@@ -509,6 +509,7 @@ import {
   CompanionFloatingBubble,
   MIN_COLS_FOR_FULL_SPRITE,
 } from '../buddy/CompanionSprite.js'
+import { fireCompanionObserver } from '../buddy/observer.js'
 import { DevBar } from '../components/DevBar.js'
 import type { RemoteMessageContent } from '../utils/oauthApi.js'
 import {
@@ -3152,6 +3153,10 @@ export function REPL({
             // Bump conversationId so Messages.tsx row keys change and
             // stale memoized rows remount with post-compact content.
             setConversationId(randomUUID())
+            // Re-pin scroll after conversationId bump — the new ID invalidates
+            // useVirtualScroll's height cache, collapsing offsets to estimates.
+            // Without this, stale scrollTop lands in an empty range → blank screen.
+            scrollRef.current?.scrollToBottom()
             // Compaction succeeded — clear the context-blocked flag so ticks resume
             if (feature('KAIROS')) {
               proactiveModule?.setContextBlocked(false)
@@ -3875,6 +3880,8 @@ export function REPL({
         // TODO: Once onSubmit supports ContentBlockParam arrays, remove this branch
         const newAbortController = createAbortController()
         setAbortController(newAbortController)
+        // Re-pin scroll — this path bypasses onSubmit (which calls repinScroll)
+        repinScroll()
 
         void onQuery(
           [initialMsg.message],
@@ -3904,6 +3911,7 @@ export function REPL({
     onQuery,
     mainLoopModel,
     tools,
+    repinScroll,
   ])
 
   const onSubmit = useCallback(
