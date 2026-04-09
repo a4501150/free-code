@@ -1,6 +1,4 @@
 import { feature } from 'bun:bundle'
-import { getIsRemoteMode } from '../../bootstrap/state.js'
-import { redownloadUserSettings } from '../../services/settingsSync/index.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { refreshActivePlugins } from '../../utils/plugins/refresh.js'
@@ -17,22 +15,6 @@ export const call: LocalCommandCall = async (_args, context) => {
   // Managed settings intentionally NOT re-fetched: it already polls hourly
   // (POLLING_INTERVAL_MS), and policy enforcement is eventually-consistent
   // by design (stale-cache fallback on fetch failure). Interactive
-  // /reload-plugins has never re-fetched it either.
-  //
-  // No retries: user-initiated command, one attempt + fail-open. The user
-  // can re-run /reload-plugins to retry. Startup path keeps its retries.
-  if (
-    feature('DOWNLOAD_USER_SETTINGS') &&
-    (isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) || getIsRemoteMode())
-  ) {
-    const applied = await redownloadUserSettings()
-    // applyRemoteEntriesToLocal uses markInternalWrite to suppress the
-    // file watcher (correct for startup, nothing listening yet); fire
-    // notifyChange here so mid-session applySettingsChange runs.
-    if (applied) {
-      settingsChangeDetector.notifyChange('userSettings')
-    }
-  }
 
   const r = await refreshActivePlugins(context.setAppState)
 

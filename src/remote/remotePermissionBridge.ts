@@ -5,6 +5,20 @@ import type { AssistantMessage } from '../types/message.js'
 import { jsonStringify } from '../utils/slowOperations.js'
 
 /**
+ * Simple permission response for remote sessions.
+ * This is a simplified version of PermissionResult for remote communication.
+ */
+export type RemotePermissionResponse =
+  | {
+      behavior: 'allow'
+      updatedInput: Record<string, unknown>
+    }
+  | {
+      behavior: 'deny'
+      message: string
+    }
+
+/**
  * Create a synthetic AssistantMessage for remote permission requests.
  * The ToolUseConfirm type requires an AssistantMessage, but in remote mode
  * we don't have a real one — the tool use runs on the CCR container.

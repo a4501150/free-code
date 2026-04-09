@@ -29,7 +29,7 @@ export type GitHubActionsMetadata = {
 
 /**
  * Core user data used as base for all analytics providers.
- * This is also the format used by GrowthBook.
+ * This is the canonical shape for user identity data.
  */
 export type CoreUserData = {
   deviceId: string
@@ -127,13 +127,6 @@ export const getCoreUserData = memoize(
   },
 )
 
-/**
- * Get user data for GrowthBook (same as core data with analytics metadata).
- */
-export function getUserForGrowthBook(): CoreUserData {
-  return getCoreUserData(true)
-}
-
 function getEmail(): string | undefined {
   // Return cached email if available (from async initialization)
   if (cachedEmail !== null) {
@@ -146,16 +139,6 @@ function getEmail(): string | undefined {
     return oauthAccount.emailAddress
   }
 
-  // Ant-only fallbacks below (no execSync)
-  if (process.env.USER_TYPE !== 'ant') {
-    return undefined
-  }
-
-  if (process.env.COO_CREATOR) {
-    return `${process.env.COO_CREATOR}@anthropic.com`
-  }
-
-  // If initUser() wasn't called, we return undefined instead of blocking
   return undefined
 }
 
@@ -166,16 +149,7 @@ async function getEmailAsync(): Promise<string | undefined> {
     return oauthAccount.emailAddress
   }
 
-  // Ant-only fallbacks below
-  if (process.env.USER_TYPE !== 'ant') {
-    return undefined
-  }
-
-  if (process.env.COO_CREATOR) {
-    return `${process.env.COO_CREATOR}@anthropic.com`
-  }
-
-  return getGitEmail()
+  return undefined
 }
 
 /**

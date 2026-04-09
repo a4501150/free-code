@@ -17,17 +17,13 @@ import type {
 import {
   getAnthropicApiKeyWithSource,
   getClaudeAIOAuthTokens,
-  getOauthAccountInfo,
   isClaudeAISubscriber,
 } from 'src/utils/auth.js'
 import {
   createAssistantAPIErrorMessage,
   NO_RESPONSE_REQUESTED,
 } from 'src/utils/messages.js'
-import {
-  getDefaultMainLoopModelSetting,
-  isNonCustomOpusModel,
-} from 'src/utils/model/model.js'
+import { isNonCustomOpusModel } from 'src/utils/model/model.js'
 import { getModelStrings } from 'src/utils/model/modelStrings.js'
 import { getAPIProvider } from 'src/utils/model/providers.js'
 import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
@@ -39,10 +35,6 @@ import { isEnvTruthy } from '../../utils/envUtils.js'
 import { formatFileSize } from '../../utils/format.js'
 import { ImageResizeError } from '../../utils/imageResizer.js'
 import { ImageSizeError } from '../../utils/imageValidation.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from '../analytics/index.js'
 import {
   type ClaudeAILimits,
   getRateLimitErrorMessage,
@@ -161,8 +153,6 @@ export const ORG_DISABLED_ERROR_MESSAGE_ENV_KEY =
   'Your ANTHROPIC_API_KEY belongs to a disabled organization · Update or unset the environment variable'
 export const TOKEN_REVOKED_ERROR_MESSAGE =
   'OAuth token revoked · Please run /login'
-export const CCR_AUTH_ERROR_MESSAGE =
-  'Authentication error · This may be a temporary network issue, please try again'
 export const REPEATED_529_ERROR_MESSAGE = 'Repeated 529 Overloaded errors'
 export const CUSTOM_OFF_SWITCH_MESSAGE =
   'Opus is experiencing high load, please use /model to switch to Sonnet'
@@ -207,15 +197,6 @@ export function getOauthOrgNotAllowedErrorMessage(): string {
   return getIsNonInteractiveSession()
     ? 'Your organization does not have access to Claude. Please login again or contact your administrator.'
     : OAUTH_ORG_NOT_ALLOWED_ERROR_MESSAGE
-}
-
-/**
- * Check if we're in CCR (Claude Code Remote) mode.
- * In CCR mode, auth is handled via JWTs provided by the infrastructure,
- * not via /login. Transient auth errors should suggest retrying, not logging in.
- */
-function isCCRMode(): boolean {
-  return isEnvTruthy(process.env.CLAUDE_CODE_REMOTE)
 }
 
 // Temp helper to log tool_use/tool_result mismatch errors
@@ -362,20 +343,6 @@ function logToolUseToolResultMismatch(
     }
 
     // Log to Statsig
-    logEvent('tengu_tool_use_tool_result_mismatch_error', {
-      toolUseId:
-        toolUseId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      normalizedSequence: normalizedSeq.join(
-        ', ',
-      ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      preNormalizedSequence: preNormalizedSeq.join(
-        ', ',
-      ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      normalizedMessageCount: messagesForAPI.length,
-      originalMessageCount: messages.length,
-      normalizedToolUseIndex: normalizedIndex,
-      originalToolUseIndex: originalIndex,
-    })
   } catch (_) {
     // Ignore errors in debug logging
   }
@@ -684,33 +651,14 @@ export function getAssistantMessageFromError(
       }
     }
 
-    if (process.env.USER_TYPE === 'ant') {
-      const baseMessage = `API Error: 400 ${error.message}\n\nRun /share and post the JSON file to ${MACRO.FEEDBACK_CHANNEL}.`
-      const rewindInstruction = getIsNonInteractiveSession()
-        ? ''
-        : ' Then, use /rewind to recover the conversation.'
-      return createAssistantAPIErrorMessage({
-        content: baseMessage + rewindInstruction,
-        error: 'invalid_request',
-      })
-    } else {
-      const baseMessage = 'API Error: 400 due to tool use concurrency issues.'
-      const rewindInstruction = getIsNonInteractiveSession()
-        ? ''
-        : ' Run /rewind to recover the conversation.'
-      return createAssistantAPIErrorMessage({
-        content: baseMessage + rewindInstruction,
-        error: 'invalid_request',
-      })
-    }
-  }
-
-  if (
-    error instanceof APIError &&
-    error.status === 400 &&
-    error.message.includes('unexpected `tool_use_id` found in `tool_result`')
-  ) {
-    logEvent('tengu_unexpected_tool_result', {})
+    const baseMessage = 'API Error: 400 due to tool use concurrency issues.'
+    const rewindInstruction = getIsNonInteractiveSession()
+      ? ''
+      : ' Run /rewind to recover the conversation.'
+    return createAssistantAPIErrorMessage({
+      content: baseMessage + rewindInstruction,
+      error: 'invalid_request',
+    })
   }
 
   // Duplicate tool_use IDs (CC-1212). ensureToolResultPairing strips these
@@ -721,7 +669,6 @@ export function getAssistantMessageFromError(
     error.status === 400 &&
     error.message.includes('`tool_use` ids must be unique')
   ) {
-    logEvent('tengu_duplicate_tool_use_id', {})
     const rewindInstruction = getIsNonInteractiveSession()
       ? ''
       : ' Run /rewind to recover the conversation.'
@@ -743,28 +690,6 @@ export function getAssistantMessageFromError(
     return createAssistantAPIErrorMessage({
       content:
         'Claude Opus is not available with the Claude Pro plan. If you have updated your subscription plan recently, run /logout and /login for the plan to take effect.',
-      error: 'invalid_request',
-    })
-  }
-
-  // Check for invalid model name error for Ant users. Claude Code may be
-  // defaulting to a custom internal-only model for Ants, and there might be
-  // Ants using new or unknown org IDs that haven't been gated in.
-  if (
-    process.env.USER_TYPE === 'ant' &&
-    !process.env.ANTHROPIC_MODEL &&
-    error instanceof Error &&
-    error.message.toLowerCase().includes('invalid model name')
-  ) {
-    // Get organization ID from config - only use OAuth account data when actively using OAuth
-    const orgId = getOauthAccountInfo()?.organizationUuid
-    const baseMsg = `[ANT-ONLY] Your org isn't gated into the \`${model}\` model. Either run \`claude\` with \`ANTHROPIC_MODEL=${getDefaultMainLoopModelSetting()}\``
-    const msg = orgId
-      ? `${baseMsg} or share your orgId (${orgId}) in ${MACRO.FEEDBACK_CHANNEL} for help getting access.`
-      : `${baseMsg} or reach out in ${MACRO.FEEDBACK_CHANNEL} for help getting access.`
-
-    return createAssistantAPIErrorMessage({
-      content: msg,
       error: 'invalid_request',
     })
   }
@@ -814,14 +739,6 @@ export function getAssistantMessageFromError(
     error instanceof Error &&
     error.message.toLowerCase().includes('x-api-key')
   ) {
-    // In CCR mode, auth is via JWTs - this is likely a transient network issue
-    if (isCCRMode()) {
-      return createAssistantAPIErrorMessage({
-        error: 'authentication_failed',
-        content: CCR_AUTH_ERROR_MESSAGE,
-      })
-    }
-
     // Check if the API key is from an external source
     const { source } = getAnthropicApiKeyWithSource()
     const isExternalSource =
@@ -866,14 +783,6 @@ export function getAssistantMessageFromError(
     error instanceof APIError &&
     (error.status === 401 || error.status === 403)
   ) {
-    // In CCR mode, auth is via JWTs - this is likely a transient network issue
-    if (isCCRMode()) {
-      return createAssistantAPIErrorMessage({
-        error: 'authentication_failed',
-        content: CCR_AUTH_ERROR_MESSAGE,
-      })
-    }
-
     return createAssistantAPIErrorMessage({
       error: 'authentication_failed',
       content: getIsNonInteractiveSession()
@@ -1188,8 +1097,6 @@ export function getErrorMessageIfRefusal(
   if (stopReason !== 'refusal') {
     return
   }
-
-  logEvent('tengu_refusal_api_response', {})
 
   const baseMessage = getIsNonInteractiveSession()
     ? `${API_ERROR_MESSAGE_PREFIX}: Claude Code is unable to respond to this request, which appears to violate our Usage Policy (https://www.anthropic.com/legal/aup). Try rephrasing the request or attempting a different approach.`

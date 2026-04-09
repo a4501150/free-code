@@ -13,6 +13,7 @@ import {
 import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import { getFsImplementation } from './fsOperations.js'
 import { writeToStderr } from './process.js'
+import { getInitialSettings } from './settings/settings.js'
 import { jsonStringify } from './slowOperations.js'
 
 export type DebugLogLevel = 'verbose' | 'debug' | 'info' | 'warn' | 'error'
@@ -62,7 +63,7 @@ export const isDebugMode = memoize((): boolean => {
  * with --debug. Returns true if logging was already active.
  */
 export function enableDebugLogging(): boolean {
-  const wasActive = isDebugMode() || process.env.USER_TYPE === 'ant'
+  const wasActive = isDebugMode() || (getInitialSettings()?.alwaysDebugLog ?? false)
   runtimeDebugEnabled = true
   isDebugMode.cache.clear?.()
   return wasActive
@@ -106,9 +107,9 @@ function shouldLogDebugMessage(message: string): boolean {
     return false
   }
 
-  // Non-ants only write debug logs when debug mode is active (via --debug at
-  // startup or /debug mid-session). Ants always log for /share, bug reports.
-  if (process.env.USER_TYPE !== 'ant' && !isDebugMode()) {
+  // Only write debug logs when debug mode is active (via --debug at
+  // startup or /debug mid-session) or alwaysDebugLog is enabled.
+  if (!(getInitialSettings()?.alwaysDebugLog ?? false) && !isDebugMode()) {
     return false
   }
 
@@ -256,7 +257,7 @@ const updateLatestDebugLogSymlink = memoize(async (): Promise<void> => {
  * Logs errors for Ants only, always visible in production.
  */
 export function logAntError(context: string, error: unknown): void {
-  if (process.env.USER_TYPE !== 'ant') {
+  if (!(getInitialSettings()?.alwaysDebugLog ?? false)) {
     return
   }
 

@@ -8,7 +8,6 @@ import {
   IMAGE_MAX_WIDTH,
   IMAGE_TARGET_RAW_SIZE,
 } from '../constants/apiLimits.js'
-import { logEvent } from '../services/analytics/index.js'
 import {
   getImageProcessor,
   type SharpFunction,
@@ -285,10 +284,6 @@ export async function maybeResizeAndDownsampleImageBuffer(
       height = IMAGE_MAX_HEIGHT
     }
 
-    // IMPORTANT: Always create fresh sharp(imageBuffer) instances for each operation.
-    // The native image-processor-napi module doesn't properly apply format conversions
-    // when reusing a sharp instance after calling toBuffer(). This caused a bug where
-    // all compression attempts (PNG, JPEG at various qualities) returned identical sizes.
     logForDebugging(`Resizing to ${width}x${height}`)
     const resizedImageBuffer = await sharp(imageBuffer)
       .resize(width, height, {
@@ -385,11 +380,6 @@ export async function maybeResizeAndDownsampleImageBuffer(
     logError(error as Error)
     const errorType = classifyImageError(error)
     const errorMsg = errorMessage(error)
-    logEvent('tengu_image_resize_failed', {
-      original_size_bytes: originalSize,
-      error_type: errorType,
-      error_message_hash: hashString(errorMsg),
-    })
 
     // Detect actual format from magic bytes instead of trusting extension
     const detected = detectImageFormatFromBuffer(imageBuffer)
@@ -412,11 +402,6 @@ export async function maybeResizeAndDownsampleImageBuffer(
 
     // If original image's base64 encoding is within API limit, allow it through uncompressed
     if (base64Size <= API_IMAGE_MAX_BASE64_SIZE && !overDim) {
-      logEvent('tengu_image_resize_fallback', {
-        original_size_bytes: originalSize,
-        base64_size_bytes: base64Size,
-        error_type: errorType,
-      })
       return { buffer: imageBuffer, mediaType: normalizedExt }
     }
 
@@ -550,12 +535,6 @@ export async function compressImageBuffer(
     logError(error as Error)
     const errorType = classifyImageError(error)
     const errorMsg = errorMessage(error)
-    logEvent('tengu_image_compress_failed', {
-      original_size_bytes: imageBuffer.length,
-      max_bytes: maxBytes,
-      error_type: errorType,
-      error_message_hash: hashString(errorMsg),
-    })
 
     // If original image is within the requested limit, allow it through
     if (imageBuffer.length <= maxBytes) {

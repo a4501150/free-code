@@ -7,7 +7,6 @@ import {
   useSetAppState,
 } from 'src/state/AppState.js'
 import type { ToolPermissionContext } from 'src/Tool.js'
-import { getIsRemoteMode } from '../../bootstrap/state.js'
 import {
   createDisabledBypassPermissionsContext,
   shouldDisableBypassPermissions,
@@ -60,7 +59,6 @@ export function useKickOffCheckAndDisableBypassPermissionsIfNeeded(): void {
 
   // Run once, when the component mounts
   useEffect(() => {
-    if (getIsRemoteMode()) return
     void checkAndDisableBypassPermissionsIfNeeded(
       toolPermissionContext,
       setAppState,
@@ -88,7 +86,7 @@ export async function checkAndDisableAutoModeIfNeeded(
     )
     setAppState(prev => {
       // Apply the transform to CURRENT context, not the stale snapshot we
-      // passed to verifyAutoModeGateAccess. The async GrowthBook await inside
+      // passed to verifyAutoModeGateAccess. The async gate check inside
       // can be outrun by a mid-turn shift-tab; spreading a stale context here
       // would revert the user's mode change.
       const nextCtx = updateContext(prev.toolPermissionContext)
@@ -139,7 +137,6 @@ export function useKickOffCheckAndDisableAutoModeIfNeeded(): void {
   // breaker. The print.ts headless paths are covered by the sync
   // isAutoModeGateEnabled() check.
   useEffect(() => {
-    if (getIsRemoteMode()) return
     if (isFirstRunRef.current) {
       isFirstRunRef.current = false
     } else {

@@ -13,8 +13,7 @@ import chokidar, { type FSWatcher } from 'chokidar'
 import { readFileSync } from 'fs'
 import { readFile, stat } from 'fs/promises'
 import { dirname, join } from 'path'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
-import { logEvent } from '../services/analytics/index.js'
+
 import { registerCleanup } from '../utils/cleanupRegistry.js'
 import { logForDebugging } from '../utils/debug.js'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
@@ -33,16 +32,11 @@ import {
 /**
  * Check if keybinding customization is enabled.
  *
- * Returns true if the tengu_keybinding_customization_release GrowthBook gate is enabled.
- *
  * This function is exported so other parts of the codebase (e.g., /doctor)
  * can check the same condition consistently.
  */
 export function isKeybindingCustomizationEnabled(): boolean {
-  return getFeatureValue_CACHED_MAY_BE_STALE(
-    'tengu_keybinding_customization_release',
-    false,
-  )
+  return true
 }
 
 /**
@@ -84,9 +78,6 @@ function logCustomBindingsLoadedOncePerDay(userBindingCount: number): void {
   const today = new Date().toISOString().slice(0, 10)
   if (lastCustomBindingsLogDate === today) return
   lastCustomBindingsLogDate = today
-  logEvent('tengu_custom_keybindings_loaded', {
-    user_binding_count: userBindingCount,
-  })
 }
 
 /**

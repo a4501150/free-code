@@ -53,14 +53,14 @@ Then run `free-code` and use the `/login` command to authenticate with your pref
 
 A clean, buildable fork of Anthropic's [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI -- the terminal-native AI coding agent. The upstream source became publicly available on March 31, 2026 through a source map exposure in the npm distribution.
 
-This fork applies three categories of changes on top of that snapshot:
+This fork applies four categories of changes on top of that snapshot:
 
 ### Telemetry removed
 
-The upstream binary phones home through OpenTelemetry/gRPC, GrowthBook analytics, Sentry error reporting, and custom event logging. In this build:
+The upstream binary phones home through OpenTelemetry/gRPC, Sentry error reporting, and custom event logging. In this build:
 
 - All outbound telemetry endpoints are dead-code-eliminated or stubbed
-- GrowthBook feature flag evaluation still works locally (needed for runtime feature gates) but does not report back
+- Remote feature flag system has been fully removed (all flags hardcoded or migrated to settings.json)
 - No crash reports, no usage analytics, no session fingerprinting
 
 ### Security-prompt guardrails removed
@@ -68,6 +68,12 @@ The upstream binary phones home through OpenTelemetry/gRPC, GrowthBook analytics
 Anthropic injects system-level instructions into every conversation that constrain Claude's behavior beyond what the model itself enforces. These include hardcoded refusal patterns, injected "cyber risk" instruction blocks, and managed-settings security overlays pushed from Anthropic's servers.
 
 This build strips those injections. The model's own safety training still applies -- this just removes the extra layer of prompt-level restrictions that the CLI wraps around it.
+
+### React Compiler decompiled
+
+The upstream source snapshot shipped with React Compiler output baked into every `.tsx` file — function bodies mangled with `_c()` cache arrays, `$[N]` memoization slots, and `t0` parameter renaming. This made the code nearly unreadable and uneditable.
+
+This fork extracted the original source from inline base64 source maps embedded in each file, restoring all 543 `.tsx` files to clean, human-readable TypeScript/JSX. The React Compiler is available as an optional build step (`--react-compiler` flag) but is not used by default.
 
 ### Experimental features unlocked
 
@@ -177,7 +183,8 @@ curl -fsSL https://bun.sh/install | bash
 ```bash
 git clone https://github.com/paoloanzn/free-code.git
 cd free-code
-bun build
+bun install
+bun run build
 ./cli
 ```
 
@@ -189,6 +196,21 @@ bun build
 | `bun run build:dev` | `./cli-dev` | `VOICE_MODE` only | Dev version stamp |
 | `bun run build:dev:full` | `./cli-dev` | All 54 experimental flags | Full unlock build |
 | `bun run compile` | `./dist/cli` | `VOICE_MODE` only | Alternative output path |
+| `bun run dev` | *(runs from source)* | `VOICE_MODE` only | No compile step, slower startup |
+
+### React Compiler (Optional)
+
+Add `--react-compiler` to any build command to run the React Compiler pre-transform. This applies automatic memoization to `.tsx` components for potential render performance gains, but is not required — the terminal UI (Ink) is lightweight enough without it.
+
+```bash
+# Build with React Compiler memoization
+bun run ./scripts/build.ts --react-compiler
+
+# Combine with other flags
+bun run ./scripts/build.ts --dev --feature-set=dev-full --react-compiler
+```
+
+The source files in `src/` are always clean, human-readable React — the compiler output goes to a temporary `.compiled-src/` directory and is never committed.
 
 ### Custom Feature Flags
 
@@ -199,7 +221,7 @@ Enable specific flags without the full bundle:
 bun run ./scripts/build.ts --feature=ULTRAPLAN --feature=ULTRATHINK
 
 # Add a flag on top of the dev build
-bun run ./scripts/build.ts --dev --feature=BRIDGE_MODE
+bun run ./scripts/build.ts --dev --feature=ULTRAPLAN
 ```
 
 ---
@@ -247,7 +269,7 @@ The `bun run build:dev:full` build enables all 54 working feature flags. Highlig
 
 | Flag | Description |
 |---|---|
-| `ULTRAPLAN` | Remote multi-agent planning on Claude Code web (Opus-class) |
+| `ULTRAPLAN` | Multi-agent planning with Opus-class model (requires CCR, currently disabled) |
 | `ULTRATHINK` | Deep thinking mode -- type "ultrathink" to boost reasoning effort |
 | `VOICE_MODE` | Push-to-talk voice input and dictation |
 | `TOKEN_BUDGET` | Token budget tracking and usage warnings |
@@ -263,7 +285,6 @@ The `bun run build:dev:full` build enables all 54 working feature flags. Highlig
 | `BUILTIN_EXPLORE_PLAN_AGENTS` | Built-in explore/plan agent presets |
 | `VERIFICATION_AGENT` | Verification agent for task validation |
 | `AGENT_TRIGGERS` | Local cron/trigger tools for background automation |
-| `AGENT_TRIGGERS_REMOTE` | Remote trigger tool path |
 | `EXTRACT_MEMORIES` | Post-query automatic memory extraction |
 | `COMPACTION_REMINDERS` | Smart reminders around context compaction |
 | `CACHED_MICROCOMPACT` | Cached microcompact state through query flows |
@@ -273,7 +294,6 @@ The `bun run build:dev:full` build enables all 54 working feature flags. Highlig
 
 | Flag | Description |
 |---|---|
-| `BRIDGE_MODE` | IDE remote-control bridge (VS Code, JetBrains) |
 | `BASH_CLASSIFIER` | Classifier-assisted bash permission decisions |
 | `PROMPT_CACHE_BREAK_DETECTION` | Cache-break detection in compaction/query flow |
 
@@ -306,7 +326,6 @@ src/
     model/                # Model configs, providers, validation
   skills/                 # Skill system
   plugins/                # Plugin system
-  bridge/                 # IDE bridge
   voice/                  # Voice input
   tasks/                  # Background task management
 ```

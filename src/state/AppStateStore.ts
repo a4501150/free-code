@@ -1,6 +1,5 @@
 import type { Notification } from 'src/context/notifications.js'
 import type { TodoList } from 'src/utils/todo/types.js'
-import type { BridgePermissionCallbacks } from '../bridge/bridgePermissionCallbacks.js'
 import type { Command } from '../commands.js'
 import type { ChannelPermissionCallbacks } from '../services/mcp/channelPermissions.js'
 import type { ElicitationRequestEvent } from '../services/mcp/elicitationHandler.js'
@@ -83,7 +82,6 @@ export type FooterItem =
   | 'tmux'
   | 'bagel'
   | 'teams'
-  | 'bridge'
   | 'companion'
 
 export type AppState = DeepImmutable<{
@@ -110,51 +108,10 @@ export type AppState = DeepImmutable<{
   spinnerTip?: string
   // Agent name from --agent CLI flag or settings (for logo display)
   agent: string | undefined
-  // Assistant mode fully enabled (settings + GrowthBook gate + trust).
+  // Assistant mode fully enabled (settings + gate check + trust).
   // Single source of truth - computed once in main.tsx before option
   // mutation, consumers read this instead of re-calling isAssistantMode().
   kairosEnabled: boolean
-  // Remote session URL for --remote mode (shown in footer indicator)
-  remoteSessionUrl: string | undefined
-  // Remote session WS state (`claude assistant` viewer). 'connected' means the
-  // live event stream is open; 'reconnecting' = transient WS drop, backoff
-  // in progress; 'disconnected' = permanent close or reconnects exhausted.
-  remoteConnectionStatus:
-    | 'connecting'
-    | 'connected'
-    | 'reconnecting'
-    | 'disconnected'
-  // `claude assistant`: count of background tasks (Agent calls, teammates,
-  // workflows) running inside the REMOTE daemon child. Event-sourced from
-  // system/task_started and system/task_notification on the WS. The local
-  // AppState.tasks is always empty in viewer mode — the tasks live in a
-  // different process.
-  remoteBackgroundTaskCount: number
-  // Always-on bridge: desired state (controlled by /config or footer toggle)
-  replBridgeEnabled: boolean
-  // Always-on bridge: true when activated via /remote-control command, false when config-driven
-  replBridgeExplicit: boolean
-  // Outbound-only mode: forward events to CCR but reject inbound prompts/control
-  replBridgeOutboundOnly: boolean
-  // Always-on bridge: env registered + session created (= "Ready")
-  replBridgeConnected: boolean
-  // Always-on bridge: ingress WebSocket is open (= "Connected" - user on claude.ai)
-  replBridgeSessionActive: boolean
-  // Always-on bridge: poll loop is in error backoff (= "Reconnecting")
-  replBridgeReconnecting: boolean
-  // Always-on bridge: connect URL for Ready state (?bridge=envId)
-  replBridgeConnectUrl: string | undefined
-  // Always-on bridge: session URL on claude.ai (set when connected)
-  replBridgeSessionUrl: string | undefined
-  // Always-on bridge: IDs for debugging (shown in dialog when --verbose)
-  replBridgeEnvironmentId: string | undefined
-  replBridgeSessionId: string | undefined
-  // Always-on bridge: error message when connection fails (shown in BridgeDialog)
-  replBridgeError: string | undefined
-  // Always-on bridge: session name set via `/remote-control <name>` (used as session title)
-  replBridgeInitialName: string | undefined
-  // Always-on bridge: first-time remote dialog pending (set by /remote-control command)
-  showRemoteCallout: boolean
 }> & {
   // Unified task state - excluded from DeepImmutable because TaskState contains function types
   tasks: { [taskId: string]: TaskState }
@@ -218,7 +175,6 @@ export type AppState = DeepImmutable<{
   fileHistory: FileHistoryState
   attribution: AttributionState
   todos: { [agentId: string]: TodoList }
-  remoteAgentTaskSuggestions: { summary: string; task: string }[]
   notifications: {
     current: Notification | null
     queue: Notification[]
@@ -229,74 +185,12 @@ export type AppState = DeepImmutable<{
   thinkingEnabled: boolean | undefined
   promptSuggestionEnabled: boolean
   sessionHooks: SessionHooksState
-  tungstenActiveSession?: {
-    sessionName: string
-    socketName: string
-    target: string // The tmux target (e.g., "session:window.pane")
-  }
-  tungstenLastCapturedTime?: number // Timestamp when frame was captured for model
-  tungstenLastCommand?: {
-    command: string // The command string to display (e.g., "Enter", "echo hello")
-    timestamp: number // When the command was sent
-  }
-  // Sticky tmux panel visibility — mirrors globalConfig.tungstenPanelVisible for reactivity.
-  tungstenPanelVisible?: boolean
-  // Transient auto-hide at turn end — separate from tungstenPanelVisible so the
-  // pill stays in the footer (user can reopen) but the panel content doesn't take
-  // screen space when idle. Cleared on next Tmux tool use or user toggle. NOT persisted.
-  tungstenPanelAutoHidden?: boolean
   // WebBrowser tool (codename bagel): pill visible in footer
   bagelActive?: boolean
   // WebBrowser tool: current page URL shown in pill label
   bagelUrl?: string
   // WebBrowser tool: sticky panel visibility toggle
   bagelPanelVisible?: boolean
-  // chicago MCP session state. Types inlined (not imported from
-  // @ant/computer-use-mcp/types) so external typecheck passes without the
-  // ant-scoped dep resolved. Shapes match `AppGrant`/`CuGrantFlags`
-  // structurally — wrapper.tsx assigns via structural compatibility. Only
-  // populated when feature('CHICAGO_MCP') is active.
-  computerUseMcpState?: {
-    // Session-scoped app allowlist. NOT persisted across resume.
-    allowedApps?: readonly {
-      bundleId: string
-      displayName: string
-      grantedAt: number
-    }[]
-    // Clipboard/system-key grant flags (orthogonal to allowlist).
-    grantFlags?: {
-      clipboardRead: boolean
-      clipboardWrite: boolean
-      systemKeyCombos: boolean
-    }
-    // Dims-only (NOT the blob) for scaleCoord after compaction. The full
-    // `ScreenshotResult` including base64 is process-local in wrapper.tsx.
-    lastScreenshotDims?: {
-      width: number
-      height: number
-      displayWidth: number
-      displayHeight: number
-      displayId?: number
-      originX?: number
-      originY?: number
-    }
-    // Accumulated by onAppsHidden, cleared + unhidden at turn end.
-    hiddenDuringTurn?: ReadonlySet<string>
-    // Which display CU targets. Written back by the package's
-    // `autoTargetDisplay` resolver via `onResolvedDisplayUpdated`. Persisted
-    // across resume so clicks stay on the display the model last saw.
-    selectedDisplayId?: number
-    // True when the model explicitly picked a display via `switch_display`.
-    // Makes `handleScreenshot` skip the resolver chase chain and honor
-    // `selectedDisplayId` directly. Cleared on resolver writeback (pinned
-    // display unplugged → Swift fell back to main) and on
-    // `switch_display("auto")`.
-    displayPinnedByModel?: boolean
-    // Sorted comma-joined bundle-ID set the display was last auto-resolved
-    // for. `handleScreenshot` only re-resolves when the allowed set has
-    // changed since — keeps the resolver from yanking on every screenshot.
-    displayResolvedForApps?: string
-  }
   // REPL tool VM context - persists across REPL calls for state sharing
   replContext?: {
     vmContext: import('vm').Context
@@ -426,25 +320,15 @@ export type AppState = DeepImmutable<{
   // Effort value
   effortValue?: EffortValue
   // Set synchronously in launchUltraplan before the detached flow starts.
-  // Prevents duplicate launches during the ~5s window before
-  // ultraplanSessionUrl is set by teleportToRemote. Cleared by launchDetached
-  // once the URL is set or on failure.
+  // Prevents duplicate launches. Cleared by launchDetached on completion or failure.
   ultraplanLaunching?: boolean
-  // Active ultraplan CCR session URL. Set while the RemoteAgentTask runs;
-  // truthy disables the keyword trigger + rainbow. Cleared when the poll
-  // reaches terminal state.
-  ultraplanSessionUrl?: string
   // Approved ultraplan awaiting user choice (implement here vs fresh session).
-  // Set by RemoteAgentTask poll on approval; cleared by UltraplanChoiceDialog.
+  // Cleared by UltraplanChoiceDialog.
   ultraplanPendingChoice?: { plan: string; sessionId: string; taskId: string }
   // Pre-launch permission dialog. Set by /ultraplan (slash or keyword);
   // cleared by UltraplanLaunchDialog on choice.
   ultraplanLaunchPending?: { blurb: string }
-  // Remote-harness side: set via set_permission_mode control_request,
-  // pushed to CCR external_metadata.is_ultraplan_mode by onChangeAppState.
   isUltraplanMode?: boolean
-  // Always-on bridge: permission callbacks for bidirectional permission checks
-  replBridgePermissionCallbacks?: BridgePermissionCallbacks
   // Channel permission callbacks — permission prompts over Telegram/iMessage/etc.
   // Races against local UI + bridge + hooks + classifier via claim() in
   // interactiveHandler.ts. Constructed once in useManageMCPConnections.
@@ -481,22 +365,6 @@ export function getDefaultAppState(): AppState {
     viewSelectionMode: 'none',
     footerSelection: null,
     kairosEnabled: false,
-    remoteSessionUrl: undefined,
-    remoteConnectionStatus: 'connecting',
-    remoteBackgroundTaskCount: 0,
-    replBridgeEnabled: false,
-    replBridgeExplicit: false,
-    replBridgeOutboundOnly: false,
-    replBridgeConnected: false,
-    replBridgeSessionActive: false,
-    replBridgeReconnecting: false,
-    replBridgeConnectUrl: undefined,
-    replBridgeSessionUrl: undefined,
-    replBridgeEnvironmentId: undefined,
-    replBridgeSessionId: undefined,
-    replBridgeError: undefined,
-    replBridgeInitialName: undefined,
-    showRemoteCallout: false,
     toolPermissionContext: {
       ...getEmptyToolPermissionContext(),
       mode: initialMode,
@@ -528,7 +396,6 @@ export function getDefaultAppState(): AppState {
       needsRefresh: false,
     },
     todos: {},
-    remoteAgentTaskSuggestions: [],
     notifications: {
       current: null,
       queue: [],

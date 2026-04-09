@@ -10,7 +10,7 @@ function hashString(str: string): string {
   return createHash('sha256').update(str).digest('hex')
 }
 
-// Cache last few API requests for ant users (e.g., for /issue command)
+// Cache last few API requests (e.g., for /issue command)
 const MAX_CACHED_REQUESTS = 5
 const cachedApiRequests: Array<{ timestamp: string; request: unknown }> = []
 
@@ -46,7 +46,6 @@ export function clearAllDumpState(): void {
 }
 
 export function addApiRequestToCache(requestData: unknown): void {
-  if (process.env.USER_TYPE !== 'ant') return
   cachedApiRequests.push({
     timestamp: new Date().toISOString(),
     request: requestData,
@@ -97,7 +96,6 @@ function dumpRequest(
     const req = jsonParse(body) as Record<string, unknown>
     addApiRequestToCache(req)
 
-    if (process.env.USER_TYPE !== 'ant') return
     const entries: string[] = []
     const messages = (req.messages ?? []) as Array<{ role?: string }>
 
@@ -171,7 +169,7 @@ export function createDumpPromptsFetch(
     const response = await globalThis.fetch(input, init)
 
     // Save response async
-    if (timestamp && response.ok && process.env.USER_TYPE === 'ant') {
+    if (timestamp && response.ok) {
       const cloned = response.clone()
       void (async () => {
         try {

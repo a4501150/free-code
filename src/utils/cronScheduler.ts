@@ -13,10 +13,6 @@ import {
   removeSessionCronTasks,
   setScheduledTasksEnabled,
 } from '../bootstrap/state.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from '../services/analytics/index.js'
 import { cronToHuman } from './cron.js'
 import {
   type CronJitterConfig,
@@ -100,12 +96,12 @@ type CronSchedulerOptions = {
   lockIdentity?: string
   /**
    * Returns the cron jitter config to use for this tick. Called once per
-   * check() cycle. REPL callers pass a GrowthBook-backed implementation
+   * check() cycle. REPL callers pass a config-backed implementation
    * (see cronJitterConfig.ts) for live tuning — ops can widen the jitter
    * window mid-session during a :00 load spike without restarting clients.
    * Agent SDK daemon callers omit this and get DEFAULT_CRON_JITTER_CONFIG,
    * which is safe since daemons restart on config change anyway, and the
-   * growthbook.ts → config.ts → commands.ts → REPL chain stays out of
+   * config.ts → commands.ts → REPL chain stays out of
    * sdk.mjs.
    */
   getJitterConfig?: () => CronJitterConfig
@@ -113,7 +109,7 @@ type CronSchedulerOptions = {
    * Killswitch: polled once per check() tick. When true, check() bails
    * before firing anything — existing crons stop dead mid-session. CLI
    * callers inject `() => !isKairosCronEnabled()` so flipping the
-   * tengu_kairos_cron gate off stops already-running schedulers (not just
+   * isKairosCronEnabled() returning false stops already-running schedulers (not just
    * new ones). Daemon callers omit this, same rationale as getJitterConfig.
    */
   isKilled?: () => boolean
@@ -202,14 +198,6 @@ export function createCronScheduler(
         // removeCronTasks + chokidar reload chain is in progress.
         nextFireAt.set(t.id, Infinity)
       }
-      logEvent('tengu_scheduled_task_missed', {
-        count: missed.length,
-        taskIds: missed
-          .map(t => t.id)
-          .join(
-            ',',
-          ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      })
       if (onMissed) {
         onMissed(missed)
       } else {
@@ -237,7 +225,7 @@ export function createCronScheduler(
     // tasks excluded — they die with the process, no point persisting.
     const firedFileRecurring: string[] = []
     // Read once per tick. REPL callers pass getJitterConfig backed by
-    // GrowthBook so a config push takes effect without restart. Daemon and
+    // config so a settings push takes effect without restart. Daemon and
     // SDK callers omit it and get DEFAULT_CRON_JITTER_CONFIG (safe — jitter
     // is an ops lever for REPL fleet load-shedding, not a daemon concern).
     const jitterCfg = getJitterConfig?.() ?? DEFAULT_CRON_JITTER_CONFIG
@@ -285,11 +273,6 @@ export function createCronScheduler(
       logForDebugging(
         `[ScheduledTasks] firing ${t.id}${t.recurring ? ' (recurring)' : ''}`,
       )
-      logEvent('tengu_scheduled_task_fire', {
-        recurring: t.recurring ?? false,
-        taskId:
-          t.id as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      })
       if (onFireTask) {
         onFireTask(t)
       } else {
@@ -305,11 +288,6 @@ export function createCronScheduler(
         logForDebugging(
           `[ScheduledTasks] recurring task ${t.id} aged out (${ageHours}h since creation), deleting after final fire`,
         )
-        logEvent('tengu_scheduled_task_expired', {
-          taskId:
-            t.id as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-          ageHours,
-        })
       }
 
       if (t.recurring && !aged) {

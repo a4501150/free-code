@@ -527,6 +527,33 @@ export default class Output {
       )
     }
 
+    // Debug: log operations touching the last 2 rows (status line area)
+    if (screen.damage) {
+      const bottomRow = screenHeight - 1
+      const statusOps: string[] = []
+      for (const op of this.operations) {
+        if (op.type === 'blit') {
+          const { y: ry, height: rh } = op
+          if (ry <= bottomRow && ry + rh > bottomRow - 1) {
+            statusOps.push(`blit(x=${op.x},y=${ry},w=${op.width},h=${rh})`)
+          }
+        } else if (op.type === 'write') {
+          const lineCount = op.text.split('\n').length
+          if (op.y <= bottomRow && op.y + lineCount > bottomRow - 1) {
+            statusOps.push(`write(x=${op.x},y=${op.y},lines=${lineCount},len=${op.text.length})`)
+          }
+        } else if (op.type === 'clear') {
+          const { x, y, width, height } = op.region
+          if (y <= bottomRow && y + height > bottomRow - 1) {
+            statusOps.push(`clear(x=${x},y=${y},w=${width},h=${height})`)
+          }
+        }
+      }
+      if (statusOps.length > 0) {
+        logForDebugging(`status-row ops (y=${bottomRow}): ${statusOps.join(' → ')}`)
+      }
+    }
+
     return screen
   }
 }

@@ -24,7 +24,7 @@ function getIsBubblewrapSandbox(): boolean {
 
 // Cache for the runtime musl detection fallback (node/unbundled only).
 // In native linux builds, feature flags resolve this at compile time, so the
-// cache is only consulted when both IS_LIBC_MUSL and IS_LIBC_GLIBC are false.
+// cache is consulted at runtime on Linux.
 let muslRuntimeCache: boolean | null = null
 
 // Fire-and-forget: populate the musl cache for the node fallback path.
@@ -45,15 +45,11 @@ if (process.platform === 'linux') {
 
 /**
  * Checks if the system is using MUSL libc instead of glibc.
- * In native linux builds, this is statically known at compile time via IS_LIBC_MUSL/IS_LIBC_GLIBC flags.
- * In node (unbundled), both flags are false and we fall back to a runtime async stat check
- * whose result is cached at module load. If the cache isn't populated yet, returns false.
+ * Uses a runtime async stat check whose result is cached at module load.
+ * If the cache isn't populated yet, returns false.
  */
 function isMuslEnvironment(): boolean {
-  if (feature('IS_LIBC_MUSL')) return true
-  if (feature('IS_LIBC_GLIBC')) return false
-
-  // Fallback for node: runtime detection via pre-populated cache
+  // Runtime detection via pre-populated cache
   if (process.platform !== 'linux') return false
   return muslRuntimeCache ?? false
 }

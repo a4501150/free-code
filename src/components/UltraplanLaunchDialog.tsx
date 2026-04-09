@@ -7,10 +7,7 @@ import { CCR_TERMS_URL } from '../commands/ultraplan.js'
 type UltraplanLaunchChoice = 'launch' | 'cancel'
 
 type Props = {
-  onChoice: (
-    choice: UltraplanLaunchChoice,
-    opts?: { disconnectedBridge?: boolean },
-  ) => void
+  onChoice: (choice: UltraplanLaunchChoice) => void
 }
 
 export function UltraplanLaunchDialog({ onChoice }: Props): React.ReactNode {

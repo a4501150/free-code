@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react'
-import { getIsRemoteMode } from '../../bootstrap/state.js'
 import {
   type Notification,
   useNotifications,
@@ -9,7 +8,7 @@ import { logError } from '../../utils/log.js'
 type Result = Notification | Notification[] | null
 
 /**
- * Fires notification(s) once on mount. Encapsulates the remote-mode gate and
+ * Fires notification(s) once on mount. Encapsulates the
  * once-per-session ref guard that was hand-rolled across 10+ notifs/ hooks.
  *
  * The compute fn runs exactly once on first effect. Return null to skip,
@@ -25,7 +24,7 @@ export function useStartupNotification(
   computeRef.current = compute
 
   useEffect(() => {
-    if (getIsRemoteMode() || hasRunRef.current) return
+    if (hasRunRef.current) return
     hasRunRef.current = true
 
     void Promise.resolve()

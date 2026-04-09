@@ -5,10 +5,10 @@ import type {
   SDKControlPermissionRequest,
   StdoutMessage,
 } from '../entrypoints/sdk/controlTypes.js'
-import type { RemotePermissionResponse } from '../remote/RemoteSessionManager.js'
+import type { RemotePermissionResponse } from '../remote/remotePermissionBridge.js'
 import { logForDebugging } from '../utils/debug.js'
 import { jsonParse, jsonStringify } from '../utils/slowOperations.js'
-import type { RemoteMessageContent } from '../utils/teleport/api.js'
+import type { RemoteMessageContent } from '../utils/oauthApi.js'
 
 export type DirectConnectConfig = {
   serverUrl: string

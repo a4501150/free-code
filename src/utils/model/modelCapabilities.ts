@@ -44,10 +44,7 @@ function getCachePath(): string {
 }
 
 function isModelCapabilitiesEligible(): boolean {
-  if (process.env.USER_TYPE !== 'ant') return false
-  if (getAPIProvider() !== 'firstParty') return false
-  if (!isFirstPartyAnthropicBaseUrl()) return false
-  return true
+  return false
 }
 
 // Longest-id-first so substring match prefers most specific; secondary key for stable isEqual

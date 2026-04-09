@@ -1,18 +1,12 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { format } from 'util'
-import { shutdownDatadog } from '../../services/analytics/datadog.js'
-import { shutdown1PEventLogging } from '../../services/analytics/firstPartyEventLogger.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
 } from '../../services/analytics/index.js'
-import { initializeAnalyticsSink } from '../../services/analytics/sink.js'
 import { getClaudeAIOAuthTokens } from '../auth.js'
 import { enableConfigs, getGlobalConfig, saveGlobalConfig } from '../config.js'
 import { logForDebugging } from '../debug.js'
 import { isEnvTruthy } from '../envUtils.js'
-import { sideQuery } from '../sideQuery.js'
 import { getAllSocketPaths, getSecureSocketPath } from './common.js'
 import { importClaudeForChromePackage } from './package.js'
 
@@ -40,37 +34,12 @@ function isPermissionMode(raw: string): raw is PermissionMode {
   return PERMISSION_MODES.some(m => m === raw)
 }
 
-/**
- * Resolves the Chrome bridge URL based on environment and feature flag.
- * Bridge is used when the feature flag is enabled; ant users always get
- * bridge. API key / 3P users fall back to native messaging.
- */
-function getChromeBridgeUrl(): string | undefined {
-  const bridgeEnabled =
-    process.env.USER_TYPE === 'ant' ||
-    getFeatureValue_CACHED_MAY_BE_STALE('tengu_copper_bridge', false)
-
-  if (!bridgeEnabled) {
-    return undefined
-  }
-
-  if (
-    isEnvTruthy(process.env.USE_LOCAL_OAUTH) ||
-    isEnvTruthy(process.env.LOCAL_BRIDGE)
-  ) {
-    return 'ws://localhost:8765'
-  }
-
-  if (isEnvTruthy(process.env.USE_STAGING_OAUTH)) {
-    return 'wss://bridge-staging.claudeusercontent.com'
-  }
-
+function getChromeBridgeUrl(): string {
   return 'wss://bridge.claudeusercontent.com'
 }
 
 function isLocalBridge(): boolean {
   return (
-    isEnvTruthy(process.env.USE_LOCAL_OAUTH) ||
     isEnvTruthy(process.env.LOCAL_BRIDGE)
   )
 }
@@ -146,72 +115,6 @@ export function createChromeContext(
       },
     }),
     ...(initialPermissionMode && { initialPermissionMode }),
-    // Wire inference for the browser_task tool — the chrome-mcp server runs
-    // a lightning-mode agent loop in Node and calls the extension's
-    // lightning_turn tool once per iteration for execution.
-    //
-    // Ant-only: the extension's lightning_turn is build-time-gated via
-    // import.meta.env.ANT_ONLY_BUILD — the whole lightning/ module graph is
-    // tree-shaken from the public extension build (build:prod greps for a
-    // marker to verify). Without this injection, the Node MCP server's
-    // ListTools also filters browser_task + lightning_turn out, so external
-    // users never see the tools advertised. Three independent gates.
-    //
-    // Types inlined: AnthropicMessagesRequest/Response live in
-    // @ant/claude-for-chrome-mcp@0.4.0 which isn't published yet. CI installs
-    // 0.3.0. The callAnthropicMessages field is also 0.4.0-only, but spreading
-    // an extra property into ClaudeForChromeContext is fine against either
-    // version — 0.3.0 sees an unknown field (allowed in spread), 0.4.0 sees a
-    // structurally-matching one. Once 0.4.0 is published, this can switch to
-    // the package's exported types and the dep can be bumped.
-    ...(process.env.USER_TYPE === 'ant' && {
-      callAnthropicMessages: async (req: {
-        model: string
-        max_tokens: number
-        system: string
-        messages: Parameters<typeof sideQuery>[0]['messages']
-        stop_sequences?: string[]
-        signal?: AbortSignal
-      }): Promise<{
-        content: Array<{ type: 'text'; text: string }>
-        stop_reason: string | null
-        usage?: { input_tokens: number; output_tokens: number }
-      }> => {
-        // sideQuery handles OAuth attribution fingerprint, proxy, model betas.
-        // skipSystemPromptPrefix: the lightning prompt is complete on its own;
-        // the CLI prefix would dilute the batching instructions.
-        // tools: [] is load-bearing — without it Sonnet emits
-        // <function_calls> XML before the text commands. Original
-        // lightning-harness.js (apps repo) does the same.
-        const response = await sideQuery({
-          model: req.model,
-          system: req.system,
-          messages: req.messages,
-          max_tokens: req.max_tokens,
-          stop_sequences: req.stop_sequences,
-          signal: req.signal,
-          skipSystemPromptPrefix: true,
-          tools: [],
-          querySource: 'chrome_mcp',
-        })
-        // BetaContentBlock is TextBlock | ThinkingBlock | ToolUseBlock | ...
-        // Only text blocks carry the model's command output.
-        const textBlocks: Array<{ type: 'text'; text: string }> = []
-        for (const b of response.content) {
-          if (b.type === 'text') {
-            textBlocks.push({ type: 'text', text: b.text })
-          }
-        }
-        return {
-          content: textBlocks,
-          stop_reason: response.stop_reason,
-          usage: {
-            input_tokens: response.usage.input_tokens,
-            output_tokens: response.usage.output_tokens,
-          },
-        }
-      },
-    }),
     trackEvent: (eventName, metadata) => {
       const safeMetadata: {
         [key: string]:
@@ -233,18 +136,16 @@ export function createChromeContext(
             // Only forward allowlisted string keys — fields like error_message
             // could contain page content or user data
             safeMetadata[safeKey] =
-              value as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+              value
           }
         }
       }
-      logEvent(eventName, safeMetadata)
     },
   }
 }
 
 export async function runClaudeInChromeMcpServer(): Promise<void> {
   enableConfigs()
-  initializeAnalyticsSink()
   const context = createChromeContext()
   const { createClaudeForChromeMcpServer } = await importClaudeForChromePackage()
 
@@ -259,8 +160,6 @@ export async function runClaudeInChromeMcpServer(): Promise<void> {
       return
     }
     exiting = true
-    await shutdown1PEventLogging()
-    await shutdownDatadog()
     // eslint-disable-next-line custom-rules/no-process-exit
     process.exit(0)
   }

@@ -6,7 +6,6 @@ import pickBy from 'lodash-es/pickBy.js'
 import { basename, dirname, join, resolve } from 'path'
 import { getOriginalCwd, getSessionTrustAccepted } from '../bootstrap/state.js'
 import { getAutoMemEntrypoint } from '../memdir/paths.js'
-import { logEvent } from '../services/analytics/index.js'
 import type { McpServerConfig } from '../services/mcp/types.js'
 import type {
   BillingType,
@@ -36,10 +35,6 @@ import type { ThemeSetting } from './theme.js'
 const teamMemPaths = feature('TEAMMEM')
   ? (require('../memdir/teamMemPaths.js') as typeof import('../memdir/teamMemPaths.js'))
   : null
-const ccrAutoConnect = feature('CCR_AUTO_CONNECT')
-  ? (require('../bridge/bridgeEnabled.js') as typeof import('../bridge/bridgeEnabled.js'))
-  : null
-
 /* eslint-enable @typescript-eslint/no-require-imports */
 import type { ImageDimensions } from './imageResizer.js'
 import type { ModelOption } from './model/modelOptions.js'
@@ -47,7 +42,7 @@ import { jsonParse, jsonStringify } from './slowOperations.js'
 
 // Re-entrancy guard: prevents getConfig → logEvent → getGlobalConfig → getConfig
 // infinite recursion when the config file is corrupted. logEvent's sampling check
-// reads GrowthBook features from the global config, which calls getConfig again.
+// reads features from the global config, which calls getConfig again.
 let insideGetConfig = false
 
 // Image dimension info for coordinate mapping (only set when image was resized)
@@ -131,8 +126,6 @@ export type ProjectConfig = {
     sessionId: string
     hookBased?: boolean
   }
-  /** Spawn mode for `claude remote-control` multi-session. Set by first-run dialog or `w` toggle. */
-  remoteControlSpawnMode?: 'same-dir' | 'worktree'
 }
 
 const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
@@ -223,9 +216,6 @@ export type GlobalConfig = {
   }
   primaryApiKey?: string // Primary API key for the user when no environment variable is set, set via oauth (TODO: rename)
   hasAcknowledgedCostThreshold?: boolean
-  hasSeenUndercoverAutoNotice?: boolean // ant-only: whether the one-time auto-undercover explainer has been shown
-  hasSeenUltraplanTerms?: boolean // ant-only: whether the one-time CCR terms notice has been shown in the ultraplan launch dialog
-  hasResetAutoModeOptInForDefaultOffer?: boolean // ant-only: one-shot migration guard, re-prompts churned auto-mode users
   oauthAccount?: AccountInfo
 
   /**
@@ -417,18 +407,6 @@ export type GlobalConfig = {
   effortCalloutDismissed?: boolean // v1 - legacy, read to suppress v2 for Pro users who already saw it
   effortCalloutV2Dismissed?: boolean
 
-  // Remote callout tracking - shown once before first bridge enable
-  remoteDialogSeen?: boolean
-
-  // Cross-process backoff for initReplBridge's oauth_expired_unrefreshable skip.
-  // `expiresAt` is the dedup key — content-addressed, self-clears when /login
-  // replaces the token. `failCount` caps false positives: transient refresh
-  // failures (auth server 5xx, lock errors) get 3 retries before backoff kicks
-  // in, mirroring useReplBridge's MAX_CONSECUTIVE_INIT_FAILURES. Dead-token
-  // accounts cap at 3 config writes; healthy+transient-blip self-heals in ~210s.
-  bridgeOauthDeadExpiresAt?: number
-  bridgeOauthDeadFailCount?: number
-
   // Desktop upsell startup dialog tracking
   desktopUpsellSeenCount?: number // Total showings (max 3)
   desktopUpsellDismissed?: boolean // "Don't ask again" picked
@@ -449,20 +427,6 @@ export type GlobalConfig = {
   // Sonnet 4.5 → 4.6 migration (pro/max/team premium)
   sonnet45To46MigrationTimestamp?: number
 
-  // Cached statsig gate values
-  cachedStatsigGates: {
-    [gateName: string]: boolean
-  }
-
-  // Cached statsig dynamic configs
-  cachedDynamicConfigs?: { [configName: string]: unknown }
-
-  // Cached GrowthBook feature values
-  cachedGrowthBookFeatures?: { [featureName: string]: unknown }
-
-  // Local GrowthBook overrides (ant-only, set via /config Gates tab).
-  // Checked after env-var overrides but before the real resolved value.
-  growthBookOverrides?: { [featureName: string]: unknown }
 
   // Emergency tip tracking - stores the last shown tip to prevent re-showing
   lastShownEmergencyTip?: string
@@ -476,7 +440,7 @@ export type GlobalConfig = {
   // Fullscreen in-app text selection behavior
   copyOnSelect?: boolean // Auto-copy to clipboard on mouse-up (undefined → true; lets cmd+c "work" via no-op)
 
-  // GitHub repo path mapping for teleport directory switching
+  // GitHub repo path mapping for deep link directory resolution
   // Key: "owner/repo" (lowercase), Value: array of absolute paths where repo is cloned
   githubRepoPaths?: Record<string, string[]>
 
@@ -540,23 +504,14 @@ export type GlobalConfig = {
   // undefined = hardcoded Opus (backward-compat); null = leader's model; string = model alias/ID.
   teammateDefaultModel?: string | null
 
-  // PR status footer configuration (feature-flagged via GrowthBook)
+  // PR status footer configuration
   prStatusFooterEnabled?: boolean // Show PR review status in footer (default: true)
 
-  // Tmux live panel visibility (ant-only, toggled via Enter on tmux pill)
-  tungstenPanelVisible?: boolean
 
   // Cached org-level fast mode status from the API.
   // Used to detect cross-session changes and notify users.
   penguinModeOrgEnabled?: boolean
 
-  // Epoch ms when background refreshes last ran (fast mode, quota, passes, client data).
-  // Used with tengu_cicada_nap_ms to throttle API calls
-  startupPrefetchedAt?: number
-
-  // Run Remote Control at startup (requires BRIDGE_MODE)
-  // undefined = use default (see getRemoteControlAtStartup() for precedence)
-  remoteControlAtStartup?: boolean
 
   // Cached extra usage disabled reason from the last API response
   // undefined = no cache, null = extra usage enabled, string = disabled reason.
@@ -567,7 +522,6 @@ export type GlobalConfig = {
 
   // Speculation configuration (ant-only)
   speculationEnabled?: boolean // Whether speculation is enabled (default: true)
-
 
   // Client data for server-side experiments (fetched during bootstrap).
   clientDataCache?: Record<string, unknown> | null
@@ -634,9 +588,6 @@ function createDefaultGlobalConfig(): GlobalConfig {
     autoInstallIdeExtension: true,
     fileCheckpointingEnabled: true,
     terminalProgressBarEnabled: true,
-    cachedStatsigGates: {},
-    cachedDynamicConfigs: {},
-    cachedGrowthBookFeatures: {},
     respectGitignore: true,
     copyFullResponse: false,
   }
@@ -681,8 +632,6 @@ export const GLOBAL_CONFIG_KEYS = [
   'copyOnSelect',
   'permissionExplainerEnabled',
   'prStatusFooterEnabled',
-  'remoteControlAtStartup',
-  'remoteDialogSeen',
 ] as const
 
 export type GlobalConfigKey = (typeof GLOBAL_CONFIG_KEYS)[number]
@@ -868,7 +817,6 @@ export function saveGlobalConfig(
         'saveGlobalConfig fallback: re-read config is missing auth that cache has; refusing to write. See GH #3117.',
         { level: 'error' },
       )
-      logEvent('tengu_config_auth_loss_prevented', {})
       return
     }
     const config = updater(currentConfig)
@@ -908,13 +856,6 @@ export const CONFIG_WRITE_DISPLAY_THRESHOLD = 20
 
 function reportConfigCacheStats(): void {
   const total = configCacheHits + configCacheMisses
-  if (total > 0) {
-    logEvent('tengu_config_cache_stats', {
-      cache_hits: configCacheHits,
-      cache_misses: configCacheMisses,
-      hit_rate: configCacheHits / total,
-    })
-  }
   configCacheHits = 0
   configCacheMisses = 0
 }
@@ -1105,21 +1046,6 @@ export function getGlobalConfig(): GlobalConfig {
   }
 }
 
-/**
- * Returns the effective value of remoteControlAtStartup. Precedence:
- *   1. User's explicit config value (always wins — honors opt-out)
- *   2. CCR auto-connect default (ant-only build, GrowthBook-gated)
- *   3. false (Remote Control must be explicitly opted into)
- */
-export function getRemoteControlAtStartup(): boolean {
-  const explicit = getGlobalConfig().remoteControlAtStartup
-  if (explicit !== undefined) return explicit
-  if (feature('CCR_AUTO_CONNECT')) {
-    if (ccrAutoConnect?.getCcrAutoConnectDefault()) return true
-  }
-  return false
-}
-
 export function getCustomApiKeyStatus(
   truncatedApiKey: string,
 ): 'approved' | 'rejected' | 'new' {
@@ -1200,9 +1126,6 @@ function saveConfigWithLock<A extends object>(
       logForDebugging(
         'Lock acquisition took longer than expected - another Claude instance may be running',
       )
-      logEvent('tengu_config_lock_contention', {
-        lock_time_ms: lockTime,
-      })
     }
 
     // Check for stale write - file changed since we last read it
@@ -1210,17 +1133,6 @@ function saveConfigWithLock<A extends object>(
     if (lastReadFileStats && file === getGlobalClaudeFile()) {
       try {
         const currentStats = fs.statSync(file)
-        if (
-          currentStats.mtimeMs !== lastReadFileStats.mtime ||
-          currentStats.size !== lastReadFileStats.size
-        ) {
-          logEvent('tengu_config_stale_write', {
-            read_mtime: lastReadFileStats.mtime,
-            write_mtime: currentStats.mtimeMs,
-            read_size: lastReadFileStats.size,
-            write_size: currentStats.size,
-          })
-        }
       } catch (e) {
         const code = getErrnoCode(e)
         if (code !== 'ENOENT') {
@@ -1239,7 +1151,6 @@ function saveConfigWithLock<A extends object>(
         'saveConfigWithLock: re-read config is missing auth that cache has; refusing to write to avoid wiping ~/.claude.json. See GH #3117.',
         { level: 'error' },
       )
-      logEvent('tengu_config_auth_loss_prevented', {})
       return false
     }
 
@@ -1496,7 +1407,7 @@ function getConfig<A>(
 
       // Guard: logEvent → shouldSampleEvent → getGlobalConfig → getConfig
       // causes infinite recursion when the config file is corrupted, because
-      // the sampling check reads a GrowthBook feature from global config.
+      // the sampling check reads a feature from global config.
       // Only log analytics on the outermost call.
       if (!insideGetConfig) {
         insideGetConfig = true
@@ -1512,9 +1423,6 @@ function getConfig<A>(
           } catch {
             // No backup
           }
-          logEvent('tengu_config_parse_error', {
-            has_backup: hasBackup,
-          })
         } finally {
           insideGetConfig = false
         }
@@ -1695,7 +1603,6 @@ export function saveCurrentProjectConfig(
         'saveCurrentProjectConfig fallback: re-read config is missing auth that cache has; refusing to write. See GH #3117.',
         { level: 'error' },
       )
-      logEvent('tengu_config_auth_loss_prevented', {})
       return
     }
     const currentProjectConfig =

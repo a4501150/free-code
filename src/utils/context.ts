@@ -19,8 +19,7 @@ const MAX_OUTPUT_TOKENS_UPPER_LIMIT = 64_000
 // tokens, so 32k/64k defaults over-reserve 8-16× slot capacity. With the cap
 // enabled, <1% of requests hit the limit; those get one clean retry at 64k
 // (see query.ts max_output_tokens_escalate). Cap is applied in
-// claude.ts:getMaxOutputTokensForModel to avoid the growthbook→betas→context
-// import cycle.
+// claude.ts:getMaxOutputTokensForModel to avoid the betas→context import cycle.
 export const CAPPED_DEFAULT_MAX_TOKENS = 8_000
 export const ESCALATED_MAX_TOKENS = 64_000
 
@@ -52,20 +51,6 @@ export function getContextWindowForModel(
   model: string,
   betas?: string[],
 ): number {
-  // Allow override via environment variable (ant-only)
-  // This takes precedence over all other context window resolution, including 1M detection,
-  // so users can cap the effective context window for local decisions (auto-compact, etc.)
-  // while still using a 1M-capable endpoint.
-  if (
-    process.env.USER_TYPE === 'ant' &&
-    process.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS
-  ) {
-    const override = parseInt(process.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, 10)
-    if (!isNaN(override) && override > 0) {
-      return override
-    }
-  }
-
   // [1m] suffix — explicit client-side opt-in, respected over all detection
   if (has1mContext(model)) {
     return 1_000_000
@@ -87,12 +72,6 @@ export function getContextWindowForModel(
   }
   if (getSonnet1mExpTreatmentEnabled(model)) {
     return 1_000_000
-  }
-  if (process.env.USER_TYPE === 'ant') {
-    const antModel = resolveAntModel(model)
-    if (antModel?.contextWindow) {
-      return antModel.contextWindow
-    }
   }
   return MODEL_CONTEXT_WINDOW_DEFAULT
 }
@@ -152,15 +131,6 @@ export function getModelMaxOutputTokens(model: string): {
 } {
   let defaultTokens: number
   let upperLimit: number
-
-  if (process.env.USER_TYPE === 'ant') {
-    const antModel = resolveAntModel(model.toLowerCase())
-    if (antModel) {
-      defaultTokens = antModel.defaultMaxTokens ?? MAX_OUTPUT_TOKENS_DEFAULT
-      upperLimit = antModel.upperMaxTokensLimit ?? MAX_OUTPUT_TOKENS_UPPER_LIMIT
-      return { default: defaultTokens, upperLimit }
-    }
-  }
 
   const m = getCanonicalName(model)
 

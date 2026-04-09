@@ -1,8 +1,7 @@
 import { randomUUID } from 'crypto'
 import type { HookEvent } from 'src/entrypoints/agentSdkTypes.js'
 import { query } from '../../query.js'
-import { logEvent } from '../../services/analytics/index.js'
-import type { AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../../services/analytics/metadata.js'
+
 import type { ToolUseContext } from '../../Tool.js'
 import { type Tool, toolMatchesName } from '../../Tool.js'
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from '../../tools/SyntheticOutputTool/SyntheticOutputTool.js'
@@ -239,12 +238,6 @@ When done, return your result using the ${SYNTHETIC_OUTPUT_TOOL_NAME} tool with:
           logForDebugging(
             `Hooks: Agent hook did not complete within ${MAX_AGENT_TURNS} turns`,
           )
-          logEvent('tengu_agent_stop_hook_max_turns', {
-            durationMs: Date.now() - hookStartTime,
-            turnCount,
-            agentName:
-              agentName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-          })
           return {
             hook,
             outcome: 'cancelled',
@@ -254,13 +247,6 @@ When done, return your result using the ${SYNTHETIC_OUTPUT_TOOL_NAME} tool with:
         // For other cases (e.g., agent finished without calling structured output tool),
         // just log and return cancelled (don't show error to user)
         logForDebugging(`Hooks: Agent hook did not return structured output`)
-        logEvent('tengu_agent_stop_hook_error', {
-          durationMs: Date.now() - hookStartTime,
-          turnCount,
-          errorType: 1, // 1 = no structured output
-          agentName:
-            agentName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        })
         return {
           hook,
           outcome: 'cancelled',
@@ -284,12 +270,6 @@ When done, return your result using the ${SYNTHETIC_OUTPUT_TOOL_NAME} tool with:
 
       // Condition was met
       logForDebugging(`Hooks: Agent hook condition was met`)
-      logEvent('tengu_agent_stop_hook_success', {
-        durationMs: Date.now() - hookStartTime,
-        turnCount,
-        agentName:
-          agentName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      })
       return {
         hook,
         outcome: 'success',
@@ -316,12 +296,6 @@ When done, return your result using the ${SYNTHETIC_OUTPUT_TOOL_NAME} tool with:
   } catch (error) {
     const errorMsg = errorMessage(error)
     logForDebugging(`Hooks: Agent hook error: ${errorMsg}`)
-    logEvent('tengu_agent_stop_hook_error', {
-      durationMs: Date.now() - hookStartTime,
-      errorType: 2, // 2 = general error
-      agentName:
-        agentName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    })
     return {
       hook,
       outcome: 'non_blocking_error',

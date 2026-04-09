@@ -1,8 +1,8 @@
 import { feature } from 'bun:bundle'
 import { z } from 'zod/v4'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import {
   executeTaskCompletedHooks,
   getTaskCompletedHookMessage,
@@ -333,7 +333,7 @@ export const TaskUpdateTool = buildTool({
     let verificationNudgeNeeded = false
     if (
       feature('VERIFICATION_AGENT') &&
-      getFeatureValue_CACHED_MAY_BE_STALE('tengu_hive_evidence', false) &&
+      (getInitialSettings()?.verificationNudge ?? true) &&
       !context.agentId &&
       updates.status === 'completed'
     ) {

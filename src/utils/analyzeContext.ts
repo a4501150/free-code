@@ -8,7 +8,6 @@ import { microcompactMessages } from 'src/services/compact/microCompact.js'
 import { getSdkBetas } from '../bootstrap/state.js'
 import { getCommandName } from '../commands.js'
 import { getSystemContext } from '../context.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
 import {
   AUTOCOMPACT_BUFFER_TOKENS,
   getEffectiveContextWindowSize,
@@ -411,28 +410,7 @@ async function countBuiltInToolTokens(
   // Build per-tool breakdown for always-loaded tools (ant-only, proportional
   // split of the bulk count based on rough schema size estimation). Excludes
   // SkillTool since its tokens are shown in the separate Skills category.
-  let systemToolDetails: SystemToolDetail[] = []
-  if (process.env.USER_TYPE === 'ant') {
-    const toolsForBreakdown = alwaysLoadedTools.filter(
-      t => !toolMatchesName(t, SKILL_TOOL_NAME),
-    )
-    if (toolsForBreakdown.length > 0) {
-      const estimates = toolsForBreakdown.map(t =>
-        roughTokenCountEstimation(jsonStringify(t.inputSchema ?? {})),
-      )
-      const estimateTotal = estimates.reduce((s, e) => s + e, 0) || 1
-      const distributable = Math.max(
-        0,
-        alwaysLoadedTokens - TOOL_TOKEN_COUNT_OVERHEAD,
-      )
-      systemToolDetails = toolsForBreakdown
-        .map((t, i) => ({
-          name: t.name,
-          tokens: Math.round((estimates[i]! / estimateTotal) * distributable),
-        }))
-        .sort((a, b) => b.tokens - a.tokens)
-    }
-  }
+  const systemToolDetails: SystemToolDetail[] = []
 
   // Count deferred builtin tools individually for details
   const deferredBuiltinDetails: DeferredBuiltinTool[] = []
@@ -1021,10 +999,7 @@ export async function analyzeContextUsage(
   const systemToolsTokens = builtInToolTokens - skillFrontmatterTokens
   if (systemToolsTokens > 0) {
     cats.push({
-      name:
-        process.env.USER_TYPE === 'ant'
-          ? '[ANT-ONLY] System tools'
-          : 'System tools',
+      name: 'System tools',
       tokens: systemToolsTokens,
       color: 'inactive',
     })
@@ -1111,11 +1086,6 @@ export async function analyzeContextUsage(
   // shouldAutoCompact, so the 33k buffer shown here would be a lie too.
   let reservedTokens = 0
   let skipReservedBuffer = false
-  if (feature('REACTIVE_COMPACT')) {
-    if (getFeatureValue_CACHED_MAY_BE_STALE('tengu_cobalt_raccoon', false)) {
-      skipReservedBuffer = true
-    }
-  }
   if (feature('CONTEXT_COLLAPSE')) {
     /* eslint-disable @typescript-eslint/no-require-imports */
     const { isContextCollapseEnabled } =
@@ -1350,12 +1320,9 @@ export async function analyzeContextUsage(
     model: runtimeModel,
     memoryFiles: memoryFileDetails,
     mcpTools: mcpToolDetails,
-    deferredBuiltinTools:
-      process.env.USER_TYPE === 'ant' ? deferredBuiltinDetails : undefined,
-    systemTools:
-      process.env.USER_TYPE === 'ant' ? systemToolDetails : undefined,
-    systemPromptSections:
-      process.env.USER_TYPE === 'ant' ? systemPromptSections : undefined,
+    deferredBuiltinTools: undefined,
+    systemTools: undefined,
+    systemPromptSections: undefined,
     agents: agentDetails,
     slashCommands:
       slashCommandTokens > 0

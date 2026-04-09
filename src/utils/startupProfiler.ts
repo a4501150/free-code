@@ -11,10 +11,6 @@
 
 import { dirname, join } from 'path'
 import { getSessionId } from 'src/bootstrap/state.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from '../services/analytics/index.js'
 import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import { getFsImplementation } from './fsOperations.js'
@@ -29,8 +25,7 @@ const DETAILED_PROFILING = isEnvTruthy(process.env.CLAUDE_CODE_PROFILE_STARTUP)
 // Decision made once at startup - non-sampled users pay no profiling cost
 const STATSIG_SAMPLE_RATE = 0.005
 // eslint-disable-next-line custom-rules/no-process-env-top-level
-const STATSIG_LOGGING_SAMPLED =
-  process.env.USER_TYPE === 'ant' || Math.random() < STATSIG_SAMPLE_RATE
+const STATSIG_LOGGING_SAMPLED = Math.random() < STATSIG_SAMPLE_RATE
 
 // Enable profiling if either detailed mode OR sampled for Statsig
 const SHOULD_PROFILE = DETAILED_PROFILING || STATSIG_LOGGING_SAMPLED
@@ -187,8 +182,4 @@ export function logStartupPerf(): void {
   // Add checkpoint count for debugging
   metadata.checkpoint_count = marks.length
 
-  logEvent(
-    'tengu_startup_perf',
-    metadata as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  )
 }

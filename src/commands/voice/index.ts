@@ -1,6 +1,6 @@
 import type { Command } from '../../commands.js'
 import {
-  isVoiceGrowthBookEnabled,
+  isVoiceModeFeatureEnabled,
   isVoiceModeEnabled,
 } from '../../voice/voiceModeEnabled.js'
 
@@ -9,7 +9,7 @@ const voice = {
   name: 'voice',
   description: 'Toggle voice mode',
   availability: ['claude-ai'],
-  isEnabled: () => isVoiceGrowthBookEnabled(),
+  isEnabled: () => isVoiceModeFeatureEnabled(),
   get isHidden() {
     return !isVoiceModeEnabled()
   },

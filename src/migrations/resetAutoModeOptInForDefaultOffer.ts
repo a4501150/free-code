@@ -1,8 +1,7 @@
 import { feature } from 'bun:bundle'
-import { logEvent } from 'src/services/analytics/index.js'
+
 import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'
 import { logError } from '../utils/log.js'
-import { getAutoModeEnabledState } from '../utils/permissions/permissionSetup.js'
 import {
   getSettingsForSource,
   updateSettingsForSource,
@@ -26,7 +25,6 @@ export function resetAutoModeOptInForDefaultOffer(): void {
   if (feature('TRANSCRIPT_CLASSIFIER')) {
     const config = getGlobalConfig()
     if (config.hasResetAutoModeOptInForDefaultOffer) return
-    if (getAutoModeEnabledState() !== 'enabled') return
 
     try {
       const user = getSettingsForSource('userSettings')
@@ -37,7 +35,6 @@ export function resetAutoModeOptInForDefaultOffer(): void {
         updateSettingsForSource('userSettings', {
           skipAutoPermissionPrompt: undefined,
         })
-        logEvent('tengu_migrate_reset_auto_opt_in_for_default_offer', {})
       }
 
       saveGlobalConfig(c => {

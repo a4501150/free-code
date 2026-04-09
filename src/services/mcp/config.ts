@@ -36,10 +36,6 @@ import {
 } from '../../utils/settings/types.js'
 import type { ValidationError } from '../../utils/settings/validation.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from '../analytics/index.js'
 import { fetchClaudeAIMcpConfigsIfEligible } from './claudeai.js'
 import { expandEnvVarsInString } from './envExpansion.js'
 import {
@@ -162,34 +158,11 @@ function getServerUrl(config: McpServerConfig): string | null {
 }
 
 /**
- * CCR proxy URL path markers. In remote sessions, claude.ai connectors arrive
- * via --mcp-config with URLs rewritten to route through the CCR/session-ingress
- * SHTTP proxy. The original vendor URL is preserved in the mcp_url query param
- * so the proxy knows where to forward. See api-go/ccr/internal/ccrshared/
- * mcp_url_rewriter.go and api-go/ccr/internal/mcpproxy/proxy.go.
- */
-const CCR_PROXY_PATH_MARKERS = [
-  '/v2/session_ingress/shttp/mcp/',
-  '/v2/ccr-sessions/',
-]
-
-/**
- * If the URL is a CCR proxy URL, extract the original vendor URL from the
- * mcp_url query parameter. Otherwise return the URL unchanged. This lets
- * signature-based dedup match a plugin's raw vendor URL against a connector's
- * rewritten proxy URL when both point at the same MCP server.
+ * Returns the URL unchanged. Previously unwrapped CCR proxy URLs, but CCR
+ * infrastructure has been removed.
  */
 export function unwrapCcrProxyUrl(url: string): string {
-  if (!CCR_PROXY_PATH_MARKERS.some(m => url.includes(m))) {
-    return url
-  }
-  try {
-    const parsed = new URL(url)
-    const original = parsed.searchParams.get('mcp_url')
-    return original || url
-  } catch {
-    return url
-  }
+  return url
 }
 
 /**
@@ -636,15 +609,6 @@ export async function addMcpConfig(
   // Block reserved server name "claude-in-chrome"
   if (isClaudeInChromeMCPServer(name)) {
     throw new Error(`Cannot add MCP server "${name}": this name is reserved.`)
-  }
-
-  if (feature('CHICAGO_MCP')) {
-    const { isComputerUseMCPServer } = await import(
-      '../../utils/computerUse/common.js'
-    )
-    if (isComputerUseMCPServer(name)) {
-      throw new Error(`Cannot add MCP server "${name}": this name is reserved.`)
-    }
   }
 
   // Block adding servers when enterprise MCP config exists (it has exclusive control)
@@ -1508,13 +1472,7 @@ export function areMcpConfigsAllowedWithEnterpriseMcpConfig(
  * (opt-out via disabledMcpServers), this requires explicit opt-in via
  * enabledMcpServers. Shows up in /mcp as disabled until the user enables it.
  */
-/* eslint-disable @typescript-eslint/no-require-imports */
-const DEFAULT_DISABLED_BUILTIN = feature('CHICAGO_MCP')
-  ? (
-      require('../../utils/computerUse/common.js') as typeof import('../../utils/computerUse/common.js')
-    ).COMPUTER_USE_MCP_SERVER_NAME
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+const DEFAULT_DISABLED_BUILTIN = null
 
 function isDefaultDisabledBuiltin(name: string): boolean {
   return DEFAULT_DISABLED_BUILTIN !== null && name === DEFAULT_DISABLED_BUILTIN
@@ -1568,11 +1526,4 @@ export function setMcpServerEnabled(name: string, enabled: boolean): void {
     return { ...current, disabledMcpServers: next }
   })
 
-  if (isBuiltinStateChange) {
-    logEvent('tengu_builtin_mcp_toggle', {
-      serverName:
-        name as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      enabled,
-    })
-  }
 }

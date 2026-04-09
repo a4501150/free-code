@@ -1,4 +1,3 @@
-// biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import addDir from './commands/add-dir/index.js'
 import autofixPr from './commands/autofix-pr/index.js'
 import backfillSessions from './commands/backfill-sessions/index.js'
@@ -38,18 +37,10 @@ import releaseNotes from './commands/release-notes/index.js'
 import rename from './commands/rename/index.js'
 import resume from './commands/resume/index.js'
 import review, { ultrareview } from './commands/review.js'
-import session from './commands/session/index.js'
 import share from './commands/share/index.js'
 import skills from './commands/skills/index.js'
 import status from './commands/status/index.js'
 import tasks from './commands/tasks/index.js'
-import teleport from './commands/teleport/index.js'
-/* eslint-disable @typescript-eslint/no-require-imports */
-const agentsPlatform =
-  process.env.USER_TYPE === 'ant'
-    ? require('./commands/agents-platform/index.js').default
-    : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 import securityReview from './commands/security-review.js'
 import bughunter from './commands/bughunter/index.js'
 import terminalSetup from './commands/terminalSetup/index.js'
@@ -60,22 +51,12 @@ import { feature } from 'bun:bundle'
 // Dead code elimination: conditional imports
 /* eslint-disable @typescript-eslint/no-require-imports */
 const proactive =
-  feature('PROACTIVE') || feature('KAIROS')
+  feature('KAIROS')
     ? require('./commands/proactive.js').default
     : null
 const briefCommand =
   feature('KAIROS') || feature('KAIROS_BRIEF')
     ? require('./commands/brief.js').default
-    : null
-const assistantCommand = feature('KAIROS')
-  ? require('./commands/assistant/index.js').default
-  : null
-const bridge = feature('BRIDGE_MODE')
-  ? require('./commands/bridge/index.js').default
-  : null
-const remoteControlServerCommand =
-  feature('DAEMON') && feature('BRIDGE_MODE')
-    ? require('./commands/remoteControlServer/index.js').default
     : null
 const voiceCommand = feature('VOICE_MODE')
   ? require('./commands/voice/index.js').default
@@ -86,11 +67,6 @@ const forceSnip = feature('HISTORY_SNIP')
 const workflowsCmd = feature('WORKFLOW_SCRIPTS')
   ? (
       require('./commands/workflows/index.js') as typeof import('./commands/workflows/index.js')
-    ).default
-  : null
-const webCmd = feature('CCR_REMOTE_SETUP')
-  ? (
-      require('./commands/remote-setup/index.js') as typeof import('./commands/remote-setup/index.js')
     ).default
   : null
 const clearSkillIndexCache = feature('EXPERIMENTAL_SKILL_SEARCH')
@@ -104,7 +80,6 @@ const subscribePr = feature('KAIROS_GITHUB_WEBHOOKS')
 const ultraplan = feature('ULTRAPLAN')
   ? require('./commands/ultraplan.js').default
   : null
-const torch = feature('TORCH') ? require('./commands/torch.js').default : null
 const peersCmd = feature('UDS_INBOX')
   ? (
       require('./commands/peers/index.js') as typeof import('./commands/peers/index.js')
@@ -137,7 +112,6 @@ import reloadPlugins from './commands/reload-plugins/index.js'
 import rewind from './commands/rewind/index.js'
 import heapDump from './commands/heapdump/index.js'
 import mockLimits from './commands/mock-limits/index.js'
-import bridgeKick from './commands/bridge-kick.js'
 import version from './commands/version.js'
 import summary from './commands/summary/index.js'
 import {
@@ -175,7 +149,6 @@ import exportCommand from './commands/export/index.js'
 import model from './commands/model/index.js'
 import tag from './commands/tag/index.js'
 import outputStyle from './commands/output-style/index.js'
-import remoteEnv from './commands/remote-env/index.js'
 import upgrade from './commands/upgrade/index.js'
 import {
   extraUsage,
@@ -234,7 +207,6 @@ export const INTERNAL_ONLY_COMMANDS = [
   initVerifiers,
   ...(forceSnip ? [forceSnip] : []),
   mockLimits,
-  bridgeKick,
   version,
   ...(subscribePr ? [subscribePr] : []),
   resetLimits,
@@ -242,13 +214,11 @@ export const INTERNAL_ONLY_COMMANDS = [
   onboarding,
   share,
   summary,
-  teleport,
   antTrace,
   perfIssue,
   env,
   oauthRefresh,
   debugToolCall,
-  agentsPlatform,
   autofixPr,
 ].filter(Boolean)
 
@@ -288,14 +258,12 @@ const COMMANDS = memoize((): Command[] => [
   mobile,
   model,
   outputStyle,
-  remoteEnv,
   plugin,
   pr_comments,
   releaseNotes,
   reloadPlugins,
   rename,
   resume,
-  session,
   skills,
   stats,
   status,
@@ -316,14 +284,10 @@ const COMMANDS = memoize((): Command[] => [
   usage,
   usageReport,
   vim,
-  ...(webCmd ? [webCmd] : []),
   ...(forkCmd ? [forkCmd] : []),
   ...(buddy ? [buddy] : []),
   ...(proactive ? [proactive] : []),
   ...(briefCommand ? [briefCommand] : []),
-  ...(assistantCommand ? [assistantCommand] : []),
-  ...(bridge ? [bridge] : []),
-  ...(remoteControlServerCommand ? [remoteControlServerCommand] : []),
   ...(voiceCommand ? [voiceCommand] : []),
   thinkback,
   thinkbackPlay,
@@ -338,11 +302,7 @@ const COMMANDS = memoize((): Command[] => [
   ...(peersCmd ? [peersCmd] : []),
   tasks,
   ...(workflowsCmd ? [workflowsCmd] : []),
-  ...(torch ? [torch] : []),
   ...(ultraplan ? [ultraplan] : []),
-  ...(process.env.USER_TYPE === 'ant' && !process.env.IS_DEMO
-    ? INTERNAL_ONLY_COMMANDS
-    : []),
 ])
 
 export const builtInCommandNames = memoize(
@@ -606,84 +566,6 @@ export const getSlashCommandToolSkills = memoize(
     }
   },
 )
-
-/**
- * Commands that are safe to use in remote mode (--remote).
- * These only affect local TUI state and don't depend on local filesystem,
- * git, shell, IDE, MCP, or other local execution context.
- *
- * Used in two places:
- * 1. Pre-filtering commands in main.tsx before REPL renders (prevents race with CCR init)
- * 2. Preserving local-only commands in REPL's handleRemoteInit after CCR filters
- */
-export const REMOTE_SAFE_COMMANDS: Set<Command> = new Set([
-  session, // Shows QR code / URL for remote session
-  exit, // Exit the TUI
-  clear, // Clear screen
-  help, // Show help
-  theme, // Change terminal theme
-  color, // Change agent color
-  vim, // Toggle vim mode
-  cost, // Show session cost (local cost tracking)
-  usage, // Show usage info
-  copy, // Copy last message
-  btw, // Quick note
-  feedback, // Send feedback
-  plan, // Plan mode toggle
-  keybindings, // Keybinding management
-  statusline, // Status line toggle
-  stickers, // Stickers
-  mobile, // Mobile QR code
-])
-
-/**
- * Builtin commands of type 'local' that ARE safe to execute when received
- * over the Remote Control bridge. These produce text output that streams
- * back to the mobile/web client and have no terminal-only side effects.
- *
- * 'local-jsx' commands are blocked by type (they render Ink UI) and
- * 'prompt' commands are allowed by type (they expand to text sent to the
- * model) — this set only gates 'local' commands.
- *
- * When adding a new 'local' command that should work from mobile, add it
- * here. Default is blocked.
- */
-export const BRIDGE_SAFE_COMMANDS: Set<Command> = new Set(
-  [
-    compact, // Shrink context — useful mid-session from a phone
-    clear, // Wipe transcript
-    cost, // Show session cost
-    summary, // Summarize conversation
-    releaseNotes, // Show changelog
-    files, // List tracked files
-  ].filter((c): c is Command => c !== null),
-)
-
-/**
- * Whether a slash command is safe to execute when its input arrived over the
- * Remote Control bridge (mobile/web client).
- *
- * PR #19134 blanket-blocked all slash commands from bridge inbound because
- * `/model` from iOS was popping the local Ink picker. This predicate relaxes
- * that with an explicit allowlist: 'prompt' commands (skills) expand to text
- * and are safe by construction; 'local' commands need an explicit opt-in via
- * BRIDGE_SAFE_COMMANDS; 'local-jsx' commands render Ink UI and stay blocked.
- */
-export function isBridgeSafeCommand(cmd: Command): boolean {
-  if (cmd.type === 'local-jsx') return false
-  if (cmd.type === 'prompt') return true
-  return BRIDGE_SAFE_COMMANDS.has(cmd)
-}
-
-/**
- * Filter commands to only include those safe for remote mode.
- * Used to pre-filter commands when rendering the REPL in --remote mode,
- * preventing local-only commands from being briefly available before
- * the CCR init message arrives.
- */
-export function filterCommandsForRemoteMode(commands: Command[]): Command[] {
-  return commands.filter(cmd => REMOTE_SAFE_COMMANDS.has(cmd))
-}
 
 export function findCommand(
   commandName: string,

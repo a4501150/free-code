@@ -5,7 +5,6 @@ import { Dialog } from './design-system/Dialog.js'
 import type { AppState } from '../state/AppStateStore.js'
 import { useSetAppState } from '../state/AppState.js'
 import type { Message } from '../types/message.js'
-import type { RemoteAgentTaskState } from '../tasks/RemoteAgentTask/RemoteAgentTask.js'
 import type { FileStateCache } from '../utils/fileStateCache.js'
 import {
   createUserMessage,
@@ -13,8 +12,6 @@ import {
   prepareUserContent,
 } from '../utils/messages.js'
 import { updateTaskState } from '../utils/task/framework.js'
-import { archiveRemoteSession } from '../utils/teleport.js'
-import { logForDebugging } from '../utils/debug.js'
 
 type UltraplanChoice = 'execute' | 'dismiss'
 
@@ -52,7 +49,7 @@ export function UltraplanChoiceDialog({
       }
 
       // Mark task completed
-      updateTaskState<RemoteAgentTaskState>(taskId, setAppState, t =>
+      updateTaskState(taskId, setAppState, t =>
         t.status !== 'running'
           ? t
           : { ...t, status: 'completed', endTime: Date.now() },
@@ -64,11 +61,6 @@ export function UltraplanChoiceDialog({
         ultraplanPendingChoice: undefined,
         ultraplanSessionUrl: undefined,
       }))
-
-      // Archive the remote session
-      void archiveRemoteSession(sessionId).catch(e =>
-        logForDebugging(`ultraplan choice archive failed: ${String(e)}`),
-      )
     },
     [plan, sessionId, taskId, setMessages, setAppState],
   )

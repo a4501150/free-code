@@ -1,6 +1,4 @@
 import { createHash } from 'crypto'
-import type { AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from 'src/services/analytics/index.js'
-import { logEvent } from 'src/services/analytics/index.js'
 
 /**
  * Creates a truncated SHA256 hash (16 chars) for file paths
@@ -12,7 +10,7 @@ function hashFilePath(
   return createHash('sha256')
     .update(filePath)
     .digest('hex')
-    .slice(0, 16) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+    .slice(0, 16)
 }
 
 /**
@@ -24,7 +22,7 @@ function hashFileContent(
 ): AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS {
   return createHash('sha256')
     .update(content)
-    .digest('hex') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+    .digest('hex')
 }
 
 // Maximum content size to hash (100KB)
@@ -48,8 +46,8 @@ export function logFileOperation(params: {
     | boolean
   > = {
     operation:
-      params.operation as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    tool: params.tool as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+      params.operation,
+    tool: params.tool,
     filePathHash: hashFilePath(params.filePath),
   }
 
@@ -64,8 +62,7 @@ export function logFileOperation(params: {
 
   if (params.type !== undefined) {
     metadata.type =
-      params.type as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+      params.type
   }
 
-  logEvent('tengu_file_operation', metadata)
 }

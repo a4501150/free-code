@@ -84,11 +84,9 @@ export function getRemoteManagedSettingsSyncFromCache(): SettingsJson | null {
     // loadSettingsFromDisk returns) — no-op. The async-fetch arm (index.ts
     // setSessionCache + notifyChange) already handles its own reset.
     //
-    // gh-23085: isBridgeEnabled() at main.tsx Commander-definition time
-    // (before preAction → init() → isRemoteManagedSettingsEligible()) reached
-    // getSettings_DEPRECATED() at auth.ts:115. The try/catch in bridgeEnabled
-    // swallowed the later getGlobalConfig() throw, but the merged settings
-    // cache was already poisoned. See managedSettingsHeadless.int.test.ts.
+    // gh-23085: early Commander-definition time access to getSettings_DEPRECATED()
+    // at auth.ts:115 poisoned the merged settings cache.
+    // See managedSettingsHeadless.int.test.ts.
     resetSettingsCache()
     return cachedSettings
   }

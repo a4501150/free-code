@@ -57,8 +57,8 @@ export async function generateSessionName(
     return null
   } catch (error) {
     // Haiku timeout/rate-limit/network are expected operational failures —
-    // logForDebugging, not logError. Called automatically on every 3rd bridge
-    // message (initReplBridge.ts), so errors here would flood the error file.
+    // logForDebugging, not logError. May be called frequently,
+    // so errors here would flood the error file.
     logForDebugging(`generateSessionName failed: ${errorMessage(error)}`, {
       level: 'error',
     })

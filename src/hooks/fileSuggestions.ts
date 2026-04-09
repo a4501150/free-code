@@ -11,7 +11,7 @@ import {
   FileIndex,
   yieldToEventLoop,
 } from '../native-ts/file-index/index.js'
-import { logEvent } from '../services/analytics/index.js'
+
 import type { FileSuggestionCommandInput } from '../types/fileSuggestion.js'
 import { getGlobalConfig } from '../utils/config.js'
 import { getCwd } from '../utils/cwd.js'
@@ -304,13 +304,6 @@ async function getFilesUsingGit(
       `[FileIndex] git ls-files: ${normalizedTracked.length} tracked files in ${duration}ms`,
     )
 
-    logEvent('tengu_file_suggestions_git_ls_files', {
-      file_count: normalizedTracked.length,
-      tracked_count: normalizedTracked.length,
-      untracked_count: 0,
-      duration_ms: duration,
-    })
-
     // Start background fetch for untracked files (don't await)
     if (!untrackedFetchPromise) {
       const untrackedArgs = respectGitignore
@@ -506,11 +499,6 @@ async function getProjectFiles(
   logForDebugging(
     `[FileIndex] ripgrep: ${relativePaths.length} files in ${duration}ms`,
   )
-
-  logEvent('tengu_file_suggestions_ripgrep', {
-    file_count: relativePaths.length,
-    duration_ms: duration,
-  })
 
   return relativePaths
 }
@@ -769,12 +757,6 @@ export async function generateFileSuggestions(
     logForDebugging(
       `[FileIndex] generateFileSuggestions: ${matches.length} results in ${duration}ms (${wasBuilding ? 'partial' : 'full'} index)`,
     )
-    logEvent('tengu_file_suggestions_query', {
-      duration_ms: duration,
-      cache_hit: !wasBuilding,
-      result_count: matches.length,
-      query_length: partialPath.length,
-    })
 
     return matches
   } catch (error) {

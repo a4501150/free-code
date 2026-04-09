@@ -21,15 +21,7 @@ import { normalizeMessagesForAPI } from '../utils/messages.js'
 import { jsonParse, jsonStringify } from '../utils/slowOperations.js'
 
 function shouldUseVCR(): boolean {
-  if (process.env.NODE_ENV === 'test') {
-    return true
-  }
-
-  if (process.env.USER_TYPE === 'ant' && isEnvTruthy(process.env.FORCE_VCR)) {
-    return true
-  }
-
-  return false
+  return process.env.NODE_ENV === 'test'
 }
 
 /**

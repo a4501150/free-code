@@ -1,7 +1,6 @@
 import { feature } from 'bun:bundle'
 import { useEffect, useRef } from 'react'
 import { useNotifications } from 'src/context/notifications.js'
-import { getIsRemoteMode } from '../../bootstrap/state.js'
 import { useAppState } from '../../state/AppState.js'
 import type { PermissionMode } from '../../utils/permissions/PermissionMode.js'
 import {
@@ -30,7 +29,6 @@ export function useAutoModeUnavailableNotification(): void {
     prevModeRef.current = mode
 
     if (!feature('TRANSCRIPT_CLASSIFIER')) return
-    if (getIsRemoteMode()) return
     if (shownRef.current) return
 
     const wrappedPastAutoSlot =

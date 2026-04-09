@@ -1,11 +1,6 @@
 import { feature } from 'bun:bundle'
 import { APIUserAbortError } from '@anthropic-ai/sdk'
 import type { z } from 'zod/v4'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from '../../services/analytics/index.js'
 import type { ToolPermissionContext, ToolUseContext } from '../../Tool.js'
 import type { PendingClassifierCheck } from '../../types/permissions.js'
 import { count } from '../../utils/array.js'
@@ -110,43 +105,21 @@ export const MAX_SUBCOMMANDS_FOR_SECURITY_CHECK = 50
 export const MAX_SUGGESTED_RULES_FOR_COMPOUND = 5
 
 /**
- * [ANT-ONLY] Log classifier evaluation results for analysis.
+ * Log classifier evaluation results for analysis (no-op).
  * This helps us understand which classifier rules are being evaluated
  * and how the classifier is deciding on commands.
  */
 function logClassifierResultForAnts(
-  command: string,
-  behavior: ClassifierBehavior,
-  descriptions: string[],
-  result: ClassifierResult,
-): void {
-  if (process.env.USER_TYPE !== 'ant') {
-    return
-  }
-
-  logEvent('tengu_internal_bash_classifier_result', {
-    behavior:
-      behavior as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    descriptions: jsonStringify(
-      descriptions,
-    ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    matches: result.matches,
-    matchedDescription: (result.matchedDescription ??
-      '') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    confidence:
-      result.confidence as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    reason:
-      result.reason as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    // Note: command contains code/filepaths - this is ANT-ONLY so it's OK
-    command:
-      command as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  })
-}
+  _command: string,
+  _behavior: ClassifierBehavior,
+  _descriptions: string[],
+  _result: ClassifierResult,
+): void {}
 
 /**
  * Extract a stable command prefix (command + subcommand) from a raw command string.
  * Skips leading env var assignments only if they are in SAFE_ENV_VARS (or
- * ANT_ONLY_SAFE_ENV_VARS for ant users). Returns null if a non-safe env var is
+ * SAFE_ENV_VARS). Returns null if a non-safe env var is
  * encountered (to fall back to exact match), or if the second token doesn't look
  * like a subcommand (lowercase alphanumeric, e.g., "commit", "run").
  *
@@ -163,16 +136,14 @@ export function getSimpleCommandPrefix(command: string): string | null {
   if (tokens.length === 0) return null
 
   // Skip env var assignments (VAR=value) at the start, but only if they are
-  // in SAFE_ENV_VARS (or ANT_ONLY_SAFE_ENV_VARS for ant users). If a non-safe
+  // in SAFE_ENV_VARS. If a non-safe
   // env var is encountered, return null to fall back to exact match. This
   // prevents generating prefix rules like Bash(npm run:*) that can never match
   // at allow-rule check time, because stripSafeWrappers only strips safe vars.
   let i = 0
   while (i < tokens.length && ENV_VAR_ASSIGN_RE.test(tokens[i]!)) {
     const varName = tokens[i]!.split('=')[0]!
-    const isAntOnlySafe =
-      process.env.USER_TYPE === 'ant' && ANT_ONLY_SAFE_ENV_VARS.has(varName)
-    if (!SAFE_ENV_VARS.has(varName) && !isAntOnlySafe) {
+    if (!SAFE_ENV_VARS.has(varName)) {
       return null
     }
     i++
@@ -246,9 +217,7 @@ export function getFirstWordPrefix(command: string): string | null {
   let i = 0
   while (i < tokens.length && ENV_VAR_ASSIGN_RE.test(tokens[i]!)) {
     const varName = tokens[i]!.split('=')[0]!
-    const isAntOnlySafe =
-      process.env.USER_TYPE === 'ant' && ANT_ONLY_SAFE_ENV_VARS.has(varName)
-    if (!SAFE_ENV_VARS.has(varName) && !isAntOnlySafe) {
+    if (!SAFE_ENV_VARS.has(varName)) {
       return null
     }
     i++
@@ -325,9 +294,7 @@ function extractPrefixBeforeHeredoc(command: string): string | null {
   let i = 0
   while (i < tokens.length && ENV_VAR_ASSIGN_RE.test(tokens[i]!)) {
     const varName = tokens[i]!.split('=')[0]!
-    const isAntOnlySafe =
-      process.env.USER_TYPE === 'ant' && ANT_ONLY_SAFE_ENV_VARS.has(varName)
-    if (!SAFE_ENV_VARS.has(varName) && !isAntOnlySafe) {
+    if (!SAFE_ENV_VARS.has(varName)) {
       return null
     }
     i++
@@ -429,72 +396,6 @@ const SAFE_ENV_VARS = new Set([
   'BLOCKSIZE', // alternative block size
 ])
 
-/**
- * ANT-ONLY environment variables that are safe to strip from commands.
- * These are only enabled when USER_TYPE === 'ant'.
- *
- * SECURITY: These env vars are stripped before permission-rule matching, which
- * means `DOCKER_HOST=tcp://evil.com docker ps` matches a `Bash(docker ps:*)`
- * rule after stripping. This is INTENTIONALLY ANT-ONLY (gated at line ~380)
- * and MUST NEVER ship to external users. DOCKER_HOST redirects the Docker
- * daemon endpoint — stripping it defeats prefix-based permission restrictions
- * by hiding the network endpoint from the permission check. KUBECONFIG
- * similarly controls which cluster kubectl talks to. These are convenience
- * strippings for internal power users who accept the risk.
- *
- * Based on analysis of 30 days of tengu_internal_bash_tool_use_permission_request events.
- */
-const ANT_ONLY_SAFE_ENV_VARS = new Set([
-  // Kubernetes and container config (config file pointers, not execution)
-  'KUBECONFIG', // kubectl config file path — controls which cluster kubectl uses
-  'DOCKER_HOST', // Docker daemon socket/endpoint — controls which daemon docker talks to
-
-  // Cloud provider project/profile selection (just names/identifiers)
-  'AWS_PROFILE', // AWS profile name selection
-  'CLOUDSDK_CORE_PROJECT', // GCP project ID
-  'CLUSTER', // generic cluster name
-
-  // Anthropic internal cluster selection (just names/identifiers)
-  'COO_CLUSTER', // coo cluster name
-  'COO_CLUSTER_NAME', // coo cluster name (alternate)
-  'COO_NAMESPACE', // coo namespace
-  'COO_LAUNCH_YAML_DRY_RUN', // dry run mode
-
-  // Feature flags (boolean/string flags only)
-  'SKIP_NODE_VERSION_CHECK', // skip version check
-  'EXPECTTEST_ACCEPT', // accept test expectations
-  'CI', // CI environment indicator
-  'GIT_LFS_SKIP_SMUDGE', // skip LFS downloads
-
-  // GPU/Device selection (just device IDs)
-  'CUDA_VISIBLE_DEVICES', // GPU device selection
-  'JAX_PLATFORMS', // JAX platform selection
-
-  // Display/terminal settings
-  'COLUMNS', // terminal width
-  'TMUX', // TMUX socket info
-
-  // Test/debug configuration
-  'POSTGRESQL_VERSION', // postgres version string
-  'FIRESTORE_EMULATOR_HOST', // emulator host:port
-  'HARNESS_QUIET', // quiet mode flag
-  'TEST_CROSSCHECK_LISTS_MATCH_UPDATE', // test update flag
-  'DBT_PER_DEVELOPER_ENVIRONMENTS', // DBT config
-  'STATSIG_FORD_DB_CHECKS', // statsig DB check flag
-
-  // Build configuration
-  'ANT_ENVIRONMENT', // Anthropic environment name
-  'ANT_SERVICE', // Anthropic service name
-  'MONOREPO_ROOT_DIR', // monorepo root path
-
-  // Version selectors
-  'PYENV_VERSION', // Python version selection
-
-  // Credentials (approved subset - these don't change exfil risk)
-  'PGPASSWORD', // Postgres password
-  'GH_TOKEN', // GitHub token
-  'GROWTHBOOK_API_KEY', // self-hosted growthbook
-])
 
 /**
  * Strips full-line comments from a command.
@@ -587,9 +488,7 @@ export function stripSafeWrappers(command: string): string {
     const envVarMatch = stripped.match(ENV_VAR_PATTERN)
     if (envVarMatch) {
       const varName = envVarMatch[1]!
-      const isAntOnlySafe =
-        process.env.USER_TYPE === 'ant' && ANT_ONLY_SAFE_ENV_VARS.has(varName)
-      if (SAFE_ENV_VARS.has(varName) || isAntOnlySafe) {
+      if (SAFE_ENV_VARS.has(varName)) {
         stripped = stripped.replace(ENV_VAR_PATTERN, '')
       }
     }
@@ -1678,11 +1577,9 @@ export async function bashToolHasPermission(
   const injectionCheckDisabled = isEnvTruthy(
     process.env.CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK,
   )
-  // GrowthBook killswitch for shadow mode — when off, skip the native parse
+  // Feature flag killswitch for shadow mode — when off, skip the native parse
   // entirely. Computed once; feature() must stay inline in the ternary below.
-  const shadowEnabled = feature('TREE_SITTER_BASH_SHADOW')
-    ? getFeatureValue_CACHED_MAY_BE_STALE('tengu_birch_trellis', true)
-    : false
+  const shadowEnabled = feature('TREE_SITTER_BASH_SHADOW') ? true : false
   // Parse once here; the resulting AST feeds both parseForSecurityFromAst
   // and bashToolCheckCommandOperatorPermissions.
   let astRoot = injectionCheckDisabled
@@ -1724,15 +1621,6 @@ export async function bashToolHasPermission(
         (tsSubs.length !== legacySubs.length ||
           tsSubs.some((s, i) => s !== legacySubs[i]))
     }
-    logEvent('tengu_tree_sitter_shadow', {
-      available,
-      astTooComplex: tooComplex,
-      astSemanticFail: semanticFail,
-      subsDiffer,
-      injectionCheckDisabled,
-      killswitchOff: !shadowEnabled,
-      cmdOverLength: input.command.length > 10000,
-    })
     // Always force legacy — shadow mode is observational only.
     astResult = { kind: 'parse-unavailable' }
     astRoot = null
@@ -1749,9 +1637,6 @@ export async function bashToolHasPermission(
       type: 'other' as const,
       reason: astResult.reason,
     }
-    logEvent('tengu_bash_ast_too_complex', {
-      nodeTypeId: nodeTypeId(astResult.nodeType),
-    })
     return {
       behavior: 'ask',
       decisionReason,
@@ -2358,12 +2243,6 @@ export async function bashToolHasPermission(
     hasPossibleCommandInjection = results.some(
       r => r.behavior !== 'passthrough',
     )
-    if (divergenceCount > 0) {
-      logEvent('tengu_tree_sitter_security_divergence', {
-        quoteContextDivergence: true,
-        count: divergenceCount,
-      })
-    }
   }
   if (
     subcommandPermissionDecisions.every(_ => _.behavior === 'allow') &&

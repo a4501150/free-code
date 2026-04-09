@@ -14,7 +14,7 @@
  * used by the openclaw project.
  */
 import { createServer, type Server } from 'http'
-import { logEvent } from 'src/services/analytics/index.js'
+
 import {
   CODEX_AUTHORIZE_URL,
   CODEX_CLIENT_ID,
@@ -323,8 +323,6 @@ export async function runCodexOAuthFlow(
   const { url, verifier, state } = buildCodexAuthUrl()
   const callbackServer = await startCodexCallbackServer(state)
 
-  logEvent('tengu_oauth_codex_flow_start', {})
-
   try {
     await onUrlReady(url)
     await openBrowser(url)
@@ -356,12 +354,9 @@ export async function runCodexOAuthFlow(
       throw new Error('No authorization code received from Codex OAuth flow.')
     }
 
-    logEvent('tengu_oauth_codex_code_received', {})
     const tokens = await exchangeCodexCode(code, verifier)
-    logEvent('tengu_oauth_codex_success', {})
     return tokens
   } catch (err) {
-    logEvent('tengu_oauth_codex_error', {})
     throw err
   } finally {
     callbackServer.close()

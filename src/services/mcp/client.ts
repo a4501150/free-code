@@ -94,7 +94,6 @@ import {
   getWebSocketProxyUrl,
 } from '../../utils/proxy.js'
 import { recursivelySanitizeUnicode } from '../../utils/sanitization.js'
-import { getSessionIngressAuthToken } from '../../utils/sessionIngressAuth.js'
 import { subprocessEnv } from '../../utils/subprocessEnv.js'
 import {
   isPersistError,
@@ -102,7 +101,6 @@ import {
 } from '../../utils/toolResultStorage.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
 } from '../analytics/index.js'
 import {
   type ElicitationWaitingState,
@@ -235,18 +233,6 @@ import { isClaudeInChromeMCPServer } from '../../utils/claudeInChrome/common.js'
 const claudeInChromeToolRendering =
   (): typeof import('../../utils/claudeInChrome/toolRendering.js') =>
     require('../../utils/claudeInChrome/toolRendering.js')
-// Lazy: wrapper.tsx → hostAdapter.ts → executor.ts pulls both native modules
-// (@ant/computer-use-input + @ant/computer-use-swift). Runtime-gated by
-// GrowthBook tengu_malort_pedway (see gates.ts).
-const computerUseWrapper = feature('CHICAGO_MCP')
-  ? (): typeof import('../../utils/computerUse/wrapper.js') =>
-      require('../../utils/computerUse/wrapper.js')
-  : undefined
-const isComputerUseMCPServer = feature('CHICAGO_MCP')
-  ? (
-      require('../../utils/computerUse/common.js') as typeof import('../../utils/computerUse/common.js')
-    ).isComputerUseMCPServer
-  : undefined
 
 import { mkdir, readFile, unlink, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
@@ -327,7 +313,7 @@ function mcpBaseUrlAnalytics(serverRef: ScopedMcpServerConfig): {
   return url
     ? {
         mcpServerBaseUrl:
-          url as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          url,
       }
     : {}
 }
@@ -342,11 +328,6 @@ function handleRemoteAuthFailure(
   serverRef: ScopedMcpServerConfig,
   transportType: 'sse' | 'http' | 'claudeai-proxy',
 ): MCPServerConnection {
-  logEvent('tengu_mcp_server_needs_auth', {
-    transportType:
-      transportType as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    ...mcpBaseUrlAnalytics(serverRef),
-  })
   const label: Record<typeof transportType, string> = {
     sse: 'SSE',
     http: 'HTTP',
@@ -400,10 +381,6 @@ export function createClaudeAiProxyFetch(innerFetch: FetchLike): FetchLike {
     // downstream service genuinely needs auth (the common case: 30+ servers
     // with "MCP server requires authentication but no OAuth token configured").
     const tokenChanged = await handleOAuth401Error(sentToken).catch(() => false)
-    logEvent('tengu_mcp_claudeai_proxy_401', {
-      tokenChanged:
-        tokenChanged as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    })
     if (!tokenChanged) {
       // ELOCKED contention: another connector may have won the lockfile and refreshed — check if token changed underneath us
       const now = getClaudeAIOAuthTokens()?.accessToken
@@ -612,10 +589,6 @@ export const connectToServer = memoize(
     try {
       let transport
 
-      // If we have the session ingress JWT, we will connect via the session ingress rather than
-      // to remote MCP's directly.
-      const sessionIngressToken = getSessionIngressAuthToken()
-
       if (serverRef.type === 'sse') {
         // Create an auth provider for this server
         const authProvider = new ClaudeAuthProvider(name, serverRef)
@@ -743,9 +716,6 @@ export const connectToServer = memoize(
         const tlsOptions = getWebSocketTLSOptions()
         const wsHeaders = {
           'User-Agent': getMCPUserAgent(),
-          ...(sessionIngressToken && {
-            Authorization: `Bearer ${sessionIngressToken}`,
-          }),
           ...combinedHeaders,
         }
 
@@ -759,7 +729,6 @@ export const connectToServer = memoize(
           `WebSocket transport options: ${jsonStringify({
             url: serverRef.url,
             headers: wsHeadersForLogging,
-            hasSessionAuth: !!sessionIngressToken,
           })}`,
         )
 
@@ -830,10 +799,6 @@ export const connectToServer = memoize(
             ...proxyOptions,
             headers: {
               'User-Agent': getMCPUserAgent(),
-              ...(sessionIngressToken &&
-                !hasOAuthTokens && {
-                  Authorization: `Bearer ${sessionIngressToken}`,
-                }),
               ...combinedHeaders,
             },
           },
@@ -924,25 +889,6 @@ export const connectToServer = memoize(
         await inProcessServer.connect(serverTransport)
         transport = clientTransport
         logMCPDebug(name, `In-process Chrome MCP server started`)
-      } else if (
-        feature('CHICAGO_MCP') &&
-        (serverRef.type === 'stdio' || !serverRef.type) &&
-        isComputerUseMCPServer!(name)
-      ) {
-        // Run the Computer Use MCP server in-process — same rationale as
-        // Chrome above. The package's CallTool handler is a stub; real
-        // dispatch goes through wrapper.tsx's .call() override.
-        const { createComputerUseMcpServerForCli } = await import(
-          '../../utils/computerUse/mcpServer.js'
-        )
-        const { createLinkedTransportPair } = await import(
-          './InProcessTransport.js'
-        )
-        inProcessServer = await createComputerUseMcpServerForCli()
-        const [clientTransport, serverTransport] = createLinkedTransportPair()
-        await inProcessServer.connect(serverTransport)
-        transport = clientTransport
-        logMCPDebug(name, `In-process Computer Use MCP server started`)
       } else if (serverRef.type === 'stdio' || !serverRef.type) {
         const finalCommand =
           process.env.CLAUDE_CODE_SHELL_PREFIX || serverRef.command
@@ -1142,9 +1088,6 @@ export const connectToServer = memoize(
           serverRef.type === 'sse-ide' ||
           serverRef.type === 'ws-ide'
         ) {
-          logEvent('tengu_mcp_ide_server_connection_failed', {
-            connectionDurationMs: elapsed,
-          })
         }
         if (inProcessServer) {
           inProcessServer.close().catch(() => {})
@@ -1200,11 +1143,6 @@ export const connectToServer = memoize(
 
       if (serverRef.type === 'sse-ide' || serverRef.type === 'ws-ide') {
         const ideConnectionDurationMs = Date.now() - connectStartTime
-        logEvent('tengu_mcp_ide_server_connection_succeeded', {
-          connectionDurationMs: ideConnectionDurationMs,
-          serverVersion:
-            serverVersion as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        })
         try {
           void maybeNotifyIDEConnected(client)
         } catch (error) {
@@ -1582,18 +1520,6 @@ export const connectToServer = memoize(
       }
 
       const connectionDurationMs = Date.now() - connectStartTime
-      logEvent('tengu_mcp_server_connection_succeeded', {
-        connectionDurationMs,
-        transportType: (serverRef.type ??
-          'stdio') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        totalServers: serverStats?.totalServers,
-        stdioCount: serverStats?.stdioCount,
-        sseCount: serverStats?.sseCount,
-        httpCount: serverStats?.httpCount,
-        sseIdeCount: serverStats?.sseIdeCount,
-        wsIdeCount: serverStats?.wsIdeCount,
-        ...mcpBaseUrlAnalytics(serverRef),
-      })
       return {
         name,
         client,
@@ -1606,22 +1532,6 @@ export const connectToServer = memoize(
       }
     } catch (error) {
       const connectionDurationMs = Date.now() - connectStartTime
-      logEvent('tengu_mcp_server_connection_failed', {
-        connectionDurationMs,
-        totalServers: serverStats?.totalServers || 1,
-        stdioCount:
-          serverStats?.stdioCount || (serverRef.type === 'stdio' ? 1 : 0),
-        sseCount: serverStats?.sseCount || (serverRef.type === 'sse' ? 1 : 0),
-        httpCount:
-          serverStats?.httpCount || (serverRef.type === 'http' ? 1 : 0),
-        sseIdeCount:
-          serverStats?.sseIdeCount || (serverRef.type === 'sse-ide' ? 1 : 0),
-        wsIdeCount:
-          serverStats?.wsIdeCount || (serverRef.type === 'ws-ide' ? 1 : 0),
-        transportType: (serverRef.type ??
-          'stdio') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        ...mcpBaseUrlAnalytics(serverRef),
-      })
       logMCPDebug(
         name,
         `Connection failed after ${connectionDurationMs}ms: ${errorMessage(error)}`,
@@ -1981,11 +1891,6 @@ export const fetchToolsForClient = memoizeWithLRU(
               ? claudeInChromeToolRendering().getClaudeInChromeMCPToolOverrides(
                   tool.name,
                 )
-              : {}),
-            ...(feature('CHICAGO_MCP') &&
-            (client.config.type === 'stdio' || !client.config.type) &&
-            isComputerUseMCPServer!(client.name)
-              ? computerUseWrapper!().getComputerUseMCPToolOverrides(tool.name)
               : {}),
           }
         })
@@ -2447,11 +2352,6 @@ export function prefetchAllMcpResources(
             (command.argumentHint ?? '').length
           return sum + commandMetadataLength
         }, 0)
-        logEvent('tengu_mcp_tools_commands_loaded', {
-          tools_count: tools.length,
-          commands_count: commands.length,
-          commands_metadata_length: commandsMetadataLength,
-        })
 
         void resolve({
           clients,
@@ -2741,11 +2641,6 @@ export async function processMCPResult(
 
   // If large output files feature is disabled, fall back to old truncation behavior
   if (isEnvDefinedFalsy(process.env.ENABLE_MCP_LARGE_OUTPUT_FILES)) {
-    logEvent('tengu_mcp_large_result_handled', {
-      outcome: 'truncated',
-      reason: 'env_disabled',
-      sizeEstimateTokens,
-    } as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS)
     return await truncateMcpContentIfNeeded(content)
   }
 
@@ -2758,11 +2653,6 @@ export async function processMCPResult(
   // If content contains images, fall back to truncation - persisting images as JSON
   // defeats the image compression logic and makes them non-viewable
   if (contentContainsImages(content)) {
-    logEvent('tengu_mcp_large_result_handled', {
-      outcome: 'truncated',
-      reason: 'contains_images',
-      sizeEstimateTokens,
-    } as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS)
     return await truncateMcpContentIfNeeded(content)
   }
 
@@ -2777,20 +2667,8 @@ export async function processMCPResult(
   if (isPersistError(persistResult)) {
     // If file save failed, fall back to returning truncated content info
     const contentLength = contentStr.length
-    logEvent('tengu_mcp_large_result_handled', {
-      outcome: 'truncated',
-      reason: 'persist_failed',
-      sizeEstimateTokens,
-    } as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS)
     return `Error: result (${contentLength.toLocaleString()} characters) exceeds maximum allowed tokens. Failed to save output to file: ${persistResult.error}. If this MCP server provides pagination or filtering tools, use them to retrieve specific portions of the data.`
   }
-
-  logEvent('tengu_mcp_large_result_handled', {
-    outcome: 'persisted',
-    reason: 'file_saved',
-    sizeEstimateTokens,
-    persistedSizeChars: persistResult.originalSize,
-  } as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS)
 
   const formatDescription = getFormatDescription(type, schema)
   return getLargeOutputInstructions(
@@ -3161,14 +3039,6 @@ async function callMCPTool({
 
     // Log code indexing tool usage
     const codeIndexingTool = detectCodeIndexingFromMcpServerName(name)
-    if (codeIndexingTool) {
-      logEvent('tengu_code_indexing_tool_used', {
-        tool: codeIndexingTool as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        source:
-          'mcp' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        success: true,
-      })
-    }
 
     const content = await processMCPResult(result, tool, name)
     return {
@@ -3202,7 +3072,6 @@ async function callMCPTool({
           name,
           `Tool call returned 401 Unauthorized - token may have expired`,
         )
-        logEvent('tengu_mcp_tool_call_auth_error', {})
         throw new McpAuthError(
           name,
           `MCP server "${name}" requires re-authorization (token expired)`,
@@ -3227,7 +3096,6 @@ async function callMCPTool({
           name,
           `MCP session expired during tool call (${isSessionExpired ? '404/-32001' : 'connection closed'}), clearing connection cache for re-initialization`,
         )
-        logEvent('tengu_mcp_session_expired', {})
         await clearServerCache(name, config)
         throw new McpSessionExpiredError(name)
       }

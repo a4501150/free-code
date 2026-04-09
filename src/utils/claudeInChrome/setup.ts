@@ -7,7 +7,7 @@ import {
   getIsNonInteractiveSession,
   getSessionBypassPermissionsMode,
 } from '../../bootstrap/state.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
+import { getInitialSettings } from '../settings/settings.js'
 import type { ScopedMcpServerConfig } from '../../services/mcp/types.js'
 import { isInBundledMode } from '../bundledMode.js'
 import { getGlobalConfig, saveGlobalConfig } from '../config.js'
@@ -77,8 +77,7 @@ export function shouldAutoEnableClaudeInChrome(): boolean {
   shouldAutoEnable =
     getIsInteractive() &&
     isChromeExtensionInstalled_CACHED_MAY_BE_STALE() &&
-    (process.env.USER_TYPE === 'ant' ||
-      getFeatureValue_CACHED_MAY_BE_STALE('tengu_chrome_auto_enable', false))
+    (getInitialSettings()?.chromeAutoEnable ?? false)
 
   return shouldAutoEnable
 }
@@ -203,12 +202,6 @@ export async function installChromeNativeHostManifest(
     type: 'stdio',
     allowed_origins: [
       `chrome-extension://fcoeoabgfenejglbffodgkkbkcdhcgfn/`, // PROD_EXTENSION_ID
-      ...(process.env.USER_TYPE === 'ant'
-        ? [
-            'chrome-extension://dihbgbndebgnbjfmelmegjepbnkhlgni/', // DEV_EXTENSION_ID
-            'chrome-extension://dngcpimnedloihjnnfngkgjoidhnaolf/', // ANT_EXTENSION_ID
-          ]
-        : []),
     ],
   }
 

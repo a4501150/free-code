@@ -5,7 +5,6 @@ import type {
 import { getAPIProvider } from 'src/utils/model/providers.js'
 import type { PermissionResult } from 'src/utils/permissions/PermissionResult.js'
 import { z } from 'zod/v4'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import { queryModelWithStreaming } from '../../services/api/claude.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { lazySchema } from '../../utils/lazySchema.js'
@@ -259,26 +258,19 @@ export const WebSearchTool = buildTool({
     })
     const toolSchema = makeToolSchema(input)
 
-    const useHaiku = getFeatureValue_CACHED_MAY_BE_STALE(
-      'tengu_plum_vx3',
-      false,
-    )
-
     const appState = context.getAppState()
     const queryStream = queryModelWithStreaming({
       messages: [userMessage],
       systemPrompt: asSystemPrompt([
         'You are an assistant for performing a web search tool use',
       ]),
-      thinkingConfig: useHaiku
-        ? { type: 'disabled' as const }
-        : context.options.thinkingConfig,
+      thinkingConfig: { type: 'disabled' as const },
       tools: [],
       signal: context.abortController.signal,
       options: {
         getToolPermissionContext: async () => appState.toolPermissionContext,
-        model: useHaiku ? getSmallFastModel() : context.options.mainLoopModel,
-        toolChoice: useHaiku ? { type: 'tool', name: 'web_search' } : undefined,
+        model: getSmallFastModel(),
+        toolChoice: { type: 'tool', name: 'web_search' },
         isNonInteractiveSession: context.options.isNonInteractiveSession,
         hasAppendSystemPrompt: !!context.options.appendSystemPrompt,
         extraToolSchemas: [toolSchema],

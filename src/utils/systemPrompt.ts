@@ -1,8 +1,4 @@
 import { feature } from 'bun:bundle'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from '../services/analytics/index.js'
 import type { ToolUseContext } from '../Tool.js'
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
 import { isBuiltInAgent } from '../tools/AgentTool/loadAgentsDir.js'
@@ -16,7 +12,7 @@ export { asSystemPrompt, type SystemPrompt } from './systemPromptType.js'
 // into non-proactive builds.
 /* eslint-disable @typescript-eslint/no-require-imports */
 const proactiveModule =
-  feature('PROACTIVE') || feature('KAIROS')
+  feature('KAIROS')
     ? (require('../proactive/index.js') as typeof import('../proactive/index.js'))
     : null
 /* eslint-enable @typescript-eslint/no-require-imports */
@@ -83,18 +79,6 @@ export function buildEffectiveSystemPrompt({
     : undefined
 
   // Log agent memory loaded event for main loop agents
-  if (mainThreadAgentDefinition?.memory) {
-    logEvent('tengu_agent_memory_loaded', {
-      ...(process.env.USER_TYPE === 'ant' && {
-        agent_type:
-          mainThreadAgentDefinition.agentType as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      }),
-      scope:
-        mainThreadAgentDefinition.memory as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      source:
-        'main-thread' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    })
-  }
 
   // In proactive mode, agent instructions are appended to the default prompt
   // rather than replacing it. The proactive default prompt is already lean
@@ -102,7 +86,7 @@ export function buildEffectiveSystemPrompt({
   // add domain-specific behavior on top — same pattern as teammates.
   if (
     agentSystemPrompt &&
-    (feature('PROACTIVE') || feature('KAIROS')) &&
+    (feature('KAIROS')) &&
     isProactiveActive_SAFE_TO_CALL_ANYWHERE()
   ) {
     return asSystemPrompt([

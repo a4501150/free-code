@@ -2,7 +2,6 @@ import { execa } from 'execa'
 import { readFile, realpath } from 'fs/promises'
 import { homedir } from 'os'
 import { delimiter, join, posix, win32 } from 'path'
-import { checkGlobalInstallPermissions } from './autoUpdater.js'
 import { isInBundledMode } from './bundledMode.js'
 import {
   formatAutoUpdaterDisabledReason,
@@ -19,17 +18,6 @@ import {
   isRunningFromLocalInstallation,
   localInstallationExists,
 } from './localInstaller.js'
-import {
-  detectApk,
-  detectAsdf,
-  detectDeb,
-  detectHomebrew,
-  detectMise,
-  detectPacman,
-  detectRpm,
-  detectWinget,
-  getPackageManager,
-} from './nativeInstaller/packageManagers.js'
 import { getPlatform } from './platform.js'
 import { getRipgrepStatus } from './ripgrep.js'
 import { SandboxManager } from './sandbox/sandbox-adapter.js'
@@ -61,8 +49,6 @@ export type DiagnosticInfo = {
   hasUpdatePermissions: boolean | null
   multipleInstallations: Array<{ type: string; path: string }>
   warnings: Array<{ issue: string; fix: string }>
-  recommendation?: string
-  packageManager?: string
   ripgrepStatus: {
     working: boolean
     mode: 'system' | 'builtin' | 'embedded'
@@ -92,19 +78,6 @@ export async function getCurrentInstallationType(): Promise<InstallationType> {
 
   // Check if running in bundled mode first
   if (isInBundledMode()) {
-    // Check if this bundled instance was installed by a package manager
-    if (
-      detectHomebrew() ||
-      detectWinget() ||
-      detectMise() ||
-      detectAsdf() ||
-      (await detectPacman()) ||
-      (await detectDeb()) ||
-      (await detectRpm()) ||
-      (await detectApk())
-    ) {
-      return 'package-manager'
-    }
     return 'native'
   }
 
@@ -257,7 +230,7 @@ async function detectMultipleInstallations(): Promise<
         // If the symlink points to a Caskroom directory, it's a Homebrew cask
         // Only skip it if it's the same Homebrew installation we're currently running from
         if (realPath.includes('/Caskroom/')) {
-          isCurrentHomebrewInstallation = detectHomebrew()
+          isCurrentHomebrewInstallation = false
         }
       } catch {
         // If we can't resolve the symlink, include it anyway
@@ -570,20 +543,7 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
   // Get config values for display
   const configInstallMethod = config.installMethod || 'not set'
 
-  // Check permissions for global installations
   let hasUpdatePermissions: boolean | null = null
-  if (installationType === 'npm-global') {
-    const permCheck = await checkGlobalInstallPermissions()
-    hasUpdatePermissions = permCheck.hasPermissions
-
-    // Add warning if no permissions
-    if (!hasUpdatePermissions && !getAutoUpdaterDisabledReason()) {
-      warnings.push({
-        issue: 'Insufficient permissions for auto-updates',
-        fix: 'Do one of: (1) Re-install node without sudo, or (2) Use `claude install` for native installation',
-      })
-    }
-  }
 
   // Get ripgrep status and configuration
   const ripgrepStatusRaw = getRipgrepStatus()
@@ -596,11 +556,6 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
       ripgrepStatusRaw.mode === 'system' ? ripgrepStatusRaw.path : null,
   }
 
-  // Get package manager info if running from package manager
-  const packageManager =
-    installationType === 'package-manager'
-      ? await getPackageManager()
-      : undefined
 
   const diagnostic: DiagnosticInfo = {
     installationType,
@@ -617,7 +572,6 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
     hasUpdatePermissions,
     multipleInstallations,
     warnings,
-    packageManager,
     ripgrepStatus,
   }
 

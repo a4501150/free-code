@@ -1,7 +1,6 @@
 import { dirname, sep } from 'path'
-import { logEvent } from 'src/services/analytics/index.js'
+
 import { z } from 'zod/v4'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import { diagnosticTracker } from '../../services/diagnosticTracking.js'
 import { clearDeliveredDiagnosticsForFile } from '../../services/lsp/LSPDiagnosticRegistry.js'
 import { getLspServerManager } from '../../services/lsp/manager.js'
@@ -17,7 +16,6 @@ import { buildTool, type ToolDef } from '../../Tool.js'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { countLinesChanged, getPatchForDisplay } from '../../utils/diff.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
 import { isENOENT } from '../../utils/errors.js'
 import { getFileModificationTime, writeTextContent } from '../../utils/file.js'
 import {
@@ -27,10 +25,7 @@ import {
 import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
 import { readFileSyncWithMetadata } from '../../utils/fileRead.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
-import {
-  fetchSingleFileGitDiff,
-  type ToolUseDiff,
-} from '../../utils/gitDiff.js'
+import { type ToolUseDiff } from '../../utils/gitDiff.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
@@ -337,24 +332,8 @@ export const FileWriteTool = buildTool({
     })
 
     // Log when writing to CLAUDE.md
-    if (fullFilePath.endsWith(`${sep}CLAUDE.md`)) {
-      logEvent('tengu_write_claudemd', {})
-    }
 
     let gitDiff: ToolUseDiff | undefined
-    if (
-      isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) &&
-      getFeatureValue_CACHED_MAY_BE_STALE('tengu_quartz_lantern', false)
-    ) {
-      const startTime = Date.now()
-      const diff = await fetchSingleFileGitDiff(fullFilePath)
-      if (diff) gitDiff = diff
-      logEvent('tengu_tool_use_diff_computed', {
-        isWriteTool: true,
-        durationMs: Date.now() - startTime,
-        hasDiff: !!diff,
-      })
-    }
 
     if (oldContent) {
       const patch = getPatchForDisplay({

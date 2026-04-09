@@ -13,10 +13,6 @@
  */
 
 import { getIsNonInteractiveSession } from '../bootstrap/state.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from '../services/analytics/index.js'
 import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getPerformance } from './profilerBase.js'
@@ -30,8 +26,7 @@ const DETAILED_PROFILING = isEnvTruthy(process.env.CLAUDE_CODE_PROFILE_STARTUP)
 // Decision made once at module load - non-sampled users pay no profiling cost
 const STATSIG_SAMPLE_RATE = 0.05
 // eslint-disable-next-line custom-rules/no-process-env-top-level
-const STATSIG_LOGGING_SAMPLED =
-  process.env.USER_TYPE === 'ant' || Math.random() < STATSIG_SAMPLE_RATE
+const STATSIG_LOGGING_SAMPLED = Math.random() < STATSIG_SAMPLE_RATE
 
 // Enable profiling if either detailed mode OR sampled for Statsig
 const SHOULD_PROFILE = DETAILED_PROFILING || STATSIG_LOGGING_SAMPLED
@@ -162,12 +157,6 @@ export function logHeadlessProfilerTurn(): void {
   }
 
   // Log to Statsig if sampled
-  if (STATSIG_LOGGING_SAMPLED) {
-    logEvent(
-      'tengu_headless_latency',
-      metadata as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    )
-  }
 
   // Log detailed output if CLAUDE_CODE_PROFILE_STARTUP=1
   if (DETAILED_PROFILING) {

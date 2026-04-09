@@ -1,9 +1,6 @@
-// biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 /**
  * Ensure that any model codenames introduced here are also added to
- * scripts/excluded-strings.txt to avoid leaking them. Wrap any codename string
- * literals with process.env.USER_TYPE === 'ant' for Bun to remove the codenames
- * during dead code elimination
+ * scripts/excluded-strings.txt to avoid leaking them.
  */
 import { getMainLoopModelOverride } from '../../bootstrap/state.js'
 import {
@@ -15,7 +12,6 @@ import {
   isTeamPremiumSubscriber,
   isCodexSubscriber,
 } from '../auth.js'
-import { getAntModelOverrideConfig, resolveAntModel } from './antModels.js'
 import {
   has1mContext,
   is1mContextDisabled,
@@ -181,14 +177,6 @@ export function getRuntimeMainLoopModel(params: {
 export function getDefaultMainLoopModelSetting(): ModelName | ModelAlias {
   if (isCodexSubscriber()) {
     return getModelStrings().gpt53codex
-  }
-
-  // Ants default to defaultModel from flag config, or Opus 1M if not configured
-  if (process.env.USER_TYPE === 'ant') {
-    return (
-      getAntModelOverrideConfig()?.defaultModel ??
-      getDefaultOpusModel() + '[1m]'
-    )
   }
 
   // Max users get Opus as default
@@ -419,33 +407,10 @@ export function getPublicModelDisplayName(model: ModelName): string | null {
   }
 }
 
-function maskModelCodename(baseName: string): string {
-  // Mask only the first dash-separated segment (the codename), preserve the rest
-  // e.g. capybara-v2-fast → cap*****-v2-fast
-  const [codename = '', ...rest] = baseName.split('-')
-  const masked =
-    codename.slice(0, 3) + '*'.repeat(Math.max(0, codename.length - 3))
-  return [masked, ...rest].join('-')
-}
-
 export function renderModelName(model: ModelName): string {
   const publicName = getPublicModelDisplayName(model)
   if (publicName) {
     return publicName
-  }
-  if (process.env.USER_TYPE === 'ant') {
-    const resolved = parseUserSpecifiedModel(model)
-    const antModel = resolveAntModel(model)
-    if (antModel) {
-      const baseName = antModel.model.replace(/\[1m\]$/i, '')
-      const masked = maskModelCodename(baseName)
-      const suffix = has1mContext(resolved) ? '[1m]' : ''
-      return masked + suffix
-    }
-    if (resolved !== model) {
-      return `${model} (${resolved})`
-    }
-    return resolved
   }
   return model
 }
@@ -521,21 +486,6 @@ export function parseUserSpecifiedModel(
     return getDefaultOpusModel() + (has1mTag ? '[1m]' : '')
   }
 
-  if (process.env.USER_TYPE === 'ant') {
-    const has1mAntTag = has1mContext(normalizedModel)
-    const baseAntModel = normalizedModel.replace(/\[1m]$/i, '').trim()
-
-    const antModel = resolveAntModel(baseAntModel)
-    if (antModel) {
-      const suffix = has1mAntTag ? '[1m]' : ''
-      return antModel.model + suffix
-    }
-
-    // Fall through to the alias string if we cannot load the config. The API calls
-    // will fail with this string, but we should hear about it through feedback and
-    // can tell the user to restart/wait for flag cache refresh to get the latest values.
-  }
-
   // Preserve original case for custom model names (e.g., Azure Foundry deployment IDs)
   // Only strip [1m] suffix if present, maintaining case of the base model
   if (has1mTag) {
@@ -594,9 +544,7 @@ export function isLegacyModelRemapEnabled(): boolean {
 
 export function modelDisplayString(model: ModelSetting): string {
   if (model === null) {
-    if (process.env.USER_TYPE === 'ant') {
-      return `Default for Ants (${renderDefaultModelSetting(getDefaultMainLoopModelSetting())})`
-    } else if (isClaudeAISubscriber()) {
+    if (isClaudeAISubscriber()) {
       return `Default (${getClaudeAiUserDefaultModelDescription()})`
     }
     return `Default (${getDefaultMainLoopModel()})`

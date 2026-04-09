@@ -2,10 +2,6 @@ import { isAutoMemoryEnabled } from '../../memdir/paths.js'
 import { registerBundledSkill } from '../bundledSkills.js'
 
 export function registerRememberSkill(): void {
-  if (process.env.USER_TYPE !== 'ant') {
-    return
-  }
-
   const SKILL_PROMPT = `# Memory Review
 
 ## Goal

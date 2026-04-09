@@ -19,6 +19,7 @@ import { registerCleanup } from './cleanupRegistry.js'
 import { logForDebugging } from './debug.js'
 import { getFsImplementation } from './fsOperations.js'
 import { attachErrorLogSink, dateToFilename } from './log.js'
+import { getInitialSettings } from './settings/settings.js'
 import { jsonStringify } from './slowOperations.js'
 
 const DATE = dateToFilename(new Date())
@@ -109,7 +110,7 @@ function getLogWriter(path: string): JsonlWriter {
 }
 
 function appendToLog(path: string, message: object): void {
-  if (process.env.USER_TYPE !== 'ant') {
+  if (!(getInitialSettings()?.errorLogSink ?? false)) {
     return
   }
 

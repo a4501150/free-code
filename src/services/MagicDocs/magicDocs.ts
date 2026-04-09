@@ -10,6 +10,7 @@ import type { Tool, ToolUseContext } from '../../Tool.js'
 import type { BuiltInAgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import { runAgent } from '../../tools/AgentTool/runAgent.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import {
   FileReadTool,
   type Output as FileReadToolOutput,
@@ -240,7 +241,7 @@ const updateMagicDocs = sequential(async function (
 })
 
 export async function initMagicDocs(): Promise<void> {
-  if (process.env.USER_TYPE === 'ant') {
+  if (getInitialSettings()?.magicDocs ?? false) {
     // Register listener to detect magic docs when files are read
     registerFileReadListener((filePath: string, content: string) => {
       const result = detectMagicDocHeader(content)

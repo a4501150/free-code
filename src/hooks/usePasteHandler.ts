@@ -1,5 +1,6 @@
 import { basename } from 'path'
 import React from 'react'
+import { logForDebugging } from 'src/utils/debug.js'
 import { logError } from 'src/utils/log.js'
 import { useDebounceCallback } from 'usehooks-ts'
 import type { InputEvent, Key } from '../ink.js'
@@ -59,6 +60,7 @@ export function usePasteHandler({
       isMountedRef.current = false
     }
   }, [])
+
 
   const checkClipboardForImageImpl = React.useCallback(() => {
     if (!onImagePaste || !isMountedRef.current) return
@@ -172,6 +174,13 @@ export function usePasteHandler({
                   }
                   setIsPasting(false)
                 }
+              }).catch((error) => {
+                // If image processing fails, fall back to pasting raw text
+                logError(error as Error)
+                if (onPaste) {
+                  onPaste(pastedText)
+                }
+                setIsPasting(false)
               })
               return { chunks: [], timeoutId: null }
             }
@@ -237,6 +246,10 @@ export function usePasteHandler({
       .split(/ (?=\/|[A-Za-z]:\\)/)
       .flatMap(part => part.split('\n'))
       .some(line => isImageFilePath(line.trim()))
+
+    if (input.length > 10) {
+      logForDebugging(`[paste] input chunk (${input.length} chars): isFromPaste=${isFromPaste}, hasImageFilePath=${hasImageFilePath}, pastePending=${pastePendingRef.current}, input=${JSON.stringify(input.slice(0, 120))}`)
+    }
 
     // Handle empty paste (clipboard image on macOS)
     // When the user pastes an image with Cmd+V, the terminal sends an empty

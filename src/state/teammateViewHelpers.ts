@@ -1,4 +1,4 @@
-import { logEvent } from '../services/analytics/index.js'
+
 import { isTerminalTaskStatus } from '../Task.js'
 import type { LocalAgentTaskState } from '../tasks/LocalAgentTask/LocalAgentTask.js'
 
@@ -47,7 +47,6 @@ export function enterTeammateView(
   taskId: string,
   setAppState: (updater: (prev: AppState) => AppState) => void,
 ): void {
-  logEvent('tengu_transcript_view_enter', {})
   setAppState(prev => {
     const task = prev.tasks[taskId]
     const prevId = prev.viewingAgentTaskId
@@ -88,7 +87,6 @@ export function enterTeammateView(
 export function exitTeammateView(
   setAppState: (updater: (prev: AppState) => AppState) => void,
 ): void {
-  logEvent('tengu_transcript_view_exit', {})
   setAppState(prev => {
     const id = prev.viewingAgentTaskId
     const cleared = {

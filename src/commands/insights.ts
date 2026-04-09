@@ -1,17 +1,11 @@
-import { execFileSync } from 'child_process'
 import { diffLines } from 'diff'
-import { constants as fsConstants } from 'fs'
 import {
-  copyFile,
   mkdir,
-  mkdtemp,
   readdir,
   readFile,
-  rm,
   unlink,
   writeFile,
 } from 'fs/promises'
-import { tmpdir } from 'os'
 import { extname, join } from 'path'
 import type { Command } from '../commands.js'
 import { queryWithModel } from '../services/api/claude.js'
@@ -22,7 +16,6 @@ import {
 import type { LogOption } from '../types/logs.js'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
 import { toError } from '../utils/errors.js'
-import { execFileNoThrow } from '../utils/execFileNoThrow.js'
 import { logError } from '../utils/log.js'
 import { extractTextContent } from '../utils/messages.js'
 import { getDefaultOpusModel } from '../utils/model/model.js'
@@ -57,168 +50,22 @@ type RemoteHostInfo = {
 }
 
 /* eslint-disable custom-rules/no-process-env-top-level */
-const getRunningRemoteHosts: () => Promise<string[]> =
-  process.env.USER_TYPE === 'ant'
-    ? async () => {
-        const { stdout, code } = await execFileNoThrow(
-          'coder',
-          ['list', '-o', 'json'],
-          { timeout: 30000 },
-        )
-        if (code !== 0) return []
-        try {
-          const workspaces = jsonParse(stdout) as Array<{
-            name: string
-            latest_build?: { status?: string }
-          }>
-          return workspaces
-            .filter(w => w.latest_build?.status === 'running')
-            .map(w => w.name)
-        } catch {
-          return []
-        }
-      }
-    : async () => []
+const getRunningRemoteHosts: () => Promise<string[]> = async () => []
 
-const getRemoteHostSessionCount: (hs: string) => Promise<number> =
-  process.env.USER_TYPE === 'ant'
-    ? async (homespace: string) => {
-        const { stdout, code } = await execFileNoThrow(
-          'ssh',
-          [
-            `${homespace}.coder`,
-            'find /root/.claude/projects -name "*.jsonl" 2>/dev/null | wc -l',
-          ],
-          { timeout: 30000 },
-        )
-        if (code !== 0) return 0
-        return parseInt(stdout.trim(), 10) || 0
-      }
-    : async () => 0
+const getRemoteHostSessionCount: (_hs: string) => Promise<number> =
+  async () => 0
 
 const collectFromRemoteHost: (
-  hs: string,
-  destDir: string,
+  _hs: string,
+  _destDir: string,
 ) => Promise<{ copied: number; skipped: number }> =
-  process.env.USER_TYPE === 'ant'
-    ? async (homespace: string, destDir: string) => {
-        const result = { copied: 0, skipped: 0 }
+  async () => ({ copied: 0, skipped: 0 })
 
-        // Create temp directory
-        const tempDir = await mkdtemp(join(tmpdir(), 'claude-hs-'))
-
-        try {
-          // SCP the projects folder
-          const scpResult = await execFileNoThrow(
-            'scp',
-            ['-rq', `${homespace}.coder:/root/.claude/projects/`, tempDir],
-            { timeout: 300000 },
-          )
-          if (scpResult.code !== 0) {
-            // SCP failed
-            return result
-          }
-
-          const projectsDir = join(tempDir, 'projects')
-          let projectDirents: Awaited<ReturnType<typeof readdir>>
-          try {
-            projectDirents = await readdir(projectsDir, { withFileTypes: true })
-          } catch {
-            return result
-          }
-
-          // Merge into destination (parallel per project directory)
-          await Promise.all(
-            projectDirents.map(async dirent => {
-              const projectName = dirent.name
-              const projectPath = join(projectsDir, projectName)
-
-              // Skip if not a directory
-              if (!dirent.isDirectory()) return
-
-              const destProjectName = `${projectName}__${homespace}`
-              const destProjectPath = join(destDir, destProjectName)
-
-              try {
-                await mkdir(destProjectPath, { recursive: true })
-              } catch {
-                // Directory may already exist
-              }
-
-              // Copy session files (skip existing)
-              let files: Awaited<ReturnType<typeof readdir>>
-              try {
-                files = await readdir(projectPath, { withFileTypes: true })
-              } catch {
-                return
-              }
-              await Promise.all(
-                files.map(async fileDirent => {
-                  const fileName = fileDirent.name
-                  if (!fileName.endsWith('.jsonl')) return
-
-                  const srcFile = join(projectPath, fileName)
-                  const destFile = join(destProjectPath, fileName)
-
-                  try {
-                    await copyFile(srcFile, destFile, fsConstants.COPYFILE_EXCL)
-                    result.copied++
-                  } catch {
-                    // EEXIST from COPYFILE_EXCL means dest already exists
-                    result.skipped++
-                  }
-                }),
-              )
-            }),
-          )
-        } finally {
-          try {
-            await rm(tempDir, { recursive: true, force: true })
-          } catch {
-            // Ignore cleanup errors
-          }
-        }
-
-        return result
-      }
-    : async () => ({ copied: 0, skipped: 0 })
-
-const collectAllRemoteHostData: (destDir: string) => Promise<{
+const collectAllRemoteHostData: (_destDir: string) => Promise<{
   hosts: RemoteHostInfo[]
   totalCopied: number
   totalSkipped: number
-}> =
-  process.env.USER_TYPE === 'ant'
-    ? async (destDir: string) => {
-        const rHosts = await getRunningRemoteHosts()
-        const result: RemoteHostInfo[] = []
-        let totalCopied = 0
-        let totalSkipped = 0
-
-        // Collect from all hosts in parallel (SCP per host can take seconds)
-        const hostResults = await Promise.all(
-          rHosts.map(async hs => {
-            const sessionCount = await getRemoteHostSessionCount(hs)
-            if (sessionCount > 0) {
-              const { copied, skipped } = await collectFromRemoteHost(
-                hs,
-                destDir,
-              )
-              return { name: hs, sessionCount, copied, skipped }
-            }
-            return { name: hs, sessionCount, copied: 0, skipped: 0 }
-          }),
-        )
-
-        for (const hr of hostResults) {
-          result.push({ name: hr.name, sessionCount: hr.sessionCount })
-          totalCopied += hr.copied
-          totalSkipped += hr.skipped
-        }
-
-        return { hosts: result, totalCopied, totalSkipped }
-      }
-    : async () => ({ hosts: [], totalCopied: 0, totalSkipped: 0 })
+}> = async () => ({ hosts: [], totalCopied: 0, totalSkipped: 0 })
 /* eslint-enable custom-rules/no-process-env-top-level */
 
 // ============================================================================
@@ -1447,38 +1294,6 @@ RESPOND WITH ONLY A VALID JSON OBJECT:
 Include 3 opportunities. Think BIG - autonomous workflows, parallel agents, iterating against tests.`,
     maxTokens: 8192,
   },
-  ...(process.env.USER_TYPE === 'ant'
-    ? [
-        {
-          name: 'cc_team_improvements',
-          prompt: `Analyze this Claude Code usage data and suggest product improvements for the CC team.
-
-RESPOND WITH ONLY A VALID JSON OBJECT:
-{
-  "improvements": [
-    {"title": "Product/tooling improvement", "detail": "3-4 sentences describing the improvement", "evidence": "3-4 sentences with specific session examples"}
-  ]
-}
-
-Include 2-3 improvements based on friction patterns observed.`,
-          maxTokens: 8192,
-        },
-        {
-          name: 'model_behavior_improvements',
-          prompt: `Analyze this Claude Code usage data and suggest model behavior improvements.
-
-RESPOND WITH ONLY A VALID JSON OBJECT:
-{
-  "improvements": [
-    {"title": "Model behavior change", "detail": "3-4 sentences describing what the model should do differently", "evidence": "3-4 sentences with specific examples"}
-  ]
-}
-
-Include 2-3 improvements based on friction patterns observed.`,
-          maxTokens: 8192,
-        },
-      ]
-    : []),
   {
     name: 'fun_ending',
     prompt: `Analyze this Claude Code usage data and find a memorable moment.
@@ -2187,76 +2002,7 @@ function generateHtmlReport(
     `
       : ''
 
-  // Build Team Feedback section (collapsible, ant-only)
-  const ccImprovements =
-    process.env.USER_TYPE === 'ant'
-      ? insights.cc_team_improvements?.improvements || []
-      : []
-  const modelImprovements =
-    process.env.USER_TYPE === 'ant'
-      ? insights.model_behavior_improvements?.improvements || []
-      : []
-  const teamFeedbackHtml =
-    ccImprovements.length > 0 || modelImprovements.length > 0
-      ? `
-    <h2 id="section-feedback" class="feedback-header">Closing the Loop: Feedback for Other Teams</h2>
-    <p class="feedback-intro">Suggestions for the CC product and model teams based on your usage patterns. Click to expand.</p>
-    ${
-      ccImprovements.length > 0
-        ? `
-    <div class="collapsible-section">
-      <div class="collapsible-header" onclick="toggleCollapsible(this)">
-        <span class="collapsible-arrow">▶</span>
-        <h3>Product Improvements for CC Team</h3>
-      </div>
-      <div class="collapsible-content">
-        <div class="suggestions-section">
-          ${ccImprovements
-            .map(
-              imp => `
-            <div class="feedback-card team-card">
-              <div class="feedback-title">${escapeHtml(imp.title || '')}</div>
-              <div class="feedback-detail">${escapeHtml(imp.detail || '')}</div>
-              ${imp.evidence ? `<div class="feedback-evidence"><em>Evidence:</em> ${escapeHtml(imp.evidence)}</div>` : ''}
-            </div>
-          `,
-            )
-            .join('')}
-        </div>
-      </div>
-    </div>
-    `
-        : ''
-    }
-    ${
-      modelImprovements.length > 0
-        ? `
-    <div class="collapsible-section">
-      <div class="collapsible-header" onclick="toggleCollapsible(this)">
-        <span class="collapsible-arrow">▶</span>
-        <h3>Model Behavior Improvements</h3>
-      </div>
-      <div class="collapsible-content">
-        <div class="suggestions-section">
-          ${modelImprovements
-            .map(
-              imp => `
-            <div class="feedback-card model-card">
-              <div class="feedback-title">${escapeHtml(imp.title || '')}</div>
-              <div class="feedback-detail">${escapeHtml(imp.detail || '')}</div>
-              ${imp.evidence ? `<div class="feedback-evidence"><em>Evidence:</em> ${escapeHtml(imp.evidence)}</div>` : ''}
-            </div>
-          `,
-            )
-            .join('')}
-        </div>
-      </div>
-    </div>
-    `
-        : ''
-    }
-    `
-      : ''
+  const teamFeedbackHtml = ''
 
   // Build Fun Ending section
   const funEnding = insights.fun_ending
@@ -2804,12 +2550,8 @@ export async function generateUsageReport(options?: {
 }> {
   let remoteStats: { hosts: RemoteHostInfo[]; totalCopied: number } | undefined
 
-  // Optionally collect data from remote hosts first (ant-only)
-  if (process.env.USER_TYPE === 'ant' && options?.collectRemote) {
-    const destDir = join(getClaudeConfigHomeDir(), 'projects')
-    const { hosts, totalCopied } = await collectAllRemoteHostData(destDir)
-    remoteStats = { hosts, totalCopied }
-  }
+  // Remote host data collection is not available in this build
+  void options?.collectRemote
 
   // Phase 1: Lite scan — filesystem metadata only (no JSONL parsing)
   const allScannedSessions = await scanAllSessions()
@@ -3044,60 +2786,11 @@ const usageReport: Command = {
   progressMessage: 'analyzing your sessions',
   source: 'builtin',
   async getPromptForCommand(args) {
-    let collectRemote = false
-    let remoteHosts: string[] = []
-    let hasRemoteHosts = false
-
-    if (process.env.USER_TYPE === 'ant') {
-      // Parse --homespaces flag
-      collectRemote = args?.includes('--homespaces') ?? false
-
-      // Check for available remote hosts
-      remoteHosts = await getRunningRemoteHosts()
-      hasRemoteHosts = remoteHosts.length > 0
-
-      // Show collection message if collecting
-      if (collectRemote && hasRemoteHosts) {
-        // biome-ignore lint/suspicious/noConsole: intentional
-        console.error(
-          `Collecting sessions from ${remoteHosts.length} homespace(s): ${remoteHosts.join(', ')}...`,
-        )
-      }
-    }
-
     const { insights, htmlPath, data, remoteStats } = await generateUsageReport(
-      { collectRemote },
+      { collectRemote: false },
     )
 
-    let reportUrl = `file://${htmlPath}`
-    let uploadHint = ''
-
-    if (process.env.USER_TYPE === 'ant') {
-      // Try to upload to S3
-      const timestamp = new Date()
-        .toISOString()
-        .replace(/[-:]/g, '')
-        .replace('T', '_')
-        .slice(0, 15)
-      const username = process.env.SAFEUSER || process.env.USER || 'unknown'
-      const filename = `${username}_insights_${timestamp}.html`
-      const s3Path = `s3://anthropic-serve/atamkin/cc-user-reports/${filename}`
-      const s3Url = `https://s3-frontend.infra.ant.dev/anthropic-serve/atamkin/cc-user-reports/${filename}`
-
-      reportUrl = s3Url
-      try {
-        execFileSync('ff', ['cp', htmlPath, s3Path], {
-          timeout: 60000,
-          stdio: 'pipe', // Suppress output
-        })
-      } catch {
-        // Upload failed - fall back to local file and show upload command
-        reportUrl = `file://${htmlPath}`
-        uploadHint = `\nAutomatic upload failed. Are you on the boron namespace? Try \`use-bo\` and ensure you've run \`sso\`.
-To share, run: ff cp ${htmlPath} ${s3Path}
-Then access at: ${s3Url}`
-      }
-    }
+    const reportUrl = `file://${htmlPath}`
 
     // Build header with stats
     const sessionLabel =
@@ -3112,20 +2805,8 @@ Then access at: ${s3Url}`
       `${data.git_commits} commits`,
     ].join(' · ')
 
-    // Build remote host info (ant-only)
-    let remoteInfo = ''
-    if (process.env.USER_TYPE === 'ant') {
-      if (remoteStats && remoteStats.totalCopied > 0) {
-        const hsNames = remoteStats.hosts
-          .filter(h => h.sessionCount > 0)
-          .map(h => h.name)
-          .join(', ')
-        remoteInfo = `\n_Collected ${remoteStats.totalCopied} new sessions from: ${hsNames}_\n`
-      } else if (!collectRemote && hasRemoteHosts) {
-        // Suggest using --homespaces if they have remote hosts but didn't use the flag
-        remoteInfo = `\n_Tip: Run \`/insights --homespaces\` to include sessions from your ${remoteHosts.length} running homespace(s)_\n`
-      }
-    }
+    const remoteInfo = ''
+    void remoteStats
 
     // Build markdown summary from insights
     const atAGlance = insights.at_a_glance
@@ -3150,7 +2831,7 @@ ${remoteInfo}
 
     const userSummary = `${header}${summaryText}
 
-Your full shareable insights report is ready: ${reportUrl}${uploadHint}`
+Your full shareable insights report is ready: ${reportUrl}`
 
     // Return prompt for Claude to respond to
     return [
@@ -3172,7 +2853,7 @@ Now output the following message exactly:
 
 <message>
 Your shareable insights report is ready:
-${reportUrl}${uploadHint}
+${reportUrl}
 
 Want to dig into any section or try one of the suggestions?
 </message>`,

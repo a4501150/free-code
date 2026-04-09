@@ -6,15 +6,6 @@ import type {
 import { createHash } from 'crypto'
 import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from 'src/constants/prompts.js'
 import { getSystemContext, getUserContext } from 'src/context.js'
-import { isAnalyticsDisabled } from 'src/services/analytics/config.js'
-import {
-  checkStatsigFeatureGate_CACHED_MAY_BE_STALE,
-  getFeatureValue_CACHED_MAY_BE_STALE,
-} from 'src/services/analytics/growthbook.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from 'src/services/analytics/index.js'
 import { prefetchAllMcpResources } from 'src/services/mcp/client.js'
 import type { ScopedMcpServerConfig } from 'src/services/mcp/types.js'
 import { BashTool } from 'src/tools/BashTool/BashTool.js'
@@ -43,6 +34,7 @@ import {
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
+import { getInitialSettings } from './settings/settings.js'
 import { createUserMessage } from './messages.js'
 import {
   getAPIProvider,
@@ -135,7 +127,7 @@ export async function toolToAPISchema(
 ): Promise<BetaToolUnion> {
   // Session-stable base schema: name, description, input_schema, strict,
   // eager_input_streaming. These are computed once per session and cached to
-  // prevent mid-session GrowthBook flips (tengu_tool_pear, tengu_fgts) or
+  // prevent mid-session settings flips (strictToolSchemas, fineGrainedToolStreaming) or
   // tool.prompt() drift from churning the serialized tool array bytes.
   // See toolSchemaCache.ts for rationale.
   //
@@ -152,7 +144,7 @@ export async function toolToAPISchema(
   let base = cache.get(cacheKey)
   if (!base) {
     const strictToolsEnabled =
-      checkStatsigFeatureGate_CACHED_MAY_BE_STALE('tengu_tool_pear')
+      (getInitialSettings()?.strictToolSchemas ?? false)
     // Use tool's JSON schema directly if provided, otherwise convert Zod schema
     let input_schema = (
       'inputJSONSchema' in tool && tool.inputJSONSchema
@@ -199,7 +191,7 @@ export async function toolToAPISchema(
     if (
       getAPIProvider() === 'firstParty' &&
       isFirstPartyAnthropicBaseUrl() &&
-      (getFeatureValue_CACHED_MAY_BE_STALE('tengu_fgts', false) ||
+      ((getInitialSettings()?.fineGrainedToolStreaming ?? false) ||
         isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING))
     ) {
       base.eager_input_streaming = true
@@ -281,16 +273,6 @@ function logStripOnce(stripped: string[]): void {
 export function logAPIPrefix(systemPrompt: SystemPrompt): void {
   const [firstSyspromptBlock] = splitSysPromptPrefix(systemPrompt)
   const firstSystemPrompt = firstSyspromptBlock?.text
-  logEvent('tengu_sysprompt_block', {
-    snippet: firstSystemPrompt?.slice(
-      0,
-      20,
-    ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    length: firstSystemPrompt?.length ?? 0,
-    hash: (firstSystemPrompt
-      ? createHash('sha256').update(firstSystemPrompt).digest('hex')
-      : '') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  })
 }
 
 /**
@@ -324,9 +306,6 @@ export function splitSysPromptPrefix(
 ): SystemPromptBlock[] {
   const useGlobalCacheFeature = shouldUseGlobalCacheScope()
   if (useGlobalCacheFeature && options?.skipGlobalCacheForSystemPrompt) {
-    logEvent('tengu_sysprompt_using_tool_based_cache', {
-      promptBlockCount: systemPrompt.length,
-    })
 
     // Filter out boundary marker, return blocks without global scope
     let attributionHeader: string | undefined
@@ -395,17 +374,7 @@ export function splitSysPromptPrefix(
       const dynamicJoined = dynamicBlocks.join('\n\n')
       if (dynamicJoined) result.push({ text: dynamicJoined, cacheScope: null })
 
-      logEvent('tengu_sysprompt_boundary_found', {
-        blockCount: result.length,
-        staticBlockLength: staticJoined.length,
-        dynamicBlockLength: dynamicJoined.length,
-      })
-
       return result
-    } else {
-      logEvent('tengu_sysprompt_missing_boundary_marker', {
-        promptBlockCount: systemPrompt.length,
-      })
     }
   }
   let attributionHeader: string | undefined
@@ -473,94 +442,6 @@ export function prependUserContext(
   ]
 }
 
-/**
- * Log metrics about context and system prompt size
- */
-export async function logContextMetrics(
-  mcpConfigs: Record<string, ScopedMcpServerConfig>,
-  toolPermissionContext: ToolPermissionContext,
-): Promise<void> {
-  // Early return if logging is disabled
-  if (isAnalyticsDisabled()) {
-    return
-  }
-  const [{ tools: mcpTools }, tools, userContext, systemContext] =
-    await Promise.all([
-      prefetchAllMcpResources(mcpConfigs),
-      getTools(toolPermissionContext),
-      getUserContext(),
-      getSystemContext(),
-    ])
-  // Extract individual context sizes and calculate total
-  const gitStatusSize = systemContext.gitStatus?.length ?? 0
-  const claudeMdSize = userContext.claudeMd?.length ?? 0
-
-  // Calculate total context size
-  const totalContextSize = gitStatusSize + claudeMdSize
-
-  // Get file count using ripgrep (rounded to nearest power of 10 for privacy)
-  const currentDir = getCwd()
-  const ignorePatternsByRoot = getFileReadIgnorePatterns(toolPermissionContext)
-  const normalizedIgnorePatterns = normalizePatternsToPath(
-    ignorePatternsByRoot,
-    currentDir,
-  )
-  const fileCount = await countFilesRoundedRg(
-    currentDir,
-    AbortSignal.timeout(1000),
-    normalizedIgnorePatterns,
-  )
-
-  // Calculate tool metrics
-  let mcpToolsCount = 0
-  let mcpServersCount = 0
-  let mcpToolsTokens = 0
-  let nonMcpToolsCount = 0
-  let nonMcpToolsTokens = 0
-
-  const nonMcpTools = tools.filter(tool => !tool.isMcp)
-  mcpToolsCount = mcpTools.length
-  nonMcpToolsCount = nonMcpTools.length
-
-  // Extract unique server names from MCP tool names (format: mcp__servername__toolname)
-  const serverNames = new Set<string>()
-  for (const tool of mcpTools) {
-    const parts = tool.name.split('__')
-    if (parts.length >= 3 && parts[1]) {
-      serverNames.add(parts[1])
-    }
-  }
-  mcpServersCount = serverNames.size
-
-  // Estimate tool tokens locally for analytics (avoids N API calls per session)
-  // Use inputJSONSchema (plain JSON Schema) when available, otherwise convert Zod schema
-  for (const tool of mcpTools) {
-    const schema =
-      'inputJSONSchema' in tool && tool.inputJSONSchema
-        ? tool.inputJSONSchema
-        : zodToJsonSchema(tool.inputSchema)
-    mcpToolsTokens += roughTokenCountEstimation(jsonStringify(schema))
-  }
-  for (const tool of nonMcpTools) {
-    const schema =
-      'inputJSONSchema' in tool && tool.inputJSONSchema
-        ? tool.inputJSONSchema
-        : zodToJsonSchema(tool.inputSchema)
-    nonMcpToolsTokens += roughTokenCountEstimation(jsonStringify(schema))
-  }
-
-  logEvent('tengu_context_size', {
-    git_status_size: gitStatusSize,
-    claude_md_size: claudeMdSize,
-    total_context_size: totalContextSize,
-    project_file_count_rounded: fileCount,
-    mcp_tools_count: mcpToolsCount,
-    mcp_servers_count: mcpServersCount,
-    mcp_tools_tokens: mcpToolsTokens,
-    non_mcp_tools_count: nonMcpToolsCount,
-    non_mcp_tools_tokens: nonMcpToolsTokens,
-  })
-}
 
 // TODO: Generalize this to all tools
 export function normalizeToolInput<T extends Tool>(
@@ -595,9 +476,6 @@ export function normalizeToolInput<T extends Tool>(
       normalizedCommand = normalizedCommand.replace(/\\\\;/g, '\\;')
 
       // Logging for commands that are only echoing a string. This is to help us understand how often  Claude talks via bash
-      if (/^echo\s+["']?[^|&;><]*["']?$/i.test(normalizedCommand.trim())) {
-        logEvent('tengu_bash_tool_simple_echo', {})
-      }
 
       // Check for run_in_background (may not exist in schema if CLAUDE_CODE_DISABLE_BACKGROUND_TASKS is set)
       const run_in_background =

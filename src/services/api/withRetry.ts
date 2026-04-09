@@ -35,15 +35,7 @@ import { isNonCustomOpusModel } from '../../utils/model/model.js'
 import { disableKeepAlive } from '../../utils/proxy.js'
 import { sleep } from '../../utils/sleep.js'
 import type { ThinkingConfig } from '../../utils/thinking.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../analytics/growthbook.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from '../analytics/index.js'
-import {
-  checkMockRateLimitError,
-  isMockRateLimitError,
-} from '../rateLimitMocking.js'
+import { isMockRateLimitError } from '../rateLimitMocking.js'
 import { REPEATED_529_ERROR_MESSAGE } from './errors.js'
 import { extractConnectionErrorDetails } from './errorUtils.js'
 
@@ -198,17 +190,6 @@ export async function* withRetry<T>(
       : false
 
     try {
-      // Check for mock rate limits (used by /mock-limits command for Ant employees)
-      if (process.env.USER_TYPE === 'ant') {
-        const mockError = checkMockRateLimitError(
-          retryContext.model,
-          wasFastModeActive,
-        )
-        if (mockError) {
-          throw mockError
-        }
-      }
-
       // Get a fresh client instance on first attempt or after authentication errors
       // - 401 for first-party API authentication failures
       // - 403 "OAuth token has been revoked" (another process refreshed the token)
@@ -216,13 +197,7 @@ export async function* withRetry<T>(
       // - Vertex-specific auth errors (credential refresh failures, 401)
       // - ECONNRESET/EPIPE: stale keep-alive socket; disable pooling and reconnect
       const isStaleConnection = isStaleConnectionError(lastError)
-      if (
-        isStaleConnection &&
-        getFeatureValue_CACHED_MAY_BE_STALE(
-          'tengu_disable_keepalive_on_econnreset',
-          false,
-        )
-      ) {
+      if (isStaleConnection) {
         logForDebugging(
           'Stale connection (ECONNRESET/EPIPE) — disabling keep-alive for retry',
         )
@@ -316,10 +291,6 @@ export async function* withRetry<T>(
       // Non-foreground sources bail immediately on 529 — no retry amplification
       // during capacity cascades. User never sees these fail.
       if (is529Error(error) && !shouldRetry529(options.querySource)) {
-        logEvent('tengu_api_529_background_dropped', {
-          query_source:
-            options.querySource as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        })
         throw new CannotRetryError(error, retryContext)
       }
 
@@ -335,13 +306,6 @@ export async function* withRetry<T>(
         if (consecutive529Errors >= MAX_529_RETRIES) {
           // Check if fallback model is specified
           if (options.fallbackModel) {
-            logEvent('tengu_api_opus_fallback_triggered', {
-              original_model:
-                options.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-              fallback_model:
-                options.fallbackModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-              provider: getAPIProviderForStatsig(),
-            })
 
             // Throw special error to indicate fallback was triggered
             throw new FallbackTriggeredError(
@@ -351,11 +315,9 @@ export async function* withRetry<T>(
           }
 
           if (
-            process.env.USER_TYPE === 'external' &&
             !process.env.IS_SANDBOX &&
             !isPersistentRetryEnabled()
           ) {
-            logEvent('tengu_api_custom_529_overloaded_error', {})
             throw new CannotRetryError(
               new Error(REPEATED_529_ERROR_MESSAGE),
               retryContext,
@@ -415,13 +377,6 @@ export async function* withRetry<T>(
           )
           retryContext.maxTokensOverride = adjustedMaxTokens
 
-          logEvent('tengu_max_tokens_context_overflow_adjustment', {
-            inputTokens,
-            contextLimit,
-            adjustedMaxTokens,
-            attempt,
-          })
-
           continue
         }
       }
@@ -465,24 +420,8 @@ export async function* withRetry<T>(
       // In persistent mode the for-loop `attempt` is clamped at maxRetries+1;
       // use persistentAttempt for telemetry/yields so they show the true count.
       const reportedAttempt = persistent ? persistentAttempt : attempt
-      logEvent('tengu_api_retry', {
-        attempt: reportedAttempt,
-        delayMs: delayMs,
-        error: (error as APIError)
-          .message as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        status: (error as APIError).status,
-        provider: getAPIProviderForStatsig(),
-      })
 
       if (persistent) {
-        if (delayMs > 60_000) {
-          logEvent('tengu_api_persistent_retry_wait', {
-            status: (error as APIError).status,
-            delayMs,
-            attempt: reportedAttempt,
-            provider: getAPIProviderForStatsig(),
-          })
-        }
         // Chunk long sleeps so the host sees periodic stdout activity and
         // does not mark the session idle. Each yield surfaces as
         // {type:'system', subtype:'api_retry'} on stdout via QueryEngine.
@@ -705,17 +644,6 @@ function shouldRetry(error: APIError): boolean {
     return true
   }
 
-  // CCR mode: auth is via infrastructure-provided JWTs, so a 401/403 is a
-  // transient blip (auth service flap, network hiccup) rather than bad
-  // credentials. Bypass x-should-retry:false — the server assumes we'd retry
-  // the same bad key, but our key is fine.
-  if (
-    isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) &&
-    (error.status === 401 || error.status === 403)
-  ) {
-    return true
-  }
-
   // Check for overloaded errors first by examining the message content
   // The SDK sometimes fails to properly pass the 529 status code during streaming,
   // so we need to check the error message directly
@@ -741,13 +669,8 @@ function shouldRetry(error: APIError): boolean {
     return true
   }
 
-  // Ants can ignore x-should-retry: false for 5xx server errors only.
-  // For other status codes (401, 403, 400, 429, etc.), respect the header.
   if (shouldRetryHeader === 'false') {
-    const is5xxError = error.status !== undefined && error.status >= 500
-    if (!(process.env.USER_TYPE === 'ant' && is5xxError)) {
-      return false
-    }
+    return false
   }
 
   if (error instanceof APIConnectionError) {

@@ -10,12 +10,6 @@ import {
 } from '../../constants/apiLimits.js'
 import { hasBinaryExtension } from '../../constants/files.js'
 import { memoryFreshnessNote } from '../../memdir/memoryAge.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
-import { logEvent } from '../../services/analytics/index.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  getFileExtensionForAnalytics,
-} from '../../services/analytics/metadata.js'
 import {
   countTokensWithAPI,
   roughTokenCountEstimationForFileType,
@@ -27,6 +21,7 @@ import {
 } from '../../skills/loadSkillsDir.js'
 import type { ToolUseContext } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
+import { getImageProcessor } from './imageProcessor.js'
 import { getCwd } from '../../utils/cwd.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from '../../utils/envUtils.js'
 import { getErrnoCode, isENOENT } from '../../utils/errors.js'
@@ -508,12 +503,6 @@ export const FileReadTool = buildTool({
 
     // Telemetry: track when callers override default read limits.
     // Only fires on override (low volume) — event count = override frequency.
-    if (fileReadingLimits !== undefined) {
-      logEvent('tengu_file_read_limits_override', {
-        hasMaxTokens: fileReadingLimits.maxTokens !== undefined,
-        hasMaxSizeBytes: fileReadingLimits.maxSizeBytes !== undefined,
-      })
-    }
 
     const ext = path.extname(file_path).toLowerCase().slice(1)
     // Use expandPath for consistent path normalization with FileEditTool/FileWriteTool
@@ -533,13 +522,7 @@ export const FileReadTool = buildTool({
     // the model externally.
     // 3P default: killswitch off = dedup enabled. Client-side only — no
     // server support needed, safe for Bedrock/Vertex/Foundry.
-    const dedupKillswitch = getFeatureValue_CACHED_MAY_BE_STALE(
-      'tengu_read_dedup_killswitch',
-      false,
-    )
-    const existingState = dedupKillswitch
-      ? undefined
-      : readFileState.get(fullFilePath)
+    const existingState = readFileState.get(fullFilePath)
     // Only dedup entries that came from a prior Read (offset is always set
     // by Read). Edit/Write store offset=undefined — their readFileState
     // entry reflects post-edit mtime, so deduping against it would wrongly
@@ -555,10 +538,6 @@ export const FileReadTool = buildTool({
         try {
           const mtimeMs = await getFileModificationTimeAsync(fullFilePath)
           if (mtimeMs === existingState.timestamp) {
-            const analyticsExt = getFileExtensionForAnalytics(fullFilePath)
-            logEvent('tengu_file_read_dedup', {
-              ...(analyticsExt !== undefined && { ext: analyticsExt }),
-            })
             return {
               data: {
                 type: 'file_unchanged' as const,
@@ -901,12 +880,6 @@ async function callInner(
       if (!extractResult.success) {
         throw new Error(extractResult.error.message)
       }
-      logEvent('tengu_pdf_page_extraction', {
-        success: true,
-        pageCount: extractResult.data.file.count,
-        fileSize: extractResult.data.file.originalSize,
-        hasPageRange: true,
-      })
       logFileOperation({
         operation: 'read',
         tool: 'FileReadTool',
@@ -961,19 +934,6 @@ async function callInner(
 
     if (shouldExtractPages) {
       const extractResult = await extractPDFPages(resolvedFilePath)
-      if (extractResult.success) {
-        logEvent('tengu_pdf_page_extraction', {
-          success: true,
-          pageCount: extractResult.data.file.count,
-          fileSize: extractResult.data.file.originalSize,
-        })
-      } else {
-        logEvent('tengu_pdf_page_extraction', {
-          success: false,
-          available: extractResult.error.reason !== 'unavailable',
-          fileSize: stats.size,
-        })
-      }
     }
 
     if (!isPDFSupported()) {
@@ -1065,22 +1025,6 @@ async function callInner(
   })
 
   const sessionFileType = detectSessionFileType(fullFilePath)
-  const analyticsExt = getFileExtensionForAnalytics(fullFilePath)
-  logEvent('tengu_session_file_read', {
-    totalLines,
-    readLines: lineCount,
-    totalBytes,
-    readBytes,
-    offset,
-    ...(limit !== undefined && { limit }),
-    ...(analyticsExt !== undefined && { ext: analyticsExt }),
-    ...(messageId !== undefined && {
-      messageID:
-        messageId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    }),
-    is_session_memory: sessionFileType === 'session_memory',
-    is_session_transcript: sessionFileType === 'session_transcript',
-  })
 
   return { data }
 }
@@ -1155,14 +1099,7 @@ export async function readImageWithTokenBudget(
       logError(e)
       // Fallback: heavily compressed version from the SAME buffer
       try {
-        const sharpModule = await import('sharp')
-        const sharp =
-          (
-            sharpModule as {
-              default?: typeof sharpModule
-            } & typeof sharpModule
-          ).default || sharpModule
-
+        const sharp = await getImageProcessor()
         const fallbackBuffer = await sharp(imageBuffer)
           .resize(400, 400, {
             fit: 'inside',

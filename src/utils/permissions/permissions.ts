@@ -70,17 +70,10 @@ import {
   getTotalInputTokens,
   getTotalOutputTokens,
 } from '../../bootstrap/state.js'
-import { getFeatureValue_CACHED_WITH_REFRESH } from '../../services/analytics/growthbook.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from '../../services/analytics/index.js'
-import { sanitizeToolNameForAnalytics } from '../../services/analytics/metadata.js'
 import {
   clearClassifierChecking,
   setClassifierChecking,
 } from '../classifierApprovals.js'
-import { isInProtectedNamespace } from '../envUtils.js'
 import { executePermissionRequestHooks } from '../hooks.js'
 import {
   AUTO_REJECT_MESSAGE,
@@ -104,7 +97,6 @@ import {
   formatActionForClassifier,
 } from './yoloClassifier.js'
 
-const CLASSIFIER_FAIL_CLOSED_REFRESH_MS = 30 * 60 * 1000 // 30 minutes
 
 const PERMISSION_RULE_SOURCES = [
   ...SETTING_SOURCES,
@@ -479,7 +471,6 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
 ): Promise<PermissionDecision> => {
   const result = await hasPermissionsToUseToolInner(tool, input, context)
 
-
   // Reset consecutive denials on any allowed tool use in auto mode.
   // This ensures that a successful tool use (even one auto-allowed by rules)
   // breaks the consecutive denial streak.
@@ -623,21 +614,6 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
             logForDebugging(
               `Skipping auto mode classifier for ${tool.name}: would be allowed in acceptEdits mode`,
             )
-            logEvent('tengu_auto_mode_decision', {
-              decision:
-                'allowed' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-              toolName: sanitizeToolNameForAnalytics(tool.name),
-              inProtectedNamespace: isInProtectedNamespace(),
-              // msg_id of the agent completion that produced this tool_use —
-              // the action at the bottom of the classifier transcript. Joins
-              // the decision back to the main agent's API response.
-              agentMsgId: assistantMessage.message
-                .id as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-              confidence:
-                'high' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-              fastPath:
-                'acceptEdits' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-            })
             return {
               behavior: 'allow',
               updatedInput: acceptEditsResult.updatedInput ?? input,
@@ -663,18 +639,6 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
         logForDebugging(
           `Skipping auto mode classifier for ${tool.name}: tool is on the safe allowlist`,
         )
-        logEvent('tengu_auto_mode_decision', {
-          decision:
-            'allowed' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-          toolName: sanitizeToolNameForAnalytics(tool.name),
-          inProtectedNamespace: isInProtectedNamespace(),
-          agentMsgId: assistantMessage.message
-            .id as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-          confidence:
-            'high' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-          fastPath:
-            'allowlist' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        })
         return {
           behavior: 'allow',
           updatedInput: input,
@@ -701,20 +665,6 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
         clearClassifierChecking(toolUseID)
       }
 
-      // Notify ants when classifier error dumped prompts (will be in /share)
-      if (
-        process.env.USER_TYPE === 'ant' &&
-        classifierResult.errorDumpPath &&
-        context.addNotification
-      ) {
-        context.addNotification({
-          key: 'auto-mode-error-dump',
-          text: `Auto mode classifier error — prompts dumped to ${classifierResult.errorDumpPath} (included in /share)`,
-          priority: 'immediate',
-          color: 'error',
-        })
-      }
-
       // Log classifier decision for metrics (including overhead telemetry)
       const yoloDecision = classifierResult.unavailable
         ? 'unavailable'
@@ -730,86 +680,6 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
               classifierResult.usage,
             )
           : undefined
-      logEvent('tengu_auto_mode_decision', {
-        decision:
-          yoloDecision as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        toolName: sanitizeToolNameForAnalytics(tool.name),
-        inProtectedNamespace: isInProtectedNamespace(),
-        // msg_id of the agent completion that produced this tool_use —
-        // the action at the bottom of the classifier transcript.
-        agentMsgId: assistantMessage.message
-          .id as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        classifierModel:
-          classifierResult.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        consecutiveDenials: classifierResult.shouldBlock
-          ? denialState.consecutiveDenials + 1
-          : 0,
-        totalDenials: classifierResult.shouldBlock
-          ? denialState.totalDenials + 1
-          : denialState.totalDenials,
-        // Overhead telemetry: token usage and latency for the classifier API call
-        classifierInputTokens: classifierResult.usage?.inputTokens,
-        classifierOutputTokens: classifierResult.usage?.outputTokens,
-        classifierCacheReadInputTokens:
-          classifierResult.usage?.cacheReadInputTokens,
-        classifierCacheCreationInputTokens:
-          classifierResult.usage?.cacheCreationInputTokens,
-        classifierDurationMs: classifierResult.durationMs,
-        // Character lengths of the prompt components sent to the classifier
-        classifierSystemPromptLength:
-          classifierResult.promptLengths?.systemPrompt,
-        classifierToolCallsLength: classifierResult.promptLengths?.toolCalls,
-        classifierUserPromptsLength:
-          classifierResult.promptLengths?.userPrompts,
-        // Session totals at time of classifier call (for computing overhead %).
-        // These are main-transcript-only — sideQuery (used by the classifier)
-        // does NOT call addToTotalSessionCost, so classifier tokens are excluded.
-        sessionInputTokens: getTotalInputTokens(),
-        sessionOutputTokens: getTotalOutputTokens(),
-        sessionCacheReadInputTokens: getTotalCacheReadInputTokens(),
-        sessionCacheCreationInputTokens: getTotalCacheCreationInputTokens(),
-        classifierCostUSD,
-        classifierStage:
-          classifierResult.stage as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        classifierStage1InputTokens: classifierResult.stage1Usage?.inputTokens,
-        classifierStage1OutputTokens:
-          classifierResult.stage1Usage?.outputTokens,
-        classifierStage1CacheReadInputTokens:
-          classifierResult.stage1Usage?.cacheReadInputTokens,
-        classifierStage1CacheCreationInputTokens:
-          classifierResult.stage1Usage?.cacheCreationInputTokens,
-        classifierStage1DurationMs: classifierResult.stage1DurationMs,
-        classifierStage1RequestId:
-          classifierResult.stage1RequestId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        classifierStage1MsgId:
-          classifierResult.stage1MsgId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        classifierStage1CostUSD:
-          classifierResult.stage1Usage && classifierResult.model
-            ? calculateCostFromTokens(
-                classifierResult.model,
-                classifierResult.stage1Usage,
-              )
-            : undefined,
-        classifierStage2InputTokens: classifierResult.stage2Usage?.inputTokens,
-        classifierStage2OutputTokens:
-          classifierResult.stage2Usage?.outputTokens,
-        classifierStage2CacheReadInputTokens:
-          classifierResult.stage2Usage?.cacheReadInputTokens,
-        classifierStage2CacheCreationInputTokens:
-          classifierResult.stage2Usage?.cacheCreationInputTokens,
-        classifierStage2DurationMs: classifierResult.stage2DurationMs,
-        classifierStage2RequestId:
-          classifierResult.stage2RequestId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        classifierStage2MsgId:
-          classifierResult.stage2MsgId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        classifierStage2CostUSD:
-          classifierResult.stage2Usage && classifierResult.model
-            ? calculateCostFromTokens(
-                classifierResult.model,
-                classifierResult.stage2Usage,
-              )
-            : undefined,
-      })
 
       if (classifierResult.durationMs !== undefined) {
         addToTurnClassifierDuration(classifierResult.durationMs)
@@ -840,39 +710,24 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
             },
           }
         }
-        // When classifier is unavailable (API error), behavior depends on
-        // the tengu_iron_gate_closed gate.
+        // When classifier is unavailable (API error), fail closed.
         if (classifierResult.unavailable) {
-          if (
-            getFeatureValue_CACHED_WITH_REFRESH(
-              'tengu_iron_gate_closed',
-              true,
-              CLASSIFIER_FAIL_CLOSED_REFRESH_MS,
-            )
-          ) {
-            logForDebugging(
-              'Auto mode classifier unavailable, denying with retry guidance (fail closed)',
-              { level: 'warn' },
-            )
-            return {
-              behavior: 'deny',
-              decisionReason: {
-                type: 'classifier',
-                classifier: 'auto-mode',
-                reason: 'Classifier unavailable',
-              },
-              message: buildClassifierUnavailableMessage(
-                tool.name,
-                classifierResult.model,
-              ),
-            }
-          }
-          // Fail open: fall back to normal permission handling
           logForDebugging(
-            'Auto mode classifier unavailable, falling back to normal permission handling (fail open)',
+            'Auto mode classifier unavailable, denying with retry guidance (fail closed)',
             { level: 'warn' },
           )
-          return result
+          return {
+            behavior: 'deny',
+            decisionReason: {
+              type: 'classifier',
+              classifier: 'auto-mode',
+              reason: 'Classifier unavailable',
+            },
+            message: buildClassifierUnavailableMessage(
+              tool.name,
+              classifierResult.model,
+            ),
+          }
         }
 
         // Update denial tracking and check limits
@@ -1005,20 +860,6 @@ function handleDenialLimitExceeded(
   const warning = hitTotalLimit
     ? `${totalCount} actions were blocked this session. Please review the transcript before continuing.`
     : `${consecutiveCount} consecutive actions were blocked. Please review the transcript before continuing.`
-
-  logEvent('tengu_auto_mode_denial_limit_exceeded', {
-    limit: (hitTotalLimit
-      ? 'total'
-      : 'consecutive') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    mode: (isHeadless
-      ? 'headless'
-      : 'cli') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    messageID: assistantMessage.message
-      .id as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    consecutiveDenials: consecutiveCount,
-    totalDenials: totalCount,
-    toolName: sanitizeToolNameForAnalytics(tool.name),
-  })
 
   if (isHeadless) {
     throw new AbortError(

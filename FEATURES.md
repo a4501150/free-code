@@ -10,7 +10,7 @@ external-build defines and externals. Result:
 - 34 flags still fail to bundle
 
 Important: "bundle cleanly" does not always mean "runtime-safe". Some flags
-still depend on optional native modules, claude.ai OAuth, GrowthBook gates, or
+still depend on optional native modules, claude.ai OAuth, or
 externalized `@ant/*` packages.
 
 ## Build Variants
@@ -20,12 +20,10 @@ externalized `@ant/*` packages.
 - `bun run compile`
   Builds the regular external binary at `./dist/cli`.
 - `bun run build:dev`
-  Builds `./cli-dev` with a dev-stamped version and experimental GrowthBook key.
+  Builds `./cli-dev` with a dev-stamped version.
 - `bun run build:dev:full`
   Builds `./cli-dev` with the entire current "Working Experimental Features"
-  bundle from this document, minus `CHICAGO_MCP`. That flag still compiles,
-  but the external binary does not boot cleanly with it because startup
-  reaches the missing `@ant/computer-use-mcp` runtime package.
+  bundle from this document.
 
 ## Default Build Flags
 
@@ -80,8 +78,6 @@ explicitly called out as default-on.
   Stores extra custom-agent memory snapshot state in the app.
 - `AGENT_TRIGGERS`
   Enables local cron/trigger tools and bundled trigger-related skills.
-- `AGENT_TRIGGERS_REMOTE`
-  Enables the remote trigger tool path.
 - `BUILTIN_EXPLORE_PLAN_AGENTS`
   Enables built-in explore/plan agent presets.
 - `CACHED_MICROCOMPACT`
@@ -101,16 +97,6 @@ explicitly called out as default-on.
 
 - `BASH_CLASSIFIER`
   Enables classifier-assisted bash permission decisions.
-- `BRIDGE_MODE`
-  Enables Remote Control / REPL bridge command and entitlement paths.
-- `CCR_AUTO_CONNECT`
-  Enables the CCR auto-connect default path.
-- `CCR_MIRROR`
-  Enables outbound-only CCR mirror sessions.
-- `CCR_REMOTE_SETUP`
-  Enables the remote setup command path.
-- `CHICAGO_MCP`
-  Enables computer-use MCP integration paths and wrapper loading.
 - `CONNECTOR_TEXT`
   Enables connector-text block handling in API/logging/UI paths.
 - `MCP_RICH_OUTPUT`
@@ -131,40 +117,20 @@ explicitly called out as default-on.
 These also bundle cleanly, but they are mostly rollout, platform, telemetry,
 or plumbing toggles rather than user-facing experimental features.
 
-- `ABLATION_BASELINE`
-  CLI ablation/baseline entrypoint toggle.
-- `ALLOW_TEST_VERSIONS`
-  Allows test versions in native installer flows.
-- `ANTI_DISTILLATION_CC`
-  Adds anti-distillation request metadata.
 - `BREAK_CACHE_COMMAND`
   Injects the break-cache command path.
-- `COWORKER_TYPE_TELEMETRY`
-  Adds coworker-type telemetry fields.
-- `DOWNLOAD_USER_SETTINGS`
-  Enables settings-sync pull paths.
 - `DUMP_SYSTEM_PROMPT`
   Enables the system-prompt dump path.
 - `FILE_PERSISTENCE`
   Enables file persistence plumbing.
 - `HARD_FAIL`
   Enables stricter failure/logging behavior.
-- `IS_LIBC_GLIBC`
-  Forces glibc environment detection.
-- `IS_LIBC_MUSL`
-  Forces musl environment detection.
 - `NATIVE_CLIENT_ATTESTATION`
   Adds native attestation marker text in the system header.
-- `PERFETTO_TRACING`
-  Enables perfetto tracing hooks.
-- `SKILL_IMPROVEMENT`
-  Enables skill-improvement hooks.
 - `SKIP_DETECTION_WHEN_AUTOUPDATES_DISABLED`
   Skips updater detection when auto-updates are disabled.
 - `SLOW_OPERATION_LOGGING`
   Enables slow-operation logging.
-- `UPLOAD_USER_SETTINGS`
-  Enables settings-sync push paths.
 
 ## Compile-Safe But Runtime-Caveated
 
@@ -178,16 +144,9 @@ have meaningful runtime caveats:
 - `NATIVE_CLIPBOARD_IMAGE`
   Bundles cleanly, but only accelerates macOS clipboard reads when
   `image-processor-napi` is present.
-- `BRIDGE_MODE`, `CCR_AUTO_CONNECT`, `CCR_MIRROR`, `CCR_REMOTE_SETUP`
-  Bundle cleanly, but are gated at runtime on claude.ai OAuth plus GrowthBook
-  entitlement checks.
 - `KAIROS_BRIEF`, `KAIROS_CHANNELS`
   Bundle cleanly, but they do not restore the full missing assistant stack.
   They only expose the brief/channel-specific surfaces that still exist.
-- `CHICAGO_MCP`
-  Bundles cleanly, but the runtime path still reaches externalized
-  `@ant/computer-use-*` packages. This is compile-safe, not fully
-  runtime-safe, in the external snapshot.
 - `TEAMMEM`
   Bundles cleanly, but only does useful work when team-memory config/files are
   actually enabled in the environment.
@@ -198,10 +157,6 @@ These are the failed flags where the current blocker looks small enough that a
 focused reconstruction pass could probably restore them without rebuilding an
 entire subsystem.
 
-- `AUTO_THEME`
-  Fails on missing `src/utils/systemThemeWatcher.js`. `systemTheme.ts` and the
-  theme provider already contain the cache/parsing logic, so the missing piece
-  looks like the OSC 11 watcher only.
 - `BG_SESSIONS`
   Fails on missing `src/cli/bg.js`. The CLI fast-path dispatch in
   `src/entrypoints/cli.tsx` is already wired.
@@ -211,9 +166,6 @@ entire subsystem.
 - `BUILDING_CLAUDE_APPS`
   Fails on missing `src/claude-api/csharp/claude-api.md`. This looks like an
   asset/document gap, not a missing runtime subsystem.
-- `COMMIT_ATTRIBUTION`
-  Fails on missing `src/utils/attributionHooks.js`. Setup and cache-clear code
-  already call into that hook module.
 - `FORK_SUBAGENT`
   Fails on missing `src/commands/fork/index.js`. Command slot and message
   rendering support are already present.
@@ -229,9 +181,6 @@ entire subsystem.
 - `MCP_SKILLS`
   Fails on missing `src/skills/mcpSkills.js`. `mcpSkillBuilders.ts` already
   exists specifically to support that missing registry layer.
-- `MEMORY_SHAPE_TELEMETRY`
-  Fails on missing `src/memdir/memoryShapeTelemetry.js`. The hook call sites
-  are already in place in `sessionFileAccessHooks.ts`.
 - `OVERFLOW_TEST_TOOL`
   Fails on missing `src/tools/OverflowTestTool/OverflowTestTool.js`. This
   appears isolated and test-only.
@@ -241,9 +190,6 @@ entire subsystem.
 - `TEMPLATES`
   Fails on missing `src/cli/handlers/templateJobs.js`. The CLI fast-path is
   already wired in `src/entrypoints/cli.tsx`.
-- `TORCH`
-  Fails on missing `src/commands/torch.js`. This looks like a single command
-  entry gap.
 - `TRANSCRIPT_CLASSIFIER`
   The first hard failure is missing
   `src/utils/permissions/yolo-classifier-prompts/auto_mode_system_prompt.txt`.
@@ -267,8 +213,6 @@ than a single wrapper or asset.
   Missing `src/server/parseConnectUrl.js`.
 - `EXPERIMENTAL_SKILL_SEARCH`
   Missing `src/services/skillSearch/localSearch.js`.
-- `MONITOR_TOOL`
-  Missing `src/tools/MonitorTool/MonitorTool.js`.
 - `REACTIVE_COMPACT`
   Missing `src/services/compact/reactiveCompact.js`.
 - `REVIEW_ARTIFACT`
@@ -281,8 +225,6 @@ than a single wrapper or asset.
   Missing `src/tools/TerminalCaptureTool/TerminalCaptureTool.js`.
 - `UDS_INBOX`
   Missing `src/utils/udsMessaging.js`.
-- `WEB_BROWSER_TOOL`
-  Missing `src/tools/WebBrowserTool/WebBrowserTool.js`.
 - `WORKFLOW_SCRIPTS`
   Fails first on `src/commands/workflows/index.js`, but there are more gaps:
   `tasks.ts` already expects `LocalWorkflowTask`, and `tools.ts` expects a
@@ -295,11 +237,9 @@ These are the ones that still look expensive to restore because the first
 missing import is only the visible edge of a broader absent subsystem.
 
 - `KAIROS`
-  Missing `src/assistant/index.js` and much of the assistant stack with it.
+  Missing `src/assistant/` (removed with CCR infrastructure) and much of the assistant stack.
 - `KAIROS_DREAM`
   Missing `src/dream.js` and related dream-task behavior.
-- `PROACTIVE`
-  Missing `src/proactive/index.js` and the proactive task/tool stack.
 
 ## Useful Entry Points
 

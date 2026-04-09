@@ -40,12 +40,10 @@ export const WORKTREE_BRANCH_TAG = 'worktreeBranch'
 // XML tag names for ultraplan mode (remote parallel planning sessions)
 export const ULTRAPLAN_TAG = 'ultraplan'
 
-// XML tag name for remote /review results (teleported review session output).
-// Remote session wraps its final review in this tag; local poller extracts it.
+// XML tag name for remote review results.
 export const REMOTE_REVIEW_TAG = 'remote-review'
 
-// run_hunt.sh's heartbeat echoes the orchestrator's progress.json inside this
-// tag every ~10s. Local poller parses the latest for the task-status line.
+// Heartbeat progress tag for remote review orchestration.
 export const REMOTE_REVIEW_PROGRESS_TAG = 'remote-review-progress'
 
 // XML tag name for teammate messages (swarm inter-agent communication)

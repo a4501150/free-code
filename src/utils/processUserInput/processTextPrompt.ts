@@ -6,7 +6,7 @@ import type {
   SystemMessage,
   UserMessage,
 } from 'src/types/message.js'
-import { logEvent } from '../../services/analytics/index.js'
+
 import type { PermissionMode } from '../../types/permissions.js'
 import { createUserMessage } from '../messages.js'
 import { logOTelEvent, redactIfDisabled } from '../telemetry/events.js'
@@ -58,10 +58,6 @@ export function processTextPrompt(
 
   const isNegative = matchesNegativeKeyword(userPromptText)
   const isKeepGoing = matchesKeepGoingKeyword(userPromptText)
-  logEvent('tengu_input_prompt', {
-    is_negative: isNegative,
-    is_keep_going: isKeepGoing,
-  })
 
   // If we have pasted images, create a message with image content
   if (imageContentBlocks.length > 0) {

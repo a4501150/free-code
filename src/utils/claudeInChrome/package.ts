@@ -14,7 +14,7 @@ function loadClaudeForChromePackage(): ClaudeForChromePackage | null {
 
   try {
     /* eslint-disable @typescript-eslint/no-require-imports */
-    cachedPackage = require('@ant/claude-for-chrome-mcp') as ClaudeForChromePackage
+    cachedPackage = require('../../vendor/claude-for-chrome-mcp/index.js') as ClaudeForChromePackage
     /* eslint-enable @typescript-eslint/no-require-imports */
   } catch {
     cachedPackage = null
@@ -28,5 +28,5 @@ export function getChromeBrowserTools(): BrowserTool[] {
 }
 
 export async function importClaudeForChromePackage(): Promise<ClaudeForChromePackage> {
-  return (await import('@ant/claude-for-chrome-mcp')) as ClaudeForChromePackage
+  return (await import('../../vendor/claude-for-chrome-mcp/index.js')) as ClaudeForChromePackage
 }

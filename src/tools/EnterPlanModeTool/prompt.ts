@@ -164,7 +164,5 @@ User: "Fix the typo in the README"
 }
 
 export function getEnterPlanModeToolPrompt(): string {
-  return process.env.USER_TYPE === 'ant'
-    ? getEnterPlanModeToolPromptAnt()
-    : getEnterPlanModeToolPromptExternal()
+  return getEnterPlanModeToolPromptExternal()
 }

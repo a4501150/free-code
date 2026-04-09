@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { ToolUseConfirm } from '../components/permissions/PermissionRequest.js'
-import type { RemotePermissionResponse } from '../remote/RemoteSessionManager.js'
 import {
+  type RemotePermissionResponse,
   createSyntheticAssistantMessage,
   createToolStub,
 } from '../remote/remotePermissionBridge.js'
@@ -19,7 +19,7 @@ import type { Message as MessageType } from '../types/message.js'
 import type { PermissionAskDecision } from '../types/permissions.js'
 import { logForDebugging } from '../utils/debug.js'
 import { gracefulShutdown } from '../utils/gracefulShutdown.js'
-import type { RemoteMessageContent } from '../utils/teleport/api.js'
+import type { RemoteMessageContent } from '../utils/oauthApi.js'
 
 type UseDirectConnectResult = {
   isRemoteMode: boolean
@@ -220,8 +220,8 @@ export function useDirectConnect({
     isConnectedRef.current = false
   }, [])
 
-  // Same stability concern as useRemoteSession — memoize so consumers
-  // that depend on the result object don't see a fresh reference per render.
+  // Memoize so consumers that depend on the result object don't see a
+  // fresh reference per render.
   return useMemo(
     () => ({ isRemoteMode, sendMessage, cancelRequest, disconnect }),
     [isRemoteMode, sendMessage, cancelRequest, disconnect],

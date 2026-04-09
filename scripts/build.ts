@@ -1,5 +1,5 @@
-import { chmodSync, existsSync, mkdirSync } from 'fs'
-import { dirname } from 'path'
+import { chmodSync, existsSync, mkdirSync, cpSync, rmSync } from 'fs'
+import { dirname, resolve } from 'path'
 
 const pkg = await Bun.file(new URL('../package.json', import.meta.url)).json() as {
   name: string
@@ -9,6 +9,7 @@ const pkg = await Bun.file(new URL('../package.json', import.meta.url)).json() a
 const args = process.argv.slice(2)
 const compile = args.includes('--compile')
 const dev = args.includes('--dev')
+const useReactCompiler = args.includes('--react-compiler')
 
 const fullExperimentalFeatures = [
   'AGENT_MEMORY_SNAPSHOT',
@@ -16,12 +17,8 @@ const fullExperimentalFeatures = [
   'AGENT_TRIGGERS_REMOTE',
   'AWAY_SUMMARY',
   'BASH_CLASSIFIER',
-  'BRIDGE_MODE',
   'BUILTIN_EXPLORE_PLAN_AGENTS',
   'CACHED_MICROCOMPACT',
-  'CCR_AUTO_CONNECT',
-  'CCR_MIRROR',
-  'CCR_REMOTE_SETUP',
   'COMPACTION_REMINDERS',
   'CONNECTOR_TEXT',
   'EXTRACT_MEMORIES',
@@ -124,13 +121,7 @@ if (outDir !== '.') {
   mkdirSync(outDir, { recursive: true })
 }
 
-const externals = [
-  '@ant/*',
-  'audio-capture-napi',
-  'image-processor-napi',
-  'modifiers-napi',
-  'url-handler-napi',
-]
+const externals: string[] = []
 
 const defines = {
   'process.env.USER_TYPE': JSON.stringify('external'),
@@ -143,8 +134,7 @@ const defines = {
         'process.env.CLAUDE_CODE_EXPERIMENTAL_BUILD': JSON.stringify('true'),
       }
     : {}),
-  'process.env.CLAUDE_CODE_VERIFY_PLAN': JSON.stringify('false'),
-  'process.env.CCR_FORCE_BUNDLE': JSON.stringify('true'),
+  'process.env.CLAUDE_CODE_VERIFY_PLAN': JSON.stringify('true'),
   'MACRO.VERSION': JSON.stringify(version),
   'MACRO.BUILD_TIME': JSON.stringify(buildTime),
   'MACRO.PACKAGE_URL': JSON.stringify(pkg.name),
@@ -158,10 +148,52 @@ const defines = {
   ),
 } as const
 
+// Optional React Compiler pre-build step: transforms .tsx files with
+// babel-plugin-react-compiler for automatic memoization. Enabled with
+// --react-compiler flag. The compiled output goes to .compiled-src/ and
+// bun build points at that instead of src/.
+const entrypoint = useReactCompiler ? './.compiled-src/entrypoints/cli.tsx' : './src/entrypoints/cli.tsx'
+
+if (useReactCompiler) {
+  console.log('Running React Compiler pre-transform...')
+
+  // Clean and recreate staging directory
+  const compiledDir = resolve(process.cwd(), '.compiled-src')
+  if (existsSync(compiledDir)) {
+    rmSync(compiledDir, { recursive: true })
+  }
+
+  // Copy src/ to .compiled-src/ so non-tsx files are preserved
+  cpSync(resolve(process.cwd(), 'src'), compiledDir, { recursive: true })
+
+  // Run babel on .tsx files only
+  const babelProc = Bun.spawnSync({
+    cmd: [
+      'npx',
+      'babel',
+      compiledDir,
+      '--out-dir', compiledDir,
+      '--extensions', '.tsx',
+      '--config-file', resolve(process.cwd(), 'babel.react-compiler.json'),
+      '--keep-file-extension',
+    ],
+    cwd: process.cwd(),
+    stdout: 'inherit',
+    stderr: 'inherit',
+  })
+
+  if (babelProc.exitCode !== 0) {
+    console.error('React Compiler pre-transform failed')
+    process.exit(babelProc.exitCode ?? 1)
+  }
+
+  console.log('React Compiler pre-transform complete')
+}
+
 const cmd = [
   'bun',
   'build',
-  './src/entrypoints/cli.tsx',
+  entrypoint,
   '--compile',
   '--target',
   'bun',

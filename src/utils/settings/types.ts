@@ -73,7 +73,7 @@ export const PermissionsSchema = lazySchema(() =>
             disableAutoMode: z
               .enum(['disable'])
               .optional()
-              .describe('Disable auto mode'),
+              .describe('Disable auto mode (deprecated, use top-level autoMode instead)'),
           }
         : {}),
       additionalDirectories: z
@@ -701,11 +701,7 @@ export const SettingsSchema = lazySchema(() =>
             'enabled automatically for supported models.',
         ),
       effortLevel: z
-        .enum(
-          process.env.USER_TYPE === 'ant'
-            ? ['low', 'medium', 'high', 'max']
-            : ['low', 'medium', 'high'],
-        )
+        .enum(['low', 'medium', 'high'])
         .optional()
         .catch(undefined)
         .describe('Persisted effort level for supported models.'),
@@ -792,15 +788,6 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Per-plugin configuration including MCP server user configs, keyed by plugin ID (plugin@marketplace format)',
         ),
-      remote: z
-        .object({
-          defaultEnvironmentId: z
-            .string()
-            .optional()
-            .describe('Default environment ID to use for remote sessions'),
-        })
-        .optional()
-        .describe('Remote session configuration'),
       autoUpdatesChannel: z
         .enum(['latest', 'stable'])
         .optional()
@@ -828,17 +815,7 @@ export const SettingsSchema = lazySchema(() =>
           'Custom directory for plan files, relative to project root. ' +
             'If not set, defaults to ~/.claude/plans/',
         ),
-      ...(process.env.USER_TYPE === 'ant'
-        ? {
-            classifierPermissionsEnabled: z
-              .boolean()
-              .optional()
-              .describe(
-                'Enable AI-based classification for Bash(prompt:...) permission rules',
-              ),
-          }
-        : {}),
-      ...(feature('PROACTIVE') || feature('KAIROS')
+      ...(feature('KAIROS')
         ? {
             minSleepDurationMs: z
               .number()
@@ -989,12 +966,6 @@ export const SettingsSchema = lazySchema(() =>
                   .array(z.string())
                   .optional()
                   .describe('Rules for the auto mode classifier deny section'),
-                ...(process.env.USER_TYPE === 'ant'
-                  ? {
-                      // Back-compat alias for ant users; external users use soft_deny
-                      deny: z.array(z.string()).optional(),
-                    }
-                  : {}),
                 environment: z
                   .array(z.string())
                   .optional()
@@ -1006,10 +977,12 @@ export const SettingsSchema = lazySchema(() =>
               .describe('Auto mode classifier prompt customization'),
           }
         : {}),
-      disableAutoMode: z
-        .enum(['disable'])
+      autoMode: z
+        .boolean()
         .optional()
-        .describe('Disable auto mode'),
+        .describe(
+          'Enable auto mode (AI-powered permission classifier). Default: true.',
+        ),
       sshConfigs: z
         .array(
           z.object({
@@ -1068,6 +1041,247 @@ export const SettingsSchema = lazySchema(() =>
             'Useful for enterprise administrators to add organization-specific context ' +
             '(e.g., "All plugins from our internal marketplace are vetted and approved.").',
         ),
+      fineGrainedToolStreaming: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable fine-grained tool streaming (eager_input_streaming) to avoid buffering entire tool inputs before sending deltas.',
+        ),
+      strictToolSchemas: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable strict tool schemas (structured outputs) for improved tool call reliability.',
+        ),
+      systemReminderSmooshing: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable system-reminder wrapping and message smooshing for better prompt caching and API structure.',
+        ),
+      deferredToolRefRelocation: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable deferred tool reference relocation to fix premature stop sequences after tool results.',
+        ),
+      streamingToolExecution: z
+        .boolean()
+        .optional()
+        .describe(
+          'Execute tools while the model is still streaming, rather than waiting for the full response.',
+        ),
+      destructiveCommandWarning: z
+        .boolean()
+        .optional()
+        .describe(
+          'Show warnings for destructive commands (e.g., rm -rf, git reset --hard) in permission dialogs.',
+        ),
+      contentReplacementState: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable content replacement for tool results to save tokens by replacing stale large results with stubs.',
+        ),
+      sessionMemory: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable session memory to automatically maintain context notes across long conversations.',
+        ),
+      sessionMemoryCompact: z
+        .boolean()
+        .optional()
+        .describe(
+          'Use session memory as the compaction strategy instead of traditional LLM-based summarization.',
+        ),
+      compactStreamingRetry: z
+        .boolean()
+        .optional()
+        .describe(
+          'Retry compact streaming on failure (up to max retries).',
+        ),
+      searchPastContext: z
+        .boolean()
+        .optional()
+        .describe(
+          'Add instructions for searching past context (memory directory topic files and transcripts) to the system prompt.',
+        ),
+      memoryExtraction: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable background memory extraction agent that automatically extracts memories from conversations.',
+        ),
+      memoryExtractionNonInteractive: z
+        .boolean()
+        .optional()
+        .describe(
+          'Extend memory extraction to non-interactive sessions (SDK, print mode).',
+        ),
+      verificationNudge: z
+        .boolean()
+        .optional()
+        .describe(
+          'Nudge verification after all tasks/todos are completed.',
+        ),
+      agentListInMessages: z
+        .boolean()
+        .optional()
+        .describe(
+          'Inject agent list in messages rather than tool descriptions for better prompt cache hit rate.',
+        ),
+      planModeInterviewPhase: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable interview phase in plan mode where clarifying questions are asked before generating a plan.',
+        ),
+      promptSuggestions: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable prompt suggestions feature.',
+        ),
+      emergencyTip: z
+        .object({
+          tip: z.string(),
+          color: z.enum(['dim', 'warning', 'error']).optional(),
+        })
+        .optional()
+        .describe(
+          'Emergency tip/announcement displayed at the top of the REPL feed.',
+        ),
+      tokenEfficientJsonTools: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable token-efficient JSON tool_use format (FC v3) beta header. Only works with first-party API.',
+        ),
+      chromeAutoEnable: z
+        .boolean()
+        .optional()
+        .describe(
+          'Automatically enable Claude in Chrome integration when the extension is detected.',
+        ),
+      rateLimitBuyFirst: z
+        .boolean()
+        .optional()
+        .describe(
+          'Show upgrade/extra-usage options before "stop and wait" in the rate-limit options menu.',
+        ),
+      cronJitterConfig: z
+        .object({
+          recurringFrac: z.number().min(0).max(1),
+          recurringCapMs: z.number().int().nonnegative(),
+          oneShotMaxMs: z.number().int().nonnegative(),
+          oneShotFloorMs: z.number().int().nonnegative(),
+          oneShotMinuteMod: z.number().int().min(1).max(60),
+          recurringMaxAgeMs: z.number().int().nonnegative(),
+        })
+        .optional()
+        .describe(
+          'Cron task jitter configuration for spreading scheduled task execution.',
+        ),
+      fastModeDisabledReason: z
+        .string()
+        .optional()
+        .describe(
+          'When set, disables fast mode with this string as the unavailability reason.',
+        ),
+      promptCache1hAllowlist: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Allowlist of query source patterns eligible for 1-hour prompt cache TTL. Supports wildcard suffix matching (e.g. "repl_main_thread*").',
+        ),
+      advisorConfig: z
+        .object({
+          enabled: z.boolean().optional(),
+          canUserConfigure: z.boolean().optional(),
+          baseModel: z.string().optional(),
+          advisorModel: z.string().optional(),
+        })
+        .optional()
+        .describe(
+          'Configuration for the server-side advisor tool. Requires first-party API.',
+        ),
+      memoryExtractionInterval: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          'Number of eligible assistant turns between memory extraction runs. Lower values extract more frequently but cost more API tokens.',
+        ),
+      skillImprovement: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable skill improvement post-sampling hook that analyzes skill usage and suggests improvements.',
+        ),
+      toolResultBudgetChars: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          'Per-message aggregate budget limit (in characters) for tool result storage. When parallel tools exceed this, largest results are persisted to disk.',
+        ),
+      sessionMemoryCompactConfig: z
+        .object({
+          maxTokens: z.number().int().positive(),
+          minTextBlockMessages: z.number().int().positive(),
+          minTokens: z.number().int().positive(),
+        })
+        .optional()
+        .describe(
+          'Configuration for session memory compaction token limits and message thresholds.',
+        ),
+      opusDefaultEffortConfig: z
+        .object({
+          enabled: z.boolean(),
+          dialogTitle: z.string(),
+          dialogDescription: z.string(),
+        })
+        .optional()
+        .describe(
+          'Configuration for the Opus default effort recommendation dialog.',
+        ),
+      briefSlashCommand: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable the /brief slash command for toggling brief-only mode.',
+        ),
+      timeBasedMicrocompactConfig: z
+        .object({
+          enabled: z.boolean(),
+          gapThresholdMinutes: z.number().positive(),
+          keepRecent: z.number().int().nonnegative(),
+        })
+        .optional()
+        .describe(
+          'Configuration for time-based microcompact that clears old tool results after idle gaps.',
+        ),
+      idleReturnMode: z
+        .enum(['dialog', 'hint', 'hint_v2', 'off'])
+        .optional()
+        .describe(
+          'Behavior when returning to a large conversation after idle. "dialog" shows blocking dialog, "hint"/"hint_v2" shows notification, "off" disables.',
+        ),
+      alwaysDebugLog: z.boolean().optional().describe('Always write debug logs to disk, not just in debug mode.'),
+      crossProjectResume: z.boolean().optional().describe('Enable enhanced cross-project resume with worktree detection.'),
+      enhancedPromptGuidance: z.boolean().optional().describe('Enable enhanced prompt guidance (assertiveness, comment guidelines, false-claims mitigation, length anchors).'),
+      errorLogSink: z.boolean().optional().describe('Write structured error logs to a per-session JSONL file.'),
+      magicDocs: z.boolean().optional().describe('Enable Magic Docs auto-detection and background updates.'),
+      memoryUsageIndicator: z.boolean().optional().describe('Show memory usage indicator when heap usage is high.'),
+      mockRateLimits: z.boolean().optional().describe('Enable mock rate limit testing via /mock-limits command.'),
+      numericEffort: z.boolean().optional().describe('Accept numeric effort values (0-100+) and allow max effort level.'),
+      replMode: z.boolean().optional().describe('Enable REPL tool for batched file/bash operations.'),
+      shellSessionId: z.boolean().optional().describe('Inject CLAUDE_CODE_SESSION_ID into shell subprocesses.'),
+      slowOperationTracking: z.boolean().optional().describe('Track and warn about slow synchronous operations (300ms threshold).'),
+      terminalRecording: z.boolean().optional().describe('Enable asciinema-format terminal session recording.'),
     })
     .passthrough(),
 )

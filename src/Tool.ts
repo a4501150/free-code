@@ -293,7 +293,7 @@ export type ToolUseContext = {
   /**
    * Parent's rendered system prompt bytes, frozen at turn start.
    * Used by fork subagents to share the parent's prompt cache — re-calling
-   * getSystemPrompt() at fork-spawn time can diverge (GrowthBook cold→warm)
+   * getSystemPrompt() at fork-spawn time can diverge (cold→warm config)
    * and bust the cache. See forkSubagent.ts.
    */
   renderedSystemPrompt?: SystemPrompt
@@ -395,8 +395,7 @@ export type Tool<
   // Type for MCP tools that can specify their input schema directly in JSON Schema format
   // rather than converting from Zod schema
   readonly inputJSONSchema?: ToolInputJSONSchema
-  // Optional because TungstenTool doesn't define this. TODO: Make it required.
-  // When we do that, we can also go through and make this a bit more type-safe.
+  // TODO: Make this required and make it a bit more type-safe.
   outputSchema?: z.ZodType<unknown>
   inputsEquivalent?(a: z.infer<Input>, b: z.infer<Input>): boolean
   isConcurrencySafe(input: z.infer<Input>): boolean
@@ -467,7 +466,7 @@ export type Tool<
   /**
    * When true, enables strict mode for this tool, which causes the API to
    * more strictly adhere to tool instructions and parameter schemas.
-   * Only applied when the tengu_tool_pear is enabled.
+   * Only applied when strictToolSchemas setting is enabled.
    */
   readonly strict?: boolean
 

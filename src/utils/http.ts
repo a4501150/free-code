@@ -106,7 +106,7 @@ export function getAuthHeaders(): AuthHeaders {
  * The request closure is called again on retry, so it should re-read auth
  * (e.g., via getAuthHeaders()) to pick up the refreshed token.
  *
- * Note: bridgeApi.ts has its own DI-injected version — handleOAuth401Error
+ * Note: some callers may need their own version — handleOAuth401Error
  * transitively pulls in config.ts (~1300 modules), which breaks the SDK bundle.
  *
  * @param opts.also403Revoked - Also retry on 403 with "OAuth token has been

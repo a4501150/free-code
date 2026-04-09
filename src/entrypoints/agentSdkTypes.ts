@@ -14,7 +14,7 @@ import type {
   ToolAnnotations,
 } from '@modelcontextprotocol/sdk/types.js'
 
-// Control protocol types for SDK builders (bridge subpath consumers)
+// Control protocol types for SDK builders
 /** @alpha */
 export type {
   SDKControlRequest,
@@ -290,7 +290,7 @@ export type CronTask = {
 
 /**
  * Cron scheduler tuning knobs (jitter + expiry). Sourced at runtime from the
- * `tengu_kairos_cron_config` GrowthBook config in CLI sessions; daemon hosts
+ * `tengu_kairos_cron_config` config in CLI sessions; daemon hosts
  * pass this through `watchScheduledTasks({ getJitterConfig })` to get the
  * same tuning.
  * @internal
@@ -365,7 +365,7 @@ export function buildMissedTaskNotification(_missed: CronTask[]): string {
 }
 
 /**
- * A user message typed on claude.ai, extracted from the bridge WS.
+ * A user message received from a remote client.
  * @internal
  */
 export type InboundPrompt = {
@@ -373,71 +373,3 @@ export type InboundPrompt = {
   uuid?: string
 }
 
-/**
- * Options for connectRemoteControl.
- * @internal
- */
-export type ConnectRemoteControlOptions = {
-  dir: string
-  name?: string
-  workerType?: string
-  branch?: string
-  gitRepoUrl?: string | null
-  getAccessToken: () => string | undefined
-  baseUrl: string
-  orgUUID: string
-  model: string
-}
-
-/**
- * Handle returned by connectRemoteControl. Write query() yields in,
- * read inbound prompts out. See src/assistant/daemonBridge.ts for full
- * field documentation.
- * @internal
- */
-export type RemoteControlHandle = {
-  sessionUrl: string
-  environmentId: string
-  bridgeSessionId: string
-  write(msg: SDKMessage): void
-  sendResult(): void
-  sendControlRequest(req: unknown): void
-  sendControlResponse(res: unknown): void
-  sendControlCancelRequest(requestId: string): void
-  inboundPrompts(): AsyncGenerator<InboundPrompt>
-  controlRequests(): AsyncGenerator<unknown>
-  permissionResponses(): AsyncGenerator<unknown>
-  onStateChange(
-    cb: (
-      state: 'ready' | 'connected' | 'reconnecting' | 'failed',
-      detail?: string,
-    ) => void,
-  ): void
-  teardown(): Promise<void>
-}
-
-/**
- * Hold a claude.ai remote-control bridge connection from a daemon process.
- *
- * The daemon owns the WebSocket in the PARENT process — if the agent
- * subprocess (spawned via `query()`) crashes, the daemon respawns it while
- * claude.ai keeps the same session. Contrast with `query.enableRemoteControl`
- * which puts the WS in the CHILD process (dies with the agent).
- *
- * Pipe `query()` yields through `write()` + `sendResult()`. Read
- * `inboundPrompts()` (user typed on claude.ai) into `query()`'s input
- * stream. Handle `controlRequests()` locally (interrupt → abort, set_model
- * → reconfigure).
- *
- * Skips the `tengu_ccr_bridge` gate and policy-limits check — @internal
- * caller is pre-entitled. OAuth is still required (env var or keychain).
- *
- * Returns null on no-OAuth or registration failure.
- *
- * @internal
- */
-export async function connectRemoteControl(
-  _opts: ConnectRemoteControlOptions,
-): Promise<RemoteControlHandle | null> {
-  throw new Error('not implemented')
-}

@@ -1,5 +1,4 @@
 import { feature } from 'bun:bundle'
-import { getRemoteControlAtStartup } from '../../utils/config.js'
 import {
   EDITOR_MODES,
   NOTIFICATION_CHANNELS,
@@ -31,7 +30,7 @@ export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
     source: 'global',
     type: 'string',
     description: 'Color theme for the UI',
-    options: feature('AUTO_THEME') ? THEME_SETTINGS : THEME_NAMES,
+    options: THEME_NAMES,
   },
   editorMode: {
     source: 'global',
@@ -131,16 +130,18 @@ export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
       'How to spawn teammates: "tmux" for traditional tmux, "in-process" for same process, "auto" to choose automatically',
     options: TEAMMATE_MODES,
   },
-  ...(process.env.USER_TYPE === 'ant'
-    ? {
-        classifierPermissionsEnabled: {
-          source: 'settings' as const,
-          type: 'boolean' as const,
-          description:
-            'Enable AI-based classification for Bash(prompt:...) permission rules',
-        },
-      }
-    : {}),
+  alwaysDebugLog: { source: 'settings' as const, type: 'boolean' as const, description: 'Always write debug logs to disk' },
+  crossProjectResume: { source: 'settings' as const, type: 'boolean' as const, description: 'Enable enhanced cross-project resume' },
+  enhancedPromptGuidance: { source: 'settings' as const, type: 'boolean' as const, description: 'Enable enhanced prompt guidance' },
+  errorLogSink: { source: 'settings' as const, type: 'boolean' as const, description: 'Write structured error logs' },
+  magicDocs: { source: 'settings' as const, type: 'boolean' as const, description: 'Enable Magic Docs' },
+  memoryUsageIndicator: { source: 'settings' as const, type: 'boolean' as const, description: 'Show memory usage indicator' },
+  mockRateLimits: { source: 'settings' as const, type: 'boolean' as const, description: 'Enable mock rate limit testing' },
+  numericEffort: { source: 'settings' as const, type: 'boolean' as const, description: 'Allow numeric effort values' },
+  replMode: { source: 'settings' as const, type: 'boolean' as const, description: 'Enable REPL tool' },
+  shellSessionId: { source: 'settings' as const, type: 'boolean' as const, description: 'Pass session ID to shell' },
+  slowOperationTracking: { source: 'settings' as const, type: 'boolean' as const, description: 'Track slow operations' },
+  terminalRecording: { source: 'settings' as const, type: 'boolean' as const, description: 'Enable terminal recording' },
   ...(feature('VOICE_MODE')
     ? {
         voiceEnabled: {
@@ -150,36 +151,25 @@ export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
         },
       }
     : {}),
-  ...(feature('BRIDGE_MODE')
-    ? {
-        remoteControlAtStartup: {
-          source: 'global' as const,
-          type: 'boolean' as const,
-          description:
-            'Enable Remote Control for all sessions (true | false | default)',
-          formatOnRead: () => getRemoteControlAtStartup(),
-        },
-      }
-    : {}),
   ...(feature('KAIROS') || feature('KAIROS_PUSH_NOTIFICATION')
     ? {
         taskCompleteNotifEnabled: {
           source: 'global' as const,
           type: 'boolean' as const,
           description:
-            'Push to your mobile device when idle after Claude finishes (requires Remote Control)',
+            'Push to your mobile device when idle after Claude finishes (requires push notification support)',
         },
         inputNeededNotifEnabled: {
           source: 'global' as const,
           type: 'boolean' as const,
           description:
-            'Push to your mobile device when a permission prompt or question is waiting (requires Remote Control)',
+            'Push to your mobile device when a permission prompt or question is waiting (requires push notification support)',
         },
         agentPushNotifEnabled: {
           source: 'global' as const,
           type: 'boolean' as const,
           description:
-            'Allow Claude to push to your mobile device when it deems it appropriate (requires Remote Control)',
+            'Allow Claude to push to your mobile device when it deems it appropriate (requires push notification support)',
         },
       }
     : {}),

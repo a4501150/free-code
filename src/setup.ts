@@ -2,10 +2,6 @@
 
 import { feature } from 'bun:bundle'
 import chalk from 'chalk'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from 'src/services/analytics/index.js'
 import { getCwd } from 'src/utils/cwd.js'
 import { checkForReleaseNotes } from 'src/utils/releaseNotes.js'
 import { setCwd } from 'src/utils/Shell.js'
@@ -41,7 +37,6 @@ import { hasWorktreeCreateHook } from './utils/hooks.js'
 import { checkAndRestoreITerm2Backup } from './utils/iTermBackup.js'
 import { logError } from './utils/log.js'
 import { getRecentActivity } from './utils/logoV2Utils.js'
-import { lockCurrentVersion } from './utils/nativeInstaller/index.js'
 import type { PermissionMode } from './utils/permissions/PermissionMode.js'
 import { getPlanSlug } from './utils/plans.js'
 import { saveWorktreeState } from './utils/sessionStorage.js'
@@ -174,7 +169,7 @@ export async function setup(
   // Handle worktree creation if requested
   // IMPORTANT: this must be called befiore getCommands(), otherwise /eject won't be available.
   if (worktreeEnabled) {
-    // Mirrors bridgeMain.ts: hook-configured sessions can proceed without git
+    // Hook-configured sessions can proceed without git
     // so createWorktreeForSession() can delegate to the hook (non-git VCS).
     const hasHook = hasWorktreeCreateHook()
     const inGit = await getIsGit()
@@ -243,8 +238,6 @@ export async function setup(
       process.exit(1)
     }
 
-    logEvent('tengu_worktree_created', { tmux_enabled: tmuxEnabled })
-
     // Create tmux session for the worktree if enabled
     if (tmuxEnabled && tmuxSessionName) {
       const tmuxResult = await createTmuxSessionForWorktree(
@@ -300,7 +293,6 @@ export async function setup(
       /* eslint-enable @typescript-eslint/no-require-imports */
     }
   }
-  void lockCurrentVersion() // Lock current version to prevent deletion by other processes
   logForDiagnosticsNoPII('info', 'setup_background_jobs_launched')
 
   profileCheckpoint('setup_before_prefetch')
@@ -334,31 +326,6 @@ export async function setup(
   // overhead. NOT an early-return: the --dangerously-skip-permissions safety
   // gate, tengu_started beacon, and apiKeyHelper prefetch below must still run.
   if (!isBareMode()) {
-    if (process.env.USER_TYPE === 'ant') {
-      // Prime repo classification cache for auto-undercover mode. Default is
-      // undercover ON until proven internal; if this resolves to internal, clear
-      // the prompt cache so the next turn picks up the OFF state.
-      void import('./utils/commitAttribution.js').then(async m => {
-        if (await m.isInternalModelRepo()) {
-          const { clearSystemPromptSections } = await import(
-            './constants/systemPromptSections.js'
-          )
-          clearSystemPromptSections()
-        }
-      })
-    }
-    if (feature('COMMIT_ATTRIBUTION')) {
-      // Dynamic import to enable dead code elimination (module contains excluded strings).
-      // Defer to next tick so the git subprocess spawn runs after first render
-      // rather than during the setup() microtask window.
-      setImmediate(() => {
-        void import('./utils/attributionHooks.js').then(
-          ({ registerAttributionHooks }) => {
-            registerAttributionHooks() // Register attribution tracking hooks (ant-only feature)
-          },
-        )
-      })
-    }
     void import('./utils/sessionFileAccessHooks.js').then(m =>
       m.registerSessionFileAccessHooks(),
     ) // Register session file access analytics hooks
@@ -375,7 +342,6 @@ export async function setup(
   // inc-3694 (P0 CHANGELOG crash) threw at checkForReleaseNotes below; every
   // event after this point was dead. This beacon is the earliest reliable
   // "process started" signal for release health monitoring.
-  logEvent('tengu_started', {})
 
   void prefetchApiKeyFromApiKeyHelperIfSafe(getIsNonInteractiveSession()) // Prefetch safely - only executes if trust already confirmed
   profileCheckpoint('setup_after_prefetch')
@@ -413,32 +379,6 @@ export async function setup(
       process.exit(1)
     }
 
-    if (
-      process.env.USER_TYPE === 'ant' &&
-      // Skip for Desktop's local agent mode — same trust model as CCR/BYOC
-      // (trusted Anthropic-managed launcher intentionally pre-approving everything).
-      // Precedent: permissionSetup.ts:861, applySettingsChange.ts:55 (PR #19116)
-      process.env.CLAUDE_CODE_ENTRYPOINT !== 'local-agent' &&
-      // Same for CCD (Claude Code in Desktop) — apps#29127 passes the flag
-      // unconditionally to unlock mid-session bypass switching
-      process.env.CLAUDE_CODE_ENTRYPOINT !== 'claude-desktop'
-    ) {
-      // Only await if permission mode is set to bypass
-      const [isDocker, hasInternet] = await Promise.all([
-        envDynamic.getIsDocker(),
-        env.hasInternetAccess(),
-      ])
-      const isBubblewrap = envDynamic.getIsBubblewrapSandbox()
-      const isSandbox = process.env.IS_SANDBOX === '1'
-      const isSandboxed = isDocker || isBubblewrap || isSandbox
-      if (!isSandboxed || hasInternet) {
-        // biome-ignore lint/suspicious/noConsole:: intentional console output
-        console.error(
-          `--dangerously-skip-permissions can only be used in Docker/sandbox containers with no internet access but got Docker: ${isDocker}, Bubblewrap: ${isBubblewrap}, IS_SANDBOX: ${isSandbox}, hasInternet: ${hasInternet}`,
-        )
-        process.exit(1)
-      }
-    }
   }
 
   if (process.env.NODE_ENV === 'test') {
@@ -451,25 +391,6 @@ export async function setup(
     projectConfig.lastCost !== undefined &&
     projectConfig.lastDuration !== undefined
   ) {
-    logEvent('tengu_exit', {
-      last_session_cost: projectConfig.lastCost,
-      last_session_api_duration: projectConfig.lastAPIDuration,
-      last_session_tool_duration: projectConfig.lastToolDuration,
-      last_session_duration: projectConfig.lastDuration,
-      last_session_lines_added: projectConfig.lastLinesAdded,
-      last_session_lines_removed: projectConfig.lastLinesRemoved,
-      last_session_total_input_tokens: projectConfig.lastTotalInputTokens,
-      last_session_total_output_tokens: projectConfig.lastTotalOutputTokens,
-      last_session_total_cache_creation_input_tokens:
-        projectConfig.lastTotalCacheCreationInputTokens,
-      last_session_total_cache_read_input_tokens:
-        projectConfig.lastTotalCacheReadInputTokens,
-      last_session_fps_average: projectConfig.lastFpsAverage,
-      last_session_fps_low_1_pct: projectConfig.lastFpsLow1Pct,
-      last_session_id:
-        projectConfig.lastSessionId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      ...projectConfig.lastSessionMetrics,
-    })
     // Note: We intentionally don't clear these values after logging.
     // They're needed for cost restoration when resuming sessions.
     // The values will be overwritten when the next session exits.

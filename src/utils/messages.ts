@@ -15,20 +15,12 @@ import type {
 import { randomUUID, type UUID } from 'crypto'
 import isObject from 'lodash-es/isObject.js'
 import last from 'lodash-es/last.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from 'src/services/analytics/index.js'
-import { sanitizeToolNameForAnalytics } from 'src/services/analytics/metadata.js'
 import type { AgentId } from 'src/types/ids.js'
 import { companionIntroText } from '../buddy/prompt.js'
 import { NO_CONTENT_MESSAGE } from '../constants/messages.js'
 import { OUTPUT_STYLE_CONFIG } from '../constants/outputStyles.js'
 import { isAutoMemoryEnabled } from '../memdir/paths.js'
-import {
-  checkStatsigFeatureGate_CACHED_MAY_BE_STALE,
-  getFeatureValue_CACHED_MAY_BE_STALE,
-} from '../services/analytics/growthbook.js'
+import { getInitialSettings } from './settings/settings.js'
 import {
   getImageTooLargeErrorMessage,
   getPdfInvalidErrorMessage,
@@ -55,7 +47,6 @@ import type {
   SystemAPIErrorMessage,
   SystemApiMetricsMessage,
   SystemAwaySummaryMessage,
-  SystemBridgeStatusMessage,
   SystemCompactBoundaryMessage,
   SystemInformationalMessage,
   SystemLocalCommandMessage,
@@ -82,7 +73,6 @@ import {
 } from './attachments.js'
 import { quote } from './bash/shellQuote.js'
 import { formatNumber, formatTokens } from './format.js'
-import { getPewterLedgerVariant } from './planModeV2.js'
 import { jsonStringify } from './slowOperations.js'
 
 // Hook attachments that have a hookName field (excludes HookPermissionDecisionAttachment)
@@ -180,13 +170,10 @@ const TOOL_REFERENCE_TURN_BOUNDARY = 'Tool loaded.'
 
 /**
  * Appends a memory correction hint to a rejection/cancellation message
- * when auto-memory is enabled and the GrowthBook flag is on.
+ * when auto-memory is enabled.
  */
 export function withMemoryCorrectionHint(message: string): string {
-  if (
-    isAutoMemoryEnabled() &&
-    getFeatureValue_CACHED_MAY_BE_STALE('tengu_amber_prism', false)
-  ) {
+  if (isAutoMemoryEnabled()) {
     return message + MEMORY_CORRECTION_HINT
   }
   return message
@@ -332,7 +319,7 @@ export function getLastAssistantMessage(
   messages: Message[],
 ): AssistantMessage | undefined {
   // findLast exits early from the end — much faster than filter + last for
-  // large message arrays (called on every REPL render via useFeedbackSurvey).
+  // large message arrays.
   return messages.findLast(
     (msg): msg is AssistantMessage => msg.type === 'assistant',
   )
@@ -2150,16 +2137,12 @@ export function normalizeMessagesForAPI(
           // pass's sibling gets a \n[id:xxx] suffix from appendMessageTag below,
           // so startsWith matches both bare and tagged forms.
           //
-          // Gated OFF when tengu_toolref_defer_j8m is active — that gate
-          // enables relocateToolReferenceSiblings in post-processing below,
-          // which moves existing siblings to a later non-ref message instead
-          // of adding one here. This injection is itself one of the patterns
-          // that gets relocated, so skipping it saves a scan. When gate is
-          // off, this is the fallback (same as pre-#21049 main).
+          // Gated OFF when deferredToolRefRelocation setting is active —
+          // relocateToolReferenceSiblings in post-processing below moves
+          // existing siblings to a later non-ref message instead of adding
+          // one here. When setting is off, this is the fallback.
           if (
-            !checkStatsigFeatureGate_CACHED_MAY_BE_STALE(
-              'tengu_toolref_defer_j8m',
-            )
+            !(getInitialSettings()?.deferredToolRefRelocation ?? true)
           ) {
             const contentAfterStrip = normalizedMessage.message.content
             if (
@@ -2270,9 +2253,8 @@ export function normalizeMessagesForAPI(
           const rawAttachmentMessage = normalizeAttachmentForAPI(
             message.attachment,
           )
-          const attachmentMessage = checkStatsigFeatureGate_CACHED_MAY_BE_STALE(
-            'tengu_chair_sermon',
-          )
+          const attachmentMessage = (getInitialSettings()
+            ?.systemReminderSmooshing ?? false)
             ? rawAttachmentMessage.map(ensureSystemReminderWrap)
             : rawAttachmentMessage
 
@@ -2298,9 +2280,7 @@ export function normalizeMessagesForAPI(
   // Runs after merge (siblings are in place) and before ID tagging (so
   // tags reflect final positions). When gate is OFF, this is a noop and
   // the TOOL_REFERENCE_TURN_BOUNDARY injection above serves as fallback.
-  const relocated = checkStatsigFeatureGate_CACHED_MAY_BE_STALE(
-    'tengu_toolref_defer_j8m',
-  )
+  const relocated = (getInitialSettings()?.deferredToolRefRelocation ?? true)
     ? relocateToolReferenceSiblings(result)
     : result
 
@@ -2331,9 +2311,7 @@ export function normalizeMessagesForAPI(
   // Gated together: the merge exists solely to feed the smoosh; running it
   // ungated changes VCR fixture hashes for @-mention scenarios (adjacent
   // [prompt, attachment] users) without any benefit when the smoosh is off.
-  const smooshed = checkStatsigFeatureGate_CACHED_MAY_BE_STALE(
-    'tengu_chair_sermon',
-  )
+  const smooshed = (getInitialSettings()?.systemReminderSmooshing ?? false)
     ? smooshSystemReminderSiblings(mergeAdjacentUserMessages(withNonEmpty))
     : withNonEmpty
 
@@ -2612,7 +2590,7 @@ export function mergeUserContentBlocks(
     return [...a, ...b]
   }
 
-  if (!checkStatsigFeatureGate_CACHED_MAY_BE_STALE('tengu_chair_sermon')) {
+  if (!(getInitialSettings()?.systemReminderSmooshing ?? false)) {
     // Legacy (ungated) smoosh: only string-content tool_result + all-text
     // siblings → joined string. Matches pre-universal-smoosh behavior on main.
     // The precondition guarantees smooshIntoToolResult hits its string path
@@ -2680,16 +2658,10 @@ export function normalizeContentFromAPI(
             // parse. We fall back to {} which means downstream validation
             // sees empty input. The raw prefix goes to debug log only — no
             // PII-tagged proto column exists for it yet.
-            logEvent('tengu_tool_input_json_parse_fail', {
-              toolName: sanitizeToolNameForAnalytics(contentBlock.name),
-              inputLen: contentBlock.input.length,
-            })
-            if (process.env.USER_TYPE === 'ant') {
-              logForDebugging(
-                `tool input JSON parse fail: ${contentBlock.input.slice(0, 200)}`,
-                { level: 'warn' },
-              )
-            }
+            logForDebugging(
+              `tool input JSON parse fail: ${contentBlock.input.slice(0, 200)}`,
+              { level: 'warn' },
+            )
           }
           normalizedInput = parsed ?? {}
         } else {
@@ -2719,11 +2691,6 @@ export function normalizeContentFromAPI(
         }
       }
       case 'text':
-        if (contentBlock.text.trim().length === 0) {
-          logEvent('tengu_model_whitespace_response', {
-            length: contentBlock.text.length,
-          })
-        }
         // Return the block as-is to preserve exact content for prompt caching.
         // Empty text blocks are handled at the display layer and must not be
         // altered here.
@@ -3148,12 +3115,7 @@ function getPlanModeInstructions(attachment: {
   return getPlanModeV2Instructions(attachment)
 }
 
-// --
-// Plan file structure experiment arms.
-// Each arm returns the full Phase 4 section so the surrounding template
-// stays a flat string interpolation with no conditionals inline.
-
-export const PLAN_PHASE4_CONTROL = `### Phase 4: Final Plan
+export const PLAN_PHASE4_SECTION = `### Phase 4: Final Plan
 Goal: Write your final plan to the plan file (the only file you can edit).
 - Begin with a **Context** section: explain why this change is being made — the problem or need it addresses, what prompted it, and the intended outcome
 - Include only your recommended approach, not all alternatives
@@ -3161,48 +3123,6 @@ Goal: Write your final plan to the plan file (the only file you can edit).
 - Include the paths of critical files to be modified
 - Reference existing functions and utilities you found that should be reused, with their file paths
 - Include a verification section describing how to test the changes end-to-end (run the code, use MCP tools, run tests)`
-
-const PLAN_PHASE4_TRIM = `### Phase 4: Final Plan
-Goal: Write your final plan to the plan file (the only file you can edit).
-- One-line **Context**: what is being changed and why
-- Include only your recommended approach, not all alternatives
-- List the paths of files to be modified
-- Reference existing functions and utilities to reuse, with their file paths
-- End with **Verification**: the single command to run to confirm the change works (no numbered test procedures)`
-
-const PLAN_PHASE4_CUT = `### Phase 4: Final Plan
-Goal: Write your final plan to the plan file (the only file you can edit).
-- Do NOT write a Context or Background section. The user just told you what they want.
-- List the paths of files to be modified and what changes in each (one line per file)
-- Reference existing functions and utilities to reuse, with their file paths
-- End with **Verification**: the single command that confirms the change works
-- Most good plans are under 40 lines. Prose is a sign you are padding.`
-
-const PLAN_PHASE4_CAP = `### Phase 4: Final Plan
-Goal: Write your final plan to the plan file (the only file you can edit).
-- Do NOT write a Context, Background, or Overview section. The user just told you what they want.
-- Do NOT restate the user's request. Do NOT write prose paragraphs.
-- List the paths of files to be modified and what changes in each (one bullet per file)
-- Reference existing functions to reuse, with file:line
-- End with the single verification command
-- **Hard limit: 40 lines.** If the plan is longer, delete prose — not file paths.`
-
-function getPlanPhase4Section(): string {
-  const variant = getPewterLedgerVariant()
-  switch (variant) {
-    case 'trim':
-      return PLAN_PHASE4_TRIM
-    case 'cut':
-      return PLAN_PHASE4_CUT
-    case 'cap':
-      return PLAN_PHASE4_CAP
-    case null:
-      return PLAN_PHASE4_CONTROL
-    default:
-      variant satisfies never
-      return PLAN_PHASE4_CONTROL
-  }
-}
 
 function getPlanModeV2Instructions(attachment: {
   isSubAgent?: boolean
@@ -3281,7 +3201,7 @@ Goal: Review the plan(s) from Phase 2 and ensure alignment with the user's inten
 2. Ensure that the plans align with the user's original request
 3. Use ${ASK_USER_QUESTION_TOOL_NAME} to clarify any remaining questions with the user
 
-${getPlanPhase4Section()}
+${PLAN_PHASE4_SECTION}
 
 ### Phase 5: Call ${ExitPlanModeV2Tool.name}
 At the very end of your turn, once you have asked the user questions and are happy with your final plan file - you should always call ${ExitPlanModeV2Tool.name} to indicate to the user that you are done planning.
@@ -3498,7 +3418,6 @@ Read the team config to discover your teammates' names. Check the task list peri
       ]
     }
   }
-
 
   // skill_discovery handled here (not in the switch) so the 'skill_discovery'
   // string literal lives inside a feature()-guarded block. A case label can't
@@ -4238,7 +4157,6 @@ You have exited auto mode. The user may now want to interact more directly. You 
       ])
     }
     case 'verify_plan_reminder': {
-      // Dead code elimination: CLAUDE_CODE_VERIFY_PLAN='false' in external builds, so === 'true' check allows Bun to eliminate the string
       /* eslint-disable-next-line custom-rules/no-process-env-top-level */
       const toolName =
         process.env.CLAUDE_CODE_VERIFY_PLAN === 'true'
@@ -4360,22 +4278,6 @@ export function createPermissionRetryMessage(
     content: `Allowed ${commands.join(', ')}`,
     commands,
     level: 'info',
-    isMeta: false,
-    timestamp: new Date().toISOString(),
-    uuid: randomUUID(),
-  }
-}
-
-export function createBridgeStatusMessage(
-  url: string,
-  upgradeNudge?: string,
-): SystemBridgeStatusMessage {
-  return {
-    type: 'system',
-    subtype: 'bridge_status',
-    content: `/remote-control is active. Code in CLI or at ${url}`,
-    url,
-    upgradeNudge,
     isMeta: false,
     timestamp: new Date().toISOString(),
     uuid: randomUUID(),
@@ -4803,13 +4705,6 @@ function filterTrailingThinkingFromLastAssistant(
     lastValidIndex--
   }
 
-  logEvent('tengu_filtered_trailing_thinking_block', {
-    messageUUID:
-      lastMessage.uuid as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    blocksRemoved: content.length - lastValidIndex - 1,
-    remainingBlocks: lastValidIndex + 1,
-  })
-
   // Insert placeholder if all blocks were thinking
   const filteredContent =
     lastValidIndex < 0
@@ -4890,10 +4785,6 @@ export function filterWhitespaceOnlyAssistantMessages(
 
     if (hasOnlyWhitespaceTextContent(content)) {
       hasChanges = true
-      logEvent('tengu_filtered_whitespace_only_assistant', {
-        messageUUID:
-          message.uuid as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      })
       return false
     }
 
@@ -4953,11 +4844,6 @@ function ensureNonEmptyAssistantContent(
     const content = message.message.content
     if (Array.isArray(content) && content.length === 0) {
       hasChanges = true
-      logEvent('tengu_fixed_empty_assistant_content', {
-        messageUUID:
-          message.uuid as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        messageIndex: index,
-      })
 
       return {
         ...message,
@@ -5044,13 +4930,6 @@ export function filterOrphanedThinkingOnlyMessages(
     }
 
     // Truly orphaned - no other message with same id has content to merge with
-    logEvent('tengu_filtered_orphaned_thinking_message', {
-      messageUUID:
-        msg.uuid as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      messageId: msg.message
-        .id as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      blockCount: content.length,
-    })
     return false
   })
 
@@ -5368,7 +5247,7 @@ export function ensureToolResultPairing(
         // [tool_result, text] sibling the smoosh inside normalize never saw
         // (pairing runs after normalize). Re-smoosh just this one message.
         result.push(
-          checkStatsigFeatureGate_CACHED_MAY_BE_STALE('tengu_chair_sermon')
+          (getInitialSettings()?.systemReminderSmooshing ?? false)
             ? smooshSystemReminderSiblings([patchedNext])[0]!
             : patchedNext,
         )
@@ -5442,13 +5321,6 @@ export function ensureToolResultPairing(
       )
     }
 
-    logEvent('tengu_tool_result_pairing_repaired', {
-      messageCount: messages.length,
-      repairedMessageCount: result.length,
-      messageTypes: messageTypes.join(
-        '; ',
-      ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    })
     logError(
       new Error(
         `ensureToolResultPairing: repaired missing tool_result blocks (${messages.length} -> ${result.length} messages). Message structure: ${messageTypes.join('; ')}`,

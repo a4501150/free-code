@@ -83,7 +83,6 @@ type State = {
   flagSettingsPath: string | undefined
   flagSettingsInline: Record<string, unknown> | null
   allowedSettingSources: SettingSource[]
-  sessionIngressToken: string | null | undefined
   oauthTokenFromFd: string | null | undefined
   apiKeyFromFd: string | null | undefined
   // Telemetry state
@@ -167,12 +166,6 @@ type State = {
   registeredHooks: Partial<Record<HookEvent, RegisteredHookMatcher[]>> | null
   // Cache for plan slugs: sessionId -> wordSlug
   planSlugCache: Map<string, string>
-  // Track teleported session for reliability logging
-  teleportedSessionInfo: {
-    isTeleported: boolean
-    hasLoggedFirstMessage: boolean
-    sessionId: string | null
-  } | null
   // Track invoked skills for preservation across compaction
   // Keys are composite: `${agentId ?? ''}:${skillName}` to prevent cross-agent overwrites
   invokedSkills: Map<
@@ -195,8 +188,6 @@ type State = {
   sdkBetas: string[] | undefined
   // Main thread agent type (from --agent flag or settings)
   mainThreadAgentType: string | undefined
-  // Remote mode (--remote flag)
-  isRemoteMode: boolean
   // Direct connect server URL (for display in header)
   directConnectServerUrl: string | undefined
   // System prompt section cache state
@@ -217,7 +208,7 @@ type State = {
   hasDevChannels: boolean
   // Dir containing the session's `.jsonl`; null = derive from originalCwd.
   sessionProjectDir: string | null
-  // Cached prompt cache 1h TTL allowlist from GrowthBook (session-stable)
+  // Cached prompt cache 1h TTL allowlist (session-stable)
   promptCache1hAllowlist: string[] | null
   // Cached 1h TTL user eligibility (session-stable). Latched on first
   // evaluation so mid-session overage flips don't change the cache_control
@@ -233,7 +224,7 @@ type State = {
   fastModeHeaderLatched: boolean | null
   // Sticky-on latch for the cache-editing beta header. Once cached
   // microcompact is first enabled, keep sending the header so mid-session
-  // GrowthBook/settings toggles don't bust the prompt cache.
+  // settings toggles don't bust the prompt cache.
   cacheEditingHeaderLatched: boolean | null
   // Sticky-on latch for clearing thinking from prior tool loops. Triggered
   // when >1h since last API call (confirmed cache miss — no cache-hit
@@ -305,7 +296,6 @@ function getInitialState(): State {
     clientType: 'cli',
     sessionSource: undefined,
     questionPreviewFormat: undefined,
-    sessionIngressToken: undefined,
     oauthTokenFromFd: undefined,
     apiKeyFromFd: undefined,
     flagSettingsPath: undefined,
@@ -376,8 +366,6 @@ function getInitialState(): State {
     registeredHooks: null,
     // Cache for plan slugs
     planSlugCache: new Map(),
-    // Track teleported session for reliability logging
-    teleportedSessionInfo: null,
     // Track invoked skills for preservation across compaction
     invokedSkills: new Map(),
     // Track slow operations for dev bar display
@@ -386,13 +374,6 @@ function getInitialState(): State {
     sdkBetas: undefined,
     // Main thread agent type
     mainThreadAgentType: undefined,
-    // Remote mode
-    isRemoteMode: false,
-    ...(process.env.USER_TYPE === 'ant'
-      ? {
-          replBridgeActive: false,
-        }
-      : {}),
     // Direct connect server URL
     directConnectServerUrl: undefined,
     // System prompt section cache state
@@ -406,7 +387,7 @@ function getInitialState(): State {
     hasDevChannels: false,
     // Session project dir (null = derive from originalCwd)
     sessionProjectDir: null,
-    // Prompt cache 1h allowlist (null = not yet fetched from GrowthBook)
+    // Prompt cache 1h allowlist (null = not yet fetched)
     promptCache1hAllowlist: null,
     // Prompt cache 1h eligibility (null = not yet evaluated)
     promptCache1hEligible: null,
@@ -554,6 +535,15 @@ export function resetTotalDurationStateAndCost_FOR_TESTS_ONLY(): void {
   STATE.totalCostUSD = 0
 }
 
+const costUpdated = createSignal()
+
+/**
+ * Register a callback that fires after addToTotalCostState updates token/cost
+ * counters. The StatusLine component uses this to refresh immediately when
+ * output tokens change, instead of waiting for the next message-based trigger.
+ */
+export const onCostUpdate = costUpdated.subscribe
+
 export function addToTotalCostState(
   cost: number,
   modelUsage: ModelUsage,
@@ -561,6 +551,7 @@ export function addToTotalCostState(
 ): void {
   STATE.modelUsage[model] = modelUsage
   STATE.totalCostUSD += cost
+  costUpdated.emit()
 }
 
 export function getTotalCostUSD(): number {
@@ -927,6 +918,7 @@ export function resetStateForTests(): void {
   currentTurnTokenBudget = null
   budgetContinuationCount = 0
   sessionSwitched.clear()
+  costUpdated.clear()
 }
 
 // You shouldn't use this directly. See src/utils/model/modelStrings.ts::getModelStrings()
@@ -1145,14 +1137,6 @@ export function setFlagSettingsInline(
   settings: Record<string, unknown> | null,
 ): void {
   STATE.flagSettingsInline = settings
-}
-
-export function getSessionIngressToken(): string | null | undefined {
-  return STATE.sessionIngressToken
-}
-
-export function setSessionIngressToken(token: string | null): void {
-  STATE.sessionIngressToken = token
 }
 
 export function getOauthTokenFromFd(): string | null | undefined {
@@ -1473,31 +1457,6 @@ export function getSessionCreatedTeams(): Set<string> {
   return STATE.sessionCreatedTeams
 }
 
-// Teleported session tracking for reliability logging
-export function setTeleportedSessionInfo(info: {
-  sessionId: string | null
-}): void {
-  STATE.teleportedSessionInfo = {
-    isTeleported: true,
-    hasLoggedFirstMessage: false,
-    sessionId: info.sessionId,
-  }
-}
-
-export function getTeleportedSessionInfo(): {
-  isTeleported: boolean
-  hasLoggedFirstMessage: boolean
-  sessionId: string | null
-} | null {
-  return STATE.teleportedSessionInfo
-}
-
-export function markFirstTeleportMessageLogged(): void {
-  if (STATE.teleportedSessionInfo) {
-    STATE.teleportedSessionInfo.hasLoggedFirstMessage = true
-  }
-}
-
 // Invoked skills tracking for preservation across compaction
 export type InvokedSkillInfo = {
   skillName: string
@@ -1562,29 +1521,6 @@ export function clearInvokedSkillsForAgent(agentId: string): void {
   }
 }
 
-// Slow operations tracking for dev bar
-const MAX_SLOW_OPERATIONS = 10
-const SLOW_OPERATION_TTL_MS = 10000
-
-export function addSlowOperation(operation: string, durationMs: number): void {
-  if (process.env.USER_TYPE !== 'ant') return
-  // Skip tracking for editor sessions (user editing a prompt file in $EDITOR)
-  // These are intentionally slow since the user is drafting text
-  if (operation.includes('exec') && operation.includes('claude-prompt-')) {
-    return
-  }
-  const now = Date.now()
-  // Remove stale operations
-  STATE.slowOperations = STATE.slowOperations.filter(
-    op => now - op.timestamp < SLOW_OPERATION_TTL_MS,
-  )
-  // Add new operation
-  STATE.slowOperations.push({ operation, durationMs, timestamp: now })
-  // Keep only the most recent operations
-  if (STATE.slowOperations.length > MAX_SLOW_OPERATIONS) {
-    STATE.slowOperations = STATE.slowOperations.slice(-MAX_SLOW_OPERATIONS)
-  }
-}
 
 const EMPTY_SLOW_OPERATIONS: ReadonlyArray<{
   operation: string
@@ -1615,8 +1551,6 @@ export function getSlowOperations(): ReadonlyArray<{
       return EMPTY_SLOW_OPERATIONS
     }
   }
-  // Safe to return directly: addSlowOperation() reassigns STATE.slowOperations
-  // before pushing, so the array held in React state is never mutated.
   return STATE.slowOperations
 }
 
@@ -1626,14 +1560,6 @@ export function getMainThreadAgentType(): string | undefined {
 
 export function setMainThreadAgentType(agentType: string | undefined): void {
   STATE.mainThreadAgentType = agentType
-}
-
-export function getIsRemoteMode(): boolean {
-  return STATE.isRemoteMode
-}
-
-export function setIsRemoteMode(value: boolean): void {
-  STATE.isRemoteMode = value
 }
 
 // System prompt section accessors

@@ -3,6 +3,7 @@ import { getOriginalCwd } from '../bootstrap/state.js'
 import type { LogOption } from '../types/logs.js'
 import { quote } from './bash/shellQuote.js'
 import { getSessionIdFromLog } from './sessionStorage.js'
+import { getInitialSettings } from './settings/settings.js'
 
 export type CrossProjectResumeResult =
   | {
@@ -38,8 +39,8 @@ export function checkCrossProjectResume(
     return { isCrossProject: false }
   }
 
-  // Gate worktree detection to ants only for staged rollout
-  if (process.env.USER_TYPE !== 'ant') {
+  // Gate worktree detection behind setting
+  if (!(getInitialSettings()?.crossProjectResume ?? false)) {
     const sessionId = getSessionIdFromLog(log)
     const command = `cd ${quote([log.projectPath])} && claude --resume ${sessionId}`
     return {

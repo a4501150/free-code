@@ -5,10 +5,6 @@ import type { SettingSource } from 'src/utils/settings/constants.js'
 import { z } from 'zod/v4'
 import { isAutoMemoryEnabled } from '../../memdir/paths.js'
 import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from '../../services/analytics/index.js'
-import {
   type McpServerConfig,
   McpServerConfigSchema,
 } from '../../services/mcp/types.js'
@@ -91,10 +87,7 @@ const AgentJsonSchema = lazySchema(() =>
     initialPrompt: z.string().optional(),
     memory: z.enum(['user', 'project', 'local']).optional(),
     background: z.boolean().optional(),
-    isolation: (process.env.USER_TYPE === 'ant'
-      ? z.enum(['worktree', 'remote'])
-      : z.enum(['worktree'])
-    ).optional(),
+    isolation: z.enum(['worktree']).optional(),
   }),
 )
 
@@ -123,12 +116,12 @@ export type BaseAgentDefinition = {
   background?: boolean // Always run as background task when spawned
   initialPrompt?: string // Prepended to the first user turn (slash commands work)
   memory?: AgentMemoryScope // Persistent memory scope
-  isolation?: 'worktree' | 'remote' // Run in an isolated git worktree, or remotely in CCR (ant-only)
+  isolation?: 'worktree' // Run in an isolated git worktree
   pendingSnapshotUpdate?: { snapshotTimestamp: string }
   /** Omit CLAUDE.md hierarchy from the agent's userContext. Read-only agents
    * (Explore, Plan) don't need commit/PR/lint guidelines — the main agent has
    * full CLAUDE.md and interprets their output. Saves ~5-15 Gtok/week across
-   * 34M+ Explore spawns. Kill-switch: tengu_slim_subagent_claudemd. */
+   * 34M+ Explore spawns. */
   omitClaudeMd?: boolean
 }
 
@@ -329,12 +322,6 @@ export const getAgentDefinitionsWithOverrides = memoize(
             logForDebugging(
               `Failed to parse agent from ${filePath}: ${errorMsg}`,
             )
-            logEvent('tengu_agent_parse_error', {
-              error:
-                errorMsg as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-              location:
-                source as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-            })
             return null
           }
           return agent
@@ -604,10 +591,8 @@ export function parseAgentFromMarkdown(
       }
     }
 
-    // Parse isolation mode. 'remote' is ant-only; external builds reject it at parse time.
-    type IsolationMode = 'worktree' | 'remote'
-    const VALID_ISOLATION_MODES: readonly IsolationMode[] =
-      process.env.USER_TYPE === 'ant' ? ['worktree', 'remote'] : ['worktree']
+    type IsolationMode = 'worktree'
+    const VALID_ISOLATION_MODES: readonly IsolationMode[] = ['worktree']
     const isolationRaw = frontmatter['isolation'] as string | undefined
     let isolation: IsolationMode | undefined
     if (isolationRaw !== undefined) {

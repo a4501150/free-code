@@ -5,8 +5,8 @@
  */
 
 import { writeFile } from 'fs/promises'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import memoize from 'lodash-es/memoize.js'
-import { getIsRemoteMode } from '../../bootstrap/state.js'
 import { getSystemPrompt } from '../../constants/prompts.js'
 import { getSystemContext, getUserContext } from '../../context.js'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
@@ -39,7 +39,7 @@ import {
 import { sequential } from '../../utils/sequential.js'
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
 import { getTokenUsage, tokenCountWithEstimation } from '../../utils/tokens.js'
-import { logEvent } from '../analytics/index.js'
+
 import { isAutoCompactEnabled } from '../compact/autoCompact.js'
 import {
   buildSessionMemoryUpdatePrompt,
@@ -65,20 +65,16 @@ import {
 // Feature Gate and Config (Cached - Non-blocking)
 // ============================================================================
 // These functions return cached values from disk immediately without blocking
-// on GrowthBook initialization. Values may be stale but are updated in background.
+// on initialization. Values may be stale but are updated in background.
 
 import { errorMessage, getErrnoCode } from '../../utils/errors.js'
-import {
-  getDynamicConfig_CACHED_MAY_BE_STALE,
-  getFeatureValue_CACHED_MAY_BE_STALE,
-} from '../analytics/growthbook.js'
 
 /**
  * Check if session memory feature is enabled.
  * Uses cached gate value - returns immediately without blocking.
  */
 function isSessionMemoryGateEnabled(): boolean {
-  return getFeatureValue_CACHED_MAY_BE_STALE('tengu_session_memory', false)
+  return getInitialSettings()?.sessionMemory ?? false
 }
 
 /**
@@ -86,10 +82,11 @@ function isSessionMemoryGateEnabled(): boolean {
  * Returns immediately without blocking - value may be stale.
  */
 function getSessionMemoryRemoteConfig(): Partial<SessionMemoryConfig> {
-  return getDynamicConfig_CACHED_MAY_BE_STALE<Partial<SessionMemoryConfig>>(
-    'tengu_sm_config',
-    {},
-  )
+  return {
+    minimumMessageTokensToInit: 150000,
+    minimumTokensBetweenUpdate: 40000,
+    toolCallsBetweenUpdates: 10,
+  }
 }
 
 // ============================================================================
@@ -225,10 +222,6 @@ async function setupSessionMemoryFile(
     currentMemory = output.file.content
   }
 
-  logEvent('tengu_session_memory_file_read', {
-    content_length: currentMemory.length,
-  })
-
   return { memoryPath, currentMemory }
 }
 
@@ -266,9 +259,6 @@ const initSessionMemoryConfigIfNeeded = memoize((): void => {
 /**
  * Session memory post-sampling hook that extracts and updates session notes
  */
-// Track if we've logged the gate check failure this session (to avoid spam)
-let hasLoggedGateFailure = false
-
 const extractSessionMemory = sequential(async function (
   context: REPLHookContext,
 ): Promise<void> {
@@ -282,11 +272,6 @@ const extractSessionMemory = sequential(async function (
 
   // Check gate lazily when hook runs (cached, non-blocking)
   if (!isSessionMemoryGateEnabled()) {
-    // Log gate failure once per session (ant-only)
-    if (process.env.USER_TYPE === 'ant' && !hasLoggedGateFailure) {
-      hasLoggedGateFailure = true
-      logEvent('tengu_session_memory_gate_disabled', {})
-    }
     return
   }
 
@@ -329,16 +314,6 @@ const extractSessionMemory = sequential(async function (
   const lastMessage = messages[messages.length - 1]
   const usage = lastMessage ? getTokenUsage(lastMessage) : undefined
   const config = getSessionMemoryConfig()
-  logEvent('tengu_session_memory_extraction', {
-    input_tokens: usage?.input_tokens,
-    output_tokens: usage?.output_tokens,
-    cache_read_input_tokens: usage?.cache_read_input_tokens ?? undefined,
-    cache_creation_input_tokens:
-      usage?.cache_creation_input_tokens ?? undefined,
-    config_min_message_tokens_to_init: config.minimumMessageTokensToInit,
-    config_min_tokens_between_update: config.minimumTokensBetweenUpdate,
-    config_tool_calls_between_updates: config.toolCallsBetweenUpdates,
-  })
 
   // Record the context size at extraction for tracking minimumTokensBetweenUpdate
   recordExtractionTokenCount(tokenCountWithEstimation(messages))
@@ -355,16 +330,10 @@ const extractSessionMemory = sequential(async function (
  * The gate check and config loading happen lazily when the hook runs.
  */
 export function initSessionMemory(): void {
-  if (getIsRemoteMode()) return
   // Session memory is used for compaction, so respect auto-compact settings
   const autoCompactEnabled = isAutoCompactEnabled()
 
   // Log initialization state (ant-only to avoid noise in external logs)
-  if (process.env.USER_TYPE === 'ant') {
-    logEvent('tengu_session_memory_init', {
-      auto_compact_enabled: autoCompactEnabled,
-    })
-  }
 
   if (!autoCompactEnabled) {
     return
@@ -433,7 +402,6 @@ export async function manuallyExtractSessionMemory(
     })
 
     // Log manual extraction event
-    logEvent('tengu_session_memory_manual_extraction', {})
 
     // Record the context size at extraction for tracking minimumTokensBetweenUpdate
     recordExtractionTokenCount(tokenCountWithEstimation(messages))

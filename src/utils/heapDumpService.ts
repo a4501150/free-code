@@ -14,7 +14,7 @@ import {
   type HeapSpaceInfo,
 } from 'v8'
 import { getSessionId } from '../bootstrap/state.js'
-import { logEvent } from '../services/analytics/index.js'
+
 import { logForDebugging } from './debug.js'
 import { toError } from './errors.js'
 import { getDesktopPath } from './file.js'
@@ -256,23 +256,10 @@ export async function performHeapDump(
     await writeHeapSnapshot(heapPath)
     logForDebugging(`[HeapDump] Heap dump written to ${heapPath}`)
 
-    logEvent('tengu_heap_dump', {
-      triggerManual: trigger === 'manual',
-      triggerAuto15GB: trigger === 'auto-1.5GB',
-      dumpNumber,
-      success: true,
-    })
-
     return { success: true, heapPath, diagPath }
   } catch (err) {
     const error = toError(err)
     logError(error)
-    logEvent('tengu_heap_dump', {
-      triggerManual: trigger === 'manual',
-      triggerAuto15GB: trigger === 'auto-1.5GB',
-      dumpNumber,
-      success: false,
-    })
     return { success: false, error: error.message }
   }
 }

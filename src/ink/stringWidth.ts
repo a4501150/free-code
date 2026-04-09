@@ -217,6 +217,37 @@ const bunStringWidth =
 
 const BUN_STRING_WIDTH_OPTS = { ambiguousIsNarrow: true } as const
 
+/**
+ * Apple Terminal (Terminal.app) renders ☰ (U+2630 TRIGRAM FOR HEAVEN) as
+ * 2 cells wide, but Bun.stringWidth and eastAsianWidth both report 1.
+ * This single-character discrepancy causes Ink's cursor positioning to
+ * drift by 1 column after ☰, garbling all subsequent diff-based partial
+ * updates on the same row. Wrap Bun.stringWidth to add +1 for each
+ * under-counted occurrence. Only active on Apple Terminal.
+ *
+ * Verified via CHA (cursor horizontal absolute) test: all other symbols
+ * in U+2600–U+26FF render as 1 cell in Apple Terminal 2026-04.
+ */
+const IS_APPLE_TERMINAL = process.env.TERM_PROGRAM === 'Apple_Terminal'
+
+/** Characters that Apple Terminal renders as 2 cells but Bun.stringWidth
+ *  reports as 1. Extend this set if more discrepancies are found. */
+const APPLE_TERMINAL_WIDE_CHARS = new Set([
+  0x2630, // ☰ TRIGRAM FOR HEAVEN
+])
+
+function appleTerminalWidthCorrection(str: string): number {
+  let correction = 0
+  for (const char of str) {
+    if (APPLE_TERMINAL_WIDE_CHARS.has(char.codePointAt(0)!)) {
+      correction++
+    }
+  }
+  return correction
+}
+
 export const stringWidth: (str: string) => number = bunStringWidth
-  ? str => bunStringWidth(str, BUN_STRING_WIDTH_OPTS)
+  ? IS_APPLE_TERMINAL
+    ? str => bunStringWidth(str, BUN_STRING_WIDTH_OPTS) + appleTerminalWidthCorrection(str)
+    : str => bunStringWidth(str, BUN_STRING_WIDTH_OPTS)
   : stringWidthJavaScript

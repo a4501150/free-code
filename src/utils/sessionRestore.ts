@@ -107,16 +107,6 @@ export function restoreSessionStateFromLog(
     })
   }
 
-  // Restore attribution state (ant-only feature)
-  if (
-    feature('COMMIT_ATTRIBUTION') &&
-    result.attributionSnapshots &&
-    result.attributionSnapshots.length > 0
-  ) {
-    attributionRestoreStateFromLog(result.attributionSnapshots, newState => {
-      setAppState(prev => ({ ...prev, attribution: newState }))
-    })
-  }
 
   // Restore context-collapse commit log + staged snapshot. Must run before
   // the first query() so projectView() can rebuild the collapsed view from
@@ -157,13 +147,6 @@ export function restoreSessionStateFromLog(
 export function computeRestoredAttributionState(
   result: ResumeResult,
 ): AttributionState | undefined {
-  if (
-    feature('COMMIT_ATTRIBUTION') &&
-    result.attributionSnapshots &&
-    result.attributionSnapshots.length > 0
-  ) {
-    return restoreAttributionStateFromSnapshots(result.attributionSnapshots)
-  }
   return undefined
 }
 

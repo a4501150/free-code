@@ -1,33 +1,8 @@
-import { isEnvTruthy } from 'src/utils/envUtils.js'
-
-// Default to prod config, override with test/staging if enabled
-type OauthConfigType = 'prod' | 'staging' | 'local'
-
-function getOauthConfigType(): OauthConfigType {
-  if (process.env.USER_TYPE === 'ant') {
-    if (isEnvTruthy(process.env.USE_LOCAL_OAUTH)) {
-      return 'local'
-    }
-    if (isEnvTruthy(process.env.USE_STAGING_OAUTH)) {
-      return 'staging'
-    }
-  }
-  return 'prod'
-}
-
 export function fileSuffixForOauthConfig(): string {
   if (process.env.CLAUDE_CODE_CUSTOM_OAUTH_URL) {
     return '-custom-oauth'
   }
-  switch (getOauthConfigType()) {
-    case 'local':
-      return '-local-oauth'
-    case 'staging':
-      return '-staging-oauth'
-    case 'prod':
-      // No suffix for production config
-      return ''
-  }
+  return ''
 }
 
 export const CLAUDE_AI_INFERENCE_SCOPE = 'user:inference' as const
@@ -134,98 +109,17 @@ const PROD_OAUTH_CONFIG = {
 export const MCP_CLIENT_METADATA_URL =
   'https://claude.ai/oauth/claude-code-client-metadata'
 
-// Staging OAuth configuration - only included in ant builds with staging flag
-// Uses literal check for dead code elimination
-const STAGING_OAUTH_CONFIG =
-  process.env.USER_TYPE === 'ant'
-    ? ({
-        BASE_API_URL: 'https://api-staging.anthropic.com',
-        CONSOLE_AUTHORIZE_URL:
-          'https://platform.staging.ant.dev/oauth/authorize',
-        CLAUDE_AI_AUTHORIZE_URL:
-          'https://claude-ai.staging.ant.dev/oauth/authorize',
-        CLAUDE_AI_ORIGIN: 'https://claude-ai.staging.ant.dev',
-        // OpenAI OAuth URLs (staging)
-        OPENAI_AUTHORIZE_URL: 'https://openai.com/oauth/authorize',
-        OPENAI_TOKEN_URL: 'https://openai.com/oauth/token',
-        OPENAI_CLIENT_ID: 'claude-code-staging-client',
-        TOKEN_URL: 'https://platform.staging.ant.dev/v1/oauth/token',
-        API_KEY_URL:
-          'https://api-staging.anthropic.com/api/oauth/claude_cli/create_api_key',
-        ROLES_URL:
-          'https://api-staging.anthropic.com/api/oauth/claude_cli/roles',
-        CONSOLE_SUCCESS_URL:
-          'https://platform.staging.ant.dev/buy_credits?returnUrl=/oauth/code/success%3Fapp%3Dclaude-code',
-        CLAUDEAI_SUCCESS_URL:
-          'https://platform.staging.ant.dev/oauth/code/success?app=claude-code',
-        OPENAI_SUCCESS_URL:
-          'https://openai.com/oauth/success?app=claude-code-staging',
-        MANUAL_REDIRECT_URL:
-          'https://platform.staging.ant.dev/oauth/code/callback',
-        CLIENT_ID: '22422756-60c9-4084-8eb7-27705fd5cf9a',
-        OAUTH_FILE_SUFFIX: '-staging-oauth',
-        MCP_PROXY_URL: 'https://mcp-proxy-staging.anthropic.com',
-        MCP_PROXY_PATH: '/v1/mcp/{server_id}',
-      } as const)
-    : undefined
-
-// Three local dev servers: :8000 api-proxy (`api dev start -g ccr`),
-// :4000 claude-ai frontend, :3000 Console frontend. Env vars let
-// scripts/claude-localhost override if your layout differs.
-function getLocalOauthConfig(): OauthConfig {
-  const api =
-    process.env.CLAUDE_LOCAL_OAUTH_API_BASE?.replace(/\/$/, '') ??
-    'http://localhost:8000'
-  const apps =
-    process.env.CLAUDE_LOCAL_OAUTH_APPS_BASE?.replace(/\/$/, '') ??
-    'http://localhost:4000'
-  const consoleBase =
-    process.env.CLAUDE_LOCAL_OAUTH_CONSOLE_BASE?.replace(/\/$/, '') ??
-    'http://localhost:3000'
-  return {
-    BASE_API_URL: api,
-    CONSOLE_AUTHORIZE_URL: `${consoleBase}/oauth/authorize`,
-    CLAUDE_AI_AUTHORIZE_URL: `${apps}/oauth/authorize`,
-    CLAUDE_AI_ORIGIN: apps,
-    // OpenAI OAuth URLs (local dev)
-    OPENAI_AUTHORIZE_URL: 'https://openai.com/oauth/authorize',
-    OPENAI_TOKEN_URL: 'https://openai.com/oauth/token',
-    OPENAI_CLIENT_ID: 'claude-code-local-client',
-    TOKEN_URL: `${api}/v1/oauth/token`,
-    API_KEY_URL: `${api}/api/oauth/claude_cli/create_api_key`,
-    ROLES_URL: `${api}/api/oauth/claude_cli/roles`,
-    CONSOLE_SUCCESS_URL: `${consoleBase}/buy_credits?returnUrl=/oauth/code/success%3Fapp%3Dclaude-code`,
-    CLAUDEAI_SUCCESS_URL: `${consoleBase}/oauth/code/success?app=claude-code`,
-    OPENAI_SUCCESS_URL: 'https://openai.com/oauth/success?app=claude-code-local',
-    MANUAL_REDIRECT_URL: `${consoleBase}/oauth/code/callback`,
-    CLIENT_ID: '22422756-60c9-4084-8eb7-27705fd5cf9a',
-    OAUTH_FILE_SUFFIX: '-local-oauth',
-    MCP_PROXY_URL: 'http://localhost:8205',
-    MCP_PROXY_PATH: '/v1/toolbox/shttp/mcp/{server_id}',
-  }
-}
 
 // Allowed base URLs for CLAUDE_CODE_CUSTOM_OAUTH_URL override.
 // Only FedStart/PubSec deployments are permitted to prevent OAuth tokens
 // from being sent to arbitrary endpoints.
 const ALLOWED_OAUTH_BASE_URLS = [
-  'https://beacon.claude-ai.staging.ant.dev',
   'https://claude.fedstart.com',
   'https://claude-staging.fedstart.com',
 ]
 
-// Default to prod config, override with test/staging if enabled
 export function getOauthConfig(): OauthConfig {
-  let config: OauthConfig = (() => {
-    switch (getOauthConfigType()) {
-      case 'local':
-        return getLocalOauthConfig()
-      case 'staging':
-        return STAGING_OAUTH_CONFIG ?? PROD_OAUTH_CONFIG
-      case 'prod':
-        return PROD_OAUTH_CONFIG
-    }
-  })()
+  let config: OauthConfig = PROD_OAUTH_CONFIG
 
   // Allow overriding all OAuth URLs to point to an approved FedStart deployment.
   // Only allowlisted base URLs are accepted to prevent credential leakage.

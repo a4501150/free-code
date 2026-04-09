@@ -1,11 +1,6 @@
 import { feature } from 'bun:bundle'
 import { stat } from 'fs/promises'
-import { getClientType } from '../bootstrap/state.js'
-import {
-  getRemoteSessionUrl,
-  isRemoteSessionLocal,
-  PRODUCT_URL,
-} from '../constants/product.js'
+import { PRODUCT_URL } from '../constants/product.js'
 import { TERMINAL_OUTPUT_TAGS } from '../constants/xml.js'
 import type { AppState } from '../state/AppState.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
@@ -34,7 +29,6 @@ import { isMemoryFileAccess } from './sessionFileAccessHooks.js'
 import { getTranscriptPath } from './sessionStorage.js'
 import { readTranscriptForLoad } from './sessionStoragePortable.js'
 import { getInitialSettings } from './settings/settings.js'
-import { isUndercover } from './undercover.js'
 
 export type AttributionTexts = {
   commit: string
@@ -50,23 +44,6 @@ export type AttributionTexts = {
  * - Remote mode: returns session URL for attribution
  */
 export function getAttributionTexts(): AttributionTexts {
-  if (process.env.USER_TYPE === 'ant' && isUndercover()) {
-    return { commit: '', pr: '' }
-  }
-
-  if (getClientType() === 'remote') {
-    const remoteSessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID
-    if (remoteSessionId) {
-      const ingressUrl = process.env.SESSION_INGRESS_URL
-      // Skip for local dev - URLs won't persist
-      if (!isRemoteSessionLocal(remoteSessionId, ingressUrl)) {
-        const sessionUrl = getRemoteSessionUrl(remoteSessionId, ingressUrl)
-        return { commit: sessionUrl, pr: sessionUrl }
-      }
-    }
-    return { commit: '', pr: '' }
-  }
-
   // @[MODEL LAUNCH]: Update the hardcoded fallback model name below (guards against codename leaks).
   // For internal repos, use the real model name. For external repos,
   // fall back to "Claude Opus 4.6" for unrecognized models to avoid leaking codenames.
@@ -297,22 +274,6 @@ async function getTranscriptStats(): Promise<{
 export async function getEnhancedPRAttribution(
   getAppState: () => AppState,
 ): Promise<string> {
-  if (process.env.USER_TYPE === 'ant' && isUndercover()) {
-    return ''
-  }
-
-  if (getClientType() === 'remote') {
-    const remoteSessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID
-    if (remoteSessionId) {
-      const ingressUrl = process.env.SESSION_INGRESS_URL
-      // Skip for local dev - URLs won't persist
-      if (!isRemoteSessionLocal(remoteSessionId, ingressUrl)) {
-        return getRemoteSessionUrl(remoteSessionId, ingressUrl)
-      }
-    }
-    return ''
-  }
-
   const settings = getInitialSettings()
 
   // If user has custom PR attribution, use that
@@ -380,14 +341,6 @@ export async function getEnhancedPRAttribution(
   // squash_merge_commit_message=PR_BODY (cli, apps), the PR body becomes the
   // squash commit body verbatim — trailer lines at the end become proper git
   // trailers on the squash commit.
-  if (feature('COMMIT_ATTRIBUTION') && isInternal && attributionData) {
-    const { buildPRTrailers } = await import('./attributionTrailer.js')
-    const trailers = buildPRTrailers(attributionData, appState.attribution)
-    const result = `${summary}\n\n${trailers.join('\n')}`
-    logForDebugging(`PR Attribution: returning with trailers: ${result}`)
-    return result
-  }
-
   logForDebugging(`PR Attribution: returning summary: ${summary}`)
   return summary
 }

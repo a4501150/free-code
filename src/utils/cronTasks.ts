@@ -308,8 +308,7 @@ export function nextCronRunMs(cron: string, fromMs: number): number | null {
 
 /**
  * Cron scheduler tuning knobs. Sourced at runtime from the
- * `tengu_kairos_cron_config` GrowthBook JSON config (see cronJitterConfig.ts)
- * so ops can adjust behavior fleet-wide without shipping a client build.
+ * `tengu_kairos_cron_config` JSON config (see cronJitterConfig.ts).
  * Defaults here preserve the pre-config behavior exactly.
  */
 export type CronJitterConfig = {

@@ -1,6 +1,5 @@
 import { dirname, isAbsolute, sep } from 'path'
-import { logEvent } from 'src/services/analytics/index.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
+
 import { diagnosticTracker } from '../../services/diagnosticTracking.js'
 import { clearDeliveredDiagnosticsForFile } from '../../services/lsp/LSPDiagnosticRegistry.js'
 import { getLspServerManager } from '../../services/lsp/manager.js'
@@ -36,10 +35,7 @@ import {
 } from '../../utils/fileRead.js'
 import { formatFileSize } from '../../utils/format.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
-import {
-  fetchSingleFileGitDiff,
-  type ToolUseDiff,
-} from '../../utils/gitDiff.js'
+import { type ToolUseDiff } from '../../utils/gitDiff.js'
 import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
 import {
@@ -525,9 +521,6 @@ export const FileEditTool = buildTool({
     })
 
     // 7. Log events
-    if (absoluteFilePath.endsWith(`${sep}CLAUDE.md`)) {
-      logEvent('tengu_write_claudemd', {})
-    }
     countLinesChanged(patch)
 
     logFileOperation({
@@ -536,26 +529,7 @@ export const FileEditTool = buildTool({
       filePath: absoluteFilePath,
     })
 
-    logEvent('tengu_edit_string_lengths', {
-      oldStringBytes: Buffer.byteLength(old_string, 'utf8'),
-      newStringBytes: Buffer.byteLength(new_string, 'utf8'),
-      replaceAll: replace_all,
-    })
-
     let gitDiff: ToolUseDiff | undefined
-    if (
-      isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) &&
-      getFeatureValue_CACHED_MAY_BE_STALE('tengu_quartz_lantern', false)
-    ) {
-      const startTime = Date.now()
-      const diff = await fetchSingleFileGitDiff(absoluteFilePath)
-      if (diff) gitDiff = diff
-      logEvent('tengu_tool_use_diff_computed', {
-        isEditTool: true,
-        durationMs: Date.now() - startTime,
-        hasDiff: !!diff,
-      })
-    }
 
     // 8. Yield result
     const data = {

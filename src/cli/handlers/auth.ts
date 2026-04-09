@@ -4,10 +4,6 @@ import {
   clearAuthRelatedCaches,
   performLogout,
 } from '../../commands/logout/logout.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from '../../services/analytics/index.js'
 import { getSSLErrorHint } from '../../services/api/errorUtils.js'
 import { fetchAndStoreClaudeCodeFirstTokenDate } from '../../services/api/firstTokenDate.js'
 import {
@@ -33,7 +29,6 @@ import {
 } from '../../utils/auth.js'
 import { saveGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
-import { isRunningOnHomespace } from '../../utils/envUtils.js'
 import { errorMessage } from '../../utils/errors.js'
 import { logError } from '../../utils/log.js'
 import { getAPIProvider } from '../../utils/model/providers.js'
@@ -90,14 +85,7 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
   const storageResult = saveOAuthTokensIfNeeded(tokens)
   clearOAuthTokenCache()
 
-  if (storageResult.warning) {
-    logEvent('tengu_oauth_storage_warning', {
-      warning:
-        storageResult.warning as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    })
-  }
-
-  // Roles and first-token-date may fail for limited-scope tokens (e.g.
+// Roles and first-token-date may fail for limited-scope tokens (e.g.
   // inference-only from setup-token). They're not required for core auth.
   await fetchAndStoreUserRoles(tokens.accessToken).catch(err =>
     logForDebugging(String(err), { level: 'error' }),
@@ -173,7 +161,6 @@ export async function authLogin({
     const scopes = envScopes.split(/\s+/).filter(Boolean)
 
     try {
-      logEvent('tengu_login_from_refresh_token', {})
 
       const tokens = await refreshOAuthToken(envRefreshToken, { scopes })
       await installOAuthTokens(tokens)
@@ -191,9 +178,6 @@ export async function authLogin({
         return { ...current, hasCompletedOnboarding: true }
       })
 
-      logEvent('tengu_oauth_success', {
-        loginWithClaudeAi: shouldUseClaudeAIAuth(tokens.scopes),
-      })
       process.stdout.write('Login successful.\n')
       process.exit(0)
     } catch (err) {
@@ -211,7 +195,6 @@ export async function authLogin({
   const oauthService = new OAuthService()
 
   try {
-    logEvent('tengu_oauth_flow_start', { loginWithClaudeAi })
 
     const result = await oauthService.startOAuthFlow(
       async url => {
@@ -234,8 +217,6 @@ export async function authLogin({
       process.exit(1)
     }
 
-    logEvent('tengu_oauth_success', { loginWithClaudeAi })
-
     process.stdout.write('Login successful.\n')
     process.exit(0)
   } catch (err) {
@@ -257,7 +238,7 @@ export async function authStatus(opts: {
   const { source: authTokenSource, hasToken } = getAuthTokenSource()
   const { source: apiKeySource } = getAnthropicApiKeyWithSource()
   const hasApiKeyEnvVar =
-    !!process.env.ANTHROPIC_API_KEY && !isRunningOnHomespace()
+    !!process.env.ANTHROPIC_API_KEY
   const oauthAccount = getOauthAccountInfo()
   const subscriptionType = getSubscriptionType()
   const using3P = isUsing3PServices()

@@ -7,9 +7,7 @@ import {
   getSettingsForSource,
 } from 'src/utils/settings/settings.js'
 import { shouldOfferTerminalSetup } from '../../commands/terminalSetup/terminalSetup.js'
-import { getDesktopUpsellConfig } from '../../components/DesktopUpsell/DesktopUpsellStartup.js'
 import { color } from '../../components/design-system/color.js'
-import { shouldShowOverageCreditUpsell } from '../../components/LogoV2/OverageCreditUpsell.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
 import { isKairosCronEnabled } from '../../tools/ScheduleCronTool/prompt.js'
 import { is1PApiCustomer } from '../../utils/auth.js'
@@ -43,16 +41,6 @@ import {
   getCurrentSessionAgentColor,
   isCustomTitleEnabled,
 } from '../../utils/sessionStorage.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../analytics/growthbook.js'
-import {
-  formatGrantAmount,
-  getCachedOverageCreditGrant,
-} from '../api/overageCreditGrant.js'
-import {
-  checkCachedPassesEligibility,
-  formatCreditAmount,
-  getCachedReferrerReward,
-} from '../api/referral.js'
 import { getSessionsSinceLastShown } from './tipHistory.js'
 import type { Tip, TipContext } from './types.js'
 
@@ -109,7 +97,6 @@ const externalTips: Tip[] = [
       `Use Plan Mode to prepare for a complex request before making changes. Press ${getShortcutDisplay('chat:cycleMode', 'Chat', 'shift+tab')} twice to enable.`,
     cooldownSessions: 5,
     isRelevant: async () => {
-      if (process.env.USER_TYPE === 'ant') return false
       const config = getGlobalConfig()
       // Show to users who haven't used plan mode recently (7+ days)
       const daysSinceLastUse = config.lastPlanModeUse
@@ -401,9 +388,7 @@ const externalTips: Tip[] = [
   {
     id: 'shift-tab',
     content: async () =>
-      process.env.USER_TYPE === 'ant'
-        ? `Hit ${getShortcutDisplay('chat:cycleMode', 'Chat', 'shift+tab')} to cycle between default mode and auto mode`
-        : `Hit ${getShortcutDisplay('chat:cycleMode', 'Chat', 'shift+tab')} to cycle between default mode, auto-accept edit mode, and plan mode`,
+      `Hit ${getShortcutDisplay('chat:cycleMode', 'Chat', 'shift+tab')} to cycle between default mode, auto-accept edit mode, and plan mode`,
     cooldownSessions: 10,
     isRelevant: async () => true,
   },
@@ -448,13 +433,7 @@ const externalTips: Tip[] = [
       return `Continue your session in Claude Code Desktop with ${blue('/desktop')}`
     },
     cooldownSessions: 15,
-    isRelevant: async () => {
-      if (!getDesktopUpsellConfig().enable_shortcut_tip) return false
-      return (
-        process.platform === 'darwin' ||
-        (process.platform === 'win32' && process.arch === 'x64')
-      )
-    },
+    isRelevant: async () => false,
   },
   {
     id: 'web-app',
@@ -476,7 +455,6 @@ const externalTips: Tip[] = [
       `Your default model setting is Opus Plan Mode. Press ${getShortcutDisplay('chat:cycleMode', 'Chat', 'shift+tab')} twice to activate Plan Mode and plan with Claude Opus.`,
     cooldownSessions: 2,
     async isRelevant() {
-      if (process.env.USER_TYPE === 'ant') return false
       const config = getGlobalConfig()
       const modelSetting = getUserSpecifiedModelSetting()
       const hasOpusPlanMode = modelSetting === 'opusplan'
@@ -517,12 +495,7 @@ const externalTips: Tip[] = [
     content: async ctx => {
       const blue = color('suggestion', ctx.theme)
       const cmd = blue('/effort high')
-      const variant = getFeatureValue_CACHED_MAY_BE_STALE<
-        'off' | 'copy_a' | 'copy_b'
-      >('tengu_tide_elm', 'off')
-      return variant === 'copy_b'
-        ? `Use ${cmd} for better one-shot answers. Claude thinks it through first.`
-        : `Working on something tricky? ${cmd} gives better first answers`
+      return `Working on something tricky? ${cmd} gives better first answers`
     },
     cooldownSessions: 3,
     isRelevant: async () => {
@@ -534,123 +507,36 @@ const externalTips: Tip[] = [
       if (getEffortEnvOverride() !== undefined) return false
       const persisted = getInitialSettings().effortLevel
       if (persisted === 'high' || persisted === 'max') return false
-      return (
-        getFeatureValue_CACHED_MAY_BE_STALE<'off' | 'copy_a' | 'copy_b'>(
-          'tengu_tide_elm',
-          'off',
-        ) !== 'off'
-      )
+      return true
     },
   },
   {
     id: 'subagent-fanout-nudge',
     content: async ctx => {
       const blue = color('suggestion', ctx.theme)
-      const variant = getFeatureValue_CACHED_MAY_BE_STALE<
-        'off' | 'copy_a' | 'copy_b'
-      >('tengu_tern_alloy', 'off')
-      return variant === 'copy_b'
-        ? `For big tasks, tell Claude to ${blue('use subagents')}. They work in parallel and keep your main thread clean.`
-        : `Say ${blue('"fan out subagents"')} and Claude sends a team. Each one digs deep so nothing gets missed.`
+      return `Say ${blue('"fan out subagents"')} and Claude sends a team. Each one digs deep so nothing gets missed.`
     },
     cooldownSessions: 3,
     isRelevant: async () => {
       if (!is1PApiCustomer()) return false
-      return (
-        getFeatureValue_CACHED_MAY_BE_STALE<'off' | 'copy_a' | 'copy_b'>(
-          'tengu_tern_alloy',
-          'off',
-        ) !== 'off'
-      )
+      return true
     },
   },
   {
     id: 'loop-command-nudge',
     content: async ctx => {
       const blue = color('suggestion', ctx.theme)
-      const variant = getFeatureValue_CACHED_MAY_BE_STALE<
-        'off' | 'copy_a' | 'copy_b'
-      >('tengu_timber_lark', 'off')
-      return variant === 'copy_b'
-        ? `Use ${blue('/loop 5m check the deploy')} to run any prompt on a schedule. Set it and forget it.`
-        : `${blue('/loop')} runs any prompt on a recurring schedule. Great for monitoring deploys, babysitting PRs, or polling status.`
+      return `${blue('/loop')} runs any prompt on a recurring schedule. Great for monitoring deploys, babysitting PRs, or polling status.`
     },
     cooldownSessions: 3,
     isRelevant: async () => {
       if (!is1PApiCustomer()) return false
       if (!isKairosCronEnabled()) return false
-      return (
-        getFeatureValue_CACHED_MAY_BE_STALE<'off' | 'copy_a' | 'copy_b'>(
-          'tengu_timber_lark',
-          'off',
-        ) !== 'off'
-      )
-    },
-  },
-  {
-    id: 'guest-passes',
-    content: async ctx => {
-      const claude = color('claude', ctx.theme)
-      const reward = getCachedReferrerReward()
-      return reward
-        ? `Share Claude Code and earn ${claude(formatCreditAmount(reward))} of extra usage · ${claude('/passes')}`
-        : `You have free guest passes to share · ${claude('/passes')}`
-    },
-    cooldownSessions: 3,
-    isRelevant: async () => {
-      const config = getGlobalConfig()
-      if (config.hasVisitedPasses) {
-        return false
-      }
-      const { eligible } = checkCachedPassesEligibility()
-      return eligible
-    },
-  },
-  {
-    id: 'overage-credit',
-    content: async ctx => {
-      const claude = color('claude', ctx.theme)
-      const info = getCachedOverageCreditGrant()
-      const amount = info ? formatGrantAmount(info) : null
-      if (!amount) return ''
-      // Copy from "OC & Bulk Overages copy" doc (#5 — CLI Rotating tip)
-      return `${claude(`${amount} in extra usage, on us`)} · third-party apps · ${claude('/extra-usage')}`
-    },
-    cooldownSessions: 3,
-    isRelevant: async () => shouldShowOverageCreditUpsell(),
-  },
-  {
-    id: 'feedback-command',
-    content: async () => 'Use /feedback to help us improve!',
-    cooldownSessions: 15,
-    async isRelevant() {
-      if (process.env.USER_TYPE === 'ant') {
-        return false
-      }
-      const config = getGlobalConfig()
-      return config.numStartups > 5
+      return true
     },
   },
 ]
-const internalOnlyTips: Tip[] =
-  process.env.USER_TYPE === 'ant'
-    ? [
-        {
-          id: 'important-claudemd',
-          content: async () =>
-            '[ANT-ONLY] Use "IMPORTANT:" prefix for must-follow CLAUDE.md rules',
-          cooldownSessions: 30,
-          isRelevant: async () => true,
-        },
-        {
-          id: 'skillify',
-          content: async () =>
-            '[ANT-ONLY] Use /skillify at the end of a workflow to turn it into a reusable skill',
-          cooldownSessions: 15,
-          isRelevant: async () => true,
-        },
-      ]
-    : []
+const internalOnlyTips: Tip[] = []
 
 function getCustomTips(): Tip[] {
   const settings = getInitialSettings()

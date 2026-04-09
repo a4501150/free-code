@@ -1,6 +1,5 @@
 // Critical system constants extracted to break circular dependencies
 
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
 import { logForDebugging } from '../utils/debug.js'
 import { isEnvDefinedFalsy } from '../utils/envUtils.js'
 import { getAPIProvider } from '../utils/model/providers.js'
@@ -46,19 +45,19 @@ export function getCLISyspromptPrefix(options?: {
 
 /**
  * Check if attribution header is enabled.
- * Enabled by default, can be disabled via env var or GrowthBook killswitch.
+ * Enabled by default, can be disabled via env var.
  */
 function isAttributionHeaderEnabled(): boolean {
   if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_ATTRIBUTION_HEADER)) {
     return false
   }
-  return getFeatureValue_CACHED_MAY_BE_STALE('tengu_attribution_header', true)
+  return true
 }
 
 /**
  * Get attribution header for API requests.
  * Returns a header string with cc_version (including fingerprint) and cc_entrypoint.
- * Enabled by default, can be disabled via env var or GrowthBook killswitch.
+ * Enabled by default, can be disabled via env var.
  *
  * Includes a `cch=00000` placeholder that is replaced with a computed
  * xxHash64-based integrity hash before the request is sent. The fetch

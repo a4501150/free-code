@@ -16,11 +16,6 @@
 import { promises as fs } from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from 'src/services/analytics/index.js'
 import { logForDebugging } from '../debug.js'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
 import { getErrnoCode } from '../errors.js'
@@ -299,9 +294,6 @@ export async function ensureDeepLinkProtocolRegistered(): Promise<void> {
   if (getInitialSettings().disableDeepLinkRegistration === 'disable') {
     return
   }
-  if (!getFeatureValue_CACHED_MAY_BE_STALE('tengu_lodestone_enabled', false)) {
-    return
-  }
 
   const claudePath = await resolveClaudePath()
   if (await isProtocolHandlerCurrent(claudePath)) {
@@ -327,16 +319,10 @@ export async function ensureDeepLinkProtocolRegistered(): Promise<void> {
 
   try {
     await registerProtocolHandler(claudePath)
-    logEvent('tengu_deep_link_registered', { success: true })
     logForDebugging('Auto-registered claude-cli:// deep link protocol handler')
     await fs.rm(failureMarkerPath, { force: true }).catch(() => {})
   } catch (error) {
     const code = getErrnoCode(error)
-    logEvent('tengu_deep_link_registered', {
-      success: false,
-      error_code:
-        code as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    })
     logForDebugging(
       `Failed to auto-register deep link protocol handler: ${error instanceof Error ? error.message : String(error)}`,
       { level: 'warn' },

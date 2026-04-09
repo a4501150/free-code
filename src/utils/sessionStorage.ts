@@ -18,10 +18,6 @@ import {
 import memoize from 'lodash-es/memoize.js'
 import { basename, dirname, join } from 'path'
 import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from 'src/services/analytics/index.js'
-import {
   getOriginalCwd,
   getPlanSlugCache,
   getPromptId,
@@ -32,8 +28,6 @@ import {
 } from '../bootstrap/state.js'
 import { builtInCommandNames } from '../commands.js'
 import { COMMAND_NAME_TAG, TICK_TAG } from '../constants/xml.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
-import * as sessionIngress from '../services/api/sessionIngress.js'
 import { REPL_TOOL_NAME } from '../tools/REPLTool/constants.js'
 import {
   type AgentId,
@@ -187,7 +181,7 @@ const EPHEMERAL_PROGRESS_TYPES = new Set([
   'bash_progress',
   'powershell_progress',
   'mcp_progress',
-  ...(feature('PROACTIVE') || feature('KAIROS')
+  ...(feature('KAIROS')
     ? (['sleep_progress'] as const)
     : []),
 ])
@@ -368,7 +362,7 @@ export async function deleteRemoteAgentMetadata(taskId: string): Promise<void> {
 
 /**
  * Scan the remote-agents/ directory for all persisted metadata files.
- * Used by restoreRemoteAgentTasks to reconnect to still-running CCR sessions.
+ * Used to reconnect to still-running sessions.
  */
 export async function listRemoteAgentMetadata(): Promise<
   RemoteAgentMetadata[]
@@ -417,7 +411,7 @@ export function getNodeEnv(): string {
 
 // exported for testing
 export function getUserType(): string {
-  return process.env.USER_TYPE || 'external'
+  return 'external'
 }
 
 function getEntrypoint(): string | undefined {
@@ -487,48 +481,6 @@ export function setSessionFileForTesting(path: string): void {
   getProject().sessionFile = path
 }
 
-type InternalEventWriter = (
-  eventType: string,
-  payload: Record<string, unknown>,
-  options?: { isCompaction?: boolean; agentId?: string },
-) => Promise<void>
-
-/**
- * Register a CCR v2 internal event writer for transcript persistence.
- * When set, transcript messages are written as internal worker events
- * instead of going through v1 Session Ingress.
- */
-export function setInternalEventWriter(writer: InternalEventWriter): void {
-  getProject().setInternalEventWriter(writer)
-}
-
-type InternalEventReader = () => Promise<
-  { payload: Record<string, unknown>; agent_id?: string }[] | null
->
-
-/**
- * Register a CCR v2 internal event reader for session resume.
- * When set, hydrateFromCCRv2InternalEvents() can fetch foreground and
- * subagent internal events to reconstruct conversation state on reconnection.
- */
-export function setInternalEventReader(
-  reader: InternalEventReader,
-  subagentReader: InternalEventReader,
-): void {
-  getProject().setInternalEventReader(reader)
-  getProject().setInternalSubagentEventReader(subagentReader)
-}
-
-/**
- * Set the remote ingress URL on the current Project for testing.
- * This simulates what hydrateRemoteSession does in production.
- */
-export function setRemoteIngressUrlForTesting(url: string): void {
-  getProject().setRemoteIngressUrl(url)
-}
-
-const REMOTE_FLUSH_INTERVAL_MS = 10
-
 class Project {
   // Minimal cache for current session only (not all sessions)
   currentSessionTag: string | undefined
@@ -550,10 +502,6 @@ class Project {
   // Entries buffered while sessionFile is null. Flushed by materializeSessionFile
   // on the first user/assistant message — prevents metadata-only session files.
   private pendingEntries: Entry[] = []
-  private remoteIngressUrl: string | null = null
-  private internalEventWriter: InternalEventWriter | null = null
-  private internalEventReader: InternalEventReader | null = null
-  private internalSubagentEventReader: InternalEventReader | null = null
   private pendingWriteCount: number = 0
   private flushResolvers: Array<() => void> = []
   // Per-file write queues. Each entry carries a resolve callback so
@@ -954,7 +902,7 @@ class Project {
    * True when test env / cleanupPeriodDays=0 / --no-session-persistence /
    * CLAUDE_CODE_SKIP_PROMPT_HISTORY should suppress all transcript writes.
    * Shared guard for appendEntry and materializeSessionFile so both skip
-   * consistently. The env var is set by tmuxSocket.ts so Tungsten-spawned
+   * consistently. The env var is set by tmuxSocket.ts so tmux-spawned
    * test sessions don't pollute the user's --resume list.
    */
   private shouldSkipPersistence(): boolean {
@@ -1247,12 +1195,10 @@ class Project {
           if (!isAgentSidechain) {
             // messageSet is main-file-authoritative. Sidechain entries go to a
             // separate agent file — adding their UUIDs here causes recordTranscript
-            // to skip them on the main thread (line ~1270), so the message is never
-            // written to the main session file. The next main-thread message then
-            // chains its parentUuid to a UUID that only exists in the agent file,
-            // and --resume's buildConversationChain terminates at the dangling ref.
-            // Same constraint for remote (inc-4718 above): sidechain persisting a
-            // UUID the main thread hasn't written yet → 409 when main writes it.
+            // to skip them on the main thread, so the message is never written to
+            // the main session file. The next main-thread message then chains its
+            // parentUuid to a UUID that only exists in the agent file, and
+            // --resume's buildConversationChain terminates at the dangling ref.
             messageSet.add(entry.uuid)
 
             if (isTranscriptMessage(entry)) {
@@ -1299,87 +1245,11 @@ class Project {
     }
   }
 
-  private async persistToRemote(sessionId: UUID, entry: TranscriptMessage) {
-    if (isShuttingDown()) {
-      return
-    }
-
-    // CCR v2 path: write as internal worker event
-    if (this.internalEventWriter) {
-      try {
-        await this.internalEventWriter(
-          'transcript',
-          entry as unknown as Record<string, unknown>,
-          {
-            ...(isCompactBoundaryMessage(entry) && { isCompaction: true }),
-            ...(entry.agentId && { agentId: entry.agentId }),
-          },
-        )
-      } catch {
-        logEvent('tengu_session_persistence_failed', {})
-        logForDebugging('Failed to write transcript as internal event')
-      }
-      return
-    }
-
-    // v1 Session Ingress path
-    if (
-      !isEnvTruthy(process.env.ENABLE_SESSION_PERSISTENCE) ||
-      !this.remoteIngressUrl
-    ) {
-      return
-    }
-
-    const success = await sessionIngress.appendSessionLog(
-      sessionId,
-      entry,
-      this.remoteIngressUrl,
-    )
-
-    if (!success) {
-      logEvent('tengu_session_persistence_failed', {})
-      gracefulShutdownSync(1, 'other')
-    }
-  }
-
-  setRemoteIngressUrl(url: string): void {
-    this.remoteIngressUrl = url
-    logForDebugging(`Remote persistence enabled with URL: ${url}`)
-    if (url) {
-      // If using CCR, don't delay messages by any more than 10ms.
-      this.FLUSH_INTERVAL_MS = REMOTE_FLUSH_INTERVAL_MS
-    }
-  }
-
-  setInternalEventWriter(writer: InternalEventWriter): void {
-    this.internalEventWriter = writer
-    logForDebugging(
-      'CCR v2 internal event writer registered for transcript persistence',
-    )
-    // Use fast flush interval for CCR v2
-    this.FLUSH_INTERVAL_MS = REMOTE_FLUSH_INTERVAL_MS
-  }
-
-  setInternalEventReader(reader: InternalEventReader): void {
-    this.internalEventReader = reader
-    logForDebugging(
-      'CCR v2 internal event reader registered for session resume',
-    )
-  }
-
-  setInternalSubagentEventReader(reader: InternalEventReader): void {
-    this.internalSubagentEventReader = reader
-    logForDebugging(
-      'CCR v2 subagent event reader registered for session resume',
-    )
-  }
-
-  getInternalEventReader(): InternalEventReader | null {
-    return this.internalEventReader
-  }
-
-  getInternalSubagentEventReader(): InternalEventReader | null {
-    return this.internalSubagentEventReader
+  private async persistToRemote(
+    _sessionId: UUID,
+    _entry: TranscriptMessage,
+  ) {
+    // CCR remote persistence infrastructure removed — no-op.
   }
 }
 
@@ -1584,144 +1454,6 @@ export async function flushSessionStorage(): Promise<void> {
   await getProject().flush()
 }
 
-export async function hydrateRemoteSession(
-  sessionId: string,
-  ingressUrl: string,
-): Promise<boolean> {
-  switchSession(asSessionId(sessionId))
-
-  const project = getProject()
-
-  try {
-    const remoteLogs =
-      (await sessionIngress.getSessionLogs(sessionId, ingressUrl)) || []
-
-    // Ensure the project directory and session file exist
-    const projectDir = getProjectDir(getOriginalCwd())
-    await mkdir(projectDir, { recursive: true, mode: 0o700 })
-
-    const sessionFile = getTranscriptPathForSession(sessionId)
-
-    // Replace local logs with remote logs. writeFile truncates, so no
-    // unlink is needed; an empty remoteLogs array produces an empty file.
-    const content = remoteLogs.map(e => jsonStringify(e) + '\n').join('')
-    await writeFile(sessionFile, content, { encoding: 'utf8', mode: 0o600 })
-
-    logForDebugging(`Hydrated ${remoteLogs.length} entries from remote`)
-    return remoteLogs.length > 0
-  } catch (error) {
-    logForDebugging(`Error hydrating session from remote: ${error}`)
-    logForDiagnosticsNoPII('error', 'hydrate_remote_session_fail')
-    return false
-  } finally {
-    // Set remote ingress URL after hydrating the remote session
-    // to ensure we've always synced with the remote session
-    // prior to enabling persistence
-    project.setRemoteIngressUrl(ingressUrl)
-  }
-}
-
-/**
- * Hydrate session state from CCR v2 internal events.
- * Fetches foreground and subagent events via the registered readers,
- * extracts transcript entries from payloads, and writes them to the
- * local transcript files (main + per-agent).
- * The server handles compaction filtering — it returns events starting
- * from the latest compaction boundary.
- */
-export async function hydrateFromCCRv2InternalEvents(
-  sessionId: string,
-): Promise<boolean> {
-  const startMs = Date.now()
-  switchSession(asSessionId(sessionId))
-
-  const project = getProject()
-  const reader = project.getInternalEventReader()
-  if (!reader) {
-    logForDebugging('No internal event reader registered for CCR v2 resume')
-    return false
-  }
-
-  try {
-    // Fetch foreground events
-    const events = await reader()
-    if (!events) {
-      logForDebugging('Failed to read internal events for resume')
-      logForDiagnosticsNoPII('error', 'hydrate_ccr_v2_read_fail')
-      return false
-    }
-
-    const projectDir = getProjectDir(getOriginalCwd())
-    await mkdir(projectDir, { recursive: true, mode: 0o700 })
-
-    // Write foreground transcript
-    const sessionFile = getTranscriptPathForSession(sessionId)
-    const fgContent = events.map(e => jsonStringify(e.payload) + '\n').join('')
-    await writeFile(sessionFile, fgContent, { encoding: 'utf8', mode: 0o600 })
-
-    logForDebugging(
-      `Hydrated ${events.length} foreground entries from CCR v2 internal events`,
-    )
-
-    // Fetch and write subagent events
-    let subagentEventCount = 0
-    const subagentReader = project.getInternalSubagentEventReader()
-    if (subagentReader) {
-      const subagentEvents = await subagentReader()
-      if (subagentEvents && subagentEvents.length > 0) {
-        subagentEventCount = subagentEvents.length
-        // Group by agent_id
-        const byAgent = new Map<string, Record<string, unknown>[]>()
-        for (const e of subagentEvents) {
-          const agentId = e.agent_id || ''
-          if (!agentId) continue
-          let list = byAgent.get(agentId)
-          if (!list) {
-            list = []
-            byAgent.set(agentId, list)
-          }
-          list.push(e.payload)
-        }
-
-        // Write each agent's transcript to its own file
-        for (const [agentId, entries] of byAgent) {
-          const agentFile = getAgentTranscriptPath(asAgentId(agentId))
-          await mkdir(dirname(agentFile), { recursive: true, mode: 0o700 })
-          const agentContent = entries
-            .map(p => jsonStringify(p) + '\n')
-            .join('')
-          await writeFile(agentFile, agentContent, {
-            encoding: 'utf8',
-            mode: 0o600,
-          })
-        }
-
-        logForDebugging(
-          `Hydrated ${subagentEvents.length} subagent entries across ${byAgent.size} agents`,
-        )
-      }
-    }
-
-    logForDiagnosticsNoPII('info', 'hydrate_ccr_v2_completed', {
-      duration_ms: Date.now() - startMs,
-      event_count: events.length,
-      subagent_event_count: subagentEventCount,
-    })
-    return events.length > 0
-  } catch (error) {
-    // Re-throw epoch mismatch so the worker doesn't race against gracefulShutdown
-    if (
-      error instanceof Error &&
-      error.message === 'CCRClient: Epoch mismatch (409)'
-    ) {
-      throw error
-    }
-    logForDebugging(`Error hydrating session from CCR v2: ${error}`)
-    logForDiagnosticsNoPII('error', 'hydrate_ccr_v2_fail')
-    return false
-  }
-}
-
 function extractFirstPrompt(transcript: TranscriptMessage[]): string {
   const textContent = getFirstMeaningfulUserMessageTextContent(transcript)
   if (textContent) {
@@ -1891,13 +1623,6 @@ function applyPreservedSegmentRelinks(
       // the full pre-compact history. Known cause: mid-turn-yielded
       // attachment pushed to mutableMessages but never recordTranscript'd
       // (SDK subprocess restarted before next turn's qe:420 flush).
-      logEvent('tengu_relink_walk_broken', {
-        tailInTranscript: messages.has(lastSeg.tailUuid),
-        headInTranscript: messages.has(lastSeg.headUuid),
-        anchorInTranscript: messages.has(lastSeg.anchorUuid),
-        walkSteps: walkSeen.size,
-        transcriptSize: messages.size,
-      })
       return
     }
   }
@@ -2032,10 +1757,6 @@ function applySnipRemovals(messages: Map<UUID, TranscriptMessage>): void {
     relinkedCount++
   }
 
-  logEvent('tengu_snip_resume_filtered', {
-    removed_count: removedCount,
-    relinked_count: relinkedCount,
-  })
 }
 
 /**
@@ -2080,7 +1801,6 @@ export function buildConversationChain(
           `Cycle detected in parentUuid chain at message ${currentMsg.uuid}. Returning partial transcript.`,
         ),
       )
-      logEvent('tengu_chain_parent_cycle', {})
       break
     }
     seen.add(currentMsg.uuid)
@@ -2192,9 +1912,6 @@ function recoverOrphanedParallelToolResults(
   }
 
   if (recoveredCount === 0) return chain
-  logEvent('tengu_chain_parallel_tr_recovered', {
-    recovered_count: recoveredCount,
-  })
 
   const result: TranscriptMessage[] = []
   for (const m of chain) {
@@ -2231,13 +1948,6 @@ export function checkResumeConsistency(chain: Message[]): void {
     // The checkpoint was appended AFTER messageCount messages, so its own
     // position should be messageCount (i.e., i === expected).
     const actual = i
-    logEvent('tengu_resume_consistency_delta', {
-      expected,
-      actual,
-      delta: actual - expected,
-      chain_length: chain.length,
-      checkpoint_age_entries: chain.length - 1 - i,
-    })
     return
   }
 }
@@ -2547,13 +2257,6 @@ async function trackSessionBranchingAnalytics(
   const sessionsWithBranches = branchCounts.length
   const totalBranches = branchCounts.reduce((sum, count) => sum + count, 0)
 
-  logEvent('tengu_session_forked_branches_fetched', {
-    total_sessions: sessionIdCounts.size,
-    sessions_with_branches: sessionsWithBranches,
-    max_branches_per_session: Math.max(...branchCounts),
-    avg_branches_per_session: Math.round(totalBranches / sessionsWithBranches),
-    total_transcript_count: logs.length,
-  })
 }
 
 export async function fetchLogs(limit?: number): Promise<LogOption[]> {
@@ -2631,10 +2334,6 @@ export async function saveCustomTitle(
   if (sessionId === getSessionId()) {
     getProject().currentSessionTitle = customTitle
   }
-  logEvent('tengu_session_renamed', {
-    source:
-      source as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  })
 }
 
 /**
@@ -2695,7 +2394,6 @@ export async function saveTag(sessionId: UUID, tag: string, fullPath?: string) {
   if (sessionId === getSessionId()) {
     getProject().currentSessionTag = tag
   }
-  logEvent('tengu_session_tagged', {})
 }
 
 /**
@@ -2725,7 +2423,6 @@ export async function linkSessionToPR(
     project.currentSessionPrUrl = prUrl
     project.currentSessionPrRepository = prRepository
   }
-  logEvent('tengu_session_linked_to_pr', { prNumber })
 }
 
 export function getCurrentSessionTag(sessionId: UUID): string | undefined {
@@ -2829,10 +2526,6 @@ export async function saveAgentName(
     getProject().currentSessionAgentName = agentName
     void updateSessionName(agentName)
   }
-  logEvent('tengu_agent_name_set', {
-    source:
-      source as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  })
 }
 
 export async function saveAgentColor(
@@ -2850,7 +2543,6 @@ export async function saveAgentColor(
   if (sessionId === getSessionId()) {
     getProject().currentSessionAgentColor = agentColor
   }
-  logEvent('tengu_agent_color_set', {})
 }
 
 /**
@@ -3728,65 +3420,38 @@ export async function loadTranscriptFile(
   const leafUuids = new Set<UUID>()
   let hasCycle = false
 
-  if (getFeatureValue_CACHED_MAY_BE_STALE('tengu_pebble_leaf_prune', false)) {
-    // Build a set of UUIDs that have user/assistant children
-    // (these are mid-conversation nodes, not dead ends)
-    const hasUserAssistantChild = new Set<UUID>()
-    for (const msg of allMessages) {
-      if (msg.parentUuid && (msg.type === 'user' || msg.type === 'assistant')) {
-        hasUserAssistantChild.add(msg.parentUuid)
-      }
-    }
-
-    // For each terminal message, walk back to find the nearest user/assistant ancestor.
-    // Skip ancestors that already have user/assistant children - those are mid-conversation
-    // nodes where the conversation continued (e.g., an assistant tool_use message whose
-    // progress child is terminal, but whose tool_result child continues the conversation).
-    for (const terminal of terminalMessages) {
-      const seen = new Set<UUID>()
-      let current: TranscriptMessage | undefined = terminal
-      while (current) {
-        if (seen.has(current.uuid)) {
-          hasCycle = true
-          break
-        }
-        seen.add(current.uuid)
-        if (current.type === 'user' || current.type === 'assistant') {
-          if (!hasUserAssistantChild.has(current.uuid)) {
-            leafUuids.add(current.uuid)
-          }
-          break
-        }
-        current = current.parentUuid
-          ? messages.get(current.parentUuid)
-          : undefined
-      }
-    }
-  } else {
-    // Original leaf computation: walk back from terminal messages to find
-    // the nearest user/assistant ancestor unconditionally
-    for (const terminal of terminalMessages) {
-      const seen = new Set<UUID>()
-      let current: TranscriptMessage | undefined = terminal
-      while (current) {
-        if (seen.has(current.uuid)) {
-          hasCycle = true
-          break
-        }
-        seen.add(current.uuid)
-        if (current.type === 'user' || current.type === 'assistant') {
-          leafUuids.add(current.uuid)
-          break
-        }
-        current = current.parentUuid
-          ? messages.get(current.parentUuid)
-          : undefined
-      }
+  // Build a set of UUIDs that have user/assistant children
+  // (these are mid-conversation nodes, not dead ends)
+  const hasUserAssistantChild = new Set<UUID>()
+  for (const msg of allMessages) {
+    if (msg.parentUuid && (msg.type === 'user' || msg.type === 'assistant')) {
+      hasUserAssistantChild.add(msg.parentUuid)
     }
   }
 
-  if (hasCycle) {
-    logEvent('tengu_transcript_parent_cycle', {})
+  // For each terminal message, walk back to find the nearest user/assistant ancestor.
+  // Skip ancestors that already have user/assistant children - those are mid-conversation
+  // nodes where the conversation continued (e.g., an assistant tool_use message whose
+  // progress child is terminal, but whose tool_result child continues the conversation).
+  for (const terminal of terminalMessages) {
+    const seen = new Set<UUID>()
+    let current: TranscriptMessage | undefined = terminal
+    while (current) {
+      if (seen.has(current.uuid)) {
+        hasCycle = true
+        break
+      }
+      seen.add(current.uuid)
+      if (current.type === 'user' || current.type === 'assistant') {
+        if (!hasUserAssistantChild.has(current.uuid)) {
+          leafUuids.add(current.uuid)
+        }
+        break
+      }
+      current = current.parentUuid
+        ? messages.get(current.parentUuid)
+        : undefined
+    }
   }
 
   return {
@@ -4888,7 +4553,7 @@ function extractFirstPromptFromChunk(chunk: string): string {
 
         if (SKIP_FIRST_PROMPT_PATTERN.test(result)) {
           if (
-            (feature('PROACTIVE') || feature('KAIROS')) &&
+            (feature('KAIROS')) &&
             result.startsWith(`<${TICK_TAG}>`)
           )
             hasTickMessages = true
@@ -4908,7 +4573,7 @@ function extractFirstPromptFromChunk(chunk: string): string {
   if (firstCommandFallback) return firstCommandFallback
   // Proactive sessions have only tick messages — give them a synthetic prompt
   // so they're not filtered out by enrichLogs
-  if ((feature('PROACTIVE') || feature('KAIROS')) && hasTickMessages)
+  if ((feature('KAIROS')) && hasTickMessages)
     return 'Proactive session'
   return ''
 }

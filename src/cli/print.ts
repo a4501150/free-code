@@ -2,13 +2,8 @@
 import { feature } from 'bun:bundle'
 import { readFile, stat } from 'fs/promises'
 import { dirname } from 'path'
-import {
-  downloadUserSettings,
-  redownloadUserSettings,
-} from 'src/services/settingsSync/index.js'
 import { waitForRemoteManagedSettingsToLoad } from 'src/services/remoteManagedSettings/index.js'
 import { StructuredIO } from 'src/cli/structuredIO.js'
-import { RemoteIO } from 'src/cli/remoteIO.js'
 import {
   type Command,
   formatDescriptionWithSource,
@@ -22,11 +17,6 @@ import { assembleToolPool, filterToolsByDenyRules } from 'src/tools.js'
 import uniqBy from 'lodash-es/uniqBy.js'
 import { uniq } from 'src/utils/array.js'
 import { mergeAndFilterTools } from 'src/utils/toolPool.js'
-import {
-  logEvent,
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-} from 'src/services/analytics/index.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import {
   logForDiagnosticsNoPII,
@@ -134,11 +124,6 @@ import { getCwd } from 'src/utils/cwd.js'
 import omit from 'lodash-es/omit.js'
 import reject from 'lodash-es/reject.js'
 import { isPolicyAllowed } from 'src/services/policyLimits/index.js'
-import type { ReplBridgeHandle } from 'src/bridge/replBridge.js'
-import { getRemoteSessionUrl } from 'src/constants/product.js'
-import { buildBridgeConnectUrl } from 'src/bridge/bridgeStatusUtil.js'
-import { extractInboundMessageFields } from 'src/bridge/inboundMessages.js'
-import { resolveAndPrepend } from 'src/bridge/inboundAttachments.js'
 import type { CanUseToolFn } from 'src/hooks/useCanUseTool.js'
 import { hasPermissionsToUseTool } from 'src/utils/permissions/permissions.js'
 import { safeParseJSON } from 'src/utils/json.js'
@@ -203,8 +188,6 @@ import {
 import { createSyntheticOutputTool } from 'src/tools/SyntheticOutputTool/SyntheticOutputTool.js'
 import { parseSessionIdentifier } from 'src/utils/sessionUrl.js'
 import {
-  hydrateRemoteSession,
-  hydrateFromCCRv2InternalEvents,
   resetSessionFilePointer,
   doesMessageExistInSession,
   findUnresolvedToolUse,
@@ -286,7 +269,6 @@ import {
   setMainThreadAgentType,
   switchSession,
   isSessionPersistenceDisabled,
-  getIsRemoteMode,
   getFlagSettingsInline,
   setFlagSettingsInline,
   getMainThreadAgentType,
@@ -348,7 +330,6 @@ import { getRunningTasks } from '../utils/task/framework.js'
 import { isBackgroundTask } from '../tasks/types.js'
 import { stopTask } from '../tasks/stopTask.js'
 import { drainSdkEvents } from '../utils/sdkEventQueue.js'
-import { initializeGrowthBook } from '../services/analytics/growthbook.js'
 import { errorMessage, toError } from '../utils/errors.js'
 import { sleep } from '../utils/sleep.js'
 import { isExtractModeActive } from '../memdir/paths.js'
@@ -477,8 +458,6 @@ export async function runHeadless(
     appendSystemPrompt: string | undefined
     userSpecifiedModel: string | undefined
     fallbackModel: string | undefined
-    teleport: string | true | null | undefined
-    sdkUrl: string | undefined
     replayUserMessages: boolean | undefined
     includePartialMessages: boolean | undefined
     forkSession: boolean | undefined
@@ -491,28 +470,12 @@ export async function runHeadless(
     setSDKStatus?: (status: SDKStatus) => void
   },
 ): Promise<void> {
-  if (
-    process.env.USER_TYPE === 'ant' &&
-    isEnvTruthy(process.env.CLAUDE_CODE_EXIT_AFTER_FIRST_RENDER)
-  ) {
-    process.stderr.write(
-      `\nStartup time: ${Math.round(process.uptime() * 1000)}ms\n`,
-    )
-    // eslint-disable-next-line custom-rules/no-process-exit
-    process.exit(0)
-  }
 
   // Fire user settings download now so it overlaps with the MCP/tool setup
   // below. Managed settings already started in main.tsx preAction; this gives
   // user settings a similar head start. The cached promise is joined in
   // installPluginsAndApplyMcpInBackground before plugin install reads
   // enabledPlugins.
-  if (
-    feature('DOWNLOAD_USER_SETTINGS') &&
-    (isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) || getIsRemoteMode())
-  ) {
-    void downloadUserSettings()
-  }
 
   // In headless mode there is no React tree, so the useSettingsChange hook
   // never runs. Subscribe directly so that settings changes (including
@@ -560,9 +523,6 @@ export async function runHeadless(
   }
   headlessProfilerCheckpoint('after_grove_check')
 
-  // Initialize GrowthBook so feature flags take effect in headless mode.
-  // Without this, the disk cache is empty and all flags fall back to defaults.
-  void initializeGrowthBook()
 
   if (options.resumeSessionAt && !options.resume) {
     process.stderr.write(`Error: --resume-session-at requires --resume\n`)
@@ -685,7 +645,6 @@ export async function runHeadless(
     agentSetting: resumedAgentSetting,
   } = await loadInitialMessages(setAppState, {
     continue: options.continue,
-    teleport: options.teleport,
     resume: options.resume,
     resumeSessionAt: options.resumeSessionAt,
     forkSession: options.forkSession,
@@ -770,13 +729,11 @@ export async function runHeadless(
     return
   }
 
-  // Check if we need input prompt - skip if we're resuming with a valid session ID/JSONL file or using SDK URL
+  // Check if we need input prompt - skip if we're resuming with a valid session ID/JSONL file
   const hasValidResumeSessionId =
     typeof options.resume === 'string' &&
     (Boolean(validateUuid(options.resume)) || options.resume.endsWith('.jsonl'))
-  const isUsingSdkUrl = Boolean(options.sdkUrl)
-
-  if (!inputPrompt && !hasValidResumeSessionId && !isUsingSdkUrl) {
+  if (!inputPrompt && !hasValidResumeSessionId) {
     process.stderr.write(
       `Error: Input must be provided either through stdin or as a prompt argument when using --print\n`,
     )
@@ -799,10 +756,7 @@ export async function runHeadless(
   )
   let filteredTools = [...tools, ...allowedMcpTools]
 
-  // When using SDK URL, always use stdio permission prompting to delegate to the SDK
-  const effectivePermissionPromptToolName = options.sdkUrl
-    ? 'stdio'
-    : options.permissionPromptToolName
+  const effectivePermissionPromptToolName = options.permissionPromptToolName
 
   // Callback for when a permission prompt is shown
   const onPermissionPrompt = (details: RequiresActionDetails) => {
@@ -963,7 +917,7 @@ export async function runHeadless(
   // already flushed above, so this adds no user-visible latency — it just
   // delays process exit so gracefulShutdownSync's 5s failsafe doesn't kill
   // the forked agent mid-flight. Gated by isExtractModeActive so the
-  // tengu_slate_thimble flag controls non-interactive extraction end-to-end.
+  // isExtractModeActive controls non-interactive extraction end-to-end.
   if (feature('EXTRACT_MEMORIES') && isExtractModeActive()) {
     await extractMemoriesModule!.drainPendingExtraction()
   }
@@ -1051,7 +1005,7 @@ function runHeadlessStreaming(
 
   // Wire the central onChangeAppState mode-diff hook to the SDK output stream.
   // This fires whenever ANY code path mutates toolPermissionContext.mode —
-  // Shift+Tab, ExitPlanMode dialog, /plan slash command, rewind, bridge
+  // Shift+Tab, ExitPlanMode dialog, /plan slash command, rewind,
   // set_permission_mode, the query loop, stop_task — rather than the two
   // paths that previously went through a bespoke wrapper.
   // The wrapper's body was fully redundant (it enqueued here AND called
@@ -1287,10 +1241,6 @@ function runHeadlessStreaming(
 
             const mode = request.params.mode === 'url' ? 'url' : 'form'
 
-            logEvent('tengu_mcp_elicitation_shown', {
-              mode: mode as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-            })
-
             // Run elicitation hooks first — they can provide a response programmatically
             const hookResponse = await runElicitationHooks(
               serverName,
@@ -1302,11 +1252,6 @@ function runHeadlessStreaming(
                 serverName,
                 `Elicitation resolved by hook: ${jsonStringify(hookResponse)}`,
               )
-              logEvent('tengu_mcp_elicitation_response', {
-                mode: mode as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-                action:
-                  hookResponse.action as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-              })
               return hookResponse
             }
 
@@ -1345,11 +1290,6 @@ function runHeadlessStreaming(
               elicitationId,
             )
 
-            logEvent('tengu_mcp_elicitation_response', {
-              mode: mode as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-              action:
-                result.action as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-            })
             return result
           },
         )
@@ -1497,37 +1437,6 @@ function runHeadlessStreaming(
       }
     }
     return allTools
-  }
-
-  // Bridge handle for remote-control (SDK control message).
-  // Mirrors the REPL's useReplBridge hook: the handle is created when
-  // `remote_control` is enabled and torn down when disabled.
-  let bridgeHandle: ReplBridgeHandle | null = null
-  // Cursor into mutableMessages — tracks how far we've forwarded.
-  // Same index-based diff as useReplBridge's lastWrittenIndexRef.
-  let bridgeLastForwardedIndex = 0
-
-  // Forward new messages from mutableMessages to the bridge.
-  // Called incrementally during each turn (so claude.ai sees progress
-  // and stays alive during permission waits) and again after the turn.
-  //
-  // writeMessages has its own UUID-based dedup (initialMessageUUIDs,
-  // recentPostedUUIDs) — the index cursor here is a pre-filter to avoid
-  // O(n) re-scanning of already-sent messages on every call.
-  function forwardMessagesToBridge(): void {
-    if (!bridgeHandle) return
-    // Guard against mutableMessages shrinking (compaction truncates it).
-    const startIndex = Math.min(
-      bridgeLastForwardedIndex,
-      mutableMessages.length,
-    )
-    const newMessages = mutableMessages
-      .slice(startIndex)
-      .filter(m => m.type === 'user' || m.type === 'assistant')
-    bridgeLastForwardedIndex = mutableMessages.length
-    if (newMessages.length > 0) {
-      bridgeHandle.writeMessages(newMessages)
-    }
   }
 
   // Helper to apply MCP server changes - used by both mcp_set_servers control message
@@ -1703,16 +1612,9 @@ function runHeadlessStreaming(
   // NOTE: Nested function required - needs closure access to applyMcpServerChanges and updateSdkMcp
   async function installPluginsAndApplyMcpInBackground(): Promise<void> {
     try {
-      // Join point for user settings (fired at runHeadless entry) and managed
-      // settings (fired in main.tsx preAction). downloadUserSettings() caches
-      // its promise so this awaits the same in-flight request.
+      // Join point for managed settings (fired in main.tsx preAction).
       await Promise.all([
-        feature('DOWNLOAD_USER_SETTINGS') &&
-        (isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) || getIsRemoteMode())
-          ? withDiagnosticsTiming('headless_user_settings_download', () =>
-              downloadUserSettings(),
-            )
-          : Promise.resolve(),
+        Promise.resolve(),
         withDiagnosticsTiming('headless_managed_settings_wait', () =>
           waitForRemoteManagedSettingsToLoad(),
         ),
@@ -1778,7 +1680,7 @@ function runHeadlessStreaming(
     // which also matched plugin agents that were in the poisoned initial
     // currentAgents but correctly excluded from freshAgentDefs after managed
     // settings applied — leaking policy-blocked agents into the init message.
-    // See gh-23085: isBridgeEnabled() at Commander-definition time poisoned
+    // See gh-23085: settings read at Commander-definition time poisoned
     // the settings cache before setEligibility(true) ran.
     const sdkAgents = currentAgents.filter(a => a.source === 'flagSettings')
     currentAgents = [...freshAgentDefs.allAgents, ...sdkAgents]
@@ -1897,9 +1799,6 @@ function runHeadlessStreaming(
               `CLAUDE_CODE_SYNC_PLUGIN_INSTALL: plugin installation timed out after ${timeoutMs}ms`,
             ),
           )
-          logEvent('tengu_sync_plugin_install_timeout', {
-            timeout_ms: timeoutMs,
-          })
         }
       } else {
         await pluginInstallPromise
@@ -2095,13 +1994,7 @@ function runHeadlessStreaming(
 
           const input = command.value
 
-          if (structuredIO instanceof RemoteIO && command.mode === 'prompt') {
-            logEvent('tengu_bridge_message_received', {
-              is_repl: false,
-            })
-          }
-
-          // Abort any in-flight suggestion generation and track acceptance
+// Abort any in-flight suggestion generation and track acceptance
           suggestionState.abortController?.abort()
           suggestionState.abortController = null
           suggestionState.pendingSuggestion = null
@@ -2208,11 +2101,6 @@ function runHeadlessStreaming(
                 })
               },
             })) {
-              // Forward messages to bridge incrementally (mid-turn) so
-              // claude.ai sees progress and the connection stays alive
-              // while blocked on permission requests.
-              forwardMessagesToBridge()
-
               if (message.type === 'result') {
                 // Flush pending SDK events so they appear before result on the stream.
                 for (const event of drainSdkEvents()) {
@@ -2248,10 +2136,6 @@ function runHeadlessStreaming(
           for (const uuid of batchUuids) {
             notifyCommandLifecycle(uuid, 'completed')
           }
-
-          // Forward messages to bridge after each turn
-          forwardMessagesToBridge()
-          bridgeHandle?.sendResult()
 
           if (feature('FILE_PERSISTENCE') && turnStartTime !== undefined) {
             void executeFilePersistence(
@@ -2901,10 +2785,7 @@ function runHeadlessStreaming(
             })
           }
 
-          if (
-            message.request.agentProgressSummaries &&
-            getFeatureValue_CACHED_MAY_BE_STALE('tengu_slate_prism', true)
-          ) {
+          if (message.request.agentProgressSummaries) {
             setSdkAgentProgressSummariesEnabled(true)
           }
 
@@ -3064,18 +2945,6 @@ function runHeadlessStreaming(
           }
         } else if (message.request.subtype === 'reload_plugins') {
           try {
-            if (
-              feature('DOWNLOAD_USER_SETTINGS') &&
-              (isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) || getIsRemoteMode())
-            ) {
-              // Re-pull user settings so enabledPlugins pushed from the
-              // user's local CLI take effect before the cache sweep.
-              const applied = await redownloadUserSettings()
-              if (applied) {
-                settingsChangeDetector.notifyChange('userSettings')
-              }
-            }
-
             const r = await refreshActivePlugins(setAppState)
 
             const sdkAgents = currentAgents.filter(
@@ -3526,10 +3395,6 @@ function runHeadlessStreaming(
           // is GC'd — no fd or port is held.
           claudeOAuth?.service.cleanup()
 
-          logEvent('tengu_oauth_flow_start', {
-            loginWithClaudeAi: loginWithClaudeAi ?? true,
-          })
-
           const service = new OAuthService()
           let urlResolver!: (urls: {
             manualUrl: string
@@ -3561,9 +3426,6 @@ function runHeadlessStreaming(
               // getClaudeAIOAuthTokens in this process is invalidated; the
               // next API call re-reads keychain/file and works. No respawn.
               await installOAuthTokens(tokens)
-              logEvent('tengu_oauth_success', {
-                loginWithClaudeAi: loginWithClaudeAi ?? true,
-              })
             })
             .finally(() => {
               service.cleanup()
@@ -3889,135 +3751,6 @@ function runHeadlessStreaming(
             proactiveModule!.deactivateProactive()
           }
           sendControlResponseSuccess(message)
-        } else if (message.request.subtype === 'remote_control') {
-          if (message.request.enabled) {
-            if (bridgeHandle) {
-              // Already connected
-              sendControlResponseSuccess(message, {
-                session_url: getRemoteSessionUrl(
-                  bridgeHandle.bridgeSessionId,
-                  bridgeHandle.sessionIngressUrl,
-                ),
-                connect_url: buildBridgeConnectUrl(
-                  bridgeHandle.environmentId,
-                  bridgeHandle.sessionIngressUrl,
-                ),
-                environment_id: bridgeHandle.environmentId,
-              })
-            } else {
-              // initReplBridge surfaces gate-failure reasons via
-              // onStateChange('failed', detail) before returning null.
-              // Capture so the control-response error is actionable
-              // ("/login", "disabled by your organization's policy", etc.)
-              // instead of a generic "initialization failed".
-              let bridgeFailureDetail: string | undefined
-              try {
-                const { initReplBridge } = await import(
-                  'src/bridge/initReplBridge.js'
-                )
-                const handle = await initReplBridge({
-                  onInboundMessage(msg) {
-                    const fields = extractInboundMessageFields(msg)
-                    if (!fields) return
-                    const { content, uuid } = fields
-                    enqueue({
-                      value: content,
-                      mode: 'prompt' as const,
-                      uuid,
-                      skipSlashCommands: true,
-                    })
-                    void run()
-                  },
-                  onPermissionResponse(response) {
-                    // Forward bridge permission responses into the
-                    // stdin processing loop so they resolve pending
-                    // permission requests from the SDK consumer.
-                    structuredIO.injectControlResponse(response)
-                  },
-                  onInterrupt() {
-                    abortController?.abort()
-                  },
-                  onSetModel(model) {
-                    const resolved =
-                      model === 'default' ? getDefaultMainLoopModel() : model
-                    activeUserSpecifiedModel = resolved
-                    setMainLoopModelOverride(resolved)
-                  },
-                  onSetMaxThinkingTokens(maxTokens) {
-                    if (maxTokens === null) {
-                      options.thinkingConfig = undefined
-                    } else if (maxTokens === 0) {
-                      options.thinkingConfig = { type: 'disabled' }
-                    } else {
-                      options.thinkingConfig = {
-                        type: 'enabled',
-                        budgetTokens: maxTokens,
-                      }
-                    }
-                  },
-                  onStateChange(state, detail) {
-                    if (state === 'failed') {
-                      bridgeFailureDetail = detail
-                    }
-                    logForDebugging(
-                      `[bridge:sdk] State change: ${state}${detail ? ` — ${detail}` : ''}`,
-                    )
-                    output.enqueue({
-                      type: 'system' as StdoutMessage['type'],
-                      subtype: 'bridge_state' as string,
-                      state,
-                      detail,
-                      uuid: randomUUID(),
-                      session_id: getSessionId(),
-                    } as StdoutMessage)
-                  },
-                  initialMessages:
-                    mutableMessages.length > 0 ? mutableMessages : undefined,
-                })
-                if (!handle) {
-                  sendControlResponseError(
-                    message,
-                    bridgeFailureDetail ??
-                      'Remote Control initialization failed',
-                  )
-                } else {
-                  bridgeHandle = handle
-                  bridgeLastForwardedIndex = mutableMessages.length
-                  // Forward permission requests to the bridge
-                  structuredIO.setOnControlRequestSent(request => {
-                    handle.sendControlRequest(request)
-                  })
-                  // Cancel stale bridge permission prompts when the SDK
-                  // consumer resolves a can_use_tool request first.
-                  structuredIO.setOnControlRequestResolved(requestId => {
-                    handle.sendControlCancelRequest(requestId)
-                  })
-                  sendControlResponseSuccess(message, {
-                    session_url: getRemoteSessionUrl(
-                      handle.bridgeSessionId,
-                      handle.sessionIngressUrl,
-                    ),
-                    connect_url: buildBridgeConnectUrl(
-                      handle.environmentId,
-                      handle.sessionIngressUrl,
-                    ),
-                    environment_id: handle.environmentId,
-                  })
-                }
-              } catch (err) {
-                sendControlResponseError(message, errorMessage(err))
-              }
-            }
-          } else {
-            // Disable
-            if (bridgeHandle) {
-              structuredIO.setOnControlRequestSent(undefined)
-              structuredIO.setOnControlRequestResolved(undefined)
-              await bridgeHandle.teardown()
-              bridgeHandle = null
-            }
-            sendControlResponseSuccess(message)
-          }
         } else {
           // Unknown control request subtype — send an error response so
           // the caller doesn't hang waiting for a reply that never comes.
@@ -4040,8 +3773,8 @@ function runHeadlessStreaming(
         // Handled in structuredIO.ts, but TypeScript needs the type guard
         continue
       } else if (message.type === 'assistant' || message.type === 'system') {
-        // History replay from bridge: inject into mutableMessages as
-        // conversation context so the model sees prior turns.
+        // History replay: inject into mutableMessages as conversation
+        // context so the model sees prior turns.
         const internalMsgs = toInternalMessages([message])
         mutableMessages.push(...internalMsgs)
         // Echo assistant messages back so CCR displays them
@@ -4101,9 +3834,7 @@ function runHeadlessStreaming(
 
       enqueue({
         mode: 'prompt' as const,
-        // file_attachments rides the protobuf catchall from the web composer.
-        // Same-ref no-op when absent (no 'file_attachments' key).
-        value: await resolveAndPrepend(message, message.message.content),
+        value: message.message.content,
         uuid: message.uuid,
         priority: message.priority,
       })
@@ -4722,9 +4453,8 @@ function handleChannelEnable(
   }
 
   const pluginId =
-    `${entry.name}@${entry.marketplace}` as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+    `${entry.name}@${entry.marketplace}`
   logMCPDebug(serverName, 'Channel notifications registered')
-  logEvent('tengu_mcp_channel_enable', { plugin: pluginId })
 
   // Identical enqueue shape to the interactive register block in
   // useManageMCPConnections. drainCommandQueue processes it between turns —
@@ -4738,14 +4468,6 @@ function handleChannelEnable(
         serverName,
         `notifications/claude/channel: ${content.slice(0, 80)}`,
       )
-      logEvent('tengu_mcp_channel_message', {
-        content_length: content.length,
-        meta_key_count: Object.keys(meta ?? {}).length,
-        entry_kind:
-          'plugin' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        is_dev: false,
-        plugin: pluginId,
-      })
       enqueue({
         mode: 'prompt',
         value: wrapChannelMessage(serverName, content, meta),
@@ -4799,7 +4521,7 @@ function reregisterChannelHandlerAfterReconnect(
   const entry = findChannelEntry(connection.name, getAllowedChannels())
   const pluginId =
     entry?.kind === 'plugin'
-      ? (`${entry.name}@${entry.marketplace}` as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS)
+      ? (`${entry.name}@${entry.marketplace}`)
       : undefined
 
   logMCPDebug(
@@ -4814,14 +4536,6 @@ function reregisterChannelHandlerAfterReconnect(
         connection.name,
         `notifications/claude/channel: ${content.slice(0, 80)}`,
       )
-      logEvent('tengu_mcp_channel_message', {
-        content_length: content.length,
-        meta_key_count: Object.keys(meta ?? {}).length,
-        entry_kind:
-          entry?.kind as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        is_dev: entry?.dev ?? false,
-        plugin: pluginId,
-      })
       enqueue({
         mode: 'prompt',
         value: wrapChannelMessage(connection.name, content, meta),
@@ -4894,7 +4608,6 @@ async function loadInitialMessages(
   setAppState: (f: (prev: AppState) => AppState) => void,
   options: {
     continue: boolean | undefined
-    teleport: string | true | null | undefined
     resume: string | boolean | undefined
     resumeSessionAt: string | undefined
     forkSession: boolean | undefined
@@ -4907,7 +4620,6 @@ async function loadInitialMessages(
   // Handle continue in print mode
   if (options.continue) {
     try {
-      logEvent('tengu_continue_print', {})
 
       const result = await loadConversationForResume(
         undefined /* sessionId */,
@@ -4985,50 +4697,10 @@ async function loadInitialMessages(
     }
   }
 
-  // Handle teleport in print mode
-  if (options.teleport) {
-    try {
-      if (!isPolicyAllowed('allow_remote_sessions')) {
-        throw new Error(
-          "Remote sessions are disabled by your organization's policy.",
-        )
-      }
-
-      logEvent('tengu_teleport_print', {})
-
-      if (typeof options.teleport !== 'string') {
-        throw new Error('No session ID provided for teleport')
-      }
-
-      const {
-        checkOutTeleportedSessionBranch,
-        processMessagesForTeleportResume,
-        teleportResumeCodeSession,
-        validateGitState,
-      } = await import('src/utils/teleport.js')
-      await validateGitState()
-      const teleportResult = await teleportResumeCodeSession(options.teleport)
-      const { branchError } = await checkOutTeleportedSessionBranch(
-        teleportResult.branch,
-      )
-      return {
-        messages: processMessagesForTeleportResume(
-          teleportResult.log,
-          branchError,
-        ),
-      }
-    } catch (error) {
-      logError(error)
-      gracefulShutdownSync(1)
-      return { messages: [] }
-    }
-  }
-
   // Handle resume in print mode (accepts session ID or URL)
   // URLs are [ANT-ONLY]
   if (options.resume) {
     try {
-      logEvent('tengu_resume_print', {})
 
       // In print mode - we require a valid session ID, JSONL file or URL
       const parsedSessionId = parseSessionIdentifier(
@@ -5045,49 +4717,15 @@ async function loadInitialMessages(
         return { messages: [] }
       }
 
-      // Hydrate local transcript from remote before loading
-      if (isEnvTruthy(process.env.CLAUDE_CODE_USE_CCR_V2)) {
-        // Await restore alongside hydration so SSE catchup lands on
-        // restored state, not a fresh default.
-        const [, metadata] = await Promise.all([
-          hydrateFromCCRv2InternalEvents(parsedSessionId.sessionId),
-          options.restoredWorkerState,
-        ])
-        if (metadata) {
-          setAppState(externalMetadataToAppState(metadata))
-          if (typeof metadata.model === 'string') {
-            setMainLoopModelOverride(metadata.model)
-          }
-        }
-      } else if (
-        parsedSessionId.isUrl &&
-        parsedSessionId.ingressUrl &&
-        isEnvTruthy(process.env.ENABLE_SESSION_PERSISTENCE)
-      ) {
-        // v1: fetch session logs from Session Ingress
-        await hydrateRemoteSession(
-          parsedSessionId.sessionId,
-          parsedSessionId.ingressUrl,
-        )
-      }
-
       // Load the conversation with the specified session ID
       const result = await loadConversationForResume(
         parsedSessionId.sessionId,
         parsedSessionId.jsonlFile || undefined,
       )
 
-      // hydrateFromCCRv2InternalEvents writes an empty transcript file for
-      // fresh sessions (writeFile(sessionFile, '') with zero events), so
-      // loadConversationForResume returns {messages: []} not null. Treat
-      // empty the same as null so SessionStart still fires.
       if (!result || result.messages.length === 0) {
-        // For URL-based or CCR v2 resume, start with empty session (it was hydrated but empty)
-        if (
-          parsedSessionId.isUrl ||
-          isEnvTruthy(process.env.CLAUDE_CODE_USE_CCR_V2)
-        ) {
-          // Execute SessionStart hooks for startup since we're starting a new session
+        if (parsedSessionId.isUrl) {
+          // URL-based resume with empty session — start fresh
           return {
             messages: await (options.sessionStartHooksPromise ??
               processSessionStartHooks('startup')),
@@ -5199,7 +4837,6 @@ async function loadInitialMessages(
 function getStructuredIO(
   inputPrompt: string | AsyncIterable<string>,
   options: {
-    sdkUrl: string | undefined
     replayUserMessages?: boolean
   },
 ): StructuredIO {
@@ -5226,10 +4863,7 @@ function getStructuredIO(
     inputStream = inputPrompt
   }
 
-  // Use RemoteIO if sdkUrl is provided, otherwise use regular StructuredIO
-  return options.sdkUrl
-    ? new RemoteIO(options.sdkUrl, inputStream, options.replayUserMessages)
-    : new StructuredIO(inputStream, options.replayUserMessages)
+  return new StructuredIO(inputStream, options.replayUserMessages)
 }
 
 /**

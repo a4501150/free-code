@@ -302,10 +302,27 @@ export class LogUpdate {
     let currentStyleId = stylePool.none
     let currentHyperlink: Hyperlink = undefined
 
+    // Debug: dump status line row content from both screens
+    {
+      const slY = next.screen.height - 2
+      if (slY >= 0 && slY < prev.screen.height && slY < next.screen.height) {
+        const pLine = readLine(prev.screen, slY).trimEnd()
+        const nLine = readLine(next.screen, slY).trimEnd()
+        if (pLine !== nLine) {
+          logForDebugging(`diff-row y=${slY} prev[${pLine.length}]="${pLine.slice(0, 120)}" next[${nLine.length}]="${nLine.slice(0, 120)}"`)
+        }
+      }
+    }
+
     // First pass: render changes to existing rows (rows < prev.screen.height)
     let needsFullReset = false
     let resetTriggerY = -1
+    const statusRowY = next.screen.height - 2
+    const statusDiffCells: string[] = []
     diffEach(prev.screen, next.screen, (x, y, removed, added) => {
+      if (y === statusRowY) {
+        statusDiffCells.push(`x=${x}:${removed?.char ?? '∅'}→${added?.char ?? '∅'}`)
+      }
       // Skip new rows - we'll render them directly after
       if (growing && y >= prev.screen.height) {
         return
@@ -379,6 +396,9 @@ export class LogUpdate {
         })
       }
     })
+    if (statusDiffCells.length > 0) {
+      logForDebugging(`diff-cells y=${statusRowY}: ${statusDiffCells.join(' ')}`)
+    }
     if (needsFullReset) {
       return fullResetSequence_CAUSES_FLICKER(next, 'offscreen', stylePool, {
         triggerY: resetTriggerY,

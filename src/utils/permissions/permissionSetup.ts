@@ -16,6 +16,7 @@ import { isEnvTruthy } from '../envUtils.js'
 import type { SettingSource } from '../settings/constants.js'
 import { SETTING_SOURCES } from '../settings/constants.js'
 import {
+  getInitialSettings,
   getSettings_DEPRECATED,
   getSettingsFilePathForSource,
   getUseAutoModeDuringPlan,
@@ -35,19 +36,9 @@ const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
 
 import { resolve } from 'path'
 import {
-  checkSecurityRestrictionGate,
-  checkStatsigFeatureGate_CACHED_MAY_BE_STALE,
-  getDynamicConfig_BLOCKS_ON_INIT,
-  getFeatureValue_CACHED_MAY_BE_STALE,
-} from 'src/services/analytics/growthbook.js'
-import {
   addDirHelpMessage,
   validateDirectoryForWorkspace,
 } from '../../commands/add-dir/validation.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from '../../services/analytics/index.js'
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 /* eslint-enable @typescript-eslint/no-require-imports */
@@ -273,10 +264,6 @@ function isDangerousClassifierPermission(
   toolName: string,
   ruleContent: string | undefined,
 ): boolean {
-  if (process.env.USER_TYPE === 'ant') {
-    // Tmux send-keys executes arbitrary shell, bypassing the classifier same as Bash(*)
-    if (toolName === 'Tmux') return true
-  }
   return (
     isDangerousBashPermission(toolName, ruleContent) ||
     isDangerousPowerShellPermission(toolName, ruleContent) ||
@@ -695,28 +682,8 @@ export function initialPermissionModeFromCLI({
 }): { mode: PermissionMode; notification?: string } {
   const settings = getSettings_DEPRECATED() || {}
 
-  // Check GrowthBook gate first - highest precedence
-  const growthBookDisableBypassPermissionsMode =
-    checkStatsigFeatureGate_CACHED_MAY_BE_STALE(
-      'tengu_disable_bypass_permissions_mode',
-    )
-
-  // Then check settings - lower precedence
-  const settingsDisableBypassPermissionsMode =
-    settings.permissions?.disableBypassPermissionsMode === 'disable'
-
-  // Statsig gate takes precedence over settings
   const disableBypassPermissionsMode =
-    growthBookDisableBypassPermissionsMode ||
-    settingsDisableBypassPermissionsMode
-
-  // Sync circuit-breaker check (cached GB read). Prevents the
-  // AutoModeOptInDialog from showing in showSetupScreens() when auto can't
-  // actually be entered. autoModeFlagCli still carries intent through to
-  // verifyAutoModeGateAccess, which notifies the user why.
-  const autoModeCircuitBrokenSync = feature('TRANSCRIPT_CLASSIFIER')
-    ? getAutoModeEnabledStateIfCached() === 'disabled'
-    : false
+    settings.permissions?.disableBypassPermissionsMode === 'disable'
 
   // Modes in order of priority
   const orderedModes: PermissionMode[] = []
@@ -728,45 +695,16 @@ export function initialPermissionModeFromCLI({
   if (permissionModeCli) {
     const parsedMode = permissionModeFromString(permissionModeCli)
     if (feature('TRANSCRIPT_CLASSIFIER') && parsedMode === 'auto') {
-      if (autoModeCircuitBrokenSync) {
-        logForDebugging(
-          'auto mode circuit breaker active (cached) — falling back to default',
-          { level: 'warn' },
-        )
-      } else {
-        orderedModes.push('auto')
-      }
+      orderedModes.push('auto')
     } else {
       orderedModes.push(parsedMode)
     }
   }
   if (settings.permissions?.defaultMode) {
     const settingsMode = settings.permissions.defaultMode as PermissionMode
-    // CCR only supports acceptEdits and plan — ignore other defaultModes from
-    // settings (e.g. bypassPermissions would otherwise silently grant full
-    // access in a remote environment).
-    if (
-      isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) &&
-      !['acceptEdits', 'plan', 'default'].includes(settingsMode)
-    ) {
-      logForDebugging(
-        `settings defaultMode "${settingsMode}" is not supported in CLAUDE_CODE_REMOTE — only acceptEdits and plan are allowed`,
-        { level: 'warn' },
-      )
-      logEvent('tengu_ccr_unsupported_default_mode_ignored', {
-        mode: settingsMode as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      })
-    }
     // auto from settings requires the same gate check as from CLI
-    else if (feature('TRANSCRIPT_CLASSIFIER') && settingsMode === 'auto') {
-      if (autoModeCircuitBrokenSync) {
-        logForDebugging(
-          'auto mode circuit breaker active (cached) — falling back to default',
-          { level: 'warn' },
-        )
-      } else {
-        orderedModes.push('auto')
-      }
+    if (feature('TRANSCRIPT_CLASSIFIER') && settingsMode === 'auto') {
+      orderedModes.push('auto')
     } else {
       orderedModes.push(settingsMode)
     }
@@ -776,18 +714,10 @@ export function initialPermissionModeFromCLI({
 
   for (const mode of orderedModes) {
     if (mode === 'bypassPermissions' && disableBypassPermissionsMode) {
-      if (growthBookDisableBypassPermissionsMode) {
-        logForDebugging('bypassPermissions mode is disabled by Statsig gate', {
-          level: 'warn',
-        })
-        notification =
-          'Bypass permissions mode was disabled by your organization policy'
-      } else {
-        logForDebugging('bypassPermissions mode is disabled by settings', {
-          level: 'warn',
-        })
-        notification = 'Bypass permissions mode was disabled by settings'
-      }
+      logForDebugging('bypassPermissions mode is disabled by settings', {
+        level: 'warn',
+      })
+      notification = 'Bypass permissions mode was disabled by settings'
       continue // Skip this mode if it's disabled
     }
 
@@ -927,46 +857,21 @@ export async function initializeToolPermissionContext({
     })
   }
 
-  // Check if bypassPermissions mode is available (not disabled by Statsig gate or settings)
-  // Use cached values to avoid blocking on startup
-  const growthBookDisableBypassPermissionsMode =
-    checkStatsigFeatureGate_CACHED_MAY_BE_STALE(
-      'tengu_disable_bypass_permissions_mode',
-    )
+  // Check if bypassPermissions mode is available (not disabled by settings)
   const settings = getSettings_DEPRECATED() || {}
-  const settingsDisableBypassPermissionsMode =
-    settings.permissions?.disableBypassPermissionsMode === 'disable'
   const isBypassPermissionsModeAvailable =
     (permissionMode === 'bypassPermissions' ||
       allowDangerouslySkipPermissions) &&
-    !growthBookDisableBypassPermissionsMode &&
-    !settingsDisableBypassPermissionsMode
+    settings.permissions?.disableBypassPermissionsMode !== 'disable'
 
   // Load all permission rules from disk
   const rulesFromDisk = loadAllPermissionRulesFromDisk()
 
-  // Ant-only: Detect overly broad shell allow rules for all modes.
-  // Bash(*) or PowerShell(*) are equivalent to YOLO mode for that shell.
-  // Skip in CCR/BYOC where --allowed-tools is the intended pre-approval mechanism.
-  // Variable name kept for return-field compat; contains both shells.
-  let overlyBroadBashPermissions: DangerousPermissionInfo[] = []
-  if (
-    process.env.USER_TYPE === 'ant' &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) &&
-    process.env.CLAUDE_CODE_ENTRYPOINT !== 'local-agent'
-  ) {
-    overlyBroadBashPermissions = [
-      ...findOverlyBroadBashPermissions(rulesFromDisk, parsedAllowedToolsCli),
-      ...findOverlyBroadPowerShellPermissions(
-        rulesFromDisk,
-        parsedAllowedToolsCli,
-      ),
-    ]
-  }
+  const overlyBroadBashPermissions: DangerousPermissionInfo[] = []
 
-  // Ant-only: Detect dangerous shell permissions for auto mode
+  // Detect dangerous shell permissions for auto mode.
   // Dangerous permissions (like Bash(*), Bash(python:*), PowerShell(iex:*)) would auto-allow
-  // before the classifier can evaluate them, defeating the purpose of safer YOLO mode
+  // before the classifier can evaluate them, defeating the purpose of safer YOLO mode.
   let dangerousPermissions: DangerousPermissionInfo[] = []
   if (feature('TRANSCRIPT_CLASSIFIER') && permissionMode === 'auto') {
     dangerousPermissions = findDangerousClassifierPermissions(
@@ -1035,7 +940,7 @@ export async function initializeToolPermissionContext({
 export type AutoModeGateCheckResult = {
   // Transform function (not a pre-computed context) so callers can apply it
   // inside setAppState(prev => ...) against the CURRENT context. Pre-computing
-  // the context here captured a stale snapshot: the async GrowthBook await
+  // the context here captured a stale snapshot: the async gate check
   // below can be outrun by a mid-turn shift-tab, and returning
   // { ...currentContext, ... } would overwrite the user's mode change.
   updateContext: (ctx: ToolPermissionContext) => ToolPermissionContext
@@ -1059,9 +964,7 @@ export function getAutoModeUnavailableNotification(
       base = 'auto mode unavailable for this model'
       break
   }
-  return process.env.USER_TYPE === 'ant'
-    ? `${base} · #claude-code-feedback`
-    : base
+  return base
 }
 
 /**
@@ -1069,7 +972,7 @@ export function getAutoModeUnavailableNotification(
  *
  * Returns a transform function (not a pre-computed context) that callers
  * apply inside setAppState(prev => ...) against the CURRENT context. This
- * prevents the async GrowthBook await from clobbering mid-turn mode changes
+ * prevents the async gate check from clobbering mid-turn mode changes
  * (e.g., user shift-tabs to acceptEdits while this check is in flight).
  *
  * The transform re-checks mode/prePlanMode against the fresh ctx to avoid
@@ -1083,62 +986,22 @@ export async function verifyAutoModeGateAccess(
   // downgrades). Optional for callers without AppState (e.g. SDK init paths).
   fastMode?: boolean,
 ): Promise<AutoModeGateCheckResult> {
-  // Auto-mode config — runs in ALL builds (circuit breaker, carousel, kick-out)
-  // Fresh read of tengu_auto_mode_config.enabled — this async check runs once
-  // after GrowthBook initialization and is the authoritative source for
-  // isAutoModeAvailable. The sync startup path uses stale cache; this
-  // corrects it. Circuit breaker (enabled==='disabled') takes effect here.
-  const autoModeConfig = await getDynamicConfig_BLOCKS_ON_INIT<{
-    enabled?: AutoModeEnabledState
-    disableFastMode?: boolean
-  }>('tengu_auto_mode_config', {})
-  const enabledState = parseAutoModeEnabledState(autoModeConfig?.enabled)
   const disabledBySettings = isAutoModeDisabledBySettings()
-  // Treat settings-disable the same as GrowthBook 'disabled' for circuit-breaker
-  // semantics — blocks SDK/explicit re-entry via isAutoModeGateEnabled().
-  autoModeStateModule?.setAutoModeCircuitBroken(
-    enabledState === 'disabled' || disabledBySettings,
-  )
-
-  // Carousel availability: not circuit-broken, not disabled-by-settings,
-  // model supports it, disableFastMode breaker not firing, and (enabled or opted-in)
   const mainModel = getMainLoopModel()
-  // Temp circuit breaker: tengu_auto_mode_config.disableFastMode blocks auto
-  // mode when fast mode is on. Checks runtime AppState.fastMode (if provided)
-  // and, for ants, model name '-fast' substring (ant-internal fast models
-  // like capybara-v2-fast[1m] encode speed in the model ID itself).
-  // Remove once auto+fast mode interaction is validated.
-  const disableFastModeBreakerFires =
-    !!autoModeConfig?.disableFastMode &&
-    (!!fastMode ||
-      (process.env.USER_TYPE === 'ant' &&
-        mainModel.toLowerCase().includes('-fast')))
-  const modelSupported =
-    modelSupportsAutoMode(mainModel) && !disableFastModeBreakerFires
-  let carouselAvailable = false
-  if (enabledState !== 'disabled' && !disabledBySettings && modelSupported) {
-    carouselAvailable =
-      enabledState === 'enabled' || hasAutoModeOptInAnySource()
-  }
-  // canEnterAuto gates explicit entry (--permission-mode auto, defaultMode: auto)
-  // — explicit entry IS an opt-in, so we only block on circuit breaker + settings + model
-  const canEnterAuto =
-    enabledState !== 'disabled' && !disabledBySettings && modelSupported
+  const modelSupported = modelSupportsAutoMode(mainModel)
+  const carouselAvailable = !disabledBySettings && modelSupported
+  const canEnterAuto = carouselAvailable
   logForDebugging(
-    `[auto-mode] verifyAutoModeGateAccess: enabledState=${enabledState} disabledBySettings=${disabledBySettings} model=${mainModel} modelSupported=${modelSupported} disableFastModeBreakerFires=${disableFastModeBreakerFires} carouselAvailable=${carouselAvailable} canEnterAuto=${canEnterAuto}`,
+    `[auto-mode] verifyAutoModeGateAccess: disabledBySettings=${disabledBySettings} model=${mainModel} modelSupported=${modelSupported} carouselAvailable=${carouselAvailable}`,
   )
 
   // Capture CLI-flag intent now (doesn't depend on context).
   const autoModeFlagCli = autoModeStateModule?.getAutoModeFlagCli() ?? false
 
   // Return a transform function that re-evaluates context-dependent conditions
-  // against the CURRENT context at setAppState time. The async GrowthBook
-  // results above (canEnterAuto, carouselAvailable, enabledState, reason) are
-  // closure-captured — those don't depend on context. But mode, prePlanMode,
-  // and isAutoModeAvailable checks MUST use the fresh ctx or a mid-await
-  // shift-tab gets reverted (or worse, the user stays in auto despite the
-  // circuit breaker if they entered auto DURING the await — which is possible
-  // because setAutoModeCircuitBroken above runs AFTER the await).
+  // against the CURRENT context at setAppState time. The gate results above
+  // (canEnterAuto, carouselAvailable) are closure-captured. But mode,
+  // prePlanMode, and isAutoModeAvailable checks MUST use the fresh ctx.
   const setAvailable = (
     ctx: ToolPermissionContext,
     available: boolean,
@@ -1161,15 +1024,9 @@ export async function verifyAutoModeGateAccess(
   let reason: AutoModeUnavailableReason
   if (disabledBySettings) {
     reason = 'settings'
-    logForDebugging('auto mode disabled: disableAutoMode in settings', {
+    logForDebugging('auto mode disabled by settings', {
       level: 'warn',
     })
-  } else if (enabledState === 'disabled') {
-    reason = 'circuit-breaker'
-    logForDebugging(
-      'auto mode disabled: tengu_auto_mode_config.enabled === "disabled" (circuit breaker)',
-      { level: 'warn' },
-    )
   } else {
     reason = 'model'
     logForDebugging(
@@ -1262,11 +1119,16 @@ export async function verifyAutoModeGateAccess(
 /**
  * Core logic to check if bypassPermissions should be disabled based on Statsig gate
  */
-export function shouldDisableBypassPermissions(): Promise<boolean> {
-  return checkSecurityRestrictionGate('tengu_disable_bypass_permissions_mode')
+export async function shouldDisableBypassPermissions(): Promise<boolean> {
+  const settings = getSettings_DEPRECATED() || {}
+  return settings.permissions?.disableBypassPermissionsMode === 'disable'
 }
 
 function isAutoModeDisabledBySettings(): boolean {
+  // New: autoMode boolean in settings.json (default: true = enabled)
+  const autoMode = getInitialSettings()?.autoMode
+  if (autoMode === false) return true
+  // Backward compat: old disableAutoMode: 'disable' in permissions or top-level
   const settings = getSettings_DEPRECATED() || {}
   return (
     (settings as { disableAutoMode?: 'disable' }).disableAutoMode ===
@@ -1281,7 +1143,6 @@ function isAutoModeDisabledBySettings(): boolean {
  * have not disabled it. Synchronous.
  */
 export function isAutoModeGateEnabled(): boolean {
-  if (autoModeStateModule?.isAutoModeCircuitBroken() ?? false) return false
   if (isAutoModeDisabledBySettings()) return false
   if (!modelSupportsAutoMode(getMainLoopModel())) return false
   return true
@@ -1293,62 +1154,27 @@ export function isAutoModeGateEnabled(): boolean {
  */
 export function getAutoModeUnavailableReason(): AutoModeUnavailableReason | null {
   if (isAutoModeDisabledBySettings()) return 'settings'
-  if (autoModeStateModule?.isAutoModeCircuitBroken() ?? false) {
-    return 'circuit-breaker'
-  }
   if (!modelSupportsAutoMode(getMainLoopModel())) return 'model'
   return null
 }
 
-/**
- * The `enabled` field in the tengu_auto_mode_config GrowthBook JSON config.
- * Controls auto mode availability in UI surfaces (CLI, IDE, Desktop).
- * - 'enabled': auto mode is available in the shift-tab carousel (or equivalent)
- * - 'disabled': auto mode is fully unavailable — circuit breaker for incident response
- * - 'opt-in': auto mode is available only if the user has explicitly opted in
- *   (via --enable-auto-mode in CLI, or a settings toggle in IDE/Desktop)
- */
 export type AutoModeEnabledState = 'enabled' | 'disabled' | 'opt-in'
 
-const AUTO_MODE_ENABLED_DEFAULT: AutoModeEnabledState = 'disabled'
-
-function parseAutoModeEnabledState(value: unknown): AutoModeEnabledState {
-  if (value === 'enabled' || value === 'disabled' || value === 'opt-in') {
-    return value
-  }
-  return AUTO_MODE_ENABLED_DEFAULT
-}
-
 /**
- * Reads the `enabled` field from tengu_auto_mode_config (cached, may be stale).
- * Defaults to 'disabled' if GrowthBook is unavailable or the field is unset.
- * Other surfaces (IDE, Desktop) should call this to decide whether to surface
- * auto mode in their mode pickers.
+ * Returns the auto mode enabled state. Always 'enabled' — disabling is
+ * controlled by the `autoMode` boolean in settings.json.
  */
 export function getAutoModeEnabledState(): AutoModeEnabledState {
-  const config = getFeatureValue_CACHED_MAY_BE_STALE<{
-    enabled?: AutoModeEnabledState
-  }>('tengu_auto_mode_config', {})
-  return parseAutoModeEnabledState(config?.enabled)
+  return 'enabled'
 }
 
-const NO_CACHED_AUTO_MODE_CONFIG = Symbol('no-cached-auto-mode-config')
-
 /**
- * Like getAutoModeEnabledState but returns undefined when no cached value
- * exists (cold start, before GrowthBook init). Used by the sync
- * circuit-breaker check in initialPermissionModeFromCLI, which must not
- * conflate "not yet fetched" with "fetched and disabled" — the former
- * defers to verifyAutoModeGateAccess, the latter blocks immediately.
+ * Synchronous version of getAutoModeEnabledState. Always returns 'enabled'.
  */
 export function getAutoModeEnabledStateIfCached():
   | AutoModeEnabledState
   | undefined {
-  const config = getFeatureValue_CACHED_MAY_BE_STALE<
-    { enabled?: AutoModeEnabledState } | typeof NO_CACHED_AUTO_MODE_CONFIG
-  >('tengu_auto_mode_config', NO_CACHED_AUTO_MODE_CONFIG)
-  if (config === NO_CACHED_AUTO_MODE_CONFIG) return undefined
-  return parseAutoModeEnabledState(config?.enabled)
+  return 'enabled'
 }
 
 /**
@@ -1365,22 +1191,11 @@ export function hasAutoModeOptInAnySource(): boolean {
 }
 
 /**
- * Checks if bypassPermissions mode is currently disabled by Statsig gate or settings.
- * This is a synchronous version that uses cached Statsig values.
+ * Checks if bypassPermissions mode is currently disabled by settings.
  */
 export function isBypassPermissionsModeDisabled(): boolean {
-  const growthBookDisableBypassPermissionsMode =
-    checkStatsigFeatureGate_CACHED_MAY_BE_STALE(
-      'tengu_disable_bypass_permissions_mode',
-    )
   const settings = getSettings_DEPRECATED() || {}
-  const settingsDisableBypassPermissionsMode =
-    settings.permissions?.disableBypassPermissionsMode === 'disable'
-
-  return (
-    growthBookDisableBypassPermissionsMode ||
-    settingsDisableBypassPermissionsMode
-  )
+  return settings.permissions?.disableBypassPermissionsMode === 'disable'
 }
 
 /**

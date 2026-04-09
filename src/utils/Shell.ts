@@ -4,7 +4,7 @@ import { type FileHandle, mkdir, open, realpath } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { isAbsolute, resolve } from 'path'
 import { join as posixJoin } from 'path/posix'
-import { logEvent } from 'src/services/analytics/index.js'
+
 import {
   getOriginalCwd,
   getSessionId,
@@ -32,6 +32,7 @@ import { accessSync } from 'fs'
 import { onCwdChangedForHooks } from './hooks/fileChangedWatcher.js'
 import { getClaudeTempDirName } from './permissions/filesystem.js'
 import { getPlatform } from './platform.js'
+import { getInitialSettings } from './settings/settings.js'
 import { SandboxManager } from './sandbox/sandbox-adapter.js'
 import { invalidateSessionEnvCache } from './sessionEnvironment.js'
 import { createBashShellProvider } from './shell/bashProvider.js'
@@ -320,7 +321,7 @@ export async function exec(
         GIT_EDITOR: 'true',
         CLAUDECODE: '1',
         ...envOverrides,
-        ...(process.env.USER_TYPE === 'ant'
+        ...(getInitialSettings()?.shellSessionId ?? false
           ? {
               CLAUDE_CODE_SESSION_ID: getSessionId(),
             }
@@ -409,7 +410,6 @@ export async function exec(
             void onCwdChangedForHooks(cwd, newCwd)
           }
         } catch {
-          logEvent('tengu_shell_set_cwd', { success: false })
         }
       }
       // Clean up the temp file used for cwd tracking
@@ -464,9 +464,6 @@ export function setCwd(path: string, relativeTo?: string): void {
   setCwdState(physicalPath)
   if (process.env.NODE_ENV !== 'test') {
     try {
-      logEvent('tengu_shell_set_cwd', {
-        success: true,
-      })
     } catch (_error) {
       // Ignore logging errors to prevent test failures
     }

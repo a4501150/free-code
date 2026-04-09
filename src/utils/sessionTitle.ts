@@ -2,19 +2,16 @@
  * Session title generation via Haiku.
  *
  * Standalone module with minimal dependencies so it can be imported from
- * print.ts (SDK control request handler) without pulling in the React/chalk/
- * git dependency chain that teleport.tsx carries.
+ * print.ts (SDK control request handler) without pulling in heavy
+ * dependency chains.
  *
- * This is the single source of truth for AI-generated session titles across
- * all surfaces. Previously there were separate Haiku title generators:
- * - teleport.tsx generateTitleAndBranch (6-word title + branch for CCR)
- * - rename/generateSessionName.ts (kebab-case name for /rename)
- * Each remains for backwards compat; new callers should use this module.
+ * This is the single source of truth for AI-generated session titles.
+ * rename/generateSessionName.ts provides kebab-case names for /rename.
  */
 
 import { z } from 'zod/v4'
 import { getIsNonInteractiveSession } from '../bootstrap/state.js'
-import { logEvent } from '../services/analytics/index.js'
+
 import { queryHaiku } from '../services/api/claude.js'
 import type { Message } from '../types/message.js'
 import { logForDebugging } from './debug.js'
@@ -102,9 +99,6 @@ export async function generateSessionTitle(
       options: {
         querySource: 'generate_session_title',
         agents: [],
-        // Reflect the actual session mode — this module is called from
-        // both the SDK print path (non-interactive) and the CCR remote
-        // session path via useRemoteSession (interactive).
         isNonInteractiveSession: getIsNonInteractiveSession(),
         hasAppendSystemPrompt: false,
         mcpTools: [],
@@ -116,14 +110,11 @@ export async function generateSessionTitle(
     const parsed = titleSchema().safeParse(safeParseJSON(text))
     const title = parsed.success ? parsed.data.title.trim() || null : null
 
-    logEvent('tengu_session_title_generated', { success: title !== null })
-
     return title
   } catch (error) {
     logForDebugging(`generateSessionTitle failed: ${error}`, {
       level: 'error',
     })
-    logEvent('tengu_session_title_generated', { success: false })
     return null
   }
 }

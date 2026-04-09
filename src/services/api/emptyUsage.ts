@@ -1,9 +1,8 @@
 import type { NonNullableUsage } from '../../entrypoints/sdk/sdkUtilityTypes.js'
 
 /**
- * Zero-initialized usage object. Extracted from logging.ts so that
- * bridge/replBridge.ts can import it without transitively pulling in
- * api/errors.ts → utils/messages.ts → BashTool.tsx → the world.
+ * Zero-initialized usage object. Extracted from logging.ts to avoid
+ * transitively pulling in api/errors.ts → utils/messages.ts → BashTool.tsx → the world.
  */
 export const EMPTY_USAGE: Readonly<NonNullableUsage> = {
   input_tokens: 0,

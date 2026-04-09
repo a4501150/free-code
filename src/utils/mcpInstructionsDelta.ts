@@ -1,11 +1,9 @@
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
-import { logEvent } from '../services/analytics/index.js'
 import type {
   ConnectedMCPServer,
   MCPServerConnection,
 } from '../services/mcp/types.js'
 import type { Message } from '../types/message.js'
-import { isEnvDefinedFalsy, isEnvTruthy } from './envUtils.js'
+import { isEnvDefinedFalsy } from './envUtils.js'
 
 export type McpInstructionsDelta = {
   /** Server names — for stateless-scan reconstruction. */
@@ -32,15 +30,11 @@ export type ClientSideInstruction = {
  * (rebuilt every turn; cache-busts on late connect).
  *
  * Env override for local testing: CLAUDE_CODE_MCP_INSTR_DELTA=true/false
- * wins over both ant bypass and the GrowthBook gate.
+ * wins over both ant bypass and the feature gate.
  */
 export function isMcpInstructionsDeltaEnabled(): boolean {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_MCP_INSTR_DELTA)) return true
   if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_MCP_INSTR_DELTA)) return false
-  return (
-    process.env.USER_TYPE === 'ant' ||
-    getFeatureValue_CACHED_MAY_BE_STALE('tengu_basalt_3kr', false)
-  )
+  return true
 }
 
 /**
@@ -111,15 +105,6 @@ export function getMcpInstructionsDelta(
 
   // Same diagnostic fields as tengu_deferred_tools_pool_change — same
   // scan-fails-in-prod bug, same attachment persistence path.
-  logEvent('tengu_mcp_instructions_pool_change', {
-    addedCount: added.length,
-    removedCount: removed.length,
-    priorAnnouncedCount: announced.size,
-    clientSideCount: clientSideInstructions.length,
-    messagesLength: messages.length,
-    attachmentCount,
-    midCount,
-  })
 
   added.sort((a, b) => a.name.localeCompare(b.name))
   return {

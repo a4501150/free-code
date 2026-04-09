@@ -521,19 +521,22 @@ function highlightLine(
     // hljs throws on unknown language despite ignoreIllegals
     return [[defaultStyle(theme), code]]
   }
-  if (!hasRootNode(result.emitter)) {
+  // highlight.js exposes the emitter as `_emitter` (private API); older
+  // versions or forks may use `emitter`. Try both to stay resilient.
+  const emitter = (result as any)._emitter ?? (result as any).emitter
+  if (!hasRootNode(emitter)) {
     if (!loggedEmitterShapeError) {
       loggedEmitterShapeError = true
       logError(
         new Error(
-          `color-diff: hljs emitter shape mismatch (keys: ${Object.keys(result.emitter).join(',')}). Syntax highlighting disabled.`,
+          `color-diff: hljs emitter shape mismatch (keys: ${Object.keys(emitter ?? {}).join(',')}). Syntax highlighting disabled.`,
         ),
       )
     }
     return [[defaultStyle(theme), code]]
   }
   const blocks: Block[] = []
-  flattenHljs(result.emitter.rootNode, theme, undefined, blocks)
+  flattenHljs(emitter.rootNode, theme, undefined, blocks)
   return blocks
 }
 

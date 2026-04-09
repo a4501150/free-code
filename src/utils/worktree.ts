@@ -587,40 +587,6 @@ async function performPostCreationSetup(
   // Copy gitignored files specified in .worktreeinclude (best-effort)
   await copyWorktreeIncludeFiles(repoRoot, worktreePath)
 
-  // The core.hooksPath config-set above is fragile: husky's prepare script
-  // (`git config core.hooksPath .husky`) runs on every `bun install` and
-  // resets the SHARED .git/config value back to relative, causing each
-  // worktree to resolve to its OWN .husky/ again. The attribution hook
-  // file isn't tracked (it's in .git/info/exclude), so fresh worktrees
-  // don't have it. Install it directly into the worktree's .husky/ —
-  // husky won't delete it (husky install is additive-only), and for
-  // non-husky repos this resolves to the shared .git/hooks/ (idempotent).
-  //
-  // Pass the worktree-local .husky explicitly: getHooksDir would return
-  // the absolute core.hooksPath we just set above (main repo's .husky),
-  // not the worktree's — `git rev-parse --git-path hooks` echoes the config
-  // value verbatim when it's absolute.
-  if (feature('COMMIT_ATTRIBUTION')) {
-    const worktreeHooksDir =
-      hooksPath === huskyPath ? join(worktreePath, '.husky') : undefined
-    void import('./postCommitAttribution.js')
-      .then(m =>
-        m
-          .installPrepareCommitMsgHook(worktreePath, worktreeHooksDir)
-          .catch(error => {
-            logForDebugging(
-              `Failed to install attribution hook in worktree: ${error}`,
-            )
-          }),
-      )
-      .catch(error => {
-        // Dynamic import() itself rejected (module load failure). The inner
-        // .catch above only handles installPrepareCommitMsgHook rejection —
-        // without this outer handler an import failure would surface as an
-        // unhandled promise rejection.
-        logForDebugging(`Failed to load postCommitAttribution module: ${error}`)
-      })
-  }
 }
 
 /**
@@ -1021,11 +987,11 @@ export async function removeAgentWorktree(
 
 /**
  * Slug patterns for throwaway worktrees created by AgentTool (`agent-a<7hex>`,
- * from earlyAgentId.slice(0,8)), WorkflowTool (`wf_<runId>-<idx>` where runId
- * is randomUUID().slice(0,12) = 8 hex + `-` + 3 hex), and bridgeMain
- * (`bridge-<safeFilenameId>`). These leak when the parent process is killed
- * (Ctrl+C, ESC, crash) before their in-process cleanup runs. Exact-shape
- * patterns avoid sweeping user-named EnterWorktree slugs like `wf-myfeature`.
+ * from earlyAgentId.slice(0,8)) and WorkflowTool (`wf_<runId>-<idx>` where
+ * runId is randomUUID().slice(0,12) = 8 hex + `-` + 3 hex). These leak when
+ * the parent process is killed (Ctrl+C, ESC, crash) before their in-process
+ * cleanup runs. Exact-shape patterns avoid sweeping user-named EnterWorktree
+ * slugs like `wf-myfeature`.
  */
 const EPHEMERAL_WORKTREE_PATTERNS = [
   /^agent-a[0-9a-f]{7}$/,
@@ -1033,8 +999,6 @@ const EPHEMERAL_WORKTREE_PATTERNS = [
   // Legacy wf-<idx> slugs from before workflowRunId disambiguation — kept so
   // the 30-day sweep still cleans up worktrees leaked by older builds.
   /^wf-\d+$/,
-  // Real bridge slugs are `bridge-${safeFilenameId(sessionId)}`.
-  /^bridge-[A-Za-z0-9_]+(-[A-Za-z0-9_]+)*$/,
   // Template job worktrees: job-<templateName>-<8hex>. Prefix distinguishes
   // from user-named EnterWorktree slugs that happen to end in 8 hex.
   /^job-[a-zA-Z0-9._-]{1,55}-[0-9a-f]{8}$/,
@@ -1392,76 +1356,8 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
     )
   }
 
-  // For ants in claude-cli-internal, set up dev panes (watch + start)
-  const isAnt = process.env.USER_TYPE === 'ant'
-  const isClaudeCliInternal = repoName === 'claude-cli-internal'
-  const shouldSetupDevPanes = isAnt && isClaudeCliInternal && !sessionExists
-
-  if (shouldSetupDevPanes) {
-    // Create detached session with Claude in first pane
-    spawnSync(
-      'tmux',
-      [
-        'new-session',
-        '-d', // detached
-        '-s',
-        tmuxSessionName,
-        '-c',
-        worktreeDir,
-        '--',
-        process.execPath,
-        ...newArgs,
-      ],
-      { cwd: worktreeDir, env: tmuxEnv },
-    )
-
-    // Split horizontally and run watch
-    spawnSync(
-      'tmux',
-      ['split-window', '-h', '-t', tmuxSessionName, '-c', worktreeDir],
-      { cwd: worktreeDir },
-    )
-    spawnSync(
-      'tmux',
-      ['send-keys', '-t', tmuxSessionName, 'bun run watch', 'Enter'],
-      { cwd: worktreeDir },
-    )
-
-    // Split vertically and run start
-    spawnSync(
-      'tmux',
-      ['split-window', '-v', '-t', tmuxSessionName, '-c', worktreeDir],
-      { cwd: worktreeDir },
-    )
-    spawnSync('tmux', ['send-keys', '-t', tmuxSessionName, 'bun run start'], {
-      cwd: worktreeDir,
-    })
-
-    // Select the first pane (Claude)
-    spawnSync('tmux', ['select-pane', '-t', `${tmuxSessionName}:0.0`], {
-      cwd: worktreeDir,
-    })
-
-    // Attach or switch to the session
-    if (isAlreadyInTmux) {
-      // Switch to sibling session (avoid nesting)
-      spawnSync('tmux', ['switch-client', '-t', tmuxSessionName], {
-        stdio: 'inherit',
-      })
-    } else {
-      // Attach to the session
-      spawnSync(
-        'tmux',
-        [...tmuxGlobalArgs, 'attach-session', '-t', tmuxSessionName],
-        {
-          stdio: 'inherit',
-          cwd: worktreeDir,
-        },
-      )
-    }
-  } else {
-    // Standard behavior: create or attach
-    if (isAlreadyInTmux) {
+  // Standard behavior: create or attach
+  if (isAlreadyInTmux) {
       // Already in tmux - create detached session, then switch to it (sibling)
       // Check if session already exists first
       if (sessionExists) {
@@ -1513,7 +1409,7 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
         env: tmuxEnv,
       })
     }
-  }
 
   return { handled: true }
 }
+

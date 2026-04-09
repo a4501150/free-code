@@ -60,16 +60,6 @@ export class ShellError extends Error {
   }
 }
 
-export class TeleportOperationError extends Error {
-  constructor(
-    message: string,
-    public readonly formattedMessage: string,
-  ) {
-    super(message)
-    this.name = 'TeleportOperationError'
-  }
-}
-
 /**
  * Error with a message that is safe to log to telemetry.
  * Use the long name to confirm you've verified the message contains no

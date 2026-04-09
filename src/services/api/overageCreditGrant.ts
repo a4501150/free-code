@@ -4,7 +4,7 @@ import { getOauthAccountInfo } from '../../utils/auth.js'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { logError } from '../../utils/log.js'
 import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
-import { getOAuthHeaders, prepareApiRequest } from '../../utils/teleport/api.js'
+import { getOAuthHeaders, prepareApiRequest } from '../../utils/oauthApi.js'
 
 export type OverageCreditGrantInfo = {
   available: boolean

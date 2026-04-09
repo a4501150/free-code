@@ -7,6 +7,7 @@ import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import { getFsImplementation } from './fsOperations.js'
 import { sanitizePath } from './path.js'
+import { getInitialSettings } from './settings/settings.js'
 import { jsonStringify } from './slowOperations.js'
 
 // Mutable recording state — filePath is updated when session ID changes (e.g., --resume)
@@ -25,7 +26,7 @@ export function getRecordFilePath(): string | null {
   if (recordingState.filePath !== null) {
     return recordingState.filePath
   }
-  if (process.env.USER_TYPE !== 'ant') {
+  if (!(getInitialSettings()?.terminalRecording ?? false)) {
     return null
   }
   if (!isEnvTruthy(process.env.CLAUDE_CODE_TERMINAL_RECORDING)) {

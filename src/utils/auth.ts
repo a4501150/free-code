@@ -5,10 +5,6 @@ import { mkdir, stat } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
 import { CLAUDE_AI_PROFILE_SCOPE } from 'src/constants/oauth.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from 'src/services/analytics/index.js'
 import { getModelStrings } from 'src/utils/model/modelStrings.js'
 import { getAPIProvider } from 'src/utils/model/providers.js'
 import {
@@ -53,7 +49,6 @@ import {
   getClaudeConfigHomeDir,
   isBareMode,
   isEnvTruthy,
-  isRunningOnHomespace,
 } from './envUtils.js'
 import { errorMessage } from './errors.js'
 import { execSyncWithDefaults_DEPRECATED } from './execFileNoThrow.js'
@@ -90,10 +85,7 @@ const DEFAULT_API_KEY_HELPER_TTL = 5 * 60 * 1000
  * also use that key — and fail if it's stale/wrong-org.
  */
 function isManagedOAuthContext(): boolean {
-  return (
-    isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) ||
-    process.env.CLAUDE_CODE_ENTRYPOINT === 'claude-desktop'
-  )
+  return process.env.CLAUDE_CODE_ENTRYPOINT === 'claude-desktop'
 }
 
 /** Whether we are supporting direct 1P auth. */
@@ -248,11 +240,7 @@ export function getAnthropicApiKeyWithSource(
     return { key: null, source: 'none' }
   }
 
-  // On homespace, don't use ANTHROPIC_API_KEY (use Console key instead)
-  // https://anthropic.slack.com/archives/C08428WSLKV/p1747331773214779
-  const apiKeyEnv = isRunningOnHomespace()
-    ? undefined
-    : process.env.ANTHROPIC_API_KEY
+  const apiKeyEnv = process.env.ANTHROPIC_API_KEY
 
   // Always check for direct environment variable when the user ran claude --print.
   // This is useful for CI, etc.
@@ -551,7 +539,6 @@ async function _executeApiKeyHelper(
         `Security: apiKeyHelper executed before workspace trust is confirmed. If you see this message, post in ${MACRO.FEEDBACK_CHANNEL}.`,
       )
       logAntError('apiKeyHelper invoked before trust check', error)
-      logEvent('tengu_apiKeyHelper_missing_trust11', {})
       return null
     }
   }
@@ -626,7 +613,6 @@ async function runAwsAuthRefresh(): Promise<boolean> {
         `Security: awsAuthRefresh executed before workspace trust is confirmed. If you see this message, post in ${MACRO.FEEDBACK_CHANNEL}.`,
       )
       logAntError('awsAuthRefresh invoked before trust check', error)
-      logEvent('tengu_awsAuthRefresh_missing_trust', {})
       return false
     }
   }
@@ -723,7 +709,6 @@ async function getAwsCredsFromCredentialExport(): Promise<{
         `Security: awsCredentialExport executed before workspace trust is confirmed. If you see this message, post in ${MACRO.FEEDBACK_CHANNEL}.`,
       )
       logAntError('awsCredentialExport invoked before trust check', error)
-      logEvent('tengu_awsCredentialExport_missing_trust', {})
       return null
     }
   }
@@ -890,7 +875,6 @@ async function runGcpAuthRefresh(): Promise<boolean> {
         `Security: gcpAuthRefresh executed before workspace trust is confirmed. If you see this message, post in ${MACRO.FEEDBACK_CHANNEL}.`,
       )
       logAntError('gcpAuthRefresh invoked before trust check', error)
-      logEvent('tengu_gcpAuthRefresh_missing_trust', {})
       return false
     }
   }
@@ -1121,19 +1105,10 @@ export async function saveApiKey(apiKey: string): Promise<void> {
         reject: false,
       })
 
-      logEvent('tengu_api_key_saved_to_keychain', {})
       savedToKeychain = true
     } catch (e) {
       logError(e)
-      logEvent('tengu_api_key_keychain_error', {
-        error: errorMessage(
-          e,
-        ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      })
-      logEvent('tengu_api_key_saved_to_config', {})
     }
-  } else {
-    logEvent('tengu_api_key_saved_to_config', {})
   }
 
   const normalizedKey = normalizeApiKeyForConfig(apiKey)
@@ -1197,19 +1172,17 @@ export function saveOAuthTokensIfNeeded(tokens: OAuthTokens): {
   warning?: string
 } {
   if (!shouldUseClaudeAIAuth(tokens.scopes)) {
-    logEvent('tengu_oauth_tokens_not_claude_ai', {})
     return { success: true }
   }
 
   // Skip saving inference-only tokens (they come from env vars)
   if (!tokens.refreshToken || !tokens.expiresAt) {
-    logEvent('tengu_oauth_tokens_inference_only', {})
     return { success: true }
   }
 
   const secureStorage = getSecureStorage()
   const storageBackend =
-    secureStorage.name as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+    secureStorage.name
 
   try {
     const storageData = secureStorage.read() || {}
@@ -1231,24 +1204,12 @@ export function saveOAuthTokensIfNeeded(tokens: OAuthTokens): {
 
     const updateStatus = secureStorage.update(storageData)
 
-    if (updateStatus.success) {
-      logEvent('tengu_oauth_tokens_saved', { storageBackend })
-    } else {
-      logEvent('tengu_oauth_tokens_save_failed', { storageBackend })
-    }
-
     getClaudeAIOAuthTokens.cache?.clear?.()
     clearBetasCaches()
     clearToolSchemaCache()
     return updateStatus
   } catch (error) {
     logError(error)
-    logEvent('tengu_oauth_tokens_save_exception', {
-      storageBackend,
-      error: errorMessage(
-        error,
-      ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    })
     return { success: false, warning: 'Failed to save OAuth tokens' }
   }
 }
@@ -1366,7 +1327,6 @@ export function clearCodexOAuthTokens(): void {
   })
 }
 
-
 let lastCredentialsMtimeMs = 0
 
 // Cross-process staleness: another CC instance may write fresh tokens to
@@ -1440,7 +1400,6 @@ async function handleOAuth401ErrorImpl(
 
   // If keychain has a different token, another tab already refreshed - use it
   if (currentTokens.accessToken !== failedAccessToken) {
-    logEvent('tengu_oauth_401_recovered_from_keychain', {})
     return true
   }
 
@@ -1544,31 +1503,18 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
 
   let release
   try {
-    logEvent('tengu_oauth_token_refresh_lock_acquiring', {})
     release = await lockfile.lock(claudeDir)
-    logEvent('tengu_oauth_token_refresh_lock_acquired', {})
   } catch (err) {
     if ((err as { code?: string }).code === 'ELOCKED') {
       // Another process has the lock, let's retry if we haven't exceeded max retries
       if (retryCount < MAX_RETRIES) {
-        logEvent('tengu_oauth_token_refresh_lock_retry', {
-          retryCount: retryCount + 1,
-        })
         // Wait a bit before retrying
         await sleep(1000 + Math.random() * 1000)
         return checkAndRefreshOAuthTokenIfNeededImpl(retryCount + 1, force)
       }
-      logEvent('tengu_oauth_token_refresh_lock_retry_limit_reached', {
-        maxRetries: MAX_RETRIES,
-      })
       return false
     }
     logError(err)
-    logEvent('tengu_oauth_token_refresh_lock_error', {
-      error: errorMessage(
-        err,
-      ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    })
     return false
   }
   try {
@@ -1580,11 +1526,9 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
       !lockedTokens?.refreshToken ||
       !isOAuthTokenExpired(lockedTokens.expiresAt)
     ) {
-      logEvent('tengu_oauth_token_refresh_race_resolved', {})
       return false
     }
 
-    logEvent('tengu_oauth_token_refresh_starting', {})
     const refreshedTokens = await refreshOAuthToken(lockedTokens.refreshToken, {
       // For Claude.ai subscribers, omit scopes so the default
       // CLAUDE_AI_OAUTH_SCOPES applies — this allows scope expansion
@@ -1606,15 +1550,12 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
     clearKeychainCache()
     const currentTokens = await getClaudeAIOAuthTokensAsync()
     if (currentTokens && !isOAuthTokenExpired(currentTokens.expiresAt)) {
-      logEvent('tengu_oauth_token_refresh_race_recovered', {})
       return true
     }
 
     return false
   } finally {
-    logEvent('tengu_oauth_token_refresh_lock_releasing', {})
     await release()
-    logEvent('tengu_oauth_token_refresh_lock_released', {})
   }
 }
 

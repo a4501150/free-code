@@ -44,10 +44,6 @@ import { extractReadFilesFromMessages } from '../../utils/queryHelpers.js'
 import { getTranscriptPath } from '../../utils/sessionStorage.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-  logEvent,
-} from '../analytics/index.js'
-import {
   generateSuggestion,
   getPromptVariant,
   getSuggestionSuppressReason,
@@ -130,26 +126,6 @@ function logSpeculation(
   boundary: CompletionBoundary | null,
   extras?: Record<string, string | number | boolean | undefined>,
 ): void {
-  logEvent('tengu_speculation', {
-    speculation_id:
-      id as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    outcome:
-      outcome as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    duration_ms: Date.now() - startTime,
-    suggestion_length: suggestionLength,
-    tools_executed: countToolsInMessages(messages),
-    completed: boundary !== null,
-    boundary_type: boundary?.type as
-      | AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
-      | undefined,
-    boundary_tool: getBoundaryTool(boundary) as
-      | AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
-      | undefined,
-    boundary_detail: getBoundaryDetail(boundary) as
-      | AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
-      | undefined,
-    ...extras,
-  })
 }
 
 function countToolsInMessages(messages: Message[]): number {
@@ -276,8 +252,6 @@ function createSpeculationFeedbackMessage(
   timeSavedMs: number,
   sessionTotalMs: number,
 ): Message | null {
-  if (process.env.USER_TYPE !== 'ant') return null
-
   if (messages.length === 0 || timeSavedMs === 0) return null
 
   const toolUses = countToolsInMessages(messages)
@@ -335,9 +309,7 @@ function resetSpeculationState(setAppState: SetAppState): void {
 }
 
 export function isSpeculationEnabled(): boolean {
-  const enabled =
-    process.env.USER_TYPE === 'ant' &&
-    (getGlobalConfig().speculationEnabled ?? true)
+  const enabled = getGlobalConfig().speculationEnabled ?? false
   logForDebugging(`[Speculation] enabled=${enabled}`)
   return enabled
 }
@@ -703,9 +675,9 @@ export async function startSpeculation(
         error_message: errorMessage(error).slice(
           0,
           200,
-        ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        ),
         error_phase:
-          'start' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          'start',
         is_pipelined: isPipelined,
       },
     )
@@ -977,9 +949,9 @@ export async function handleSpeculationAccept(
         error_message: errorMessage(error).slice(
           0,
           200,
-        ) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        ),
         error_phase:
-          'accept' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          'accept',
         is_pipelined: speculationState.isPipelined,
       },
     )
