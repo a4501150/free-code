@@ -135,7 +135,6 @@ export const VERIFICATION_AGENT: BuiltInAgentDefinition = {
   agentType: 'verification',
   whenToUse: VERIFICATION_WHEN_TO_USE,
   color: 'red',
-  background: true,
   disallowedTools: [
     AGENT_TOOL_NAME,
     EXIT_PLAN_MODE_TOOL_NAME,

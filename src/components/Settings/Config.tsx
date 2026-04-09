@@ -1,33 +1,33 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
-import { feature } from 'bun:bundle'
+import { feature } from "bun:bundle";
 import {
   Box,
   Text,
   useTheme,
   useThemeSetting,
   useTerminalFocus,
-} from '../../ink.js'
-import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
-import * as React from 'react'
-import { useState, useCallback } from 'react'
+} from "../../ink.js";
+import type { KeyboardEvent } from "../../ink/events/keyboard-event.js";
+import * as React from "react";
+import { useState, useCallback } from "react";
 import {
   useKeybinding,
   useKeybindings,
-} from '../../keybindings/useKeybinding.js'
-import figures from 'figures'
+} from "../../keybindings/useKeybinding.js";
+import figures from "figures";
 import {
   type GlobalConfig,
   saveGlobalConfig,
   getCurrentProjectConfig,
   type OutputStyle,
-} from '../../utils/config.js'
-import { normalizeApiKeyForConfig } from '../../utils/authPortable.js'
+} from "../../utils/config.js";
+import { normalizeApiKeyForConfig } from "../../utils/authPortable.js";
 import {
   getGlobalConfig,
   getAutoUpdaterDisabledReason,
   formatAutoUpdaterDisabledReason,
-} from '../../utils/config.js'
-import chalk from 'chalk'
+} from "../../utils/config.js";
+import chalk from "chalk";
 import {
   permissionModeTitle,
   permissionModeFromString,
@@ -37,69 +37,69 @@ import {
   PERMISSION_MODES,
   type ExternalPermissionMode,
   type PermissionMode,
-} from '../../utils/permissions/PermissionMode.js'
+} from "../../utils/permissions/PermissionMode.js";
 import {
   getAutoModeEnabledState,
   hasAutoModeOptInAnySource,
   transitionPlanAutoMode,
-} from '../../utils/permissions/permissionSetup.js'
-import { logError } from '../../utils/log.js'
-import { ThemePicker } from '../ThemePicker.js'
+} from "../../utils/permissions/permissionSetup.js";
+import { logError } from "../../utils/log.js";
+import { ThemePicker } from "../ThemePicker.js";
 import {
   useAppState,
   useSetAppState,
   useAppStateStore,
-} from '../../state/AppState.js'
-import { ModelPicker } from '../ModelPicker.js'
+} from "../../state/AppState.js";
+import { ModelPicker } from "../ModelPicker.js";
 import {
   modelDisplayString,
   isOpus1mMergeEnabled,
-} from '../../utils/model/model.js'
-import { isBilledAsExtraUsage } from '../../utils/extraUsage.js'
-import { ClaudeMdExternalIncludesDialog } from '../ClaudeMdExternalIncludesDialog.js'
+} from "../../utils/model/model.js";
+import { isBilledAsExtraUsage } from "../../utils/extraUsage.js";
+import { ClaudeMdExternalIncludesDialog } from "../ClaudeMdExternalIncludesDialog.js";
 import {
   ChannelDowngradeDialog,
   type ChannelDowngradeChoice,
-} from '../ChannelDowngradeDialog.js'
-import { Dialog } from '../design-system/Dialog.js'
-import { Select } from '../CustomSelect/index.js'
-import { OutputStylePicker } from '../OutputStylePicker.js'
-import { LanguagePicker } from '../LanguagePicker.js'
+} from "../ChannelDowngradeDialog.js";
+import { Dialog } from "../design-system/Dialog.js";
+import { Select } from "../CustomSelect/index.js";
+import { OutputStylePicker } from "../OutputStylePicker.js";
+import { LanguagePicker } from "../LanguagePicker.js";
 import {
   getExternalClaudeMdIncludes,
   getMemoryFiles,
   hasExternalClaudeMdIncludes,
-} from 'src/utils/claudemd.js'
-import { KeyboardShortcutHint } from '../design-system/KeyboardShortcutHint.js'
-import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js'
-import { Byline } from '../design-system/Byline.js'
-import { useTabHeaderFocus } from '../design-system/Tabs.js'
-import { useIsInsideModal } from '../../context/modalContext.js'
-import { SearchBox } from '../SearchBox.js'
+} from "src/utils/claudemd.js";
+import { KeyboardShortcutHint } from "../design-system/KeyboardShortcutHint.js";
+import { ConfigurableShortcutHint } from "../ConfigurableShortcutHint.js";
+import { Byline } from "../design-system/Byline.js";
+import { useTabHeaderFocus } from "../design-system/Tabs.js";
+import { useIsInsideModal } from "../../context/modalContext.js";
+import { SearchBox } from "../SearchBox.js";
 import {
   isSupportedTerminal,
   hasAccessToIDEExtensionDiffFeature,
-} from '../../utils/ide.js'
+} from "../../utils/ide.js";
 import {
   getInitialSettings,
   getSettingsForSource,
   updateSettingsForSource,
-} from '../../utils/settings/settings.js'
-import { getUserMsgOptIn, setUserMsgOptIn } from '../../bootstrap/state.js'
-import { DEFAULT_OUTPUT_STYLE_NAME } from 'src/constants/outputStyles.js'
-import { isEnvTruthy } from 'src/utils/envUtils.js'
+} from "../../utils/settings/settings.js";
+import { getUserMsgOptIn, setUserMsgOptIn } from "../../bootstrap/state.js";
+import { DEFAULT_OUTPUT_STYLE_NAME } from "src/constants/outputStyles.js";
+import { isEnvTruthy } from "src/utils/envUtils.js";
 import type {
   LocalJSXCommandContext,
   CommandResultDisplay,
-} from '../../commands.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
+} from "../../commands.js";
+import { isAgentSwarmsEnabled } from "../../utils/agentSwarmsEnabled.js";
 import {
   getCliTeammateModeOverride,
   clearCliTeammateModeOverride,
-} from '../../utils/swarm/backends/teammateModeSnapshot.js'
-import { getHardcodedTeammateModelFallback } from '../../utils/swarm/teammateModel.js'
-import { useSearchInput } from '../../hooks/useSearchInput.js'
-import { useTerminalSize } from '../../hooks/useTerminalSize.js'
+} from "../../utils/swarm/backends/teammateModeSnapshot.js";
+import { getHardcodedTeammateModelFallback } from "../../utils/swarm/teammateModel.js";
+import { useSearchInput } from "../../hooks/useSearchInput.js";
+import { useTerminalSize } from "../../hooks/useTerminalSize.js";
 import {
   clearFastModeCooldown,
   FAST_MODE_MODEL_DISPLAY,
@@ -107,60 +107,60 @@ import {
   isFastModeEnabled,
   getFastModeModel,
   isFastModeSupportedByModel,
-} from '../../utils/fastMode.js'
-import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js'
+} from "../../utils/fastMode.js";
+import { isFullscreenEnvEnabled } from "../../utils/fullscreen.js";
 
 type Props = {
   onClose: (
     result?: string,
     options?: { display?: CommandResultDisplay },
-  ) => void
-  context: LocalJSXCommandContext
-  setTabsHidden: (hidden: boolean) => void
-  onIsSearchModeChange?: (inSearchMode: boolean) => void
-  contentHeight?: number
-}
+  ) => void;
+  context: LocalJSXCommandContext;
+  setTabsHidden: (hidden: boolean) => void;
+  onIsSearchModeChange?: (inSearchMode: boolean) => void;
+  contentHeight?: number;
+};
 
 type SettingBase =
   | {
-      id: string
-      label: string
+      id: string;
+      label: string;
     }
   | {
-      id: string
-      label: React.ReactNode
-      searchText: string
-    }
+      id: string;
+      label: React.ReactNode;
+      searchText: string;
+    };
 
 type Setting =
   | (SettingBase & {
-      value: boolean
-      onChange(value: boolean): void
-      type: 'boolean'
+      value: boolean;
+      onChange(value: boolean): void;
+      type: "boolean";
     })
   | (SettingBase & {
-      value: string
-      options: string[]
-      onChange(value: string): void
-      type: 'enum'
+      value: string;
+      options: string[];
+      onChange(value: string): void;
+      type: "enum";
     })
   | (SettingBase & {
       // For enums that are set by a custom component, we don't need to pass options,
       // but we still need a value to display in the top-level config menu
-      value: string
-      onChange(value: string): void
-      type: 'managedEnum'
-    })
+      value: string;
+      onChange(value: string): void;
+      type: "managedEnum";
+    });
 
 type SubMenu =
-  | 'Theme'
-  | 'Model'
-  | 'TeammateModel'
-  | 'ExternalIncludes'
-  | 'OutputStyle'
-  | 'ChannelDowngrade'
-  | 'Language'
-  | 'EnableAutoUpdates'
+  | "Theme"
+  | "Model"
+  | "TeammateModel"
+  | "ExternalIncludes"
+  | "OutputStyle"
+  | "ChannelDowngrade"
+  | "Language"
+  | "EnableAutoUpdates";
 export function Config({
   onClose,
   context,
@@ -168,61 +168,61 @@ export function Config({
   onIsSearchModeChange,
   contentHeight,
 }: Props): React.ReactNode {
-  const { headerFocused, focusHeader } = useTabHeaderFocus()
-  const insideModal = useIsInsideModal()
-  const [, setTheme] = useTheme()
-  const themeSetting = useThemeSetting()
-  const [globalConfig, setGlobalConfig] = useState(getGlobalConfig())
-  const initialConfig = React.useRef(getGlobalConfig())
-  const [settingsData, setSettingsData] = useState(getInitialSettings())
-  const initialSettingsData = React.useRef(getInitialSettings())
+  const { headerFocused, focusHeader } = useTabHeaderFocus();
+  const insideModal = useIsInsideModal();
+  const [, setTheme] = useTheme();
+  const themeSetting = useThemeSetting();
+  const [globalConfig, setGlobalConfig] = useState(getGlobalConfig());
+  const initialConfig = React.useRef(getGlobalConfig());
+  const [settingsData, setSettingsData] = useState(getInitialSettings());
+  const initialSettingsData = React.useRef(getInitialSettings());
   const [currentOutputStyle, setCurrentOutputStyle] = useState<OutputStyle>(
     settingsData?.outputStyle || DEFAULT_OUTPUT_STYLE_NAME,
-  )
-  const initialOutputStyle = React.useRef(currentOutputStyle)
+  );
+  const initialOutputStyle = React.useRef(currentOutputStyle);
   const [currentLanguage, setCurrentLanguage] = useState<string | undefined>(
     settingsData?.language,
-  )
-  const initialLanguage = React.useRef(currentLanguage)
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  const [scrollOffset, setScrollOffset] = useState(0)
-  const [isSearchMode, setIsSearchMode] = useState(true)
-  const isTerminalFocused = useTerminalFocus()
-  const { rows } = useTerminalSize()
+  );
+  const initialLanguage = React.useRef(currentLanguage);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [isSearchMode, setIsSearchMode] = useState(true);
+  const isTerminalFocused = useTerminalFocus();
+  const { rows } = useTerminalSize();
   // contentHeight is set by Settings.tsx (same value passed to Tabs to fix
   // pane height across all tabs — prevents layout jank when switching).
   // Reserve ~10 rows for chrome (search box, gaps, footer, scroll hints).
   // Fallback calc for standalone rendering (tests).
-  const paneCap = contentHeight ?? Math.min(Math.floor(rows * 0.8), 30)
-  const maxVisible = Math.max(5, paneCap - 10)
-  const mainLoopModel = useAppState(s => s.mainLoopModel)
-  const verbose = useAppState(s => s.verbose)
-  const thinkingEnabled = useAppState(s => s.thinkingEnabled)
-  const isFastMode = useAppState(s =>
+  const paneCap = contentHeight ?? Math.min(Math.floor(rows * 0.8), 30);
+  const maxVisible = Math.max(5, paneCap - 10);
+  const mainLoopModel = useAppState((s) => s.mainLoopModel);
+  const verbose = useAppState((s) => s.verbose);
+  const thinkingEnabled = useAppState((s) => s.thinkingEnabled);
+  const isFastMode = useAppState((s) =>
     isFastModeEnabled() ? s.fastMode : false,
-  )
-  const promptSuggestionEnabled = useAppState(s => s.promptSuggestionEnabled)
+  );
+  const promptSuggestionEnabled = useAppState((s) => s.promptSuggestionEnabled);
   // Show auto in the default-mode dropdown when the user has opted in OR the
   // config is fully 'enabled' — even if currently circuit-broken ('disabled'),
   // an opted-in user should still see it in settings (it's a temporary state).
-  const showAutoInDefaultModePicker = feature('TRANSCRIPT_CLASSIFIER')
-    ? hasAutoModeOptInAnySource() || getAutoModeEnabledState() === 'enabled'
-    : false
+  const showAutoInDefaultModePicker = feature("TRANSCRIPT_CLASSIFIER")
+    ? hasAutoModeOptInAnySource() || getAutoModeEnabledState() === "enabled"
+    : false;
   // Chat/Transcript view picker is visible to entitled users (pass the GB
   // gate) even if they haven't opted in this session — it IS the persistent
   // opt-in. 'chat' written here is read at next startup by main.tsx which
   // sets userMsgOptIn if still entitled.
   /* eslint-disable @typescript-eslint/no-require-imports */
   const showDefaultViewPicker =
-    feature('KAIROS') || feature('KAIROS_BRIEF')
+    feature("KAIROS") || feature("KAIROS_BRIEF")
       ? (
-          require('../../tools/BriefTool/BriefTool.js') as typeof import('../../tools/BriefTool/BriefTool.js')
+          require("../../tools/BriefTool/BriefTool.js") as typeof import("../../tools/BriefTool/BriefTool.js")
         ).isBriefEntitled()
-      : false
+      : false;
   /* eslint-enable @typescript-eslint/no-require-imports */
-  const setAppState = useSetAppState()
-  const [changes, setChanges] = useState<{ [key: string]: unknown }>({})
-  const initialThinkingEnabled = React.useRef(thinkingEnabled)
+  const setAppState = useSetAppState();
+  const [changes, setChanges] = useState<{ [key: string]: unknown }>({});
+  const initialThinkingEnabled = React.useRef(thinkingEnabled);
   // Per-source settings snapshots for revert-on-escape. getInitialSettings()
   // returns merged-across-sources which can't tell us what to delete vs
   // restore; per-source snapshots + updateSettingsForSource's
@@ -230,16 +230,16 @@ export function Config({
   // avoid reading settings files on every render — useRef evaluates its arg
   // eagerly even though only the first result is kept.
   const [initialLocalSettings] = useState(() =>
-    getSettingsForSource('localSettings'),
-  )
+    getSettingsForSource("localSettings"),
+  );
   const [initialUserSettings] = useState(() =>
-    getSettingsForSource('userSettings'),
-  )
-  const initialThemeSetting = React.useRef(themeSetting)
+    getSettingsForSource("userSettings"),
+  );
+  const initialThemeSetting = React.useRef(themeSetting);
   // AppState fields Config may modify — snapshot once at mount.
-  const store = useAppStateStore()
+  const store = useAppStateStore();
   const [initialAppState] = useState(() => {
-    const s = store.getState()
+    const s = store.getState();
     return {
       mainLoopModel: s.mainLoopModel,
       mainLoopModelForSession: s.mainLoopModelForSession,
@@ -249,19 +249,19 @@ export function Config({
       promptSuggestionEnabled: s.promptSuggestionEnabled,
       isBriefOnly: s.isBriefOnly,
       settings: s.settings,
-    }
-  })
+    };
+  });
   // Bootstrap state snapshot — userMsgOptIn is outside AppState, so
   // revertChanges needs to restore it separately. Without this, cycling
   // defaultView to 'chat' then Escape leaves the tool active while the
   // display filter reverts — the exact ambient-activation behavior this
   // PR's entitlement/opt-in split is meant to prevent.
-  const [initialUserMsgOptIn] = useState(() => getUserMsgOptIn())
+  const [initialUserMsgOptIn] = useState(() => getUserMsgOptIn());
   // Set on first user-visible change; gates revertChanges() on Escape so
   // opening-then-closing doesn't trigger redundant disk writes.
-  const isDirty = React.useRef(false)
-  const [showThinkingWarning, setShowThinkingWarning] = useState(false)
-  const [showSubmenu, setShowSubmenu] = useState<SubMenu | null>(null)
+  const isDirty = React.useRef(false);
+  const [showThinkingWarning, setShowThinkingWarning] = useState(false);
+  const [showSubmenu, setShowSubmenu] = useState<SubMenu | null>(null);
   const {
     query: searchQuery,
     setQuery: setSearchQuery,
@@ -272,663 +272,663 @@ export function Config({
     onExitUp: focusHeader,
     // Ctrl+C/D must reach Settings' useExitOnCtrlCD; 'd' also avoids
     // double-action (delete-char + exit-pending).
-    passthroughCtrlKeys: ['c', 'd'],
-  })
+    passthroughCtrlKeys: ["c", "d"],
+  });
 
   // Tell the parent when Config's own Esc handler is active so Settings cedes
   // confirm:no. Only true when search mode owns the keyboard — not when the
   // tab header is focused (then Settings must handle Esc-to-close).
-  const ownsEsc = isSearchMode && !headerFocused
+  const ownsEsc = isSearchMode && !headerFocused;
   React.useEffect(() => {
-    onIsSearchModeChange?.(ownsEsc)
-  }, [ownsEsc, onIsSearchModeChange])
+    onIsSearchModeChange?.(ownsEsc);
+  }, [ownsEsc, onIsSearchModeChange]);
 
   const isConnectedToIde = hasAccessToIDEExtensionDiffFeature(
     context.options.mcpClients,
-  )
+  );
 
   const isFileCheckpointingAvailable = !isEnvTruthy(
     process.env.CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING,
-  )
+  );
 
-  const memoryFiles = React.use(getMemoryFiles(true))
+  const memoryFiles = React.use(getMemoryFiles(true));
   const shouldShowExternalIncludesToggle =
-    hasExternalClaudeMdIncludes(memoryFiles)
+    hasExternalClaudeMdIncludes(memoryFiles);
 
-  const autoUpdaterDisabledReason = getAutoUpdaterDisabledReason()
+  const autoUpdaterDisabledReason = getAutoUpdaterDisabledReason();
 
   function onChangeMainModelConfig(value: string | null): void {
-    const previousModel = mainLoopModel
-    setAppState(prev => ({
+    const previousModel = mainLoopModel;
+    setAppState((prev) => ({
       ...prev,
       mainLoopModel: value,
       mainLoopModelForSession: null,
-    }))
-    setChanges(prev => {
+    }));
+    setChanges((prev) => {
       const valStr =
         modelDisplayString(value) +
         (isBilledAsExtraUsage(value, false, isOpus1mMergeEnabled())
-          ? ' · Billed as extra usage'
-          : '')
-      if ('model' in prev) {
-        const { model, ...rest } = prev
-        return { ...rest, model: valStr }
+          ? " · Billed as extra usage"
+          : "");
+      if ("model" in prev) {
+        const { model, ...rest } = prev;
+        return { ...rest, model: valStr };
       }
-      return { ...prev, model: valStr }
-    })
+      return { ...prev, model: valStr };
+    });
   }
 
   function onChangeVerbose(value: boolean): void {
     // Update the global config to persist the setting
-    saveGlobalConfig(current => ({ ...current, verbose: value }))
-    setGlobalConfig({ ...getGlobalConfig(), verbose: value })
+    saveGlobalConfig((current) => ({ ...current, verbose: value }));
+    setGlobalConfig({ ...getGlobalConfig(), verbose: value });
 
     // Update the app state for immediate UI feedback
-    setAppState(prev => ({
+    setAppState((prev) => ({
       ...prev,
       verbose: value,
-    }))
-    setChanges(prev => {
-      if ('verbose' in prev) {
-        const { verbose, ...rest } = prev
-        return rest
+    }));
+    setChanges((prev) => {
+      if ("verbose" in prev) {
+        const { verbose, ...rest } = prev;
+        return rest;
       }
-      return { ...prev, verbose: value }
-    })
+      return { ...prev, verbose: value };
+    });
   }
 
   // TODO: Add MCP servers
   const settingsItems: Setting[] = [
     // Global settings
     {
-      id: 'autoCompactEnabled',
-      label: 'Auto-compact',
+      id: "autoCompactEnabled",
+      label: "Auto-compact",
       value: globalConfig.autoCompactEnabled,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(autoCompactEnabled: boolean) {
-        saveGlobalConfig(current => ({ ...current, autoCompactEnabled }))
-        setGlobalConfig({ ...getGlobalConfig(), autoCompactEnabled })
+        saveGlobalConfig((current) => ({ ...current, autoCompactEnabled }));
+        setGlobalConfig({ ...getGlobalConfig(), autoCompactEnabled });
       },
     },
     {
-      id: 'spinnerTipsEnabled',
-      label: 'Show tips',
+      id: "spinnerTipsEnabled",
+      label: "Show tips",
       value: settingsData?.spinnerTipsEnabled ?? true,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(spinnerTipsEnabled: boolean) {
-        updateSettingsForSource('localSettings', {
+        updateSettingsForSource("localSettings", {
           spinnerTipsEnabled,
-        })
+        });
         // Update local state to reflect the change immediately
-        setSettingsData(prev => ({
+        setSettingsData((prev) => ({
           ...prev,
           spinnerTipsEnabled,
-        }))
+        }));
       },
     },
     {
-      id: 'prefersReducedMotion',
-      label: 'Reduce motion',
+      id: "prefersReducedMotion",
+      label: "Reduce motion",
       value: settingsData?.prefersReducedMotion ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(prefersReducedMotion: boolean) {
-        updateSettingsForSource('localSettings', {
+        updateSettingsForSource("localSettings", {
           prefersReducedMotion,
-        })
-        setSettingsData(prev => ({
+        });
+        setSettingsData((prev) => ({
           ...prev,
           prefersReducedMotion,
-        }))
+        }));
         // Sync to AppState so components react immediately
-        setAppState(prev => ({
+        setAppState((prev) => ({
           ...prev,
           settings: { ...prev.settings, prefersReducedMotion },
-        }))
+        }));
       },
     },
     {
-      id: 'thinkingEnabled',
-      label: 'Thinking mode',
+      id: "thinkingEnabled",
+      label: "Thinking mode",
       value: thinkingEnabled ?? true,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        setAppState(prev => ({ ...prev, thinkingEnabled: enabled }))
-        updateSettingsForSource('userSettings', {
-          alwaysThinkingEnabled: enabled ? undefined : false,
-        })
+        setAppState((prev) => ({ ...prev, thinkingEnabled: enabled }));
+        updateSettingsForSource("userSettings", {
+          alwaysThinkingEnabled: enabled,
+        });
       },
     },
     // Fast mode toggle (ant-only, eliminated from external builds)
     ...(isFastModeEnabled() && isFastModeAvailable()
       ? [
           {
-            id: 'fastMode',
+            id: "fastMode",
             label: `Fast mode (${FAST_MODE_MODEL_DISPLAY} only)`,
             value: !!isFastMode,
-            type: 'boolean' as const,
+            type: "boolean" as const,
             onChange(enabled: boolean) {
-              clearFastModeCooldown()
-              updateSettingsForSource('userSettings', {
-                fastMode: enabled ? true : undefined,
-              })
+              clearFastModeCooldown();
+              updateSettingsForSource("userSettings", {
+                fastMode: enabled,
+              });
               if (enabled) {
-                setAppState(prev => ({
+                setAppState((prev) => ({
                   ...prev,
                   mainLoopModel: getFastModeModel(),
                   mainLoopModelForSession: null,
                   fastMode: true,
-                }))
-                setChanges(prev => ({
+                }));
+                setChanges((prev) => ({
                   ...prev,
                   model: getFastModeModel(),
-                  'Fast mode': 'ON',
-                }))
+                  "Fast mode": "ON",
+                }));
               } else {
-                setAppState(prev => ({
+                setAppState((prev) => ({
                   ...prev,
                   fastMode: false,
-                }))
-                setChanges(prev => ({ ...prev, 'Fast mode': 'OFF' }))
+                }));
+                setChanges((prev) => ({ ...prev, "Fast mode": "OFF" }));
               }
             },
           },
         ]
       : []),
     ...[
-          {
-            id: 'promptSuggestionEnabled',
-            label: 'Prompt suggestions',
-            value: promptSuggestionEnabled,
-            type: 'boolean' as const,
-            onChange(enabled: boolean) {
-              setAppState(prev => ({
-                ...prev,
-                promptSuggestionEnabled: enabled,
-              }))
-              updateSettingsForSource('userSettings', {
-                promptSuggestionEnabled: enabled ? undefined : false,
-              })
-            },
-          },
-        ],
+      {
+        id: "promptSuggestionEnabled",
+        label: "Prompt suggestions",
+        value: promptSuggestionEnabled,
+        type: "boolean" as const,
+        onChange(enabled: boolean) {
+          setAppState((prev) => ({
+            ...prev,
+            promptSuggestionEnabled: enabled,
+          }));
+          updateSettingsForSource("userSettings", {
+            promptSuggestionEnabled: enabled,
+          });
+        },
+      },
+    ],
     {
-      id: 'destructiveCommandWarning',
-      label: 'Destructive command warnings',
+      id: "destructiveCommandWarning",
+      label: "Destructive command warnings",
       value: settingsData?.destructiveCommandWarning ?? true,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          destructiveCommandWarning: enabled ? undefined : false,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          destructiveCommandWarning: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           destructiveCommandWarning: enabled,
-        }))
+        }));
       },
     },
-    ...(feature('TRANSCRIPT_CLASSIFIER')
+    ...(feature("TRANSCRIPT_CLASSIFIER")
       ? [
           {
-            id: 'autoMode',
-            label: 'Auto mode',
+            id: "autoMode",
+            label: "Auto mode",
             value: settingsData?.autoMode ?? true,
-            type: 'boolean' as const,
+            type: "boolean" as const,
             onChange(enabled: boolean) {
-              updateSettingsForSource('userSettings', {
-                autoMode: enabled ? undefined : false,
-              })
-              setSettingsData(prev => ({ ...prev, autoMode: enabled }))
+              updateSettingsForSource("userSettings", {
+                autoMode: enabled,
+              });
+              setSettingsData((prev) => ({ ...prev, autoMode: enabled }));
             },
           },
         ]
       : []),
     {
-      id: 'streamingToolExecution',
-      label: 'Streaming tool execution',
+      id: "streamingToolExecution",
+      label: "Streaming tool execution",
       value: settingsData?.streamingToolExecution ?? true,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          streamingToolExecution: enabled ? undefined : false,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          streamingToolExecution: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           streamingToolExecution: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'sessionMemory',
-      label: 'Session memory',
+      id: "sessionMemory",
+      label: "Session memory",
       value: settingsData?.sessionMemory ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          sessionMemory: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          sessionMemory: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           sessionMemory: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'planModeInterviewPhase',
-      label: 'Plan mode interview',
+      id: "planModeInterviewPhase",
+      label: "Plan mode interview",
       value: settingsData?.planModeInterviewPhase ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
+        updateSettingsForSource("userSettings", {
           planModeInterviewPhase: enabled ? true : false,
-        })
-        setSettingsData(prev => ({
+        });
+        setSettingsData((prev) => ({
           ...prev,
           planModeInterviewPhase: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'verificationNudge',
-      label: 'Verification nudge',
+      id: "verificationNudge",
+      label: "Verification nudge",
       value: settingsData?.verificationNudge ?? true,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          verificationNudge: enabled ? undefined : false,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          verificationNudge: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           verificationNudge: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'contentReplacementState',
-      label: 'Tool result compression',
+      id: "contentReplacementState",
+      label: "Tool result compression",
       value: settingsData?.contentReplacementState ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          contentReplacementState: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          contentReplacementState: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           contentReplacementState: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'enhancedPromptGuidance',
-      label: 'Enhanced prompt guidance',
+      id: "enhancedPromptGuidance",
+      label: "Enhanced prompt guidance",
       value: settingsData?.enhancedPromptGuidance ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          enhancedPromptGuidance: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          enhancedPromptGuidance: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           enhancedPromptGuidance: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'terminalRecording',
-      label: 'Terminal recording',
+      id: "terminalRecording",
+      label: "Terminal recording",
       value: settingsData?.terminalRecording ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          terminalRecording: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          terminalRecording: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           terminalRecording: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'crossProjectResume',
-      label: 'Cross-project resume',
+      id: "crossProjectResume",
+      label: "Cross-project resume",
       value: settingsData?.crossProjectResume ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          crossProjectResume: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          crossProjectResume: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           crossProjectResume: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'alwaysDebugLog',
-      label: 'Always write debug logs',
+      id: "alwaysDebugLog",
+      label: "Always write debug logs",
       value: settingsData?.alwaysDebugLog ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          alwaysDebugLog: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          alwaysDebugLog: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           alwaysDebugLog: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'replMode',
-      label: 'REPL tool',
+      id: "replMode",
+      label: "REPL tool",
       value: settingsData?.replMode ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          replMode: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          replMode: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           replMode: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'magicDocs',
-      label: 'Magic Docs',
+      id: "magicDocs",
+      label: "Magic Docs",
       value: settingsData?.magicDocs ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          magicDocs: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          magicDocs: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           magicDocs: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'slowOperationTracking',
-      label: 'Slow operation tracking',
+      id: "slowOperationTracking",
+      label: "Slow operation tracking",
       value: settingsData?.slowOperationTracking ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          slowOperationTracking: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          slowOperationTracking: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           slowOperationTracking: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'memoryUsageIndicator',
-      label: 'Memory usage indicator',
+      id: "memoryUsageIndicator",
+      label: "Memory usage indicator",
       value: settingsData?.memoryUsageIndicator ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          memoryUsageIndicator: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          memoryUsageIndicator: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           memoryUsageIndicator: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'shellSessionId',
-      label: 'Shell session ID',
+      id: "shellSessionId",
+      label: "Shell session ID",
       value: settingsData?.shellSessionId ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          shellSessionId: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          shellSessionId: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           shellSessionId: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'numericEffort',
-      label: 'Numeric effort values',
+      id: "numericEffort",
+      label: "Numeric effort values",
       value: settingsData?.numericEffort ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          numericEffort: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          numericEffort: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           numericEffort: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'mockRateLimits',
-      label: 'Mock rate limit testing',
+      id: "mockRateLimits",
+      label: "Mock rate limit testing",
       value: settingsData?.mockRateLimits ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          mockRateLimits: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          mockRateLimits: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           mockRateLimits: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'errorLogSink',
-      label: 'Error log sink',
+      id: "errorLogSink",
+      label: "Error log sink",
       value: settingsData?.errorLogSink ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          errorLogSink: enabled ? true : undefined,
-        })
-        setSettingsData(prev => ({
+        updateSettingsForSource("userSettings", {
+          errorLogSink: enabled,
+        });
+        setSettingsData((prev) => ({
           ...prev,
           errorLogSink: enabled,
-        }))
+        }));
       },
     },
     {
-      id: 'speculationEnabled',
-      label: 'Speculative execution',
+      id: "speculationEnabled",
+      label: "Speculative execution",
       value: globalConfig.speculationEnabled ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        saveGlobalConfig(current => {
-          if (current.speculationEnabled === enabled) return current
+        saveGlobalConfig((current) => {
+          if (current.speculationEnabled === enabled) return current;
           return {
             ...current,
             speculationEnabled: enabled,
-          }
-        })
+          };
+        });
         setGlobalConfig({
           ...getGlobalConfig(),
           speculationEnabled: enabled,
-        })
+        });
       },
     },
     ...(isFileCheckpointingAvailable
       ? [
           {
-            id: 'fileCheckpointingEnabled',
-            label: 'Rewind code (checkpoints)',
+            id: "fileCheckpointingEnabled",
+            label: "Rewind code (checkpoints)",
             value: globalConfig.fileCheckpointingEnabled,
-            type: 'boolean' as const,
+            type: "boolean" as const,
             onChange(enabled: boolean) {
-              saveGlobalConfig(current => ({
+              saveGlobalConfig((current) => ({
                 ...current,
                 fileCheckpointingEnabled: enabled,
-              }))
+              }));
               setGlobalConfig({
                 ...getGlobalConfig(),
                 fileCheckpointingEnabled: enabled,
-              })
+              });
             },
           },
         ]
       : []),
     {
-      id: 'verbose',
-      label: 'Verbose output',
+      id: "verbose",
+      label: "Verbose output",
       value: verbose,
-      type: 'boolean',
+      type: "boolean",
       onChange: onChangeVerbose,
     },
     {
-      id: 'terminalProgressBarEnabled',
-      label: 'Terminal progress bar',
+      id: "terminalProgressBarEnabled",
+      label: "Terminal progress bar",
       value: globalConfig.terminalProgressBarEnabled,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(terminalProgressBarEnabled: boolean) {
-        saveGlobalConfig(current => ({
+        saveGlobalConfig((current) => ({
           ...current,
           terminalProgressBarEnabled,
-        }))
-        setGlobalConfig({ ...getGlobalConfig(), terminalProgressBarEnabled })
+        }));
+        setGlobalConfig({ ...getGlobalConfig(), terminalProgressBarEnabled });
       },
     },
     {
-      id: 'showStatusInTerminalTab',
-      label: 'Show status in terminal tab',
+      id: "showStatusInTerminalTab",
+      label: "Show status in terminal tab",
       value: globalConfig.showStatusInTerminalTab ?? false,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(showStatusInTerminalTab: boolean) {
-        saveGlobalConfig(current => ({
+        saveGlobalConfig((current) => ({
           ...current,
           showStatusInTerminalTab,
-        }))
+        }));
         setGlobalConfig({
           ...getGlobalConfig(),
           showStatusInTerminalTab,
-        })
+        });
       },
     },
     {
-      id: 'showTurnDuration',
-      label: 'Show turn duration',
+      id: "showTurnDuration",
+      label: "Show turn duration",
       value: globalConfig.showTurnDuration,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(showTurnDuration: boolean) {
-        saveGlobalConfig(current => ({ ...current, showTurnDuration }))
-        setGlobalConfig({ ...getGlobalConfig(), showTurnDuration })
+        saveGlobalConfig((current) => ({ ...current, showTurnDuration }));
+        setGlobalConfig({ ...getGlobalConfig(), showTurnDuration });
       },
     },
     {
-      id: 'defaultPermissionMode',
-      label: 'Default permission mode',
-      value: settingsData?.permissions?.defaultMode || 'default',
+      id: "defaultPermissionMode",
+      label: "Default permission mode",
+      value: settingsData?.permissions?.defaultMode || "default",
       options: (() => {
-        const priorityOrder: PermissionMode[] = ['default', 'plan']
+        const priorityOrder: PermissionMode[] = ["default", "plan"];
         const allModes: readonly PermissionMode[] = feature(
-          'TRANSCRIPT_CLASSIFIER',
+          "TRANSCRIPT_CLASSIFIER",
         )
           ? PERMISSION_MODES
-          : EXTERNAL_PERMISSION_MODES
-        const excluded: PermissionMode[] = ['bypassPermissions']
-        if (feature('TRANSCRIPT_CLASSIFIER') && !showAutoInDefaultModePicker) {
-          excluded.push('auto')
+          : EXTERNAL_PERMISSION_MODES;
+        const excluded: PermissionMode[] = ["bypassPermissions"];
+        if (feature("TRANSCRIPT_CLASSIFIER") && !showAutoInDefaultModePicker) {
+          excluded.push("auto");
         }
         return [
           ...priorityOrder,
           ...allModes.filter(
-            m => !priorityOrder.includes(m) && !excluded.includes(m),
+            (m) => !priorityOrder.includes(m) && !excluded.includes(m),
           ),
-        ]
+        ];
       })(),
-      type: 'enum' as const,
+      type: "enum" as const,
       onChange(mode: string) {
-        const parsedMode = permissionModeFromString(mode)
+        const parsedMode = permissionModeFromString(mode);
         // Internal modes (e.g. auto) are stored directly
         const validatedMode = isExternalPermissionMode(parsedMode)
           ? toExternalPermissionMode(parsedMode)
-          : parsedMode
-        const result = updateSettingsForSource('userSettings', {
+          : parsedMode;
+        const result = updateSettingsForSource("userSettings", {
           permissions: {
             ...settingsData?.permissions,
             defaultMode: validatedMode as ExternalPermissionMode,
           },
-        })
+        });
 
         if (result.error) {
-          logError(result.error)
-          return
+          logError(result.error);
+          return;
         }
 
         // Update local state to reflect the change immediately.
         // validatedMode is typed as the wide PermissionMode union but at
         // runtime is always a PERMISSION_MODES member (the options dropdown
         // is built from that array above), so this narrowing is sound.
-        setSettingsData(prev => ({
+        setSettingsData((prev) => ({
           ...prev,
           permissions: {
             ...prev?.permissions,
             defaultMode: validatedMode as (typeof PERMISSION_MODES)[number],
           },
-        }))
+        }));
         // Track changes
-        setChanges(prev => ({ ...prev, defaultPermissionMode: mode }))
+        setChanges((prev) => ({ ...prev, defaultPermissionMode: mode }));
       },
     },
-    ...(feature('TRANSCRIPT_CLASSIFIER') && showAutoInDefaultModePicker
+    ...(feature("TRANSCRIPT_CLASSIFIER") && showAutoInDefaultModePicker
       ? [
           {
-            id: 'useAutoModeDuringPlan',
-            label: 'Use auto mode during plan',
+            id: "useAutoModeDuringPlan",
+            label: "Use auto mode during plan",
             value:
               (settingsData as { useAutoModeDuringPlan?: boolean } | undefined)
                 ?.useAutoModeDuringPlan ?? true,
-            type: 'boolean' as const,
+            type: "boolean" as const,
             onChange(useAutoModeDuringPlan: boolean) {
-              updateSettingsForSource('userSettings', {
+              updateSettingsForSource("userSettings", {
                 useAutoModeDuringPlan,
-              })
-              setSettingsData(prev => ({
+              });
+              setSettingsData((prev) => ({
                 ...prev,
                 useAutoModeDuringPlan,
-              }))
+              }));
               // Internal writes suppress the file watcher, so
               // applySettingsChange won't fire. Reconcile directly so
               // mid-plan toggles take effect immediately.
-              setAppState(prev => {
-                const next = transitionPlanAutoMode(prev.toolPermissionContext)
-                if (next === prev.toolPermissionContext) return prev
-                return { ...prev, toolPermissionContext: next }
-              })
-              setChanges(prev => ({
+              setAppState((prev) => {
+                const next = transitionPlanAutoMode(prev.toolPermissionContext);
+                if (next === prev.toolPermissionContext) return prev;
+                return { ...prev, toolPermissionContext: next };
+              });
+              setChanges((prev) => ({
                 ...prev,
-                'Use auto mode during plan': useAutoModeDuringPlan,
-              }))
+                "Use auto mode during plan": useAutoModeDuringPlan,
+              }));
             },
           },
         ]
       : []),
     {
-      id: 'respectGitignore',
-      label: 'Respect .gitignore in file picker',
+      id: "respectGitignore",
+      label: "Respect .gitignore in file picker",
       value: globalConfig.respectGitignore,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(respectGitignore: boolean) {
-        saveGlobalConfig(current => ({ ...current, respectGitignore }))
-        setGlobalConfig({ ...getGlobalConfig(), respectGitignore })
+        saveGlobalConfig((current) => ({ ...current, respectGitignore }));
+        setGlobalConfig({ ...getGlobalConfig(), respectGitignore });
       },
     },
     {
-      id: 'copyFullResponse',
-      label: 'Always copy full response (skip /copy picker)',
+      id: "copyFullResponse",
+      label: "Always copy full response (skip /copy picker)",
       value: globalConfig.copyFullResponse,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(copyFullResponse: boolean) {
-        saveGlobalConfig(current => ({ ...current, copyFullResponse }))
-        setGlobalConfig({ ...getGlobalConfig(), copyFullResponse })
+        saveGlobalConfig((current) => ({ ...current, copyFullResponse }));
+        setGlobalConfig({ ...getGlobalConfig(), copyFullResponse });
       },
     },
     // Copy-on-select is only meaningful with in-app selection (fullscreen
@@ -936,13 +936,13 @@ export function Config({
     ...(isFullscreenEnvEnabled()
       ? [
           {
-            id: 'copyOnSelect',
-            label: 'Copy on select',
+            id: "copyOnSelect",
+            label: "Copy on select",
             value: globalConfig.copyOnSelect ?? true,
-            type: 'boolean' as const,
+            type: "boolean" as const,
             onChange(copyOnSelect: boolean) {
-              saveGlobalConfig(current => ({ ...current, copyOnSelect }))
-              setGlobalConfig({ ...getGlobalConfig(), copyOnSelect })
+              saveGlobalConfig((current) => ({ ...current, copyOnSelect }));
+              setGlobalConfig({ ...getGlobalConfig(), copyOnSelect });
             },
           },
         ]
@@ -950,224 +950,222 @@ export function Config({
     // autoUpdates setting is hidden - use DISABLE_AUTOUPDATER env var to control
     autoUpdaterDisabledReason
       ? {
-          id: 'autoUpdatesChannel',
-          label: 'Auto-update channel',
-          value: 'disabled',
-          type: 'managedEnum' as const,
+          id: "autoUpdatesChannel",
+          label: "Auto-update channel",
+          value: "disabled",
+          type: "managedEnum" as const,
           onChange() {},
         }
       : {
-          id: 'autoUpdatesChannel',
-          label: 'Auto-update channel',
-          value: settingsData?.autoUpdatesChannel ?? 'latest',
-          type: 'managedEnum' as const,
+          id: "autoUpdatesChannel",
+          label: "Auto-update channel",
+          value: settingsData?.autoUpdatesChannel ?? "latest",
+          type: "managedEnum" as const,
           onChange() {
             // Handled via toggleSetting -> 'ChannelDowngrade'
           },
         },
     {
-      id: 'theme',
-      label: 'Theme',
+      id: "theme",
+      label: "Theme",
       value: themeSetting,
-      type: 'managedEnum',
+      type: "managedEnum",
       onChange: setTheme,
     },
     {
-      id: 'notifChannel',
+      id: "notifChannel",
       label:
-        feature('KAIROS') || feature('KAIROS_PUSH_NOTIFICATION')
-          ? 'Local notifications'
-          : 'Notifications',
+        feature("KAIROS") || feature("KAIROS_PUSH_NOTIFICATION")
+          ? "Local notifications"
+          : "Notifications",
       value: globalConfig.preferredNotifChannel,
       options: [
-        'auto',
-        'iterm2',
-        'terminal_bell',
-        'iterm2_with_bell',
-        'kitty',
-        'ghostty',
-        'notifications_disabled',
+        "auto",
+        "iterm2",
+        "terminal_bell",
+        "iterm2_with_bell",
+        "kitty",
+        "ghostty",
+        "notifications_disabled",
       ],
-      type: 'enum',
-      onChange(notifChannel: GlobalConfig['preferredNotifChannel']) {
-        saveGlobalConfig(current => ({
+      type: "enum",
+      onChange(notifChannel: GlobalConfig["preferredNotifChannel"]) {
+        saveGlobalConfig((current) => ({
           ...current,
           preferredNotifChannel: notifChannel,
-        }))
+        }));
         setGlobalConfig({
           ...getGlobalConfig(),
           preferredNotifChannel: notifChannel,
-        })
+        });
       },
     },
-    ...(feature('KAIROS') || feature('KAIROS_PUSH_NOTIFICATION')
+    ...(feature("KAIROS") || feature("KAIROS_PUSH_NOTIFICATION")
       ? [
           {
-            id: 'taskCompleteNotifEnabled',
-            label: 'Push when idle',
+            id: "taskCompleteNotifEnabled",
+            label: "Push when idle",
             value: globalConfig.taskCompleteNotifEnabled ?? false,
-            type: 'boolean' as const,
+            type: "boolean" as const,
             onChange(taskCompleteNotifEnabled: boolean) {
-              saveGlobalConfig(current => ({
+              saveGlobalConfig((current) => ({
                 ...current,
                 taskCompleteNotifEnabled,
-              }))
+              }));
               setGlobalConfig({
                 ...getGlobalConfig(),
                 taskCompleteNotifEnabled,
-              })
+              });
             },
           },
           {
-            id: 'inputNeededNotifEnabled',
-            label: 'Push when input needed',
+            id: "inputNeededNotifEnabled",
+            label: "Push when input needed",
             value: globalConfig.inputNeededNotifEnabled ?? false,
-            type: 'boolean' as const,
+            type: "boolean" as const,
             onChange(inputNeededNotifEnabled: boolean) {
-              saveGlobalConfig(current => ({
+              saveGlobalConfig((current) => ({
                 ...current,
                 inputNeededNotifEnabled,
-              }))
+              }));
               setGlobalConfig({
                 ...getGlobalConfig(),
                 inputNeededNotifEnabled,
-              })
+              });
             },
           },
           {
-            id: 'agentPushNotifEnabled',
-            label: 'Push when Claude decides',
+            id: "agentPushNotifEnabled",
+            label: "Push when Claude decides",
             value: globalConfig.agentPushNotifEnabled ?? false,
-            type: 'boolean' as const,
+            type: "boolean" as const,
             onChange(agentPushNotifEnabled: boolean) {
-              saveGlobalConfig(current => ({
+              saveGlobalConfig((current) => ({
                 ...current,
                 agentPushNotifEnabled,
-              }))
+              }));
               setGlobalConfig({
                 ...getGlobalConfig(),
                 agentPushNotifEnabled,
-              })
+              });
             },
           },
         ]
       : []),
     {
-      id: 'outputStyle',
-      label: 'Output style',
+      id: "outputStyle",
+      label: "Output style",
       value: currentOutputStyle,
-      type: 'managedEnum' as const,
+      type: "managedEnum" as const,
       onChange: () => {}, // handled by OutputStylePicker submenu
     },
     ...(showDefaultViewPicker
       ? [
           {
-            id: 'defaultView',
-            label: 'What you see by default',
+            id: "defaultView",
+            label: "What you see by default",
             // 'default' means the setting is unset — currently resolves to
             // transcript (main.tsx falls through when defaultView !== 'chat').
             // String() narrows the conditional-schema-spread union to string.
             value:
               settingsData?.defaultView === undefined
-                ? 'default'
+                ? "default"
                 : String(settingsData.defaultView),
-            options: ['transcript', 'chat', 'default'],
-            type: 'enum' as const,
+            options: ["transcript", "chat", "default"],
+            type: "enum" as const,
             onChange(selected: string) {
               const defaultView =
-                selected === 'default'
+                selected === "default"
                   ? undefined
-                  : (selected as 'chat' | 'transcript')
-              updateSettingsForSource('localSettings', { defaultView })
-              setSettingsData(prev => ({ ...prev, defaultView }))
-              const nextBrief = defaultView === 'chat'
-              setAppState(prev => {
-                if (prev.isBriefOnly === nextBrief) return prev
-                return { ...prev, isBriefOnly: nextBrief }
-              })
+                  : (selected as "chat" | "transcript");
+              updateSettingsForSource("localSettings", { defaultView });
+              setSettingsData((prev) => ({ ...prev, defaultView }));
+              const nextBrief = defaultView === "chat";
+              setAppState((prev) => {
+                if (prev.isBriefOnly === nextBrief) return prev;
+                return { ...prev, isBriefOnly: nextBrief };
+              });
               // Keep userMsgOptIn in sync so the tool list follows the view.
               // Two-way now (same as /brief) — accepting a cache invalidation
               // is better than leaving the tool on after switching away.
               // Reverted on Escape via initialUserMsgOptIn snapshot.
-              setUserMsgOptIn(nextBrief)
-              setChanges(prev => ({ ...prev, 'Default view': selected }))
+              setUserMsgOptIn(nextBrief);
+              setChanges((prev) => ({ ...prev, "Default view": selected }));
             },
           },
         ]
       : []),
     {
-      id: 'language',
-      label: 'Language',
-      value: currentLanguage ?? 'Default (English)',
-      type: 'managedEnum' as const,
+      id: "language",
+      label: "Language",
+      value: currentLanguage ?? "Default (English)",
+      type: "managedEnum" as const,
       onChange: () => {}, // handled by LanguagePicker submenu
     },
     {
-      id: 'editorMode',
-      label: 'Editor mode',
+      id: "editorMode",
+      label: "Editor mode",
       // Convert 'emacs' to 'normal' for backward compatibility
       value:
-        globalConfig.editorMode === 'emacs'
-          ? 'normal'
-          : globalConfig.editorMode || 'normal',
-      options: ['normal', 'vim'],
-      type: 'enum',
+        globalConfig.editorMode === "emacs"
+          ? "normal"
+          : globalConfig.editorMode || "normal",
+      options: ["normal", "vim"],
+      type: "enum",
       onChange(value: string) {
-        saveGlobalConfig(current => ({
+        saveGlobalConfig((current) => ({
           ...current,
-          editorMode: value as GlobalConfig['editorMode'],
-        }))
+          editorMode: value as GlobalConfig["editorMode"],
+        }));
         setGlobalConfig({
           ...getGlobalConfig(),
-          editorMode: value as GlobalConfig['editorMode'],
-        })
-
+          editorMode: value as GlobalConfig["editorMode"],
+        });
       },
     },
     {
-      id: 'prStatusFooterEnabled',
-      label: 'Show PR status footer',
+      id: "prStatusFooterEnabled",
+      label: "Show PR status footer",
       value: globalConfig.prStatusFooterEnabled ?? true,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        saveGlobalConfig(current => {
-          if (current.prStatusFooterEnabled === enabled) return current
+        saveGlobalConfig((current) => {
+          if (current.prStatusFooterEnabled === enabled) return current;
           return {
             ...current,
             prStatusFooterEnabled: enabled,
-          }
-        })
+          };
+        });
         setGlobalConfig({
           ...getGlobalConfig(),
           prStatusFooterEnabled: enabled,
-        })
+        });
       },
     },
     {
-      id: 'model',
-      label: 'Model',
-      value: mainLoopModel === null ? 'Default (recommended)' : mainLoopModel,
-      type: 'managedEnum' as const,
+      id: "model",
+      label: "Model",
+      value: mainLoopModel === null ? "Default (recommended)" : mainLoopModel,
+      type: "managedEnum" as const,
       onChange: onChangeMainModelConfig,
     },
     ...(isConnectedToIde
       ? [
           {
-            id: 'diffTool',
-            label: 'Diff tool',
-            value: globalConfig.diffTool ?? 'auto',
-            options: ['terminal', 'auto'],
-            type: 'enum' as const,
+            id: "diffTool",
+            label: "Diff tool",
+            value: globalConfig.diffTool ?? "auto",
+            options: ["terminal", "auto"],
+            type: "enum" as const,
             onChange(diffTool: string) {
-              saveGlobalConfig(current => ({
+              saveGlobalConfig((current) => ({
                 ...current,
-                diffTool: diffTool as GlobalConfig['diffTool'],
-              }))
+                diffTool: diffTool as GlobalConfig["diffTool"],
+              }));
               setGlobalConfig({
                 ...getGlobalConfig(),
-                diffTool: diffTool as GlobalConfig['diffTool'],
-              })
-
+                diffTool: diffTool as GlobalConfig["diffTool"],
+              });
             },
           },
         ]
@@ -1175,14 +1173,13 @@ export function Config({
     ...(!isSupportedTerminal()
       ? [
           {
-            id: 'autoConnectIde',
-            label: 'Auto-connect to IDE (external terminal)',
+            id: "autoConnectIde",
+            label: "Auto-connect to IDE (external terminal)",
             value: globalConfig.autoConnectIde ?? false,
-            type: 'boolean' as const,
+            type: "boolean" as const,
             onChange(autoConnectIde: boolean) {
-              saveGlobalConfig(current => ({ ...current, autoConnectIde }))
-              setGlobalConfig({ ...getGlobalConfig(), autoConnectIde })
-
+              saveGlobalConfig((current) => ({ ...current, autoConnectIde }));
+              setGlobalConfig({ ...getGlobalConfig(), autoConnectIde });
             },
           },
         ]
@@ -1190,97 +1187,99 @@ export function Config({
     ...(isSupportedTerminal()
       ? [
           {
-            id: 'autoInstallIdeExtension',
-            label: 'Auto-install IDE extension',
+            id: "autoInstallIdeExtension",
+            label: "Auto-install IDE extension",
             value: globalConfig.autoInstallIdeExtension ?? true,
-            type: 'boolean' as const,
+            type: "boolean" as const,
             onChange(autoInstallIdeExtension: boolean) {
-              saveGlobalConfig(current => ({
+              saveGlobalConfig((current) => ({
                 ...current,
                 autoInstallIdeExtension,
-              }))
-              setGlobalConfig({ ...getGlobalConfig(), autoInstallIdeExtension })
-
+              }));
+              setGlobalConfig({
+                ...getGlobalConfig(),
+                autoInstallIdeExtension,
+              });
             },
           },
         ]
       : []),
     {
-      id: 'claudeInChromeDefaultEnabled',
-      label: 'Claude in Chrome enabled by default',
+      id: "claudeInChromeDefaultEnabled",
+      label: "Claude in Chrome enabled by default",
       value: globalConfig.claudeInChromeDefaultEnabled ?? true,
-      type: 'boolean' as const,
+      type: "boolean" as const,
       onChange(enabled: boolean) {
-        saveGlobalConfig(current => ({
+        saveGlobalConfig((current) => ({
           ...current,
           claudeInChromeDefaultEnabled: enabled,
-        }))
+        }));
         setGlobalConfig({
           ...getGlobalConfig(),
           claudeInChromeDefaultEnabled: enabled,
-        })
+        });
       },
     },
     // Teammate mode (only shown when agent swarms are enabled)
     ...(isAgentSwarmsEnabled()
       ? (() => {
-          const cliOverride = getCliTeammateModeOverride()
+          const cliOverride = getCliTeammateModeOverride();
           const label = cliOverride
             ? `Teammate mode [overridden: ${cliOverride}]`
-            : 'Teammate mode'
+            : "Teammate mode";
           return [
             {
-              id: 'teammateMode',
+              id: "teammateMode",
               label,
-              value: globalConfig.teammateMode ?? 'auto',
-              options: ['auto', 'tmux', 'in-process'],
-              type: 'enum' as const,
+              value: globalConfig.teammateMode ?? "auto",
+              options: ["auto", "tmux", "in-process"],
+              type: "enum" as const,
               onChange(mode: string) {
                 if (
-                  mode !== 'auto' &&
-                  mode !== 'tmux' &&
-                  mode !== 'in-process'
+                  mode !== "auto" &&
+                  mode !== "tmux" &&
+                  mode !== "in-process"
                 ) {
-                  return
+                  return;
                 }
                 // Clear CLI override and set new mode (pass mode to avoid race condition)
-                clearCliTeammateModeOverride(mode)
-                saveGlobalConfig(current => ({
+                clearCliTeammateModeOverride(mode);
+                saveGlobalConfig((current) => ({
                   ...current,
                   teammateMode: mode,
-                }))
+                }));
                 setGlobalConfig({
                   ...getGlobalConfig(),
                   teammateMode: mode,
-                })
+                });
               },
             },
             {
-              id: 'teammateDefaultModel',
-              label: 'Default teammate model',
+              id: "teammateDefaultModel",
+              label: "Default teammate model",
               value: teammateModelDisplayString(
                 globalConfig.teammateDefaultModel,
               ),
-              type: 'managedEnum' as const,
+              type: "managedEnum" as const,
               onChange() {},
             },
-          ]
+          ];
         })()
       : []),
     ...(shouldShowExternalIncludesToggle
       ? [
           {
-            id: 'showExternalIncludesDialog',
-            label: 'External CLAUDE.md includes',
+            id: "showExternalIncludesDialog",
+            label: "External CLAUDE.md includes",
             value: (() => {
-              const projectConfig = getCurrentProjectConfig()
+              const projectConfig = getCurrentProjectConfig();
               if (projectConfig.hasClaudeMdExternalIncludesApproved) {
-                return 'true'
+                return "true";
               } else {
-                return 'false'
+                return "false";
               }
             })(),
-            type: 'managedEnum' as const,
+            type: "managedEnum" as const,
             onChange() {
               // Will be handled by toggleSetting function
             },
@@ -1290,127 +1289,127 @@ export function Config({
     ...(process.env.ANTHROPIC_API_KEY
       ? [
           {
-            id: 'apiKey',
+            id: "apiKey",
             label: (
               <Text>
-                Use custom API key:{' '}
+                Use custom API key:{" "}
                 <Text bold>
                   {normalizeApiKeyForConfig(process.env.ANTHROPIC_API_KEY)}
                 </Text>
               </Text>
             ),
-            searchText: 'Use custom API key',
+            searchText: "Use custom API key",
             value: Boolean(
               process.env.ANTHROPIC_API_KEY &&
-                globalConfig.customApiKeyResponses?.approved?.includes(
-                  normalizeApiKeyForConfig(process.env.ANTHROPIC_API_KEY),
-                ),
+              globalConfig.customApiKeyResponses?.approved?.includes(
+                normalizeApiKeyForConfig(process.env.ANTHROPIC_API_KEY),
+              ),
             ),
-            type: 'boolean' as const,
+            type: "boolean" as const,
             onChange(useCustomKey: boolean) {
-              saveGlobalConfig(current => {
-                const updated = { ...current }
+              saveGlobalConfig((current) => {
+                const updated = { ...current };
                 if (!updated.customApiKeyResponses) {
                   updated.customApiKeyResponses = {
                     approved: [],
                     rejected: [],
-                  }
+                  };
                 }
                 if (!updated.customApiKeyResponses.approved) {
                   updated.customApiKeyResponses = {
                     ...updated.customApiKeyResponses,
                     approved: [],
-                  }
+                  };
                 }
                 if (!updated.customApiKeyResponses.rejected) {
                   updated.customApiKeyResponses = {
                     ...updated.customApiKeyResponses,
                     rejected: [],
-                  }
+                  };
                 }
                 if (process.env.ANTHROPIC_API_KEY) {
                   const truncatedKey = normalizeApiKeyForConfig(
                     process.env.ANTHROPIC_API_KEY,
-                  )
+                  );
                   if (useCustomKey) {
                     updated.customApiKeyResponses = {
                       ...updated.customApiKeyResponses,
                       approved: [
                         ...(
                           updated.customApiKeyResponses.approved ?? []
-                        ).filter(k => k !== truncatedKey),
+                        ).filter((k) => k !== truncatedKey),
                         truncatedKey,
                       ],
                       rejected: (
                         updated.customApiKeyResponses.rejected ?? []
-                      ).filter(k => k !== truncatedKey),
-                    }
+                      ).filter((k) => k !== truncatedKey),
+                    };
                   } else {
                     updated.customApiKeyResponses = {
                       ...updated.customApiKeyResponses,
                       approved: (
                         updated.customApiKeyResponses.approved ?? []
-                      ).filter(k => k !== truncatedKey),
+                      ).filter((k) => k !== truncatedKey),
                       rejected: [
                         ...(
                           updated.customApiKeyResponses.rejected ?? []
-                        ).filter(k => k !== truncatedKey),
+                        ).filter((k) => k !== truncatedKey),
                         truncatedKey,
                       ],
-                    }
+                    };
                   }
                 }
-                return updated
-              })
-              setGlobalConfig(getGlobalConfig())
+                return updated;
+              });
+              setGlobalConfig(getGlobalConfig());
             },
           },
         ]
       : []),
-  ]
+  ];
 
   // Filter settings based on search query
   const filteredSettingsItems = React.useMemo(() => {
-    if (!searchQuery) return settingsItems
-    const lowerQuery = searchQuery.toLowerCase()
-    return settingsItems.filter(setting => {
-      if (setting.id.toLowerCase().includes(lowerQuery)) return true
+    if (!searchQuery) return settingsItems;
+    const lowerQuery = searchQuery.toLowerCase();
+    return settingsItems.filter((setting) => {
+      if (setting.id.toLowerCase().includes(lowerQuery)) return true;
       const searchableText =
-        'searchText' in setting ? setting.searchText : setting.label
-      return searchableText.toLowerCase().includes(lowerQuery)
-    })
-  }, [settingsItems, searchQuery])
+        "searchText" in setting ? setting.searchText : setting.label;
+      return searchableText.toLowerCase().includes(lowerQuery);
+    });
+  }, [settingsItems, searchQuery]);
 
   // Adjust selected index when filtered list shrinks, and keep the selected
   // item visible when maxVisible changes (e.g., terminal resize).
   React.useEffect(() => {
     if (selectedIndex >= filteredSettingsItems.length) {
-      const newIndex = Math.max(0, filteredSettingsItems.length - 1)
-      setSelectedIndex(newIndex)
-      setScrollOffset(Math.max(0, newIndex - maxVisible + 1))
-      return
+      const newIndex = Math.max(0, filteredSettingsItems.length - 1);
+      setSelectedIndex(newIndex);
+      setScrollOffset(Math.max(0, newIndex - maxVisible + 1));
+      return;
     }
-    setScrollOffset(prev => {
-      if (selectedIndex < prev) return selectedIndex
+    setScrollOffset((prev) => {
+      if (selectedIndex < prev) return selectedIndex;
       if (selectedIndex >= prev + maxVisible)
-        return selectedIndex - maxVisible + 1
-      return prev
-    })
-  }, [filteredSettingsItems.length, selectedIndex, maxVisible])
+        return selectedIndex - maxVisible + 1;
+      return prev;
+    });
+  }, [filteredSettingsItems.length, selectedIndex, maxVisible]);
 
   // Keep the selected item visible within the scroll window.
   // Called synchronously from navigation handlers to avoid a render frame
   // where the selected item falls outside the visible window.
   const adjustScrollOffset = useCallback(
     (newIndex: number) => {
-      setScrollOffset(prev => {
-        if (newIndex < prev) return newIndex
-        if (newIndex >= prev + maxVisible) return newIndex - maxVisible + 1
-        return prev
-      })
+      setScrollOffset((prev) => {
+        if (newIndex < prev) return newIndex;
+        if (newIndex >= prev + maxVisible) return newIndex - maxVisible + 1;
+        return prev;
+      });
     },
     [maxVisible],
-  )
+  );
 
   // Enter: keep all changes (already persisted by onChange handlers), close
   // with a summary of what changed.
@@ -1418,36 +1417,36 @@ export function Config({
     // Submenu handling: each submenu has its own Enter/Esc — don't close
     // the whole panel while one is open.
     if (showSubmenu !== null) {
-      return
+      return;
     }
     // Log any changes that were made
     // TODO: Make these proper messages
     const formattedChanges: string[] = Object.entries(changes).map(
       ([key, value]) => {
-        return `Set ${key} to ${chalk.bold(value)}`
+        return `Set ${key} to ${chalk.bold(value)}`;
       },
-    )
+    );
     // Check for API key changes
-    const effectiveApiKey = process.env.ANTHROPIC_API_KEY
+    const effectiveApiKey = process.env.ANTHROPIC_API_KEY;
     const initialUsingCustomKey = Boolean(
       effectiveApiKey &&
-        initialConfig.current.customApiKeyResponses?.approved?.includes(
-          normalizeApiKeyForConfig(effectiveApiKey),
-        ),
-    )
+      initialConfig.current.customApiKeyResponses?.approved?.includes(
+        normalizeApiKeyForConfig(effectiveApiKey),
+      ),
+    );
     const currentUsingCustomKey = Boolean(
       effectiveApiKey &&
-        globalConfig.customApiKeyResponses?.approved?.includes(
-          normalizeApiKeyForConfig(effectiveApiKey),
-        ),
-    )
+      globalConfig.customApiKeyResponses?.approved?.includes(
+        normalizeApiKeyForConfig(effectiveApiKey),
+      ),
+    );
     if (initialUsingCustomKey !== currentUsingCustomKey) {
       formattedChanges.push(
-        `${currentUsingCustomKey ? 'Enabled' : 'Disabled'} custom API key`,
-      )
+        `${currentUsingCustomKey ? "Enabled" : "Disabled"} custom API key`,
+      );
     }
     if (globalConfig.theme !== initialConfig.current.theme) {
-      formattedChanges.push(`Set theme to ${chalk.bold(globalConfig.theme)}`)
+      formattedChanges.push(`Set theme to ${chalk.bold(globalConfig.theme)}`);
     }
     if (
       globalConfig.preferredNotifChannel !==
@@ -1455,103 +1454,103 @@ export function Config({
     ) {
       formattedChanges.push(
         `Set notifications to ${chalk.bold(globalConfig.preferredNotifChannel)}`,
-      )
+      );
     }
     if (currentOutputStyle !== initialOutputStyle.current) {
       formattedChanges.push(
         `Set output style to ${chalk.bold(currentOutputStyle)}`,
-      )
+      );
     }
     if (currentLanguage !== initialLanguage.current) {
       formattedChanges.push(
-        `Set response language to ${chalk.bold(currentLanguage ?? 'Default (English)')}`,
-      )
+        `Set response language to ${chalk.bold(currentLanguage ?? "Default (English)")}`,
+      );
     }
     if (globalConfig.editorMode !== initialConfig.current.editorMode) {
       formattedChanges.push(
-        `Set editor mode to ${chalk.bold(globalConfig.editorMode || 'emacs')}`,
-      )
+        `Set editor mode to ${chalk.bold(globalConfig.editorMode || "emacs")}`,
+      );
     }
     if (globalConfig.diffTool !== initialConfig.current.diffTool) {
       formattedChanges.push(
         `Set diff tool to ${chalk.bold(globalConfig.diffTool)}`,
-      )
+      );
     }
     if (globalConfig.autoConnectIde !== initialConfig.current.autoConnectIde) {
       formattedChanges.push(
-        `${globalConfig.autoConnectIde ? 'Enabled' : 'Disabled'} auto-connect to IDE`,
-      )
+        `${globalConfig.autoConnectIde ? "Enabled" : "Disabled"} auto-connect to IDE`,
+      );
     }
     if (
       globalConfig.autoInstallIdeExtension !==
       initialConfig.current.autoInstallIdeExtension
     ) {
       formattedChanges.push(
-        `${globalConfig.autoInstallIdeExtension ? 'Enabled' : 'Disabled'} auto-install IDE extension`,
-      )
+        `${globalConfig.autoInstallIdeExtension ? "Enabled" : "Disabled"} auto-install IDE extension`,
+      );
     }
     if (
       globalConfig.autoCompactEnabled !==
       initialConfig.current.autoCompactEnabled
     ) {
       formattedChanges.push(
-        `${globalConfig.autoCompactEnabled ? 'Enabled' : 'Disabled'} auto-compact`,
-      )
+        `${globalConfig.autoCompactEnabled ? "Enabled" : "Disabled"} auto-compact`,
+      );
     }
     if (
       globalConfig.respectGitignore !== initialConfig.current.respectGitignore
     ) {
       formattedChanges.push(
-        `${globalConfig.respectGitignore ? 'Enabled' : 'Disabled'} respect .gitignore in file picker`,
-      )
+        `${globalConfig.respectGitignore ? "Enabled" : "Disabled"} respect .gitignore in file picker`,
+      );
     }
     if (
       globalConfig.copyFullResponse !== initialConfig.current.copyFullResponse
     ) {
       formattedChanges.push(
-        `${globalConfig.copyFullResponse ? 'Enabled' : 'Disabled'} always copy full response`,
-      )
+        `${globalConfig.copyFullResponse ? "Enabled" : "Disabled"} always copy full response`,
+      );
     }
     if (globalConfig.copyOnSelect !== initialConfig.current.copyOnSelect) {
       formattedChanges.push(
-        `${globalConfig.copyOnSelect ? 'Enabled' : 'Disabled'} copy on select`,
-      )
+        `${globalConfig.copyOnSelect ? "Enabled" : "Disabled"} copy on select`,
+      );
     }
     if (
       globalConfig.terminalProgressBarEnabled !==
       initialConfig.current.terminalProgressBarEnabled
     ) {
       formattedChanges.push(
-        `${globalConfig.terminalProgressBarEnabled ? 'Enabled' : 'Disabled'} terminal progress bar`,
-      )
+        `${globalConfig.terminalProgressBarEnabled ? "Enabled" : "Disabled"} terminal progress bar`,
+      );
     }
     if (
       globalConfig.showStatusInTerminalTab !==
       initialConfig.current.showStatusInTerminalTab
     ) {
       formattedChanges.push(
-        `${globalConfig.showStatusInTerminalTab ? 'Enabled' : 'Disabled'} terminal tab status`,
-      )
+        `${globalConfig.showStatusInTerminalTab ? "Enabled" : "Disabled"} terminal tab status`,
+      );
     }
     if (
       globalConfig.showTurnDuration !== initialConfig.current.showTurnDuration
     ) {
       formattedChanges.push(
-        `${globalConfig.showTurnDuration ? 'Enabled' : 'Disabled'} turn duration`,
-      )
+        `${globalConfig.showTurnDuration ? "Enabled" : "Disabled"} turn duration`,
+      );
     }
     if (
       settingsData?.autoUpdatesChannel !==
       initialSettingsData.current?.autoUpdatesChannel
     ) {
       formattedChanges.push(
-        `Set auto-update channel to ${chalk.bold(settingsData?.autoUpdatesChannel ?? 'latest')}`,
-      )
+        `Set auto-update channel to ${chalk.bold(settingsData?.autoUpdatesChannel ?? "latest")}`,
+      );
     }
     if (formattedChanges.length > 0) {
-      onClose(formattedChanges.join('\n'))
+      onClose(formattedChanges.join("\n"));
     } else {
-      onClose('Config dialog dismissed', { display: 'system' })
+      onClose("Config dialog dismissed", { display: "system" });
     }
   }, [
     showSubmenu,
@@ -1565,7 +1564,7 @@ export function Config({
       ? (settingsData as Record<string, unknown> | undefined)?.fastMode
       : undefined,
     onClose,
-  ])
+  ]);
 
   // Restore all state stores to their mount-time snapshots. Changes are
   // applied to disk/AppState immediately on toggle, so "cancel" means
@@ -1575,30 +1574,30 @@ export function Config({
     // config overwrite since setTheme internally calls saveGlobalConfig with
     // a partial update — we want the full snapshot to be the last write.
     if (themeSetting !== initialThemeSetting.current) {
-      setTheme(initialThemeSetting.current)
+      setTheme(initialThemeSetting.current);
     }
     // Global config: full overwrite from snapshot. saveGlobalConfig skips if
     // the returned ref equals current (test mode checks ref; prod writes to
     // disk but content is identical).
-    saveGlobalConfig(() => initialConfig.current)
+    saveGlobalConfig(() => initialConfig.current);
     // Settings files: restore each key Config may have touched. undefined
     // deletes the key (updateSettingsForSource customizer at settings.ts:368).
-    const il = initialLocalSettings
-    updateSettingsForSource('localSettings', {
+    const il = initialLocalSettings;
+    updateSettingsForSource("localSettings", {
       spinnerTipsEnabled: il?.spinnerTipsEnabled,
       prefersReducedMotion: il?.prefersReducedMotion,
       defaultView: il?.defaultView,
       outputStyle: il?.outputStyle,
-    })
-    const iu = initialUserSettings
-    updateSettingsForSource('userSettings', {
+    });
+    const iu = initialUserSettings;
+    updateSettingsForSource("userSettings", {
       alwaysThinkingEnabled: iu?.alwaysThinkingEnabled,
       fastMode: iu?.fastMode,
       promptSuggestionEnabled: iu?.promptSuggestionEnabled,
       autoUpdatesChannel: iu?.autoUpdatesChannel,
       minimumVersion: iu?.minimumVersion,
       language: iu?.language,
-      ...(feature('TRANSCRIPT_CLASSIFIER')
+      ...(feature("TRANSCRIPT_CLASSIFIER")
         ? {
             useAutoModeDuringPlan: (
               iu as { useAutoModeDuringPlan?: boolean } | undefined
@@ -1631,10 +1630,10 @@ export function Config({
       numericEffort: iu?.numericEffort,
       mockRateLimits: iu?.mockRateLimits,
       errorLogSink: iu?.errorLogSink,
-    })
+    });
     // AppState: batch-restore all possibly-touched fields.
-    const ia = initialAppState
-    setAppState(prev => ({
+    const ia = initialAppState;
+    setAppState((prev) => ({
       ...prev,
       mainLoopModel: ia.mainLoopModel,
       mainLoopModelForSession: ia.mainLoopModelForSession,
@@ -1647,12 +1646,12 @@ export function Config({
       // Reconcile auto-mode state after useAutoModeDuringPlan revert above —
       // the onChange handler may have activated/deactivated auto mid-plan.
       toolPermissionContext: transitionPlanAutoMode(prev.toolPermissionContext),
-    }))
+    }));
     // Bootstrap state: restore userMsgOptIn. Only touched by the defaultView
     // onChange above, so no feature() guard needed here (that path only
     // exists when showDefaultViewPicker is true).
     if (getUserMsgOptIn() !== initialUserMsgOptIn) {
-      setUserMsgOptIn(initialUserMsgOptIn)
+      setUserMsgOptIn(initialUserMsgOptIn);
     }
   }, [
     themeSetting,
@@ -1662,128 +1661,128 @@ export function Config({
     initialAppState,
     initialUserMsgOptIn,
     setAppState,
-  ])
+  ]);
 
   // Escape: revert all changes (if any) and close.
   const handleEscape = useCallback(() => {
     if (showSubmenu !== null) {
-      return
+      return;
     }
     if (isDirty.current) {
-      revertChanges()
+      revertChanges();
     }
-    onClose('Config dialog dismissed', { display: 'system' })
-  }, [showSubmenu, revertChanges, onClose])
+    onClose("Config dialog dismissed", { display: "system" });
+  }, [showSubmenu, revertChanges, onClose]);
 
   // Disable when submenu is open so the submenu's Dialog handles ESC, and in
   // search mode so the onKeyDown handler (which clears-then-exits search)
   // wins — otherwise Escape in search would jump straight to revert+close.
-  useKeybinding('confirm:no', handleEscape, {
-    context: 'Settings',
+  useKeybinding("confirm:no", handleEscape, {
+    context: "Settings",
     isActive: showSubmenu === null && !isSearchMode && !headerFocused,
-  })
+  });
   // Save-and-close fires on Enter only when not in search mode (Enter there
   // exits search to the list — see the isSearchMode branch in handleKeyDown).
-  useKeybinding('settings:close', handleSaveAndClose, {
-    context: 'Settings',
+  useKeybinding("settings:close", handleSaveAndClose, {
+    context: "Settings",
     isActive: showSubmenu === null && !isSearchMode && !headerFocused,
-  })
+  });
 
   // Settings navigation and toggle actions via configurable keybindings.
   // Only active when not in search mode and no submenu is open.
   const toggleSetting = useCallback(() => {
-    const setting = filteredSettingsItems[selectedIndex]
+    const setting = filteredSettingsItems[selectedIndex];
     if (!setting || !setting.onChange) {
-      return
+      return;
     }
 
-    if (setting.type === 'boolean') {
-      isDirty.current = true
-      setting.onChange(!setting.value)
-      if (setting.id === 'thinkingEnabled') {
-        const newValue = !setting.value
-        const backToInitial = newValue === initialThinkingEnabled.current
+    if (setting.type === "boolean") {
+      isDirty.current = true;
+      setting.onChange(!setting.value);
+      if (setting.id === "thinkingEnabled") {
+        const newValue = !setting.value;
+        const backToInitial = newValue === initialThinkingEnabled.current;
         if (backToInitial) {
-          setShowThinkingWarning(false)
-        } else if (context.messages.some(m => m.type === 'assistant')) {
-          setShowThinkingWarning(true)
+          setShowThinkingWarning(false);
+        } else if (context.messages.some((m) => m.type === "assistant")) {
+          setShowThinkingWarning(true);
         }
       }
-      return
+      return;
     }
 
     if (
-      setting.id === 'theme' ||
-      setting.id === 'model' ||
-      setting.id === 'teammateDefaultModel' ||
-      setting.id === 'showExternalIncludesDialog' ||
-      setting.id === 'outputStyle' ||
-      setting.id === 'language'
+      setting.id === "theme" ||
+      setting.id === "model" ||
+      setting.id === "teammateDefaultModel" ||
+      setting.id === "showExternalIncludesDialog" ||
+      setting.id === "outputStyle" ||
+      setting.id === "language"
     ) {
       // managedEnum items open a submenu — isDirty is set by the submenu's
       // completion callback, not here (submenu may be cancelled).
       switch (setting.id) {
-        case 'theme':
-          setShowSubmenu('Theme')
-          setTabsHidden(true)
-          return
-        case 'model':
-          setShowSubmenu('Model')
-          setTabsHidden(true)
-          return
-        case 'teammateDefaultModel':
-          setShowSubmenu('TeammateModel')
-          setTabsHidden(true)
-          return
-        case 'showExternalIncludesDialog':
-          setShowSubmenu('ExternalIncludes')
-          setTabsHidden(true)
-          return
-        case 'outputStyle':
-          setShowSubmenu('OutputStyle')
-          setTabsHidden(true)
-          return
-        case 'language':
-          setShowSubmenu('Language')
-          setTabsHidden(true)
-          return
+        case "theme":
+          setShowSubmenu("Theme");
+          setTabsHidden(true);
+          return;
+        case "model":
+          setShowSubmenu("Model");
+          setTabsHidden(true);
+          return;
+        case "teammateDefaultModel":
+          setShowSubmenu("TeammateModel");
+          setTabsHidden(true);
+          return;
+        case "showExternalIncludesDialog":
+          setShowSubmenu("ExternalIncludes");
+          setTabsHidden(true);
+          return;
+        case "outputStyle":
+          setShowSubmenu("OutputStyle");
+          setTabsHidden(true);
+          return;
+        case "language":
+          setShowSubmenu("Language");
+          setTabsHidden(true);
+          return;
       }
     }
 
-    if (setting.id === 'autoUpdatesChannel') {
+    if (setting.id === "autoUpdatesChannel") {
       if (autoUpdaterDisabledReason) {
         // Auto-updates are disabled - show enable dialog instead
-        setShowSubmenu('EnableAutoUpdates')
-        setTabsHidden(true)
-        return
+        setShowSubmenu("EnableAutoUpdates");
+        setTabsHidden(true);
+        return;
       }
-      const currentChannel = settingsData?.autoUpdatesChannel ?? 'latest'
-      if (currentChannel === 'latest') {
+      const currentChannel = settingsData?.autoUpdatesChannel ?? "latest";
+      if (currentChannel === "latest") {
         // Switching to stable - show downgrade dialog
-        setShowSubmenu('ChannelDowngrade')
-        setTabsHidden(true)
+        setShowSubmenu("ChannelDowngrade");
+        setTabsHidden(true);
       } else {
         // Switching to latest - just do it and clear minimumVersion
-        isDirty.current = true
-        updateSettingsForSource('userSettings', {
-          autoUpdatesChannel: 'latest',
+        isDirty.current = true;
+        updateSettingsForSource("userSettings", {
+          autoUpdatesChannel: "latest",
           minimumVersion: undefined,
-        })
-        setSettingsData(prev => ({
+        });
+        setSettingsData((prev) => ({
           ...prev,
-          autoUpdatesChannel: 'latest',
+          autoUpdatesChannel: "latest",
           minimumVersion: undefined,
-        }))
+        }));
       }
-      return
+      return;
     }
 
-    if (setting.type === 'enum') {
-      isDirty.current = true
-      const currentIndex = setting.options.indexOf(setting.value)
-      const nextIndex = (currentIndex + 1) % setting.options.length
-      setting.onChange(setting.options[nextIndex]!)
-      return
+    if (setting.type === "enum") {
+      isDirty.current = true;
+      const currentIndex = setting.options.indexOf(setting.value);
+      const nextIndex = (currentIndex + 1) % setting.options.length;
+      setting.onChange(setting.options[nextIndex]!);
+      return;
     }
   }, [
     autoUpdaterDisabledReason,
@@ -1791,95 +1790,95 @@ export function Config({
     selectedIndex,
     settingsData?.autoUpdatesChannel,
     setTabsHidden,
-  ])
+  ]);
 
   const moveSelection = (delta: -1 | 1): void => {
-    setShowThinkingWarning(false)
+    setShowThinkingWarning(false);
     const newIndex = Math.max(
       0,
       Math.min(filteredSettingsItems.length - 1, selectedIndex + delta),
-    )
-    setSelectedIndex(newIndex)
-    adjustScrollOffset(newIndex)
-  }
+    );
+    setSelectedIndex(newIndex);
+    adjustScrollOffset(newIndex);
+  };
 
   useKeybindings(
     {
-      'select:previous': () => {
+      "select:previous": () => {
         if (selectedIndex === 0) {
           // ↑ at top enters search mode so users can type-to-filter after
           // reaching the list boundary. Wheel-up (scroll:lineUp) clamps
           // instead — overshoot shouldn't move focus away from the list.
-          setShowThinkingWarning(false)
-          setIsSearchMode(true)
-          setScrollOffset(0)
+          setShowThinkingWarning(false);
+          setIsSearchMode(true);
+          setScrollOffset(0);
         } else {
-          moveSelection(-1)
+          moveSelection(-1);
         }
       },
-      'select:next': () => moveSelection(1),
+      "select:next": () => moveSelection(1),
       // Wheel. ScrollKeybindingHandler's scroll:line* returns false (not
       // consumed) when the ScrollBox content fits — which it always does
       // here because the list is paginated (slice). The event falls through
       // to this handler which navigates the list, clamping at boundaries.
-      'scroll:lineUp': () => moveSelection(-1),
-      'scroll:lineDown': () => moveSelection(1),
-      'select:accept': toggleSetting,
-      'settings:search': () => {
-        setIsSearchMode(true)
-        setSearchQuery('')
+      "scroll:lineUp": () => moveSelection(-1),
+      "scroll:lineDown": () => moveSelection(1),
+      "select:accept": toggleSetting,
+      "settings:search": () => {
+        setIsSearchMode(true);
+        setSearchQuery("");
       },
     },
     {
-      context: 'Settings',
+      context: "Settings",
       isActive: showSubmenu === null && !isSearchMode && !headerFocused,
     },
-  )
+  );
 
   // Combined key handling across search/list modes. Branch order mirrors
   // the original useInput gate priority: submenu and header short-circuit
   // first (their own handlers own input), then search vs. list.
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (showSubmenu !== null) return
-      if (headerFocused) return
+      if (showSubmenu !== null) return;
+      if (headerFocused) return;
       // Search mode: Esc clears then exits, Enter/↓ moves to the list.
       if (isSearchMode) {
-        if (e.key === 'escape') {
-          e.preventDefault()
+        if (e.key === "escape") {
+          e.preventDefault();
           if (searchQuery.length > 0) {
-            setSearchQuery('')
+            setSearchQuery("");
           } else {
-            setIsSearchMode(false)
+            setIsSearchMode(false);
           }
-          return
+          return;
         }
-        if (e.key === 'return' || e.key === 'down' || e.key === 'wheeldown') {
-          e.preventDefault()
-          setIsSearchMode(false)
-          setSelectedIndex(0)
-          setScrollOffset(0)
+        if (e.key === "return" || e.key === "down" || e.key === "wheeldown") {
+          e.preventDefault();
+          setIsSearchMode(false);
+          setSelectedIndex(0);
+          setScrollOffset(0);
         }
-        return
+        return;
       }
       // List mode: left/right/tab cycle the selected option's value. These
       // keys used to switch tabs; now they only do so when the tab row is
       // explicitly focused (see headerFocused in Settings.tsx).
-      if (e.key === 'left' || e.key === 'right' || e.key === 'tab') {
-        e.preventDefault()
-        toggleSetting()
-        return
+      if (e.key === "left" || e.key === "right" || e.key === "tab") {
+        e.preventDefault();
+        toggleSetting();
+        return;
       }
       // Fallback: printable characters (other than those bound to actions)
       // enter search mode. Carve out j/k// — useKeybindings (still on the
       // useInput path) consumes these via stopImmediatePropagation, but
       // onKeyDown dispatches independently so we must skip them explicitly.
-      if (e.ctrl || e.meta) return
-      if (e.key === 'j' || e.key === 'k' || e.key === '/') return
-      if (e.key.length === 1 && e.key !== ' ') {
-        e.preventDefault()
-        setIsSearchMode(true)
-        setSearchQuery(e.key)
+      if (e.ctrl || e.meta) return;
+      if (e.key === "j" || e.key === "k" || e.key === "/") return;
+      if (e.key.length === 1 && e.key !== " ") {
+        e.preventDefault();
+        setIsSearchMode(true);
+        setSearchQuery(e.key);
       }
     },
     [
@@ -1890,7 +1889,7 @@ export function Config({
       setSearchQuery,
       toggleSetting,
     ],
-  )
+  );
 
   return (
     <Box
@@ -1900,18 +1899,18 @@ export function Config({
       autoFocus
       onKeyDown={handleKeyDown}
     >
-      {showSubmenu === 'Theme' ? (
+      {showSubmenu === "Theme" ? (
         <>
           <ThemePicker
-            onThemeSelect={setting => {
-              isDirty.current = true
-              setTheme(setting)
-              setShowSubmenu(null)
-              setTabsHidden(false)
+            onThemeSelect={(setting) => {
+              isDirty.current = true;
+              setTheme(setting);
+              setShowSubmenu(null);
+              setTabsHidden(false);
             }}
             onCancel={() => {
-              setShowSubmenu(null)
-              setTabsHidden(false)
+              setShowSubmenu(null);
+              setTabsHidden(false);
             }}
             hideEscToCancel
             skipExitHandling={true} // Skip exit handling as Config already handles it
@@ -1930,19 +1929,19 @@ export function Config({
             </Text>
           </Box>
         </>
-      ) : showSubmenu === 'Model' ? (
+      ) : showSubmenu === "Model" ? (
         <>
           <ModelPicker
             initial={mainLoopModel}
             onSelect={(model, _effort) => {
-              isDirty.current = true
-              onChangeMainModelConfig(model)
-              setShowSubmenu(null)
-              setTabsHidden(false)
+              isDirty.current = true;
+              onChangeMainModelConfig(model);
+              setShowSubmenu(null);
+              setTabsHidden(false);
             }}
             onCancel={() => {
-              setShowSubmenu(null)
-              setTabsHidden(false)
+              setShowSubmenu(null);
+              setTabsHidden(false);
             }}
             showFastModeNotice={
               isFastModeEnabled()
@@ -1964,15 +1963,15 @@ export function Config({
             </Byline>
           </Text>
         </>
-      ) : showSubmenu === 'TeammateModel' ? (
+      ) : showSubmenu === "TeammateModel" ? (
         <>
           <ModelPicker
             initial={globalConfig.teammateDefaultModel ?? null}
             skipSettingsWrite
             headerText="Default model for newly spawned teammates. The leader can override via the tool call's model parameter."
             onSelect={(model, _effort) => {
-              setShowSubmenu(null)
-              setTabsHidden(false)
+              setShowSubmenu(null);
+              setTabsHidden(false);
               // First-open-then-Enter from unset: picker highlights "Default"
               // (initial=null) and confirming would write null, silently
               // switching Opus-fallback → follow-leader. Treat as no-op.
@@ -1980,26 +1979,26 @@ export function Config({
                 globalConfig.teammateDefaultModel === undefined &&
                 model === null
               ) {
-                return
+                return;
               }
-              isDirty.current = true
-              saveGlobalConfig(current =>
+              isDirty.current = true;
+              saveGlobalConfig((current) =>
                 current.teammateDefaultModel === model
                   ? current
                   : { ...current, teammateDefaultModel: model },
-              )
+              );
               setGlobalConfig({
                 ...getGlobalConfig(),
                 teammateDefaultModel: model,
-              })
-              setChanges(prev => ({
+              });
+              setChanges((prev) => ({
                 ...prev,
                 teammateDefaultModel: teammateModelDisplayString(model),
-              }))
+              }));
             }}
             onCancel={() => {
-              setShowSubmenu(null)
-              setTabsHidden(false)
+              setShowSubmenu(null);
+              setTabsHidden(false);
             }}
           />
           <Text dimColor>
@@ -2014,12 +2013,12 @@ export function Config({
             </Byline>
           </Text>
         </>
-      ) : showSubmenu === 'ExternalIncludes' ? (
+      ) : showSubmenu === "ExternalIncludes" ? (
         <>
           <ClaudeMdExternalIncludesDialog
             onDone={() => {
-              setShowSubmenu(null)
-              setTabsHidden(false)
+              setShowSubmenu(null);
+              setTabsHidden(false);
             }}
             externalIncludes={getExternalClaudeMdIncludes(memoryFiles)}
           />
@@ -2035,25 +2034,24 @@ export function Config({
             </Byline>
           </Text>
         </>
-      ) : showSubmenu === 'OutputStyle' ? (
+      ) : showSubmenu === "OutputStyle" ? (
         <>
           <OutputStylePicker
             initialStyle={currentOutputStyle}
-            onComplete={style => {
-              isDirty.current = true
-              setCurrentOutputStyle(style ?? DEFAULT_OUTPUT_STYLE_NAME)
-              setShowSubmenu(null)
-              setTabsHidden(false)
+            onComplete={(style) => {
+              isDirty.current = true;
+              setCurrentOutputStyle(style ?? DEFAULT_OUTPUT_STYLE_NAME);
+              setShowSubmenu(null);
+              setTabsHidden(false);
 
               // Save to local settings
-              updateSettingsForSource('localSettings', {
+              updateSettingsForSource("localSettings", {
                 outputStyle: style,
-              })
-
+              });
             }}
             onCancel={() => {
-              setShowSubmenu(null)
-              setTabsHidden(false)
+              setShowSubmenu(null);
+              setTabsHidden(false);
             }}
           />
           <Text dimColor>
@@ -2068,25 +2066,24 @@ export function Config({
             </Byline>
           </Text>
         </>
-      ) : showSubmenu === 'Language' ? (
+      ) : showSubmenu === "Language" ? (
         <>
           <LanguagePicker
             initialLanguage={currentLanguage}
-            onComplete={language => {
-              isDirty.current = true
-              setCurrentLanguage(language)
-              setShowSubmenu(null)
-              setTabsHidden(false)
+            onComplete={(language) => {
+              isDirty.current = true;
+              setCurrentLanguage(language);
+              setShowSubmenu(null);
+              setTabsHidden(false);
 
               // Save to user settings
-              updateSettingsForSource('userSettings', {
+              updateSettingsForSource("userSettings", {
                 language,
-              })
-
+              });
             }}
             onCancel={() => {
-              setShowSubmenu(null)
-              setTabsHidden(false)
+              setShowSubmenu(null);
+              setTabsHidden(false);
             }}
           />
           <Text dimColor>
@@ -2101,24 +2098,24 @@ export function Config({
             </Byline>
           </Text>
         </>
-      ) : showSubmenu === 'EnableAutoUpdates' ? (
+      ) : showSubmenu === "EnableAutoUpdates" ? (
         <Dialog
           title="Enable Auto-Updates"
           onCancel={() => {
-            setShowSubmenu(null)
-            setTabsHidden(false)
+            setShowSubmenu(null);
+            setTabsHidden(false);
           }}
           hideBorder
           hideInputGuide
         >
-          {autoUpdaterDisabledReason?.type !== 'config' ? (
+          {autoUpdaterDisabledReason?.type !== "config" ? (
             <>
               <Text>
-                {autoUpdaterDisabledReason?.type === 'env'
-                  ? 'Auto-updates are controlled by an environment variable and cannot be changed here.'
-                  : 'Auto-updates are disabled in development builds.'}
+                {autoUpdaterDisabledReason?.type === "env"
+                  ? "Auto-updates are controlled by an environment variable and cannot be changed here."
+                  : "Auto-updates are disabled in development builds."}
               </Text>
-              {autoUpdaterDisabledReason?.type === 'env' && (
+              {autoUpdaterDisabledReason?.type === "env" && (
                 <Text dimColor>
                   Unset {autoUpdaterDisabledReason.envVar} to re-enable
                   auto-updates.
@@ -2129,69 +2126,69 @@ export function Config({
             <Select
               options={[
                 {
-                  label: 'Enable with latest channel',
-                  value: 'latest',
+                  label: "Enable with latest channel",
+                  value: "latest",
                 },
                 {
-                  label: 'Enable with stable channel',
-                  value: 'stable',
+                  label: "Enable with stable channel",
+                  value: "stable",
                 },
               ]}
               onChange={(channel: string) => {
-                isDirty.current = true
-                setShowSubmenu(null)
-                setTabsHidden(false)
+                isDirty.current = true;
+                setShowSubmenu(null);
+                setTabsHidden(false);
 
-                saveGlobalConfig(current => ({
+                saveGlobalConfig((current) => ({
                   ...current,
                   autoUpdates: true,
-                }))
-                setGlobalConfig({ ...getGlobalConfig(), autoUpdates: true })
+                }));
+                setGlobalConfig({ ...getGlobalConfig(), autoUpdates: true });
 
-                updateSettingsForSource('userSettings', {
-                  autoUpdatesChannel: channel as 'latest' | 'stable',
+                updateSettingsForSource("userSettings", {
+                  autoUpdatesChannel: channel as "latest" | "stable",
                   minimumVersion: undefined,
-                })
-                setSettingsData(prev => ({
+                });
+                setSettingsData((prev) => ({
                   ...prev,
-                  autoUpdatesChannel: channel as 'latest' | 'stable',
+                  autoUpdatesChannel: channel as "latest" | "stable",
                   minimumVersion: undefined,
-                }))
+                }));
               }}
             />
           )}
         </Dialog>
-      ) : showSubmenu === 'ChannelDowngrade' ? (
+      ) : showSubmenu === "ChannelDowngrade" ? (
         <ChannelDowngradeDialog
           currentVersion={MACRO.VERSION}
           onChoice={(choice: ChannelDowngradeChoice) => {
-            setShowSubmenu(null)
-            setTabsHidden(false)
+            setShowSubmenu(null);
+            setTabsHidden(false);
 
-            if (choice === 'cancel') {
+            if (choice === "cancel") {
               // User cancelled - don't change anything
-              return
+              return;
             }
 
-            isDirty.current = true
+            isDirty.current = true;
             // Switch to stable channel
             const newSettings: {
-              autoUpdatesChannel: 'stable'
-              minimumVersion?: string
+              autoUpdatesChannel: "stable";
+              minimumVersion?: string;
             } = {
-              autoUpdatesChannel: 'stable',
-            }
+              autoUpdatesChannel: "stable",
+            };
 
-            if (choice === 'stay') {
+            if (choice === "stay") {
               // User wants to stay on current version until stable catches up
-              newSettings.minimumVersion = MACRO.VERSION
+              newSettings.minimumVersion = MACRO.VERSION;
             }
 
-            updateSettingsForSource('userSettings', newSettings)
-            setSettingsData(prev => ({
+            updateSettingsForSource("userSettings", newSettings);
+            setSettingsData((prev) => ({
               ...prev,
               ...newSettings,
-            }))
+            }));
           }}
         />
       ) : (
@@ -2222,67 +2219,67 @@ export function Config({
                 {filteredSettingsItems
                   .slice(scrollOffset, scrollOffset + maxVisible)
                   .map((setting, i) => {
-                    const actualIndex = scrollOffset + i
+                    const actualIndex = scrollOffset + i;
                     const isSelected =
                       actualIndex === selectedIndex &&
                       !headerFocused &&
-                      !isSearchMode
+                      !isSearchMode;
 
                     return (
                       <React.Fragment key={setting.id}>
                         <Box>
                           <Box width={44}>
-                            <Text color={isSelected ? 'suggestion' : undefined}>
-                              {isSelected ? figures.pointer : ' '}{' '}
+                            <Text color={isSelected ? "suggestion" : undefined}>
+                              {isSelected ? figures.pointer : " "}{" "}
                               {setting.label}
                             </Text>
                           </Box>
-                          <Box key={isSelected ? 'selected' : 'unselected'}>
-                            {setting.type === 'boolean' ? (
+                          <Box key={isSelected ? "selected" : "unselected"}>
+                            {setting.type === "boolean" ? (
                               <>
                                 <Text
-                                  color={isSelected ? 'suggestion' : undefined}
+                                  color={isSelected ? "suggestion" : undefined}
                                 >
                                   {setting.value.toString()}
                                 </Text>
                                 {showThinkingWarning &&
-                                  setting.id === 'thinkingEnabled' && (
+                                  setting.id === "thinkingEnabled" && (
                                     <Text color="warning">
-                                      {' '}
+                                      {" "}
                                       Changing thinking mode mid-conversation
                                       will increase latency and may reduce
                                       quality.
                                     </Text>
                                   )}
                               </>
-                            ) : setting.id === 'theme' ? (
+                            ) : setting.id === "theme" ? (
                               <Text
-                                color={isSelected ? 'suggestion' : undefined}
+                                color={isSelected ? "suggestion" : undefined}
                               >
                                 {THEME_LABELS[setting.value.toString()] ??
                                   setting.value.toString()}
                               </Text>
-                            ) : setting.id === 'notifChannel' ? (
+                            ) : setting.id === "notifChannel" ? (
                               <Text
-                                color={isSelected ? 'suggestion' : undefined}
+                                color={isSelected ? "suggestion" : undefined}
                               >
                                 <NotifChannelLabel
                                   value={setting.value.toString()}
                                 />
                               </Text>
-                            ) : setting.id === 'defaultPermissionMode' ? (
+                            ) : setting.id === "defaultPermissionMode" ? (
                               <Text
-                                color={isSelected ? 'suggestion' : undefined}
+                                color={isSelected ? "suggestion" : undefined}
                               >
                                 {permissionModeTitle(
                                   setting.value as PermissionMode,
                                 )}
                               </Text>
-                            ) : setting.id === 'autoUpdatesChannel' &&
+                            ) : setting.id === "autoUpdatesChannel" &&
                               autoUpdaterDisabledReason ? (
                               <Box flexDirection="column">
                                 <Text
-                                  color={isSelected ? 'suggestion' : undefined}
+                                  color={isSelected ? "suggestion" : undefined}
                                 >
                                   disabled
                                 </Text>
@@ -2296,7 +2293,7 @@ export function Config({
                               </Box>
                             ) : (
                               <Text
-                                color={isSelected ? 'suggestion' : undefined}
+                                color={isSelected ? "suggestion" : undefined}
                               >
                                 {setting.value.toString()}
                               </Text>
@@ -2304,12 +2301,12 @@ export function Config({
                           </Box>
                         </Box>
                       </React.Fragment>
-                    )
+                    );
                   })}
                 {scrollOffset + maxVisible < filteredSettingsItems.length && (
                   <Text dimColor>
-                    {figures.arrowDown}{' '}
-                    {filteredSettingsItems.length - scrollOffset - maxVisible}{' '}
+                    {figures.arrowDown}{" "}
+                    {filteredSettingsItems.length - scrollOffset - maxVisible}{" "}
                     more below
                   </Text>
                 )}
@@ -2376,60 +2373,60 @@ export function Config({
         </Box>
       )}
     </Box>
-  )
+  );
 }
 
 function teammateModelDisplayString(value: string | null | undefined): string {
   if (value === undefined) {
-    return modelDisplayString(getHardcodedTeammateModelFallback())
+    return modelDisplayString(getHardcodedTeammateModelFallback());
   }
-  if (value === null) return "Default (leader's model)"
-  return modelDisplayString(value)
+  if (value === null) return "Default (leader's model)";
+  return modelDisplayString(value);
 }
 
 const THEME_LABELS: Record<string, string> = {
-  auto: 'Auto (match terminal)',
-  dark: 'Dark mode',
-  light: 'Light mode',
-  'dark-daltonized': 'Dark mode (colorblind-friendly)',
-  'light-daltonized': 'Light mode (colorblind-friendly)',
-  'dark-ansi': 'Dark mode (ANSI colors only)',
-  'light-ansi': 'Light mode (ANSI colors only)',
-}
+  auto: "Auto (match terminal)",
+  dark: "Dark mode",
+  light: "Light mode",
+  "dark-daltonized": "Dark mode (colorblind-friendly)",
+  "light-daltonized": "Light mode (colorblind-friendly)",
+  "dark-ansi": "Dark mode (ANSI colors only)",
+  "light-ansi": "Light mode (ANSI colors only)",
+};
 
 function NotifChannelLabel({ value }: { value: string }): React.ReactNode {
   switch (value) {
-    case 'auto':
-      return 'Auto'
-    case 'iterm2':
+    case "auto":
+      return "Auto";
+    case "iterm2":
       return (
         <Text>
           iTerm2 <Text dimColor>(OSC 9)</Text>
         </Text>
-      )
-    case 'terminal_bell':
+      );
+    case "terminal_bell":
       return (
         <Text>
           Terminal Bell <Text dimColor>(\a)</Text>
         </Text>
-      )
-    case 'kitty':
+      );
+    case "kitty":
       return (
         <Text>
           Kitty <Text dimColor>(OSC 99)</Text>
         </Text>
-      )
-    case 'ghostty':
+      );
+    case "ghostty":
       return (
         <Text>
           Ghostty <Text dimColor>(OSC 777)</Text>
         </Text>
-      )
-    case 'iterm2_with_bell':
-      return 'iTerm2 w/ Bell'
-    case 'notifications_disabled':
-      return 'Disabled'
+      );
+    case "iterm2_with_bell":
+      return "iTerm2 w/ Bell";
+    case "notifications_disabled":
+      return "Disabled";
     default:
-      return value
+      return value;
   }
 }
