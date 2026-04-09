@@ -35,6 +35,7 @@ const fullExperimentalFeatures = [
   'SHOT_STATS',
   'TEAMMEM',
   'TOKEN_BUDGET',
+  'TRANSCRIPT_CLASSIFIER',
   'TREE_SITTER_BASH',
   'TREE_SITTER_BASH_SHADOW',
   'ULTRAPLAN',
