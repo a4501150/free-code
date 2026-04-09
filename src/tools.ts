@@ -109,12 +109,14 @@ const SnipTool = feature('HISTORY_SNIP')
 const ListPeersTool = feature('UDS_INBOX')
   ? require('./tools/ListPeersTool/ListPeersTool.js').ListPeersTool
   : null
-const WorkflowTool = feature('WORKFLOW_SCRIPTS')
-  ? (() => {
-      require('./tools/WorkflowTool/bundled/index.js').initBundledWorkflows()
-      return require('./tools/WorkflowTool/WorkflowTool.js').WorkflowTool
-    })()
-  : null
+// Avoid IIFE + return pattern — Bun's minifier merges `return` with the next
+// identifier (e.g. `return __toCommonJS(...)` → `returnA8(...)`) which causes
+// a ReferenceError at runtime.
+let WorkflowTool: typeof import('./tools/WorkflowTool/WorkflowTool.js').WorkflowTool | null = null
+if (feature('WORKFLOW_SCRIPTS')) {
+  require('./tools/WorkflowTool/bundled/index.js').initBundledWorkflows()
+  WorkflowTool = require('./tools/WorkflowTool/WorkflowTool.js').WorkflowTool
+}
 /* eslint-enable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 import type { ToolPermissionContext } from './Tool.js'
 import { getDenyRuleForTool } from './utils/permissions/permissions.js'

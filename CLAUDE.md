@@ -112,44 +112,44 @@ These must be individually enabled with `--feature=FLAG_NAME`:
 | Flag | Files | Description | Build Status |
 |------|-------|-------------|--------------|
 | `AUTO_THEME` | 1 | Adds "Auto (match terminal)" option to theme picker | **OK** — builds clean |
-| `BG_SESSIONS` | 7 | Background sessions via tmux (ps/logs/attach/kill/--bg), session lifecycle | **Broken** — missing `cli/bg.js` |
+| `BG_SESSIONS` | 7 | Background sessions via tmux (ps/logs/attach/kill/--bg), session lifecycle | **OK** — builds clean |
 | `BREAK_CACHE_COMMAND` | 1 | Injects cache-breaking string into system prompt for debugging | **OK** — builds clean |
 | `BUDDY` | 7 | Virtual companion sprites with rarity, speech bubbles, reactions, notifications | **OK** — builds clean |
-| `BUILDING_CLAUDE_APPS` | 1 | Registers "Claude API" bundled skill | **Broken** — missing `claude-api/` skill docs |
-| `BYOC_ENVIRONMENT_RUNNER` | 1 | `claude environment-runner` CLI subcommand for BYOC | **Broken** — missing `environment-runner/main.js` |
+| `BUILDING_CLAUDE_APPS` | 1 | Registers "Claude API" bundled skill | **OK** — builds clean |
+| `BYOC_ENVIRONMENT_RUNNER` | 1 | `claude environment-runner` CLI subcommand for BYOC | **OK** — builds clean |
 | `COMMIT_ATTRIBUTION` | 1 | Tracks permission/escape/prompt counts for commit attribution metrics | **OK** — builds clean |
-| `CONTEXT_COLLAPSE` | 13 | Archives older context into collapsed summaries; alternative to reactive compact | **Broken** — missing `CtxInspectTool` |
-| `COORDINATOR_MODE` | 15 | Coordinator mode: delegates work to agents, filters tools, custom system prompt | **Broken** — missing `coordinator/workerAgent.js` |
+| `CONTEXT_COLLAPSE` | 13 | Archives older context into collapsed summaries; alternative to reactive compact | **OK** — builds clean |
+| `COORDINATOR_MODE` | 15 | Coordinator mode: delegates work to agents, filters tools, custom system prompt | **OK** — builds clean |
 | `DAEMON` | 1 | `claude daemon` + `--daemon-worker` CLI subcommands for long-running supervisor | **OK** — builds clean |
-| `DIRECT_CONNECT` | 1 | `claude connect <url>` for remote server connection with auth | **Broken** — missing `server/` module (9 files) |
+| `DIRECT_CONNECT` | 1 | `claude connect <url>` for remote server connection with auth | **OK** — builds clean |
 | `DUMP_SYSTEM_PROMPT` | 1 | `--dump-system-prompt` flag for prompt sensitivity evals | **OK** — builds clean |
-| `EXPERIMENTAL_SKILL_SEARCH` | 9 | Remote skill search/indexing from MCP and external sources | **Broken** — missing `services/skillSearch/` (11 files) |
+| `EXPERIMENTAL_SKILL_SEARCH` | 9 | Remote skill search/indexing from MCP and external sources | **OK** — builds clean |
 | `FILE_PERSISTENCE` | 1 | Post-turn file persistence with event emission | **OK** — builds clean |
-| `FORK_SUBAGENT` | 5 | Fork agent mode — spawns full-access subagent with permission bubbling | **Broken** — missing `commands/fork/`, `UserForkBoilerplateMessage` |
+| `FORK_SUBAGENT` | 5 | Fork agent mode — spawns full-access subagent with permission bubbling | **OK** — builds clean |
 | `HARD_FAIL` | 2 | `--hard-fail` makes `logError()` crash process instead of silently logging | **OK** — builds clean |
-| `HISTORY_SNIP` | 8 | SnipTool — trim older conversation history, integrated into query/message pipeline | **Broken** — missing `SnipTool`, `commands/force-snip`, `SnipBoundaryMessage` |
+| `HISTORY_SNIP` | 8 | SnipTool — trim older conversation history, integrated into query/message pipeline | **OK** — builds clean |
 | `KAIROS` | **52** | **Full assistant mode** — scheduling, notifications, team context, persistent sessions, daily logs. Largest flag (120+ refs). | **Broken** — missing `proactive/`, `sessionTranscript/`, `SleepTool`, `SendUserFileTool`, `PushNotificationTool`, `SubscribePRTool` |
 | `KAIROS_DREAM` | 1 | Registers "dream" skill for background memory consolidation (requires KAIROS) | **Broken** — depends on KAIROS |
 | `KAIROS_GITHUB_WEBHOOKS` | 3 | SubscribePRTool + `/subscribe-pr` for GitHub PR webhook subscriptions | **Broken** — missing `SubscribePRTool`, `commands/subscribe-pr` |
 | `KAIROS_PUSH_NOTIFICATION` | 3 | Push notification tool + settings (extends KAIROS notification support) | **Broken** — missing `PushNotificationTool` |
 | `MCP_SKILLS` | 3 | Fetches and registers skills from MCP server resources | **OK** — builds clean |
 | `OVERFLOW_TEST_TOOL` | 2 | Debug tool for overflow scenario testing + classifier integration | **OK** — builds clean |
-| `REACTIVE_COMPACT` | 2 | Trigger-based automatic compaction module | **Broken** — missing `services/compact/reactiveCompact.js` |
-| `REVIEW_ARTIFACT` | 2 | "Hunter" skill + ReviewArtifactTool with custom permission UI | **Broken** — missing `hunter.js`, `ReviewArtifactTool`, `ReviewArtifactPermissionRequest` |
-| `RUN_SKILL_GENERATOR` | 1 | Skill generator/scaffolding skill | **Broken** — missing `runSkillGenerator.js` |
-| `SELF_HOSTED_RUNNER` | 1 | `claude self-hosted-runner` CLI mode for headless poll-based execution | **Broken** — missing `self-hosted-runner/main.js` |
+| `REACTIVE_COMPACT` | 2 | Trigger-based automatic compaction module | **OK** — builds clean |
+| `REVIEW_ARTIFACT` | 2 | "Hunter" skill + ReviewArtifactTool with custom permission UI | **OK** — builds clean |
+| `RUN_SKILL_GENERATOR` | 1 | Skill generator/scaffolding skill | **OK** — builds clean |
+| `SELF_HOSTED_RUNNER` | 1 | `claude self-hosted-runner` CLI mode for headless poll-based execution | **OK** — builds clean |
 | `SLOW_OPERATION_LOGGING` | 1 | Performance instrumentation wrapping JSON.stringify, structuredClone, etc. | **OK** — builds clean |
-| `SSH_REMOTE` | 1 | `claude ssh <host> [dir]` for SSH-backed remote sessions | **Broken** — missing `ssh/createSSHSession.js` |
+| `SSH_REMOTE` | 1 | `claude ssh <host> [dir]` for SSH-backed remote sessions | **OK** — builds clean |
 | `STREAMLINED_OUTPUT` | 1 | Streamlined transformer for headless `stream-json` output format | **OK** — builds clean |
-| `TEMPLATES` | 5 | Template execution system — config, permissions, CLI dispatch, job classification | **Broken** — missing `cli/handlers/templateJobs.js` |
+| `TEMPLATES` | 5 | Template execution system — config, permissions, CLI dispatch, job classification | **OK** — builds clean |
 | `TERMINAL_PANEL` | 5 | TerminalCaptureTool + meta+j keybinding for terminal panel toggle | **OK** — builds clean |
-| `UDS_INBOX` | 10 | Unix domain socket IPC — peer discovery, messaging, `/peers` command, ListPeersTool | **Broken** — missing `ListPeersTool`, `udsMessaging`, `commands/peers/` |
-| `WORKFLOW_SCRIPTS` | 7 | WorkflowTool + `/workflows` command + task tracking + custom permission UI | **Broken** — missing `WorkflowTool`, `commands/workflows/`, `LocalWorkflowTask` |
+| `UDS_INBOX` | 10 | Unix domain socket IPC — peer discovery, messaging, `/peers` command, ListPeersTool | **OK** — builds clean |
+| `WORKFLOW_SCRIPTS` | 7 | WorkflowTool + `/workflows` command + task tracking + custom permission UI | **OK** — builds clean |
 
 Total: **66 unique build-time feature flags** (1 default + 31 dev-full + 34 additional).
 
-- **Buildable flags**: 1 default (`VOICE_MODE`) + 31 dev-full + 13 hidden that build clean (`AUTO_THEME`, `BREAK_CACHE_COMMAND`, `BUDDY`, `COMMIT_ATTRIBUTION`, `DAEMON`, `DUMP_SYSTEM_PROMPT`, `FILE_PERSISTENCE`, `HARD_FAIL`, `MCP_SKILLS`, `OVERFLOW_TEST_TOOL`, `SLOW_OPERATION_LOGGING`, `STREAMLINED_OUTPUT`, `TERMINAL_PANEL`) = **45 working flags**
-- **Broken flags**: 21 hidden flags depend on modules stripped from the upstream source and will fail to build. See "Build Status" column above for missing modules.
+- **Buildable flags**: 1 default (`VOICE_MODE`) + 31 dev-full + 30 hidden that build clean (`AUTO_THEME`, `BG_SESSIONS`, `BREAK_CACHE_COMMAND`, `BUDDY`, `BUILDING_CLAUDE_APPS`, `BYOC_ENVIRONMENT_RUNNER`, `COMMIT_ATTRIBUTION`, `CONTEXT_COLLAPSE`, `COORDINATOR_MODE`, `DAEMON`, `DIRECT_CONNECT`, `DUMP_SYSTEM_PROMPT`, `EXPERIMENTAL_SKILL_SEARCH`, `FILE_PERSISTENCE`, `FORK_SUBAGENT`, `HARD_FAIL`, `HISTORY_SNIP`, `MCP_SKILLS`, `OVERFLOW_TEST_TOOL`, `REACTIVE_COMPACT`, `REVIEW_ARTIFACT`, `RUN_SKILL_GENERATOR`, `SELF_HOSTED_RUNNER`, `SLOW_OPERATION_LOGGING`, `SSH_REMOTE`, `STREAMLINED_OUTPUT`, `TEMPLATES`, `TERMINAL_PANEL`, `UDS_INBOX`, `WORKFLOW_SCRIPTS`) = **62 working flags**
+- **Broken flags**: 4 hidden flags depend on modules stripped from the upstream source and will fail to build. See "Build Status" column above for missing modules.
 - `PROACTIVE` was removed (legacy, subsumed by KAIROS).
 
 > **TODO**: As flags are moved to default-on (enabled in production builds), update the tables above — move the flag to the "Default feature" section and update `defaultFeatures` in scripts/build.ts accordingly.
