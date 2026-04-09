@@ -20,7 +20,10 @@ import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { getDisplayPath } from '../../utils/file.js'
 import { formatRelativeTimeAgo } from '../../utils/format.js'
 import { projectIsInGitRepo } from '../../utils/memory/versions.js'
-import { updateSettingsForSource } from '../../utils/settings/settings.js'
+import {
+  getInitialSettings,
+  updateSettingsForSource,
+} from '../../utils/settings/settings.js'
 import { Select } from '../CustomSelect/index.js'
 import { ListItem } from '../design-system/ListItem.js'
 
@@ -204,6 +207,9 @@ export function MemoryFileSelector({
 
   // Toggle state (local copy of settings so the UI updates immediately)
   const [autoMemoryOn, setAutoMemoryOn] = useState(isAutoMemoryEnabled)
+  const [sessionMemoryOn, setSessionMemoryOn] = useState(
+    () => getInitialSettings()?.sessionMemory ?? false,
+  )
   const [autoDreamOn, setAutoDreamOn] = useState(isAutoDreamEnabled)
 
   // Dream row is only meaningful when auto-memory is on (dream consolidates
@@ -232,15 +238,24 @@ export function MemoryFileSelector({
         ? 'never'
         : `last ran ${formatRelativeTimeAgo(new Date(lastDreamAt))}`
 
-  // null = Select has focus, 0 = auto-memory, 1 = auto-dream (if showDreamRow)
+  // null = Select has focus, 0 = auto-memory, 1 = session-memory,
+  // 2 = auto-dream (if showDreamRow)
   const [focusedToggle, setFocusedToggle] = useState<number | null>(null)
   const toggleFocused = focusedToggle !== null
-  const lastToggleIndex = showDreamRow ? 1 : 0
+  const lastToggleIndex = showDreamRow ? 2 : 1
 
   function handleToggleAutoMemory(): void {
     const newValue = !autoMemoryOn
     updateSettingsForSource('userSettings', { autoMemoryEnabled: newValue })
     setAutoMemoryOn(newValue)
+  }
+
+  function handleToggleSessionMemory(): void {
+    const newValue = !sessionMemoryOn
+    updateSettingsForSource('userSettings', {
+      sessionMemory: newValue ? true : undefined,
+    })
+    setSessionMemoryOn(newValue)
   }
 
   function handleToggleAutoDream(): void {
@@ -257,7 +272,8 @@ export function MemoryFileSelector({
     'confirm:yes',
     () => {
       if (focusedToggle === 0) handleToggleAutoMemory()
-      else if (focusedToggle === 1) handleToggleAutoDream()
+      else if (focusedToggle === 1) handleToggleSessionMemory()
+      else if (focusedToggle === 2) handleToggleAutoDream()
     },
     { context: 'Confirmation', isActive: toggleFocused },
   )
@@ -284,9 +300,12 @@ export function MemoryFileSelector({
         <ListItem isFocused={focusedToggle === 0}>
           <Text>Auto-memory: {autoMemoryOn ? 'on' : 'off'}</Text>
         </ListItem>
+        <ListItem isFocused={focusedToggle === 1}>
+          <Text>Session memory: {sessionMemoryOn ? 'on' : 'off'}</Text>
+        </ListItem>
         {showDreamRow && (
-          <ListItem isFocused={focusedToggle === 1} styled={false}>
-            <Text color={focusedToggle === 1 ? 'suggestion' : undefined}>
+          <ListItem isFocused={focusedToggle === 2} styled={false}>
+            <Text color={focusedToggle === 2 ? 'suggestion' : undefined}>
               Auto-dream: {autoDreamOn ? 'on' : 'off'}
               {dreamStatus && <Text dimColor> · {dreamStatus}</Text>}
               {!isDreamRunning && autoDreamOn && (
