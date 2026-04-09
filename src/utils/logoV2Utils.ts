@@ -20,7 +20,7 @@ import { getInitialSettings } from './settings/settings.js'
 // Layout constants
 const MAX_LEFT_WIDTH = 50
 const MAX_USERNAME_LENGTH = 20
-const BORDER_PADDING = 4
+export const BORDER_PADDING = 4
 const DIVIDER_WIDTH = 1
 const CONTENT_PADDING = 2
 
@@ -49,21 +49,24 @@ export function calculateLayoutDimensions(
   optimalLeftWidth: number,
 ): LayoutDimensions {
   if (layoutMode === 'horizontal') {
-    const leftWidth = optimalLeftWidth
+    // Ensure leftWidth doesn't consume more than what's available,
+    // leaving at least MIN_RIGHT_WIDTH for the right panel.
+    const MIN_RIGHT_WIDTH = 20
+    const maxLeftWidth = Math.max(
+      MIN_RIGHT_WIDTH,
+      columns - BORDER_PADDING - CONTENT_PADDING - DIVIDER_WIDTH - MIN_RIGHT_WIDTH,
+    )
+    const leftWidth = Math.min(optimalLeftWidth, maxLeftWidth)
     const usedSpace =
       BORDER_PADDING + CONTENT_PADDING + DIVIDER_WIDTH + leftWidth
     const availableForRight = columns - usedSpace
 
-    let rightWidth = Math.max(30, availableForRight)
-    const totalWidth = Math.min(
-      leftWidth + rightWidth + DIVIDER_WIDTH + CONTENT_PADDING,
-      columns - BORDER_PADDING,
-    )
-
-    // Recalculate right width if we had to cap the total
-    if (totalWidth < leftWidth + rightWidth + DIVIDER_WIDTH + CONTENT_PADDING) {
-      rightWidth = totalWidth - leftWidth - DIVIDER_WIDTH - CONTENT_PADDING
-    }
+    // Never exceed available space — previous Math.max(30, ...) could
+    // create overflow that forced Yoga to shrink items, destabilising
+    // the divider's position across renders.
+    const rightWidth = Math.max(MIN_RIGHT_WIDTH, availableForRight)
+    const totalWidth =
+      leftWidth + rightWidth + DIVIDER_WIDTH + CONTENT_PADDING
 
     return { leftWidth, rightWidth, totalWidth }
   }

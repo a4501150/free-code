@@ -4,6 +4,7 @@ import { Box, Text, color } from '../../ink.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { stringWidth } from '../../ink/stringWidth.js'
 import {
+  BORDER_PADDING,
   getLayoutMode,
   calculateLayoutDimensions,
   calculateOptimalLeftWidth,
@@ -343,7 +344,7 @@ export function LogoV2(): React.ReactNode {
   )
 
   // Calculate layout dimensions
-  const { leftWidth, rightWidth } = calculateLayoutDimensions(
+  const { leftWidth, rightWidth, totalWidth } = calculateLayoutDimensions(
     columns,
     layoutMode,
     optimalLeftWidth,
@@ -354,6 +355,7 @@ export function LogoV2(): React.ReactNode {
       <OffscreenFreeze>
         <Box
           flexDirection="column"
+          width={layoutMode === 'horizontal' ? totalWidth + BORDER_PADDING : undefined}
           borderStyle="round"
           borderColor="claude"
           borderText={{
@@ -373,6 +375,7 @@ export function LogoV2(): React.ReactNode {
             <Box
               flexDirection="column"
               width={leftWidth}
+              flexShrink={0}
               justifyContent="space-between"
               alignItems="center"
               minHeight={9}
