@@ -114,13 +114,13 @@ These must be individually enabled with `--feature=FLAG_NAME`:
 | `AUTO_THEME` | 1 | Adds "Auto (match terminal)" option to theme picker | **OK** — builds clean |
 | `BG_SESSIONS` | 7 | Background sessions via tmux (ps/logs/attach/kill/--bg), session lifecycle | **Broken** — missing `cli/bg.js` |
 | `BREAK_CACHE_COMMAND` | 1 | Injects cache-breaking string into system prompt for debugging | **OK** — builds clean |
-| `BUDDY` | 7 | Virtual companion sprites with rarity, speech bubbles, reactions, notifications | **Broken** — missing `commands/buddy/` |
+| `BUDDY` | 7 | Virtual companion sprites with rarity, speech bubbles, reactions, notifications | **OK** — builds clean |
 | `BUILDING_CLAUDE_APPS` | 1 | Registers "Claude API" bundled skill | **Broken** — missing `claude-api/` skill docs |
 | `BYOC_ENVIRONMENT_RUNNER` | 1 | `claude environment-runner` CLI subcommand for BYOC | **Broken** — missing `environment-runner/main.js` |
 | `COMMIT_ATTRIBUTION` | 1 | Tracks permission/escape/prompt counts for commit attribution metrics | **OK** — builds clean |
 | `CONTEXT_COLLAPSE` | 13 | Archives older context into collapsed summaries; alternative to reactive compact | **Broken** — missing `CtxInspectTool` |
 | `COORDINATOR_MODE` | 15 | Coordinator mode: delegates work to agents, filters tools, custom system prompt | **Broken** — missing `coordinator/workerAgent.js` |
-| `DAEMON` | 1 | `claude daemon` + `--daemon-worker` CLI subcommands for long-running supervisor | **Broken** — missing `daemon/` module |
+| `DAEMON` | 1 | `claude daemon` + `--daemon-worker` CLI subcommands for long-running supervisor | **OK** — builds clean |
 | `DIRECT_CONNECT` | 1 | `claude connect <url>` for remote server connection with auth | **Broken** — missing `server/` module (9 files) |
 | `DUMP_SYSTEM_PROMPT` | 1 | `--dump-system-prompt` flag for prompt sensitivity evals | **OK** — builds clean |
 | `EXPERIMENTAL_SKILL_SEARCH` | 9 | Remote skill search/indexing from MCP and external sources | **Broken** — missing `services/skillSearch/` (11 files) |
@@ -132,8 +132,8 @@ These must be individually enabled with `--feature=FLAG_NAME`:
 | `KAIROS_DREAM` | 1 | Registers "dream" skill for background memory consolidation (requires KAIROS) | **Broken** — depends on KAIROS |
 | `KAIROS_GITHUB_WEBHOOKS` | 3 | SubscribePRTool + `/subscribe-pr` for GitHub PR webhook subscriptions | **Broken** — missing `SubscribePRTool`, `commands/subscribe-pr` |
 | `KAIROS_PUSH_NOTIFICATION` | 3 | Push notification tool + settings (extends KAIROS notification support) | **Broken** — missing `PushNotificationTool` |
-| `MCP_SKILLS` | 3 | Fetches and registers skills from MCP server resources | **Broken** — missing `skills/mcpSkills.js` |
-| `OVERFLOW_TEST_TOOL` | 2 | Debug tool for overflow scenario testing + classifier integration | **Broken** — missing `OverflowTestTool` |
+| `MCP_SKILLS` | 3 | Fetches and registers skills from MCP server resources | **OK** — builds clean |
+| `OVERFLOW_TEST_TOOL` | 2 | Debug tool for overflow scenario testing + classifier integration | **OK** — builds clean |
 | `REACTIVE_COMPACT` | 2 | Trigger-based automatic compaction module | **Broken** — missing `services/compact/reactiveCompact.js` |
 | `REVIEW_ARTIFACT` | 2 | "Hunter" skill + ReviewArtifactTool with custom permission UI | **Broken** — missing `hunter.js`, `ReviewArtifactTool`, `ReviewArtifactPermissionRequest` |
 | `RUN_SKILL_GENERATOR` | 1 | Skill generator/scaffolding skill | **Broken** — missing `runSkillGenerator.js` |
@@ -142,14 +142,14 @@ These must be individually enabled with `--feature=FLAG_NAME`:
 | `SSH_REMOTE` | 1 | `claude ssh <host> [dir]` for SSH-backed remote sessions | **Broken** — missing `ssh/createSSHSession.js` |
 | `STREAMLINED_OUTPUT` | 1 | Streamlined transformer for headless `stream-json` output format | **OK** — builds clean |
 | `TEMPLATES` | 5 | Template execution system — config, permissions, CLI dispatch, job classification | **Broken** — missing `cli/handlers/templateJobs.js` |
-| `TERMINAL_PANEL` | 5 | TerminalCaptureTool + meta+j keybinding for terminal panel toggle | **Broken** — missing `TerminalCaptureTool` |
+| `TERMINAL_PANEL` | 5 | TerminalCaptureTool + meta+j keybinding for terminal panel toggle | **OK** — builds clean |
 | `UDS_INBOX` | 10 | Unix domain socket IPC — peer discovery, messaging, `/peers` command, ListPeersTool | **Broken** — missing `ListPeersTool`, `udsMessaging`, `commands/peers/` |
 | `WORKFLOW_SCRIPTS` | 7 | WorkflowTool + `/workflows` command + task tracking + custom permission UI | **Broken** — missing `WorkflowTool`, `commands/workflows/`, `LocalWorkflowTask` |
 
 Total: **66 unique build-time feature flags** (1 default + 31 dev-full + 34 additional).
 
-- **Buildable flags**: 1 default (`VOICE_MODE`) + 31 dev-full + 8 hidden that build clean (`AUTO_THEME`, `BREAK_CACHE_COMMAND`, `COMMIT_ATTRIBUTION`, `DUMP_SYSTEM_PROMPT`, `FILE_PERSISTENCE`, `HARD_FAIL`, `SLOW_OPERATION_LOGGING`, `STREAMLINED_OUTPUT`) = **40 working flags**
-- **Broken flags**: 26 hidden flags depend on modules stripped from the upstream source and will fail to build. See "Build Status" column above for missing modules.
+- **Buildable flags**: 1 default (`VOICE_MODE`) + 31 dev-full + 13 hidden that build clean (`AUTO_THEME`, `BREAK_CACHE_COMMAND`, `BUDDY`, `COMMIT_ATTRIBUTION`, `DAEMON`, `DUMP_SYSTEM_PROMPT`, `FILE_PERSISTENCE`, `HARD_FAIL`, `MCP_SKILLS`, `OVERFLOW_TEST_TOOL`, `SLOW_OPERATION_LOGGING`, `STREAMLINED_OUTPUT`, `TERMINAL_PANEL`) = **45 working flags**
+- **Broken flags**: 21 hidden flags depend on modules stripped from the upstream source and will fail to build. See "Build Status" column above for missing modules.
 - `PROACTIVE` was removed (legacy, subsumed by KAIROS).
 
 > **TODO**: As flags are moved to default-on (enabled in production builds), update the tables above — move the flag to the "Default feature" section and update `defaultFeatures` in scripts/build.ts accordingly.
@@ -162,14 +162,14 @@ rather than build-time flags.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `autoMode` | `false` | Single boolean to enable auto-approve mode |
+| `autoMode` | `true` | Enable auto-approve mode |
 | `planModeInterviewPhase` | `false` | When false, plan mode uses V2 workflow with built-in Explore/Plan agents instead of the older interview-phase flow |
-| `fineGrainedToolStreaming` | unset | Enable fine-grained tool streaming (eager_input_streaming) |
-| `streamingToolExecution` | unset | Execute tools while model is still streaming |
-| `sessionMemory` | unset | Auto-maintain context notes across long conversations |
-| `contentReplacementState` | unset | Replace stale tool results with stubs to save tokens |
-| `destructiveCommandWarning` | unset | Show warnings for destructive commands in permission dialogs |
-| `memoryExtraction` | unset | Background memory extraction agent |
+| `fineGrainedToolStreaming` | `false` | Enable fine-grained tool streaming (eager_input_streaming) |
+| `streamingToolExecution` | `true` | Execute tools while model is still streaming |
+| `sessionMemory` | `false` | Auto-maintain context notes across long conversations |
+| `contentReplacementState` | `false` | Replace stale tool results with stubs to save tokens |
+| `destructiveCommandWarning` | `true` | Show warnings for destructive commands in permission dialogs |
+| `memoryExtraction` | `true` | Background memory extraction agent |
 
 See `src/utils/settings/types.ts` for the complete schema of all ~45 settings.json options.
 
