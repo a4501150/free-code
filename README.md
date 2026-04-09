@@ -14,7 +14,7 @@
   <a href="#quick-install"><img src="https://img.shields.io/badge/install-one--liner-blue?style=flat-square" alt="Install" /></a>
   <a href="https://github.com/paoloanzn/free-code/stargazers"><img src="https://img.shields.io/github/stars/paoloanzn/free-code?style=flat-square" alt="Stars" /></a>
   <a href="https://github.com/paoloanzn/free-code/issues"><img src="https://img.shields.io/github/issues/paoloanzn/free-code?style=flat-square" alt="Issues" /></a>
-  <a href="https://github.com/paoloanzn/free-code/blob/main/FEATURES.md"><img src="https://img.shields.io/badge/features-88%20flags-orange?style=flat-square" alt="Feature Flags" /></a>
+  <a href="https://github.com/paoloanzn/free-code/blob/main/FEATURES.md"><img src="https://img.shields.io/badge/features-66%20flags-orange?style=flat-square" alt="Feature Flags" /></a>
   <a href="#ipfs-mirror"><img src="https://img.shields.io/badge/IPFS-mirrored-teal?style=flat-square" alt="IPFS" /></a>
 </p>
 
@@ -73,11 +73,11 @@ This build strips those injections. The model's own safety training still applie
 
 The upstream source snapshot shipped with React Compiler output baked into every `.tsx` file — function bodies mangled with `_c()` cache arrays, `$[N]` memoization slots, and `t0` parameter renaming. This made the code nearly unreadable and uneditable.
 
-This fork extracted the original source from inline base64 source maps embedded in each file, restoring all 543 `.tsx` files to clean, human-readable TypeScript/JSX. The React Compiler is available as an optional build step (`--react-compiler` flag) but is not used by default.
+This fork extracted the original source from inline base64 source maps embedded in each file, restoring all 517 `.tsx` files to clean, human-readable TypeScript/JSX. The React Compiler is available as an optional build step (`--react-compiler` flag) but is not used by default.
 
 ### Experimental features unlocked
 
-Claude Code ships with 88 feature flags gated behind `bun:bundle` compile-time switches. Most are disabled in the public npm release. This build unlocks all 54 flags that compile cleanly. See [Experimental Features](#experimental-features) below, or refer to [FEATURES.md](FEATURES.md) for the full audit.
+Claude Code ships with 66 feature flags gated behind `bun:bundle` compile-time switches. Most are disabled in the public npm release. The `build:dev:full` build enables all 30 flags in the `fullExperimentalFeatures` set. See [Experimental Features](#experimental-features) below, or refer to [FEATURES.md](FEATURES.md) for the full audit.
 
 ---
 
@@ -194,7 +194,7 @@ bun run build
 |---|---|---|---|
 | `bun run build` | `./cli` | `VOICE_MODE` only | Production-like binary |
 | `bun run build:dev` | `./cli-dev` | `VOICE_MODE` only | Dev version stamp |
-| `bun run build:dev:full` | `./cli-dev` | All 54 experimental flags | Full unlock build |
+| `bun run build:dev:full` | `./cli-dev` | All 30 experimental flags | Full unlock build |
 | `bun run compile` | `./dist/cli` | `VOICE_MODE` only | Alternative output path |
 | `bun run dev` | *(runs from source)* | `VOICE_MODE` only | No compile step, slower startup |
 
@@ -263,7 +263,7 @@ bun run dev
 
 ## Experimental Features
 
-The `bun run build:dev:full` build enables all 54 working feature flags. Highlights:
+The `bun run build:dev:full` build enables all 30 flags in `fullExperimentalFeatures`. Highlights:
 
 ### Interaction & UI
 
@@ -297,7 +297,7 @@ The `bun run build:dev:full` build enables all 54 working feature flags. Highlig
 | `BASH_CLASSIFIER` | Classifier-assisted bash permission decisions |
 | `PROMPT_CACHE_BREAK_DETECTION` | Cache-break detection in compaction/query flow |
 
-See [FEATURES.md](FEATURES.md) for the complete audit of all 88 flags, including 34 broken flags with reconstruction notes.
+See [FEATURES.md](FEATURES.md) for the complete audit of all 66 flags, including broken flags with reconstruction notes.
 
 ---
 
@@ -362,7 +362,7 @@ If this repo gets taken down, the code lives on.
 
 ## Contributing
 
-Contributions are welcome. If you're working on restoring one of the 34 broken feature flags, check the reconstruction notes in [FEATURES.md](FEATURES.md) first -- many are close to compiling and just need a small wrapper or missing asset.
+Contributions are welcome. If you're working on restoring one of the broken feature flags, check the reconstruction notes in [FEATURES.md](FEATURES.md) first -- many are close to compiling and just need a small wrapper or missing asset.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feat/my-feature`)

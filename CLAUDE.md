@@ -32,7 +32,7 @@ Run the built binary with `./cli` or `./cli-dev`. Set `ANTHROPIC_API_KEY` in the
 - **Command/tool registries**: src/commands.ts registers slash commands; src/tools.ts registers tool implementations. Implementations live in src/commands/ and src/tools/.
 - **LLM query pipeline**: src/QueryEngine.ts coordinates message flow, tool use, and model invocation.
 - **Core subsystems**:
-  - src/services/: API clients, OAuth/MCP integration, analytics stubs
+  - src/services/: API clients, OAuth/MCP integration
   - src/state/: app state store
   - src/hooks/: React hooks used by UI/flows
   - src/components/: terminal UI components (Ink)
@@ -60,7 +60,7 @@ Bun's `feature()` function provides compile-time dead code elimination. When a f
 
 **Default build** (`bun run build`): Only `VOICE_MODE` is enabled.
 
-**Dev-full build** (`bun run build:dev:full`): Enables all 32 experimental features listed in `fullExperimentalFeatures` in scripts/build.ts.
+**Dev-full build** (`bun run build:dev:full`): Enables all 30 experimental features listed in `fullExperimentalFeatures` in scripts/build.ts.
 
 #### Experimental features (in `fullExperimentalFeatures` array)
 
@@ -70,7 +70,6 @@ These are enabled by `--feature-set=dev-full`:
 |------|-------------|
 | `AGENT_MEMORY_SNAPSHOT` | Snapshot agent memory for context preservation |
 | `AGENT_TRIGGERS` | Cron/scheduled task tools (CronCreate, CronDelete, CronList) |
-| `AGENT_TRIGGERS_REMOTE` | Remote agent trigger support |
 | `AWAY_SUMMARY` | Away summary when returning to a session |
 | `BASH_CLASSIFIER` | ML classifier for bash command safety |
 | `BUILTIN_EXPLORE_PLAN_AGENTS` | Built-in Explore and Plan subagent types |
@@ -85,7 +84,6 @@ These are enabled by `--feature-set=dev-full`:
 | `LODESTONE` | Protocol registration and discovery |
 | `MCP_RICH_OUTPUT` | Rich output rendering for MCP tool results |
 | `MESSAGE_ACTIONS` | Message action buttons (copy, retry, etc.) |
-| `NATIVE_CLIPBOARD_IMAGE` | Native clipboard image paste support |
 | `NEW_INIT` | New `/init` flow for project setup |
 | `POWERSHELL_AUTO_MODE` | Auto-mode support for PowerShell commands |
 | `PROMPT_CACHE_BREAK_DETECTION` | Detect and handle prompt cache breaks |
@@ -144,7 +142,26 @@ These must be individually enabled with `--feature=FLAG_NAME`:
 | `UDS_INBOX` | Unix domain socket messaging/inbox |
 | `WORKFLOW_SCRIPTS` | Workflow scripts tool |
 
-Total: **66 unique build-time feature flags** (32 in dev-full + 34 additional).
+Total: **66 unique build-time feature flags** (30 in dev-full + 36 additional).
+
+### Notable settings.json defaults
+
+These settings were migrated from the upstream GrowthBook remote flag system
+and ant-internal gates. They are configured in `settings.json` (project-level)
+rather than build-time flags.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `autoMode` | `false` | Single boolean to enable auto-approve mode |
+| `planModeInterviewPhase` | `false` | When false, plan mode uses V2 workflow with built-in Explore/Plan agents instead of the older interview-phase flow |
+| `fineGrainedToolStreaming` | unset | Enable fine-grained tool streaming (eager_input_streaming) |
+| `streamingToolExecution` | unset | Execute tools while model is still streaming |
+| `sessionMemory` | unset | Auto-maintain context notes across long conversations |
+| `contentReplacementState` | unset | Replace stale tool results with stubs to save tokens |
+| `destructiveCommandWarning` | unset | Show warnings for destructive commands in permission dialogs |
+| `memoryExtraction` | unset | Background memory extraction agent |
+
+See `src/utils/settings/types.ts` for the complete schema of all ~45 settings.json options.
 
 ### Build-time `--define` macros
 
@@ -199,7 +216,6 @@ Checked at runtime via `isEnvTruthy()` (src/utils/envUtils.ts). Values `'1'`, `'
 | `CLAUDE_CODE_DISABLE_THINKING` | Disable extended thinking |
 | `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING` | Disable adaptive thinking |
 | `CLAUDE_CODE_DISABLE_FAST_MODE` | Disable fast mode |
-| `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK` | Disable non-streaming fallback |
 | `CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK` | Disable command injection checks |
 | `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` | Disable background bash tasks |
 | `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` | Disable terminal title setting |
@@ -227,7 +243,6 @@ Checked at runtime via `isEnvTruthy()` (src/utils/envUtils.ts). Values `'1'`, `'
 | Variable | Description |
 |----------|-------------|
 | `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | Max output tokens override |
-| `CLAUDE_CODE_MAX_CONTEXT_TOKENS` | Max context tokens override |
 | `CLAUDE_CODE_MAX_RETRIES` | Max API retry count |
 | `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` | Max parallel tool execution |
 | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | Auto-compact window size |
@@ -245,7 +260,6 @@ Checked at runtime via `isEnvTruthy()` (src/utils/envUtils.ts). Values `'1'`, `'
 | `CLAUDE_CODE_PERFETTO_TRACE` | Enable Perfetto tracing |
 | `CLAUDE_CODE_DEBUG_REPAINTS` | Debug UI repaints |
 | `CLAUDE_CODE_DEBUG_LOG_LEVEL` | Debug log level |
-| `CLAUDE_CODE_HARD_FAIL` | Hard fail mode for debugging |
 | `CLAUDE_CODE_DIAGNOSTICS_FILE` | Diagnostics output file |
 
 #### Path/directory overrides

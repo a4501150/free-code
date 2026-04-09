@@ -14,7 +14,6 @@ const useReactCompiler = args.includes('--react-compiler')
 const fullExperimentalFeatures = [
   'AGENT_MEMORY_SNAPSHOT',
   'AGENT_TRIGGERS',
-  'AGENT_TRIGGERS_REMOTE',
   'AWAY_SUMMARY',
   'BASH_CLASSIFIER',
   'BUILTIN_EXPLORE_PLAN_AGENTS',
@@ -29,7 +28,6 @@ const fullExperimentalFeatures = [
   'LODESTONE',
   'MCP_RICH_OUTPUT',
   'MESSAGE_ACTIONS',
-  'NATIVE_CLIPBOARD_IMAGE',
   'NEW_INIT',
   'POWERSHELL_AUTO_MODE',
   'PROMPT_CACHE_BREAK_DETECTION',

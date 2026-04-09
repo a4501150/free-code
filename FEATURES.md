@@ -1,13 +1,11 @@
 # Feature Flags Audit
 
-Audit date: 2026-03-31
+Audit date: 2026-04-09
 
-This repository currently references 88 `feature('FLAG')` compile-time flags.
-I re-checked them by bundling the CLI once per flag on top of the current
-external-build defines and externals. Result:
-
-- 54 flags bundle cleanly in this snapshot
-- 34 flags still fail to bundle
+This repository currently references 66 `feature('FLAG')` compile-time flags.
+Of those, 30 are in the `fullExperimentalFeatures` array (enabled by
+`--feature-set=dev-full`) and 36 are additional flags that must be individually
+enabled.
 
 Important: "bundle cleanly" does not always mean "runtime-safe". Some flags
 still depend on optional native modules, claude.ai OAuth, or
@@ -22,8 +20,7 @@ externalized `@ant/*` packages.
 - `bun run build:dev`
   Builds `./cli-dev` with a dev-stamped version.
 - `bun run build:dev:full`
-  Builds `./cli-dev` with the entire current "Working Experimental Features"
-  bundle from this document.
+  Builds `./cli-dev` with all 30 flags from `fullExperimentalFeatures`.
 
 ## Default Build Flags
 
@@ -101,8 +98,6 @@ explicitly called out as default-on.
   Enables connector-text block handling in API/logging/UI paths.
 - `MCP_RICH_OUTPUT`
   Enables richer MCP UI rendering.
-- `NATIVE_CLIPBOARD_IMAGE`
-  Enables the native macOS clipboard image fast path.
 - `POWERSHELL_AUTO_MODE`
   Enables PowerShell-specific auto-mode permission handling.
 - `TREE_SITTER_BASH`
@@ -114,7 +109,7 @@ explicitly called out as default-on.
 
 ## Bundle-Clean Support Flags
 
-These also bundle cleanly, but they are mostly rollout, platform, telemetry,
+These also bundle cleanly, but they are mostly rollout, platform,
 or plumbing toggles rather than user-facing experimental features.
 
 - `BREAK_CACHE_COMMAND`
@@ -125,12 +120,16 @@ or plumbing toggles rather than user-facing experimental features.
   Enables file persistence plumbing.
 - `HARD_FAIL`
   Enables stricter failure/logging behavior.
-- `NATIVE_CLIENT_ATTESTATION`
-  Adds native attestation marker text in the system header.
-- `SKIP_DETECTION_WHEN_AUTOUPDATES_DISABLED`
-  Skips updater detection when auto-updates are disabled.
 - `SLOW_OPERATION_LOGGING`
   Enables slow-operation logging.
+- `AUTO_THEME`
+  Adds auto theme detection option in the theme picker.
+- `COMMIT_ATTRIBUTION`
+  Adds git commit co-author attribution.
+- `PROACTIVE`
+  Enables proactive suggestions mode.
+- `STREAMLINED_OUTPUT`
+  Enables streamlined output format.
 
 ## Compile-Safe But Runtime-Caveated
 
@@ -141,9 +140,6 @@ have meaningful runtime caveats:
   Bundles cleanly, but requires claude.ai OAuth and a local recording backend.
   The native audio module is optional now; on this machine the fallback path
   asks for `brew install sox`.
-- `NATIVE_CLIPBOARD_IMAGE`
-  Bundles cleanly, but only accelerates macOS clipboard reads when
-  `image-processor-napi` is present.
 - `KAIROS_BRIEF`, `KAIROS_CHANNELS`
   Bundle cleanly, but they do not restore the full missing assistant stack.
   They only expose the brief/channel-specific surfaces that still exist.
@@ -243,15 +239,9 @@ missing import is only the visible edge of a broader absent subsystem.
 
 ## Useful Entry Points
 
-- Feature-aware build logic:
-  [scripts/build.ts](/Users/paolo/Repos/claude-code/scripts/build.ts)
-- Feature-gated command imports:
-  [src/commands.ts](/Users/paolo/Repos/claude-code/src/commands.ts)
-- Feature-gated tool imports:
-  [src/tools.ts](/Users/paolo/Repos/claude-code/src/tools.ts)
-- Feature-gated task imports:
-  [src/tasks.ts](/Users/paolo/Repos/claude-code/src/tasks.ts)
-- Feature-gated query behavior:
-  [src/query.ts](/Users/paolo/Repos/claude-code/src/query.ts)
-- Feature-gated CLI entry paths:
-  [src/entrypoints/cli.tsx](/Users/paolo/Repos/claude-code/src/entrypoints/cli.tsx)
+- Feature-aware build logic: `scripts/build.ts`
+- Feature-gated command imports: `src/commands.ts`
+- Feature-gated tool imports: `src/tools.ts`
+- Feature-gated task imports: `src/tasks.ts`
+- Feature-gated query behavior: `src/query.ts`
+- Feature-gated CLI entry paths: `src/entrypoints/cli.tsx`
