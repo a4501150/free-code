@@ -3002,6 +3002,7 @@ export function REPL({
         },
         resume,
         setConversationId,
+        scrollToBottom: () => scrollRef.current?.scrollToBottom(),
         requestPrompt: feature('HOOK_PROMPTS') ? requestPrompt : undefined,
         contentReplacementState: contentReplacementStateRef.current,
       }
@@ -3799,6 +3800,7 @@ export function REPL({
           getAppState: () => store.getState(),
           setAppState,
           setConversationId,
+          scrollToBottom: () => scrollRef.current?.scrollToBottom(),
         })
         haikuTitleAttemptedRef.current = false
         setHaikuTitle(undefined)
@@ -6131,6 +6133,8 @@ export function REPL({
                           getAppState: () => store.getState(),
                           setAppState,
                           setConversationId,
+                          scrollToBottom: () =>
+                            scrollRef.current?.scrollToBottom(),
                         })
                         haikuTitleAttemptedRef.current = false
                         setHaikuTitle(undefined)
