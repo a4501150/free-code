@@ -1,5 +1,6 @@
 import type { ChildProcess, ExecFileException } from 'child_process'
 import { execFile, spawn } from 'child_process'
+import { existsSync } from 'fs'
 import memoize from 'lodash-es/memoize.js'
 import { homedir } from 'os'
 import * as path from 'path'
@@ -53,6 +54,17 @@ const getRipgrepConfig = memoize((): RipgrepConfig => {
       args: ['--no-config'],
       argv0: 'rg',
     }
+  }
+
+  // In compiled Bun binaries, __dirname resolves to /$bunfs/root/... (virtual).
+  // Check for vendor ripgrep next to the actual executable on disk.
+  const execDir = path.dirname(process.execPath)
+  const execRgBin =
+    process.platform === 'win32'
+      ? path.resolve(execDir, 'vendor', 'ripgrep', `${process.arch}-win32`, 'rg.exe')
+      : path.resolve(execDir, 'vendor', 'ripgrep', `${process.arch}-${process.platform}`, 'rg')
+  if (existsSync(execRgBin)) {
+    return { mode: 'builtin', command: execRgBin, args: [] }
   }
 
   const rgRoot = path.resolve(__dirname, 'vendor', 'ripgrep')

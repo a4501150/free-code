@@ -265,4 +265,12 @@ if (existsSync(outfile)) {
   chmodSync(outfile, 0o755)
 }
 
+// Copy vendor/ripgrep next to the compiled binary
+const vendorSrc = resolve(process.cwd(), 'vendor', 'ripgrep')
+const vendorDst = resolve(dirname(outfile), 'vendor', 'ripgrep')
+if (existsSync(vendorSrc) && resolve(vendorSrc) !== resolve(vendorDst)) {
+  cpSync(vendorSrc, vendorDst, { recursive: true })
+  console.log(`Copied vendor/ripgrep to ${vendorDst}`)
+}
+
 console.log(`Built ${outfile}`)
