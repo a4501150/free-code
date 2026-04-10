@@ -14,5 +14,6 @@ export function getDescription(): string {
   - Use ${AGENT_TOOL_NAME} tool for open-ended searches requiring multiple rounds
   - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use \`interface\\{\\}\` to find \`interface{}\` in Go code)
   - Multiline matching: By default patterns match within single lines only. For cross-line patterns like \`struct \\{[\\s\\S]*?field\`, use \`multiline: true\`
+  - By default, .gitignore'd files are excluded. Use \`no_ignore: true\` to search ignored files (e.g., node_modules, build output, vendored files)
 `
 }

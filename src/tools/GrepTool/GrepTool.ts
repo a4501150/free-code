@@ -86,6 +86,9 @@ const inputSchema = lazySchema(() =>
     multiline: semanticBoolean(z.boolean().optional()).describe(
       'Enable multiline mode where . matches newlines and patterns can span lines (rg -U --multiline-dotall). Default: false.',
     ),
+    no_ignore: semanticBoolean(z.boolean().optional()).describe(
+      'Search files even if they are ignored by .gitignore, .ignore, or other ignore files (rg --no-ignore). Useful for searching in node_modules, build output, vendored files, etc. Default: false.',
+    ),
   }),
 )
 type InputSchema = ReturnType<typeof inputSchema>
@@ -323,11 +326,17 @@ export const GrepTool = buildTool({
       head_limit,
       offset = 0,
       multiline = false,
+      no_ignore = false,
     },
     { abortController, getAppState },
   ) {
     const absolutePath = path ? expandPath(path) : getCwd()
     const args = ['--hidden']
+
+    // Allow searching files ignored by .gitignore, .ignore, etc.
+    if (no_ignore) {
+      args.push('--no-ignore')
+    }
 
     // Exclude VCS directories to avoid noise from version control metadata
     for (const dir of VCS_DIRECTORIES_TO_EXCLUDE) {
