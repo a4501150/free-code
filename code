@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Auto-rebuilding wrapper for cli-dev
+# Usage: alias code='/Users/jinyangli/src/free-code/code'
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLI_DEV="$SCRIPT_DIR/cli-dev"
+REBUILD_FLAG=0
+
+# If cli-dev doesn't exist, must build
+if [[ ! -f "$CLI_DEV" ]]; then
+    REBUILD_FLAG=1
+else
+    # Check if any src/ or scripts/ file is newer than cli-dev
+    # Using find with -newer is fast and handles the common case
+    if [[ -n "$(find "$SCRIPT_DIR/src" "$SCRIPT_DIR/scripts" "$SCRIPT_DIR/package.json" -newer "$CLI_DEV" -print -quit 2>/dev/null)" ]]; then
+        REBUILD_FLAG=1
+    fi
+fi
+
+if [[ "$REBUILD_FLAG" -eq 1 ]]; then
+    echo "[code] Source changes detected, rebuilding cli-dev..." >&2
+    (cd "$SCRIPT_DIR" && bun run build:dev:full) >&2
+    if [[ $? -ne 0 ]]; then
+        echo "[code] Build failed!" >&2
+        exit 1
+    fi
+    echo "[code] Build complete." >&2
+fi
+
+exec "$CLI_DEV" "$@"
