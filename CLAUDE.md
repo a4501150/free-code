@@ -22,9 +22,40 @@ bun run compile
 
 # Run from source without compiling
 bun run dev
+
+# Run all tests (requires `bun run build` first)
+bun test
+
+# Run e2e tests explicitly
+bun run test:e2e
 ```
 
 Run the built binary with `./cli` or `./cli-dev`. Set `ANTHROPIC_API_KEY` in the environment or use OAuth via `./cli /login`.
+
+## Testing
+
+All tests are e2e: they launch the real compiled binary (`./cli`) against a mock Anthropic API server and verify behavior through tmux sessions.
+
+```
+tests/
+  helpers/              # Shared test infrastructure
+    mock-server.ts      # MockAnthropicServer (Bun.serve, response queue, request logging)
+    sse-encoder.ts      # SSE stream encoder matching Anthropic streaming format
+    fixture-builders.ts # textResponse(), toolUseResponse(), errorResponse(), etc.
+  e2e/                  # All test suites (tmux-based)
+    tmux-helpers.ts     # TmuxSession class — manages CLI in tmux, sends keys, captures pane
+    repl.test.ts        # Startup, basic responses, prompts, multiple turns, slash commands
+    tool-use.test.ts    # Bash, Read, Edit, Write, Grep, Glob, NotebookEdit, Config, parallel
+    conversation-flow.test.ts  # Message ordering, multi-turn, max-turns, stop reasons, thinking
+    error-handling.test.ts     # HTTP 400/401/429/500/529 errors, truncated SSE
+    edge-cases.test.ts         # Special chars, large I/O, multiple text blocks
+    output-formats.test.ts     # Headless --print mode: text, json, stream-json
+```
+
+**How it works**: Each test creates a `TmuxSession` pointing at a `MockAnthropicServer`. The CLI runs without `--bare` (all tools registered) and without permission-skipping flags (real default permission mode). `submitAndApprove()` auto-detects and approves permission dialogs. Tests verify via:
+- `server.getRequestLog()` — what the CLI sent to the API
+- `readFile()` — disk side effects from tool execution
+- `capturePane()` — what the user sees on screen
 
 ## High-level architecture
 
