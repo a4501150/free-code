@@ -168,12 +168,8 @@ entire subsystem.
 - `HISTORY_SNIP`
   Fails on missing `src/commands/force-snip.js`. The surrounding SnipTool and
   query/message comments are already there.
-- `KAIROS_GITHUB_WEBHOOKS`
-  Fails on missing `src/tools/SubscribePRTool/SubscribePRTool.js`. The command
-  slot and some message handling already exist.
-- `KAIROS_PUSH_NOTIFICATION`
-  Fails on missing `src/tools/PushNotificationTool/PushNotificationTool.js`.
-  The tool slot already exists in `src/tools.ts`.
+- ~~`KAIROS_GITHUB_WEBHOOKS`~~ **FIXED** — SubscribePRTool, subscribe-pr command, and UserGitHubWebhookMessage implemented.
+- ~~`KAIROS_PUSH_NOTIFICATION`~~ **FIXED** — PushNotificationTool implemented wrapping sendNotification().
 - `MCP_SKILLS`
   Fails on missing `src/skills/mcpSkills.js`. `mcpSkillBuilders.ts` already
   exists specifically to support that missing registry layer.
@@ -227,15 +223,10 @@ than a single wrapper or asset.
   real `WorkflowTool` implementation while only `WorkflowTool/constants.ts`
   exists in this snapshot.
 
-## Broken Flags With Large Missing Subsystems
+## Previously Broken Flags — Now Fixed
 
-These are the ones that still look expensive to restore because the first
-missing import is only the visible edge of a broader absent subsystem.
-
-- `KAIROS`
-  Missing `src/assistant/` (removed with CCR infrastructure) and much of the assistant stack.
-- `KAIROS_DREAM`
-  Missing `src/dream.js` and related dream-task behavior.
+- ~~`KAIROS`~~ **FIXED** — Full implementations: `src/proactive/` (state machine + tick hook), `src/assistant/` (mode detection, team init, system prompt), `src/services/sessionTranscript/` (JSONL persistence), `src/services/kairosGate.ts`, SleepTool, SendUserFileTool.
+- ~~`KAIROS_DREAM`~~ **FIXED** — Dream skill implemented using existing consolidationPrompt infrastructure.
 
 ## Useful Entry Points
 

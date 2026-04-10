@@ -128,10 +128,10 @@ These must be individually enabled with `--feature=FLAG_NAME`:
 | `FORK_SUBAGENT` | 5 | Fork agent mode — spawns full-access subagent with permission bubbling | **OK** — builds clean |
 | `HARD_FAIL` | 2 | `--hard-fail` makes `logError()` crash process instead of silently logging | **OK** — builds clean |
 | `HISTORY_SNIP` | 8 | SnipTool — trim older conversation history, integrated into query/message pipeline | **OK** — builds clean |
-| `KAIROS` | **52** | **Full assistant mode** — scheduling, notifications, team context, persistent sessions, daily logs. Largest flag (120+ refs). | **Broken** — missing `proactive/`, `sessionTranscript/`, `SleepTool`, `SendUserFileTool`, `PushNotificationTool`, `SubscribePRTool` |
-| `KAIROS_DREAM` | 1 | Registers "dream" skill for background memory consolidation (requires KAIROS) | **Broken** — depends on KAIROS |
-| `KAIROS_GITHUB_WEBHOOKS` | 3 | SubscribePRTool + `/subscribe-pr` for GitHub PR webhook subscriptions | **Broken** — missing `SubscribePRTool`, `commands/subscribe-pr` |
-| `KAIROS_PUSH_NOTIFICATION` | 3 | Push notification tool + settings (extends KAIROS notification support) | **Broken** — missing `PushNotificationTool` |
+| `KAIROS` | **52** | **Full assistant mode** — scheduling, notifications, team context, persistent sessions, daily logs. Largest flag (120+ refs). | **OK** — builds clean |
+| `KAIROS_DREAM` | 1 | Registers "dream" skill for background memory consolidation (requires KAIROS) | **OK** — builds clean |
+| `KAIROS_GITHUB_WEBHOOKS` | 3 | SubscribePRTool + `/subscribe-pr` for GitHub PR webhook subscriptions | **OK** — builds clean |
+| `KAIROS_PUSH_NOTIFICATION` | 3 | Push notification tool + settings (extends KAIROS notification support) | **OK** — builds clean |
 | `MCP_SKILLS` | 3 | Fetches and registers skills from MCP server resources | **OK** — builds clean |
 | `OVERFLOW_TEST_TOOL` | 2 | Debug tool for overflow scenario testing + classifier integration | **OK** — builds clean |
 | `REACTIVE_COMPACT` | 2 | Trigger-based automatic compaction module | **OK** — builds clean |
@@ -148,8 +148,8 @@ These must be individually enabled with `--feature=FLAG_NAME`:
 
 Total: **66 unique build-time feature flags** (1 default + 31 dev-full + 34 additional).
 
-- **Buildable flags**: 1 default (`VOICE_MODE`) + 31 dev-full + 30 hidden that build clean (`AUTO_THEME`, `BG_SESSIONS`, `BREAK_CACHE_COMMAND`, `BUDDY`, `BUILDING_CLAUDE_APPS`, `BYOC_ENVIRONMENT_RUNNER`, `COMMIT_ATTRIBUTION`, `CONTEXT_COLLAPSE`, `COORDINATOR_MODE`, `DAEMON`, `DIRECT_CONNECT`, `DUMP_SYSTEM_PROMPT`, `EXPERIMENTAL_SKILL_SEARCH`, `FILE_PERSISTENCE`, `FORK_SUBAGENT`, `HARD_FAIL`, `HISTORY_SNIP`, `MCP_SKILLS`, `OVERFLOW_TEST_TOOL`, `REACTIVE_COMPACT`, `REVIEW_ARTIFACT`, `RUN_SKILL_GENERATOR`, `SELF_HOSTED_RUNNER`, `SLOW_OPERATION_LOGGING`, `SSH_REMOTE`, `STREAMLINED_OUTPUT`, `TEMPLATES`, `TERMINAL_PANEL`, `UDS_INBOX`, `WORKFLOW_SCRIPTS`) = **62 working flags**
-- **Broken flags**: 4 hidden flags depend on modules stripped from the upstream source and will fail to build. See "Build Status" column above for missing modules.
+- **Buildable flags**: 1 default (`VOICE_MODE`) + 31 dev-full + 34 hidden that build clean = **66 working flags** (all flags now build successfully)
+- **Broken flags**: None — all 66 flags build clean.
 - `PROACTIVE` was removed (legacy, subsumed by KAIROS).
 
 > **TODO**: As flags are moved to default-on (enabled in production builds), update the tables above — move the flag to the "Default feature" section and update `defaultFeatures` in scripts/build.ts accordingly.
