@@ -68,7 +68,6 @@ function getVersionChangelog(): string {
 const defaultFeatures = [
   // Tier 1: CLI flag / subcommand gated
   'BG_SESSIONS',
-  'BYOC_ENVIRONMENT_RUNNER',
   'DAEMON',
   'DIRECT_CONNECT',
   'DUMP_SYSTEM_PROMPT',
@@ -79,13 +78,11 @@ const defaultFeatures = [
   'TEMPLATES',
   'UNATTENDED_RETRY',
   // Tier 2: Slash command / skill gated
-  'BREAK_CACHE_COMMAND',
   'BUDDY',
   'BUILDING_CLAUDE_APPS',
   'HISTORY_SNIP',
   'KAIROS_DREAM',
   'KAIROS_GITHUB_WEBHOOKS',
-  'OVERFLOW_TEST_TOOL',
   'REVIEW_ARTIFACT',
   'RUN_SKILL_GENERATOR',
   'ULTRAPLAN',
