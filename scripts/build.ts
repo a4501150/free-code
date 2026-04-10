@@ -17,18 +17,13 @@ const fullExperimentalFeatures = [
   'AWAY_SUMMARY',
   'BASH_CLASSIFIER',
   'BUILTIN_EXPLORE_PLAN_AGENTS',
-  'CACHED_MICROCOMPACT',
   'COMPACTION_REMINDERS',
   'CONNECTOR_TEXT',
   'EXTRACT_MEMORIES',
   'HISTORY_PICKER',
   'HOOK_PROMPTS',
-  'KAIROS_BRIEF',
-  'KAIROS_CHANNELS',
-  'LODESTONE',
   'MCP_RICH_OUTPUT',
   'MESSAGE_ACTIONS',
-  'NEW_INIT',
   'POWERSHELL_AUTO_MODE',
   'PROMPT_CACHE_BREAK_DETECTION',
   'QUICK_SEARCH',
@@ -38,11 +33,6 @@ const fullExperimentalFeatures = [
   'TRANSCRIPT_CLASSIFIER',
   'TREE_SITTER_BASH',
   'TREE_SITTER_BASH_SHADOW',
-  'ULTRAPLAN',
-  'ULTRATHINK',
-  'UNATTENDED_RETRY',
-  'VERIFICATION_AGENT',
-  'VOICE_MODE',
 ] as const
 
 function runCommand(cmd: string[]): string | null {
@@ -75,7 +65,47 @@ function getVersionChangelog(): string {
   )
 }
 
-const defaultFeatures = ['VOICE_MODE']
+const defaultFeatures = [
+  // Tier 1: CLI flag / subcommand gated
+  'BG_SESSIONS',
+  'BYOC_ENVIRONMENT_RUNNER',
+  'DAEMON',
+  'DIRECT_CONNECT',
+  'DUMP_SYSTEM_PROMPT',
+  'HARD_FAIL',
+  'SELF_HOSTED_RUNNER',
+  'SSH_REMOTE',
+  'STREAMLINED_OUTPUT',
+  'TEMPLATES',
+  'UNATTENDED_RETRY',
+  // Tier 2: Slash command / skill gated
+  'BREAK_CACHE_COMMAND',
+  'BUDDY',
+  'BUILDING_CLAUDE_APPS',
+  'FORK_SUBAGENT',
+  'HISTORY_SNIP',
+  'KAIROS_DREAM',
+  'KAIROS_GITHUB_WEBHOOKS',
+  'OVERFLOW_TEST_TOOL',
+  'REVIEW_ARTIFACT',
+  'RUN_SKILL_GENERATOR',
+  'ULTRAPLAN',
+  'WORKFLOW_SCRIPTS',
+  // Tier 3: Settings / env var / file gated
+  'CACHED_MICROCOMPACT',
+  'COORDINATOR_MODE',
+  'KAIROS',
+  'KAIROS_BRIEF',
+  'KAIROS_CHANNELS',
+  'KAIROS_PUSH_NOTIFICATION',
+  'LODESTONE',
+  'NEW_INIT',
+  // Tier 4: Active but benign (user keyword / prompt nudge)
+  'ULTRATHINK',
+  'VERIFICATION_AGENT',
+  // Always on
+  'VOICE_MODE',
+]
 const featureSet = new Set(defaultFeatures)
 for (let i = 0; i < args.length; i += 1) {
   const arg = args[i]

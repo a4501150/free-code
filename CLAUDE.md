@@ -58,101 +58,99 @@ Bun's `feature()` function provides compile-time dead code elimination. When a f
 
 **Usage**: `--feature=FLAG_NAME` or `--feature-set=dev-full` (enables all experimental features).
 
-**Default build** (`bun run build`): Only `VOICE_MODE` is enabled.
+**Default build** (`bun run build`): 34 flags enabled (runtime-gated features safe to always include).
 
-**Dev-full build** (`bun run build:dev:full`): Enables all 31 experimental features listed in `fullExperimentalFeatures` in scripts/build.ts.
+**Dev-full build** (`bun run build:dev:full`): 55 flags enabled (adds 21 experimental). The remaining 10 additional flags need `--feature=FLAG_NAME`.
 
-#### Default feature (always enabled)
+#### Default features (always included in every build)
 
-| Flag | Files | Description | Implementation |
-|------|-------|-------------|----------------|
-| `VOICE_MODE` | 17 | Voice dictation (hold-to-talk) with STT streaming, keybindings, UI indicators | Full — command, settings, keybindings, STT service, UI components, hooks |
+These are safe to always include because they require explicit runtime activation (CLI flag, slash command, setting, or file).
+
+| Flag | Runtime Gate | Description |
+|------|-------------|-------------|
+| `BG_SESSIONS` | `--bg` / `--background` | Background sessions via tmux (ps/logs/attach/kill) |
+| `BREAK_CACHE_COMMAND` | debug injection | Injects cache-breaking string into system prompt |
+| `BUDDY` | `/buddy` command | Virtual companion sprites with rarity, speech bubbles |
+| `BUILDING_CLAUDE_APPS` | `/claude-api` skill | Registers "Claude API" bundled skill |
+| `BYOC_ENVIRONMENT_RUNNER` | `claude environment-runner` | CLI subcommand for BYOC |
+| `CACHED_MICROCOMPACT` | config (default off) | Caches micro-compaction results across pipeline |
+| `COORDINATOR_MODE` | env `CLAUDE_CODE_COORDINATOR_MODE=1` | Delegates work to agents, filters tools, custom prompt |
+| `DAEMON` | `claude daemon` / `--daemon-worker` | Long-running supervisor daemon |
+| `DIRECT_CONNECT` | `claude connect <url>` | Remote server connection with auth |
+| `DUMP_SYSTEM_PROMPT` | `--dump-system-prompt` | Prints system prompt and exits |
+| `FORK_SUBAGENT` | `/fork` command | Fork agent mode — full-access subagent |
+| `HARD_FAIL` | `--hard-fail` | Makes `logError()` crash instead of silently logging |
+| `HISTORY_SNIP` | `/force-snip` + SnipTool | Trim older conversation history |
+| `KAIROS` | `--assistant` or `.claude/agents/assistant.md` | **Full assistant mode** — proactive, scheduling, notifications, daily logs (52 files) |
+| `KAIROS_BRIEF` | `--brief` or `/brief` | BriefTool (SendUserMessage) + settings + prompt + UI |
+| `KAIROS_CHANNELS` | `--channels <servers>` | Channel notifications via MCP, message queue |
+| `KAIROS_DREAM` | `/dream` skill | Background memory consolidation |
+| `KAIROS_GITHUB_WEBHOOKS` | `/subscribe-pr` command | SubscribePRTool for GitHub PR subscriptions |
+| `KAIROS_PUSH_NOTIFICATION` | setting `agentPushNotifEnabled` | Push notification tool + settings |
+| `LODESTONE` | auto (disable via setting) | Deep link protocol handler (`claude-cli://`) |
+| `NEW_INIT` | env `CLAUDE_CODE_NEW_INIT=true` | Alternate `/init` prompt mentioning skills/hooks |
+| `OVERFLOW_TEST_TOOL` | debug tool | Debug tool for overflow scenario testing |
+| `REVIEW_ARTIFACT` | `/hunter` skill | ReviewArtifactTool with custom permission UI |
+| `RUN_SKILL_GENERATOR` | skill invocation | Skill generator/scaffolding |
+| `SELF_HOSTED_RUNNER` | `claude self-hosted-runner` | Headless poll-based execution |
+| `SSH_REMOTE` | `claude ssh <host> [dir]` | SSH-backed remote sessions |
+| `STREAMLINED_OUTPUT` | `--output-format=stream-json` | Streamlined transformer for headless output |
+| `TEMPLATES` | `claude new` / `claude list` / `claude reply` | Template execution system |
+| `ULTRAPLAN` | `/ultraplan` command | Web-based planning with rainbow trigger keywords |
+| `UNATTENDED_RETRY` | env `CLAUDE_CODE_UNATTENDED_RETRY=true` | Persistent retry on 429/529 in headless/CI mode |
+| `ULTRATHINK` | user types "ultrathink" keyword | Ultra/extended thinking mode |
+| `VERIFICATION_AGENT` | prompt nudge (benign) | Adversarial verification agent; PASS/FAIL/PARTIAL verdicts |
+| `VOICE_MODE` | hold-to-talk keybinding | Voice dictation with STT streaming |
+| `WORKFLOW_SCRIPTS` | `/workflows` command | WorkflowTool + task tracking |
 
 #### Experimental features (in `fullExperimentalFeatures` array)
 
-These are enabled by `--feature-set=dev-full`:
+These are enabled by `--feature-set=dev-full`. They activate immediately when built (no additional runtime gate), so they are kept out of default builds.
 
-| Flag | Files | Description | Implementation |
-|------|-------|-------------|----------------|
-| `AGENT_MEMORY_SNAPSHOT` | 2 | Snapshot agent memory; dialog prompts user to review/apply pending snapshots | Full |
-| `AGENT_TRIGGERS` | 11 | Cron/scheduled task tools (CronCreate, CronDelete, CronList), scheduler lifecycle, loop skill | Full |
-| `AWAY_SUMMARY` | 2 | Detects user idle, generates summary of what happened while away | Full |
-| `BASH_CLASSIFIER` | 15+ | ML classifier for bash command safety; spans entire permission pipeline from decision logic to UI | Full — deepest permission integration |
-| `BUILTIN_EXPLORE_PLAN_AGENTS` | 1 | Boolean gate enabling built-in Explore and Plan subagent types | Full (simple toggle) |
-| `CACHED_MICROCOMPACT` | 4 | Caches micro-compaction results across prompt/query/API pipeline | Full |
-| `COMPACTION_REMINDERS` | 1 | Injects compaction reminder attachment into system prompt | Full (minimal scope) |
-| `CONNECTOR_TEXT` | 5 | API beta feature: connector text blocks, end-to-end from headers to rendering | Full |
-| `EXTRACT_MEMORIES` | 4 | Background memory extraction on query completion and during housekeeping | Full |
-| `HISTORY_PICKER` | 2 | History search dialog (Ctrl+R alternative) with keybinding | Full |
-| `HOOK_PROMPTS` | 1 | Passes `requestPrompt` to tool use context for hook prompt requests | Full (1 line) |
-| `KAIROS_BRIEF` | 20+ | BriefTool + `/brief` command + settings + prompt injection + UI (OR'd with KAIROS) | Full — major feature |
-| `KAIROS_CHANNELS` | 15+ | Channel notifications via MCP, message queue, tool behavior (OR'd with KAIROS) | Full — major feature |
-| `LODESTONE` | 4 | Deep link protocol handler (`claude-cli://`), registration, URI handling | Full |
-| `MCP_RICH_OUTPUT` | 1 | Enhanced MCP tool output rendering (truncation, richer components) | Full (narrow scope) |
-| `MESSAGE_ACTIONS` | 2 | Keyboard-navigable message actions (copy, retry), cursor state | Full |
-| `NEW_INIT` | 1 | Alternate `/init` prompt mentioning skills/hooks (double-gated with env var) | Full (narrow scope) |
-| `POWERSHELL_AUTO_MODE` | 1 | Allows PowerShell tool in auto/non-interactive mode | Full (minimal) |
-| `PROMPT_CACHE_BREAK_DETECTION` | 6 | Monitors cache read/write metrics to detect prompt cache breaks | Full |
-| `QUICK_SEARCH` | 2 | Quick Open + Global Search dialogs with Ctrl+F keybinding | Full |
-| `SHOT_STATS` | 3 | Tracks one-shot vs multi-shot conversation distribution in stats UI | Full |
-| `TEAMMEM` | 17 | Team memory sync — shared memory files, filesystem watcher, extraction | Full — major subsystem |
-| `TOKEN_BUDGET` | 6 | User-specified output token budget with enforcement and spinner progress | Full |
-| `TRANSCRIPT_CLASSIFIER` | **45** | **Auto mode** — AI-powered permission classifier, auto-approve settings, classifier UI. Prompts extracted from v2.1.96. | Full — major subsystem |
-| `TREE_SITTER_BASH` | 1 | Tree-sitter-based bash parsing (replaces regex parser for security analysis) | Full |
-| `TREE_SITTER_BASH_SHADOW` | 2 | Shadow mode: runs tree-sitter in parallel with legacy parser, logs divergences | Full |
-| `ULTRAPLAN` | 5 | `/ultraplan` command — launches web-based planning with rainbow trigger keywords | Full |
-| `ULTRATHINK` | 1 | Gate for ultra/extended thinking mode | Full (minimal) |
-| `UNATTENDED_RETRY` | 1 | Persistent retry on 429/529 in headless/CI mode | Full (minimal) |
-| `VERIFICATION_AGENT` | 4 | Adversarial verification agent; nudges on task completion, PASS/FAIL/PARTIAL verdicts | Full |
+| Flag | Description | Notes |
+|------|-------------|-------|
+| `AGENT_MEMORY_SNAPSHOT` | Snapshot agent memory; review/apply pending snapshots | Runs when auto-memory enabled |
+| `AGENT_TRIGGERS` | Cron/scheduled task tools (CronCreate/Delete/List), scheduler | Registers cron tools; disable via `CLAUDE_CODE_DISABLE_CRON` |
+| `AWAY_SUMMARY` | Detects user idle, generates summary of what happened | Passive trigger |
+| `BASH_CLASSIFIER` | ML classifier for bash command safety | Changes permission pipeline |
+| `BUILTIN_EXPLORE_PLAN_AGENTS` | Enables built-in Explore and Plan subagent types | Simple toggle |
+| `COMPACTION_REMINDERS` | Injects compaction reminder into system prompt | Benign |
+| `CONNECTOR_TEXT` | API beta: connector text blocks | Changes API beta headers |
+| `EXTRACT_MEMORIES` | Background memory extraction on query completion | Controlled by `memoryExtraction` setting |
+| `HISTORY_PICKER` | History search dialog (Ctrl+R alternative) | Benign UI addition |
+| `HOOK_PROMPTS` | Passes `requestPrompt` to tool use context | Minimal (1 line) |
+| `MCP_RICH_OUTPUT` | Enhanced MCP tool output rendering | Benign |
+| `MESSAGE_ACTIONS` | Keyboard-navigable message actions (copy, retry) | Disable via `CLAUDE_CODE_DISABLE_MESSAGE_ACTIONS` |
+| `POWERSHELL_AUTO_MODE` | Allows PowerShell tool in auto mode | Removes permission restriction |
+| `PROMPT_CACHE_BREAK_DETECTION` | Monitors cache metrics for prompt cache breaks | Passive monitoring |
+| `QUICK_SEARCH` | Quick Open + Global Search (Ctrl+F) | Benign UI addition |
+| `SHOT_STATS` | Tracks one-shot vs multi-shot stats | Passive tracking |
+| `TEAMMEM` | Team memory sync — shared memory files, filesystem watcher | Major subsystem |
+| `TOKEN_BUDGET` | User-specified output token budget with enforcement | User types `+500k` to activate |
+| `TRANSCRIPT_CLASSIFIER` | Auto mode — AI-powered permission classifier | Major subsystem; adds "auto" mode |
+| `TREE_SITTER_BASH` | Tree-sitter-based bash parsing (replaces regex) | Security-sensitive parser change |
+| `TREE_SITTER_BASH_SHADOW` | Shadow mode: tree-sitter in parallel, logs divergences | Non-destructive |
 
-#### Additional feature flags (not in dev-full set)
+#### Additional feature flags (not in default or dev-full)
 
 These must be individually enabled with `--feature=FLAG_NAME`:
 
-| Flag | Files | Description | Build Status |
-|------|-------|-------------|--------------|
-| `AUTO_THEME` | 1 | Adds "Auto (match terminal)" option to theme picker | **OK** — builds clean |
-| `BG_SESSIONS` | 7 | Background sessions via tmux (ps/logs/attach/kill/--bg), session lifecycle | **OK** — builds clean |
-| `BREAK_CACHE_COMMAND` | 1 | Injects cache-breaking string into system prompt for debugging | **OK** — builds clean |
-| `BUDDY` | 7 | Virtual companion sprites with rarity, speech bubbles, reactions, notifications | **OK** — builds clean |
-| `BUILDING_CLAUDE_APPS` | 1 | Registers "Claude API" bundled skill | **OK** — builds clean |
-| `BYOC_ENVIRONMENT_RUNNER` | 1 | `claude environment-runner` CLI subcommand for BYOC | **OK** — builds clean |
-| `COMMIT_ATTRIBUTION` | 1 | Tracks permission/escape/prompt counts for commit attribution metrics | **OK** — builds clean |
-| `CONTEXT_COLLAPSE` | 13 | Archives older context into collapsed summaries; alternative to reactive compact | **OK** — builds clean |
-| `COORDINATOR_MODE` | 15 | Coordinator mode: delegates work to agents, filters tools, custom system prompt | **OK** — builds clean |
-| `DAEMON` | 1 | `claude daemon` + `--daemon-worker` CLI subcommands for long-running supervisor | **OK** — builds clean |
-| `DIRECT_CONNECT` | 1 | `claude connect <url>` for remote server connection with auth | **OK** — builds clean |
-| `DUMP_SYSTEM_PROMPT` | 1 | `--dump-system-prompt` flag for prompt sensitivity evals | **OK** — builds clean |
-| `EXPERIMENTAL_SKILL_SEARCH` | 9 | Remote skill search/indexing from MCP and external sources | **OK** — builds clean |
-| `FILE_PERSISTENCE` | 1 | Post-turn file persistence with event emission | **OK** — builds clean |
-| `FORK_SUBAGENT` | 5 | Fork agent mode — spawns full-access subagent with permission bubbling | **OK** — builds clean |
-| `HARD_FAIL` | 2 | `--hard-fail` makes `logError()` crash process instead of silently logging | **OK** — builds clean |
-| `HISTORY_SNIP` | 8 | SnipTool — trim older conversation history, integrated into query/message pipeline | **OK** — builds clean |
-| `KAIROS` | **52** | **Full assistant mode** — scheduling, notifications, team context, persistent sessions, daily logs. Largest flag (120+ refs). | **OK** — builds clean |
-| `KAIROS_DREAM` | 1 | Registers "dream" skill for background memory consolidation (requires KAIROS) | **OK** — builds clean |
-| `KAIROS_GITHUB_WEBHOOKS` | 3 | SubscribePRTool + `/subscribe-pr` for GitHub PR webhook subscriptions | **OK** — builds clean |
-| `KAIROS_PUSH_NOTIFICATION` | 3 | Push notification tool + settings (extends KAIROS notification support) | **OK** — builds clean |
-| `MCP_SKILLS` | 3 | Fetches and registers skills from MCP server resources | **OK** — builds clean |
-| `OVERFLOW_TEST_TOOL` | 2 | Debug tool for overflow scenario testing + classifier integration | **OK** — builds clean |
-| `REACTIVE_COMPACT` | 2 | Trigger-based automatic compaction module | **OK** — builds clean |
-| `REVIEW_ARTIFACT` | 2 | "Hunter" skill + ReviewArtifactTool with custom permission UI | **OK** — builds clean |
-| `RUN_SKILL_GENERATOR` | 1 | Skill generator/scaffolding skill | **OK** — builds clean |
-| `SELF_HOSTED_RUNNER` | 1 | `claude self-hosted-runner` CLI mode for headless poll-based execution | **OK** — builds clean |
-| `SLOW_OPERATION_LOGGING` | 1 | Performance instrumentation wrapping JSON.stringify, structuredClone, etc. | **OK** — builds clean |
-| `SSH_REMOTE` | 1 | `claude ssh <host> [dir]` for SSH-backed remote sessions | **OK** — builds clean |
-| `STREAMLINED_OUTPUT` | 1 | Streamlined transformer for headless `stream-json` output format | **OK** — builds clean |
-| `TEMPLATES` | 5 | Template execution system — config, permissions, CLI dispatch, job classification | **OK** — builds clean |
-| `TERMINAL_PANEL` | 5 | TerminalCaptureTool + meta+j keybinding for terminal panel toggle | **OK** — builds clean |
-| `UDS_INBOX` | 10 | Unix domain socket IPC — peer discovery, messaging, `/peers` command, ListPeersTool | **OK** — builds clean |
-| `WORKFLOW_SCRIPTS` | 7 | WorkflowTool + `/workflows` command + task tracking + custom permission UI | **OK** — builds clean |
+| Flag | Description |
+|------|-------------|
+| `AUTO_THEME` | Adds "Auto (match terminal)" option to theme picker |
+| `COMMIT_ATTRIBUTION` | Tracks permission/escape/prompt counts for commit attribution |
+| `CONTEXT_COLLAPSE` | Archives older context into collapsed summaries (stub — no-op) |
+| `EXPERIMENTAL_SKILL_SEARCH` | Remote skill search/indexing from MCP (stub — no-op) |
+| `FILE_PERSISTENCE` | Post-turn file persistence with event emission (stub — no-op) |
+| `MCP_SKILLS` | Fetches and registers skills from MCP server resources |
+| `REACTIVE_COMPACT` | Trigger-based automatic compaction (stub — no-op) |
+| `SLOW_OPERATION_LOGGING` | Performance instrumentation (JSON.stringify, structuredClone) |
+| `TERMINAL_PANEL` | TerminalCaptureTool + meta+j keybinding |
+| `UDS_INBOX` | Unix domain socket IPC — peer discovery, messaging, `/peers` |
 
-Total: **66 unique build-time feature flags** (1 default + 31 dev-full + 34 additional).
+Total: **65 unique build-time feature flags** (34 default + 21 dev-full + 10 additional).
 
-- **Buildable flags**: 1 default (`VOICE_MODE`) + 31 dev-full + 34 hidden that build clean = **66 working flags** (all flags now build successfully)
-- **Broken flags**: None — all 66 flags build clean.
-- `PROACTIVE` was removed (legacy, subsumed by KAIROS).
-
-> **TODO**: As flags are moved to default-on (enabled in production builds), update the tables above — move the flag to the "Default feature" section and update `defaultFeatures` in scripts/build.ts accordingly.
+All 65 flags build clean.
 
 ### Notable settings.json defaults
 
