@@ -2564,6 +2564,17 @@ export function REPL({
     prevDialogRef.current = focusedInputDialog
   }, [focusedInputDialog, repinScroll])
 
+  // Re-pin scroll when a local-JSX command overlay (e.g. /stats, /config)
+  // closes. The overlay hides PromptInput which changes ScrollBox viewport
+  // height — without re-pinning, the scroll position drifts upward.
+  const prevLocalJSXRef = useRef(isShowingLocalJSXCommand)
+  useLayoutEffect(() => {
+    const was = prevLocalJSXRef.current
+    const now = isShowingLocalJSXCommand
+    if (was && !now) repinScroll()
+    prevLocalJSXRef.current = now
+  }, [isShowingLocalJSXCommand, repinScroll])
+
   function onCancel() {
     if (focusedInputDialog === 'elicitation') {
       // Elicitation dialog handles its own Escape, and closing it shouldn't affect any loading state.
