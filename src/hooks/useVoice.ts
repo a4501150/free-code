@@ -503,11 +503,7 @@ export function useVoice({
   }
 
   // When voice is enabled, lazy-import voice.ts so checkRecordingAvailability
-  // et al. are ready when the user presses the voice key. Do NOT preload the
-  // native module — require('audio-capture.node') is a synchronous dlopen of
-  // CoreAudio/AudioUnit that blocks the event loop for ~1s (warm) to ~8s
-  // (cold coreaudiod). setImmediate doesn't help: it yields one tick, then the
-  // dlopen still blocks. The first voice keypress pays the dlopen cost instead.
+  // et al. are ready when the user presses the voice key.
   useEffect(() => {
     if (enabled && !voiceModule) {
       void import('../services/voice.js').then(mod => {

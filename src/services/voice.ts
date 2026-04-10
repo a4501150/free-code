@@ -1,8 +1,7 @@
 // Voice service: audio recording for push-to-talk voice input.
 //
 // Recording uses SoX `rec` (macOS/Linux) or arecord (Linux ALSA) for
-// microphone capture. The native audio-capture-napi module (private
-// Anthropic package) has been removed.
+// microphone capture.
 
 import { type ChildProcess, spawn, spawnSync } from 'child_process'
 import { logForDebugging } from '../utils/debug.js'
@@ -149,7 +148,7 @@ export async function checkVoiceDependencies(): Promise<{
   if (process.platform === 'win32') {
     return {
       available: false,
-      missing: ['Voice mode is not supported on Windows without the native audio module'],
+      missing: ['Voice mode is not supported on Windows (no SoX or arecord available)'],
       installCommand: null,
     }
   }
@@ -202,7 +201,7 @@ export async function checkRecordingAvailability(): Promise<RecordingAvailabilit
     return {
       available: false,
       reason:
-        'Voice recording is not supported on Windows without the native audio module.',
+        'Voice recording is not supported on Windows (no SoX or arecord available).',
     }
   }
 
