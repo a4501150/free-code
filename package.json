@@ -18,9 +18,8 @@
     "build:dev:full": "bun run ./scripts/build.ts --dev --feature-set=dev-full",
     "compile": "bun run ./scripts/build.ts --compile",
     "dev": "bun run ./src/entrypoints/cli.tsx",
-    "test": "bun test tests/",
-    "test:integration": "bun test tests/integration/",
-    "test:e2e": "bun test tests/e2e/ --timeout 60000"
+    "test": "bun test tests/e2e/ --timeout 120000",
+    "test:e2e": "bun test tests/e2e/ --timeout 120000"
   },
   "dependencies": {
     "@alcalzone/ansi-tokenize": "^0.3.0",

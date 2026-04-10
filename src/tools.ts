@@ -250,14 +250,7 @@ export function filterToolsByDenyRules<
 
 export const getTools = (permissionContext: ToolPermissionContext): Tools => {
   // Simple mode: only Bash, Read, and Edit tools
-  // CLAUDE_CODE_BARE_FULL_TOOLS overrides tool restriction while keeping other
-  // bare-mode subsystem gates (MCP, plugins, keychain, etc.) intact. Used by
-  // integration tests that need all tools registered but cannot tolerate full
-  // subsystem initialization.
-  if (
-    isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE) &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_BARE_FULL_TOOLS)
-  ) {
+  if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
     // --bare + REPL mode: REPL wraps Bash/Read/Edit/etc inside the VM, so
     // return REPL instead of the raw primitives. Matches the non-bare path
     // below which also hides REPL_ONLY_TOOLS when REPL is enabled.
