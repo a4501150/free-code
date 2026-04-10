@@ -22,6 +22,15 @@ export interface CLIRunOptions {
   additionalEnv?: Record<string, string>
   timeout?: number // ms, default 60_000
   cwd?: string // working directory, default to a temp dir
+  /**
+   * When true, register all tools (Grep, Glob, Write, NotebookEdit, etc.)
+   * instead of the bare-mode default (Bash, Read, Edit only).
+   *
+   * The CLI always runs with --bare for test stability (skips MCP, plugins,
+   * keychain, etc.). This option sets CLAUDE_CODE_BARE_FULL_TOOLS=1 to
+   * override only the tool registration restriction.
+   */
+  fullTools?: boolean
 }
 
 export interface CLIRunResult {
@@ -76,6 +85,10 @@ export function ensureBinaryExists(): void {
  * This is a true E2E test: it spawns the actual compiled CLI binary,
  * points it at the mock API server via ANTHROPIC_BASE_URL, and captures
  * all output.
+ *
+ * The CLI always runs with --bare for test stability (skips MCP servers,
+ * plugins, keychain, etc.). Use `fullTools: true` to register all tools
+ * while keeping bare-mode subsystem isolation.
  */
 export async function runCLI(options: CLIRunOptions): Promise<CLIRunResult> {
   const {
@@ -96,7 +109,7 @@ export async function runCLI(options: CLIRunOptions): Promise<CLIRunResult> {
   const cwd = options.cwd ?? tempCwd!.path
 
   try {
-    // Build CLI args
+    // Build CLI args — always use --bare for test environment stability
     const args: string[] = [
       '--print',
       '--bare',
@@ -142,6 +155,13 @@ export async function runCLI(options: CLIRunOptions): Promise<CLIRunResult> {
       DO_NOT_TRACK: '1',
       // Override any user-specific env
       ...additionalEnv,
+    }
+
+    // When fullTools is requested, override the bare-mode tool restriction
+    // so all tools (Grep, Glob, Write, NotebookEdit, etc.) are registered
+    // while keeping bare-mode subsystem isolation (no MCP, plugins, etc.)
+    if (options.fullTools) {
+      env.CLAUDE_CODE_BARE_FULL_TOOLS = '1'
     }
 
     const proc = Bun.spawn([CLI_BINARY, ...args], {
