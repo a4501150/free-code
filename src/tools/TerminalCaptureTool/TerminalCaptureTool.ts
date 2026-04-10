@@ -38,6 +38,9 @@ export const TerminalCaptureTool = buildTool({
   async description() {
     return DESCRIPTION
   },
+  async prompt() {
+    return DESCRIPTION
+  },
   get inputSchema(): InputSchema {
     return inputSchema()
   },

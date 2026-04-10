@@ -21,6 +21,9 @@ export const OverflowTestTool = buildTool({
   async description() {
     return DESCRIPTION
   },
+  async prompt() {
+    return DESCRIPTION
+  },
   get inputSchema(): InputSchema {
     return inputSchema()
   },
