@@ -5,10 +5,12 @@
  * through the full interactive REPL.
  */
 
-import { describe, test, expect, beforeAll, afterAll, afterEach } from 'bun:test'
+import { describe, test as bunTest, expect, beforeAll, afterAll, afterEach } from 'bun:test'
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, sleep } from './tmux-helpers'
+import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
+
+const test = createLoggingTest(bunTest)
 
 describe('Edge Cases', () => {
   let server: MockAnthropicServer

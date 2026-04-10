@@ -362,3 +362,26 @@ function sleep(ms: number): Promise<void> {
 }
 
 export { sleep }
+
+/**
+ * Wraps bun's `test()` to log each test name and result to stdout,
+ * so output is visible when captured by non-TTY tools (e.g. CI, Bash tool).
+ */
+export function createLoggingTest(bunTest: typeof import('bun:test').test) {
+  return function loggedTest(name: string, fn: () => Promise<void>) {
+    bunTest(name, async () => {
+      const start = Date.now()
+      try {
+        await fn()
+        const elapsed = Date.now() - start
+        // biome-ignore lint/suspicious/noConsole: intentional test output
+        console.log(`  PASS  ${name} (${elapsed}ms)`)
+      } catch (e) {
+        const elapsed = Date.now() - start
+        // biome-ignore lint/suspicious/noConsole: intentional test output
+        console.log(`  FAIL  ${name} (${elapsed}ms)`)
+        throw e
+      }
+    })
+  }
+}

@@ -12,7 +12,7 @@
 
 import {
   describe,
-  test,
+  test as bunTest,
   expect,
   beforeAll,
   afterAll,
@@ -23,7 +23,9 @@ import {
   type RequestLogEntry,
 } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, sleep } from './tmux-helpers'
+import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
+
+const test = createLoggingTest(bunTest)
 import { writeFile, readFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 

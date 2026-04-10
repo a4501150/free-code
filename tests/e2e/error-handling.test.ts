@@ -5,10 +5,12 @@
  * (4xx, 5xx, truncated streams) through the full interactive REPL.
  */
 
-import { describe, test, expect, beforeAll, afterAll, afterEach } from 'bun:test'
+import { describe, test as bunTest, expect, beforeAll, afterAll, afterEach } from 'bun:test'
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { errorResponse, rawResponse, textResponse } from '../helpers/fixture-builders'
-import { TmuxSession, sleep } from './tmux-helpers'
+import { TmuxSession, createLoggingTest } from './tmux-helpers'
+
+const test = createLoggingTest(bunTest)
 
 describe('Error Handling', () => {
   let server: MockAnthropicServer
@@ -40,10 +42,10 @@ describe('Error Handling', () => {
       })
       await session.start()
 
-      await session.sendLine('trigger 400')
-      await sleep(5000)
+      // submitAndWaitForResponse includes a delay before polling,
+      // preventing false match on stale "for shortcuts" in scrollback
+      const screen = await session.submitAndWaitForResponse('trigger 400', 15_000)
 
-      const screen = await session.capturePaneWithHistory()
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
       // CLI should still be alive (not crashed)
       expect(screen.length).toBeGreaterThan(0)
@@ -60,10 +62,8 @@ describe('Error Handling', () => {
       })
       await session.start()
 
-      await session.sendLine('trigger 401')
-      await sleep(5000)
+      const screen = await session.submitAndWaitForResponse('trigger 401', 15_000)
 
-      const screen = await session.capturePaneWithHistory()
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
       // Should indicate auth error somewhere on screen
       expect(
@@ -88,11 +88,8 @@ describe('Error Handling', () => {
       })
       await session.start()
 
-      await session.sendLine('trigger rate limit')
+      const screen = await session.submitAndWaitForResponse('trigger rate limit', 30_000)
 
-      // Wait for either the success text or a rate limit indication
-      await sleep(10_000)
-      const screen = await session.capturePaneWithHistory()
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
       // Either retried and got success, or showed rate limit error
       expect(screen.length).toBeGreaterThan(0)
@@ -109,10 +106,8 @@ describe('Error Handling', () => {
       })
       await session.start()
 
-      await session.sendLine('trigger 500')
-      await sleep(5000)
+      const screen = await session.submitAndWaitForResponse('trigger 500', 15_000)
 
-      const screen = await session.capturePaneWithHistory()
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
       expect(screen.length).toBeGreaterThan(0)
     })
@@ -128,10 +123,8 @@ describe('Error Handling', () => {
       })
       await session.start()
 
-      await session.sendLine('trigger 529')
-      await sleep(5000)
+      const screen = await session.submitAndWaitForResponse('trigger 529', 15_000)
 
-      const screen = await session.capturePaneWithHistory()
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
       expect(screen.length).toBeGreaterThan(0)
     })
@@ -186,11 +179,8 @@ describe('Error Handling', () => {
       })
       await session.start()
 
-      await session.sendLine('trigger truncated response')
-      // The CLI should handle truncation gracefully (not hang forever)
-      await sleep(10_000)
+      const screen = await session.submitAndWaitForResponse('trigger truncated response', 30_000)
 
-      const screen = await session.capturePaneWithHistory()
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
       // CLI should still be alive
       expect(screen.length).toBeGreaterThan(0)

@@ -7,7 +7,7 @@
 
 import {
   describe,
-  test,
+  test as bunTest,
   expect,
   beforeAll,
   afterAll,
@@ -15,6 +15,9 @@ import {
 } from 'bun:test'
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
+import { createLoggingTest } from './tmux-helpers'
+
+const test = createLoggingTest(bunTest)
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

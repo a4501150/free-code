@@ -11,7 +11,7 @@
 
 import {
   describe,
-  test,
+  test as bunTest,
   expect,
   beforeAll,
   afterAll,
@@ -25,7 +25,9 @@ import {
   thinkingToolUseResponse,
   maxTokensResponse,
 } from '../helpers/fixture-builders'
-import { TmuxSession, sleep } from './tmux-helpers'
+import { TmuxSession, createLoggingTest } from './tmux-helpers'
+
+const test = createLoggingTest(bunTest)
 
 describe('Conversation Flow E2E', () => {
   let server: MockAnthropicServer
@@ -361,12 +363,8 @@ describe('Conversation Flow E2E', () => {
       })
       await session.start()
 
-      await session.sendLine('Call a tool')
-      await sleep(500)
-      // Auto-approve permission if one appears, or wait for idle
-      await session.waitForPermissionOrIdle(15_000)
-      // Wait for the CLI to settle — with max-turns=1 it should stop
-      await sleep(5_000)
+      // Submit and approve any permission dialogs until idle
+      await session.submitAndApprove('Call a tool', 30_000)
 
       // With max-turns=1, the model should only get 1 chance, but the CLI
       // may have made additional requests (e.g. for the tool result turn).
@@ -443,9 +441,8 @@ describe('Conversation Flow E2E', () => {
       session = new TmuxSession({ serverUrl: server.url })
       await session.start()
 
-      await session.sendLine('Generate a long response')
-      // No tool use, but the CLI may auto-continue — just wait
-      await sleep(10_000)
+      // No tool use, but the CLI may auto-continue — wait for idle prompt
+      await session.submitAndWaitForResponse('Generate a long response', 30_000)
 
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
     })

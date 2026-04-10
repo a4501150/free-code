@@ -104,6 +104,11 @@ function VerboseToolUse({
         </Text>
         {input && tool.renderToolUseTag?.(input)}
       </Box>
+      {isInProgress &&
+        tool.renderToolUseProgressMessage?.(
+          lookups.progressMessagesByToolUseID.get(content.id) ?? [],
+          { tools, verbose: true },
+        )}
       {isResolved && !isError && toolResult !== undefined && (
         <Box>
           {tool.renderToolResultMessage?.(toolResult, [], {

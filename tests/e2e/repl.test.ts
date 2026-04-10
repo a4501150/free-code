@@ -6,10 +6,12 @@
  * submission, multi-turn conversations, slash commands, and keyboard input.
  */
 
-import { describe, test, expect, beforeAll, afterAll, afterEach } from 'bun:test'
+import { describe, test as bunTest, expect, beforeAll, afterAll, afterEach } from 'bun:test'
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, sleep } from './tmux-helpers'
+import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
+
+const test = createLoggingTest(bunTest)
 
 describe('REPL E2E', () => {
   let server: MockAnthropicServer
