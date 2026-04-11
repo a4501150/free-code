@@ -240,4 +240,12 @@ export async function clearConversation({
   if (hookMessages.length > 0) {
     setMessages(() => hookMessages)
   }
+
+  // Final re-pin: the multiple await points above (resetSessionFilePointer,
+  // processSessionStartHooks) yield control to React. If the Ink reconciler
+  // doesn't fully batch state updates after those awaits, intermediate renders
+  // with empty messages + stale scrollTop can leave the screen blank. This
+  // deferred scrollToBottom fires after the final render, ensuring stickyScroll
+  // is true when the caller (processInitialMessage / /clear handler) continues.
+  scrollToBottom?.()
 }

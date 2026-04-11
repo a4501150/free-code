@@ -34,6 +34,8 @@ export interface TmuxSessionOptions {
   additionalEnv?: Record<string, string>
   /** Extra CLI args to append */
   additionalArgs?: string[]
+  /** Project-level settings to write to settings.json */
+  settings?: Record<string, unknown>
 }
 
 export class TmuxSession {
@@ -50,6 +52,7 @@ export class TmuxSession {
   private _height: number
   private _additionalEnv: Record<string, string>
   private _additionalArgs: string[]
+  private _settings: Record<string, unknown>
 
   constructor(options: TmuxSessionOptions) {
     this.sessionName = `claude_e2e_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -60,11 +63,17 @@ export class TmuxSession {
     this._height = options.height ?? 40
     this._additionalEnv = options.additionalEnv ?? {}
     this._additionalArgs = options.additionalArgs ?? []
+    this._settings = options.settings ?? {}
   }
 
   /** Get the temp CWD path (only valid after start()) */
   get cwd(): string {
     return this._cwd
+  }
+
+  /** Get the config dir path (only valid after start()) */
+  get configDirPath(): string | null {
+    return this.configDir
   }
 
   /**
@@ -111,10 +120,11 @@ export class TmuxSession {
       JSON.stringify(config, null, 2),
     )
 
-    // Empty settings.json to prevent MCP server loading from project config
+    // Settings.json — defaults to empty to prevent MCP server loading from project config.
+    // Tests can pass custom settings via the `settings` option.
     await writeFile(
       join(this.configDir, 'settings.json'),
-      JSON.stringify({}, null, 2),
+      JSON.stringify(this._settings, null, 2),
     )
 
     // Build environment string

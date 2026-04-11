@@ -3887,6 +3887,12 @@ export function REPL({
           clearBuffer: () => {},
           resetHistory: () => {},
         })
+        // Deferred re-pin after clearConversation — same rationale as the
+        // plan-message path below. onSubmit calls repinScroll synchronously
+        // but intermediate renders may lose the sticky flag.
+        if (initialMsg.clearContext) {
+          setTimeout(repinScroll, 0)
+        }
       } else {
         // Plan messages or complex content (images, etc.) - send directly to model
         // Plan messages use onQuery to preserve planContent metadata for rendering
@@ -3903,6 +3909,16 @@ export function REPL({
           [], // additionalAllowedTools
           mainLoopModel,
         )
+
+        // Deferred re-pin: the Ink reconciler may not batch state updates
+        // from clearConversation (after await) with scrollToBottom's
+        // forceRender. Intermediate renders with empty messages + stale
+        // scrollTop can show a blank screen. This backstop fires after
+        // onQuery's setMessages has committed, ensuring stickyScroll is
+        // true when the virtual scroll computes the range. See also the
+        // similar fix for /clear in clearConversation (scrollToBottom at
+        // line 117 of conversation.ts) and compaction (line 3171 above).
+        setTimeout(repinScroll, 0)
       }
 
       // Reset ref after a delay to allow new initial messages

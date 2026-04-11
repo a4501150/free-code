@@ -73,6 +73,25 @@ tests/
   - src/voice/: voice input
   - src/tasks/: background task management
 
+## Gotchas: Scroll re-pinning after context clear
+
+The virtual scroll (`src/hooks/useVirtualScroll.ts`) uses a height cache keyed by message UUID + conversationId. When context is cleared (`clearConversation` in `src/commands/clear/conversation.ts`), `setMessages([])` + `setConversationId(randomUUID())` invalidates the entire cache. Without re-pinning scroll to the bottom, stale `scrollTop` lands in an empty offset range → **blank screen** (recovers on user scroll).
+
+**Why multiple `scrollToBottom`/`repinScroll` calls exist:**
+
+| Call | Location | Purpose | Notes |
+|------|----------|---------|-------|
+| `scrollToBottom()` after `setConversationId()` | `clearConversation` line 117 | Immediate re-pin after conversationId bump | Covers the window before async ops begin |
+| `scrollToBottom()` at end of `clearConversation` | `clearConversation` end | Re-pin after all async ops (session hooks, file pointer reset) | Redundant with #3 in the plan path (back-to-back, same sync frame), but needed for standalone `/clear` which doesn't go through `processInitialMessage` |
+| `repinScroll()` before `onQuery` | `REPL.tsx processInitialMessage` | Synchronous re-pin before plan implementation query starts | Redundant with #2 in the plan path, but reads clearer as intent |
+| `setTimeout(repinScroll, 0)` after `onQuery` | `REPL.tsx processInitialMessage` | **Deferred backstop** — Ink's `react-reconciler` may not batch state updates after `await` boundaries the same way ReactDOM does. This fires after `onQuery`'s `setMessages` commits, catching any intermediate renders that lost sticky state | The actual fix for the plan-mode blank screen |
+| `repinScroll()` in `lastMsgIsHuman` effect | `REPL.tsx` line ~1636 | React effect backstop when user message lands | Pre-existing safety net |
+| `repinScroll()` in `focusedInputDialog` effect | `REPL.tsx` line ~2563 | Re-pin when permission dialog appears/dismisses (layout change shifts viewport) | Pre-existing safety net |
+
+**Key invariant:** `stickyScroll = true` on the ScrollBox DOM element makes `useVirtualScroll` use the tail-walk path (always shows the last N items). When `stickyScroll = false`, it uses `scrollTop` to compute the visible range — if `scrollTop` is stale after a cache wipe, the range is empty → blank.
+
+**If you modify `clearConversation`, compaction, or plan mode approval:** ensure `scrollToBottom()` is called after any `setConversationId()` bump and after all async operations that could trigger intermediate renders.
+
 ## Build system
 
 - scripts/build.ts is the build script and feature-flag bundler. Feature flags are set via build arguments (e.g., `--feature=ULTRAPLAN`) or presets like `--feature-set=dev-full` (see README for details).
