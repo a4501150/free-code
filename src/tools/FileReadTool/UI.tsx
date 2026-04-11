@@ -2,9 +2,10 @@ import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs
 import * as React from 'react'
 import { extractTag } from 'src/utils/messages.js'
 import { FallbackToolUseErrorMessage } from '../../components/FallbackToolUseErrorMessage.js'
+import { HighlightedCode } from '../../components/HighlightedCode.js'
 import { FilePathLink } from '../../components/FilePathLink.js'
 import { MessageResponse } from '../../components/MessageResponse.js'
-import { Text } from '../../ink.js'
+import { Box, Text } from '../../ink.js'
 import { FILE_NOT_FOUND_CWD_NOTE, getDisplayPath } from '../../utils/file.js'
 import { formatFileSize } from '../../utils/format.js'
 import { getPlansDirectory } from '../../utils/plans.js'
@@ -82,7 +83,13 @@ export function renderToolUseTag({
   return <Text dimColor> {agentTaskId}</Text>
 }
 
-export function renderToolResultMessage(output: Output): React.ReactNode {
+export function renderToolResultMessage(
+  output: Output,
+  _progressMessages?: unknown[],
+  options?: { verbose?: boolean },
+): React.ReactNode {
+  const verbose = options?.verbose ?? false
+
   // TODO: Render recursively
   switch (output.type) {
     case 'image': {
@@ -130,7 +137,23 @@ export function renderToolResultMessage(output: Output): React.ReactNode {
       )
     }
     case 'text': {
-      const { numLines } = output.file
+      const { numLines, content } = output.file
+
+      if (verbose && content) {
+        return (
+          <Box flexDirection="column">
+            <MessageResponse height={1}>
+              <Text>
+                Read <Text bold>{numLines}</Text>{' '}
+                {numLines === 1 ? 'line' : 'lines'}
+              </Text>
+            </MessageResponse>
+            <MessageResponse>
+              <HighlightedCode code={content} filePath={output.file.filePath} />
+            </MessageResponse>
+          </Box>
+        )
+      }
 
       return (
         <MessageResponse height={1}>
