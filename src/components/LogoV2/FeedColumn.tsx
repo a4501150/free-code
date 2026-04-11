@@ -18,7 +18,7 @@ export function FeedColumn({
   const actualWidth = Math.min(maxOfAllFeeds, maxWidth)
 
   return (
-    <Box flexDirection="column" flexShrink={0}>
+    <Box flexDirection="column">
       {feeds.map((feed, index) => (
         <React.Fragment key={index}>
           <Feed config={feed} actualWidth={actualWidth} />
