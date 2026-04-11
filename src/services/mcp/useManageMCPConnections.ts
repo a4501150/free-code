@@ -48,6 +48,7 @@ import {
 import type { AppState } from 'src/state/AppState.js'
 import type { PluginError } from 'src/types/plugin.js'
 import { logForDebugging } from 'src/utils/debug.js'
+import { clearToolSchemaCache } from '../../utils/toolSchemaCache.js'
 import { getAllowedChannels } from '../../bootstrap/state.js'
 import { useNotifications } from '../../context/notifications.js'
 import {
@@ -604,6 +605,7 @@ export function useManageMCPConnections(
                     client.name,
                   )
                   fetchToolsForClient.cache.delete(client.name)
+                  clearToolSchemaCache()
                   const newTools = await fetchToolsForClient(client)
                   const newCount = newTools.length
                   if (previousToolsPromise) {

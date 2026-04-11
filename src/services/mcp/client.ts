@@ -41,6 +41,7 @@ import memoize from 'lodash-es/memoize.js'
 import zipObject from 'lodash-es/zipObject.js'
 import pMap from 'p-map'
 import { getOriginalCwd, getSessionId } from '../../bootstrap/state.js'
+import { clearToolSchemaCache } from '../../utils/toolSchemaCache.js'
 import type { Command } from '../../commands.js'
 import { getOauthConfig } from '../../constants/oauth.js'
 import { PRODUCT_URL } from '../../constants/product.js'
@@ -1582,6 +1583,11 @@ export async function clearServerCache(
   if (feature('MCP_SKILLS')) {
     fetchMcpSkillsForClient!.cache.delete(name)
   }
+
+  // Clear the tool schema cache so the next API call re-serializes tool
+  // definitions with fresh descriptions/schemas from the reconnected server.
+  // Same pattern as auth.ts and logout.tsx.
+  clearToolSchemaCache()
 }
 
 /**
