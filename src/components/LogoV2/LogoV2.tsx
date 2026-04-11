@@ -373,6 +373,7 @@ export function LogoV2(): React.ReactNode {
             <Box
               flexDirection="column"
               width={leftWidth}
+              flexShrink={0}
               justifyContent="space-between"
               alignItems="center"
               minHeight={9}
@@ -392,7 +393,8 @@ export function LogoV2(): React.ReactNode {
             {/* Vertical divider */}
             {layoutMode === 'horizontal' && (
               <Box
-                height="100%"
+                flexShrink={0}
+                alignSelf="stretch"
                 borderStyle="single"
                 borderColor="claude"
                 borderDimColor
