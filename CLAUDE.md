@@ -82,9 +82,8 @@ The virtual scroll (`src/hooks/useVirtualScroll.ts`) uses a height cache keyed b
 | Call | Location | Purpose | Notes |
 |------|----------|---------|-------|
 | `scrollToBottom()` after `setConversationId()` | `clearConversation` line 117 | Immediate re-pin after conversationId bump | Covers the window before async ops begin |
-| `scrollToBottom()` at end of `clearConversation` | `clearConversation` end | Re-pin after all async ops (session hooks, file pointer reset) | Redundant with #3 in the plan path (back-to-back, same sync frame), but needed for standalone `/clear` which doesn't go through `processInitialMessage` |
-| `repinScroll()` before `onQuery` | `REPL.tsx processInitialMessage` | Synchronous re-pin before plan implementation query starts | Redundant with #2 in the plan path, but reads clearer as intent |
-| `setTimeout(repinScroll, 0)` after `onQuery` | `REPL.tsx processInitialMessage` | **Deferred backstop** — Ink's `react-reconciler` may not batch state updates after `await` boundaries the same way ReactDOM does. This fires after `onQuery`'s `setMessages` commits, catching any intermediate renders that lost sticky state | The actual fix for the plan-mode blank screen |
+| `scrollToBottom()` at end of `clearConversation` | `clearConversation` end | Re-pin after all async ops (session hooks, file pointer reset) | Needed for standalone `/clear` which doesn't go through `processInitialMessage` |
+| `setTimeout(repinScroll, 0)` after `onQuery` | `REPL.tsx processInitialMessage` | Deferred re-pin — fires after `onQuery`'s `setMessages` commits, catching intermediate renders where Ink's reconciler lost sticky state across `await` boundaries | The fix for the plan-mode blank screen. This path bypasses `onSubmit` so needs its own re-pin |
 | `repinScroll()` in `lastMsgIsHuman` effect | `REPL.tsx` line ~1636 | React effect backstop when user message lands | Pre-existing safety net |
 | `repinScroll()` in `focusedInputDialog` effect | `REPL.tsx` line ~2563 | Re-pin when permission dialog appears/dismisses (layout change shifts viewport) | Pre-existing safety net |
 

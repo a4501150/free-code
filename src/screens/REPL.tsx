@@ -3899,8 +3899,6 @@ export function REPL({
         // TODO: Once onSubmit supports ContentBlockParam arrays, remove this branch
         const newAbortController = createAbortController()
         setAbortController(newAbortController)
-        // Re-pin scroll — this path bypasses onSubmit (which calls repinScroll)
-        repinScroll()
 
         void onQuery(
           [initialMsg.message],
@@ -3910,14 +3908,13 @@ export function REPL({
           mainLoopModel,
         )
 
-        // Deferred re-pin: the Ink reconciler may not batch state updates
-        // from clearConversation (after await) with scrollToBottom's
-        // forceRender. Intermediate renders with empty messages + stale
-        // scrollTop can show a blank screen. This backstop fires after
+        // Deferred re-pin: this path bypasses onSubmit (which normally
+        // calls repinScroll). The Ink reconciler may not batch state
+        // updates from clearConversation (after await) with onQuery's
+        // setMessages. Intermediate renders with empty messages + stale
+        // scrollTop can show a blank screen. setTimeout fires after
         // onQuery's setMessages has committed, ensuring stickyScroll is
-        // true when the virtual scroll computes the range. See also the
-        // similar fix for /clear in clearConversation (scrollToBottom at
-        // line 117 of conversation.ts) and compaction (line 3171 above).
+        // true when the virtual scroll computes the visible range.
         setTimeout(repinScroll, 0)
       }
 
