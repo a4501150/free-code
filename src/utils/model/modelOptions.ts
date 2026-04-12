@@ -16,6 +16,7 @@ import {
 import { getSettings_DEPRECATED } from '../settings/settings.js'
 import { checkOpus1mAccess, checkSonnet1mAccess } from './check1mAccess.js'
 import { getAPIProvider } from './providers.js'
+import { getProviderRegistry } from './providerRegistry.js'
 import { isModelAllowed } from './modelAllowlist.js'
 import {
   getCanonicalName,
@@ -489,6 +490,30 @@ export function getModelOptions(fastMode = false): ModelOption[] {
   for (const opt of getGlobalConfig().additionalModelOptionsCache ?? []) {
     if (!options.some(existing => existing.value === opt.value)) {
       options.push(opt)
+    }
+  }
+
+  // Append models from non-legacy provider types configured in settings.providers
+  const registry = getProviderRegistry()
+  for (const model of registry.getAllModels()) {
+    const providerType = model.config.type
+    // Skip legacy types — already handled by the standard option builders above
+    if (
+      providerType === 'anthropic' ||
+      providerType === 'bedrock-converse' ||
+      providerType === 'vertex' ||
+      providerType === 'foundry' ||
+      providerType === 'openai-responses'
+    ) {
+      continue
+    }
+    const value = model.model.alias || model.model.id
+    if (!options.some((existing) => existing.value === value)) {
+      options.push({
+        value,
+        label: model.model.label || model.model.id,
+        description: `${model.providerName} · ${model.model.description || model.model.id}`,
+      })
     }
   }
 

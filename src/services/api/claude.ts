@@ -24,6 +24,7 @@ import {
   getAPIProvider,
   isFirstPartyAnthropicBaseUrl,
 } from 'src/utils/model/providers.js'
+import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import {
   getAttributionHeader,
   getCLISyspromptPrefix,
@@ -312,6 +313,12 @@ export function getExtraBodyParams(betaHeaders?: string[]): JsonObject {
 export function getPromptCachingEnabled(model: string): boolean {
   // Global disable takes precedence
   if (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING)) return false
+
+  // Per-provider caching: if the provider's cache type is 'none' or
+  // 'automatic-prefix', disable explicit cache_control markers.
+  // Only 'explicit-breakpoint' providers use our cache markers.
+  const cacheType = getProviderRegistry().getProviderCacheType(model)
+  if (cacheType === 'none' || cacheType === 'automatic-prefix') return false
 
   // Check if we should disable for small/fast model
   if (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_HAIKU)) {

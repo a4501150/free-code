@@ -2,6 +2,7 @@ import type { BetaUsage as Usage } from '@anthropic-ai/sdk/resources/beta/messag
 
 import { setHasUnknownModelCost } from '../bootstrap/state.js'
 import { isFastModeEnabled } from './fastMode.js'
+import { getProviderRegistry } from './model/providerRegistry.js'
 import {
   CLAUDE_3_5_HAIKU_CONFIG,
   CLAUDE_3_5_V2_SONNET_CONFIG,
@@ -153,6 +154,21 @@ export function getModelCosts(model: string, usage: Usage): ModelCosts {
 
   const costs = MODEL_COSTS[shortName]
   if (!costs) {
+    // Check provider registry for custom pricing
+    const registry = getProviderRegistry()
+    const provider = registry.getProviderForModel(model)
+    if (provider?.model.pricing) {
+      const p = provider.model.pricing
+      return {
+        inputTokens: p.input ?? DEFAULT_UNKNOWN_MODEL_COST.inputTokens,
+        outputTokens: p.output ?? DEFAULT_UNKNOWN_MODEL_COST.outputTokens,
+        promptCacheWriteTokens:
+          (p.input ?? DEFAULT_UNKNOWN_MODEL_COST.inputTokens) * 1.25,
+        promptCacheReadTokens:
+          (p.input ?? DEFAULT_UNKNOWN_MODEL_COST.inputTokens) * 0.1,
+        webSearchRequests: 0,
+      }
+    }
     trackUnknownModelCost(model, shortName)
     return (
       MODEL_COSTS[getCanonicalName(getDefaultMainLoopModelSetting())] ??

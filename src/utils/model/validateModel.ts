@@ -2,6 +2,7 @@
 import { MODEL_ALIASES } from './aliases.js'
 import { isModelAllowed } from './modelAllowlist.js'
 import { getAPIProvider } from './providers.js'
+import { getProviderRegistry } from './providerRegistry.js'
 import { sideQuery } from '../sideQuery.js'
 import {
   NotFoundError,
@@ -51,6 +52,13 @@ export async function validateModel(
 
   // Check if it matches ANTHROPIC_CUSTOM_MODEL_OPTION (pre-validated by the user)
   if (normalizedModel === process.env.ANTHROPIC_CUSTOM_MODEL_OPTION) {
+    return { valid: true }
+  }
+
+  // Check if the model exists in the provider registry (covers custom providers)
+  const registry = getProviderRegistry()
+  if (registry.getProviderForModel(normalizedModel)) {
+    validModelCache.set(normalizedModel, true)
     return { valid: true }
   }
 

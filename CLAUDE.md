@@ -75,6 +75,76 @@ tests/
   - src/voice/: voice input
   - src/tasks/: background task management
 
+## Provider system
+
+The model/provider system is config-driven via `settings.json` `providers` field. Each provider defines a wire format type, auth config, and available models.
+
+### Architecture
+
+1. **Provider config** (`src/utils/settings/types.ts`): Zod schemas for `ProviderConfig`, `ProviderModelConfig`, `ProviderAuthConfig`, `ProviderCacheConfig`
+2. **Provider registry** (`src/utils/model/providerRegistry.ts`): Singleton `ProviderRegistry` class. Lazily initialized from `settings.providers` or auto-migrated from legacy env vars. Indexes models by ID and alias for O(1) lookup.
+3. **Legacy migration** (`src/utils/model/legacyProviderMigration.ts`): Generates provider configs from `ANTHROPIC_API_KEY`, `CLAUDE_CODE_USE_BEDROCK`, etc. when `settings.providers` is absent. Detects OAuth tokens in secure storage.
+4. **Client creation** (`src/services/api/client.ts`): `getAnthropicClient()` resolves model → registry → `createClientForProvider()`. ALL provider types go through this path. No legacy env var dispatch.
+5. **Adapters** (`src/services/api/*-adapter.ts`): Fetch interceptors that translate between Anthropic Messages API and the target provider's wire format.
+
+### Provider types and adapters
+
+| Type | Adapter | Wire format | Auth |
+|------|---------|-------------|------|
+| `anthropic` | Native SDK | Anthropic Messages API | apiKey, bearer, oauth |
+| `openai-chat-completions` | `openai-chat-completions-adapter.ts` | OpenAI Chat Completions | apiKey, bearer |
+| `openai-responses` | `codex-fetch-adapter.ts` | OpenAI Responses API | oauth |
+| `bedrock-converse` | `bedrock-adapter.ts` | AWS Bedrock (SigV4 + EventStream binary) | aws |
+| `vertex` | `vertex-adapter.ts` | Vertex AI REST API | gcp |
+| `foundry` | `foundry-adapter.ts` | Azure Foundry (Anthropic proxy) | azure, apiKey |
+| `gemini` | (not yet implemented) | Gemini generateContent | apiKey |
+
+### Auth is orthogonal to provider type
+
+Any auth method can pair with any provider type. Auth is resolved from `config.auth.active`:
+
+- `apiKey`: Literal key or env var → `x-api-key` (Anthropic) or `Authorization: Bearer` (others)
+- `bearer`: Literal token or env var → `Authorization: Bearer`
+- `oauth`: Access token (managed by `/login`) → `authToken` on Anthropic SDK
+- `aws`: AWS credential chain + SigV4 signing
+- `gcp`: GCP ADC via `google-auth-library` → Bearer token
+- `azure`: Azure AD via `@azure/identity` → Bearer token
+
+### Per-provider caching
+
+Each provider has a `cache.type`:
+- `explicit-breakpoint`: Keep `cache_control` markers (Anthropic direct, Vertex)
+- `automatic-prefix`: Strip markers, provider caches automatically (OpenAI, DeepSeek)
+- `none`: Strip markers, no caching (Bedrock, local models)
+
+Checked in `getPromptCachingEnabled()` in `src/services/api/claude.ts`.
+
+### Data flow
+
+```
+settings.json (or legacy env vars)
+  → ProviderRegistry (lazy init, singleton)
+    → getProviderForModel(model) or resolveDefaultProvider()
+      → createClientForProvider(resolved, args)
+        → Anthropic SDK with custom fetch adapter (or native for anthropic type)
+```
+
+### Key files
+
+| File | Purpose |
+|------|---------|
+| `src/utils/settings/types.ts` | Provider config Zod schemas |
+| `src/utils/model/providerRegistry.ts` | Registry singleton, model/alias indexing |
+| `src/utils/model/legacyProviderMigration.ts` | Legacy env var → provider config |
+| `src/utils/model/providers.ts` | `getAPIProvider()` bridge (backed by registry) |
+| `src/services/api/client.ts` | `getAnthropicClient()` → registry dispatch |
+| `src/services/api/openai-chat-completions-adapter.ts` | Anthropic ↔ Chat Completions |
+| `src/services/api/bedrock-adapter.ts` | Anthropic → Bedrock (SigV4 + EventStream) |
+| `src/services/api/vertex-adapter.ts` | Anthropic → Vertex AI |
+| `src/services/api/foundry-adapter.ts` | Anthropic → Azure Foundry |
+| `tests/helpers/mock-openai-server.ts` | Mock Chat Completions server for tests |
+| `tests/e2e/provider-config.test.ts` | Provider system E2E tests |
+
 ## Gotchas: Scroll re-pinning after context clear
 
 The virtual scroll (`src/hooks/useVirtualScroll.ts`) uses a height cache keyed by message UUID + conversationId. When context is cleared (`clearConversation` in `src/commands/clear/conversation.ts`), `setMessages([])` + `setConversationId(randomUUID())` invalidates the entire cache. Without re-pinning scroll to the bottom, stale `scrollTop` lands in an empty offset range → **blank screen** (recovers on user scroll).

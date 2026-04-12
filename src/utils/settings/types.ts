@@ -252,6 +252,176 @@ export const CUSTOMIZATION_SURFACES = [
   'mcp',
 ] as const
 
+// ── Provider config schemas ──────────────────────────────────────────
+
+export const PROVIDER_TYPES = [
+  'anthropic',
+  'openai-chat-completions',
+  'openai-responses',
+  'bedrock-converse',
+  'vertex',
+  'foundry',
+  'gemini',
+] as const
+
+export type ProviderType = (typeof PROVIDER_TYPES)[number]
+
+export const PROVIDER_AUTH_METHODS = [
+  'apiKey',
+  'bearer',
+  'oauth',
+  'gcp',
+  'aws',
+  'azure',
+] as const
+
+export type ProviderAuthMethod = (typeof PROVIDER_AUTH_METHODS)[number]
+
+export const PROVIDER_CACHE_TYPES = [
+  'explicit-breakpoint',
+  'automatic-prefix',
+  'none',
+] as const
+
+export type ProviderCacheType = (typeof PROVIDER_CACHE_TYPES)[number]
+
+export const ProviderModelSchema = lazySchema(() =>
+  z.object({
+    id: z.string().describe('Model ID sent to the API'),
+    alias: z
+      .string()
+      .optional()
+      .describe(
+        'Short alias for model selection (e.g. "opus", "sonnet", "haiku")',
+      ),
+    label: z.string().optional().describe('Human-readable display name'),
+    description: z.string().optional().describe('Short description for UI'),
+    context: z
+      .string()
+      .optional()
+      .describe('Context window hint (e.g. "1m" for 1M tokens)'),
+    pricing: z
+      .object({
+        input: z
+          .number()
+          .optional()
+          .describe('Cost per million input tokens (USD)'),
+        output: z
+          .number()
+          .optional()
+          .describe('Cost per million output tokens (USD)'),
+      })
+      .optional()
+      .describe('Optional pricing override (per Mtok, USD)'),
+  }),
+)
+
+export const ProviderCacheSchema = lazySchema(() =>
+  z.object({
+    type: z
+      .enum(PROVIDER_CACHE_TYPES)
+      .describe(
+        'Caching strategy: explicit-breakpoint (keep cache_control markers), ' +
+          'automatic-prefix (strip markers, provider caches automatically), ' +
+          'none (strip markers, no caching)',
+      ),
+  }),
+)
+
+export const ProviderAuthSchema = lazySchema(() =>
+  z.object({
+    active: z
+      .string()
+      .describe(
+        'Which auth method to use: "apiKey", "bearer", "oauth", "gcp", "aws", "azure"',
+      ),
+    apiKey: z
+      .object({
+        key: z.string().optional().describe('Literal API key'),
+        keyEnv: z
+          .string()
+          .optional()
+          .describe('Environment variable name containing the API key'),
+      })
+      .optional(),
+    bearer: z
+      .object({
+        token: z.string().optional().describe('Literal bearer token'),
+        tokenEnv: z
+          .string()
+          .optional()
+          .describe('Environment variable name containing the bearer token'),
+      })
+      .optional(),
+    oauth: z
+      .object({
+        accessToken: z.string().describe('OAuth access token'),
+        refreshToken: z.string().optional().describe('OAuth refresh token'),
+        expiresAt: z
+          .number()
+          .optional()
+          .describe('Token expiry (Unix epoch seconds)'),
+      })
+      .optional(),
+    gcp: z
+      .object({
+        projectId: z.string().optional().describe('GCP project ID'),
+        region: z
+          .string()
+          .optional()
+          .describe('GCP region (e.g. "us-east5")'),
+      })
+      .optional(),
+    aws: z
+      .object({
+        region: z
+          .string()
+          .optional()
+          .describe('AWS region (e.g. "us-east-1")'),
+        profile: z.string().optional().describe('AWS profile name'),
+      })
+      .optional(),
+    azure: z
+      .object({
+        tenantId: z.string().optional().describe('Azure AD tenant ID'),
+        clientId: z.string().optional().describe('Azure AD client ID'),
+      })
+      .optional(),
+  }),
+)
+
+export const ProviderConfigSchema = lazySchema(() =>
+  z.object({
+    type: z
+      .enum(PROVIDER_TYPES)
+      .describe('Wire format / transform type for this provider'),
+    baseUrl: z
+      .string()
+      .optional()
+      .describe(
+        'API base URL. Required for most types, optional for cloud providers (derived from auth config)',
+      ),
+    cache: ProviderCacheSchema()
+      .optional()
+      .describe('Per-provider caching strategy'),
+    auth: ProviderAuthSchema()
+      .optional()
+      .describe('Authentication configuration'),
+    models: z
+      .array(ProviderModelSchema())
+      .describe('Models available from this provider'),
+  }),
+)
+
+export type ProviderConfig = z.infer<ReturnType<typeof ProviderConfigSchema>>
+export type ProviderModelConfig = z.infer<
+  ReturnType<typeof ProviderModelSchema>
+>
+export type ProviderCacheConfig = z.infer<
+  ReturnType<typeof ProviderCacheSchema>
+>
+export type ProviderAuthConfig = z.infer<ReturnType<typeof ProviderAuthSchema>>
+
 export const SettingsSchema = lazySchema(() =>
   z
     .object({
@@ -395,6 +565,13 @@ export const SettingsSchema = lazySchema(() =>
           'Override mapping from Anthropic model ID (e.g. "claude-opus-4-6") to provider-specific ' +
             'model ID (e.g. a Bedrock inference profile ARN). Typically set in managed settings by ' +
             'enterprise administrators.',
+        ),
+      providers: z
+        .record(z.string(), ProviderConfigSchema())
+        .optional()
+        .describe(
+          'Provider configurations. Each key is a provider name, value configures the provider type, ' +
+            'auth, models, and caching. When set, replaces legacy env var provider selection.',
         ),
       // Whether to automatically approve all MCP servers in the project
       enableAllProjectMcpServers: z
