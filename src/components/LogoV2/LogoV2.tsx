@@ -393,13 +393,15 @@ export function LogoV2(): React.ReactNode {
             {/* Vertical divider */}
             {layoutMode === 'horizontal' && (
               <Box
-                height="100%"
+                alignSelf="stretch"
+                flexShrink={0}
                 borderStyle="single"
                 borderColor="claude"
                 borderDimColor
                 borderTop={false}
                 borderBottom={false}
                 borderLeft={false}
+                minHeight={9}
               />
             )}
 

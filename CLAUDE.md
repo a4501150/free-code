@@ -57,6 +57,8 @@ tests/
 - `readFile()` — disk side effects from tool execution
 - `capturePane()` — what the user sees on screen
 
+**Debug logging in e2e tests**: `tmux-helpers.ts` sets `NODE_ENV=test` for test isolation. `shouldLogDebugMessage` in `src/utils/debug.ts` suppresses `logForDebugging` output when `NODE_ENV=test` unless `--debug` or `--debug-to-stderr` is passed. To get debug logs from a test binary, pass `additionalArgs: ['--debug']` to `TmuxSession` and read the debug log from the config dir. Also note: e2e tests run `./cli` (standard build via `bun run build`), NOT `./cli-dev` — make sure you build the correct target.
+
 ## High-level architecture
 
 - **Entry point/UI loop**: src/entrypoints/cli.tsx bootstraps the CLI, with the main interactive UI in src/screens/REPL.tsx (Ink/React).
@@ -90,6 +92,16 @@ The virtual scroll (`src/hooks/useVirtualScroll.ts`) uses a height cache keyed b
 **Key invariant:** `stickyScroll = true` on the ScrollBox DOM element makes `useVirtualScroll` use the tail-walk path (always shows the last N items). When `stickyScroll = false`, it uses `scrollTop` to compute the visible range — if `scrollTop` is stale after a cache wipe, the range is empty → blank.
 
 **If you modify `clearConversation`, compaction, or plan mode approval:** ensure `scrollToBottom()` is called after any `setConversationId()` bump and after all async operations that could trigger intermediate renders.
+
+## Gotchas: Yoga percentage height collapse after ScrollBox cull
+
+When a node inside a ScrollBox uses `height="100%"`, its Yoga-computed height can collapse to 0 after the node is culled (scrolled out of view) by `renderScrolledChildren` and then re-enters the viewport on scroll-back. This is because `dropSubtreeCache` removes nodeCache entries, and Yoga's percentage resolution requires a definite parent height — which a content-sized flex-row parent does not provide on relayout.
+
+**Symptom:** A border-only `<Box>` (e.g., the LogoV2 vertical divider) disappears when scrolling back up to it after content pushed it above the viewport.
+
+**Fix:** Use `minHeight={N}` or `alignSelf="stretch"` + `flexShrink={0}` instead of `height="100%"` for elements inside ScrollBox content that need a guaranteed height. `minHeight` gives Yoga a definite floor that survives across all layout recalculations. Avoid `height="100%"` inside ScrollBox content where the parent's height is content-determined.
+
+**Affected file:** `src/components/LogoV2/LogoV2.tsx` — the vertical divider between left and right panels uses `minHeight={9}` matching the left panel's `minHeight={9}`.
 
 ## Build system
 

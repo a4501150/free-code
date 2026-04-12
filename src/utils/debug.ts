@@ -103,7 +103,7 @@ export const getDebugFilePath = memoize((): string | null => {
 })
 
 function shouldLogDebugMessage(message: string): boolean {
-  if (process.env.NODE_ENV === 'test' && !isDebugToStdErr()) {
+  if (process.env.NODE_ENV === 'test' && !isDebugToStdErr() && !isDebugMode()) {
     return false
   }
 
