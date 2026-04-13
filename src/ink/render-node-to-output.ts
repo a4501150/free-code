@@ -860,8 +860,14 @@ function renderNodeToOutput(
         // the right range. Not scheduling scrollDrainNode here keeps the
         // clamp passive — React's commit → resetAfterCommit → onRender will
         // paint again with fresh bounds.
+        // Bound the clamp to [0, maxScroll]. Stale clamp bounds from
+        // useVirtualScroll's useLayoutEffect (which clears clamps when
+        // sticky) can arrive one frame late — resetAfterCommit fires
+        // onRender before React's layout effects drain. Without the
+        // maxScroll cap, a stale cMin from a pre-/clear scroll position
+        // forces scrollTop far past the now-tiny content → blank screen.
         const clamped = haveClamp
-          ? Math.max(cMin, Math.min(scrollTop, cMax))
+          ? Math.min(Math.max(cMin, Math.min(scrollTop, cMax)), maxScroll)
           : scrollTop
         node.scrollTop = scrollTop
         // Clamp hitting top/bottom consumes any remainder. Set drainPending
