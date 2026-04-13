@@ -97,10 +97,10 @@ The model/provider system is config-driven via `settings.json` `providers` field
 | `anthropic` | Native SDK | Anthropic Messages API | apiKey, bearer, oauth |
 | `openai-chat-completions` | `openai-chat-completions-adapter.ts` | OpenAI Chat Completions | apiKey, bearer |
 | `openai-responses` | `codex-fetch-adapter.ts` | OpenAI Responses API | oauth |
-| `bedrock-converse` | `bedrock-adapter.ts` | AWS Bedrock (SigV4 + EventStream binary) | aws |
-| `vertex` | `vertex-adapter.ts` | Vertex AI REST API | gcp |
+| `bedrock-converse` | `bedrock-converse-adapter.ts` | AWS Bedrock Converse API (model-agnostic) | aws |
+| `vertex` | `vertex-adapter.ts` | Vertex AI REST API (Claude via rawPredict) | gcp |
 | `foundry` | `foundry-adapter.ts` | Azure Foundry (Anthropic proxy) | azure, apiKey |
-| `gemini` | (not yet implemented) | Gemini generateContent | apiKey |
+| `gemini` | `gemini-adapter.ts` | Vertex AI generateContent (Gemini models) | gcp |
 
 ### Auth is orthogonal to provider type
 
@@ -163,7 +163,8 @@ Instead of checking provider identity (`isBedrockProvider()`, `isVertexProvider(
 | `src/utils/model/model.ts` | Barrel re-export of modelResolution + modelDisplay |
 | `src/services/api/client.ts` | `getAnthropicClient()` → registry dispatch (impure shell) |
 | `src/services/api/openai-chat-completions-adapter.ts` | Anthropic ↔ Chat Completions (pure) |
-| `src/services/api/bedrock-adapter.ts` | Anthropic → Bedrock (pure) |
+| `src/services/api/bedrock-converse-adapter.ts` | Anthropic ↔ Bedrock Converse API (pure, full body transform) |
+| `src/services/api/gemini-adapter.ts` | Anthropic ↔ Vertex AI generateContent (pure, full body transform) |
 | `src/services/api/vertex-adapter.ts` | Anthropic → Vertex AI (pure) |
 | `src/services/api/foundry-adapter.ts` | Anthropic → Azure Foundry (pure) |
 | `src/services/api/codex-fetch-adapter.ts` | Anthropic → Codex/OpenAI Responses (pure) |
