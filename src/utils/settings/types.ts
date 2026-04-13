@@ -331,7 +331,7 @@ export const ProviderCacheSchema = lazySchema(() =>
 export const ProviderAuthSchema = lazySchema(() =>
   z.object({
     active: z
-      .string()
+      .enum(PROVIDER_AUTH_METHODS)
       .describe(
         'Which auth method to use: "apiKey", "bearer", "oauth", "gcp", "aws", "azure"',
       ),

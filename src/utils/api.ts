@@ -40,6 +40,7 @@ import {
   getAPIProvider,
   isFirstPartyAnthropicBaseUrl,
 } from './model/providers.js'
+import { getProviderRegistry } from './model/providerRegistry.js'
 import {
   getFileReadIgnorePatterns,
   normalizePatternsToPath,
@@ -189,8 +190,9 @@ export async function toolToAPISchema(
     // Gated to direct api.anthropic.com: proxies (LiteLLM etc.) and Bedrock/Vertex
     // with Claude 4.5 reject this field with 400. See GH#32742, PR #21729.
     if (
-      getAPIProvider() === 'firstParty' &&
-      isFirstPartyAnthropicBaseUrl() &&
+      (options.model
+        ? getProviderRegistry().isAnthropicNative(options.model)
+        : getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()) &&
       ((getInitialSettings()?.fineGrainedToolStreaming ?? false) ||
         isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING))
     ) {

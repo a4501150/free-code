@@ -20,7 +20,11 @@ import { has1mContext } from './context.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
-import { getAPIProvider } from './model/providers.js'
+import {
+  getAPIProvider,
+  isFirstPartyAnthropicBaseUrl,
+} from './model/providers.js'
+import { getProviderRegistry } from './model/providerRegistry.js'
 import { getInitialSettings } from './settings/settings.js'
 
 /**
@@ -91,12 +95,12 @@ export function modelSupportsISP(model: string): boolean {
     return supported3P
   }
   const canonical = getCanonicalName(model)
-  const provider = getAPIProvider()
+  const providerType = getProviderRegistry().getProviderType(model)
   // Foundry supports interleaved thinking for all models
-  if (provider === 'foundry') {
+  if (providerType === 'foundry') {
     return true
   }
-  if (provider === 'firstParty') {
+  if (providerType === 'anthropic') {
     return !canonical.includes('claude-3-')
   }
   return (
@@ -117,11 +121,11 @@ function vertexModelSupportsWebSearch(model: string): boolean {
 // Context management is supported on Claude 4+ models
 export function modelSupportsContextManagement(model: string): boolean {
   const canonical = getCanonicalName(model)
-  const provider = getAPIProvider()
-  if (provider === 'foundry') {
+  const providerType = getProviderRegistry().getProviderType(model)
+  if (providerType === 'foundry') {
     return true
   }
-  if (provider === 'firstParty') {
+  if (providerType === 'anthropic') {
     return !canonical.includes('claude-3-')
   }
   return (
@@ -134,9 +138,9 @@ export function modelSupportsContextManagement(model: string): boolean {
 // @[MODEL LAUNCH]: Add the new model ID to this list if it supports structured outputs.
 export function modelSupportsStructuredOutputs(model: string): boolean {
   const canonical = getCanonicalName(model)
-  const provider = getAPIProvider()
-  // Structured outputs only supported on firstParty and Foundry (not Bedrock/Vertex yet)
-  if (provider !== 'firstParty' && provider !== 'foundry') {
+  const providerType = getProviderRegistry().getProviderType(model)
+  // Structured outputs only supported on anthropic and foundry (not Bedrock/Vertex yet)
+  if (providerType !== 'anthropic' && providerType !== 'foundry') {
     return false
   }
   return (
@@ -156,10 +160,10 @@ export function modelSupportsAutoMode(model: string): boolean {
     // firstParty-only at launch (PI probes not wired for
     // Bedrock/Vertex/Foundry yet). Checked before allowModels so the GB
     // override can't enable auto mode on unsupported providers.
-    if (getAPIProvider() !== 'firstParty') {
+    if (!getProviderRegistry().isAnthropicType(model)) {
       return false
     }
-    // Allowlist (firstParty already checked above).
+    // Allowlist (anthropic type already checked above).
     return /^claude-(opus|sonnet)-4-6/.test(m)
   }
   return false
@@ -170,9 +174,12 @@ export function modelSupportsAutoMode(model: string): boolean {
  * - Claude API / Foundry: advanced-tool-use-2025-11-20
  * - Vertex AI / Bedrock: tool-search-tool-2025-10-19
  */
-export function getToolSearchBetaHeader(): string {
-  const provider = getAPIProvider()
-  if (provider === 'vertex' || provider === 'bedrock') {
+export function getToolSearchBetaHeader(model?: string): string {
+  const registry = getProviderRegistry()
+  const providerType = model
+    ? registry.getProviderType(model)
+    : registry.getDefaultProvider()?.config.type ?? null
+  if (providerType === 'vertex' || providerType === 'bedrock-converse') {
     return TOOL_SEARCH_BETA_HEADER_3P
   }
   return TOOL_SEARCH_BETA_HEADER_1P
@@ -183,9 +190,13 @@ export function getToolSearchBetaHeader(): string {
  * These are betas that are only available on firstParty provider
  * and may not be supported by proxies or other providers.
  */
-export function shouldIncludeFirstPartyOnlyBetas(): boolean {
+export function shouldIncludeFirstPartyOnlyBetas(model?: string): boolean {
+  const registry = getProviderRegistry()
+  const providerType = model
+    ? registry.getProviderType(model)
+    : registry.getDefaultProvider()?.config.type ?? null
   return (
-    (getAPIProvider() === 'firstParty' || getAPIProvider() === 'foundry') &&
+    (providerType === 'anthropic' || providerType === 'foundry') &&
     !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)
   )
 }
@@ -195,9 +206,12 @@ export function shouldIncludeFirstPartyOnlyBetas(): boolean {
  * Foundry users were never bucketed into the rollout experiment — the
  * treatment data is firstParty-only.
  */
-export function shouldUseGlobalCacheScope(): boolean {
+export function shouldUseGlobalCacheScope(model?: string): boolean {
+  const isNative = model
+    ? getProviderRegistry().isAnthropicNative(model)
+    : getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()
   return (
-    getAPIProvider() === 'firstParty' &&
+    isNative &&
     !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)
   )
 }
@@ -205,8 +219,8 @@ export function shouldUseGlobalCacheScope(): boolean {
 export const getAllModelBetas = memoize((model: string): string[] => {
   const betaHeaders = []
   const isHaiku = getCanonicalName(model).includes('haiku')
-  const provider = getAPIProvider()
-  const includeFirstPartyOnlyBetas = shouldIncludeFirstPartyOnlyBetas()
+  const providerType = getProviderRegistry().getProviderType(model)
+  const includeFirstPartyOnlyBetas = shouldIncludeFirstPartyOnlyBetas(model)
 
   if (!isHaiku) {
     betaHeaders.push(CLAUDE_CODE_20250219_BETA_HEADER)
@@ -253,7 +267,7 @@ export const getAllModelBetas = memoize((model: string): string[] => {
   // Add context management beta for thinking preservation
   const thinkingPreservationEnabled = modelSupportsContextManagement(model)
 
-  if (shouldIncludeFirstPartyOnlyBetas() && thinkingPreservationEnabled) {
+  if (shouldIncludeFirstPartyOnlyBetas(model) && thinkingPreservationEnabled) {
     betaHeaders.push(CONTEXT_MANAGEMENT_BETA_HEADER)
   }
   // Add strict tool use beta if experiment is enabled.
@@ -273,11 +287,11 @@ export const getAllModelBetas = memoize((model: string): string[] => {
   }
 
   // Add web search beta for Vertex Claude 4.0+ models only
-  if (provider === 'vertex' && vertexModelSupportsWebSearch(model)) {
+  if (providerType === 'vertex' && vertexModelSupportsWebSearch(model)) {
     betaHeaders.push(WEB_SEARCH_BETA_HEADER)
   }
   // Foundry only ships models that already support Web Search
-  if (provider === 'foundry') {
+  if (providerType === 'foundry') {
     betaHeaders.push(WEB_SEARCH_BETA_HEADER)
   }
 
@@ -300,7 +314,7 @@ export const getAllModelBetas = memoize((model: string): string[] => {
 
 export const getModelBetas = memoize((model: string): string[] => {
   const modelBetas = getAllModelBetas(model)
-  if (getAPIProvider() === 'bedrock') {
+  if (getProviderRegistry().isBedrockProvider(model)) {
     return modelBetas.filter(b => !BEDROCK_EXTRA_PARAMS_HEADERS.has(b))
   }
   return modelBetas

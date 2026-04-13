@@ -563,7 +563,7 @@ export function modelDisplayString(model: ModelSetting): string {
 
 // @[MODEL LAUNCH]: Add a marketing name mapping for the new model below.
 export function getMarketingNameForModel(modelId: string): string | undefined {
-  if (getAPIProvider() === 'foundry') {
+  if (getProviderRegistry().isFoundryProvider(modelId)) {
     // deployment ID is user-defined in Foundry, so it may have no relation to the actual model
     return undefined
   }

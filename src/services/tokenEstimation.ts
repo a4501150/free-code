@@ -3,11 +3,11 @@ import type { BetaMessageParam as MessageParam } from '@anthropic-ai/sdk/resourc
 // @aws-sdk/client-bedrock-runtime is imported dynamically in countTokensWithBedrock()
 // to defer ~279KB of AWS SDK code until a Bedrock call is actually made
 import type { CountTokensCommandInput } from '@aws-sdk/client-bedrock-runtime'
-import { getAPIProvider } from 'src/utils/model/providers.js'
+import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import { VERTEX_COUNT_TOKENS_ALLOWED_BETAS } from '../constants/betas.js'
 import type { Attachment } from '../utils/attachments.js'
 import { getModelBetas } from '../utils/betas.js'
-import { getVertexRegionForModel, isEnvTruthy } from '../utils/envUtils.js'
+import { getVertexRegionForModel } from '../utils/envUtils.js'
 import { logError } from '../utils/log.js'
 import { normalizeAttachmentForAPI } from '../utils/messages.js'
 import {
@@ -147,7 +147,7 @@ export async function countMessagesTokensWithAPI(
       const betas = getModelBetas(model)
       const containsThinking = hasThinkingBlocks(messages)
 
-      if (getAPIProvider() === 'bedrock') {
+      if (getProviderRegistry().isBedrockProvider(model)) {
         // @anthropic-sdk/bedrock-sdk doesn't support countTokens currently
         return countTokensWithBedrock({
           model: normalizeModelStringForAPI(model),
@@ -165,7 +165,7 @@ export async function countMessagesTokensWithAPI(
       })
 
       const filteredBetas =
-        getAPIProvider() === 'vertex'
+        getProviderRegistry().isVertexProvider(model)
           ? betas.filter(b => VERTEX_COUNT_TOKENS_ALLOWED_BETAS.has(b))
           : betas
 
@@ -256,15 +256,16 @@ export async function countTokensViaHaikuFallback(
   const containsThinking = hasThinkingBlocks(messages)
 
   // If we're on Vertex and using global region, always use Sonnet since Haiku is not available there.
+  const registry = getProviderRegistry()
   const isVertexGlobalEndpoint =
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) &&
+    registry.isVertexProvider() &&
     getVertexRegionForModel(getSmallFastModel()) === 'global'
   // If we're on Bedrock with thinking blocks, use Sonnet since Haiku 3.5 doesn't support thinking
   const isBedrockWithThinking =
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) && containsThinking
+    registry.isBedrockProvider() && containsThinking
   // If we're on Vertex with thinking blocks, use Sonnet since Haiku 3.5 doesn't support thinking
   const isVertexWithThinking =
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) && containsThinking
+    registry.isVertexProvider() && containsThinking
   // Otherwise always use Haiku - Haiku 4.5 supports thinking blocks.
   // WARNING: if you change this to use a non-Haiku model, this request will fail in 1P unless it uses getCLISyspromptPrefix.
   // Note: We don't need Sonnet for tool_reference blocks because we strip them via
@@ -294,7 +295,7 @@ export async function countTokensViaHaikuFallback(
   // Filter betas for Vertex - some betas (like web-search) cause 400 errors
   // on certain Vertex endpoints. See issue #10789.
   const filteredBetas =
-    getAPIProvider() === 'vertex'
+    getProviderRegistry().isVertexProvider(model)
       ? betas.filter(b => VERTEX_COUNT_TOKENS_ALLOWED_BETAS.has(b))
       : betas
 

@@ -31,8 +31,8 @@ import {
   API_PDF_MAX_PAGES,
   PDF_TARGET_RAW_SIZE,
 } from '../../constants/apiLimits.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
 import { formatFileSize } from '../../utils/format.js'
+import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 import { ImageResizeError } from '../../utils/imageResizer.js'
 import { ImageSizeError } from '../../utils/imageValidation.js'
 import {
@@ -794,7 +794,7 @@ export function getAssistantMessageFromError(
   // Bedrock errors like "403 You don't have access to the model with the specified model ID."
   // don't contain the actual model ID
   if (
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) &&
+    getProviderRegistry().isBedrockProvider() &&
     error instanceof Error &&
     error.message.toLowerCase().includes('model id')
   ) {
@@ -1043,7 +1043,7 @@ export function classifyAPIError(error: unknown): string {
 
   // Bedrock-specific errors
   if (
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) &&
+    getProviderRegistry().isBedrockProvider() &&
     error instanceof Error &&
     error.message.toLowerCase().includes('model id')
   ) {

@@ -18,6 +18,7 @@
  */
 
 import type { ProviderConfig } from '../../utils/settings/types.js'
+import { mapStatusToErrorType } from './adapter-error-utils.js'
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -626,35 +627,10 @@ async function translateStreamToAnthropic(
           }
         }
       } catch (err) {
-        // Emit error as text
-        if (!currentTextBlockStarted) {
-          controller.enqueue(
-            encoder.encode(
-              formatSSE(
-                'content_block_start',
-                JSON.stringify({
-                  type: 'content_block_start',
-                  index: contentBlockIndex,
-                  content_block: { type: 'text', text: '' },
-                }),
-              ),
-            ),
-          )
-          currentTextBlockStarted = true
-        }
+        // Emit error as SSE error event so the SDK error handling pipeline catches it
         controller.enqueue(
           encoder.encode(
-            formatSSE(
-              'content_block_delta',
-              JSON.stringify({
-                type: 'content_block_delta',
-                index: contentBlockIndex,
-                delta: {
-                  type: 'text_delta',
-                  text: `\n\n[Error: ${String(err)}]`,
-                },
-              }),
-            ),
+            `event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: String(err) } })}\n\n`,
           ),
         )
       }
@@ -863,7 +839,7 @@ export function createChatCompletionsFetch(
       const errorBody = {
         type: 'error',
         error: {
-          type: 'api_error',
+          type: mapStatusToErrorType(response.status),
           message: `Chat Completions API error (${response.status}): ${errorText}`,
         },
       }

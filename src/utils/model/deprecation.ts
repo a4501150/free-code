@@ -4,7 +4,8 @@
  * Contains information about deprecated models and their retirement dates.
  */
 
-import { type APIProvider, getAPIProvider } from './providers.js'
+import type { APIProvider } from './providers.js'
+import { getProviderRegistry } from './providerRegistry.js'
 
 type DeprecatedModelInfo = {
   isDeprecated: true
@@ -65,7 +66,7 @@ const DEPRECATED_MODELS: Record<string, DeprecationEntry> = {
  */
 function getDeprecatedModelInfo(modelId: string): DeprecationInfo {
   const lowercaseModelId = modelId.toLowerCase()
-  const provider = getAPIProvider()
+  const provider = getProviderRegistry().getLegacyAPIProvider(modelId)
 
   for (const [key, value] of Object.entries(DEPRECATED_MODELS)) {
     const retirementDate = value.retirementDates[provider]

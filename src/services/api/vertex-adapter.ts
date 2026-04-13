@@ -11,6 +11,7 @@
  */
 
 import type { ProviderConfig } from '../../utils/settings/types.js'
+import { mapStatusToErrorType } from './adapter-error-utils.js'
 
 /**
  * Creates a fetch function that intercepts Anthropic SDK calls and routes
@@ -119,7 +120,7 @@ export function createVertexFetch(
       const errorBody = {
         type: 'error',
         error: {
-          type: 'api_error',
+          type: mapStatusToErrorType(response.status),
           message: `Vertex AI error (${response.status}): ${errorText}`,
         },
       }

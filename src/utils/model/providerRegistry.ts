@@ -202,6 +202,38 @@ export class ProviderRegistry {
     }
   }
 
+  // ── Convenience provider-type checks ──────────────────────────────
+  // All accept an optional model string. When omitted, check the default
+  // provider — correct for single-provider setups and backward compat.
+
+  private resolveProviderType(model?: string): ProviderType | null {
+    if (model) return this.getProviderType(model)
+    return this.getDefaultProvider()?.config.type ?? null
+  }
+
+  /**
+   * Returns true if the provider is a third-party cloud provider
+   * (Bedrock, Vertex, or Foundry). Replaces `isUsing3PServices()`.
+   */
+  isThirdPartyCloudProvider(model?: string): boolean {
+    const type = this.resolveProviderType(model)
+    return (
+      type === 'bedrock-converse' || type === 'vertex' || type === 'foundry'
+    )
+  }
+
+  isBedrockProvider(model?: string): boolean {
+    return this.resolveProviderType(model) === 'bedrock-converse'
+  }
+
+  isVertexProvider(model?: string): boolean {
+    return this.resolveProviderType(model) === 'vertex'
+  }
+
+  isFoundryProvider(model?: string): boolean {
+    return this.resolveProviderType(model) === 'foundry'
+  }
+
   /**
    * Get the first provider's name and config.
    * Useful for code that just needs "the default provider".

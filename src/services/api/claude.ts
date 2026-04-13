@@ -380,7 +380,7 @@ function should1hCacheTTL(querySource?: QuerySource): boolean {
   // 3P Bedrock users get 1h TTL when opted in via env var — they manage their own billing
   // No remote gating needed since 3P users don't have remote config
   if (
-    getAPIProvider() === 'bedrock' &&
+    getProviderRegistry().isBedrockProvider() &&
     isEnvTruthy(process.env.ENABLE_PROMPT_CACHING_1H_BEDROCK)
   ) {
     return true
@@ -994,8 +994,9 @@ async function* queryModel(
   // Also naturally handles rollback/undo since removed messages won't be in the array.
   const previousRequestId = getPreviousRequestIdFromMessages(messages)
 
+  const registry = getProviderRegistry()
   const resolvedModel =
-    getAPIProvider() === 'bedrock' &&
+    registry.isBedrockProvider(options.model) &&
     options.model.includes('application-inference-profile')
       ? ((await getInferenceProfileBackingModel(options.model)) ??
         options.model)
@@ -1114,8 +1115,8 @@ async function* queryModel(
   // Add tool search beta header if enabled - required for defer_loading to be accepted
   // Header differs by provider: 1P/Foundry use advanced-tool-use, Vertex/Bedrock use tool-search-tool
   // For Bedrock, this header must go in extraBodyParams, not the betas array
-  const toolSearchHeader = useToolSearch ? getToolSearchBetaHeader() : null
-  if (toolSearchHeader && getAPIProvider() !== 'bedrock') {
+  const toolSearchHeader = useToolSearch ? getToolSearchBetaHeader(options.model) : null
+  if (toolSearchHeader && !registry.isBedrockProvider(options.model)) {
     if (!betas.includes(toolSearchHeader)) {
       betas.push(toolSearchHeader)
     }
@@ -1367,7 +1368,7 @@ async function* queryModel(
     if (
       !cacheEditingHeaderLatched &&
       cachedMCEnabled &&
-      getAPIProvider() === 'firstParty' &&
+      registry.isAnthropicType(options.model) &&
       options.querySource === 'repl_main_thread'
     ) {
       cacheEditingHeaderLatched = true
@@ -1482,7 +1483,7 @@ async function* queryModel(
 
     // For Bedrock, include both model-based betas and dynamically-added tool search header
     const bedrockBetas =
-      getAPIProvider() === 'bedrock'
+      registry.isBedrockProvider(retryContext.model)
         ? [
             ...getBedrockExtraBodyParamsBetas(retryContext.model),
             ...(toolSearchHeader ? [toolSearchHeader] : []),
@@ -1608,11 +1609,11 @@ async function* queryModel(
     // the feature disables but the header doesn't flip.
     const useCachedMC =
       cachedMCEnabled &&
-      getAPIProvider() === 'firstParty' &&
+      registry.isAnthropicType(retryContext.model) &&
       options.querySource === 'repl_main_thread'
     if (
       cacheEditingHeaderLatched &&
-      getAPIProvider() === 'firstParty' &&
+      registry.isAnthropicType(retryContext.model) &&
       options.querySource === 'repl_main_thread' &&
       !betasParams.includes(cacheEditingBetaHeader)
     ) {
@@ -1744,10 +1745,9 @@ async function* queryModel(
         // Generate and track client request ID so timeouts (which return no
         // server request ID) can still be correlated with server logs.
         // First-party only — 3P providers don't log it (inc-4029 class).
-        clientRequestId =
-          getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()
-            ? randomUUID()
-            : undefined
+        clientRequestId = registry.isAnthropicNative(context.model)
+          ? randomUUID()
+          : undefined
 
         // Use raw stream instead of BetaMessageStream to avoid O(n²) partial JSON parsing
         // BetaMessageStream calls partialParse() on every input_json_delta, which we don't need

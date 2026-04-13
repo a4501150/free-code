@@ -100,7 +100,7 @@ export async function getAnthropicClient({
     await configureApiKeyHeaders(defaultHeaders, getIsNonInteractiveSession())
   }
 
-  const resolvedFetch = buildFetch(fetchOverride, source)
+  const resolvedFetch = buildFetch(fetchOverride, source, model)
 
   const ARGS = {
     defaultHeaders,
@@ -207,11 +207,13 @@ export const CLIENT_REQUEST_ID_HEADER = 'x-client-request-id'
 function buildFetch(
   fetchOverride: ClientOptions['fetch'],
   source: string | undefined,
+  model?: string,
 ): ClientOptions['fetch'] {
   // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
   const inner = fetchOverride ?? globalThis.fetch
-  const injectClientRequestId =
-    getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()
+  const injectClientRequestId = model
+    ? getProviderRegistry().isAnthropicNative(model)
+    : getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()
   return async (input, init) => {
     // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
     const headers = new Headers(init?.headers)

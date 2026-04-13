@@ -211,6 +211,7 @@ import {
   parseUserSpecifiedModel,
 } from './utils/model/model.js'
 import { ensureModelStringsInitialized } from './utils/model/modelStrings.js'
+import { getProviderRegistry } from './utils/model/providerRegistry.js'
 import { PERMISSION_MODES } from './utils/permissions/PermissionMode.js'
 import {
   checkAndDisableBypassPermissions,
@@ -578,14 +579,15 @@ export function startDeferredPrefetches(): void {
   void getUserContext()
   prefetchSystemContextIfSafe()
   void getRelevantTips()
+  const registry = getProviderRegistry()
   if (
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) &&
+    registry.isBedrockProvider() &&
     !isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)
   ) {
     void prefetchAwsCredentialsAndBedRockInfoIfSafe()
   }
   if (
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) &&
+    registry.isVertexProvider() &&
     !isEnvTruthy(process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH)
   ) {
     void prefetchGcpCredentialsIfSafe()

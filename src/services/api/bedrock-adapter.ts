@@ -11,6 +11,7 @@
  */
 
 import type { ProviderConfig } from '../../utils/settings/types.js'
+import { mapStatusToErrorType } from './adapter-error-utils.js'
 
 // ── AWS EventStream binary parsing ──────────────────────────────────
 //
@@ -338,7 +339,7 @@ export function createBedrockFetch(
       const errorBody = {
         type: 'error',
         error: {
-          type: 'api_error',
+          type: mapStatusToErrorType(response.status),
           message: `Bedrock API error (${response.status}): ${errorText}`,
         },
       }
