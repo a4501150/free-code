@@ -6,32 +6,90 @@ import { logError } from '../log.js'
 import { sequential } from '../sequential.js'
 import { getInitialSettings } from '../settings/settings.js'
 import { findFirstMatch, getBedrockInferenceProfiles } from './bedrock.js'
-import {
-  ALL_MODEL_CONFIGS,
-  CANONICAL_ID_TO_KEY,
-  type CanonicalModelId,
-  type ModelKey,
-} from './configs.js'
-import { type APIProvider, getAPIProvider } from './providers.js'
+import { getProviderRegistry } from './providerRegistry.js'
+
+// ── ModelKey definition ─────────────────────────────────────────────
+// Authoritative list of model generation keys. Adding a new model
+// requires adding its modelKey to legacyProviderMigration.ts model
+// arrays AND adding it here.
+
+export const MODEL_KEYS = [
+  'haiku35',
+  'haiku45',
+  'sonnet35',
+  'sonnet37',
+  'sonnet40',
+  'sonnet45',
+  'sonnet46',
+  'opus40',
+  'opus41',
+  'opus45',
+  'opus46',
+  'gpt54',
+  'gpt53codex',
+  'gpt54mini',
+] as const
+
+export type ModelKey = (typeof MODEL_KEYS)[number]
+
+/**
+ * Canonical first-party model IDs, keyed by ModelKey.
+ * These are the Anthropic-direct model IDs used as the universal
+ * reference for model identity (e.g. in modelOverrides keys).
+ */
+const CANONICAL_IDS: Record<ModelKey, string> = {
+  haiku35: 'claude-3-5-haiku-20241022',
+  haiku45: 'claude-haiku-4-5-20251001',
+  sonnet35: 'claude-3-5-sonnet-20241022',
+  sonnet37: 'claude-3-7-sonnet-20250219',
+  sonnet40: 'claude-sonnet-4-20250514',
+  sonnet45: 'claude-sonnet-4-5-20250929',
+  sonnet46: 'claude-sonnet-4-6',
+  opus40: 'claude-opus-4-20250514',
+  opus41: 'claude-opus-4-1-20250805',
+  opus45: 'claude-opus-4-5-20251101',
+  opus46: 'claude-opus-4-6',
+  gpt54: 'gpt-5.4',
+  gpt53codex: 'gpt-5.3-codex',
+  gpt54mini: 'gpt-5.4-mini',
+}
+
+/** Reverse map: canonical first-party ID → ModelKey */
+const CANONICAL_ID_TO_KEY: Record<string, ModelKey> = Object.fromEntries(
+  (Object.entries(CANONICAL_IDS) as [ModelKey, string][]).map(([key, id]) => [
+    id,
+    key,
+  ]),
+) as Record<string, ModelKey>
+
+/** Runtime list of canonical model IDs. */
+export const CANONICAL_MODEL_IDS = Object.values(CANONICAL_IDS) as [
+  string,
+  ...string[],
+]
 
 /**
  * Maps each model version to its provider-specific model ID string.
- * Derived from ALL_MODEL_CONFIGS — adding a model there extends this type.
  */
 export type ModelStrings = Record<ModelKey, string>
 
-const MODEL_KEYS = Object.keys(ALL_MODEL_CONFIGS) as ModelKey[]
-
-function getBuiltinModelStrings(provider: APIProvider): ModelStrings {
+/**
+ * Build ModelStrings from the provider registry's modelKey index.
+ * Falls back to canonical (first-party) IDs for any keys not found
+ * in the registry (e.g. user-configured providers missing some models).
+ */
+function getRegistryModelStrings(): ModelStrings {
+  const registry = getProviderRegistry()
   const out = {} as ModelStrings
   for (const key of MODEL_KEYS) {
-    out[key] = ALL_MODEL_CONFIGS[key][provider]
+    const modelId = registry.getModelIdByKey(key)
+    out[key] = modelId ?? CANONICAL_IDS[key]
   }
   return out
 }
 
 async function getBedrockModelStrings(): Promise<ModelStrings> {
-  const fallback = getBuiltinModelStrings('bedrock')
+  const fallback = getRegistryModelStrings()
   let profiles: string[] | undefined
   try {
     profiles = await getBedrockInferenceProfiles()
@@ -42,13 +100,13 @@ async function getBedrockModelStrings(): Promise<ModelStrings> {
   if (!profiles?.length) {
     return fallback
   }
-  // Each config's firstParty ID is the canonical substring we search for in the
-  // user's inference profile list (e.g. "claude-opus-4-6" matches
-  // "eu.anthropic.claude-opus-4-6-v1"). Fall back to the hardcoded bedrock ID
+  // Each model's canonical first-party ID is the substring we search for in
+  // the user's inference profile list (e.g. "claude-opus-4-6" matches
+  // "eu.anthropic.claude-opus-4-6-v1"). Fall back to the registry-derived ID
   // when no matching profile is found.
   const out = {} as ModelStrings
   for (const key of MODEL_KEYS) {
-    const needle = ALL_MODEL_CONFIGS[key].firstParty
+    const needle = CANONICAL_IDS[key]
     out[key] = findFirstMatch(profiles, needle) || fallback[key]
   }
   return out
@@ -67,7 +125,7 @@ function applyModelOverrides(ms: ModelStrings): ModelStrings {
   }
   const out = { ...ms }
   for (const [canonicalId, override] of Object.entries(overrides)) {
-    const key = CANONICAL_ID_TO_KEY[canonicalId as CanonicalModelId]
+    const key = CANONICAL_ID_TO_KEY[canonicalId]
     if (key && override) {
       out[key] = override
     }
@@ -99,6 +157,13 @@ export function resolveOverriddenModel(modelId: string): string {
   return modelId
 }
 
+function isBedrock(): boolean {
+  return (
+    getProviderRegistry().getDefaultProvider()?.config.type ===
+    'bedrock-converse'
+  )
+}
+
 const updateBedrockModelStrings = sequential(async () => {
   if (getModelStringsState() !== null) {
     // Already initialized. Doing the check here, combined with
@@ -122,8 +187,8 @@ function initModelStrings(): void {
     return
   }
   // Initial with default values for non-Bedrock providers
-  if (getAPIProvider() !== 'bedrock') {
-    setModelStringsState(getBuiltinModelStrings(getAPIProvider()))
+  if (!isBedrock()) {
+    setModelStringsState(getRegistryModelStrings())
     return
   }
   // On Bedrock, update model strings in the background without blocking.
@@ -139,7 +204,7 @@ export function getModelStrings(): ModelStrings {
     initModelStrings()
     // Bedrock path falls through here while the profile fetch runs in the
     // background — still honor overrides on the interim defaults.
-    return applyModelOverrides(getBuiltinModelStrings(getAPIProvider()))
+    return applyModelOverrides(getRegistryModelStrings())
   }
   return applyModelOverrides(ms)
 }
@@ -156,8 +221,8 @@ export async function ensureModelStringsInitialized(): Promise<void> {
   }
 
   // For non-Bedrock, initialize synchronously
-  if (getAPIProvider() !== 'bedrock') {
-    setModelStringsState(getBuiltinModelStrings(getAPIProvider()))
+  if (!isBedrock()) {
+    setModelStringsState(getRegistryModelStrings())
     return
   }
 

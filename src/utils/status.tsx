@@ -27,7 +27,7 @@ import {
   getClaudeAiUserDefaultModelDescription,
   modelDisplayString,
 } from './model/model.js'
-import { getAPIProvider } from './model/providers.js'
+import { getProviderRegistry } from './model/providerRegistry.js'
 import { getMTLSConfig } from './mtls.js'
 import { getProxyUrl } from './proxy.js'
 import { SandboxManager } from './sandbox/sandbox-adapter.js'
@@ -295,16 +295,16 @@ export function buildAccountProperties(): Property[] {
 }
 
 export function buildAPIProviderProperties(): Property[] {
-  const apiProvider = getAPIProvider()
+  const providerType = getProviderRegistry().getDefaultProvider()?.config.type
 
   const properties: Property[] = []
 
-  if (apiProvider !== 'firstParty') {
+  if (providerType && providerType !== 'anthropic') {
     const providerLabel = {
-      bedrock: 'AWS Bedrock',
+      'bedrock-converse': 'AWS Bedrock',
       vertex: 'Google Vertex AI',
       foundry: 'Microsoft Foundry',
-    }[apiProvider]
+    }[providerType]
 
     properties.push({
       label: 'API provider',
@@ -312,7 +312,7 @@ export function buildAPIProviderProperties(): Property[] {
     })
   }
 
-  if (apiProvider === 'firstParty') {
+  if (!providerType || providerType === 'anthropic') {
     const anthropicBaseUrl = process.env.ANTHROPIC_BASE_URL
     if (anthropicBaseUrl) {
       properties.push({
@@ -320,7 +320,7 @@ export function buildAPIProviderProperties(): Property[] {
         value: anthropicBaseUrl,
       })
     }
-  } else if (apiProvider === 'bedrock') {
+  } else if (providerType === 'bedrock-converse') {
     const bedrockBaseUrl = process.env.BEDROCK_BASE_URL
     if (bedrockBaseUrl) {
       properties.push({
@@ -339,7 +339,7 @@ export function buildAPIProviderProperties(): Property[] {
         value: 'AWS auth skipped',
       })
     }
-  } else if (apiProvider === 'vertex') {
+  } else if (providerType === 'vertex') {
     const vertexBaseUrl = process.env.VERTEX_BASE_URL
     if (vertexBaseUrl) {
       properties.push({
@@ -366,7 +366,7 @@ export function buildAPIProviderProperties(): Property[] {
         value: 'GCP auth skipped',
       })
     }
-  } else if (apiProvider === 'foundry') {
+  } else if (providerType === 'foundry') {
     const foundryBaseUrl = process.env.ANTHROPIC_FOUNDRY_BASE_URL
     if (foundryBaseUrl) {
       properties.push({

@@ -76,12 +76,10 @@ export function createVertexFetch(
     }
 
     // Get GCP access token and project ID
+    // All env vars (ANTHROPIC_VERTEX_PROJECT_ID) must be resolved into
+    // config.auth.gcp.projectId by the caller (legacyProviderMigration.ts).
     const authResult = await getAccessToken()
-    const projectId =
-      configProjectId ||
-      authResult.projectId ||
-      process.env.ANTHROPIC_VERTEX_PROJECT_ID ||
-      ''
+    const projectId = configProjectId || authResult.projectId || ''
 
     // Build Vertex URL
     const action = isStreaming ? 'streamRawPredict' : 'rawPredict'

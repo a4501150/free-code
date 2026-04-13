@@ -1,6 +1,6 @@
 import { saveGlobalConfig } from '../utils/config.js'
 import { isLegacyModelRemapEnabled } from '../utils/model/model.js'
-import { getAPIProvider } from '../utils/model/providers.js'
+import { getProviderRegistry } from '../utils/model/providerRegistry.js'
 import {
   getSettingsForSource,
   updateSettingsForSource,
@@ -23,7 +23,7 @@ import {
  * project.
  */
 export function migrateLegacyOpusToCurrent(): void {
-  if (getAPIProvider() !== 'firstParty') {
+  if (!getProviderRegistry().getCapabilities().firstPartyFeatures) {
     return
   }
 

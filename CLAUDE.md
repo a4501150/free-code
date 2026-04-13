@@ -81,11 +81,14 @@ The model/provider system is config-driven via `settings.json` `providers` field
 
 ### Architecture
 
-1. **Provider config** (`src/utils/settings/types.ts`): Zod schemas for `ProviderConfig`, `ProviderModelConfig`, `ProviderAuthConfig`, `ProviderCacheConfig`
-2. **Provider registry** (`src/utils/model/providerRegistry.ts`): Singleton `ProviderRegistry` class. Lazily initialized from `settings.providers` or auto-migrated from legacy env vars. Indexes models by ID and alias for O(1) lookup.
-3. **Legacy migration** (`src/utils/model/legacyProviderMigration.ts`): Generates provider configs from `ANTHROPIC_API_KEY`, `CLAUDE_CODE_USE_BEDROCK`, etc. when `settings.providers` is absent. Detects OAuth tokens in secure storage.
-4. **Client creation** (`src/services/api/client.ts`): `getAnthropicClient()` resolves model → registry → `createClientForProvider()`. ALL provider types go through this path. No legacy env var dispatch.
-5. **Adapters** (`src/services/api/*-adapter.ts`): Fetch interceptors that translate between Anthropic Messages API and the target provider's wire format.
+1. **Provider config** (`src/utils/settings/types.ts`): Zod schemas for `ProviderConfig`, `ProviderModelConfig`, `ProviderAuthConfig`, `ProviderCacheConfig`, `ProviderCapabilitiesSchema`
+2. **Provider registry** (`src/utils/model/providerRegistry.ts`): Singleton `ProviderRegistry` class. Lazily initialized from `settings.providers` or auto-migrated from legacy env vars. Indexes models by ID and alias for O(1) lookup. Provides **capability queries** (`getCapabilities()`, `getCapability()`) instead of identity checks.
+3. **Legacy migration** (`src/utils/model/legacyProviderMigration.ts`): Generates provider configs from `ANTHROPIC_API_KEY`, `CLAUDE_CODE_USE_BEDROCK`, etc. when `settings.providers` is absent. Resolves all provider-specific env vars (e.g. `ANTHROPIC_FOUNDRY_RESOURCE`) into `config.baseUrl`/`config.auth`.
+4. **Client creation** (`src/services/api/client.ts`): `getAnthropicClient()` resolves model → registry → `createClientForProvider()`. ALL provider types go through this path. The "impure shell" that creates auth closures for adapters.
+5. **Adapters** (`src/services/api/*-adapter.ts`): **Pure** fetch interceptors — zero `process.env` reads, zero auth imports. All configuration comes through `ProviderConfig` and injected callbacks.
+6. **Model resolution** (`src/utils/model/modelResolution.ts`): Determines which model to use based on settings, subscription tier, and provider config.
+7. **Model display** (`src/utils/model/modelDisplay.ts`): Human-readable display strings, canonical name mapping, marketing names.
+8. **Model barrel** (`src/utils/model/model.ts`): Re-exports from `modelResolution.ts` and `modelDisplay.ts` for backward compatibility.
 
 ### Provider types and adapters
 
@@ -129,19 +132,41 @@ settings.json (or legacy env vars)
         → Anthropic SDK with custom fetch adapter (or native for anthropic type)
 ```
 
+### Provider capabilities
+
+Instead of checking provider identity (`isBedrockProvider()`, `isVertexProvider()`), code should query **capabilities** via `registry.getCapabilities(model)` or `registry.getCapability(model, 'capName')`. Capabilities are auto-derived from `config.type` with special handling for Anthropic proxies (non-official baseUrl → `firstPartyFeatures: false`).
+
+| Capability | Type | Description |
+|-----------|------|-------------|
+| `firstPartyFeatures` | boolean | Supports Anthropic platform features (settingsSync, teamMemory, etc.) |
+| `clientRequestId` | boolean | Supports `x-client-request-id` header |
+| `eagerInputStreaming` | boolean | Supports `eager_input_streaming` beta |
+| `globalCacheScope` | boolean | Supports global-scope prompt caching |
+| `betasInBody` | boolean | Beta flags go in request body, not HTTP headers |
+| `authManagedExternally` | boolean | Auth managed by cloud provider (skip OAuth) |
+| `credentialRefresh` | `'none'\|'aws'\|'gcp'` | Credential prefetch/refresh type |
+| `tokenCountingMethod` | `'native'\|'bedrock-custom'\|'vertex-filtered'` | How token counting works |
+| `opaqueDeploymentIds` | boolean | Model IDs are opaque deployment names (Foundry) |
+| `regionPrefixPropagation` | boolean | Region prefixes propagate to subagents (Bedrock) |
+| `enrichModelIdErrors` | boolean | Enrich 403 errors with model name |
+
 ### Key files
 
 | File | Purpose |
 |------|---------|
-| `src/utils/settings/types.ts` | Provider config Zod schemas |
-| `src/utils/model/providerRegistry.ts` | Registry singleton, model/alias indexing |
-| `src/utils/model/legacyProviderMigration.ts` | Legacy env var → provider config |
-| `src/utils/model/providers.ts` | `getAPIProvider()` bridge (backed by registry) |
-| `src/services/api/client.ts` | `getAnthropicClient()` → registry dispatch |
-| `src/services/api/openai-chat-completions-adapter.ts` | Anthropic ↔ Chat Completions |
-| `src/services/api/bedrock-adapter.ts` | Anthropic → Bedrock (SigV4 + EventStream) |
-| `src/services/api/vertex-adapter.ts` | Anthropic → Vertex AI |
-| `src/services/api/foundry-adapter.ts` | Anthropic → Azure Foundry |
+| `src/utils/settings/types.ts` | Provider config Zod schemas + `ProviderCapabilitiesSchema` |
+| `src/utils/model/providerRegistry.ts` | Registry singleton, capability derivation, model/alias/modelKey indexing |
+| `src/utils/model/legacyProviderMigration.ts` | Legacy env var → provider config (resolves all env vars) |
+| `src/utils/model/modelStrings.ts` | `ModelKey` type, `CANONICAL_IDS`, `getModelStrings()` (registry-backed) |
+| `src/utils/model/modelResolution.ts` | Model selection/resolution logic |
+| `src/utils/model/modelDisplay.ts` | Display strings, canonical names, marketing names |
+| `src/utils/model/model.ts` | Barrel re-export of modelResolution + modelDisplay |
+| `src/services/api/client.ts` | `getAnthropicClient()` → registry dispatch (impure shell) |
+| `src/services/api/openai-chat-completions-adapter.ts` | Anthropic ↔ Chat Completions (pure) |
+| `src/services/api/bedrock-adapter.ts` | Anthropic → Bedrock (pure) |
+| `src/services/api/vertex-adapter.ts` | Anthropic → Vertex AI (pure) |
+| `src/services/api/foundry-adapter.ts` | Anthropic → Azure Foundry (pure) |
+| `src/services/api/codex-fetch-adapter.ts` | Anthropic → Codex/OpenAI Responses (pure) |
 | `tests/helpers/mock-openai-server.ts` | Mock Chat Completions server for tests |
 | `tests/e2e/provider-config.test.ts` | Provider system E2E tests |
 

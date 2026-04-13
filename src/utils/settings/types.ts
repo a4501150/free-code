@@ -294,6 +294,13 @@ export const ProviderModelSchema = lazySchema(() =>
       .describe(
         'Short alias for model selection (e.g. "opus", "sonnet", "haiku")',
       ),
+    modelKey: z
+      .string()
+      .optional()
+      .describe(
+        'Short key for ModelStrings lookup (e.g. "opus46", "sonnet46"). ' +
+          'Used by the provider registry to index models by their generation key.',
+      ),
     label: z.string().optional().describe('Human-readable display name'),
     description: z.string().optional().describe('Short description for UI'),
     context: z
@@ -327,6 +334,102 @@ export const ProviderCacheSchema = lazySchema(() =>
       ),
   }),
 )
+
+export const PROVIDER_CREDENTIAL_REFRESH_TYPES = [
+  'none',
+  'aws',
+  'gcp',
+] as const
+
+export type ProviderCredentialRefreshType =
+  (typeof PROVIDER_CREDENTIAL_REFRESH_TYPES)[number]
+
+export const PROVIDER_TOKEN_COUNTING_METHODS = [
+  'native',
+  'bedrock-custom',
+  'vertex-filtered',
+] as const
+
+export type ProviderTokenCountingMethod =
+  (typeof PROVIDER_TOKEN_COUNTING_METHODS)[number]
+
+export const ProviderCapabilitiesSchema = lazySchema(() =>
+  z.object({
+    // Prompt caching
+    globalCacheScope: z
+      .boolean()
+      .optional()
+      .describe(
+        'Supports global-scope prompt caching (Anthropic native only)',
+      ),
+
+    // Streaming & request features
+    eagerInputStreaming: z
+      .boolean()
+      .optional()
+      .describe('Supports eager_input_streaming beta'),
+    clientRequestId: z
+      .boolean()
+      .optional()
+      .describe('Supports x-client-request-id header for correlation'),
+
+    // Beta header placement
+    betasInBody: z
+      .boolean()
+      .optional()
+      .describe(
+        'Beta flags go in request body extraParams, not HTTP headers (Bedrock)',
+      ),
+
+    // Auth model
+    authManagedExternally: z
+      .boolean()
+      .optional()
+      .describe('Auth is managed by cloud provider, not Anthropic OAuth'),
+    credentialRefresh: z
+      .enum(PROVIDER_CREDENTIAL_REFRESH_TYPES)
+      .optional()
+      .describe('Type of credential refresh needed'),
+
+    // First-party features (settingsSync, teamMemory, policyLimits, etc.)
+    firstPartyFeatures: z
+      .boolean()
+      .optional()
+      .describe('Supports Anthropic first-party platform features'),
+
+    // Token counting
+    tokenCountingMethod: z
+      .enum(PROVIDER_TOKEN_COUNTING_METHODS)
+      .optional()
+      .describe('How token counting works for this provider'),
+
+    // Model ID handling
+    opaqueDeploymentIds: z
+      .boolean()
+      .optional()
+      .describe(
+        'Model IDs are opaque deployment names, not marketing names (Foundry)',
+      ),
+    regionPrefixPropagation: z
+      .boolean()
+      .optional()
+      .describe(
+        'Model IDs may carry region prefixes that must propagate to subagents (Bedrock)',
+      ),
+
+    // Error handling
+    enrichModelIdErrors: z
+      .boolean()
+      .optional()
+      .describe(
+        'Provider omits model ID from 403 errors; enrich with model name',
+      ),
+  }),
+)
+
+export type ProviderCapabilities = z.infer<
+  ReturnType<typeof ProviderCapabilitiesSchema>
+>
 
 export const ProviderAuthSchema = lazySchema(() =>
   z.object({
@@ -407,6 +510,11 @@ export const ProviderConfigSchema = lazySchema(() =>
     auth: ProviderAuthSchema()
       .optional()
       .describe('Authentication configuration'),
+    capabilities: ProviderCapabilitiesSchema()
+      .optional()
+      .describe(
+        'Provider capability flags. Auto-derived from provider type if omitted.',
+      ),
     models: z
       .array(ProviderModelSchema())
       .describe('Models available from this provider'),

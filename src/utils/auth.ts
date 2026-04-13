@@ -6,7 +6,6 @@ import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
 import { CLAUDE_AI_PROFILE_SCOPE } from 'src/constants/oauth.js'
 import { getModelStrings } from 'src/utils/model/modelStrings.js'
-import { getAPIProvider } from 'src/utils/model/providers.js'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import {
   getIsNonInteractiveSession,
@@ -106,7 +105,7 @@ export function isAnthropicAuthEnabled(): boolean {
     return !!process.env.CLAUDE_CODE_OAUTH_TOKEN
   }
 
-  const is3P = getProviderRegistry().isThirdPartyCloudProvider()
+  const is3P = getProviderRegistry().getCapabilities().authManagedExternally
 
   // Check if user has configured an external API key source
   // This allows externally-provided API keys to work (without requiring proxy configuration)
@@ -1567,7 +1566,8 @@ export function isClaudeAISubscriber(): boolean {
 
 export function isCodexSubscriber(): boolean {
   // Only treat as Codex subscriber when explicitly using OpenAI provider
-  if (getAPIProvider() !== 'openai') {
+  const providerType = getProviderRegistry().getDefaultProvider()?.config.type
+  if (providerType !== 'openai-chat-completions' && providerType !== 'openai-responses') {
     return false
   }
 
@@ -1597,8 +1597,8 @@ export function is1PApiCustomer(): boolean {
   // 3. AWS Bedrock users
   // 4. Foundry users
 
-  // Exclude Vertex, Bedrock, and Foundry customers
-  if (getProviderRegistry().isThirdPartyCloudProvider()) {
+  // Exclude providers with externally-managed auth (Vertex, Bedrock, Foundry)
+  if (getProviderRegistry().getCapabilities().authManagedExternally) {
     return false
   }
 
@@ -1733,7 +1733,7 @@ export function getSubscriptionName(): string {
 
 /** Check if using third-party services (Bedrock or Vertex or Foundry) */
 export function isUsing3PServices(): boolean {
-  return getProviderRegistry().isThirdPartyCloudProvider()
+  return getProviderRegistry().getCapabilities().authManagedExternally
 }
 
 /**
@@ -1860,9 +1860,9 @@ export type UserAccountInfo = {
 }
 
 export function getAccountInformation() {
-  const apiProvider = getAPIProvider()
+  const caps = getProviderRegistry().getCapabilities()
   // Only provide account info for first-party Anthropic API
-  if (apiProvider !== 'firstParty') {
+  if (!caps.firstPartyFeatures) {
     return undefined
   }
   const { source: authTokenSource } = getAuthTokenSource()

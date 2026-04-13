@@ -2,7 +2,7 @@
  * Provider Registry
  *
  * Single source of truth for all provider/model resolution.
- * Replaces the scattered getAPIProvider() / ALL_MODEL_CONFIGS / modelStrings pattern
+ * Single source of truth for model identity, capabilities, and provider config.
  * with a unified config-driven lookup.
  */
 
@@ -10,11 +10,138 @@ import type {
   ProviderAuthConfig,
   ProviderCacheConfig,
   ProviderCacheType,
+  ProviderCapabilities,
   ProviderConfig,
   ProviderModelConfig,
   ProviderType,
 } from '../settings/types.js'
-import type { APIProvider } from './providers.js'
+
+// ── Capability defaults by provider type ──────────────────────────────
+
+const ALL_FALSE_CAPABILITIES: Required<ProviderCapabilities> = {
+  globalCacheScope: false,
+  eagerInputStreaming: false,
+  clientRequestId: false,
+  betasInBody: false,
+  authManagedExternally: false,
+  credentialRefresh: 'none',
+  firstPartyFeatures: false,
+  tokenCountingMethod: 'native',
+  opaqueDeploymentIds: false,
+  regionPrefixPropagation: false,
+  enrichModelIdErrors: false,
+}
+
+const PROVIDER_CAPABILITY_DEFAULTS: Record<
+  ProviderType,
+  Required<ProviderCapabilities>
+> = {
+  anthropic: {
+    globalCacheScope: true,
+    eagerInputStreaming: true,
+    clientRequestId: true,
+    betasInBody: false,
+    authManagedExternally: false,
+    credentialRefresh: 'none',
+    firstPartyFeatures: true,
+    tokenCountingMethod: 'native',
+    opaqueDeploymentIds: false,
+    regionPrefixPropagation: false,
+    enrichModelIdErrors: false,
+  },
+  'bedrock-converse': {
+    globalCacheScope: false,
+    eagerInputStreaming: false,
+    clientRequestId: false,
+    betasInBody: true,
+    authManagedExternally: true,
+    credentialRefresh: 'aws',
+    firstPartyFeatures: false,
+    tokenCountingMethod: 'bedrock-custom',
+    opaqueDeploymentIds: false,
+    regionPrefixPropagation: true,
+    enrichModelIdErrors: true,
+  },
+  vertex: {
+    globalCacheScope: false,
+    eagerInputStreaming: false,
+    clientRequestId: false,
+    betasInBody: false,
+    authManagedExternally: true,
+    credentialRefresh: 'gcp',
+    firstPartyFeatures: false,
+    tokenCountingMethod: 'vertex-filtered',
+    opaqueDeploymentIds: false,
+    regionPrefixPropagation: false,
+    enrichModelIdErrors: false,
+  },
+  foundry: {
+    globalCacheScope: false,
+    eagerInputStreaming: false,
+    clientRequestId: false,
+    betasInBody: false,
+    authManagedExternally: true,
+    credentialRefresh: 'none',
+    firstPartyFeatures: false,
+    tokenCountingMethod: 'native',
+    opaqueDeploymentIds: true,
+    regionPrefixPropagation: false,
+    enrichModelIdErrors: false,
+  },
+  'openai-chat-completions': { ...ALL_FALSE_CAPABILITIES },
+  'openai-responses': { ...ALL_FALSE_CAPABILITIES },
+  gemini: { ...ALL_FALSE_CAPABILITIES },
+}
+
+/**
+ * Check if an Anthropic provider config points to the official API URL.
+ * Used to distinguish native Anthropic from proxy setups.
+ */
+function isOfficialAnthropicBaseUrl(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return true // no baseUrl = official Anthropic API
+  try {
+    return new URL(baseUrl).host === 'api.anthropic.com'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Derive fully-resolved capabilities for a provider config.
+ * Starts from type-based defaults, adjusts for Anthropic proxies,
+ * then merges any explicit config.capabilities overrides.
+ */
+function deriveCapabilities(config: ProviderConfig): Required<ProviderCapabilities> {
+  const defaults = PROVIDER_CAPABILITY_DEFAULTS[config.type] ?? {
+    ...ALL_FALSE_CAPABILITIES,
+  }
+
+  // Anthropic proxies (non-official baseUrl) lose first-party-only features
+  let base = { ...defaults }
+  if (
+    config.type === 'anthropic' &&
+    !isOfficialAnthropicBaseUrl(config.baseUrl)
+  ) {
+    base = {
+      ...base,
+      globalCacheScope: false,
+      eagerInputStreaming: false,
+      clientRequestId: false,
+      firstPartyFeatures: false,
+    }
+  }
+
+  // Merge explicit overrides from config.capabilities
+  if (config.capabilities) {
+    for (const [key, value] of Object.entries(config.capabilities)) {
+      if (value !== undefined) {
+        ;(base as Record<string, unknown>)[key] = value
+      }
+    }
+  }
+
+  return base
+}
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -41,31 +168,40 @@ export class ProviderRegistry {
     string,
     { providerName: string; config: ProviderConfig; model: ProviderModelConfig }
   >
+  /** modelKey → [providerName, model config] */
+  private readonly modelKeyIndex: Map<
+    string,
+    { providerName: string; config: ProviderConfig; model: ProviderModelConfig }
+  >
+  /** provider name → resolved capabilities (cached) */
+  private readonly capabilitiesCache: Map<
+    string,
+    Required<ProviderCapabilities>
+  >
 
   constructor(providers: Record<string, ProviderConfig>) {
     this.providers = new Map(Object.entries(providers))
     this.modelIndex = new Map()
+    this.modelKeyIndex = new Map()
+    this.capabilitiesCache = new Map()
     this.buildIndex()
   }
 
   private buildIndex(): void {
     for (const [name, config] of this.providers) {
       for (const model of config.models) {
+        const entry = { providerName: name, config, model }
         // Index by model ID (always)
         if (!this.modelIndex.has(model.id)) {
-          this.modelIndex.set(model.id, {
-            providerName: name,
-            config,
-            model,
-          })
+          this.modelIndex.set(model.id, entry)
         }
         // Index by alias (if set and not already taken)
         if (model.alias && !this.modelIndex.has(model.alias)) {
-          this.modelIndex.set(model.alias, {
-            providerName: name,
-            config,
-            model,
-          })
+          this.modelIndex.set(model.alias, entry)
+        }
+        // Index by modelKey (if set and not already taken)
+        if (model.modelKey && !this.modelKeyIndex.has(model.modelKey)) {
+          this.modelKeyIndex.set(model.modelKey, entry)
         }
       }
     }
@@ -107,6 +243,26 @@ export class ProviderRegistry {
     return this.providers.size > 0
   }
 
+  /**
+   * Look up a model's provider-specific ID by its modelKey (e.g. 'opus46' → 'claude-opus-4-6').
+   * Returns undefined if no model with that key is registered.
+   */
+  getModelIdByKey(key: string): string | undefined {
+    return this.modelKeyIndex.get(key)?.model.id
+  }
+
+  /**
+   * Get all registered modelKey → model ID mappings.
+   * Used by modelStrings.ts to build the full ModelStrings record.
+   */
+  getModelKeyEntries(): Map<string, string> {
+    const result = new Map<string, string>()
+    for (const [key, entry] of this.modelKeyIndex) {
+      result.set(key, entry.model.id)
+    }
+    return result
+  }
+
   // ── Per-model queries ────────────────────────────────────────────
 
   getProviderCacheType(model: string): ProviderCacheType {
@@ -124,114 +280,52 @@ export class ProviderRegistry {
     return provider?.config.auth
   }
 
+  // ── Capability queries ──────────────────────────────────────────────
+
   /**
-   * Returns true if the model is served by an Anthropic-native provider
-   * (type: "anthropic") with the official Anthropic API URL.
-   * Replaces `getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()`.
+   * Get the fully-resolved capabilities for a provider, identified by model.
+   * When no model is given, returns capabilities for the default provider.
+   * Capabilities are auto-derived from provider type and cached.
    */
-  isAnthropicNative(model: string): boolean {
-    const provider = this.getProviderForModel(model)
-    if (!provider) return false
-    if (provider.config.type !== 'anthropic') return false
-    const baseUrl = provider.config.baseUrl
-    if (!baseUrl) return true // no baseUrl = official Anthropic API
-    try {
-      const host = new URL(baseUrl).host
-      return host === 'api.anthropic.com'
-    } catch {
-      return false
-    }
+  getCapabilities(model?: string): Required<ProviderCapabilities> {
+    const resolved = model
+      ? this.getProviderForModel(model)
+      : (() => {
+          const def = this.getDefaultProvider()
+          return def
+            ? { providerName: def.name, config: def.config, model: undefined }
+            : null
+        })()
+
+    if (!resolved) return { ...ALL_FALSE_CAPABILITIES }
+
+    const cached = this.capabilitiesCache.get(resolved.providerName)
+    if (cached) return { ...cached }
+
+    const caps = deriveCapabilities(resolved.config)
+    this.capabilitiesCache.set(resolved.providerName, caps)
+    return { ...caps }
+  }
+
+  /**
+   * Get a single capability value for a provider, identified by model.
+   */
+  getCapability<K extends keyof Required<ProviderCapabilities>>(
+    model: string,
+    cap: K,
+  ): Required<ProviderCapabilities>[K] {
+    return this.getCapabilities(model)[cap]
   }
 
   /**
    * Returns true if the model is served by an Anthropic-type provider
-   * (could be official or a proxy).
-   * Replaces `getAPIProvider() === 'firstParty'`.
+   * (could be official or a proxy). Use this to check if the provider
+   * speaks the Anthropic Messages API wire format.
    */
   isAnthropicType(model: string): boolean {
     const provider = this.getProviderForModel(model)
     if (!provider) return false
     return provider.config.type === 'anthropic'
-  }
-
-  /**
-   * Returns true if the model is served by an official Anthropic URL
-   * (either no baseUrl or api.anthropic.com).
-   * Replaces `isFirstPartyAnthropicBaseUrl()`.
-   */
-  isOfficialAnthropicUrl(model: string): boolean {
-    return this.isAnthropicNative(model)
-  }
-
-  /**
-   * Returns a legacy APIProvider string for backward compatibility.
-   * Used during the migration period so existing code that switches
-   * on provider type continues to work.
-   */
-  getLegacyAPIProvider(model?: string): APIProvider {
-    if (!model) {
-      // No model specified — infer from the first provider
-      const first = this.providers.entries().next()
-      if (!first.done) {
-        return this.providerTypeToLegacy(first.value[1].type)
-      }
-      return 'firstParty'
-    }
-    const provider = this.getProviderForModel(model)
-    if (!provider) return 'firstParty'
-    return this.providerTypeToLegacy(provider.config.type)
-  }
-
-  private providerTypeToLegacy(type: ProviderType): APIProvider {
-    switch (type) {
-      case 'anthropic':
-        return 'firstParty'
-      case 'bedrock-converse':
-        return 'bedrock'
-      case 'vertex':
-        return 'vertex'
-      case 'foundry':
-        return 'foundry'
-      case 'openai-responses':
-      case 'openai-chat-completions':
-        return 'openai'
-      case 'gemini':
-        return 'openai' // closest legacy equivalent
-      default:
-        return 'firstParty'
-    }
-  }
-
-  // ── Convenience provider-type checks ──────────────────────────────
-  // All accept an optional model string. When omitted, check the default
-  // provider — correct for single-provider setups and backward compat.
-
-  private resolveProviderType(model?: string): ProviderType | null {
-    if (model) return this.getProviderType(model)
-    return this.getDefaultProvider()?.config.type ?? null
-  }
-
-  /**
-   * Returns true if the provider is a third-party cloud provider
-   * (Bedrock, Vertex, or Foundry). Replaces `isUsing3PServices()`.
-   */
-  isThirdPartyCloudProvider(model?: string): boolean {
-    const type = this.resolveProviderType(model)
-    return (
-      type === 'bedrock-converse' || type === 'vertex' || type === 'foundry'
-    )
-  }
-
-  isBedrockProvider(model?: string): boolean {
-    return this.resolveProviderType(model) === 'bedrock-converse'
-  }
-
-  isVertexProvider(model?: string): boolean {
-    return this.resolveProviderType(model) === 'vertex'
-  }
-
-  isFoundryProvider(model?: string): boolean {
-    return this.resolveProviderType(model) === 'foundry'
   }
 
   /**

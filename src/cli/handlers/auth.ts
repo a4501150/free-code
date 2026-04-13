@@ -31,7 +31,7 @@ import { saveGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
 import { logError } from '../../utils/log.js'
-import { getAPIProvider } from '../../utils/model/providers.js'
+import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import {
@@ -293,7 +293,7 @@ export async function authStatus(opts: {
       )
     }
   } else {
-    const apiProvider = getAPIProvider()
+    const apiProvider = getProviderRegistry().getDefaultProvider()?.config.type ?? 'anthropic'
     const resolvedApiKeySource =
       apiKeySource !== 'none'
         ? apiKeySource

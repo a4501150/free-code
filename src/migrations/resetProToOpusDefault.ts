@@ -1,7 +1,7 @@
 
 import { isProSubscriber } from '../utils/auth.js'
 import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'
-import { getAPIProvider } from '../utils/model/providers.js'
+import { getProviderRegistry } from '../utils/model/providerRegistry.js'
 import { getSettings_DEPRECATED } from '../utils/settings/settings.js'
 
 export function resetProToOpusDefault(): void {
@@ -11,10 +11,8 @@ export function resetProToOpusDefault(): void {
     return
   }
 
-  const apiProvider = getAPIProvider()
-
   // Pro users on firstParty get auto-migrated to Opus 4.5 default
-  if (apiProvider !== 'firstParty' || !isProSubscriber()) {
+  if (!getProviderRegistry().getCapabilities().firstPartyFeatures || !isProSubscriber()) {
     saveGlobalConfig(current => ({
       ...current,
       opusProMigrationComplete: true,

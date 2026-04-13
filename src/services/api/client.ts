@@ -14,10 +14,6 @@ import {
   refreshGcpCredentialsIfNeeded,
 } from 'src/utils/auth.js'
 import { getUserAgent } from 'src/utils/http.js'
-import {
-  getAPIProvider,
-  isFirstPartyAnthropicBaseUrl,
-} from 'src/utils/model/providers.js'
 import { getProxyFetchOptions } from 'src/utils/proxy.js'
 import {
   getIsNonInteractiveSession,
@@ -212,8 +208,8 @@ function buildFetch(
   // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
   const inner = fetchOverride ?? globalThis.fetch
   const injectClientRequestId = model
-    ? getProviderRegistry().isAnthropicNative(model)
-    : getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()
+    ? getProviderRegistry().getCapability(model, 'clientRequestId')
+    : getProviderRegistry().getCapabilities().clientRequestId
   return async (input, init) => {
     // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
     const headers = new Headers(init?.headers)
@@ -365,7 +361,10 @@ async function createClientForProvider(
           ...(isDebugToStdErr() && { logger: createStderrLogger() }),
         })
       }
-      const codexFetch = createCodexFetch(accessToken)
+      // Pass a callback so the adapter can get refreshed tokens without importing auth
+      const codexFetch = createCodexFetch(accessToken, () => {
+        return getCodexOAuthTokens()?.accessToken ?? null
+      })
       return new Anthropic({
         apiKey: 'codex-placeholder',
         ...baseArgs,
@@ -457,8 +456,11 @@ async function createClientForProvider(
     // ── Azure Foundry ───────────────────────────────────────────
     case 'foundry': {
       const getToken = async () => {
-        if (process.env.ANTHROPIC_FOUNDRY_API_KEY) {
-          return null
+        // If an API key is configured, return it as the token.
+        // The adapter uses heuristics to set the right header (x-api-key vs Bearer).
+        const apiKeyFromAuth = resolveAuthHeaders(config)['x-api-key']
+        if (apiKeyFromAuth) {
+          return apiKeyFromAuth
         }
         if (isEnvTruthy(process.env.CLAUDE_CODE_SKIP_FOUNDRY_AUTH)) {
           return ''

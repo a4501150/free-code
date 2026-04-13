@@ -25,7 +25,6 @@ import {
 } from 'src/utils/messages.js'
 import { isNonCustomOpusModel } from 'src/utils/model/model.js'
 import { getModelStrings } from 'src/utils/model/modelStrings.js'
-import { getAPIProvider } from 'src/utils/model/providers.js'
 import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
 import {
   API_PDF_MAX_PAGES,
@@ -794,7 +793,7 @@ export function getAssistantMessageFromError(
   // Bedrock errors like "403 You don't have access to the model with the specified model ID."
   // don't contain the actual model ID
   if (
-    getProviderRegistry().isBedrockProvider() &&
+    getProviderRegistry().getCapabilities().enrichModelIdErrors &&
     error instanceof Error &&
     error.message.toLowerCase().includes('model id')
   ) {
@@ -816,7 +815,7 @@ export function getAssistantMessageFromError(
     const fallbackSuggestion = get3PModelFallbackSuggestion(model)
     return createAssistantAPIErrorMessage({
       content: fallbackSuggestion
-        ? `The model ${model} is not available on your ${getAPIProvider()} deployment. Try ${switchCmd} to switch to ${fallbackSuggestion}, or ask your admin to enable this model.`
+        ? `The model ${model} is not available on your ${getProviderRegistry().getDefaultProvider()?.config.type ?? 'unknown'} deployment. Try ${switchCmd} to switch to ${fallbackSuggestion}, or ask your admin to enable this model.`
         : `There's an issue with the selected model (${model}). It may not exist or you may not have access to it. Run ${switchCmd} to pick a different model.`,
       error: 'invalid_request',
     })
@@ -847,7 +846,7 @@ export function getAssistantMessageFromError(
  * Returns a model name suggestion, or undefined if no suggestion is applicable.
  */
 function get3PModelFallbackSuggestion(model: string): string | undefined {
-  if (getAPIProvider() === 'firstParty') {
+  if (getProviderRegistry().getCapabilities().firstPartyFeatures) {
     return undefined
   }
   // @[MODEL LAUNCH]: Add a fallback suggestion chain for the new model → previous version for 3P
@@ -1041,9 +1040,9 @@ export function classifyAPIError(error: unknown): string {
     return 'auth_error'
   }
 
-  // Bedrock-specific errors
+  // Provider-specific model ID errors (e.g., Bedrock 403 without model name)
   if (
-    getProviderRegistry().isBedrockProvider() &&
+    getProviderRegistry().getCapabilities().enrichModelIdErrors &&
     error instanceof Error &&
     error.message.toLowerCase().includes('model id')
   ) {

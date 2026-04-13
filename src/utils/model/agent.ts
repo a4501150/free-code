@@ -59,7 +59,7 @@ export function getAgentModel(
     resolvedModel: string,
     originalSpec: string,
   ): string => {
-    if (parentRegionPrefix && getProviderRegistry().isBedrockProvider(parentModel)) {
+    if (parentRegionPrefix && getProviderRegistry().getCapability(parentModel, 'regionPrefixPropagation')) {
       if (getBedrockRegionPrefix(originalSpec)) return resolvedModel
       return applyBedrockRegionPrefix(resolvedModel, parentRegionPrefix)
     }

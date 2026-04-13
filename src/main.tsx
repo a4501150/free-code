@@ -580,14 +580,15 @@ export function startDeferredPrefetches(): void {
   prefetchSystemContextIfSafe()
   void getRelevantTips()
   const registry = getProviderRegistry()
+  const credRefresh = registry.getCapabilities().credentialRefresh
   if (
-    registry.isBedrockProvider() &&
+    credRefresh === 'aws' &&
     !isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)
   ) {
     void prefetchAwsCredentialsAndBedRockInfoIfSafe()
   }
   if (
-    registry.isVertexProvider() &&
+    credRefresh === 'gcp' &&
     !isEnvTruthy(process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH)
   ) {
     void prefetchGcpCredentialsIfSafe()

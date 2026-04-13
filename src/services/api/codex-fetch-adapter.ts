@@ -15,7 +15,6 @@
  * Endpoint: https://chatgpt.com/backend-api/codex/responses
  */
 
-import { getCodexOAuthTokens } from '../../utils/auth.js'
 
 // ── Available Codex models ──────────────────────────────────────────
 export const CODEX_MODELS = [
@@ -740,11 +739,13 @@ const CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex/responses'
 
 /**
  * Creates a fetch function that intercepts Anthropic API calls and routes them to Codex.
- * @param accessToken - The Codex access token for authentication
+ * @param accessToken - The initial Codex access token for authentication
+ * @param getRefreshedToken - Optional callback to get a possibly-refreshed token at request time
  * @returns A fetch function that translates Anthropic requests to Codex format
  */
 export function createCodexFetch(
   accessToken: string,
+  getRefreshedToken?: () => string | null,
 ): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
   const accountId = extractAccountId(accessToken)
 
@@ -770,9 +771,8 @@ export function createCodexFetch(
       anthropicBody = {}
     }
 
-    // Get current token (may have been refreshed)
-    const tokens = getCodexOAuthTokens()
-    const currentToken = tokens?.accessToken || accessToken
+    // Get current token (may have been refreshed via callback)
+    const currentToken = getRefreshedToken?.() || accessToken
 
     // Translate to Codex format
     const { codexBody, codexModel } = translateToCodexBody(anthropicBody)

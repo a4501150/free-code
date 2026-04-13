@@ -27,15 +27,10 @@ export function createFoundryFetch(
   config: ProviderConfig,
   getToken: () => Promise<string | null>,
 ): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
-  const resource = process.env.ANTHROPIC_FOUNDRY_RESOURCE
-  const baseUrl =
-    config.baseUrl ||
-    process.env.ANTHROPIC_FOUNDRY_BASE_URL ||
-    (resource
-      ? `https://${resource}.services.ai.azure.com/anthropic`
-      : '')
-
-  const apiKey = process.env.ANTHROPIC_FOUNDRY_API_KEY
+  // All env vars (ANTHROPIC_FOUNDRY_RESOURCE, ANTHROPIC_FOUNDRY_BASE_URL,
+  // ANTHROPIC_FOUNDRY_API_KEY) must be resolved into config.baseUrl and the
+  // getToken callback by the caller (client.ts / legacyProviderMigration.ts).
+  const baseUrl = config.baseUrl || ''
 
   return async (
     input: RequestInfo | URL,
@@ -57,12 +52,13 @@ export function createFoundryFetch(
       'Content-Type': 'application/json',
     }
 
-    // Auth: API key or Azure AD token
-    if (apiKey) {
-      requestHeaders['x-api-key'] = apiKey
-    } else {
-      const token = await getToken()
-      if (token) {
+    // Auth: Azure AD token (or API key passed through getToken)
+    const token = await getToken()
+    if (token) {
+      // If the token looks like an API key (no spaces, not a JWT), use x-api-key header
+      if (!token.includes('.') || token.length < 50) {
+        requestHeaders['x-api-key'] = token
+      } else {
         requestHeaders['Authorization'] = `Bearer ${token}`
       }
     }

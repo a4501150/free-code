@@ -18,6 +18,7 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
   {
     id: 'claude-opus-4-6',
     alias: 'opus',
+    modelKey: 'opus46',
     label: 'Opus 4.6',
     description: 'Most capable',
     context: '1m',
@@ -25,45 +26,55 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
   {
     id: 'claude-sonnet-4-6',
     alias: 'sonnet',
+    modelKey: 'sonnet46',
     label: 'Sonnet 4.6',
     description: 'Fast and capable',
   },
   {
     id: 'claude-haiku-4-5-20251001',
     alias: 'haiku',
+    modelKey: 'haiku45',
     label: 'Haiku 4.5',
     description: 'Fastest',
   },
   {
     id: 'claude-opus-4-5-20251101',
+    modelKey: 'opus45',
     label: 'Opus 4.5',
   },
   {
     id: 'claude-sonnet-4-5-20250929',
+    modelKey: 'sonnet45',
     label: 'Sonnet 4.5',
   },
   {
     id: 'claude-opus-4-1-20250805',
+    modelKey: 'opus41',
     label: 'Opus 4.1',
   },
   {
     id: 'claude-opus-4-20250514',
+    modelKey: 'opus40',
     label: 'Opus 4',
   },
   {
     id: 'claude-sonnet-4-20250514',
+    modelKey: 'sonnet40',
     label: 'Sonnet 4',
   },
   {
     id: 'claude-3-7-sonnet-20250219',
+    modelKey: 'sonnet37',
     label: 'Sonnet 3.7',
   },
   {
     id: 'claude-3-5-sonnet-20241022',
+    modelKey: 'sonnet35',
     label: 'Sonnet 3.5 v2',
   },
   {
     id: 'claude-3-5-haiku-20241022',
+    modelKey: 'haiku35',
     label: 'Haiku 3.5',
   },
 ]
@@ -72,49 +83,60 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
   {
     id: 'us.anthropic.claude-opus-4-6-v1',
     alias: 'opus',
+    modelKey: 'opus46',
     label: 'Opus 4.6',
     context: '1m',
   },
   {
     id: 'us.anthropic.claude-sonnet-4-6',
     alias: 'sonnet',
+    modelKey: 'sonnet46',
     label: 'Sonnet 4.6',
   },
   {
     id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
     alias: 'haiku',
+    modelKey: 'haiku45',
     label: 'Haiku 4.5',
   },
   {
     id: 'us.anthropic.claude-opus-4-5-20251101-v1:0',
+    modelKey: 'opus45',
     label: 'Opus 4.5',
   },
   {
     id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    modelKey: 'sonnet45',
     label: 'Sonnet 4.5',
   },
   {
     id: 'us.anthropic.claude-opus-4-1-20250805-v1:0',
+    modelKey: 'opus41',
     label: 'Opus 4.1',
   },
   {
     id: 'us.anthropic.claude-opus-4-20250514-v1:0',
+    modelKey: 'opus40',
     label: 'Opus 4',
   },
   {
     id: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+    modelKey: 'sonnet40',
     label: 'Sonnet 4',
   },
   {
     id: 'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
+    modelKey: 'sonnet37',
     label: 'Sonnet 3.7',
   },
   {
     id: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    modelKey: 'sonnet35',
     label: 'Sonnet 3.5 v2',
   },
   {
     id: 'us.anthropic.claude-3-5-haiku-20241022-v1:0',
+    modelKey: 'haiku35',
     label: 'Haiku 3.5',
   },
 ]
@@ -123,49 +145,60 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
   {
     id: 'claude-opus-4-6',
     alias: 'opus',
+    modelKey: 'opus46',
     label: 'Opus 4.6',
     context: '1m',
   },
   {
     id: 'claude-sonnet-4-6',
     alias: 'sonnet',
+    modelKey: 'sonnet46',
     label: 'Sonnet 4.6',
   },
   {
     id: 'claude-haiku-4-5@20251001',
     alias: 'haiku',
+    modelKey: 'haiku45',
     label: 'Haiku 4.5',
   },
   {
     id: 'claude-opus-4-5@20251101',
+    modelKey: 'opus45',
     label: 'Opus 4.5',
   },
   {
     id: 'claude-sonnet-4-5@20250929',
+    modelKey: 'sonnet45',
     label: 'Sonnet 4.5',
   },
   {
     id: 'claude-opus-4-1@20250805',
+    modelKey: 'opus41',
     label: 'Opus 4.1',
   },
   {
     id: 'claude-opus-4@20250514',
+    modelKey: 'opus40',
     label: 'Opus 4',
   },
   {
     id: 'claude-sonnet-4@20250514',
+    modelKey: 'sonnet40',
     label: 'Sonnet 4',
   },
   {
     id: 'claude-3-7-sonnet@20250219',
+    modelKey: 'sonnet37',
     label: 'Sonnet 3.7',
   },
   {
     id: 'claude-3-5-sonnet-v2@20241022',
+    modelKey: 'sonnet35',
     label: 'Sonnet 3.5 v2',
   },
   {
     id: 'claude-3-5-haiku@20241022',
+    modelKey: 'haiku35',
     label: 'Haiku 3.5',
   },
 ]
@@ -174,45 +207,55 @@ const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
   {
     id: 'claude-opus-4-6',
     alias: 'opus',
+    modelKey: 'opus46',
     label: 'Opus 4.6',
     context: '1m',
   },
   {
     id: 'claude-sonnet-4-6',
     alias: 'sonnet',
+    modelKey: 'sonnet46',
     label: 'Sonnet 4.6',
   },
   {
     id: 'claude-haiku-4-5',
     alias: 'haiku',
+    modelKey: 'haiku45',
     label: 'Haiku 4.5',
   },
   {
     id: 'claude-sonnet-4-5',
+    modelKey: 'sonnet45',
     label: 'Sonnet 4.5',
   },
   {
     id: 'claude-opus-4-1',
+    modelKey: 'opus41',
     label: 'Opus 4.1',
   },
   {
     id: 'claude-opus-4',
+    modelKey: 'opus40',
     label: 'Opus 4',
   },
   {
     id: 'claude-sonnet-4',
+    modelKey: 'sonnet40',
     label: 'Sonnet 4',
   },
   {
     id: 'claude-3-7-sonnet',
+    modelKey: 'sonnet37',
     label: 'Sonnet 3.7',
   },
   {
     id: 'claude-3-5-sonnet',
+    modelKey: 'sonnet35',
     label: 'Sonnet 3.5',
   },
   {
     id: 'claude-3-5-haiku',
+    modelKey: 'haiku35',
     label: 'Haiku 3.5',
   },
 ]
@@ -221,18 +264,21 @@ const DEFAULT_CODEX_MODELS: ProviderModelConfig[] = [
   {
     id: 'gpt-5.4',
     alias: 'gpt54',
+    modelKey: 'gpt54',
     label: 'GPT-5.4',
     description: 'Latest GPT',
   },
   {
     id: 'gpt-5.3-codex',
     alias: 'gpt53codex',
+    modelKey: 'gpt53codex',
     label: 'GPT-5.3 Codex',
     description: 'Frontier agentic coding',
   },
   {
     id: 'gpt-5.4-mini',
     alias: 'gpt54mini',
+    modelKey: 'gpt54mini',
     label: 'GPT-5.4 Mini',
     description: 'Fast GPT',
   },
@@ -279,12 +325,23 @@ export function migrateFromLegacyEnvVars(opts?: {
       models: DEFAULT_VERTEX_MODELS,
     }
   } else if (isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY)) {
+    // Resolve Foundry env vars into config so the adapter stays pure
+    const foundryResource = process.env.ANTHROPIC_FOUNDRY_RESOURCE
+    const foundryBaseUrl =
+      process.env.ANTHROPIC_FOUNDRY_BASE_URL ||
+      (foundryResource
+        ? `https://${foundryResource}.services.ai.azure.com/anthropic`
+        : undefined)
+    const foundryApiKey = process.env.ANTHROPIC_FOUNDRY_API_KEY
     providers['foundry'] = {
       type: 'foundry',
+      ...(foundryBaseUrl ? { baseUrl: foundryBaseUrl } : {}),
       cache: { type: 'none' },
       auth: {
-        active: 'azure',
-        azure: {},
+        active: foundryApiKey ? 'apiKey' : 'azure',
+        ...(foundryApiKey
+          ? { apiKey: { keyEnv: 'ANTHROPIC_FOUNDRY_API_KEY' } }
+          : { azure: {} }),
       },
       models: DEFAULT_FOUNDRY_MODELS,
     }

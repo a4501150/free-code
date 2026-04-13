@@ -4,7 +4,7 @@
  * Contains information about deprecated models and their retirement dates.
  */
 
-import type { APIProvider } from './providers.js'
+import type { ProviderType } from '../settings/types.js'
 import { getProviderRegistry } from './providerRegistry.js'
 
 type DeprecatedModelInfo = {
@@ -22,12 +22,15 @@ type DeprecationInfo = DeprecatedModelInfo | NotDeprecatedInfo
 type DeprecationEntry = {
   /** Human-readable model name */
   modelName: string
-  /** Retirement dates by provider (null = not deprecated for that provider) */
-  retirementDates: Record<APIProvider, string | null>
+  /** Retirement dates by provider type (null = not deprecated for that provider) */
+  retirementDates: Partial<Record<ProviderType, string | null>> & {
+    /** Default retirement date for provider types not explicitly listed */
+    default?: string | null
+  }
 }
 
 /**
- * Deprecated models and their retirement dates by provider.
+ * Deprecated models and their retirement dates by provider type.
  * Keys are substrings to match in model IDs (case-insensitive).
  * To add a new deprecated model, add an entry to this object.
  */
@@ -35,28 +38,23 @@ const DEPRECATED_MODELS: Record<string, DeprecationEntry> = {
   'claude-3-opus': {
     modelName: 'Claude 3 Opus',
     retirementDates: {
-      firstParty: 'January 5, 2026',
-      bedrock: 'January 15, 2026',
-      vertex: 'January 5, 2026',
-      foundry: 'January 5, 2026',
+      default: 'January 5, 2026',
+      'bedrock-converse': 'January 15, 2026',
     },
   },
   'claude-3-7-sonnet': {
     modelName: 'Claude 3.7 Sonnet',
     retirementDates: {
-      firstParty: 'February 19, 2026',
-      bedrock: 'April 28, 2026',
+      default: 'February 19, 2026',
+      'bedrock-converse': 'April 28, 2026',
       vertex: 'May 11, 2026',
-      foundry: 'February 19, 2026',
     },
   },
   'claude-3-5-haiku': {
     modelName: 'Claude 3.5 Haiku',
     retirementDates: {
-      firstParty: 'February 19, 2026',
-      bedrock: null,
-      vertex: null,
-      foundry: null,
+      anthropic: 'February 19, 2026',
+      // Not deprecated on bedrock, vertex, foundry
     },
   },
 }
@@ -66,11 +64,18 @@ const DEPRECATED_MODELS: Record<string, DeprecationEntry> = {
  */
 function getDeprecatedModelInfo(modelId: string): DeprecationInfo {
   const lowercaseModelId = modelId.toLowerCase()
-  const provider = getProviderRegistry().getLegacyAPIProvider(modelId)
+  const providerType = getProviderRegistry().getProviderType(modelId)
 
   for (const [key, value] of Object.entries(DEPRECATED_MODELS)) {
-    const retirementDate = value.retirementDates[provider]
-    if (!lowercaseModelId.includes(key) || !retirementDate) {
+    if (!lowercaseModelId.includes(key)) {
+      continue
+    }
+    // Look up retirement date: check specific provider type first, then default
+    const retirementDate =
+      (providerType ? value.retirementDates[providerType] : undefined) ??
+      value.retirementDates.default ??
+      null
+    if (!retirementDate) {
       continue
     }
     return {

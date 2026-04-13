@@ -20,10 +20,6 @@ import { has1mContext } from './context.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
-import {
-  getAPIProvider,
-  isFirstPartyAnthropicBaseUrl,
-} from './model/providers.js'
 import { getProviderRegistry } from './model/providerRegistry.js'
 import { getInitialSettings } from './settings/settings.js'
 
@@ -207,11 +203,11 @@ export function shouldIncludeFirstPartyOnlyBetas(model?: string): boolean {
  * treatment data is firstParty-only.
  */
 export function shouldUseGlobalCacheScope(model?: string): boolean {
-  const isNative = model
-    ? getProviderRegistry().isAnthropicNative(model)
-    : getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()
+  const caps = model
+    ? getProviderRegistry().getCapabilities(model)
+    : getProviderRegistry().getCapabilities()
   return (
-    isNative &&
+    caps.globalCacheScope &&
     !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)
   )
 }
@@ -314,7 +310,7 @@ export const getAllModelBetas = memoize((model: string): string[] => {
 
 export const getModelBetas = memoize((model: string): string[] => {
   const modelBetas = getAllModelBetas(model)
-  if (getProviderRegistry().isBedrockProvider(model)) {
+  if (getProviderRegistry().getCapability(model, 'betasInBody')) {
     return modelBetas.filter(b => !BEDROCK_EXTRA_PARAMS_HEADERS.has(b))
   }
   return modelBetas

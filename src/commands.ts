@@ -142,7 +142,7 @@ import {
 } from './utils/plugins/loadPluginCommands.js'
 import memoize from 'lodash-es/memoize.js'
 import { isUsing3PServices, isClaudeAISubscriber } from './utils/auth.js'
-import { isFirstPartyAnthropicBaseUrl } from './utils/model/providers.js'
+import { getProviderRegistry } from './utils/model/providerRegistry.js'
 import env from './commands/env/index.js'
 import exit from './commands/exit/index.js'
 import exportCommand from './commands/export/index.js'
@@ -389,7 +389,7 @@ export function meetsAvailabilityRequirement(cmd: Command): boolean {
         if (
           !isClaudeAISubscriber() &&
           !isUsing3PServices() &&
-          isFirstPartyAnthropicBaseUrl()
+          getProviderRegistry().getCapabilities().firstPartyFeatures
         )
           return true
         break

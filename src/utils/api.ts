@@ -36,10 +36,6 @@ import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getInitialSettings } from './settings/settings.js'
 import { createUserMessage } from './messages.js'
-import {
-  getAPIProvider,
-  isFirstPartyAnthropicBaseUrl,
-} from './model/providers.js'
 import { getProviderRegistry } from './model/providerRegistry.js'
 import {
   getFileReadIgnorePatterns,
@@ -191,8 +187,8 @@ export async function toolToAPISchema(
     // with Claude 4.5 reject this field with 400. See GH#32742, PR #21729.
     if (
       (options.model
-        ? getProviderRegistry().isAnthropicNative(options.model)
-        : getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()) &&
+        ? getProviderRegistry().getCapability(options.model, 'eagerInputStreaming')
+        : getProviderRegistry().getCapabilities().eagerInputStreaming) &&
       ((getInitialSettings()?.fineGrainedToolStreaming ?? false) ||
         isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING))
     ) {

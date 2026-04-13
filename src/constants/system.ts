@@ -2,7 +2,7 @@
 
 import { logForDebugging } from '../utils/debug.js'
 import { isEnvDefinedFalsy } from '../utils/envUtils.js'
-import { getAPIProvider } from '../utils/model/providers.js'
+import { getProviderRegistry } from '../utils/model/providerRegistry.js'
 import { getWorkload } from '../utils/workloadContext.js'
 
 const DEFAULT_PREFIX = `You are Claude Code, Anthropic's official CLI for Claude.`
@@ -29,8 +29,7 @@ export function getCLISyspromptPrefix(options?: {
   isNonInteractive: boolean
   hasAppendSystemPrompt: boolean
 }): CLISyspromptPrefix {
-  const apiProvider = getAPIProvider()
-  if (apiProvider === 'vertex') {
+  if (getProviderRegistry().getDefaultProvider()?.config.type === 'vertex') {
     return DEFAULT_PREFIX
   }
 
