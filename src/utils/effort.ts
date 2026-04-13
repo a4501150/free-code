@@ -24,6 +24,11 @@ export function modelSupportsEffort(model: string): boolean {
   if (isEnvTruthy(process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT)) {
     return true
   }
+  // Per-model effortLevels from providers.json / settings.json
+  const configLevels = getProviderRegistry().getModelEffortLevels(model)
+  if (configLevels !== undefined) {
+    return configLevels.length > 0
+  }
   const supported3P = get3PModelCapabilityOverride(model, 'effort')
   if (supported3P !== undefined) {
     return supported3P
@@ -50,6 +55,11 @@ export function modelSupportsEffort(model: string): boolean {
 // @[MODEL LAUNCH]: Add the new model to the allowlist if it supports 'max' effort.
 // Per API docs, 'max' is Opus 4.6 only for public models — other models return an error.
 export function modelSupportsMaxEffort(model: string): boolean {
+  // Per-model effortLevels from providers.json — check if 'max' is listed
+  const configLevels = getProviderRegistry().getModelEffortLevels(model)
+  if (configLevels !== undefined) {
+    return configLevels.includes('max')
+  }
   const supported3P = get3PModelCapabilityOverride(model, 'max_effort')
   if (supported3P !== undefined) {
     return supported3P
@@ -274,6 +284,12 @@ export function getOpusDefaultEffortConfig(): OpusDefaultEffortConfig {
 export function getDefaultEffortForModel(
   model: string,
 ): EffortValue | undefined {
+  // Per-model defaultEffort from providers.json / settings.json takes priority
+  const configDefault = getProviderRegistry().getModelDefaultEffort(model)
+  if (configDefault !== undefined) {
+    return parseEffortValue(configDefault)
+  }
+
   // IMPORTANT: Do not change the default effort level without notifying
   // the model launch DRI and research. Default effort is a sensitive setting
   // that can greatly affect model quality and bashing.

@@ -56,6 +56,20 @@ export function getContextWindowForModel(
     return 1_000_000
   }
 
+  // Per-model contextWindow from providers.json / settings.json takes priority
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getProviderRegistry } = require('./model/providerRegistry.js') as {
+      getProviderRegistry: () => { getProviderForModel: (m: string) => { model: { contextWindow?: number } } | null }
+    }
+    const resolved = getProviderRegistry().getProviderForModel(model)
+    if (resolved?.model.contextWindow && resolved.model.contextWindow > 0) {
+      return resolved.model.contextWindow
+    }
+  } catch {
+    // Registry not available yet — fall through to defaults
+  }
+
   const cap = getModelCapability(model)
   if (cap?.max_input_tokens && cap.max_input_tokens >= 100_000) {
     if (
@@ -129,6 +143,21 @@ export function getModelMaxOutputTokens(model: string): {
   default: number
   upperLimit: number
 } {
+  // Per-model maxOutputTokens from providers.json / settings.json takes priority
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getProviderRegistry } = require('./model/providerRegistry.js') as {
+      getProviderRegistry: () => { getProviderForModel: (m: string) => { model: { maxOutputTokens?: number } } | null }
+    }
+    const resolved = getProviderRegistry().getProviderForModel(model)
+    if (resolved?.model.maxOutputTokens && resolved.model.maxOutputTokens > 0) {
+      const limit = resolved.model.maxOutputTokens
+      return { default: limit, upperLimit: limit }
+    }
+  } catch {
+    // Registry not available yet — fall through to defaults
+  }
+
   let defaultTokens: number
   let upperLimit: number
 

@@ -284,6 +284,18 @@ export class ProviderRegistry {
     return provider?.config.auth
   }
 
+  // ── Per-model config queries ──────────────────────────────────────
+
+  getModelEffortLevels(model: string): string[] | undefined {
+    const provider = this.getProviderForModel(model)
+    return provider?.model.effortLevels
+  }
+
+  getModelDefaultEffort(model: string): string | undefined {
+    const provider = this.getProviderForModel(model)
+    return provider?.model.defaultEffort
+  }
+
   // ── Capability queries ──────────────────────────────────────────────
 
   /**
@@ -348,12 +360,14 @@ export class ProviderRegistry {
 /**
  * Get or lazily initialize the provider registry.
  *
- * On first call, reads `providers` from settings.json. If absent,
- * falls back to auto-migration from legacy environment variables.
+ * Resolution order:
+ * 1. settings.json `providers` field (explicit user config, highest priority)
+ * 2. ~/.claude/providers.json (persisted migration / login result)
+ * 3. Legacy env var migration → persist to providers.json for next run
  */
 export function getProviderRegistry(): ProviderRegistry {
   if (!_instance) {
-    // Lazy init: import settings + migration at call time to avoid circular deps
+    // Lazy init: import at call time to avoid circular deps
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { getInitialSettings } = require('../settings/settings.js') as {
       getInitialSettings: () => Record<string, unknown>
@@ -364,30 +378,44 @@ export function getProviderRegistry(): ProviderRegistry {
         oauthTokens?: { accessToken: string } | null
       }) => Record<string, ProviderConfig>
     }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { readProvidersFile, writeProvidersFile } = require('./providersFile.js') as {
+      readProvidersFile: () => Record<string, ProviderConfig> | null
+      writeProvidersFile: (providers: Record<string, ProviderConfig>) => void
+    }
 
     const settings = getInitialSettings()
 
     if (settings.providers) {
+      // Explicit config in settings.json — highest priority
       _instance = new ProviderRegistry(
         settings.providers as Record<string, ProviderConfig>,
       )
     } else {
-      // Detect OAuth tokens for legacy migration.
-      // Use lazy require to avoid circular dep (auth.ts → providers.ts → registry).
-      let oauthTokens: { accessToken: string } | null = null
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { getClaudeAIOAuthTokens } = require('../auth.js') as {
-          getClaudeAIOAuthTokens: () => { accessToken: string } | null
-        }
-        oauthTokens = getClaudeAIOAuthTokens()
-      } catch {
-        // Auth not available yet — proceed without OAuth detection
-      }
+      // Read from providers.json (single source of truth)
+      const persisted = readProvidersFile()
 
-      _instance = new ProviderRegistry(
-        migrateFromLegacyEnvVars({ oauthTokens }),
-      )
+      if (persisted && Object.keys(persisted).length > 0) {
+        _instance = new ProviderRegistry(persisted)
+      } else {
+        // First run or empty file — migrate from env vars and persist
+        let oauthTokens: { accessToken: string } | null = null
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { getClaudeAIOAuthTokens } = require('../auth.js') as {
+            getClaudeAIOAuthTokens: () => { accessToken: string } | null
+          }
+          oauthTokens = getClaudeAIOAuthTokens()
+        } catch {
+          // Auth not available yet — proceed without OAuth detection
+        }
+
+        const migrated = migrateFromLegacyEnvVars({ oauthTokens })
+        _instance = new ProviderRegistry(migrated)
+
+        // Persist so next run skips migration
+        writeProvidersFile(migrated)
+      }
     }
   }
   return _instance

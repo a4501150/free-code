@@ -1536,6 +1536,30 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
     })
     saveOAuthTokensIfNeeded(refreshedTokens)
 
+    // Update providers.json with refreshed tokens
+    try {
+      const { writeProvidersFile, readProvidersFile } = await import('./model/providersFile.js')
+      const existing = readProvidersFile()
+      const anthropicProvider = existing?.['anthropic']
+      if (anthropicProvider && anthropicProvider.auth?.active === 'oauth') {
+        writeProvidersFile({
+          anthropic: {
+            ...anthropicProvider,
+            auth: {
+              active: 'oauth',
+              oauth: {
+                accessToken: refreshedTokens.accessToken,
+                refreshToken: refreshedTokens.refreshToken,
+                expiresAt: refreshedTokens.expiresAt,
+              },
+            },
+          },
+        })
+      }
+    } catch {
+      // Non-fatal: providers.json update is best-effort
+    }
+
     // Clear the cache after refreshing token
     getClaudeAIOAuthTokens.cache?.clear?.()
     clearKeychainCache()

@@ -307,6 +307,30 @@ export const ProviderModelSchema = lazySchema(() =>
       .string()
       .optional()
       .describe('Context window hint (e.g. "1m" for 1M tokens)'),
+    contextWindow: z
+      .number()
+      .optional()
+      .describe(
+        'Context window size in tokens. Overrides auto-detection. ' +
+          'E.g. 200000 for 200k, 1000000 for 1M.',
+      ),
+    maxOutputTokens: z
+      .number()
+      .optional()
+      .describe('Maximum output tokens for this model'),
+    effortLevels: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Available effort/thinking levels for this model. ' +
+          'E.g. ["low", "medium", "high"] for Claude, ["low", "high", "xhigh"] for Codex.',
+      ),
+    defaultEffort: z
+      .string()
+      .optional()
+      .describe(
+        'Default effort level for this model. Must be one of the effortLevels values.',
+      ),
     pricing: z
       .object({
         input: z
