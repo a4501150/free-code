@@ -31,8 +31,8 @@ import {
   renderDefaultModelSetting,
   type ModelSetting,
 } from './model.js'
-import { has1mContext } from '../context.js'
 import { getGlobalConfig } from '../config.js'
+import { stripProviderPrefix } from './parseModelString.js'
 
 /** Whether the current provider is NOT first-party Anthropic. */
 function is3P(): boolean {
@@ -80,22 +80,7 @@ export function getDefaultOptionForUser(fastMode = false): ModelOption {
   }
 }
 
-function getCustomSonnetOption(): ModelOption | undefined {
-  const customSonnetModel = process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
-  // When a 3P user has a custom sonnet model string, show it directly
-  if (is3P() && customSonnetModel) {
-    const is1m = has1mContext(customSonnetModel)
-    return {
-      value: 'sonnet',
-      label:
-        process.env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME ?? customSonnetModel,
-      description:
-        process.env.ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION ??
-        `Custom Sonnet model${is1m ? ' (1M context)' : ''}`,
-      descriptionForModel: `${process.env.ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION ?? `Custom Sonnet model${is1m ? ' with 1M context' : ''}`} (${customSonnetModel})`,
-    }
-  }
-}
+// Custom model env var options removed — use provider config models instead.
 
 // @[MODEL LAUNCH]: Update or add model option functions (getSonnetXXOption, getOpusXXOption, etc.)
 // with the new model's label and description. These appear in the /model picker.
@@ -109,21 +94,7 @@ function getSonnet46Option(): ModelOption {
   }
 }
 
-function getCustomOpusOption(): ModelOption | undefined {
-  const customOpusModel = process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
-  // When a 3P user has a custom opus model string, show it directly
-  if (is3P() && customOpusModel) {
-    const is1m = has1mContext(customOpusModel)
-    return {
-      value: 'opus',
-      label: process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME ?? customOpusModel,
-      description:
-        process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION ??
-        `Custom Opus model${is1m ? ' (1M context)' : ''}`,
-      descriptionForModel: `${process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION ?? `Custom Opus model${is1m ? ' with 1M context' : ''}`} (${customOpusModel})`,
-    }
-  }
-}
+// Custom opus env var option removed — use provider config models instead.
 
 function getOpus41Option(): ModelOption {
   return {
@@ -163,20 +134,7 @@ export function getOpus46_1MOption(fastMode = false): ModelOption {
   }
 }
 
-function getCustomHaikuOption(): ModelOption | undefined {
-  const customHaikuModel = process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL
-  // When a 3P user has a custom haiku model string, show it directly
-  if (is3P() && customHaikuModel) {
-    return {
-      value: 'haiku',
-      label: process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME ?? customHaikuModel,
-      description:
-        process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION ??
-        'Custom Haiku model',
-      descriptionForModel: `${process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION ?? 'Custom Haiku model'} (${customHaikuModel})`,
-    }
-  }
-}
+// Custom haiku env var option removed — use provider config models instead.
 
 function getHaiku45Option(): ModelOption {
   return {
@@ -200,8 +158,9 @@ function getHaiku35Option(): ModelOption {
 
 function getHaikuOption(): ModelOption {
   // Return correct Haiku option based on provider
-  const haikuModel = getDefaultHaikuModel()
-  return haikuModel === getModelStrings().haiku45
+  // Strip provider prefix since getModelStrings() returns bare IDs
+  const haikuBare = stripProviderPrefix(getDefaultHaikuModel())
+  return haikuBare === getModelStrings().haiku45
     ? getHaiku45Option()
     : getHaiku35Option()
 }
@@ -357,37 +316,21 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     return payg1POptions
   }
 
-  // PAYG 3P: Default (Sonnet 4.5) + Sonnet (3P custom) or Sonnet 4.6/1M + Opus (3P custom) or Opus 4.1/Opus 4.6/Opus1M + Haiku + Opus 4.1
+  // PAYG 3P: Default (Sonnet 4.5) + Sonnet 4.6/1M + Opus 4.1/4.6/1M + Haiku
   const payg3pOptions = [getDefaultOptionForUser(fastMode)]
 
-  const customSonnet = getCustomSonnetOption()
-  if (customSonnet !== undefined) {
-    payg3pOptions.push(customSonnet)
-  } else {
-    // Add Sonnet 4.6 since Sonnet 4.5 is the default
-    payg3pOptions.push(getSonnet46Option())
-    if (checkSonnet1mAccess()) {
-      payg3pOptions.push(getSonnet46_1MOption())
-    }
+  payg3pOptions.push(getSonnet46Option())
+  if (checkSonnet1mAccess()) {
+    payg3pOptions.push(getSonnet46_1MOption())
   }
 
-  const customOpus = getCustomOpusOption()
-  if (customOpus !== undefined) {
-    payg3pOptions.push(customOpus)
-  } else {
-    // Add Opus 4.1, Opus 4.6 and Opus 4.6 1M
-    payg3pOptions.push(getOpus41Option()) // This is the default opus
-    payg3pOptions.push(getOpus46Option(fastMode))
-    if (checkOpus1mAccess()) {
-      payg3pOptions.push(getOpus46_1MOption(fastMode))
-    }
+  payg3pOptions.push(getOpus41Option())
+  payg3pOptions.push(getOpus46Option(fastMode))
+  if (checkOpus1mAccess()) {
+    payg3pOptions.push(getOpus46_1MOption(fastMode))
   }
-  const customHaiku = getCustomHaikuOption()
-  if (customHaiku !== undefined) {
-    payg3pOptions.push(customHaiku)
-  } else {
-    payg3pOptions.push(getHaikuOption())
-  }
+
+  payg3pOptions.push(getHaikuOption())
   return payg3pOptions
 }
 

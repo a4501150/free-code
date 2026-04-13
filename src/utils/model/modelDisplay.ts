@@ -19,6 +19,7 @@ import { type ModelAlias, isModelAlias } from './aliases.js'
 import { capitalize } from '../stringUtils.js'
 import { getModelStrings, resolveOverriddenModel } from './modelStrings.js'
 import type { ModelName, ModelSetting, ModelShortName } from './modelTypes.js'
+import { stripProviderPrefix } from './parseModelString.js'
 
 // ── Canonical name resolution ──────────────────────────────────────
 
@@ -30,7 +31,7 @@ import type { ModelName, ModelSetting, ModelShortName } from './modelTypes.js'
  * module top-level (see MODEL_COSTS in modelCost.ts).
  */
 export function firstPartyNameToCanonical(name: ModelName): ModelShortName {
-  name = name.toLowerCase()
+  name = stripProviderPrefix(name).toLowerCase()
   // Special cases for Claude 4+ models to differentiate versions
   // Order matters: check more specific versions first (4-5 before 4)
   if (name.includes('claude-opus-4-6')) {
@@ -110,11 +111,12 @@ export function getCanonicalName(fullModelName: ModelName): ModelShortName {
 // ── Display string generation ──────────────────────────────────────
 
 export function isNonCustomOpusModel(model: ModelName): boolean {
+  const bare = stripProviderPrefix(model)
   return (
-    model === getModelStrings().opus40 ||
-    model === getModelStrings().opus41 ||
-    model === getModelStrings().opus45 ||
-    model === getModelStrings().opus46
+    bare === getModelStrings().opus40 ||
+    bare === getModelStrings().opus41 ||
+    bare === getModelStrings().opus45 ||
+    bare === getModelStrings().opus46
   )
 }
 
@@ -176,6 +178,8 @@ export function renderDefaultModelSetting(
  * if the model is not recognized as a public model.
  */
 export function getPublicModelDisplayName(model: ModelName): string | null {
+  // Strip provider prefix so "anthropic:claude-opus-4-6" matches against bare model IDs
+  model = stripProviderPrefix(model)
   if (model.includes('gpt-') || model.includes('codex')) {
     if (model === 'gpt-5.2-codex') return 'Codex 5.2'
     if (model === 'gpt-5.1-codex') return 'Codex 5.1'
@@ -279,8 +283,9 @@ export function getMarketingNameForModel(modelId: string): string | undefined {
     return undefined
   }
 
-  const has1m = modelId.toLowerCase().includes('[1m]')
-  const canonical = getCanonicalName(modelId)
+  const stripped = stripProviderPrefix(modelId)
+  const has1m = stripped.toLowerCase().includes('[1m]')
+  const canonical = getCanonicalName(stripped)
 
   if (canonical.includes('claude-opus-4-6')) {
     return has1m ? 'Opus 4.6 (with 1M context)' : 'Opus 4.6'

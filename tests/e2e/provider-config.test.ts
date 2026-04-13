@@ -265,6 +265,132 @@ describe('Provider Config E2E', () => {
     })
   })
 
+  // ─── Provider-Qualified Model Syntax ────────────────────────
+
+  describe('Provider-Qualified Model Syntax', () => {
+    let session: TmuxSession
+
+    afterEach(async () => {
+      if (session) await session.stop()
+    })
+
+    test('qualified name routes to correct provider (openai)', async () => {
+      // Both providers share the same model ID "shared-model".
+      // Using "test-openai:shared-model" should route to the OpenAI server.
+      openaiServer.reset([{ kind: 'text', text: 'From OpenAI provider' }])
+      anthropicServer.reset([textResponse('From Anthropic provider')])
+
+      session = new TmuxSession({
+        serverUrl: anthropicServer.url,
+        settings: {
+          providers: {
+            'test-anthropic': {
+              type: 'anthropic',
+              baseUrl: anthropicServer.url,
+              auth: { active: 'apiKey', apiKey: { key: 'test-key' } },
+              models: [{ id: 'shared-model' }],
+            },
+            'test-openai': {
+              type: 'openai-chat-completions',
+              baseUrl: `${openaiServer.url}/v1`,
+              auth: { active: 'apiKey', apiKey: { key: 'test-key' } },
+              models: [{ id: 'shared-model' }],
+            },
+          },
+        },
+        additionalArgs: ['--model', 'test-openai:shared-model'],
+      })
+      await session.start()
+
+      await session.sendLine('Hello')
+      const screen = await session.waitForText('From OpenAI provider', 15_000)
+      expect(screen).toContain('From OpenAI provider')
+
+      // Verify request went to OpenAI server
+      const openaiRequests = openaiServer.getRequestLog()
+      expect(openaiRequests.length).toBeGreaterThanOrEqual(1)
+      expect(openaiRequests[0]!.body.model).toBe('shared-model')
+    })
+
+    test('qualified name routes to correct provider (anthropic)', async () => {
+      // Same setup, but "test-anthropic:shared-model" should route to Anthropic.
+      openaiServer.reset([{ kind: 'text', text: 'From OpenAI provider' }])
+      anthropicServer.reset([textResponse('From Anthropic provider')])
+
+      session = new TmuxSession({
+        serverUrl: anthropicServer.url,
+        settings: {
+          providers: {
+            'test-anthropic': {
+              type: 'anthropic',
+              baseUrl: anthropicServer.url,
+              auth: { active: 'apiKey', apiKey: { key: 'test-key' } },
+              models: [{ id: 'shared-model' }],
+            },
+            'test-openai': {
+              type: 'openai-chat-completions',
+              baseUrl: `${openaiServer.url}/v1`,
+              auth: { active: 'apiKey', apiKey: { key: 'test-key' } },
+              models: [{ id: 'shared-model' }],
+            },
+          },
+        },
+        additionalArgs: ['--model', 'test-anthropic:shared-model'],
+      })
+      await session.start()
+
+      await session.sendLine('Hello')
+      const screen = await session.waitForText(
+        'From Anthropic provider',
+        15_000,
+      )
+      expect(screen).toContain('From Anthropic provider')
+
+      // Verify request went to Anthropic server, not OpenAI
+      const anthropicRequests = anthropicServer.getRequestLog()
+      expect(anthropicRequests.length).toBeGreaterThanOrEqual(1)
+      expect(openaiServer.getRequestLog().length).toBe(0)
+    })
+
+    test('qualified alias resolves to correct model on correct provider', async () => {
+      openaiServer.reset([{ kind: 'text', text: 'Alias resolved!' }])
+      anthropicServer.reset([textResponse('fallback')])
+
+      session = new TmuxSession({
+        serverUrl: anthropicServer.url,
+        settings: {
+          providers: {
+            'test-anthropic': {
+              type: 'anthropic',
+              baseUrl: anthropicServer.url,
+              auth: { active: 'apiKey', apiKey: { key: 'test-key' } },
+              models: [{ id: 'shared-model' }],
+            },
+            'test-openai': {
+              type: 'openai-chat-completions',
+              baseUrl: `${openaiServer.url}/v1`,
+              auth: { active: 'apiKey', apiKey: { key: 'test-key' } },
+              models: [
+                { id: 'shared-model', alias: 'my-alias' },
+              ],
+            },
+          },
+        },
+        additionalArgs: ['--model', 'test-openai:my-alias'],
+      })
+      await session.start()
+
+      await session.sendLine('Hello')
+      const screen = await session.waitForText('Alias resolved', 15_000)
+      expect(screen).toContain('Alias resolved')
+
+      // Verify the request went to OpenAI with the resolved model ID
+      const openaiRequests = openaiServer.getRequestLog()
+      expect(openaiRequests.length).toBeGreaterThanOrEqual(1)
+      expect(openaiRequests[0]!.body.model).toBe('shared-model')
+    })
+  })
+
   // ─── Per-Provider Caching ──────────────────────────────────
 
   describe('Per-Provider Caching', () => {

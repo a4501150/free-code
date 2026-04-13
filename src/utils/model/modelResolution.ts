@@ -28,12 +28,20 @@ import { getProviderRegistry } from './providerRegistry.js'
 import { isModelAllowed } from './modelAllowlist.js'
 import { type ModelAlias, isModelAlias } from './aliases.js'
 import type { ModelName, ModelSetting } from './modelTypes.js'
+import {
+  parseModelStringFromRegistry,
+  qualifyModel,
+  toQualifiedString,
+} from './parseModelString.js'
 
 // Re-export types from modelTypes for backward compat
 export type { ModelShortName, ModelName, ModelSetting } from './modelTypes.js'
 
 export function getSmallFastModel(): ModelName {
-  return process.env.ANTHROPIC_SMALL_FAST_MODEL || getDefaultHaikuModel()
+  if (process.env.ANTHROPIC_SMALL_FAST_MODEL) {
+    return qualifyWithDefault(process.env.ANTHROPIC_SMALL_FAST_MODEL)
+  }
+  return getDefaultHaikuModel()
 }
 
 /**
@@ -91,40 +99,31 @@ export function getBestModel(): ModelName {
   return getDefaultOpusModel()
 }
 
-// @[MODEL LAUNCH]: Update the default Opus model (3P providers may lag so keep defaults unchanged).
+/**
+ * Helper to qualify a bare model ID with the default provider name.
+ * If the model is already qualified, returns it as-is.
+ * Strips any context suffix ([1m], [2m]) — callers that need a suffix add it themselves.
+ */
+function qualifyWithDefault(bareModelId: string): ModelName {
+  const registry = getProviderRegistry()
+  const parsed = parseModelStringFromRegistry(bareModelId)
+  // Use the parsed provider if it was explicitly qualified, otherwise use default
+  const provider = parsed.provider || registry.getDefaultProviderName() || ''
+  // Return without context suffix — getDefaultXxxModel() returns base model IDs
+  return qualifyModel(provider, parsed.modelId)
+}
+
+// @[MODEL LAUNCH]: Update default model IDs below if the new model becomes the default.
 export function getDefaultOpusModel(): ModelName {
-  if (process.env.ANTHROPIC_DEFAULT_OPUS_MODEL) {
-    return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
-  }
-  // 3P providers (Bedrock, Vertex, Foundry) — kept as a separate branch
-  // even when values match, since 3P availability lags firstParty and
-  // these will diverge again at the next model launch.
-  if (!getProviderRegistry().getCapabilities().firstPartyFeatures) {
-    return getModelStrings().opus46
-  }
-  return getModelStrings().opus46
+  return qualifyWithDefault(getModelStrings().opus46)
 }
 
-// @[MODEL LAUNCH]: Update the default Sonnet model (3P providers may lag so keep defaults unchanged).
 export function getDefaultSonnetModel(): ModelName {
-  if (process.env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
-    return process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
-  }
-  // Default to Sonnet 4.5 for 3P since they may not have 4.6 yet
-  if (!getProviderRegistry().getCapabilities().firstPartyFeatures) {
-    return getModelStrings().sonnet45
-  }
-  return getModelStrings().sonnet46
+  return qualifyWithDefault(getModelStrings().sonnet46)
 }
 
-// @[MODEL LAUNCH]: Update the default Haiku model (3P providers may lag so keep defaults unchanged).
 export function getDefaultHaikuModel(): ModelName {
-  if (process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL) {
-    return process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL
-  }
-
-  // Haiku 4.5 is available on all platforms (first-party, Foundry, Bedrock, Vertex)
-  return getModelStrings().haiku45
+  return qualifyWithDefault(getModelStrings().haiku45)
 }
 
 /**
@@ -166,7 +165,7 @@ export function getRuntimeMainLoopModel(params: {
  */
 export function getDefaultMainLoopModelSetting(): ModelName | ModelAlias {
   if (isCodexSubscriber()) {
-    return getModelStrings().gpt53codex
+    return qualifyWithDefault(getModelStrings().gpt53codex)
   }
 
   // Max users get Opus as default
@@ -208,8 +207,11 @@ export function isOpus1mMergeEnabled(): boolean {
 }
 
 /**
- * Returns a full model name for use in this session, possibly after resolving
- * a model alias.
+ * Returns a fully-qualified model name for use in this session, after
+ * resolving aliases and ensuring a provider prefix is present.
+ *
+ * All model strings in the system are provider-qualified: "provider:modelId[contextSuffix]".
+ * Bare aliases ("sonnet", "opus", "haiku") resolve using the default provider.
  *
  * Supports [1m] suffix on any model alias (e.g., haiku[1m], sonnet[1m]) to enable
  * 1M context window without requiring each variant to be in MODEL_ALIASES.
@@ -217,26 +219,22 @@ export function isOpus1mMergeEnabled(): boolean {
 export function parseUserSpecifiedModel(
   modelInput: ModelName | ModelAlias,
 ): ModelName {
-  const modelInputTrimmed = modelInput.trim()
-  const normalizedModel = modelInputTrimmed.toLowerCase()
+  const parsed = parseModelStringFromRegistry(modelInput)
+  const modelString = parsed.modelId.toLowerCase()
+  const suffix = parsed.contextSuffix
+  const has1mTag = suffix.toLowerCase() === '[1m]'
 
-  const has1mTag = has1mContext(normalizedModel)
-  const modelString = has1mTag
-    ? normalizedModel.replace(/\[1m]$/i, '').trim()
-    : normalizedModel
-
+  // Resolve built-in aliases — getDefaultXxxModel() already returns qualified strings
   if (isModelAlias(modelString)) {
     switch (modelString) {
       case 'opusplan':
-        return (
-          getDefaultSonnetModel() + (has1mTag ? '[1m]' : '')
-        ) // Sonnet is default, Opus in plan mode
+        return getDefaultSonnetModel() + suffix // Sonnet is default, Opus in plan mode
       case 'sonnet':
-        return getDefaultSonnetModel() + (has1mTag ? '[1m]' : '')
+        return getDefaultSonnetModel() + suffix
       case 'haiku':
-        return getDefaultHaikuModel() + (has1mTag ? '[1m]' : '')
+        return getDefaultHaikuModel() + suffix
       case 'opus':
-        return getDefaultOpusModel() + (has1mTag ? '[1m]' : '')
+        return getDefaultOpusModel() + suffix
       case 'best':
         return getBestModel()
       default:
@@ -245,9 +243,10 @@ export function parseUserSpecifiedModel(
 
   // Check provider registry for alias match (covers custom providers)
   const registry = getProviderRegistry()
-  const registryMatch = registry.getProviderForModel(modelString)
-  if (registryMatch && registryMatch.model.alias === modelString) {
-    return registryMatch.model.id + (has1mTag ? '[1m]' : '')
+  const qualifiedInput = toQualifiedString(parsed)
+  const registryMatch = registry.getProviderForModel(qualifiedInput)
+  if (registryMatch && registryMatch.model.alias === parsed.modelId) {
+    return qualifyModel(registryMatch.providerName, registryMatch.model.id, suffix)
   }
 
   // Opus 4/4.1 are no longer available on the first-party API (same as
@@ -257,14 +256,12 @@ export function parseUserSpecifiedModel(
     isLegacyOpusFirstParty(modelString) &&
     isLegacyModelRemapEnabled()
   ) {
-    return getDefaultOpusModel() + (has1mTag ? '[1m]' : '')
+    return getDefaultOpusModel() + suffix
   }
 
-  // Preserve original case for custom model names (e.g., Azure Foundry deployment IDs)
-  if (has1mTag) {
-    return modelInputTrimmed.replace(/\[1m\]$/i, '').trim() + '[1m]'
-  }
-  return modelInputTrimmed
+  // Return the qualified string, preserving original case for custom model
+  // names (e.g., Azure Foundry deployment IDs)
+  return qualifyModel(parsed.provider, parsed.modelId, suffix)
 }
 
 /**
@@ -278,14 +275,17 @@ export function resolveSkillModelOverride(
   if (has1mContext(skillModel) || !has1mContext(currentModel)) {
     return skillModel
   }
-  if (modelSupports1M(parseUserSpecifiedModel(skillModel))) {
-    return skillModel + '[1m]'
+  const resolved = parseUserSpecifiedModel(skillModel)
+  if (modelSupports1M(resolved)) {
+    // Append [1m] to the qualified string
+    const parsed = parseModelStringFromRegistry(resolved)
+    return qualifyModel(parsed.provider, parsed.modelId, '[1m]')
   }
   return skillModel
 }
 
 export function normalizeModelStringForAPI(model: string): string {
-  return model.replace(/\[(1|2)m\]/gi, '')
+  return parseModelStringFromRegistry(model).modelId
 }
 
 /**

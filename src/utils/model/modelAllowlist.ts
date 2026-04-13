@@ -2,6 +2,7 @@ import { getSettings_DEPRECATED } from '../settings/settings.js'
 import { isModelAlias, isModelFamilyAlias } from './aliases.js'
 import { parseUserSpecifiedModel } from './model.js'
 import { resolveOverriddenModel } from './modelStrings.js'
+import { stripProviderPrefix } from './parseModelString.js'
 
 /**
  * Check if a model belongs to a given family by checking if its name
@@ -107,7 +108,9 @@ export function isModelAllowed(model: string): boolean {
     return false // Empty allowlist blocks all user-specified models
   }
 
-  const resolvedModel = resolveOverriddenModel(model)
+  // Strip provider prefix — allowlist entries are bare model names/aliases
+  const stripped = stripProviderPrefix(model)
+  const resolvedModel = resolveOverriddenModel(stripped)
   const normalizedModel = resolvedModel.trim().toLowerCase()
   const normalizedAllowlist = availableModels.map(m => m.trim().toLowerCase())
 

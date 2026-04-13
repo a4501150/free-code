@@ -3,7 +3,7 @@ import { isUltrathinkEnabled } from './thinking.js'
 import { getInitialSettings } from './settings/settings.js'
 import { isProSubscriber, isMaxSubscriber, isTeamSubscriber } from './auth.js'
 import { getProviderRegistry } from './model/providerRegistry.js'
-import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
+
 import { isEnvTruthy } from './envUtils.js'
 import type { EffortLevel } from 'src/entrypoints/sdk/runtimeTypes.js'
 
@@ -29,10 +29,7 @@ export function modelSupportsEffort(model: string): boolean {
   if (configLevels !== undefined) {
     return configLevels.length > 0
   }
-  const supported3P = get3PModelCapabilityOverride(model, 'effort')
-  if (supported3P !== undefined) {
-    return supported3P
-  }
+
   // Supported by a subset of Claude 4 models
   if (m.includes('opus-4-6') || m.includes('sonnet-4-6')) {
     return true
@@ -60,10 +57,7 @@ export function modelSupportsMaxEffort(model: string): boolean {
   if (configLevels !== undefined) {
     return configLevels.includes('max')
   }
-  const supported3P = get3PModelCapabilityOverride(model, 'max_effort')
-  if (supported3P !== undefined) {
-    return supported3P
-  }
+
   if (model.toLowerCase().includes('opus-4-6')) {
     return true
   }

@@ -8,6 +8,11 @@ import {
   parseUserSpecifiedModel,
 } from './model.js'
 import { getProviderRegistry } from './providerRegistry.js'
+import {
+  parseModelStringFromRegistry,
+  qualifyModel,
+  stripProviderPrefix,
+} from './parseModelString.js'
 
 export const AGENT_MODEL_OPTIONS = [...MODEL_ALIASES, 'inherit'] as const
 export type AgentModelAlias = (typeof AGENT_MODEL_OPTIONS)[number]
@@ -44,24 +49,23 @@ export function getAgentModel(
     return parseUserSpecifiedModel(process.env.CLAUDE_CODE_SUBAGENT_MODEL)
   }
 
-  // Extract Bedrock region prefix from parent model to inherit for subagents.
-  // This ensures subagents use the same cross-region inference profile (e.g., "eu.", "us.")
-  // as the parent, which is required when IAM permissions only allow specific regions.
-  const parentRegionPrefix = getBedrockRegionPrefix(parentModel)
+  // Extract Bedrock region prefix from parent model's bare model ID to inherit for subagents.
+  const parentBare = stripProviderPrefix(parentModel)
+  const parentRegionPrefix = getBedrockRegionPrefix(parentBare)
 
   // Helper to apply parent region prefix for Bedrock models.
-  // `originalSpec` is the raw model string before resolution (alias or full ID).
-  // If the user explicitly specified a full model ID that already carries its own
-  // region prefix (e.g., "eu.anthropic.…"), we preserve it instead of overwriting
-  // with the parent's prefix. This prevents silent data-residency violations when
-  // an agent config intentionally pins to a different region than the parent.
+  // Operates on the bare model ID, then re-qualifies with the provider prefix.
   const applyParentRegionPrefix = (
     resolvedModel: string,
     originalSpec: string,
   ): string => {
     if (parentRegionPrefix && getProviderRegistry().getCapability(parentModel, 'regionPrefixPropagation')) {
-      if (getBedrockRegionPrefix(originalSpec)) return resolvedModel
-      return applyBedrockRegionPrefix(resolvedModel, parentRegionPrefix)
+      const originalBare = stripProviderPrefix(originalSpec)
+      if (getBedrockRegionPrefix(originalBare)) return resolvedModel
+      // Decompose, apply region prefix to bare model ID, reassemble
+      const parsed = parseModelStringFromRegistry(resolvedModel)
+      const prefixed = applyBedrockRegionPrefix(parsed.modelId, parentRegionPrefix)
+      return qualifyModel(parsed.provider, prefixed, parsed.contextSuffix)
     }
     return resolvedModel
   }
@@ -108,7 +112,7 @@ export function getAgentModel(
  * since they carry semantics beyond "same tier as parent".
  */
 function aliasMatchesParentTier(alias: string, parentModel: string): boolean {
-  const canonical = getCanonicalName(parentModel)
+  const canonical = getCanonicalName(stripProviderPrefix(parentModel))
   switch (alias.toLowerCase()) {
     case 'opus':
       return canonical.includes('opus')

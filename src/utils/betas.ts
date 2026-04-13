@@ -19,7 +19,7 @@ import { isClaudeAISubscriber } from './auth.js'
 import { has1mContext } from './context.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
-import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
+
 import { getProviderRegistry } from './model/providerRegistry.js'
 import { getInitialSettings } from './settings/settings.js'
 
@@ -83,13 +83,6 @@ export function filterAllowedSdkBetas(
 // however out of an abundance of caution, we do not enable any which are behind an experiment
 
 export function modelSupportsISP(model: string): boolean {
-  const supported3P = get3PModelCapabilityOverride(
-    model,
-    'interleaved_thinking',
-  )
-  if (supported3P !== undefined) {
-    return supported3P
-  }
   const canonical = getCanonicalName(model)
   const providerType = getProviderRegistry().getProviderType(model)
   // Foundry supports interleaved thinking for all models

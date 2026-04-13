@@ -15,6 +15,7 @@ import type {
   ProviderModelConfig,
   ProviderType,
 } from '../settings/types.js'
+import { parseModelString } from './parseModelString.js'
 
 // ── Capability defaults by provider type ──────────────────────────────
 
@@ -167,8 +168,8 @@ let _instance: ProviderRegistry | null = null
 
 export class ProviderRegistry {
   private readonly providers: Map<string, ProviderConfig>
-  /** model ID or alias → [providerName, model config] */
-  private readonly modelIndex: Map<
+  /** Qualified "providerName:modelId" or "providerName:alias" → entry */
+  private readonly qualifiedIndex: Map<
     string,
     { providerName: string; config: ProviderConfig; model: ProviderModelConfig }
   >
@@ -182,26 +183,30 @@ export class ProviderRegistry {
     string,
     Required<ProviderCapabilities>
   >
+  /** Set of all provider names (lowercased) for the parser */
+  private readonly providerNames: Set<string>
 
   constructor(providers: Record<string, ProviderConfig>) {
     this.providers = new Map(Object.entries(providers))
-    this.modelIndex = new Map()
+    this.qualifiedIndex = new Map()
     this.modelKeyIndex = new Map()
     this.capabilitiesCache = new Map()
+    this.providerNames = new Set(
+      [...this.providers.keys()].map((n) => n.toLowerCase()),
+    )
     this.buildIndex()
   }
 
   private buildIndex(): void {
     for (const [name, config] of this.providers) {
+      const lowerName = name.toLowerCase()
       for (const model of config.models) {
         const entry = { providerName: name, config, model }
-        // Index by model ID (always)
-        if (!this.modelIndex.has(model.id)) {
-          this.modelIndex.set(model.id, entry)
-        }
-        // Index by alias (if set and not already taken)
-        if (model.alias && !this.modelIndex.has(model.alias)) {
-          this.modelIndex.set(model.alias, entry)
+        // Index by qualified "providerName:modelId"
+        this.qualifiedIndex.set(`${lowerName}:${model.id}`, entry)
+        // Index by qualified alias "providerName:alias"
+        if (model.alias) {
+          this.qualifiedIndex.set(`${lowerName}:${model.alias}`, entry)
         }
         // Index by modelKey (if set and not already taken)
         if (model.modelKey && !this.modelKeyIndex.has(model.modelKey)) {
@@ -213,10 +218,31 @@ export class ProviderRegistry {
 
   // ── Core lookups ─────────────────────────────────────────────────
 
-  getProviderForModel(modelIdOrAlias: string): ResolvedProvider | null {
-    // Strip [1m]/[2m] context suffix for lookup
-    const normalized = modelIdOrAlias.replace(/\[\d+m\]$/, '')
-    const entry = this.modelIndex.get(normalized)
+  /**
+   * Get the set of registered provider names (lowercased).
+   * Used by parseModelString() to identify provider prefixes.
+   */
+  getProviderNames(): Set<string> {
+    return this.providerNames
+  }
+
+  /**
+   * Get the name of the default (first) provider.
+   */
+  getDefaultProviderName(): string | null {
+    const first = this.providers.keys().next()
+    if (first.done) return null
+    return first.value
+  }
+
+  getProviderForModel(qualifiedModel: string): ResolvedProvider | null {
+    const parsed = parseModelString(
+      qualifiedModel,
+      this.providerNames,
+      this.getDefaultProviderName() ?? '',
+    )
+    const key = `${parsed.provider.toLowerCase()}:${parsed.modelId}`
+    const entry = this.qualifiedIndex.get(key)
     if (!entry) return null
     return {
       providerName: entry.providerName,
