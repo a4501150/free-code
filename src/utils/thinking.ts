@@ -80,12 +80,13 @@ export function getRainbowColor(
   return colors[charIndex % colors.length]!
 }
 
-// TODO(inigo): add support for probing unknown models via API error detection
 // Provider-aware thinking support detection (aligns with modelSupportsISP in betas.ts)
 export function modelSupportsThinking(model: string): boolean {
+  // Config-driven: check per-model flag from provider registry first
+  const configured = getProviderRegistry().getModelFlag(model, 'thinking')
+  if (configured !== undefined) return configured
 
-  // IMPORTANT: Do not change thinking support without notifying the model
-  // launch DRI and research. This can greatly affect model quality and bashing.
+  // Fallback: hardcoded logic for models without explicit config
   const canonical = getCanonicalName(model)
   const providerType = getProviderRegistry().getProviderType(model)
   // Anthropic and Foundry: all Claude 4+ models (including Haiku 4.5)
@@ -96,15 +97,19 @@ export function modelSupportsThinking(model: string): boolean {
   return canonical.includes('sonnet-4') || canonical.includes('opus-4')
 }
 
-// @[MODEL LAUNCH]: Add the new model to the allowlist if it supports adaptive thinking.
 export function modelSupportsAdaptiveThinking(model: string): boolean {
+  // Config-driven: check per-model flag from provider registry first
+  const configured = getProviderRegistry().getModelFlag(
+    model,
+    'adaptiveThinking',
+  )
+  if (configured !== undefined) return configured
 
+  // Fallback: hardcoded logic for models without explicit config
   const canonical = getCanonicalName(model)
-  // Supported by a subset of Claude 4 models
   if (canonical.includes('opus-4-6') || canonical.includes('sonnet-4-6')) {
     return true
   }
-  // Exclude any other known legacy models (allowlist above catches 4-6 variants first)
   if (
     canonical.includes('opus') ||
     canonical.includes('sonnet') ||
@@ -112,17 +117,7 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
   ) {
     return false
   }
-  // IMPORTANT: Do not change adaptive thinking support without notifying the
-  // model launch DRI and research. This can greatly affect model quality and
-  // bashing.
-
-  // Newer models (4.6+) are all trained on adaptive thinking and MUST have it
-  // enabled for model testing. DO NOT default to false for first party, otherwise
-  // we may silently degrade model quality.
-
-  // Default to true for unknown model strings on 1P and Foundry (because Foundry
-  // is a proxy). Do not default to true for other 3P as they have different formats
-  // for their model strings.
+  // Default to true for unknown model strings on 1P and Foundry
   const providerType = getProviderRegistry().getProviderType(model)
   return providerType === 'anthropic' || providerType === 'foundry'
 }

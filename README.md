@@ -253,9 +253,7 @@ bun run dev
 | `ANTHROPIC_AUTH_TOKEN` | Auth token (alternative) |
 | `ANTHROPIC_MODEL` | Override default model |
 | `ANTHROPIC_BASE_URL` | Custom API endpoint |
-| `ANTHROPIC_DEFAULT_OPUS_MODEL` | Custom Opus model ID |
-| `ANTHROPIC_DEFAULT_SONNET_MODEL` | Custom Sonnet model ID |
-| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Custom Haiku model ID |
+| `CLAUDE_CODE_SUBAGENT_MODEL` | Override model for all subagents (default: inherit parent model) |
 | `CLAUDE_CODE_OAUTH_TOKEN` | OAuth token via env |
 | `CLAUDE_CODE_API_KEY_HELPER_TTL_MS` | API key helper cache TTL |
 

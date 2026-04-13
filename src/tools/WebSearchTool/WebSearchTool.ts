@@ -166,29 +166,10 @@ export const WebSearchTool = buildTool({
   },
   isEnabled() {
     const registry = getProviderRegistry()
-    const caps = registry.getCapabilities()
     const model = getMainLoopModel()
 
-    // Enable for first-party Anthropic
-    if (caps.firstPartyFeatures) {
-      return true
-    }
-
-    // Enable for Vertex AI with supported models (Claude 4.0+)
-    if (registry.getDefaultProvider()?.config.type === 'vertex') {
-      const supportsWebSearch =
-        model.includes('claude-opus-4') ||
-        model.includes('claude-sonnet-4') ||
-        model.includes('claude-haiku-4')
-      return supportsWebSearch
-    }
-
-    // Foundry only ships models that already support Web Search
-    if (registry.getDefaultProvider()?.config.type === 'foundry') {
-      return true
-    }
-
-    return false
+    // Use provider-level webSearch capability
+    return registry.getCapability(model, 'webSearch')
   },
   get inputSchema(): InputSchema {
     return inputSchema()

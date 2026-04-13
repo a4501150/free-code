@@ -344,6 +344,38 @@ export const ProviderModelSchema = lazySchema(() =>
       })
       .optional()
       .describe('Optional pricing override (per Mtok, USD)'),
+    thinking: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether this model supports extended thinking / reasoning. ' +
+          'OpenAI models use reasoning_effort, Gemini uses thinkingConfig.',
+      ),
+    adaptiveThinking: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether this model supports adaptive thinking (Anthropic type: adaptive). ' +
+          'When false, budget-based thinking is used instead.',
+      ),
+    interleavedThinking: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether this model supports interleaved thinking between tool calls (Anthropic ISP beta).',
+      ),
+    serverContextManagement: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether this model supports server-side context/thinking management (Anthropic context-management beta).',
+      ),
+    structuredOutputs: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether this model supports structured/constrained JSON output (Anthropic structured-outputs beta).',
+      ),
   }),
 )
 
@@ -447,6 +479,14 @@ export const ProviderCapabilitiesSchema = lazySchema(() =>
       .optional()
       .describe(
         'Provider omits model ID from 403 errors; enrich with model name',
+      ),
+
+    // Web search
+    webSearch: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether this provider supports server-side web search tool',
       ),
   }),
 )
@@ -1018,6 +1058,13 @@ export const SettingsSchema = lazySchema(() =>
         .string()
         .optional()
         .describe('Advisor model for the server-side advisor tool.'),
+      autoModeClassifierModel: z
+        .string()
+        .optional()
+        .describe(
+          'Model to use for auto mode safety classifier. ' +
+            'Defaults to the main loop model when not set.',
+        ),
       fastMode: z
         .boolean()
         .optional()

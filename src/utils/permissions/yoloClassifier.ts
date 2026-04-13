@@ -25,7 +25,10 @@ import { errorMessage } from '../errors.js'
 import { lazySchema } from '../lazySchema.js'
 import { extractTextContent } from '../messages.js'
 import { getMainLoopModel } from '../model/model.js'
-import { getAutoModeConfig } from '../settings/settings.js'
+import {
+  getAutoModeConfig,
+  getSettingsWithErrors,
+} from '../settings/settings.js'
 import { sideQuery } from '../sideQuery.js'
 import { jsonStringify } from '../slowOperations.js'
 import { tokenCountWithEstimation } from '../tokens.js'
@@ -1244,16 +1247,18 @@ type AutoModeConfig = {
 }
 
 const DEFAULT_AUTO_MODE_CONFIG: AutoModeConfig = {
-  model: 'claude-sonnet-4-6[1m]',
   twoStageClassifier: true,
 }
 
 /**
  * Get the model for the classifier.
- * Ant-only env var takes precedence, then hardcoded default,
- * then the main loop model.
+ * Priority: settings autoModeClassifierModel > main loop model (inherit).
  */
 function getClassifierModel(): string {
+  const { settings } = getSettingsWithErrors()
+  if (settings.autoModeClassifierModel) {
+    return settings.autoModeClassifierModel
+  }
   return DEFAULT_AUTO_MODE_CONFIG.model ?? getMainLoopModel()
 }
 

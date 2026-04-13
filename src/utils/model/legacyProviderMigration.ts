@@ -14,6 +14,48 @@ import { isEnvTruthy } from '../envUtils.js'
 
 // ── Default Claude models ────────────────────────────────────────────
 
+// Shared capability presets for Claude models (1P / Foundry)
+const CLAUDE_46_CAPS = {
+  thinking: true,
+  adaptiveThinking: true,
+  interleavedThinking: true,
+  serverContextManagement: true,
+  structuredOutputs: true,
+} as const
+
+const CLAUDE_4X_CAPS = {
+  thinking: true,
+  adaptiveThinking: false,
+  interleavedThinking: true,
+  serverContextManagement: true,
+  structuredOutputs: true,
+} as const
+
+const CLAUDE_3X_CAPS = {
+  thinking: false,
+  adaptiveThinking: false,
+  interleavedThinking: false,
+  serverContextManagement: false,
+  structuredOutputs: false,
+} as const
+
+// 3P (Bedrock/Vertex) — no server context management or structured outputs betas
+const CLAUDE_46_3P_CAPS = {
+  thinking: true,
+  adaptiveThinking: true,
+  interleavedThinking: true,
+  serverContextManagement: false,
+  structuredOutputs: false,
+} as const
+
+const CLAUDE_4X_3P_CAPS = {
+  thinking: true,
+  adaptiveThinking: false,
+  interleavedThinking: true,
+  serverContextManagement: false,
+  structuredOutputs: false,
+} as const
+
 const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
   {
     id: 'claude-opus-4-6',
@@ -26,6 +68,7 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
     maxOutputTokens: 128_000,
     effortLevels: ['low', 'medium', 'high', 'max'],
     defaultEffort: 'medium',
+    ...CLAUDE_46_CAPS,
   },
   {
     id: 'claude-sonnet-4-6',
@@ -37,6 +80,7 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
     contextWindow: 1_000_000,
     maxOutputTokens: 64_000,
     effortLevels: ['low', 'medium', 'high', 'max'],
+    ...CLAUDE_46_CAPS,
   },
   {
     id: 'claude-haiku-4-5-20251001',
@@ -46,6 +90,7 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
     description: 'Fastest',
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
+    ...CLAUDE_4X_CAPS,
   },
   {
     id: 'claude-opus-4-5-20251101',
@@ -54,6 +99,7 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
     effortLevels: ['low', 'medium', 'high'],
+    ...CLAUDE_4X_CAPS,
   },
   {
     id: 'claude-sonnet-4-5-20250929',
@@ -61,6 +107,7 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 4.5',
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
+    ...CLAUDE_4X_CAPS,
   },
   {
     id: 'claude-opus-4-1-20250805',
@@ -68,6 +115,7 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
     label: 'Opus 4.1',
     contextWindow: 200_000,
     maxOutputTokens: 32_000,
+    ...CLAUDE_4X_CAPS,
   },
   {
     id: 'claude-opus-4-20250514',
@@ -75,6 +123,7 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
     label: 'Opus 4',
     contextWindow: 200_000,
     maxOutputTokens: 32_000,
+    ...CLAUDE_4X_CAPS,
   },
   {
     id: 'claude-sonnet-4-20250514',
@@ -82,6 +131,7 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 4',
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
+    ...CLAUDE_4X_CAPS,
   },
   {
     id: 'claude-3-7-sonnet-20250219',
@@ -89,6 +139,7 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 3.7',
     contextWindow: 200_000,
     maxOutputTokens: 8_192,
+    ...CLAUDE_3X_CAPS,
   },
   {
     id: 'claude-3-5-sonnet-20241022',
@@ -96,6 +147,7 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 3.5 v2',
     contextWindow: 200_000,
     maxOutputTokens: 8_192,
+    ...CLAUDE_3X_CAPS,
   },
   {
     id: 'claude-3-5-haiku-20241022',
@@ -103,6 +155,7 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
     label: 'Haiku 3.5',
     contextWindow: 200_000,
     maxOutputTokens: 8_192,
+    ...CLAUDE_3X_CAPS,
   },
 ]
 
@@ -117,6 +170,7 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
     maxOutputTokens: 128_000,
     effortLevels: ['low', 'medium', 'high', 'max'],
     defaultEffort: 'medium',
+    ...CLAUDE_46_3P_CAPS,
   },
   {
     id: 'us.anthropic.claude-sonnet-4-6',
@@ -127,6 +181,7 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
     contextWindow: 1_000_000,
     maxOutputTokens: 64_000,
     effortLevels: ['low', 'medium', 'high', 'max'],
+    ...CLAUDE_46_3P_CAPS,
   },
   {
     id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
@@ -135,6 +190,7 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
     label: 'Haiku 4.5',
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
+    ...CLAUDE_4X_3P_CAPS,
   },
   {
     id: 'us.anthropic.claude-opus-4-5-20251101-v1:0',
@@ -143,6 +199,7 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
     effortLevels: ['low', 'medium', 'high'],
+    ...CLAUDE_4X_3P_CAPS,
   },
   {
     id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
@@ -150,6 +207,7 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 4.5',
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
+    ...CLAUDE_4X_3P_CAPS,
   },
   {
     id: 'us.anthropic.claude-opus-4-1-20250805-v1:0',
@@ -157,6 +215,7 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
     label: 'Opus 4.1',
     contextWindow: 200_000,
     maxOutputTokens: 32_000,
+    ...CLAUDE_4X_3P_CAPS,
   },
   {
     id: 'us.anthropic.claude-opus-4-20250514-v1:0',
@@ -164,6 +223,7 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
     label: 'Opus 4',
     contextWindow: 200_000,
     maxOutputTokens: 32_000,
+    ...CLAUDE_4X_3P_CAPS,
   },
   {
     id: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
@@ -171,6 +231,7 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 4',
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
+    ...CLAUDE_4X_3P_CAPS,
   },
   {
     id: 'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
@@ -178,6 +239,7 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 3.7',
     contextWindow: 200_000,
     maxOutputTokens: 8_192,
+    ...CLAUDE_3X_CAPS,
   },
   {
     id: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
@@ -185,6 +247,7 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 3.5 v2',
     contextWindow: 200_000,
     maxOutputTokens: 8_192,
+    ...CLAUDE_3X_CAPS,
   },
   {
     id: 'us.anthropic.claude-3-5-haiku-20241022-v1:0',
@@ -192,6 +255,7 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
     label: 'Haiku 3.5',
     contextWindow: 200_000,
     maxOutputTokens: 8_192,
+    ...CLAUDE_3X_CAPS,
   },
 ]
 
@@ -206,6 +270,7 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
     maxOutputTokens: 128_000,
     effortLevels: ['low', 'medium', 'high', 'max'],
     defaultEffort: 'medium',
+    ...CLAUDE_46_3P_CAPS,
   },
   {
     id: 'claude-sonnet-4-6',
@@ -216,6 +281,7 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
     contextWindow: 1_000_000,
     maxOutputTokens: 64_000,
     effortLevels: ['low', 'medium', 'high', 'max'],
+    ...CLAUDE_46_3P_CAPS,
   },
   {
     id: 'claude-haiku-4-5@20251001',
@@ -224,6 +290,7 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
     label: 'Haiku 4.5',
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
+    ...CLAUDE_4X_3P_CAPS,
   },
   {
     id: 'claude-opus-4-5@20251101',
@@ -232,6 +299,7 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
     effortLevels: ['low', 'medium', 'high'],
+    ...CLAUDE_4X_3P_CAPS,
   },
   {
     id: 'claude-sonnet-4-5@20250929',
@@ -239,6 +307,7 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 4.5',
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
+    ...CLAUDE_4X_3P_CAPS,
   },
   {
     id: 'claude-opus-4-1@20250805',
@@ -246,6 +315,7 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
     label: 'Opus 4.1',
     contextWindow: 200_000,
     maxOutputTokens: 32_000,
+    ...CLAUDE_4X_3P_CAPS,
   },
   {
     id: 'claude-opus-4@20250514',
@@ -253,6 +323,7 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
     label: 'Opus 4',
     contextWindow: 200_000,
     maxOutputTokens: 32_000,
+    ...CLAUDE_4X_3P_CAPS,
   },
   {
     id: 'claude-sonnet-4@20250514',
@@ -260,6 +331,7 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 4',
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
+    ...CLAUDE_4X_3P_CAPS,
   },
   {
     id: 'claude-3-7-sonnet@20250219',
@@ -267,6 +339,7 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 3.7',
     contextWindow: 200_000,
     maxOutputTokens: 8_192,
+    ...CLAUDE_3X_CAPS,
   },
   {
     id: 'claude-3-5-sonnet-v2@20241022',
@@ -274,6 +347,7 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 3.5 v2',
     contextWindow: 200_000,
     maxOutputTokens: 8_192,
+    ...CLAUDE_3X_CAPS,
   },
   {
     id: 'claude-3-5-haiku@20241022',
@@ -281,6 +355,7 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
     label: 'Haiku 3.5',
     contextWindow: 200_000,
     maxOutputTokens: 8_192,
+    ...CLAUDE_3X_CAPS,
   },
 ]
 
@@ -295,6 +370,7 @@ const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
     maxOutputTokens: 128_000,
     effortLevels: ['low', 'medium', 'high', 'max'],
     defaultEffort: 'medium',
+    ...CLAUDE_46_CAPS,
   },
   {
     id: 'claude-sonnet-4-6',
@@ -305,6 +381,7 @@ const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
     contextWindow: 1_000_000,
     maxOutputTokens: 64_000,
     effortLevels: ['low', 'medium', 'high', 'max'],
+    ...CLAUDE_46_CAPS,
   },
   {
     id: 'claude-haiku-4-5',
@@ -313,6 +390,7 @@ const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
     label: 'Haiku 4.5',
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
+    ...CLAUDE_4X_CAPS,
   },
   {
     id: 'claude-sonnet-4-5',
@@ -320,6 +398,7 @@ const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 4.5',
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
+    ...CLAUDE_4X_CAPS,
   },
   {
     id: 'claude-opus-4-1',
@@ -327,6 +406,7 @@ const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
     label: 'Opus 4.1',
     contextWindow: 200_000,
     maxOutputTokens: 32_000,
+    ...CLAUDE_4X_CAPS,
   },
   {
     id: 'claude-opus-4',
@@ -334,6 +414,7 @@ const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
     label: 'Opus 4',
     contextWindow: 200_000,
     maxOutputTokens: 32_000,
+    ...CLAUDE_4X_CAPS,
   },
   {
     id: 'claude-sonnet-4',
@@ -341,6 +422,7 @@ const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 4',
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
+    ...CLAUDE_4X_CAPS,
   },
   {
     id: 'claude-3-7-sonnet',
@@ -348,6 +430,7 @@ const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 3.7',
     contextWindow: 200_000,
     maxOutputTokens: 8_192,
+    ...CLAUDE_3X_CAPS,
   },
   {
     id: 'claude-3-5-sonnet',
@@ -355,6 +438,7 @@ const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
     label: 'Sonnet 3.5',
     contextWindow: 200_000,
     maxOutputTokens: 8_192,
+    ...CLAUDE_3X_CAPS,
   },
   {
     id: 'claude-3-5-haiku',
@@ -362,8 +446,18 @@ const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
     label: 'Haiku 3.5',
     contextWindow: 200_000,
     maxOutputTokens: 8_192,
+    ...CLAUDE_3X_CAPS,
   },
 ]
+
+// OpenAI models: thinking translated to reasoning_effort by adapter
+const OPENAI_CAPS = {
+  thinking: true,
+  adaptiveThinking: false,
+  interleavedThinking: false,
+  serverContextManagement: false,
+  structuredOutputs: false,
+} as const
 
 const DEFAULT_CODEX_MODELS: ProviderModelConfig[] = [
   {
@@ -375,6 +469,7 @@ const DEFAULT_CODEX_MODELS: ProviderModelConfig[] = [
     contextWindow: 1_050_000,
     maxOutputTokens: 128_000,
     effortLevels: ['none', 'low', 'medium', 'high', 'xhigh'],
+    ...OPENAI_CAPS,
   },
   {
     id: 'gpt-5.3-codex',
@@ -385,6 +480,7 @@ const DEFAULT_CODEX_MODELS: ProviderModelConfig[] = [
     contextWindow: 400_000,
     maxOutputTokens: 128_000,
     effortLevels: ['low', 'medium', 'high', 'xhigh'],
+    ...OPENAI_CAPS,
   },
   {
     id: 'gpt-5.4-mini',
@@ -395,6 +491,7 @@ const DEFAULT_CODEX_MODELS: ProviderModelConfig[] = [
     contextWindow: 400_000,
     maxOutputTokens: 128_000,
     effortLevels: ['none', 'low', 'medium', 'high', 'xhigh'],
+    ...OPENAI_CAPS,
   },
 ]
 

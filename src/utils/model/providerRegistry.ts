@@ -31,6 +31,7 @@ const ALL_FALSE_CAPABILITIES: Required<ProviderCapabilities> = {
   opaqueDeploymentIds: false,
   regionPrefixPropagation: false,
   enrichModelIdErrors: false,
+  webSearch: false,
 }
 
 const PROVIDER_CAPABILITY_DEFAULTS: Record<
@@ -49,6 +50,7 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     opaqueDeploymentIds: false,
     regionPrefixPropagation: false,
     enrichModelIdErrors: false,
+    webSearch: true,
   },
   'bedrock-converse': {
     globalCacheScope: false,
@@ -62,6 +64,7 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     opaqueDeploymentIds: false,
     regionPrefixPropagation: true,
     enrichModelIdErrors: true,
+    webSearch: false,
   },
   vertex: {
     globalCacheScope: false,
@@ -75,6 +78,7 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     opaqueDeploymentIds: false,
     regionPrefixPropagation: false,
     enrichModelIdErrors: false,
+    webSearch: true,
   },
   foundry: {
     globalCacheScope: false,
@@ -88,6 +92,7 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     opaqueDeploymentIds: true,
     regionPrefixPropagation: false,
     enrichModelIdErrors: false,
+    webSearch: true,
   },
   'openai-chat-completions': { ...ALL_FALSE_CAPABILITIES },
   'openai-responses': { ...ALL_FALSE_CAPABILITIES },
@@ -357,6 +362,21 @@ export class ProviderRegistry {
     cap: K,
   ): Required<ProviderCapabilities>[K] {
     return this.getCapabilities(model)[cap]
+  }
+
+  /**
+   * Get a per-model capability flag from the provider config.
+   * Returns the boolean value if the flag exists on the model config,
+   * or undefined if not set (caller should fall back to hardcoded logic).
+   */
+  getModelFlag(
+    model: string,
+    flag: keyof ProviderModelConfig,
+  ): boolean | undefined {
+    const resolved = this.getProviderForModel(model)
+    if (!resolved) return undefined
+    const value = resolved.model[flag]
+    return typeof value === 'boolean' ? value : undefined
   }
 
   /**

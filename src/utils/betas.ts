@@ -83,9 +83,16 @@ export function filterAllowedSdkBetas(
 // however out of an abundance of caution, we do not enable any which are behind an experiment
 
 export function modelSupportsISP(model: string): boolean {
+  // Config-driven: check per-model flag from provider registry first
+  const configured = getProviderRegistry().getModelFlag(
+    model,
+    'interleavedThinking',
+  )
+  if (configured !== undefined) return configured
+
+  // Fallback: hardcoded logic for models without explicit config
   const canonical = getCanonicalName(model)
   const providerType = getProviderRegistry().getProviderType(model)
-  // Foundry supports interleaved thinking for all models
   if (providerType === 'foundry') {
     return true
   }
@@ -97,18 +104,20 @@ export function modelSupportsISP(model: string): boolean {
   )
 }
 
-function vertexModelSupportsWebSearch(model: string): boolean {
-  const canonical = getCanonicalName(model)
-  // Web search only supported on Claude 4.0+ models on Vertex
-  return (
-    canonical.includes('claude-opus-4') ||
-    canonical.includes('claude-sonnet-4') ||
-    canonical.includes('claude-haiku-4')
-  )
+function providerSupportsWebSearch(model: string): boolean {
+  return getProviderRegistry().getCapability(model, 'webSearch')
 }
 
 // Context management is supported on Claude 4+ models
 export function modelSupportsContextManagement(model: string): boolean {
+  // Config-driven: check per-model flag from provider registry first
+  const configured = getProviderRegistry().getModelFlag(
+    model,
+    'serverContextManagement',
+  )
+  if (configured !== undefined) return configured
+
+  // Fallback: hardcoded logic for models without explicit config
   const canonical = getCanonicalName(model)
   const providerType = getProviderRegistry().getProviderType(model)
   if (providerType === 'foundry') {
@@ -124,11 +133,17 @@ export function modelSupportsContextManagement(model: string): boolean {
   )
 }
 
-// @[MODEL LAUNCH]: Add the new model ID to this list if it supports structured outputs.
 export function modelSupportsStructuredOutputs(model: string): boolean {
+  // Config-driven: check per-model flag from provider registry first
+  const configured = getProviderRegistry().getModelFlag(
+    model,
+    'structuredOutputs',
+  )
+  if (configured !== undefined) return configured
+
+  // Fallback: hardcoded logic for models without explicit config
   const canonical = getCanonicalName(model)
   const providerType = getProviderRegistry().getProviderType(model)
-  // Structured outputs only supported on anthropic and foundry (not Bedrock/Vertex yet)
   if (providerType !== 'anthropic' && providerType !== 'foundry') {
     return false
   }
@@ -142,18 +157,11 @@ export function modelSupportsStructuredOutputs(model: string): boolean {
   )
 }
 
-// @[MODEL LAUNCH]: Add the new model if it supports auto mode (specifically PI probes) — ask in #proj-claude-code-safety-research.
-export function modelSupportsAutoMode(model: string): boolean {
+// Auto mode: the safety classifier runs as a separate model call, so any main
+// model can participate. The classifier model is configurable via settings.
+export function modelSupportsAutoMode(_model: string): boolean {
   if (feature('TRANSCRIPT_CLASSIFIER')) {
-    const m = getCanonicalName(model)
-    // firstParty-only at launch (PI probes not wired for
-    // Bedrock/Vertex/Foundry yet). Checked before allowModels so the GB
-    // override can't enable auto mode on unsupported providers.
-    if (!getProviderRegistry().isAnthropicType(model)) {
-      return false
-    }
-    // Allowlist (anthropic type already checked above).
-    return /^claude-(opus|sonnet)-4-6/.test(m)
+    return true
   }
   return false
 }
@@ -275,12 +283,11 @@ export const getAllModelBetas = memoize((model: string): string[] => {
     betaHeaders.push(STRUCTURED_OUTPUTS_BETA_HEADER)
   }
 
-  // Add web search beta for Vertex Claude 4.0+ models only
-  if (providerType === 'vertex' && vertexModelSupportsWebSearch(model)) {
-    betaHeaders.push(WEB_SEARCH_BETA_HEADER)
-  }
-  // Foundry only ships models that already support Web Search
-  if (providerType === 'foundry') {
+  // Add web search beta for providers that support it (provider-level capability)
+  if (
+    providerSupportsWebSearch(model) &&
+    providerType !== 'anthropic' // 1P handles web search server-side without beta header
+  ) {
     betaHeaders.push(WEB_SEARCH_BETA_HEADER)
   }
 
