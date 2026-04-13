@@ -53,7 +53,7 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     globalCacheScope: false,
     eagerInputStreaming: false,
     clientRequestId: false,
-    betasInBody: true,
+    betasInBody: false,
     authManagedExternally: true,
     credentialRefresh: 'aws',
     firstPartyFeatures: false,
@@ -90,7 +90,11 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
   },
   'openai-chat-completions': { ...ALL_FALSE_CAPABILITIES },
   'openai-responses': { ...ALL_FALSE_CAPABILITIES },
-  gemini: { ...ALL_FALSE_CAPABILITIES },
+  gemini: {
+    ...ALL_FALSE_CAPABILITIES,
+    authManagedExternally: true,
+    credentialRefresh: 'gcp' as const,
+  },
 }
 
 /**

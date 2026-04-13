@@ -23,9 +23,10 @@ import { isDebugToStdErr, logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { createCodexFetch } from './codex-fetch-adapter.js'
 import { createChatCompletionsFetch } from './openai-chat-completions-adapter.js'
-import { createBedrockFetch } from './bedrock-adapter.js'
+import { createBedrockConverseFetch } from './bedrock-converse-adapter.js'
 import { createVertexFetch } from './vertex-adapter.js'
 import { createFoundryFetch } from './foundry-adapter.js'
+import { createGeminiFetch } from './gemini-adapter.js'
 import {
   getProviderRegistry,
   type ResolvedProvider,
@@ -391,7 +392,7 @@ async function createClientForProvider(
         }
         return null
       }
-      const fetch = createBedrockFetch(config, getCredentials)
+      const fetch = createBedrockConverseFetch(config, getCredentials)
       return new Anthropic({
         apiKey: 'bedrock-placeholder',
         ...baseArgs,
@@ -484,9 +485,47 @@ async function createClientForProvider(
       })
     }
 
-    // ── Gemini (future) ─────────────────────────────────────────
-    case 'gemini':
-      return null
+    // ── Gemini (Vertex AI generateContent) ───────────────────────
+    case 'gemini': {
+      const getAccessToken = async () => {
+        const { GoogleAuth } = await import('google-auth-library')
+
+        const hasProjectEnvVar =
+          process.env['GCLOUD_PROJECT'] ||
+          process.env['GOOGLE_CLOUD_PROJECT'] ||
+          process.env['gcloud_project'] ||
+          process.env['google_cloud_project']
+        const hasKeyFile =
+          process.env['GOOGLE_APPLICATION_CREDENTIALS'] ||
+          process.env['google_application_credentials']
+
+        const googleAuth = new GoogleAuth({
+          scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+          ...(hasProjectEnvVar || hasKeyFile
+            ? {}
+            : {
+                projectId: config.auth?.gcp?.projectId,
+              }),
+        })
+
+        const authClient = await googleAuth.getClient()
+        const headers = await authClient.getRequestHeaders()
+        const token =
+          headers['Authorization']?.replace('Bearer ', '') || ''
+        const projectId =
+          headers['x-goog-user-project'] ||
+          (await googleAuth.getProjectId()) ||
+          undefined
+        return { token, projectId: projectId ?? undefined }
+      }
+      const fetch = createGeminiFetch(config, getAccessToken)
+      return new Anthropic({
+        apiKey: 'gemini-placeholder',
+        ...baseArgs,
+        fetch: fetch as unknown as typeof globalThis.fetch,
+        ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+      })
+    }
 
     default:
       return null
