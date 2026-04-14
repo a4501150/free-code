@@ -2,7 +2,7 @@ import { feature } from 'bun:bundle'
 import memoize from 'lodash-es/memoize.js'
 import { getIsNonInteractiveSession, getSdkBetas } from '../bootstrap/state.js'
 import {
-  BEDROCK_EXTRA_PARAMS_HEADERS,
+  BODY_ONLY_BETAS,
   CLAUDE_CODE_20250219_BETA_HEADER,
   CONTEXT_1M_BETA_HEADER,
   CONTEXT_MANAGEMENT_BETA_HEADER,
@@ -168,15 +168,16 @@ export function modelSupportsAutoMode(_model: string): boolean {
 
 /**
  * Get the correct tool search beta header for the current API provider.
- * - Claude API / Foundry: advanced-tool-use-2025-11-20
- * - Vertex AI / Bedrock: tool-search-tool-2025-10-19
+ * Providers using Anthropic wire format (anthropic, foundry, proxies) use the 1P header.
+ * Cloud providers with custom APIs (Bedrock Converse, Vertex) use the 3P header.
  */
 export function getToolSearchBetaHeader(model?: string): string {
   const registry = getProviderRegistry()
-  const providerType = model
-    ? registry.getProviderType(model)
-    : registry.getDefaultProvider()?.config.type ?? null
-  if (providerType === 'vertex' || providerType === 'bedrock-converse') {
+  const caps = model
+    ? registry.getCapabilities(model)
+    : registry.getCapabilities()
+  // 3P providers have non-native token counting methods (bedrock-custom, vertex-filtered)
+  if (caps.tokenCountingMethod !== 'native') {
     return TOOL_SEARCH_BETA_HEADER_3P
   }
   return TOOL_SEARCH_BETA_HEADER_1P
@@ -311,17 +312,20 @@ export const getAllModelBetas = memoize((model: string): string[] => {
 export const getModelBetas = memoize((model: string): string[] => {
   const modelBetas = getAllModelBetas(model)
   if (getProviderRegistry().getCapability(model, 'betasInBody')) {
-    return modelBetas.filter(b => !BEDROCK_EXTRA_PARAMS_HEADERS.has(b))
+    return modelBetas.filter(b => !BODY_ONLY_BETAS.has(b))
   }
   return modelBetas
 })
 
-export const getBedrockExtraBodyParamsBetas = memoize(
+export const getBodyBetas = memoize(
   (model: string): string[] => {
     const modelBetas = getAllModelBetas(model)
-    return modelBetas.filter(b => BEDROCK_EXTRA_PARAMS_HEADERS.has(b))
+    return modelBetas.filter(b => BODY_ONLY_BETAS.has(b))
   },
 )
+
+/** @deprecated Use getBodyBetas instead */
+export const getBedrockExtraBodyParamsBetas = getBodyBetas
 
 /**
  * Merge SDK-provided betas with auto-detected model betas.

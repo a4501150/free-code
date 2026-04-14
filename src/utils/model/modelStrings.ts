@@ -28,6 +28,11 @@ export const MODEL_KEYS = [
   'gpt54',
   'gpt53codex',
   'gpt54mini',
+  'gpt52codex',
+  'gpt51codex',
+  'gpt51codexMini',
+  'gpt51codexMax',
+  'gpt52',
 ] as const
 
 export type ModelKey = (typeof MODEL_KEYS)[number]
@@ -52,6 +57,11 @@ const CANONICAL_IDS: Record<ModelKey, string> = {
   gpt54: 'gpt-5.4',
   gpt53codex: 'gpt-5.3-codex',
   gpt54mini: 'gpt-5.4-mini',
+  gpt52codex: 'gpt-5.2-codex',
+  gpt51codex: 'gpt-5.1-codex',
+  gpt51codexMini: 'gpt-5.1-codex-mini',
+  gpt51codexMax: 'gpt-5.1-codex-max',
+  gpt52: 'gpt-5.2',
 }
 
 /** Reverse map: canonical first-party ID → ModelKey */

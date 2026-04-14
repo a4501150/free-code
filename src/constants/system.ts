@@ -29,7 +29,7 @@ export function getCLISyspromptPrefix(options?: {
   isNonInteractive: boolean
   hasAppendSystemPrompt: boolean
 }): CLISyspromptPrefix {
-  if (getProviderRegistry().getDefaultProvider()?.config.type === 'vertex') {
+  if (!getProviderRegistry().getCapabilities().customSyspromptPrefix) {
     return DEFAULT_PREFIX
   }
 

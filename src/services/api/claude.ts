@@ -54,7 +54,7 @@ import {
 } from '../../utils/api.js'
 import { getOauthAccountInfo } from '../../utils/auth.js'
 import {
-  getBedrockExtraBodyParamsBetas,
+  getBodyBetas,
   getMergedBetas,
   getModelBetas,
 } from '../../utils/betas.js'
@@ -194,7 +194,6 @@ import { count } from '../../utils/array.js'
 import { insertBlockAfterToolResults } from '../../utils/contentArray.js'
 import { validateBoundedIntEnvVar } from '../../utils/envValidation.js'
 import { safeParseJSON } from '../../utils/json.js'
-import { getInferenceProfileBackingModel } from '../../utils/model/bedrock.js'
 import {
   normalizeModelStringForAPI,
   parseUserSpecifiedModel,
@@ -991,12 +990,7 @@ async function* queryModel(
   const previousRequestId = getPreviousRequestIdFromMessages(messages)
 
   const registry = getProviderRegistry()
-  const resolvedModel =
-    registry.getProviderType(options.model) === 'bedrock-converse' &&
-    options.model.includes('application-inference-profile')
-      ? ((await getInferenceProfileBackingModel(options.model)) ??
-        options.model)
-      : options.model
+  const resolvedModel = await registry.resolveModelId(options.model)
 
   queryCheckpoint('query_tool_schema_build_start')
   const isAgenticQuery =
@@ -1483,7 +1477,7 @@ async function* queryModel(
     const bedrockBetas =
       registry.getCapability(retryContext.model, 'betasInBody')
         ? [
-            ...getBedrockExtraBodyParamsBetas(retryContext.model),
+            ...getBodyBetas(retryContext.model),
             ...(toolSearchHeader ? [toolSearchHeader] : []),
           ]
         : []

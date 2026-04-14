@@ -136,14 +136,13 @@ export function getModelCosts(model: string, usage: Usage): ModelCosts {
     const provider = registry.getProviderForModel(model)
     if (provider?.model.pricing) {
       const p = provider.model.pricing
+      const inputCost = p.input ?? DEFAULT_UNKNOWN_MODEL_COST.inputTokens
       return {
-        inputTokens: p.input ?? DEFAULT_UNKNOWN_MODEL_COST.inputTokens,
+        inputTokens: inputCost,
         outputTokens: p.output ?? DEFAULT_UNKNOWN_MODEL_COST.outputTokens,
-        promptCacheWriteTokens:
-          (p.input ?? DEFAULT_UNKNOWN_MODEL_COST.inputTokens) * 1.25,
-        promptCacheReadTokens:
-          (p.input ?? DEFAULT_UNKNOWN_MODEL_COST.inputTokens) * 0.1,
-        webSearchRequests: 0,
+        promptCacheWriteTokens: p.cacheWrite ?? inputCost * 1.25,
+        promptCacheReadTokens: p.cacheRead ?? inputCost * 0.1,
+        webSearchRequests: p.webSearch ?? 0,
       }
     }
     trackUnknownModelCost(model, shortName)

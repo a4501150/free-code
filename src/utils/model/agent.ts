@@ -1,7 +1,6 @@
 import type { PermissionMode } from '../permissions/PermissionMode.js'
 import { capitalize } from '../stringUtils.js'
 import { MODEL_ALIASES, type ModelAlias } from './aliases.js'
-import { applyBedrockRegionPrefix, getBedrockRegionPrefix } from './bedrock.js'
 import {
   getCanonicalName,
   getRuntimeMainLoopModel,
@@ -49,25 +48,21 @@ export function getAgentModel(
     return parseUserSpecifiedModel(process.env.CLAUDE_CODE_SUBAGENT_MODEL)
   }
 
-  // Extract Bedrock region prefix from parent model's bare model ID to inherit for subagents.
-  const parentBare = stripProviderPrefix(parentModel)
-  const parentRegionPrefix = getBedrockRegionPrefix(parentBare)
+  const registry = getProviderRegistry()
 
-  // Helper to apply parent region prefix for Bedrock models.
+  // Helper to propagate region prefix from parent model for Bedrock cross-region inference.
   // Operates on the bare model ID, then re-qualifies with the provider prefix.
   const applyParentRegionPrefix = (
     resolvedModel: string,
-    originalSpec: string,
+    _originalSpec: string,
   ): string => {
-    if (parentRegionPrefix && getProviderRegistry().getCapability(parentModel, 'regionPrefixPropagation')) {
-      const originalBare = stripProviderPrefix(originalSpec)
-      if (getBedrockRegionPrefix(originalBare)) return resolvedModel
-      // Decompose, apply region prefix to bare model ID, reassemble
-      const parsed = parseModelStringFromRegistry(resolvedModel)
-      const prefixed = applyBedrockRegionPrefix(parsed.modelId, parentRegionPrefix)
-      return qualifyModel(parsed.provider, prefixed, parsed.contextSuffix)
-    }
-    return resolvedModel
+    const parsed = parseModelStringFromRegistry(resolvedModel)
+    const prefixed = registry.propagateModelPrefix(
+      stripProviderPrefix(parentModel),
+      parsed.modelId,
+    )
+    if (prefixed === parsed.modelId) return resolvedModel
+    return qualifyModel(parsed.provider, prefixed, parsed.contextSuffix)
   }
 
   // Prioritize tool-specified model if provided

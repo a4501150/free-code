@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios'
+import { ANTHROPIC_API_VERSION } from 'src/constants/api.js'
 import { getOrganizationUUID } from 'src/services/oauth/client.js'
 import { getClaudeAIOAuthTokens } from './auth.js'
 import { logForDebugging } from './debug.js'
@@ -80,7 +81,7 @@ export function getOAuthHeaders(accessToken: string): Record<string, string> {
   return {
     Authorization: `Bearer ${accessToken}`,
     'Content-Type': 'application/json',
-    'anthropic-version': '2023-06-01',
+    'anthropic-version': ANTHROPIC_API_VERSION,
   }
 }
 

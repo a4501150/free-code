@@ -38,11 +38,23 @@ export function has1mContext(model: string): boolean {
   return /\[1m\]/i.test(model)
 }
 
-// @[MODEL LAUNCH]: Update this pattern if the new model supports 1M context
+// @[MODEL LAUNCH]: Set supports1M: true on the model entry in legacyProviderMigration.ts.
 export function modelSupports1M(model: string): boolean {
   if (is1mContextDisabled()) {
     return false
   }
+  // Config-driven: check registry for supports1M flag
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getProviderRegistry } = require('./model/providerRegistry.js') as {
+      getProviderRegistry: () => { getModelFlag: (m: string, f: string) => boolean | undefined }
+    }
+    const flag = getProviderRegistry().getModelFlag(model, 'supports1M')
+    if (flag !== undefined) return flag
+  } catch {
+    // Registry not available yet — fall through to hardcoded check
+  }
+  // Fallback for models not in registry
   const canonical = getCanonicalName(model)
   return canonical.includes('claude-sonnet-4') || canonical.includes('opus-4-6')
 }
@@ -147,12 +159,13 @@ export function getModelMaxOutputTokens(model: string): {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { getProviderRegistry } = require('./model/providerRegistry.js') as {
-      getProviderRegistry: () => { getProviderForModel: (m: string) => { model: { maxOutputTokens?: number } } | null }
+      getProviderRegistry: () => { getProviderForModel: (m: string) => { model: { maxOutputTokens?: number; maxOutputTokensDefault?: number } } | null }
     }
     const resolved = getProviderRegistry().getProviderForModel(model)
     if (resolved?.model.maxOutputTokens && resolved.model.maxOutputTokens > 0) {
-      const limit = resolved.model.maxOutputTokens
-      return { default: limit, upperLimit: limit }
+      const upperLimit = resolved.model.maxOutputTokens
+      const defaultTokens = resolved.model.maxOutputTokensDefault ?? upperLimit
+      return { default: defaultTokens, upperLimit }
     }
   } catch {
     // Registry not available yet — fall through to defaults

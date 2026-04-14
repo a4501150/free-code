@@ -27,6 +27,7 @@ import typescriptClaudeApiFilesApi from './claude-api/typescript/claude-api/file
 import typescriptClaudeApiReadme from './claude-api/typescript/claude-api/README.md'
 import typescriptClaudeApiStreaming from './claude-api/typescript/claude-api/streaming.md'
 import typescriptClaudeApiToolUse from './claude-api/typescript/claude-api/tool-use.md'
+import { getModelStrings } from '../../utils/model/modelStrings.js'
 
 // @[MODEL LAUNCH]: Update the model IDs/names below. These are substituted into {{VAR}}
 // placeholders in the .md files at runtime before the skill prompt is sent.
@@ -34,9 +35,9 @@ import typescriptClaudeApiToolUse from './claude-api/typescript/claude-api/tool-
 //   - claude-api/SKILL.md (Current Models pricing table)
 //   - claude-api/shared/models.md (full model catalog with legacy versions and alias mappings)
 export const SKILL_MODEL_VARS = {
-  OPUS_ID: 'claude-opus-4-6',
+  OPUS_ID: getModelStrings().opus46,
   OPUS_NAME: 'Claude Opus 4.6',
-  SONNET_ID: 'claude-sonnet-4-6',
+  SONNET_ID: getModelStrings().sonnet46,
   SONNET_NAME: 'Claude Sonnet 4.6',
   HAIKU_ID: 'claude-haiku-4-5',
   HAIKU_NAME: 'Claude Haiku 4.5',

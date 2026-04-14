@@ -317,7 +317,14 @@ export const ProviderModelSchema = lazySchema(() =>
     maxOutputTokens: z
       .number()
       .optional()
-      .describe('Maximum output tokens for this model'),
+      .describe('Maximum output tokens for this model (upper limit)'),
+    maxOutputTokensDefault: z
+      .number()
+      .optional()
+      .describe(
+        'Default output token budget for this model. ' +
+          'When not set, maxOutputTokens is used as both default and upper limit.',
+      ),
     effortLevels: z
       .array(z.string())
       .optional()
@@ -341,9 +348,32 @@ export const ProviderModelSchema = lazySchema(() =>
           .number()
           .optional()
           .describe('Cost per million output tokens (USD)'),
+        cacheWrite: z
+          .number()
+          .optional()
+          .describe('Cost per million prompt cache write tokens (USD)'),
+        cacheRead: z
+          .number()
+          .optional()
+          .describe('Cost per million prompt cache read tokens (USD)'),
+        webSearch: z
+          .number()
+          .optional()
+          .describe('Cost per web search request (USD)'),
       })
       .optional()
       .describe('Optional pricing override (per Mtok, USD)'),
+    supports1M: z
+      .boolean()
+      .optional()
+      .describe('Whether this model supports 1M token context window'),
+    marketingName: z
+      .string()
+      .optional()
+      .describe(
+        'Human-readable marketing name (e.g. "Opus 4.6", "Claude 3.7 Sonnet"). ' +
+          'Used by getMarketingNameForModel() for display.',
+      ),
     thinking: z
       .boolean()
       .optional()
@@ -487,6 +517,15 @@ export const ProviderCapabilitiesSchema = lazySchema(() =>
       .optional()
       .describe(
         'Whether this provider supports server-side web search tool',
+      ),
+
+    // System prompt format
+    customSyspromptPrefix: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether the provider supports custom system prompt prefixes. ' +
+          'False for providers that require a specific prefix format (e.g. Vertex).',
       ),
   }),
 )

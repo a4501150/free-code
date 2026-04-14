@@ -32,6 +32,7 @@ const ALL_FALSE_CAPABILITIES: Required<ProviderCapabilities> = {
   regionPrefixPropagation: false,
   enrichModelIdErrors: false,
   webSearch: false,
+  customSyspromptPrefix: true,
 }
 
 const PROVIDER_CAPABILITY_DEFAULTS: Record<
@@ -51,6 +52,7 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     regionPrefixPropagation: false,
     enrichModelIdErrors: false,
     webSearch: true,
+    customSyspromptPrefix: true,
   },
   'bedrock-converse': {
     globalCacheScope: false,
@@ -65,6 +67,7 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     regionPrefixPropagation: true,
     enrichModelIdErrors: true,
     webSearch: false,
+    customSyspromptPrefix: true,
   },
   vertex: {
     globalCacheScope: false,
@@ -79,6 +82,7 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     regionPrefixPropagation: false,
     enrichModelIdErrors: false,
     webSearch: true,
+    customSyspromptPrefix: false,
   },
   foundry: {
     globalCacheScope: false,
@@ -93,6 +97,7 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     regionPrefixPropagation: false,
     enrichModelIdErrors: false,
     webSearch: true,
+    customSyspromptPrefix: true,
   },
   'openai-chat-completions': { ...ALL_FALSE_CAPABILITIES },
   'openai-responses': { ...ALL_FALSE_CAPABILITIES },
@@ -398,6 +403,45 @@ export class ProviderRegistry {
     const first = this.providers.entries().next()
     if (first.done) return null
     return { name: first.value[0], config: first.value[1] }
+  }
+
+  /**
+   * Resolve a model ID to its underlying foundation model.
+   * For Bedrock application inference profiles, resolves the ARN to the
+   * backing model ID. For all other providers, returns the model as-is.
+   */
+  async resolveModelId(model: string): Promise<string> {
+    if (
+      this.getProviderType(model) === 'bedrock-converse' &&
+      model.includes('application-inference-profile')
+    ) {
+      const { getInferenceProfileBackingModel } = await import('./bedrock.js')
+      return (await getInferenceProfileBackingModel(model)) ?? model
+    }
+    return model
+  }
+
+  /**
+   * Propagate a parent model's region prefix to a child model.
+   * For Bedrock cross-region inference, the parent's region prefix
+   * (e.g. "eu.", "us.") is applied to child models that lack one.
+   * For all other providers, returns childModel unchanged.
+   */
+  propagateModelPrefix(parentModel: string, childModel: string): string {
+    if (!this.getCapability(parentModel, 'regionPrefixPropagation')) {
+      return childModel
+    }
+    // Lazy import to avoid loading bedrock.ts for non-Bedrock providers
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getBedrockRegionPrefix, applyBedrockRegionPrefix } = require('./bedrock.js') as {
+      getBedrockRegionPrefix: (m: string) => string | null
+      applyBedrockRegionPrefix: (m: string, p: string) => string
+    }
+    const parentPrefix = getBedrockRegionPrefix(parentModel)
+    if (!parentPrefix) return childModel
+    // Don't override if child already has a prefix
+    if (getBedrockRegionPrefix(childModel)) return childModel
+    return applyBedrockRegionPrefix(childModel, parentPrefix)
   }
 }
 

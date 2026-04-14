@@ -30,67 +30,28 @@ import { stripProviderPrefix } from './parseModelString.js'
  * 'us.anthropic.claude-opus-4-6-v1:0'). Does not touch settings, so safe at
  * module top-level (see MODEL_COSTS in modelCost.ts).
  */
+// Ordered most-specific first to avoid prefix collisions (e.g. opus-4-6 before opus-4).
+// Used by firstPartyNameToCanonical() to map any model string to its canonical short name.
+const CANONICAL_SHORT_NAMES: readonly string[] = [
+  // Claude 4.x — check more specific versions first
+  'claude-opus-4-6', 'claude-opus-4-5', 'claude-opus-4-1', 'claude-opus-4',
+  'claude-sonnet-4-6', 'claude-sonnet-4-5', 'claude-sonnet-4',
+  'claude-haiku-4-5',
+  // Claude 3.x
+  'claude-3-7-sonnet', 'claude-3-5-sonnet', 'claude-3-5-haiku',
+  'claude-3-opus', 'claude-3-sonnet', 'claude-3-haiku',
+  // OpenAI GPT — more specific first
+  'gpt-5.4-mini', 'gpt-5.4', 'gpt-5.3-codex',
+  'gpt-5.2-codex', 'gpt-5.1-codex-mini', 'gpt-5.1-codex-max', 'gpt-5.1-codex', 'gpt-5.2',
+]
+
 export function firstPartyNameToCanonical(name: ModelName): ModelShortName {
   name = stripProviderPrefix(name).toLowerCase()
-  // Special cases for Claude 4+ models to differentiate versions
-  // Order matters: check more specific versions first (4-5 before 4)
-  if (name.includes('claude-opus-4-6')) {
-    return 'claude-opus-4-6'
-  }
-  if (name.includes('claude-opus-4-5')) {
-    return 'claude-opus-4-5'
-  }
-  if (name.includes('claude-opus-4-1')) {
-    return 'claude-opus-4-1'
-  }
-  if (name.includes('claude-opus-4')) {
-    return 'claude-opus-4'
-  }
-  if (name.includes('claude-sonnet-4-6')) {
-    return 'claude-sonnet-4-6'
-  }
-  if (name.includes('claude-sonnet-4-5')) {
-    return 'claude-sonnet-4-5'
-  }
-  if (name.includes('claude-sonnet-4')) {
-    return 'claude-sonnet-4'
-  }
-  if (name.includes('claude-haiku-4-5')) {
-    return 'claude-haiku-4-5'
-  }
-  // Claude 3.x models use a different naming scheme (claude-3-{family})
-  if (name.includes('claude-3-7-sonnet')) {
-    return 'claude-3-7-sonnet'
-  }
-  if (name.includes('claude-3-5-sonnet')) {
-    return 'claude-3-5-sonnet'
-  }
-  if (name.includes('claude-3-5-haiku')) {
-    return 'claude-3-5-haiku'
-  }
-  if (name.includes('claude-3-opus')) {
-    return 'claude-3-opus'
-  }
-  if (name.includes('claude-3-sonnet')) {
-    return 'claude-3-sonnet'
-  }
-  if (name.includes('claude-3-haiku')) {
-    return 'claude-3-haiku'
-  }
-  // OpenAI GPT models
-  if (name.includes('gpt-5.4-mini')) {
-    return 'gpt-5.4-mini'
-  }
-  if (name.includes('gpt-5.4')) {
-    return 'gpt-5.4'
-  }
-  if (name.includes('gpt-5.3-codex')) {
-    return 'gpt-5.3-codex'
+  for (const canonical of CANONICAL_SHORT_NAMES) {
+    if (name.includes(canonical)) return canonical
   }
   const match = name.match(/(claude-(\d+-\d+-)?\w+)/)
-  if (match && match[1]) {
-    return match[1]
-  }
+  if (match?.[1]) return match[1]
   // Fall back to the original name if no pattern matches
   return name
 }
@@ -181,12 +142,13 @@ export function getPublicModelDisplayName(model: ModelName): string | null {
   // Strip provider prefix so "anthropic:claude-opus-4-6" matches against bare model IDs
   model = stripProviderPrefix(model)
   if (model.includes('gpt-') || model.includes('codex')) {
-    if (model === 'gpt-5.2-codex') return 'Codex 5.2'
-    if (model === 'gpt-5.1-codex') return 'Codex 5.1'
-    if (model === 'gpt-5.1-codex-mini') return 'Codex 5.1 Mini'
-    if (model === 'gpt-5.1-codex-max') return 'Codex 5.1 Max'
-    if (model === 'gpt-5.4') return 'GPT 5.4'
-    if (model === 'gpt-5.2') return 'GPT 5.2'
+    const ms = getModelStrings()
+    if (model === ms.gpt52codex) return 'Codex 5.2'
+    if (model === ms.gpt51codex) return 'Codex 5.1'
+    if (model === ms.gpt51codexMini) return 'Codex 5.1 Mini'
+    if (model === ms.gpt51codexMax) return 'Codex 5.1 Max'
+    if (model === ms.gpt54) return 'GPT 5.4'
+    if (model === ms.gpt52) return 'GPT 5.2'
     return model
   }
 
@@ -276,7 +238,7 @@ export function modelDisplayString(model: ModelSetting): string {
   return model === resolvedModel ? resolvedModel : `${model} (${resolvedModel})`
 }
 
-// @[MODEL LAUNCH]: Add a marketing name mapping for the new model below.
+// @[MODEL LAUNCH]: Add a marketingName to the model entry in legacyProviderMigration.ts.
 export function getMarketingNameForModel(modelId: string): string | undefined {
   if (getProviderRegistry().getCapability(modelId, 'opaqueDeploymentIds')) {
     // deployment ID is user-defined (e.g. Foundry), so it may have no relation to the actual model
@@ -285,6 +247,15 @@ export function getMarketingNameForModel(modelId: string): string | undefined {
 
   const stripped = stripProviderPrefix(modelId)
   const has1m = stripped.toLowerCase().includes('[1m]')
+
+  // Config-driven: check registry for marketingName first
+  const resolved = getProviderRegistry().getProviderForModel(modelId)
+  if (resolved?.model.marketingName) {
+    const name = resolved.model.marketingName
+    return has1m ? `${name} (with 1M context)` : name
+  }
+
+  // Fallback for models not in registry
   const canonical = getCanonicalName(stripped)
 
   if (canonical.includes('claude-opus-4-6')) {

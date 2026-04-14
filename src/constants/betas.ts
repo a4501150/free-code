@@ -30,11 +30,10 @@ export const CLI_INTERNAL_BETA_HEADER = ''
 export const ADVISOR_BETA_HEADER = 'advisor-tool-2026-03-01'
 
 /**
- * Bedrock only supports a limited number of beta headers and only through
- * extraBodyParams. This set maintains the beta strings that should be in
- * Bedrock extraBodyParams *and not* in Bedrock headers.
+ * Beta headers that must be delivered in the request body (via extraBodyParams)
+ * rather than as HTTP headers, for providers with betasInBody capability.
  */
-export const BEDROCK_EXTRA_PARAMS_HEADERS = new Set([
+export const BODY_ONLY_BETAS = new Set([
   INTERLEAVED_THINKING_BETA_HEADER,
   CONTEXT_1M_BETA_HEADER,
   TOOL_SEARCH_BETA_HEADER_3P,

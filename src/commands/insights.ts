@@ -30,6 +30,9 @@ import { countCharInString } from '../utils/stringUtils.js'
 import { asSystemPrompt } from '../utils/systemPromptType.js'
 import { escapeXmlAttr as escapeHtml } from '../utils/xml.js'
 
+// Max output tokens for all insight analysis queries
+const INSIGHTS_MAX_TOKENS = 8192
+
 // Model for facet extraction and summarization (Opus - best quality)
 function getAnalysisModel(): string {
   return getDefaultOpusModel()
@@ -1193,7 +1196,7 @@ RESPOND WITH ONLY A VALID JSON OBJECT:
 }
 
 Include 4-5 areas. Skip internal CC operations.`,
-    maxTokens: 8192,
+    maxTokens: INSIGHTS_MAX_TOKENS,
   },
   {
     name: 'interaction_style',
@@ -1204,7 +1207,7 @@ RESPOND WITH ONLY A VALID JSON OBJECT:
   "narrative": "2-3 paragraphs analyzing HOW the user interacts with Claude Code. Use second person 'you'. Describe patterns: iterate quickly vs detailed upfront specs? Interrupt often or let Claude run? Include specific examples. Use **bold** for key insights.",
   "key_pattern": "One sentence summary of most distinctive interaction style"
 }`,
-    maxTokens: 8192,
+    maxTokens: INSIGHTS_MAX_TOKENS,
   },
   {
     name: 'what_works',
@@ -1219,7 +1222,7 @@ RESPOND WITH ONLY A VALID JSON OBJECT:
 }
 
 Include 3 impressive workflows.`,
-    maxTokens: 8192,
+    maxTokens: INSIGHTS_MAX_TOKENS,
   },
   {
     name: 'friction_analysis',
@@ -1234,7 +1237,7 @@ RESPOND WITH ONLY A VALID JSON OBJECT:
 }
 
 Include 3 friction categories with 2 examples each.`,
-    maxTokens: 8192,
+    maxTokens: INSIGHTS_MAX_TOKENS,
   },
   {
     name: 'suggestions',
@@ -1277,7 +1280,7 @@ RESPOND WITH ONLY A VALID JSON OBJECT:
 IMPORTANT for claude_md_additions: PRIORITIZE instructions that appear MULTIPLE TIMES in the user data. If user told Claude the same thing in 2+ sessions (e.g., 'always run tests', 'use TypeScript'), that's a PRIME candidate - they shouldn't have to repeat themselves.
 
 IMPORTANT for features_to_try: Pick 2-3 from the CC FEATURES REFERENCE above. Include 2-3 items for each category.`,
-    maxTokens: 8192,
+    maxTokens: INSIGHTS_MAX_TOKENS,
   },
   {
     name: 'on_the_horizon',
@@ -1292,7 +1295,7 @@ RESPOND WITH ONLY A VALID JSON OBJECT:
 }
 
 Include 3 opportunities. Think BIG - autonomous workflows, parallel agents, iterating against tests.`,
-    maxTokens: 8192,
+    maxTokens: INSIGHTS_MAX_TOKENS,
   },
   {
     name: 'fun_ending',
@@ -1305,7 +1308,7 @@ RESPOND WITH ONLY A VALID JSON OBJECT:
 }
 
 Find something genuinely interesting or amusing from the session summaries.`,
-    maxTokens: 8192,
+    maxTokens: INSIGHTS_MAX_TOKENS,
   },
 ]
 
@@ -1596,7 +1599,7 @@ ${horizonText}`
   const atAGlanceSection: InsightSection = {
     name: 'at_a_glance',
     prompt: atAGlancePrompt,
-    maxTokens: 8192,
+    maxTokens: INSIGHTS_MAX_TOKENS,
   }
 
   const atAGlanceResult = await generateSectionInsight(atAGlanceSection, '')

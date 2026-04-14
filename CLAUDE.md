@@ -149,13 +149,45 @@ Instead of checking provider identity (`isBedrockProvider()`, `isVertexProvider(
 | `opaqueDeploymentIds` | boolean | Model IDs are opaque deployment names (Foundry) |
 | `regionPrefixPropagation` | boolean | Region prefixes propagate to subagents (Bedrock) |
 | `enrichModelIdErrors` | boolean | Enrich 403 errors with model name |
+| `webSearch` | boolean | Supports server-side web search tool |
+| `customSyspromptPrefix` | boolean | Supports custom system prompt prefixes (false for Vertex) |
+
+### Per-model metadata fields
+
+The `ProviderModelSchema` (in `types.ts`) defines per-model config. All fields are optional. Key metadata fields populated in `legacyProviderMigration.ts`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `contextWindow` | number | Context window size in tokens |
+| `maxOutputTokens` | number | Maximum output tokens (upper limit) |
+| `maxOutputTokensDefault` | number | Default output token budget (may be < upper limit) |
+| `supports1M` | boolean | Whether the model supports 1M context window |
+| `marketingName` | string | Human-readable name (e.g. "Opus 4.6", "Claude 3.7 Sonnet") |
+| `pricing` | object | Full pricing: `input`, `output`, `cacheWrite`, `cacheRead`, `webSearch` (per Mtok USD) |
+| `thinking` / `adaptiveThinking` / `interleavedThinking` | boolean | Thinking capability flags |
+| `serverContextManagement` / `structuredOutputs` | boolean | API beta feature flags |
+
+### Shared API constants
+
+`src/constants/api.ts` exports:
+- `ANTHROPIC_API_VERSION` — the `anthropic-version` header value (`'2023-06-01'`)
+- `getApiBaseUrl()` — resolves `ANTHROPIC_BASE_URL` → `CLAUDE_CODE_API_BASE_URL` → `'https://api.anthropic.com'`
+
+All non-SDK HTTP requests to Anthropic APIs must use these instead of hardcoding URLs or version strings.
+
+### Known limitations
+
+- **Circular dep `providerRegistry.ts` ↔ `auth.ts`**: Mitigated by lazy `require()` in providerRegistry.ts. Would need significant restructuring to fully resolve.
+- **`modelResolution.ts` env reads**: `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL` are user-facing config, not provider identity — acceptable as direct env reads.
+- **Adapter fallback model IDs**: `gemini-adapter.ts` defaults to `'gemini-2.0-flash'`, `openai-chat-completions-adapter.ts` to `'gpt-4'` — adapter-internal defaults, acceptable.
 
 ### Key files
 
 | File | Purpose |
 |------|---------|
+| `src/constants/api.ts` | Shared `ANTHROPIC_API_VERSION` and `getApiBaseUrl()` |
 | `src/utils/settings/types.ts` | Provider config Zod schemas + `ProviderCapabilitiesSchema` |
-| `src/utils/model/providerRegistry.ts` | Registry singleton, capability derivation, model/alias/modelKey indexing |
+| `src/utils/model/providerRegistry.ts` | Registry singleton, capability derivation, model/alias/modelKey indexing, `resolveModelId()`, `propagateModelPrefix()` |
 | `src/utils/model/legacyProviderMigration.ts` | Legacy env var → provider config (resolves all env vars) |
 | `src/utils/model/modelStrings.ts` | `ModelKey` type, `CANONICAL_IDS`, `getModelStrings()` (registry-backed) |
 | `src/utils/model/modelResolution.ts` | Model selection/resolution logic |

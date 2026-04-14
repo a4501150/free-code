@@ -2,7 +2,6 @@
 import { MODEL_ALIASES } from './aliases.js'
 import { isModelAllowed } from './modelAllowlist.js'
 import { getProviderRegistry } from './providerRegistry.js'
-import { getProviderRegistry } from './providerRegistry.js'
 import { sideQuery } from '../sideQuery.js'
 import {
   NotFoundError,
