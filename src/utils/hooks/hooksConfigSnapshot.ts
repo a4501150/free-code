@@ -104,7 +104,7 @@ export function captureHooksConfigSnapshot(): void {
 export function updateHooksConfigSnapshot(): void {
   // Reset the session cache to ensure we read fresh settings from disk.
   // Without this, the snapshot could use stale cached settings when the user
-  // edits settings.json externally and then runs /hooks - the session cache
+  // edits freecode.json externally and then runs /hooks - the session cache
   // may not have been invalidated yet (e.g., if the file watcher's stability
   // threshold hasn't elapsed).
   resetSettingsCache()

@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { readFile, stat } from 'fs/promises'
 import * as React from 'react'
+import { getApiBaseUrl } from 'src/constants/api.js'
 import { useCallback, useEffect, useState } from 'react'
 import { getLastAPIRequest } from 'src/bootstrap/state.js'
 import {
@@ -693,7 +694,7 @@ async function submitFeedback(
     }
 
     const response = await axios.post(
-      'https://api.anthropic.com/api/claude_cli_feedback',
+      `${getApiBaseUrl()}/api/claude_cli_feedback`,
       {
         content: jsonStringify(data),
       },

@@ -67,7 +67,6 @@ import {
   normalizeMessages,
   prepareUserContent,
 } from '../messages.js'
-import type { ModelAlias } from '../model/aliases.js'
 import { parseToolListFromCLI } from '../permissions/permissionSetup.js'
 import { hasPermissionsToUseTool } from '../permissions/permissions.js'
 import {
@@ -205,7 +204,7 @@ async function executeForkedSlashCommand(
         canUseTool,
         isAsync: true,
         querySource: 'agent:custom',
-        model: command.model as ModelAlias | undefined,
+        model: command.model as string | undefined,
         availableTools: freshTools,
         override: { agentId },
       })) {
@@ -286,7 +285,7 @@ async function executeForkedSlashCommand(
       canUseTool,
       isAsync: false,
       querySource: 'agent:custom',
-      model: command.model as ModelAlias | undefined,
+      model: command.model as string | undefined,
       availableTools: context.options.tools,
     })) {
       agentMessages.push(message)

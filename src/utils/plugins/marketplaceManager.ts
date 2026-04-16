@@ -1643,7 +1643,7 @@ async function loadAndCacheMarketplace(
       }
 
       case 'settings': {
-        // Inline manifest from settings.json — no fetch. Synthesize the
+        // Inline manifest from freecode.json — no fetch. Synthesize the
         // marketplace.json on disk so getMarketplaceCacheOnly reads it
         // like any other source. The plugins array already passed
         // PluginMarketplaceEntrySchema validation when settings were parsed;
@@ -1926,7 +1926,7 @@ export async function addMarketplaceSource(
  *
  * Removes the marketplace configuration and cleans up cached files.
  * Deletes both directory caches (for git sources) and file caches (for URL sources).
- * Also cleans up the marketplace from settings.json (extraKnownMarketplaces) and
+ * Also cleans up the marketplace from freecode.json (extraKnownMarketplaces) and
  * removes related plugin entries from enabledPlugins.
  *
  * @param name - The marketplace name to remove
@@ -1964,7 +1964,7 @@ export async function removeMarketplaceSource(name: string): Promise<void> {
   const jsonCachePath = join(cacheDir, `${name}.json`)
   await fs.rm(jsonCachePath, { force: true })
 
-  // Clean up settings.json - remove marketplace from extraKnownMarketplaces
+  // Clean up freecode.json - remove marketplace from extraKnownMarketplaces
   // and remove related plugin entries from enabledPlugins
 
   // Check each editable settings source

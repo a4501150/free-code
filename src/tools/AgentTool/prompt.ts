@@ -1,6 +1,6 @@
-import { getSubscriptionType } from '../../utils/auth.js'
 import { hasEmbeddedSearchTools } from '../../utils/embeddedTools.js'
 import { isEnvDefinedFalsy, isEnvTruthy } from '../../utils/envUtils.js'
+import { getAgentModelDisplay as getAgentModelDisplayName } from '../../utils/model/agent.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { isTeammate } from '../../utils/teammate.js'
 import { isInProcessTeammate } from '../../utils/teammateContext.js'
@@ -40,9 +40,21 @@ function getToolsDescription(agent: AgentDefinition): string {
  * Format one agent line for the agent_listing_delta attachment message:
  * `- type: whenToUse (Tools: ...)`.
  */
+function getModelDisplayForPrompt(model: string | undefined): string {
+  if (!model) return ''
+  try {
+    const display = getAgentModelDisplayName(model)
+    if (display === 'Inherit from parent (default)' || display === 'Inherit from parent') return ''
+    return ` (Default model: ${display})`
+  } catch {
+    return ` (Default model: ${model})`
+  }
+}
+
 export function formatAgentLine(agent: AgentDefinition): string {
   const toolsDescription = getToolsDescription(agent)
-  return `- ${agent.agentType}: ${agent.whenToUse} (Tools: ${toolsDescription})`
+  const modelDisplay = getModelDisplayForPrompt(agent.model)
+  return `- ${agent.agentType}: ${agent.whenToUse}${modelDisplay} (Tools: ${toolsDescription})`
 }
 
 /**
@@ -240,13 +252,11 @@ When NOT to use the ${AGENT_TOOL_NAME} tool:
 `
 
   // When listing via attachment, the "launch multiple agents" note is in the
-  // attachment message (conditioned on subscription there). When inline, keep
-  // the existing per-call getSubscriptionType() check.
-  const concurrencyNote =
-    !listViaAttachment && getSubscriptionType() !== 'pro'
-      ? `
+  // attachment message. When inline, include it here.
+  const concurrencyNote = !listViaAttachment
+    ? `
 - Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses`
-      : ''
+    : ''
 
   // Non-coordinator gets the full prompt with all sections
   return `${shared}

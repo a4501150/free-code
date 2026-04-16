@@ -378,7 +378,7 @@ export async function extractMcpServersFromPlugins(
 
       // Resolve environment variables before scoping. When a saved channel
       // config is missing a key (plugin update added a required field, or a
-      // hand-edited settings.json), substituteUserConfigVariables throws
+      // hand-edited freecode.json), substituteUserConfigVariables throws
       // inside resolvePluginMcpEnvironment — catch per-server so one bad
       // config doesn't crash the whole plugin load via Promise.all.
       const resolvedServers: Record<string, McpServerConfig> = {}

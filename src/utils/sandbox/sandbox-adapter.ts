@@ -227,7 +227,7 @@ export function convertToSandboxRuntimeConfig(
   const denyRead: string[] = []
   const allowRead: string[] = []
 
-  // Always deny writes to settings.json files to prevent sandbox escape
+  // Always deny writes to freecode.json files to prevent sandbox escape
   // This blocks settings in the original working directory (where Claude Code started)
   const settingsPaths = SETTING_SOURCES.map(source =>
     getSettingsFilePathForSource(source),
@@ -242,6 +242,8 @@ export function convertToSandboxRuntimeConfig(
   if (cwd !== originalCwd) {
     denyWrite.push(resolve(cwd, '.claude', 'settings.json'))
     denyWrite.push(resolve(cwd, '.claude', 'settings.local.json'))
+    denyWrite.push(resolve(cwd, '.claude', 'freecode.json'))
+    denyWrite.push(resolve(cwd, '.claude', 'freecode.local.json'))
   }
 
   // Block writes to .claude/skills in both original and current working directories.

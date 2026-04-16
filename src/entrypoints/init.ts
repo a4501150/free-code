@@ -57,7 +57,7 @@ export const init = memoize(async (): Promise<void> => {
     const envVarsStart = Date.now()
     applySafeConfigEnvironmentVariables()
 
-    // Apply NODE_EXTRA_CA_CERTS from settings.json to process.env early,
+    // Apply NODE_EXTRA_CA_CERTS from freecode.json to process.env early,
     // before any TLS connections. Bun caches the TLS cert store at boot
     // via BoringSSL, so this must happen before the first TLS handshake.
     applyExtraCACertsFromConfig()

@@ -28,7 +28,7 @@ export function useApiKeyVerification(): ApiKeyVerificationResult {
       return 'valid'
     }
     // Use skipRetrievingKeyFromApiKeyHelper to avoid executing apiKeyHelper
-    // before trust dialog is shown (security: prevents RCE via settings.json)
+    // before trust dialog is shown (security: prevents RCE via freecode.json)
     const { key, source } = getAnthropicApiKeyWithSource({
       skipRetrievingKeyFromApiKeyHelper: true,
     })

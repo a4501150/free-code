@@ -31,7 +31,6 @@ import {
 } from '../../utils/ide.js'
 import {
   getMainLoopModel,
-  getUserSpecifiedModelSetting,
 } from '../../utils/model/model.js'
 import { getPlatform } from '../../utils/platform.js'
 import { isPluginInstalled } from '../../utils/plugins/installedPluginsManager.js'
@@ -448,22 +447,6 @@ const externalTips: Tip[] = [
       '/mobile to use Claude Code from the Claude app on your phone',
     cooldownSessions: 15,
     isRelevant: async () => true,
-  },
-  {
-    id: 'opusplan-mode-reminder',
-    content: async () =>
-      `Your default model setting is Opus Plan Mode. Press ${getShortcutDisplay('chat:cycleMode', 'Chat', 'shift+tab')} twice to activate Plan Mode and plan with Claude Opus.`,
-    cooldownSessions: 2,
-    async isRelevant() {
-      const config = getGlobalConfig()
-      const modelSetting = getUserSpecifiedModelSetting()
-      const hasOpusPlanMode = modelSetting === 'opusplan'
-      // Show reminder if they have Opus Plan Mode and haven't used plan mode recently (3+ days)
-      const daysSinceLastUse = config.lastPlanModeUse
-        ? (Date.now() - config.lastPlanModeUse) / (1000 * 60 * 60 * 24)
-        : Infinity
-      return hasOpusPlanMode && daysSinceLastUse > 3
-    },
   },
   {
     id: 'frontend-design-plugin',

@@ -24,7 +24,7 @@ import type { FileHistoryState } from './fileHistory.js'
 import { fileHistoryEnabled, fileHistoryMakeSnapshot } from './fileHistory.js'
 import { gracefulShutdownSync } from './gracefulShutdown.js'
 import { enqueue } from './messageQueueManager.js'
-import { resolveSkillModelOverride } from './model/model.js'
+import { parseUserSpecifiedModel } from './model/model.js'
 import type { ProcessUserInputContext } from './processUserInput/processUserInput.js'
 import { processUserInput } from './processUserInput/processUserInput.js'
 import type { QueryGuard } from './QueryGuard.js'
@@ -550,7 +550,7 @@ async function executeUserInput(params: ExecuteUserInputParams): Promise<void> {
           shouldQuery,
           allowedTools ?? [],
           model
-            ? resolveSkillModelOverride(model, mainLoopModel)
+            ? parseUserSpecifiedModel(model)
             : mainLoopModel,
           shouldCallBeforeQuery ? onBeforeQuery : undefined,
           primaryInput,

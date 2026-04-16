@@ -17,21 +17,14 @@ import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
 import { logError } from '../../utils/log.js'
 import { sleep } from '../../utils/sleep.js'
+import {
+  ANTHROPIC_API_VERSION,
+  getApiBaseUrl,
+} from '../../constants/api.js'
 
 // Files API is currently in beta. oauth-2025-04-20 enables Bearer OAuth
 // on public-api routes (auth.py: "oauth_auth" not in beta_versions → 404).
 const FILES_API_BETA_HEADER = 'files-api-2025-04-14,oauth-2025-04-20'
-const ANTHROPIC_VERSION = '2023-06-01'
-
-// API base URL - uses ANTHROPIC_BASE_URL set by env-manager for the appropriate environment
-// Falls back to public API for standalone usage
-function getDefaultApiBaseUrl(): string {
-  return (
-    process.env.ANTHROPIC_BASE_URL ||
-    process.env.CLAUDE_CODE_API_BASE_URL ||
-    'https://api.anthropic.com'
-  )
-}
 
 function logDebugError(message: string): void {
   logForDebugging(`[files-api] ${message}`, { level: 'error' })
@@ -129,12 +122,12 @@ export async function downloadFile(
   fileId: string,
   config: FilesApiConfig,
 ): Promise<Buffer> {
-  const baseUrl = config.baseUrl || getDefaultApiBaseUrl()
+  const baseUrl = config.baseUrl || getApiBaseUrl()
   const url = `${baseUrl}/v1/files/${fileId}/content`
 
   const headers = {
     Authorization: `Bearer ${config.oauthToken}`,
-    'anthropic-version': ANTHROPIC_VERSION,
+    'anthropic-version': ANTHROPIC_API_VERSION,
     'anthropic-beta': FILES_API_BETA_HEADER,
   }
 
@@ -377,12 +370,12 @@ export async function uploadFile(
   config: FilesApiConfig,
   opts?: { signal?: AbortSignal },
 ): Promise<UploadResult> {
-  const baseUrl = config.baseUrl || getDefaultApiBaseUrl()
+  const baseUrl = config.baseUrl || getApiBaseUrl()
   const url = `${baseUrl}/v1/files`
 
   const headers = {
     Authorization: `Bearer ${config.oauthToken}`,
-    'anthropic-version': ANTHROPIC_VERSION,
+    'anthropic-version': ANTHROPIC_API_VERSION,
     'anthropic-beta': FILES_API_BETA_HEADER,
   }
 
@@ -590,10 +583,10 @@ export async function listFilesCreatedAfter(
   afterCreatedAt: string,
   config: FilesApiConfig,
 ): Promise<FileMetadata[]> {
-  const baseUrl = config.baseUrl || getDefaultApiBaseUrl()
+  const baseUrl = config.baseUrl || getApiBaseUrl()
   const headers = {
     Authorization: `Bearer ${config.oauthToken}`,
-    'anthropic-version': ANTHROPIC_VERSION,
+    'anthropic-version': ANTHROPIC_API_VERSION,
     'anthropic-beta': FILES_API_BETA_HEADER,
   }
 

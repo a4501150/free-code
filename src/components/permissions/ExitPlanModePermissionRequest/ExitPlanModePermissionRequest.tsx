@@ -466,6 +466,7 @@ export function ExitPlanModePermissionRequest({
       // Set initial message - REPL will handle context clear and fresh query
       // Add verification instruction if the feature is enabled
       const verificationInstruction =
+        feature('VERIFY_PLAN') &&
         process.env.CLAUDE_CODE_VERIFY_PLAN === 'true'
           ? `\n\nIMPORTANT: When you have finished implementing the plan, you MUST call the "VerifyPlanExecution" tool directly (NOT the ${AGENT_TOOL_NAME} tool or an agent) to trigger background verification.`
           : ''

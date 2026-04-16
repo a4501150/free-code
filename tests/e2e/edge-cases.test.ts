@@ -107,6 +107,102 @@ describe('Edge Cases', () => {
     })
   })
 
+  describe('Permission Dialog During Typing', () => {
+    let session: TmuxSession
+
+    afterEach(async () => {
+      if (session) await session.stop()
+    })
+
+    bunTest(
+      'permission dialog appears even when user is actively typing',
+      async () => {
+        // Queue: first response triggers a Bash tool that needs permission
+        // (touch is NOT read-only, so it always prompts for approval),
+        // second response is the follow-up after approval.
+        server.reset([
+          toolUseResponse([
+            {
+              name: 'Bash',
+              input: { command: 'touch /tmp/permission_during_typing_test' },
+            },
+          ]),
+          textResponse('Tool completed successfully'),
+        ])
+
+        session = new TmuxSession({ serverUrl: server.url })
+        await session.start()
+
+        // Submit a prompt to trigger the agent loop
+        await session.sendLine('Run echo command')
+        await sleep(300)
+
+        // Type partial text into the prompt input while the agent is processing.
+        // This sets isPromptInputActive = true in the REPL.
+        await session.sendText('some partial input')
+        await sleep(200)
+
+        // The permission dialog must appear despite active typing.
+        // Under the bug, this would time out because the dialog is suppressed.
+        await session.waitForText('Do you want to proceed', 15_000)
+
+        // Approve the permission
+        await session.sendSpecialKey('Enter')
+
+        // Wait for completion
+        await session.waitForPrompt()
+
+        // The agent should have completed — verify API got 2 requests
+        expect(server.getRequestCount()).toBeGreaterThanOrEqual(2)
+      },
+      30_000,
+    )
+
+    bunTest(
+      'permission dialog can be approved and agent completes after typing',
+      async () => {
+        server.reset([
+          toolUseResponse([
+            {
+              name: 'Bash',
+              input: { command: 'touch /tmp/stash_test_file' },
+            },
+          ]),
+          textResponse('Done after approval'),
+        ])
+
+        session = new TmuxSession({ serverUrl: server.url })
+        await session.start()
+
+        // Submit prompt to trigger agent loop
+        await session.sendLine('Run a command')
+        await sleep(300)
+
+        // Type some text — it may or may not arrive before the dialog
+        await session.sendText('draft')
+        await sleep(200)
+
+        // Permission dialog should appear (regardless of typed text)
+        await session.waitForText('Do you want to proceed', 15_000)
+
+        // Approve the permission
+        await session.sendSpecialKey('Enter')
+
+        // Wait for idle — agent should complete the full round trip
+        await session.waitForPrompt()
+
+        // Verify the tool ran and the follow-up response was sent
+        const log = server.getRequestLog()
+        expect(log.length).toBeGreaterThanOrEqual(2)
+
+        // Verify the final response appears on screen
+        const screen = await session.capturePaneWithHistory()
+        expect(screen).toContain('Done after approval')
+      },
+      30_000,
+    )
+  })
+
   describe('Multiple Content Blocks', () => {
     let session: TmuxSession
 

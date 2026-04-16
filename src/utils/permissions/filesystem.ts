@@ -95,7 +95,7 @@ export function normalizeCaseForComparison(path: string): string {
  * return the skill name and a session-allow pattern scoped to just that skill.
  * Used to offer a narrower "allow edits to this skill only" option in the
  * permission dialog and SDK suggestions, so iterating on one skill doesn't
- * require granting session access to all of .claude/ (settings.json, hooks/, etc.).
+ * require granting session access to all of .claude/ (freecode.json, hooks/, etc.).
  */
 export function getClaudeSkillScope(
   filePath: string,
@@ -208,9 +208,11 @@ export function isClaudeSettingsPath(filePath: string): boolean {
   // Use platform separator so endsWith checks work on both Unix (/) and Windows (\)
   if (
     normalizedPath.endsWith(`${sep}.claude${sep}settings.json`) ||
-    normalizedPath.endsWith(`${sep}.claude${sep}settings.local.json`)
+    normalizedPath.endsWith(`${sep}.claude${sep}settings.local.json`) ||
+    normalizedPath.endsWith(`${sep}.claude${sep}freecode.json`) ||
+    normalizedPath.endsWith(`${sep}.claude${sep}freecode.local.json`)
   ) {
-    // Include .claude/settings.json even for other projects
+    // Include .claude/settings.json and .claude/freecode.json even for other projects
     return true
   }
   // Check for current project's settings files (including managed settings and CLI args)
@@ -492,7 +494,7 @@ function isDangerousFilePathToAutoEdit(path: string): boolean {
  * - 8.3 short names (e.g., GIT~1, CLAUDE~1, SETTIN~1.JSON)
  * - Long path prefixes (e.g., \\?\C:\..., \\.\C:\..., //?/C:/..., //./C:/...)
  * - Trailing dots and spaces (e.g., .git., .claude , .bashrc...)
- * - DOS device names (e.g., .git.CON, settings.json.PRN, .bashrc.AUX)
+ * - DOS device names (e.g., .git.CON, freecode.json.PRN, .bashrc.AUX)
  * - Three or more consecutive dots (e.g., .../file.txt, path/.../file, file...txt)
  *
  * When detected, these paths should always require manual approval to prevent
@@ -535,7 +537,7 @@ function isDangerousFilePathToAutoEdit(path: string): boolean {
 function hasSuspiciousWindowsPathPattern(path: string): boolean {
   // Check for NTFS Alternate Data Streams
   // Look for ':' after position 2 to skip drive letters (e.g., C:\)
-  // Examples: file.txt::$DATA, .bashrc:hidden, settings.json:stream
+  // Examples: file.txt::$DATA, .bashrc:hidden, freecode.json:stream
   // Note: ADS colon syntax is only interpreted by the Windows kernel. On WSL,
   // DrvFs mounts route file operations through the Windows kernel, so colon
   // syntax is still interpreted as ADS separators. On Linux/macOS (non-WSL),
@@ -567,14 +569,14 @@ function hasSuspiciousWindowsPathPattern(path: string): boolean {
   }
 
   // Check for trailing dots and spaces that Windows strips during path resolution
-  // Examples: .git., .claude , .bashrc..., settings.json.
+  // Examples: .git., .claude , .bashrc..., freecode.json.
   // This can bypass string matching if ".git" is blocked but ".git." is used
   if (/[.\s]+$/.test(path)) {
     return true
   }
 
   // Check for DOS device names that Windows treats as special devices
-  // Examples: .git.CON, settings.json.PRN, .bashrc.AUX
+  // Examples: .git.CON, freecode.json.PRN, .bashrc.AUX
   // Device names: CON, PRN, AUX, NUL, COM1-9, LPT1-9
   if (/\.(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(path)) {
     return true
@@ -605,7 +607,7 @@ function hasSuspiciousWindowsPathPattern(path: string): boolean {
  *
  * This function performs comprehensive safety checks including:
  * - Suspicious Windows path patterns (NTFS streams, 8.3 names, long path prefixes, etc.)
- * - Claude config files (.claude/settings.json, .claude/commands/, .claude/agents/)
+ * - Claude config files (.claude/freecode.json, .claude/commands/, .claude/agents/)
  * - MCP CLI state files (managed internally by Claude Code)
  * - Dangerous files (.bashrc, .gitconfig, .git/, .vscode/, .idea/, etc.)
  *
@@ -1272,7 +1274,7 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
     // Check if this rule is scoped under .claude/ (project or global).
     // Accepts both the broad patterns ('/.claude/**', '~/.claude/**') and
     // narrowed ones like '/.claude/skills/my-skill/**' so users can grant
-    // session access to a single skill without also exposing settings.json
+    // session access to a single skill without also exposing freecode.json
     // or hooks/. The rule already matched the path via matchingRuleForInput;
     // this is an additional scope check. Reject '..' to prevent a rule like
     // '/.claude/../**' from leaking this bypass outside .claude/.
@@ -1304,7 +1306,7 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
   if (!safetyCheck.safe) {
     // SDK suggestion: if under .claude/skills/{name}/, emit the narrowed
     // session-scoped addRules that step 1.6 will honor on the next call.
-    // Everything else (.claude/settings.json, .git/, .vscode/, .idea/) falls
+    // Everything else (.claude/freecode.json, .git/, .vscode/, .idea/) falls
     // back to generateSuggestions — its setMode suggestion doesn't bypass
     // this check, but preserving it avoids a surprising empty array.
     const skillScope = getClaudeSkillScope(path)

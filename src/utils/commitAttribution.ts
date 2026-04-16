@@ -14,7 +14,8 @@ import { isGeneratedFile } from './generatedFiles.js'
 import { getRemoteUrlForDir, resolveGitDir } from './git/gitFilesystem.js'
 import { findGitRoot, gitExe } from './git.js'
 import { logError } from './log.js'
-import { getCanonicalName, type ModelName } from './model/model.js'
+import { getPublicModelDisplayName, type ModelName } from './model/model.js'
+import { stripProviderPrefix } from './model/parseModelString.js'
 import { sequential } from './sequential.js'
 
 /**
@@ -146,24 +147,17 @@ export function sanitizeSurfaceKey(surfaceKey: string): string {
   return `${surface}/${sanitizedModel}`
 }
 
-// @[MODEL LAUNCH]: Add a mapping for the new model ID so git commit trailers show the public name.
 /**
  * Sanitize a model name to its public equivalent.
- * Maps internal variants to their public names based on model family.
+ * Uses registry label lookup, falls back to bare model ID.
  */
 export function sanitizeModelName(shortName: string): string {
-  // Map internal variants to public equivalents based on model family
-  if (shortName.includes('opus-4-6')) return 'claude-opus-4-6'
-  if (shortName.includes('opus-4-5')) return 'claude-opus-4-5'
-  if (shortName.includes('opus-4-1')) return 'claude-opus-4-1'
-  if (shortName.includes('opus-4')) return 'claude-opus-4'
-  if (shortName.includes('sonnet-4-6')) return 'claude-sonnet-4-6'
-  if (shortName.includes('sonnet-4-5')) return 'claude-sonnet-4-5'
-  if (shortName.includes('sonnet-4')) return 'claude-sonnet-4'
-  if (shortName.includes('sonnet-3-7')) return 'claude-sonnet-3-7'
-  if (shortName.includes('haiku-4-5')) return 'claude-haiku-4-5'
-  if (shortName.includes('haiku-3-5')) return 'claude-haiku-3-5'
-  // Unknown models get a generic name
+  const label = getPublicModelDisplayName(shortName)
+  if (label) return label
+  const bare = stripProviderPrefix(shortName)
+  if (bare.startsWith('claude-') || bare.startsWith('gpt-')) {
+    return bare
+  }
   return 'claude'
 }
 
@@ -235,7 +229,7 @@ export function getClientSurface(): string {
  * Format: "surface/model" (e.g., "cli/claude-sonnet")
  */
 export function buildSurfaceKey(surface: string, model: ModelName): string {
-  return `${surface}/${getCanonicalName(model)}`
+  return `${surface}/${stripProviderPrefix(model)}`
 }
 
 /**

@@ -196,7 +196,7 @@ export function settingSourceToScope(
  */
 export async function getInstalledPlugins(): Promise<string[]> {
   // Trigger sync in background (don't await - don't block startup)
-  // This syncs enabledPlugins from settings.json to installed_plugins.json
+  // This syncs enabledPlugins from freecode.json to installed_plugins.json
   void migrateFromEnabledPlugins().catch(error => {
     logError(error)
   })

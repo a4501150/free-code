@@ -15,43 +15,10 @@
  * Endpoint: https://chatgpt.com/backend-api/codex/responses
  */
 
-import { getCodexOAuthTokens } from '../../utils/auth.js'
 
-// ── Available Codex models ──────────────────────────────────────────
-export const CODEX_MODELS = [
-  { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', description: 'Frontier agentic coding model' },
-  { id: 'gpt-5.1-codex', label: 'GPT-5.1 Codex', description: 'Codex coding model' },
-  { id: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini', description: 'Fast Codex model' },
-  { id: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max', description: 'Max Codex model' },
-  { id: 'gpt-5.4', label: 'GPT-5.4', description: 'Latest GPT' },
-  { id: 'gpt-5.2', label: 'GPT-5.2', description: 'GPT-5.2' },
-] as const
-
-export const DEFAULT_CODEX_MODEL = 'gpt-5.2-codex'
-
-/**
- * Maps Claude model names to corresponding Codex model names.
- * @param claudeModel - The Claude model name to map
- * @returns The corresponding Codex model ID
- */
-export function mapClaudeModelToCodex(claudeModel: string | null): string {
-  if (!claudeModel) return DEFAULT_CODEX_MODEL
-  if (isCodexModel(claudeModel)) return claudeModel
-  const lower = claudeModel.toLowerCase()
-  if (lower.includes('opus')) return 'gpt-5.1-codex-max'
-  if (lower.includes('haiku')) return 'gpt-5.1-codex-mini'
-  if (lower.includes('sonnet')) return 'gpt-5.2-codex'
-  return DEFAULT_CODEX_MODEL
-}
-
-/**
- * Checks if a given model string is a valid Codex model.
- * @param model - The model string to check
- * @returns True if the model is a Codex model, false otherwise
- */
-export function isCodexModel(model: string): boolean {
-  return CODEX_MODELS.some(m => m.id === model)
-}
+// No hardcoded model list — the provider registry (freecode.json) is the
+// single source of truth for available models. The adapter just passes
+// through whatever model ID the registry resolved.
 
 // ── JWT helpers ─────────────────────────────────────────────────────
 
@@ -219,7 +186,7 @@ function translateMessages(
  * @param anthropicBody - The Anthropic request body to translate
  * @returns Object containing the translated Codex body and model
  */
-function translateToCodexBody(anthropicBody: Record<string, unknown>): {
+function translateToCodexBody(anthropicBody: Record<string, unknown>, sessionId: string): {
   codexBody: Record<string, unknown>
   codexModel: string
 } {
@@ -228,10 +195,8 @@ function translateToCodexBody(anthropicBody: Record<string, unknown>): {
     | string
     | Array<{ type: string; text?: string; cache_control?: unknown }>
     | undefined
-  const claudeModel = anthropicBody.model as string
+  const codexModel = (anthropicBody.model as string) || 'gpt-5.3-codex'
   const anthropicTools = (anthropicBody.tools || []) as AnthropicTool[]
-
-  const codexModel = mapClaudeModelToCodex(claudeModel)
 
   // Build system instructions
   let instructions = ''
@@ -258,11 +223,22 @@ function translateToCodexBody(anthropicBody: Record<string, unknown>): {
     input,
     tool_choice: 'auto',
     parallel_tool_calls: true,
+    // Route requests to the same backend node so the KV cache is reused.
+    // The official Codex CLI uses the conversation UUID for this field.
+    prompt_cache_key: sessionId,
   }
 
   // Add tools if present
   if (anthropicTools.length > 0) {
     codexBody.tools = translateTools(anthropicTools)
+  }
+
+  // Effort → reasoning_effort (OpenAI Responses API)
+  const outputConfig = anthropicBody.output_config as
+    | { effort?: string }
+    | undefined
+  if (outputConfig?.effort) {
+    codexBody.reasoning = { effort: outputConfig.effort }
   }
 
   return { codexBody, codexModel }
@@ -299,6 +275,7 @@ async function translateCodexStreamToAnthropic(
       let contentBlockIndex = 0
       let outputTokens = 0
       let inputTokens = 0
+      let cacheReadInputTokens = 0
 
       // Emit Anthropic message_start
       controller.enqueue(
@@ -342,7 +319,7 @@ async function translateCodexStreamToAnthropic(
         const reader = codexResponse.body?.getReader()
         if (!reader) {
           emitTextBlock(controller, encoder, contentBlockIndex, 'Error: No response body')
-          finishStream(controller, encoder, outputTokens, inputTokens, false)
+          finishStream(controller, encoder, outputTokens, inputTokens, 0, false)
           return
         }
 
@@ -567,10 +544,20 @@ async function translateCodexStreamToAnthropic(
             // Response completed — extract usage
             else if (eventType === 'response.completed') {
               const response = event.response as Record<string, unknown>
-              const usage = response?.usage as Record<string, number> | undefined
+              const usage = response?.usage as Record<string, number | Record<string, number>> | undefined
               if (usage) {
-                outputTokens = usage.output_tokens || outputTokens
-                inputTokens = usage.input_tokens || inputTokens
+                const totalInput = (usage.input_tokens as number) ?? 0
+                const totalOutput = (usage.output_tokens as number) ?? 0
+
+                // Split cached vs marginal input tokens to match Anthropic semantics.
+                // Anthropic reports marginal (non-cached) as input_tokens and cached
+                // separately as cache_read_input_tokens. Without this split the
+                // accumulated total_input_tokens grows quadratically over a conversation.
+                const details = usage.input_tokens_details as Record<string, number> | undefined
+                const cached = details?.cached_tokens ?? 0
+                cacheReadInputTokens = cached
+                inputTokens = totalInput - cached
+                outputTokens = totalOutput
               }
             }
           }
@@ -625,7 +612,7 @@ async function translateCodexStreamToAnthropic(
         closeToolCallBlock(controller, encoder, contentBlockIndex, currentToolCallId, currentToolCallName, currentToolCallArgs)
       }
 
-      finishStream(controller, encoder, outputTokens, inputTokens, hadToolCalls)
+      finishStream(controller, encoder, outputTokens, inputTokens, cacheReadInputTokens, hadToolCalls)
     },
   })
 
@@ -686,10 +673,18 @@ async function translateCodexStreamToAnthropic(
     encoder: TextEncoder,
     outputTokens: number,
     inputTokens: number,
+    cacheReadInputTokens: number,
     hadToolCalls: boolean,
   ) {
     // Use 'tool_use' stop reason when model made tool calls
     const stopReason = hadToolCalls ? 'tool_use' : 'end_turn'
+
+    const usagePayload = {
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      cache_read_input_tokens: cacheReadInputTokens,
+      cache_creation_input_tokens: 0,
+    }
 
     controller.enqueue(
       encoder.encode(
@@ -698,7 +693,7 @@ async function translateCodexStreamToAnthropic(
           JSON.stringify({
             type: 'message_delta',
             delta: { stop_reason: stopReason, stop_sequence: null },
-            usage: { output_tokens: outputTokens },
+            usage: usagePayload,
           }),
         ),
       ),
@@ -715,7 +710,7 @@ async function translateCodexStreamToAnthropic(
               invocationLatency: 0,
               firstByteLatency: 0,
             },
-            usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+            usage: usagePayload,
           }),
         ),
       ),
@@ -736,17 +731,27 @@ async function translateCodexStreamToAnthropic(
 
 // ── Main fetch interceptor ──────────────────────────────────────────
 
-const CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex/responses'
+const DEFAULT_CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex/responses'
+
+type CodexFetchOptions = {
+  accessToken: string
+  getRefreshedToken?: () => string | null
+  baseUrl?: string
+  getSessionId: () => string
+}
 
 /**
  * Creates a fetch function that intercepts Anthropic API calls and routes them to Codex.
- * @param accessToken - The Codex access token for authentication
- * @returns A fetch function that translates Anthropic requests to Codex format
  */
 export function createCodexFetch(
-  accessToken: string,
+  opts: CodexFetchOptions,
 ): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
-  const accountId = extractAccountId(accessToken)
+  const isProxied = !!opts.baseUrl
+  const codexBaseUrl = isProxied
+    ? `${opts.baseUrl!.replace(/\/$/, '')}/codex/responses`
+    : DEFAULT_CODEX_BASE_URL
+  // Account ID only needed for direct ChatGPT backend (proxy handles it)
+  const accountId = isProxied ? null : extractAccountId(opts.accessToken)
 
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = input instanceof Request ? input.url : String(input)
@@ -770,24 +775,30 @@ export function createCodexFetch(
       anthropicBody = {}
     }
 
-    // Get current token (may have been refreshed)
-    const tokens = getCodexOAuthTokens()
-    const currentToken = tokens?.accessToken || accessToken
+    // Get current token (may have been refreshed via callback)
+    const currentToken = opts.getRefreshedToken?.() || opts.accessToken
 
     // Translate to Codex format
-    const { codexBody, codexModel } = translateToCodexBody(anthropicBody)
+    const { codexBody, codexModel } = translateToCodexBody(anthropicBody, opts.getSessionId())
 
     // Call Codex API
-    const codexResponse = await globalThis.fetch(CODEX_BASE_URL, {
+    const sessionId = opts.getSessionId()
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      Authorization: `Bearer ${currentToken}`,
+      originator: 'pi',
+      'OpenAI-Beta': 'responses=experimental',
+      // session_id header helps the backend route requests to the same node
+      // for prompt cache reuse (matches official Codex CLI behavior)
+      'session_id': sessionId,
+    }
+    if (accountId) {
+      headers['chatgpt-account-id'] = accountId
+    }
+    const codexResponse = await globalThis.fetch(codexBaseUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-        Authorization: `Bearer ${currentToken}`,
-        'chatgpt-account-id': accountId,
-        originator: 'pi',
-        'OpenAI-Beta': 'responses=experimental',
-      },
+      headers,
       body: JSON.stringify(codexBody),
     })
 

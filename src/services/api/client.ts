@@ -5,78 +5,32 @@ import {
   hasCchPlaceholder,
   replaceCchPlaceholder,
 } from 'src/utils/cch.js'
-import type { GoogleAuth } from 'google-auth-library'
 import {
   checkAndRefreshOAuthTokenIfNeeded,
   getAnthropicApiKey,
   getApiKeyFromApiKeyHelper,
-  getClaudeAIOAuthTokens,
   getCodexOAuthTokens,
-  isClaudeAISubscriber,
-  isCodexSubscriber,
   refreshAndGetAwsCredentials,
   refreshGcpCredentialsIfNeeded,
 } from 'src/utils/auth.js'
 import { getUserAgent } from 'src/utils/http.js'
-import { getSmallFastModel } from 'src/utils/model/model.js'
-import {
-  getAPIProvider,
-  isFirstPartyAnthropicBaseUrl,
-} from 'src/utils/model/providers.js'
 import { getProxyFetchOptions } from 'src/utils/proxy.js'
 import {
   getIsNonInteractiveSession,
   getSessionId,
 } from '../../bootstrap/state.js'
-import { getOauthConfig } from '../../constants/oauth.js'
 import { isDebugToStdErr, logForDebugging } from '../../utils/debug.js'
-import {
-  getAWSRegion,
-  getVertexRegionForModel,
-  isEnvTruthy,
-} from '../../utils/envUtils.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
 import { createCodexFetch } from './codex-fetch-adapter.js'
-
-/**
- * Environment variables for different client types:
- *
- * Direct API:
- * - ANTHROPIC_API_KEY: Required for direct API access
- *
- * AWS Bedrock:
- * - AWS credentials configured via aws-sdk defaults
- * - AWS_REGION or AWS_DEFAULT_REGION: Sets the AWS region for all models (default: us-east-1)
- * - ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION: Optional. Override AWS region specifically for the small fast model (Haiku)
- *
- * Foundry (Azure):
- * - ANTHROPIC_FOUNDRY_RESOURCE: Your Azure resource name (e.g., 'my-resource')
- *   For the full endpoint: https://{resource}.services.ai.azure.com/anthropic/v1/messages
- * - ANTHROPIC_FOUNDRY_BASE_URL: Optional. Alternative to resource - provide full base URL directly
- *   (e.g., 'https://my-resource.services.ai.azure.com')
- *
- * Authentication (one of the following):
- * - ANTHROPIC_FOUNDRY_API_KEY: Your Microsoft Foundry API key (if using API key auth)
- * - Azure AD authentication: If no API key is provided, uses DefaultAzureCredential
- *   which supports multiple auth methods (environment variables, managed identity,
- *   Azure CLI, etc.). See: https://docs.microsoft.com/en-us/javascript/api/@azure/identity
- *
- * Vertex AI:
- * - Model-specific region variables (highest priority):
- *   - VERTEX_REGION_CLAUDE_3_5_HAIKU: Region for Claude 3.5 Haiku model
- *   - VERTEX_REGION_CLAUDE_HAIKU_4_5: Region for Claude Haiku 4.5 model
- *   - VERTEX_REGION_CLAUDE_3_5_SONNET: Region for Claude 3.5 Sonnet model
- *   - VERTEX_REGION_CLAUDE_3_7_SONNET: Region for Claude 3.7 Sonnet model
- * - CLOUD_ML_REGION: Optional. The default GCP region to use for all models
- *   If specific model region not specified above
- * - ANTHROPIC_VERTEX_PROJECT_ID: Required. Your GCP project ID
- * - Standard GCP credentials configured via google-auth-library
- *
- * Priority for determining region:
- * 1. Hardcoded model-specific environment variables
- * 2. Global CLOUD_ML_REGION variable
- * 3. Default region from config
- * 4. Fallback region (us-east5)
- */
+import { createChatCompletionsFetch } from './openai-chat-completions-adapter.js'
+import { createBedrockConverseFetch } from './bedrock-converse-adapter.js'
+import { createVertexFetch } from './vertex-adapter.js'
+import { createFoundryFetch } from './foundry-adapter.js'
+import { createGeminiFetch } from './gemini-adapter.js'
+import {
+  getProviderRegistry,
+  type ResolvedProvider,
+} from '../../utils/model/providerRegistry.js'
 
 function createStderrLogger(): ClientOptions['logger'] {
   return {
@@ -115,16 +69,13 @@ export async function getAnthropicClient({
     'X-Claude-Code-Session-Id': getSessionId(),
     ...customHeaders,
     ...(containerId ? { 'x-claude-remote-container-id': containerId } : {}),
-    // SDK consumers can identify their app/library for backend analytics
     ...(clientApp ? { 'x-client-app': clientApp } : {}),
   }
 
-  // Log API client configuration for HFI debugging
   logForDebugging(
     `[API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: ${!!process.env.ANTHROPIC_CUSTOM_HEADERS}, has Authorization header: ${!!customHeaders['Authorization']}`,
   )
 
-  // Add additional protection header if enabled via env var
   const additionalProtectionEnabled = isEnvTruthy(
     process.env.CLAUDE_CODE_ADDITIONAL_PROTECTION,
   )
@@ -136,11 +87,17 @@ export async function getAnthropicClient({
   await checkAndRefreshOAuthTokenIfNeeded()
   logForDebugging('[API:auth] OAuth token check complete')
 
-  if (!isClaudeAISubscriber()) {
+  // Only inject API key / bearer token headers when the default provider
+  // uses apiKey or bearer auth (not OAuth). This avoids conflicting
+  // Authorization headers when OAuth is configured.
+  const defaultAuthActive = getProviderRegistry()
+    .getDefaultProvider()
+    ?.config.auth?.active
+  if (defaultAuthActive !== 'oauth') {
     await configureApiKeyHeaders(defaultHeaders, getIsNonInteractiveSession())
   }
 
-  const resolvedFetch = buildFetch(fetchOverride, source)
+  const resolvedFetch = buildFetch(fetchOverride, source, model)
 
   const ARGS = {
     defaultHeaders,
@@ -154,179 +111,57 @@ export async function getAnthropicClient({
       fetch: resolvedFetch,
     }),
   }
-  if (isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK)) {
-    const { AnthropicBedrock } = await import('@anthropic-ai/bedrock-sdk')
-    // Use region override for small fast model if specified
-    const awsRegion =
-      model === getSmallFastModel() &&
-      process.env.ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION
-        ? process.env.ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION
-        : getAWSRegion()
 
-    const bedrockArgs: ConstructorParameters<typeof AnthropicBedrock>[0] = {
-      ...ARGS,
-      awsRegion,
-      ...(isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH) && {
-        skipAuth: true,
-      }),
-      ...(isDebugToStdErr() && { logger: createStderrLogger() }),
-    }
+  // ── Unified provider-registry dispatch ───────────────────────────
+  // All providers (anthropic, bedrock, vertex, foundry, openai, etc.)
+  // are resolved through the registry. Legacy env vars are auto-migrated
+  // to provider configs at registry init time.
+  const registry = getProviderRegistry()
 
-    // Add API key authentication if available
-    if (process.env.AWS_BEARER_TOKEN_BEDROCK) {
-      bedrockArgs.skipAuth = true
-      // Add the Bearer token for Bedrock API key authentication
-      bedrockArgs.defaultHeaders = {
-        ...bedrockArgs.defaultHeaders,
-        Authorization: `Bearer ${process.env.AWS_BEARER_TOKEN_BEDROCK}`,
-      }
-    } else if (!isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)) {
-      // Refresh auth and get credentials with cache clearing
-      const cachedCredentials = await refreshAndGetAwsCredentials()
-      if (cachedCredentials) {
-        bedrockArgs.awsAccessKey = cachedCredentials.accessKeyId
-        bedrockArgs.awsSecretKey = cachedCredentials.secretAccessKey
-        bedrockArgs.awsSessionToken = cachedCredentials.sessionToken
-      }
-    }
-    // we have always been lying about the return type - this doesn't support batching or models
-    return new AnthropicBedrock(bedrockArgs) as unknown as Anthropic
-  }
-  if (isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY)) {
-    const { AnthropicFoundry } = await import('@anthropic-ai/foundry-sdk')
-    // Determine Azure AD token provider based on configuration
-    // SDK reads ANTHROPIC_FOUNDRY_API_KEY by default
-    let azureADTokenProvider: (() => Promise<string>) | undefined
-    if (!process.env.ANTHROPIC_FOUNDRY_API_KEY) {
-      if (isEnvTruthy(process.env.CLAUDE_CODE_SKIP_FOUNDRY_AUTH)) {
-        // Mock token provider for testing/proxy scenarios (similar to Vertex mock GoogleAuth)
-        azureADTokenProvider = () => Promise.resolve('')
-      } else {
-        // Use real Azure AD authentication with DefaultAzureCredential
-        const {
-          DefaultAzureCredential: AzureCredential,
-          getBearerTokenProvider,
-        } = await import('@azure/identity')
-        azureADTokenProvider = getBearerTokenProvider(
-          new AzureCredential(),
-          'https://cognitiveservices.azure.com/.default',
-        )
-      }
-    }
+  // 1. Try exact model match in registry
+  const resolved = model
+    ? registry.getProviderForModel(model)
+    : null
 
-    const foundryArgs: ConstructorParameters<typeof AnthropicFoundry>[0] = {
-      ...ARGS,
-      ...(azureADTokenProvider && { azureADTokenProvider }),
-      ...(isDebugToStdErr() && { logger: createStderrLogger() }),
-    }
-    // we have always been lying about the return type - this doesn't support batching or models
-    return new AnthropicFoundry(foundryArgs) as unknown as Anthropic
-  }
-  if (isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX)) {
-    // Refresh GCP credentials if gcpAuthRefresh is configured and credentials are expired
-    // This is similar to how we handle AWS credential refresh for Bedrock
-    if (!isEnvTruthy(process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH)) {
-      await refreshGcpCredentialsIfNeeded()
-    }
-
-    const [{ AnthropicVertex }, { GoogleAuth }] = await Promise.all([
-      import('@anthropic-ai/vertex-sdk'),
-      import('google-auth-library'),
-    ])
-    // TODO: Cache either GoogleAuth instance or AuthClient to improve performance
-    // Currently we create a new GoogleAuth instance for every getAnthropicClient() call
-    // This could cause repeated authentication flows and metadata server checks
-    // However, caching needs careful handling of:
-    // - Credential refresh/expiration
-    // - Environment variable changes (GOOGLE_APPLICATION_CREDENTIALS, project vars)
-    // - Cross-request auth state management
-    // See: https://github.com/googleapis/google-auth-library-nodejs/issues/390 for caching challenges
-
-    // Prevent metadata server timeout by providing projectId as fallback
-    // google-auth-library checks project ID in this order:
-    // 1. Environment variables (GCLOUD_PROJECT, GOOGLE_CLOUD_PROJECT, etc.)
-    // 2. Credential files (service account JSON, ADC file)
-    // 3. gcloud config
-    // 4. GCE metadata server (causes 12s timeout outside GCP)
-    //
-    // We only set projectId if user hasn't configured other discovery methods
-    // to avoid interfering with their existing auth setup
-
-    // Check project environment variables in same order as google-auth-library
-    // See: https://github.com/googleapis/google-auth-library-nodejs/blob/main/src/auth/googleauth.ts
-    const hasProjectEnvVar =
-      process.env['GCLOUD_PROJECT'] ||
-      process.env['GOOGLE_CLOUD_PROJECT'] ||
-      process.env['gcloud_project'] ||
-      process.env['google_cloud_project']
-
-    // Check for credential file paths (service account or ADC)
-    // Note: We're checking both standard and lowercase variants to be safe,
-    // though we should verify what google-auth-library actually checks
-    const hasKeyFile =
-      process.env['GOOGLE_APPLICATION_CREDENTIALS'] ||
-      process.env['google_application_credentials']
-
-    const googleAuth = isEnvTruthy(process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH)
-      ? ({
-          // Mock GoogleAuth for testing/proxy scenarios
-          getClient: () => ({
-            getRequestHeaders: () => ({}),
-          }),
-        } as unknown as GoogleAuth)
-      : new GoogleAuth({
-          scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-          // Only use ANTHROPIC_VERTEX_PROJECT_ID as last resort fallback
-          // This prevents the 12-second metadata server timeout when:
-          // - No project env vars are set AND
-          // - No credential keyfile is specified AND
-          // - ADC file exists but lacks project_id field
-          //
-          // Risk: If auth project != API target project, this could cause billing/audit issues
-          // Mitigation: Users can set GOOGLE_CLOUD_PROJECT to override
-          ...(hasProjectEnvVar || hasKeyFile
-            ? {}
-            : {
-                projectId: process.env.ANTHROPIC_VERTEX_PROJECT_ID,
-              }),
-        })
-
-    const vertexArgs: ConstructorParameters<typeof AnthropicVertex>[0] = {
-      ...ARGS,
-      region: getVertexRegionForModel(model),
-      googleAuth,
-      ...(isDebugToStdErr() && { logger: createStderrLogger() }),
-    }
-    // we have always been lying about the return type - this doesn't support batching or models
-    return new AnthropicVertex(vertexArgs) as unknown as Anthropic
+  if (resolved) {
+    const client = await createClientForProvider(resolved, ARGS, { apiKey })
+    if (client) return client
   }
 
-  // ── Codex (OpenAI) provider via fetch adapter ─────────────────────
-  if (isCodexSubscriber()) {
-    const codexTokens = getCodexOAuthTokens()
-    if (codexTokens?.accessToken) {
-      const codexFetch = createCodexFetch(codexTokens.accessToken)
-      const clientConfig: ConstructorParameters<typeof Anthropic>[0] = {
-        apiKey: 'codex-placeholder', // SDK requires a key but the fetch adapter handles auth
-        ...ARGS,
-        fetch: codexFetch as unknown as typeof globalThis.fetch,
-        ...(isDebugToStdErr() && { logger: createStderrLogger() }),
-      }
-      return new Anthropic(clientConfig)
-    }
+  // 2. No exact match — use the default provider.
+  // This handles: model=undefined, and unknown model strings (e.g. model
+  // validation probes that send arbitrary model IDs to the API — the API
+  // itself returns 404 if the model doesn't exist).
+  const defaultResolved = resolveDefaultProvider(registry)
+  if (defaultResolved) {
+    const client = await createClientForProvider(
+      defaultResolved,
+      ARGS,
+      { apiKey },
+    )
+    if (client) return client
   }
 
-  // Determine authentication method based on available tokens
-  const clientConfig: ConstructorParameters<typeof Anthropic>[0] = {
-    apiKey: isClaudeAISubscriber() ? null : apiKey || getAnthropicApiKey(),
-    authToken: isClaudeAISubscriber()
-      ? getClaudeAIOAuthTokens()?.accessToken
-      : undefined,
-    ...ARGS,
-    ...(isDebugToStdErr() && { logger: createStderrLogger() }),
-  }
+  // 3. Registry is completely empty (should not happen after migration,
+  // but guard against it). Fail with a clear error.
+  throw new Error(
+    'No providers configured. Set providers in freecode.json or ' +
+      'configure ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL environment variables.',
+  )
+}
 
-  return new Anthropic(clientConfig)
+/**
+ * When no model is specified, resolve the default provider from the registry.
+ * Uses the first model of the first (default) provider.
+ */
+function resolveDefaultProvider(
+  registry: ReturnType<typeof getProviderRegistry>,
+): ResolvedProvider | null {
+  const defaultProvider = registry.getDefaultProvider()
+  if (!defaultProvider) return null
+  const firstModel = defaultProvider.config.models[0]
+  if (!firstModel) return null
+  return registry.getProviderForModel(firstModel.id)
 }
 
 async function configureApiKeyHeaders(
@@ -347,14 +182,11 @@ function getCustomHeaders(): Record<string, string> {
 
   if (!customHeadersEnv) return customHeaders
 
-  // Split by newlines to support multiple headers
   const headerStrings = customHeadersEnv.split(/\n|\r\n/)
 
   for (const headerString of headerStrings) {
     if (!headerString.trim()) continue
 
-    // Parse header in format "Name: Value" (curl style). Split on first `:`
-    // then trim — avoids regex backtracking on malformed long header lines.
     const colonIdx = headerString.indexOf(':')
     if (colonIdx === -1) continue
     const name = headerString.slice(0, colonIdx).trim()
@@ -372,13 +204,13 @@ export const CLIENT_REQUEST_ID_HEADER = 'x-client-request-id'
 function buildFetch(
   fetchOverride: ClientOptions['fetch'],
   source: string | undefined,
+  model?: string,
 ): ClientOptions['fetch'] {
   // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
   const inner = fetchOverride ?? globalThis.fetch
-  // Only send to the first-party API — Bedrock/Vertex/Foundry don't log it
-  // and unknown headers risk rejection by strict proxies (inc-4029 class).
-  const injectClientRequestId =
-    getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()
+  const injectClientRequestId = model
+    ? getProviderRegistry().getCapability(model, 'clientRequestId')
+    : getProviderRegistry().getCapabilities().clientRequestId
   return async (input, init) => {
     // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
     const headers = new Headers(init?.headers)
@@ -409,5 +241,296 @@ function buildFetch(
       // never let logging crash the fetch
     }
     return inner(input, { ...init, headers, body })
+  }
+}
+
+// ── Provider-registry client creation ─────────────────────────────────
+
+/**
+ * Resolve auth headers from a provider's auth config.
+ */
+function resolveAuthHeaders(
+  provider: ResolvedProvider,
+): Record<string, string> {
+  const auth = provider.config.auth
+  if (!auth) return {}
+
+  switch (auth.active) {
+    case 'apiKey': {
+      const key =
+        auth.apiKey?.key ||
+        (auth.apiKey?.keyEnv ? process.env[auth.apiKey.keyEnv] : undefined)
+      if (!key) return {}
+      if (provider.config.type === 'anthropic') {
+        return { 'x-api-key': key }
+      }
+      return { Authorization: `Bearer ${key}` }
+    }
+    case 'bearer': {
+      const token =
+        auth.bearer?.token ||
+        (auth.bearer?.tokenEnv
+          ? process.env[auth.bearer.tokenEnv]
+          : undefined)
+      if (!token) return {}
+      return { Authorization: `Bearer ${token}` }
+    }
+    case 'oauth': {
+      const token = auth.oauth?.accessToken
+      if (!token) return {}
+      return { Authorization: `Bearer ${token}` }
+    }
+    default:
+      return {}
+  }
+}
+
+/**
+ * Create a client for any provider type resolved from the registry.
+ * Handles ALL provider types — no fallthrough to legacy code.
+ */
+async function createClientForProvider(
+  provider: ResolvedProvider,
+  baseArgs: Record<string, unknown>,
+  opts: { apiKey?: string } = {},
+): Promise<Anthropic | null> {
+  const { config } = provider
+
+  switch (config.type) {
+    // ── Anthropic native (direct API, Claude.ai, or proxy) ──────
+    case 'anthropic': {
+      const clientConfig: ConstructorParameters<typeof Anthropic>[0] = {
+        ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
+        ...baseArgs,
+        ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+      }
+
+      // Auth is purely config-driven via config.auth.active.
+      // OAuth tokens, API keys, and bearer tokens are all resolved from
+      // the provider config — no runtime isClaudeAISubscriber() checks.
+      const authActive = config.auth?.active
+      if (authActive === 'oauth') {
+        const token = config.auth?.oauth?.accessToken
+        clientConfig.apiKey = null
+        clientConfig.authToken = token || undefined
+      } else if (authActive === 'bearer') {
+        const headers = resolveAuthHeaders(provider)
+        clientConfig.apiKey = 'bearer-placeholder'
+        clientConfig.defaultHeaders = {
+          ...(clientConfig.defaultHeaders as Record<string, string>),
+          ...headers,
+        }
+      } else {
+        // apiKey auth (default)
+        const authHeaders = resolveAuthHeaders(provider)
+        const resolvedKey =
+          authHeaders['x-api-key'] || opts.apiKey || getAnthropicApiKey()
+        clientConfig.apiKey = resolvedKey || ''
+      }
+
+      return new Anthropic(clientConfig)
+    }
+
+    // ── OpenAI Chat Completions ─────────────────────────────────
+    case 'openai-chat-completions': {
+      const authHeaders = resolveAuthHeaders(provider)
+      const fetch = createChatCompletionsFetch(config, authHeaders)
+      return new Anthropic({
+        apiKey: 'provider-registry-placeholder',
+        ...baseArgs,
+        fetch: fetch as unknown as typeof globalThis.fetch,
+      })
+    }
+
+    // ── OpenAI Responses API (Codex) ────────────────────────────
+    case 'openai-responses': {
+      // Get Codex OAuth tokens at runtime (may have been refreshed)
+      const codexTokens = getCodexOAuthTokens()
+      const accessToken = codexTokens?.accessToken
+      if (!accessToken) {
+        // Fall back to auth headers from config
+        const authHeaders = resolveAuthHeaders(provider)
+        if (!authHeaders['Authorization']) return null
+        // TODO: createCodexFetch currently requires a token string directly;
+        // for now, extract from Authorization header
+        const token = authHeaders['Authorization'].replace('Bearer ', '')
+        const codexFetch = createCodexFetch({ accessToken: token, baseUrl: config.baseUrl, getSessionId })
+        return new Anthropic({
+          apiKey: 'codex-placeholder',
+          ...baseArgs,
+          fetch: codexFetch as unknown as typeof globalThis.fetch,
+          ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+        })
+      }
+      // Pass a callback so the adapter can get refreshed tokens without importing auth
+      const codexFetch = createCodexFetch({
+        accessToken,
+        getRefreshedToken: () => getCodexOAuthTokens()?.accessToken ?? null,
+        baseUrl: config.baseUrl,
+        getSessionId,
+      })
+      return new Anthropic({
+        apiKey: 'codex-placeholder',
+        ...baseArgs,
+        fetch: codexFetch as unknown as typeof globalThis.fetch,
+        ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+      })
+    }
+
+    // ── AWS Bedrock ─────────────────────────────────────────────
+    case 'bedrock-converse': {
+      const getCredentials = async () => {
+        if (process.env.AWS_BEARER_TOKEN_BEDROCK) {
+          return null
+        }
+        if (!isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)) {
+          const creds = await refreshAndGetAwsCredentials()
+          if (creds) {
+            return {
+              accessKeyId: creds.accessKeyId,
+              secretAccessKey: creds.secretAccessKey,
+              sessionToken: creds.sessionToken,
+            }
+          }
+        }
+        return null
+      }
+      const fetch = createBedrockConverseFetch(config, getCredentials)
+      return new Anthropic({
+        apiKey: 'bedrock-placeholder',
+        ...baseArgs,
+        fetch: fetch as unknown as typeof globalThis.fetch,
+        ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+      })
+    }
+
+    // ── Google Vertex AI ────────────────────────────────────────
+    case 'vertex': {
+      const getAccessToken = async () => {
+        if (!isEnvTruthy(process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH)) {
+          await refreshGcpCredentialsIfNeeded()
+        }
+        const { GoogleAuth } = await import('google-auth-library')
+
+        const hasProjectEnvVar =
+          process.env['GCLOUD_PROJECT'] ||
+          process.env['GOOGLE_CLOUD_PROJECT'] ||
+          process.env['gcloud_project'] ||
+          process.env['google_cloud_project']
+        const hasKeyFile =
+          process.env['GOOGLE_APPLICATION_CREDENTIALS'] ||
+          process.env['google_application_credentials']
+
+        const googleAuth = isEnvTruthy(
+          process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH,
+        )
+          ? ({
+              getClient: () => ({
+                getRequestHeaders: () => ({}),
+              }),
+            } as unknown as InstanceType<typeof GoogleAuth>)
+          : new GoogleAuth({
+              scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+              ...(hasProjectEnvVar || hasKeyFile
+                ? {}
+                : {
+                    projectId: process.env.ANTHROPIC_VERTEX_PROJECT_ID,
+                  }),
+            })
+
+        const authClient = await googleAuth.getClient()
+        const headers = await authClient.getRequestHeaders()
+        const token =
+          headers['Authorization']?.replace('Bearer ', '') || ''
+        const projectId =
+          headers['x-goog-user-project'] ||
+          (await googleAuth.getProjectId()) ||
+          undefined
+        return { token, projectId: projectId ?? undefined }
+      }
+      const fetch = createVertexFetch(config, getAccessToken)
+      return new Anthropic({
+        apiKey: 'vertex-placeholder',
+        ...baseArgs,
+        fetch: fetch as unknown as typeof globalThis.fetch,
+        ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+      })
+    }
+
+    // ── Azure Foundry ───────────────────────────────────────────
+    case 'foundry': {
+      const getToken = async () => {
+        // If an API key is configured, return it as the token.
+        // The adapter uses heuristics to set the right header (x-api-key vs Bearer).
+        const apiKeyFromAuth = resolveAuthHeaders(provider)['x-api-key']
+        if (apiKeyFromAuth) {
+          return apiKeyFromAuth
+        }
+        if (isEnvTruthy(process.env.CLAUDE_CODE_SKIP_FOUNDRY_AUTH)) {
+          return ''
+        }
+        const {
+          DefaultAzureCredential: AzureCredential,
+          getBearerTokenProvider,
+        } = await import('@azure/identity')
+        const tokenProvider = getBearerTokenProvider(
+          new AzureCredential(),
+          'https://cognitiveservices.azure.com/.default',
+        )
+        return tokenProvider()
+      }
+      const fetch = createFoundryFetch(config, getToken)
+      return new Anthropic({
+        apiKey: 'foundry-placeholder',
+        ...baseArgs,
+        fetch: fetch as unknown as typeof globalThis.fetch,
+        ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+      })
+    }
+
+    // ── Gemini (Vertex AI generateContent) ───────────────────────
+    case 'gemini': {
+      const getAccessToken = async () => {
+        const { GoogleAuth } = await import('google-auth-library')
+
+        const hasProjectEnvVar =
+          process.env['GCLOUD_PROJECT'] ||
+          process.env['GOOGLE_CLOUD_PROJECT'] ||
+          process.env['gcloud_project'] ||
+          process.env['google_cloud_project']
+        const hasKeyFile =
+          process.env['GOOGLE_APPLICATION_CREDENTIALS'] ||
+          process.env['google_application_credentials']
+
+        const googleAuth = new GoogleAuth({
+          scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+          ...(hasProjectEnvVar || hasKeyFile
+            ? {}
+            : {
+                projectId: config.auth?.gcp?.projectId,
+              }),
+        })
+
+        const authClient = await googleAuth.getClient()
+        const headers = await authClient.getRequestHeaders()
+        const token =
+          headers['Authorization']?.replace('Bearer ', '') || ''
+        const projectId =
+          headers['x-goog-user-project'] ||
+          (await googleAuth.getProjectId()) ||
+          undefined
+        return { token, projectId: projectId ?? undefined }
+      }
+      const fetch = createGeminiFetch(config, getAccessToken)
+      return new Anthropic({
+        apiKey: 'gemini-placeholder',
+        ...baseArgs,
+        fetch: fetch as unknown as typeof globalThis.fetch,
+        ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+      })
+    }
+
+    default:
+      return null
   }
 }

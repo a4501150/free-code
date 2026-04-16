@@ -12,7 +12,7 @@ const statusline = {
   allowedTools: [
     AGENT_TOOL_NAME,
     'Read(~/**)',
-    'Edit(~/.claude/settings.json)',
+    'Edit(~/.claude/freecode.json)',
   ],
   source: 'builtin',
   disableNonInteractive: true,

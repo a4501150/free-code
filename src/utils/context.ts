@@ -1,8 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
-import { CONTEXT_1M_BETA_HEADER } from '../constants/betas.js'
-import { getGlobalConfig } from './config.js'
 import { isEnvTruthy } from './envUtils.js'
-import { getCanonicalName } from './model/model.js'
 import { getModelCapability } from './model/modelCapabilities.js'
 
 // Model context window size (200k tokens for all models right now)
@@ -31,29 +28,45 @@ export function is1mContextDisabled(): boolean {
   return isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT)
 }
 
-export function has1mContext(model: string): boolean {
-  if (is1mContextDisabled()) {
-    return false
-  }
-  return /\[1m\]/i.test(model)
-}
-
-// @[MODEL LAUNCH]: Update this pattern if the new model supports 1M context
 export function modelSupports1M(model: string): boolean {
   if (is1mContextDisabled()) {
     return false
   }
-  const canonical = getCanonicalName(model)
-  return canonical.includes('claude-sonnet-4') || canonical.includes('opus-4-6')
+  // Config-driven: check registry for contextWindow >= 1M
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getProviderRegistry } = require('./model/providerRegistry.js') as {
+      getProviderRegistry: () => { getProviderForModel: (m: string) => { model: { contextWindow?: number } } | null }
+    }
+    const resolved = getProviderRegistry().getProviderForModel(model)
+    if (resolved?.model.contextWindow !== undefined) {
+      return resolved.model.contextWindow >= 1_000_000
+    }
+  } catch {
+    // Registry not available yet
+  }
+  return false
 }
 
 export function getContextWindowForModel(
   model: string,
-  betas?: string[],
+  _betas?: string[],
 ): number {
-  // [1m] suffix — explicit client-side opt-in, respected over all detection
-  if (has1mContext(model)) {
-    return 1_000_000
+  // Per-model contextWindow from freecode.json takes priority
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getProviderRegistry } = require('./model/providerRegistry.js') as {
+      getProviderRegistry: () => { getProviderForModel: (m: string) => { model: { contextWindow?: number } } | null }
+    }
+    const resolved = getProviderRegistry().getProviderForModel(model)
+    if (resolved?.model.contextWindow && resolved.model.contextWindow > 0) {
+      if (is1mContextDisabled() && resolved.model.contextWindow > MODEL_CONTEXT_WINDOW_DEFAULT) {
+        return MODEL_CONTEXT_WINDOW_DEFAULT
+      }
+      return resolved.model.contextWindow
+    }
+  } catch {
+    // Registry not available yet — fall through to defaults
   }
 
   const cap = getModelCapability(model)
@@ -67,27 +80,7 @@ export function getContextWindowForModel(
     return cap.max_input_tokens
   }
 
-  if (betas?.includes(CONTEXT_1M_BETA_HEADER) && modelSupports1M(model)) {
-    return 1_000_000
-  }
-  if (getSonnet1mExpTreatmentEnabled(model)) {
-    return 1_000_000
-  }
   return MODEL_CONTEXT_WINDOW_DEFAULT
-}
-
-export function getSonnet1mExpTreatmentEnabled(model: string): boolean {
-  if (is1mContextDisabled()) {
-    return false
-  }
-  // Only applies to sonnet 4.6 without an explicit [1m] suffix
-  if (has1mContext(model)) {
-    return false
-  }
-  if (!getCanonicalName(model).includes('sonnet-4-6')) {
-    return false
-  }
-  return getGlobalConfig().clientDataCache?.['coral_reef_sonnet'] === 'true'
 }
 
 /**
@@ -124,67 +117,38 @@ export function calculateContextPercentages(
 
 /**
  * Returns the model's default and upper limit for max output tokens.
+ * Uses registry metadata, falls back to safe defaults.
  */
 export function getModelMaxOutputTokens(model: string): {
   default: number
   upperLimit: number
 } {
-  let defaultTokens: number
-  let upperLimit: number
-
-  const m = getCanonicalName(model)
-
-  if (m.includes('opus-4-6')) {
-    defaultTokens = 64_000
-    upperLimit = 128_000
-  } else if (m.includes('sonnet-4-6')) {
-    defaultTokens = 32_000
-    upperLimit = 128_000
-  } else if (
-    m.includes('opus-4-5') ||
-    m.includes('sonnet-4') ||
-    m.includes('haiku-4')
-  ) {
-    defaultTokens = 32_000
-    upperLimit = 64_000
-  } else if (m.includes('opus-4-1') || m.includes('opus-4')) {
-    defaultTokens = 32_000
-    upperLimit = 32_000
-  } else if (m.includes('claude-3-opus')) {
-    defaultTokens = 4_096
-    upperLimit = 4_096
-  } else if (m.includes('claude-3-sonnet')) {
-    defaultTokens = 8_192
-    upperLimit = 8_192
-  } else if (m.includes('claude-3-haiku')) {
-    defaultTokens = 4_096
-    upperLimit = 4_096
-  } else if (m.includes('3-5-sonnet') || m.includes('3-5-haiku')) {
-    defaultTokens = 8_192
-    upperLimit = 8_192
-  } else if (m.includes('3-7-sonnet')) {
-    defaultTokens = 32_000
-    upperLimit = 64_000
-  } else {
-    defaultTokens = MAX_OUTPUT_TOKENS_DEFAULT
-    upperLimit = MAX_OUTPUT_TOKENS_UPPER_LIMIT
+  // Per-model maxOutputTokens from freecode.json takes priority
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getProviderRegistry } = require('./model/providerRegistry.js') as {
+      getProviderRegistry: () => { getProviderForModel: (m: string) => { model: { maxOutputTokens?: number; maxOutputTokensDefault?: number } } | null }
+    }
+    const resolved = getProviderRegistry().getProviderForModel(model)
+    if (resolved?.model.maxOutputTokens && resolved.model.maxOutputTokens > 0) {
+      const upperLimit = resolved.model.maxOutputTokens
+      const defaultTokens = resolved.model.maxOutputTokensDefault ?? upperLimit
+      return { default: defaultTokens, upperLimit }
+    }
+  } catch {
+    // Registry not available yet — fall through to defaults
   }
 
   const cap = getModelCapability(model)
   if (cap?.max_tokens && cap.max_tokens >= 4_096) {
-    upperLimit = cap.max_tokens
-    defaultTokens = Math.min(defaultTokens, upperLimit)
+    return { default: Math.min(MAX_OUTPUT_TOKENS_DEFAULT, cap.max_tokens), upperLimit: cap.max_tokens }
   }
 
-  return { default: defaultTokens, upperLimit }
+  return { default: MAX_OUTPUT_TOKENS_DEFAULT, upperLimit: MAX_OUTPUT_TOKENS_UPPER_LIMIT }
 }
 
 /**
- * Returns the max thinking budget tokens for a given model. The max
- * thinking tokens should be strictly less than the max output tokens.
- *
- * Deprecated since newer models use adaptive thinking rather than a
- * strict thinking token budget.
+ * Returns the max thinking budget tokens for a given model.
  */
 export function getMaxThinkingTokensForModel(model: string): number {
   return getModelMaxOutputTokens(model).upperLimit - 1

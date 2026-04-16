@@ -19,6 +19,7 @@ import { Message as MessageComponent } from '../../components/Message.js'
 import { MessageResponse } from '../../components/MessageResponse.js'
 import { ToolUseLoader } from '../../components/ToolUseLoader.js'
 import { Box, Text } from '../../ink.js'
+import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js'
 import { getDumpPromptsPath } from '../../services/api/dumpPrompts.js'
 import { findToolByName, type Tools } from '../../Tool.js'
 import type { Message, ProgressMessage } from '../../types/message.js'
@@ -35,7 +36,7 @@ import {
   createAssistantMessage,
   EMPTY_LOOKUPS,
 } from '../../utils/messages.js'
-import type { ModelAlias } from '../../utils/model/aliases.js'
+import { getAgentModel } from '../../utils/model/agent.js'
 import {
   getMainLoopModel,
   parseUserSpecifiedModel,
@@ -418,28 +419,25 @@ export function renderToolResultMessage(
           <AgentResponseDisplay content={content} theme={theme} />
         </MessageResponse>
       )}
-      <MessageResponse height={1}>
-        <MessageComponent
-          message={finalAssistantMessage}
-          lookups={EMPTY_LOOKUPS}
-          addMargin={false}
-          tools={tools}
-          commands={[]}
-          verbose={verbose}
-          inProgressToolUseIDs={new Set()}
-          progressMessagesForMessage={[]}
-          shouldAnimate={false}
-          shouldShowDot={false}
-          isTranscriptMode={false}
-          isStatic={true}
-        />
-      </MessageResponse>
-      {!isTranscriptMode && (
-        <Text dimColor>
-          {'  '}
-          <CtrlOToExpand />
-        </Text>
-      )}
+      <Box flexDirection="row">
+        <MessageResponse height={1}>
+          <MessageComponent
+            message={finalAssistantMessage}
+            lookups={EMPTY_LOOKUPS}
+            addMargin={false}
+            tools={tools}
+            commands={[]}
+            verbose={verbose}
+            inProgressToolUseIDs={new Set()}
+            progressMessagesForMessage={[]}
+            shouldAnimate={false}
+            shouldShowDot={false}
+            isTranscriptMode={false}
+            isStatic={true}
+          />
+        </MessageResponse>
+        {!isTranscriptMode && <CtrlOToExpand />}
+      </Box>
     </Box>
   )
 }
@@ -462,7 +460,7 @@ export function renderToolUseTag(
     description: string
     prompt: string
     subagent_type: string
-    model?: ModelAlias
+    model?: string
   }>,
 ): React.ReactNode {
   const tags: React.ReactNode[] = []
@@ -484,6 +482,39 @@ export function renderToolUseTag(
   }
 
   return <>{tags}</>
+}
+
+/**
+ * Agent-aware version of renderToolUseTag that resolves the effective model
+ * using the agent definition's model field. Called from AssistantToolUseMessage
+ * when the tool is AgentTool, so the model tag shows even when the LLM
+ * doesn't explicitly pass a model parameter.
+ */
+export function renderAgentToolUseTag(
+  input: Partial<{
+    description: string
+    prompt: string
+    subagent_type: string
+    model?: string
+  }>,
+  agentDefinitionModel: string | undefined,
+): React.ReactNode {
+  const mainModel = getMainLoopModel()
+  const effectiveModel = getAgentModel(
+    agentDefinitionModel,
+    mainModel,
+    input.model,
+  )
+
+  if (effectiveModel !== mainModel) {
+    return (
+      <Box flexWrap="nowrap" marginLeft={1}>
+        <Text dimColor>{effectiveModel}</Text>
+      </Box>
+    )
+  }
+
+  return null
 }
 
 const INITIALIZING_TEXT = 'Initializing…'
@@ -756,10 +787,28 @@ export function renderToolUseErrorMessage(
   )
 }
 
-function calculateAgentStats(progressMessages: ProgressMessage<Progress>[]): {
+function calculateAgentStats(
+  progressMessages: ProgressMessage<Progress>[],
+  output: Output | undefined,
+  nowMs: number,
+): {
   toolUseCount: number
   tokens: number | null
+  durationMs: number | null
 } {
+  // Prefer authoritative totals from the completed output. Progress messages
+  // aren't persisted across session save/resume, so after resume they're
+  // empty — but the completed tool result carries the final totals and is
+  // restored from disk. Using these totals keeps the stats correct after
+  // resume and matches the "Done (…)" trailer shown elsewhere.
+  if (output && output.status === 'completed') {
+    return {
+      toolUseCount: output.totalToolUseCount,
+      tokens: output.totalTokens,
+      durationMs: output.totalDurationMs,
+    }
+  }
+
   const toolUseCount = count(progressMessages, msg => {
     if (!hasProgressMessage(msg.data)) {
       return false
@@ -786,32 +835,67 @@ function calculateAgentStats(progressMessages: ProgressMessage<Progress>[]): {
       usage.output_tokens
   }
 
-  return { toolUseCount, tokens }
+  // Live elapsed time derived from the first progress message's timestamp.
+  // Null when no progress messages have arrived yet (we don't know when the
+  // tool use started) — the status line falls back to plain 'Initializing…'.
+  const firstTimestamp = progressMessages[0]?.timestamp
+  const startMs = firstTimestamp ? Date.parse(firstTimestamp) : NaN
+  const durationMs = Number.isFinite(startMs)
+    ? Math.max(0, nowMs - startMs)
+    : null
+
+  return { toolUseCount, tokens, durationMs }
 }
 
-export function renderGroupedAgentToolUse(
-  toolUses: Array<{
-    param: ToolUseBlockParam
-    isResolved: boolean
-    isError: boolean
-    isInProgress: boolean
-    progressMessages: ProgressMessage<Progress>[]
-    result?: {
-      param: ToolResultBlockParam
-      output: Output
-    }
-  }>,
-  options: {
-    shouldAnimate: boolean
-    tools: Tools
-  },
-): React.ReactNode | null {
-  const { shouldAnimate, tools } = options
+/**
+ * Re-renders once per second while `enabled`, returning `Date.now()`. Used to
+ * drive live elapsed-time display in the grouped agent view. Torn down
+ * automatically when `enabled` flips false (all agents complete).
+ */
+function useNow(enabled: boolean, intervalMs = 1000): number {
+  const [now, setNow] = React.useState(() => Date.now())
+
+  React.useEffect(() => {
+    if (!enabled) return
+    const id = setInterval(() => setNow(Date.now()), intervalMs)
+    return () => clearInterval(id)
+  }, [enabled, intervalMs])
+
+  return now
+}
+
+type GroupedAgentToolUse = {
+  param: ToolUseBlockParam
+  isResolved: boolean
+  isError: boolean
+  isInProgress: boolean
+  progressMessages: ProgressMessage<Progress>[]
+  result?: {
+    param: ToolResultBlockParam
+    output: Output
+  }
+}
+
+function GroupedAgentToolUseView({
+  toolUses,
+  shouldAnimate,
+  tools,
+}: {
+  toolUses: GroupedAgentToolUse[]
+  shouldAnimate: boolean
+  tools: Tools
+}): React.ReactNode | null {
+  const mainModel = getMainLoopModel()
+  const activeAgents = useAppStateMaybeOutsideOfProvider(
+    state => state.agentDefinitions.activeAgents,
+  )
+  const anyUnresolved = toolUses.some(t => !t.isResolved)
+  const nowMs = useNow(anyUnresolved)
 
   // Calculate stats for each agent
   const agentStats = toolUses.map(
     ({ param, isResolved, isError, progressMessages, result }) => {
-      const stats = calculateAgentStats(progressMessages)
+      const stats = calculateAgentStats(progressMessages, result?.output, nowMs)
       const lastToolInfo = extractLastToolInfo(progressMessages, tools)
       const parsedInput = inputSchema().safeParse(param.input)
 
@@ -864,12 +948,33 @@ export function renderGroupedAgentToolUse(
 
       const name = parsedInput.success ? parsedInput.data.name : undefined
 
+      // Resolve effective model; show tag only when it differs from the main
+      // loop model. Matches single-agent behavior in renderAgentToolUseTag.
+      const subagentType = parsedInput.success
+        ? parsedInput.data.subagent_type
+        : undefined
+      const agentDefinitionModel = subagentType
+        ? activeAgents?.find(a => a.agentType === subagentType)?.model
+        : undefined
+      const toolSpecifiedModel = parsedInput.success
+        ? parsedInput.data.model
+        : undefined
+      const resolvedModel = getAgentModel(
+        agentDefinitionModel,
+        mainModel,
+        toolSpecifiedModel,
+      )
+      const effectiveModel =
+        resolvedModel !== mainModel ? resolvedModel : null
+
       return {
         id: param.id,
         agentType,
         description,
         toolUseCount: stats.toolUseCount,
         tokens: stats.tokens,
+        durationMs: stats.durationMs,
+        effectiveModel,
         isResolved,
         isError,
         isAsync,
@@ -882,7 +987,6 @@ export function renderGroupedAgentToolUse(
     },
   )
 
-  const anyUnresolved = toolUses.some(t => !t.isResolved)
   const anyError = toolUses.some(t => t.isError)
   const allComplete = !anyUnresolved
 
@@ -939,6 +1043,8 @@ export function renderGroupedAgentToolUse(
           taskDescription={stat.taskDescription}
           toolUseCount={stat.toolUseCount}
           tokens={stat.tokens}
+          durationMs={stat.durationMs}
+          effectiveModel={stat.effectiveModel}
           color={stat.color}
           isLast={index === agentStats.length - 1}
           isResolved={stat.isResolved}
@@ -946,11 +1052,29 @@ export function renderGroupedAgentToolUse(
           isAsync={stat.isAsync}
           shouldAnimate={shouldAnimate}
           lastToolInfo={stat.lastToolInfo}
-          hideType={allSameType}
+          // Always show full AgentType(description) format to match the
+          // single-agent header, even when all grouped agents share a type.
+          hideType={false}
           name={stat.name}
         />
       ))}
     </Box>
+  )
+}
+
+export function renderGroupedAgentToolUse(
+  toolUses: GroupedAgentToolUse[],
+  options: {
+    shouldAnimate: boolean
+    tools: Tools
+  },
+): React.ReactNode | null {
+  return (
+    <GroupedAgentToolUseView
+      toolUses={toolUses}
+      shouldAnimate={options.shouldAnimate}
+      tools={options.tools}
+    />
   )
 }
 

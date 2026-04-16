@@ -11,8 +11,8 @@
  * request reuses the warmed connection.
  *
  * Called from init.ts AFTER applyExtraCACertsFromConfig() + configureGlobalAgents()
- * so settings.json env vars are applied and the TLS cert store is finalized.
- * The early cli.tsx call site was removed — it ran before settings.json loaded,
+ * so freecode.json env vars are applied and the TLS cert store is finalized.
+ * The early cli.tsx call site was removed — it ran before freecode.json loaded,
  * so ANTHROPIC_BASE_URL/proxy/mTLS in settings would be invisible and preconnect
  * would warm the wrong pool (or worse, lock BoringSSL's cert store before
  * NODE_EXTRA_CA_CERTS was applied).
@@ -24,7 +24,7 @@
  */
 
 import { getOauthConfig } from '../constants/oauth.js'
-import { isEnvTruthy } from './envUtils.js'
+import { isUsing3PServices } from './auth.js'
 
 let fired = false
 
@@ -33,11 +33,7 @@ export function preconnectAnthropicApi(): void {
   fired = true
 
   // Skip if using a cloud provider — different endpoint + auth
-  if (
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY)
-  ) {
+  if (isUsing3PServices()) {
     return
   }
   // Skip if proxy/mTLS/unix — SDK's custom dispatcher won't reuse this pool

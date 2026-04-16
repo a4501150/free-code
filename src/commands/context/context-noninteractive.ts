@@ -188,15 +188,39 @@ function formatContextAsMarkdownTable(data: ContextData): string {
     output += `\n`
   }
 
-  // MCP tools
+  // MCP tools — grouped by server, servers ordered by total tokens desc.
   if (mcpTools.length > 0) {
     output += `### MCP Tools\n\n`
-    output += `| Tool | Server | Tokens |\n`
-    output += `|------|--------|--------|\n`
+
+    const serverGroups = new Map<string, typeof mcpTools>()
     for (const tool of mcpTools) {
-      output += `| ${tool.name} | ${tool.serverName} | ${formatTokens(tool.tokens)} |\n`
+      const existing = serverGroups.get(tool.serverName) || []
+      existing.push(tool)
+      serverGroups.set(tool.serverName, existing)
     }
-    output += `\n`
+    const orderedServers = Array.from(serverGroups.entries()).sort(
+      (a, b) =>
+        b[1].reduce((s, t) => s + t.tokens, 0) -
+        a[1].reduce((s, t) => s + t.tokens, 0),
+    )
+
+    for (const [serverName, serverTools] of orderedServers) {
+      const serverTotal = serverTools.reduce((s, t) => s + t.tokens, 0)
+      output += `#### mcp__${serverName} (${serverTools.length} ${plural(
+        serverTools.length,
+        'tool',
+      )}, ${formatTokens(serverTotal)} tokens)\n\n`
+      output += `| Tool | Tokens |\n`
+      output += `|------|--------|\n`
+      const prefix = `mcp__${serverName}__`
+      for (const tool of serverTools) {
+        const shortName = tool.name.startsWith(prefix)
+          ? tool.name.slice(prefix.length)
+          : tool.name
+        output += `| ${shortName} | ${formatTokens(tool.tokens)} |\n`
+      }
+      output += `\n`
+    }
   }
 
   // Custom agents

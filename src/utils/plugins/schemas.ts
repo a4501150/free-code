@@ -205,7 +205,7 @@ const RelativeCommandPath = lazySchema(() =>
 /**
  * Shared marketplace-name validation. Used by both PluginMarketplaceSchema
  * (validates fetched marketplace.json) and the settings arm of
- * MarketplaceSourceSchema (validates inline names in settings.json).
+ * MarketplaceSourceSchema (validates inline names in freecode.json).
  *
  * The two must stay in sync: loadAndCacheMarketplace's case 'settings' writes
  * to join(cacheDir, source.name) BEFORE the post-write PluginMarketplaceSchema
@@ -612,7 +612,7 @@ const PluginUserConfigOptionSchema = lazySchema(() =>
         .boolean()
         .optional()
         .describe(
-          'If true, masks dialog input and stores value in secure storage (keychain/credentials file) instead of settings.json',
+          'If true, masks dialog input and stores value in secure storage (keychain/credentials file) instead of freecode.json',
         ),
       min: z.number().optional().describe('Minimum value (number type only)'),
       max: z.number().optional().describe('Maximum value (number type only)'),
@@ -624,7 +624,7 @@ const PluginUserConfigOptionSchema = lazySchema(() =>
  * Schema for the top-level userConfig field in plugin manifest.
  *
  * Declares user-configurable values the plugin needs. Users are prompted at
- * enable time. Non-sensitive values go to settings.json
+ * enable time. Non-sensitive values go to freecode.json
  * pluginConfigs[pluginId].options; sensitive values go to secure storage.
  * Values are available as ${user_config.KEY} in MCP/LSP server config, hook
  * commands, and (non-sensitive only) skill/agent content.
@@ -644,7 +644,7 @@ const PluginManifestUserConfigSchema = lazySchema(() =>
       .optional()
       .describe(
         'User-configurable values this plugin needs. Prompted at enable time. ' +
-          'Non-sensitive values saved to settings.json; sensitive values to secure storage ' +
+          'Non-sensitive values saved to freecode.json; sensitive values to secure storage ' +
           '(macOS keychain or .credentials.json). Available as ${user_config.KEY} in ' +
           'MCP/LSP server config, hook commands, and (non-sensitive only) skill/agent content. ' +
           'Note: sensitive values share a single keychain entry with OAuth tokens — keep ' +
@@ -660,7 +660,7 @@ const PluginManifestUserConfigSchema = lazySchema(() =>
  * inject messages into the conversation (Telegram, Slack, Discord, etc.).
  * Declaring it here lets the plugin prompt for user config (bot tokens,
  * owner IDs) at install time via the PluginOptionsFlow prompt,
- * rather than requiring users to hand-edit settings.json.
+ * rather than requiring users to hand-edit freecode.json.
  *
  * The `server` field must match a key in the plugin's `mcpServers` — this is
  * not cross-validated at schema parse time (the mcpServers field can be a
@@ -1031,11 +1031,11 @@ export const MarketplaceSourceSchema = lazySchema(() =>
           ),
         plugins: z
           .array(SettingsMarketplacePluginSchema())
-          .describe('Plugin entries declared inline in settings.json'),
+          .describe('Plugin entries declared inline in freecode.json'),
         owner: PluginAuthorSchema().optional(),
       })
       .describe(
-        'Inline marketplace manifest defined directly in settings.json. ' +
+        'Inline marketplace manifest defined directly in freecode.json. ' +
           'The reconciler writes a synthetic marketplace.json to the cache; ' +
           'diffMarketplaces detects edits via isEqual on the stored source ' +
           '(the plugins array is inside this object, so edits surface as sourceChanged).',
@@ -1165,7 +1165,7 @@ export const PluginSourceSchema = lazySchema(() =>
  *
  * Settings-sourced marketplaces point at remote plugins that have their own
  * plugin.json — there is no reason to inline commands/agents/hooks/mcp/lsp in
- * settings.json. This schema carries only what loadPluginFromMarketplaceEntry
+ * freecode.json. This schema carries only what loadPluginFromMarketplaceEntry
  * reads (name, source, version, strict) plus description for discoverability.
  *
  * The synthetic marketplace.json written by loadAndCacheMarketplace is re-parsed
@@ -1496,9 +1496,9 @@ export const InstalledPluginsFileSchemaV1 = lazySchema(() =>
  *
  * Plugins can be installed at different scopes:
  * - managed: Enterprise/system-wide (read-only, platform-specific paths)
- * - user: User's global settings (~/.claude/settings.json)
- * - project: Shared project settings ($project/.claude/settings.json)
- * - local: Personal project overrides ($project/.claude/settings.local.json)
+ * - user: User's global settings (~/.claude/freecode.json)
+ * - project: Shared project settings ($project/.claude/freecode.json)
+ * - local: Personal project overrides ($project/.claude/freecode.local.json)
  *
  * Note: 'flag' scope plugins (from --settings) are session-only and
  * are NOT persisted to installed_plugins.json.

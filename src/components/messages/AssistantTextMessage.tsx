@@ -21,9 +21,8 @@ import {
   isEmptyMessageText,
   NO_RESPONSE_REQUESTED,
 } from '../../utils/messages.js'
-import { getUpgradeMessage } from '../../utils/model/contextWindowUpgradeCheck.js'
 import {
-  getDefaultSonnetModel,
+  getDefaultMainLoopModel,
   renderModelName,
 } from '../../utils/model/model.js'
 import { isMacOsKeychainLocked } from '../../utils/secureStorage/macOsKeychainStorage.js'
@@ -91,17 +90,14 @@ export function AssistantTextMessage({
     case NO_RESPONSE_REQUESTED:
       return null
 
-    case PROMPT_TOO_LONG_ERROR_MESSAGE: {
-      const upgradeHint = getUpgradeMessage('warning')
+    case PROMPT_TOO_LONG_ERROR_MESSAGE:
       return (
         <MessageResponse height={1}>
           <Text color="error">
             Context limit reached · /compact or /clear to continue
-            {upgradeHint ? ` · ${upgradeHint}` : ''}
           </Text>
         </MessageResponse>
       )
-    }
 
     case CREDIT_BALANCE_TOO_LOW_ERROR_MESSAGE:
       return (
@@ -163,7 +159,7 @@ export function AssistantTextMessage({
             </Text>
             <Text>
               To continue immediately, use /model to switch to{' '}
-              {renderModelName(getDefaultSonnetModel())} and continue coding.
+              {renderModelName(getDefaultMainLoopModel())} and continue coding.
             </Text>
           </Box>
         </MessageResponse>

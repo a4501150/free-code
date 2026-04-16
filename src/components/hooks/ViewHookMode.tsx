@@ -2,7 +2,7 @@
  * ViewHookMode shows read-only details for a single configured hook.
  *
  * The /hooks menu is read-only; this view replaces the former delete-hook
- * confirmation screen and directs users to settings.json or Claude for edits.
+ * confirmation screen and directs users to freecode.json or Claude for edits.
  */
 import * as React from 'react'
 import { Box, Text } from '../../ink.js'
@@ -73,7 +73,7 @@ export function ViewHookMode({
             </Text>
           )}
         <Text dimColor>
-          To modify or remove this hook, edit settings.json directly or ask
+          To modify or remove this hook, edit freecode.json directly or ask
           Claude to help.
         </Text>
       </Box>

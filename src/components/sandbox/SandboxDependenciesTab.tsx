@@ -106,7 +106,7 @@ export function SandboxDependenciesTab({ depCheck }: Props): React.ReactNode {
                   {'  '}· or copy vendor/seccomp/* from sandbox-runtime and set
                 </Text>
                 <Text dimColor>
-                  {'    '}sandbox.seccomp.bpfPath and applyPath in settings.json
+                  {'    '}sandbox.seccomp.bpfPath and applyPath in freecode.json
                 </Text>
               </Box>
             )}

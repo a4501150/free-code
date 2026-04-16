@@ -210,7 +210,8 @@ import {
   normalizeModelStringForAPI,
   parseUserSpecifiedModel,
 } from './utils/model/model.js'
-import { ensureModelStringsInitialized } from './utils/model/modelStrings.js'
+import { ensureWireModelIdsInitialized } from './utils/model/modelIds.js'
+import { getProviderRegistry } from './utils/model/providerRegistry.js'
 import { PERMISSION_MODES } from './utils/permissions/PermissionMode.js'
 import {
   checkAndDisableBypassPermissions,
@@ -353,12 +354,7 @@ const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
 import { migrateAutoUpdatesToSettings } from './migrations/migrateAutoUpdatesToSettings.js'
 import { migrateBypassPermissionsAcceptedToSettings } from './migrations/migrateBypassPermissionsAcceptedToSettings.js'
 import { migrateEnableAllProjectMcpServersToSettings } from './migrations/migrateEnableAllProjectMcpServersToSettings.js'
-import { migrateLegacyOpusToCurrent } from './migrations/migrateLegacyOpusToCurrent.js'
-import { migrateOpusToOpus1m } from './migrations/migrateOpusToOpus1m.js'
-import { migrateSonnet1mToSonnet45 } from './migrations/migrateSonnet1mToSonnet45.js'
-import { migrateSonnet45ToSonnet46 } from './migrations/migrateSonnet45ToSonnet46.js'
 import { resetAutoModeOptInForDefaultOffer } from './migrations/resetAutoModeOptInForDefaultOffer.js'
-import { resetProToOpusDefault } from './migrations/resetProToOpusDefault.js'
 /* eslint-enable @typescript-eslint/no-require-imports */
 import {
   createDirectConnectSession,
@@ -494,19 +490,14 @@ function getCertEnvVarTelemetry(): Record<string, boolean> {
 }
 
 
-// @[MODEL LAUNCH]: Consider any migrations you may need for model strings. See migrateSonnet1mToSonnet45.ts for an example.
+// @[MODEL LAUNCH]: Consider any migrations you may need for model strings.
 // Bump this when adding a new sync migration so existing users re-run the set.
-const CURRENT_MIGRATION_VERSION = 11
+const CURRENT_MIGRATION_VERSION = 12
 function runMigrations(): void {
   if (getGlobalConfig().migrationVersion !== CURRENT_MIGRATION_VERSION) {
     migrateAutoUpdatesToSettings()
     migrateBypassPermissionsAcceptedToSettings()
     migrateEnableAllProjectMcpServersToSettings()
-    resetProToOpusDefault()
-    migrateSonnet1mToSonnet45()
-    migrateLegacyOpusToCurrent()
-    migrateSonnet45ToSonnet46()
-    migrateOpusToOpus1m()
     if (feature('TRANSCRIPT_CLASSIFIER')) {
       resetAutoModeOptInForDefaultOffer()
     }
@@ -578,14 +569,16 @@ export function startDeferredPrefetches(): void {
   void getUserContext()
   prefetchSystemContextIfSafe()
   void getRelevantTips()
+  const registry = getProviderRegistry()
+  const credRefresh = registry.getCapabilities().credentialRefresh
   if (
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) &&
+    credRefresh === 'aws' &&
     !isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)
   ) {
     void prefetchAwsCredentialsAndBedRockInfoIfSafe()
   }
   if (
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) &&
+    credRefresh === 'gcp' &&
     !isEnvTruthy(process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH)
   ) {
     void prefetchGcpCredentialsIfSafe()
@@ -1107,7 +1100,7 @@ async function run(): Promise<CommanderCommand> {
 
     // process.title on Windows sets the console title directly; on POSIX,
     // terminal shell integration may mirror the process name to the tab.
-    // After init() so settings.json env can also gate this (gh-4765).
+    // After init() so freecode.json env can also gate this (gh-4765).
     if (!isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE)) {
       process.title = 'claude'
     }
@@ -1458,7 +1451,7 @@ async function run(): Promise<CommanderCommand> {
     // @[MODEL LAUNCH]: Update the example model ID in the --model help text.
     .option(
       '--model <model>',
-      `Model for the current session. Provide an alias for the latest model (e.g. 'sonnet' or 'opus') or a model's full name (e.g. 'claude-sonnet-4-6').`,
+      `Model for the current session. Provide a full model ID (e.g. 'claude-sonnet-4-6') or a provider-qualified model ID (e.g. 'anthropic:claude-sonnet-4-6').`,
     )
     .addOption(
       new Option(
@@ -1482,10 +1475,6 @@ async function run(): Promise<CommanderCommand> {
     .option(
       '--betas <betas...>',
       'Beta headers to include in API requests (API key users only)',
-    )
-    .option(
-      '--fallback-model <model>',
-      'Enable automatic fallback to specified model when default model is overloaded (only works with --print)',
     )
     .addOption(
       new Option(
@@ -1566,7 +1555,7 @@ async function run(): Promise<CommanderCommand> {
 
       // Log event for any single-word prompt
 
-      // Assistant mode: when .claude/settings.json has assistant: true AND
+      // Assistant mode: when .claude/freecode.json has assistant: true AND
       // the assistant gate is on, force brief on. Permission
       // mode is left to the user — settings defaultMode or --permission-mode
       // apply as normal. REPL-typed messages already default to 'next'
@@ -1576,7 +1565,7 @@ async function run(): Promise<CommanderCommand> {
       // kairosEnabled is computed once here and reused at the
       // getAssistantSystemPromptAddendum() call site further down.
       //
-      // Trust gate: .claude/settings.json is attacker-controllable in an
+      // Trust gate: .claude/freecode.json is attacker-controllable in an
       // untrusted clone. We run ~1000 lines before showSetupScreens() shows
       // the trust dialog, and by then we've already appended
       // .claude/agents/assistant.md to the system prompt. Refuse to activate
@@ -1602,7 +1591,7 @@ async function run(): Promise<CommanderCommand> {
       if (
         feature('KAIROS') &&
         assistantModule?.isAssistantMode() &&
-        // Spawned teammates share the leader's cwd + settings.json, so
+        // Spawned teammates share the leader's cwd + freecode.json, so
         // isAssistantMode() is true for them too. --agent-id being set
         // means we ARE a spawned teammate (extractTeammateOptions runs
         // ~170 lines later so check the raw commander option) — don't
@@ -1650,7 +1639,6 @@ async function run(): Promise<CommanderCommand> {
         mcpConfig = [],
         permissionMode: permissionModeCli,
         addDir = [],
-        fallbackModel,
         betas = [],
         ide = false,
         sessionId,
@@ -1841,16 +1829,6 @@ async function run(): Promise<CommanderCommand> {
 
       // Get isNonInteractiveSession from state (was set before init())
       const isNonInteractiveSession = getIsNonInteractiveSession()
-
-      // Validate that fallback model is different from main model
-      if (fallbackModel && options.model && fallbackModel === options.model) {
-        process.stderr.write(
-          chalk.red(
-            'Error: Fallback model cannot be the same as the main model. Please specify a different model for --fallback-model.\n',
-          ),
-        )
-        process.exit(1)
-      }
 
       // Handle system prompt options
       let systemPrompt = options.systemPrompt
@@ -2524,7 +2502,7 @@ async function run(): Promise<CommanderCommand> {
 
       if (getIsNonInteractiveSession()) {
         // Apply full merged settings env now (including project-scoped
-        // .claude/settings.json PATH/GIT_DIR/GIT_WORK_TREE) so gitExe() and
+        // .claude/freecode.json PATH/GIT_DIR/GIT_WORK_TREE) so gitExe() and
         // the git spawn below see it. Trust is implicit in -p mode; the
         // docstring at managedEnv.ts:96-97 says this applies "potentially
         // dangerous environment variables such as LD_PRELOAD, PATH" from all
@@ -2554,12 +2532,12 @@ async function run(): Promise<CommanderCommand> {
         // Promise.all join in print.ts. The void getUserContext() in
         // startDeferredPrefetches becomes a memoize cache-hit.
         void getUserContext()
-        // Kick ensureModelStringsInitialized now — for Bedrock this triggers
+        // Kick ensureWireModelIdsInitialized now — for Bedrock this triggers
         // a 100-200ms profile fetch that was awaited serially at
         // print.ts:739. updateBedrockModelStrings is sequential()-wrapped so
         // the await joins the in-flight fetch. Non-Bedrock is a sync
         // early-return (zero-cost).
-        void ensureModelStringsInitialized()
+        void ensureWireModelIdsInitialized()
       }
 
       // Apply --name: cache-only so no orphan file is created before the
@@ -2575,8 +2553,6 @@ async function run(): Promise<CommanderCommand> {
       // NOTE: Model resolution happens after setup() to ensure trust is established before AWS auth
       const userSpecifiedModel =
         options.model === 'default' ? getDefaultMainLoopModel() : options.model
-      const userSpecifiedFallbackModel =
-        fallbackModel === 'default' ? getDefaultMainLoopModel() : fallbackModel
 
       // Reuse preSetupCwd unless setup() chdir'd (worktreeEnabled). Saves a
       // getCwd() syscall in the common path.
@@ -2775,7 +2751,7 @@ async function run(): Promise<CommanderCommand> {
       // defaultView: 'chat' is a persisted opt-in — check entitlement and set
       // userMsgOptIn so the tool + prompt section activate. Interactive-only:
       // defaultView is a display preference; SDK sessions have no display, and
-      // the assistant installer writes defaultView:'chat' to settings.local.json
+      // the assistant installer writes defaultView:'chat' to freecode.local.json
       // which would otherwise leak into --print sessions in the same directory.
       // Runs right after maybeActivateBrief() so all startup opt-in paths fire
       // BEFORE any isBriefEnabled() read below (proactive prompt's
@@ -3498,7 +3474,6 @@ async function run(): Promise<CommanderCommand> {
             systemPrompt,
             appendSystemPrompt,
             userSpecifiedModel: effectiveModel,
-            fallbackModel: userSpecifiedFallbackModel,
             replayUserMessages: effectiveReplayUserMessages,
             includePartialMessages: effectiveIncludePartialMessages,
             forkSession: options.forkSession || false,

@@ -110,6 +110,39 @@ function groupBySource<
   return orderedGroups
 }
 
+/**
+ * Group MCP tools by server name. Tools within each group stay in their
+ * original order (alphabetical from the tool registry). Servers are ordered
+ * by total token usage, descending.
+ */
+function groupByServer<T extends { serverName: string; tokens: number }>(
+  items: T[],
+): Map<string, T[]> {
+  const groups = new Map<string, T[]>()
+  for (const item of items) {
+    const existing = groups.get(item.serverName) || []
+    existing.push(item)
+    groups.set(item.serverName, existing)
+  }
+  const sorted = Array.from(groups.entries()).sort(
+    (a, b) =>
+      b[1].reduce((s, t) => s + t.tokens, 0) -
+      a[1].reduce((s, t) => s + t.tokens, 0),
+  )
+  return new Map(sorted)
+}
+
+/**
+ * Strip the `mcp__<server>__` prefix from a tool name. The server-prefixed
+ * form (`mcp__<server>`) is shown in the group header so users can copy it
+ * for permission config; listing the full prefix on every tool would be
+ * redundant.
+ */
+function stripToolPrefix(toolName: string, serverName: string): string {
+  const prefix = `mcp__${serverName}__`
+  return toolName.startsWith(prefix) ? toolName.slice(prefix.length) : toolName
+}
+
 interface Props {
   data: ContextData
 }
@@ -258,41 +291,116 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
                 · /mcp{hasDeferredMcpTools ? ' (loaded on-demand)' : ''}
               </Text>
             </Box>
-            {/* Show loaded tools first */}
-            {mcpTools.some(t => t.isLoaded) && (
-              <Box flexDirection="column" marginTop={1}>
-                <Text dimColor>Loaded</Text>
-                {mcpTools
-                  .filter(t => t.isLoaded)
-                  .map((tool, i) => (
-                    <Box key={i}>
-                      <Text>└ {tool.name}: </Text>
-                      <Text dimColor>{formatTokens(tool.tokens)} tokens</Text>
-                    </Box>
-                  ))}
-              </Box>
-            )}
-            {/* Show available (deferred) tools */}
-            {hasDeferredMcpTools && mcpTools.some(t => !t.isLoaded) && (
-              <Box flexDirection="column" marginTop={1}>
-                <Text dimColor>Available</Text>
-                {mcpTools
-                  .filter(t => !t.isLoaded)
-                  .map((tool, i) => (
-                    <Box key={i}>
-                      <Text dimColor>└ {tool.name}</Text>
-                    </Box>
-                  ))}
-              </Box>
-            )}
-            {/* Show all tools normally when not deferred */}
             {!hasDeferredMcpTools &&
-              mcpTools.map((tool, i) => (
-                <Box key={i}>
-                  <Text>└ {tool.name}: </Text>
-                  <Text dimColor>{formatTokens(tool.tokens)} tokens</Text>
+              Array.from(groupByServer(mcpTools).entries()).map(
+                ([serverName, serverTools]) => {
+                  const serverTotal = serverTools.reduce(
+                    (s, t) => s + t.tokens,
+                    0,
+                  )
+                  return (
+                    <Box
+                      key={serverName}
+                      flexDirection="column"
+                      marginTop={1}
+                    >
+                      <Box>
+                        <Text dimColor>mcp__{serverName}</Text>
+                        <Text dimColor>
+                          {' '}
+                          ({serverTools.length}{' '}
+                          {plural(serverTools.length, 'tool')},{' '}
+                          {formatTokens(serverTotal)} tokens)
+                        </Text>
+                      </Box>
+                      {serverTools.map((tool, i) => (
+                        <Box key={i}>
+                          <Text>
+                            └ {stripToolPrefix(tool.name, serverName)}:{' '}
+                          </Text>
+                          <Text dimColor>
+                            {formatTokens(tool.tokens)} tokens
+                          </Text>
+                        </Box>
+                      ))}
+                    </Box>
+                  )
+                },
+              )}
+            {hasDeferredMcpTools && mcpTools.some(t => t.isLoaded) && (
+              <Box flexDirection="column">
+                <Box marginTop={1}>
+                  <Text dimColor>Loaded</Text>
                 </Box>
-              ))}
+                {Array.from(
+                  groupByServer(mcpTools.filter(t => t.isLoaded)).entries(),
+                ).map(([serverName, serverTools]) => {
+                  const serverTotal = serverTools.reduce(
+                    (s, t) => s + t.tokens,
+                    0,
+                  )
+                  return (
+                    <Box
+                      key={serverName}
+                      flexDirection="column"
+                      marginTop={1}
+                    >
+                      <Box>
+                        <Text dimColor>mcp__{serverName}</Text>
+                        <Text dimColor>
+                          {' '}
+                          ({serverTools.length}{' '}
+                          {plural(serverTools.length, 'tool')},{' '}
+                          {formatTokens(serverTotal)} tokens)
+                        </Text>
+                      </Box>
+                      {serverTools.map((tool, i) => (
+                        <Box key={i}>
+                          <Text>
+                            └ {stripToolPrefix(tool.name, serverName)}:{' '}
+                          </Text>
+                          <Text dimColor>
+                            {formatTokens(tool.tokens)} tokens
+                          </Text>
+                        </Box>
+                      ))}
+                    </Box>
+                  )
+                })}
+              </Box>
+            )}
+            {hasDeferredMcpTools && mcpTools.some(t => !t.isLoaded) && (
+              <Box flexDirection="column">
+                <Box marginTop={1}>
+                  <Text dimColor>Available</Text>
+                </Box>
+                {Array.from(
+                  groupByServer(mcpTools.filter(t => !t.isLoaded)).entries(),
+                ).map(([serverName, serverTools]) => (
+                  <Box
+                    key={serverName}
+                    flexDirection="column"
+                    marginTop={1}
+                  >
+                    <Box>
+                      <Text dimColor>mcp__{serverName}</Text>
+                      <Text dimColor>
+                        {' '}
+                        ({serverTools.length}{' '}
+                        {plural(serverTools.length, 'tool')})
+                      </Text>
+                    </Box>
+                    {serverTools.map((tool, i) => (
+                      <Box key={i}>
+                        <Text dimColor>
+                          └ {stripToolPrefix(tool.name, serverName)}
+                        </Text>
+                      </Box>
+                    ))}
+                  </Box>
+                ))}
+              </Box>
+            )}
           </Box>
         )}
 

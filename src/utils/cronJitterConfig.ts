@@ -15,7 +15,7 @@ import {
 import { getInitialSettings } from './settings/settings.js'
 
 /**
- * Read cron jitter config from settings.json, fall back to defaults.
+ * Read cron jitter config from freecode.json, fall back to defaults.
  * Called from check() every tick via the `getJitterConfig` callback —
  * cheap (synchronous settings read).
  *

@@ -50,8 +50,7 @@ import {
 import { parseFrontmatter } from '../../utils/frontmatterParser.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { createUserMessage, normalizeMessages } from '../../utils/messages.js'
-import type { ModelAlias } from '../../utils/model/aliases.js'
-import { resolveSkillModelOverride } from '../../utils/model/model.js'
+import { parseUserSpecifiedModel } from '../../utils/model/model.js'
 import { recordSkillUsage } from '../../utils/suggestions/skillUsageTracking.js'
 import { createAgentId } from '../../utils/uuid.js'
 import { runAgent } from '../AgentTool/runAgent.js'
@@ -173,7 +172,7 @@ async function executeForkedSkill(
       canUseTool,
       isAsync: false,
       querySource: 'agent:custom',
-      model: command.model as ModelAlias | undefined,
+      model: command.model as string | undefined,
       availableTools: context.options.tools,
       override: { agentId },
     })) {
@@ -636,17 +635,12 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
           }
         }
 
-        // Carry [1m] suffix over — otherwise a skill with `model: opus` on an
-        // opus[1m] session drops the effective window to 200K and trips autocompact.
         if (model) {
           modifiedContext = {
             ...modifiedContext,
             options: {
               ...modifiedContext.options,
-              mainLoopModel: resolveSkillModelOverride(
-                model,
-                ctx.options.mainLoopModel,
-              ),
+              mainLoopModel: parseUserSpecifiedModel(model),
             },
           }
         }

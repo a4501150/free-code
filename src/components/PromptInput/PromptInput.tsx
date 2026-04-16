@@ -145,7 +145,6 @@ import {
 } from '../../utils/keyboardShortcuts.js'
 import { logError } from '../../utils/log.js'
 import {
-  isOpus1mMergeEnabled,
   modelDisplayString,
 } from '../../utils/model/model.js'
 import { setAutoModeActive } from '../../utils/permissions/autoModeState.js'
@@ -2559,7 +2558,7 @@ function PromptInput({
       const effectiveFastMode = (isFastMode ?? false) && !wasFastModeDisabled
       let message = `Model set to ${modelDisplayString(model)}`
       if (
-        isBilledAsExtraUsage(model, effectiveFastMode, isOpus1mMergeEnabled())
+        isBilledAsExtraUsage(model, effectiveFastMode)
       ) {
         message += ' · Billed as extra usage'
       }

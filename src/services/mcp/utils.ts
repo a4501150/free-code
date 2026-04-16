@@ -151,7 +151,7 @@ export function excludeResourcesByServer(
 /**
  * Stable hash of an MCP server config for change detection on /reload-plugins.
  * Excludes `scope` (provenance, not content — moving a server from .mcp.json
- * to settings.json shouldn't reconnect it). Keys sorted so `{a:1,b:2}` and
+ * to freecode.json shouldn't reconnect it). Keys sorted so `{a:1,b:2}` and
  * `{b:2,a:1}` hash the same.
  */
 export function hashMcpConfig(config: ScopedMcpServerConfig): string {
@@ -378,7 +378,7 @@ export function getProjectMcpServerStatus(
   // the user has explicitly chosen to bypass all permission checks.
   // SECURITY: We intentionally only check skipDangerousModePermissionPrompt via
   // hasSkipDangerousModePermissionPrompt(), which reads from userSettings/localSettings/
-  // flagSettings/policySettings but NOT projectSettings (repo-level .claude/settings.json).
+  // flagSettings/policySettings but NOT projectSettings (repo-level .claude/freecode.json).
   // This is intentional: a repo should not be able to accept the bypass dialog on behalf of
   // users. We also do NOT check getSessionBypassPermissionsMode() here because
   // sessionBypassPermissionsMode can be set from project settings before the dialog is shown,

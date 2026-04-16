@@ -11,6 +11,12 @@ import {
   toPersistableEffort,
 } from '../../utils/effort.js'
 import { updateSettingsForSource } from '../../utils/settings/settings.js'
+import { updateProviderModelConfig } from '../../utils/settings/freecodeSettings.js'
+import {
+  getProviderRegistry,
+  resetProviderRegistry,
+} from '../../utils/model/providerRegistry.js'
+import { parseModelString } from '../../utils/model/parseModelString.js'
 
 const COMMON_HELP_ARGS = ['help', '-h', '--help']
 
@@ -75,7 +81,7 @@ export function showCurrentEffort(
   }
 }
 
-function unsetEffortLevel(): EffortCommandResult {
+function unsetEffortLevel(model?: string): EffortCommandResult {
   const result = updateSettingsForSource('userSettings', {
     effortLevel: undefined,
   })
@@ -83,6 +89,10 @@ function unsetEffortLevel(): EffortCommandResult {
     return {
       message: `Failed to set effort level: ${result.error.message}`,
     }
+  }
+  // Clear selectedEffort for the current model in provider config
+  if (model) {
+    clearSelectedEffortForModel(model)
   }
   // env=auto/unset (null) matches what /effort auto asks for, so only warn
   // when env is pinning a specific level that will keep overriding.
@@ -100,10 +110,21 @@ function unsetEffortLevel(): EffortCommandResult {
   }
 }
 
-export function executeEffort(args: string): EffortCommandResult {
+function clearSelectedEffortForModel(model: string): void {
+  const registry = getProviderRegistry()
+  const providerNames = registry.getProviderNames()
+  const defaultProvider = registry.getDefaultProviderName() ?? ''
+  const parsed = parseModelString(model, providerNames, defaultProvider)
+  updateProviderModelConfig(parsed.provider, parsed.modelId, {
+    selectedEffort: undefined,
+  })
+  resetProviderRegistry()
+}
+
+export function executeEffort(args: string, model?: string): EffortCommandResult {
   const normalized = args.toLowerCase()
   if (normalized === 'auto' || normalized === 'unset') {
-    return unsetEffortLevel()
+    return unsetEffortLevel(model)
   }
 
   if (!isEffortLevel(normalized)) {
@@ -128,13 +149,15 @@ function ShowCurrentEffort({
 }
 
 function ApplyEffortAndClose({
-  result,
+  args,
   onDone,
 }: {
-  result: EffortCommandResult
+  args: string
   onDone: (result: string) => void
 }): React.ReactNode {
   const setAppState = useSetAppState()
+  const model = useMainLoopModel()
+  const result = React.useMemo(() => executeEffort(args, model), [args, model])
   const { effortUpdate, message } = result
   React.useEffect(() => {
     if (effortUpdate) {
@@ -157,7 +180,7 @@ export async function call(
 
   if (COMMON_HELP_ARGS.includes(args)) {
     onDone(
-      'Usage: /effort [low|medium|high|max|auto]\n\nEffort levels:\n- low: Quick, straightforward implementation\n- medium: Balanced approach with standard testing\n- high: Comprehensive implementation with extensive testing\n- max: Maximum capability with deepest reasoning (Opus 4.6 only)\n- auto: Use the default effort level for your model',
+      'Usage: /effort [low|medium|high|max|auto]\n\nEffort levels:\n- low: Quick, straightforward implementation\n- medium: Balanced approach with standard testing\n- high: Comprehensive implementation with extensive testing\n- max: Maximum capability with deepest reasoning\n- auto: Use the default effort level for your model',
     )
     return
   }
@@ -166,6 +189,5 @@ export async function call(
     return <ShowCurrentEffort onDone={onDone} />
   }
 
-  const result = executeEffort(args)
-  return <ApplyEffortAndClose result={result} onDone={onDone} />
+  return <ApplyEffortAndClose args={args} onDone={onDone} />
 }

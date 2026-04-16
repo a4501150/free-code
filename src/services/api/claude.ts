@@ -20,10 +20,8 @@ import type {
 import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { Stream } from '@anthropic-ai/sdk/streaming.mjs'
 import { randomUUID } from 'crypto'
-import {
-  getAPIProvider,
-  isFirstPartyAnthropicBaseUrl,
-} from 'src/utils/model/providers.js'
+import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
+import { stripProviderPrefix } from 'src/utils/model/parseModelString.js'
 import {
   getAttributionHeader,
   getCLISyspromptPrefix,
@@ -57,7 +55,7 @@ import {
 } from '../../utils/api.js'
 import { getOauthAccountInfo } from '../../utils/auth.js'
 import {
-  getBedrockExtraBodyParamsBetas,
+  getBodyBetas,
   getMergedBetas,
   getModelBetas,
 } from '../../utils/betas.js'
@@ -65,7 +63,6 @@ import { getOrCreateUserID } from '../../utils/config.js'
 import {
   CAPPED_DEFAULT_MAX_TOKENS,
   getModelMaxOutputTokens,
-  getSonnet1mExpTreatmentEnabled,
 } from '../../utils/context.js'
 import { resolveAppliedEffort } from '../../utils/effort.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
@@ -81,10 +78,9 @@ import {
   stripAdvisorBlocks,
   stripCallerFieldFromAssistantMessage,
   stripToolReferenceBlocksFromUserMessage,
+  stripUnsignedThinkingBlocks,
 } from '../../utils/messages.js'
 import {
-  getDefaultOpusModel,
-  getDefaultSonnetModel,
   getSmallFastModel,
 } from '../../utils/model/model.js'
 import {
@@ -130,7 +126,6 @@ import {
 } from 'src/bootstrap/state.js'
 import {
   AFK_MODE_BETA_HEADER,
-  CONTEXT_1M_BETA_HEADER,
   CONTEXT_MANAGEMENT_BETA_HEADER,
   EFFORT_BETA_HEADER,
   FAST_MODE_BETA_HEADER,
@@ -197,7 +192,6 @@ import { count } from '../../utils/array.js'
 import { insertBlockAfterToolResults } from '../../utils/contentArray.js'
 import { validateBoundedIntEnvVar } from '../../utils/envValidation.js'
 import { safeParseJSON } from '../../utils/json.js'
-import { getInferenceProfileBackingModel } from '../../utils/model/bedrock.js'
 import {
   normalizeModelStringForAPI,
   parseUserSpecifiedModel,
@@ -243,7 +237,6 @@ import {
 } from './promptCacheBreakDetection.js'
 import {
   CannotRetryError,
-  FallbackTriggeredError,
   is529Error,
   type RetryContext,
   withRetry,
@@ -313,22 +306,28 @@ export function getPromptCachingEnabled(model: string): boolean {
   // Global disable takes precedence
   if (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING)) return false
 
+  // Per-provider caching: if the provider's cache type is 'none' or
+  // 'automatic-prefix', disable explicit cache_control markers.
+  // Only 'explicit-breakpoint' providers use our cache markers.
+  const cacheType = getProviderRegistry().getProviderCacheType(model)
+  if (cacheType === 'none' || cacheType === 'automatic-prefix') return false
+
   // Check if we should disable for small/fast model
   if (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_HAIKU)) {
     const smallFastModel = getSmallFastModel()
     if (model === smallFastModel) return false
   }
 
-  // Check if we should disable for default Sonnet
+  const bareModel = stripProviderPrefix(model).toLowerCase()
+
+  // Check if we should disable for Sonnet models
   if (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_SONNET)) {
-    const defaultSonnet = getDefaultSonnetModel()
-    if (model === defaultSonnet) return false
+    if (bareModel.includes('sonnet')) return false
   }
 
-  // Check if we should disable for default Opus
+  // Check if we should disable for Opus models
   if (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_OPUS)) {
-    const defaultOpus = getDefaultOpusModel()
-    if (model === defaultOpus) return false
+    if (bareModel.includes('opus')) return false
   }
 
   return true
@@ -373,7 +372,7 @@ function should1hCacheTTL(querySource?: QuerySource): boolean {
   // 3P Bedrock users get 1h TTL when opted in via env var — they manage their own billing
   // No remote gating needed since 3P users don't have remote config
   if (
-    getAPIProvider() === 'bedrock' &&
+    getProviderRegistry().getDefaultProvider()?.config.type === 'bedrock-converse' &&
     isEnvTruthy(process.env.ENABLE_PROMPT_CACHING_1H_BEDROCK)
   ) {
     return true
@@ -647,7 +646,6 @@ export type Options = {
   isNonInteractiveSession: boolean
   extraToolSchemas?: BetaToolUnion[]
   maxOutputTokensOverride?: number
-  fallbackModel?: string
   onStreamingFallback?: () => void
   querySource: QuerySource
   agents: AgentDefinition[]
@@ -790,7 +788,6 @@ export async function* executeNonStreamingRequest(
   },
   retryOptions: {
     model: string
-    fallbackModel?: string
     thinkingConfig: ThinkingConfig
     fastMode?: boolean
     signal: AbortSignal
@@ -851,7 +848,6 @@ export async function* executeNonStreamingRequest(
     },
     {
       model: retryOptions.model,
-      fallbackModel: retryOptions.fallbackModel,
       thinkingConfig: retryOptions.thinkingConfig,
       ...(isFastModeEnabled() && { fastMode: retryOptions.fastMode }),
       signal: retryOptions.signal,
@@ -987,12 +983,8 @@ async function* queryModel(
   // Also naturally handles rollback/undo since removed messages won't be in the array.
   const previousRequestId = getPreviousRequestIdFromMessages(messages)
 
-  const resolvedModel =
-    getAPIProvider() === 'bedrock' &&
-    options.model.includes('application-inference-profile')
-      ? ((await getInferenceProfileBackingModel(options.model)) ??
-        options.model)
-      : options.model
+  const registry = getProviderRegistry()
+  const resolvedModel = await registry.resolveModelId(options.model)
 
   queryCheckpoint('query_tool_schema_build_start')
   const isAgenticQuery =
@@ -1107,8 +1099,8 @@ async function* queryModel(
   // Add tool search beta header if enabled - required for defer_loading to be accepted
   // Header differs by provider: 1P/Foundry use advanced-tool-use, Vertex/Bedrock use tool-search-tool
   // For Bedrock, this header must go in extraBodyParams, not the betas array
-  const toolSearchHeader = useToolSearch ? getToolSearchBetaHeader() : null
-  if (toolSearchHeader && getAPIProvider() !== 'bedrock') {
+  const toolSearchHeader = useToolSearch ? getToolSearchBetaHeader(options.model) : null
+  if (toolSearchHeader && !registry.getCapability(options.model, 'betasInBody')) {
     if (!betas.includes(toolSearchHeader)) {
       betas.push(toolSearchHeader)
     }
@@ -1195,6 +1187,17 @@ async function* queryModel(
   queryCheckpoint('query_message_normalization_start')
   let messagesForAPI = normalizeMessagesForAPI(messages, filteredTools)
   queryCheckpoint('query_message_normalization_end')
+
+  // Strip thinking blocks with missing/empty signatures when the target is an
+  // Anthropic-type provider. The Anthropic API requires a valid server-generated
+  // signature on every thinking block in conversation history. Thinking blocks
+  // from non-Anthropic providers (OpenAI, Bedrock, etc.) never have signatures,
+  // so sending them to an Anthropic target causes a 400 error. Other providers'
+  // adapters silently drop thinking blocks during translation, so this is only
+  // needed for Anthropic targets.
+  if (registry.isAnthropicType(options.model)) {
+    messagesForAPI = stripUnsignedThinkingBlocks(messagesForAPI)
+  }
 
   // Model-specific post-processing: strip tool-search-specific fields if the
   // selected model doesn't support tool search.
@@ -1284,7 +1287,9 @@ async function* queryModel(
   // filter(Boolean) works by converting each element to a boolean - empty strings become false and are filtered out.
   systemPrompt = asSystemPrompt(
     [
-      getAttributionHeader(fingerprint),
+      registry.isAnthropicType(options.model)
+        ? getAttributionHeader(fingerprint)
+        : '',
       getCLISyspromptPrefix({
         isNonInteractive: options.isNonInteractiveSession,
         hasAppendSystemPrompt: options.hasAppendSystemPrompt,
@@ -1360,7 +1365,7 @@ async function* queryModel(
     if (
       !cacheEditingHeaderLatched &&
       cachedMCEnabled &&
-      getAPIProvider() === 'firstParty' &&
+      registry.isAnthropicType(options.model) &&
       options.querySource === 'repl_main_thread'
     ) {
       cacheEditingHeaderLatched = true
@@ -1465,19 +1470,11 @@ async function* queryModel(
   const paramsFromContext = (retryContext: RetryContext) => {
     const betasParams = [...betas]
 
-    // Append 1M beta dynamically for the Sonnet 1M experiment.
-    if (
-      !betasParams.includes(CONTEXT_1M_BETA_HEADER) &&
-      getSonnet1mExpTreatmentEnabled(retryContext.model)
-    ) {
-      betasParams.push(CONTEXT_1M_BETA_HEADER)
-    }
-
-    // For Bedrock, include both model-based betas and dynamically-added tool search header
+    // For providers with betasInBody, include both model-based betas and dynamically-added tool search header
     const bedrockBetas =
-      getAPIProvider() === 'bedrock'
+      registry.getCapability(retryContext.model, 'betasInBody')
         ? [
-            ...getBedrockExtraBodyParamsBetas(retryContext.model),
+            ...getBodyBetas(retryContext.model),
             ...(toolSearchHeader ? [toolSearchHeader] : []),
           ]
         : []
@@ -1601,11 +1598,11 @@ async function* queryModel(
     // the feature disables but the header doesn't flip.
     const useCachedMC =
       cachedMCEnabled &&
-      getAPIProvider() === 'firstParty' &&
+      registry.isAnthropicType(retryContext.model) &&
       options.querySource === 'repl_main_thread'
     if (
       cacheEditingHeaderLatched &&
-      getAPIProvider() === 'firstParty' &&
+      registry.isAnthropicType(retryContext.model) &&
       options.querySource === 'repl_main_thread' &&
       !betasParams.includes(cacheEditingBetaHeader)
     ) {
@@ -1737,10 +1734,9 @@ async function* queryModel(
         // Generate and track client request ID so timeouts (which return no
         // server request ID) can still be correlated with server logs.
         // First-party only — 3P providers don't log it (inc-4029 class).
-        clientRequestId =
-          getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()
-            ? randomUUID()
-            : undefined
+        clientRequestId = registry.getCapability(context.model, 'clientRequestId')
+          ? randomUUID()
+          : undefined
 
         // Use raw stream instead of BetaMessageStream to avoid O(n²) partial JSON parsing
         // BetaMessageStream calls partialParse() on every input_json_delta, which we don't need
@@ -1764,7 +1760,6 @@ async function* queryModel(
       },
       {
         model: options.model,
-        fallbackModel: options.fallbackModel,
         thinkingConfig,
         ...(isFastModeEnabled() ? { fastMode: isFastMode } : false),
         signal,
@@ -2232,14 +2227,6 @@ async function* queryModel(
       clearStreamIdleTimers()
     }
   } catch (errorFromRetry) {
-    // FallbackTriggeredError must propagate to query.ts, which performs the
-    // actual model switch. Swallowing it here would turn the fallback into a
-    // no-op — the user would just see "Model fallback triggered: X -> Y" as
-    // an error message with no actual retry on the fallback model.
-    if (errorFromRetry instanceof FallbackTriggeredError) {
-      throw errorFromRetry
-    }
-
     // Check if this is a 404 error during stream creation that should trigger
     // non-streaming fallback. This handles gateways that return 404 for streaming
     // endpoints but work fine with non-streaming. Before v2.1.8, BetaMessageStream
@@ -2272,7 +2259,6 @@ async function* queryModel(
           { model: options.model, source: options.querySource },
           {
             model: options.model,
-            fallbackModel: options.fallbackModel,
             thinkingConfig,
             ...(isFastModeEnabled() && { fastMode: isFastMode }),
             signal,
@@ -2307,11 +2293,6 @@ async function* queryModel(
 
         // Continue to success logging below
       } catch (fallbackError) {
-        // Propagate model-fallback signal to query.ts (see comment above).
-        if (fallbackError instanceof FallbackTriggeredError) {
-          throw fallbackError
-        }
-
         // Fallback also failed, handle as normal error
         logForDebugging(
           `Non-streaming fallback also failed: ${errorMessage(fallbackError)}`,

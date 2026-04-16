@@ -6,7 +6,6 @@ import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { isVoiceModeEnabled } from '../../voice/voiceModeEnabled.js'
 import { AnimatedAsterisk } from './AnimatedAsterisk.js'
-import { shouldShowOpus1mMergeNotice } from './Opus1mMergeNotice.js'
 
 const MAX_SHOW_COUNT = 3
 
@@ -26,8 +25,7 @@ function VoiceModeNoticeInner(): React.ReactNode {
     () =>
       isVoiceModeEnabled() &&
       getInitialSettings().voiceEnabled !== true &&
-      (getGlobalConfig().voiceNoticeSeenCount ?? 0) < MAX_SHOW_COUNT &&
-      !shouldShowOpus1mMergeNotice(),
+      (getGlobalConfig().voiceNoticeSeenCount ?? 0) < MAX_SHOW_COUNT,
   )
 
   useEffect(() => {

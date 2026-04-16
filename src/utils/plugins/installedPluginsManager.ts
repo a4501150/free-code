@@ -6,7 +6,7 @@
  * - Which plugins are installed globally
  * - Installation metadata (version, timestamps, paths)
  *
- * The enabled/disabled state remains in .claude/settings.json for per-repo control.
+ * The enabled/disabled state remains in .claude/freecode.json for per-repo control.
  *
  * Rationale: Installation is global (a plugin is either on disk or not), while
  * enabled/disabled state is per-repository (different projects may want different
@@ -715,7 +715,7 @@ export async function initializeVersionedPlugins(): Promise<void> {
   // Step 1: Migrate to single file format (consolidates V1/V2 files, cleans up legacy cache)
   migrateToSinglePluginFile()
 
-  // Step 2: Sync enabledPlugins from settings.json to installed_plugins.json
+  // Step 2: Sync enabledPlugins from freecode.json to installed_plugins.json
   // This must complete before CLI exits (especially in headless mode)
   try {
     await migrateFromEnabledPlugins()
@@ -826,7 +826,7 @@ export function isPluginInstalled(pluginId: string): boolean {
   }
   // Plugins are loaded from settings.enabledPlugins
   // If settings.enabledPlugins and installed_plugins.json diverge
-  // (via settings.json clobber), return false
+  // (via freecode.json clobber), return false
   return getSettings_DEPRECATED().enabledPlugins?.[pluginId] !== undefined
 }
 
@@ -1043,7 +1043,7 @@ function getPluginVersionFromManifest(
  * - Captures git commit SHA for git-based plugins
  *
  * Being present in enabledPlugins (whether true or false) indicates the plugin
- * has been installed. The enabled/disabled state remains in settings.json.
+ * has been installed. The enabled/disabled state remains in freecode.json.
  */
 export async function migrateFromEnabledPlugins(): Promise<void> {
   // Use merged settings for shouldSkipSync check
@@ -1086,15 +1086,15 @@ export async function migrateFromEnabledPlugins(): Promise<void> {
 
   logForDebugging(
     fileExists
-      ? 'Syncing installed_plugins.json with enabledPlugins from all settings.json files'
-      : 'Creating installed_plugins.json from settings.json files',
+      ? 'Syncing installed_plugins.json with enabledPlugins from all freecode.json files'
+      : 'Creating installed_plugins.json from freecode.json files',
   )
 
   const now = new Date().toISOString()
   const projectPath = getCwd()
 
-  // Step 1: Build a map of pluginId -> scope from all settings.json files
-  // Settings.json is the source of truth for scope
+  // Step 1: Build a map of pluginId -> scope from all freecode.json files
+  // freecode.json is the source of truth for scope
   const pluginScopeFromSettings = new Map<
     string,
     {
@@ -1137,7 +1137,7 @@ export async function migrateFromEnabledPlugins(): Promise<void> {
     v2Plugins = { ...existingData.plugins }
   }
 
-  // Step 3: Update V2 scopes based on settings.json (settings is source of truth)
+  // Step 3: Update V2 scopes based on freecode.json (settings is source of truth)
   let updatedCount = 0
   let addedCount = 0
 
@@ -1161,7 +1161,7 @@ export async function migrateFromEnabledPlugins(): Promise<void> {
         existingEntry.lastUpdated = now
         updatedCount++
         logForDebugging(
-          `Updated ${pluginId} scope to ${scopeInfo.scope} (settings.json is source of truth)`,
+          `Updated ${pluginId} scope to ${scopeInfo.scope} (freecode.json is source of truth)`,
         )
       }
     } else {

@@ -745,4 +745,65 @@ describe('Tool Use E2E', () => {
       expect(log.length).toBeGreaterThanOrEqual(3)
     })
   })
+
+  // ─── Parallel Agent Tool Calls ────────────────────
+
+  describe('Parallel Agent Tool Calls', () => {
+    let session: TmuxSession
+
+    afterEach(async () => {
+      if (session) await session.stop()
+    })
+
+    test('multiple concurrent agents complete without infinite re-render crash', async () => {
+      // Regression test: GroupedAgentToolUseView renders a live timer via
+      // useNow() when multiple agents run concurrently. A broken getSnapshot
+      // (returning Date.now() directly to useSyncExternalStore) caused
+      // "Maximum update depth exceeded" and crashed the CLI.
+      //
+      // Response queue:
+      //   0: main → 2 parallel Agent tool_use blocks
+      //   1: subagent 1 text response
+      //   2: subagent 2 text response
+      //   3: main → final text after collecting agent results
+      server.reset([
+        toolUseResponse([
+          {
+            name: 'Agent',
+            input: {
+              description: 'First parallel task',
+              prompt: 'Return the word hello',
+            },
+          },
+          {
+            name: 'Agent',
+            input: {
+              description: 'Second parallel task',
+              prompt: 'Return the word world',
+            },
+          },
+        ]),
+        textResponse('hello'),
+        textResponse('world'),
+        textResponse('Both agents finished successfully'),
+      ])
+
+      session = new TmuxSession({ serverUrl: server.url })
+      await session.start()
+
+      // If the useNow bug is present, the CLI crashes during grouped agent
+      // rendering and never returns to idle — submitAndApprove times out.
+      const screen = await session.submitAndApprove(
+        'Run two agents in parallel',
+        90_000,
+      )
+
+      // Verify no crash error appeared in the terminal
+      expect(screen).not.toContain('Maximum update depth exceeded')
+
+      // Verify the main agent completed at least one round-trip
+      const log = server.getRequestLog()
+      expect(log.length).toBeGreaterThanOrEqual(2)
+    })
+  })
 })

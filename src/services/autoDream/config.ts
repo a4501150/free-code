@@ -6,7 +6,7 @@ import { getInitialSettings } from '../../utils/settings/settings.js'
 
 /**
  * Whether background memory consolidation should run.
- * Controlled by autoDreamEnabled in settings.json (default: false).
+ * Controlled by autoDreamEnabled in freecode.json (default: false).
  */
 export function isAutoDreamEnabled(): boolean {
   return getInitialSettings().autoDreamEnabled ?? false

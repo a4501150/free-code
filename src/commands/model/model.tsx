@@ -13,17 +13,10 @@ import {
   isFastModeEnabled,
   isFastModeSupportedByModel,
 } from '../../utils/fastMode.js'
-import { MODEL_ALIASES } from '../../utils/model/aliases.js'
-import {
-  checkOpus1mAccess,
-  checkSonnet1mAccess,
-} from '../../utils/model/check1mAccess.js'
 import {
   getDefaultMainLoopModelSetting,
-  isOpus1mMergeEnabled,
   renderDefaultModelSetting,
 } from '../../utils/model/model.js'
-import { isModelAllowed } from '../../utils/model/modelAllowlist.js'
 import { validateModel } from '../../utils/model/validateModel.js'
 
 function ModelPickerWrapper({
@@ -86,7 +79,6 @@ function ModelPickerWrapper({
       isBilledAsExtraUsage(
         model,
         wasFastModeToggledOn === true,
-        isOpus1mMergeEnabled(),
       )
     ) {
       message += ` · Billed as extra usage`
@@ -133,47 +125,16 @@ function SetModelAndClose({
 
   React.useEffect(() => {
     async function handleModelChange(): Promise<void> {
-      if (model && !isModelAllowed(model)) {
-        onDone(
-          `Model '${model}' is not available. Your organization restricts model selection.`,
-          { display: 'system' },
-        )
-        return
-      }
-
-      // @[MODEL LAUNCH]: Update check for 1M access.
-      if (model && isOpus1mUnavailable(model)) {
-        onDone(
-          `Opus 4.6 with 1M context is not available for your account. Learn more: https://code.claude.com/docs/en/model-config#extended-context-with-1m`,
-          { display: 'system' },
-        )
-        return
-      }
-
-      if (model && isSonnet1mUnavailable(model)) {
-        onDone(
-          `Sonnet 4.6 with 1M context is not available for your account. Learn more: https://code.claude.com/docs/en/model-config#extended-context-with-1m`,
-          { display: 'system' },
-        )
-        return
-      }
-
       // Skip validation for default model
       if (!model) {
         setModel(null)
         return
       }
 
-      // Skip validation for known aliases - they're predefined and should work
-      if (isKnownAlias(model)) {
-        setModel(model)
-        return
-      }
-
       // Validate and set custom model
       try {
-        // Don't use parseUserSpecifiedModel for non-aliases since it lowercases the input
-        // and model names are case-sensitive
+        // Validate the raw user input directly so custom model names keep their
+        // original casing during validation.
         const { valid, error } = await validateModel(model)
 
         if (valid) {
@@ -218,7 +179,6 @@ function SetModelAndClose({
         isBilledAsExtraUsage(
           modelValue,
           wasFastModeToggledOn === true,
-          isOpus1mMergeEnabled(),
         )
       ) {
         message += ` · Billed as extra usage`
@@ -236,32 +196,6 @@ function SetModelAndClose({
   }, [model, onDone, setAppState])
 
   return null
-}
-
-function isKnownAlias(model: string): boolean {
-  return (MODEL_ALIASES as readonly string[]).includes(
-    model.toLowerCase().trim(),
-  )
-}
-
-function isOpus1mUnavailable(model: string): boolean {
-  const m = model.toLowerCase()
-  return (
-    !checkOpus1mAccess() &&
-    !isOpus1mMergeEnabled() &&
-    m.includes('opus') &&
-    m.includes('[1m]')
-  )
-}
-
-function isSonnet1mUnavailable(model: string): boolean {
-  const m = model.toLowerCase()
-  // Warn about Sonnet and Sonnet 4.6, but not Sonnet 4.5 since that had
-  // a different access criteria.
-  return (
-    !checkSonnet1mAccess() &&
-    (m.includes('sonnet[1m]') || m.includes('sonnet-4-6[1m]'))
-  )
 }
 
 function ShowModelAndClose({

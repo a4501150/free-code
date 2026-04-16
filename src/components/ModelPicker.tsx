@@ -15,8 +15,8 @@ import {
   convertEffortValueToLevel,
   type EffortLevel,
   getDefaultEffortForModel,
+  getModelEffortLevels,
   modelSupportsEffort,
-  modelSupportsMaxEffort,
   resolvePickerEffortPersistence,
   toPersistableEffort,
 } from '../utils/effort.js'
@@ -26,16 +26,23 @@ import {
   modelDisplayString,
   parseUserSpecifiedModel,
 } from '../utils/model/model.js'
-import { getModelOptions } from '../utils/model/modelOptions.js'
+import {
+  getGroupedModelOptions,
+  type ModelOptionGroup,
+} from '../utils/model/modelOptions.js'
 import {
   getSettingsForSource,
   updateSettingsForSource,
 } from '../utils/settings/settings.js'
+import { updateProviderModelConfig } from '../utils/settings/freecodeSettings.js'
+import { getProviderRegistry, resetProviderRegistry } from '../utils/model/providerRegistry.js'
+import { parseModelString } from '../utils/model/parseModelString.js'
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js'
 import { Select } from './CustomSelect/index.js'
 import { Byline } from './design-system/Byline.js'
 import { KeyboardShortcutHint } from './design-system/KeyboardShortcutHint.js'
 import { Pane } from './design-system/Pane.js'
+import { Tab, Tabs, useTabHeaderFocus } from './design-system/Tabs.js'
 import { effortLevelToSymbol } from './EffortIndicator.js'
 
 export type Props = {
@@ -50,13 +57,20 @@ export type Props = {
   /**
    * When true, skip writing effortLevel to userSettings on selection.
    * Used by the assistant installer wizard where the model choice is
-   * project-scoped (written to the assistant's .claude/settings.json via
+   * project-scoped (written to the assistant's .claude/freecode.json via
    * install.ts) and should not leak to the user's global ~/.claude/settings.
    */
   skipSettingsWrite?: boolean
 }
 
 const NO_PREFERENCE = '__NO_PREFERENCE__'
+
+type SelectOption = {
+  value: string
+  label: string
+  description: string
+  descriptionForModel?: string
+}
 
 export function ModelPicker({
   initial,
@@ -73,9 +87,6 @@ export function ModelPicker({
   const maxVisible = 10
 
   const initialValue = initial === null ? NO_PREFERENCE : initial
-  const [focusedValue, setFocusedValue] = useState<string | undefined>(
-    initialValue,
-  )
 
   const isFastMode = useAppState(s =>
     isFastModeEnabled() ? s.fastMode : false,
@@ -89,62 +100,86 @@ export function ModelPicker({
       : undefined,
   )
 
-  // Memoize all derived values to prevent re-renders
-  const modelOptions = useMemo(
-    () => getModelOptions(isFastMode ?? false),
+  // Get model options grouped by provider
+  const groups = useMemo(
+    () => getGroupedModelOptions(isFastMode ?? false),
     [isFastMode],
   )
 
-  // Ensure the initial value is in the options list
-  // This handles edge cases where the user's current model (e.g., 'haiku' for 3P users)
-  // is not in the base options but should still be selectable and shown as selected
-  const optionsWithInitial = useMemo(() => {
-    if (initial !== null && !modelOptions.some(opt => opt.value === initial)) {
-      return [
-        ...modelOptions,
-        {
-          value: initial,
-          label: modelDisplayString(initial),
-          description: 'Current model',
-        },
-      ]
-    }
-    return modelOptions
-  }, [modelOptions, initial])
-
-  const selectOptions = useMemo(
-    () =>
-      optionsWithInitial.map(opt => ({
+  // Build per-group select options (with NO_PREFERENCE sentinel for null values)
+  const groupSelectOptions = useMemo(() => {
+    return groups.map(group => {
+      let opts = group.options.map(opt => ({
         ...opt,
-        value: opt.value === null ? NO_PREFERENCE : opt.value,
-      })),
-    [optionsWithInitial],
-  )
-  const initialFocusValue = useMemo(
-    () =>
-      selectOptions.some(_ => _.value === initialValue)
-        ? initialValue
-        : (selectOptions[0]?.value ?? undefined),
-    [selectOptions, initialValue],
-  )
-  const visibleCount = Math.min(maxVisible, selectOptions.length)
-  const hiddenCount = Math.max(0, selectOptions.length - visibleCount)
+        value: opt.value === null ? NO_PREFERENCE : (opt.value as string),
+      }))
 
-  const focusedModelName = selectOptions.find(
-    opt => opt.value === focusedValue,
-  )?.label
+      // Ensure the initial value is in the appropriate group
+      if (
+        initial !== null &&
+        !opts.some(opt => opt.value === initialValue) &&
+        // Only add to the first group that might own it, or the first group as fallback
+        group === groups[0]
+      ) {
+        const allOpts = groups.flatMap(g =>
+          g.options.map(o => (o.value === null ? NO_PREFERENCE : o.value)),
+        )
+        if (!allOpts.includes(initialValue)) {
+          opts = [
+            ...opts,
+            {
+              value: initialValue,
+              label: modelDisplayString(initial),
+              description: 'Current model',
+            },
+          ]
+        }
+      }
+
+      return opts
+    })
+  }, [groups, initial, initialValue])
+
+  // Determine which tab the initial value belongs to
+  const initialTabIndex = useMemo(() => {
+    for (let i = 0; i < groupSelectOptions.length; i++) {
+      if (groupSelectOptions[i]!.some(o => o.value === initialValue)) {
+        return i
+      }
+    }
+    return 0
+  }, [groupSelectOptions, initialValue])
+
+  const [activeTabIndex, setActiveTabIndex] = useState(initialTabIndex)
+  const hasMultipleGroups = groups.length > 1
+
+  // Track focused value — use a single state since only one tab's Select is active
+  const [focusedValue, setFocusedValue] = useState<string | undefined>(
+    initialValue,
+  )
+
+  // Find the focused option label across all groups
+  const focusedModelName = useMemo(() => {
+    for (const opts of groupSelectOptions) {
+      const found = opts.find(opt => opt.value === focusedValue)
+      if (found) return found.label
+    }
+    return undefined
+  }, [groupSelectOptions, focusedValue])
+
   const focusedModel = resolveOptionModel(focusedValue)
   const focusedSupportsEffort = focusedModel
     ? modelSupportsEffort(focusedModel)
     : false
-  const focusedSupportsMax = focusedModel
-    ? modelSupportsMaxEffort(focusedModel)
-    : false
+  const focusedEffortLevels = focusedModel
+    ? getModelEffortLevels(focusedModel)
+    : ['low', 'medium', 'high']
   const focusedDefaultEffort = getDefaultEffortLevelForOption(focusedValue)
-  // Clamp display when 'max' is selected but the focused model doesn't support it.
-  // resolveAppliedEffort() does the same downgrade at API-send time.
+  // Clamp display when effort is not in the focused model's supported levels
   const displayEffort =
-    effort === 'max' && !focusedSupportsMax ? 'high' : effort
+    effort && !focusedEffortLevels.includes(effort)
+      ? (focusedEffortLevels[focusedEffortLevels.length - 1] as EffortLevel)
+      : effort
 
   const handleFocus = useCallback(
     (value: string) => {
@@ -156,7 +191,6 @@ export function ModelPicker({
     [hasToggledEffort, effortValue],
   )
 
-  // Effort level cycling keybindings
   const handleCycleEffort = useCallback(
     (direction: 'left' | 'right') => {
       if (!focusedSupportsEffort) return
@@ -164,14 +198,15 @@ export function ModelPicker({
         cycleEffortLevel(
           prev ?? focusedDefaultEffort,
           direction,
-          focusedSupportsMax,
+          focusedEffortLevels,
         ),
       )
       setHasToggledEffort(true)
     },
-    [focusedSupportsEffort, focusedSupportsMax, focusedDefaultEffort],
+    [focusedSupportsEffort, focusedEffortLevels, focusedDefaultEffort],
   )
 
+  // Effort cycling keybindings — only active when Select has focus (not tab header)
   useKeybindings(
     {
       'modelPicker:decreaseEffort': () => handleCycleEffort('left'),
@@ -182,11 +217,6 @@ export function ModelPicker({
 
   function handleSelect(value: string): void {
     if (!skipSettingsWrite) {
-      // Prior comes from userSettings on disk — NOT merged settings (which
-      // includes project/policy layers that must not leak into the user's
-      // global ~/.claude/settings.json), and NOT AppState.effortValue (which
-      // includes session-ephemeral sources like --effort CLI flag).
-      // See resolvePickerEffortPersistence JSDoc.
       const effortLevel = resolvePickerEffortPersistence(
         effort,
         getDefaultEffortLevelForOption(value),
@@ -198,6 +228,22 @@ export function ModelPicker({
         updateSettingsForSource('userSettings', { effortLevel: persistable })
       }
       setAppState(prev => ({ ...prev, effortValue: effortLevel }))
+
+      // Persist selectedEffort per-model in provider config when user explicitly toggled effort
+      if (hasToggledEffort && value !== NO_PREFERENCE) {
+        const resolvedModel = resolveOptionModel(value)
+        if (resolvedModel && modelSupportsEffort(resolvedModel)) {
+          const registry = getProviderRegistry()
+          const providerNames = registry.getProviderNames()
+          const defaultProvider = registry.getDefaultProviderName() ?? ''
+          const parsed = parseModelString(value, providerNames, defaultProvider)
+          const effortToWrite = toPersistableEffort(effort)
+          updateProviderModelConfig(parsed.provider, parsed.modelId, {
+            selectedEffort: effortToWrite,
+          })
+          resetProviderRegistry()
+        }
+      }
     }
 
     const selectedModel = resolveOptionModel(value)
@@ -212,6 +258,79 @@ export function ModelPicker({
     onSelect(value, selectedEffort)
   }
 
+  const handleTabChange = useCallback(
+    (tabId: string) => {
+      const idx = groups.findIndex(g => g.provider === tabId)
+      if (idx !== -1) {
+        setActiveTabIndex(idx)
+        // Focus the first option in the new tab
+        const firstOpt = groupSelectOptions[idx]?.[0]
+        if (firstOpt) {
+          setFocusedValue(firstOpt.value)
+          if (!hasToggledEffort && effortValue === undefined) {
+            setEffort(getDefaultEffortLevelForOption(firstOpt.value))
+          }
+        }
+      }
+    },
+    [groups, groupSelectOptions, hasToggledEffort, effortValue],
+  )
+
+  const effortIndicator = (
+    <Box marginBottom={1} flexDirection="column">
+      {focusedSupportsEffort ? (
+        <Text dimColor>
+          <EffortLevelIndicator effort={displayEffort} />{' '}
+          {capitalize(displayEffort)} effort
+          {displayEffort === focusedDefaultEffort ? ` (default)` : ``}{' '}
+          <Text color="subtle">← → to adjust</Text>
+        </Text>
+      ) : (
+        <Text color="subtle">
+          <EffortLevelIndicator effort={undefined} /> Effort not supported
+          {focusedModelName ? ` for ${focusedModelName}` : ''}
+        </Text>
+      )}
+    </Box>
+  )
+
+  const fastModeNotice = isFastModeEnabled() ? (
+    showFastModeNotice ? (
+      <Box marginBottom={1}>
+        <Text dimColor>
+          Fast mode is <Text bold>ON</Text> and available with{' '}
+          {FAST_MODE_MODEL_DISPLAY} only (/fast). Switching to other models turn
+          off fast mode.
+        </Text>
+      </Box>
+    ) : isFastModeAvailable() && !isFastModeCooldown() ? (
+      <Box marginBottom={1}>
+        <Text dimColor>
+          Use <Text bold>/fast</Text> to turn on Fast mode (
+          {FAST_MODE_MODEL_DISPLAY} only).
+        </Text>
+      </Box>
+    ) : null
+  ) : null
+
+  const footer = isStandaloneCommand ? (
+    <Text dimColor italic>
+      {exitState.pending ? (
+        <>Press {exitState.keyName} again to exit</>
+      ) : (
+        <Byline>
+          <KeyboardShortcutHint shortcut="Enter" action="confirm" />
+          <ConfigurableShortcutHint
+            action="select:cancel"
+            context="Select"
+            fallback="Esc"
+            description="exit"
+          />
+        </Byline>
+      )}
+    </Text>
+  ) : null
+
   const content = (
     <Box flexDirection="column">
       <Box flexDirection="column">
@@ -221,7 +340,7 @@ export function ModelPicker({
           </Text>
           <Text dimColor>
             {headerText ??
-              'Switch between Claude models. Applies to this session and future Claude Code sessions. For other/previous model names, specify with --model.'}
+              'Switch between models. Applies to this session and future sessions. For other/previous model names, specify with --model.'}
           </Text>
           {sessionModel && (
             <Text dimColor>
@@ -231,78 +350,34 @@ export function ModelPicker({
           )}
         </Box>
 
-        <Box flexDirection="column" marginBottom={1}>
-          <Box flexDirection="column">
-            <Select
-              defaultValue={initialValue}
-              defaultFocusValue={initialFocusValue}
-              options={selectOptions}
-              onChange={handleSelect}
-              onFocus={handleFocus}
-              onCancel={onCancel ?? (() => {})}
-              visibleOptionCount={visibleCount}
-            />
-          </Box>
-          {hiddenCount > 0 && (
-            <Box paddingLeft={3}>
-              <Text dimColor>and {hiddenCount} more…</Text>
-            </Box>
-          )}
-        </Box>
+        {hasMultipleGroups ? (
+          <TabbedModelList
+            groups={groups}
+            groupSelectOptions={groupSelectOptions}
+            activeTabIndex={activeTabIndex}
+            initialValue={initialValue}
+            maxVisible={maxVisible}
+            onSelect={handleSelect}
+            onFocus={handleFocus}
+            onCancel={onCancel ?? (() => {})}
+            onTabChange={handleTabChange}
+          />
+        ) : (
+          <SingleModelList
+            options={groupSelectOptions[0] ?? []}
+            initialValue={initialValue}
+            maxVisible={maxVisible}
+            onSelect={handleSelect}
+            onFocus={handleFocus}
+            onCancel={onCancel ?? (() => {})}
+          />
+        )}
 
-        <Box marginBottom={1} flexDirection="column">
-          {focusedSupportsEffort ? (
-            <Text dimColor>
-              <EffortLevelIndicator effort={displayEffort} />{' '}
-              {capitalize(displayEffort)} effort
-              {displayEffort === focusedDefaultEffort ? ` (default)` : ``}{' '}
-              <Text color="subtle">← → to adjust</Text>
-            </Text>
-          ) : (
-            <Text color="subtle">
-              <EffortLevelIndicator effort={undefined} /> Effort not supported
-              {focusedModelName ? ` for ${focusedModelName}` : ''}
-            </Text>
-          )}
-        </Box>
-
-        {isFastModeEnabled() ? (
-          showFastModeNotice ? (
-            <Box marginBottom={1}>
-              <Text dimColor>
-                Fast mode is <Text bold>ON</Text> and available with{' '}
-                {FAST_MODE_MODEL_DISPLAY} only (/fast). Switching to other
-                models turn off fast mode.
-              </Text>
-            </Box>
-          ) : isFastModeAvailable() && !isFastModeCooldown() ? (
-            <Box marginBottom={1}>
-              <Text dimColor>
-                Use <Text bold>/fast</Text> to turn on Fast mode (
-                {FAST_MODE_MODEL_DISPLAY} only).
-              </Text>
-            </Box>
-          ) : null
-        ) : null}
+        {effortIndicator}
+        {fastModeNotice}
       </Box>
 
-      {isStandaloneCommand && (
-        <Text dimColor italic>
-          {exitState.pending ? (
-            <>Press {exitState.keyName} again to exit</>
-          ) : (
-            <Byline>
-              <KeyboardShortcutHint shortcut="Enter" action="confirm" />
-              <ConfigurableShortcutHint
-                action="select:cancel"
-                context="Select"
-                fallback="Esc"
-                description="exit"
-              />
-            </Byline>
-          )}
-        </Text>
-      )}
+      {footer}
     </Box>
   )
 
@@ -312,6 +387,145 @@ export function ModelPicker({
 
   return <Pane color="permission">{content}</Pane>
 }
+
+// --- Sub-components for single-list and tabbed modes -----------------------
+
+function SingleModelList({
+  options,
+  initialValue,
+  maxVisible,
+  onSelect,
+  onFocus,
+  onCancel,
+}: {
+  options: SelectOption[]
+  initialValue: string
+  maxVisible: number
+  onSelect: (value: string) => void
+  onFocus: (value: string) => void
+  onCancel: () => void
+}): React.ReactNode {
+  const initialFocusValue = options.some(o => o.value === initialValue)
+    ? initialValue
+    : (options[0]?.value ?? undefined)
+  const visibleCount = Math.min(maxVisible, options.length)
+  const hiddenCount = Math.max(0, options.length - visibleCount)
+
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Box flexDirection="column">
+        <Select
+          defaultValue={initialValue}
+          defaultFocusValue={initialFocusValue}
+          options={options}
+          onChange={onSelect}
+          onFocus={onFocus}
+          onCancel={onCancel}
+          visibleOptionCount={visibleCount}
+        />
+      </Box>
+      {hiddenCount > 0 && (
+        <Box paddingLeft={3}>
+          <Text dimColor>and {hiddenCount} more…</Text>
+        </Box>
+      )}
+    </Box>
+  )
+}
+
+function TabbedModelList({
+  groups,
+  groupSelectOptions,
+  activeTabIndex,
+  initialValue,
+  maxVisible,
+  onSelect,
+  onFocus,
+  onCancel,
+  onTabChange,
+}: {
+  groups: ModelOptionGroup[]
+  groupSelectOptions: SelectOption[][]
+  activeTabIndex: number
+  initialValue: string
+  maxVisible: number
+  onSelect: (value: string) => void
+  onFocus: (value: string) => void
+  onCancel: () => void
+  onTabChange: (tabId: string) => void
+}): React.ReactNode {
+  const activeProvider = groups[activeTabIndex]?.provider ?? groups[0]!.provider
+
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Tabs
+        selectedTab={activeProvider}
+        onTabChange={onTabChange}
+        color="permission"
+      >
+        {groups.map((group, i) => (
+          <Tab key={group.provider} title={group.provider} id={group.provider}>
+            <ProviderTabContent
+              options={groupSelectOptions[i] ?? []}
+              initialValue={initialValue}
+              maxVisible={maxVisible}
+              onSelect={onSelect}
+              onFocus={onFocus}
+              onCancel={onCancel}
+            />
+          </Tab>
+        ))}
+      </Tabs>
+    </Box>
+  )
+}
+
+function ProviderTabContent({
+  options,
+  initialValue,
+  maxVisible,
+  onSelect,
+  onFocus,
+  onCancel,
+}: {
+  options: SelectOption[]
+  initialValue: string
+  maxVisible: number
+  onSelect: (value: string) => void
+  onFocus: (value: string) => void
+  onCancel: () => void
+}): React.ReactNode {
+  const { headerFocused, focusHeader } = useTabHeaderFocus()
+
+  const initialFocusValue = options.some(o => o.value === initialValue)
+    ? initialValue
+    : (options[0]?.value ?? undefined)
+  const visibleCount = Math.min(maxVisible, options.length)
+  const hiddenCount = Math.max(0, options.length - visibleCount)
+
+  return (
+    <Box flexDirection="column">
+      <Select
+        defaultValue={initialValue}
+        defaultFocusValue={initialFocusValue}
+        options={options}
+        onChange={onSelect}
+        onFocus={onFocus}
+        onCancel={onCancel}
+        visibleOptionCount={visibleCount}
+        isDisabled={headerFocused}
+        onUpFromFirstItem={focusHeader}
+      />
+      {hiddenCount > 0 && (
+        <Box paddingLeft={3}>
+          <Text dimColor>and {hiddenCount} more…</Text>
+        </Box>
+      )}
+    </Box>
+  )
+}
+
+// --- Helpers ---------------------------------------------------------------
 
 function resolveOptionModel(value?: string): string | undefined {
   if (!value) return undefined
@@ -335,24 +549,26 @@ function EffortLevelIndicator({
 function cycleEffortLevel(
   current: EffortLevel,
   direction: 'left' | 'right',
-  includeMax: boolean,
+  levels: string[],
 ): EffortLevel {
-  const levels: EffortLevel[] = includeMax
-    ? ['low', 'medium', 'high', 'max']
-    : ['low', 'medium', 'high']
-  // If the current level isn't in the cycle (e.g. 'max' after switching to a
-  // non-Opus model), clamp to 'high'.
   const idx = levels.indexOf(current)
-  const currentIndex = idx !== -1 ? idx : levels.indexOf('high')
+  // If the current level isn't in the model's configured levels, start from
+  // the closest match (last level for too-high, first for too-low).
+  const currentIndex = idx !== -1 ? idx : Math.max(0, levels.length - 2)
   if (direction === 'right') {
-    return levels[(currentIndex + 1) % levels.length]!
+    return levels[(currentIndex + 1) % levels.length]! as EffortLevel
   } else {
-    return levels[(currentIndex - 1 + levels.length) % levels.length]!
+    return levels[(currentIndex - 1 + levels.length) % levels.length]! as EffortLevel
   }
 }
 
 function getDefaultEffortLevelForOption(value?: string): EffortLevel {
   const resolved = resolveOptionModel(value) ?? getDefaultMainLoopModel()
+  // Check selectedEffort from provider config first (user's persisted preference)
+  const selectedEffort = getProviderRegistry().getModelSelectedEffort(resolved)
+  if (selectedEffort !== undefined) {
+    return convertEffortValueToLevel(selectedEffort as EffortLevel)
+  }
   const defaultValue = getDefaultEffortForModel(resolved)
   return defaultValue !== undefined
     ? convertEffortValueToLevel(defaultValue)

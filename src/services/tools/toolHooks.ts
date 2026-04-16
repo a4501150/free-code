@@ -258,7 +258,7 @@ export async function* runPostToolUseFailureHooks<Input extends AnyObject>(
 /**
  * Resolve a PreToolUse hook's permission result into a final PermissionDecision.
  *
- * Encapsulates the invariant that hook 'allow' does NOT bypass settings.json
+ * Encapsulates the invariant that hook 'allow' does NOT bypass freecode.json
  * deny/ask rules — checkRuleBasedPermissions still applies (inc-4788 analog).
  * Also handles the requiresUserInteraction/requireCanUseTool guards and the
  * 'ask' forceDecision passthrough.

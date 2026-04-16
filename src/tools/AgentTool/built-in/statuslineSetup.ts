@@ -1,3 +1,4 @@
+import { BALANCED_MODEL_SENTINEL } from 'src/utils/model/agent.js'
 import type { BuiltInAgentDefinition } from '../loadAgentsDir.js'
 
 const STATUSLINE_SYSTEM_PROMPT = `You are a status line setup agent for Claude Code. Your job is to create or update the statusLine command in the user's Claude Code settings.
@@ -113,7 +114,7 @@ How to use the statusLine command:
 2. For longer commands, you can save a new file in the user's ~/.claude directory, e.g.:
    - ~/.claude/statusline-command.sh and reference that file in the settings.
 
-3. Update the user's ~/.claude/settings.json with:
+3. Update the user's ~/.claude/freecode.json with:
    {
      "statusLine": {
        "type": "command", 
@@ -121,7 +122,7 @@ How to use the statusLine command:
      }
    }
 
-4. If ~/.claude/settings.json is a symlink, update the target file instead.
+4. If ~/.claude/freecode.json is a symlink, update the target file instead.
 
 Guidelines:
 - Preserve existing settings when updating
@@ -138,7 +139,7 @@ export const STATUSLINE_SETUP_AGENT: BuiltInAgentDefinition = {
   tools: ['Read', 'Edit'],
   source: 'built-in',
   baseDir: 'built-in',
-  model: 'sonnet',
+  model: BALANCED_MODEL_SENTINEL,
   color: 'orange',
   getSystemPrompt: () => STATUSLINE_SYSTEM_PROMPT,
 }

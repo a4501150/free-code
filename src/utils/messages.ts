@@ -4157,9 +4157,8 @@ You have exited auto mode. The user may now want to interact more directly. You 
       ])
     }
     case 'verify_plan_reminder': {
-      /* eslint-disable-next-line custom-rules/no-process-env-top-level */
       const toolName =
-        process.env.CLAUDE_CODE_VERIFY_PLAN === 'true'
+        feature('VERIFY_PLAN') && process.env.CLAUDE_CODE_VERIFY_PLAN === 'true'
           ? 'VerifyPlanExecution'
           : ''
       const content = `You have completed implementing the plan. Please call the "${toolName}" tool directly (NOT the ${AGENT_TOOL_NAME} tool or an agent) to verify that all plan items were completed correctly.`
@@ -4966,6 +4965,45 @@ export function stripSignatureBlocks(messages: Message[]): Message[] {
     // If we returned the original message, the stale signature would survive
     // the merge. Empty content is absorbed by merge; true orphans are handled
     // by the empty-content placeholder path in normalizeMessagesForAPI.
+
+    changed = true
+    return {
+      ...msg,
+      message: { ...msg.message, content: filtered },
+    } as typeof msg
+  })
+
+  return changed ? result : messages
+}
+
+/**
+ * Strip thinking/redacted_thinking blocks that lack a valid signature.
+ * The Anthropic API requires a server-generated signature on every thinking
+ * block in conversation history. Blocks originating from non-Anthropic
+ * providers (OpenAI, Bedrock, etc.) never carry signatures, so they must
+ * be removed before sending to an Anthropic-type provider.
+ *
+ * Unlike stripSignatureBlocks (which strips ALL thinking blocks), this only
+ * removes blocks with missing or empty signatures — valid Anthropic thinking
+ * blocks are preserved.
+ */
+export function stripUnsignedThinkingBlocks(
+  messages: (UserMessage | AssistantMessage)[],
+): (UserMessage | AssistantMessage)[] {
+  let changed = false
+  const result = messages.map(msg => {
+    if (msg.type !== 'assistant') return msg
+
+    const content = msg.message.content
+    if (!Array.isArray(content)) return msg
+
+    const filtered = content.filter(block => {
+      if (!isThinkingBlock(block)) return true
+      // Keep thinking blocks that have a non-empty signature
+      const sig = (block as any).signature
+      return typeof sig === 'string' && sig.length > 0
+    })
+    if (filtered.length === content.length) return msg
 
     changed = true
     return {

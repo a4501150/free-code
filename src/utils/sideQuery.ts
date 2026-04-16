@@ -16,6 +16,7 @@ import { getAnthropicClient } from '../services/api/client.js'
 import { getModelBetas, modelSupportsStructuredOutputs } from './betas.js'
 import { computeFingerprint } from './fingerprint.js'
 import { normalizeModelStringForAPI } from './model/model.js'
+import { getProviderRegistry } from './model/providerRegistry.js'
 
 type MessageParam = Anthropic.MessageParam
 type TextBlockParam = Anthropic.TextBlockParam
@@ -89,7 +90,7 @@ function extractFirstUserMessageText(messages: MessageParam[]): string {
  * - CLI system prompt prefix
  * - Proper betas for the model
  * - API metadata
- * - Model string normalization (strips [1m] suffix for API)
+ * - Model string normalization (strips provider prefix for API)
  *
  * @example
  * // Permission explainer
@@ -140,7 +141,9 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
 
   // Compute fingerprint for OAuth attribution
   const fingerprint = computeFingerprint(messageText, MACRO.VERSION)
-  const attributionHeader = getAttributionHeader(fingerprint)
+  const attributionHeader = getProviderRegistry().isAnthropicType(model)
+    ? getAttributionHeader(fingerprint)
+    : ''
 
   // Build system as array to keep attribution header in its own block
   // (prevents server-side parsing from including system content in cc_entrypoint)

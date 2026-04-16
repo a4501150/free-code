@@ -9,6 +9,7 @@ import React, {
 import { KeybindingWarnings } from 'src/components/KeybindingWarnings.js'
 import { McpParsingWarnings } from 'src/components/mcp/McpParsingWarnings.js'
 import { getModelMaxOutputTokens } from 'src/utils/context.js'
+import { getWireModelId } from 'src/utils/model/modelIds.js'
 import { getClaudeConfigHomeDir } from 'src/utils/envUtils.js'
 import type { SettingSource } from 'src/utils/settings/constants.js'
 import { getOriginalCwd } from '../bootstrap/state.js'
@@ -98,7 +99,7 @@ export function Doctor({ onDone }: Props): React.ReactNode {
       {
         name: 'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
         // Check for values against the latest supported model
-        ...getModelMaxOutputTokens('claude-opus-4-6'),
+        ...getModelMaxOutputTokens(getWireModelId('claude-opus-4-6')),
       },
     ]
     return envVars

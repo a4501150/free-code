@@ -20,8 +20,7 @@ import type { Tools } from '../Tool.js'
 import type { Command } from '../types/command.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import {
-  getCanonicalName,
-  getMarketingNameForModel,
+  getPublicModelDisplayName,
 } from '../utils/model/model.js'
 import { getSkillToolCommands } from 'src/commands.js'
 import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
@@ -112,15 +111,6 @@ export const CLAUDE_CODE_DOCS_MAP_URL =
 export const SYSTEM_PROMPT_DYNAMIC_BOUNDARY =
   '__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__'
 
-// @[MODEL LAUNCH]: Update the latest frontier model.
-const FRONTIER_MODEL_NAME = 'Claude Opus 4.6'
-
-// @[MODEL LAUNCH]: Update the model family IDs below to the latest in each tier.
-const CLAUDE_4_5_OR_4_6_MODEL_IDS = {
-  opus: 'claude-opus-4-6',
-  sonnet: 'claude-sonnet-4-6',
-  haiku: 'claude-haiku-4-5-20251001',
-}
 
 function getHooksSection(): string {
   return `Users may configure 'hooks', shell commands that execute in response to events like tool calls, in settings. Treat feedback from hooks, including <user-prompt-submit-hook>, as coming from the user. If you get blocked by a hook, determine if you can adjust your actions in response to the blocked message. If not, ask the user to check their hooks configuration.`
@@ -599,20 +589,15 @@ export async function computeEnvInfo(
 ): Promise<string> {
   const [isGit, unameSR] = await Promise.all([getIsGit(), getUnameSR()])
 
-  const marketingName = getMarketingNameForModel(modelId)
-  const modelDescription = marketingName
-    ? `You are powered by the model named ${marketingName}. The exact model ID is ${modelId}.`
+  const displayName = getPublicModelDisplayName(modelId)
+  const modelDescription = displayName
+    ? `You are powered by the model named ${displayName}. The exact model ID is ${modelId}.`
     : `You are powered by the model ${modelId}.`
 
   const additionalDirsInfo =
     additionalWorkingDirectories && additionalWorkingDirectories.length > 0
       ? `Additional working directories: ${additionalWorkingDirectories.join(', ')}\n`
       : ''
-
-  const cutoff = getKnowledgeCutoff(modelId)
-  const knowledgeCutoffMessage = cutoff
-    ? `\n\nAssistant knowledge cutoff is ${cutoff}.`
-    : ''
 
   return `Here is useful information about the environment you are running in:
 <env>
@@ -622,7 +607,7 @@ ${additionalDirsInfo}Platform: ${env.platform}
 ${getShellInfoLine()}
 OS Version: ${unameSR}
 </env>
-${modelDescription}${knowledgeCutoffMessage}`
+${modelDescription}`
 }
 
 export async function computeSimpleEnvInfo(
@@ -631,15 +616,10 @@ export async function computeSimpleEnvInfo(
 ): Promise<string> {
   const [isGit, unameSR] = await Promise.all([getIsGit(), getUnameSR()])
 
-  const marketingName = getMarketingNameForModel(modelId)
-  const modelDescription: string | null = marketingName
-    ? `You are powered by the model named ${marketingName}. The exact model ID is ${modelId}.`
+  const displayName = getPublicModelDisplayName(modelId)
+  const modelDescription = displayName
+    ? `You are powered by the model named ${displayName}. The exact model ID is ${modelId}.`
     : `You are powered by the model ${modelId}.`
-
-  const cutoff = getKnowledgeCutoff(modelId)
-  const knowledgeCutoffMessage = cutoff
-    ? `Assistant knowledge cutoff is ${cutoff}.`
-    : null
 
   const cwd = getCwd()
   const isWorktree = getCurrentWorktreeSession() !== null
@@ -660,10 +640,8 @@ export async function computeSimpleEnvInfo(
     getShellInfoLine(),
     `OS Version: ${unameSR}`,
     modelDescription,
-    knowledgeCutoffMessage,
-    `The most recent Claude model family is Claude 4.5/4.6. Model IDs — Opus 4.6: '${CLAUDE_4_5_OR_4_6_MODEL_IDS.opus}', Sonnet 4.6: '${CLAUDE_4_5_OR_4_6_MODEL_IDS.sonnet}', Haiku 4.5: '${CLAUDE_4_5_OR_4_6_MODEL_IDS.haiku}'. When building AI applications, default to the latest and most capable Claude models.`,
     `Claude Code is available as a CLI in the terminal, desktop app (Mac/Windows), web app (claude.ai/code), and IDE extensions (VS Code, JetBrains).`,
-    `Fast mode for Claude Code uses the same ${FRONTIER_MODEL_NAME} model with faster output. It does NOT switch to a different model. It can be toggled with /fast.`,
+    `Fast mode for Claude Code uses the same model with faster output. It does NOT switch to a different model. It can be toggled with /fast.`,
   ].filter(item => item !== null)
 
   return [
@@ -671,26 +649,6 @@ export async function computeSimpleEnvInfo(
     `You have been invoked in the following environment: `,
     ...prependBullets(envItems),
   ].join(`\n`)
-}
-
-// @[MODEL LAUNCH]: Add a knowledge cutoff date for the new model.
-function getKnowledgeCutoff(modelId: string): string | null {
-  const canonical = getCanonicalName(modelId)
-  if (canonical.includes('claude-sonnet-4-6')) {
-    return 'August 2025'
-  } else if (canonical.includes('claude-opus-4-6')) {
-    return 'May 2025'
-  } else if (canonical.includes('claude-opus-4-5')) {
-    return 'May 2025'
-  } else if (canonical.includes('claude-haiku-4')) {
-    return 'February 2025'
-  } else if (
-    canonical.includes('claude-opus-4') ||
-    canonical.includes('claude-sonnet-4')
-  ) {
-    return 'January 2025'
-  }
-  return null
 }
 
 function getShellInfoLine(): string {

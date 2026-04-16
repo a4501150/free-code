@@ -8,6 +8,7 @@ import { errorMessage, isENOENT } from './errors.js'
 import { getFsImplementation } from './fsOperations.js'
 import { readJSONLFile } from './json.js'
 import { SYNTHETIC_MODEL } from './messages.js'
+import { getPublicModelDisplayName } from './model/model.js'
 import { getProjectsDir, isTranscriptMessage } from './sessionStorage.js'
 import { SHELL_TOOL_NAMES } from './shell/shellToolUtils.js'
 import { jsonParse } from './slowOperations.js'
@@ -308,7 +309,9 @@ async function processSessionFiles(
           // Track model usage if available (skip synthetic messages)
           if (message.message?.usage) {
             const usage = message.message.usage
-            const model = message.message.model || 'unknown'
+            // Canonicalize model names to merge dated/versioned variants
+            const rawModel = message.message.model || 'unknown'
+            const model = getPublicModelDisplayName(rawModel) || rawModel
 
             // Skip synthetic messages - they are internal and shouldn't appear in stats
             if (model === SYNTHETIC_MODEL) {

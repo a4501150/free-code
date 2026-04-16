@@ -73,7 +73,7 @@ export function resolveAgentOverrides(
 
 /**
  * Resolve the display model string for an agent.
- * Returns the model alias or 'inherit' for display purposes.
+ * Returns the model ID or 'inherit' for display purposes.
  */
 export function resolveAgentModelDisplay(
   agent: AgentDefinition,

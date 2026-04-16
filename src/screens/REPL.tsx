@@ -491,7 +491,6 @@ import { useRateLimitWarningNotification } from 'src/hooks/notifs/useRateLimitWa
 import { useDeprecationWarningNotification } from 'src/hooks/notifs/useDeprecationWarningNotification.js'
 import { useNpmDeprecationNotification } from 'src/hooks/notifs/useNpmDeprecationNotification.js'
 import { useIDEStatusIndicator } from 'src/hooks/notifs/useIDEStatusIndicator.js'
-import { useModelMigrationNotifications } from 'src/hooks/notifs/useModelMigrationNotifications.js'
 import { useCanSwitchToExistingSubscription } from 'src/hooks/notifs/useCanSwitchToExistingSubscription.js'
 import { useTeammateLifecycleNotification } from 'src/hooks/notifs/useTeammateShutdownNotification.js'
 import { useFastModeNotification } from 'src/hooks/notifs/useFastModeNotification.js'
@@ -1075,7 +1074,6 @@ export function REPL({
     shouldShowEffortCallout(mainLoopModel),
   )
   // notifications
-  useModelMigrationNotifications()
   useCanSwitchToExistingSubscription()
   useIDEStatusIndicator({ ideSelection, mcpClients, ideInstallationStatus })
   useMcpConnectivityStatus({ mcpClients })
@@ -2056,7 +2054,7 @@ export function REPL({
     setMessages(prev => [
       ...prev,
       createSystemMessage(
-        `Worktree creation took ${secs}s. For large repos, set \`worktree.sparsePaths\` in .claude/settings.json to check out only the directories you need — e.g. \`{"worktree": {"sparsePaths": ["src", "packages/foo"]}}\`.`,
+        `Worktree creation took ${secs}s. For large repos, set \`worktree.sparsePaths\` in .claude/freecode.json to check out only the directories you need — e.g. \`{"worktree": {"sparsePaths": ["src", "packages/foo"]}}\`.`,
         'info',
       ),
     ])
@@ -2454,9 +2452,9 @@ export function REPL({
     // High priority dialogs (always show regardless of typing)
     if (isMessageSelectorVisible) return 'message-selector'
 
-    // Suppress interrupt dialogs while user is actively typing
-    if (isPromptInputActive) return undefined
-
+    // Critical permission dialogs — NEVER suppress these, even while typing.
+    // The 200ms grace period in interactiveHandler.ts protects against
+    // accidental keypresses dismissing the dialog before the user reads it.
     if (sandboxPermissionRequestQueue[0]) return 'sandbox-permission'
 
     // Permission/interactive dialogs (show unless blocked by toolJSX)
@@ -2470,6 +2468,11 @@ export function REPL({
     if (allowDialogsWithAnimation && workerSandboxPermissions.queue[0])
       return 'worker-sandbox-permission'
     if (allowDialogsWithAnimation && elicitation.queue[0]) return 'elicitation'
+
+    // Suppress only non-critical dialogs while user is actively typing.
+    // These are informational/onboarding dialogs that can safely wait.
+    if (isPromptInputActive) return undefined
+
     if (allowDialogsWithAnimation && showingCostDialog) return 'cost'
     if (allowDialogsWithAnimation && idleReturnPending) return 'idle-return'
 
@@ -2515,18 +2518,58 @@ export function REPL({
 
   const focusedInputDialog = getFocusedInputDialog()
 
-  // True when permission prompts exist but are hidden because the user is typing
+  // True when non-critical dialogs exist but are deferred because the user is typing.
+  // Critical permission dialogs (tool-permission, sandbox, prompt, elicitation)
+  // always show immediately regardless of typing state.
   const hasSuppressedDialogs =
-    isPromptInputActive &&
-    (sandboxPermissionRequestQueue[0] ||
-      toolUseConfirmQueue[0] ||
-      promptQueue[0] ||
-      workerSandboxPermissions.queue[0] ||
-      elicitation.queue[0] ||
-      showingCostDialog)
+    isPromptInputActive && (showingCostDialog || idleReturnPending)
 
   // Keep ref in sync so timer callbacks can read the current value
   focusedInputDialogRef.current = focusedInputDialog
+
+  // Auto-stash prompt text when a critical permission dialog interrupts typing.
+  // Preserves the user's in-progress text so it can be restored after the
+  // dialog is resolved (approved/rejected).
+  const prevDialogForStashRef = useRef(focusedInputDialog)
+  useEffect(() => {
+    const prev = prevDialogForStashRef.current
+    prevDialogForStashRef.current = focusedInputDialog
+
+    const isCritical = (
+      d: typeof focusedInputDialog,
+    ): d is
+      | 'tool-permission'
+      | 'sandbox-permission'
+      | 'prompt'
+      | 'worker-sandbox-permission'
+      | 'elicitation' =>
+      d === 'tool-permission' ||
+      d === 'sandbox-permission' ||
+      d === 'prompt' ||
+      d === 'worker-sandbox-permission' ||
+      d === 'elicitation'
+
+    // Transitioning from prompt input → critical dialog while user has text
+    if (
+      !prev &&
+      isCritical(focusedInputDialog) &&
+      inputValueRef.current.trim().length > 0 &&
+      !stashedPrompt
+    ) {
+      setStashedPrompt({
+        text: inputValueRef.current,
+        cursorOffset: inputValueRef.current.length,
+        pastedContents: {},
+      })
+      setInputValue('')
+    }
+
+    // Transitioning from critical dialog → prompt input: auto-restore
+    if (isCritical(prev) && !focusedInputDialog && stashedPrompt) {
+      setInputValue(stashedPrompt.text)
+      setStashedPrompt(undefined)
+    }
+  }, [focusedInputDialog, stashedPrompt, setInputValue, setStashedPrompt])
 
   // Immediately capture pause/resume when focusedInputDialog changes
   // This ensures accurate timing even under high system load, rather than

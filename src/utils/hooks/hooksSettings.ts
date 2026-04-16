@@ -108,7 +108,7 @@ export function getAllHooks(appState: AppState): IndividualHookConfig[] {
 
     // Track which settings files we've already processed to avoid duplicates
     // (e.g., when running from home directory, userSettings and projectSettings
-    // both resolve to ~/.claude/settings.json)
+    // both resolve to ~/.claude/freecode.json)
     const seenFiles = new Set<string>()
 
     for (const source of sources) {
@@ -170,11 +170,11 @@ export function getHooksForEvent(
 export function hookSourceDescriptionDisplayString(source: HookSource): string {
   switch (source) {
     case 'userSettings':
-      return 'User settings (~/.claude/settings.json)'
+      return 'User settings (~/.claude/freecode.json)'
     case 'projectSettings':
-      return 'Project settings (.claude/settings.json)'
+      return 'Project settings (.claude/freecode.json)'
     case 'localSettings':
-      return 'Local settings (.claude/settings.local.json)'
+      return 'Local settings (.claude/freecode.local.json)'
     case 'pluginHook':
       // TODO: Get the actual plugin hook file paths instead of using glob pattern
       // We should capture the specific plugin paths during hook registration and display them here

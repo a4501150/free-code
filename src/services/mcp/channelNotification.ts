@@ -227,22 +227,13 @@ export function gateChannelServer(
     }
   }
 
-  // Teams/Enterprise opt-in. Managed orgs must explicitly enable channels.
-  // Default OFF — absent or false blocks. Keyed off subscription tier, not
-  // "policy settings exist" — a team org with zero configured policy keys
-  // (remote endpoint returns 404) is still a managed org and must not fall
-  // through to the unmanaged path.
+  // Subscription type and policy settings — used by the allowlist below
+  // to decide whether to use org-level or built-in allowlist.
   const sub = getSubscriptionType()
-  const managed = sub === 'team' || sub === 'enterprise'
-  const policy = managed ? getSettingsForSource('policySettings') : undefined
-  if (managed && policy?.channelsEnabled !== true) {
-    return {
-      action: 'skip',
-      kind: 'policy',
-      reason:
-        'channels not enabled by org policy (set channelsEnabled: true in managed settings)',
-    }
-  }
+  const policy =
+    sub === 'team' || sub === 'enterprise'
+      ? getSettingsForSource('policySettings')
+      : undefined
 
   // User-level session opt-in. A server must be explicitly listed in
   // --channels to push inbound this session — protects against a trusted

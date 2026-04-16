@@ -79,13 +79,13 @@ const defaultFeatures = [
   'UNATTENDED_RETRY',
   // Tier 2: Slash command / skill gated
   'BUDDY',
-  'BUILDING_CLAUDE_APPS',
   'HISTORY_SNIP',
   'KAIROS_DREAM',
   'KAIROS_GITHUB_WEBHOOKS',
   'REVIEW_ARTIFACT',
   'RUN_SKILL_GENERATOR',
   'ULTRAPLAN',
+  'VERIFY_PLAN',
   'WORKFLOW_SCRIPTS',
   // Tier 3: Settings / env var / file gated
   'CACHED_MICROCOMPACT',
@@ -98,7 +98,6 @@ const defaultFeatures = [
   'NEW_INIT',
   // Tier 4: Active but benign (user keyword / prompt nudge)
   'ULTRATHINK',
-  'VERIFICATION_AGENT',
   // Always on
   'VOICE_MODE',
 ]

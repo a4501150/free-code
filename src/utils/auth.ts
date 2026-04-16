@@ -5,8 +5,8 @@ import { mkdir, stat } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
 import { CLAUDE_AI_PROFILE_SCOPE } from 'src/constants/oauth.js'
-import { getModelStrings } from 'src/utils/model/modelStrings.js'
-import { getAPIProvider } from 'src/utils/model/providers.js'
+import { ensureWireModelIdsInitialized } from 'src/utils/model/modelIds.js'
+import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import {
   getIsNonInteractiveSession,
   preferThirdPartyAuthentication,
@@ -78,7 +78,7 @@ const DEFAULT_API_KEY_HELPER_TTL = 5 * 60 * 1000
 
 /**
  * CCR and Claude Desktop spawn the CLI with OAuth and should never fall back
- * to the user's ~/.claude/settings.json API-key config (apiKeyHelper,
+ * to the user's ~/.claude/freecode.json API-key config (apiKeyHelper,
  * env.ANTHROPIC_API_KEY, env.ANTHROPIC_AUTH_TOKEN). Those settings exist for
  * the user's terminal CLI, not managed sessions. Without this guard, a user
  * who runs `claude` in their terminal with an API key sees every CCD session
@@ -105,10 +105,7 @@ export function isAnthropicAuthEnabled(): boolean {
     return !!process.env.CLAUDE_CODE_OAUTH_TOKEN
   }
 
-  const is3P =
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY)
+  const is3P = getProviderRegistry().getCapabilities().authManagedExternally
 
   // Check if user has configured an external API key source
   // This allows externally-provided API keys to work (without requiring proxy configuration)
@@ -339,7 +336,7 @@ export function getAnthropicApiKeyWithSource(
 /**
  * Get the configured apiKeyHelper from settings.
  * In bare mode, only the --settings flag source is consulted — apiKeyHelper
- * from ~/.claude/settings.json or project settings is ignored.
+ * from ~/.claude/freecode.json or project settings is ignored.
  */
 export function getConfiguredApiKeyHelper(): string | undefined {
   if (isBareMode()) {
@@ -1029,7 +1026,7 @@ export function prefetchAwsCredentialsAndBedRockInfoIfSafe(): void {
 
   // Safe to prefetch - either not from project settings or trust already established
   void refreshAndGetAwsCredentials()
-  getModelStrings()
+  void ensureWireModelIdsInitialized()
 }
 
 /** @private Use {@link getAnthropicApiKey} or {@link getAnthropicApiKeyWithSource} */
@@ -1539,6 +1536,33 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
     })
     saveOAuthTokensIfNeeded(refreshedTokens)
 
+    // Update freecode.json with refreshed tokens
+    try {
+      const { readFreecodeSettingsFile, writeFreecodeSettingsFile } = await import('./settings/freecodeSettings.js')
+      const existing = readFreecodeSettingsFile() ?? {}
+      const providers = existing.providers as Record<string, Record<string, unknown>> | undefined
+      const anthropicProvider = providers?.['anthropic']
+      if (anthropicProvider && (anthropicProvider.auth as Record<string, unknown>)?.active === 'oauth') {
+        writeFreecodeSettingsFile({
+          providers: {
+            anthropic: {
+              ...anthropicProvider,
+              auth: {
+                active: 'oauth',
+                oauth: {
+                  accessToken: refreshedTokens.accessToken,
+                  refreshToken: refreshedTokens.refreshToken,
+                  expiresAt: refreshedTokens.expiresAt,
+                },
+              },
+            },
+          },
+        })
+      }
+    } catch {
+      // Non-fatal: freecode.json update is best-effort
+    }
+
     // Clear the cache after refreshing token
     getClaudeAIOAuthTokens.cache?.clear?.()
     clearKeychainCache()
@@ -1569,7 +1593,8 @@ export function isClaudeAISubscriber(): boolean {
 
 export function isCodexSubscriber(): boolean {
   // Only treat as Codex subscriber when explicitly using OpenAI provider
-  if (getAPIProvider() !== 'openai') {
+  const providerType = getProviderRegistry().getDefaultProvider()?.config.type
+  if (providerType !== 'openai-chat-completions' && providerType !== 'openai-responses') {
     return false
   }
 
@@ -1599,12 +1624,8 @@ export function is1PApiCustomer(): boolean {
   // 3. AWS Bedrock users
   // 4. Foundry users
 
-  // Exclude Vertex, Bedrock, and Foundry customers
-  if (
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY)
-  ) {
+  // Exclude providers with externally-managed auth (Vertex, Bedrock, Foundry)
+  if (getProviderRegistry().getCapabilities().authManagedExternally) {
     return false
   }
 
@@ -1739,11 +1760,7 @@ export function getSubscriptionName(): string {
 
 /** Check if using third-party services (Bedrock or Vertex or Foundry) */
 export function isUsing3PServices(): boolean {
-  return !!(
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY)
-  )
+  return getProviderRegistry().getCapabilities().authManagedExternally
 }
 
 /**
@@ -1870,9 +1887,9 @@ export type UserAccountInfo = {
 }
 
 export function getAccountInformation() {
-  const apiProvider = getAPIProvider()
+  const caps = getProviderRegistry().getCapabilities()
   // Only provide account info for first-party Anthropic API
-  if (apiProvider !== 'firstParty') {
+  if (!caps.firstPartyFeatures) {
     return undefined
   }
   const { source: authTokenSource } = getAuthTokenSource()

@@ -40,7 +40,7 @@ import {
 import { isFastModeEnabled } from './utils/fastMode.js'
 import { formatDuration, formatNumber } from './utils/format.js'
 import type { FpsMetrics } from './utils/fpsTracker.js'
-import { getCanonicalName } from './utils/model/model.js'
+import { getPublicModelDisplayName, renderModelName } from './utils/model/model.js'
 import { calculateUSDCost } from './utils/modelCost.js'
 export {
   getTotalCostUSD as getTotalCost,
@@ -183,7 +183,7 @@ function formatModelUsage(): string {
   // Accumulate usage by short name
   const usageByShortName: { [shortName: string]: ModelUsage } = {}
   for (const [model, usage] of Object.entries(modelUsageMap)) {
-    const shortName = getCanonicalName(model)
+    const shortName = getPublicModelDisplayName(model) || model
     if (!usageByShortName[shortName]) {
       usageByShortName[shortName] = {
         inputTokens: 0,
@@ -207,6 +207,8 @@ function formatModelUsage(): string {
 
   let result = 'Usage by model:'
   for (const [shortName, usage] of Object.entries(usageByShortName)) {
+    // Use human-readable display name when available
+    const displayName = renderModelName(shortName)
     const usageString =
       `  ${formatNumber(usage.inputTokens)} input, ` +
       `${formatNumber(usage.outputTokens)} output, ` +
@@ -216,7 +218,7 @@ function formatModelUsage(): string {
         ? `, ${formatNumber(usage.webSearchRequests)} web search`
         : '') +
       ` (${formatCost(usage.costUSD)})`
-    result += `\n` + `${shortName}:`.padStart(21) + usageString
+    result += `\n` + `${displayName}:`.padStart(21) + usageString
   }
   return result
 }

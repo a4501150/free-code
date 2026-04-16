@@ -1,5 +1,6 @@
 import axios from 'axios'
 import memoize from 'lodash-es/memoize.js'
+import { ANTHROPIC_API_VERSION } from 'src/constants/api.js'
 import { getOauthConfig } from 'src/constants/oauth.js'
 import { getClaudeAIOAuthTokens } from 'src/utils/auth.js'
 import { getGlobalConfig, saveGlobalConfig } from 'src/utils/config.js'
@@ -68,7 +69,7 @@ export const fetchClaudeAIMcpConfigsIfEligible = memoize(
           Authorization: `Bearer ${tokens.accessToken}`,
           'Content-Type': 'application/json',
           'anthropic-beta': MCP_SERVERS_BETA_HEADER,
-          'anthropic-version': '2023-06-01',
+          'anthropic-version': ANTHROPIC_API_VERSION,
         },
         timeout: FETCH_TIMEOUT_MS,
       })

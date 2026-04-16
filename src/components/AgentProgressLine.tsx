@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Box, Text } from '../ink.js'
-import { formatNumber } from '../utils/format.js'
+import { formatDuration, formatNumber } from '../utils/format.js'
 import type { Theme } from '../utils/theme.js'
 
 type Props = {
@@ -11,6 +11,12 @@ type Props = {
   taskDescription?: string
   toolUseCount: number
   tokens: number | null
+  // Live elapsed time while in progress, or total duration once complete.
+  // Null before the first progress message arrives (start time unknown).
+  durationMs: number | null
+  // Resolved model ID, non-null only when it differs from the main loop
+  // model. Rendered as a dim tag on the title line.
+  effectiveModel: string | null
   color?: keyof Theme
   isLast: boolean
   isResolved: boolean
@@ -29,6 +35,8 @@ export function AgentProgressLine({
   taskDescription,
   toolUseCount,
   tokens,
+  durationMs,
+  effectiveModel,
   color,
   isLast,
   isResolved,
@@ -44,12 +52,34 @@ export function AgentProgressLine({
   // Determine the status text
   const getStatusText = (): string => {
     if (!isResolved) {
-      return lastToolInfo || 'Initializing…'
+      const parts: string[] = [lastToolInfo || 'Initializing…']
+      if (toolUseCount > 0) {
+        parts.push(
+          toolUseCount === 1 ? '1 tool use' : `${toolUseCount} tool uses`,
+        )
+      }
+      if (tokens !== null && tokens > 0) {
+        parts.push(`${formatNumber(tokens)} tokens`)
+      }
+      if (durationMs !== null) {
+        parts.push(formatDuration(durationMs))
+      }
+      return parts.join(' · ')
     }
     if (isBackgrounded) {
       return taskDescription ?? 'Running in the background'
     }
-    return 'Done'
+    // Mirror single-agent "Done (N tool uses · Xk tokens · Ys)" format.
+    const parts: string[] = [
+      toolUseCount === 1 ? '1 tool use' : `${toolUseCount} tool uses`,
+    ]
+    if (tokens !== null) {
+      parts.push(`${formatNumber(tokens)} tokens`)
+    }
+    if (durationMs !== null) {
+      parts.push(formatDuration(durationMs))
+    }
+    return `Done (${parts.join(' · ')})`
   }
 
   return (
@@ -85,12 +115,8 @@ export function AgentProgressLine({
               )}
             </>
           )}
-          {!isBackgrounded && (
-            <>
-              {' · '}
-              {toolUseCount} tool {toolUseCount === 1 ? 'use' : 'uses'}
-              {tokens !== null && <> · {formatNumber(tokens)} tokens</>}
-            </>
+          {!isBackgrounded && effectiveModel && (
+            <Text dimColor> {effectiveModel}</Text>
           )}
         </Text>
       </Box>

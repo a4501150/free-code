@@ -11,7 +11,7 @@ import { isAwsCredentialsProviderError } from 'src/utils/aws.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logError } from 'src/utils/log.js'
 import { createSystemAPIErrorMessage } from 'src/utils/messages.js'
-import { getAPIProviderForStatsig } from 'src/utils/model/providers.js'
+import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import {
   clearApiKeyHelperCache,
   clearAwsCredentialsCache,
@@ -31,7 +31,6 @@ import {
   isFastModeEnabled,
   triggerFastModeCooldown,
 } from '../../utils/fastMode.js'
-import { isNonCustomOpusModel } from '../../utils/model/model.js'
 import { disableKeepAlive } from '../../utils/proxy.js'
 import { sleep } from '../../utils/sleep.js'
 import type { ThinkingConfig } from '../../utils/thinking.js'
@@ -119,7 +118,6 @@ export interface RetryContext {
 interface RetryOptions {
   maxRetries?: number
   model: string
-  fallbackModel?: string
   thinkingConfig: ThinkingConfig
   fastMode?: boolean
   signal?: AbortSignal
@@ -146,16 +144,6 @@ export class CannotRetryError extends Error {
     if (originalError instanceof Error && originalError.stack) {
       this.stack = originalError.stack
     }
-  }
-}
-
-export class FallbackTriggeredError extends Error {
-  constructor(
-    public readonly originalModel: string,
-    public readonly fallbackModel: string,
-  ) {
-    super(`Model fallback triggered: ${originalModel} -> ${fallbackModel}`)
-    this.name = 'FallbackTriggeredError'
   }
 }
 
@@ -295,25 +283,9 @@ export async function* withRetry<T>(
       }
 
       // Track consecutive 529 errors
-      if (
-        is529Error(error) &&
-        // If FALLBACK_FOR_ALL_PRIMARY_MODELS is not set, fall through only if the primary model is a non-custom Opus model.
-        // TODO: Revisit if the isNonCustomOpusModel check should still exist, or if isNonCustomOpusModel is a stale artifact of when Claude Code was hardcoded on Opus.
-        (process.env.FALLBACK_FOR_ALL_PRIMARY_MODELS ||
-          (!isClaudeAISubscriber() && isNonCustomOpusModel(options.model)))
-      ) {
+      if (is529Error(error)) {
         consecutive529Errors++
         if (consecutive529Errors >= MAX_529_RETRIES) {
-          // Check if fallback model is specified
-          if (options.fallbackModel) {
-
-            // Throw special error to indicate fallback was triggered
-            throw new FallbackTriggeredError(
-              options.model,
-              options.fallbackModel,
-            )
-          }
-
           if (
             !process.env.IS_SANDBOX &&
             !isPersistentRetryEnabled()
@@ -568,7 +540,7 @@ function isOAuthTokenRevokedError(error: unknown): boolean {
 }
 
 function isBedrockAuthError(error: unknown): boolean {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK)) {
+  if (getProviderRegistry().getCapabilities().credentialRefresh === 'aws') {
     // AWS libs reject without an API call if .aws holds a past Expiration value
     // otherwise, API calls that receive expired tokens give generic 403
     // "The security token included in the request is invalid"
@@ -607,7 +579,7 @@ function isGoogleAuthLibraryCredentialError(error: unknown): boolean {
 }
 
 function isVertexAuthError(error: unknown): boolean {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX)) {
+  if (getProviderRegistry().getCapabilities().credentialRefresh === 'gcp') {
     // SDK-level: google-auth-library fails in prepareOptions() before the HTTP call
     if (isGoogleAuthLibraryCredentialError(error)) {
       return true

@@ -127,9 +127,9 @@ function serverSecretsKey(pluginId: string, serverName: string): string {
 
 /**
  * Load user configuration for an MCP server, merging non-sensitive values
- * (from settings.json) with sensitive values (from secureStorage keychain).
+ * (from freecode.json) with sensitive values (from secureStorage keychain).
  * secureStorage wins on collision — schema determines destination so
- * collision shouldn't happen, but if a user hand-edits settings.json we
+ * collision shouldn't happen, but if a user hand-edits freecode.json we
  * trust the more secure source.
  *
  * Returns null only if NEITHER source has anything — callers skip
@@ -175,11 +175,11 @@ export function loadMcpServerUserConfig(
  * Save user configuration for an MCP server, splitting by `schema[key].sensitive`.
  * Mirrors savePluginOptions (pluginOptionsStorage.ts:90) for top-level options:
  *   - `sensitive: true` → secureStorage (keychain on macOS, .credentials.json 0600 elsewhere)
- *   - everything else   → settings.json pluginConfigs[pluginId].mcpServers[serverName]
+ *   - everything else   → freecode.json pluginConfigs[pluginId].mcpServers[serverName]
  *
  * Without this split, per-channel `sensitive: true` was a false sense of
  * security — the dialog masked the input but the save went to plaintext
- * settings.json anyway. H1 #3617646 (Telegram/Discord bot tokens in
+ * freecode.json anyway. H1 #3617646 (Telegram/Discord bot tokens in
  * world-readable .env) surfaced this as the gap to close.
  *
  * Writes are skipped if nothing in that category is present.
@@ -210,8 +210,8 @@ export function saveMcpServerUserConfig(
 
     // Scrub ONLY keys we're writing in this call. Covers both directions
     // across schema-version flips:
-    //  - sensitive→secureStorage ⇒ remove stale plaintext from settings.json
-    //  - nonSensitive→settings.json ⇒ remove stale entry from secureStorage
+    //  - sensitive→secureStorage ⇒ remove stale plaintext from freecode.json
+    //  - nonSensitive→freecode.json ⇒ remove stale entry from secureStorage
     //    (otherwise loadMcpServerUserConfig's {...nonSensitive, ...sensitive}
     //    would let the stale secureStorage value win on next read)
     // Partial `config` (user only re-enters one field) leaves other fields
@@ -220,11 +220,11 @@ export function saveMcpServerUserConfig(
     const nonSensitiveKeysInThisSave = new Set(Object.keys(nonSensitive))
 
     // Sensitive → secureStorage FIRST. If this fails (keychain locked,
-    // .credentials.json perms), throw before touching settings.json — the
+    // .credentials.json perms), throw before touching freecode.json — the
     // old plaintext stays as a fallback instead of losing BOTH copies.
     //
     // Also scrub non-sensitive keys from secureStorage — schema flipped
-    // sensitive→false and they're being written to settings.json now. Without
+    // sensitive→false and they're being written to freecode.json now. Without
     // this, loadMcpServerUserConfig's merge would let the stale secureStorage
     // value win on next read.
     const storage = getSecureStorage()
@@ -249,7 +249,7 @@ export function saveMcpServerUserConfig(
         existing.pluginSecrets = {}
       }
       // secureStorage keyvault is a flat object — direct replace, no merge
-      // semantics to worry about (unlike settings.json's mergeWith).
+      // semantics to worry about (unlike freecode.json's mergeWith).
       existing.pluginSecrets[k] = {
         ...secureScrubbed,
         ...sensitive,
@@ -275,9 +275,9 @@ export function saveMcpServerUserConfig(
       }
     }
 
-    // Non-sensitive → settings.json. Write whenever there are new non-sensitive
+    // Non-sensitive → freecode.json. Write whenever there are new non-sensitive
     // values OR existing plaintext sensitive values to scrub — so reconfiguring
-    // a sensitive-only schema still cleans up the old settings.json. Runs
+    // a sensitive-only schema still cleans up the old freecode.json. Runs
     // AFTER the secureStorage write succeeded, so the scrub can't leave you
     // with zero copies of the secret.
     //
@@ -323,7 +323,7 @@ export function saveMcpServerUserConfig(
       }
       if (keysToScrubFromSettings.length > 0) {
         logForDebugging(
-          `saveMcpServerUserConfig: scrubbed ${keysToScrubFromSettings.length} plaintext sensitive key(s) from settings.json for ${pluginId}/${serverName}`,
+          `saveMcpServerUserConfig: scrubbed ${keysToScrubFromSettings.length} plaintext sensitive key(s) from freecode.json for ${pluginId}/${serverName}`,
         )
       }
     }
@@ -738,7 +738,7 @@ export async function loadMcpbFile(
       // Server name from DXT manifest
       const serverName = manifest.name
 
-      // Try to load existing config from settings.json or use provided config
+      // Try to load existing config from freecode.json or use provided config
       const savedConfig = loadMcpServerUserConfig(pluginId, serverName)
       const userConfig = providedUserConfig || savedConfig || {}
 
@@ -873,7 +873,7 @@ export async function loadMcpbFile(
     // Server name from DXT manifest
     const serverName = manifest.name
 
-    // Try to load existing config from settings.json or use provided config
+    // Try to load existing config from freecode.json or use provided config
     const savedConfig = loadMcpServerUserConfig(pluginId, serverName)
     const userConfig = providedUserConfig || savedConfig || {}
 

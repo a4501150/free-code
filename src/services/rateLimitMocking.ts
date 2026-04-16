@@ -4,6 +4,7 @@
  */
 
 import { APIError } from '@anthropic-ai/sdk'
+import { stripProviderPrefix } from '../utils/model/parseModelString.js'
 import {
   applyMockHeaders,
   checkMockFastModeRateLimit,
@@ -77,11 +78,14 @@ export function checkMockRateLimitError(
   // Check if this is an Opus-specific rate limit
   const isOpusLimit = rateLimitType === 'seven_day_opus'
 
-  // Check if current model is an Opus model (handles all variants including aliases)
-  const isUsingOpus = currentModel.includes('opus')
+  // Check if current model is an Opus model after stripping any provider prefix.
+  const isUsingOpus = stripProviderPrefix(currentModel)
+    .toLowerCase()
+    .includes('opus')
 
-  // For Opus limits, only throw 429 if actually using Opus
-  // This simulates the real API behavior where fallback to Sonnet succeeds
+  // For Opus limits, only throw 429 if actually using Opus.
+  // This simulates the real API behavior where fallback to a non-rate-limited
+  // model succeeds.
   if (isOpusLimit && !isUsingOpus) {
     return null
   }

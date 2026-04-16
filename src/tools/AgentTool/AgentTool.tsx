@@ -51,6 +51,8 @@ import {
   normalizeMessages,
 } from '../../utils/messages.js'
 import { getAgentModel } from '../../utils/model/agent.js'
+import { parseUserSpecifiedModel } from '../../utils/model/model.js'
+import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 import { permissionModeSchema } from '../../utils/permissions/PermissionMode.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import {
@@ -155,12 +157,35 @@ const baseInputSchema = lazySchema(() =>
       .string()
       .optional()
       .describe('The type of specialized agent to use for this task'),
-    model: z
-      .enum(['sonnet', 'opus', 'haiku'])
-      .optional()
-      .describe(
-        "Optional model override for this agent. Takes precedence over the agent definition's model frontmatter. If omitted, uses the agent definition's model, or inherits from the parent.",
-      ),
+    model: (() => {
+      const registry = getProviderRegistry()
+      const available = registry.getAvailableSubagentModels()
+      if (available.length > 0) {
+        // Build description with model labels and descriptions
+        const lines = available.map(id => {
+          const entry = registry.getProviderForModel(id)
+          const label = entry?.model.label ?? id
+          const desc = entry?.model.description
+          return `- ${id}: ${label}${desc ? ` — ${desc}` : ''}`
+        })
+        const description =
+          "Optional model override for this agent. Takes precedence over the agent definition's model frontmatter. " +
+          'If omitted, uses the agent definition\'s model, or inherits from the parent.\n' +
+          `Available models:\n${lines.join('\n')}`
+        return z
+          .enum(available as [string, ...string[]])
+          .optional()
+          .describe(description)
+      }
+      return z
+        .string()
+        .optional()
+        .describe(
+          "Optional model override for this agent. Use a provider-qualified model ID (e.g. 'anthropic:claude-sonnet-4-6'). " +
+            "Takes precedence over the agent definition's model frontmatter. " +
+            "If omitted, uses the agent definition's model, or inherits from the parent.",
+        )
+    })(),
     run_in_background: z
       .boolean()
       .optional()
@@ -604,6 +629,23 @@ export const AgentTool = buildTool({
     // Initialize the color for this agent if it has a predefined one
     if (selectedAgent.color) {
       setAgentColor(selectedAgent.agentType, selectedAgent.color)
+    }
+
+    // Validate model if specified — fail early if it doesn't resolve in the registry
+    if (model) {
+      const parsed = parseUserSpecifiedModel(model)
+      const resolved = getProviderRegistry().getProviderForModel(parsed)
+      if (!resolved) {
+        const available =
+          getProviderRegistry().getAvailableSubagentModels()
+        const hint =
+          available.length > 0
+            ? ` Available models: ${available.join(', ')}`
+            : ''
+        throw new Error(
+          `Unknown model "${model}".${hint}`,
+        )
+      }
     }
 
     // Resolve agent params for logging (these are already resolved in runAgent)

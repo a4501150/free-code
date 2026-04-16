@@ -51,7 +51,7 @@ function getPluginsDirectoryName(): string {
  * 2. Default: ~/.claude/plugins or ~/.claude/cowork_plugins
  */
 export function getPluginsDirectory(): string {
-  // expandTilde: when CLAUDE_CODE_PLUGIN_CACHE_DIR is set via settings.json
+  // expandTilde: when CLAUDE_CODE_PLUGIN_CACHE_DIR is set via freecode.json
   // `env` (not shell), ~ is not expanded by the shell. Without this, a value
   // like "~/.claude/plugins" becomes a literal `~` directory created in the
   // cwd of every project (gh-30794 / CC-212).

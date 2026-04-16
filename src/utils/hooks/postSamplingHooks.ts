@@ -5,7 +5,7 @@ import { toError } from '../errors.js'
 import { logError } from '../log.js'
 import type { SystemPrompt } from '../systemPromptType.js'
 
-// Post-sampling hook - not exposed in settings.json config (yet), only used programmatically
+// Post-sampling hook - not exposed in freecode.json config (yet), only used programmatically
 
 // Generic context for REPL hooks (both post-sampling and stop hooks)
 export type REPLHookContext = {

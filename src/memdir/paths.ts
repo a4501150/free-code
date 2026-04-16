@@ -22,7 +22,7 @@ import {
  * Enabled by default. Priority chain (first defined wins):
  *   1. CLAUDE_CODE_DISABLE_AUTO_MEMORY env var (1/true → OFF, 0/false → ON)
  *   2. CLAUDE_CODE_SIMPLE (--bare) → OFF
- *   3. autoMemoryEnabled in settings.json (supports project-level opt-out)
+ *   3. autoMemoryEnabled in freecode.json (supports project-level opt-out)
  *   4. Default: enabled
  */
 export function isAutoMemoryEnabled(): boolean {
@@ -152,10 +152,10 @@ function getAutoMemPathOverride(): string | undefined {
 }
 
 /**
- * Settings.json override for the full auto-memory directory path.
+ * freecode.json override for the full auto-memory directory path.
  * Supports ~/ expansion for user convenience.
  *
- * SECURITY: projectSettings (.claude/settings.json committed to the repo) is
+ * SECURITY: projectSettings (.claude/freecode.json committed to the repo) is
  * intentionally excluded — a malicious repo could otherwise set
  * autoMemoryDirectory: "~/.ssh" and gain silent write access to sensitive
  * directories via the filesystem.ts write carve-out (which fires when
@@ -195,7 +195,7 @@ function getAutoMemBase(): string {
  *
  * Resolution order:
  *   1. CLAUDE_COWORK_MEMORY_PATH_OVERRIDE env var (full-path override, used by Cowork)
- *   2. autoMemoryDirectory in settings.json (trusted sources only: policy/local/user)
+ *   2. autoMemoryDirectory in freecode.json (trusted sources only: policy/local/user)
  *   3. <memoryBase>/projects/<sanitized-git-root>/memory/
  *      where memoryBase is resolved by getMemoryBaseDir()
  *
@@ -203,7 +203,7 @@ function getAutoMemBase(): string {
  * fire per tool-use message per Messages re-render; each miss costs
  * getSettingsForSource × 4 → parseSettingsFile (realpathSync + readFileSync).
  * Keyed on projectRoot so tests that change its mock mid-block recompute;
- * env vars / settings.json / CLAUDE_CONFIG_DIR are session-stable in
+ * env vars / freecode.json / CLAUDE_CONFIG_DIR are session-stable in
  * production and covered by per-test cache.clear.
  */
 export const getAutoMemPath = memoize(
@@ -252,7 +252,7 @@ export function getAutoMemEntrypoint(): string {
  * write permission in that case — the filesystem.ts write carve-out is gated
  * on !hasAutoMemPathOverride() (it exists to bypass DANGEROUS_DIRECTORIES).
  *
- * The settings.json autoMemoryDirectory DOES get the write carve-out: it's the
+ * The freecode.json autoMemoryDirectory DOES get the write carve-out: it's the
  * user's explicit choice from a trusted settings source (projectSettings is
  * excluded — see getAutoMemPathSetting), and hasAutoMemPathOverride() remains
  * false for it.

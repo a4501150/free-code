@@ -159,9 +159,6 @@ entire subsystem.
 - `BUDDY`
   Fails on missing `src/commands/buddy/index.js`. The buddy UI components and
   prompt-input hooks already exist.
-- `BUILDING_CLAUDE_APPS`
-  Fails on missing `src/claude-api/csharp/claude-api.md`. This looks like an
-  asset/document gap, not a missing runtime subsystem.
 - `FORK_SUBAGENT`
   Fails on missing `src/commands/fork/index.js`. Command slot and message
   rendering support are already present.

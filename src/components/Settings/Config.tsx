@@ -53,7 +53,6 @@ import {
 import { ModelPicker } from "../ModelPicker.js";
 import {
   modelDisplayString,
-  isOpus1mMergeEnabled,
 } from "../../utils/model/model.js";
 import { isBilledAsExtraUsage } from "../../utils/extraUsage.js";
 import { ClaudeMdExternalIncludesDialog } from "../ClaudeMdExternalIncludesDialog.js";
@@ -307,7 +306,7 @@ export function Config({
     setChanges((prev) => {
       const valStr =
         modelDisplayString(value) +
-        (isBilledAsExtraUsage(value, false, isOpus1mMergeEnabled())
+        (isBilledAsExtraUsage(value, false)
           ? " · Billed as extra usage"
           : "");
       if ("model" in prev) {

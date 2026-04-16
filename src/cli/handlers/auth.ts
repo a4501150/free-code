@@ -31,7 +31,16 @@ import { saveGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
 import { logError } from '../../utils/log.js'
-import { getAPIProvider } from '../../utils/model/providers.js'
+import {
+  getProviderRegistry,
+  resetProviderRegistry,
+} from '../../utils/model/providerRegistry.js'
+import { writeFreecodeSettingsFile } from '../../utils/settings/freecodeSettings.js'
+import {
+  DEFAULT_ANTHROPIC_MODELS,
+  DEFAULT_CODEX_MODELS,
+} from '../../utils/model/legacyProviderMigration.js'
+import type { ProviderConfig } from '../../utils/settings/types.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import {
@@ -114,6 +123,66 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
       accountId: (tokens.tokenAccount?.uuid ?? ''),
     })
   }
+
+  // Persist provider config to freecode.json so it's the single source of truth
+  if (shouldUseClaudeAIAuth(tokens.scopes)) {
+    // claude.ai OAuth subscriber
+    writeFreecodeSettingsFile({
+      providers: {
+        anthropic: {
+          type: 'anthropic',
+          cache: { type: 'explicit-breakpoint' },
+          auth: {
+            active: 'oauth',
+            oauth: {
+              accessToken: tokens.accessToken,
+              refreshToken: tokens.refreshToken,
+              expiresAt: tokens.expiresAt,
+            },
+          },
+          models: DEFAULT_ANTHROPIC_MODELS,
+        },
+      },
+    })
+  } else if (hasAnyAnthropicScope(tokens.scopes)) {
+    // Console user — API key was created above; persist with apiKey auth
+    // The API key is stored in keychain/globalConfig by createAndStoreApiKey.
+    // For freecode.json we use keyEnv so it resolves at runtime.
+    writeFreecodeSettingsFile({
+      providers: {
+        anthropic: {
+          type: 'anthropic',
+          cache: { type: 'explicit-breakpoint' },
+          auth: {
+            active: 'apiKey',
+            apiKey: { keyEnv: 'ANTHROPIC_API_KEY' },
+          },
+          models: DEFAULT_ANTHROPIC_MODELS,
+        },
+      },
+    })
+  } else {
+    // Third-party (Codex)
+    writeFreecodeSettingsFile({
+      providers: {
+        codex: {
+          type: 'openai-responses',
+          baseUrl: 'https://chatgpt.com/backend-api/codex',
+          cache: { type: 'automatic-prefix' },
+          auth: {
+            active: 'oauth',
+            oauth: {
+              accessToken: tokens.accessToken,
+              refreshToken: tokens.refreshToken,
+              expiresAt: tokens.expiresAt,
+            },
+          },
+          models: DEFAULT_CODEX_MODELS,
+        } satisfies ProviderConfig,
+      },
+    })
+  }
+  resetProviderRegistry()
 
   await clearAuthRelatedCaches()
 }
@@ -293,7 +362,7 @@ export async function authStatus(opts: {
       )
     }
   } else {
-    const apiProvider = getAPIProvider()
+    const apiProvider = getProviderRegistry().getDefaultProvider()?.config.type ?? 'anthropic'
     const resolvedApiKeySource =
       apiKeySource !== 'none'
         ? apiKeySource

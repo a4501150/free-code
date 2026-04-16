@@ -60,7 +60,7 @@ This fork applies four categories of changes on top of that snapshot:
 The upstream binary phones home through OpenTelemetry/gRPC, Sentry error reporting, and custom event logging. In this build:
 
 - All outbound telemetry endpoints are dead-code-eliminated or stubbed
-- Remote feature flag system has been fully removed (all flags hardcoded or migrated to settings.json)
+- Remote feature flag system has been fully removed (all flags hardcoded or migrated to freecode.json)
 - No crash reports, no usage analytics, no session fingerprinting
 
 ### Security-prompt guardrails removed
@@ -253,9 +253,7 @@ bun run dev
 | `ANTHROPIC_AUTH_TOKEN` | Auth token (alternative) |
 | `ANTHROPIC_MODEL` | Override default model |
 | `ANTHROPIC_BASE_URL` | Custom API endpoint |
-| `ANTHROPIC_DEFAULT_OPUS_MODEL` | Custom Opus model ID |
-| `ANTHROPIC_DEFAULT_SONNET_MODEL` | Custom Sonnet model ID |
-| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Custom Haiku model ID |
+| `CLAUDE_CODE_SUBAGENT_MODEL` | Override model for all subagents (default: inherit parent model) |
 | `CLAUDE_CODE_OAUTH_TOKEN` | OAuth token via env |
 | `CLAUDE_CODE_API_KEY_HELPER_TTL_MS` | API key helper cache TTL |
 

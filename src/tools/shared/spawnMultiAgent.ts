@@ -72,7 +72,8 @@ import { isCustomAgent } from '../AgentTool/loadAgentsDir.js'
 function getDefaultTeammateModel(leaderModel: string | null): string {
   const configured = getGlobalConfig().teammateDefaultModel
   if (configured === null) {
-    // User picked "Default" in the /config picker — follow the leader.
+    // User picked "Default" in the /config picker — follow the leader,
+    // falling back to the configured default model if needed.
     return leaderModel ?? getHardcodedTeammateModelFallback()
   }
   if (configured !== undefined) {

@@ -12,10 +12,7 @@ import {
   getAnthropicApiKeyWithSource,
   getClaudeAIOAuthTokens,
 } from '../../utils/auth.js'
-import {
-  getAPIProvider,
-  isFirstPartyAnthropicBaseUrl,
-} from '../../utils/model/providers.js'
+import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 
 import {
   resetSyncCache as resetLeafCache,
@@ -49,13 +46,8 @@ export function resetSyncCache(): void {
 export function isRemoteManagedSettingsEligible(): boolean {
   if (cached !== undefined) return cached
 
-  // 3p provider users should not hit the settings endpoint
-  if (getAPIProvider() !== 'firstParty') {
-    return (cached = setEligibility(false))
-  }
-
-  // Custom base URL users should not hit the settings endpoint
-  if (!isFirstPartyAnthropicBaseUrl()) {
+  // 3p provider users and custom base URL users should not hit the settings endpoint
+  if (!getProviderRegistry().getCapabilities().firstPartyFeatures) {
     return (cached = setEligibility(false))
   }
 

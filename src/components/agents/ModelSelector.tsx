@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Box, Text } from '../../ink.js'
-import { getAgentModelOptions } from '../../utils/model/agent.js'
+import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 import { Select } from '../CustomSelect/select.js'
 
 interface ModelSelectorProps {
@@ -15,24 +15,31 @@ export function ModelSelector({
   onCancel,
 }: ModelSelectorProps): React.ReactNode {
   const modelOptions = React.useMemo(() => {
-    const base = getAgentModelOptions()
-    // If the agent's current model is a full ID (e.g. 'claude-opus-4-5') not
-    // in the alias list, inject it as an option so it can round-trip through
-    // confirm without being overwritten.
-    if (initialModel && !base.some(o => o.value === initialModel)) {
-      return [
-        {
-          value: initialModel,
-          label: initialModel,
-          description: 'Current model (custom ID)',
-        },
-        ...base,
-      ]
+    const registry = getProviderRegistry()
+    const allModels = registry.getAllModels()
+    const options = allModels.map(({ providerName, model }) => ({
+      value: `${providerName}:${model.id}`,
+      label: model.label || model.id,
+      description: model.description || model.id,
+    }))
+    // Add inherit option
+    options.push({
+      value: 'inherit',
+      label: 'Inherit from parent',
+      description: 'Use the same model as the main conversation',
+    })
+    // If the agent's current model is not in the list, inject it
+    if (initialModel && !options.some(o => o.value === initialModel)) {
+      options.unshift({
+        value: initialModel,
+        label: initialModel,
+        description: 'Current model (custom ID)',
+      })
     }
-    return base
+    return options
   }, [initialModel])
 
-  const defaultModel = initialModel ?? 'sonnet'
+  const defaultModel = initialModel ?? 'inherit'
 
   return (
     <Box flexDirection="column">

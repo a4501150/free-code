@@ -194,9 +194,9 @@ export function checkPermissionMode(
   // (or aliases like cd, sl, chdir, pushd, popd), the cwd changes between statements.
   // Path validation resolves relative paths against the stale process cwd, so a write
   // cmdlet in a later statement targets a different directory than the validator checked.
-  // Example: `Set-Location ./.claude; Set-Content ./settings.json '...'` — the validator
-  // sees ./settings.json as /project/settings.json, but PowerShell writes to
-  // /project/.claude/settings.json. Refuse to auto-allow any write operation in a
+  // Example: `Set-Location ./.claude; Set-Content ./freecode.json '...'` — the validator
+  // sees ./freecode.json as /project/freecode.json, but PowerShell writes to
+  // /project/.claude/freecode.json. Refuse to auto-allow any write operation in a
   // compound that contains a cwd-changing command. This matches BashTool's
   // compoundCommandHasCd guard (BashTool/pathValidation.ts:630-655).
   const totalCommands = segments.reduce(

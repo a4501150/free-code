@@ -116,7 +116,7 @@ function interpolateEnvVars(
  * blocked domains.
  *
  * Header values support $VAR_NAME and ${VAR_NAME} env var interpolation so that
- * secrets (e.g. "Authorization: Bearer $MY_TOKEN") are not stored in settings.json.
+ * secrets (e.g. "Authorization: Bearer $MY_TOKEN") are not stored in freecode.json.
  * Only env vars explicitly listed in the hook's `allowedEnvVars` array are resolved;
  * all other references are replaced with empty strings.
  */

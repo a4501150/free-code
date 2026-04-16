@@ -28,6 +28,10 @@ import {
   getEnabledSettingSources,
   type SettingSource,
 } from './constants.js'
+import {
+  migrateToFreecodeSettings,
+  migrateProjectSettingsToFreecode,
+} from './migrateToFreecode.js'
 import { markInternalWrite } from './internalWrites.js'
 import {
   getManagedFilePath,
@@ -232,7 +236,7 @@ function parseSettingsFileUncached(path: string): {
 
 /**
  * Get the absolute path to the associated file root for a given settings source
- * (e.g. for $PROJ_DIR/.claude/settings.json, returns $PROJ_DIR)
+ * (e.g. for $PROJ_DIR/.claude/freecode.json, returns $PROJ_DIR)
  * @param source The source of the settings
  * @returns The root path of the settings file
  */
@@ -268,7 +272,9 @@ function getUserSettingsFilePath(): string {
   ) {
     return 'cowork_settings.json'
   }
-  return 'settings.json'
+  // freecode.json is the single source of truth for user settings.
+  // Legacy settings.json is only read by migrateToFreecodeSettings().
+  return 'freecode.json'
 }
 
 export function getSettingsFilePathForSource(
@@ -300,9 +306,9 @@ export function getRelativeSettingsFilePathForSource(
 ): string {
   switch (source) {
     case 'projectSettings':
-      return join('.claude', 'settings.json')
+      return join('.claude', 'freecode.json')
     case 'localSettings':
-      return join('.claude', 'settings.local.json')
+      return join('.claude', 'freecode.local.json')
   }
 }
 
@@ -654,6 +660,21 @@ function loadSettingsFromDisk(): SettingsWithErrors {
 
   isLoadingSettings = true
   try {
+    // Migrate legacy settings.json → freecode.json before reading.
+    // This ensures freecode.json exists when getUserSettingsFilePath() returns it.
+    try {
+      migrateToFreecodeSettings()
+    } catch {
+      // Non-fatal: migration is best-effort
+    }
+
+    // Migrate project-level .claude/settings.json → .claude/freecode.json
+    try {
+      migrateProjectSettingsToFreecode(getOriginalCwd())
+    } catch {
+      // Non-fatal: migration is best-effort
+    }
+
     // Start with plugin settings as the lowest priority base.
     // All file-based sources (user, project, local, flag, policy) override these.
     // Plugin settings only contain allowlisted keys (e.g., agent) that are valid SettingsJson fields.

@@ -23,7 +23,9 @@ import { registerVerifySkill } from './verify.js'
 export function initBundledSkills(): void {
   registerUpdateConfigSkill()
   registerKeybindingsSkill()
-  registerVerifySkill()
+  if (feature('VERIFY_PLAN') && process.env.CLAUDE_CODE_VERIFY_PLAN === 'true') {
+    registerVerifySkill()
+  }
   registerDebugSkill()
   registerLoremIpsumSkill()
   registerSkillifySkill()
@@ -50,12 +52,6 @@ export function initBundledSkills(): void {
     // per-invocation pattern as the cron tools. Registered unconditionally;
     // the skill's own isEnabled callback decides visibility.
     registerLoopSkill()
-  }
-  if (feature('BUILDING_CLAUDE_APPS')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    const { registerClaudeApiSkill } = require('./claudeApi.js')
-    /* eslint-enable @typescript-eslint/no-require-imports */
-    registerClaudeApiSkill()
   }
   if (shouldAutoEnableClaudeInChrome()) {
     registerClaudeInChromeSkill()

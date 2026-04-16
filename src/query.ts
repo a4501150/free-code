@@ -4,7 +4,6 @@ import type {
   ToolUseBlock,
 } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { CanUseToolFn } from './hooks/useCanUseTool.js'
-import { FallbackTriggeredError } from './services/api/withRetry.js'
 import {
   calculateTokenWarningState,
   isAutoCompactEnabled,
@@ -72,10 +71,7 @@ import {
 } from './utils/messageQueueManager.js'
 import { notifyCommandLifecycle } from './utils/commandLifecycle.js'
 import { headlessProfilerCheckpoint } from './utils/headlessProfiler.js'
-import {
-  getRuntimeMainLoopModel,
-  renderModelName,
-} from './utils/model/model.js'
+import { getRuntimeMainLoopModel } from './utils/model/model.js'
 import {
   doesMostRecentAssistantMessageExceed200k,
   finalContextTokensFromLastResponse,
@@ -179,7 +175,6 @@ export type QueryParams = {
   systemContext: { [k: string]: string }
   canUseTool: CanUseToolFn
   toolUseContext: ToolUseContext
-  fallbackModel?: string
   querySource: QuerySource
   maxOutputTokensOverride?: number
   maxTurns?: number
@@ -249,7 +244,6 @@ async function* queryLoop(
     userContext,
     systemContext,
     canUseTool,
-    fallbackModel,
     querySource,
     maxTurns,
     skipCacheWrite,
@@ -615,15 +609,10 @@ async function* queryLoop(
       }
     }
 
-    let attemptWithFallback = true
-
     queryCheckpoint('query_api_loop_start')
     try {
-      while (attemptWithFallback) {
-        attemptWithFallback = false
-        try {
-          let streamingFallbackOccured = false
-          queryCheckpoint('query_api_streaming_start')
+      let streamingFallbackOccured = false
+      queryCheckpoint('query_api_streaming_start')
           for await (const message of deps.callModel({
             messages: prependUserContext(messagesForQuery, userContext),
             systemPrompt: fullSystemPrompt,
@@ -642,7 +631,6 @@ async function* queryLoop(
               toolChoice: undefined,
               isNonInteractiveSession:
                 toolUseContext.options.isNonInteractiveSession,
-              fallbackModel,
               onStreamingFallback: () => {
                 streamingFallbackOccured = true
               },
@@ -853,51 +841,6 @@ async function* queryLoop(
               )
             }
           }
-        } catch (innerError) {
-          if (innerError instanceof FallbackTriggeredError && fallbackModel) {
-            // Fallback was triggered - switch model and retry
-            currentModel = fallbackModel
-            attemptWithFallback = true
-
-            // Clear assistant messages since we'll retry the entire request
-            yield* yieldMissingToolResultBlocks(
-              assistantMessages,
-              'Model fallback triggered',
-            )
-            assistantMessages.length = 0
-            toolResults.length = 0
-            toolUseBlocks.length = 0
-            needsFollowUp = false
-
-            // Discard pending results from the failed attempt and create a
-            // fresh executor. This prevents orphan tool_results (with old
-            // tool_use_ids) from leaking into the retry.
-            if (streamingToolExecutor) {
-              streamingToolExecutor.discard()
-              streamingToolExecutor = new StreamingToolExecutor(
-                toolUseContext.options.tools,
-                canUseTool,
-                toolUseContext,
-              )
-            }
-
-            // Update tool use context with new model
-            toolUseContext.options.mainLoopModel = fallbackModel
-
-            // Log the fallback event
-
-            // Yield system message about fallback — use 'warning' level so
-            // users see the notification without needing verbose mode
-            yield createSystemMessage(
-              `Switched to ${renderModelName(innerError.fallbackModel)} due to high demand for ${renderModelName(innerError.originalModel)}`,
-              'warning',
-            )
-
-            continue
-          }
-          throw innerError
-        }
-      }
     } catch (error) {
       logError(error)
       const errorMessage =

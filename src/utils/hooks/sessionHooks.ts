@@ -19,7 +19,7 @@ export type FunctionHookCallback = (
 
 /**
  * Function hook type with callback embedded.
- * Session-scoped only, cannot be persisted to settings.json.
+ * Session-scoped only, cannot be persisted to freecode.json.
  */
 export type FunctionHook = {
   type: 'function'

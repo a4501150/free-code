@@ -7,6 +7,8 @@ import { BLACK_CIRCLE } from '../../constants/figures.js'
 import { stringWidth } from '../../ink/stringWidth.js'
 import { Box, Text, useTheme } from '../../ink.js'
 import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js'
+import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
+import { renderAgentToolUseTag } from '../../tools/AgentTool/UI.js'
 import {
   findToolByName,
   type Tool,
@@ -75,6 +77,18 @@ export function AssistantToolUseMessage({
     "external" === 'ant' &&
     isClassifierCheckingRaw &&
     permissionMode !== 'auto'
+
+  // Look up the agent definition model for AgentTool so renderAgentToolUseTag
+  // can show the effective model even when the LLM doesn't pass model explicitly.
+  const agentDefinitionModel = useAppStateMaybeOutsideOfProvider(state => {
+    if (param.name !== AGENT_TOOL_NAME) return undefined
+    const subagentType = (param.input as { subagent_type?: string })
+      ?.subagent_type
+    if (!subagentType) return undefined
+    return state.agentDefinitions.activeAgents.find(
+      a => a.agentType === subagentType,
+    )?.model
+  })
 
   // Memoize on param identity (stable — from the persisted message object).
   // Zod safeParse allocates per call, and some tools' userFacingName()
@@ -197,8 +211,9 @@ export function AssistantToolUseMessage({
           )}
           {/* Render tool-specific tags (timeout, model, resume ID, etc.) */}
           {input.success &&
-            tool.renderToolUseTag &&
-            tool.renderToolUseTag(input.data)}
+            (param.name === AGENT_TOOL_NAME
+              ? renderAgentToolUseTag(input.data, agentDefinitionModel)
+              : tool.renderToolUseTag?.(input.data))}
         </Box>
         {!isResolved &&
           !isQueued &&

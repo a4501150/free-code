@@ -1,7 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
-import { MODEL_ALIASES } from './aliases.js'
-import { isModelAllowed } from './modelAllowlist.js'
-import { getAPIProvider } from './providers.js'
+import { getProviderRegistry } from './providerRegistry.js'
 import { sideQuery } from '../sideQuery.js'
 import {
   NotFoundError,
@@ -9,7 +7,6 @@ import {
   APIConnectionError,
   AuthenticationError,
 } from '@anthropic-ai/sdk'
-import { getModelStrings } from './modelStrings.js'
 
 // Cache valid models to avoid repeated API calls
 const validModelCache = new Map<string, boolean>()
@@ -27,30 +24,15 @@ export async function validateModel(
     return { valid: false, error: 'Model name cannot be empty' }
   }
 
-  // Check against availableModels allowlist before any API call
-  if (!isModelAllowed(normalizedModel)) {
-    return {
-      valid: false,
-      error: `Model '${normalizedModel}' is not in the list of available models`,
-    }
-  }
-
-  // Check if it's a known alias (these are always valid)
-  const lowerModel = normalizedModel.toLowerCase()
-  if ((MODEL_ALIASES as readonly string[]).includes(lowerModel)) {
-    return { valid: true }
-  }
-
-  // Check if it's a known Codex/OpenAI model (skip Anthropic API validation)
-  const { isCodexSubscriber } = await import('../auth.js')
-  const { isCodexModel } = await import('../../services/api/codex-fetch-adapter.js')
-  if (isCodexSubscriber() && isCodexModel(normalizedModel)) {
-    validModelCache.set(normalizedModel, true)
-    return { valid: true }
-  }
-
   // Check if it matches ANTHROPIC_CUSTOM_MODEL_OPTION (pre-validated by the user)
   if (normalizedModel === process.env.ANTHROPIC_CUSTOM_MODEL_OPTION) {
+    return { valid: true }
+  }
+
+  // Check if the model exists in the provider registry (covers custom providers)
+  const registry = getProviderRegistry()
+  if (registry.getProviderForModel(normalizedModel)) {
+    validModelCache.set(normalizedModel, true)
     return { valid: true }
   }
 
@@ -95,11 +77,9 @@ function handleValidationError(
 ): { valid: boolean; error: string } {
   // NotFoundError (404) means the model doesn't exist
   if (error instanceof NotFoundError) {
-    const fallback = get3PFallbackSuggestion(modelName)
-    const suggestion = fallback ? `. Try '${fallback}' instead` : ''
     return {
       valid: false,
-      error: `Model '${modelName}' not found${suggestion}`,
+      error: `Model '${modelName}' not found`,
     }
   }
 
@@ -143,25 +123,4 @@ function handleValidationError(
     valid: false,
     error: `Unable to validate model: ${errorMessage}`,
   }
-}
-
-// @[MODEL LAUNCH]: Add a fallback suggestion chain for the new model → previous version
-/**
- * Suggest a fallback model for 3P users when the selected model is unavailable.
- */
-function get3PFallbackSuggestion(model: string): string | undefined {
-  if (getAPIProvider() === 'firstParty') {
-    return undefined
-  }
-  const lowerModel = model.toLowerCase()
-  if (lowerModel.includes('opus-4-6') || lowerModel.includes('opus_4_6')) {
-    return getModelStrings().opus41
-  }
-  if (lowerModel.includes('sonnet-4-6') || lowerModel.includes('sonnet_4_6')) {
-    return getModelStrings().sonnet45
-  }
-  if (lowerModel.includes('sonnet-4-5') || lowerModel.includes('sonnet_4_5')) {
-    return getModelStrings().sonnet40
-  }
-  return undefined
 }

@@ -29,10 +29,7 @@ import { getMergedBetas } from './betas.js'
 import { getContextWindowForModel } from './context.js'
 import { logForDebugging } from './debug.js'
 import { isEnvDefinedFalsy, isEnvTruthy } from './envUtils.js'
-import {
-  getAPIProvider,
-  isFirstPartyAnthropicBaseUrl,
-} from './model/providers.js'
+import { getProviderRegistry } from './model/providerRegistry.js'
 import { jsonStringify } from './slowOperations.js'
 import { zodToJsonSchema } from './zodToJsonSchema.js'
 
@@ -279,10 +276,14 @@ export function isToolSearchEnabledOptimistic(): boolean {
   // means the user is explicitly configuring tool search and asserts their
   // setup supports it. The falsy check (rather than === undefined) aligns
   // with getToolSearchMode(), which also treats "" as unset.
+  // With capability-based dispatch, anthropic providers behind a custom proxy
+  // get firstPartyFeatures: false, so tool search is already disabled for them
+  // by the isEnabled() check upstream. This block is retained for explicit
+  // logging when using a proxy URL.
   if (
     !process.env.ENABLE_TOOL_SEARCH &&
-    getAPIProvider() === 'firstParty' &&
-    !isFirstPartyAnthropicBaseUrl()
+    getProviderRegistry().getDefaultProvider()?.config.type === 'anthropic' &&
+    !getProviderRegistry().getCapabilities().firstPartyFeatures
   ) {
     if (!loggedOptimistic) {
       loggedOptimistic = true

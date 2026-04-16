@@ -698,7 +698,7 @@ export async function createWorktreeForSession(
     if (!gitRoot) {
       throw new Error(
         'Cannot create a worktree: not in a git repository and no WorktreeCreate hooks are configured. ' +
-          'Configure WorktreeCreate/WorktreeRemove hooks in settings.json to use worktree isolation with other VCS systems.',
+          'Configure WorktreeCreate/WorktreeRemove hooks in freecode.json to use worktree isolation with other VCS systems.',
       )
     }
 
@@ -893,7 +893,7 @@ export async function createAgentWorktree(slug: string): Promise<{
   if (!gitRoot) {
     throw new Error(
       'Cannot create agent worktree: not in a git repository and no WorktreeCreate hooks are configured. ' +
-        'Configure WorktreeCreate/WorktreeRemove hooks in settings.json to use worktree isolation with other VCS systems.',
+        'Configure WorktreeCreate/WorktreeRemove hooks in freecode.json to use worktree isolation with other VCS systems.',
     )
   }
 

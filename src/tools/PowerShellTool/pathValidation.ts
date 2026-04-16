@@ -1581,9 +1581,9 @@ function checkPathConstraintsForStatement(
   // New-PSDrive, relative paths in later statements resolve against the
   // CHANGED cwd at runtime, but this validator resolves them against the
   // STALE getCwd() snapshot. Example attack (finding #3):
-  //   Set-Location ./.claude; Set-Content ./settings.json '...'
-  // Validator sees ./settings.json → /project/settings.json (not a config file).
-  // Runtime writes /project/.claude/settings.json (Claude's permission config).
+  //   Set-Location ./.claude; Set-Content ./freecode.json '...'
+  // Validator sees ./freecode.json → /project/freecode.json (not a config file).
+  // Runtime writes /project/.claude/freecode.json (Claude's permission config).
   //
   // ALTERNATIVE APPROACH (rejected): simulate cwd through the statement chain
   // — after `Set-Location ./.claude`, validate subsequent statements with

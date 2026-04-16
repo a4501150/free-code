@@ -175,7 +175,7 @@ import { getLastCacheSafeParams } from 'src/utils/forkedAgent.js'
 import { getAccountInformation } from 'src/utils/auth.js'
 import { OAuthService } from 'src/services/oauth/index.js'
 import { installOAuthTokens } from 'src/cli/handlers/auth.js'
-import { getAPIProvider } from 'src/utils/model/providers.js'
+import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import type { HookCallbackMatcher } from 'src/types/hooks.js'
 import { AwsAuthStatusManager } from 'src/utils/awsAuthStatusManager.js'
 import type { HookEvent } from 'src/entrypoints/agentSdkTypes.js'
@@ -262,7 +262,7 @@ import {
 } from 'src/utils/effort.js'
 import { modelSupportsAdaptiveThinking } from 'src/utils/thinking.js'
 import { modelSupportsAutoMode } from 'src/utils/betas.js'
-import { ensureModelStringsInitialized } from 'src/utils/model/modelStrings.js'
+import { ensureWireModelIdsInitialized } from 'src/utils/model/modelIds.js'
 import {
   getSessionId,
   setMainLoopModelOverride,
@@ -457,7 +457,6 @@ export async function runHeadless(
     systemPrompt: string | undefined
     appendSystemPrompt: string | undefined
     userSpecifiedModel: string | undefined
-    fallbackModel: string | undefined
     replayUserMessages: boolean | undefined
     includePartialMessages: boolean | undefined
     forkSession: boolean | undefined
@@ -792,7 +791,7 @@ export async function runHeadless(
 
   // Ensure model strings are initialized before generating model options.
   // For Bedrock users, this waits for the profile fetch to get correct region strings.
-  await ensureModelStringsInitialized()
+  await ensureWireModelIdsInitialized()
   headlessProfilerCheckpoint('after_modelStrings')
 
   // UDS inbox store registration is deferred until after `run` is defined
@@ -950,7 +949,6 @@ function runHeadlessStreaming(
     systemPrompt: string | undefined
     appendSystemPrompt: string | undefined
     userSpecifiedModel: string | undefined
-    fallbackModel: string | undefined
     replayUserMessages?: boolean | undefined
     includePartialMessages?: boolean | undefined
     enableAuthStatus?: boolean | undefined
@@ -2055,7 +2053,6 @@ function runHeadlessStreaming(
               taskBudget: options.taskBudget,
               canUseTool,
               userSpecifiedModel: activeUserSpecifiedModel,
-              fallbackModel: options.fallbackModel,
               jsonSchema: getInitJsonSchema() ?? options.jsonSchema,
               mutableMessages,
               getReadFileCache: () =>
@@ -3502,7 +3499,7 @@ function runHeadlessStreaming(
                     subscriptionType: accountInfo?.subscription,
                     tokenSource: accountInfo?.tokenSource,
                     apiKeySource: accountInfo?.apiKeySource,
-                    apiProvider: getAPIProvider(),
+                    apiProvider: getProviderRegistry().getDefaultProvider()?.config.type ?? 'anthropic',
                   },
                 })
               },
@@ -4207,7 +4204,7 @@ async function handleInitializeRequest(
       // getAccountInformation() returns undefined under 3P providers, so the
       // other fields are all absent. apiProvider disambiguates "not logged
       // in" (firstParty + tokenSource:none) from "3P, login not applicable".
-      apiProvider: getAPIProvider(),
+      apiProvider: getProviderRegistry().getDefaultProvider()?.config.type ?? 'anthropic',
     },
     pid: process.pid,
   }

@@ -210,8 +210,12 @@ export class TmuxSession {
     await exec(`tmux send-keys -t ${this.sessionName} ${shellEscape(keys)}`)
   }
 
-  async sendLine(text: string): Promise<void> {
+  async sendText(text: string): Promise<void> {
     await exec(`tmux send-keys -t ${this.sessionName} -l ${shellEscape(text)}`)
+  }
+
+  async sendLine(text: string): Promise<void> {
+    await this.sendText(text)
     await exec(`tmux send-keys -t ${this.sessionName} Enter`)
   }
 

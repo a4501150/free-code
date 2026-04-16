@@ -5,7 +5,7 @@
  * of field schemas matching `McpbUserConfigurationOption`. At enable time the
  * user is prompted for values. Storage splits by `sensitive`:
  *   - `sensitive: true`  → secureStorage (keychain on macOS, .credentials.json elsewhere)
- *   - everything else    → settings.json `pluginConfigs[pluginId].options`
+ *   - everything else    → freecode.json `pluginConfigs[pluginId].options`
  *
  * `loadPluginOptions` reads and merges both. The substitution helpers are also
  * here (moved from mcpPluginIntegration.ts) so hooks/LSP/skills don't all
@@ -70,7 +70,7 @@ export const loadPluginOptions = memoize(
       ({} as Record<string, string>)
 
     // secureStorage wins on collision — schema determines destination so
-    // collision shouldn't happen, but if a user hand-edits settings.json we
+    // collision shouldn't happen, but if a user hand-edits freecode.json we
     // trust the more secure source.
     return { ...nonSensitive, ...sensitive }
   },
@@ -110,7 +110,7 @@ export function savePluginOptions(
   const nonSensitiveKeysInThisSave = new Set(Object.keys(nonSensitive))
 
   // secureStorage FIRST — if keychain fails, throw before touching
-  // settings.json so old plaintext (if any) stays as fallback.
+  // freecode.json so old plaintext (if any) stays as fallback.
   const storage = getSecureStorage()
   const existingInSecureStorage =
     storage.read()?.pluginSecrets?.[pluginId] ?? undefined
@@ -150,12 +150,12 @@ export function savePluginOptions(
     }
   }
 
-  // settings.json AFTER secureStorage — scrub sensitive keys via explicit
+  // freecode.json AFTER secureStorage — scrub sensitive keys via explicit
   // undefined (mergeWith deletion pattern).
   //
   // TODO: getSettings_DEPRECATED returns MERGED settings across all scopes.
   // Mutating that and writing to userSettings can leak project-scope
-  // pluginConfigs into ~/.claude/settings.json. Same pattern exists in
+  // pluginConfigs into ~/.claude/freecode.json. Same pattern exists in
   // saveMcpServerUserConfig. Safe today since pluginConfigs is only ever
   // written here (user-scope), but will bite if we add project-scoped
   // plugin options.

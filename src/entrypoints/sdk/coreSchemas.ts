@@ -71,7 +71,7 @@ export const ThinkingAdaptiveSchema = lazySchema(() =>
     .object({
       type: z.literal('adaptive'),
     })
-    .describe('Claude decides when and how much to think (Opus 4.6+).'),
+    .describe('Claude decides when and how much to think.'),
 )
 
 export const ThinkingEnabledSchema = lazySchema(() =>
@@ -1036,7 +1036,7 @@ export const AgentInfoSchema = lazySchema(() =>
         .string()
         .optional()
         .describe(
-          "Model alias this agent uses. If omitted, inherits the parent's model",
+          "Model ID this agent uses. If omitted, inherits the parent's model",
         ),
     })
     .describe(
@@ -1057,7 +1057,7 @@ export const ModelInfoSchema = lazySchema(() =>
         .optional()
         .describe('Whether this model supports effort levels'),
       supportedEffortLevels: z
-        .array(z.enum(['low', 'medium', 'high', 'max']))
+        .array(z.enum(['low', 'medium', 'high', 'max', 'xhigh']))
         .optional()
         .describe('Available effort levels for this model'),
       supportsAdaptiveThinking: z
@@ -1128,7 +1128,7 @@ export const AgentDefinitionSchema = lazySchema(() =>
         .string()
         .optional()
         .describe(
-          "Model alias (e.g. 'sonnet', 'opus', 'haiku') or full model ID (e.g. 'claude-opus-4-5'). If omitted or 'inherit', uses the main model",
+          "Full model ID (e.g. 'claude-sonnet-4-6') or provider-qualified model ID (e.g. 'anthropic:claude-sonnet-4-6'). If omitted or 'inherit', uses the main model",
         ),
       mcpServers: z.array(AgentMcpServerSpecSchema()).optional(),
       criticalSystemReminder_EXPERIMENTAL: z
@@ -1191,9 +1191,9 @@ export const SettingSourceSchema = lazySchema(() =>
     .enum(['user', 'project', 'local'])
     .describe(
       'Source for loading filesystem-based settings. ' +
-        "'user' - Global user settings (~/.claude/settings.json). " +
-        "'project' - Project settings (.claude/settings.json). " +
-        "'local' - Local settings (.claude/settings.local.json).",
+        "'user' - Global user settings (~/.claude/freecode.json). " +
+        "'project' - Project settings (.claude/freecode.json). " +
+        "'local' - Local settings (.claude/freecode.local.json).",
     ),
 )
 

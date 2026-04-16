@@ -1125,7 +1125,7 @@ export async function shouldDisableBypassPermissions(): Promise<boolean> {
 }
 
 function isAutoModeDisabledBySettings(): boolean {
-  // New: autoMode boolean in settings.json (default: true = enabled)
+  // New: autoMode boolean in freecode.json (default: true = enabled)
   const autoMode = getInitialSettings()?.autoMode
   if (autoMode === false) return true
   // Backward compat: old disableAutoMode: 'disable' in permissions or top-level
@@ -1162,7 +1162,7 @@ export type AutoModeEnabledState = 'enabled' | 'disabled' | 'opt-in'
 
 /**
  * Returns the auto mode enabled state. Always 'enabled' — disabling is
- * controlled by the `autoMode` boolean in settings.json.
+ * controlled by the `autoMode` boolean in freecode.json.
  */
 export function getAutoModeEnabledState(): AutoModeEnabledState {
   return 'enabled'

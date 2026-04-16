@@ -131,9 +131,14 @@ function EffortOptionLabel({
  * - Everyone else: mark as dismissed so it never shows
  */
 export function shouldShowEffortCallout(model: string): boolean {
-  // Only show for Opus 4.6 for now
+  // Only show for models that support 'max' effort
   const parsed = parseUserSpecifiedModel(model)
-  if (!parsed.toLowerCase().includes('opus-4-6')) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { getProviderRegistry } = require('../utils/model/providerRegistry.js') as {
+    getProviderRegistry: () => { getModelEffortLevels: (m: string) => string[] | undefined }
+  }
+  const levels = getProviderRegistry().getModelEffortLevels(parsed)
+  if (!levels?.includes('max')) {
     return false
   }
 

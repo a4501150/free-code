@@ -130,7 +130,7 @@ function buildHookSchemas() {
     // DO NOT add .transform() here. This schema is used by parseSettingsFile,
     // and updateSettingsForSource round-trips the parsed result through
     // JSON.stringify — a transformed function value is silently dropped,
-    // deleting the user's prompt from settings.json (gh-24920, CC-79). The
+    // deleting the user's prompt from freecode.json (gh-24920, CC-79). The
     // transform (from #10594) wrapped the string in `(_msgs) => prompt`
     // for a programmatic-construction use case in ExitPlanModeV2Tool that
     // has since been refactored into VerifyPlanExecutionTool, which no
@@ -150,7 +150,7 @@ function buildHookSchemas() {
       .string()
       .optional()
       .describe(
-        'Model to use for this agent hook (e.g., "claude-sonnet-4-6"). If not specified, uses Haiku.',
+        'Model to use for this agent hook (e.g., "claude-sonnet-4-6"). If not specified, uses the configured small/fast model.',
       ),
     statusMessage: z
       .string()

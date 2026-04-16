@@ -19,10 +19,10 @@ import { getFsImplementation } from './fsOperations.js'
  * - --use-system-ca + NODE_EXTRA_CA_CERTS: system CAs + extra cert file contents
  *
  * Memoized for performance. Call clearCACertsCache() to invalidate after
- * environment variable changes (e.g., after trust dialog applies settings.json).
+ * environment variable changes (e.g., after trust dialog applies freecode.json).
  *
  * Reads ONLY `process.env.NODE_EXTRA_CA_CERTS`. `caCertsConfig.ts` populates
- * that env var from settings.json at CLI init; this module stays config-free
+ * that env var from freecode.json at CLI init; this module stays config-free
  * so `proxy.ts`/`mtls.ts` don't transitively pull in the command registry.
  */
 export const getCACertificates = memoize((): string[] | undefined => {
