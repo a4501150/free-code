@@ -95,6 +95,7 @@ export function UserToolSuccessMessage({
         isTranscriptMode,
         isBriefOnly,
         input: lookups.toolUseByToolUseID.get(toolUseID)?.input,
+        toolUseId: toolUseID,
       },
     ) ?? null
 

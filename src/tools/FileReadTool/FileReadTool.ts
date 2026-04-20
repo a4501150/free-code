@@ -76,8 +76,6 @@ import {
   FILE_READ_TOOL_NAME,
   FILE_UNCHANGED_STUB,
   LINE_FORMAT_INSTRUCTION,
-  OFFSET_INSTRUCTION_DEFAULT,
-  OFFSET_INSTRUCTION_TARGETED,
   renderPromptTemplate,
 } from './prompt.js'
 import {
@@ -345,13 +343,9 @@ export const FileReadTool = buildTool({
     const maxSizeInstruction = limits.includeMaxSizeInPrompt
       ? `Files larger than ${formatFileSize(limits.maxSizeBytes)} will return an error; use offset and limit for larger files`
       : ''
-    const offsetInstruction = limits.targetedRangeNudge
-      ? OFFSET_INSTRUCTION_TARGETED
-      : OFFSET_INSTRUCTION_DEFAULT
     return renderPromptTemplate(
       pickLineFormatInstruction(),
       maxSizeInstruction,
-      offsetInstruction,
     )
   },
   get inputSchema(): InputSchema {
@@ -713,7 +707,7 @@ function shouldIncludeFileReadMitigation(): boolean {
   // Skip mitigation for high-tier models (pricing >= $5/Mtok input)
   const model = getMainLoopModel()
   const resolved = getProviderRegistry().getProviderForModel(model)
-  if (resolved?.model.pricing && resolved.model.pricing.input >= 5) {
+  if (resolved?.model.pricing?.input !== undefined && resolved.model.pricing.input >= 5) {
     return false
   }
   return true

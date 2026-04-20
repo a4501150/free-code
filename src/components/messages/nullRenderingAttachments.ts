@@ -1,3 +1,4 @@
+import { feature } from 'bun:bundle'
 import type { Attachment } from 'src/utils/attachments.js'
 import type { Message, NormalizedMessage } from '../../types/message.js'
 
@@ -28,7 +29,6 @@ const NULL_RENDERING_TYPES = [
   'plan_mode_reentry',
   'structured_output',
   'team_context',
-  'todo_reminder',
   'context_efficiency',
   'deferred_tools_delta',
   'mcp_instructions_delta',
@@ -40,18 +40,23 @@ const NULL_RENDERING_TYPES = [
   'auto_mode',
   'auto_mode_exit',
   'output_token_usage',
-  'pen_mode_enter',
-  'pen_mode_exit',
-  'verify_plan_reminder',
   'current_session_memory',
   'compaction_reminder',
   'date_change',
 ] as const satisfies readonly Attachment['type'][]
 
-export type NullRenderingAttachmentType = (typeof NULL_RENDERING_TYPES)[number]
+// Exhaustiveness type: keep 'verify_plan_reminder' in the type union so the
+// satisfies NullRenderingAttachmentType assertion in AttachmentMessage's
+// switch default still passes when VERIFY_PLAN is compiled out.
+export type NullRenderingAttachmentType =
+  | (typeof NULL_RENDERING_TYPES)[number]
+  | 'verify_plan_reminder'
 
 const NULL_RENDERING_ATTACHMENT_TYPES: ReadonlySet<Attachment['type']> =
-  new Set(NULL_RENDERING_TYPES)
+  new Set<Attachment['type']>([
+    ...NULL_RENDERING_TYPES,
+    ...(feature('VERIFY_PLAN') ? ['verify_plan_reminder' as const] : []),
+  ])
 
 /**
  * True when this message is an attachment that AttachmentMessage renders as

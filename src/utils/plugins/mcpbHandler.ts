@@ -1,7 +1,6 @@
-import type {
-  McpbManifest,
-  McpbUserConfigurationOption,
-} from '@anthropic-ai/mcpb'
+import { getMcpConfigForManifest } from '@anthropic-ai/mcpb'
+import type { McpbManifestAny as McpbManifest } from '@anthropic-ai/mcpb'
+type McpbUserConfigurationOption = Record<string, unknown>
 import axios from 'axios'
 import { createHash } from 'crypto'
 import { chmod, writeFile } from 'fs/promises'
@@ -391,14 +390,16 @@ export function validateUserConfig(
 
     // Number range validation
     if (fieldSchema.type === 'number' && typeof value === 'number') {
-      if (fieldSchema.min !== undefined && value < fieldSchema.min) {
+      const minVal = fieldSchema.min as number | null | undefined
+      const maxVal = fieldSchema.max as number | null | undefined
+      if (minVal != null && value < minVal) {
         errors.push(
-          `${fieldSchema.title || key} must be at least ${fieldSchema.min}`,
+          `${(fieldSchema.title as string) || key} must be at least ${minVal}`,
         )
       }
-      if (fieldSchema.max !== undefined && value > fieldSchema.max) {
+      if (maxVal != null && value > maxVal) {
         errors.push(
-          `${fieldSchema.title || key} must be at most ${fieldSchema.max}`,
+          `${(fieldSchema.title as string) || key} must be at most ${maxVal}`,
         )
       }
     }
@@ -415,9 +416,6 @@ async function generateMcpConfig(
   extractedPath: string,
   userConfig: UserConfigValues = {},
 ): Promise<McpServerConfig> {
-  // Lazy import: @anthropic-ai/mcpb barrel pulls in zod v3 schemas (~700KB of
-  // bound closures). See dxt/helpers.ts for details.
-  const { getMcpConfigForManifest } = await import('@anthropic-ai/mcpb')
   const mcpConfig = await getMcpConfigForManifest({
     manifest,
     extensionPath: extractedPath,

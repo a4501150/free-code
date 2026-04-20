@@ -9,7 +9,6 @@ import type { QuerySource } from 'src/constants/querySource.js'
 import type { SystemAPIErrorMessage } from 'src/types/message.js'
 import { isAwsCredentialsProviderError } from 'src/utils/aws.js'
 import { logForDebugging } from 'src/utils/debug.js'
-import { logError } from 'src/utils/log.js'
 import { createSystemAPIErrorMessage } from 'src/utils/messages.js'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import {
@@ -41,7 +40,6 @@ import { extractConnectionErrorDetails } from './errorUtils.js'
 const abortError = () => new APIUserAbortError()
 
 const DEFAULT_MAX_RETRIES = 10
-const FLOOR_OUTPUT_TOKENS = 3000
 const MAX_529_RETRIES = 3
 export const BASE_DELAY_MS = 500
 
@@ -109,7 +107,6 @@ function isStaleConnectionError(error: unknown): boolean {
 }
 
 export interface RetryContext {
-  maxTokensOverride?: number
   model: string
   thinkingConfig: ThinkingConfig
   fastMode?: boolean
@@ -315,44 +312,6 @@ export async function* withRetry<T>(
         throw new CannotRetryError(error, retryContext)
       }
 
-      // Handle max tokens context overflow errors by adjusting max_tokens for the next attempt
-      // NOTE: With extended-context-window beta, this 400 error should not occur.
-      // The API now returns 'model_context_window_exceeded' stop_reason instead.
-      // Keeping for backward compatibility.
-      if (error instanceof APIError) {
-        const overflowData = parseMaxTokensContextOverflowError(error)
-        if (overflowData) {
-          const { inputTokens, contextLimit } = overflowData
-
-          const safetyBuffer = 1000
-          const availableContext = Math.max(
-            0,
-            contextLimit - inputTokens - safetyBuffer,
-          )
-          if (availableContext < FLOOR_OUTPUT_TOKENS) {
-            logError(
-              new Error(
-                `availableContext ${availableContext} is less than FLOOR_OUTPUT_TOKENS ${FLOOR_OUTPUT_TOKENS}`,
-              ),
-            )
-            throw error
-          }
-          // Ensure we have enough tokens for thinking + at least 1 output token
-          const minRequired =
-            (retryContext.thinkingConfig.type === 'enabled'
-              ? retryContext.thinkingConfig.budgetTokens
-              : 0) + 1
-          const adjustedMaxTokens = Math.max(
-            FLOOR_OUTPUT_TOKENS,
-            availableContext,
-            minRequired,
-          )
-          retryContext.maxTokensOverride = adjustedMaxTokens
-
-          continue
-        }
-      }
-
       // For other errors, proceed with normal retry logic
       // Get retry-after header if available
       const retryAfter = getRetryAfter(error)
@@ -456,53 +415,6 @@ export function getRetryDelay(
   )
   const jitter = Math.random() * 0.25 * baseDelay
   return baseDelay + jitter
-}
-
-export function parseMaxTokensContextOverflowError(error: APIError):
-  | {
-      inputTokens: number
-      maxTokens: number
-      contextLimit: number
-    }
-  | undefined {
-  if (error.status !== 400 || !error.message) {
-    return undefined
-  }
-
-  if (
-    !error.message.includes(
-      'input length and `max_tokens` exceed context limit',
-    )
-  ) {
-    return undefined
-  }
-
-  // Example format: "input length and `max_tokens` exceed context limit: 188059 + 20000 > 200000"
-  const regex =
-    /input length and `max_tokens` exceed context limit: (\d+) \+ (\d+) > (\d+)/
-  const match = error.message.match(regex)
-
-  if (!match || match.length !== 4) {
-    return undefined
-  }
-
-  if (!match[1] || !match[2] || !match[3]) {
-    logError(
-      new Error(
-        'Unable to parse max_tokens from max_tokens exceed context limit error message',
-      ),
-    )
-    return undefined
-  }
-  const inputTokens = parseInt(match[1], 10)
-  const maxTokens = parseInt(match[2], 10)
-  const contextLimit = parseInt(match[3], 10)
-
-  if (isNaN(inputTokens) || isNaN(maxTokens) || isNaN(contextLimit)) {
-    return undefined
-  }
-
-  return { inputTokens, maxTokens, contextLimit }
 }
 
 // TODO: Replace with a response header check once the API adds a dedicated
@@ -620,11 +532,6 @@ function shouldRetry(error: APIError): boolean {
   // The SDK sometimes fails to properly pass the 529 status code during streaming,
   // so we need to check the error message directly
   if (error.message?.includes('"type":"overloaded_error"')) {
-    return true
-  }
-
-  // Check for max tokens context overflow errors that we can handle
-  if (parseMaxTokensContextOverflowError(error)) {
     return true
   }
 

@@ -1,6 +1,7 @@
 import { feature } from 'bun:bundle'
 import chalk from 'chalk'
 import { markPostCompaction } from 'src/bootstrap/state.js'
+import * as reactiveCompactNs from '../../services/compact/reactiveCompact.js'
 import { getSystemPrompt } from '../../constants/prompts.js'
 import { getSystemContext, getUserContext } from '../../context.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
@@ -30,11 +31,9 @@ import {
   type SystemPrompt,
 } from '../../utils/systemPrompt.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
 const reactiveCompact = feature('REACTIVE_COMPACT')
-  ? (require('../../services/compact/reactiveCompact.js') as typeof import('../../services/compact/reactiveCompact.js'))
+  ? reactiveCompactNs
   : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 export const call: LocalCommandCall = async (args, context) => {
   const { abortController } = context
@@ -181,7 +180,8 @@ async function compactViaReactive(
       // The outer catch in `call` translates these: aborted → "Compaction
       // canceled." (via abortController.signal.aborted check), NOT_ENOUGH →
       // re-thrown as-is, everything else → "Error during compaction: …".
-      switch (outcome.reason) {
+      const reason = (outcome as { reason: string }).reason
+      switch (reason) {
         case 'too_few_groups':
           throw new Error(ERROR_MESSAGE_NOT_ENOUGH_MESSAGES)
         case 'aborted':
@@ -205,15 +205,16 @@ async function compactViaReactive(
     // — both callers (here and tryReactiveCompact) run PreCompact outside so
     // they can merge its userDisplayMessage with PostCompact's here. This
     // caller additionally runs it concurrently with getCacheSharingParams.
+    const outcomeResult = (outcome as unknown as { result: CompactionResult }).result
     const combinedMessage =
-      [hookResult.userDisplayMessage, outcome.result.userDisplayMessage]
+      [hookResult.userDisplayMessage, outcomeResult.userDisplayMessage]
         .filter(Boolean)
         .join('\n') || undefined
 
     return {
       type: 'compact',
       compactionResult: {
-        ...outcome.result,
+        ...outcomeResult,
         userDisplayMessage: combinedMessage,
       },
       displayText: buildDisplayText(context, combinedMessage),

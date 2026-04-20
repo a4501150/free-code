@@ -1,6 +1,12 @@
 import { normalizeLanguageForSTT } from '../../hooks/useVoice.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
 
+import {
+  checkRecordingAvailability,
+  checkVoiceDependencies,
+  requestMicrophonePermission,
+} from '../../services/voice.js'
+import { isVoiceStreamAvailable } from '../../services/voiceStreamSTT.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import { isAnthropicAuthEnabled } from '../../utils/auth.js'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
@@ -54,10 +60,6 @@ export const call: LocalCommandCall = async () => {
   }
 
   // Toggle ON — run pre-flight checks first
-  const { isVoiceStreamAvailable } = await import(
-    '../../services/voiceStreamSTT.js'
-  )
-  const { checkRecordingAvailability } = await import('../../services/voice.js')
 
   // Check recording availability (microphone access)
   const recording = await checkRecordingAvailability()
@@ -79,9 +81,6 @@ export const call: LocalCommandCall = async () => {
   }
 
   // Check for recording tools
-  const { checkVoiceDependencies, requestMicrophonePermission } = await import(
-    '../../services/voice.js'
-  )
   const deps = await checkVoiceDependencies()
   if (!deps.available) {
     const hint = deps.installCommand

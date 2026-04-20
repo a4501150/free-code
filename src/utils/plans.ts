@@ -13,6 +13,7 @@ import type {
 import { getPlanSlugCache, getSessionId } from '../bootstrap/state.js'
 import { EXIT_PLAN_MODE_V2_TOOL_NAME } from '../tools/ExitPlanModeTool/constants.js'
 import { getCwd } from './cwd.js'
+import { recordTranscript } from './sessionStorage.js'
 import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir } from './envUtils.js'
 import { isENOENT } from './errors.js'
@@ -389,7 +390,6 @@ export async function persistFileSnapshotIfRemote(): Promise<void> {
       snapshotFiles,
     }
 
-    const { recordTranscript } = await import('./sessionStorage.js')
     await recordTranscript([message])
   } catch (error) {
     logError(error)

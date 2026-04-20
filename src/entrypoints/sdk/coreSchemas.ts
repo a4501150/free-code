@@ -1262,6 +1262,7 @@ export const SDKAssistantMessageErrorSchema = lazySchema(() =>
     'server_error',
     'unknown',
     'max_output_tokens',
+    'context_window_exceeded',
   ]),
 )
 

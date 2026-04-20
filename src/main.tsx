@@ -39,7 +39,7 @@ import React from 'react'
 import { getSystemContext, getUserContext } from './context.js'
 import { init, initializeTelemetryAfterTrust } from './entrypoints/init.js'
 import { addToHistory } from './history.js'
-import type { Root } from './ink.js'
+import { createRoot, type Root } from './ink.js'
 import { launchRepl } from './replLauncher.js'
 import { fetchBootstrapData } from './services/api/bootstrap.js'
 import { prefetchPassesEligibility } from './services/api/referral.js'
@@ -72,16 +72,15 @@ import {
 } from './utils/advisor.js'
 import { isAgentSwarmsEnabled } from './utils/agentSwarmsEnabled.js'
 import { count, uniq } from './utils/array.js'
-import { installAsciicastRecorder } from './utils/asciicast.js'
 import {
   getSubscriptionType,
-  isClaudeAISubscriber,
   prefetchAwsCredentialsAndBedRockInfoIfSafe,
   prefetchGcpCredentialsIfSafe,
   validateForceLoginOrg,
 } from './utils/auth.js'
 import {
   checkHasTrustDialogAccepted,
+  enableConfigs,
   getGlobalConfig,
   isAutoUpdaterDisabled,
   saveGlobalConfig,
@@ -101,19 +100,12 @@ import { getBaseRenderOptions } from './utils/renderOptions.js'
 import { settingsChangeDetector } from './utils/settings/changeDetector.js'
 import { skillChangeDetector } from './utils/skills/skillChangeDetector.js'
 import { jsonParse, writeFileSync_DEPRECATED } from './utils/slowOperations.js'
+import { setCliTeammateModeOverride } from './utils/swarm/backends/teammateModeSnapshot.js'
 import { computeInitialTeamContext } from './utils/swarm/reconnection.js'
+import { TEAMMATE_SYSTEM_PROMPT_ADDENDUM } from './utils/swarm/teammatePromptAddendum.js'
+import { isPlanModeRequired, setDynamicTeamContext } from './utils/teammate.js'
 import { initializeWarningHandler } from './utils/warningHandler.js'
 import { isWorktreeModeEnabled } from './utils/worktreeModeEnabled.js'
-
-// Lazy require to avoid circular dependency: teammate.ts -> AppState.tsx -> ... -> main.tsx
-/* eslint-disable @typescript-eslint/no-require-imports */
-const getTeammateUtils = () =>
-  require('./utils/teammate.js') as typeof import('./utils/teammate.js')
-const getTeammatePromptAddendum = () =>
-  require('./utils/swarm/teammatePromptAddendum.js') as typeof import('./utils/swarm/teammatePromptAddendum.js')
-const getTeammateModeSnapshot = () =>
-  require('./utils/swarm/backends/teammateModeSnapshot.js') as typeof import('./utils/swarm/backends/teammateModeSnapshot.js')
-/* eslint-enable @typescript-eslint/no-require-imports */
 // Dead code elimination: conditional imports for KAIROS assistant module
 /* eslint-disable @typescript-eslint/no-require-imports */
 const assistantModule = feature('KAIROS')
@@ -174,15 +166,6 @@ import {
 } from './tools/AgentTool/loadAgentsDir.js'
 import type { LogOption } from './types/logs.js'
 import type { Message as MessageType } from './types/message.js'
-import {
-  CLAUDE_IN_CHROME_SKILL_HINT,
-  CLAUDE_IN_CHROME_SKILL_HINT_WITH_WEBBROWSER,
-} from './utils/claudeInChrome/prompt.js'
-import {
-  setupClaudeInChrome,
-  shouldAutoEnableClaudeInChrome,
-  shouldEnableClaudeInChrome,
-} from './utils/claudeInChrome/setup.js'
 import { getContextWindowForModel } from './utils/context.js'
 import { loadConversationForResume } from './utils/conversationRecovery.js'
 import { buildDeepLinkBanner } from './utils/deepLink/banner.js'
@@ -236,7 +219,6 @@ import {
 import {
   cacheSessionTitle,
   getSessionIdFromLog,
-  loadTranscriptFromFile,
   saveAgentSetting,
   saveMode,
   searchSessionsByCustomTitle,
@@ -284,10 +266,6 @@ import {
 } from 'src/services/mcp/utils.js'
 import { isXaaEnabled } from 'src/services/mcp/xaaIdpLogin.js'
 import { getRelevantTips } from 'src/services/tips/tipRegistry.js'
-import {
-  CLAUDE_IN_CHROME_MCP_SERVER_NAME,
-  isClaudeInChromeMCPServer,
-} from 'src/utils/claudeInChrome/common.js'
 import { registerCleanup } from 'src/utils/cleanupRegistry.js'
 import { eagerParseCliFlag } from 'src/utils/cliArgs.js'
 import { createEmptyAttributionState } from 'src/utils/commitAttribution.js'
@@ -328,7 +306,6 @@ import {
   getUserMsgOptIn,
   setAllowedChannels,
   setAllowedSettingSources,
-  setChromeFlagOverride,
   setClientType,
   setCwdState,
   setDirectConnectServerUrl,
@@ -388,6 +365,78 @@ import {
   isTmuxAvailable,
   parsePRReference,
 } from './utils/worktree.js'
+import { initSinks } from './utils/sinks.js'
+import { handleDeepLinkUri } from './utils/deepLink/protocolHandler.js'
+import { parseConnectUrl } from './server/parseConnectUrl.js'
+import { applyCoordinatorToolFilter } from './utils/toolPool.js'
+import { setup } from './setup.js'
+import { buildMergePrompt } from './components/agents/SnapshotUpdateDialog.js'
+import { runHeadless } from 'src/cli/print.js'
+import { clearSessionCaches } from './commands/clear/caches.js'
+import {
+  createSSHSession,
+  createLocalSSHSession,
+  SSHSessionError,
+} from './ssh/createSSHSession.js'
+import {
+  mcpServeHandler,
+  mcpRemoveHandler,
+  mcpListHandler,
+  mcpGetHandler,
+  mcpAddJsonHandler,
+  mcpAddFromDesktopHandler,
+  mcpResetChoicesHandler,
+} from './cli/handlers/mcp.js'
+import { randomBytes } from 'crypto'
+import { startServer } from './server/server.js'
+import { SessionManager } from './server/sessionManager.js'
+import { DangerousBackend } from './server/backends/dangerousBackend.js'
+import { printBanner } from './server/serverBanner.js'
+import { createServerLogger } from './server/serverLog.js'
+import {
+  writeServerLock,
+  removeServerLock,
+  probeRunningServer,
+} from './server/lockfile.js'
+import { runConnectHeadless } from './server/connectHeadless.js'
+import {
+  authLogin,
+  authStatus,
+  authLogout,
+} from './cli/handlers/auth.js'
+import {
+  pluginValidateHandler,
+  pluginListHandler,
+  marketplaceAddHandler,
+  marketplaceListHandler,
+  marketplaceRemoveHandler,
+  marketplaceUpdateHandler,
+  pluginInstallHandler,
+  pluginUninstallHandler,
+  pluginEnableHandler,
+  pluginDisableHandler,
+  pluginUpdateHandler,
+} from './cli/handlers/plugins.js'
+import { setupTokenHandler, doctorHandler } from './cli/handlers/util.js'
+import { agentsHandler } from './cli/handlers/agents.js'
+import {
+  autoModeDefaultsHandler,
+  autoModeConfigHandler,
+  autoModeCritiqueHandler,
+} from './cli/handlers/autoMode.js'
+import { up } from './cli/up.js'
+import { logHandler } from './cli/log.js'
+import { errorHandler } from './cli/error.js'
+import { exportHandler } from './cli/export.js'
+import {
+  taskCreateHandler,
+  taskListHandler,
+  taskGetHandler,
+  taskUpdateHandler,
+  taskDirHandler,
+} from './cli/task.js'
+import { completionHandler } from './cli/completion.js'
+import { startBackgroundHousekeeping } from './utils/backgroundHousekeeping.js'
 
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
 profileCheckpoint('main_tsx_imports_loaded')
@@ -442,14 +491,6 @@ function isBeingDebugged() {
     // Ignore error and fall back to argument detection
     return hasInspectArg || hasInspectEnv
   }
-}
-
-// Exit if we detect node debugging or inspection
-if ("external" !== 'ant' && isBeingDebugged()) {
-  // Use process.exit directly here since we're in the top-level code before imports
-  // and gracefulShutdown is not yet available
-  // eslint-disable-next-line custom-rules/no-top-level-side-effects
-  process.exit(1)
 }
 
 /**
@@ -586,7 +627,6 @@ export function startDeferredPrefetches(): void {
   void countFilesRoundedRg(getCwd(), AbortSignal.timeout(3000), [])
 
   // Analytics and feature flag initialization
-  void initializeAnalyticsGates()
   void prefetchOfficialMcpUrls()
 
   void refreshModelCapabilities()
@@ -595,13 +635,6 @@ export function startDeferredPrefetches(): void {
   void settingsChangeDetector.initialize()
   if (!isBareMode()) {
     void skillChangeDetector.initialize()
-  }
-
-  // Event loop stall detector — logs when the main thread is blocked >500ms
-  if ("external" === 'ant') {
-    void import('./utils/eventLoopStallDetector.js').then(m =>
-      m.startEventLoopStallDetector(),
-    )
   }
 }
 
@@ -803,7 +836,6 @@ export async function main() {
     )
     if (ccIdx !== -1 && _pendingConnect) {
       const ccUrl = rawCliArgs[ccIdx]!
-      const { parseConnectUrl } = await import('./server/parseConnectUrl.js')
       const parsed = parseConnectUrl(ccUrl)
       _pendingConnect.dangerouslySkipPermissions = rawCliArgs.includes(
         '--dangerously-skip-permissions',
@@ -843,12 +875,8 @@ export async function main() {
   if (feature('LODESTONE')) {
     const handleUriIdx = process.argv.indexOf('--handle-uri')
     if (handleUriIdx !== -1 && process.argv[handleUriIdx + 1]) {
-      const { enableConfigs } = await import('./utils/config.js')
       enableConfigs()
       const uri = process.argv[handleUriIdx + 1]!
-      const { handleDeepLinkUri } = await import(
-        './utils/deepLink/protocolHandler.js'
-      )
       const exitCode = await handleDeepLinkUri(uri)
       process.exit(exitCode)
     }
@@ -1110,7 +1138,6 @@ async function run(): Promise<CommanderCommand> {
     // a sink attaches. setup() attaches sinks for the default command, but
     // subcommands (doctor, mcp, plugin, auth) never call setup() and would
     // silently drop events on process.exit(). Both inits are idempotent.
-    const { initSinks } = await import('./utils/sinks.js')
     initSinks()
     profileCheckpoint('preAction_after_sinks')
 
@@ -1528,8 +1555,6 @@ async function run(): Promise<CommanderCommand> {
       [] as string[],
     )
     .option('--disable-slash-commands', 'Disable all skills', () => true)
-    .option('--chrome', 'Enable Claude in Chrome integration')
-    .option('--no-chrome', 'Disable Claude in Chrome integration')
     .option(
       '--file <specs...>',
       'File resources to download at startup. Format: file_id:relative_path (e.g., --file file_abc:doc.txt file_def:img.png)',
@@ -1672,17 +1697,19 @@ async function run(): Promise<CommanderCommand> {
       // Extract disable slash commands flag
       const disableSlashCommands = options.disableSlashCommands || false
 
-      // Extract tasks mode options (ant-only)
-      const tasksOption =
-        "external" === 'ant' &&
-        (options as { tasks?: boolean | string }).tasks
+      // Extract tasks mode options (gated on COORDINATOR_MODE build feature)
+      const tasksOption = feature('COORDINATOR_MODE')
+        ? (options as { tasks?: boolean | string }).tasks
+        : undefined
       const taskListId = tasksOption
         ? typeof tasksOption === 'string'
           ? tasksOption
           : DEFAULT_TASKS_MODE_TASK_LIST_ID
         : undefined
-      if ("external" === 'ant' && taskListId) {
-        process.env.CLAUDE_CODE_TASK_LIST_ID = taskListId
+      if (feature('COORDINATOR_MODE')) {
+        if (taskListId) {
+          process.env.CLAUDE_CODE_TASK_LIST_ID = taskListId
+        }
       }
 
       // Extract worktree option
@@ -1764,7 +1791,7 @@ async function run(): Promise<CommanderCommand> {
           teammateOpts.agentName &&
           teammateOpts.teamName
         ) {
-          getTeammateUtils().setDynamicTeamContext?.({
+          setDynamicTeamContext({
             agentId: teammateOpts.agentId,
             agentName: teammateOpts.agentName,
             teamName: teammateOpts.teamName,
@@ -1777,9 +1804,7 @@ async function run(): Promise<CommanderCommand> {
         // Set teammate mode CLI override if provided
         // This must be done before setup() captures the snapshot
         if (teammateOpts.teammateMode) {
-          getTeammateModeSnapshot().setCliTeammateModeOverride?.(
-            teammateOpts.teammateMode,
-          )
+          setCliTeammateModeOverride(teammateOpts.teammateMode)
         }
       }
 
@@ -1905,8 +1930,7 @@ async function run(): Promise<CommanderCommand> {
         storedTeammateOpts?.agentName &&
         storedTeammateOpts?.teamName
       ) {
-        const addendum =
-          getTeammatePromptAddendum().TEAMMATE_SYSTEM_PROMPT_ADDENDUM
+        const addendum = TEAMMATE_SYSTEM_PROMPT_ADDENDUM
         appendSystemPrompt = appendSystemPrompt
           ? `${appendSystemPrompt}\n\n${addendum}`
           : addendum
@@ -2011,16 +2035,6 @@ async function run(): Promise<CommanderCommand> {
             .filter(([, config]) => config.type !== 'sdk')
             .map(([name]) => name)
 
-          let reservedNameError: string | null = null
-          if (nonSdkConfigNames.some(isClaudeInChromeMCPServer)) {
-            reservedNameError = `Invalid MCP configuration: "${CLAUDE_IN_CHROME_MCP_SERVER_NAME}" is a reserved MCP name.`
-          }
-          if (reservedNameError) {
-            // stderr+exit(1) — a throw here becomes a silent unhandled
-            // rejection in stream-json mode (void main() in cli.tsx).
-            process.stderr.write(`Error: ${reservedNameError}\n`)
-            process.exit(1)
-          }
 
           // Add dynamic scope to all configs. type:'sdk' entries pass through
           // unchanged — they're extracted into sdkMcpConfigs downstream and
@@ -2047,54 +2061,6 @@ async function run(): Promise<CommanderCommand> {
             )
           }
           dynamicMcpConfig = { ...dynamicMcpConfig, ...allowed }
-        }
-      }
-
-      // Extract Claude in Chrome option and enforce claude.ai subscriber check (unless user is ant)
-      const chromeOpts = options as { chrome?: boolean }
-      // Store the explicit CLI flag so teammates can inherit it
-      setChromeFlagOverride(chromeOpts.chrome)
-      const enableClaudeInChrome =
-        shouldEnableClaudeInChrome(chromeOpts.chrome) &&
-        ("external" === 'ant' || isClaudeAISubscriber())
-      const autoEnableClaudeInChrome =
-        !enableClaudeInChrome && shouldAutoEnableClaudeInChrome()
-
-      if (enableClaudeInChrome) {
-        const platform = getPlatform()
-        try {
-
-          const {
-            mcpConfig: chromeMcpConfig,
-            allowedTools: chromeMcpTools,
-            systemPrompt: chromeSystemPrompt,
-          } = setupClaudeInChrome()
-          dynamicMcpConfig = { ...dynamicMcpConfig, ...chromeMcpConfig }
-          allowedTools.push(...chromeMcpTools)
-          if (chromeSystemPrompt) {
-            appendSystemPrompt = appendSystemPrompt
-              ? `${chromeSystemPrompt}\n\n${appendSystemPrompt}`
-              : chromeSystemPrompt
-          }
-        } catch (error) {
-          logForDebugging(`[Claude in Chrome] Error: ${error}`)
-          logError(error)
-          // biome-ignore lint/suspicious/noConsole:: intentional console output
-          console.error(`Error: Failed to run with Claude in Chrome.`)
-          process.exit(1)
-        }
-      } else if (autoEnableClaudeInChrome) {
-        try {
-          const { mcpConfig: chromeMcpConfig } = setupClaudeInChrome()
-          dynamicMcpConfig = { ...dynamicMcpConfig, ...chromeMcpConfig }
-
-          const hint = CLAUDE_IN_CHROME_SKILL_HINT
-          appendSystemPrompt = appendSystemPrompt
-            ? `${appendSystemPrompt}\n\n${hint}`
-            : hint
-        } catch (error) {
-          // Silently skip any errors for the auto-enable
-          logForDebugging(`[Claude in Chrome] Error (auto-enable): ${error}`)
         }
       }
 
@@ -2270,22 +2236,6 @@ async function run(): Promise<CommanderCommand> {
       const { warnings, dangerousPermissions, overlyBroadBashPermissions } =
         initResult
 
-      // Handle overly broad shell allow rules for ant users (Bash(*), PowerShell(*))
-      if (
-        "external" === 'ant' &&
-        overlyBroadBashPermissions.length > 0
-      ) {
-        for (const permission of overlyBroadBashPermissions) {
-          logForDebugging(
-            `Ignoring overly broad shell permission ${permission.ruleDisplay} from ${permission.sourceDisplay}`,
-          )
-        }
-        toolPermissionContext = removeDangerousPermissions(
-          toolPermissionContext,
-          overlyBroadBashPermissions,
-        )
-      }
-
       if (feature('TRANSCRIPT_CLASSIFIER') && dangerousPermissions.length > 0) {
         toolPermissionContext = stripDangerousPermissionsForAutoMode(
           toolPermissionContext,
@@ -2412,9 +2362,6 @@ async function run(): Promise<CommanderCommand> {
         feature('COORDINATOR_MODE') &&
         isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE)
       ) {
-        const { applyCoordinatorToolFilter } = await import(
-          './utils/toolPool.js'
-        )
         tools = applyCoordinatorToolFilter(tools)
       }
 
@@ -2442,7 +2389,6 @@ async function run(): Promise<CommanderCommand> {
       profileCheckpoint('action_before_setup')
       logForDebugging('[STARTUP] Running setup()...')
       const setupStart = Date.now()
-      const { setup } = await import('./setup.js')
       const messagingSocketPath = feature('UDS_INBOX')
         ? (options as { messagingSocketPath?: string }).messagingSocketPath
         : undefined
@@ -2815,12 +2761,6 @@ async function run(): Promise<CommanderCommand> {
         const ctx = getRenderContext(false)
         getFpsMetrics = ctx.getFpsMetrics
         stats = ctx.stats
-        // Install asciicast recorder before Ink mounts (ant-only, opt-in via CLAUDE_CODE_TERMINAL_RECORDING=1)
-        if ("external" === 'ant') {
-          installAsciicastRecorder()
-        }
-
-        const { createRoot } = await import('./ink.js')
         root = await createRoot(ctx.renderOptions)
 
         // Log startup time now, before any blocking dialog renders. Logging
@@ -2835,7 +2775,6 @@ async function run(): Promise<CommanderCommand> {
           permissionMode,
           allowDangerouslySkipPermissions,
           commands,
-          enableClaudeInChrome,
           devChannels,
         )
         logForDebugging(
@@ -2858,9 +2797,6 @@ async function run(): Promise<CommanderCommand> {
               agentDef.pendingSnapshotUpdate!.snapshotTimestamp,
           })
           if (choice === 'merge') {
-            const { buildMergePrompt } = await import(
-              './components/agents/SnapshotUpdateDialog.js'
-            )
             const mergePrompt = buildMergePrompt(
               agentDef.agentType,
               agentDef.memory!,
@@ -3431,23 +3367,15 @@ async function run(): Promise<CommanderCommand> {
         // In headless mode, start deferred prefetches immediately (no user typing delay)
         // --bare / SIMPLE: startDeferredPrefetches early-returns internally.
         // backgroundHousekeeping (initExtractMemories, pruneShellSnapshots,
-        // cleanupOldMessageFiles) and sdkHeapDumpMonitor are all bookkeeping
-        // that scripted calls don't need — the next interactive session reconciles.
+        // cleanupOldMessageFiles) is bookkeeping that scripted calls don't need —
+        // the next interactive session reconciles.
         if (!isBareMode()) {
           startDeferredPrefetches()
-          void import('./utils/backgroundHousekeeping.js').then(m =>
-            m.startBackgroundHousekeeping(),
-          )
-          if ("external" === 'ant') {
-            void import('./utils/sdkHeapDumpMonitor.js').then(m =>
-              m.startSdkMemoryMonitor(),
-            )
-          }
+          void startBackgroundHousekeeping()
         }
 
         logSessionTelemetry()
         profileCheckpoint('before_print_import')
-        const { runHeadless } = await import('src/cli/print.js')
         profileCheckpoint('after_print_import')
         void runHeadless(
           inputPrompt,
@@ -3537,7 +3465,7 @@ async function run(): Promise<CommanderCommand> {
       const effectiveToolPermissionContext = {
         ...toolPermissionContext,
         mode:
-          isAgentSwarmsEnabled() && getTeammateUtils().isPlanModeRequired()
+          isAgentSwarmsEnabled() && isPlanModeRequired()
             ? ('plan' as const)
             : toolPermissionContext.mode,
       }
@@ -3549,6 +3477,7 @@ async function run(): Promise<CommanderCommand> {
         settings: getInitialSettings(),
         tasks: {},
         agentNameRegistry: new Map(),
+        expandedAgentToolUseIds: new Set<string>(),
         verbose: verbose ?? getGlobalConfig().verbose ?? false,
         mainLoopModel: initialMainLoopModel,
         mainLoopModelForSession: null,
@@ -3596,7 +3525,6 @@ async function run(): Promise<CommanderCommand> {
         elicitation: {
           queue: [],
         },
-        todos: {},
         remoteAgentTaskSuggestions: [],
         fileHistory: {
           snapshots: [],
@@ -3642,9 +3570,9 @@ async function run(): Promise<CommanderCommand> {
         // KAIROS block so Agent(name: "foo") can spawn in-process teammates
         // without TeamCreate. computeInitialTeamContext() is for tmux-spawned
         // teammates reading their own identity, not the assistant-mode leader.
-        teamContext: feature('KAIROS')
+        teamContext: (feature('KAIROS')
           ? (assistantTeamContext ?? computeInitialTeamContext?.())
-          : computeInitialTeamContext?.(),
+          : computeInitialTeamContext?.()) as any,
       }
 
       // Add CLI initial prompt to history
@@ -3665,29 +3593,6 @@ async function run(): Promise<CommanderCommand> {
         logSessionTelemetry()
       })
 
-      // Set up per-turn session environment data uploader (ant-only build).
-      // Default-enabled for all ant users when working in an Anthropic-owned
-      // repo. Captures git/filesystem state (NOT transcripts) at each turn so
-      // environments can be recreated at any user message index. Gating:
-      //   - Build-time: this import is stubbed in external builds.
-      //   - Runtime: uploader checks github.com/anthropics/* remote + gcloud auth.
-      //   - Safety: CLAUDE_CODE_DISABLE_SESSION_DATA_UPLOAD=1 bypasses (tests set this).
-      // Import is dynamic + async to avoid adding startup latency.
-      const sessionUploaderPromise =
-        "external" === 'ant'
-          ? import('./utils/sessionDataUploader.js')
-          : null
-
-      // Defer session uploader resolution to the onTurnComplete callback to avoid
-      // adding a new top-level await in main.tsx (performance-critical path).
-      // The per-turn auth logic in sessionDataUploader.ts handles unauthenticated
-      // state gracefully (re-checks each turn, so auth recovery mid-session works).
-      const uploaderReady = sessionUploaderPromise
-        ? sessionUploaderPromise
-            .then(mod => mod.createSessionTurnUploader())
-            .catch(() => null)
-        : null
-
       const sessionConfig = {
         debug: debug || debugToStderr,
         commands: [...commands, ...mcpCommands],
@@ -3702,11 +3607,6 @@ async function run(): Promise<CommanderCommand> {
         appendSystemPrompt,
         taskListId,
         thinkingConfig,
-        ...(uploaderReady && {
-          onTurnComplete: (messages: MessageType[]) => {
-            void uploaderReady.then(uploader => uploader?.(messages))
-          },
-        }),
       }
 
       // Shared context for processResumedConversation calls
@@ -3726,9 +3626,6 @@ async function run(): Promise<CommanderCommand> {
           const resumeStart = performance.now()
 
           // Clear stale caches before resuming to ensure fresh file/skill discovery
-          const { clearSessionCaches } = await import(
-            './commands/clear/caches.js'
-          )
           clearSessionCaches()
 
           const result = await loadConversationForResume(
@@ -3834,8 +3731,6 @@ async function run(): Promise<CommanderCommand> {
         // the REPL an SSHSession. Tools run remotely, UI renders locally.
         // `--local` skips probe/deploy/ssh and spawns the current binary
         // directly with the same env — e2e test of the proxy/auth plumbing.
-        const { createSSHSession, createLocalSSHSession, SSHSessionError } =
-          await import('./ssh/createSSHSession.js')
         let sshSession
         try {
           if (_pendingSSH.local) {
@@ -3919,9 +3814,6 @@ async function run(): Promise<CommanderCommand> {
         // Handle resume flow - from file (ant-only), session ID, or interactive selector
 
         // Clear stale caches before resuming to ensure fresh file/skill discovery
-        const { clearSessionCaches } = await import(
-          './commands/clear/caches.js'
-        )
         clearSessionCaches()
 
         let processedResume: ProcessedResume | undefined = undefined
@@ -3963,90 +3855,6 @@ async function run(): Promise<CommanderCommand> {
             } else {
               // No match or multiple matches - use as search term for picker
               searchTerm = trimmedValue
-            }
-          }
-        }
-
-        if ("external" === 'ant') {
-          if (
-            options.resume &&
-            typeof options.resume === 'string' &&
-            !maybeSessionId
-          ) {
-            // Check for ccshare URL (e.g. https://go/ccshare/boris-20260311-211036)
-            const { parseCcshareId, loadCcshare } = await import(
-              './utils/ccshareResume.js'
-            )
-            const ccshareId = parseCcshareId(options.resume)
-            if (ccshareId) {
-              try {
-                const resumeStart = performance.now()
-                const logOption = await loadCcshare(ccshareId)
-                const result = await loadConversationForResume(
-                  logOption,
-                  undefined,
-                )
-                if (result) {
-                  processedResume = await processResumedConversation(
-                    result,
-                    {
-                      forkSession: true,
-                      transcriptPath: result.fullPath,
-                    },
-                    resumeContext,
-                  )
-                  if (processedResume.restoredAgentDef) {
-                    mainThreadAgentDefinition = processedResume.restoredAgentDef
-                  }
-                }
-              } catch (error) {
-                logError(error)
-                await exitWithError(
-                  root,
-                  `Unable to resume from ccshare: ${errorMessage(error)}`,
-                  () => gracefulShutdown(1),
-                )
-              }
-            } else {
-              const resolvedPath = resolve(options.resume)
-              try {
-                const resumeStart = performance.now()
-                let logOption
-                try {
-                  // Attempt to load as a transcript file; ENOENT falls through to session-ID handling
-                  logOption = await loadTranscriptFromFile(resolvedPath)
-                } catch (error) {
-                  if (!isENOENT(error)) throw error
-                  // ENOENT: not a file path — fall through to session-ID handling
-                }
-                if (logOption) {
-                  const result = await loadConversationForResume(
-                    logOption,
-                    undefined /* sourceFile */,
-                  )
-                  if (result) {
-                    processedResume = await processResumedConversation(
-                      result,
-                      {
-                        forkSession: !!options.forkSession,
-                        transcriptPath: result.fullPath,
-                      },
-                      resumeContext,
-                    )
-                    if (processedResume.restoredAgentDef) {
-                      mainThreadAgentDefinition =
-                        processedResume.restoredAgentDef
-                    }
-                  }
-                }
-              } catch (error) {
-                logError(error)
-                await exitWithError(
-                  root,
-                  `Unable to load transcript from file: ${options.resume}`,
-                  () => gracefulShutdown(1),
-                )
-              }
             }
           }
         }
@@ -4217,40 +4025,18 @@ async function run(): Promise<CommanderCommand> {
     )
   }
 
-  if ("external" === 'ant') {
-    program.addOption(
-      new Option(
-        '--delegate-permissions',
-        '[ANT-ONLY] Alias for --permission-mode auto.',
-      ).implies({ permissionMode: 'auto' }),
-    )
-    program.addOption(
-      new Option(
-        '--dangerously-skip-permissions-with-classifiers',
-        '[ANT-ONLY] Deprecated alias for --permission-mode auto.',
-      )
-        .hideHelp()
-        .implies({ permissionMode: 'auto' }),
-    )
-    program.addOption(
-      new Option(
-        '--afk',
-        '[ANT-ONLY] Deprecated alias for --permission-mode auto.',
-      )
-        .hideHelp()
-        .implies({ permissionMode: 'auto' }),
-    )
+  if (feature('COORDINATOR_MODE')) {
     program.addOption(
       new Option(
         '--tasks [id]',
-        '[ANT-ONLY] Tasks mode: watch for tasks and auto-process them. Optional id is used as both the task list ID and agent ID (defaults to "tasklist").',
+        'Tasks mode: watch for tasks and auto-process them. Optional id is used as both the task list ID and agent ID (defaults to "tasklist").',
       )
         .argParser(String)
         .hideHelp(),
     )
     program.option(
       '--agent-teams',
-      '[ANT-ONLY] Force Claude to use multi-agent mode for solving problems',
+      'Force Claude to use multi-agent mode for solving problems',
       () => true,
     )
   }
@@ -4401,7 +4187,6 @@ async function run(): Promise<CommanderCommand> {
     )
     .action(
       async ({ debug, verbose }: { debug?: boolean; verbose?: boolean }) => {
-        const { mcpServeHandler } = await import('./cli/handlers/mcp.js')
         await mcpServeHandler({ debug, verbose })
       },
     )
@@ -4421,7 +4206,6 @@ async function run(): Promise<CommanderCommand> {
       'Configuration scope (local, user, or project) - if not specified, removes from whichever scope it exists in',
     )
     .action(async (name: string, options: { scope?: string }) => {
-      const { mcpRemoveHandler } = await import('./cli/handlers/mcp.js')
       await mcpRemoveHandler(name, options)
     })
 
@@ -4431,7 +4215,6 @@ async function run(): Promise<CommanderCommand> {
       'List configured MCP servers. Note: The workspace trust dialog is skipped and stdio servers from .mcp.json are spawned for health checks. Only use this command in directories you trust.',
     )
     .action(async () => {
-      const { mcpListHandler } = await import('./cli/handlers/mcp.js')
       await mcpListHandler()
     })
 
@@ -4441,7 +4224,6 @@ async function run(): Promise<CommanderCommand> {
       'Get details about an MCP server. Note: The workspace trust dialog is skipped and stdio servers from .mcp.json are spawned for health checks. Only use this command in directories you trust.',
     )
     .action(async (name: string) => {
-      const { mcpGetHandler } = await import('./cli/handlers/mcp.js')
       await mcpGetHandler(name)
     })
 
@@ -4463,7 +4245,6 @@ async function run(): Promise<CommanderCommand> {
         json: string,
         options: { scope?: string; clientSecret?: true },
       ) => {
-        const { mcpAddJsonHandler } = await import('./cli/handlers/mcp.js')
         await mcpAddJsonHandler(name, json, options)
       },
     )
@@ -4477,7 +4258,6 @@ async function run(): Promise<CommanderCommand> {
       'local',
     )
     .action(async (options: { scope?: string }) => {
-      const { mcpAddFromDesktopHandler } = await import('./cli/handlers/mcp.js')
       await mcpAddFromDesktopHandler(options)
     })
 
@@ -4487,7 +4267,6 @@ async function run(): Promise<CommanderCommand> {
       'Reset all approved and rejected project-scoped (.mcp.json) servers within this project',
     )
     .action(async () => {
-      const { mcpResetChoicesHandler } = await import('./cli/handlers/mcp.js')
       await mcpResetChoicesHandler()
     })
 
@@ -4524,17 +4303,6 @@ async function run(): Promise<CommanderCommand> {
           idleTimeout: string
           maxSessions: string
         }) => {
-          const { randomBytes } = await import('crypto')
-          const { startServer } = await import('./server/server.js')
-          const { SessionManager } = await import('./server/sessionManager.js')
-          const { DangerousBackend } = await import(
-            './server/backends/dangerousBackend.js'
-          )
-          const { printBanner } = await import('./server/serverBanner.js')
-          const { createServerLogger } = await import('./server/serverLog.js')
-          const { writeServerLock, removeServerLock, probeRunningServer } =
-            await import('./server/lockfile.js')
-
           const existing = await probeRunningServer()
           if (existing) {
             process.stderr.write(
@@ -4656,9 +4424,6 @@ async function run(): Promise<CommanderCommand> {
             outputFormat: string
           },
         ) => {
-          const { parseConnectUrl } = await import(
-            './server/parseConnectUrl.js'
-          )
           const { serverUrl, authToken } = parseConnectUrl(ccUrl)
 
           let connectConfig
@@ -4683,10 +4448,6 @@ async function run(): Promise<CommanderCommand> {
             )
             process.exit(1)
           }
-
-          const { runConnectHeadless } = await import(
-            './server/connectHeadless.js'
-          )
 
           const prompt = typeof opts.print === 'string' ? opts.print : ''
           const interactive = opts.print === true
@@ -4729,7 +4490,6 @@ async function run(): Promise<CommanderCommand> {
         console?: boolean
         claudeai?: boolean
       }) => {
-        const { authLogin } = await import('./cli/handlers/auth.js')
         await authLogin({ email, sso, console: useConsole, claudeai })
       },
     )
@@ -4740,7 +4500,6 @@ async function run(): Promise<CommanderCommand> {
     .option('--json', 'Output as JSON (default)')
     .option('--text', 'Output as human-readable text')
     .action(async (opts: { json?: boolean; text?: boolean }) => {
-      const { authStatus } = await import('./cli/handlers/auth.js')
       await authStatus(opts)
     })
 
@@ -4748,7 +4507,6 @@ async function run(): Promise<CommanderCommand> {
     .command('logout')
     .description('Log out from your Anthropic account')
     .action(async () => {
-      const { authLogout } = await import('./cli/handlers/auth.js')
       await authLogout()
     })
 
@@ -4774,9 +4532,6 @@ async function run(): Promise<CommanderCommand> {
     .description('Validate a plugin or marketplace manifest')
     .addOption(coworkOption())
     .action(async (manifestPath: string, options: { cowork?: boolean }) => {
-      const { pluginValidateHandler } = await import(
-        './cli/handlers/plugins.js'
-      )
       await pluginValidateHandler(manifestPath, options)
     })
 
@@ -4796,7 +4551,6 @@ async function run(): Promise<CommanderCommand> {
         available?: boolean
         cowork?: boolean
       }) => {
-        const { pluginListHandler } = await import('./cli/handlers/plugins.js')
         await pluginListHandler(options)
       },
     )
@@ -4824,9 +4578,6 @@ async function run(): Promise<CommanderCommand> {
         source: string,
         options: { cowork?: boolean; sparse?: string[]; scope?: string },
       ) => {
-        const { marketplaceAddHandler } = await import(
-          './cli/handlers/plugins.js'
-        )
         await marketplaceAddHandler(source, options)
       },
     )
@@ -4837,9 +4588,6 @@ async function run(): Promise<CommanderCommand> {
     .option('--json', 'Output as JSON')
     .addOption(coworkOption())
     .action(async (options: { json?: boolean; cowork?: boolean }) => {
-      const { marketplaceListHandler } = await import(
-        './cli/handlers/plugins.js'
-      )
       await marketplaceListHandler(options)
     })
 
@@ -4849,9 +4597,6 @@ async function run(): Promise<CommanderCommand> {
     .description('Remove a configured marketplace')
     .addOption(coworkOption())
     .action(async (name: string, options: { cowork?: boolean }) => {
-      const { marketplaceRemoveHandler } = await import(
-        './cli/handlers/plugins.js'
-      )
       await marketplaceRemoveHandler(name, options)
     })
 
@@ -4862,9 +4607,6 @@ async function run(): Promise<CommanderCommand> {
     )
     .addOption(coworkOption())
     .action(async (name: string | undefined, options: { cowork?: boolean }) => {
-      const { marketplaceUpdateHandler } = await import(
-        './cli/handlers/plugins.js'
-      )
       await marketplaceUpdateHandler(name, options)
     })
 
@@ -4883,9 +4625,6 @@ async function run(): Promise<CommanderCommand> {
     .addOption(coworkOption())
     .action(
       async (plugin: string, options: { scope?: string; cowork?: boolean }) => {
-        const { pluginInstallHandler } = await import(
-          './cli/handlers/plugins.js'
-        )
         await pluginInstallHandler(plugin, options)
       },
     )
@@ -4911,9 +4650,6 @@ async function run(): Promise<CommanderCommand> {
         plugin: string,
         options: { scope?: string; cowork?: boolean; keepData?: boolean },
       ) => {
-        const { pluginUninstallHandler } = await import(
-          './cli/handlers/plugins.js'
-        )
         await pluginUninstallHandler(plugin, options)
       },
     )
@@ -4929,9 +4665,6 @@ async function run(): Promise<CommanderCommand> {
     .addOption(coworkOption())
     .action(
       async (plugin: string, options: { scope?: string; cowork?: boolean }) => {
-        const { pluginEnableHandler } = await import(
-          './cli/handlers/plugins.js'
-        )
         await pluginEnableHandler(plugin, options)
       },
     )
@@ -4951,9 +4684,6 @@ async function run(): Promise<CommanderCommand> {
         plugin: string | undefined,
         options: { scope?: string; cowork?: boolean; all?: boolean },
       ) => {
-        const { pluginDisableHandler } = await import(
-          './cli/handlers/plugins.js'
-        )
         await pluginDisableHandler(plugin, options)
       },
     )
@@ -4971,9 +4701,6 @@ async function run(): Promise<CommanderCommand> {
     .addOption(coworkOption())
     .action(
       async (plugin: string, options: { scope?: string; cowork?: boolean }) => {
-        const { pluginUpdateHandler } = await import(
-          './cli/handlers/plugins.js'
-        )
         await pluginUpdateHandler(plugin, options)
       },
     )
@@ -4986,10 +4713,6 @@ async function run(): Promise<CommanderCommand> {
       'Set up a long-lived authentication token (requires Claude subscription)',
     )
     .action(async () => {
-      const [{ setupTokenHandler }, { createRoot }] = await Promise.all([
-        import('./cli/handlers/util.js'),
-        import('./ink.js'),
-      ])
       const root = await createRoot(getBaseRenderOptions(false))
       await setupTokenHandler(root)
     })
@@ -5003,7 +4726,6 @@ async function run(): Promise<CommanderCommand> {
       'Comma-separated list of setting sources to load (user, project, local).',
     )
     .action(async () => {
-      const { agentsHandler } = await import('./cli/handlers/agents.js')
       await agentsHandler()
       process.exit(0)
     })
@@ -5020,9 +4742,6 @@ async function run(): Promise<CommanderCommand> {
           'Print the default auto mode environment, allow, and deny rules as JSON',
         )
         .action(async () => {
-          const { autoModeDefaultsHandler } = await import(
-            './cli/handlers/autoMode.js'
-          )
           autoModeDefaultsHandler()
           process.exit(0)
         })
@@ -5033,9 +4752,6 @@ async function run(): Promise<CommanderCommand> {
           'Print the effective auto mode config as JSON: your settings where set, defaults otherwise',
         )
         .action(async () => {
-          const { autoModeConfigHandler } = await import(
-            './cli/handlers/autoMode.js'
-          )
           autoModeConfigHandler()
           process.exit(0)
         })
@@ -5045,9 +4761,6 @@ async function run(): Promise<CommanderCommand> {
         .description('Get AI feedback on your custom auto mode rules')
         .option('--model <model>', 'Override which model is used')
         .action(async options => {
-          const { autoModeCritiqueHandler } = await import(
-            './cli/handlers/autoMode.js'
-          )
           await autoModeCritiqueHandler(options)
           process.exit()
         })
@@ -5061,10 +4774,6 @@ async function run(): Promise<CommanderCommand> {
       'Check the health of your Claude Code auto-updater. Note: The workspace trust dialog is skipped and stdio servers from .mcp.json are spawned for health checks. Only use this command in directories you trust.',
     )
     .action(async () => {
-      const [{ doctorHandler }, { createRoot }] = await Promise.all([
-        import('./cli/handlers/util.js'),
-        import('./ink.js'),
-      ])
       const root = await createRoot(getBaseRenderOptions(false))
       await doctorHandler(root)
     })
@@ -5077,203 +4786,170 @@ async function run(): Promise<CommanderCommand> {
   // - UI shows both versions including build metadata for clarity
   // claude update/upgrade removed — auto-updater disabled for custom fork
 
-  // claude up — run the project's CLAUDE.md "# claude up" setup instructions.
-  if ("external" === 'ant') {
-    program
-      .command('up')
-      .description(
-        '[ANT-ONLY] Initialize or upgrade the local dev environment using the "# claude up" section of the nearest CLAUDE.md',
-      )
-      .action(async () => {
-        const { up } = await import('src/cli/up.js')
-        await up()
-      })
-  }
+  // claude up — run the nearest CLAUDE.md's "# claude up" setup instructions.
+  program
+    .command('up')
+    .description(
+      'Initialize or upgrade the local dev environment using the "# claude up" section of the nearest CLAUDE.md',
+    )
+    .action(async () => {
+      await up()
+      // eslint-disable-next-line custom-rules/no-process-exit
+      process.exit(0)
+    })
 
-  // claude rollback (ant-only)
-  // Rolls back to previous releases
-  if ("external" === 'ant') {
-    program
-      .command('rollback [target]')
-      .description(
-        '[ANT-ONLY] Roll back to a previous release\n\nExamples:\n  claude rollback                                    Go 1 version back from current\n  claude rollback 3                                  Go 3 versions back from current\n  claude rollback 2.0.73-dev.20251217.t190658        Roll back to a specific version',
-      )
-      .option('-l, --list', 'List recent published versions with ages')
-      .option('--dry-run', 'Show what would be installed without installing')
-      .option(
-        '--safe',
-        'Roll back to the server-pinned safe version (set by oncall during incidents)',
-      )
-      .action(
-        async (
-          target?: string,
-          options?: { list?: boolean; dryRun?: boolean; safe?: boolean },
-        ) => {
-          const { rollback } = await import('src/cli/rollback.js')
-          await rollback(target, options)
-        },
-      )
-  }
+  // claude log — list recent conversation logs, or render a specific one.
+  program
+    .command('log')
+    .description('Manage conversation logs.')
+    .argument(
+      '[number|sessionId]',
+      'A numeric index (0, 1, 2, ...) or a session UUID.',
+    )
+    .action(async (logId: string | undefined) => {
+      await logHandler(logId)
+      // eslint-disable-next-line custom-rules/no-process-exit
+      process.exit(0)
+    })
 
-  // ant-only commands
-  if ("external" === 'ant') {
-    const validateLogId = (value: string) => {
-      const maybeSessionId = validateUuid(value)
-      if (maybeSessionId) return maybeSessionId
-      return Number(value)
-    }
-    // claude log
-    program
-      .command('log')
-      .description('[ANT-ONLY] Manage conversation logs.')
-      .argument(
-        '[number|sessionId]',
-        'A number (0, 1, 2, etc.) to display a specific log, or the sesssion ID (uuid) of a log',
-        validateLogId,
-      )
-      .action(async (logId: string | number | undefined) => {
-        const { logHandler } = await import('./cli/handlers/ant.js')
-        await logHandler(logId)
-      })
+  // claude error — list or view persisted error logs.
+  program
+    .command('error')
+    .description(
+      'View persisted error logs. Requires `errorLogSink: true` in freecode.json to be useful.',
+    )
+    .argument('[number]', 'Index (0 = most recent).', parseInt)
+    .action(async (n: number | undefined) => {
+      await errorHandler(n)
+      // eslint-disable-next-line custom-rules/no-process-exit
+      process.exit(0)
+    })
 
-    // claude error
-    program
-      .command('error')
-      .description(
-        '[ANT-ONLY] View error logs. Optionally provide a number (0, -1, -2, etc.) to display a specific log.',
-      )
-      .argument(
-        '[number]',
-        'A number (0, 1, 2, etc.) to display a specific log',
-        parseInt,
-      )
-      .action(async (number: number | undefined) => {
-        const { errorHandler } = await import('./cli/handlers/ant.js')
-        await errorHandler(number)
-      })
-
-    // claude export
-    program
-      .command('export')
-      .description('[ANT-ONLY] Export a conversation to a text file.')
-      .usage('<source> <outputFile>')
-      .argument(
-        '<source>',
-        'Session ID, log index (0, 1, 2...), or path to a .json/.jsonl log file',
-      )
-      .argument('<outputFile>', 'Output file path for the exported text')
-      .addHelpText(
-        'after',
-        `
+  // claude export — render a conversation to a plain-text file.
+  program
+    .command('export')
+    .description('Export a conversation to a text file.')
+    .usage('<source> <outputFile>')
+    .argument(
+      '<source>',
+      'Session ID, log index (0, 1, 2...), or path to a .json/.jsonl log file',
+    )
+    .argument('<outputFile>', 'Output file path for the exported text')
+    .addHelpText(
+      'after',
+      `
 Examples:
   $ claude export 0 conversation.txt                Export conversation at log index 0
   $ claude export <uuid> conversation.txt           Export conversation by session ID
   $ claude export input.json output.txt             Render JSON log file to text
   $ claude export <uuid>.jsonl output.txt           Render JSONL session file to text`,
-      )
-      .action(async (source: string, outputFile: string) => {
-        const { exportHandler } = await import('./cli/handlers/ant.js')
-        await exportHandler(source, outputFile)
-      })
+    )
+    .action(async (source: string, outputFile: string) => {
+      await exportHandler(source, outputFile)
+      // eslint-disable-next-line custom-rules/no-process-exit
+      process.exit(0)
+    })
 
-    if ("external" === 'ant') {
-      const taskCmd = program
-        .command('task')
-        .description('[ANT-ONLY] Manage task list tasks')
+  // claude task <subcommand> — interact with the shared task list.
+  const taskCmd = program.command('task').description('Manage task list tasks')
 
-      taskCmd
-        .command('create <subject>')
-        .description('Create a new task')
-        .option('-d, --description <text>', 'Task description')
-        .option('-l, --list <id>', 'Task list ID (defaults to "tasklist")')
-        .action(
-          async (
-            subject: string,
-            opts: { description?: string; list?: string },
-          ) => {
-            const { taskCreateHandler } = await import('./cli/handlers/ant.js')
-            await taskCreateHandler(subject, opts)
-          },
-        )
+  taskCmd
+    .command('create <subject>')
+    .description('Create a new task')
+    .option('-d, --description <text>', 'Task description')
+    .option('-l, --list <id>', 'Task list ID (defaults to "tasklist")')
+    .action(
+      async (
+        subject: string,
+        opts: { description?: string; list?: string },
+      ) => {
+        await taskCreateHandler(subject, opts)
+        // eslint-disable-next-line custom-rules/no-process-exit
+        process.exit(0)
+      },
+    )
 
-      taskCmd
-        .command('list')
-        .description('List all tasks')
-        .option('-l, --list <id>', 'Task list ID (defaults to "tasklist")')
-        .option('--pending', 'Show only pending tasks')
-        .option('--json', 'Output as JSON')
-        .action(
-          async (opts: {
-            list?: string
-            pending?: boolean
-            json?: boolean
-          }) => {
-            const { taskListHandler } = await import('./cli/handlers/ant.js')
-            await taskListHandler(opts)
-          },
-        )
+  taskCmd
+    .command('list')
+    .description('List all tasks')
+    .option('-l, --list <id>', 'Task list ID (defaults to "tasklist")')
+    .option('--pending', 'Show only pending tasks')
+    .option('--json', 'Output as JSON')
+    .action(
+      async (opts: {
+        list?: string
+        pending?: boolean
+        json?: boolean
+      }) => {
+        await taskListHandler(opts)
+        // eslint-disable-next-line custom-rules/no-process-exit
+        process.exit(0)
+      },
+    )
 
-      taskCmd
-        .command('get <id>')
-        .description('Get details of a task')
-        .option('-l, --list <id>', 'Task list ID (defaults to "tasklist")')
-        .action(async (id: string, opts: { list?: string }) => {
-          const { taskGetHandler } = await import('./cli/handlers/ant.js')
-          await taskGetHandler(id, opts)
-        })
+  taskCmd
+    .command('get <id>')
+    .description('Get details of a task')
+    .option('-l, --list <id>', 'Task list ID (defaults to "tasklist")')
+    .action(async (id: string, opts: { list?: string }) => {
+      await taskGetHandler(id, opts)
+      // eslint-disable-next-line custom-rules/no-process-exit
+      process.exit(0)
+    })
 
-      taskCmd
-        .command('update <id>')
-        .description('Update a task')
-        .option('-l, --list <id>', 'Task list ID (defaults to "tasklist")')
-        .option(
-          '-s, --status <status>',
-          `Set status (${TASK_STATUSES.join(', ')})`,
-        )
-        .option('--subject <text>', 'Update subject')
-        .option('-d, --description <text>', 'Update description')
-        .option('--owner <agentId>', 'Set owner')
-        .option('--clear-owner', 'Clear owner')
-        .action(
-          async (
-            id: string,
-            opts: {
-              list?: string
-              status?: string
-              subject?: string
-              description?: string
-              owner?: string
-              clearOwner?: boolean
-            },
-          ) => {
-            const { taskUpdateHandler } = await import('./cli/handlers/ant.js')
-            await taskUpdateHandler(id, opts)
-          },
-        )
+  taskCmd
+    .command('update <id>')
+    .description('Update a task')
+    .option('-l, --list <id>', 'Task list ID (defaults to "tasklist")')
+    .option(
+      '-s, --status <status>',
+      `Set status (${TASK_STATUSES.join(', ')})`,
+    )
+    .option('--subject <text>', 'Update subject')
+    .option('-d, --description <text>', 'Update description')
+    .option('--owner <agentId>', 'Set owner')
+    .option('--clear-owner', 'Clear owner')
+    .action(
+      async (
+        id: string,
+        opts: {
+          list?: string
+          status?: string
+          subject?: string
+          description?: string
+          owner?: string
+          clearOwner?: boolean
+        },
+      ) => {
+        await taskUpdateHandler(id, opts)
+        // eslint-disable-next-line custom-rules/no-process-exit
+        process.exit(0)
+      },
+    )
 
-      taskCmd
-        .command('dir')
-        .description('Show the tasks directory path')
-        .option('-l, --list <id>', 'Task list ID (defaults to "tasklist")')
-        .action(async (opts: { list?: string }) => {
-          const { taskDirHandler } = await import('./cli/handlers/ant.js')
-          await taskDirHandler(opts)
-        })
-    }
+  taskCmd
+    .command('dir')
+    .description('Show the tasks directory path')
+    .option('-l, --list <id>', 'Task list ID (defaults to "tasklist")')
+    .action(async (opts: { list?: string }) => {
+      await taskDirHandler(opts)
+      // eslint-disable-next-line custom-rules/no-process-exit
+      process.exit(0)
+    })
 
-    // claude completion <shell>
-    program
-      .command('completion <shell>', { hidden: true })
-      .description('Generate shell completion script (bash, zsh, or fish)')
-      .option(
-        '--output <file>',
-        'Write completion script directly to a file instead of stdout',
-      )
-      .action(async (shell: string, opts: { output?: string }) => {
-        const { completionHandler } = await import('./cli/handlers/ant.js')
-        await completionHandler(shell, opts, program)
-      })
-  }
+  // claude completion <shell>
+  program
+    .command('completion <shell>', { hidden: true })
+    .description('Generate shell completion script (bash, zsh, or fish)')
+    .option(
+      '--output <file>',
+      'Write completion script directly to a file instead of stdout',
+    )
+    .action(async (shell: string, opts: { output?: string }) => {
+      await completionHandler(shell, opts, program)
+      // eslint-disable-next-line custom-rules/no-process-exit
+      process.exit(0)
+    })
 
   profileCheckpoint('run_before_parse')
   await program.parseAsync(process.argv)

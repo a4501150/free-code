@@ -1513,7 +1513,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
       this.serverConfig.oauth?.xaa &&
       !tokenData?.refreshToken &&
       (!tokenData?.accessToken ||
-        (tokenData.expiresAt - Date.now()) / 1000 <= 300)
+        ((tokenData.expiresAt ?? 0) - Date.now()) / 1000 <= 300)
     ) {
       if (!this._refreshInProgress) {
         logMCPDebug(
@@ -1546,7 +1546,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
     }
 
     // Check if token is expired
-    const expiresIn = (tokenData.expiresAt - Date.now()) / 1000
+    const expiresIn = ((tokenData.expiresAt ?? 0) - Date.now()) / 1000
 
     // Step-up check: if a 403 insufficient_scope was detected and the current
     // token doesn't have the requested scope, omit refresh_token below so the
@@ -1611,7 +1611,11 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
     }
 
     // Return current tokens (may be expired if refresh failed or not needed yet)
-    const tokens = {
+    if (!tokenData.accessToken) {
+      logMCPDebug(this.serverName, `No access token cached — returning undefined`)
+      return undefined
+    }
+    const tokens: OAuthTokens = {
       access_token: tokenData.accessToken,
       refresh_token: needsStepUp ? undefined : tokenData.refreshToken,
       expires_in: expiresIn,
@@ -1620,7 +1624,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
     }
 
     logMCPDebug(this.serverName, `Returning tokens`)
-    logMCPDebug(this.serverName, `Token length: ${tokens.access_token?.length}`)
+    logMCPDebug(this.serverName, `Token length: ${tokens.access_token.length}`)
     logMCPDebug(this.serverName, `Has refresh token: ${!!tokens.refresh_token}`)
     logMCPDebug(this.serverName, `Expires in: ${Math.floor(expiresIn)}s`)
 
@@ -2068,8 +2072,8 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
       const data = storage.read()
       const tokenData = data?.mcpOAuth?.[serverKey]
       if (tokenData) {
-        const expiresIn = (tokenData.expiresAt - Date.now()) / 1000
-        if (expiresIn > 300) {
+        const expiresIn = ((tokenData.expiresAt ?? 0) - Date.now()) / 1000
+        if (expiresIn > 300 && tokenData.accessToken) {
           logMCPDebug(
             this.serverName,
             `Another process already refreshed tokens (expires in ${Math.floor(expiresIn)}s)`,
@@ -2202,8 +2206,8 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
           const serverKey = getServerKey(this.serverName, this.serverConfig)
           const tokenData = data?.mcpOAuth?.[serverKey]
           if (tokenData) {
-            const expiresIn = (tokenData.expiresAt - Date.now()) / 1000
-            if (expiresIn > 300) {
+            const expiresIn = ((tokenData.expiresAt ?? 0) - Date.now()) / 1000
+            if (expiresIn > 300 && tokenData.accessToken) {
               logMCPDebug(
                 this.serverName,
                 `Another process refreshed tokens, using those`,

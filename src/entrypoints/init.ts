@@ -14,6 +14,7 @@ import {
   isEligibleForRemoteManagedSettings,
 } from '../services/remoteManagedSettings/index.js'
 import { preconnectAnthropicApi } from '../utils/apiPreconnect.js'
+import { cleanupSessionTeams } from '../utils/swarm/teamHelpers.js'
 import { applyExtraCACertsFromConfig } from '../utils/caCertsConfig.js'
 import { registerCleanup } from '../utils/cleanupRegistry.js'
 import { enableConfigs, recordFirstStartTime } from '../utils/config.js'
@@ -132,12 +133,8 @@ export const init = memoize(async (): Promise<void> => {
 
     // gh-32730: teams created by subagents (or main agent without
     // explicit TeamDelete) were left on disk forever. Register cleanup
-    // for all teams created this session. Lazy import: swarm code is
-    // behind feature gate and most sessions never create teams.
+    // for all teams created this session.
     registerCleanup(async () => {
-      const { cleanupSessionTeams } = await import(
-        '../utils/swarm/teamHelpers.js'
-      )
       await cleanupSessionTeams()
     })
 

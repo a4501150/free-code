@@ -1,6 +1,8 @@
+import { feature } from 'bun:bundle'
 import figures from 'figures'
 import * as React from 'react'
 import { useMemo, useState } from 'react'
+import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
 import { useTerminalSize } from 'src/hooks/useTerminalSize.js'
 import { stringWidth } from 'src/ink/stringWidth.js'
 import { useAppState, useSetAppState } from 'src/state/AppState.js'
@@ -51,7 +53,9 @@ export function BackgroundTaskStatus({
       (Object.values(tasks ?? {}) as TaskState[]).filter(
         t =>
           isBackgroundTask(t) &&
-          !("external" === 'ant' && isPanelAgentTask(t)),
+          !(feature('COORDINATOR_MODE') && isCoordinatorMode()
+            ? isPanelAgentTask(t)
+            : false),
       ),
     [tasks],
   )

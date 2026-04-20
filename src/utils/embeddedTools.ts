@@ -1,3 +1,4 @@
+import { feature } from 'bun:bundle'
 import { isEnvTruthy } from './envUtils.js'
 
 /**
@@ -18,6 +19,21 @@ export function hasEmbeddedSearchTools(): boolean {
   return (
     e !== 'sdk-ts' && e !== 'sdk-py' && e !== 'sdk-cli' && e !== 'local-agent'
   )
+}
+
+/**
+ * True when Glob/Grep should be omitted and the model should prefer
+ * `find` / `grep` / `rg` via the Bash tool. Distinct from
+ * hasEmbeddedSearchTools(), which specifically reports whether the
+ * bun binary has the bfs/ugrep fallbacks baked in (a perf concern).
+ *
+ * Gated by the `DEDICATED_SEARCH_TOOLS` feature flag — default builds
+ * strip Glob/Grep and use bash-first prompt variants. Opt in at build
+ * time with `--feature=DEDICATED_SEARCH_TOOLS` to restore them.
+ */
+export function shouldPreferBashForSearch(): boolean {
+  if (feature('DEDICATED_SEARCH_TOOLS')) return hasEmbeddedSearchTools()
+  return true
 }
 
 /**

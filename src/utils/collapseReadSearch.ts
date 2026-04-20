@@ -30,16 +30,11 @@ import {
   isShellCommandTargetingMemory,
 } from './memoryFileDetection.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const teamMemOps = feature('TEAMMEM')
-  ? (require('./teamMemoryOps.js') as typeof import('./teamMemoryOps.js'))
-  : null
-const SNIP_TOOL_NAME = feature('HISTORY_SNIP')
-  ? (
-      require('../tools/SnipTool/prompt.js') as typeof import('../tools/SnipTool/prompt.js')
-    ).SNIP_TOOL_NAME
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as teamMemOpsNs from './teamMemoryOps.js'
+import * as snipToolPromptNs from '../tools/SnipTool/prompt.js'
+
+const teamMemOps = feature('TEAMMEM') ? teamMemOpsNs : null
+const SNIP_TOOL_NAME = feature('HISTORY_SNIP') ? snipToolPromptNs.SNIP_TOOL_NAME : null
 
 /**
  * Result of checking if a tool use is a search or read operation.
@@ -314,7 +309,7 @@ function getCollapsibleToolInfo(
     const firstContent = msg.messages[0]?.message.content[0]
     const info = getSearchOrReadFromContent(
       firstContent
-        ? { type: 'tool_use', name: msg.toolName, input: firstContent.input }
+        ? { type: 'tool_use', name: msg.toolName, input: (firstContent as { input?: unknown }).input }
         : undefined,
       tools,
     )
@@ -500,11 +495,11 @@ export function hasAnyToolInProgress(
 export function getDisplayMessageFromCollapsed(
   message: CollapsedReadSearchGroup,
 ): Exclude<CollapsibleMessage, { type: 'grouped_tool_use' }> {
-  const firstMsg = message.displayMessage
-  if (firstMsg.type === 'grouped_tool_use') {
-    return firstMsg.displayMessage
+  const firstMsg = message.displayMessage as import('../types/message.js').NormalizedMessage & { type?: string; displayMessage?: unknown }
+  if ((firstMsg as {type: string}).type === 'grouped_tool_use') {
+    return (firstMsg as {displayMessage: Exclude<CollapsibleMessage, { type: 'grouped_tool_use' }>}).displayMessage
   }
-  return firstMsg
+  return firstMsg as Exclude<CollapsibleMessage, { type: 'grouped_tool_use' }>
 }
 
 /**
@@ -716,8 +711,8 @@ function createCollapsedGroup(
     readFilePaths: nonMemReadFilePaths,
     searchArgs: group.nonMemSearchArgs,
     latestDisplayHint: group.latestDisplayHint,
-    messages: group.messages,
-    displayMessage: firstMsg,
+    messages: group.messages as unknown as import('../types/message.js').NormalizedMessage[],
+    displayMessage: firstMsg as import('../types/message.js').NormalizedMessage,
     uuid: `collapsed-${firstMsg.uuid}` as UUID,
     timestamp: firstMsg.timestamp,
   }

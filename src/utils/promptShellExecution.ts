@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import type { Tool, ToolUseContext } from '../Tool.js'
 import { BashTool } from '../tools/BashTool/BashTool.js'
+import { PowerShellTool } from '../tools/PowerShellTool/PowerShellTool.js'
 import { logForDebugging } from './debug.js'
 import { errorMessage, MalformedCommandError, ShellError } from './errors.js'
 import type { FrontmatterShell } from './frontmatterParser.js'
@@ -26,24 +27,7 @@ type PromptShellTool = Tool & {
 
 import { isPowerShellToolEnabled } from './shell/shellToolUtils.js'
 
-// Lazy: this file is on the startup import chain (main → commands →
-// loadSkillsDir → here). A static import would load PowerShellTool.ts
-// (and transitively parser.ts, validators, etc.) at startup on all
-// platforms, defeating tools.ts's lazy require. Deferred until the
-// first skill with `shell: powershell` actually runs.
-/* eslint-disable @typescript-eslint/no-require-imports */
-const getPowerShellTool = (() => {
-  let cached: PromptShellTool | undefined
-  return (): PromptShellTool => {
-    if (!cached) {
-      cached = (
-        require('../tools/PowerShellTool/PowerShellTool.js') as typeof import('../tools/PowerShellTool/PowerShellTool.js')
-      ).PowerShellTool
-    }
-    return cached
-  }
-})()
-/* eslint-enable @typescript-eslint/no-require-imports */
+const getPowerShellTool = (): PromptShellTool => PowerShellTool
 
 // Pattern for code blocks: ```! command ```
 const BLOCK_PATTERN = /```!\s*\n?([\s\S]*?)\n?```/g

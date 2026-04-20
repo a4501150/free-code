@@ -33,9 +33,9 @@ export const OverflowTestTool = buildTool({
   isConcurrencySafe() {
     return true
   },
-  async call(input): Promise<Output> {
+  async call(input) {
     const count = Math.max(0, Math.min(input.size, 10_000_000))
-    return { data: 'x'.repeat(count) }
+    return { data: { data: 'x'.repeat(count) } }
   },
   renderToolUseMessage() {
     return null

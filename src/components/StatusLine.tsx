@@ -135,9 +135,9 @@ function buildStatusLineCommandInput(
       total_input_tokens: getTotalInputTokens(),
       total_output_tokens: getTotalOutputTokens(),
       context_window_size: contextWindowSize,
-      current_usage: currentUsage,
-      used_percentage: contextPercentages.used,
-      remaining_percentage: contextPercentages.remaining,
+      current_usage: (currentUsage as unknown as number) ?? 0,
+      used_percentage: contextPercentages.used ?? 0,
+      remaining_percentage: contextPercentages.remaining ?? 0,
     },
     exceeds_200k_tokens: exceeds200kTokens,
     ...((rateLimits.five_hour || rateLimits.seven_day) && {

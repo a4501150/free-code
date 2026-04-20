@@ -248,7 +248,7 @@ function ModeIndicator({
         Object.values(tasks),
         t =>
           isBackgroundTask(t) &&
-          !("external" === 'ant' && isPanelAgentTask(t)),
+          !(feature('COORDINATOR_MODE') ? isPanelAgentTask(t) : false),
       ),
     [tasks],
   )
@@ -473,7 +473,7 @@ function ModeIndicator({
 
   // Add "↓ to manage tasks" hint when panel has visible rows
   const hasCoordinatorTasks =
-    "external" === 'ant' && getVisibleAgentTasks(tasks).length > 0
+    feature('COORDINATOR_MODE') ? getVisibleAgentTasks(tasks).length > 0 : false
 
   // Tasks pill renders as a Box sibling (not a parts entry) so its
   // click-target Box isn't nested inside <Text wrap="truncate"> — the

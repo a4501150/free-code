@@ -1,3 +1,4 @@
+import axios from 'axios'
 import memoize from 'lodash-es/memoize.js'
 import { homedir } from 'os'
 import { join } from 'path'
@@ -27,8 +28,7 @@ export const getGlobalClaudeFile = memoize((): string => {
 
 const hasInternetAccess = memoize(async (): Promise<boolean> => {
   try {
-    const { default: axiosClient } = await import('axios')
-    await axiosClient.head('http://1.1.1.1', {
+    await axios.head('http://1.1.1.1', {
       signal: AbortSignal.timeout(1000),
     })
     return true

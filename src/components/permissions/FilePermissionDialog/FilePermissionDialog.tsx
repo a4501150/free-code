@@ -73,10 +73,10 @@ export function FilePermissionDialog<T extends ToolInput = ToolInput>({
   workerBadge,
   languageName: languageNameOverride,
 }: FilePermissionDialogProps<T>): React.ReactNode {
-  // Derive from path unless caller provided an explicit override (NotebookEdit
-  // passes 'python'/'markdown' from cell_type). getLanguageName is async;
-  // downstream UnaryEvent.language_name and logPermissionEvent already accept
-  // Promise<string>. useMemo keeps the promise stable across renders.
+  // Derive from path unless caller provided an explicit override.
+  // getLanguageName is async; downstream UnaryEvent.language_name and
+  // logPermissionEvent already accept Promise<string>. useMemo keeps the
+  // promise stable across renders.
   const languageName = useMemo(
     () => languageNameOverride ?? (path ? getLanguageName(path) : 'none'),
     [languageNameOverride, path],

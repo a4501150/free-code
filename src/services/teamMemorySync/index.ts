@@ -40,6 +40,7 @@ import {
   validateTeamMemKey,
 } from '../../memdir/teamMemPaths.js'
 import { count } from '../../utils/array.js'
+import { clearMemoryFileCaches } from '../../utils/claudemd.js'
 import {
   checkAndRefreshOAuthTokenIfNeeded,
   getClaudeAIOAuthTokens,
@@ -841,7 +842,6 @@ export async function pullTeamMemory(
 
   const filesWritten = await writeRemoteEntriesToLocal(entries)
   if (filesWritten > 0) {
-    const { clearMemoryFileCaches } = await import('../../utils/claudemd.js')
     clearMemoryFileCaches()
   }
   logForDebugging(`team-memory-sync: pulled ${filesWritten} files`, {

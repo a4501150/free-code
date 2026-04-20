@@ -75,6 +75,8 @@ export function isNavigableMessage(msg: NavigableMessage): boolean {
           return true
       }
       return false
+    default:
+      return false
   }
 }
 
@@ -88,7 +90,6 @@ const PRIMARY_INPUT: Record<string, PrimaryInput> = {
   Read: { label: 'path', extract: str('file_path') },
   Edit: { label: 'path', extract: str('file_path') },
   Write: { label: 'path', extract: str('file_path') },
-  NotebookEdit: { label: 'path', extract: str('notebook_path') },
   Bash: { label: 'command', extract: str('command') },
   Grep: { label: 'pattern', extract: str('pattern') },
   Glob: { label: 'pattern', extract: str('pattern') },
@@ -361,17 +362,15 @@ export function copyTextOf(msg: NavigableMessage): string {
       return msg.messages
         .flatMap(m =>
           m.type === 'user'
-            ? [toolResultText(m)]
-            : m.type === 'grouped_tool_use'
-              ? m.results.map(toolResultText)
-              : [],
+            ? [toolResultText(m as NormalizedUserMessage)]
+            : [],
         )
         .filter(Boolean)
         .join('\n\n')
     case 'system':
-      if ('content' in msg) return msg.content
-      if ('error' in msg) return String(msg.error)
-      return msg.subtype
+      if ('content' in msg) return (msg as { content: string }).content
+      if ('error' in msg) return String((msg as { error: unknown }).error)
+      return (msg as { subtype: string }).subtype
     case 'attachment': {
       const a = msg.attachment
       if (a.type === 'queued_command') {
@@ -382,6 +381,8 @@ export function copyTextOf(msg: NavigableMessage): string {
       }
       return `[${a.type}]`
     }
+    default:
+      return ''
   }
 }
 

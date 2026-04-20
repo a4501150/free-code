@@ -6,6 +6,11 @@
  * for yielding between actions.
  */
 
+import {
+  activateProactive,
+  deactivateProactive,
+  isProactiveActive,
+} from '../proactive/index.js'
 import type {
   Command,
   LocalJSXCommandContext,
@@ -25,13 +30,6 @@ const proactive = {
         onDone: LocalJSXCommandOnDone,
         _context: ToolUseContext & LocalJSXCommandContext,
       ): Promise<React.ReactNode> {
-        // Dynamic import to avoid pulling proactive module into non-KAIROS builds
-        const {
-          isProactiveActive,
-          activateProactive,
-          deactivateProactive,
-        } = await import('../proactive/index.js')
-
         const wasActive = isProactiveActive()
 
         if (wasActive) {

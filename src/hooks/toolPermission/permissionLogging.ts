@@ -25,7 +25,7 @@ type PermissionDecisionArgs =
   | { decision: 'accept'; source: PermissionApprovalSource | 'config' }
   | { decision: 'reject'; source: PermissionRejectionSource | 'config' }
 
-const CODE_EDITING_TOOLS = ['Edit', 'Write', 'NotebookEdit']
+const CODE_EDITING_TOOLS = ['Edit', 'Write']
 
 function isCodeEditingTool(toolName: string): boolean {
   return CODE_EDITING_TOOLS.includes(toolName)
@@ -87,7 +87,7 @@ function baseMetadata(
   messageId: string,
   toolName: string,
   waitMs: number | undefined,
-): { [key: string]: boolean | number | undefined } {
+): { [key: string]: string | boolean | number | undefined } {
   return {
     messageID:
       messageId,

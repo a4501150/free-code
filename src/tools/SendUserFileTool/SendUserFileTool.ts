@@ -11,6 +11,7 @@ import { resolve } from 'path'
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { lazySchema } from '../../utils/lazySchema.js'
+import { isBriefEnabled } from '../BriefTool/BriefTool.js'
 import {
   SEND_USER_FILE_TOOL_NAME,
   DESCRIPTION,
@@ -63,6 +64,10 @@ export const SendUserFileTool = buildTool({
 
   userFacingName() {
     return 'SendUserFile'
+  },
+
+  isEnabled() {
+    return isBriefEnabled()
   },
 
   isReadOnly() {

@@ -10,10 +10,8 @@ import { getMainLoopModelOverride } from "../../bootstrap/state.js";
 import type { PermissionMode } from "../permissions/PermissionMode.js";
 import { getProviderRegistry } from "./providerRegistry.js";
 import type { ModelName, ModelSetting } from "./modelTypes.js";
-import {
-  parseModelStringFromRegistry,
-  qualifyModel,
-} from "./parseModelString.js";
+import { qualifyModel, stripContextSuffix } from "./parseModelString.js";
+import { parseModelStringFromRegistry } from "./parseModelStringWithRegistry.js";
 import { getInitialSettings } from "../settings/settings.js";
 
 // Re-export types from modelTypes for backward compat
@@ -22,7 +20,9 @@ export type { ModelShortName, ModelName, ModelSetting } from "./modelTypes.js";
 export function getSmallFastModel(): ModelName {
   // Priority: env var > freecode.json defaultSmallFastModel > defaultModel
   if (process.env.ANTHROPIC_SMALL_FAST_MODEL) {
-    return qualifyWithDefault(process.env.ANTHROPIC_SMALL_FAST_MODEL);
+    return qualifyWithDefault(
+      stripContextSuffix(process.env.ANTHROPIC_SMALL_FAST_MODEL),
+    );
   }
   const configured = getProviderRegistry().getConfiguredDefaultSmallFastModel();
   if (configured) {
@@ -55,7 +55,7 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
     // Priority: env var > freecode.json defaultModel
     const envModel = process.env.ANTHROPIC_MODEL;
     if (envModel) {
-      specifiedModel = envModel;
+      specifiedModel = stripContextSuffix(envModel);
     } else {
       const registry = getProviderRegistry();
       specifiedModel = registry.getConfiguredDefaultModel() || undefined;

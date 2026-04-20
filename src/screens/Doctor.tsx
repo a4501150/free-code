@@ -98,8 +98,8 @@ export function Doctor({ onDone }: Props): React.ReactNode {
       },
       {
         name: 'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
-        // Check for values against the latest supported model
-        ...getModelMaxOutputTokens(getWireModelId('claude-opus-4-6')),
+        default: getModelMaxOutputTokens(getWireModelId('claude-opus-4-6')),
+        upperLimit: Number.MAX_SAFE_INTEGER,
       },
     ]
     return envVars

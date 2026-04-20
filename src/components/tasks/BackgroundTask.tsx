@@ -68,7 +68,7 @@ export function BackgroundTask({
             status={task.status}
             label={
               task.status === 'running'
-                ? `${task.agentCount} ${plural(task.agentCount, 'agent')}`
+                ? `${task.agentCount ?? 0} ${plural(task.agentCount ?? 0, 'agent')}`
                 : task.status === 'completed'
                   ? 'done'
                   : undefined

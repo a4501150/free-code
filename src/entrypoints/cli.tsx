@@ -4,11 +4,28 @@ import { feature } from 'bun:bundle'
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
 process.env.COREPACK_ENABLE_AUTO_PIN = '0'
 
+import * as bg from '../cli/bg.js'
+import { environmentRunnerMain } from '../environment-runner/main.js'
+import { selfHostedRunnerMain } from '../self-hosted-runner/main.js'
+import { templatesMain } from '../cli/handlers/templateJobs.js'
+import { daemonMain } from '../daemon/main.js'
+import { runDaemonWorker } from '../daemon/workerRegistry.js'
+import { main as cliMain } from '../main.js'
+import { getSystemPrompt } from '../constants/prompts.js'
+import { enableConfigs } from '../utils/config.js'
+import { startCapturingEarlyInput } from '../utils/earlyInput.js'
+import { getMainLoopModel } from '../utils/model/model.js'
+import { exitWithError } from '../utils/process.js'
+import { initSinks } from '../utils/sinks.js'
+import { profileCheckpoint } from '../utils/startupProfiler.js'
+import { execIntoTmuxWorktree } from '../utils/worktree.js'
+import { isWorktreeModeEnabled } from '../utils/worktreeModeEnabled.js'
 
 /**
  * Bootstrap entrypoint - checks for special flags before loading the full CLI.
- * All imports are dynamic to minimize module evaluation for fast paths.
- * Fast-path for --version has zero imports beyond this file.
+ * All imports are now static — the prior lazy-import scheme meant to keep
+ * --version fast has been removed as part of the lazy-import elimination
+ * refactor.
  */
 async function main(): Promise<void> {
   const args = process.argv.slice(2)
@@ -24,8 +41,6 @@ async function main(): Promise<void> {
     return
   }
 
-  // For all other paths, load the startup profiler
-  const { profileCheckpoint } = await import('../utils/startupProfiler.js')
   profileCheckpoint('cli_entry')
 
   // Fast-path for --dump-system-prompt: output the rendered system prompt and exit.
@@ -33,31 +48,12 @@ async function main(): Promise<void> {
   // Ant-only: eliminated from external builds via feature flag.
   if (feature('DUMP_SYSTEM_PROMPT') && args[0] === '--dump-system-prompt') {
     profileCheckpoint('cli_dump_system_prompt_path')
-    const { enableConfigs } = await import('../utils/config.js')
     enableConfigs()
-    const { getMainLoopModel } = await import('../utils/model/model.js')
     const modelIdx = args.indexOf('--model')
     const model = (modelIdx !== -1 && args[modelIdx + 1]) || getMainLoopModel()
-    const { getSystemPrompt } = await import('../constants/prompts.js')
     const prompt = await getSystemPrompt([], model)
     // biome-ignore lint/suspicious/noConsole:: intentional console output
     console.log(prompt.join('\n'))
-    return
-  }
-
-  if (process.argv[2] === '--claude-in-chrome-mcp') {
-    profileCheckpoint('cli_claude_in_chrome_mcp_path')
-    const { runClaudeInChromeMcpServer } = await import(
-      '../utils/claudeInChrome/mcpServer.js'
-    )
-    await runClaudeInChromeMcpServer()
-    return
-  } else if (process.argv[2] === '--chrome-native-host') {
-    profileCheckpoint('cli_chrome_native_host_path')
-    const { runChromeNativeHost } = await import(
-      '../utils/claudeInChrome/chromeNativeHost.js'
-    )
-    await runChromeNativeHost()
     return
   }
 
@@ -67,7 +63,6 @@ async function main(): Promise<void> {
   // workers are lean. If a worker kind needs configs/auth (assistant will),
   // it calls them inside its run() fn.
   if (feature('DAEMON') && args[0] === '--daemon-worker') {
-    const { runDaemonWorker } = await import('../daemon/workerRegistry.js')
     await runDaemonWorker(args[1])
     return
   }
@@ -75,18 +70,14 @@ async function main(): Promise<void> {
   // Fast-path for `claude daemon [subcommand]`: long-running supervisor.
   if (feature('DAEMON') && args[0] === 'daemon') {
     profileCheckpoint('cli_daemon_path')
-    const { enableConfigs } = await import('../utils/config.js')
     enableConfigs()
-    const { initSinks } = await import('../utils/sinks.js')
     initSinks()
-    const { daemonMain } = await import('../daemon/main.js')
     await daemonMain(args.slice(1))
     return
   }
 
   // Fast-path for `claude ps|logs|attach|kill` and `--bg`/`--background`.
-  // Session management against the ~/.claude/sessions/ registry. Flag
-  // literals are inlined so bg.js only loads when actually dispatching.
+  // Session management against the ~/.claude/sessions/ registry.
   if (
     feature('BG_SESSIONS') &&
     (args[0] === 'ps' ||
@@ -97,9 +88,7 @@ async function main(): Promise<void> {
       args.includes('--background'))
   ) {
     profileCheckpoint('cli_bg_path')
-    const { enableConfigs } = await import('../utils/config.js')
     enableConfigs()
-    const bg = await import('../cli/bg.js')
     switch (args[0]) {
       case 'ps':
         await bg.psHandler(args.slice(1))
@@ -125,7 +114,6 @@ async function main(): Promise<void> {
     (args[0] === 'new' || args[0] === 'list' || args[0] === 'reply')
   ) {
     profileCheckpoint('cli_templates_path')
-    const { templatesMain } = await import('../cli/handlers/templateJobs.js')
     await templatesMain(args)
     // process.exit (not return) — mountFleetView's Ink TUI can leave event
     // loop handles that prevent natural exit.
@@ -137,9 +125,6 @@ async function main(): Promise<void> {
   // feature() must stay inline for build-time dead code elimination.
   if (feature('BYOC_ENVIRONMENT_RUNNER') && args[0] === 'environment-runner') {
     profileCheckpoint('cli_environment_runner_path')
-    const { environmentRunnerMain } = await import(
-      '../environment-runner/main.js'
-    )
     await environmentRunnerMain(args.slice(1))
     return
   }
@@ -149,9 +134,6 @@ async function main(): Promise<void> {
   // heartbeat). feature() must stay inline for build-time dead code elimination.
   if (feature('SELF_HOSTED_RUNNER') && args[0] === 'self-hosted-runner') {
     profileCheckpoint('cli_self_hosted_runner_path')
-    const { selfHostedRunnerMain } = await import(
-      '../self-hosted-runner/main.js'
-    )
     await selfHostedRunnerMain(args.slice(1))
     return
   }
@@ -165,20 +147,14 @@ async function main(): Promise<void> {
       args.some(a => a.startsWith('--worktree=')))
   ) {
     profileCheckpoint('cli_tmux_worktree_fast_path')
-    const { enableConfigs } = await import('../utils/config.js')
     enableConfigs()
-    const { isWorktreeModeEnabled } = await import(
-      '../utils/worktreeModeEnabled.js'
-    )
     if (isWorktreeModeEnabled()) {
-      const { execIntoTmuxWorktree } = await import('../utils/worktree.js')
       const result = await execIntoTmuxWorktree(args)
       if (result.handled) {
         return
       }
       // If not handled (e.g., error), fall through to normal CLI
       if (result.error) {
-        const { exitWithError } = await import('../utils/process.js')
         exitWithError(result.error)
       }
     }
@@ -199,10 +175,8 @@ async function main(): Promise<void> {
   }
 
   // No special flags detected, load and run the full CLI
-  const { startCapturingEarlyInput } = await import('../utils/earlyInput.js')
   startCapturingEarlyInput()
   profileCheckpoint('cli_before_main_import')
-  const { main: cliMain } = await import('../main.js')
   profileCheckpoint('cli_after_main_import')
   await cliMain()
   profileCheckpoint('cli_after_main_complete')

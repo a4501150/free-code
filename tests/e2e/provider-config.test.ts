@@ -13,10 +13,18 @@ import {
   beforeAll,
   afterAll,
   afterEach,
+  setDefaultTimeout,
 } from "bun:test";
+
+// e2e tests launch the compiled CLI in tmux and drive it end-to-end —
+// they need far more than bun's 5s default. Matches plan-mode.test.ts.
+setDefaultTimeout(120_000);
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { MockAnthropicServer } from "../helpers/mock-server";
 import { MockOpenAIServer } from "../helpers/mock-openai-server";
-import { textResponse } from "../helpers/fixture-builders";
+import { textResponse, toolUseResponse } from "../helpers/fixture-builders";
 import { TmuxSession, createLoggingTest } from "./tmux-helpers";
 
 const test = createLoggingTest(bunTest);
@@ -556,6 +564,261 @@ describe("Provider Config E2E", () => {
       const anthropicRequests = anthropicServer.getRequestLog();
       expect(anthropicRequests.length).toBeGreaterThanOrEqual(1);
       expect(openaiServer.getRequestLog().length).toBe(0);
+    });
+  });
+
+  // ─── Subagent Model Tier Routing ───────────────────────────
+  //
+  // Exercises the mostPowerful tier sentinel in src/utils/model/agent.ts:
+  //   1. Subagent with model: mostPowerful uses defaultMostPowerfulModel when
+  //      configured.
+  //   2. defaultSubagentModel is a blunt override that beats the tier sentinel
+  //      (clause a — documented in CLAUDE.md).
+  //   3. Falls back to inherit (main model) when defaultMostPowerfulModel is
+  //      unset.
+  //
+  // Uses a user-defined markdown agent rather than the built-in Plan agent:
+  // Plan is gated behind `feature('BUILTIN_EXPLORE_PLAN_AGENTS')` which is
+  // dev-full only, so the stock ./cli build (used by e2e tests) doesn't
+  // include it. The markdown path exercises the identical resolution code
+  // in getAgentModel().
+
+  describe("Subagent Model Tier Routing", () => {
+    let session: TmuxSession;
+    let tierCwd: string | null = null;
+
+    // Unique marker in the user-agent's system prompt — used to pick the
+    // subagent's request out of the mock-server log.
+    const AGENT_MARKER = "TIER_TEST_SUBAGENT_MARKER_XYZ123";
+
+    async function setupTierAgentCwd(): Promise<string> {
+      const cwd = await mkdtemp(join(tmpdir(), "claude-e2e-tier-cwd-"));
+      const agentsDir = join(cwd, ".claude", "agents");
+      await mkdir(agentsDir, { recursive: true });
+      await writeFile(
+        join(agentsDir, "TierTest.md"),
+        [
+          "---",
+          "name: TierTest",
+          "description: Test subagent for mostPowerful tier routing",
+          "model: mostPowerful",
+          "---",
+          "",
+          `You are a test subagent. ${AGENT_MARKER}. Respond briefly.`,
+          "",
+        ].join("\n"),
+      );
+      return cwd;
+    }
+
+    afterEach(async () => {
+      if (session) await session.stop();
+      if (tierCwd) {
+        await rm(tierCwd, { recursive: true, force: true }).catch(() => {});
+        tierCwd = null;
+      }
+    });
+
+    /**
+     * Return the model field of the request whose system prompt carries the
+     * unique TierTest marker. Returns undefined if no such request exists.
+     */
+    function tierSubagentModel(
+      requests: ReturnType<MockAnthropicServer["getRequestLog"]>,
+    ): string | undefined {
+      const subReq = requests.find((r) => systemMatchesMarker(r.body.system));
+      return subReq?.body.model;
+    }
+
+    function systemMatchesMarker(system: unknown): boolean {
+      if (typeof system === "string") return system.includes(AGENT_MARKER);
+      if (Array.isArray(system)) {
+        for (const block of system) {
+          if (
+            block &&
+            typeof block === "object" &&
+            "text" in block &&
+            typeof (block as { text: unknown }).text === "string" &&
+            (block as { text: string }).text.includes(AGENT_MARKER)
+          ) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    /**
+     * Assert the subagent request's model matches `expected`. On mismatch,
+     * throw with a detailed dump of every request in the log (model + whether
+     * it carried the tier marker) so we can diagnose the code path that set
+     * the unexpected value without needing to reproduce the flake.
+     */
+    function assertTierSubagentModel(
+      requests: ReturnType<MockAnthropicServer["getRequestLog"]>,
+      expected: string,
+    ): void {
+      const actual = tierSubagentModel(requests);
+      if (actual === expected) return;
+      const summary = requests
+        .map((r, i) => {
+          const marker = systemMatchesMarker(r.body.system) ? " [MARKER]" : "";
+          return `  [${i}] model=${JSON.stringify(r.body.model)}${marker}`;
+        })
+        .join("\n");
+      throw new Error(
+        `tier subagent model mismatch — expected ${JSON.stringify(expected)}, ` +
+          `got ${JSON.stringify(actual)}\n` +
+          `request log (${requests.length} requests):\n${summary}`,
+      );
+    }
+
+    test("subagent with model:mostPowerful uses defaultMostPowerfulModel when configured", async () => {
+      tierCwd = await setupTierAgentCwd();
+
+      // Main agent spawns TierTest subagent; subagent returns a short reply;
+      // main agent wraps up. Verify the subagent request hits powerful-model.
+      anthropicServer.reset([
+        toolUseResponse([
+          {
+            name: "Agent",
+            input: {
+              description: "Tier test",
+              prompt: "Run the tier test",
+              subagent_type: "TierTest",
+            },
+          },
+        ]),
+        textResponse("Tier done"),
+        textResponse("Main done"),
+      ]);
+
+      session = new TmuxSession({
+        serverUrl: anthropicServer.url,
+        cwd: tierCwd,
+        settings: {
+          defaultModel: "test-anthropic:main-model",
+          defaultMostPowerfulModel: "test-anthropic:powerful-model",
+          providers: {
+            "test-anthropic": {
+              type: "anthropic",
+              baseUrl: anthropicServer.url,
+              auth: { active: "apiKey", apiKey: { key: "test-key" } },
+              models: [
+                { id: "main-model" },
+                { id: "powerful-model" },
+              ],
+            },
+          },
+        },
+      });
+      await session.start();
+
+      await session.submitAndApprove("Run tier test", 90_000);
+      await session.waitForText("Main done", 30_000);
+
+      const requests = anthropicServer.getRequestLog();
+      assertTierSubagentModel(requests, "powerful-model");
+
+      // Sanity: at least one main-loop request used main-model.
+      expect(
+        requests.some((r) => r.body.model === "main-model"),
+      ).toBe(true);
+    });
+
+    test("defaultSubagentModel overrides mostPowerful sentinel (clause a)", async () => {
+      tierCwd = await setupTierAgentCwd();
+
+      // With defaultSubagentModel set, the tier sentinel is short-circuited —
+      // sub-model wins regardless of defaultMostPowerfulModel.
+      anthropicServer.reset([
+        toolUseResponse([
+          {
+            name: "Agent",
+            input: {
+              description: "Tier test",
+              prompt: "Run the tier test",
+              subagent_type: "TierTest",
+            },
+          },
+        ]),
+        textResponse("Tier done"),
+        textResponse("Main done"),
+      ]);
+
+      session = new TmuxSession({
+        serverUrl: anthropicServer.url,
+        cwd: tierCwd,
+        settings: {
+          defaultModel: "test-anthropic:main-model",
+          defaultMostPowerfulModel: "test-anthropic:powerful-model",
+          defaultSubagentModel: "test-anthropic:sub-model",
+          providers: {
+            "test-anthropic": {
+              type: "anthropic",
+              baseUrl: anthropicServer.url,
+              auth: { active: "apiKey", apiKey: { key: "test-key" } },
+              models: [
+                { id: "main-model" },
+                { id: "powerful-model" },
+                { id: "sub-model" },
+              ],
+            },
+          },
+        },
+      });
+      await session.start();
+
+      await session.submitAndApprove("Run tier test", 90_000);
+      await session.waitForText("Main done", 30_000);
+
+      const requests = anthropicServer.getRequestLog();
+      assertTierSubagentModel(requests, "sub-model");
+    });
+
+    test("mostPowerful falls back to inherit when defaultMostPowerfulModel is unset", async () => {
+      tierCwd = await setupTierAgentCwd();
+
+      // With only defaultModel configured, the mostPowerful sentinel falls
+      // back to inherit — the subagent uses the parent's main-model.
+      anthropicServer.reset([
+        toolUseResponse([
+          {
+            name: "Agent",
+            input: {
+              description: "Tier test",
+              prompt: "Run the tier test",
+              subagent_type: "TierTest",
+            },
+          },
+        ]),
+        textResponse("Tier done"),
+        textResponse("Main done"),
+      ]);
+
+      session = new TmuxSession({
+        serverUrl: anthropicServer.url,
+        cwd: tierCwd,
+        settings: {
+          defaultModel: "test-anthropic:main-model",
+          // no defaultMostPowerfulModel, no defaultSubagentModel
+          providers: {
+            "test-anthropic": {
+              type: "anthropic",
+              baseUrl: anthropicServer.url,
+              auth: { active: "apiKey", apiKey: { key: "test-key" } },
+              models: [{ id: "main-model" }],
+            },
+          },
+        },
+      });
+      await session.start();
+
+      await session.submitAndApprove("Run tier test", 90_000);
+      await session.waitForText("Main done", 30_000);
+
+      const requests = anthropicServer.getRequestLog();
+      assertTierSubagentModel(requests, "main-model");
     });
   });
 });

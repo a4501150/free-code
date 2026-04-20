@@ -131,7 +131,7 @@ export function* normalizeMessage(message: Message): Generator<SDKMessage> {
               yield {
                 type: 'assistant',
                 message: _.message,
-                parent_tool_use_id: message.parentToolUseID,
+                parent_tool_use_id: message.parentToolUseID ?? null,
                 session_id: getSessionId(),
                 uuid: _.uuid,
                 error: _.error,
@@ -141,7 +141,7 @@ export function* normalizeMessage(message: Message): Generator<SDKMessage> {
               yield {
                 type: 'user',
                 message: _.message,
-                parent_tool_use_id: message.parentToolUseID,
+                parent_tool_use_id: message.parentToolUseID ?? null,
                 session_id: getSessionId(),
                 uuid: _.uuid,
                 timestamp: _.timestamp,
@@ -164,7 +164,7 @@ export function* normalizeMessage(message: Message): Generator<SDKMessage> {
         }
 
         // Use parentToolUseID as the key since toolUseID changes for each progress message
-        const trackingKey = message.parentToolUseID
+        const trackingKey = message.parentToolUseID ?? ''
         const now = Date.now()
         const lastSent = toolProgressLastSentTime.get(trackingKey) || 0
         const timeSinceLastSent = now - lastSent
@@ -187,7 +187,7 @@ export function* normalizeMessage(message: Message): Generator<SDKMessage> {
             tool_use_id: message.toolUseID,
             tool_name:
               message.data.type === 'bash_progress' ? 'Bash' : 'PowerShell',
-            parent_tool_use_id: message.parentToolUseID,
+            parent_tool_use_id: message.parentToolUseID ?? null,
             elapsed_time_seconds: message.data.elapsedTimeSeconds,
             task_id: message.data.taskId,
             session_id: getSessionId(),
@@ -225,7 +225,7 @@ export async function* handleOrphanedPermission(
 ): AsyncGenerator<SDKMessage, void, unknown> {
   const persistSession = !isSessionPersistenceDisabled()
   const { permissionResult, assistantMessage } = orphanedPermission
-  const { toolUseID } = permissionResult
+  const { toolUseID } = permissionResult as unknown as { toolUseID?: string }
 
   if (!toolUseID) {
     return
@@ -274,10 +274,10 @@ export async function* handleOrphanedPermission(
   const canUseTool: CanUseToolFn = async () => ({
     ...permissionResult,
     decisionReason: {
-      type: 'mode',
+      type: 'mode' as const,
       mode: 'default' as const,
     },
-  })
+  } as any)
 
   // Add the assistant message with tool_use to messages BEFORE executing
   // so the conversation history is complete (tool_use -> tool_result).

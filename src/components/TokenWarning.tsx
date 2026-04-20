@@ -8,6 +8,7 @@ import {
   isAutoCompactEnabled,
 } from '../services/compact/autoCompact.js'
 import { useCompactWarningSuppression } from '../services/compact/compactWarningHook.js'
+import * as contextCollapseNs from '../services/contextCollapse/index.js'
 
 type Props = {
   tokenUsage: number
@@ -21,10 +22,7 @@ type Props = {
  * renders this when feature('CONTEXT_COLLAPSE') + isContextCollapseEnabled().
  */
 function CollapseLabel(): React.ReactNode {
-  /* eslint-disable @typescript-eslint/no-require-imports */
-  const { getStats, subscribe } =
-    require('../services/contextCollapse/index.js') as typeof import('../services/contextCollapse/index.js')
-  /* eslint-enable @typescript-eslint/no-require-imports */
+  const { getStats, subscribe } = contextCollapseNs
 
   // Snapshot must be referentially stable across calls when the
   // underlying counts haven't changed — returning a fresh object every
@@ -89,10 +87,7 @@ export function TokenWarning({ tokenUsage, model }: Props): React.ReactNode {
   let reactiveOnlyMode = false
   let collapseMode = false
   if (feature('CONTEXT_COLLAPSE')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    const { isContextCollapseEnabled } =
-      require('../services/contextCollapse/index.js') as typeof import('../services/contextCollapse/index.js')
-    /* eslint-enable @typescript-eslint/no-require-imports */
+    const { isContextCollapseEnabled } = contextCollapseNs
     if (isContextCollapseEnabled()) {
       collapseMode = true
     }

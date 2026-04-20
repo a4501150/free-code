@@ -2,7 +2,10 @@ import type { Anthropic } from '@anthropic-ai/sdk'
 import type { BetaMessageParam as MessageParam } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 // @aws-sdk/client-bedrock-runtime is imported dynamically in countTokensWithBedrock()
 // to defer ~279KB of AWS SDK code until a Bedrock call is actually made
-import type { CountTokensCommandInput } from '@aws-sdk/client-bedrock-runtime'
+import {
+  CountTokensCommand,
+  type CountTokensCommandInput,
+} from '@aws-sdk/client-bedrock-runtime'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import { VERTEX_COUNT_TOKENS_ALLOWED_BETAS } from '../constants/betas.js'
 import type { Attachment } from '../utils/attachments.js'
@@ -412,7 +415,7 @@ function roughTokenCountEstimationForBlock(
     return 2000
   }
   if (block.type === 'tool_result') {
-    return roughTokenCountEstimationForContent(block.content)
+    return roughTokenCountEstimationForContent(block.content as string | import('@anthropic-ai/sdk/resources/messages.mjs').ContentBlockParam[] | undefined)
   }
   if (block.type === 'tool_use') {
     // input is the JSON the model generated — arbitrarily large (bash
@@ -475,9 +478,6 @@ async function countTokensWithBedrock({
       }),
     }
 
-    const { CountTokensCommand } = await import(
-      '@aws-sdk/client-bedrock-runtime'
-    )
     const input: CountTokensCommandInput = {
       modelId,
       input: {

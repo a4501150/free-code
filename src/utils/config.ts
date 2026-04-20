@@ -31,11 +31,9 @@ import { getEssentialTrafficOnlyReason } from './privacyLevel.js'
 import { getManagedFilePath } from './settings/managedPath.js'
 import type { ThemeSetting } from './theme.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const teamMemPaths = feature('TEAMMEM')
-  ? (require('../memdir/teamMemPaths.js') as typeof import('../memdir/teamMemPaths.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as teamMemPathsNs from '../memdir/teamMemPaths.js'
+
+const teamMemPaths = feature('TEAMMEM') ? teamMemPathsNs : null
 import type { ImageDimensions } from './imageResizer.js'
 import type { ModelOption } from './model/modelOptions.js'
 import { jsonParse, jsonStringify } from './slowOperations.js'
@@ -280,6 +278,9 @@ export type GlobalConfig = {
   // Transcript share prompt tracking ("Don't ask again")
   transcriptShareDismissed?: boolean
 
+  // Migration flag
+  hasResetAutoModeOptInForDefaultOffer?: boolean
+
   // Memory usage tracking
   memoryUsageCount: number // Number of times user has added to memory
 
@@ -344,9 +345,6 @@ export type GlobalConfig = {
 
   // Experiment enrollment notice tracking (keyed by experiment id)
   experimentNoticesSeenCount?: Record<string, number>
-
-  // OpusPlan experiment config
-  hasShownOpusPlanWelcome?: Record<string, boolean> // Whether the OpusPlan welcome message has been shown per org
 
   // Queue usage tracking
   promptQueueUseCount: number // Number of times use has used the prompt queue
@@ -450,17 +448,6 @@ export type GlobalConfig = {
   officialMarketplaceAutoInstallRetryCount?: number // Number of retry attempts
   officialMarketplaceAutoInstallLastAttemptTime?: number // Timestamp of last attempt
   officialMarketplaceAutoInstallNextRetryTime?: number // Earliest time to retry again
-
-  // Claude in Chrome settings
-  hasCompletedClaudeInChromeOnboarding?: boolean // Whether Claude in Chrome onboarding has been shown
-  claudeInChromeDefaultEnabled?: boolean // Whether Claude in Chrome is enabled by default (undefined means platform default)
-  cachedChromeExtensionInstalled?: boolean // Cached result of whether Chrome extension is installed
-
-  // Chrome extension pairing state (persisted across sessions)
-  chromeExtension?: {
-    pairedDeviceId?: string
-    pairedDeviceName?: string
-  }
 
   // LSP plugin recommendation preferences
   lspRecommendationDisabled?: boolean // Disable all LSP plugin recommendations
@@ -607,8 +594,6 @@ export const GLOBAL_CONFIG_KEYS = [
   'inputNeededNotifEnabled',
   'agentPushNotifEnabled',
   'respectGitignore',
-  'claudeInChromeDefaultEnabled',
-  'hasCompletedClaudeInChromeOnboarding',
   'lspRecommendationDisabled',
   'lspRecommendationNeverPlugins',
   'lspRecommendationIgnoredCount',

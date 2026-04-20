@@ -41,6 +41,8 @@ import type { PermissionMode } from './utils/permissions/PermissionMode.js'
 import { getPlanSlug } from './utils/plans.js'
 import { saveWorktreeState } from './utils/sessionStorage.js'
 import { profileCheckpoint } from './utils/startupProfiler.js'
+import * as udsMessagingNs from './utils/udsMessaging.js'
+import { captureTeammateModeSnapshot } from './utils/swarm/backends/teammateModeSnapshot.js'
 import {
   createTmuxSessionForWorktree,
   createWorktreeForSession,
@@ -88,9 +90,8 @@ export async function setup(
     // and $CLAUDE_CODE_MESSAGING_SOCKET is exported before any hook
     // (SessionStart in particular) can spawn and snapshot process.env.
     if (feature('UDS_INBOX')) {
-      const m = await import('./utils/udsMessaging.js')
-      await m.startUdsMessaging(
-        messagingSocketPath ?? m.getDefaultUdsSocketPath(),
+      await udsMessagingNs.startUdsMessaging(
+        messagingSocketPath ?? udsMessagingNs.getDefaultUdsSocketPath(),
         { isExplicit: messagingSocketPath !== undefined },
       )
     }
@@ -98,9 +99,6 @@ export async function setup(
 
   // Teammate snapshot — SIMPLE-only gate (no escape hatch, swarm not used in bare)
   if (!isBareMode() && isAgentSwarmsEnabled()) {
-    const { captureTeammateModeSnapshot } = await import(
-      './utils/swarm/backends/teammateModeSnapshot.js'
-    )
     captureTeammateModeSnapshot()
   }
 

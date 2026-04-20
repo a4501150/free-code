@@ -544,6 +544,85 @@ export const SDKControlElicitationResponseSchema = lazySchema(() =>
     .describe('Response from the SDK consumer for an elicitation request.'),
 )
 
+export const SDKControlEndSessionRequestSchema = lazySchema(() =>
+  z
+    .object({
+      subtype: z.literal('end_session'),
+      reason: z.string().optional(),
+    })
+    .describe(
+      'Instructs the agent to abort any in-flight work and close stdin gracefully.',
+    ),
+)
+
+export const SDKControlChannelEnableRequestSchema = lazySchema(() =>
+  z
+    .object({
+      subtype: z.literal('channel_enable'),
+      serverName: z.string(),
+    })
+    .describe(
+      '@internal Enables optional channel capabilities on a running MCP server.',
+    ),
+)
+
+export const SDKControlMcpAuthenticateRequestSchema = lazySchema(() =>
+  z
+    .object({
+      subtype: z.literal('mcp_authenticate'),
+      serverName: z.string(),
+    })
+    .describe(
+      'Kicks off the OAuth flow for an MCP server and returns the authorization URL.',
+    ),
+)
+
+export const SDKControlMcpOAuthCallbackUrlRequestSchema = lazySchema(() =>
+  z
+    .object({
+      subtype: z.literal('mcp_oauth_callback_url'),
+      serverName: z.string(),
+      callbackUrl: z.string(),
+    })
+    .describe(
+      'Submits an OAuth callback URL (manually pasted by the user) for an MCP server.',
+    ),
+)
+
+export const SDKControlMcpClearAuthRequestSchema = lazySchema(() =>
+  z
+    .object({
+      subtype: z.literal('mcp_clear_auth'),
+      serverName: z.string(),
+    })
+    .describe(
+      'Revokes stored OAuth credentials for an MCP server and reconnects it.',
+    ),
+)
+
+export const SDKControlGenerateSessionTitleRequestSchema = lazySchema(() =>
+  z
+    .object({
+      subtype: z.literal('generate_session_title'),
+      description: z.string(),
+      persist: z.boolean().optional(),
+    })
+    .describe(
+      'Generates a short session title from a description and optionally persists it.',
+    ),
+)
+
+export const SDKControlSideQuestionRequestSchema = lazySchema(() =>
+  z
+    .object({
+      subtype: z.literal('side_question'),
+      question: z.string(),
+    })
+    .describe(
+      'Runs a forked "side question" against the current conversation context.',
+    ),
+)
+
 
 // ============================================================================
 // Control Request/Response Wrappers
@@ -572,6 +651,13 @@ export const SDKControlRequestInnerSchema = lazySchema(() =>
     SDKControlApplyFlagSettingsRequestSchema(),
     SDKControlGetSettingsRequestSchema(),
     SDKControlElicitationRequestSchema(),
+    SDKControlEndSessionRequestSchema(),
+    SDKControlChannelEnableRequestSchema(),
+    SDKControlMcpAuthenticateRequestSchema(),
+    SDKControlMcpOAuthCallbackUrlRequestSchema(),
+    SDKControlMcpClearAuthRequestSchema(),
+    SDKControlGenerateSessionTitleRequestSchema(),
+    SDKControlSideQuestionRequestSchema(),
   ]),
 )
 

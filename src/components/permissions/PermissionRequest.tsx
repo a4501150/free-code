@@ -12,7 +12,6 @@ import { FileReadTool } from '../../tools/FileReadTool/FileReadTool.js'
 import { FileWriteTool } from '../../tools/FileWriteTool/FileWriteTool.js'
 import { GlobTool } from '../../tools/GlobTool/GlobTool.js'
 import { GrepTool } from '../../tools/GrepTool/GrepTool.js'
-import { NotebookEditTool } from '../../tools/NotebookEditTool/NotebookEditTool.js'
 import { PowerShellTool } from '../../tools/PowerShellTool/PowerShellTool.js'
 import { SkillTool } from '../../tools/SkillTool/SkillTool.js'
 import { WebFetchTool } from '../../tools/WebFetchTool/WebFetchTool.js'
@@ -26,38 +25,32 @@ import { FallbackPermissionRequest } from './FallbackPermissionRequest.js'
 import { FileEditPermissionRequest } from './FileEditPermissionRequest/FileEditPermissionRequest.js'
 import { FilesystemPermissionRequest } from './FilesystemPermissionRequest/FilesystemPermissionRequest.js'
 import { FileWritePermissionRequest } from './FileWritePermissionRequest/FileWritePermissionRequest.js'
-import { NotebookEditPermissionRequest } from './NotebookEditPermissionRequest/NotebookEditPermissionRequest.js'
 import { PowerShellPermissionRequest } from './PowerShellPermissionRequest/PowerShellPermissionRequest.js'
 import { SkillPermissionRequest } from './SkillPermissionRequest/SkillPermissionRequest.js'
 import { WebFetchPermissionRequest } from './WebFetchPermissionRequest/WebFetchPermissionRequest.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
+import * as reviewArtifactToolNs from '../../tools/ReviewArtifactTool/ReviewArtifactTool.js'
+import * as reviewArtifactPermNs from './ReviewArtifactPermissionRequest/ReviewArtifactPermissionRequest.js'
+import * as workflowToolNs from '../../tools/WorkflowTool/WorkflowTool.js'
+import * as workflowPermNs from '../../tools/WorkflowTool/WorkflowPermissionRequest.js'
+
 const ReviewArtifactTool = feature('REVIEW_ARTIFACT')
-  ? (
-      require('../../tools/ReviewArtifactTool/ReviewArtifactTool.js') as typeof import('../../tools/ReviewArtifactTool/ReviewArtifactTool.js')
-    ).ReviewArtifactTool
+  ? reviewArtifactToolNs.ReviewArtifactTool
   : null
 
 const ReviewArtifactPermissionRequest = feature('REVIEW_ARTIFACT')
-  ? (
-      require('./ReviewArtifactPermissionRequest/ReviewArtifactPermissionRequest.js') as typeof import('./ReviewArtifactPermissionRequest/ReviewArtifactPermissionRequest.js')
-    ).ReviewArtifactPermissionRequest
+  ? reviewArtifactPermNs.ReviewArtifactPermissionRequest
   : null
 
 const WorkflowTool = feature('WORKFLOW_SCRIPTS')
-  ? (
-      require('../../tools/WorkflowTool/WorkflowTool.js') as typeof import('../../tools/WorkflowTool/WorkflowTool.js')
-    ).WorkflowTool
+  ? workflowToolNs.WorkflowTool
   : null
 
 const WorkflowPermissionRequest = feature('WORKFLOW_SCRIPTS')
-  ? (
-      require('../../tools/WorkflowTool/WorkflowPermissionRequest.js') as typeof import('../../tools/WorkflowTool/WorkflowPermissionRequest.js')
-    ).WorkflowPermissionRequest
+  ? workflowPermNs.WorkflowPermissionRequest
   : null
 
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
-/* eslint-enable @typescript-eslint/no-require-imports */
 import type { z } from 'zod/v4'
 import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js'
 import type { WorkerBadgeProps } from './WorkerBadge.js'
@@ -78,8 +71,6 @@ function permissionComponentForTool(
       return ReviewArtifactPermissionRequest ?? FallbackPermissionRequest
     case WebFetchTool:
       return WebFetchPermissionRequest
-    case NotebookEditTool:
-      return NotebookEditPermissionRequest
     case ExitPlanModeV2Tool:
       return ExitPlanModePermissionRequest
     case EnterPlanModeTool:

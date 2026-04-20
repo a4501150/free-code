@@ -14,6 +14,8 @@
  * - SigV4 request signing
  */
 
+import { Sha256 } from '@aws-crypto/sha256-js'
+import { SignatureV4 } from '@smithy/signature-v4'
 import type { ProviderConfig } from '../../utils/settings/types.js'
 import { mapStatusToErrorType } from './adapter-error-utils.js'
 
@@ -91,9 +93,6 @@ async function signRequest(
   region: string,
   credentials: AwsCredentials,
 ): Promise<Record<string, string>> {
-  const { SignatureV4 } = await import('@smithy/signature-v4')
-  const { Sha256 } = await import('@aws-crypto/sha256-js')
-
   const parsedUrl = new URL(url)
 
   const signer = new SignatureV4({

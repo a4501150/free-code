@@ -27,6 +27,9 @@ import { UserPlanMessage } from './UserPlanMessage.js'
 import { UserPromptMessage } from './UserPromptMessage.js'
 import { UserResourceUpdateMessage } from './UserResourceUpdateMessage.js'
 import { UserTeammateMessage } from './UserTeammateMessage.js'
+import * as userForkBoilerplateNs from './UserForkBoilerplateMessage.js'
+import * as userCrossSessionNs from './UserCrossSessionMessage.js'
+import * as userChannelNs from './UserChannelMessage.js'
 
 type Props = {
   addMargin: boolean
@@ -91,22 +94,6 @@ export function UserTextMessage({
     )
   }
 
-  // GitHub webhook events (check_run, review comments, pushes) delivered via
-  // bound-session routing after /subscribe-pr. The tag constant is stripped
-  // from external builds — inline the literal so the import doesn't fail.
-  // The require() below DCEs when both flags are off. startsWith (not
-  // includes) and before the includes-checks below: defense-in-depth if
-  // the sanitizer were ever weakened.
-  if (feature('KAIROS_GITHUB_WEBHOOKS')) {
-    if (param.text.startsWith('<github-webhook-activity>')) {
-      /* eslint-disable @typescript-eslint/no-require-imports */
-      const { UserGitHubWebhookMessage } =
-        require('./UserGitHubWebhookMessage.js') as typeof import('./UserGitHubWebhookMessage.js')
-      /* eslint-enable @typescript-eslint/no-require-imports */
-      return <UserGitHubWebhookMessage addMargin={addMargin} param={param} />
-    }
-  }
-
   // Bash inputs!
   if (param.text.includes('<bash-input>')) {
     return <UserBashInputMessage addMargin={addMargin} param={param} />
@@ -153,10 +140,7 @@ export function UserTextMessage({
   // ship in external builds where feature('FORK_SUBAGENT') is false.
   if (feature('FORK_SUBAGENT')) {
     if (param.text.includes('<fork-boilerplate>')) {
-      /* eslint-disable @typescript-eslint/no-require-imports */
-      const { UserForkBoilerplateMessage } =
-        require('./UserForkBoilerplateMessage.js') as typeof import('./UserForkBoilerplateMessage.js')
-      /* eslint-enable @typescript-eslint/no-require-imports */
+      const { UserForkBoilerplateMessage } = userForkBoilerplateNs
       return <UserForkBoilerplateMessage addMargin={addMargin} param={param} />
     }
   }
@@ -166,10 +150,7 @@ export function UserTextMessage({
   // external builds where feature('UDS_INBOX') is false.
   if (feature('UDS_INBOX')) {
     if (param.text.includes('<cross-session-message')) {
-      /* eslint-disable @typescript-eslint/no-require-imports */
-      const { UserCrossSessionMessage } =
-        require('./UserCrossSessionMessage.js') as typeof import('./UserCrossSessionMessage.js')
-      /* eslint-enable @typescript-eslint/no-require-imports */
+      const { UserCrossSessionMessage } = userCrossSessionNs
       return <UserCrossSessionMessage addMargin={addMargin} param={param} />
     }
   }
@@ -177,10 +158,7 @@ export function UserTextMessage({
   // Inbound channel message (MCP server push).
   if (feature('KAIROS') || feature('KAIROS_CHANNELS')) {
     if (param.text.includes('<channel source="')) {
-      /* eslint-disable @typescript-eslint/no-require-imports */
-      const { UserChannelMessage } =
-        require('./UserChannelMessage.js') as typeof import('./UserChannelMessage.js')
-      /* eslint-enable @typescript-eslint/no-require-imports */
+      const { UserChannelMessage } = userChannelNs
       return <UserChannelMessage addMargin={addMargin} param={param} />
     }
   }

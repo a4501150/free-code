@@ -117,19 +117,6 @@ const commonFields = lazySchema(() => ({
     .optional()
     .describe('User answers collected by the permission component'),
   annotations: annotationsSchema(),
-  metadata: z
-    .object({
-      source: z
-        .string()
-        .optional()
-        .describe(
-          'Optional identifier for the source of this question (e.g., "remember" for /remember command). Used for analytics tracking.',
-        ),
-    })
-    .optional()
-    .describe(
-      'Optional metadata for tracking and analytics purposes. Not displayed to user.',
-    ),
 }))
 
 const inputSchema = lazySchema(() =>

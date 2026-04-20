@@ -1,4 +1,5 @@
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
+import { registerCoordinatorAgents } from './coordinatorAgentRegistry.js'
 
 /**
  * Returns coordinator-managed worker agent definitions.
@@ -7,3 +8,5 @@ import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
 export function getCoordinatorAgents(): AgentDefinition[] {
   return []
 }
+
+registerCoordinatorAgents(getCoordinatorAgents)

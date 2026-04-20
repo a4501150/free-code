@@ -6,6 +6,13 @@
  * with a unified config-driven lookup.
  */
 
+import { getClaudeAIOAuthTokens } from "../oauthTokenReader.js";
+import {
+  readFreecodeSettingsFile,
+  reorderFreecodeSettingsFile,
+  writeFreecodeSettingsFile,
+} from "../settings/freecodeSettings.js";
+import { getInitialSettings } from "../settings/settings.js";
 import type {
   ProviderAuthConfig,
   ProviderCacheConfig,
@@ -15,14 +22,13 @@ import type {
   ProviderModelConfig,
   ProviderType,
 } from "../settings/types.js";
-import { parseModelString } from "./parseModelString.js";
-/** Return type of migrateFromLegacyEnvVars — providers plus optional default models */
-interface MigrationResult {
-  providers: Record<string, ProviderConfig>;
-  defaultModel?: string;
-  defaultSubagentModel?: string;
-  defaultSmallFastModel?: string;
-}
+import { getInferenceProfileBackingModel } from "./bedrock.js";
+import {
+  applyBedrockRegionPrefix,
+  getBedrockRegionPrefix,
+} from "./bedrockInferenceProfiles.js";
+import { migrateFromLegacyEnvVars } from "./legacyProviderMigration.js";
+import { parseModelString, stripContextSuffix } from "./parseModelString.js";
 
 // ── Capability defaults by provider type ──────────────────────────────
 
@@ -215,6 +221,8 @@ export class ProviderRegistry {
   private readonly _availableSubagentModels: string[];
   /** Provider-qualified default balanced model from freecode.json */
   private readonly _defaultBalancedModel: string | undefined;
+  /** Provider-qualified default most-powerful model from freecode.json */
+  private readonly _defaultMostPowerfulModel: string | undefined;
 
   constructor(
     providers: Record<string, ProviderConfig>,
@@ -224,6 +232,7 @@ export class ProviderRegistry {
       defaultSmallFastModel?: string;
       availableSubagentModels?: string[];
       defaultBalancedModel?: string;
+      defaultMostPowerfulModel?: string;
     },
   ) {
     this.providers = new Map(Object.entries(providers));
@@ -238,6 +247,7 @@ export class ProviderRegistry {
     this._defaultSmallFastModel = opts?.defaultSmallFastModel;
     this._availableSubagentModels = opts?.availableSubagentModels ?? [];
     this._defaultBalancedModel = opts?.defaultBalancedModel;
+    this._defaultMostPowerfulModel = opts?.defaultMostPowerfulModel;
     this.buildIndex();
   }
 
@@ -476,6 +486,14 @@ export class ProviderRegistry {
   }
 
   /**
+   * Get the configured default most-powerful model from freecode.json.
+   * Returns a provider-qualified string or undefined.
+   */
+  getConfiguredDefaultMostPowerfulModel(): string | undefined {
+    return this._defaultMostPowerfulModel;
+  }
+
+  /**
    * Resolve a model ID to its underlying foundation model.
    * For Bedrock application inference profiles, resolves the ARN to the
    * backing model ID. For all other providers, returns the model as-is.
@@ -485,7 +503,6 @@ export class ProviderRegistry {
       this.getProviderType(model) === "bedrock-converse" &&
       model.includes("application-inference-profile")
     ) {
-      const { getInferenceProfileBackingModel } = await import("./bedrock.js");
       return (await getInferenceProfileBackingModel(model)) ?? model;
     }
     return model;
@@ -501,13 +518,6 @@ export class ProviderRegistry {
     if (!this.getCapability(parentModel, "regionPrefixPropagation")) {
       return childModel;
     }
-    // Lazy import to avoid loading bedrock.ts for non-Bedrock providers
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { getBedrockRegionPrefix, applyBedrockRegionPrefix } =
-      require("./bedrock.js") as {
-        getBedrockRegionPrefix: (m: string) => string | null;
-        applyBedrockRegionPrefix: (m: string, p: string) => string;
-      };
     const parentPrefix = getBedrockRegionPrefix(parentModel);
     if (!parentPrefix) return childModel;
     // Don't override if child already has a prefix
@@ -527,31 +537,9 @@ export class ProviderRegistry {
  */
 export function getProviderRegistry(): ProviderRegistry {
   if (!_instance) {
-    // Lazy init: import at call time to avoid circular deps
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { getInitialSettings } = require("../settings/settings.js") as {
-      getInitialSettings: () => Record<string, unknown>;
-    };
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { migrateFromLegacyEnvVars } =
-      require("./legacyProviderMigration.js") as {
-        migrateFromLegacyEnvVars: (opts?: {
-          oauthTokens?: { accessToken: string } | null;
-        }) => MigrationResult;
-      };
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { writeFreecodeSettingsFile } =
-      require("../settings/freecodeSettings.js") as {
-        writeFreecodeSettingsFile: (partial: Record<string, unknown>) => void;
-      };
-
     // Migration from settings.json → freecode.json is handled by loadSettingsFromDisk()
     // before getInitialSettings() returns, so freecode.json is already populated.
     const settings = getInitialSettings();
-
-    // Strip legacy [Nm] context suffixes — context window is now config-driven
-    const stripContextSuffix = (m: string): string =>
-      m.replace(/\[\d+m\]$/i, "");
 
     if (settings.providers) {
       // Providers found in settings (freecode.json or settings.json)
@@ -580,20 +568,15 @@ export function getProviderRegistry(): ProviderRegistry {
             typeof settingsObj.defaultBalancedModel === "string"
               ? stripContextSuffix(settingsObj.defaultBalancedModel)
               : undefined,
+          defaultMostPowerfulModel:
+            typeof settingsObj.defaultMostPowerfulModel === "string"
+              ? stripContextSuffix(settingsObj.defaultMostPowerfulModel)
+              : undefined,
         },
       );
     } else {
       // No providers in settings — run legacy env var migration
-      let oauthTokens: { accessToken: string } | null = null;
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { getClaudeAIOAuthTokens } = require("../auth.js") as {
-          getClaudeAIOAuthTokens: () => { accessToken: string } | null;
-        };
-        oauthTokens = getClaudeAIOAuthTokens();
-      } catch {
-        // Auth not available yet — proceed without OAuth detection
-      }
+      const oauthTokens = getClaudeAIOAuthTokens();
 
       const migrated = migrateFromLegacyEnvVars({ oauthTokens });
 
@@ -628,6 +611,10 @@ export function getProviderRegistry(): ProviderRegistry {
           typeof settingsObj.defaultBalancedModel === "string"
             ? stripContextSuffix(settingsObj.defaultBalancedModel)
             : undefined,
+        defaultMostPowerfulModel:
+          typeof settingsObj.defaultMostPowerfulModel === "string"
+            ? stripContextSuffix(settingsObj.defaultMostPowerfulModel)
+            : undefined,
       });
 
       // Persist to freecode.json so future runs pick up the migration output
@@ -640,11 +627,6 @@ export function getProviderRegistry(): ProviderRegistry {
 
       // Clean up provider-routing env vars from the env block — they are now
       // baked into the provider config and top-level default* fields.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { readFreecodeSettingsFile } =
-        require("../settings/freecodeSettings.js") as {
-          readFreecodeSettingsFile: () => Record<string, unknown> | null;
-        };
       const currentSettings = readFreecodeSettingsFile() ?? {};
       if (
         currentSettings.env &&
@@ -694,11 +676,6 @@ export function getProviderRegistry(): ProviderRegistry {
       }
 
       // Reorder keys for readability after migration is complete.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { reorderFreecodeSettingsFile } =
-        require("../settings/freecodeSettings.js") as {
-          reorderFreecodeSettingsFile: () => void;
-        };
       reorderFreecodeSettingsFile();
     }
   }
@@ -713,6 +690,7 @@ export function initProviderRegistry(
     defaultSmallFastModel?: string;
     availableSubagentModels?: string[];
     defaultBalancedModel?: string;
+    defaultMostPowerfulModel?: string;
   },
 ): ProviderRegistry {
   _instance = new ProviderRegistry(providers, opts);

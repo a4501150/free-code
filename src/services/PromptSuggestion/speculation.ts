@@ -54,7 +54,7 @@ import {
 const MAX_SPECULATION_TURNS = 20
 const MAX_SPECULATION_MESSAGES = 100
 
-const WRITE_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit'])
+const WRITE_TOOLS = new Set(['Edit', 'Write'])
 const SAFE_READ_ONLY_TOOLS = new Set([
   'Read',
   'Glob',

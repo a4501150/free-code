@@ -101,16 +101,6 @@ export function Settings({
     <Tab key="usage" title="Usage">
       <Usage />
     </Tab>,
-    ...("external" === 'ant'
-      ? [
-          <Tab key="gates" title="Gates">
-            <Gates
-              onOwnsEscChange={setGatesOwnsEsc}
-              contentHeight={contentHeight}
-            />
-          </Tab>,
-        ]
-      : []),
   ]
 
   return (

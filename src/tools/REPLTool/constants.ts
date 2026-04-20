@@ -7,7 +7,6 @@ import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../FileWriteTool/prompt.js'
 import { GLOB_TOOL_NAME } from '../GlobTool/prompt.js'
 import { GREP_TOOL_NAME } from '../GrepTool/prompt.js'
-import { NOTEBOOK_EDIT_TOOL_NAME } from '../NotebookEditTool/constants.js'
 
 export const REPL_TOOL_NAME = 'REPL'
 
@@ -41,6 +40,5 @@ export const REPL_ONLY_TOOLS = new Set([
   GLOB_TOOL_NAME,
   GREP_TOOL_NAME,
   BASH_TOOL_NAME,
-  NOTEBOOK_EDIT_TOOL_NAME,
   AGENT_TOOL_NAME,
 ])

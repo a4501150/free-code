@@ -1,8 +1,13 @@
+import type { SDKMessage } from '../entrypoints/sdk/coreTypes.js'
+import type { SDKControlPermissionRequest } from '../entrypoints/sdk/controlTypes.js'
 import type { RemoteMessageContent } from '../utils/oauthApi.js'
 
 export type SSHSessionCallbacks = {
-  onMessage: (message: unknown) => void
-  onPermissionRequest: (request: unknown, requestId: string) => void
+  onMessage: (message: SDKMessage) => void
+  onPermissionRequest: (
+    request: SDKControlPermissionRequest,
+    requestId: string,
+  ) => void
   onConnected?: () => void
   onReconnecting?: (attempt: number, max: number) => void
   onDisconnected?: () => void

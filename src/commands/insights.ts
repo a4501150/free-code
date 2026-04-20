@@ -2504,9 +2504,9 @@ type LiteSessionInfo = {
 async function scanAllSessions(): Promise<LiteSessionInfo[]> {
   const projectsDir = getProjectsDir()
 
-  let dirents: Awaited<ReturnType<typeof readdir>>
+  let dirents: { isDirectory(): boolean; name: string }[]
   try {
-    dirents = await readdir(projectsDir, { withFileTypes: true })
+    dirents = await readdir(projectsDir, { withFileTypes: true }) as { isDirectory(): boolean; name: string }[]
   } catch {
     return []
   }

@@ -35,6 +35,10 @@ export async function loadFigSpec(
   if (command.startsWith('-') && command !== '-') return null
 
   try {
+    // Intentionally dynamic: @withfig/autocomplete publishes ~1500
+    // per-command spec modules. We load on demand rather than static-
+    // importing them all — this is the one surviving dynamic import in
+    // the codebase and cannot be converted without a code generator.
     const module = await import(`@withfig/autocomplete/build/${command}.js`)
     return module.default || module
   } catch {

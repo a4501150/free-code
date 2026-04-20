@@ -46,7 +46,7 @@ export function ConfirmStep({
     }
   }
 
-  const agent = wizardData.finalAgent!
+  const agent = wizardData.finalAgent! as import('../../../../tools/AgentTool/loadAgentsDir.js').CustomAgentDefinition
   const validation = validateAgent(agent, tools, existingAgents)
 
   const systemPromptPreview = truncateToWidth(agent.getSystemPrompt(), 240)

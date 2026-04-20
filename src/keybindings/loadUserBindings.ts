@@ -3,10 +3,6 @@
  *
  * Loads keybindings from ~/.claude/keybindings.json and watches
  * for changes to reload them automatically.
- *
- * NOTE: User keybinding customization is currently only available for
- * Anthropic employees (USER_TYPE === 'ant'). External users always
- * use the default bindings.
  */
 
 import chokidar, { type FSWatcher } from 'chokidar'
@@ -28,16 +24,6 @@ import {
   type KeybindingWarning,
   validateBindings,
 } from './validate.js'
-
-/**
- * Check if keybinding customization is enabled.
- *
- * This function is exported so other parts of the codebase (e.g., /doctor)
- * can check the same condition consistently.
- */
-export function isKeybindingCustomizationEnabled(): boolean {
-  return true
-}
 
 /**
  * Time in milliseconds to wait for file writes to stabilize.
@@ -63,22 +49,6 @@ let disposed = false
 let cachedBindings: ParsedBinding[] | null = null
 let cachedWarnings: KeybindingWarning[] = []
 const keybindingsChanged = createSignal<[result: KeybindingsLoadResult]>()
-
-/**
- * Tracks the date (YYYY-MM-DD) when we last logged a custom keybindings load event.
- * Used to ensure we fire the event at most once per day.
- */
-let lastCustomBindingsLogDate: string | null = null
-
-/**
- * Log a telemetry event when custom keybindings are loaded, at most once per day.
- * This lets us estimate the percentage of users who customize their keybindings.
- */
-function logCustomBindingsLoadedOncePerDay(userBindingCount: number): void {
-  const today = new Date().toISOString().slice(0, 10)
-  if (lastCustomBindingsLogDate === today) return
-  lastCustomBindingsLogDate = today
-}
 
 /**
  * Type guard to check if an object is a valid KeybindingBlock.
@@ -117,18 +87,9 @@ function getDefaultParsedBindings(): ParsedBinding[] {
 /**
  * Load and parse keybindings from user config file.
  * Returns merged default + user bindings along with validation warnings.
- *
- * For external users, always returns default bindings only.
- * User customization is currently gated to Anthropic employees.
  */
-export async function loadKeybindings(): Promise<KeybindingsLoadResult> {
+async function loadKeybindings(): Promise<KeybindingsLoadResult> {
   const defaultBindings = getDefaultParsedBindings()
-
-  // Skip user config loading for external users
-  if (!isKeybindingCustomizationEnabled()) {
-    return { bindings: defaultBindings, warnings: [] }
-  }
-
   const userPath = getKeybindingsPath()
 
   try {
@@ -187,8 +148,6 @@ export async function loadKeybindings(): Promise<KeybindingsLoadResult> {
     // User bindings come after defaults, so they override
     const mergedBindings = [...defaultBindings, ...userParsed]
 
-    logCustomBindingsLoadedOncePerDay(userParsed.length)
-
     // Run validation on user config
     // First check for duplicate keys in raw JSON (JSON.parse silently drops earlier values)
     const duplicateKeyWarnings = checkDuplicateKeysInJson(content)
@@ -243,9 +202,6 @@ export function loadKeybindingsSync(): ParsedBinding[] {
 /**
  * Load keybindings synchronously with validation warnings.
  * Uses cached values if available.
- *
- * For external users, always returns default bindings only.
- * User customization is currently gated to Anthropic employees.
  */
 export function loadKeybindingsSyncWithWarnings(): KeybindingsLoadResult {
   if (cachedBindings) {
@@ -253,14 +209,6 @@ export function loadKeybindingsSyncWithWarnings(): KeybindingsLoadResult {
   }
 
   const defaultBindings = getDefaultParsedBindings()
-
-  // Skip user config loading for external users
-  if (!isKeybindingCustomizationEnabled()) {
-    cachedBindings = defaultBindings
-    cachedWarnings = []
-    return { bindings: cachedBindings, warnings: cachedWarnings }
-  }
-
   const userPath = getKeybindingsPath()
 
   try {
@@ -312,8 +260,6 @@ export function loadKeybindingsSyncWithWarnings(): KeybindingsLoadResult {
     )
     cachedBindings = [...defaultBindings, ...userParsed]
 
-    logCustomBindingsLoadedOncePerDay(userParsed.length)
-
     // Run validation - check for duplicate keys in raw JSON first
     const duplicateKeyWarnings = checkDuplicateKeysInJson(content)
     cachedWarnings = [
@@ -338,19 +284,9 @@ export function loadKeybindingsSyncWithWarnings(): KeybindingsLoadResult {
 /**
  * Initialize file watching for keybindings.json.
  * Call this once when the app starts.
- *
- * For external users, this is a no-op since user customization is disabled.
  */
 export async function initializeKeybindingWatcher(): Promise<void> {
   if (initialized || disposed) return
-
-  // Skip file watching for external users
-  if (!isKeybindingCustomizationEnabled()) {
-    logForDebugging(
-      '[keybindings] Skipping file watcher - user customization disabled',
-    )
-    return
-  }
 
   const userPath = getKeybindingsPath()
   const watchDir = dirname(userPath)
@@ -397,7 +333,7 @@ export async function initializeKeybindingWatcher(): Promise<void> {
 /**
  * Clean up the file watcher.
  */
-export function disposeKeybindingWatcher(): void {
+function disposeKeybindingWatcher(): void {
   disposed = true
   if (watcher) {
     void watcher.close()
@@ -444,20 +380,4 @@ function handleDelete(path: string): void {
  */
 export function getCachedKeybindingWarnings(): KeybindingWarning[] {
   return cachedWarnings
-}
-
-/**
- * Reset internal state for testing.
- */
-export function resetKeybindingLoaderForTesting(): void {
-  initialized = false
-  disposed = false
-  cachedBindings = null
-  cachedWarnings = []
-  lastCustomBindingsLogDate = null
-  if (watcher) {
-    void watcher.close()
-    watcher = null
-  }
-  keybindingsChanged.clear()
 }

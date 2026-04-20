@@ -6,8 +6,9 @@
  */
 
 import { getProviderRegistry } from './providerRegistry.js'
+import { getDefaultMainLoopModel, parseUserSpecifiedModel } from './modelResolution.js'
 import type { ModelName, ModelSetting } from './modelTypes.js'
-import { stripProviderPrefix } from './parseModelString.js'
+import { stripProviderPrefix } from './parseModelStringWithRegistry.js'
 
 // ── Display string generation ──────────────────────────────────────
 
@@ -50,10 +51,6 @@ export function getPublicModelName(model: ModelName): string {
 export function getClaudeAiUserDefaultModelDescription(
   _fastMode = false,
 ): string {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { getDefaultMainLoopModel } = require('./modelResolution.js') as {
-    getDefaultMainLoopModel: () => ModelName
-  }
   const model = getDefaultMainLoopModel()
   const displayName = getPublicModelDisplayName(model)
   return displayName ?? renderModelName(model)
@@ -66,21 +63,12 @@ export function renderModelSetting(setting: string): string {
 export function renderDefaultModelSetting(
   setting: string,
 ): string {
-  // Lazy require to avoid circular dep with modelResolution
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { parseUserSpecifiedModel } = require('./modelResolution.js') as {
-    parseUserSpecifiedModel: (m: string) => ModelName
-  }
   return renderModelName(parseUserSpecifiedModel(setting))
 }
 
 export function modelDisplayString(model: ModelSetting): string {
   if (model === null) {
     return `Default (${getClaudeAiUserDefaultModelDescription()})`
-  }
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { parseUserSpecifiedModel } = require('./modelResolution.js') as {
-    parseUserSpecifiedModel: (m: string) => ModelName
   }
   const resolvedModel = parseUserSpecifiedModel(model)
   return model === resolvedModel ? resolvedModel : `${model} (${resolvedModel})`

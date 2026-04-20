@@ -448,9 +448,9 @@ export class StructuredIO {
       if (message.type === 'assistant' || message.type === 'system') {
         return message
       }
-      if (message.message.role !== 'user') {
+      if ((message.message as { role?: unknown }).role !== 'user') {
         exitWithMessage(
-          `Error: Expected message role 'user', got '${message.message.role}'`,
+          `Error: Expected message role 'user', got '${(message.message as { role?: unknown }).role}'`,
         )
       }
       return message

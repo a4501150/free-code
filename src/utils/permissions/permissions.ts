@@ -55,13 +55,11 @@ import {
   shouldAllowManagedPermissionRulesOnly,
 } from './permissionsLoader.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const classifierDecisionModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? (require('./classifierDecision.js') as typeof import('./classifierDecision.js'))
-  : null
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? (require('./autoModeState.js') as typeof import('./autoModeState.js'))
-  : null
+import * as classifierDecisionNs from './classifierDecision.js'
+import * as autoModeStateNs from './autoModeState.js'
+
+const classifierDecisionModule = feature('TRANSCRIPT_CLASSIFIER') ? classifierDecisionNs : null
+const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER') ? autoModeStateNs : null
 
 import {
   addToTurnClassifierDuration,
@@ -82,7 +80,6 @@ import {
   DONT_ASK_REJECT_MESSAGE,
 } from '../messages.js'
 import { calculateCostFromTokens } from '../modelCost.js'
-/* eslint-enable @typescript-eslint/no-require-imports */
 import { jsonStringify } from '../slowOperations.js'
 import {
   createDenialTrackingState,

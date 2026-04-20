@@ -182,11 +182,11 @@ export function PluginOptionsDialog({
     >
       <Box flexDirection="column">
         <Text bold={true}>
-          {fieldSchema.title || currentField}
+          {(fieldSchema.title as string | undefined) || currentField}
           {isRequired && <Text color="error"> *</Text>}
         </Text>
-        {fieldSchema.description && (
-          <Text dimColor={true}>{fieldSchema.description}</Text>
+        {Boolean(fieldSchema.description) && (
+          <Text dimColor={true}>{fieldSchema.description as string}</Text>
         )}
 
         <Box marginTop={1}>

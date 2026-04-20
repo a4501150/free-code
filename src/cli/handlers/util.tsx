@@ -16,13 +16,11 @@ import { MCPConnectionManager } from '../../services/mcp/MCPConnectionManager.js
 import { AppStateProvider } from '../../state/AppState.js'
 import { onChangeAppState } from '../../state/onChangeAppState.js'
 import { isAnthropicAuthEnabled } from '../../utils/auth.js'
+import { ConsoleOAuthFlow } from '../../components/ConsoleOAuthFlow.js'
 
 export async function setupTokenHandler(root: Root): Promise<void> {
 
   const showAuthWarning = !isAnthropicAuthEnabled()
-  const { ConsoleOAuthFlow } = await import(
-    '../../components/ConsoleOAuthFlow.js'
-  )
   await new Promise<void>(resolve => {
     root.render(
       <AppStateProvider onChangeAppState={onChangeAppState}>

@@ -11,6 +11,7 @@
 
 import type { ProviderConfig, ProviderModelConfig } from "../settings/types.js";
 import { isEnvTruthy } from "../envUtils.js";
+import { stripContextSuffix } from "./parseModelString.js";
 
 /** Return type of migrateFromLegacyEnvVars */
 export interface LegacyMigrationResult {
@@ -86,13 +87,25 @@ const HAIKU_45_PRICING = {
 
 const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
   {
+    id: "claude-opus-4-7",
+    label: "Opus 4.7",
+
+    description: "Most capable",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+
+    pricing: OPUS_46_PRICING,
+    effortLevels: ["low", "medium", "high", "xhigh", "max"],
+    defaultEffort: "xhigh",
+    ...CLAUDE_46_CAPS,
+  },
+  {
     id: "claude-opus-4-6",
     label: "Opus 4.6",
 
     description: "Most capable",
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
-    maxOutputTokensDefault: 64_000,
 
     pricing: OPUS_46_PRICING,
     effortLevels: ["low", "medium", "high", "max"],
@@ -105,8 +118,7 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
 
     description: "Fast and capable",
     contextWindow: 1_000_000,
-    maxOutputTokens: 128_000,
-    maxOutputTokensDefault: 32_000,
+    maxOutputTokens: 64_000,
 
     pricing: SONNET_PRICING,
     effortLevels: ["low", "medium", "high", "max"],
@@ -120,42 +132,29 @@ const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
     description: "Fastest",
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
-    maxOutputTokensDefault: 64_000,
     pricing: HAIKU_45_PRICING,
-    ...CLAUDE_4X_CAPS,
-  },
-  {
-    id: "claude-opus-4-5-20251101",
-    label: "Opus 4.5",
-
-    contextWindow: 200_000,
-    maxOutputTokens: 64_000,
-    maxOutputTokensDefault: 64_000,
-    pricing: OPUS_46_PRICING,
-    effortLevels: ["low", "medium", "high"],
-    defaultEffort: "high",
-    ...CLAUDE_4X_CAPS,
-  },
-  {
-    id: "claude-sonnet-4-5-20250929",
-    label: "Sonnet 4.5",
-
-    contextWindow: 200_000,
-    maxOutputTokens: 64_000,
-    maxOutputTokensDefault: 32_000,
-    pricing: SONNET_PRICING,
     ...CLAUDE_4X_CAPS,
   },
 ];
 
 const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
   {
+    id: "us.anthropic.claude-opus-4-7",
+    label: "Opus 4.7",
+
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+
+    effortLevels: ["low", "medium", "high", "xhigh", "max"],
+    defaultEffort: "xhigh",
+    ...CLAUDE_46_3P_CAPS,
+  },
+  {
     id: "us.anthropic.claude-opus-4-6-v1",
     label: "Opus 4.6",
 
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
-    maxOutputTokensDefault: 64_000,
 
     effortLevels: ["low", "medium", "high", "max"],
     defaultEffort: "high",
@@ -166,8 +165,7 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
     label: "Sonnet 4.6",
 
     contextWindow: 1_000_000,
-    maxOutputTokens: 128_000,
-    maxOutputTokensDefault: 32_000,
+    maxOutputTokens: 64_000,
 
     effortLevels: ["low", "medium", "high", "max"],
     defaultEffort: "high",
@@ -179,39 +177,28 @@ const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
 
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
-    maxOutputTokensDefault: 64_000,
-    ...CLAUDE_4X_3P_CAPS,
-  },
-  {
-    id: "us.anthropic.claude-opus-4-5-20251101-v1:0",
-    label: "Opus 4.5",
-
-    contextWindow: 200_000,
-    maxOutputTokens: 64_000,
-    maxOutputTokensDefault: 64_000,
-    effortLevels: ["low", "medium", "high"],
-    defaultEffort: "high",
-    ...CLAUDE_4X_3P_CAPS,
-  },
-  {
-    id: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-    label: "Sonnet 4.5",
-
-    contextWindow: 200_000,
-    maxOutputTokens: 64_000,
-    maxOutputTokensDefault: 32_000,
     ...CLAUDE_4X_3P_CAPS,
   },
 ];
 
 const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
   {
+    id: "claude-opus-4-7",
+    label: "Opus 4.7",
+
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+
+    effortLevels: ["low", "medium", "high", "xhigh", "max"],
+    defaultEffort: "xhigh",
+    ...CLAUDE_46_3P_CAPS,
+  },
+  {
     id: "claude-opus-4-6",
     label: "Opus 4.6",
 
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
-    maxOutputTokensDefault: 64_000,
 
     effortLevels: ["low", "medium", "high", "max"],
     defaultEffort: "high",
@@ -222,8 +209,7 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
     label: "Sonnet 4.6",
 
     contextWindow: 1_000_000,
-    maxOutputTokens: 128_000,
-    maxOutputTokensDefault: 32_000,
+    maxOutputTokens: 64_000,
 
     effortLevels: ["low", "medium", "high", "max"],
     defaultEffort: "high",
@@ -235,39 +221,28 @@ const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
 
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
-    maxOutputTokensDefault: 64_000,
-    ...CLAUDE_4X_3P_CAPS,
-  },
-  {
-    id: "claude-opus-4-5@20251101",
-    label: "Opus 4.5",
-
-    contextWindow: 200_000,
-    maxOutputTokens: 64_000,
-    maxOutputTokensDefault: 64_000,
-    effortLevels: ["low", "medium", "high"],
-    defaultEffort: "high",
-    ...CLAUDE_4X_3P_CAPS,
-  },
-  {
-    id: "claude-sonnet-4-5@20250929",
-    label: "Sonnet 4.5",
-
-    contextWindow: 200_000,
-    maxOutputTokens: 64_000,
-    maxOutputTokensDefault: 32_000,
     ...CLAUDE_4X_3P_CAPS,
   },
 ];
 
 const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
   {
+    id: "claude-opus-4-7",
+    label: "Opus 4.7",
+
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+
+    effortLevels: ["low", "medium", "high", "xhigh", "max"],
+    defaultEffort: "xhigh",
+    ...CLAUDE_46_CAPS,
+  },
+  {
     id: "claude-opus-4-6",
     label: "Opus 4.6",
 
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
-    maxOutputTokensDefault: 64_000,
 
     effortLevels: ["low", "medium", "high", "max"],
     defaultEffort: "high",
@@ -278,8 +253,7 @@ const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
     label: "Sonnet 4.6",
 
     contextWindow: 1_000_000,
-    maxOutputTokens: 128_000,
-    maxOutputTokensDefault: 32_000,
+    maxOutputTokens: 64_000,
 
     effortLevels: ["low", "medium", "high", "max"],
     defaultEffort: "high",
@@ -291,16 +265,6 @@ const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
 
     contextWindow: 200_000,
     maxOutputTokens: 64_000,
-    maxOutputTokensDefault: 64_000,
-    ...CLAUDE_4X_CAPS,
-  },
-  {
-    id: "claude-sonnet-4-5",
-    label: "Sonnet 4.5",
-
-    contextWindow: 200_000,
-    maxOutputTokens: 64_000,
-    maxOutputTokensDefault: 32_000,
     ...CLAUDE_4X_CAPS,
   },
 ];
@@ -322,7 +286,6 @@ const DEFAULT_CODEX_MODELS: ProviderModelConfig[] = [
     description: "Latest GPT",
     contextWindow: 1_050_000,
     maxOutputTokens: 128_000,
-    maxOutputTokensDefault: 128_000,
     effortLevels: ["none", "low", "medium", "high", "xhigh"],
     ...OPENAI_CAPS,
   },
@@ -333,7 +296,6 @@ const DEFAULT_CODEX_MODELS: ProviderModelConfig[] = [
     description: "Frontier agentic coding",
     contextWindow: 400_000,
     maxOutputTokens: 128_000,
-    maxOutputTokensDefault: 128_000,
     effortLevels: ["low", "medium", "high", "xhigh"],
     ...OPENAI_CAPS,
   },
@@ -344,8 +306,18 @@ const DEFAULT_CODEX_MODELS: ProviderModelConfig[] = [
     description: "Fast GPT",
     contextWindow: 400_000,
     maxOutputTokens: 128_000,
-    maxOutputTokensDefault: 128_000,
     effortLevels: ["none", "low", "medium", "high", "xhigh"],
+    ...OPENAI_CAPS,
+  },
+  {
+    id: "gpt-5.3-codex-spark",
+    label: "GPT-5.3 Codex Spark",
+
+    description: "Real-time coding, 1000+ tok/s",
+    contextWindow: 128_000,
+    maxOutputTokens: 128_000,
+    effortLevels: ["low", "medium", "high"],
+    defaultEffort: "high",
     ...OPENAI_CAPS,
   },
 ];
@@ -472,9 +444,6 @@ export function migrateFromLegacyEnvVars(opts?: {
   // so we do simple provider:modelId qualification.
   const defaultProviderName = Object.keys(providers)[0] ?? "anthropic";
 
-  // Strip legacy [Nm] context suffixes — context window is now config-driven
-  const stripContextSuffix = (m: string): string =>
-    m.replace(/\[\d+m\]$/i, "");
   const qualify = (model: string): string => {
     const bare = stripContextSuffix(model);
     return bare.includes(":") ? bare : `${defaultProviderName}:${bare}`;

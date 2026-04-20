@@ -124,20 +124,22 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
     })
   }
 
-  // Persist provider config to freecode.json so it's the single source of truth
+  // Persist provider config to freecode.json so it's the single source of truth.
+  // Login-owned providers use distinct slot names (claude-ai, claude-console) so
+  // they don't clobber a user-configured `anthropic` provider (e.g. a proxy with
+  // its own baseUrl + bearer token).
   if (shouldUseClaudeAIAuth(tokens.scopes)) {
-    // claude.ai OAuth subscriber
     writeFreecodeSettingsFile({
       providers: {
-        anthropic: {
+        'claude-ai': {
           type: 'anthropic',
           cache: { type: 'explicit-breakpoint' },
           auth: {
             active: 'oauth',
             oauth: {
-              accessToken: tokens.accessToken,
-              refreshToken: tokens.refreshToken,
-              expiresAt: tokens.expiresAt,
+              accessToken: tokens.accessToken ?? undefined,
+              refreshToken: tokens.refreshToken ?? undefined,
+              expiresAt: tokens.expiresAt ?? undefined,
             },
           },
           models: DEFAULT_ANTHROPIC_MODELS,
@@ -150,7 +152,7 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
     // For freecode.json we use keyEnv so it resolves at runtime.
     writeFreecodeSettingsFile({
       providers: {
-        anthropic: {
+        'claude-console': {
           type: 'anthropic',
           cache: { type: 'explicit-breakpoint' },
           auth: {
@@ -172,9 +174,9 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
           auth: {
             active: 'oauth',
             oauth: {
-              accessToken: tokens.accessToken,
-              refreshToken: tokens.refreshToken,
-              expiresAt: tokens.expiresAt,
+              accessToken: tokens.accessToken ?? undefined,
+              refreshToken: tokens.refreshToken ?? undefined,
+              expiresAt: tokens.expiresAt ?? undefined,
             },
           },
           models: DEFAULT_CODEX_MODELS,

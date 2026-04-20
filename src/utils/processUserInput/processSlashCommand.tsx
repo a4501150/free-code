@@ -28,7 +28,6 @@ import type {
 import { addInvokedSkill, getSessionId } from '../../bootstrap/state.js'
 import { COMMAND_MESSAGE_TAG, COMMAND_NAME_TAG } from '../../constants/xml.js'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
-import { getDumpPromptsPath } from '../../services/api/dumpPrompts.js'
 import { buildPostCompactMessages } from '../../services/compact/compact.js'
 import { resetMicrocompactState } from '../../services/compact/microCompact.js'
 import type { Progress as AgentProgress } from '../../tools/AgentTool/AgentTool.js'
@@ -245,7 +244,7 @@ async function executeForkedSlashCommand(
     return {
       type: 'progress',
       data: {
-        message,
+        message: message as import('../../types/message.js').NormalizedMessage,
         type: 'agent_progress',
         prompt: skillContent,
         agentId,
@@ -325,11 +324,6 @@ async function executeForkedSlashCommand(
   logForDebugging(
     `Forked slash command /${command.name} completed with agent ${agentId}`,
   )
-
-  // Prepend debug log for ant users so it appears inside the command output
-  if ("external" === 'ant') {
-    resultText = `[ANT-ONLY] API calls: ${getDisplayPath(getDumpPromptsPath(agentId))}\n${resultText}`
-  }
 
   // Return the result as a user message (simulates the agent's output)
   const messages: UserMessage[] = [
@@ -489,7 +483,7 @@ export async function processSlashCommand(
 
   // Local slash commands that skip messages
   if (newMessages.length === 0) {
-    const eventData: Record<string, boolean | number | undefined> = {
+    const eventData: Record<string, string | boolean | number | undefined> = {
       input:
         sanitizedCommandName,
     }
@@ -557,7 +551,7 @@ export async function processSlashCommand(
   }
 
   // A valid command
-  const eventData: Record<string, boolean | number | undefined> = {
+  const eventData: Record<string, string | boolean | number | undefined> = {
     input:
       sanitizedCommandName,
   }

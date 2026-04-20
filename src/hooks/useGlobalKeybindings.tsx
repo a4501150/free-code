@@ -12,6 +12,8 @@ import type { Screen } from '../screens/REPL.js'
 import { useAppState, useSetAppState } from '../state/AppState.js'
 import { count } from '../utils/array.js'
 import { getTerminalPanel } from '../utils/terminalPanel.js'
+import { getAllInProcessTeammateTasks } from '../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
+import * as briefToolNs from '../tools/BriefTool/BriefTool.js'
 
 type Props = {
   screen: Screen
@@ -49,9 +51,6 @@ export function GlobalKeybindingHandlers({
   // Toggle todo list (ctrl+t) - cycles through views
   const handleToggleTodos = useCallback(() => {
     setAppState(prev => {
-      const { getAllInProcessTeammateTasks } =
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        require('../tasks/InProcessTeammateTask/InProcessTeammateTask.js') as typeof import('../tasks/InProcessTeammateTask/InProcessTeammateTask.js')
       const hasTeammates =
         count(
           getAllInProcessTeammateTasks(prev.tasks),
@@ -94,10 +93,7 @@ export function GlobalKeybindingHandlers({
       // view. Users will reach for ctrl+o — clear the stuck state first.
       // Only needed in the prompt screen — transcript mode already ignores
       // isBriefOnly (Messages.tsx filter is gated on !isTranscriptMode).
-      /* eslint-disable @typescript-eslint/no-require-imports */
-      const { isBriefEnabled } =
-        require('../tools/BriefTool/BriefTool.js') as typeof import('../tools/BriefTool/BriefTool.js')
-      /* eslint-enable @typescript-eslint/no-require-imports */
+      const { isBriefEnabled } = briefToolNs
       if (!isBriefEnabled() && isBriefOnly && screen !== 'transcript') {
         setAppState(prev => {
           if (!prev.isBriefOnly) return prev
@@ -154,10 +150,7 @@ export function GlobalKeybindingHandlers({
   // out even if the GB kill-switch fires mid-session.
   const handleToggleBrief = useCallback(() => {
     if (feature('KAIROS') || feature('KAIROS_BRIEF')) {
-      /* eslint-disable @typescript-eslint/no-require-imports */
-      const { isBriefEnabled } =
-        require('../tools/BriefTool/BriefTool.js') as typeof import('../tools/BriefTool/BriefTool.js')
-      /* eslint-enable @typescript-eslint/no-require-imports */
+      const { isBriefEnabled } = briefToolNs
       if (!isBriefEnabled() && !isBriefOnly) return
       const next = !isBriefOnly
       setAppState(prev => {

@@ -4,7 +4,6 @@ import { lazySchema } from '../../utils/lazySchema.js'
 import {
   getTask,
   getTaskListId,
-  isTodoV2Enabled,
   TaskStatusSchema,
 } from '../../utils/tasks.js'
 import { TASK_GET_TOOL_NAME } from './constants.js'
@@ -56,7 +55,7 @@ export const TaskGetTool = buildTool({
   },
   shouldDefer: true,
   isEnabled() {
-    return isTodoV2Enabled()
+    return true
   },
   isConcurrencySafe() {
     return true

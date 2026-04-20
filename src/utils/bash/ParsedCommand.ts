@@ -3,7 +3,7 @@ import {
   extractOutputRedirections,
   splitCommandWithOperators,
 } from './commands.js'
-import type { Node } from './parser.js'
+import { parseCommand, type Node } from './parser.js'
 import {
   analyzeCommand,
   type TreeSitterAnalysis,
@@ -239,7 +239,6 @@ class TreeSitterParsedCommand implements IParsedCommand {
 
 const getTreeSitterAvailable = memoize(async (): Promise<boolean> => {
   try {
-    const { parseCommand } = await import('./parser.js')
     const testResult = await parseCommand('echo test')
     return testResult !== null
   } catch {
@@ -273,7 +272,6 @@ async function doParse(command: string): Promise<IParsedCommand | null> {
   const treeSitterAvailable = await getTreeSitterAvailable()
   if (treeSitterAvailable) {
     try {
-      const { parseCommand } = await import('./parser.js')
       const data = await parseCommand(command)
       if (data) {
         // Native NAPI parser returns plain JS objects (no WASM handles);

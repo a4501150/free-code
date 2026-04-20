@@ -140,7 +140,7 @@ export function attachErrorLogSink(newSink: ErrorLogSink): void {
  * - Debug logs (visible via `claude --debug` or `tail -f ~/.claude/debug/latest`)
  * - In-memory error log (accessible via `getInMemoryErrors()`, useful for including
  *   in bug reports or displaying recent errors to users)
- * - Persistent error log file (only for internal 'ant' users, stored in ~/.claude/errors/)
+ * - Persistent error log file (only when the `errorLogSink: true` setting is enabled, stored in `~/.claude/errors/`)
  *
  * Usage:
  * ```ts
@@ -227,9 +227,9 @@ export async function getErrorLogByIndex(
  * @private
  */
 async function loadLogList(path: string): Promise<LogOption[]> {
-  let files: Awaited<ReturnType<typeof readdir>>
+  let files: { name: string }[]
   try {
-    files = await readdir(path, { withFileTypes: true })
+    files = await readdir(path, { withFileTypes: true }) as { name: string }[]
   } catch {
     logError(new Error(`No logs found at ${path}`))
     return []

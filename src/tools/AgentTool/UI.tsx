@@ -18,7 +18,11 @@ import { Markdown } from '../../components/Markdown.js'
 import { Message as MessageComponent } from '../../components/Message.js'
 import { MessageResponse } from '../../components/MessageResponse.js'
 import { ToolUseLoader } from '../../components/ToolUseLoader.js'
-import { Box, Text } from '../../ink.js'
+import { Box, Text, useTheme } from '../../ink.js'
+import {
+  useIsAgentToolUseExpanded,
+  useToggleAgentToolUseExpansion,
+} from '../../state/agentExpansion.js'
 import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js'
 import { getDumpPromptsPath } from '../../services/api/dumpPrompts.js'
 import { findToolByName, type Tools } from '../../Tool.js'
@@ -33,6 +37,7 @@ import { getDisplayPath } from '../../utils/file.js'
 import { formatDuration, formatNumber } from '../../utils/format.js'
 import {
   buildSubagentLookups,
+  createAssistantAPIErrorMessage,
   createAssistantMessage,
   EMPTY_LOOKUPS,
 } from '../../utils/messages.js'
@@ -52,6 +57,34 @@ import { getAgentColor } from './agentColorManager.js'
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
 
 const MAX_PROGRESS_MESSAGES_TO_SHOW = 3
+
+/**
+ * Map a subagent errorReason to a short user-facing label for the
+ * completion line (e.g. "Stopped: output token limit"). Unknown reasons
+ * fall back to the raw enum value so we never hide the signal.
+ */
+function formatErrorReason(reason: string): string {
+  switch (reason) {
+    case 'max_output_tokens':
+      return 'output token limit'
+    case 'context_window_exceeded':
+      return 'context window exceeded'
+    case 'rate_limit':
+      return 'rate limit'
+    case 'server_error':
+      return 'server error'
+    case 'invalid_request':
+      return 'invalid request'
+    case 'authentication_failed':
+      return 'authentication failed'
+    case 'billing_error':
+      return 'billing error'
+    case 'unknown':
+      return 'unknown error'
+    default:
+      return reason
+  }
+}
 
 /**
  * Guard: checks if progress data has a `message` field (agent_progress or
@@ -116,105 +149,21 @@ type ProcessedMessage =
   | SummaryMessage
 
 /**
- * Process progress messages to group consecutive search/read operations into summaries.
- * For ants only - returns original messages for non-ants.
- * @param isAgentRunning - If true, the last group is always marked as active (in progress)
+ * Filter progress messages down to non-user assistant-side entries in their
+ * original form. (Earlier revisions also supported a grouped-summary path
+ * for consecutive search/read operations; that path has been removed.)
  */
 function processProgressMessages(
   messages: ProgressMessage<Progress>[],
-  tools: Tools,
-  isAgentRunning: boolean,
+  _tools: Tools,
+  _isAgentRunning: boolean,
 ): ProcessedMessage[] {
-  // Only process for ants
-  if ("external" !== 'ant') {
-    return messages
-      .filter(
-        (m): m is ProgressMessage<AgentToolProgress> =>
-          hasProgressMessage(m.data) && m.data.message.type !== 'user',
-      )
-      .map(m => ({ type: 'original', message: m }))
-  }
-
-  const result: ProcessedMessage[] = []
-  let currentGroup: {
-    searchCount: number
-    readCount: number
-    replCount: number
-    startUuid: string
-  } | null = null
-
-  function flushGroup(isActive: boolean): void {
-    if (
-      currentGroup &&
-      (currentGroup.searchCount > 0 ||
-        currentGroup.readCount > 0 ||
-        currentGroup.replCount > 0)
-    ) {
-      result.push({
-        type: 'summary',
-        searchCount: currentGroup.searchCount,
-        readCount: currentGroup.readCount,
-        replCount: currentGroup.replCount,
-        uuid: `summary-${currentGroup.startUuid}`,
-        isActive,
-      })
-    }
-    currentGroup = null
-  }
-
-  const agentMessages = messages.filter(
-    (m): m is ProgressMessage<AgentToolProgress> => hasProgressMessage(m.data),
-  )
-
-  // Build tool_use lookup incrementally as we iterate
-  const toolUseByID = new Map<string, ToolUseBlockParam>()
-  for (const msg of agentMessages) {
-    // Track tool_use blocks as we see them
-    if (msg.data.message.type === 'assistant') {
-      for (const c of msg.data.message.message.content) {
-        if (c.type === 'tool_use') {
-          toolUseByID.set(c.id, c as ToolUseBlockParam)
-        }
-      }
-    }
-    const info = getSearchOrReadInfo(msg, tools, toolUseByID)
-
-    if (info && (info.isSearch || info.isRead || info.isREPL)) {
-      // This is a search/read/REPL operation - add to current group
-      if (!currentGroup) {
-        currentGroup = {
-          searchCount: 0,
-          readCount: 0,
-          replCount: 0,
-          startUuid: msg.uuid,
-        }
-      }
-      // Only count tool_result messages (not tool_use) to avoid double counting
-      if (msg.data.message.type === 'user') {
-        if (info.isSearch) {
-          currentGroup.searchCount++
-        } else if (info.isREPL) {
-          currentGroup.replCount++
-        } else if (info.isRead) {
-          currentGroup.readCount++
-        }
-      }
-    } else {
-      // Non-search/read/REPL message - flush current group (completed) and add this message
-      flushGroup(false)
-      // Skip user tool_result messages — subagent progress messages lack
-      // toolUseResult, so UserToolSuccessMessage returns null and the
-      // height=1 Box in renderToolUseProgressMessage shows as a blank line.
-      if (msg.data.message.type !== 'user') {
-        result.push({ type: 'original', message: msg })
-      }
-    }
-  }
-
-  // Flush any remaining group - it's active if the agent is still running
-  flushGroup(isAgentRunning)
-
-  return result
+  return messages
+    .filter(
+      (m): m is ProgressMessage<AgentToolProgress> =>
+        hasProgressMessage(m.data) && m.data.message.type !== 'user',
+    )
+    .map(m => ({ type: 'original', message: m }))
 }
 
 const ESTIMATED_LINES_PER_TOOL = 9
@@ -330,11 +279,13 @@ export function renderToolResultMessage(
     verbose,
     theme,
     isTranscriptMode = false,
+    toolUseId,
   }: {
     tools: Tools
     verbose: boolean
     theme: ThemeName
     isTranscriptMode?: boolean
+    toolUseId?: string
   },
 ): React.ReactNode {
   if (data.status === 'async_launched') {
@@ -384,6 +335,7 @@ export function renderToolResultMessage(
     usage,
     content,
     prompt,
+    errorReason,
   } = data
   const result = [
     totalToolUseCount === 1 ? '1 tool use' : `${totalToolUseCount} tool uses`,
@@ -391,21 +343,48 @@ export function renderToolResultMessage(
     formatDuration(totalDurationMs),
   ]
 
-  const completionMessage = `Done (${result.join(' · ')})`
+  const label = errorReason
+    ? `Stopped: ${formatErrorReason(errorReason)}`
+    : 'Done'
+  const completionMessage = `${label} (${result.join(' · ')})`
 
-  const finalAssistantMessage = createAssistantMessage({
-    content: completionMessage,
-    usage: { ...usage, inference_geo: null, iterations: null, speed: null },
-  })
+  const finalAssistantMessage = errorReason
+    ? createAssistantAPIErrorMessage({ content: completionMessage })
+    : createAssistantMessage({
+        content: completionMessage,
+        usage: { ...usage, inference_geo: null, iterations: null, speed: null },
+      })
 
-  return (
-    <Box flexDirection="column">
-      {isTranscriptMode && prompt && (
-        <MessageResponse>
-          <AgentPromptDisplay prompt={prompt} theme={theme} />
-        </MessageResponse>
-      )}
-      {isTranscriptMode ? (
+  const doneLine = (
+    <Box flexDirection="row">
+      <MessageResponse height={1}>
+        <MessageComponent
+          message={finalAssistantMessage}
+          lookups={EMPTY_LOOKUPS}
+          addMargin={false}
+          tools={tools}
+          commands={[]}
+          verbose={verbose}
+          inProgressToolUseIDs={new Set()}
+          progressMessagesForMessage={[]}
+          shouldAnimate={false}
+          shouldShowDot={false}
+          isTranscriptMode={false}
+          isStatic={true}
+        />
+      </MessageResponse>
+      {!isTranscriptMode && <CtrlOToExpand />}
+    </Box>
+  )
+
+  if (isTranscriptMode) {
+    return (
+      <Box flexDirection="column">
+        {prompt && (
+          <MessageResponse>
+            <AgentPromptDisplay prompt={prompt} theme={theme} />
+          </MessageResponse>
+        )}
         <SubAgentProvider>
           <VerboseAgentTranscript
             progressMessages={progressMessagesForMessage}
@@ -413,31 +392,141 @@ export function renderToolResultMessage(
             verbose={verbose}
           />
         </SubAgentProvider>
-      ) : null}
-      {isTranscriptMode && content && content.length > 0 && (
+        {content && content.length > 0 && (
+          <MessageResponse>
+            <AgentResponseDisplay content={content} theme={theme} />
+          </MessageResponse>
+        )}
+        {doneLine}
+      </Box>
+    )
+  }
+
+  if (!toolUseId) {
+    return <Box flexDirection="column">{doneLine}</Box>
+  }
+
+  return (
+    <ExpandableSingleAgentResult
+      toolUseId={toolUseId}
+      prompt={prompt}
+      content={content}
+      progressMessages={progressMessagesForMessage}
+      tools={tools}
+      verbose={verbose}
+    >
+      {doneLine}
+    </ExpandableSingleAgentResult>
+  )
+}
+
+/**
+ * Click-to-expand wrapper for the completed single-agent view. When
+ * expanded: prompt + last 3 tool calls + response + Done(…) line.
+ * Collapsed: the existing Done(…) one-liner.
+ */
+function ExpandableSingleAgentResult({
+  toolUseId,
+  prompt,
+  content,
+  progressMessages,
+  tools,
+  verbose,
+  children,
+}: {
+  toolUseId: string
+  prompt: string | undefined
+  content: { type: string; text: string }[] | undefined
+  progressMessages: ProgressMessage<Progress>[]
+  tools: Tools
+  verbose: boolean
+  children: React.ReactNode
+}): React.ReactNode {
+  const expanded = useIsAgentToolUseExpanded(toolUseId)
+  const toggle = useToggleAgentToolUseExpansion(toolUseId)
+
+  if (!expanded) {
+    return (
+      <Box flexDirection="column" onClick={toggle}>
+        {children}
+      </Box>
+    )
+  }
+
+  // Reuse the same processor the live progress view uses so grouped
+  // search/read summaries render consistently. isAgentRunning=false
+  // since the agent has completed; any trailing group flushes as inactive.
+  const processed = processProgressMessages(progressMessages, tools, false)
+  const displayedMessages = processed.slice(-MAX_PROGRESS_MESSAGES_TO_SHOW)
+  const {
+    lookups: subagentLookups,
+    inProgressToolUseIDs: collapsedInProgressIDs,
+  } = buildSubagentLookups(
+    progressMessages
+      .filter((pm): pm is ProgressMessage<AgentToolProgress> =>
+        hasProgressMessage(pm.data),
+      )
+      .map(pm => pm.data),
+  )
+
+  return (
+    <Box flexDirection="column" onClick={toggle}>
+      {prompt && (
         <MessageResponse>
-          <AgentResponseDisplay content={content} theme={theme} />
+          <Box marginBottom={1}>
+            <AgentPromptDisplay prompt={prompt} />
+          </Box>
         </MessageResponse>
       )}
-      <Box flexDirection="row">
-        <MessageResponse height={1}>
-          <MessageComponent
-            message={finalAssistantMessage}
-            lookups={EMPTY_LOOKUPS}
-            addMargin={false}
-            tools={tools}
-            commands={[]}
-            verbose={verbose}
-            inProgressToolUseIDs={new Set()}
-            progressMessagesForMessage={[]}
-            shouldAnimate={false}
-            shouldShowDot={false}
-            isTranscriptMode={false}
-            isStatic={true}
-          />
+      {displayedMessages.length > 0 && (
+        <MessageResponse>
+          <Box flexDirection="column">
+            <SubAgentProvider>
+              {displayedMessages.map(p => {
+                if (p.type === 'summary') {
+                  const summaryText = getSearchReadSummaryText(
+                    p.searchCount,
+                    p.readCount,
+                    p.isActive,
+                    p.replCount,
+                  )
+                  return (
+                    <Box key={p.uuid} height={1} overflow="hidden">
+                      <Text dimColor>{summaryText}</Text>
+                    </Box>
+                  )
+                }
+                return (
+                  <MessageComponent
+                    key={p.message.uuid}
+                    message={p.message.data.message}
+                    lookups={subagentLookups}
+                    addMargin={false}
+                    tools={tools}
+                    commands={[]}
+                    verbose={verbose}
+                    inProgressToolUseIDs={collapsedInProgressIDs}
+                    progressMessagesForMessage={[]}
+                    shouldAnimate={false}
+                    shouldShowDot={false}
+                    style="condensed"
+                    isTranscriptMode={false}
+                    isStatic={true}
+                  />
+                )
+              })}
+            </SubAgentProvider>
+          </Box>
         </MessageResponse>
-        {!isTranscriptMode && <CtrlOToExpand />}
-      </Box>
+      )}
+      {content && content.length > 0 && (
+        <MessageResponse>
+          <Box marginTop={1} marginBottom={1}>
+            <AgentResponseDisplay content={content} />
+          </Box>
+        </MessageResponse>
+      )}
+      {children}
     </Box>
   )
 }
@@ -527,12 +616,14 @@ export function renderToolUseProgressMessage(
     terminalSize,
     inProgressToolCallCount,
     isTranscriptMode = false,
+    toolUseId,
   }: {
     tools: Tools
     verbose: boolean
     terminalSize?: { columns: number; rows: number }
     inProgressToolCallCount?: number
     isTranscriptMode?: boolean
+    toolUseId?: string
   },
 ): React.ReactNode {
   if (!progressMessages.length) {
@@ -560,9 +651,10 @@ export function renderToolUseProgressMessage(
         return false
       }
       const message = msg.data.message
-      return message.message.content.some(
-        content => content.type === 'tool_use',
-      )
+      if (message.type !== 'assistant' && message.type !== 'user') return false
+      const content = message.message.content
+      if (!Array.isArray(content)) return false
+      return content.some(c => c.type === 'tool_use')
     })
 
     const latestAssistant = progressMessages.findLast(
@@ -635,9 +727,11 @@ export function renderToolUseProgressMessage(
     if (!hasProgressMessage(data)) {
       return false
     }
-    return data.message.message.content.some(
-      content => content.type === 'tool_use',
-    )
+    const msg = data.message
+    if (msg.type !== 'assistant' && msg.type !== 'user') return false
+    const content = msg.message.content
+    if (!Array.isArray(content)) return false
+    return content.some(c => c.type === 'tool_use')
   })
 
   const firstData = progressMessages[0]?.data
@@ -667,7 +761,7 @@ export function renderToolUseProgressMessage(
       .map(pm => pm.data),
   )
 
-  return (
+  const body = (
     <MessageResponse>
       <Box flexDirection="column">
         <SubAgentProvider>
@@ -676,7 +770,7 @@ export function renderToolUseProgressMessage(
               <AgentPromptDisplay prompt={prompt} />
             </Box>
           )}
-          {displayedMessages.map(processed => {
+          {displayedMessages.map((processed, index) => {
             if (processed.type === 'summary') {
               // Render summary for grouped search/read/REPL operations using shared formatting
               const summaryText = getSearchReadSummaryText(
@@ -689,6 +783,25 @@ export function renderToolUseProgressMessage(
                 <Box key={processed.uuid} height={1} overflow="hidden">
                   <Text dimColor>{summaryText}</Text>
                 </Box>
+              )
+            }
+            // For the last displayed message (non-transcript mode), render a
+            // compact header that appends aggregated stats on the same row —
+            // matching the grouped multi-agent per-row summary. Component
+            // falls back to MessageComponent internally on extraction miss.
+            const isLast = index === displayedMessages.length - 1
+            if (isLast && !isTranscriptMode) {
+              return (
+                <SingleAgentLastLineWithStats
+                  key={processed.message.uuid}
+                  lastProcessed={processed}
+                  allProgressMessages={progressMessages}
+                  tools={tools}
+                  verbose={verbose}
+                  subagentLookups={subagentLookups}
+                  collapsedInProgressIDs={collapsedInProgressIDs}
+                  suppressInlineStats={hiddenToolUseCount > 0}
+                />
               )
             }
             // Render original message without height=1 wrapper so null
@@ -716,11 +829,60 @@ export function renderToolUseProgressMessage(
           })}
         </SubAgentProvider>
         {hiddenToolUseCount > 0 && (
-          <Text dimColor>
-            +{hiddenToolUseCount} more tool{' '}
-            {hiddenToolUseCount === 1 ? 'use' : 'uses'} <CtrlOToExpand />
-          </Text>
+          <PlusNMoreWithStats allProgressMessages={progressMessages} />
         )}
+      </Box>
+    </MessageResponse>
+  )
+
+  // Transcript mode already renders the full prompt + transcript inline;
+  // no click affordance to add. Also skip when we lack the tool-use ID.
+  if (isTranscriptMode || !toolUseId) {
+    return body
+  }
+
+  return (
+    <ExpandableSingleAgentProgress toolUseId={toolUseId} prompt={prompt}>
+      {body}
+    </ExpandableSingleAgentProgress>
+  )
+}
+
+/**
+ * Click-to-expand wrapper for the single-agent in-progress view. When expanded,
+ * prepends the agent's prompt above the existing live 3-call body so the user
+ * can see what was asked without opening the full transcript (Ctrl+O).
+ */
+function ExpandableSingleAgentProgress({
+  toolUseId,
+  prompt,
+  children,
+}: {
+  toolUseId: string
+  prompt: string | undefined
+  children: React.ReactNode
+}): React.ReactNode {
+  const expanded = useIsAgentToolUseExpanded(toolUseId)
+  const toggle = useToggleAgentToolUseExpansion(toolUseId)
+  if (!expanded) {
+    return (
+      <Box flexDirection="column" onClick={toggle}>
+        {children}
+      </Box>
+    )
+  }
+  // Wrapping in MessageResponse here lets the inner body's own
+  // MessageResponse collapse via MessageResponseContext, so the prompt
+  // and body share a single ⎿ tree prefix.
+  return (
+    <MessageResponse>
+      <Box flexDirection="column" onClick={toggle}>
+        {prompt && (
+          <Box marginBottom={1}>
+            <AgentPromptDisplay prompt={prompt} />
+          </Box>
+        )}
+        {children}
       </Box>
     </MessageResponse>
   )
@@ -864,6 +1026,183 @@ function useNow(enabled: boolean, intervalMs = 1000): number {
   return now
 }
 
+/**
+ * Renders the final displayed progress message (a tool_use) as a compact
+ * header with aggregated stats appended on the same row:
+ *
+ *   Read(CLAUDE.md) · 1 tool use · 15.9k tokens · 5s
+ *
+ * This mirrors the per-row summary the grouped (multi-agent) view shows via
+ * `AgentProgressLine`, so single- and multi-agent views stay consistent.
+ *
+ * The hosting `renderToolUseProgressMessage` is a plain function and can't
+ * use hooks, so this component owns `useNow` / `useTheme` and is rendered
+ * only for the last displayed message. Unmounts as soon as the agent
+ * resolves (AssistantToolUseMessage stops calling the progress renderer).
+ *
+ * Falls back to the regular `<MessageComponent>` render when the tool
+ * can't be identified (unknown tool, input parse failure, null/empty
+ * renderToolUseMessage result) so the caller's loop stays simple.
+ */
+function SingleAgentLastLineWithStats({
+  lastProcessed,
+  allProgressMessages,
+  tools,
+  verbose,
+  subagentLookups,
+  collapsedInProgressIDs,
+  suppressInlineStats = false,
+}: {
+  lastProcessed: Extract<ProcessedMessage, { type: 'original' }>
+  allProgressMessages: ProgressMessage<Progress>[]
+  tools: Tools
+  verbose: boolean
+  subagentLookups: ReturnType<typeof buildSubagentLookups>['lookups']
+  collapsedInProgressIDs: Set<string>
+  /** When true, don't append the aggregate stats on this row — caller is
+   *  rendering them on the `+N more tool uses` summary line instead. */
+  suppressInlineStats?: boolean
+}): React.ReactNode {
+  const [theme] = useTheme()
+  const nowMs = useNow(true)
+
+  const fallback = (
+    <MessageComponent
+      message={lastProcessed.message.data.message}
+      lookups={subagentLookups}
+      addMargin={false}
+      tools={tools}
+      commands={[]}
+      verbose={verbose}
+      inProgressToolUseIDs={collapsedInProgressIDs}
+      progressMessagesForMessage={[]}
+      shouldAnimate={false}
+      shouldShowDot={false}
+      style="condensed"
+      isTranscriptMode={false}
+      isStatic={true}
+    />
+  )
+
+  // Find the last tool_use block in the assistant message's content.
+  const lastMsg = lastProcessed.message.data.message
+  const content =
+    lastMsg.type === 'assistant' || lastMsg.type === 'user'
+      ? lastMsg.message.content
+      : []
+  let toolUse: ToolUseBlockParam | null = null
+  for (let i = (content as unknown[]).length - 1; i >= 0; i--) {
+    const block = (content as unknown[])[i]
+    if (
+      block &&
+      typeof block === 'object' &&
+      'type' in block &&
+      (block as { type: string }).type === 'tool_use'
+    ) {
+      toolUse = block as ToolUseBlockParam
+      break
+    }
+  }
+  if (!toolUse) {
+    return fallback
+  }
+
+  const tool = findToolByName(tools, toolUse.name)
+  if (!tool) {
+    return fallback
+  }
+
+  const parsed = tool.inputSchema.safeParse(toolUse.input)
+  const input = parsed.success ? parsed.data : {}
+  const userFacingToolName = tool.userFacingName(
+    parsed.success ? parsed.data : undefined,
+  )
+  if (!userFacingToolName) {
+    return fallback
+  }
+
+  let renderedToolUseMessage: React.ReactNode
+  try {
+    renderedToolUseMessage = tool.renderToolUseMessage(input, {
+      theme,
+      verbose,
+      commands: [],
+    })
+  } catch {
+    return fallback
+  }
+  if (renderedToolUseMessage === null) {
+    return fallback
+  }
+
+  const stats = calculateAgentStats(allProgressMessages, undefined, nowMs)
+  const counterParts: string[] = []
+  if (stats.toolUseCount > 0) {
+    counterParts.push(
+      stats.toolUseCount === 1
+        ? '1 tool use'
+        : `${stats.toolUseCount} tool uses`,
+    )
+  }
+  if (stats.tokens !== null && stats.tokens > 0) {
+    counterParts.push(`${formatNumber(stats.tokens)} tokens`)
+  }
+  if (stats.durationMs !== null) {
+    counterParts.push(formatDuration(stats.durationMs))
+  }
+
+  return (
+    <Box flexDirection="row" flexWrap="nowrap">
+      <Box flexShrink={0}>
+        <Text bold>{userFacingToolName}</Text>
+      </Box>
+      {renderedToolUseMessage !== '' && (
+        <Box flexWrap="nowrap">
+          <Text>({renderedToolUseMessage})</Text>
+        </Box>
+      )}
+      {!suppressInlineStats && counterParts.length > 0 && (
+        <Text dimColor> · {counterParts.join(' · ')}</Text>
+      )}
+    </Box>
+  )
+}
+
+/**
+ * Summary row rendered below the last few progress messages when some tool
+ * uses are hidden. Replaces the plain "+N more tool uses" text with the
+ * aggregate stats (tool uses, tokens, duration) and the ctrl+o affordance —
+ * avoids crowding the last invocation row with stats that aren't its own.
+ */
+function PlusNMoreWithStats({
+  allProgressMessages,
+}: {
+  allProgressMessages: ProgressMessage<Progress>[]
+}): React.ReactNode {
+  const nowMs = useNow(true)
+  const stats = calculateAgentStats(allProgressMessages, undefined, nowMs)
+  const parts: string[] = []
+  if (stats.toolUseCount > 0) {
+    parts.push(
+      stats.toolUseCount === 1
+        ? '1 tool use'
+        : `${stats.toolUseCount} tool uses`,
+    )
+  }
+  if (stats.tokens !== null && stats.tokens > 0) {
+    parts.push(`${formatNumber(stats.tokens)} tokens`)
+  }
+  if (stats.durationMs !== null) {
+    parts.push(formatDuration(stats.durationMs))
+  }
+  return (
+    <Text dimColor>
+      {parts.length > 0 ? `${parts.join(' · ')} ` : ''}
+      <CtrlOToExpand />
+    </Text>
+  )
+}
+
 type GroupedAgentToolUse = {
   param: ToolUseBlockParam
   isResolved: boolean
@@ -910,13 +1249,19 @@ function GroupedAgentToolUseView({
       let color: keyof Theme | undefined
       let descriptionColor: keyof Theme | undefined
       let taskDescription: string | undefined
-      if (isTeammateSpawn && parsedInput.success && parsedInput.data.name) {
-        agentType = `@${parsedInput.data.name}`
-        const subagentType = parsedInput.data.subagent_type
+      // Widen the inferred schema type: `name` is omit()ed when the agent-
+      // swarms gate is off, but at runtime the field can still be present on
+      // teammate-spawn inputs. Cast to reveal the optional field.
+      const widenedInput = parsedInput.success
+        ? (parsedInput.data as typeof parsedInput.data & { name?: string })
+        : undefined
+      if (isTeammateSpawn && widenedInput?.name) {
+        agentType = `@${widenedInput.name}`
+        const subagentType = widenedInput.subagent_type
         description = isCustomSubagentType(subagentType)
           ? subagentType
           : undefined
-        taskDescription = parsedInput.data.description
+        taskDescription = widenedInput.description
         // Use the custom agent definition's color on the type, not the name
         descriptionColor = isCustomSubagentType(subagentType)
           ? (getAgentColor(subagentType) as keyof Theme | undefined)
@@ -946,7 +1291,7 @@ function GroupedAgentToolUseView({
       const isAsync =
         launchedAsAsync || backgroundedMidExecution || isTeammateSpawn
 
-      const name = parsedInput.success ? parsedInput.data.name : undefined
+      const name = widenedInput?.name
 
       // Resolve effective model; show tag only when it differs from the main
       // loop model. Matches single-agent behavior in renderAgentToolUseTag.
@@ -1034,30 +1379,165 @@ function GroupedAgentToolUseView({
         </Text>
         {!allAsync && <CtrlOToExpand />}
       </Box>
-      {agentStats.map((stat, index) => (
-        <AgentProgressLine
-          key={stat.id}
-          agentType={stat.agentType}
-          description={stat.description}
-          descriptionColor={stat.descriptionColor}
-          taskDescription={stat.taskDescription}
-          toolUseCount={stat.toolUseCount}
-          tokens={stat.tokens}
-          durationMs={stat.durationMs}
-          effectiveModel={stat.effectiveModel}
-          color={stat.color}
-          isLast={index === agentStats.length - 1}
-          isResolved={stat.isResolved}
-          isError={stat.isError}
-          isAsync={stat.isAsync}
-          shouldAnimate={shouldAnimate}
-          lastToolInfo={stat.lastToolInfo}
-          // Always show full AgentType(description) format to match the
-          // single-agent header, even when all grouped agents share a type.
-          hideType={false}
-          name={stat.name}
-        />
-      ))}
+      {agentStats.map((stat, index) => {
+        const toolUse = toolUses[index]!
+        const firstData = toolUse.progressMessages[0]?.data
+        const rowPrompt =
+          firstData && hasProgressMessage(firstData) ? firstData.prompt : undefined
+        // Completed row's final response text blocks — only present once the
+        // agent has fully resolved. Grouped view reuses AgentResponseDisplay
+        // inside AgentRowWithExpand to mirror the single-agent expanded view.
+        const rowContent =
+          toolUse.result?.output &&
+          toolUse.result.output.status === 'completed'
+            ? toolUse.result.output.content
+            : undefined
+        const progressLine = (
+          <AgentProgressLine
+            agentType={stat.agentType}
+            description={stat.description}
+            descriptionColor={stat.descriptionColor}
+            taskDescription={stat.taskDescription}
+            toolUseCount={stat.toolUseCount}
+            tokens={stat.tokens}
+            durationMs={stat.durationMs}
+            effectiveModel={stat.effectiveModel}
+            color={stat.color}
+            isLast={index === agentStats.length - 1}
+            isResolved={stat.isResolved}
+            isError={stat.isError}
+            isAsync={stat.isAsync}
+            shouldAnimate={shouldAnimate}
+            lastToolInfo={stat.lastToolInfo}
+            // Always show full AgentType(description) format to match the
+            // single-agent header, even when all grouped agents share a type.
+            hideType={false}
+            name={stat.name}
+          />
+        )
+        return (
+          <AgentRowWithExpand
+            key={stat.id}
+            toolUseId={stat.id}
+            prompt={rowPrompt}
+            content={rowContent}
+            progressMessages={toolUse.progressMessages}
+            tools={tools}
+            isBackgrounded={stat.isAsync && stat.isResolved}
+          >
+            {progressLine}
+          </AgentRowWithExpand>
+        )
+      })}
+    </Box>
+  )
+}
+
+/**
+ * Per-row wrapper for the grouped multi-agent view. Owns its own expansion
+ * subscription so a click on one row re-renders just that row, not its
+ * siblings. Backgrounded rows are non-clickable (the only meaningful action
+ * is foregrounding via ↓, not expanding in place).
+ */
+function AgentRowWithExpand({
+  toolUseId,
+  prompt,
+  content,
+  progressMessages,
+  tools,
+  isBackgrounded,
+  children,
+}: {
+  toolUseId: string
+  prompt: string | undefined
+  content: { type: string; text: string }[] | undefined
+  progressMessages: ProgressMessage<Progress>[]
+  tools: Tools
+  isBackgrounded: boolean
+  children: React.ReactNode
+}): React.ReactNode {
+  const expanded = useIsAgentToolUseExpanded(toolUseId)
+  const toggle = useToggleAgentToolUseExpansion(toolUseId)
+
+  if (isBackgrounded) {
+    return <Box flexDirection="column">{children}</Box>
+  }
+
+  if (!expanded) {
+    return (
+      <Box flexDirection="column" onClick={toggle}>
+        {children}
+      </Box>
+    )
+  }
+
+  // Render the prompt and last 3 tool calls below the title/status row,
+  // indented to align under the row's content.
+  const processed = processProgressMessages(progressMessages, tools, true)
+  const displayedMessages = processed.slice(-MAX_PROGRESS_MESSAGES_TO_SHOW)
+  const {
+    lookups: subagentLookups,
+    inProgressToolUseIDs: collapsedInProgressIDs,
+  } = buildSubagentLookups(
+    progressMessages
+      .filter((pm): pm is ProgressMessage<AgentToolProgress> =>
+        hasProgressMessage(pm.data),
+      )
+      .map(pm => pm.data),
+  )
+
+  return (
+    <Box flexDirection="column" onClick={toggle}>
+      {children}
+      <Box paddingLeft={6} flexDirection="column">
+        {prompt && (
+          <Box marginBottom={1}>
+            <AgentPromptDisplay prompt={prompt} />
+          </Box>
+        )}
+        {displayedMessages.length > 0 && (
+          <SubAgentProvider>
+            {displayedMessages.map(p => {
+              if (p.type === 'summary') {
+                const summaryText = getSearchReadSummaryText(
+                  p.searchCount,
+                  p.readCount,
+                  p.isActive,
+                  p.replCount,
+                )
+                return (
+                  <Box key={p.uuid} height={1} overflow="hidden">
+                    <Text dimColor>{summaryText}</Text>
+                  </Box>
+                )
+              }
+              return (
+                <MessageComponent
+                  key={p.message.uuid}
+                  message={p.message.data.message}
+                  lookups={subagentLookups}
+                  addMargin={false}
+                  tools={tools}
+                  commands={[]}
+                  verbose={false}
+                  inProgressToolUseIDs={collapsedInProgressIDs}
+                  progressMessagesForMessage={[]}
+                  shouldAnimate={false}
+                  shouldShowDot={false}
+                  style="condensed"
+                  isTranscriptMode={false}
+                  isStatic={true}
+                />
+              )
+            })}
+          </SubAgentProvider>
+        )}
+        {content && content.length > 0 && (
+          <Box marginTop={1} marginBottom={1}>
+            <AgentResponseDisplay content={content} />
+          </Box>
+        )}
+      </Box>
     </Box>
   )
 }

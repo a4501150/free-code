@@ -39,10 +39,7 @@ import TextInput from './TextInput.js'
 
 // This value was determined experimentally by testing the URL length limit
 const GITHUB_URL_LIMIT = 7250
-const GITHUB_ISSUES_REPO_URL =
-  "external" === 'ant'
-    ? 'https://github.com/anthropics/claude-cli-internal/issues'
-    : 'https://github.com/anthropics/claude-code/issues'
+const GITHUB_ISSUES_REPO_URL = 'https://github.com/anthropics/claude-code/issues'
 
 type Props = {
   abortSignal: AbortSignal
@@ -259,14 +256,6 @@ export function Feedback({
     if (result.success) {
       if (result.feedbackId) {
         setFeedbackId(result.feedbackId)
-        // 1P-only: freeform text approved for BQ. Join on feedback_id.
-        logEventTo1P('tengu_bug_report_description', {
-          feedback_id:
-            result.feedbackId,
-          description: redactSensitiveInfo(
-            description,
-          ),
-        })
       }
       setStep('done')
     } else {

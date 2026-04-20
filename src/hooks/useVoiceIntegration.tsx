@@ -17,15 +17,14 @@ import type { ParsedKeystroke } from '../keybindings/types.js'
 import { normalizeFullWidthSpace } from '../utils/stringUtils.js'
 import { useVoiceEnabled } from './useVoiceEnabled.js'
 
-// Dead code elimination: conditional import for voice input hook.
-/* eslint-disable @typescript-eslint/no-require-imports */
 // Capture the module namespace, not the function: spyOn() mutates the module
 // object, so `voiceNs.useVoice(...)` resolves to the spy even if this module
 // was loaded before the spy was installed (test ordering independence).
+import * as useVoiceNsRaw from './useVoice.js'
 const voiceNs: { useVoice: typeof import('./useVoice.js').useVoice } = feature(
   'VOICE_MODE',
 )
-  ? require('./useVoice.js')
+  ? useVoiceNsRaw
   : {
       useVoice: ({
         enabled: _e,
@@ -37,7 +36,6 @@ const voiceNs: { useVoice: typeof import('./useVoice.js').useVoice } = feature(
         handleKeyEvent: (_fallbackMs?: number) => {},
       }),
     }
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 // Maximum gap (ms) between key presses to count as held (auto-repeat).
 // Terminal auto-repeat fires every 30-80ms; 120ms covers jitter while

@@ -1,4 +1,6 @@
 import { feature } from 'bun:bundle'
+import * as fs from 'fs/promises'
+import { join } from 'path'
 import { getInvokedSkillsForAgent } from '../../bootstrap/state.js'
 import { getInitialSettings } from '../settings/settings.js'
 import { queryModelWithoutStreaming } from '../../services/api/claude.js'
@@ -173,9 +175,6 @@ export async function applySkillImprovement(
   updates: SkillUpdate[],
 ): Promise<void> {
   if (!skillName) return
-
-  const { join } = await import('path')
-  const fs = await import('fs/promises')
 
   // Skills live at .claude/skills/<name>/SKILL.md relative to CWD
   const filePath = join(getCwd(), '.claude', 'skills', skillName, 'SKILL.md')

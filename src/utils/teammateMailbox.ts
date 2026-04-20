@@ -10,7 +10,6 @@
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { z } from 'zod/v4'
-import { TEAMMATE_MESSAGE_TAG } from '../constants/xml.js'
 import { PermissionModeSchema } from '../entrypoints/sdk/coreSchemas.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../tools/SendMessageTool/constants.js'
 import type { Message } from '../types/message.js'
@@ -367,26 +366,7 @@ export async function clearMailbox(
   }
 }
 
-/**
- * Format teammate messages as XML for attachment display
- */
-export function formatTeammateMessages(
-  messages: Array<{
-    from: string
-    text: string
-    timestamp: string
-    color?: string
-    summary?: string
-  }>,
-): string {
-  return messages
-    .map(m => {
-      const colorAttr = m.color ? ` color="${m.color}"` : ''
-      const summaryAttr = m.summary ? ` summary="${m.summary}"` : ''
-      return `<${TEAMMATE_MESSAGE_TAG} teammate_id="${m.from}"${colorAttr}${summaryAttr}>\n${m.text}\n</${TEAMMATE_MESSAGE_TAG}>`
-    })
-    .join('\n\n')
-}
+export { formatTeammateMessages } from './swarm/formatTeammateMessages.js'
 
 /**
  * Structured message sent when a teammate becomes idle (via Stop hook)

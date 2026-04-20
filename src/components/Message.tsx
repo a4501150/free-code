@@ -28,6 +28,9 @@ import type {
 import { type AdvisorBlock, isAdvisorBlock } from '../utils/advisor.js'
 import { isFullscreenEnvEnabled } from '../utils/fullscreen.js'
 import { logError } from '../utils/log.js'
+import * as snipProjectionNs from '../services/compact/snipProjection.js'
+import * as snipCompactNs from '../services/compact/snipCompact.js'
+import * as snipBoundaryMessageNs from './messages/SnipBoundaryMessage.js'
 import type { buildMessageLookups } from '../utils/messages.js'
 import { CompactSummary } from './CompactSummary.js'
 import { AdvisorMessage } from './messages/AdvisorMessage.js'
@@ -36,6 +39,7 @@ import { AssistantTextMessage } from './messages/AssistantTextMessage.js'
 import { AssistantThinkingMessage } from './messages/AssistantThinkingMessage.js'
 import { AssistantToolUseMessage } from './messages/AssistantToolUseMessage.js'
 import { AttachmentMessage } from './messages/AttachmentMessage.js'
+import { TruncationIndicator } from './messages/TruncationIndicator.js'
 import { CollapsedReadSearchContent } from './messages/CollapsedReadSearchContent.js'
 import { CompactBoundaryMessage } from './messages/CompactBoundaryMessage.js'
 import { GroupedToolUseContent } from './messages/GroupedToolUseContent.js'
@@ -54,6 +58,7 @@ export type Props = {
     | SystemMessage
     | GroupedToolUseMessageType
     | CollapsedReadSearchGroupType
+    | ProgressMessage
   lookups: ReturnType<typeof buildMessageLookups>
   // TODO: Find a way to remove this, and leave spacing to the consumer
   /** Absolute width for the container Box. When provided, eliminates a wrapper Box in the caller. */
@@ -110,7 +115,18 @@ function MessageImpl({
           isTranscriptMode={isTranscriptMode}
         />
       )
-    case 'assistant':
+    case 'assistant': {
+      // The real assistant message carries `stop_reason` from the API. When
+      // the turn ended because the output hit max_tokens (user-configured
+      // cap) or the context window was exceeded, render a dimmed footer
+      // indicator below the content so the user can see why the response
+      // was cut off. No synthetic "API Error" turn is injected into the
+      // conversation for these stops — the indicator is UI-only.
+      const stopReason = message.message.stop_reason
+      const showTruncationIndicator =
+        !message.isApiErrorMessage &&
+        (stopReason === 'max_tokens' ||
+          stopReason === 'model_context_window_exceeded')
       return (
         <Box flexDirection="column" width={containerWidth ?? '100%'}>
           {message.message.content.map((_, index) => (
@@ -135,8 +151,12 @@ function MessageImpl({
               advisorModel={message.advisorModel}
             />
           ))}
+          {showTruncationIndicator && (
+            <TruncationIndicator stopReason={stopReason} />
+          )}
         </Box>
       )
+    }
     case 'user': {
       if (message.isCompactSummary) {
         return (
@@ -174,7 +194,7 @@ function MessageImpl({
               addMargin={addMargin}
               tools={tools}
               progressMessagesForMessage={progressMessagesForMessage}
-              param={param}
+              param={param as TextBlockParam | ImageBlockParam | ToolUseBlockParam | ToolResultBlockParam}
               style={style}
               verbose={verbose}
               imageIndex={imageIndices[index]!}
@@ -206,17 +226,10 @@ function MessageImpl({
         return null
       }
       if (feature('HISTORY_SNIP')) {
-        /* eslint-disable @typescript-eslint/no-require-imports */
-        const { isSnipBoundaryMessage } =
-          require('../services/compact/snipProjection.js') as typeof import('../services/compact/snipProjection.js')
-        const { isSnipMarkerMessage } =
-          require('../services/compact/snipCompact.js') as typeof import('../services/compact/snipCompact.js')
-        /* eslint-enable @typescript-eslint/no-require-imports */
+        const { isSnipBoundaryMessage } = snipProjectionNs
+        const { isSnipMarkerMessage } = snipCompactNs
         if (isSnipBoundaryMessage(message)) {
-          /* eslint-disable @typescript-eslint/no-require-imports */
-          const { SnipBoundaryMessage } =
-            require('./messages/SnipBoundaryMessage.js') as typeof import('./messages/SnipBoundaryMessage.js')
-          /* eslint-enable @typescript-eslint/no-require-imports */
+          const { SnipBoundaryMessage } = snipBoundaryMessageNs
           return <SnipBoundaryMessage message={message} />
         }
         if (isSnipMarkerMessage(message)) {
@@ -318,7 +331,7 @@ function UserMessage({
           addMargin={addMargin}
           param={param}
           verbose={verbose}
-          planContent={message.planContent}
+          planContent={message.planContent as string | undefined}
           isTranscriptMode={isTranscriptMode}
           timestamp={message.timestamp}
         />

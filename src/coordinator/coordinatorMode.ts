@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { ASYNC_AGENT_ALLOWED_TOOLS } from '../constants/tools.js'
 import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
@@ -10,6 +9,13 @@ import { TASK_STOP_TOOL_NAME } from '../tools/TaskStopTool/prompt.js'
 import { TEAM_CREATE_TOOL_NAME } from '../tools/TeamCreateTool/constants.js'
 import { TEAM_DELETE_TOOL_NAME } from '../tools/TeamDeleteTool/constants.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
+import { isCoordinatorMode } from './coordinatorModeGate.js'
+// Side-effect import: workerAgent registers its coordinator-agent provider at
+// module init so getCoordinatorAgents() returns the real list when this module
+// is loaded.
+import './workerAgent.js'
+
+export { isCoordinatorMode }
 
 // Checks the same gate as isScratchpadEnabled() in
 // utils/permissions/filesystem.ts. Duplicated here because importing
@@ -27,13 +33,6 @@ const INTERNAL_WORKER_TOOLS = new Set([
   SEND_MESSAGE_TOOL_NAME,
   SYNTHETIC_OUTPUT_TOOL_NAME,
 ])
-
-export function isCoordinatorMode(): boolean {
-  if (feature('COORDINATOR_MODE')) {
-    return isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE)
-  }
-  return false
-}
 
 /**
  * Checks if the current coordinator mode matches the session's stored mode.

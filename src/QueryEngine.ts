@@ -82,12 +82,7 @@ import {
   type ThinkingConfig,
 } from './utils/thinking.js'
 
-// Lazy: MessageSelector.tsx pulls React/ink; only needed for message filtering at query time
-/* eslint-disable @typescript-eslint/no-require-imports */
-const messageSelector =
-  (): typeof import('src/components/MessageSelector.js') =>
-    require('src/components/MessageSelector.js')
-
+import * as messageSelector from 'src/components/MessageSelector.js'
 import {
   localCommandOutputToSDKAssistantMessage,
   toSDKCompactMetadata,
@@ -100,7 +95,6 @@ import {
   getScratchpadDir,
   isScratchpadEnabled,
 } from './utils/permissions/filesystem.js'
-/* eslint-enable @typescript-eslint/no-require-imports */
 import {
   handleOrphanedPermission,
   isResultSuccessful,
@@ -118,14 +112,10 @@ const getCoordinatorUserContext: (
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 // Dead code elimination: conditional import for snip compaction
-/* eslint-disable @typescript-eslint/no-require-imports */
-const snipModule = feature('HISTORY_SNIP')
-  ? (require('./services/compact/snipCompact.js') as typeof import('./services/compact/snipCompact.js'))
-  : null
-const snipProjection = feature('HISTORY_SNIP')
-  ? (require('./services/compact/snipProjection.js') as typeof import('./services/compact/snipProjection.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as snipCompactNs from './services/compact/snipCompact.js'
+const snipModule = feature('HISTORY_SNIP') ? snipCompactNs : null
+import * as snipProjectionNs from './services/compact/snipProjection.js'
+const snipProjection = feature('HISTORY_SNIP') ? snipProjectionNs : null
 
 export type QueryEngineConfig = {
   cwd: string
@@ -332,8 +322,8 @@ export class QueryEngine {
 
     let processUserInputContext: ProcessUserInputContext = {
       messages: this.mutableMessages,
-      // Slash commands that mutate the message array (e.g. /force-snip)
-      // call setMessages(fn).  In interactive mode this writes back to
+      // Slash commands that mutate the message array call setMessages(fn).
+      // In interactive mode this writes back to
       // AppState; in print mode we write back to mutableMessages so the
       // rest of the query loop (push at :389, snapshot at :392) sees
       // the result.  The second processUserInputContext below (after
@@ -466,7 +456,7 @@ export class QueryEngine {
         (msg.type === 'user' &&
           !msg.isMeta && // Skip synthetic caveat messages
           !msg.toolUseResult && // Skip tool results (they'll be acked from query)
-          messageSelector().selectableUserMessagesFilter(msg)) || // Skip non-user-authored messages (task notifications, etc.)
+          messageSelector.selectableUserMessagesFilter(msg)) || // Skip non-user-authored messages (task notifications, etc.)
         (msg.type === 'system' && msg.subtype === 'compact_boundary'), // Always ack compact boundaries
     )
     const messagesToAck = replayUserMessages ? replayableMessages : []
@@ -638,7 +628,7 @@ export class QueryEngine {
 
     if (fileHistoryEnabled() && persistSession) {
       messagesFromUserInput
-        .filter(messageSelector().selectableUserMessagesFilter)
+        .filter(messageSelector.selectableUserMessagesFilter)
         .forEach(message => {
           void fileHistoryMakeSnapshot(
             (updater: (prev: FileHistoryState) => FileHistoryState) => {

@@ -522,7 +522,7 @@ function PromptInput({
       Object.values(tasks).some(
         t =>
           isBackgroundTask(t) &&
-          !("external" === 'ant' && isPanelAgentTask(t)),
+          !(feature('COORDINATOR_MODE') ? isPanelAgentTask(t) : false),
       ),
     [tasks],
   )
@@ -603,7 +603,7 @@ function PromptInput({
   // something is running.
   const tasksFooterVisible =
     (runningTaskCount > 0 ||
-      ("external" === 'ant' && coordinatorTaskCount > 0)) &&
+      (feature('COORDINATOR_MODE') ? coordinatorTaskCount > 0 : false)) &&
     !shouldHideTasksFooter(tasks, showSpinnerTree)
   const teamsFooterVisible = cachedTeams.length > 0
 
@@ -2206,28 +2206,27 @@ function PromptInput({
     {
       'footer:up': () => {
         // ↑ scrolls within the coordinator task list before leaving the pill
-        if (
-          tasksSelected &&
-          "external" === 'ant' &&
-          coordinatorTaskCount > 0 &&
-          coordinatorTaskIndex > minCoordinatorIndex
-        ) {
-          setCoordinatorTaskIndex(prev => prev - 1)
-          return
+        if (feature('COORDINATOR_MODE')) {
+          if (
+            tasksSelected &&
+            coordinatorTaskCount > 0 &&
+            coordinatorTaskIndex > minCoordinatorIndex
+          ) {
+            setCoordinatorTaskIndex(prev => prev - 1)
+            return
+          }
         }
         navigateFooter(-1, true)
       },
       'footer:down': () => {
         // ↓ scrolls within the coordinator task list, never leaves the pill
-        if (
-          tasksSelected &&
-          "external" === 'ant' &&
-          coordinatorTaskCount > 0
-        ) {
-          if (coordinatorTaskIndex < coordinatorTaskCount - 1) {
-            setCoordinatorTaskIndex(prev => prev + 1)
+        if (feature('COORDINATOR_MODE')) {
+          if (tasksSelected && coordinatorTaskCount > 0) {
+            if (coordinatorTaskIndex < coordinatorTaskCount - 1) {
+              setCoordinatorTaskIndex(prev => prev + 1)
+            }
+            return
           }
-          return
         }
         if (tasksSelected && !isTeammateMode) {
           setShowBashesDialog(true)

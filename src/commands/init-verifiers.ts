@@ -12,7 +12,7 @@ const command = {
     return [
       {
         type: 'text',
-        text: `Use the TodoWrite tool to track your progress through this multi-step task.
+        text: `Use the TaskCreate / TaskUpdate tools to track your progress through this multi-step task.
 
 ## Goal
 

@@ -26,14 +26,15 @@ import { getPlan } from '../plans.js'
 export function toInternalMessages(
   messages: readonly DeepImmutable<SDKMessage>[],
 ): Message[] {
-  return messages.flatMap(message => {
-    switch (message.type) {
+  return (messages as unknown[]).flatMap((message: unknown): Message[] => {
+    const msg = message as DeepImmutable<SDKMessage>
+    switch (msg.type) {
       case 'assistant':
         return [
           {
             type: 'assistant',
-            message: message.message,
-            uuid: message.uuid,
+            message: msg.message,
+            uuid: msg.uuid,
             requestId: undefined,
             timestamp: new Date().toISOString(),
           } as Message,
@@ -42,16 +43,16 @@ export function toInternalMessages(
         return [
           {
             type: 'user',
-            message: message.message,
-            uuid: message.uuid ?? randomUUID(),
-            timestamp: message.timestamp ?? new Date().toISOString(),
-            isMeta: message.isSynthetic,
+            message: msg.message,
+            uuid: msg.uuid ?? randomUUID(),
+            timestamp: msg.timestamp ?? new Date().toISOString(),
+            isMeta: msg.isSynthetic,
           } as Message,
         ]
       case 'system':
         // Handle compact boundary messages
-        if (message.subtype === 'compact_boundary') {
-          const compactMsg = message
+        if (msg.subtype === 'compact_boundary') {
+          const compactMsg = msg
           return [
             {
               type: 'system',
@@ -61,7 +62,7 @@ export function toInternalMessages(
               compactMetadata: fromSDKCompactMetadata(
                 compactMsg.compact_metadata,
               ),
-              uuid: message.uuid,
+              uuid: msg.uuid as UUID,
               timestamp: new Date().toISOString(),
             },
           ]
@@ -104,9 +105,9 @@ export function fromSDKCompactMetadata(
     preTokens: meta.pre_tokens,
     ...(seg && {
       preservedSegment: {
-        headUuid: seg.head_uuid,
-        anchorUuid: seg.anchor_uuid,
-        tailUuid: seg.tail_uuid,
+        headUuid: seg.head_uuid as UUID,
+        anchorUuid: seg.anchor_uuid as UUID,
+        tailUuid: seg.tail_uuid as UUID,
       },
     }),
   }

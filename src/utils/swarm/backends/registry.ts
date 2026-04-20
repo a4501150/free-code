@@ -2,6 +2,10 @@ import { getIsNonInteractiveSession } from '../../../bootstrap/state.js'
 import { logForDebugging } from '../../../utils/debug.js'
 import { getPlatform } from '../../../utils/platform.js'
 import {
+  getITermBackendClass,
+  getTmuxBackendClass,
+} from './backendTypes.js'
+import {
   isInITerm2,
   isInsideTmux,
   isInsideTmuxSync,
@@ -9,9 +13,14 @@ import {
   isTmuxAvailable,
 } from './detection.js'
 import { createInProcessBackend } from './InProcessBackend.js'
+// Importing the concrete backend modules for their self-registration side
+// effect. They register their class via ./backendTypes at module init, so
+// subsequent calls to getTmuxBackendClass / getITermBackendClass resolve.
+import './ITermBackend.js'
 import { getPreferTmuxOverIterm2 } from './it2Setup.js'
 import { createPaneBackendExecutor } from './PaneBackendExecutor.js'
 import { getTeammateModeFromSnapshot } from './teammateModeSnapshot.js'
+import './TmuxBackend.js'
 import type {
   BackendDetectionResult,
   PaneBackend,
@@ -29,11 +38,6 @@ let cachedBackend: PaneBackend | null = null
  * Cached detection result with additional metadata.
  */
 let cachedDetectionResult: BackendDetectionResult | null = null
-
-/**
- * Flag to track if backends have been registered.
- */
-let backendsRegistered = false
 
 /**
  * Cached in-process backend instance.
@@ -54,49 +58,12 @@ let cachedPaneBackendExecutor: TeammateExecutor | null = null
 let inProcessFallbackActive = false
 
 /**
- * Placeholder for TmuxBackend - will be replaced with actual implementation.
- * This allows the registry to compile before the backend implementations exist.
- */
-let TmuxBackendClass: (new () => PaneBackend) | null = null
-
-/**
- * Placeholder for ITermBackend - will be replaced with actual implementation.
- * This allows the registry to compile before the backend implementations exist.
- */
-let ITermBackendClass: (new () => PaneBackend) | null = null
-
-/**
- * Ensures backend classes are dynamically imported so getBackendByType() can
- * construct them. Unlike detectAndGetBackend(), this never spawns subprocesses
- * and never throws — it's the lightweight option when you only need class
- * registration (e.g., killing a pane by its stored backendType).
+ * No-op compatibility shim. Backend classes now self-register at module load
+ * via static imports in this file; this function is retained for callers that
+ * previously needed to force the registration side effect.
  */
 export async function ensureBackendsRegistered(): Promise<void> {
-  if (backendsRegistered) return
-  await import('./TmuxBackend.js')
-  await import('./ITermBackend.js')
-  backendsRegistered = true
-}
-
-/**
- * Registers the TmuxBackend class with the registry.
- * Called by TmuxBackend.ts to avoid circular dependencies.
- */
-export function registerTmuxBackend(backendClass: new () => PaneBackend): void {
-  TmuxBackendClass = backendClass
-}
-
-/**
- * Registers the ITermBackend class with the registry.
- * Called by ITermBackend.ts to avoid circular dependencies.
- */
-export function registerITermBackend(
-  backendClass: new () => PaneBackend,
-): void {
-  logForDebugging(
-    `[registry] registerITermBackend called, class=${backendClass?.name || 'undefined'}`,
-  )
-  ITermBackendClass = backendClass
+  // no-op
 }
 
 /**
@@ -104,12 +71,13 @@ export function registerITermBackend(
  * Throws if TmuxBackend hasn't been registered.
  */
 function createTmuxBackend(): PaneBackend {
-  if (!TmuxBackendClass) {
+  const BackendClass = getTmuxBackendClass()
+  if (!BackendClass) {
     throw new Error(
       'TmuxBackend not registered. Import TmuxBackend.ts before using the registry.',
     )
   }
-  return new TmuxBackendClass()
+  return new BackendClass()
 }
 
 /**
@@ -117,12 +85,13 @@ function createTmuxBackend(): PaneBackend {
  * Throws if ITermBackend hasn't been registered.
  */
 function createITermBackend(): PaneBackend {
-  if (!ITermBackendClass) {
+  const BackendClass = getITermBackendClass()
+  if (!BackendClass) {
     throw new Error(
       'ITermBackend not registered. Import ITermBackend.ts before using the registry.',
     )
   }
-  return new ITermBackendClass()
+  return new BackendClass()
 }
 
 /**
@@ -134,9 +103,6 @@ function createITermBackend(): PaneBackend {
  * 5. Otherwise, throw error with instructions
  */
 export async function detectAndGetBackend(): Promise<BackendDetectionResult> {
-  // Ensure backends are registered before detection
-  await ensureBackendsRegistered()
-
   // Return cached result if available
   if (cachedDetectionResult) {
     logForDebugging(
@@ -459,6 +425,5 @@ export function resetBackendDetection(): void {
   cachedDetectionResult = null
   cachedInProcessBackend = null
   cachedPaneBackendExecutor = null
-  backendsRegistered = false
   inProcessFallbackActive = false
 }

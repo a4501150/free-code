@@ -1,101 +1,66 @@
 import addDir from './commands/add-dir/index.js'
-import autofixPr from './commands/autofix-pr/index.js'
-import backfillSessions from './commands/backfill-sessions/index.js'
 import btw from './commands/btw/index.js'
-import goodClaude from './commands/good-claude/index.js'
-import issue from './commands/issue/index.js'
 import feedback from './commands/feedback/index.js'
 import clear from './commands/clear/index.js'
 import color from './commands/color/index.js'
-import commit from './commands/commit.js'
 import copy from './commands/copy/index.js'
 import desktop from './commands/desktop/index.js'
-import commitPushPr from './commands/commit-push-pr.js'
 import compact from './commands/compact/index.js'
 import config from './commands/config/index.js'
 import { context, contextNonInteractive } from './commands/context/index.js'
 import cost from './commands/cost/index.js'
 import diff from './commands/diff/index.js'
-import ctx_viz from './commands/ctx_viz/index.js'
 import doctor from './commands/doctor/index.js'
 import memory from './commands/memory/index.js'
 import help from './commands/help/index.js'
 import ide from './commands/ide/index.js'
 import init from './commands/init.js'
-import initVerifiers from './commands/init-verifiers.js'
 import keybindings from './commands/keybindings/index.js'
 import login from './commands/login/index.js'
 import logout from './commands/logout/index.js'
 import installGitHubApp from './commands/install-github-app/index.js'
 import installSlackApp from './commands/install-slack-app/index.js'
-import breakCache from './commands/break-cache/index.js'
 import mcp from './commands/mcp/index.js'
 import mobile from './commands/mobile/index.js'
-import onboarding from './commands/onboarding/index.js'
 import pr_comments from './commands/pr_comments/index.js'
 import releaseNotes from './commands/release-notes/index.js'
 import rename from './commands/rename/index.js'
 import resume from './commands/resume/index.js'
 import review, { ultrareview } from './commands/review.js'
-import share from './commands/share/index.js'
 import skills from './commands/skills/index.js'
 import status from './commands/status/index.js'
 import tasks from './commands/tasks/index.js'
 import securityReview from './commands/security-review.js'
-import bughunter from './commands/bughunter/index.js'
 import terminalSetup from './commands/terminalSetup/index.js'
 import usage from './commands/usage/index.js'
 import theme from './commands/theme/index.js'
 import vim from './commands/vim/index.js'
 import { feature } from 'bun:bundle'
-// Dead code elimination: conditional imports
-/* eslint-disable @typescript-eslint/no-require-imports */
-const proactive =
-  feature('KAIROS')
-    ? require('./commands/proactive.js').default
-    : null
+// Feature-gated command modules. `feature()` is a Bun build-time macro,
+// so namespaces referenced only under a disabled flag are DCE'd.
+import * as proactiveMod from './commands/proactive.js'
+import * as briefCmdMod from './commands/brief.js'
+import * as voiceCmdMod from './commands/voice/index.js'
+import * as initVerifiersMod from './commands/init-verifiers.js'
+import * as workflowsCmdMod from './commands/workflows/index.js'
+import * as localSearchMod from './services/skillSearch/localSearch.js'
+import * as ultraplanMod from './commands/ultraplan.js'
+import * as peersCmdMod from './commands/peers/index.js'
+import * as forkCmdMod from './commands/fork/index.js'
+import * as buddyMod from './commands/buddy/index.js'
+const proactive = feature('KAIROS') ? proactiveMod.default : null
 const briefCommand =
-  feature('KAIROS') || feature('KAIROS_BRIEF')
-    ? require('./commands/brief.js').default
-    : null
-const voiceCommand = feature('VOICE_MODE')
-  ? require('./commands/voice/index.js').default
-  : null
-const forceSnip = feature('HISTORY_SNIP')
-  ? require('./commands/force-snip.js').default
-  : null
-const workflowsCmd = feature('WORKFLOW_SCRIPTS')
-  ? (
-      require('./commands/workflows/index.js') as typeof import('./commands/workflows/index.js')
-    ).default
-  : null
+  feature('KAIROS') || feature('KAIROS_BRIEF') ? briefCmdMod.default : null
+const voiceCommand = feature('VOICE_MODE') ? voiceCmdMod.default : null
+const initVerifiers = feature('VERIFY_PLAN') ? initVerifiersMod.default : null
+const workflowsCmd = feature('WORKFLOW_SCRIPTS') ? workflowsCmdMod.default : null
 const clearSkillIndexCache = feature('EXPERIMENTAL_SKILL_SEARCH')
-  ? (
-      require('./services/skillSearch/localSearch.js') as typeof import('./services/skillSearch/localSearch.js')
-    ).clearSkillIndexCache
+  ? localSearchMod.clearSkillIndexCache
   : null
-const subscribePr = feature('KAIROS_GITHUB_WEBHOOKS')
-  ? require('./commands/subscribe-pr.js').default
-  : null
-const ultraplan = feature('ULTRAPLAN')
-  ? require('./commands/ultraplan.js').default
-  : null
-const peersCmd = feature('UDS_INBOX')
-  ? (
-      require('./commands/peers/index.js') as typeof import('./commands/peers/index.js')
-    ).default
-  : null
-const forkCmd = feature('FORK_SUBAGENT')
-  ? (
-      require('./commands/fork/index.js') as typeof import('./commands/fork/index.js')
-    ).default
-  : null
-const buddy = feature('BUDDY')
-  ? (
-      require('./commands/buddy/index.js') as typeof import('./commands/buddy/index.js')
-    ).default
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+const ultraplan = feature('ULTRAPLAN') ? ultraplanMod.default : null
+const peersCmd = feature('UDS_INBOX') ? peersCmdMod.default : null
+const forkCmd = feature('FORK_SUBAGENT') ? forkCmdMod.default : null
+const buddy = feature('BUDDY') ? buddyMod.default : null
 import thinkback from './commands/thinkback/index.js'
 import thinkbackPlay from './commands/thinkback-play/index.js'
 import permissions from './commands/permissions/index.js'
@@ -111,17 +76,9 @@ import plugin from './commands/plugin/index.js'
 import reloadPlugins from './commands/reload-plugins/index.js'
 import rewind from './commands/rewind/index.js'
 import heapDump from './commands/heapdump/index.js'
-import mockLimits from './commands/mock-limits/index.js'
 import version from './commands/version.js'
 import summary from './commands/summary/index.js'
-import {
-  resetLimits,
-  resetLimitsNonInteractive,
-} from './commands/reset-limits/index.js'
-import antTrace from './commands/ant-trace/index.js'
-import perfIssue from './commands/perf-issue/index.js'
 import sandboxToggle from './commands/sandbox-toggle/index.js'
-import chrome from './commands/chrome/index.js'
 import stickers from './commands/stickers/index.js'
 import advisor from './commands/advisor.js'
 import { logError } from './utils/log.js'
@@ -158,8 +115,7 @@ import rateLimitOptions from './commands/rate-limit-options/index.js'
 import statusline from './commands/statusline.js'
 import effort from './commands/effort/index.js'
 import stats from './commands/stats/index.js'
-// insights.ts is 113KB (3200 lines, includes diffLines/html rendering). Lazy
-// shim defers the heavy module until /insights is actually invoked.
+import insightsCommand from './commands/insights.js'
 const usageReport: Command = {
   type: 'prompt',
   name: 'insights',
@@ -168,9 +124,8 @@ const usageReport: Command = {
   progressMessage: 'analyzing your sessions',
   source: 'builtin',
   async getPromptForCommand(args, context) {
-    const real = (await import('./commands/insights.js')).default
-    if (real.type !== 'prompt') throw new Error('unreachable')
-    return real.getPromptForCommand(args, context)
+    if (insightsCommand.type !== 'prompt') throw new Error('unreachable')
+    return insightsCommand.getPromptForCommand(args, context)
   },
 }
 import oauthRefresh from './commands/oauth-refresh/index.js'
@@ -194,34 +149,6 @@ export type {
 } from './types/command.js'
 export { getCommandName, isCommandEnabled } from './types/command.js'
 
-// Commands that get eliminated from the external build
-export const INTERNAL_ONLY_COMMANDS = [
-  backfillSessions,
-  breakCache,
-  bughunter,
-  commit,
-  commitPushPr,
-  ctx_viz,
-  goodClaude,
-  issue,
-  initVerifiers,
-  ...(forceSnip ? [forceSnip] : []),
-  mockLimits,
-  version,
-  ...(subscribePr ? [subscribePr] : []),
-  resetLimits,
-  resetLimitsNonInteractive,
-  onboarding,
-  share,
-  summary,
-  antTrace,
-  perfIssue,
-  env,
-  oauthRefresh,
-  debugToolCall,
-  autofixPr,
-].filter(Boolean)
-
 // Declared as a function so that we don't run this until getCommands is called,
 // since underlying functions read from config, which can't be read at module initialization time
 const COMMANDS = memoize((): Command[] => [
@@ -230,12 +157,12 @@ const COMMANDS = memoize((): Command[] => [
   agents,
   branch,
   btw,
-  chrome,
   clear,
   color,
   compact,
   config,
   copy,
+  debugToolCall,
   desktop,
   context,
   contextNonInteractive,
@@ -243,6 +170,7 @@ const COMMANDS = memoize((): Command[] => [
   diff,
   doctor,
   effort,
+  env,
   exit,
   fast,
   files,
@@ -250,6 +178,7 @@ const COMMANDS = memoize((): Command[] => [
   help,
   ide,
   init,
+  ...(initVerifiers ? [initVerifiers] : []),
   keybindings,
   installGitHubApp,
   installSlackApp,
@@ -257,6 +186,7 @@ const COMMANDS = memoize((): Command[] => [
   memory,
   mobile,
   model,
+  oauthRefresh,
   outputStyle,
   plugin,
   pr_comments,
@@ -269,6 +199,7 @@ const COMMANDS = memoize((): Command[] => [
   status,
   statusline,
   stickers,
+  summary,
   tag,
   theme,
   feedback,
@@ -283,6 +214,7 @@ const COMMANDS = memoize((): Command[] => [
   rateLimitOptions,
   usage,
   usageReport,
+  version,
   vim,
   ...(forkCmd ? [forkCmd] : []),
   ...(buddy ? [buddy] : []),
@@ -310,6 +242,11 @@ export const builtInCommandNames = memoize(
   (): Set<string> =>
     new Set(COMMANDS().flatMap(_ => [_.name, ...(_.aliases ?? [])])),
 )
+
+// Register with the leaf registry so sessionStorage can read without a static
+// import of commands.ts (that edge closes two cycles — see AP-TX-4/AP-TX-5).
+import { registerCommandNames } from './utils/commandRegistry.js'
+registerCommandNames(builtInCommandNames)
 
 async function getSkills(cwd: string): Promise<{
   skillDirCommands: Command[]
@@ -358,13 +295,10 @@ async function getSkills(cwd: string): Promise<{
   }
 }
 
-/* eslint-disable @typescript-eslint/no-require-imports */
+import * as createWorkflowCommandMod from './tools/WorkflowTool/createWorkflowCommand.js'
 const getWorkflowCommands = feature('WORKFLOW_SCRIPTS')
-  ? (
-      require('./tools/WorkflowTool/createWorkflowCommand.js') as typeof import('./tools/WorkflowTool/createWorkflowCommand.js')
-    ).getWorkflowCommands
+  ? createWorkflowCommandMod.getWorkflowCommands
   : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 /**
  * Filters commands by their declared `availability` (auth/provider requirement).

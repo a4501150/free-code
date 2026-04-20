@@ -12,6 +12,7 @@ import { isEnvTruthy } from '../../utils/envUtils.js'
 import { getErrnoCode } from '../../utils/errors.js'
 import { IMAGE_EXTENSION_REGEX } from '../../utils/imagePaste.js'
 import { expandPath } from '../../utils/path.js'
+import { uploadBriefAttachment } from './upload.js'
 
 export type ResolvedAttachment = {
   path: string
@@ -80,7 +81,6 @@ export async function resolveAttachments(
   // Upload when CLAUDE_CODE_BRIEF_UPLOAD is set (e.g. cowork desktop,
   // which already passes CLAUDE_CODE_OAUTH_TOKEN for auth).
   if (isEnvTruthy(process.env.CLAUDE_CODE_BRIEF_UPLOAD)) {
-    const { uploadBriefAttachment } = await import('./upload.js')
     const uuids = await Promise.all(
       stated.map(a =>
         uploadBriefAttachment(a.path, a.size, {

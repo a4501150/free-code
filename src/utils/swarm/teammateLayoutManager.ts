@@ -1,5 +1,6 @@
 import type { AgentColorName } from '../../tools/AgentTool/agentColorManager.js'
 import { AGENT_COLORS } from '../../tools/AgentTool/agentColorManager.js'
+import { isInsideTmux as checkTmux } from './backends/detection.js'
 import { detectAndGetBackend } from './backends/registry.js'
 import type { PaneBackend } from './backends/types.js'
 
@@ -55,7 +56,6 @@ export function clearTeammateColors(): void {
  * Uses the detection module directly for this check.
  */
 export async function isInsideTmux(): Promise<boolean> {
-  const { isInsideTmux: checkTmux } = await import('./backends/detection.js')
   return checkTmux()
 }
 

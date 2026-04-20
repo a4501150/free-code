@@ -42,7 +42,7 @@ const schemas = await Promise.all(
       agents: [],
     })
     return {
-      name: schema.name,
+      name: (schema as { name?: string }).name ?? '',
       description: (schema as { description?: string }).description ?? '',
       input_schema: (schema as { input_schema: unknown }).input_schema,
     }

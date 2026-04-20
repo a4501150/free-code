@@ -8,14 +8,12 @@ import { ASK_USER_QUESTION_TOOL_NAME } from '../tools/AskUserQuestionTool/prompt
 import { TASK_STOP_TOOL_NAME } from '../tools/TaskStopTool/prompt.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { WEB_SEARCH_TOOL_NAME } from '../tools/WebSearchTool/prompt.js'
-import { TODO_WRITE_TOOL_NAME } from '../tools/TodoWriteTool/constants.js'
 import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
 import { WEB_FETCH_TOOL_NAME } from '../tools/WebFetchTool/prompt.js'
 import { GLOB_TOOL_NAME } from '../tools/GlobTool/prompt.js'
 import { SHELL_TOOL_NAMES } from '../utils/shell/shellToolUtils.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
-import { NOTEBOOK_EDIT_TOOL_NAME } from '../tools/NotebookEditTool/constants.js'
 import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../tools/SendMessageTool/constants.js'
 import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
@@ -54,14 +52,16 @@ export const CUSTOM_AGENT_DISALLOWED_TOOLS = new Set([
 export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
   FILE_READ_TOOL_NAME,
   WEB_SEARCH_TOOL_NAME,
-  TODO_WRITE_TOOL_NAME,
+  TASK_CREATE_TOOL_NAME,
+  TASK_GET_TOOL_NAME,
+  TASK_LIST_TOOL_NAME,
+  TASK_UPDATE_TOOL_NAME,
   GREP_TOOL_NAME,
   WEB_FETCH_TOOL_NAME,
   GLOB_TOOL_NAME,
   ...SHELL_TOOL_NAMES,
   FILE_EDIT_TOOL_NAME,
   FILE_WRITE_TOOL_NAME,
-  NOTEBOOK_EDIT_TOOL_NAME,
   SKILL_TOOL_NAME,
   SYNTHETIC_OUTPUT_TOOL_NAME,
   TOOL_SEARCH_TOOL_NAME,

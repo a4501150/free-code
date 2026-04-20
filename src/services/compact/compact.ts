@@ -1,11 +1,8 @@
 import { feature } from 'bun:bundle'
 import type { UUID } from 'crypto'
 import uniqBy from 'lodash-es/uniqBy.js'
-
-/* eslint-disable @typescript-eslint/no-require-imports */
-const sessionTranscriptModule = feature('KAIROS')
-  ? (require('../sessionTranscript/sessionTranscript.js') as typeof import('../sessionTranscript/sessionTranscript.js'))
-  : null
+import * as sessionTranscriptNs from '../sessionTranscript/sessionTranscript.js'
+const sessionTranscriptModule = feature('KAIROS') ? sessionTranscriptNs : null
 
 import { APIUserAbortError } from '@anthropic-ai/sdk'
 import { markPostCompaction } from 'src/bootstrap/state.js'
@@ -39,7 +36,10 @@ import {
   getMcpInstructionsDeltaAttachment,
 } from '../../utils/attachments.js'
 import { getMemoryPath } from '../../utils/config.js'
-import { COMPACT_MAX_OUTPUT_TOKENS } from '../../utils/context.js'
+import {
+  COMPACT_MAX_OUTPUT_TOKENS,
+  getModelMaxOutputTokens,
+} from '../../utils/context.js'
 import {
   analyzeContext,
   tokenStatsToStatsigMetrics,
@@ -80,7 +80,6 @@ import {
 } from '../../utils/sessionStorage.js'
 import { sleep } from '../../utils/sleep.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
-/* eslint-enable @typescript-eslint/no-require-imports */
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
 import { getTaskOutputPath } from '../../utils/task/diskOutput.js'
 import {
@@ -92,10 +91,7 @@ import {
   extractDiscoveredToolNames,
   isToolSearchEnabled,
 } from '../../utils/toolSearch.js'
-import {
-  getMaxOutputTokensForModel,
-  queryModelWithStreaming,
-} from '../api/claude.js'
+import { queryModelWithStreaming } from '../api/claude.js'
 import {
   getPromptTooLongTokenGap,
   PROMPT_TOO_LONG_ERROR_MESSAGE,
@@ -1157,7 +1153,7 @@ async function streamCompactSummary({
           hasAppendSystemPrompt: !!context.options.appendSystemPrompt,
           maxOutputTokensOverride: Math.min(
             COMPACT_MAX_OUTPUT_TOKENS,
-            getMaxOutputTokensForModel(context.options.mainLoopModel),
+            getModelMaxOutputTokens(context.options.mainLoopModel),
           ),
           querySource: 'compact',
           agents: context.options.agentDefinitions.activeAgents,

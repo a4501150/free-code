@@ -35,6 +35,9 @@ export const TOOL_RESULT_CLEARED_MESSAGE = '[Old tool result content cleared]'
 /**
  * Resolve the effective persistence threshold for a tool.
  * Falls back to the declared per-tool cap clamped by the global default.
+ * Users can override the global cap via `toolResultPersistenceThreshold`
+ * in freecode.json — e.g. to raise it above the 500k default when running
+ * agents that routinely produce very large but still useful tool output.
  */
 export function getPersistenceThreshold(
   toolName: string,
@@ -45,7 +48,10 @@ export function getPersistenceThreshold(
   if (!Number.isFinite(declaredMaxResultSizeChars)) {
     return declaredMaxResultSizeChars
   }
-  return Math.min(declaredMaxResultSizeChars, DEFAULT_MAX_RESULT_SIZE_CHARS)
+  const globalCap =
+    getInitialSettings()?.toolResultPersistenceThreshold ??
+    DEFAULT_MAX_RESULT_SIZE_CHARS
+  return Math.min(declaredMaxResultSizeChars, globalCap)
 }
 
 // Result of persisting a tool result to disk
@@ -273,8 +279,12 @@ async function maybePersistLargeToolResult(
 
   const size = contentSize(content)
 
-  // Use tool-specific threshold if provided, otherwise fall back to global limit
-  const threshold = persistenceThreshold ?? MAX_TOOL_RESULT_BYTES
+  // Use tool-specific threshold if provided, otherwise fall back to the
+  // user-configurable global byte cap (toolResultTokenCap × BYTES_PER_TOKEN).
+  const tokenCap =
+    getInitialSettings()?.toolResultTokenCap ?? MAX_TOOL_RESULT_BYTES / BYTES_PER_TOKEN
+  const globalByteCap = tokenCap * BYTES_PER_TOKEN
+  const threshold = persistenceThreshold ?? globalByteCap
   if (size <= threshold) {
     return toolResultBlock
   }
@@ -286,9 +296,13 @@ async function maybePersistLargeToolResult(
     return toolResultBlock
   }
 
-  const message = buildLargeToolResultMessage(result)
+  // Surface persistence events to --debug-to-stderr so power users can see
+  // when the harness is mutating tool output. Hidden in normal runs.
+  logForDebugging(
+    `[toolResultStorage] Persisted tool_result to disk: tool=${toolName} tool_use_id=${toolResultBlock.tool_use_id} size=${formatFileSize(size)} threshold=${formatFileSize(threshold)} path=${result.filepath}`,
+  )
 
-  // Log analytics
+  const message = buildLargeToolResultMessage(result)
 
   return { ...toolResultBlock, content: message }
 }
@@ -373,10 +387,17 @@ export function cloneContentReplacementState(
 
 /**
  * Resolve the per-message aggregate budget limit.
- * Settings override wins when present; otherwise falls back to the hardcoded constant.
+ * Settings override wins when present; otherwise falls back to the hardcoded
+ * constant. `toolResultsPerMessageCap` is the canonical name;
+ * `toolResultBudgetChars` is the legacy alias kept for backward compat.
  */
 export function getPerMessageBudgetLimit(): number {
-  return getInitialSettings()?.toolResultBudgetChars ?? MAX_TOOL_RESULTS_PER_MESSAGE_CHARS
+  const settings = getInitialSettings()
+  return (
+    settings?.toolResultsPerMessageCap ??
+    settings?.toolResultBudgetChars ??
+    MAX_TOOL_RESULTS_PER_MESSAGE_CHARS
+  )
 }
 
 /**

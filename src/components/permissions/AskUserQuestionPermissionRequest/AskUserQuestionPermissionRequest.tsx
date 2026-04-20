@@ -171,10 +171,6 @@ function AskUserQuestionPermissionRequestBody({
       globalContentWidth: Math.max(maxWidth, MIN_CONTENT_WIDTH),
     }
   }, [questions, terminalRows, theme, highlight])
-  const metadataSource = result.success
-    ? result.data.metadata?.source
-    : undefined
-
   const [pastedContentsByQuestion, setPastedContentsByQuestion] = useState<
     Record<string, Record<number, PastedContent>>
   >({})
@@ -250,18 +246,10 @@ function AskUserQuestionPermissionRequestBody({
   const hideSubmitTab = questions.length === 1 && !questions[0]?.multiSelect
 
   const handleCancel = useCallback(() => {
-    // Log rejection with metadata source if present
     onDone()
     onReject()
     toolUseConfirm.onReject()
-  }, [
-    onDone,
-    onReject,
-    toolUseConfirm,
-    metadataSource,
-    questions.length,
-    isInPlanMode,
-  ])
+  }, [onDone, onReject, toolUseConfirm, questions.length, isInPlanMode])
 
   const handleRespondToClaude = useCallback(async () => {
     const questionsWithAnswers = questions
@@ -293,7 +281,6 @@ function AskUserQuestionPermissionRequestBody({
     answers,
     onDone,
     toolUseConfirm,
-    metadataSource,
     isInPlanMode,
     allImageAttachments,
   ])
@@ -326,14 +313,12 @@ Questions asked and answers provided:\n${questionsWithAnswers}`
     answers,
     onDone,
     toolUseConfirm,
-    metadataSource,
     isInPlanMode,
     allImageAttachments,
   ])
 
   const submitAnswers = useCallback(
     async (answersToSubmit: Record<string, string>) => {
-      // Log acceptance with metadata source if present
       // Build annotations from questionStates (e.g., selected preview, user notes)
       const annotations: Record<string, { preview?: string; notes?: string }> =
         {}
@@ -372,7 +357,6 @@ Questions asked and answers provided:\n${questionsWithAnswers}`
     [
       toolUseConfirm,
       onDone,
-      metadataSource,
       questions,
       questionStates,
       isInPlanMode,

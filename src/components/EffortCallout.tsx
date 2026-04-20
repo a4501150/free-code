@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react'
+import { getProviderRegistry } from '../utils/model/providerRegistry.js'
 import { Box, Text } from '../ink.js'
 import {
   isMaxSubscriber,
@@ -133,10 +134,6 @@ function EffortOptionLabel({
 export function shouldShowEffortCallout(model: string): boolean {
   // Only show for models that support 'max' effort
   const parsed = parseUserSpecifiedModel(model)
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { getProviderRegistry } = require('../utils/model/providerRegistry.js') as {
-    getProviderRegistry: () => { getModelEffortLevels: (m: string) => string[] | undefined }
-  }
   const levels = getProviderRegistry().getModelEffortLevels(parsed)
   if (!levels?.includes('max')) {
     return false

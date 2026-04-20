@@ -338,8 +338,6 @@ export default class Ink {
       }
     }
 
-    // @ts-expect-error @types/react-reconciler@0.32.3 declares 11 args with transitionCallbacks,
-    // but react-reconciler 0.33.0 source only accepts 10 args (no transitionCallbacks)
     this.container = reconciler.createContainer(
       this.rootNode,
       ConcurrentRoot,
@@ -353,7 +351,7 @@ export default class Ink {
       noop, // onDefaultTransitionIndicator
     )
 
-    if ("production" === 'development') {
+    if (("production" as string) === 'development') {
       reconciler.injectIntoDevTools({
         bundleType: 0,
         // Reporting React DOM's version, not Ink's
@@ -938,8 +936,7 @@ export default class Ink {
 
   pause(): void {
     // Flush pending React updates and render before pausing.
-    // @ts-expect-error flushSyncFromReconciler exists in react-reconciler 0.31 but not in @types/react-reconciler
-    reconciler.flushSyncFromReconciler()
+    ;(reconciler as any).flushSyncFromReconciler()
     this.onRender()
 
     this.isPaused = true
@@ -1687,10 +1684,8 @@ export default class Ink {
       </App>
     )
 
-    // @ts-expect-error updateContainerSync exists in react-reconciler but not in @types/react-reconciler
-    reconciler.updateContainerSync(tree, this.container, null, noop)
-    // @ts-expect-error flushSyncWork exists in react-reconciler but not in @types/react-reconciler
-    reconciler.flushSyncWork()
+    ;(reconciler as any).updateContainerSync(tree, this.container, null, noop)
+    ;(reconciler as any).flushSyncWork()
   }
 
   unmount(error?: Error | number | null): void {
@@ -1759,10 +1754,8 @@ export default class Ink {
       this.drainTimer = null
     }
 
-    // @ts-expect-error updateContainerSync exists in react-reconciler but not in @types/react-reconciler
-    reconciler.updateContainerSync(null, this.container, null, noop)
-    // @ts-expect-error flushSyncWork exists in react-reconciler but not in @types/react-reconciler
-    reconciler.flushSyncWork()
+    ;(reconciler as any).updateContainerSync(null, this.container, null, noop)
+    ;(reconciler as any).flushSyncWork()
     instances.delete(this.options.stdout)
 
     // Free the root yoga node, then clear its reference. Children are already
@@ -1869,8 +1862,8 @@ export default class Ink {
     let reentered = false
     const intercept = (
       chunk: Uint8Array | string,
-      encodingOrCb?: BufferEncoding | ((err?: Error) => void),
-      cb?: (err?: Error) => void,
+      encodingOrCb?: BufferEncoding | ((err?: Error | null) => void),
+      cb?: (err?: Error | null) => void,
     ): boolean => {
       const callback = typeof encodingOrCb === 'function' ? encodingOrCb : cb
       // Reentrancy guard: logForDebugging → writeToStderr → here. Pass

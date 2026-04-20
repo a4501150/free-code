@@ -302,13 +302,9 @@ export const ProviderModelSchema = lazySchema(() =>
     maxOutputTokens: z
       .number()
       .optional()
-      .describe("Maximum output tokens for this model (upper limit)"),
-    maxOutputTokensDefault: z
-      .number()
-      .optional()
       .describe(
-        "Default output token budget for this model. " +
-          "When not set, maxOutputTokens is used as both default and upper limit.",
+        "The `max_tokens` value sent to the API for this model. " +
+          "Overridable at runtime via `CLAUDE_CODE_MAX_OUTPUT_TOKENS`.",
       ),
     effortLevels: z
       .array(z.string())
@@ -761,6 +757,15 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Provider-qualified model for built-in agents that need balanced capability ' +
             '(e.g. statusline-setup, magicDocs). Falls back to inherit (main model) if not set.',
+        ),
+      defaultMostPowerfulModel: z
+        .string()
+        .optional()
+        .describe(
+          'Provider-qualified model for built-in agents that need the most powerful ' +
+            'available model (e.g. the Plan agent). Falls back to inherit (main model) if not set. ' +
+            'NOTE: overridden by defaultSubagentModel when that is set — leave defaultSubagentModel ' +
+            'unset to get tiered routing (smallFast / balanced / mostPowerful).',
         ),
       defaultSmallFastModel: z
         .string()
@@ -1629,7 +1634,71 @@ export const SettingsSchema = lazySchema(() =>
         .positive()
         .optional()
         .describe(
-          "Per-message aggregate budget limit (in characters) for tool result storage. When parallel tools exceed this, largest results are persisted to disk.",
+          "Per-message aggregate budget limit (in characters) for tool result storage. When parallel tools exceed this, largest results are persisted to disk. Legacy name — prefer toolResultsPerMessageCap.",
+        ),
+      toolResultPersistenceThreshold: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "Tool result size (chars) above which content is persisted to disk and replaced with a preview. Defaults to 500000.",
+        ),
+      toolResultTokenCap: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "Absolute upper bound on tool result tokens. Defaults to 500000.",
+        ),
+      toolResultsPerMessageCap: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "Aggregate chars across all parallel tool results in one user message. Defaults to 1000000.",
+        ),
+      maxMemoryFileBytes: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "Per-file byte cap for CLAUDE.md-style memory files injected via relevant-memories. Defaults to 100000.",
+        ),
+      maxMemoryFileLines: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "Per-file line cap for CLAUDE.md-style memory files injected via relevant-memories. Defaults to 5000.",
+        ),
+      maxHookOutputLength: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "Maximum characters preserved from user-prompt-submit hook stdout. Defaults to 100000.",
+        ),
+      maxMemoryEntrypointBytes: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "Byte cap on the MEMORY.md entrypoint loaded into every turn. Defaults to 200000.",
+        ),
+      maxMemoryEntrypointLines: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "Line cap on the MEMORY.md entrypoint loaded into every turn. Defaults to 2000.",
         ),
       sessionMemoryCompactConfig: z
         .object({

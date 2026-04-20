@@ -1,7 +1,5 @@
 import { feature } from 'bun:bundle'
-import { shouldAutoEnableClaudeInChrome } from 'src/utils/claudeInChrome/setup.js'
 import { registerBatchSkill } from './batch.js'
-import { registerClaudeInChromeSkill } from './claudeInChrome.js'
 import { registerDebugSkill } from './debug.js'
 import { registerKeybindingsSkill } from './keybindings.js'
 import { registerLoremIpsumSkill } from './loremIpsum.js'
@@ -9,7 +7,11 @@ import { registerRememberSkill } from './remember.js'
 import { registerSimplifySkill } from './simplify.js'
 import { registerSkillifySkill } from './skillify.js'
 import { registerUpdateConfigSkill } from './updateConfig.js'
-import { registerVerifySkill } from './verify.js'
+import * as verifyNs from './verify.js'
+import * as dreamNs from './dream.js'
+import * as hunterNs from './hunter.js'
+import * as loopNs from './loop.js'
+import * as runSkillGeneratorNs from './runSkillGenerator.js'
 
 /**
  * Initialize all bundled skills.
@@ -23,8 +25,8 @@ import { registerVerifySkill } from './verify.js'
 export function initBundledSkills(): void {
   registerUpdateConfigSkill()
   registerKeybindingsSkill()
-  if (feature('VERIFY_PLAN') && process.env.CLAUDE_CODE_VERIFY_PLAN === 'true') {
-    registerVerifySkill()
+  if (feature('VERIFY_PLAN')) {
+    verifyNs.registerVerifySkill()
   }
   registerDebugSkill()
   registerLoremIpsumSkill()
@@ -33,33 +35,18 @@ export function initBundledSkills(): void {
   registerSimplifySkill()
   registerBatchSkill()
   if (feature('KAIROS') || feature('KAIROS_DREAM')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    const { registerDreamSkill } = require('./dream.js')
-    /* eslint-enable @typescript-eslint/no-require-imports */
-    registerDreamSkill()
+    dreamNs.registerDreamSkill()
   }
   if (feature('REVIEW_ARTIFACT')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    const { registerHunterSkill } = require('./hunter.js')
-    /* eslint-enable @typescript-eslint/no-require-imports */
-    registerHunterSkill()
+    hunterNs.registerHunterSkill()
   }
   if (feature('AGENT_TRIGGERS')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    const { registerLoopSkill } = require('./loop.js')
-    /* eslint-enable @typescript-eslint/no-require-imports */
     // /loop's isEnabled delegates to isKairosCronEnabled() — same lazy
     // per-invocation pattern as the cron tools. Registered unconditionally;
     // the skill's own isEnabled callback decides visibility.
-    registerLoopSkill()
-  }
-  if (shouldAutoEnableClaudeInChrome()) {
-    registerClaudeInChromeSkill()
+    loopNs.registerLoopSkill()
   }
   if (feature('RUN_SKILL_GENERATOR')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    const { registerRunSkillGeneratorSkill } = require('./runSkillGenerator.js')
-    /* eslint-enable @typescript-eslint/no-require-imports */
-    registerRunSkillGeneratorSkill()
+    runSkillGeneratorNs.registerRunSkillGeneratorSkill()
   }
 }

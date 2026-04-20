@@ -17,29 +17,24 @@ import { TASK_STOP_TOOL_NAME } from '../../tools/TaskStopTool/prompt.js'
 import { TASK_UPDATE_TOOL_NAME } from '../../tools/TaskUpdateTool/constants.js'
 import { TEAM_CREATE_TOOL_NAME } from '../../tools/TeamCreateTool/constants.js'
 import { TEAM_DELETE_TOOL_NAME } from '../../tools/TeamDeleteTool/constants.js'
-import { TODO_WRITE_TOOL_NAME } from '../../tools/TodoWriteTool/constants.js'
 import { TOOL_SEARCH_TOOL_NAME } from '../../tools/ToolSearchTool/prompt.js'
 import { YOLO_CLASSIFIER_TOOL_NAME } from './yoloClassifier.js'
 
-// Feature-gated tool names: conditional require so Bun can DCE these when disabled.
+// Feature-gated tool names: conditional references so Bun can DCE these when disabled.
 // Gates mirror tools.ts. Keeps the tool name strings out of cli.js.
-/* eslint-disable @typescript-eslint/no-require-imports */
+import * as terminalCaptureToolPromptNs from '../../tools/TerminalCaptureTool/prompt.js'
+import * as overflowTestToolNs from '../../tools/OverflowTestTool/OverflowTestTool.js'
+import * as workflowToolConstantsNs from '../../tools/WorkflowTool/constants.js'
+
 const TERMINAL_CAPTURE_TOOL_NAME = feature('TERMINAL_PANEL')
-  ? (
-      require('../../tools/TerminalCaptureTool/prompt.js') as typeof import('../../tools/TerminalCaptureTool/prompt.js')
-    ).TERMINAL_CAPTURE_TOOL_NAME
+  ? terminalCaptureToolPromptNs.TERMINAL_CAPTURE_TOOL_NAME
   : null
 const OVERFLOW_TEST_TOOL_NAME = feature('OVERFLOW_TEST_TOOL')
-  ? (
-      require('../../tools/OverflowTestTool/OverflowTestTool.js') as typeof import('../../tools/OverflowTestTool/OverflowTestTool.js')
-    ).OVERFLOW_TEST_TOOL_NAME
+  ? overflowTestToolNs.OVERFLOW_TEST_TOOL_NAME
   : null
 const WORKFLOW_TOOL_NAME = feature('WORKFLOW_SCRIPTS')
-  ? (
-      require('../../tools/WorkflowTool/constants.js') as typeof import('../../tools/WorkflowTool/constants.js')
-    ).WORKFLOW_TOOL_NAME
+  ? workflowToolConstantsNs.WORKFLOW_TOOL_NAME
   : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 /**
  * Tools that are safe and don't need any classifier checking.
@@ -58,7 +53,6 @@ const SAFE_YOLO_ALLOWLISTED_TOOLS = new Set([
   LIST_MCP_RESOURCES_TOOL_NAME,
   'ReadMcpResourceTool', // no exported constant
   // Task management (metadata only)
-  TODO_WRITE_TOOL_NAME,
   TASK_CREATE_TOOL_NAME,
   TASK_GET_TOOL_NAME,
   TASK_UPDATE_TOOL_NAME,

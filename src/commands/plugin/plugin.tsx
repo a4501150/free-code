@@ -7,5 +7,5 @@ export async function call(
   _context: unknown,
   args?: string,
 ): Promise<React.ReactNode> {
-  return <PluginSettings onComplete={onDone} args={args} />
+  return <PluginSettings onComplete={onDone} args={args ? [args] : []} />
 }

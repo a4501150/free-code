@@ -1,5 +1,4 @@
 import type { Notification } from 'src/context/notifications.js'
-import type { TodoList } from 'src/utils/todo/types.js'
 import type { Command } from '../commands.js'
 import type { ChannelPermissionCallbacks } from '../services/mcp/channelPermissions.js'
 import type { ElicitationRequestEvent } from '../services/mcp/elicitationHandler.js'
@@ -34,6 +33,7 @@ import type { DenialTrackingState } from '../utils/permissions/denialTracking.js
 import type { PermissionMode } from '../utils/permissions/PermissionMode.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import type { SettingsJson } from '../utils/settings/types.js'
+import { isPlanModeRequired, isTeammate } from '../utils/teammate.js'
 import { shouldEnableThinkingByDefault } from '../utils/thinking.js'
 import type { Store } from './store.js'
 
@@ -118,6 +118,10 @@ export type AppState = DeepImmutable<{
   // Name → AgentId registry populated by Agent tool when `name` is provided.
   // Latest-wins on collision. Used by SendMessage to route by name.
   agentNameRegistry: Map<string, AgentId>
+  // Tool-use IDs of Agent tool calls whose inline output is currently
+  // expanded. Click-to-expand toggles entries in/out of this set; Ctrl+O
+  // transcript mode is independent.
+  expandedAgentToolUseIds: Set<string>
   // Task ID that has been foregrounded - its messages are shown in main view
   foregroundedTaskId?: string
   // Task ID of in-process teammate whose transcript is being viewed (undefined = leader's view)
@@ -174,7 +178,6 @@ export type AppState = DeepImmutable<{
   agentDefinitions: AgentDefinitionsResult
   fileHistory: FileHistoryState
   attribution: AttributionState
-  todos: { [agentId: string]: TodoList }
   notifications: {
     current: Notification | null
     queue: Notification[]
@@ -322,6 +325,8 @@ export type AppState = DeepImmutable<{
   // Set synchronously in launchUltraplan before the detached flow starts.
   // Prevents duplicate launches. Cleared by launchDetached on completion or failure.
   ultraplanLaunching?: boolean
+  // URL of the active ultraplan session, if any.
+  ultraplanSessionUrl?: string
   // Approved ultraplan awaiting user choice (implement here vs fresh session).
   // Cleared by UltraplanChoiceDialog.
   ultraplanPendingChoice?: { plan: string; sessionId: string; taskId: string }
@@ -333,26 +338,28 @@ export type AppState = DeepImmutable<{
   // Races against local UI + bridge + hooks + classifier via claim() in
   // interactiveHandler.ts. Constructed once in useManageMCPConnections.
   channelPermissionCallbacks?: ChannelPermissionCallbacks
+  // Remote session URL if connected to a remote SSH session.
+  remoteSessionUrl?: string
+  // Remote connection status.
+  remoteConnectionStatus?: string
+  // Count of background tasks in remote session.
+  remoteBackgroundTaskCount?: number
+  // Task suggestions from remote agent.
+  remoteAgentTaskSuggestions?: unknown[]
 }
 
 export type AppStateStore = Store<AppState>
 
 export function getDefaultAppState(): AppState {
   // Determine initial permission mode for teammates spawned with plan_mode_required
-  // Use lazy require to avoid circular dependency with teammate.ts
-  /* eslint-disable @typescript-eslint/no-require-imports */
-  const teammateUtils =
-    require('../utils/teammate.js') as typeof import('../utils/teammate.js')
-  /* eslint-enable @typescript-eslint/no-require-imports */
   const initialMode: PermissionMode =
-    teammateUtils.isTeammate() && teammateUtils.isPlanModeRequired()
-      ? 'plan'
-      : 'default'
+    isTeammate() && isPlanModeRequired() ? 'plan' : 'default'
 
   return {
     settings: getInitialSettings(),
     tasks: {},
     agentNameRegistry: new Map(),
+    expandedAgentToolUseIds: new Set<string>(),
     verbose: false,
     mainLoopModel: null, // alias, full name (as with --model or env var), or null (default)
     mainLoopModelForSession: null,
@@ -395,7 +402,6 @@ export function getDefaultAppState(): AppState {
       },
       needsRefresh: false,
     },
-    todos: {},
     notifications: {
       current: null,
       queue: [],

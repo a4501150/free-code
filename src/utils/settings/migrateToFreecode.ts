@@ -19,6 +19,7 @@ import {
   readFreecodeSettingsFile,
   writeFreecodeSettingsFile,
 } from "./freecodeSettings.js";
+import { stripContextSuffix } from "../model/parseModelString.js";
 
 function readLegacySettings(): Record<string, unknown> | null {
   const settingsPath = join(getClaudeConfigHomeDir(), "settings.json");
@@ -84,9 +85,6 @@ export function migrateToFreecodeSettings(): void {
     (settings.providers && typeof settings.providers === "object"
       ? Object.keys(settings.providers)[0]
       : undefined) ?? "anthropic";
-  // Strip legacy [Nm] context suffixes — context window is now config-driven
-  const stripContextSuffix = (model: string): string =>
-    model.replace(/\[\d+m\]$/i, "");
   const qualify = (model: string): string => {
     const bare = stripContextSuffix(model);
     return bare.includes(":") ? bare : `${defaultProvider}:${bare}`;

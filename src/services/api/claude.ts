@@ -21,7 +21,7 @@ import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { Stream } from '@anthropic-ai/sdk/streaming.mjs'
 import { randomUUID } from 'crypto'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
-import { stripProviderPrefix } from 'src/utils/model/parseModelString.js'
+import { stripProviderPrefix } from 'src/utils/model/parseModelStringWithRegistry.js'
 import {
   getAttributionHeader,
   getCLISyspromptPrefix,
@@ -60,10 +60,7 @@ import {
   getModelBetas,
 } from '../../utils/betas.js'
 import { getOrCreateUserID } from '../../utils/config.js'
-import {
-  CAPPED_DEFAULT_MAX_TOKENS,
-  getModelMaxOutputTokens,
-} from '../../utils/context.js'
+import { getModelMaxOutputTokens } from '../../utils/context.js'
 import { resolveAppliedEffort } from '../../utils/effort.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { errorMessage } from '../../utils/errors.js'
@@ -154,8 +151,6 @@ import {
   shouldIncludeFirstPartyOnlyBetas,
   shouldUseGlobalCacheScope,
 } from 'src/utils/betas.js'
-import { CLAUDE_IN_CHROME_MCP_SERVER_NAME } from 'src/utils/claudeInChrome/common.js'
-import { CHROME_TOOL_SEARCH_INSTRUCTIONS } from 'src/utils/claudeInChrome/prompt.js'
 import { getMaxThinkingTokensForModel } from 'src/utils/context.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logForDiagnosticsNoPII } from 'src/utils/diagLogs.js'
@@ -168,7 +163,6 @@ import {
 } from 'src/utils/fastMode.js'
 import { returnValue } from 'src/utils/generators.js'
 import { headlessProfilerCheckpoint } from 'src/utils/headlessProfiler.js'
-import { isMcpInstructionsDeltaEnabled } from 'src/utils/mcpInstructionsDelta.js'
 import { calculateUSDCost } from 'src/utils/modelCost.js'
 import { endQueryProfile, queryCheckpoint } from 'src/utils/queryProfiler.js'
 import {
@@ -182,7 +176,9 @@ import {
   isToolSearchEnabled,
 } from 'src/utils/toolSearch.js'
 import { API_MAX_MEDIA_PER_REQUEST } from '../../constants/apiLimits.js'
+import * as betaConstants from '../../constants/betas.js'
 import { ADVISOR_BETA_HEADER } from '../../constants/betas.js'
+import * as cachedMicrocompactMod from '../compact/cachedMicrocompact.js'
 import {
   formatDeferredToolLine,
   isDeferredTool,
@@ -190,7 +186,6 @@ import {
 } from '../../tools/ToolSearchTool/prompt.js'
 import { count } from '../../utils/array.js'
 import { insertBlockAfterToolResults } from '../../utils/contentArray.js'
-import { validateBoundedIntEnvVar } from '../../utils/envValidation.js'
 import { safeParseJSON } from '../../utils/json.js'
 import {
   normalizeModelStringForAPI,
@@ -214,7 +209,6 @@ import {
   pinCacheEdits,
 } from '../compact/microCompact.js'
 import { getInitializationStatus } from '../lsp/manager.js'
-import { isToolFromMcpServer } from '../mcp/utils.js'
 import { withStreamingVCR, withVCR } from '../vcr.js'
 import { CLIENT_REQUEST_ID_HEADER, getAnthropicClient } from './client.js'
 import {
@@ -425,8 +419,9 @@ function configureEffortParams(
   if (effortValue === undefined) {
     betas.push(EFFORT_BETA_HEADER)
   } else if (typeof effortValue === 'string') {
-    // Send string effort level as is
-    outputConfig.effort = effortValue
+    // Send string effort level as is (SDK accepts low|medium|high|max; xhigh
+    // tier is ant-internal and never reaches this path in OSS builds).
+    outputConfig.effort = effortValue as 'low' | 'medium' | 'high' | 'max'
     betas.push(EFFORT_BETA_HEADER)
   }
 }
@@ -915,7 +910,7 @@ export function stripExcessMediaItems(
       if (isMedia(block)) toRemove++
       if (isToolResult(block) && Array.isArray(block.content)) {
         for (const nested of block.content) {
-          if (isMedia(nested)) toRemove++
+          if (isMedia(nested as BetaContentBlockParam)) toRemove++
         }
       }
     }
@@ -938,7 +933,7 @@ export function stripExcessMediaItems(
         )
           return block
         const filtered = block.content.filter(n => {
-          if (toRemove > 0 && isMedia(n)) {
+          if (toRemove > 0 && isMedia(n as BetaContentBlockParam)) {
             toRemove--
             return false
           }
@@ -1117,9 +1112,10 @@ async function* queryModel(
       isCachedMicrocompactEnabled,
       isModelSupportedForCacheEditing,
       getCachedMCConfig,
-    } = await import('../compact/cachedMicrocompact.js')
-    const betas = await import('src/constants/betas.js')
-    cacheEditingBetaHeader = betas.CACHE_EDITING_BETA_HEADER
+    } = cachedMicrocompactMod
+    const betasRecord = betaConstants as unknown as Record<string, string>
+    const cacheEditingBetaKey = 'CACHE_EDITING_BETA_HEADER'
+    cacheEditingBetaHeader = betasRecord[cacheEditingBetaKey] ?? ''
     const featureEnabled = isCachedMicrocompactEnabled()
     const modelSupported = isModelSupportedForCacheEditing(options.model)
     cachedMCEnabled = featureEnabled && modelSupported
@@ -1275,15 +1271,6 @@ async function* queryModel(
   }
 
   // Chrome tool-search instructions: when the delta attachment is enabled,
-  // these are carried as a client-side block in mcp_instructions_delta
-  // (attachments.ts) instead of here. This per-request sys-prompt append
-  // busts the prompt cache when chrome connects late.
-  const hasChromeTools = filteredTools.some(t =>
-    isToolFromMcpServer(t.name, CLAUDE_IN_CHROME_MCP_SERVER_NAME),
-  )
-  const injectChromeHere =
-    useToolSearch && hasChromeTools && !isMcpInstructionsDeltaEnabled()
-
   // filter(Boolean) works by converting each element to a boolean - empty strings become false and are filtered out.
   systemPrompt = asSystemPrompt(
     [
@@ -1296,7 +1283,6 @@ async function* queryModel(
       }),
       ...systemPrompt,
       ...(advisorModel ? [ADVISOR_TOOL_INSTRUCTIONS] : []),
-      ...(injectChromeHere ? [CHROME_TOOL_SEARCH_INSTRUCTIONS] : []),
     ].filter(Boolean),
   )
 
@@ -1511,11 +1497,9 @@ async function* queryModel(
       }
     }
 
-    // Retry context gets preference because it tries to course correct if we exceed the context window limit
     const maxOutputTokens =
-      retryContext?.maxTokensOverride ||
       options.maxOutputTokensOverride ||
-      getMaxOutputTokensForModel(options.model)
+      getModelMaxOutputTokens(options.model)
 
     const hasThinking =
       thinkingConfig.type !== 'disabled' &&
@@ -1981,7 +1965,8 @@ async function* queryModel(
                     feature('CONNECTOR_TEXT') &&
                     contentBlock.type === 'connector_text'
                   ) {
-                    contentBlock.signature = delta.signature
+                    ;(contentBlock as unknown as { signature: string }).signature =
+                      delta.signature
                     break
                   }
                   if (contentBlock.type !== 'thinking') {
@@ -2046,15 +2031,18 @@ async function* queryModel(
 
             const lastMsg = newMessages.at(-1)
             if (lastMsg) {
-              lastMsg.message.usage = usage
+              lastMsg.message.usage = usage as unknown as BetaUsage
               lastMsg.message.stop_reason = stopReason
             }
 
             // Update cost
-            const costUSDForPart = calculateUSDCost(resolvedModel, usage)
+            const costUSDForPart = calculateUSDCost(
+              resolvedModel,
+              usage as unknown as BetaUsage,
+            )
             costUSD += addToTotalSessionCost(
               costUSDForPart,
-              usage,
+              usage as unknown as BetaUsage,
               options.model,
             )
 
@@ -2066,26 +2054,15 @@ async function* queryModel(
               yield refusalMessage
             }
 
-            if (stopReason === 'max_tokens') {
-              yield createAssistantAPIErrorMessage({
-                content: `${API_ERROR_MESSAGE_PREFIX}: Claude's response exceeded the ${
-                  maxOutputTokens
-                } output token maximum. To configure this behavior, set the CLAUDE_CODE_MAX_OUTPUT_TOKENS environment variable.`,
-                apiError: 'max_output_tokens',
-                error: 'max_output_tokens',
-              })
-            }
-
-            if (stopReason === 'model_context_window_exceeded') {
-              // Reuse the max_output_tokens recovery path — from the model's
-              // perspective, both mean "response was cut off, continue from
-              // where you left off."
-              yield createAssistantAPIErrorMessage({
-                content: `${API_ERROR_MESSAGE_PREFIX}: The model has reached its context window limit.`,
-                apiError: 'max_output_tokens',
-                error: 'max_output_tokens',
-              })
-            }
+            // Note: `max_tokens` and `model_context_window_exceeded` used
+            // to emit synthetic "API Error: ..." assistant messages here,
+            // which fed an auto-retry + multi-turn recovery loop. That was
+            // wrong — the harness was compensating for its own silent 8k
+            // clobber of the user's configured max_tokens. Now we respect
+            // the user's `maxOutputTokens` setting and pass these stop
+            // reasons through on the real assistant message's
+            // `message.stop_reason`. UI + subagent finalize read it from
+            // there; no synthetic error, no auto-retry.
             break
           }
           case 'message_stop':
@@ -2986,22 +2963,3 @@ export function adjustParamsForNonStreaming<
   }
 }
 
-export function getMaxOutputTokensForModel(model: string): number {
-  const maxOutputTokens = getModelMaxOutputTokens(model)
-
-  // Slot-reservation cap: drop default to 8k for all models. BQ p99 output
-  // = 4,911 tokens; 32k/64k defaults over-reserve 8-16× slot capacity.
-  // Requests hitting the cap get one clean retry at 64k (query.ts
-  // max_output_tokens_escalate). Math.min keeps models with lower native
-  // defaults (e.g. claude-3-opus at 4k) at their native value. Applied
-  // before the env-var override so CLAUDE_CODE_MAX_OUTPUT_TOKENS still wins.
-  const defaultTokens = Math.min(maxOutputTokens.default, CAPPED_DEFAULT_MAX_TOKENS)
-
-  const result = validateBoundedIntEnvVar(
-    'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
-    process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS,
-    defaultTokens,
-    maxOutputTokens.upperLimit,
-  )
-  return result.effective
-}

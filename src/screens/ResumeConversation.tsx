@@ -43,8 +43,11 @@ import {
   recordContentReplacement,
   resetSessionFilePointer,
   restoreSessionMetadata,
+  saveMode,
   type SessionLogResult,
 } from '../utils/sessionStorage.js'
+import * as loadAgentsDirNs from '../tools/AgentTool/loadAgentsDir.js'
+import * as contextCollapsePersistNs from '../services/contextCollapse/persist.js'
 import type { ThinkingConfig } from '../utils/thinking.js'
 import type { ContentReplacementRecord } from '../utils/toolResultStorage.js'
 import { REPL } from './REPL.js'
@@ -242,10 +245,8 @@ export function ResumeConversation({
         /* eslint-enable @typescript-eslint/no-require-imports */
         const warning = coordinatorModule.matchSessionMode(result.mode)
         if (warning) {
-          /* eslint-disable @typescript-eslint/no-require-imports */
           const { getAgentDefinitionsWithOverrides, getActiveAgentsFromList } =
-            require('../tools/AgentTool/loadAgentsDir.js') as typeof import('../tools/AgentTool/loadAgentsDir.js')
-          /* eslint-enable @typescript-eslint/no-require-imports */
+            loadAgentsDirNs
           getAgentDefinitionsWithOverrides.cache.clear?.()
           const freshAgentDefs = await getAgentDefinitionsWithOverrides(
             getOriginalCwd(),
@@ -283,7 +284,6 @@ export function ResumeConversation({
 
       if (feature('COORDINATOR_MODE')) {
         /* eslint-disable @typescript-eslint/no-require-imports */
-        const { saveMode } = require('../utils/sessionStorage.js')
         const { isCoordinatorMode } =
           require('../coordinator/coordinatorMode.js') as typeof import('../coordinator/coordinatorMode.js')
         /* eslint-enable @typescript-eslint/no-require-imports */
@@ -311,14 +311,10 @@ export function ResumeConversation({
       }
 
       if (feature('CONTEXT_COLLAPSE')) {
-        /* eslint-disable @typescript-eslint/no-require-imports */
-        ;(
-          require('../services/contextCollapse/persist.js') as typeof import('../services/contextCollapse/persist.js')
-        ).restoreFromEntries(
+        contextCollapsePersistNs.restoreFromEntries(
           result.contextCollapseCommits ?? [],
           result.contextCollapseSnapshot,
         )
-        /* eslint-enable @typescript-eslint/no-require-imports */
       }
 
       setLogs([])

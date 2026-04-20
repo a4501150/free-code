@@ -15,7 +15,7 @@ import { getRemoteUrlForDir, resolveGitDir } from './git/gitFilesystem.js'
 import { findGitRoot, gitExe } from './git.js'
 import { logError } from './log.js'
 import { getPublicModelDisplayName, type ModelName } from './model/model.js'
-import { stripProviderPrefix } from './model/parseModelString.js'
+import { stripProviderPrefix } from './model/parseModelStringWithRegistry.js'
 import { sequential } from './sequential.js'
 
 /**

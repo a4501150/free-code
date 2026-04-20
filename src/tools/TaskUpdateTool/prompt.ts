@@ -27,17 +27,6 @@ export const PROMPT = `Use this tool to update a task in the task list.
 - When requirements change or become clearer
 - When establishing dependencies between tasks
 
-## Fields You Can Update
-
-- **status**: The task status (see Status Workflow below)
-- **subject**: Change the task title (imperative form, e.g., "Run tests")
-- **description**: Change the task description
-- **activeForm**: Present continuous form shown in spinner when in_progress (e.g., "Running tests")
-- **owner**: Change the task owner (agent name)
-- **metadata**: Merge metadata keys into the task (set a key to null to delete it)
-- **addBlocks**: Mark tasks that cannot start until this one completes
-- **addBlockedBy**: Mark tasks that must complete before this one can start
-
 ## Status Workflow
 
 Status progresses: \`pending\` → \`in_progress\` → \`completed\`

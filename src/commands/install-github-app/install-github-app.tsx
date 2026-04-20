@@ -173,7 +173,7 @@ function InstallGitHubApp(props: {
           },
           state.workflowAction === 'skip',
           state.selectedWorkflows,
-          state.authType,
+          state.authType as 'api_key' | 'oauth_token',
           {
             useCurrentRepo: state.useCurrentRepo,
             workflowExists: state.workflowExists,

@@ -58,38 +58,10 @@ export function parseModelString(
 }
 
 /**
- * Convenience wrapper that uses the singleton provider registry.
- */
-export function parseModelStringFromRegistry(input: string): ParsedModelString {
-  // Lazy import to avoid circular deps
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { getProviderRegistry } = require('./providerRegistry.js') as {
-    getProviderRegistry: () => {
-      getProviderNames: () => Set<string>
-      getDefaultProviderName: () => string | null
-    }
-  }
-  const registry = getProviderRegistry()
-  return parseModelString(
-    input,
-    registry.getProviderNames(),
-    registry.getDefaultProviderName() ?? '',
-  )
-}
-
-/**
  * Reassemble a parsed model string: "provider:modelId"
  */
 export function toQualifiedString(parsed: ParsedModelString): string {
   return `${parsed.provider}:${parsed.modelId}`
-}
-
-/**
- * Strip the provider prefix from a model string, returning "modelId".
- */
-export function stripProviderPrefix(model: string): string {
-  const parsed = parseModelStringFromRegistry(model)
-  return parsed.modelId
 }
 
 /**
@@ -100,4 +72,14 @@ export function qualifyModel(
   modelId: string,
 ): string {
   return `${provider}:${modelId}`
+}
+
+/**
+ * Strip a legacy `[Nm]` context-window suffix from a model string (e.g.
+ * `claude-opus-4-6[1m]` → `claude-opus-4-6`). Context window is now config-driven,
+ * so any residual suffix in env vars or old settings must be normalized before
+ * it reaches model resolution or the HTTP request body.
+ */
+export function stripContextSuffix(model: string): string {
+  return model.replace(/\[\d+m\]$/i, '')
 }

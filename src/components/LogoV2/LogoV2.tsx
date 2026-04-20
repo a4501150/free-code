@@ -40,27 +40,19 @@ import {
 import { CondensedLogo } from './CondensedLogo.js'
 import { OffscreenFreeze } from '../OffscreenFreeze.js'
 import { checkForReleaseNotesSync } from '../../utils/releaseNotes.js'
-import { getDumpPromptsPath } from 'src/services/api/dumpPrompts.js'
 import { isEnvTruthy } from 'src/utils/envUtils.js'
-import {
-  getStartupPerfLogPath,
-  isDetailedProfilingEnabled,
-} from 'src/utils/startupProfiler.js'
 import { EmergencyTip } from './EmergencyTip.js'
 import { VoiceModeNotice } from './VoiceModeNotice.js'
 import { feature } from 'bun:bundle'
 
-// Conditional require so ChannelsNotice.tsx tree-shakes when both flags are
+// Conditional import so ChannelsNotice.tsx tree-shakes when both flags are
 // false. A module-scope helper component inside a feature() ternary does NOT
-// tree-shake (docs/feature-gating.md); the require pattern eliminates the
-// whole file. VoiceModeNotice uses the unsafe helper pattern but VOICE_MODE
+// tree-shake (docs/feature-gating.md); the namespace import + DCE eliminates
+// the whole file. VoiceModeNotice uses the unsafe helper pattern but VOICE_MODE
 // is external: true so it's moot there.
-/* eslint-disable @typescript-eslint/no-require-imports */
+import * as channelsNoticeNs from './ChannelsNotice.js'
 const ChannelsNoticeModule =
-  feature('KAIROS') || feature('KAIROS_CHANNELS')
-    ? (require('./ChannelsNotice.js') as typeof import('./ChannelsNotice.js'))
-    : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+  feature('KAIROS') || feature('KAIROS_CHANNELS') ? channelsNoticeNs : null
 import { SandboxManager } from 'src/utils/sandbox/sandbox-adapter.js'
 import {
   useShowGuestPassesUpsell,
@@ -217,29 +209,6 @@ export function LogoV2(): React.ReactNode {
             <Text>{announcement}</Text>
           </Box>
         )}
-        {"external" === 'ant' && !process.env.DEMO_VERSION && (
-          <Box paddingLeft={2} flexDirection="column">
-            <Text dimColor>Use /issue to report model behavior issues</Text>
-          </Box>
-        )}
-        {"external" === 'ant' && !process.env.DEMO_VERSION && (
-          <Box paddingLeft={2} flexDirection="column">
-            <Text color="warning">[ANT-ONLY] Logs:</Text>
-            <Text dimColor>
-              API calls: {getDisplayPath(getDumpPromptsPath())}
-            </Text>
-            <Text dimColor>
-              Debug logs: {getDisplayPath(getDebugLogPath())}
-            </Text>
-            {isDetailedProfilingEnabled() && (
-              <Text dimColor>
-                Startup Perf: {getDisplayPath(getStartupPerfLogPath())}
-              </Text>
-            )}
-          </Box>
-        )}
-        {"external" === 'ant' && <GateOverridesWarning />}
-        {"external" === 'ant' && <ExperimentEnrollmentNotice />}
       </>
     )
   }
@@ -311,8 +280,6 @@ export function LogoV2(): React.ReactNode {
             </Text>
           </Box>
         )}
-        {"external" === 'ant' && <GateOverridesWarning />}
-        {"external" === 'ant' && <ExperimentEnrollmentNotice />}
       </>
     )
   }
@@ -390,7 +357,8 @@ export function LogoV2(): React.ReactNode {
             {/* Vertical divider */}
             {layoutMode === 'horizontal' && (
               <Box
-                alignSelf="stretch"
+                alignSelf={"stretch" as "auto"}
+
                 flexShrink={0}
                 borderStyle="single"
                 borderColor="claude"
@@ -472,27 +440,6 @@ export function LogoV2(): React.ReactNode {
           </Text>
         </Box>
       )}
-      {"external" === 'ant' && !process.env.DEMO_VERSION && (
-        <Box paddingLeft={2} flexDirection="column">
-          <Text dimColor>Use /issue to report model behavior issues</Text>
-        </Box>
-      )}
-      {"external" === 'ant' && !process.env.DEMO_VERSION && (
-        <Box paddingLeft={2} flexDirection="column">
-          <Text color="warning">[ANT-ONLY] Logs:</Text>
-          <Text dimColor>
-            API calls: {getDisplayPath(getDumpPromptsPath())}
-          </Text>
-          <Text dimColor>Debug logs: {getDisplayPath(getDebugLogPath())}</Text>
-          {isDetailedProfilingEnabled() && (
-            <Text dimColor>
-              Startup Perf: {getDisplayPath(getStartupPerfLogPath())}
-            </Text>
-          )}
-        </Box>
-      )}
-      {"external" === 'ant' && <GateOverridesWarning />}
-      {"external" === 'ant' && <ExperimentEnrollmentNotice />}
     </>
   )
 }

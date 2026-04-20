@@ -365,7 +365,7 @@ async function translateGeminiStreamToAnthropicSSE(
               ),
             ),
           )
-          finishGeminiStream(controller, encoder, 0, 0, false)
+          finishGeminiStream(controller, encoder, 0, 0, 0, false)
           return
         }
 

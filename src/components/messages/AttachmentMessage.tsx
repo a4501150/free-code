@@ -1,5 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
-import React, { useMemo } from 'react'
+import React from 'react'
 import { Ansi, Box, Text } from '../../ink.js'
 import type { Attachment } from 'src/utils/attachments.js'
 import type { NullRenderingAttachmentType } from './nullRenderingAttachments.js'
@@ -16,7 +16,6 @@ import { UserImageMessage } from './UserImageMessage.js'
 import { toInkColor } from '../../utils/ink.js'
 import { jsonParse } from '../../utils/slowOperations.js'
 import { plural } from '../../utils/stringUtils.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import {
   tryRenderPlanApprovalMessage,
@@ -44,11 +43,6 @@ export function AttachmentMessage({
   isTranscriptMode,
 }: Props): React.ReactNode {
   const bg = useSelectedMessageBg()
-  // Hoisted to mount-time — per-message component, re-renders on every scroll.
-  const isDemoEnv = feature('EXPERIMENTAL_SKILL_SEARCH')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useMemo(() => isEnvTruthy(process.env.IS_DEMO), [])
-    : false
   // Handle teammate_mailbox BEFORE switch
   if (isAgentSwarmsEnabled() && attachment.type === 'teammate_mailbox') {
     // Filter out idle notifications BEFORE counting - they are hidden in the UI
@@ -140,19 +134,11 @@ export function AttachmentMessage({
       // Ant users get shortIds inline so they can /skill-feedback while the
       // turn is still fresh. External users (when this un-gates) just see
       // names — shortId is undefined outside ant builds anyway.
-      const names = attachment.skills
-        .map(s => (s.shortId ? `${s.name} [${s.shortId}]` : s.name))
-        .join(', ')
-      const firstId = attachment.skills[0]?.shortId
-      const hint =
-        "external" === 'ant' && !isDemoEnv && firstId
-          ? ` · /skill-feedback ${firstId} 1=wrong 2=noisy 3=good [comment]`
-          : ''
+      const names = attachment.skills.map(s => s.name).join(', ')
       return (
         <Line>
           <Text bold>{attachment.skills.length}</Text> relevant{' '}
           {plural(attachment.skills.length, 'skill')}: {names}
-          {hint && <Text dimColor>{hint}</Text>}
         </Line>
       )
     }
@@ -463,6 +449,7 @@ export function AttachmentMessage({
         | NullRenderingAttachmentType
         | 'skill_discovery'
         | 'teammate_mailbox'
+        | 'bagel_console'
       return null
   }
 }
@@ -474,10 +461,12 @@ function TaskStatusMessage({
 }: {
   attachment: TaskStatusAttachment
 }): React.ReactNode {
-  // For ants, killed task status is shown in the CoordinatorTaskPanel.
-  // Don't render it again in the chat.
-  if ("external" === 'ant' && attachment.status === 'killed') {
-    return null
+  // When coordinator mode is built in, killed task status is shown in the
+  // CoordinatorTaskPanel. Don't render it again in the chat.
+  if (feature('COORDINATOR_MODE')) {
+    if (attachment.status === 'killed') {
+      return null
+    }
   }
 
   // Only access teammate-specific code when swarms are enabled.

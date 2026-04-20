@@ -20,6 +20,7 @@ import {
   clearCompactWarningSuppression,
   suppressCompactWarning,
 } from './compactWarningState.js'
+import * as cachedMicrocompactMod from './cachedMicrocompact.js'
 import {
   getTimeBasedMCConfig,
   type TimeBasedMCConfig,
@@ -47,9 +48,7 @@ const COMPACTABLE_TOOLS = new Set<string>([
 
 // --- Cached microcompact state (ant-only, gated by feature('CACHED_MICROCOMPACT')) ---
 
-// Lazy-initialized cached MC module and state to avoid importing in external builds.
-// The imports and state live inside feature() checks for dead code elimination.
-let cachedMCModule: typeof import('./cachedMicrocompact.js') | null = null
+const cachedMCModule = feature('CACHED_MICROCOMPACT') ? cachedMicrocompactMod : null
 let cachedMCState: import('./cachedMicrocompact.js').CachedMCState | null = null
 let pendingCacheEdits:
   | import('./cachedMicrocompact.js').CacheEditsBlock
@@ -59,7 +58,7 @@ async function getCachedMCModule(): Promise<
   typeof import('./cachedMicrocompact.js')
 > {
   if (!cachedMCModule) {
-    cachedMCModule = await import('./cachedMicrocompact.js')
+    throw new Error('Cached microcompact is not enabled in this build')
   }
   return cachedMCModule
 }

@@ -3,22 +3,14 @@ import { Box, Text } from '../ink.js'
 import {
   getCachedKeybindingWarnings,
   getKeybindingsPath,
-  isKeybindingCustomizationEnabled,
 } from '../keybindings/loadUserBindings.js'
 
 /**
  * Displays keybinding validation warnings in the UI.
  * Similar to McpParsingWarnings, this provides persistent visibility
  * of configuration issues.
- *
- * Only shown when keybinding customization is enabled (ant users + feature gate).
  */
 export function KeybindingWarnings(): React.ReactNode {
-  // Only show warnings when keybinding customization is enabled
-  if (!isKeybindingCustomizationEnabled()) {
-    return null
-  }
-
   const warnings = getCachedKeybindingWarnings()
 
   if (warnings.length === 0) {

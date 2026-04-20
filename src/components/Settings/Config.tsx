@@ -1203,22 +1203,6 @@ export function Config({
           },
         ]
       : []),
-    {
-      id: "claudeInChromeDefaultEnabled",
-      label: "Claude in Chrome enabled by default",
-      value: globalConfig.claudeInChromeDefaultEnabled ?? true,
-      type: "boolean" as const,
-      onChange(enabled: boolean) {
-        saveGlobalConfig((current) => ({
-          ...current,
-          claudeInChromeDefaultEnabled: enabled,
-        }));
-        setGlobalConfig({
-          ...getGlobalConfig(),
-          claudeInChromeDefaultEnabled: enabled,
-        });
-      },
-    },
     // Teammate mode (only shown when agent swarms are enabled)
     ...(isAgentSwarmsEnabled()
       ? (() => {

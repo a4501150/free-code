@@ -1,5 +1,4 @@
 import { DEFAULT_BINDINGS } from '../../keybindings/defaultBindings.js'
-import { isKeybindingCustomizationEnabled } from '../../keybindings/loadUserBindings.js'
 import {
   MACOS_RESERVED,
   NON_REBINDABLE,
@@ -296,7 +295,6 @@ export function registerKeybindingsSkill(): void {
       'Use when the user wants to customize keyboard shortcuts, rebind keys, add chord bindings, or modify ~/.claude/keybindings.json. Examples: "rebind ctrl+s", "add a chord shortcut", "change the submit key", "customize keybindings".',
     allowedTools: ['Read'],
     userInvocable: false,
-    isEnabled: isKeybindingCustomizationEnabled,
     async getPromptForCommand(args) {
       // Generate reference tables dynamically from source-of-truth arrays
       const contextsTable = generateContextsTable()

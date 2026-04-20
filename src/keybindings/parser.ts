@@ -192,6 +192,7 @@ export function parseBindings(blocks: KeybindingBlock[]): ParsedBinding[] {
   const bindings: ParsedBinding[] = []
   for (const block of blocks) {
     for (const [key, action] of Object.entries(block.bindings)) {
+      if (action === null) continue
       bindings.push({
         chord: parseChord(key),
         action,

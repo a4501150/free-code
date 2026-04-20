@@ -367,35 +367,10 @@ export async function connectVoiceStream(
           cancelNoDataTimer?.()
         }
         if (transcript) {
-          // Detect when the server has moved to a new speech segment.
-          // Progressive refinements extend or shorten the previous text
-          // (e.g., "hello" → "hello world", or "hello wor" → "hello wo").
-          // A new segment starts with completely different text (neither
-          // is a prefix of the other). When detected, emit the previous
-          // text as final so the caller can accumulate it, preventing
-          // the new segment from overwriting and losing the old one.
-          //
-          // Nova 3's interims are cumulative across segments AND can
-          // revise earlier text ("Hello?" → "Hello."). Revision breaks
-          // the prefix check, causing false auto-finalize → the same
-          // text committed once AND re-appearing in the cumulative
-          // interim = duplication. Nova 3 only endpoints on the final
-          // flush, so auto-finalize is never correct for it.
-          if (!isNova3 && lastTranscriptText) {
-            const prev = lastTranscriptText.trimStart()
-            const next = transcript.trimStart()
-            if (
-              prev &&
-              next &&
-              !next.startsWith(prev) &&
-              !prev.startsWith(next)
-            ) {
-              logForDebugging(
-                `[voice_stream] Auto-finalizing previous segment (new segment detected): "${lastTranscriptText}"`,
-              )
-              callbacks.onTranscript(lastTranscriptText, true)
-            }
-          }
+          // Nova 3's interims are cumulative across segments AND can revise
+          // earlier text ("Hello?" → "Hello."). Revision breaks any prefix
+          // check, so we do not auto-finalize — Nova 3 only endpoints on the
+          // final flush, which the caller accumulates directly.
           lastTranscriptText = transcript
           // Emit as interim so the caller can show a live preview.
           callbacks.onTranscript(transcript, false)

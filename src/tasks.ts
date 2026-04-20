@@ -4,11 +4,10 @@ import { DreamTask } from './tasks/DreamTask/DreamTask.js'
 import { LocalAgentTask } from './tasks/LocalAgentTask/LocalAgentTask.js'
 import { LocalShellTask } from './tasks/LocalShellTask/LocalShellTask.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
+import * as localWorkflowTaskNs from './tasks/LocalWorkflowTask/LocalWorkflowTask.js'
 const LocalWorkflowTask: Task | null = feature('WORKFLOW_SCRIPTS')
-  ? require('./tasks/LocalWorkflowTask/LocalWorkflowTask.js').LocalWorkflowTask
+  ? localWorkflowTaskNs.LocalWorkflowTask
   : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 /**
  * Get all tasks.

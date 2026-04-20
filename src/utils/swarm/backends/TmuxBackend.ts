@@ -16,7 +16,7 @@ import {
   isInsideTmux as isInsideTmuxFromDetection,
   isTmuxAvailable,
 } from './detection.js'
-import { registerTmuxBackend } from './registry.js'
+import { registerTmuxBackend } from './backendTypes.js'
 import type { CreatePaneResult, PaneBackend, PaneId } from './types.js'
 
 // Track whether the first pane has been used for external swarm session

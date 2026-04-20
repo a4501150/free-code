@@ -39,12 +39,6 @@ Skip using this tool when:
 
 NOTE that you should not use this tool if there is only one trivial task to do. In this case you are better off just doing the task directly.
 
-## Task Fields
-
-- **subject**: A brief, actionable title in imperative form (e.g., "Fix authentication bug in login flow")
-- **description**: What needs to be done
-- **activeForm** (optional): Present continuous form shown in the spinner when the task is in_progress (e.g., "Fixing authentication bug"). If omitted, the spinner shows the subject instead.
-
 All tasks are created with status \`pending\`.
 
 ## Tips

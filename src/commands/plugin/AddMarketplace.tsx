@@ -82,10 +82,9 @@ export function AddMarketplace({
       saveMarketplaceToSettings(name, { source: resolvedSource })
       clearAllCaches()
 
-      let sourceType = parsed.source
+      let sourceType: string = parsed.source
       if (parsed.source === 'github') {
-        sourceType =
-          parsed.repo
+        sourceType = parsed.repo
       }
 
       if (onAddComplete) {

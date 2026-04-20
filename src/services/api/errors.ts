@@ -8,7 +8,7 @@ import type {
   BetaStopReason,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import { AFK_MODE_BETA_HEADER } from 'src/constants/betas.js'
-import type { SDKAssistantMessageError } from 'src/entrypoints/agentSdkTypes.js'
+import type { SDKAssistantErrorReason } from 'src/entrypoints/agentSdkTypes.js'
 import type {
   AssistantMessage,
   Message,
@@ -23,7 +23,7 @@ import {
   createAssistantAPIErrorMessage,
   NO_RESPONSE_REQUESTED,
 } from 'src/utils/messages.js'
-import { stripProviderPrefix } from 'src/utils/model/parseModelString.js'
+import { stripProviderPrefix } from 'src/utils/model/parseModelStringWithRegistry.js'
 import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
 import {
   API_PDF_MAX_PAGES,
@@ -1038,7 +1038,7 @@ export function classifyAPIError(error: unknown): string {
 
 export function categorizeRetryableAPIError(
   error: APIError,
-): SDKAssistantMessageError {
+): SDKAssistantErrorReason {
   if (
     error.status === 529 ||
     error.message?.includes('"type":"overloaded_error"')

@@ -2,6 +2,7 @@ import * as React from 'react'
 import { Box, Text } from '../ink.js'
 import { formatDuration, formatNumber } from '../utils/format.js'
 import type { Theme } from '../utils/theme.js'
+import { ToolUseLoader } from './ToolUseLoader.js'
 
 type Props = {
   agentType: string
@@ -40,9 +41,9 @@ export function AgentProgressLine({
   color,
   isLast,
   isResolved,
-  isError: _isError,
+  isError,
   isAsync = false,
-  shouldAnimate: _shouldAnimate,
+  shouldAnimate,
   lastToolInfo,
   hideType = false,
 }: Props): React.ReactNode {
@@ -84,8 +85,13 @@ export function AgentProgressLine({
 
   return (
     <Box flexDirection="column">
-      <Box paddingLeft={3}>
+      <Box paddingLeft={3} flexDirection="row">
         <Text dimColor>{treeChar} </Text>
+        <ToolUseLoader
+          shouldAnimate={shouldAnimate && !isResolved}
+          isUnresolved={!isResolved}
+          isError={isError}
+        />
         <Text dimColor={!isResolved}>
           {hideType ? (
             <>
@@ -123,7 +129,9 @@ export function AgentProgressLine({
       {!isBackgrounded && (
         <Box paddingLeft={3} flexDirection="row">
           <Text dimColor>{isLast ? '   ⎿  ' : '│  ⎿  '}</Text>
-          <Text dimColor>{getStatusText()}</Text>
+          <Text dimColor={!isResolved || isBackgrounded}>
+            {getStatusText()}
+          </Text>
         </Box>
       )}
     </Box>

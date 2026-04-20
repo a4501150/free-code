@@ -1,3 +1,4 @@
+import { spawn } from 'child_process'
 import { homedir } from 'os'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
@@ -44,7 +45,6 @@ async function startDaemon(): Promise<void> {
     return
   }
 
-  const { spawn } = await import('child_process')
   const child = spawn(process.execPath, ['--daemon-worker', 'supervisor'], {
     detached: true,
     stdio: 'ignore',

@@ -12,6 +12,7 @@ import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { getProjectRoot } from '../bootstrap/state.js'
 import { logError } from '../utils/log.js'
+import { setCliTeammateModeOverride } from '../utils/swarm/backends/teammateModeSnapshot.js'
 
 let forced = false
 
@@ -83,14 +84,7 @@ export async function initializeAssistantTeam(): Promise<
     }
 
     // Set teammate mode to in-process for assistant mode
-    try {
-      const { setCliTeammateModeOverride } = await import(
-        '../utils/swarm/backends/teammateModeSnapshot.js'
-      )
-      setCliTeammateModeOverride('in-process')
-    } catch {
-      // teammateModeSnapshot may not be available in all builds
-    }
+    setCliTeammateModeOverride('in-process')
 
     return teammates.length > 0 ? { teammates } : undefined
   } catch (err) {

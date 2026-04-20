@@ -33,6 +33,7 @@ import {
   clearSessionMetadata,
   getAgentTranscriptPath,
   resetSessionFilePointer,
+  saveMode,
   saveWorktreeState,
 } from '../../utils/sessionStorage.js'
 import {
@@ -167,6 +168,8 @@ export async function clearConversation({
         // Clear standalone agent context (name/color set by /rename, /color)
         // so the new session doesn't display the old session's identity badge
         standaloneAgentContext: undefined,
+        // Drop any per-agent click-to-expand state from the prior session.
+        expandedAgentToolUseIds: new Set<string>(),
         fileHistory: {
           snapshots: [],
           trackedFiles: new Set(),
@@ -221,7 +224,6 @@ export async function clearConversation({
   // and (if applicable) the same worktree directory.
   if (feature('COORDINATOR_MODE')) {
     /* eslint-disable @typescript-eslint/no-require-imports */
-    const { saveMode } = require('../../utils/sessionStorage.js')
     const {
       isCoordinatorMode,
     } = require('../../coordinator/coordinatorMode.js')

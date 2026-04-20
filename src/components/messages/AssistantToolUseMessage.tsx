@@ -6,6 +6,7 @@ import type { Command } from '../../commands.js'
 import { BLACK_CIRCLE } from '../../constants/figures.js'
 import { stringWidth } from '../../ink/stringWidth.js'
 import { Box, Text, useTheme } from '../../ink.js'
+import { useToggleAgentToolUseExpansion } from '../../state/agentExpansion.js'
 import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js'
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
 import { renderAgentToolUseTag } from '../../tools/AgentTool/UI.js'
@@ -16,7 +17,6 @@ import {
   type Tools,
 } from '../../Tool.js'
 import type { ProgressMessage } from '../../types/message.js'
-import { useIsClassifierChecking } from '../../utils/classifierApprovalsHook.js'
 import { logError } from '../../utils/log.js'
 import type { buildMessageLookups } from '../../utils/messages.js'
 import { MessageResponse } from '../MessageResponse.js'
@@ -60,23 +60,14 @@ export function AssistantToolUseMessage({
   const pendingWorkerRequest = useAppStateMaybeOutsideOfProvider(
     state => state.pendingWorkerRequest,
   )
-  const isClassifierCheckingRaw = useIsClassifierChecking(param.id)
   const permissionMode = useAppStateMaybeOutsideOfProvider(
     state => state.toolPermissionContext.mode,
   )
-  // strippedDangerousRules is set by stripDangerousPermissionsForAutoMode
-  // (even to {}) whenever auto is active, and cleared by restoreDangerousPermissions
-  // on deactivation — a reliable proxy for isAutoModeActive() during plan.
-  // prePlanMode would be stale after transitionPlanAutoMode deactivates mid-plan.
-  const hasStrippedRules = useAppStateMaybeOutsideOfProvider(
-    state => !!state.toolPermissionContext.strippedDangerousRules,
-  )
-  const isAutoClassifier =
-    permissionMode === 'auto' || (permissionMode === 'plan' && hasStrippedRules)
-  const isClassifierChecking =
-    "external" === 'ant' &&
-    isClassifierCheckingRaw &&
-    permissionMode !== 'auto'
+  // Toggle for AgentTool inline expansion. Wired to the header row below so
+  // clicking the "Explore(…)" / "Agent(…)" line expands the prompt + tool
+  // calls + response, matching the click-to-expand on the Done line.
+  const toggleAgentExpansion = useToggleAgentToolUseExpansion(param.id)
+  const isAgentTool = param.name === AGENT_TOOL_NAME
 
   // Look up the agent definition model for AgentTool so renderAgentToolUseTag
   // can show the effective model even when the LLM doesn't pass model explicitly.
@@ -176,6 +167,7 @@ export function AssistantToolUseMessage({
           flexDirection="row"
           flexWrap="nowrap"
           minWidth={stringWidth(userFacingToolName) + (shouldShowDot ? 2 : 0)}
+          onClick={isAgentTool ? toggleAgentExpansion : undefined}
         >
           {shouldShowDot &&
             (isQueued ? (
@@ -217,15 +209,7 @@ export function AssistantToolUseMessage({
         </Box>
         {!isResolved &&
           !isQueued &&
-          (isClassifierChecking ? (
-            <MessageResponse height={1}>
-              <Text dimColor>
-                {isAutoClassifier
-                  ? 'Auto classifier checking\u2026'
-                  : 'Bash classifier checking\u2026'}
-              </Text>
-            </MessageResponse>
-          ) : isWaitingForPermission ? (
+          (isWaitingForPermission ? (
             <MessageResponse height={1}>
               <Text dimColor>Waiting for permission…</Text>
             </MessageResponse>
@@ -302,6 +286,7 @@ function renderToolUseProgressMessage(
         terminalSize,
         inProgressToolCallCount: inProgressToolCallCount ?? 1,
         isTranscriptMode,
+        toolUseId: toolUseID,
       }) ?? null
     return (
       <>

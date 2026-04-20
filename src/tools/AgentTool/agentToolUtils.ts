@@ -32,7 +32,7 @@ import {
   updateProgressFromMessage,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { asAgentId } from '../../types/ids.js'
-import type { Message as MessageType } from '../../types/message.js'
+import type { AssistantMessage, Message as MessageType } from '../../types/message.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { AbortError, errorMessage } from '../../utils/errors.js'
@@ -230,6 +230,11 @@ export const agentToolResultSchema = lazySchema(() =>
     totalToolUseCount: z.number(),
     totalDurationMs: z.number(),
     totalTokens: z.number(),
+    // When the subagent stopped because of an API error or hitting its
+    // output-token cap, surface the reason so the parent tool_result + UI
+    // can report what actually happened instead of a misleading "Done".
+    // Narrowed to SDKAssistantErrorReason | undefined via the TS type below.
+    errorReason: z.string().optional(),
     usage: z.object({
       input_tokens: z.number(),
       output_tokens: z.number(),
@@ -279,6 +284,7 @@ export function finalizeAgentTool(
     agentType: string
     isAsync: boolean
   },
+  tracker: ProgressTracker,
 ): AgentToolResult {
   const {
     prompt,
@@ -311,8 +317,37 @@ export function finalizeAgentTool(
     }
   }
 
-  const totalTokens = getTokenCountFromUsage(lastAssistantMessage.message.usage)
+  // Use the tracker's cumulative counts rather than the last assistant
+  // message's `usage`. For long-running subagents this reports the true
+  // total tokens spent across all turns, not just the final turn. Synthetic
+  // error tails (e.g. max_output_tokens) carry zeroed usage that would
+  // otherwise make the tool report "0 tokens" for a full run.
+  const totalTokens = getTokenCountFromTracker(tracker)
   const totalToolUseCount = countToolUses(agentMessages)
+
+  // Detect a truthful stop reason from either a synthetic API-error tail
+  // OR the real assistant message's `stop_reason`. The harness no longer
+  // injects a synthetic error for max_tokens / model_context_window_exceeded
+  // (see Issue 1) — those stop reasons now flow through on the real
+  // assistant turn and must be mapped directly. The parent tool_result and
+  // UI use this to render "Stopped: ..." instead of "Done". Also walk back
+  // past any synthetic tail to pick up the real last turn's usage payload.
+  const stopReason = lastAssistantMessage.message.stop_reason
+  const errorReason = lastAssistantMessage.isApiErrorMessage
+    ? (lastAssistantMessage.error ?? 'unknown')
+    : stopReason === 'max_tokens'
+      ? 'max_output_tokens'
+      : stopReason === 'model_context_window_exceeded'
+        ? 'context_window_exceeded'
+        : undefined
+  let usageSource: AssistantMessage = lastAssistantMessage
+  if (lastAssistantMessage.isApiErrorMessage) {
+    const realLast = agentMessages.findLast(
+      (m): m is AssistantMessage =>
+        m.type === 'assistant' && !m.isApiErrorMessage,
+    )
+    if (realLast) usageSource = realLast
+  }
 
   // Signal to inference that this subagent's cache chain can be evicted.
   const lastRequestId = lastAssistantMessage.requestId
@@ -324,7 +359,8 @@ export function finalizeAgentTool(
     totalDurationMs: Date.now() - startTime,
     totalTokens,
     totalToolUseCount,
-    usage: lastAssistantMessage.message.usage,
+    errorReason,
+    usage: usageSource.message.usage,
   }
 }
 
@@ -537,7 +573,12 @@ export async function runAsyncAgentLifecycle({
 
     stopSummarization?.()
 
-    const agentResult = finalizeAgentTool(agentMessages, taskId, metadata)
+    const agentResult = finalizeAgentTool(
+      agentMessages,
+      taskId,
+      metadata,
+      tracker,
+    )
 
     // Mark task completed FIRST so TaskOutput(block=true) unblocks
     // immediately. classifyHandoffIfNeeded (API call) and getWorktreeResult

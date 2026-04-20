@@ -51,9 +51,6 @@ export type Property = {
 export type Diagnostic = React.ReactNode
 
 export function buildSandboxProperties(): Property[] {
-  if ("external" !== 'ant') {
-    return []
-  }
 
   const isSandboxed = SandboxManager.isSandboxingEnabled()
 
@@ -320,11 +317,14 @@ export function buildAPIProviderProperties(): Property[] {
       value: providerNames.join(', '),
     })
   } else if (providerType && providerType !== 'anthropic') {
-    const providerLabel = {
+    const providerLabel = ({
       'bedrock-converse': 'AWS Bedrock',
       vertex: 'Google Vertex AI',
       foundry: 'Microsoft Foundry',
-    }[providerType]
+      gemini: 'Google Gemini',
+      'openai-chat-completions': 'OpenAI Chat',
+      'openai-responses': 'OpenAI Responses',
+    } as Record<string, string>)[providerType]
 
     properties.push({
       label: 'API provider',

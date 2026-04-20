@@ -436,8 +436,8 @@ export function logAPISuccessAndDuration({
           block.type === 'mcp_tool_use'
         ) {
           const inputLen = jsonStringify(block.input).length
-          toolLengths[sanitizedName] =
-            (toolLengths[sanitizedName] ?? 0) + inputLen
+          toolLengths[block.name] =
+            (toolLengths[block.name] ?? 0) + inputLen
           hasToolUse = true
         }
       }
@@ -458,7 +458,7 @@ export function logAPISuccessAndDuration({
     preNormalizedModel,
     messageCount,
     messageTokens,
-    usage,
+    usage: usage as Usage,
     durationMs,
     durationMsIncludingRetries,
     attempt,

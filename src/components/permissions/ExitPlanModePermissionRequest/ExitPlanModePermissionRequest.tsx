@@ -83,16 +83,15 @@ import { PermissionDialog } from '../PermissionDialog.js'
 import type { PermissionRequestProps } from '../PermissionRequest.js'
 import { PermissionRuleExplanation } from '../PermissionRuleExplanation.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
+import * as autoModeStateNs from '../../../utils/permissions/autoModeState.js'
 const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? (require('../../../utils/permissions/autoModeState.js') as typeof import('../../../utils/permissions/autoModeState.js'))
+  ? autoModeStateNs
   : null
 
 import type {
   Base64ImageSource,
   ImageBlockParam,
 } from '@anthropic-ai/sdk/resources/messages.mjs'
-/* eslint-enable @typescript-eslint/no-require-imports */
 import type { PastedContent } from '../../../utils/config.js'
 import type { ImageDimensions } from '../../../utils/imageResizer.js'
 import { maybeResizeAndDownsampleImageBlock } from '../../../utils/imageResizer.js'
@@ -388,7 +387,7 @@ export function ExitPlanModePermissionRequest({
         blurb: '',
         seedPlan: currentPlan,
         getAppState: store.getState,
-        setAppState: store.setState,
+        setAppState: store.setState as unknown as (f: (prev: unknown) => unknown) => void,
         signal: new AbortController().signal,
       })
         .then(msg =>
@@ -463,14 +462,7 @@ export function ExitPlanModePermissionRequest({
 
       // Log plan exit event
 
-      // Set initial message - REPL will handle context clear and fresh query
-      // Add verification instruction if the feature is enabled
-      const verificationInstruction =
-        feature('VERIFY_PLAN') &&
-        process.env.CLAUDE_CODE_VERIFY_PLAN === 'true'
-          ? `\n\nIMPORTANT: When you have finished implementing the plan, you MUST call the "VerifyPlanExecution" tool directly (NOT the ${AGENT_TOOL_NAME} tool or an agent) to trigger background verification.`
-          : ''
-
+      // Set initial message - REPL will handle context clear and fresh query.
       // Capture the transcript path before context is cleared (session ID will be regenerated)
       const transcriptPath = getTranscriptPath()
       const transcriptHint = `\n\nIf you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: ${transcriptPath}`
@@ -483,13 +475,18 @@ export function ExitPlanModePermissionRequest({
         ? `\n\nUser feedback on this plan: ${acceptFeedback}`
         : ''
 
+      // Branch-level feature gate: when VERIFY_PLAN is off at build time, Bun
+      // folds this to the non-verify template and DCEs the long verification
+      // instruction literal out of the bundle.
+      const content = feature('VERIFY_PLAN')
+        ? `Implement the following plan:\n\n${currentPlan}\n\nIMPORTANT: When you have finished implementing the plan, you MUST call the "VerifyPlanExecution" tool directly (NOT the ${AGENT_TOOL_NAME} tool or an agent) to trigger background verification.${transcriptHint}${teamHint}${feedbackSuffix}`
+        : `Implement the following plan:\n\n${currentPlan}${transcriptHint}${teamHint}${feedbackSuffix}`
+
       setAppState(prev => ({
         ...prev,
         initialMessage: {
           message: {
-            ...createUserMessage({
-              content: `Implement the following plan:\n\n${currentPlan}${verificationInstruction}${transcriptHint}${teamHint}${feedbackSuffix}`,
-            }),
+            ...createUserMessage({ content }),
             planContent: currentPlan,
           },
           clearContext: true,

@@ -2,6 +2,11 @@ import chalk from 'chalk'
 import { exec } from 'child_process'
 import { execa } from 'execa'
 import { mkdir, stat } from 'fs/promises'
+import { GoogleAuth } from 'google-auth-library'
+import {
+  readFreecodeSettingsFile,
+  writeFreecodeSettingsFile,
+} from './settings/freecodeSettings.js'
 import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
 import { CLAUDE_AI_PROFILE_SCOPE } from 'src/constants/oauth.js'
@@ -55,7 +60,10 @@ import { execSyncWithDefaults_DEPRECATED } from './execFileNoThrow.js'
 import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
 import { memoizeWithTTLAsync } from './memoize.js'
+import { getClaudeAIOAuthTokens } from './oauthTokenReader.js'
 import { getSecureStorage } from './secureStorage/index.js'
+
+export { getClaudeAIOAuthTokens }
 import {
   clearLegacyApiKeyPrefetch,
   getLegacyApiKeyPrefetchResult,
@@ -829,8 +837,6 @@ const GCP_CREDENTIALS_CHECK_TIMEOUT_MS = 5_000
  */
 export async function checkGcpCredentialsValid(): Promise<boolean> {
   try {
-    // Dynamically import to avoid loading google-auth-library unnecessarily
-    const { GoogleAuth } = await import('google-auth-library')
     const auth = new GoogleAuth({
       scopes: ['https://www.googleapis.com/auth/cloud-platform'],
     })
@@ -1211,52 +1217,6 @@ export function saveOAuthTokensIfNeeded(tokens: OAuthTokens): {
   }
 }
 
-export const getClaudeAIOAuthTokens = memoize((): OAuthTokens | null => {
-  // --bare: API-key-only. No OAuth env tokens, no keychain, no credentials file.
-  if (isBareMode()) return null
-
-  // Check for force-set OAuth token from environment variable
-  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-    // Return an inference-only token (unknown refresh and expiry)
-    return {
-      accessToken: process.env.CLAUDE_CODE_OAUTH_TOKEN,
-      refreshToken: null,
-      expiresAt: null,
-      scopes: ['user:inference'],
-      subscriptionType: null,
-      rateLimitTier: null,
-    }
-  }
-
-  // Check for OAuth token from file descriptor
-  const oauthTokenFromFd = getOAuthTokenFromFileDescriptor()
-  if (oauthTokenFromFd) {
-    // Return an inference-only token (unknown refresh and expiry)
-    return {
-      accessToken: oauthTokenFromFd,
-      refreshToken: null,
-      expiresAt: null,
-      scopes: ['user:inference'],
-      subscriptionType: null,
-      rateLimitTier: null,
-    }
-  }
-
-  try {
-    const secureStorage = getSecureStorage()
-    const storageData = secureStorage.read()
-    const oauthData = storageData?.claudeAiOauth
-
-    if (!oauthData?.accessToken) {
-      return null
-    }
-
-    return oauthData
-  } catch (error) {
-    logError(error)
-    return null
-  }
-})
 
 /**
  * Clears all OAuth token caches. Call this on 401 errors to ensure
@@ -1427,7 +1387,7 @@ export async function getClaudeAIOAuthTokensAsync(): Promise<OAuthTokens | null>
     if (!oauthData?.accessToken) {
       return null
     }
-    return oauthData
+    return oauthData as import('../services/oauth/types.js').OAuthTokens
   } catch (error) {
     logError(error)
     return null
@@ -1536,17 +1496,17 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
     })
     saveOAuthTokensIfNeeded(refreshedTokens)
 
-    // Update freecode.json with refreshed tokens
+    // Update freecode.json with refreshed tokens. Login writes oauth creds to
+    // the "claude-ai" slot (distinct from a user-owned "anthropic" proxy).
     try {
-      const { readFreecodeSettingsFile, writeFreecodeSettingsFile } = await import('./settings/freecodeSettings.js')
       const existing = readFreecodeSettingsFile() ?? {}
       const providers = existing.providers as Record<string, Record<string, unknown>> | undefined
-      const anthropicProvider = providers?.['anthropic']
-      if (anthropicProvider && (anthropicProvider.auth as Record<string, unknown>)?.active === 'oauth') {
+      const claudeAiProvider = providers?.['claude-ai']
+      if (claudeAiProvider && (claudeAiProvider.auth as Record<string, unknown>)?.active === 'oauth') {
         writeFreecodeSettingsFile({
           providers: {
-            anthropic: {
-              ...anthropicProvider,
+            'claude-ai': {
+              ...claudeAiProvider,
               auth: {
                 active: 'oauth',
                 oauth: {

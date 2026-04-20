@@ -57,7 +57,6 @@ import type {
   SDKSession,
   SDKSessionOptions,
   SdkMcpToolDefinition,
-  SessionMessage,
   SessionMutationOptions,
 } from './sdk/runtimeTypes.js'
 
@@ -107,6 +106,9 @@ export function createSdkMcpServer(
 }
 
 export class AbortError extends Error {}
+
+/** A message from a stored session transcript. */
+export type SessionMessage = Record<string, unknown>
 
 /** @internal */
 export function query(_params: {

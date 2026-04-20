@@ -66,14 +66,8 @@ import {
   getSessionId,
   switchSession,
   setCostStateForRestore,
-  getTurnHookDurationMs,
-  getTurnHookCount,
   resetTurnHookDuration,
-  getTurnToolDurationMs,
-  getTurnToolCount,
   resetTurnToolDuration,
-  getTurnClassifierDurationMs,
-  getTurnClassifierCount,
   resetTurnClassifierDuration,
 } from '../bootstrap/state.js'
 import { asSessionId, asAgentId } from '../types/ids.js'
@@ -184,28 +178,21 @@ import { useTeammateViewAutoExit } from '../hooks/useTeammateViewAutoExit.js'
 import { errorMessage } from '../utils/errors.js'
 import { isHumanTurn } from '../utils/messagePredicates.js'
 import { logError } from '../utils/log.js'
+import * as voiceIntegrationNs from '../hooks/useVoiceIntegration.js'
 // Dead code elimination: conditional imports
-/* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 const useVoiceIntegration: typeof import('../hooks/useVoiceIntegration.js').useVoiceIntegration =
   feature('VOICE_MODE')
-    ? require('../hooks/useVoiceIntegration.js').useVoiceIntegration
+    ? voiceIntegrationNs.useVoiceIntegration
     : () => ({
         stripTrailing: () => 0,
         handleKeyEvent: () => {},
         resetAnchor: () => {},
+        interimRange: null,
       })
 const VoiceKeybindingHandler: typeof import('../hooks/useVoiceIntegration.js').VoiceKeybindingHandler =
-  feature('VOICE_MODE')
-    ? require('../hooks/useVoiceIntegration.js').VoiceKeybindingHandler
-    : () => null
-// Ant-only org warning. Conditional require so the org UUID list is
-// eliminated from external builds (one UUID is on excluded-strings).
-const useAntOrgWarningNotification: typeof import('../hooks/notifs/useAntOrgWarningNotification.js').useAntOrgWarningNotification =
-  "external" === 'ant'
-    ? require('../hooks/notifs/useAntOrgWarningNotification.js')
-        .useAntOrgWarningNotification
-    : () => {}
+  feature('VOICE_MODE') ? voiceIntegrationNs.VoiceKeybindingHandler : () => null
 // Dead code elimination: conditional import for coordinator mode
+/* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 const getCoordinatorUserContext: (
   mcpClients: ReadonlyArray<{ name: string }>,
   scratchpadDir?: string,
@@ -229,11 +216,7 @@ import {
 import { WEB_FETCH_TOOL_NAME } from '../tools/WebFetchTool/prompt.js'
 import { SLEEP_TOOL_NAME } from '../tools/SleepTool/prompt.js'
 import { clearSpeculativeChecks } from '../tools/BashTool/bashPermissions.js'
-import {
-  getGlobalConfig,
-  saveGlobalConfig,
-  getGlobalConfigWriteCount,
-} from '../utils/config.js'
+import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'
 import { hasConsoleBillingAccess } from '../utils/billing.js'
 import { getInitialSettings } from 'src/utils/settings/settings.js'
 import {
@@ -248,7 +231,6 @@ import {
   createAssistantMessage,
   createTurnDurationMessage,
   createAgentsKilledMessage,
-  createApiMetricsMessage,
   createSystemMessage,
   createCommandInputMessage,
   formatCommandInputTags,
@@ -304,6 +286,10 @@ import {
 import { type IDESelection, useIdeSelection } from '../hooks/useIdeSelection.js'
 import { getTools, assembleToolPool } from '../tools.js'
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
+import * as loadAgentsDirNs from '../tools/AgentTool/loadAgentsDir.js'
+import * as contextCollapseNs from '../services/contextCollapse/index.js'
+import { clearConversation } from '../commands/clear/conversation.js'
+import { renameRecordingForSession } from '../utils/asciicast.js'
 import { resolveAgentTools } from '../tools/AgentTool/agentToolUtils.js'
 import { resumeAgentBackground } from '../tools/AgentTool/resumeAgent.js'
 import { useMainLoopModel } from '../hooks/useMainLoopModel.js'
@@ -335,6 +321,7 @@ import {
   isLoggableMessage,
   saveWorktreeState,
   getAgentTranscript,
+  saveMode,
 } from '../utils/sessionStorage.js'
 import { deserializeMessages } from '../utils/conversationRecovery.js'
 import {
@@ -382,23 +369,23 @@ import {
   type InProcessTeammateTaskState,
 } from '../tasks/InProcessTeammateTask/types.js'
 import { useInboxPoller } from '../hooks/useInboxPoller.js'
+import * as useProactiveNs from '../proactive/useProactive.js'
+import * as useScheduledTasksNs from '../hooks/useScheduledTasks.js'
 // Dead code elimination: conditional import for loop mode
 /* eslint-disable @typescript-eslint/no-require-imports */
 const proactiveModule =
   feature('KAIROS')
     ? require('../proactive/index.js')
     : null
+/* eslint-enable @typescript-eslint/no-require-imports */
 const PROACTIVE_NO_OP_SUBSCRIBE = (_cb: () => void) => () => {}
 const PROACTIVE_FALSE = () => false
 const SUGGEST_BG_PR_NOOP = (_p: string, _n: string): boolean => false
 const useProactive =
-  feature('KAIROS')
-    ? require('../proactive/useProactive.js').useProactive
-    : null
+  feature('KAIROS') ? useProactiveNs.useProactive : null
 const useScheduledTasks = feature('AGENT_TRIGGERS')
-  ? require('../hooks/useScheduledTasks.js').useScheduledTasks
+  ? useScheduledTasksNs.useScheduledTasks
   : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 import { isAgentSwarmsEnabled } from '../utils/agentSwarmsEnabled.js'
 import { useTaskListWatcher } from '../hooks/useTaskListWatcher.js'
 import type {
@@ -439,24 +426,11 @@ import {
   shouldShowEffortCallout,
 } from '../components/EffortCallout.js'
 import type { EffortValue } from '../utils/effort.js'
-/* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
-const AntModelSwitchCallout =
-  "external" === 'ant'
-    ? require('../components/AntModelSwitchCallout.js').AntModelSwitchCallout
-    : null
-const shouldShowAntModelSwitch =
-  "external" === 'ant'
-    ? require('../components/AntModelSwitchCallout.js')
-        .shouldShowModelSwitchCallout
-    : (): boolean => false
-/* eslint-enable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 import { activityManager } from '../utils/activityManager.js'
 import { createAbortController } from '../utils/abortController.js'
 import { MCPConnectionManager } from 'src/services/mcp/MCPConnectionManager.js'
 import { useAwaySummary } from 'src/hooks/useAwaySummary.js'
-import { useChromeExtensionNotification } from 'src/hooks/useChromeExtensionNotification.js'
 import { useOfficialMarketplaceNotification } from 'src/hooks/useOfficialMarketplaceNotification.js'
-import { usePromptsFromClaudeInChrome } from 'src/hooks/usePromptsFromClaudeInChrome.js'
 import {
   getTipToShowOnSpinner,
   recordShownTip,
@@ -494,13 +468,6 @@ import { useIDEStatusIndicator } from 'src/hooks/notifs/useIDEStatusIndicator.js
 import { useCanSwitchToExistingSubscription } from 'src/hooks/notifs/useCanSwitchToExistingSubscription.js'
 import { useTeammateLifecycleNotification } from 'src/hooks/notifs/useTeammateShutdownNotification.js'
 import { useFastModeNotification } from 'src/hooks/notifs/useFastModeNotification.js'
-import {
-  AutoRunIssueNotification,
-  shouldAutoRunIssue,
-  getAutoRunIssueReasonText,
-  getAutoRunCommand,
-  type AutoRunIssueReason,
-} from '../utils/autoRunIssue.js'
 import type { HookProgress } from '../types/hooks.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
 import {
@@ -509,7 +476,6 @@ import {
   MIN_COLS_FOR_FULL_SPRITE,
 } from '../buddy/CompanionSprite.js'
 import { fireCompanionObserver } from '../buddy/observer.js'
-import { DevBar } from '../components/DevBar.js'
 import type { RemoteMessageContent } from '../utils/oauthApi.js'
 import {
   FullscreenLayout,
@@ -550,14 +516,6 @@ const RECENT_SCROLL_REPIN_WINDOW_MS = 3000
 // Use LRU cache to prevent unbounded memory growth
 // 100 files should be sufficient for most coding sessions while preventing
 // memory issues when working across many files in large projects
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b)
-  const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 === 0
-    ? Math.round((sorted[mid - 1]! + sorted[mid]!) / 2)
-    : sorted[mid]!
-}
 
 /**
  * Small component to display transcript mode footer with dynamic keybinding.
@@ -887,12 +845,6 @@ export function REPL({
     () => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE),
     [],
   )
-  const moreRightEnabled = useMemo(
-    () =>
-      "external" === 'ant' &&
-      isEnvTruthy(process.env.CLAUDE_MORERIGHT),
-    [],
-  )
   const disableVirtualScroll = useMemo(
     () => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL),
     [],
@@ -1063,13 +1015,6 @@ export function REPL({
   const [ideInstallationStatus, setIDEInstallationStatus] =
     useState<IDEExtensionInstallationStatus | null>(null)
   const [showIdeOnboarding, setShowIdeOnboarding] = useState(false)
-  // Dead code elimination: model switch callout state (ant-only)
-  const [showModelSwitchCallout, setShowModelSwitchCallout] = useState(() => {
-    if ("external" === 'ant') {
-      return shouldShowAntModelSwitch()
-    }
-    return false
-  })
   const [showEffortCallout, setShowEffortCallout] = useState(() =>
     shouldShowEffortCallout(mainLoopModel),
   )
@@ -1085,8 +1030,6 @@ export function REPL({
   useFastModeNotification()
   useDeprecationWarningNotification(mainLoopModel)
   useNpmDeprecationNotification()
-  useAntOrgWarningNotification()
-  useChromeExtensionNotification()
   useOfficialMarketplaceNotification()
   useLspInitializationNotification()
   useTeammateLifecycleNotification()
@@ -1120,13 +1063,6 @@ export function REPL({
   useEffect(() => {
     void performStartupChecks(setAppState)
   }, [setAppState])
-
-  // Allow Claude in Chrome MCP to send prompts through MCP notifications
-  // and sync permission mode changes to the Chrome extension
-  usePromptsFromClaudeInChrome(
-    mcpClients,
-    toolPermissionContext.mode,
-  )
 
   // Initialize swarm features: teammate hooks and context
   // Handles both fresh spawns and resumed teammate sessions
@@ -1791,36 +1727,8 @@ export function REPL({
   // Ref instead of state to avoid triggering React re-renders on every
   // streaming text_delta. The spinner reads this via its animation timer.
   const responseLengthRef = useRef(0)
-  // API performance metrics ref for ant-only spinner display (TTFT/OTPS).
-  // Accumulates metrics from all API requests in a turn for P50 aggregation.
-  const apiMetricsRef = useRef<
-    Array<{
-      ttftMs: number
-      firstTokenTime: number
-      lastTokenTime: number
-      responseLengthBaseline: number
-      // Tracks responseLengthRef at the time of the last content addition.
-      // Updated by both streaming deltas and subagent message content.
-      // lastTokenTime is also updated at the same time, so the OTPS
-      // denominator correctly includes subagent processing time.
-      endResponseLength: number
-    }>
-  >([])
   const setResponseLength = useCallback((f: (prev: number) => number) => {
-    const prev = responseLengthRef.current
-    responseLengthRef.current = f(prev)
-    // When content is added (not a compaction reset), update the latest
-    // metrics entry so OTPS reflects all content generation activity.
-    // Updating lastTokenTime here ensures the denominator includes both
-    // streaming time AND subagent execution time, preventing inflation.
-    if (responseLengthRef.current > prev) {
-      const entries = apiMetricsRef.current
-      if (entries.length > 0) {
-        const lastEntry = entries.at(-1)!
-        lastEntry.lastTokenTime = Date.now()
-        lastEntry.endResponseLength = responseLengthRef.current
-      }
-    }
+    responseLengthRef.current = f(responseLengthRef.current)
   }, [])
 
   // Streaming text display: set state directly per delta (Ink's 16ms render
@@ -1928,7 +1836,6 @@ export function REPL({
     }
     bashToolsProcessedIdx.current = messagesRef.current.length
     void getTipToShowOnSpinner({
-      theme,
       readFileState: readFileState.current,
       bashTools: bashTools.current,
     }).then(async tip => {
@@ -1958,7 +1865,6 @@ export function REPL({
     setIsExternalLoading(false)
     setUserInputOnProcessing(undefined)
     responseLengthRef.current = 0
-    apiMetricsRef.current = []
     setStreamingText(null)
     setStreamingToolUses([])
     setSpinnerMessage(null)
@@ -2080,7 +1986,7 @@ export function REPL({
     onTurnComplete: mrOnTurnComplete,
     render: mrRender,
   } = useMoreRight({
-    enabled: moreRightEnabled,
+    enabled: false,
     setMessages,
     inputValue,
     setInputValue,
@@ -2155,13 +2061,10 @@ export function REPL({
           if (warning) {
             // Re-derive agent definitions after mode switch so built-in agents
             // reflect the new coordinator/normal mode
-            /* eslint-disable @typescript-eslint/no-require-imports */
             const {
               getAgentDefinitionsWithOverrides,
               getActiveAgentsFromList,
-            } =
-              require('../tools/AgentTool/loadAgentsDir.js') as typeof import('../tools/AgentTool/loadAgentsDir.js')
-            /* eslint-enable @typescript-eslint/no-require-imports */
+            } = loadAgentsDirNs
             getAgentDefinitionsWithOverrides.cache.clear?.()
             const freshAgentDefs = await getAgentDefinitionsWithOverrides(
               getOriginalCwd(),
@@ -2262,9 +2165,6 @@ export function REPL({
           log.fullPath ? dirname(log.fullPath) : null,
         )
         // Rename asciicast recording to match the resumed session ID
-        const { renameRecordingForSession } = await import(
-          '../utils/asciicast.js'
-        )
         await renameRecordingForSession()
         await resetSessionFilePointer()
 
@@ -2306,7 +2206,6 @@ export function REPL({
         // Persist the current mode so future resumes know what mode this session was in
         if (feature('COORDINATOR_MODE')) {
           /* eslint-disable @typescript-eslint/no-require-imports */
-          const { saveMode } = require('../utils/sessionStorage.js')
           const { isCoordinatorMode } =
             require('../coordinator/coordinatorMode.js') as typeof import('../coordinator/coordinatorMode.js')
           /* eslint-enable @typescript-eslint/no-require-imports */
@@ -2408,14 +2307,6 @@ export function REPL({
 
   const { status: apiKeyStatus, reverify } = useApiKeyVerification()
 
-  // Auto-run /issue state
-  const [autoRunIssueReason, setAutoRunIssueReason] =
-    useState<AutoRunIssueReason | null>(null)
-  // Ref to track if autoRunIssue was triggered this survey cycle,
-  // so we can suppress the [1] follow-up prompt even after
-  // autoRunIssueReason is cleared.
-  const didAutoRunIssueRef = useRef(false)
-
   // State for exit feedback flow
   const [exitFlow, setExitFlow] = useState<React.ReactNode>(null)
   const [isExiting, setIsExiting] = useState(false)
@@ -2494,14 +2385,6 @@ export function REPL({
 
     // Onboarding dialogs (special conditions)
     if (allowDialogsWithAnimation && showIdeOnboarding) return 'ide-onboarding'
-
-    // Model switch callout (ant-only, eliminated from external builds)
-    if (
-      "external" === 'ant' &&
-      allowDialogsWithAnimation &&
-      showModelSwitchCallout
-    )
-      return 'model-switch'
 
     // Effort callout (shown once for Opus 4.6 users when effort is enabled)
     if (allowDialogsWithAnimation && showEffortCallout) return 'effort-callout'
@@ -3001,20 +2884,6 @@ export function REPL({
         dynamicSkillDirTriggers: new Set<string>(),
         discoveredSkillNames: discoveredSkillNamesRef.current,
         setResponseLength,
-        pushApiMetricsEntry:
-          "external" === 'ant'
-            ? (ttftMs: number) => {
-                const now = Date.now()
-                const baseline = responseLengthRef.current
-                apiMetricsRef.current.push({
-                  ttftMs,
-                  firstTokenTime: now,
-                  lastTokenTime: now,
-                  responseLengthBaseline: baseline,
-                  endResponseLength: baseline,
-                })
-              }
-            : undefined,
         setStreamMode,
         onCompactProgress: event => {
           switch (event.type) {
@@ -3262,9 +3131,6 @@ export function REPL({
           }
         },
         newContent => {
-          // setResponseLength handles updating both responseLengthRef (for
-          // spinner animation) and apiMetricsRef (endResponseLength/lastTokenTime
-          // for OTPS). No separate metrics update needed here.
           setResponseLength(length => length + newContent.length)
         },
         setStreamMode,
@@ -3276,17 +3142,7 @@ export function REPL({
           void removeTranscriptMessage(tombstonedMessage.uuid)
         },
         setStreamingThinking,
-        metrics => {
-          const now = Date.now()
-          const baseline = responseLengthRef.current
-          apiMetricsRef.current.push({
-            ...metrics,
-            firstTokenTime: now,
-            lastTokenTime: now,
-            responseLengthBaseline: baseline,
-            endResponseLength: baseline,
-          })
-        },
+        undefined,
         onStreamingText,
       )
     },
@@ -3529,49 +3385,6 @@ export function REPL({
 
       queryCheckpoint('query_end')
 
-      // Capture ant-only API metrics before resetLoadingState clears the ref.
-      // For multi-request turns (tool use loops), compute P50 across all requests.
-      if ("external" === 'ant' && apiMetricsRef.current.length > 0) {
-        const entries = apiMetricsRef.current
-
-        const ttfts = entries.map(e => e.ttftMs)
-        // Compute per-request OTPS using only active streaming time and
-        // streaming-only content. endResponseLength tracks content added by
-        // streaming deltas only, excluding subagent/compaction inflation.
-        const otpsValues = entries.map(e => {
-          const delta = Math.round(
-            (e.endResponseLength - e.responseLengthBaseline) / 4,
-          )
-          const samplingMs = e.lastTokenTime - e.firstTokenTime
-          return samplingMs > 0 ? Math.round(delta / (samplingMs / 1000)) : 0
-        })
-
-        const isMultiRequest = entries.length > 1
-        const hookMs = getTurnHookDurationMs()
-        const hookCount = getTurnHookCount()
-        const toolMs = getTurnToolDurationMs()
-        const toolCount = getTurnToolCount()
-        const classifierMs = getTurnClassifierDurationMs()
-        const classifierCount = getTurnClassifierCount()
-        const turnMs = Date.now() - loadingStartTimeRef.current
-        setMessages(prev => [
-          ...prev,
-          createApiMetricsMessage({
-            ttftMs: isMultiRequest ? median(ttfts) : ttfts[0]!,
-            otps: isMultiRequest ? median(otpsValues) : otpsValues[0]!,
-            isP50: isMultiRequest,
-            hookDurationMs: hookMs > 0 ? hookMs : undefined,
-            hookCount: hookCount > 0 ? hookCount : undefined,
-            turnDurationMs: turnMs > 0 ? turnMs : undefined,
-            toolDurationMs: toolMs > 0 ? toolMs : undefined,
-            toolCount: toolCount > 0 ? toolCount : undefined,
-            classifierDurationMs: classifierMs > 0 ? classifierMs : undefined,
-            classifierCount: classifierCount > 0 ? classifierCount : undefined,
-            configWriteCount: getGlobalConfigWriteCount(),
-          }),
-        ])
-      }
-
       resetLoadingState()
 
       // Log query profiling report if enabled
@@ -3652,7 +3465,6 @@ export function REPL({
             parsedBudget ?? getCurrentTurnTokenBudget(),
           )
         }
-        apiMetricsRef.current = []
         setStreamingToolUses([])
         setStreamingText(null)
 
@@ -3832,9 +3644,6 @@ export function REPL({
           ? getPlanSlug()
           : undefined
 
-        const { clearConversation } = await import(
-          '../commands/clear/conversation.js'
-        )
         await clearConversation({
           setMessages,
           readFileState: readFileState.current,
@@ -3856,12 +3665,9 @@ export function REPL({
         }
       }
 
-      // Atomically: clear initial message, set permission mode and rules, and store plan for verification
-      const shouldStorePlanForVerification =
-        initialMsg.message.planContent &&
-        "external" === 'ant' &&
-        isEnvTruthy(undefined)
-
+      // Atomically: clear initial message, set permission mode and rules, and
+      // (when VERIFY_PLAN is compiled in and the env gate is on) store the
+      // approved plan so the verifier can diff against it later.
       setAppState(prev => {
         // Build and apply permission updates (mode + allowedPrompts rules)
         let updatedToolPermissionContext = initialMsg.mode
@@ -3883,18 +3689,26 @@ export function REPL({
           })
         }
 
-        return {
+        const base = {
           ...prev,
           initialMessage: null,
           toolPermissionContext: updatedToolPermissionContext,
-          ...(shouldStorePlanForVerification && {
+        }
+        if (
+          feature('VERIFY_PLAN') &&
+          isEnvTruthy(process.env.CLAUDE_CODE_VERIFY_PLAN) &&
+          initialMsg.message.planContent
+        ) {
+          return {
+            ...base,
             pendingPlanVerification: {
-              plan: initialMsg.message.planContent!,
+              plan: initialMsg.message.planContent as string,
               verificationStarted: false,
               verificationCompleted: false,
             },
-          }),
+          }
         }
+        return base
       })
 
       // Create file history snapshot for code rewind
@@ -4367,9 +4181,7 @@ export function REPL({
         setMessages(prev => [...prev, userMessage])
 
         // Send to remote session
-        await activeRemote.sendMessage(remoteContent, {
-          uuid: userMessage.uuid,
-        })
+        await activeRemote.sendMessage(remoteContent)
         return
       }
 
@@ -4441,7 +4253,7 @@ export function REPL({
       // keep onSubmit stable across message updates (see L2384/L2400/L2662).
       // Without this, each setMessages call (~30× per turn) recreates
       // onSubmit, pinning the REPL render scope (1776B) + that render's
-      // messages array in downstream closures (PromptInput, handleAutoRunIssue).
+      // messages array in downstream closures (PromptInput).
       // Heap analysis showed ~9 REPL scopes and ~15 messages array versions
       // accumulating after #20174/#20175, all traced to this dep.
       mainLoopModel,
@@ -4519,25 +4331,6 @@ export function REPL({
       addNotification,
     ],
   )
-
-  // Handlers for auto-run /issue or /good-claude (defined after onSubmit)
-  const handleAutoRunIssue = useCallback(() => {
-    const command = autoRunIssueReason
-      ? getAutoRunCommand(autoRunIssueReason)
-      : '/issue'
-    setAutoRunIssueReason(null) // Clear the state
-    onSubmit(command, {
-      setCursorOffset: () => {},
-      clearBuffer: () => {},
-      resetHistory: () => {},
-    }).catch(err => {
-      logForDebugging(`Auto-run ${command} failed: ${errorMessage(err)}`)
-    })
-  }, [onSubmit, autoRunIssueReason])
-
-  const handleCancelAutoRunIssue = useCallback(() => {
-    setAutoRunIssueReason(null)
-  }, [])
 
   // onSubmit is unstable (deps include `messages` which changes every turn).
   // `handleOpenRateLimitOptions` is prop-drilled to every MessageRow, and each
@@ -4617,11 +4410,7 @@ export function REPL({
         // maps reference stale uuids. Simplest safe reset: drop
         // everything. The ctx-agent will re-stage on the next
         // threshold crossing.
-        /* eslint-disable @typescript-eslint/no-require-imports */
-        ;(
-          require('../services/contextCollapse/index.js') as typeof import('../services/contextCollapse/index.js')
-        ).resetContextCollapse()
-        /* eslint-enable @typescript-eslint/no-require-imports */
+        contextCollapseNs.resetContextCollapse()
       }
 
       // Restore state from the message we're rewinding to
@@ -5081,10 +4870,10 @@ export function REPL({
   // - Workers receive permission responses via mailbox messages
   // - Leaders receive permission requests via mailbox messages
 
-  if ("external" === 'ant') {
+  if (feature('COORDINATOR_MODE')) {
     // Tasks mode: watch for tasks and auto-process them
     // eslint-disable-next-line react-hooks/rules-of-hooks
-    // biome-ignore lint/correctness/useHookAtTopLevel: conditional for dead code elimination in external builds
+    // biome-ignore lint/correctness/useHookAtTopLevel: conditional for dead code elimination when COORDINATOR_MODE is off
     useTaskListWatcher({
       taskListId,
       isLoading,
@@ -5093,7 +4882,7 @@ export function REPL({
 
     // Loop mode: auto-tick when enabled (via /job command)
     // eslint-disable-next-line react-hooks/rules-of-hooks
-    // biome-ignore lint/correctness/useHookAtTopLevel: conditional for dead code elimination in external builds
+    // biome-ignore lint/correctness/useHookAtTopLevel: conditional for dead code elimination when COORDINATOR_MODE is off
     useProactive?.({
       // Suppress ticks while an initial message is pending — the initial
       // message will be processed asynchronously and a premature tick would
@@ -5215,17 +5004,11 @@ export function REPL({
         ? 'subagent stop'
         : 'stop'
 
-    if ("external" === 'ant') {
-      const cmd = currentHooks[completedCount]?.data.command
-      const label = cmd ? ` '${truncateToWidth(cmd, 40)}'` : ''
-      return total === 1
-        ? `running ${hookType} hook${label}`
-        : `running ${hookType} hook${label}\u2026 ${completedCount}/${total}`
-    }
-
+    const cmd = currentHooks[completedCount]?.data.command
+    const label = cmd ? ` '${truncateToWidth(cmd, 40)}'` : ''
     return total === 1
-      ? `running ${hookType} hook`
-      : `running stop hooks… ${completedCount}/${total}`
+      ? `running ${hookType} hook${label}`
+      : `running ${hookType} hook${label}\u2026 ${completedCount}/${total}`
   }, [messages, isLoading])
 
   // Callback to capture frozen state when entering transcript mode
@@ -5882,7 +5665,6 @@ export function REPL({
                   mode={streamMode}
                   spinnerTip={spinnerTip}
                   responseLengthRef={responseLengthRef}
-                  apiMetricsRef={apiMetricsRef}
                   overrideMessage={spinnerMessage}
                   spinnerSuffix={stopHookSpinnerSuffix}
                   verbose={verbose}
@@ -6177,9 +5959,6 @@ export function REPL({
                         })
                       }
                       if (action === 'clear') {
-                        const { clearConversation } = await import(
-                          '../commands/clear/conversation.js'
-                        )
                         await clearConversation({
                           setMessages,
                           readFileState: readFileState.current,
@@ -6212,22 +5991,6 @@ export function REPL({
                     installationStatus={ideInstallationStatus}
                   />
                 )}
-                {"external" === 'ant' &&
-                  focusedInputDialog === 'model-switch' &&
-                  AntModelSwitchCallout && (
-                    <AntModelSwitchCallout
-                      onDone={(selection: string, modelAlias?: string) => {
-                        setShowModelSwitchCallout(false)
-                        if (selection === 'switch' && modelAlias) {
-                          setAppState(prev => ({
-                            ...prev,
-                            mainLoopModel: modelAlias,
-                            mainLoopModelForSession: null,
-                          }))
-                        }
-                      }}
-                    />
-                  )}
                 {focusedInputDialog === 'effort-callout' && (
                   <EffortCallout
                     model={mainLoopModel}
@@ -6265,81 +6028,6 @@ export function REPL({
                   )}
 
 
-                {feature('ULTRAPLAN')
-                  ? focusedInputDialog === 'ultraplan-choice' &&
-                    ultraplanPendingChoice && (
-                      <UltraplanChoiceDialog
-                        plan={ultraplanPendingChoice.plan}
-                        sessionId={ultraplanPendingChoice.sessionId}
-                        taskId={ultraplanPendingChoice.taskId}
-                        setMessages={setMessages}
-                        readFileState={readFileState.current}
-                        getAppState={() => store.getState()}
-                        setConversationId={setConversationId}
-                      />
-                    )
-                  : null}
-
-                {feature('ULTRAPLAN')
-                  ? focusedInputDialog === 'ultraplan-launch' &&
-                    ultraplanLaunchPending && (
-                      <UltraplanLaunchDialog
-                        onChoice={(choice, opts) => {
-                          const blurb = ultraplanLaunchPending.blurb
-                          setAppState(prev =>
-                            prev.ultraplanLaunchPending
-                              ? { ...prev, ultraplanLaunchPending: undefined }
-                              : prev,
-                          )
-                          if (choice === 'cancel') return
-                          // Command's onDone used display:'skip', so add the
-                          // echo here — gives immediate feedback before the
-                          // ~5s ultraplan launch resolves.
-                          setMessages(prev => [
-                            ...prev,
-                            createCommandInputMessage(
-                              formatCommandInputTags('ultraplan', blurb),
-                            ),
-                          ])
-                          const appendStdout = (msg: string) =>
-                            setMessages(prev => [
-                              ...prev,
-                              createCommandInputMessage(
-                                `<${LOCAL_COMMAND_STDOUT_TAG}>${escapeXml(msg)}</${LOCAL_COMMAND_STDOUT_TAG}>`,
-                              ),
-                            ])
-                          // Defer the second message if a query is mid-turn
-                          // so it lands after the assistant reply, not
-                          // between the user's prompt and the reply.
-                          const appendWhenIdle = (msg: string) => {
-                            if (!queryGuard.isActive) {
-                              appendStdout(msg)
-                              return
-                            }
-                            const unsub = queryGuard.subscribe(() => {
-                              if (queryGuard.isActive) return
-                              unsub()
-                              // Skip if the user stopped ultraplan while we
-                              // were waiting — avoids a stale "Monitoring
-                              // <url>" message for a session that's gone.
-                              if (!store.getState().ultraplanSessionUrl) return
-                              appendStdout(msg)
-                            })
-                          }
-                          void launchUltraplan({
-                            blurb,
-                            getAppState: () => store.getState(),
-                            setAppState,
-                            signal: createAbortController().signal,
-                            onSessionReady: appendWhenIdle,
-                          })
-                            .then(appendStdout)
-                            .catch(logError)
-                        }}
-                      />
-                    )
-                  : null}
-
                 {mrRender()}
 
                 {!toolJSX?.shouldHidePromptInput &&
@@ -6348,13 +6036,6 @@ export function REPL({
                   !disabled &&
                   !cursor && (
                     <>
-                      {autoRunIssueReason && (
-                        <AutoRunIssueNotification
-                          onRun={handleAutoRunIssue}
-                          onCancel={handleCancelAutoRunIssue}
-                          reason={getAutoRunIssueReasonText(autoRunIssueReason)}
-                        />
-                      )}
                       <PromptInput
                         debug={debug}
                         ideSelection={ideSelection}
@@ -6567,7 +6248,6 @@ export function REPL({
                     }}
                   />
                 )}
-                {"external" === 'ant' && <DevBar />}
               </Box>
               {feature('BUDDY') &&
               !(companionNarrow && isFullscreenEnvEnabled()) &&

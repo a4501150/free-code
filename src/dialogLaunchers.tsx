@@ -1,26 +1,26 @@
 /**
  * Thin launchers for one-off dialog JSX sites in main.tsx.
- * Each launcher dynamically imports its component and wires the `done` callback
+ * Each launcher renders its component and wires the `done` callback
  * identically to the original inline call site. Zero behavior change.
  *
  * Part of the main.tsx React/JSX extraction effort. See sibling PRs
  * perf/extract-interactive-helpers and perf/launch-repl.
  */
 import React from 'react'
+import { App } from './components/App.js'
+import { InvalidSettingsDialog } from './components/InvalidSettingsDialog.js'
+import { SnapshotUpdateDialog } from './components/agents/SnapshotUpdateDialog.js'
 import type { StatsStore } from './context/stats.js'
 import type { Root } from './ink.js'
 import { renderAndRun, showSetupDialog } from './interactiveHelpers.js'
 import { KeybindingSetup } from './keybindings/KeybindingProviderSetup.js'
+import { ResumeConversation } from './screens/ResumeConversation.js'
 import type { AppState } from './state/AppStateStore.js'
 import type { AgentMemoryScope } from './tools/AgentTool/agentMemory.js'
 import type { FpsMetrics } from './utils/fpsTracker.js'
 import type { ValidationError } from './utils/settings/validation.js'
 
-// Type-only access to ResumeConversation's Props via the module type.
-// No runtime cost - erased at compile time.
-type ResumeConversationProps = React.ComponentProps<
-  typeof import('./screens/ResumeConversation.js').ResumeConversation
->
+type ResumeConversationProps = React.ComponentProps<typeof ResumeConversation>
 
 /**
  * Site ~3173: SnapshotUpdateDialog (agent memory snapshot update prompt).
@@ -34,9 +34,6 @@ export async function launchSnapshotUpdateDialog(
     snapshotTimestamp: string
   },
 ): Promise<'merge' | 'keep' | 'replace'> {
-  const { SnapshotUpdateDialog } = await import(
-    './components/agents/SnapshotUpdateDialog.js'
-  )
   return showSetupDialog<'merge' | 'keep' | 'replace'>(root, done => (
     <SnapshotUpdateDialog
       agentType={props.agentType}
@@ -59,9 +56,6 @@ export async function launchInvalidSettingsDialog(
     onExit: () => void
   },
 ): Promise<void> {
-  const { InvalidSettingsDialog } = await import(
-    './components/InvalidSettingsDialog.js'
-  )
   return showSetupDialog(root, done => (
     <InvalidSettingsDialog
       settingsErrors={props.settingsErrors}
@@ -74,7 +68,6 @@ export async function launchInvalidSettingsDialog(
 /**
  * Site ~4903: ResumeConversation mount (interactive session picker).
  * Uses renderAndRun, NOT showSetupDialog. Wraps in <App><KeybindingSetup>.
- * Preserves original Promise.all parallelism between getWorktreePaths and imports.
  */
 export async function launchResumeChooser(
   root: Root,
@@ -86,11 +79,7 @@ export async function launchResumeChooser(
   worktreePathsPromise: Promise<string[]>,
   resumeProps: Omit<ResumeConversationProps, 'worktreePaths'>,
 ): Promise<void> {
-  const [worktreePaths, { ResumeConversation }, { App }] = await Promise.all([
-    worktreePathsPromise,
-    import('./screens/ResumeConversation.js'),
-    import('./components/App.js'),
-  ])
+  const worktreePaths = await worktreePathsPromise
   await renderAndRun(
     root,
     <App

@@ -4,7 +4,7 @@
 import {
   DIR_EXISTS_GUIDANCE,
   ENTRYPOINT_NAME,
-  MAX_ENTRYPOINT_LINES,
+  getMaxEntrypointLines,
 } from '../../memdir/memdir.js'
 
 export function buildConsolidationPrompt(
@@ -52,7 +52,7 @@ Focus on:
 
 ## Phase 4 — Prune and index
 
-Update \`${ENTRYPOINT_NAME}\` so it stays under ${MAX_ENTRYPOINT_LINES} lines AND under ~25KB. It's an **index**, not a dump — each entry should be one line under ~150 characters: \`- [Title](file.md) — one-line hook\`. Never write memory content directly into it.
+Update \`${ENTRYPOINT_NAME}\` so it stays under ${getMaxEntrypointLines()} lines AND under ~25KB. It's an **index**, not a dump — each entry should be one line under ~150 characters: \`- [Title](file.md) — one-line hook\`. Never write memory content directly into it.
 
 - Remove pointers to memories that are now stale, wrong, or superseded
 - Demote verbose entries: if an index line is over ~200 chars, it's carrying content that belongs in the topic file — shorten the line, move the detail

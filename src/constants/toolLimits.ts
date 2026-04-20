@@ -9,17 +9,23 @@
  *
  * Individual tools may declare a lower maxResultSizeChars, but this constant
  * acts as a system-wide cap regardless of what tools declare.
+ *
+ * Raised from 50k (legacy small-context-era calibration) to 500k: modern
+ * context windows comfortably carry 500k-char tool outputs, and persisting
+ * to disk hides content from the model. Overridable per-install via
+ * `toolResultPersistenceThreshold` in freecode.json.
  */
-export const DEFAULT_MAX_RESULT_SIZE_CHARS = 50_000
+export const DEFAULT_MAX_RESULT_SIZE_CHARS = 500_000
 
 /**
  * Maximum size for tool results in tokens.
  * Based on analysis of tool result sizes, we set this to a reasonable upper bound
  * to prevent excessively large tool results from consuming too much context.
  *
- * This is approximately 400KB of text (assuming ~4 bytes per token).
+ * Approx 2 MB of text (assuming ~4 bytes per token). Overridable via
+ * `toolResultTokenCap` in freecode.json.
  */
-export const MAX_TOOL_RESULT_TOKENS = 100_000
+export const MAX_TOOL_RESULT_TOKENS = 500_000
 
 /**
  * Bytes per token estimate for calculating token count from byte size.
@@ -46,7 +52,7 @@ export const MAX_TOOL_RESULT_BYTES = MAX_TOOL_RESULT_TOKENS * BYTES_PER_TOKEN
  * Overridable at runtime via config — see
  * getPerMessageBudgetLimit() in toolResultStorage.ts.
  */
-export const MAX_TOOL_RESULTS_PER_MESSAGE_CHARS = 200_000
+export const MAX_TOOL_RESULTS_PER_MESSAGE_CHARS = 1_000_000
 
 /**
  * Maximum character length for tool summary strings in compact views.

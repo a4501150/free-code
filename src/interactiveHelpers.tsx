@@ -50,6 +50,17 @@ import {
   hasAutoModeOptIn,
   hasSkipDangerousModePermissionPrompt,
 } from './utils/settings/settings.js'
+import { Text } from './ink.js'
+import { Onboarding } from './components/Onboarding.js'
+import { TrustDialog } from './components/TrustDialog/TrustDialog.js'
+import { ClaudeMdExternalIncludesDialog } from './components/ClaudeMdExternalIncludesDialog.js'
+import { GroveDialog } from './components/grove/Grove.js'
+import { ApproveApiKey } from './components/ApproveApiKey.js'
+import { BypassPermissionsModeDialog } from './components/BypassPermissionsModeDialog.js'
+import { AutoModeOptInDialog } from './components/AutoModeOptInDialog.js'
+import { DevChannelsDialog } from './components/DevChannelsDialog.js'
+import { isChannelsEnabled } from './services/mcp/channelAllowlist.js'
+import { getClaudeAIOAuthTokens } from './utils/auth.js'
 
 export function completeOnboarding(): void {
   saveGlobalConfig(current => ({
@@ -97,7 +108,6 @@ export async function exitWithMessage(
     beforeExit?: () => Promise<void>
   },
 ): Promise<never> {
-  const { Text } = await import('./ink.js')
   const color = options?.color
   const exitCode = options?.exitCode ?? 1
   root.render(
@@ -144,11 +154,10 @@ export async function showSetupScreens(
   permissionMode: PermissionMode,
   allowDangerouslySkipPermissions: boolean,
   commands?: Command[],
-  claudeInChrome?: boolean,
   devChannels?: ChannelEntry[],
 ): Promise<boolean> {
   if (
-    "production" === 'test' ||
+    ("production" as string) === 'test' ||
     isEnvTruthy(false) ||
     process.env.IS_DEMO // Skip onboarding in demo mode
   ) {
@@ -162,7 +171,6 @@ export async function showSetupScreens(
     !config.hasCompletedOnboarding // always show onboarding at least once
   ) {
     onboardingShown = true
-    const { Onboarding } = await import('./components/Onboarding.js')
     await showSetupDialog(
       root,
       done => (
@@ -188,9 +196,6 @@ export async function showSetupScreens(
     // If it returns true, the TrustDialog would auto-resolve regardless of
     // security features, so we can skip the dynamic import and render cycle.
     if (!checkHasTrustDialogAccepted()) {
-      const { TrustDialog } = await import(
-        './components/TrustDialog/TrustDialog.js'
-      )
       await showSetupDialog(root, done => (
         <TrustDialog commands={commands} onDone={done} />
       ))
@@ -212,9 +217,6 @@ export async function showSetupScreens(
     if (await shouldShowClaudeMdExternalIncludesWarning()) {
       const externalIncludes = getExternalClaudeMdIncludes(
         await getMemoryFiles(true),
-      )
-      const { ClaudeMdExternalIncludesDialog } = await import(
-        './components/ClaudeMdExternalIncludesDialog.js'
       )
       await showSetupDialog(root, done => (
         <ClaudeMdExternalIncludesDialog
@@ -246,7 +248,6 @@ export async function showSetupScreens(
   setImmediate(() => initializeTelemetryAfterTrust())
 
   if (await isQualifiedForGrove()) {
-    const { GroveDialog } = await import('src/components/grove/Grove.js')
     const decision = await showSetupDialog<string>(root, done => (
       <GroveDialog
         showIfAlreadyViewed={false}
@@ -267,7 +268,6 @@ export async function showSetupScreens(
     )
     const keyStatus = getCustomApiKeyStatus(customApiKeyTruncated)
     if (keyStatus === 'new') {
-      const { ApproveApiKey } = await import('./components/ApproveApiKey.js')
       await showSetupDialog<boolean>(
         root,
         done => (
@@ -286,9 +286,6 @@ export async function showSetupScreens(
       allowDangerouslySkipPermissions) &&
     !hasSkipDangerousModePermissionPrompt()
   ) {
-    const { BypassPermissionsModeDialog } = await import(
-      './components/BypassPermissionsModeDialog.js'
-    )
     await showSetupDialog(root, done => (
       <BypassPermissionsModeDialog onAccept={done} />
     ))
@@ -300,9 +297,6 @@ export async function showSetupScreens(
     // consent for an unavailable feature is pointless. The
     // verifyAutoModeGateAccess notification will explain why instead.
     if (permissionMode === 'auto' && !hasAutoModeOptIn()) {
-      const { AutoModeOptInDialog } = await import(
-        './components/AutoModeOptInDialog.js'
-      )
       await showSetupDialog(root, done => (
         <AutoModeOptInDialog
           onAccept={done}
@@ -328,11 +322,6 @@ export async function showSetupScreens(
     // isChannelsEnabled() check in the dev-channels dialog below.
 
     if (devChannels && devChannels.length > 0) {
-      const [{ isChannelsEnabled }, { getClaudeAIOAuthTokens }] =
-        await Promise.all([
-          import('./services/mcp/channelAllowlist.js'),
-          import('./utils/auth.js'),
-        ])
       // Skip the dialog when channels are blocked (tengu_harbor off or no
       // OAuth) — accepting then immediately seeing "not available" in
       // ChannelsNotice is worse than no dialog. Append entries anyway so
@@ -347,9 +336,6 @@ export async function showSetupScreens(
         ])
         setHasDevChannels(true)
       } else {
-        const { DevChannelsDialog } = await import(
-          './components/DevChannelsDialog.js'
-        )
         await showSetupDialog(root, done => (
           <DevChannelsDialog
             channels={devChannels}
@@ -367,19 +353,6 @@ export async function showSetupScreens(
         ))
       }
     }
-  }
-
-  // Show Chrome onboarding for first-time Claude in Chrome users
-  if (
-    claudeInChrome &&
-    !getGlobalConfig().hasCompletedClaudeInChromeOnboarding
-  ) {
-    const { ClaudeInChromeOnboarding } = await import(
-      './components/ClaudeInChromeOnboarding.js'
-    )
-    await showSetupDialog(root, done => (
-      <ClaudeInChromeOnboarding onDone={done} />
-    ))
   }
 
   return onboardingShown

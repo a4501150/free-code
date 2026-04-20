@@ -1,12 +1,13 @@
 import { feature } from 'bun:bundle'
 import { randomUUID } from 'crypto'
+import * as udsMessagingNs from '../udsMessaging.js'
 import { getSdkBetas, getSessionId } from 'src/bootstrap/state.js'
 import { DEFAULT_OUTPUT_STYLE_NAME } from 'src/constants/outputStyles.js'
 import type {
-  ApiKeySource,
   PermissionMode,
   SDKMessage,
 } from 'src/entrypoints/agentSdkTypes.js'
+import type { ApiKeySource } from '../auth.js'
 import {
   AGENT_TOOL_NAME,
   LEGACY_AGENT_TOOL_NAME,
@@ -66,7 +67,8 @@ export function buildSystemInitMessage(inputs: SystemInitInputs): SDKMessage {
     slash_commands: inputs.commands
       .filter(c => c.userInvocable !== false)
       .map(c => c.name),
-    apiKeySource: getAnthropicApiKeyWithSource().source as ApiKeySource,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    apiKeySource: getAnthropicApiKeyWithSource().source as any,
     betas: getSdkBetas(),
     claude_code_version: MACRO.VERSION,
     output_style: outputStyle,
@@ -83,11 +85,9 @@ export function buildSystemInitMessage(inputs: SystemInitInputs): SDKMessage {
   }
   // Hidden from public SDK types — ant-only UDS messaging socket path
   if (feature('UDS_INBOX')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
     ;(initMessage as Record<string, unknown>).messaging_socket_path =
-      require('../udsMessaging.js').getUdsMessagingSocketPath()
-    /* eslint-enable @typescript-eslint/no-require-imports */
+      udsMessagingNs.getUdsMessagingSocketPath()
   }
-  initMessage.fast_mode_state = getFastModeState(inputs.model, inputs.fastMode)
+  ;(initMessage as Record<string, unknown>).fast_mode_state = getFastModeState(inputs.model, inputs.fastMode)
   return initMessage
 }

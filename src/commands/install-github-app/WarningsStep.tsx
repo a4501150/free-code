@@ -30,9 +30,9 @@ export function WarningsStep({ warnings, onContinue }: WarningsStepProps) {
               {warning.title}
             </Text>
             <Text>{warning.message}</Text>
-            {warning.instructions.length > 0 && (
+            {(warning.instructions?.length ?? 0) > 0 && (
               <Box flexDirection="column" marginLeft={2} marginTop={1}>
-                {warning.instructions.map((instruction, i) => (
+                {warning.instructions!.map((instruction, i) => (
                   <Text key={i} dimColor>
                     • {instruction}
                   </Text>

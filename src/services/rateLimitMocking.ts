@@ -4,7 +4,7 @@
  */
 
 import { APIError } from '@anthropic-ai/sdk'
-import { stripProviderPrefix } from '../utils/model/parseModelString.js'
+import { stripProviderPrefix } from '../utils/model/parseModelStringWithRegistry.js'
 import {
   applyMockHeaders,
   checkMockFastModeRateLimit,

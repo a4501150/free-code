@@ -32,10 +32,6 @@ export function renderToolResultMessage(
   _progressMessagesForMessage: unknown[],
   { verbose }: { verbose: boolean },
 ): React.ReactNode {
-  if ("external" === 'ant') {
-    return null
-  }
-
   const rawCommand = output.command ?? ''
   const command = verbose ? rawCommand : truncateCommand(rawCommand)
   const suffix = command !== rawCommand ? '… · stopped' : ' · stopped'

@@ -1,6 +1,8 @@
 import { feature } from 'bun:bundle'
 import { writeFile } from 'fs/promises'
 import { z } from 'zod/v4'
+import * as autoModeStateNs from '../../utils/permissions/autoModeState.js'
+import * as permissionSetupNs from '../../utils/permissions/permissionSetup.js'
 import {
   getAllowedChannels,
   hasExitedPlanModeInSession,
@@ -47,14 +49,12 @@ import {
   renderToolUseRejectedMessage,
 } from './UI.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
 const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? (require('../../utils/permissions/autoModeState.js') as typeof import('../../utils/permissions/autoModeState.js'))
+  ? autoModeStateNs
   : null
 const permissionSetupModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? (require('../../utils/permissions/permissionSetup.js') as typeof import('../../utils/permissions/permissionSetup.js'))
+  ? permissionSetupNs
   : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 /**
  * Schema for prompt-based permission requests.
@@ -305,8 +305,12 @@ export const ExitPlanModeV2Tool: Tool<InputSchema, Output> = buildTool({
       }
     }
 
-    // Note: Background verification hook is registered in REPL.tsx AFTER context clear
-    // via registerPlanVerificationHook(). Registering here would be cleared during context clear.
+    // Note on plan verification (VERIFY_PLAN feature): after context clear,
+    // REPL.processInitialMessage stores pendingPlanVerification on appState.
+    // The main model sees a verify_plan_reminder attachment every 10 turns
+    // until it calls VerifyPlanExecution, whose call() spawns a verifier
+    // subagent and flips verificationStarted/Completed. No separate hook is
+    // registered — the tool itself drives the verification inline.
 
     // Ensure mode is changed when exiting plan mode.
     // This handles cases where permission flow didn't set the mode

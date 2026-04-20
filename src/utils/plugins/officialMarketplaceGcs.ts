@@ -17,7 +17,7 @@ import { logForDebugging } from '../debug.js'
 import { parseZipModes, unzipFile } from '../dxt/zip.js'
 import { errorMessage, getErrnoCode } from '../errors.js'
 
-type SafeString = AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+type SafeString = string
 
 // CDN-fronted domain for the public GCS bucket (same bucket the native
 // binary ships from — nativeInstaller/download.ts:24 uses the raw GCS URL).

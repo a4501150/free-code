@@ -16,15 +16,13 @@ import {
 import { applySettingsChange } from '../utils/settings/applySettingsChange.js'
 import type { SettingSource } from '../utils/settings/constants.js'
 import { createStore } from './store.js'
+import * as voiceNs from '../context/voice.js'
 
 // DCE: voice context is ant-only. External builds get a passthrough.
-/* eslint-disable @typescript-eslint/no-require-imports */
 const VoiceProvider: (props: { children: React.ReactNode }) => React.ReactNode =
   feature('VOICE_MODE')
-    ? require('../context/voice.js').VoiceProvider
+    ? voiceNs.VoiceProvider
     : ({ children }) => children
-
-/* eslint-enable @typescript-eslint/no-require-imports */
 import {
   type AppState,
   type AppStateStore,
@@ -154,7 +152,7 @@ export function useAppState<T>(selector: (state: AppState) => T): T {
     const state = store.getState()
     const selected = selector(state)
 
-    if ("external" === 'ant' && state === selected) {
+    if (process.env.NODE_ENV === 'development' && state === selected) {
       throw new Error(
         `Your selector in \`useAppState(${selector.toString()})\` returned the original state, which is not allowed. You must instead return a property for optimised rendering.`,
       )

@@ -30,11 +30,9 @@ const defaultFeatures = [
   'BUDDY',
   'HISTORY_SNIP',
   'KAIROS_DREAM',
-  'KAIROS_GITHUB_WEBHOOKS',
   'REVIEW_ARTIFACT',
   'RUN_SKILL_GENERATOR',
   'ULTRAPLAN',
-  'VERIFY_PLAN',
   'WORKFLOW_SCRIPTS',
   'CACHED_MICROCOMPACT',
   'COORDINATOR_MODE',
@@ -58,11 +56,12 @@ if (!existsSync(dirname(bundleOut))) {
 const defines = {
   'process.env.USER_TYPE': JSON.stringify('external'),
   'process.env.CLAUDE_CODE_FORCE_FULL_LOGO': JSON.stringify('true'),
-  'process.env.CLAUDE_CODE_VERIFY_PLAN': JSON.stringify('true'),
+  ...(defaultFeatures.includes('VERIFY_PLAN')
+    ? { 'process.env.CLAUDE_CODE_VERIFY_PLAN': JSON.stringify('true') }
+    : {}),
   'MACRO.VERSION': JSON.stringify('dump-tool-schemas'),
   'MACRO.BUILD_TIME': JSON.stringify(new Date().toISOString()),
   'MACRO.PACKAGE_URL': JSON.stringify('dump-tool-schemas'),
-  'MACRO.NATIVE_PACKAGE_URL': 'undefined',
   'MACRO.FEEDBACK_CHANNEL': JSON.stringify('github'),
   'MACRO.ISSUES_EXPLAINER': JSON.stringify(''),
   'MACRO.VERSION_CHANGELOG': JSON.stringify(''),

@@ -1,22 +1,11 @@
 import { mkdir, writeFile } from 'fs/promises'
 import { dirname } from 'path'
-import {
-  getKeybindingsPath,
-  isKeybindingCustomizationEnabled,
-} from '../../keybindings/loadUserBindings.js'
+import { getKeybindingsPath } from '../../keybindings/loadUserBindings.js'
 import { generateKeybindingsTemplate } from '../../keybindings/template.js'
 import { getErrnoCode } from '../../utils/errors.js'
 import { editFileInEditor } from '../../utils/promptEditor.js'
 
 export async function call(): Promise<{ type: 'text'; value: string }> {
-  if (!isKeybindingCustomizationEnabled()) {
-    return {
-      type: 'text',
-      value:
-        'Keybinding customization is not enabled. This feature is currently in preview.',
-    }
-  }
-
   const keybindingsPath = getKeybindingsPath()
 
   // Write template with 'wx' flag (exclusive create) — fails with EEXIST if

@@ -134,7 +134,7 @@ function getKnownModelOption(model: string): ModelOption | null {
 }
 
 /**
- * Return a flat list of all model options. Used by ConfigTool and print.
+ * Return a flat list of all model options. Used by print.
  */
 export function getModelOptions(fastMode = false): ModelOption[] {
   return getGroupedModelOptions(fastMode).flatMap((g) => g.options);

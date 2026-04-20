@@ -48,6 +48,9 @@ import { gracefulShutdown } from '../../utils/gracefulShutdown.js'
 import { safeParseJSON } from '../../utils/json.js'
 import { getPlatform } from '../../utils/platform.js'
 import { cliError, cliOk } from '../exit.js'
+import { setup } from '../../setup.js'
+import { startMCPServer } from '../../entrypoints/mcp.js'
+import { readClaudeDesktopMcpServers } from '../../utils/claudeDesktop.js'
 
 async function checkMcpServerHealth(
   name: string,
@@ -87,9 +90,7 @@ export async function mcpServeHandler({
   }
 
   try {
-    const { setup } = await import('../../setup.js')
     await setup(providedCwd, 'default', false, false, undefined, false)
-    const { startMCPServer } = await import('../../entrypoints/mcp.js')
     await startMCPServer(providedCwd, debug ?? false, verbose ?? false)
   } catch (error) {
     cliError(`Error: Failed to start MCP server: ${error}`)
@@ -373,9 +374,6 @@ export async function mcpAddFromDesktopHandler(options: {
     const scope = ensureConfigScope(options.scope)
     const platform = getPlatform()
 
-    const { readClaudeDesktopMcpServers } = await import(
-      '../../utils/claudeDesktop.js'
-    )
     const servers = await readClaudeDesktopMcpServers()
 
     if (Object.keys(servers).length === 0) {

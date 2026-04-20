@@ -2,7 +2,6 @@ import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { Box, Text } from 'src/ink.js'
 import { getPlatform } from 'src/utils/platform.js'
-import { isKeybindingCustomizationEnabled } from '../../keybindings/loadUserBindings.js'
 import { useShortcutDisplay } from '../../keybindings/useShortcutDisplay.js'
 import { isFastModeAvailable, isFastModeEnabled } from '../../utils/fastMode.js'
 import { getNewlineInstructions } from './utils.js'
@@ -87,9 +86,7 @@ export function PromptInputHelpMenu(props: Props): React.ReactNode {
         <Box>
           <Text dimColor={dimColor}>
             {cycleModeShortcut}{' '}
-            {"external" === 'ant'
-              ? 'to cycle modes'
-              : 'to auto-accept edits'}
+            {'to auto-accept edits'}
           </Text>
         </Box>
         <Box>
@@ -135,11 +132,9 @@ export function PromptInputHelpMenu(props: Props): React.ReactNode {
             {externalEditorShortcut} to edit in $EDITOR
           </Text>
         </Box>
-        {isKeybindingCustomizationEnabled() && (
-          <Box>
-            <Text dimColor={dimColor}>/keybindings to customize</Text>
-          </Box>
-        )}
+        <Box>
+          <Text dimColor={dimColor}>/keybindings to customize</Text>
+        </Box>
       </Box>
     </Box>
   )

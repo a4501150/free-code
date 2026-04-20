@@ -6,6 +6,7 @@ import { basename, dirname, join, resolve, sep } from 'path'
 import { hasBinaryExtension, isBinaryContent } from '../constants/files.js'
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
+import { parseGitRemote } from './detectRepository.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
 import { execFileNoThrow } from './execFileNoThrow.js'
 import { getFsImplementation } from './fsOperations.js'
@@ -502,7 +503,6 @@ export async function getGitState(): Promise<GitRepoState | null> {
 }
 
 export async function getGithubRepo(): Promise<string | null> {
-  const { parseGitRemote } = await import('./detectRepository.js')
   const remoteUrl = await getRemoteUrl()
   if (!remoteUrl) {
     logForDebugging('Local GitHub repo: unknown')

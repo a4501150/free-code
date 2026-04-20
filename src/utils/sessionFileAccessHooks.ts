@@ -24,15 +24,12 @@ import {
   memoryScopeForPath,
 } from './memoryFileDetection.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const teamMemPaths = feature('TEAMMEM')
-  ? (require('../memdir/teamMemPaths.js') as typeof import('../memdir/teamMemPaths.js'))
-  : null
-const teamMemWatcher = feature('TEAMMEM')
-  ? (require('../services/teamMemorySync/watcher.js') as typeof import('../services/teamMemorySync/watcher.js'))
-  : null
+import * as teamMemPathsNs from '../memdir/teamMemPaths.js'
+import * as teamMemWatcherNs from '../services/teamMemorySync/watcher.js'
 
-/* eslint-enable @typescript-eslint/no-require-imports */
+const teamMemPaths = feature('TEAMMEM') ? teamMemPathsNs : null
+const teamMemWatcher = feature('TEAMMEM') ? teamMemWatcherNs : null
+
 import { getSubagentLogName } from './agentContext.js'
 
 /**

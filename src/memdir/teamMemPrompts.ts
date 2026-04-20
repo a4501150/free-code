@@ -2,7 +2,7 @@ import {
   buildSearchingPastContextSection,
   DIRS_EXIST_GUIDANCE,
   ENTRYPOINT_NAME,
-  MAX_ENTRYPOINT_LINES,
+  getMaxEntrypointLines,
 } from './memdir.js'
 import {
   MEMORY_DRIFT_CAVEAT,
@@ -50,7 +50,7 @@ export function buildCombinedMemoryPrompt(
         '',
         `**Step 2** — add a pointer to that file in the same directory's \`${ENTRYPOINT_NAME}\`. Each directory (private and team) has its own \`${ENTRYPOINT_NAME}\` index — each entry should be one line, under ~150 characters: \`- [Title](file.md) — one-line hook\`. They have no frontmatter. Never write memory content directly into a \`${ENTRYPOINT_NAME}\`.`,
         '',
-        `- Both \`${ENTRYPOINT_NAME}\` indexes are loaded into your conversation context — lines after ${MAX_ENTRYPOINT_LINES} will be truncated, so keep them concise`,
+        `- Both \`${ENTRYPOINT_NAME}\` indexes are loaded into your conversation context — lines after ${getMaxEntrypointLines()} will be truncated, so keep them concise`,
         '- Keep the name, description, and type fields in memory files up-to-date with the content',
         '- Organize memory semantically by topic, not chronologically',
         '- Update or remove memories that turn out to be wrong or outdated',

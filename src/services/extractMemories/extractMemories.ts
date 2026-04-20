@@ -59,11 +59,8 @@ import {
   buildExtractCombinedPrompt,
 } from './prompts.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const teamMemPaths = feature('TEAMMEM')
-  ? (require('../../memdir/teamMemPaths.js') as typeof import('../../memdir/teamMemPaths.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as teamMemPathsNs from '../../memdir/teamMemPaths.js'
+const teamMemPaths = feature('TEAMMEM') ? teamMemPathsNs : null
 
 // ============================================================================
 // Helpers

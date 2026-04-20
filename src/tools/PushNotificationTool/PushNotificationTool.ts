@@ -7,6 +7,7 @@
  */
 
 import { z } from 'zod/v4'
+import { sendNotification } from '../../services/notifier.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { getGlobalConfig } from '../../utils/config.js'
@@ -99,9 +100,6 @@ export const PushNotificationTool = buildTool({
 
   async call(input) {
     try {
-      // Use the existing notification infrastructure
-      const { sendNotification } = await import('../../services/notifier.js')
-
       // sendNotification requires a TerminalNotification instance.
       // For push notifications from the agent, we create a minimal shim
       // that forwards to the system notification channel.

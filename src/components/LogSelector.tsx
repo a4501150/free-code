@@ -1,6 +1,5 @@
 import chalk from 'chalk'
 import figures from 'figures'
-import Fuse from 'fuse.js'
 import React from 'react'
 import { getOriginalCwd, getSessionId } from '../bootstrap/state.js'
 import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js'
@@ -11,7 +10,7 @@ import type { Color } from '../ink/styles.js'
 import { Box, Text, useInput, useTerminalFocus, useTheme } from '../ink.js'
 import { useKeybinding } from '../keybindings/useKeybinding.js'
 
-import type { LogOption, SerializedMessage } from '../types/logs.js'
+import type { LogOption } from '../types/logs.js'
 import { formatLogMetadata, truncateToWidth } from '../utils/format.js'
 import { getWorktreePaths } from '../utils/getWorktreePaths.js'
 import { getBranch } from '../utils/git.js'
@@ -70,12 +69,6 @@ function normalizeAndTruncateToWidth(text: string, maxWidth: number): string {
 const PARENT_PREFIX_WIDTH = 2 // '▼ ' or '▶ '
 const CHILD_PREFIX_WIDTH = 4 // '  ▸ '
 
-// Deep search constants
-const DEEP_SEARCH_MAX_MESSAGES = 2000
-const DEEP_SEARCH_CROP_SIZE = 1000
-const DEEP_SEARCH_MAX_TEXT_LENGTH = 50000 // Cap searchable text per session
-const FUSE_THRESHOLD = 0.3
-const DATE_TIE_THRESHOLD_MS = 60 * 1000 // 1 minute - use relevance as tie-breaker within this window
 const SNIPPET_CONTEXT_CHARS = 50 // Characters to show before/after match
 
 type Snippet = { before: string; match: string; after: string }
@@ -191,15 +184,12 @@ export function LogSelector({
   const exitState = useExitOnCtrlCDWithKeybindings(onCancel)
   const isTerminalFocused = useTerminalFocus()
   const isResumeWithRenameEnabled = isCustomTitleEnabled()
-  const isDeepSearchEnabled = "external" === 'ant'
   const [themeName] = useTheme()
   const theme = getTheme(themeName)
   const highlightColor = React.useMemo(
     () => (text: string) => applyColor(text, theme.warning as Color),
     [theme.warning],
   )
-  const isAgenticSearchEnabled = "external" === 'ant'
-
   const [currentBranch, setCurrentBranch] = React.useState<string | null>(null)
   const [branchFilterEnabled, setBranchFilterEnabled] = React.useState(false)
   const [showAllWorktrees, setShowAllWorktrees] = React.useState(false)
@@ -249,60 +239,12 @@ export function LogSelector({
   // Debounce transcript search for performance (title search is instant)
   const deferredSearchQuery = React.useDeferredValue(searchQuery)
 
-  // Additional debounce for deep search - wait 300ms after typing stops
-  const [debouncedDeepSearchQuery, setDebouncedDeepSearchQuery] =
-    React.useState('')
-  React.useEffect(() => {
-    if (!deferredSearchQuery) {
-      setDebouncedDeepSearchQuery('')
-      return
-    }
-    const timeoutId = setTimeout(
-      setDebouncedDeepSearchQuery,
-      300,
-      deferredSearchQuery,
-    )
-    return () => clearTimeout(timeoutId)
-  }, [deferredSearchQuery])
-
-  // State for async deep search results
-  const [deepSearchResults, setDeepSearchResults] = React.useState<{
-    results: Array<{ log: LogOption; score?: number; searchableText: string }>
-    query: string
-  } | null>(null)
-  const [isSearching, setIsSearching] = React.useState(false)
-
   React.useEffect(() => {
     void getBranch().then(branch => setCurrentBranch(branch))
     void getWorktreePaths(currentCwd).then(paths => {
       setHasMultipleWorktrees(paths.length > 1)
     })
   }, [currentCwd])
-
-  // Memoize searchable text extraction - only recompute when logs change
-  const searchableTextByLog = React.useMemo(
-    () => new Map(logs.map(log => [log, buildSearchableText(log)])),
-    [logs],
-  )
-
-  // Pre-build Fuse index once when logs change (not on every search query)
-  const fuseIndex = React.useMemo(() => {
-    if (!isDeepSearchEnabled) return null
-
-    const logsWithText = logs
-      .map(log => ({
-        log,
-        searchableText: searchableTextByLog.get(log) ?? '',
-      }))
-      .filter(item => item.searchableText)
-
-    return new Fuse(logsWithText, {
-      keys: ['searchableText'],
-      threshold: FUSE_THRESHOLD,
-      ignoreLocation: true,
-      includeScore: true,
-    })
-  }, [logs, searchableTextByLog, isDeepSearchEnabled])
 
   // Compute unique tags from logs (before any filtering)
   const uniqueTags = React.useMemo(() => getUniqueTags(logs), [logs])
@@ -403,106 +345,12 @@ export function LogSelector({
     })
   }, [baseFilteredLogs, searchQuery])
 
-  // Show searching indicator when query is pending debounce
-  React.useEffect(() => {
-    if (
-      isDeepSearchEnabled &&
-      deferredSearchQuery &&
-      deferredSearchQuery !== debouncedDeepSearchQuery
-    ) {
-      setIsSearching(true)
-    }
-  }, [deferredSearchQuery, debouncedDeepSearchQuery, isDeepSearchEnabled])
-
-  // Async deep search effect - runs after 300ms debounce
-  React.useEffect(() => {
-    if (!isDeepSearchEnabled || !debouncedDeepSearchQuery || !fuseIndex) {
-      setDeepSearchResults(null)
-      setIsSearching(false)
-      return
-    }
-
-    // Use setTimeout(0) to yield to the event loop - prevents UI freeze
-    const timeoutId = setTimeout(
-      (
-        fuseIndex,
-        debouncedDeepSearchQuery,
-        setDeepSearchResults,
-        setIsSearching,
-      ) => {
-        const results = fuseIndex.search(debouncedDeepSearchQuery)
-
-        // Sort by date (newest first), with relevance as tie-breaker within same minute
-        results.sort((a, b) => {
-          const aTime = new Date(a.item.log.modified).getTime()
-          const bTime = new Date(b.item.log.modified).getTime()
-          const timeDiff = bTime - aTime
-          if (Math.abs(timeDiff) > DATE_TIE_THRESHOLD_MS) {
-            return timeDiff
-          }
-          // Within same minute window, use relevance score (lower is better)
-          return (a.score ?? 1) - (b.score ?? 1)
-        })
-
-        setDeepSearchResults({
-          results: results.map(r => ({
-            log: r.item.log,
-            score: r.score,
-            searchableText: r.item.searchableText,
-          })),
-          query: debouncedDeepSearchQuery,
-        })
-        setIsSearching(false)
-      },
-      0,
-      fuseIndex,
-      debouncedDeepSearchQuery,
-      setDeepSearchResults,
-      setIsSearching,
-    )
-
-    return () => {
-      clearTimeout(timeoutId)
-    }
-  }, [debouncedDeepSearchQuery, fuseIndex, isDeepSearchEnabled])
 
   // Merge title matches with async deep search results
   const { filteredLogs, snippets } = React.useMemo(() => {
     const snippetMap = new Map<LogOption, Snippet>()
-
-    // Start with instant title matches
-    let filtered = titleFilteredLogs
-
-    // Merge in deep search results if available and query matches
-    if (
-      deepSearchResults &&
-      debouncedDeepSearchQuery &&
-      deepSearchResults.query === debouncedDeepSearchQuery
-    ) {
-      // Extract snippets from deep search results
-      for (const result of deepSearchResults.results) {
-        if (result.searchableText) {
-          const snippet = extractSnippet(
-            result.searchableText,
-            debouncedDeepSearchQuery,
-            SNIPPET_CONTEXT_CHARS,
-          )
-          if (snippet) {
-            snippetMap.set(result.log, snippet)
-          }
-        }
-      }
-
-      // Add transcript-only matches (not already in title matches)
-      const titleMatchIds = new Set(filtered.map(log => log.messages[0]?.uuid))
-      const transcriptOnlyMatches = deepSearchResults.results
-        .map(r => r.log)
-        .filter(log => !titleMatchIds.has(log.messages[0]?.uuid))
-      filtered = [...filtered, ...transcriptOnlyMatches]
-    }
-
-    return { filteredLogs: filtered, snippets: snippetMap }
-  }, [titleFilteredLogs, deepSearchResults, debouncedDeepSearchQuery])
+    return { filteredLogs: titleFilteredLogs, snippets: snippetMap }
+  }, [titleFilteredLogs])
 
   // Use agentic search results when available and non-empty, otherwise use regular filtered logs
   const displayedLogs = React.useMemo(() => {
@@ -692,7 +540,7 @@ export function LogSelector({
 
   // Handler for triggering agentic search
   const handleAgenticSearch = React.useCallback(async () => {
-    if (!searchQuery.trim() || !onAgenticSearch || !isAgenticSearchEnabled) {
+    if (!searchQuery.trim() || !onAgenticSearch) {
       return
     }
 
@@ -724,7 +572,7 @@ export function LogSelector({
         message: error instanceof Error ? error.message : 'Search failed',
       })
     }
-  }, [searchQuery, onAgenticSearch, isAgenticSearchEnabled, logs])
+  }, [searchQuery, onAgenticSearch, logs])
 
   // Clear agentic search results/error when query changes
   React.useEffect(() => {
@@ -881,7 +729,6 @@ export function LogSelector({
           if (
             searchQuery.trim() &&
             onAgenticSearch &&
-            isAgenticSearchEnabled &&
             agenticSearchState.status !== 'results'
           ) {
             setIsAgenticSearchOptionFocused(true)
@@ -1090,7 +937,6 @@ export function LogSelector({
       {/* Agentic search option - first item in list when searching */}
       {Boolean(searchQuery.trim()) &&
         onAgenticSearch &&
-        isAgenticSearchEnabled &&
         agenticSearchState.status !== 'searching' &&
         agenticSearchState.status !== 'results' &&
         agenticSearchState.status !== 'error' && (
@@ -1246,9 +1092,7 @@ export function LogSelector({
           <Text dimColor>
             <Byline>
               <Text>
-                {isSearching && isDeepSearchEnabled
-                  ? 'Searching…'
-                  : 'Type to Search'}
+                {'Type to Search'}
               </Text>
               <KeyboardShortcutHint shortcut="Enter" action="select" />
               <ConfigurableShortcutHint
@@ -1298,76 +1142,6 @@ export function LogSelector({
       </Box>
     </Box>
   )
-}
-
-/**
- * Extracts searchable text content from a message.
- * Handles both string content and structured content blocks.
- */
-function extractSearchableText(message: SerializedMessage): string {
-  // Only extract from user and assistant messages that have content
-  if (message.type !== 'user' && message.type !== 'assistant') {
-    return ''
-  }
-
-  const content = 'message' in message ? message.message?.content : undefined
-  if (!content) return ''
-
-  // Handle string content (simple messages)
-  if (typeof content === 'string') {
-    return content
-  }
-
-  // Handle array of content blocks
-  if (Array.isArray(content)) {
-    return content
-      .map(block => {
-        if (typeof block === 'string') return block
-        if ('text' in block && typeof block.text === 'string') return block.text
-        return ''
-        // we don't return thinking blocks and tool names here;
-        // they're not useful for search, as they can add noise to the fuzzy matching
-      })
-      .filter(Boolean)
-      .join(' ')
-  }
-
-  return ''
-}
-
-/**
- * Builds searchable text for a log including messages, titles, summaries, and metadata.
- * Crops long transcripts to first/last N messages for performance.
- */
-function buildSearchableText(log: LogOption): string {
-  const searchableMessages =
-    log.messages.length <= DEEP_SEARCH_MAX_MESSAGES
-      ? log.messages
-      : [
-          ...log.messages.slice(0, DEEP_SEARCH_CROP_SIZE),
-          ...log.messages.slice(-DEEP_SEARCH_CROP_SIZE),
-        ]
-  const messageText = searchableMessages
-    .map(extractSearchableText)
-    .filter(Boolean)
-    .join(' ')
-
-  const metadata = [
-    log.customTitle,
-    log.summary,
-    log.firstPrompt,
-    log.gitBranch,
-    log.tag,
-    log.prNumber ? `PR #${log.prNumber}` : undefined,
-    log.prRepository,
-  ]
-    .filter(Boolean)
-    .join(' ')
-
-  const fullText = `${metadata} ${messageText}`.trim()
-  return fullText.length > DEEP_SEARCH_MAX_TEXT_LENGTH
-    ? fullText.slice(0, DEEP_SEARCH_MAX_TEXT_LENGTH)
-    : fullText
 }
 
 function groupLogsBySessionId(

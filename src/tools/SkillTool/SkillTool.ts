@@ -51,6 +51,7 @@ import { parseFrontmatter } from '../../utils/frontmatterParser.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { createUserMessage, normalizeMessages } from '../../utils/messages.js'
 import { parseUserSpecifiedModel } from '../../utils/model/model.js'
+import { processPromptSlashCommand } from '../../utils/processUserInput/processSlashCommand.js'
 import { recordSkillUsage } from '../../utils/suggestions/skillUsageTracking.js'
 import { createAgentId } from '../../utils/uuid.js'
 import { runAgent } from '../AgentTool/runAgent.js'
@@ -514,9 +515,6 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
     }
 
     // Process the skill with optional args
-    const { processPromptSlashCommand } = await import(
-      'src/utils/processUserInput/processSlashCommand.js'
-    )
     const processedCommand = await processPromptSlashCommand(
       commandName,
       args || '', // Pass args if provided

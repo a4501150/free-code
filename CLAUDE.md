@@ -18,14 +18,21 @@ Guidance for Claude Code when working in this repository.
 
 ## Testing
 
-All tests are e2e — they launch the compiled `./cli` against a mock API server and drive it through tmux.
+All tests are e2e — they launch the compiled `./cli` against a mock API server and drive it through tmux. Infrastructure: `tests/helpers/` (mock servers, fixture builders) and `tests/e2e/tmux-helpers.ts` (`TmuxSession`). Read existing tests in `tests/e2e/` for patterns before writing new ones.
 
-- Shared infrastructure: `tests/helpers/` — `mock-server.ts`, `mock-openai-server.ts`, `sse-encoder.ts`, `fixture-builders.ts`.
-- Suites: `tests/e2e/` — `tmux-helpers.ts` provides `TmuxSession`. `submitAndApprove()` auto-approves permission dialogs.
-- Verification hooks: `server.getRequestLog()` (what was sent), `readFile()` (disk side effects), `capturePane()` (on-screen output).
-- **`./cli` must be built first** (`bun run build`), NOT `./cli-dev`.
+**Rebuild first, always.** Tests run against `./cli`, not `./cli-dev`. Run `bun run build` after any source edit — a stale binary masks behavior changes. Test commands: see `scripts` in `package.json`.
 
-**Debug logging gotcha**: `tmux-helpers.ts` sets `NODE_ENV=test`, and `shouldLogDebugMessage` in [src/utils/debug.ts](src/utils/debug.ts) suppresses `logForDebugging` when `NODE_ENV=test` unless `--debug`/`--debug-to-stderr` is passed. To capture debug logs from an e2e run, pass `additionalArgs: ['--debug']` to `TmuxSession` and read from the config dir.
+**When to run.** Run the e2e suites whose domain your change touches before committing. If no suite covers your subsystem, add one.
+
+### Gotchas (not obvious from source)
+
+- **Debug logging is suppressed under tests.** `tmux-helpers.ts` sets `NODE_ENV=test`, and `shouldLogDebugMessage` in [src/utils/debug.ts](src/utils/debug.ts) drops `logForDebugging` calls unless `--debug` / `--debug-to-stderr` is passed via `additionalArgs`. For ad-hoc diagnostics, `console.error` from the CLI is captured in the tmux pane; `session.dumpLog()` surfaces it.
+- **Trust `server.getRequestLog()[i].body.*` over `capturePane*`.** Pane scrapes render ANSI, which can make adjacent escape codes look like suffixes on field values (e.g. a bold `\x1b[1m` next to a model ID can appear as `model-id[1m]` in scraped text). The mock server's JSON-parsed request body is the source of truth.
+- **Bun's default test timeout is 5s;** e2e tests need more. Add `setDefaultTimeout(...)` at the top of new test files — see existing files for the pattern.
+
+### Subagent model resolution tests
+
+To test what model a subagent resolves to: give the subagent a unique marker in its system prompt, then match `body.system` in `server.getRequestLog()` to locate its request. For feature-flag-gated built-in agents (e.g. Plan, gated by `BUILTIN_EXPLORE_PLAN_AGENTS`), the stock `./cli` doesn't include them — use a user-defined markdown agent in `<cwd>/.claude/agents/` instead, written before `session.start()`. Working reference: `Subagent Model Tier Routing` in [tests/e2e/provider-config.test.ts](tests/e2e/provider-config.test.ts).
 
 ## Provider system
 
@@ -69,9 +76,10 @@ Built-in agents use sentinel strings instead of hardcoded model IDs; resolved at
 
 - `'smallFast'` → `defaultSmallFastModel` (used by Explore, claude-code-guide)
 - `'balanced'` → `defaultBalancedModel` → falls back to inherit (used by statusline-setup, magicDocs)
+- `'mostPowerful'` → `defaultMostPowerfulModel` → falls back to inherit (used by Plan)
 - `'inherit'` → parent model
 
-`defaultSubagentModel` (or env `CLAUDE_CODE_SUBAGENT_MODEL`) is a **hard override** that beats tool-specified and agent-definition models.
+`defaultSubagentModel` (or env `CLAUDE_CODE_SUBAGENT_MODEL`) is a **hard override** that beats tool-specified and agent-definition models — including the tier sentinels above. Users who want tiered subagent routing should leave `defaultSubagentModel` unset and configure the three tier fields (`defaultSmallFastModel` / `defaultBalancedModel` / `defaultMostPowerfulModel`) instead.
 
 ### Resolution priority (primary / subagent / smallFast model)
 
@@ -92,10 +100,22 @@ env var override > freecode.json field > hardcoded fallback.
 - **Feature flags** use Bun's `feature('FLAG')` — untouched flags are stripped entirely at build time (compile-time DCE). Pass `--feature=FLAG` or `--feature-set=dev-full`.
 - **React Compiler is optional** (`--react-compiler`). Default builds skip it. The `.tsx` files in `src/` are the **clean pre-compilation source** — do not reintroduce compiler artifacts (`_c()`, `$[N]` patterns) when editing.
 
+### Feature-flag gotchas
+
+- **Tier comments inside `defaultFeatures` describe the runtime gate, not the build gate.** All flags in `defaultFeatures` are compiled in by default; the tier (1 CLI flag, 2 slash command, 3 setting/env/file, 4 keyword nudge, always-on) just tells you what additionally has to happen at runtime before the feature does anything user-visible. `VOICE_MODE` sits in the "always on" tier because nothing runtime-gates it — once compiled, the push-to-talk keybinding and voice UI are unconditionally wired up; contrast with e.g. `DAEMON` (needs `claude daemon` subcommand) or `KAIROS` (needs a settings toggle).
+- **Orphan flags exist.** Flags can be referenced via `feature('FLAG')` in `src/` while appearing in *neither* `defaultFeatures` nor `fullExperimentalFeatures`. Those can only be enabled with an explicit `--feature=FLAG` at build time — easy to forget and end up shipping dead code. Audit with:
+  ```
+  comm -23 \
+    <(grep -rhoE "feature\(['\"][A-Z_]+['\"]\)" src | sed -E "s/.*['\"]([A-Z_]+)['\"].*/\1/" | sort -u) \
+    <(grep -oE "'[A-Z_]+'" scripts/build.ts | tr -d "'" | sort -u)
+  ```
+  Before adding a new flag, decide intentionally whether it belongs in `defaultFeatures` (shipped on), `fullExperimentalFeatures` (opt-in via `dev-full`), or is genuinely build-only.
+- **Known orphan: `VERIFY_PLAN`** — gates the bundled `/verify` skill and the `/init-verifiers` command. Enable with `--feature=VERIFY_PLAN`.
+
 ## Settings (freecode.json) and environment variables
 
 - **Settings schema** (the authoritative list of every setting + its default): [src/utils/settings/types.ts](src/utils/settings/types.ts). Do not maintain a duplicate table here.
-- **Default model fields** (`defaultModel`, `defaultSubagentModel`, `defaultSmallFastModel`, `defaultBalancedModel`, `availableSubagentModels`) live in freecode.json. See the schema; resolution priority above applies.
+- **Default model fields** (`defaultModel`, `defaultSubagentModel`, `defaultSmallFastModel`, `defaultBalancedModel`, `defaultMostPowerfulModel`, `availableSubagentModels`) live in freecode.json. See the schema; resolution priority above applies.
 - **Runtime environment variables**: full list is in the source — grep for `isEnvTruthy(` and `process.env.CLAUDE_CODE_` / `process.env.ANTHROPIC_`. `isEnvTruthy` is defined in [src/utils/envUtils.ts](src/utils/envUtils.ts); truthy values are `'1'`, `'true'`, `'yes'`, `'on'` (case-insensitive).
 
 ## Gotchas

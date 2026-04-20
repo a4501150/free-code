@@ -1,6 +1,7 @@
 import { feature } from 'bun:bundle'
 import * as React from 'react'
 import type { LocalJSXCommandContext } from '../../commands.js'
+import * as contextCollapseOpsNs from '../../services/contextCollapse/operations.js'
 import { ContextVisualization } from '../../components/ContextVisualization.js'
 import { microcompactMessages } from '../../services/compact/microCompact.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
@@ -18,10 +19,7 @@ import { renderToAnsiString } from '../../utils/staticRender.js'
 function toApiView(messages: Message[]): Message[] {
   let view = getMessagesAfterCompactBoundary(messages)
   if (feature('CONTEXT_COLLAPSE')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    const { projectView } =
-      require('../../services/contextCollapse/operations.js') as typeof import('../../services/contextCollapse/operations.js')
-    /* eslint-enable @typescript-eslint/no-require-imports */
+    const { projectView } = contextCollapseOpsNs
     view = projectView(view)
   }
   return view

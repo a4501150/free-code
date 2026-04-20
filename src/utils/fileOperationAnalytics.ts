@@ -6,7 +6,7 @@ import { createHash } from 'crypto'
  */
 function hashFilePath(
   filePath: string,
-): AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS {
+): string {
   return createHash('sha256')
     .update(filePath)
     .digest('hex')
@@ -19,7 +19,7 @@ function hashFilePath(
  */
 function hashFileContent(
   content: string,
-): AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS {
+): string {
   return createHash('sha256')
     .update(content)
     .digest('hex')
@@ -39,12 +39,7 @@ export function logFileOperation(params: {
   content?: string
   type?: 'create' | 'update'
 }): void {
-  const metadata: Record<
-    string,
-    | AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
-    | number
-    | boolean
-  > = {
+  const metadata: Record<string, string | number | boolean> = {
     operation:
       params.operation,
     tool: params.tool,

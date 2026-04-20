@@ -19,6 +19,7 @@ import type {
 } from '../types/message.js'
 import { PERMISSION_MODES } from '../types/permissions.js'
 import { suppressNextSkillListing } from './attachments.js'
+import * as udsClientMod from './udsClient.js'
 import {
   copyFileHistoryForResume,
   type FileHistorySnapshot,
@@ -49,27 +50,20 @@ import {
 } from './sessionStorage.js'
 import type { ContentReplacementRecord } from './toolResultStorage.js'
 
-// Dead code elimination: ant-only tool names are conditionally required so
-// their strings don't leak into external builds. Static imports always bundle.
-/* eslint-disable @typescript-eslint/no-require-imports */
+// Dead code elimination: ant-only tool names are conditionally referenced so
+// their strings don't leak into external builds.
+import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
+import * as sendUserFileToolPromptNs from '../tools/SendUserFileTool/prompt.js'
+
 const BRIEF_TOOL_NAME: string | null =
-  feature('KAIROS') || feature('KAIROS_BRIEF')
-    ? (
-        require('../tools/BriefTool/prompt.js') as typeof import('../tools/BriefTool/prompt.js')
-      ).BRIEF_TOOL_NAME
-    : null
+  feature('KAIROS') || feature('KAIROS_BRIEF') ? briefToolPromptNs.BRIEF_TOOL_NAME : null
 const LEGACY_BRIEF_TOOL_NAME: string | null =
   feature('KAIROS') || feature('KAIROS_BRIEF')
-    ? (
-        require('../tools/BriefTool/prompt.js') as typeof import('../tools/BriefTool/prompt.js')
-      ).LEGACY_BRIEF_TOOL_NAME
+    ? briefToolPromptNs.LEGACY_BRIEF_TOOL_NAME
     : null
 const SEND_USER_FILE_TOOL_NAME: string | null = feature('KAIROS')
-  ? (
-      require('../tools/SendUserFileTool/prompt.js') as typeof import('../tools/SendUserFileTool/prompt.js')
-    ).SEND_USER_FILE_TOOL_NAME
+  ? sendUserFileToolPromptNs.SEND_USER_FILE_TOOL_NAME
   : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 /**
  * Transforms legacy attachment types to current types for backward compatibility
@@ -486,10 +480,16 @@ export async function loadConversationForResume(
       let skip = new Set<string>()
       if (feature('BG_SESSIONS')) {
         try {
-          const { listAllLiveSessions } = await import('./udsClient.js')
-          const live = await listAllLiveSessions()
+          const udsRecord = udsClientMod as unknown as Record<
+            string,
+            | (() => Promise<Array<{ kind?: string; sessionId?: string }>>)
+            | undefined
+          >
+          const listAllLiveSessionsKey = 'listAllLiveSessions'
+          const listAllLiveSessions = udsRecord[listAllLiveSessionsKey]
+          const live = (await listAllLiveSessions?.()) ?? []
           skip = new Set(
-            live.flatMap(s =>
+            live.flatMap((s: {kind?: string; sessionId?: string}) =>
               s.kind && s.kind !== 'interactive' && s.sessionId
                 ? [s.sessionId]
                 : [],

@@ -5,50 +5,31 @@
 // deps is a separate sweep; this ref preserves the status quo.
 /// <reference lib="dom" />
 
+import * as cliHighlight from 'cli-highlight'
+import hljs from 'highlight.js'
 import { extname } from 'path'
 
 export type CliHighlight = {
-  highlight: typeof import('cli-highlight').highlight
-  supportsLanguage: typeof import('cli-highlight').supportsLanguage
+  highlight: typeof cliHighlight.highlight
+  supportsLanguage: typeof cliHighlight.supportsLanguage
 }
 
-// One promise shared by Fallback.tsx, markdown.ts, events.ts, getLanguageName.
-// The highlight.js import piggybacks: cli-highlight has already pulled it into
-// the module cache, so the second import() is a cache hit — no extra bytes
-// faulted in.
-let cliHighlightPromise: Promise<CliHighlight | null> | undefined
-
-let loadedGetLanguage: typeof import('highlight.js').getLanguage | undefined
-
-async function loadCliHighlight(): Promise<CliHighlight | null> {
-  try {
-    const cliHighlight = await import('cli-highlight')
-    // cache hit — cli-highlight already loaded highlight.js
-    const highlightJs = await import('highlight.js')
-    loadedGetLanguage = highlightJs.getLanguage
-    return {
-      highlight: cliHighlight.highlight,
-      supportsLanguage: cliHighlight.supportsLanguage,
-    }
-  } catch {
-    return null
-  }
+const CLI_HIGHLIGHT: CliHighlight = {
+  highlight: cliHighlight.highlight,
+  supportsLanguage: cliHighlight.supportsLanguage,
 }
 
 export function getCliHighlightPromise(): Promise<CliHighlight | null> {
-  cliHighlightPromise ??= loadCliHighlight()
-  return cliHighlightPromise
+  return Promise.resolve(CLI_HIGHLIGHT)
 }
 
 /**
- * eg. "foo/bar.ts" → "TypeScript". Awaits the shared cli-highlight load,
- * then reads highlight.js's language registry. All callers are telemetry
- * (OTel counter attributes, permission-dialog unary events) — none block
- * on this, they fire-and-forget or the consumer already handles Promise<string>.
+ * eg. "foo/bar.ts" → "TypeScript". Reads highlight.js's language registry.
+ * All callers are telemetry (OTel counter attributes, permission-dialog unary
+ * events) — none block on this.
  */
 export async function getLanguageName(file_path: string): Promise<string> {
-  await getCliHighlightPromise()
   const ext = extname(file_path).slice(1)
   if (!ext) return 'unknown'
-  return loadedGetLanguage?.(ext)?.name ?? 'unknown'
+  return (hljs.getLanguage(ext) as { name?: string } | undefined)?.name ?? 'unknown'
 }

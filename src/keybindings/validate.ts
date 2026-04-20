@@ -408,6 +408,7 @@ function getUserBindingsForValidation(
   const bindings: ParsedBinding[] = []
   for (const block of userBlocks) {
     for (const [key, action] of Object.entries(block.bindings)) {
+      if (action === null) continue
       const chord = key.split(' ').map(k => parseKeystroke(k))
       bindings.push({
         chord,

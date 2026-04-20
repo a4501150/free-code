@@ -2,6 +2,9 @@ import type { Task, TaskStateBase, SetAppState } from '../../Task.js'
 
 export type LocalWorkflowTaskState = TaskStateBase & {
   type: 'local_workflow'
+  workflowName?: string
+  summary?: string
+  agentCount?: number
 }
 
 export const LocalWorkflowTask: Task = {

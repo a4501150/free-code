@@ -35,13 +35,10 @@ import { MemoryUsageIndicator } from '../MemoryUsageIndicator.js'
 import { SentryErrorBoundary } from '../SentryErrorBoundary.js'
 import { TokenWarning } from '../TokenWarning.js'
 import { SandboxPromptFooterHint } from './SandboxPromptFooterHint.js'
+import * as voiceIndicatorNs from './VoiceIndicator.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
 const VoiceIndicator: typeof import('./VoiceIndicator.js').VoiceIndicator =
-  feature('VOICE_MODE')
-    ? require('./VoiceIndicator.js').VoiceIndicator
-    : () => null
-/* eslint-enable @typescript-eslint/no-require-imports */
+  feature('VOICE_MODE') ? voiceIndicatorNs.VoiceIndicator : () => null
 
 export const FOOTER_TEMPORARY_STATUS_TIMEOUT = 5000
 

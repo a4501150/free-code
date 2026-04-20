@@ -45,7 +45,6 @@ import {
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
 import { validateInputForSettingsFileEdit } from '../../utils/settings/validateEditTool.js'
-import { NOTEBOOK_EDIT_TOOL_NAME } from '../NotebookEditTool/constants.js'
 import {
   FILE_EDIT_TOOL_NAME,
   FILE_UNEXPECTEDLY_MODIFIED_ERROR,
@@ -256,15 +255,6 @@ export const FileEditTool = buildTool({
       // Empty file with empty old_string is valid - we're replacing empty with content
       return {
         result: true,
-      }
-    }
-
-    if (fullFilePath.endsWith('.ipynb')) {
-      return {
-        result: false,
-        behavior: 'ask',
-        message: `File is a Jupyter Notebook. Use the ${NOTEBOOK_EDIT_TOOL_NAME} to edit this file.`,
-        errorCode: 5,
       }
     }
 

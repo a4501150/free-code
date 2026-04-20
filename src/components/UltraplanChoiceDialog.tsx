@@ -43,7 +43,7 @@ export function UltraplanChoiceDialog({
             'info',
           ),
           createUserMessage({
-            content: prepareUserContent({ inputString: plan }),
+            content: prepareUserContent({ inputString: plan, precedingInputBlocks: [] }),
           }),
         ])
       }
@@ -77,7 +77,7 @@ export function UltraplanChoiceDialog({
         <Box
           flexDirection="column"
           borderStyle="single"
-          borderColor="gray"
+          borderColor={"gray" as "permission"}
           paddingX={1}
           height={Math.min(displayPlan.split('\n').length + 2, 20)}
           overflow="hidden"

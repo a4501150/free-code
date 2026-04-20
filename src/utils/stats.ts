@@ -24,6 +24,36 @@ import {
   withStatsCacheLock,
 } from './statsCache.js'
 
+/**
+ * Returns a ModelUsage with every field defaulted to 0.
+ *
+ * ModelUsage fields are typed as optional because the Zod type-inference
+ * widens them, but the runtime schema treats them as present — at the wire
+ * boundary they are always populated. Use this helper at any site that
+ * performs arithmetic on usage fields to stay strict-mode clean without
+ * sprinkling `?? 0` across every callsite.
+ */
+export function safeUsage(
+  u: ModelUsage,
+): Required<
+  Pick<
+    ModelUsage,
+    | 'inputTokens'
+    | 'outputTokens'
+    | 'cacheReadInputTokens'
+    | 'cacheCreationInputTokens'
+    | 'costUSD'
+  >
+> {
+  return {
+    inputTokens: u.inputTokens ?? 0,
+    outputTokens: u.outputTokens ?? 0,
+    cacheReadInputTokens: u.cacheReadInputTokens ?? 0,
+    cacheCreationInputTokens: u.cacheCreationInputTokens ?? 0,
+    costUSD: u.costUSD ?? 0,
+  }
+}
+
 export type DailyActivity = {
   date: string // YYYY-MM-DD format
   messageCount: number

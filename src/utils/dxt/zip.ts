@@ -1,3 +1,4 @@
+import { unzipSync } from 'fflate'
 import { isAbsolute, normalize } from 'path'
 import { logForDebugging } from '../debug.js'
 import { isENOENT } from '../errors.js'
@@ -104,16 +105,10 @@ export function validateZipFile(
 /**
  * Unzips data from a Buffer and returns its contents as a record of file paths to Uint8Array data.
  * Uses unzipSync to avoid fflate worker termination crashes in bun.
- * Accepts raw zip bytes so that the caller can read the file asynchronously.
- *
- * fflate is lazy-imported to avoid its ~196KB of top-level lookup tables (revfd
- * Int32Array(32769), rev Uint16Array(32768), etc.) being allocated at startup
- * when this module is reached via the plugin loader chain.
  */
 export async function unzipFile(
   zipData: Buffer,
 ): Promise<Record<string, Uint8Array>> {
-  const { unzipSync } = await import('fflate')
   const compressedSize = zipData.length
 
   const state: ZipValidationState = {

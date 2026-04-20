@@ -1,4 +1,5 @@
 import memoize from 'lodash-es/memoize.js'
+import * as tls from 'tls'
 import { logForDebugging } from './debug.js'
 import { hasNodeOption } from './envUtils.js'
 import { getFsImplementation } from './fsOperations.js'
@@ -39,14 +40,6 @@ export const getCACertificates = memoize((): string[] | undefined => {
   if (!useSystemCA && !extraCertsPath) {
     return undefined
   }
-
-  // Deferred load: Bun's node:tls module eagerly materializes ~150 Mozilla
-  // root certificates (~750KB heap) on import, even if tls.rootCertificates
-  // is never accessed. Most users hit the early return above, so we only
-  // pay this cost when custom CA handling is actually needed.
-  /* eslint-disable @typescript-eslint/no-require-imports */
-  const tls = require('tls') as typeof import('tls')
-  /* eslint-enable @typescript-eslint/no-require-imports */
 
   const certs: string[] = []
 

@@ -28,7 +28,7 @@ export const TestingPermissionTool: Tool<InputSchema, string> = buildTool({
     return 'TestingPermission'
   },
   isEnabled() {
-    return "production" === 'test'
+    return ("production" as string) === 'test'
   },
   isConcurrencySafe() {
     return true

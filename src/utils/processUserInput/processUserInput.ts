@@ -51,6 +51,9 @@ import {
   hasUltraplanKeyword,
   replaceUltraplanKeyword,
 } from '../ultraplan/keyword.js'
+import { getMaxHookOutputLength } from '../settings/hookLimits.js'
+import { processBashCommand } from './processBashCommand.js'
+import { processSlashCommand } from './processSlashCommand.js'
 import { processTextPrompt } from './processTextPrompt.js'
 export type ProcessUserInputContext = ToolUseContext & LocalJSXCommandContext
 
@@ -227,22 +230,23 @@ export async function processUserInput({
 
     // TODO: Clean this up
     if (hookResult.message) {
-      switch (hookResult.message.attachment.type) {
+      const hMsg = hookResult.message as any
+      switch (hMsg.attachment?.type) {
         case 'hook_success':
-          if (!hookResult.message.attachment.content) {
+          if (!hMsg.attachment.content) {
             // Skip if there is no content
             break
           }
           result.messages.push({
-            ...hookResult.message,
+            ...hMsg,
             attachment: {
-              ...hookResult.message.attachment,
-              content: applyTruncation(hookResult.message.attachment.content),
+              ...hMsg.attachment,
+              content: applyTruncation(hMsg.attachment.content),
             },
           })
           break
         default:
-          result.messages.push(hookResult.message)
+          result.messages.push(hMsg)
           break
       }
     }
@@ -255,11 +259,10 @@ export async function processUserInput({
   return result
 }
 
-const MAX_HOOK_OUTPUT_LENGTH = 10000
-
 function applyTruncation(content: string): string {
-  if (content.length > MAX_HOOK_OUTPUT_LENGTH) {
-    return `${content.substring(0, MAX_HOOK_OUTPUT_LENGTH)}… [output truncated - exceeded ${MAX_HOOK_OUTPUT_LENGTH} characters]`
+  const max = getMaxHookOutputLength()
+  if (content.length > max) {
+    return `${content.substring(0, max)}… [output truncated - exceeded ${max} characters]`
   }
   return content
 }
@@ -427,7 +430,6 @@ async function processUserInputBase(
     hasUltraplanKeyword(preExpansionInput ?? inputString)
   ) {
     const rewritten = replaceUltraplanKeyword(inputString).trim()
-    const { processSlashCommand } = await import('./processSlashCommand.js')
     const slashResult = await processSlashCommand(
       `/ultraplan ${rewritten}`,
       precedingInputBlocks,
@@ -465,7 +467,6 @@ async function processUserInputBase(
 
   // Bash commands
   if (inputString !== null && mode === 'bash') {
-    const { processBashCommand } = await import('./processBashCommand.js')
     return addImageMetadataMessage(
       await processBashCommand(
         inputString,
@@ -484,7 +485,6 @@ async function processUserInputBase(
     !effectiveSkipSlash &&
     inputString.startsWith('/')
   ) {
-    const { processSlashCommand } = await import('./processSlashCommand.js')
     const slashResult = await processSlashCommand(
       inputString,
       precedingInputBlocks,

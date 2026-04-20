@@ -238,7 +238,7 @@ export class TmuxSession {
   async waitForText(
     text: string,
     timeout = 30_000,
-    interval = 500,
+    interval = 100,
   ): Promise<string> {
     const start = Date.now()
     while (Date.now() - start < timeout) {
@@ -256,7 +256,7 @@ export class TmuxSession {
   async waitForPattern(
     pattern: RegExp,
     timeout = 30_000,
-    interval = 500,
+    interval = 100,
   ): Promise<{ screen: string; match: RegExpMatchArray }> {
     const start = Date.now()
     while (Date.now() - start < timeout) {
@@ -284,7 +284,7 @@ export class TmuxSession {
    * If a permission dialog appears, approve it by pressing Enter.
    * Returns 'approved' if a dialog was handled, 'idle' if the prompt returned.
    */
-  async waitForPermissionOrIdle(timeout = 30_000, interval = 500): Promise<'approved' | 'idle'> {
+  async waitForPermissionOrIdle(timeout = 30_000, interval = 100): Promise<'approved' | 'idle'> {
     const start = Date.now()
     while (Date.now() - start < timeout) {
       const screen = await this.capturePaneWithHistory()

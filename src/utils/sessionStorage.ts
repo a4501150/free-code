@@ -4,7 +4,7 @@ import type { Dirent } from 'fs'
 // Sync fs primitives for readFileTailSync — separate from fs/promises
 // imports above. Named (not wildcard) per CLAUDE.md style; no collisions
 // with the async-suffixed names.
-import { closeSync, fstatSync, openSync, readSync } from 'fs'
+import { closeSync, createReadStream, fstatSync, openSync, readSync } from 'fs'
 import {
   appendFile as fsAppendFile,
   open as fsOpen,
@@ -26,7 +26,7 @@ import {
   isSessionPersistenceDisabled,
   switchSession,
 } from '../bootstrap/state.js'
-import { builtInCommandNames } from '../commands.js'
+import { getBuiltInCommandNames as builtInCommandNames } from './commandRegistry.js'
 import { COMMAND_NAME_TAG, TICK_TAG } from '../constants/xml.js'
 import { REPL_TOOL_NAME } from '../tools/REPLTool/constants.js'
 import {
@@ -986,7 +986,7 @@ class Project {
 
         const transcriptMessage: TranscriptMessage = {
           parentUuid: isCompactBoundary ? null : effectiveParentUuid,
-          logicalParentUuid: isCompactBoundary ? parentUuid : undefined,
+          logicalParentUuid: isCompactBoundary ? (parentUuid ?? undefined) : undefined,
           isSidechain,
           teamName: teamInfo?.teamName,
           agentName: teamInfo?.agentName,
@@ -2850,7 +2850,6 @@ async function scanPreBoundaryMetadata(
   filePath: string,
   endOffset: number,
 ): Promise<string[]> {
-  const { createReadStream } = await import('fs')
   const NEWLINE = 0x0a
 
   const stream = createReadStream(filePath, { end: endOffset - 1 })
@@ -4019,7 +4018,7 @@ export function isLoggableMessage(m: Message): boolean {
   // they have sensitive info for training that we don't want exposed to the public.
   // When enabled, we allow hook_additional_context through since it contains
   // user-configured hook output that is useful for session context on resume.
-  if (m.type === 'attachment' && getUserType() !== 'ant') {
+  if (m.type === 'attachment') {
     if (
       m.attachment.type === 'hook_additional_context' &&
       isEnvTruthy(process.env.CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT)
@@ -4062,7 +4061,7 @@ function transformMessagesForExternalTranscript(
   messages: Transcript,
   replIds: Set<string>,
 ): Transcript {
-  return messages.flatMap(m => {
+  return messages.flatMap<Transcript[number]>(m => {
     if (m.type === 'assistant' && Array.isArray(m.message.content)) {
       const content = m.message.content
       const hasRepl = content.some(
@@ -4117,12 +4116,10 @@ export function cleanMessagesForLogging(
   allMessages: readonly Message[] = messages,
 ): Transcript {
   const filtered = messages.filter(isLoggableMessage) as Transcript
-  return getUserType() !== 'ant'
-    ? transformMessagesForExternalTranscript(
-        filtered,
-        collectReplIds(allMessages),
-      )
-    : filtered
+  return transformMessagesForExternalTranscript(
+    filtered,
+    collectReplIds(allMessages),
+  )
 }
 
 /**

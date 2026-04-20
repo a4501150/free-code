@@ -1,13 +1,11 @@
 // @aws-sdk/credential-provider-node and @smithy/node-http-handler are imported
 // dynamically in getAWSClientProxyConfig() to defer ~929KB of AWS SDK.
-// undici is lazy-required inside getProxyAgent/configureGlobalAgents to defer
-// ~1.5MB when no HTTPS_PROXY/mTLS env vars are set (the common case).
 import axios, { type AxiosInstance } from 'axios'
 import type { LookupOptions } from 'dns'
 import type { Agent } from 'http'
 import { HttpsProxyAgent, type HttpsProxyAgentOptions } from 'https-proxy-agent'
 import memoize from 'lodash-es/memoize.js'
-import type * as undici from 'undici'
+import * as undici from 'undici'
 import { getCACertificates } from './caCerts.js'
 import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
@@ -196,8 +194,7 @@ export function createAxiosInstance(
  * Now respects NO_PROXY environment variable
  */
 export const getProxyAgent = memoize((uri: string): undici.Dispatcher => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const undiciMod = require('undici') as typeof undici
+  const undiciMod = undici
   const mtlsConfig = getMTLSConfig()
   const caCerts = getCACertificates()
 
@@ -368,10 +365,7 @@ export function configureGlobalAgents(): void {
     })
 
     // Set global dispatcher that now respects NO_PROXY via EnvHttpProxyAgent
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    ;(require('undici') as typeof undici).setGlobalDispatcher(
-      getProxyAgent(proxyUrl),
-    )
+    undici.setGlobalDispatcher(getProxyAgent(proxyUrl))
   } else if (mtlsAgent) {
     // No proxy but mTLS is configured
     axios.defaults.httpsAgent = mtlsAgent
@@ -379,10 +373,7 @@ export function configureGlobalAgents(): void {
     // Set undici global dispatcher with mTLS
     const mtlsOptions = getTLSFetchOptions()
     if (mtlsOptions.dispatcher) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      ;(require('undici') as typeof undici).setGlobalDispatcher(
-        mtlsOptions.dispatcher,
-      )
+      undici.setGlobalDispatcher(mtlsOptions.dispatcher)
     }
   }
 }

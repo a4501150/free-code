@@ -4,7 +4,12 @@
 // The sharp-style chaining interface (e.g. sharp(buf).resize().jpeg().toBuffer())
 // is preserved so that callers like imageResizer.ts don't need to change.
 
-import type { Buffer } from 'buffer'
+import { createJimp } from '@jimp/core'
+import bmp from '@jimp/js-bmp'
+import jpeg from '@jimp/js-jpeg'
+import png from '@jimp/js-png'
+import { methods as resizeMethods } from '@jimp/plugin-resize'
+import { Buffer } from 'buffer'
 
 export type SharpInstance = {
   metadata(): Promise<{ width: number; height: number; format: string }>
@@ -62,9 +67,6 @@ export async function getImageCreator(): Promise<SharpCreator> {
     return imageCreatorModule.default
   }
 
-  const { createJimp } = await import('@jimp/core')
-  const { default: png } = await import('@jimp/js-png')
-
   const Jimp = createJimp({ formats: [png] })
 
   const creator: SharpCreator = (options: SharpCreatorOptions) => {
@@ -96,12 +98,6 @@ export async function getImageCreator(): Promise<SharpCreator> {
  * which has a broken dependency (simple-xml-to-json).
  */
 async function createJimpSharpAdapter(): Promise<SharpFunction> {
-  const { createJimp } = await import('@jimp/core')
-  const { default: jpeg } = await import('@jimp/js-jpeg')
-  const { default: png } = await import('@jimp/js-png')
-  const { default: bmp } = await import('@jimp/js-bmp')
-  const { methods: resizeMethods } = await import('@jimp/plugin-resize')
-
   const Jimp = createJimp({ formats: [jpeg, png, bmp], plugins: [resizeMethods] })
 
   return function jimpSharp(input: Buffer): SharpInstance {

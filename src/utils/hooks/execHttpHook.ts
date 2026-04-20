@@ -4,6 +4,7 @@ import { createCombinedAbortSignal } from '../combinedAbortSignal.js'
 import { logForDebugging } from '../debug.js'
 import { errorMessage } from '../errors.js'
 import { getProxyUrl, shouldBypassProxy } from '../proxy.js'
+import { getSandboxProxyProvider } from '../sandbox/sandboxProxyState.js'
 // Import as namespace so spyOn works in tests (direct imports bypass spies)
 import * as settingsModule from '../settings/settings.js'
 import type { HttpHook } from '../settings/types.js'
@@ -14,25 +15,21 @@ const DEFAULT_HTTP_HOOK_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes (matches TOOL_
 /**
  * Get the sandbox proxy config for routing HTTP hook requests through the
  * sandbox network proxy when sandboxing is enabled.
- *
- * Uses dynamic import to avoid a static import cycle
- * (sandbox-adapter -> settings -> ... -> hooks -> execHttpHook).
  */
 async function getSandboxProxyConfig(): Promise<
   { host: string; port: number; protocol: string } | undefined
 > {
-  const { SandboxManager } = await import('../sandbox/sandbox-adapter.js')
-
-  if (!SandboxManager.isSandboxingEnabled()) {
+  const provider = getSandboxProxyProvider()
+  if (!provider || !provider.isSandboxingEnabled()) {
     return undefined
   }
 
   // Wait for the sandbox network proxy to finish initializing. In REPL mode,
   // SandboxManager.initialize() is fire-and-forget so the proxy may not be
   // ready yet when the first hook fires.
-  await SandboxManager.waitForNetworkInitialization()
+  await provider.waitForNetworkInitialization()
 
-  const proxyPort = SandboxManager.getProxyPort()
+  const proxyPort = provider.getProxyPort()
   if (!proxyPort) {
     return undefined
   }

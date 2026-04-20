@@ -67,37 +67,6 @@ function MarketplaceList({
   return <Text>Loading marketplaces...</Text>
 }
 
-function McpRedirectBanner(): React.ReactNode {
-  if ("external" !== 'ant') {
-    return null
-  }
-
-  return (
-    <Box
-      flexDirection="row"
-      alignItems="flex-start"
-      paddingLeft={1}
-      marginTop={1}
-      borderLeft
-      borderRight={false}
-      borderTop={false}
-      borderBottom={false}
-      borderColor="permission"
-      borderStyle="single"
-    >
-      <Box flexShrink={0}>
-        <Text bold italic color="permission">
-          i{' '}
-        </Text>
-      </Box>
-      <Text>
-        [ANT-ONLY] MCP servers are now managed in /plugins. Use /mcp no-redirect
-        to test old UI
-      </Text>
-    </Box>
-  )
-}
-
 type ErrorRowAction =
   | { kind: 'navigate'; tab: TabId; viewState: ViewState }
   | {
@@ -646,7 +615,7 @@ function getInitialViewState(parsedCommand: ParsedCommand): ViewState {
     case 'help':
       return { type: 'help' }
     case 'validate':
-      return { type: 'validate', path: parsedCommand.path }
+      return { type: 'validate', path: parsedCommand.path ?? '' }
     case 'install':
       if (parsedCommand.marketplace) {
         return {
@@ -723,9 +692,8 @@ function getInitialTab(viewState: ViewState): TabId {
 export function PluginSettings({
   onComplete,
   args,
-  showMcpRedirectMessage,
 }: PluginSettingsProps): React.ReactNode {
-  const parsedCommand = parsePluginArgs(args)
+  const parsedCommand = parsePluginArgs(args[0])
   const initialViewState = getInitialViewState(parsedCommand)
   const [viewState, setViewState] = useState<ViewState>(initialViewState)
   const [activeTab, setActiveTab] = useState<TabId>(
@@ -948,11 +916,6 @@ export function PluginSettings({
         onTabChange={handleTabChange}
         color="suggestion"
         disableNavigation={childSearchActive}
-        banner={
-          showMcpRedirectMessage && activeTab === 'installed' ? (
-            <McpRedirectBanner />
-          ) : undefined
-        }
       >
         <Tab id="discover" title="Discover">
           {viewState.type === 'browse-marketplace' ? (

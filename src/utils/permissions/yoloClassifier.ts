@@ -43,25 +43,23 @@ import {
 import { getClaudeTempDir } from './filesystem.js'
 
 // Dead code elimination: conditional imports for auto mode classifier prompts.
-// At build time, the bundler inlines .txt files as string literals. At test
-// time, require() returns {default: string} — txtRequire normalizes both.
-/* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
-function txtRequire(mod: string | { default: string }): string {
-  return typeof mod === 'string' ? mod : mod.default
-}
+// At build time, the bundler inlines .txt files as string literals.
+/* eslint-disable custom-rules/no-process-env-top-level */
+import autoModeSystemPromptTxt from './yolo-classifier-prompts/auto_mode_system_prompt.txt'
+import permissionsExternalTxt from './yolo-classifier-prompts/permissions_external.txt'
 
 const BASE_PROMPT: string = feature('TRANSCRIPT_CLASSIFIER')
-  ? txtRequire(require('./yolo-classifier-prompts/auto_mode_system_prompt.txt'))
+  ? (autoModeSystemPromptTxt as string)
   : ''
 
 // External template is loaded separately so it's available for
 // `claude auto-mode defaults` even in ant builds. Ant builds use
 // permissions_anthropic.txt at runtime but should dump external defaults.
 const EXTERNAL_PERMISSIONS_TEMPLATE: string = feature('TRANSCRIPT_CLASSIFIER')
-  ? txtRequire(require('./yolo-classifier-prompts/permissions_external.txt'))
+  ? (permissionsExternalTxt as string)
   : ''
 
-/* eslint-enable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
+/* eslint-enable custom-rules/no-process-env-top-level */
 
 /**
  * Shape of the settings.autoMode config — the three classifier prompt

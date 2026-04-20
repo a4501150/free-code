@@ -115,25 +115,21 @@ type ListItem =
       status: 'running'
     }
 
-// WORKFLOW_SCRIPTS is ant-only (build_flags.yaml). Static imports would leak
-// ~1.3K lines into external builds. Gate with feature() + require so the
-// bundler can dead-code-eliminate the branch.
-/* eslint-disable @typescript-eslint/no-require-imports */
+// WORKFLOW_SCRIPTS is ant-only (build_flags.yaml). Static imports can be
+// DCE-eliminated by Bun when the feature flag is off and the module is
+// side-effect-free. Gate with feature() so the bundler eliminates the branch.
+import * as workflowDetailDialogNs from './WorkflowDetailDialog.js'
+// Relative path, not `src/...` path-mapping — Bun's DCE can statically
+// resolve + eliminate `./` imports, but path-mapped strings stay opaque
+// and survive as dead literals in the bundle. Matches tasks.ts pattern.
+import * as workflowTaskNs from '../../tasks/LocalWorkflowTask/LocalWorkflowTask.js'
 const WorkflowDetailDialog = feature('WORKFLOW_SCRIPTS')
-  ? (
-      require('./WorkflowDetailDialog.js') as typeof import('./WorkflowDetailDialog.js')
-    ).WorkflowDetailDialog
+  ? workflowDetailDialogNs.WorkflowDetailDialog
   : null
-const workflowTaskModule = feature('WORKFLOW_SCRIPTS')
-  ? (require('src/tasks/LocalWorkflowTask/LocalWorkflowTask.js') as typeof import('src/tasks/LocalWorkflowTask/LocalWorkflowTask.js'))
-  : null
+const workflowTaskModule = feature('WORKFLOW_SCRIPTS') ? workflowTaskNs : null
 const killWorkflowTask = workflowTaskModule?.killWorkflowTask ?? null
 const skipWorkflowAgent = workflowTaskModule?.skipWorkflowAgent ?? null
 const retryWorkflowAgent = workflowTaskModule?.retryWorkflowAgent ?? null
-// Relative path, not `src/...` path-mapping — Bun's DCE can statically
-// resolve + eliminate `./` requires, but path-mapped strings stay opaque
-// and survive as dead literals in the bundle. Matches tasks.ts pattern.
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 // Helper to get filtered background tasks (excludes foregrounded local_agent)
 function getSelectableBackgroundTasks(
@@ -324,12 +320,6 @@ export function BackgroundTasksDialog({
       ) {
         killWorkflowTask(currentSelection.id, setAppState)
       } else if (
-        currentSelection.type === 'monitor_mcp' &&
-        currentSelection.status === 'running' &&
-        killMonitorMcp
-      ) {
-        killMonitorMcp(currentSelection.id, setAppState)
-      } else if (
         currentSelection.type === 'dream' &&
         currentSelection.status === 'running'
       ) {
@@ -490,19 +480,7 @@ export function BackgroundTasksDialog({
           />
         )
       case 'monitor_mcp':
-        if (!MonitorMcpDetailDialog) return null
-        return (
-          <MonitorMcpDetailDialog
-            task={task}
-            onKill={
-              task.status === 'running' && killMonitorMcp
-                ? () => killMonitorMcp(task.id, setAppState)
-                : undefined
-            }
-            onBack={goBackToList}
-            key={`monitor-mcp-${task.id}`}
-          />
-        )
+        return null
       case 'dream':
         return (
           <DreamDetailDialog

@@ -30,6 +30,7 @@
  */
 
 import { randomBytes } from 'crypto'
+import { zipSync } from 'fflate'
 import {
   chmod,
   lstat,
@@ -220,7 +221,6 @@ export async function createZipFromDirectory(
   const visited = new Set<string>()
   await collectFilesForZip(sourceDir, '', files, visited)
 
-  const { zipSync } = await import('fflate')
   const zipData = zipSync(files, { level: 6 })
   logForDebugging(
     `Created ZIP from ${sourceDir}: ${Object.keys(files).length} files, ${zipData.length} bytes`,

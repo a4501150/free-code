@@ -40,6 +40,8 @@ import mapValues from 'lodash-es/mapValues.js'
 import memoize from 'lodash-es/memoize.js'
 import zipObject from 'lodash-es/zipObject.js'
 import pMap from 'p-map'
+import * as wsModule from 'ws'
+import * as mcpSkillsMod from '../../skills/mcpSkills.js'
 import { getOriginalCwd, getSessionId } from '../../bootstrap/state.js'
 import { clearToolSchemaCache } from '../../utils/toolSchemaCache.js'
 import type { Command } from '../../commands.js'
@@ -112,16 +114,12 @@ import { buildMcpToolName } from './mcpStringUtils.js'
 import { normalizeNameForMCP } from './normalization.js'
 import { getLoggingSafeMcpBaseUrl } from './utils.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
 const fetchMcpSkillsForClient = feature('MCP_SKILLS')
-  ? (
-      require('../../skills/mcpSkills.js') as typeof import('../../skills/mcpSkills.js')
-    ).fetchMcpSkillsForClient
+  ? mcpSkillsMod.fetchMcpSkillsForClient
   : null
 
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js'
 import type { AssistantMessage } from 'src/types/message.js'
-/* eslint-enable @typescript-eslint/no-require-imports */
 import { classifyMcpToolForCollapse } from '../../tools/MCPTool/classifyForCollapse.js'
 import { clearKeychainCache } from '../../utils/secureStorage/macOsKeychainHelpers.js'
 import { sleep } from '../../utils/sleep.js'
@@ -226,14 +224,6 @@ function getMcpToolTimeoutMs(): number {
     DEFAULT_MCP_TOOL_TIMEOUT_MS
   )
 }
-
-import { isClaudeInChromeMCPServer } from '../../utils/claudeInChrome/common.js'
-
-// Lazy: toolRendering.tsx pulls React/ink; only needed when Claude-in-Chrome MCP server is connected
-/* eslint-disable @typescript-eslint/no-require-imports */
-const claudeInChromeToolRendering =
-  (): typeof import('../../utils/claudeInChrome/toolRendering.js') =>
-    require('../../utils/claudeInChrome/toolRendering.js')
 
 import { mkdir, readFile, unlink, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
@@ -415,7 +405,6 @@ async function createNodeWsClient(
   url: string,
   options: Record<string, unknown>,
 ): Promise<WsClientLike> {
-  const wsModule = await import('ws')
   const WS = wsModule.default as unknown as new (
     url: string,
     protocols: string[],
@@ -868,28 +857,6 @@ export const connectToServer = memoize(
           transportOptions,
         )
         logMCPDebug(name, `claude.ai proxy transport created successfully`)
-      } else if (
-        (serverRef.type === 'stdio' || !serverRef.type) &&
-        isClaudeInChromeMCPServer(name)
-      ) {
-        // Run the Chrome MCP server in-process to avoid spawning a ~325 MB subprocess
-        const { createChromeContext } = await import(
-          '../../utils/claudeInChrome/mcpServer.js'
-        )
-        const { importClaudeForChromePackage } = await import(
-          '../../utils/claudeInChrome/package.js'
-        )
-        const { createClaudeForChromeMcpServer } =
-          await importClaudeForChromePackage()
-        const { createLinkedTransportPair } = await import(
-          './InProcessTransport.js'
-        )
-        const context = createChromeContext(serverRef.env)
-        inProcessServer = createClaudeForChromeMcpServer(context)
-        const [clientTransport, serverTransport] = createLinkedTransportPair()
-        await inProcessServer.connect(serverTransport)
-        transport = clientTransport
-        logMCPDebug(name, `In-process Chrome MCP server started`)
       } else if (serverRef.type === 'stdio' || !serverRef.type) {
         const finalCommand =
           process.env.CLAUDE_CODE_SHELL_PREFIX || serverRef.command
@@ -1900,12 +1867,6 @@ export const fetchToolsForClient = memoizeWithLRU(
               const displayName = tool.annotations?.title || tool.name
               return `${client.name} - ${displayName} (MCP)`
             },
-            ...(isClaudeInChromeMCPServer(client.name) &&
-            (client.config.type === 'stdio' || !client.config.type)
-              ? claudeInChromeToolRendering().getClaudeInChromeMCPToolOverrides(
-                  tool.name,
-                )
-              : {}),
           }
         })
         .filter(isIncludedMcpTool)

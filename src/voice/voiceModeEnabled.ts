@@ -34,7 +34,7 @@ export function hasVoiceAuth(): boolean {
 
 /**
  * Full runtime check: auth + build-time feature gate. Callers: `/voice`
- * (voice.ts, voice/index.ts), ConfigTool, VoiceModeNotice — command-time
+ * (voice.ts, voice/index.ts), VoiceModeNotice — command-time
  * paths where a fresh keychain read is acceptable. For React render
  * paths use useVoiceEnabled() instead (memoizes the auth half).
  */

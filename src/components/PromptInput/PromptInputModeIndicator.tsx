@@ -52,8 +52,7 @@ function PromptChar({
 }: PromptCharProps): React.ReactNode {
   // Assign to original name for clarity within the function
   const teammateColor = themeColor
-  const isAnt = "external" === 'ant'
-  const color = teammateColor ?? (isAnt ? 'subtle' : undefined)
+  const color = teammateColor ?? undefined
 
   return (
     <Text color={color} dimColor={isLoading}>

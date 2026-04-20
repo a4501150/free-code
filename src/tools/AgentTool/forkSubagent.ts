@@ -6,7 +6,7 @@ import {
   FORK_BOILERPLATE_TAG,
   FORK_DIRECTIVE_PREFIX,
 } from '../../constants/xml.js'
-import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
+import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
 import type {
   AssistantMessage,
   Message as MessageType,
@@ -62,7 +62,9 @@ export const FORK_AGENT = {
   whenToUse:
     'Implicit fork — inherits full conversation context. Not selectable via subagent_type; triggered by omitting subagent_type when the fork experiment is active.',
   tools: ['*'],
-  maxTurns: 200,
+  // No hardcoded maxTurns — the previous 200 cap was silent harness
+  // throttling with no user opt-in. Users who want a cap can pass
+  // `--max-turns` explicitly.
   model: 'inherit',
   permissionMode: 'bubble',
   source: 'built-in',

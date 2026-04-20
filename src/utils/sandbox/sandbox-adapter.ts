@@ -968,6 +968,16 @@ export const SandboxManager: ISandboxManager = {
   },
 }
 
+// Register SandboxManager as the sandbox-proxy provider so modules like
+// execHttpHook can consult it without a static import cycle.
+import { registerSandboxProxyProvider } from './sandboxProxyState.js'
+registerSandboxProxyProvider({
+  isSandboxingEnabled: () => SandboxManager.isSandboxingEnabled(),
+  waitForNetworkInitialization: () =>
+    SandboxManager.waitForNetworkInitialization(),
+  getProxyPort: () => SandboxManager.getProxyPort(),
+})
+
 // ============================================================================
 // Re-export types from sandbox-runtime
 // ============================================================================

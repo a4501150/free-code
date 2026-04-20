@@ -5,11 +5,11 @@ import {
   parseUserSpecifiedModel,
 } from './model.js'
 import { getProviderRegistry } from './providerRegistry.js'
+import { qualifyModel, stripContextSuffix } from './parseModelString.js'
 import {
   parseModelStringFromRegistry,
-  qualifyModel,
   stripProviderPrefix,
-} from './parseModelString.js'
+} from './parseModelStringWithRegistry.js'
 import { getPublicModelDisplayName } from './modelDisplay.js'
 
 /**
@@ -24,6 +24,18 @@ export const SMALL_FAST_MODEL_SENTINEL = 'smallFast'
  * falling back to inherit (main model) if not configured.
  */
 export const BALANCED_MODEL_SENTINEL = 'balanced'
+
+/**
+ * Sentinel value for agent definitions that want the most powerful available model.
+ * Resolved at runtime by getAgentModel() via defaultMostPowerfulModel config,
+ * falling back to inherit (main model) if not configured.
+ *
+ * NOTE: still subject to the defaultSubagentModel blunt override — if the user
+ * sets defaultSubagentModel, it wins over this sentinel. Users wanting tiered
+ * routing should leave defaultSubagentModel unset and configure the three
+ * tier fields (defaultSmallFastModel / defaultBalancedModel / defaultMostPowerfulModel).
+ */
+export const MOST_POWERFUL_MODEL_SENTINEL = 'mostPowerful'
 
 /**
  * Get the default subagent model. Returns 'inherit' so subagents inherit
@@ -48,7 +60,10 @@ export function getAgentModel(
   permissionMode?: PermissionMode,
 ): string {
   // Priority: env var > freecode.json defaultSubagentModel
-  const envSubagent = process.env.CLAUDE_CODE_SUBAGENT_MODEL
+  const envSubagentRaw = process.env.CLAUDE_CODE_SUBAGENT_MODEL
+  const envSubagent = envSubagentRaw
+    ? stripContextSuffix(envSubagentRaw)
+    : undefined
   const configSubagent = getProviderRegistry().getConfiguredDefaultSubagentModel()
   const subagentOverride = envSubagent || configSubagent
   if (subagentOverride) {
@@ -107,6 +122,20 @@ export function getAgentModel(
     })
   }
 
+  // Resolve 'mostPowerful' sentinel to configured most-powerful model, falling back to inherit
+  if (agentModelWithExp === MOST_POWERFUL_MODEL_SENTINEL) {
+    const mostPowerful = registry.getConfiguredDefaultMostPowerfulModel()
+    if (mostPowerful) {
+      return applyParentRegionPrefix(parseUserSpecifiedModel(mostPowerful))
+    }
+    // Fall back to inherit (main model)
+    return getRuntimeMainLoopModel({
+      permissionMode: permissionMode ?? 'default',
+      mainLoopModel: parentModel,
+      exceeds200kTokens: false,
+    })
+  }
+
   const model = parseUserSpecifiedModel(agentModelWithExp)
   return applyParentRegionPrefix(model)
 }
@@ -124,6 +153,14 @@ export function getAgentModelDisplay(model: string | undefined): string {
     if (balanced) {
       const displayName = getPublicModelDisplayName(balanced)
       return displayName ?? balanced
+    }
+    return 'Inherit from parent'
+  }
+  if (model === MOST_POWERFUL_MODEL_SENTINEL) {
+    const mostPowerful = getProviderRegistry().getConfiguredDefaultMostPowerfulModel()
+    if (mostPowerful) {
+      const displayName = getPublicModelDisplayName(mostPowerful)
+      return displayName ?? mostPowerful
     }
     return 'Inherit from parent'
   }

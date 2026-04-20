@@ -18,17 +18,14 @@ import { count, uniq } from './array.js'
 import { getFsImplementation } from './fsOperations.js'
 import { readdir, stat } from 'fs/promises'
 import type { IDESelection } from '../hooks/useIdeSelection.js'
-import { TODO_WRITE_TOOL_NAME } from '../tools/TodoWriteTool/constants.js'
 import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
 import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
-import type { TodoList } from './todo/types.js'
 import {
   type Task,
   listTasks,
   getTaskListId,
-  isTodoV2Enabled,
 } from './tasks.js'
 import { getPlanFilePath, getPlan } from './plans.js'
 import { getConnectedIdeName } from './ide.js'
@@ -77,24 +74,22 @@ import { getProjectRoot } from '../bootstrap/state.js'
 import { formatCommandsWithinBudget } from '../tools/SkillTool/prompt.js'
 import { getContextWindowForModel } from './context.js'
 import type { DiscoverySignal } from '../services/skillSearch/signals.js'
-// Conditional require for DCE. All skill-search string literals that would
+// Conditional references for DCE. All skill-search string literals that would
 // otherwise leak into external builds live inside these modules. The only
 // surfaces in THIS file are: the maybe() call (gated via spread below) and
 // the skill_listing suppression check (uses the same skillSearchModules null
 // check). The type-only DiscoverySignal import above is erased at compile time.
-/* eslint-disable @typescript-eslint/no-require-imports */
+import * as skillSearchFeatureCheckNs from '../services/skillSearch/featureCheck.js'
+import * as skillSearchPrefetchNs from '../services/skillSearch/prefetch.js'
+import * as autoModeStateNs from './permissions/autoModeState.js'
+
 const skillSearchModules = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? {
-      featureCheck:
-        require('../services/skillSearch/featureCheck.js') as typeof import('../services/skillSearch/featureCheck.js'),
-      prefetch:
-        require('../services/skillSearch/prefetch.js') as typeof import('../services/skillSearch/prefetch.js'),
+      featureCheck: skillSearchFeatureCheckNs,
+      prefetch: skillSearchPrefetchNs,
     }
   : null
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? (require('./permissions/autoModeState.js') as typeof import('./permissions/autoModeState.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER') ? autoModeStateNs : null
 import {
   MAX_LINES_TO_READ,
   FILE_READ_TOOL_NAME,
@@ -162,8 +157,6 @@ import {
   isMcpInstructionsDeltaEnabled,
   type ClientSideInstruction,
 } from './mcpInstructionsDelta.js'
-import { CLAUDE_IN_CHROME_MCP_SERVER_NAME } from './claudeInChrome/common.js'
-import { CHROME_TOOL_SEARCH_INSTRUCTIONS } from './claudeInChrome/prompt.js'
 import type { MCPServerConnection } from '../services/mcp/types.js'
 import type {
   HookEvent,
@@ -186,17 +179,12 @@ import {
 import { isHumanTurn } from './messagePredicates.js'
 import { isEnvTruthy, getClaudeConfigHomeDir } from './envUtils.js'
 import { feature } from 'bun:bundle'
-/* eslint-disable @typescript-eslint/no-require-imports */
+import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
+import * as sessionTranscriptNs from '../services/sessionTranscript/sessionTranscript.js'
+
 const BRIEF_TOOL_NAME: string | null =
-  feature('KAIROS') || feature('KAIROS_BRIEF')
-    ? (
-        require('../tools/BriefTool/prompt.js') as typeof import('../tools/BriefTool/prompt.js')
-      ).BRIEF_TOOL_NAME
-    : null
-const sessionTranscriptModule = feature('KAIROS')
-  ? (require('../services/sessionTranscript/sessionTranscript.js') as typeof import('../services/sessionTranscript/sessionTranscript.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+  feature('KAIROS') || feature('KAIROS_BRIEF') ? briefToolPromptNs.BRIEF_TOOL_NAME : null
+const sessionTranscriptModule = feature('KAIROS') ? sessionTranscriptNs : null
 import { hasUltrathinkKeyword, isUltrathinkEnabled } from './thinking.js'
 import {
   tokenCountFromLastAPIResponse,
@@ -219,6 +207,7 @@ import { getPDFPageCount } from './pdf.js'
 import { PDF_AT_MENTION_INLINE_THRESHOLD } from '../constants/apiLimits.js'
 import { isAgentSwarmsEnabled } from './agentSwarmsEnabled.js'
 import { findRelevantMemories } from '../memdir/findRelevantMemories.js'
+import * as snipCompactNs from '../services/compact/snipCompact.js'
 import { memoryAge, memoryFreshnessText } from '../memdir/memoryAge.js'
 import { getAutoMemPath, isAutoMemoryEnabled } from '../memdir/paths.js'
 import { getAgentMemoryDir } from '../tools/AgentTool/agentMemory.js'
@@ -255,15 +244,19 @@ export const AUTO_MODE_ATTACHMENT_CONFIG = {
   FULL_REMINDER_EVERY_N_ATTACHMENTS: 5,
 } as const
 
-const MAX_MEMORY_LINES = 200
-// Line cap alone doesn't bound size (200 × 500-char lines = 100KB).  The
-// surfacer injects up to 5 files per turn via <system-reminder>, bypassing
-// the per-message tool-result budget, so a tight per-file byte cap keeps
-// aggregate injection bounded (5 × 4KB = 20KB/turn).  Enforced via
-// readFileInRange's truncateOnByteLimit option.  Truncation means the
-// most-relevant memory still surfaces: the frontmatter + opening context
-// is usually what matters.
-const MAX_MEMORY_BYTES = 4096
+// Defaults raised — the previous 200-line / 4KB caps were calibrated for a
+// much smaller context era and silently dropped most CLAUDE.md files.
+// Truncation is still possible via `maxMemoryFileLines` /
+// `maxMemoryFileBytes` in freecode.json for users who want aggressive caps.
+const MAX_MEMORY_LINES_DEFAULT = 5000
+const MAX_MEMORY_BYTES_DEFAULT = 100_000
+
+function getMaxMemoryLines(): number {
+  return getSettings_DEPRECATED()?.maxMemoryFileLines ?? MAX_MEMORY_LINES_DEFAULT
+}
+function getMaxMemoryBytes(): number {
+  return getSettings_DEPRECATED()?.maxMemoryFileBytes ?? MAX_MEMORY_BYTES_DEFAULT
+}
 
 export const RELEVANT_MEMORIES_CONFIG = {
   // Per-turn cap (5 × 4KB = 20KB) bounds a single injection, but over a
@@ -275,10 +268,6 @@ export const RELEVANT_MEMORIES_CONFIG = {
   // resets the counter — old attachments are gone from context, so
   // re-surfacing is valid.
   MAX_SESSION_BYTES: 60 * 1024,
-} as const
-
-export const VERIFY_PLAN_REMINDER_CONFIG = {
-  TURNS_BETWEEN_REMINDERS: 10,
 } as const
 
 export type FileAttachment = {
@@ -467,11 +456,6 @@ export type Attachment =
   | {
       type: 'opened_file_in_ide'
       filename: string
-    }
-  | {
-      type: 'todo_reminder'
-      content: TodoList
-      itemCount: number
     }
   | {
       type: 'task_reminder'
@@ -880,9 +864,7 @@ export async function getAttachments(
         ]
       : []),
     maybe('todo_reminders', () =>
-      isTodoV2Enabled()
-        ? getTaskReminderAttachments(messages, toolUseContext)
-        : getTodoReminderAttachments(messages, toolUseContext),
+      getTaskReminderAttachments(messages, toolUseContext),
     ),
     ...(isAgentSwarmsEnabled()
       ? [
@@ -969,9 +951,13 @@ export async function getAttachments(
         maybe('output_token_usage', async () =>
           Promise.resolve(getOutputTokenUsageAttachment()),
         ),
-        maybe('verify_plan_reminder', async () =>
-          getVerifyPlanReminderAttachment(messages, toolUseContext),
-        ),
+        ...(feature('VERIFY_PLAN')
+          ? [
+              maybe('verify_plan_reminder', async () =>
+                getVerifyPlanReminderAttachment(messages, toolUseContext),
+              ),
+            ]
+          : []),
       ]
     : []
 
@@ -984,11 +970,12 @@ export async function getAttachments(
 
   clearTimeout(timeoutId)
   // Defensive: a getter leaking [undefined] crashes .map(a => a.type) below.
-  return [
+  const merged: Attachment[] = [
     ...userAttachmentResults.flat(),
     ...threadAttachmentResults.flat(),
     ...mainThreadAttachmentResults.flat(),
-  ].filter(a => a !== undefined && a !== null)
+  ] as Attachment[]
+  return merged.filter(a => a !== undefined && a !== null)
 }
 
 async function maybe<A>(label: string, f: () => Promise<A[]>): Promise<A[]> {
@@ -1543,17 +1530,6 @@ export function getMcpInstructionsDeltaAttachment(
   // actual server `instructions` are unconditional. Decide the chrome part
   // here, pass it into the pure diff as a synthesized entry.
   const clientSide: ClientSideInstruction[] = []
-  if (
-    isToolSearchEnabledOptimistic() &&
-    modelSupportsToolReference(model) &&
-    isToolSearchToolAvailable(tools)
-  ) {
-    clientSide.push({
-      serverName: CLAUDE_IN_CHROME_MCP_SERVER_NAME,
-      block: CHROME_TOOL_SEARCH_INSTRUCTIONS,
-    })
-  }
-
   const delta = getMcpInstructionsDelta(mcpClients, messages ?? [], clientSide)
   if (!delta) return []
   return [{ type: 'mcp_instructions_delta', ...delta }]
@@ -1810,14 +1786,10 @@ async function getNestedMemoryAttachmentsForFile(
     // Phase 4: Process CWD-level directories (root → CWD)
     // Only conditional rules (unconditional rules are already loaded eagerly)
     for (const dir of cwdLevelDirs) {
-      const conditionalRules = (
-        await getConditionalRulesForCwdLevelDirectory(
-          dir,
-          filePath,
-          processedPaths,
-        )
-      ).filter(
-        f => !skipProjectLevel || (f.type !== 'Project' && f.type !== 'Local'),
+      const conditionalRules = await getConditionalRulesForCwdLevelDirectory(
+        dir,
+        filePath,
+        processedPaths,
       )
       attachments.push(
         ...memoryFilesToAttachments(conditionalRules, toolUseContext, filePath),
@@ -2242,22 +2214,24 @@ export async function readMemoriesForSurfacing(
     limit?: number
   }>
 > {
+  const maxLines = getMaxMemoryLines()
+  const maxBytes = getMaxMemoryBytes()
   const results = await Promise.all(
     selected.map(async ({ path: filePath, mtimeMs }) => {
       try {
         const result = await readFileInRange(
           filePath,
           0,
-          MAX_MEMORY_LINES,
-          MAX_MEMORY_BYTES,
+          maxLines,
+          maxBytes,
           signal,
           { truncateOnByteLimit: true },
         )
         const truncated =
-          result.totalLines > MAX_MEMORY_LINES || result.truncatedByBytes
+          result.totalLines > maxLines || result.truncatedByBytes
         const content = truncated
           ? result.content +
-            `\n\n> This memory file was truncated (${result.truncatedByBytes ? `${MAX_MEMORY_BYTES} byte limit` : `first ${MAX_MEMORY_LINES} lines`}). Use the ${FILE_READ_TOOL_NAME} tool to view the complete file at: ${filePath}`
+            `\n\n> This memory file was truncated (${result.truncatedByBytes ? `${maxBytes} byte limit` : `first ${maxLines} lines`}). Use the ${FILE_READ_TOOL_NAME} tool to view the complete file at: ${filePath}`
           : result.content
         return {
           path: filePath,
@@ -3136,113 +3110,6 @@ export function createAttachmentMessage(
   }
 }
 
-function getTodoReminderTurnCounts(messages: Message[]): {
-  turnsSinceLastTodoWrite: number
-  turnsSinceLastReminder: number
-} {
-  let lastTodoWriteIndex = -1
-  let lastReminderIndex = -1
-  let assistantTurnsSinceWrite = 0
-  let assistantTurnsSinceReminder = 0
-
-  // Iterate backwards to find most recent events
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i]
-
-    if (message?.type === 'assistant') {
-      if (isThinkingMessage(message)) {
-        // Skip thinking messages
-        continue
-      }
-
-      // Check for TodoWrite usage BEFORE incrementing counter
-      // (we don't want to count the TodoWrite message itself as "1 turn since write")
-      if (
-        lastTodoWriteIndex === -1 &&
-        'message' in message &&
-        Array.isArray(message.message?.content) &&
-        message.message.content.some(
-          block => block.type === 'tool_use' && block.name === 'TodoWrite',
-        )
-      ) {
-        lastTodoWriteIndex = i
-      }
-
-      // Count assistant turns before finding events
-      if (lastTodoWriteIndex === -1) assistantTurnsSinceWrite++
-      if (lastReminderIndex === -1) assistantTurnsSinceReminder++
-    } else if (
-      lastReminderIndex === -1 &&
-      message?.type === 'attachment' &&
-      message.attachment.type === 'todo_reminder'
-    ) {
-      lastReminderIndex = i
-    }
-
-    if (lastTodoWriteIndex !== -1 && lastReminderIndex !== -1) {
-      break
-    }
-  }
-
-  return {
-    turnsSinceLastTodoWrite: assistantTurnsSinceWrite,
-    turnsSinceLastReminder: assistantTurnsSinceReminder,
-  }
-}
-
-async function getTodoReminderAttachments(
-  messages: Message[] | undefined,
-  toolUseContext: ToolUseContext,
-): Promise<Attachment[]> {
-  // Skip if TodoWrite tool is not available
-  if (
-    !toolUseContext.options.tools.some(t =>
-      toolMatchesName(t, TODO_WRITE_TOOL_NAME),
-    )
-  ) {
-    return []
-  }
-
-  // When SendUserMessage is in the toolkit, it's the primary communication
-  // channel and the model is always told to use it (#20467). TodoWrite
-  // becomes a side channel — nudging the model about it conflicts with the
-  // brief workflow. The tool itself stays available; this only gates the
-  // "you haven't used it in a while" nag.
-  if (
-    BRIEF_TOOL_NAME &&
-    toolUseContext.options.tools.some(t => toolMatchesName(t, BRIEF_TOOL_NAME))
-  ) {
-    return []
-  }
-
-  // Skip if no messages provided
-  if (!messages || messages.length === 0) {
-    return []
-  }
-
-  const { turnsSinceLastTodoWrite, turnsSinceLastReminder } =
-    getTodoReminderTurnCounts(messages)
-
-  // Check if we should show a reminder
-  if (
-    turnsSinceLastTodoWrite >= TODO_REMINDER_CONFIG.TURNS_SINCE_WRITE &&
-    turnsSinceLastReminder >= TODO_REMINDER_CONFIG.TURNS_BETWEEN_REMINDERS
-  ) {
-    const todoKey = toolUseContext.agentId ?? getSessionId()
-    const appState = toolUseContext.getAppState()
-    const todos = appState.todos[todoKey] ?? []
-    return [
-      {
-        type: 'todo_reminder',
-        content: todos,
-        itemCount: todos.length,
-      },
-    ]
-  }
-
-  return []
-}
-
 function getTaskReminderTurnCounts(messages: Message[]): {
   turnsSinceLastTaskManagement: number
   turnsSinceLastReminder: number
@@ -3303,10 +3170,6 @@ async function getTaskReminderAttachments(
   messages: Message[] | undefined,
   toolUseContext: ToolUseContext,
 ): Promise<Attachment[]> {
-  if (!isTodoV2Enabled()) {
-    return []
-  }
-
   // When SendUserMessage is in the toolkit, it's the primary communication
   // channel and the model is always told to use it (#20467). TaskUpdate
   // becomes a side channel — nudging the model about it conflicts with the
@@ -3479,9 +3342,10 @@ async function getTeammateMailboxAttachments(
   // - Otherwise use env var if set, or leader's name if we're the team lead
   let agentName = viewedTeammate?.identity.agentName ?? envAgentName
   if (!agentName && teamLeadStatus && appState.teamContext) {
-    const leadAgentId = appState.teamContext.leadAgentId
+    const teamContext = appState.teamContext!
+    const leadAgentId = teamContext.leadAgentId
     // Look up the lead's name from agents map (not the UUID)
-    agentName = appState.teamContext.teammates[leadAgentId]?.name || 'team-lead'
+    agentName = teamContext.teammates[leadAgentId]?.name || 'team-lead'
   }
 
   logForDebugging(
@@ -3507,7 +3371,7 @@ async function getTeammateMailboxAttachments(
   // attachment generation races with InboxPoller: whichever reads first marks all
   // messages as read, and if attachments wins, protocol messages get bundled as raw
   // LLM context text instead of being routed to their UI handlers.
-  const allUnreadMessages = await readUnreadMessages(agentName, teamName)
+  const allUnreadMessages = await readUnreadMessages(agentName!, teamName)
   const unreadMessages = allUnreadMessages.filter(
     m => !isStructuredProtocolMessage(m.text),
   )
@@ -3568,8 +3432,8 @@ async function getTeammateMailboxAttachments(
   for (let i = 0; i < allMessages.length; i++) {
     const idle = isIdleNotification(allMessages[i]!.text)
     if (idle) {
-      idleAgentByIndex.set(i, idle.from)
-      latestIdleByAgent.set(idle.from, i)
+      idleAgentByIndex.set(i, idle!.from)
+      latestIdleByAgent.set(idle!.from, i)
     }
   }
   if (idleAgentByIndex.size > latestIdleByAgent.size) {
@@ -3606,7 +3470,7 @@ async function getTeammateMailboxAttachments(
   // Structured protocol messages stay unread for useInboxPoller to handle.
   if (unreadMessages.length > 0) {
     await markMessagesAsReadByPredicate(
-      agentName,
+      agentName!,
       m => !isStructuredProtocolMessage(m.text),
       teamName,
     )
@@ -3622,41 +3486,37 @@ async function getTeammateMailboxAttachments(
     for (const m of allMessages) {
       const shutdownApproval = isShutdownApproved(m.text)
       if (shutdownApproval) {
-        const teammateToRemove = shutdownApproval.from
+        const teammateToRemove = shutdownApproval!.from
         logForDebugging(
           `[SwarmMailbox] Processing shutdown_approved from ${teammateToRemove}`,
         )
 
         // Find the teammate ID by name
         const teammateId = appState.teamContext?.teammates
-          ? Object.entries(appState.teamContext.teammates).find(
+          ? Object.entries(appState.teamContext!.teammates).find(
               ([, t]) => t.name === teammateToRemove,
             )?.[0]
           : undefined
 
         if (teammateId) {
+          const id: string = teammateId!
           // Remove from team file
-          removeTeammateFromTeamFile(teamName, {
-            agentId: teammateId,
-            name: teammateToRemove,
+          removeTeammateFromTeamFile(teamName!, {
+            agentId: id,
+            name: teammateToRemove!,
           })
           logForDebugging(
             `[SwarmMailbox] Removed ${teammateToRemove} from team file`,
           )
 
           // Unassign tasks owned by this teammate
-          await unassignTeammateTasks(
-            teamName,
-            teammateId,
-            teammateToRemove,
-            'shutdown',
-          )
+          await unassignTeammateTasks(teamName!, id, teammateToRemove!, 'shutdown')
 
           // Remove from teamContext in AppState
           toolUseContext.setAppState(prev => {
             if (!prev.teamContext?.teammates) return prev
-            if (!(teammateId in prev.teamContext.teammates)) return prev
-            const { [teammateId]: _, ...remainingTeammates } =
+            if (!(id in prev.teamContext.teammates)) return prev
+            const { [id]: _, ...remainingTeammates } =
               prev.teamContext.teammates
             return {
               ...prev,
@@ -3782,71 +3642,63 @@ function getMaxBudgetUsdAttachment(maxBudgetUsd?: number): Attachment[] {
 }
 
 /**
- * Count human turns since plan mode exit (plan_mode_exit attachment).
- * Returns 0 if no plan_mode_exit attachment found.
- *
- * tool_result messages are type:'user' without isMeta, so filter by
- * toolUseResult to avoid counting them — otherwise the 10-turn reminder
- * interval fires every ~10 tool calls instead of ~10 human turns.
- */
-export function getVerifyPlanReminderTurnCount(messages: Message[]): number {
-  let turnCount = 0
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i]
-    if (message && isHumanTurn(message)) {
-      turnCount++
-    }
-    // Stop counting at plan_mode_exit attachment (marks when implementation started)
-    if (
-      message?.type === 'attachment' &&
-      message.attachment.type === 'plan_mode_exit'
-    ) {
-      return turnCount
-    }
-  }
-  // No plan_mode_exit found
-  return 0
-}
-
-/**
  * Get verify plan reminder attachment if the model hasn't called VerifyPlanExecution yet.
+ *
+ * Module-level feature gate: when VERIFY_PLAN is off at build time, this
+ * collapses to `async () => []` and Bun DCEs the turn-count helper plus the
+ * 'verify_plan_reminder' attachment type literal.
  */
-async function getVerifyPlanReminderAttachment(
+const getVerifyPlanReminderAttachment: (
   messages: Message[] | undefined,
   toolUseContext: ToolUseContext,
-): Promise<Attachment[]> {
-  if (
-    !feature('VERIFY_PLAN') ||
-    !isEnvTruthy(process.env.CLAUDE_CODE_VERIFY_PLAN)
-  ) {
-    return []
-  }
+) => Promise<Attachment[]> = feature('VERIFY_PLAN')
+  ? async (messages, toolUseContext) => {
+      if (!isEnvTruthy(process.env.CLAUDE_CODE_VERIFY_PLAN)) {
+        return []
+      }
 
-  const appState = toolUseContext.getAppState()
-  const pending = appState.pendingPlanVerification
+      // Count human turns since plan mode exit (plan_mode_exit attachment).
+      // tool_result messages are type:'user' without isMeta, so filter by
+      // isHumanTurn — otherwise the reminder fires every ~10 tool calls
+      // instead of ~10 human turns.
+      const getTurnCount = (ms: Message[]): number => {
+        let turnCount = 0
+        for (let i = ms.length - 1; i >= 0; i--) {
+          const message = ms[i]
+          if (message && isHumanTurn(message)) {
+            turnCount++
+          }
+          if (
+            message?.type === 'attachment' &&
+            message.attachment.type === 'plan_mode_exit'
+          ) {
+            return turnCount
+          }
+        }
+        return 0
+      }
 
-  // Only remind if plan exists and verification not started or completed
-  if (
-    !pending ||
-    pending.verificationStarted ||
-    pending.verificationCompleted
-  ) {
-    return []
-  }
+      const appState = toolUseContext.getAppState()
+      const pending = appState.pendingPlanVerification
 
-  // Only remind every N turns
-  if (messages && messages.length > 0) {
-    const turnCount = getVerifyPlanReminderTurnCount(messages)
-    if (
-      turnCount === 0 ||
-      turnCount % VERIFY_PLAN_REMINDER_CONFIG.TURNS_BETWEEN_REMINDERS !== 0
-    ) {
-      return []
+      if (
+        !pending ||
+        pending.verificationStarted ||
+        pending.verificationCompleted
+      ) {
+        return []
+      }
+
+      if (messages && messages.length > 0) {
+        const turnCount = getTurnCount(messages)
+        if (turnCount === 0 || turnCount % 10 !== 0) {
+          return []
+        }
+      }
+
+      return [{ type: 'verify_plan_reminder' }]
     }
-  }
-
-  return [{ type: 'verify_plan_reminder' }]
-}
+  : async () => []
 
 export function getCompactionReminderAttachment(
   messages: Message[],
@@ -3884,9 +3736,7 @@ export function getContextEfficiencyAttachment(
   }
   // Gate must match SnipTool.isEnabled() — don't nudge toward a tool that
   // isn't in the tool list. Lazy require keeps this file snip-string-free.
-  const { isSnipRuntimeEnabled, shouldNudgeForSnips } =
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require('../services/compact/snipCompact.js') as typeof import('../services/compact/snipCompact.js')
+  const { isSnipRuntimeEnabled, shouldNudgeForSnips } = snipCompactNs
   if (!isSnipRuntimeEnabled()) {
     return []
   }

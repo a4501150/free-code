@@ -10,14 +10,10 @@ import {
   type AutoCompactTrackingState,
 } from './services/compact/autoCompact.js'
 import { buildPostCompactMessages } from './services/compact/compact.js'
-/* eslint-disable @typescript-eslint/no-require-imports */
-const reactiveCompact = feature('REACTIVE_COMPACT')
-  ? (require('./services/compact/reactiveCompact.js') as typeof import('./services/compact/reactiveCompact.js'))
-  : null
-const contextCollapse = feature('CONTEXT_COLLAPSE')
-  ? (require('./services/contextCollapse/index.js') as typeof import('./services/contextCollapse/index.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as reactiveCompactNs from './services/compact/reactiveCompact.js'
+const reactiveCompact = feature('REACTIVE_COMPACT') ? reactiveCompactNs : null
+import * as contextCollapseNs from './services/contextCollapse/index.js'
+const contextCollapse = feature('CONTEXT_COLLAPSE') ? contextCollapseNs : null
 import { ImageSizeError } from './utils/imageValidation.js'
 import { ImageResizeError } from './utils/imageResizer.js'
 import { findToolByName, type ToolUseContext } from './Tool.js'
@@ -60,10 +56,9 @@ import {
 const skillPrefetch = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? (require('./services/skillSearch/prefetch.js') as typeof import('./services/skillSearch/prefetch.js'))
   : null
-const jobClassifier = feature('TEMPLATES')
-  ? (require('./jobs/classifier.js') as typeof import('./jobs/classifier.js'))
-  : null
 /* eslint-enable @typescript-eslint/no-require-imports */
+import * as jobClassifierNs from './jobs/classifier.js'
+const jobClassifier = feature('TEMPLATES') ? jobClassifierNs : null
 import {
   remove as removeFromQueue,
   getCommandsByMaxPriority,
@@ -77,7 +72,6 @@ import {
   finalContextTokensFromLastResponse,
   tokenCountWithEstimation,
 } from './utils/tokens.js'
-import { ESCALATED_MAX_TOKENS } from './utils/context.js'
 import { SLEEP_TOOL_NAME } from './tools/SleepTool/prompt.js'
 import { executePostSamplingHooks } from './utils/hooks/postSamplingHooks.js'
 import { executeStopFailureHooks } from './utils/hooks.js'
@@ -101,14 +95,10 @@ import {
 import { createBudgetTracker, checkTokenBudget } from './query/tokenBudget.js'
 import { count } from './utils/array.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const snipModule = feature('HISTORY_SNIP')
-  ? (require('./services/compact/snipCompact.js') as typeof import('./services/compact/snipCompact.js'))
-  : null
-const taskSummaryModule = feature('BG_SESSIONS')
-  ? (require('./utils/taskSummary.js') as typeof import('./utils/taskSummary.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as snipCompactNs from './services/compact/snipCompact.js'
+const snipModule = feature('HISTORY_SNIP') ? snipCompactNs : null
+import * as taskSummaryNs from './utils/taskSummary.js'
+const taskSummaryModule = feature('BG_SESSIONS') ? taskSummaryNs : null
 
 function* yieldMissingToolResultBlocks(
   assistantMessages: AssistantMessage[],
@@ -151,23 +141,6 @@ function* yieldMissingToolResultBlocks(
  * the rules of thinking are the rules of the universe. If ye does not heed these
  * rules, ye will be punished with an entire day of debugging and hair pulling.
  */
-const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3
-
-/**
- * Is this a max_output_tokens error message? If so, the streaming loop should
- * withhold it from SDK callers until we know whether the recovery loop can
- * continue. Yielding early leaks an intermediate error to SDK callers (e.g.
- * cowork/desktop) that terminate the session on any `error` field — the
- * recovery loop keeps running but nobody is listening.
- *
- * Mirrors reactiveCompact.isWithheldPromptTooLong.
- */
-function isWithheldMaxOutputTokens(
-  msg: Message | StreamEvent | undefined,
-): msg is AssistantMessage {
-  return msg?.type === 'assistant' && msg.apiError === 'max_output_tokens'
-}
-
 export type QueryParams = {
   messages: Message[]
   systemPrompt: SystemPrompt
@@ -194,9 +167,7 @@ type State = {
   messages: Message[]
   toolUseContext: ToolUseContext
   autoCompactTracking: AutoCompactTrackingState | undefined
-  maxOutputTokensRecoveryCount: number
   hasAttemptedReactiveCompact: boolean
-  maxOutputTokensOverride: number | undefined
   pendingToolUseSummary: Promise<ToolUseSummaryMessage | null> | undefined
   stopHookActive: boolean | undefined
   turnCount: number
@@ -256,10 +227,8 @@ async function* queryLoop(
   let state: State = {
     messages: params.messages,
     toolUseContext: params.toolUseContext,
-    maxOutputTokensOverride: params.maxOutputTokensOverride,
     autoCompactTracking: undefined,
     stopHookActive: undefined,
-    maxOutputTokensRecoveryCount: 0,
     hasAttemptedReactiveCompact: false,
     turnCount: 1,
     pendingToolUseSummary: undefined,
@@ -300,9 +269,7 @@ async function* queryLoop(
     const {
       messages,
       autoCompactTracking,
-      maxOutputTokensRecoveryCount,
       hasAttemptedReactiveCompact,
-      maxOutputTokensOverride,
       pendingToolUseSummary,
       stopHookActive,
       turnCount,
@@ -640,7 +607,7 @@ async function* queryLoop(
                 toolUseContext.options.agentDefinitions.allowedAgentTypes,
               hasAppendSystemPrompt:
                 !!toolUseContext.options.appendSystemPrompt,
-              maxOutputTokensOverride,
+              maxOutputTokensOverride: params.maxOutputTokensOverride,
               fetchOverride: dumpPromptsFetch,
               mcpTools: appState.mcp.tools,
               hasPendingMcpServers: appState.mcp.clients.some(
@@ -752,7 +719,7 @@ async function* queryLoop(
               if (
                 contextCollapse?.isWithheldPromptTooLong(
                   message,
-                  isPromptTooLongMessage,
+                  isPromptTooLongMessage as (message: unknown) => boolean,
                   querySource,
                 )
               ) {
@@ -766,9 +733,6 @@ async function* queryLoop(
               mediaRecoveryEnabled &&
               reactiveCompact?.isWithheldMediaSizeError(message)
             ) {
-              withheld = true
-            }
-            if (isWithheldMaxOutputTokens(message)) {
               withheld = true
             }
             if (!withheld) {
@@ -966,9 +930,7 @@ async function* queryLoop(
               messages: drained.messages,
               toolUseContext,
               autoCompactTracking: tracking,
-              maxOutputTokensRecoveryCount,
               hasAttemptedReactiveCompact,
-              maxOutputTokensOverride: undefined,
               pendingToolUseSummary: undefined,
               stopHookActive: undefined,
               turnCount,
@@ -1019,9 +981,7 @@ async function* queryLoop(
             messages: postCompactMessages,
             toolUseContext,
             autoCompactTracking: undefined,
-            maxOutputTokensRecoveryCount,
             hasAttemptedReactiveCompact: true,
-            maxOutputTokensOverride: undefined,
             pendingToolUseSummary: undefined,
             stopHookActive: undefined,
             turnCount,
@@ -1036,8 +996,8 @@ async function* queryLoop(
         // so hooks have nothing meaningful to evaluate. Running stop hooks
         // on prompt-too-long creates a death spiral: error → hook blocking
         // → retry → error → … (the hook injects more tokens each cycle).
-        yield lastMessage
-        void executeStopFailureHooks(lastMessage, toolUseContext)
+        if (lastMessage) yield lastMessage
+        void executeStopFailureHooks(lastMessage!, toolUseContext)
         return { reason: isWithheldMedia ? 'image_error' : 'prompt_too_long' }
       } else if (feature('CONTEXT_COLLAPSE') && isWithheld413) {
         // reactiveCompact compiled out but contextCollapse withheld and
@@ -1046,70 +1006,6 @@ async function* queryLoop(
         yield lastMessage
         void executeStopFailureHooks(lastMessage, toolUseContext)
         return { reason: 'prompt_too_long' }
-      }
-
-      // Check for max_output_tokens and inject recovery message. The error
-      // was withheld from the stream above; only surface it if recovery
-      // exhausts.
-      if (isWithheldMaxOutputTokens(lastMessage)) {
-        // Escalating retry: if we used the capped 8k default and hit the
-        // limit, retry the SAME request at 64k — no meta message, no
-        // multi-turn dance. This fires once per turn (guarded by the
-        // override check), then falls through to multi-turn recovery if
-        // 64k also hits the cap.
-        if (
-          maxOutputTokensOverride === undefined &&
-          !process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS
-        ) {
-          const next: State = {
-            messages: messagesForQuery,
-            toolUseContext,
-            autoCompactTracking: tracking,
-            maxOutputTokensRecoveryCount,
-            hasAttemptedReactiveCompact,
-            maxOutputTokensOverride: ESCALATED_MAX_TOKENS,
-            pendingToolUseSummary: undefined,
-            stopHookActive: undefined,
-            turnCount,
-            transition: { reason: 'max_output_tokens_escalate' },
-          }
-          state = next
-          continue
-        }
-
-        if (maxOutputTokensRecoveryCount < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT) {
-          const recoveryMessage = createUserMessage({
-            content:
-              `Output token limit hit. Resume directly — no apology, no recap of what you were doing. ` +
-              `Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.`,
-            isMeta: true,
-          })
-
-          const next: State = {
-            messages: [
-              ...messagesForQuery,
-              ...assistantMessages,
-              recoveryMessage,
-            ],
-            toolUseContext,
-            autoCompactTracking: tracking,
-            maxOutputTokensRecoveryCount: maxOutputTokensRecoveryCount + 1,
-            hasAttemptedReactiveCompact,
-            maxOutputTokensOverride: undefined,
-            pendingToolUseSummary: undefined,
-            stopHookActive: undefined,
-            turnCount,
-            transition: {
-              reason: 'max_output_tokens_recovery',
-              attempt: maxOutputTokensRecoveryCount + 1,
-            },
-          }
-          state = next
-          continue
-        }
-
-        // Recovery exhausted — surface the withheld error now.
-        yield lastMessage
       }
 
       // Skip stop hooks when the last message is an API error (rate limit,
@@ -1145,14 +1041,12 @@ async function* queryLoop(
           ],
           toolUseContext,
           autoCompactTracking: tracking,
-          maxOutputTokensRecoveryCount: 0,
           // Preserve the reactive compact guard — if compact already ran and
           // couldn't recover from prompt-too-long, retrying after a stop-hook
           // blocking error will produce the same result. Resetting to false
           // here caused an infinite loop: compact → still too long → error →
           // stop hook blocking → compact → … burning thousands of API calls.
           hasAttemptedReactiveCompact,
-          maxOutputTokensOverride: undefined,
           pendingToolUseSummary: undefined,
           stopHookActive: true,
           turnCount,
@@ -1186,9 +1080,7 @@ async function* queryLoop(
             ],
             toolUseContext,
             autoCompactTracking: tracking,
-            maxOutputTokensRecoveryCount: 0,
             hasAttemptedReactiveCompact: false,
-            maxOutputTokensOverride: undefined,
             pendingToolUseSummary: undefined,
             stopHookActive: undefined,
             turnCount,
@@ -1426,7 +1318,7 @@ async function* queryLoop(
     if (skillPrefetch && pendingSkillPrefetch) {
       const skillAttachments =
         await skillPrefetch.collectSkillDiscoveryPrefetch(pendingSkillPrefetch)
-      for (const att of skillAttachments) {
+      for (const att of skillAttachments as import('./utils/attachments.js').Attachment[]) {
         const msg = createAttachmentMessage(att)
         yield msg
         toolResults.push(msg)
@@ -1516,10 +1408,8 @@ async function* queryLoop(
       toolUseContext: toolUseContextWithQueryTracking,
       autoCompactTracking: tracking,
       turnCount: nextTurnCount,
-      maxOutputTokensRecoveryCount: 0,
       hasAttemptedReactiveCompact: false,
       pendingToolUseSummary: nextPendingToolUseSummary,
-      maxOutputTokensOverride: undefined,
       stopHookActive,
       transition: { reason: 'next_turn' },
     }

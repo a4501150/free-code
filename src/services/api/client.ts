@@ -1,5 +1,10 @@
 import Anthropic, { type ClientOptions } from '@anthropic-ai/sdk'
+import {
+  DefaultAzureCredential as AzureCredential,
+  getBearerTokenProvider,
+} from '@azure/identity'
 import { randomUUID } from 'crypto'
+import { GoogleAuth } from 'google-auth-library'
 import {
   computeCch,
   hasCchPlaceholder,
@@ -410,7 +415,6 @@ async function createClientForProvider(
         if (!isEnvTruthy(process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH)) {
           await refreshGcpCredentialsIfNeeded()
         }
-        const { GoogleAuth } = await import('google-auth-library')
 
         const hasProjectEnvVar =
           process.env['GCLOUD_PROJECT'] ||
@@ -439,7 +443,7 @@ async function createClientForProvider(
             })
 
         const authClient = await googleAuth.getClient()
-        const headers = await authClient.getRequestHeaders()
+        const headers = await authClient.getRequestHeaders() as unknown as Record<string, string | undefined>
         const token =
           headers['Authorization']?.replace('Bearer ', '') || ''
         const projectId =
@@ -469,10 +473,6 @@ async function createClientForProvider(
         if (isEnvTruthy(process.env.CLAUDE_CODE_SKIP_FOUNDRY_AUTH)) {
           return ''
         }
-        const {
-          DefaultAzureCredential: AzureCredential,
-          getBearerTokenProvider,
-        } = await import('@azure/identity')
         const tokenProvider = getBearerTokenProvider(
           new AzureCredential(),
           'https://cognitiveservices.azure.com/.default',
@@ -491,8 +491,6 @@ async function createClientForProvider(
     // ── Gemini (Vertex AI generateContent) ───────────────────────
     case 'gemini': {
       const getAccessToken = async () => {
-        const { GoogleAuth } = await import('google-auth-library')
-
         const hasProjectEnvVar =
           process.env['GCLOUD_PROJECT'] ||
           process.env['GOOGLE_CLOUD_PROJECT'] ||
@@ -512,7 +510,7 @@ async function createClientForProvider(
         })
 
         const authClient = await googleAuth.getClient()
-        const headers = await authClient.getRequestHeaders()
+        const headers = await authClient.getRequestHeaders() as unknown as Record<string, string | undefined>
         const token =
           headers['Authorization']?.replace('Bearer ', '') || ''
         const projectId =

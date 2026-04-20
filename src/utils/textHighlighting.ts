@@ -126,7 +126,7 @@ class HighlightSegmenter {
         this.codes.push(token)
         this.stringPos += token.code.length
         this.tokenIdx++
-      } else {
+      } else if (token.type === 'char') {
         const charsNeeded = targetVisiblePos - this.visiblePos
         const charsAvailable = token.value.length - this.charIdx
         const charsToTake = Math.min(charsNeeded, charsAvailable)
@@ -139,6 +139,9 @@ class HighlightSegmenter {
           this.tokenIdx++
           this.charIdx = 0
         }
+      } else {
+        // control code - skip
+        this.tokenIdx++
       }
     }
 

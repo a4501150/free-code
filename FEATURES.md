@@ -162,10 +162,10 @@ entire subsystem.
 - `FORK_SUBAGENT`
   Fails on missing `src/commands/fork/index.js`. Command slot and message
   rendering support are already present.
-- `HISTORY_SNIP`
-  Fails on missing `src/commands/force-snip.js`. The surrounding SnipTool and
-  query/message comments are already there.
-- ~~`KAIROS_GITHUB_WEBHOOKS`~~ **FIXED** — SubscribePRTool, subscribe-pr command, and UserGitHubWebhookMessage implemented.
+- ~~`HISTORY_SNIP`~~ **FIXED** — `/force-snip` command surface removed; the
+  underlying SnipTool and HISTORY_SNIP-gated history-snipping logic in
+  `src/utils/messages.ts`, `src/utils/attachments.ts`, and
+  `src/utils/collapseReadSearch.ts` are unaffected.
 - ~~`KAIROS_PUSH_NOTIFICATION`~~ **FIXED** — PushNotificationTool implemented wrapping sendNotification().
 - `MCP_SKILLS`
   Fails on missing `src/skills/mcpSkills.js`. `mcpSkillBuilders.ts` already

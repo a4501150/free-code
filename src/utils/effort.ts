@@ -231,6 +231,8 @@ export function getEffortLevelDescription(level: EffortLevel): string {
       return 'Comprehensive implementation with extensive testing and documentation'
     case 'max':
       return 'Maximum capability with deepest reasoning'
+    default:
+      return level
   }
 }
 

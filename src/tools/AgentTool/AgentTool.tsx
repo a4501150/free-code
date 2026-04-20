@@ -15,7 +15,7 @@ import {
   enhanceSystemPromptWithEnvDetails,
   getSystemPrompt,
 } from '../../constants/prompts.js'
-import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
+import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
 import { startAgentSummarization } from '../../services/AgentSummary/agentSummary.js'
 import { clearDumpState } from '../../services/api/dumpPrompts.js'
 import {
@@ -34,7 +34,7 @@ import {
   updateAgentProgress as updateAsyncAgentProgress,
   updateProgressFromMessage,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
-import { assembleToolPool } from '../../tools.js'
+import { assembleToolPool } from './assembleToolPool.js'
 import { asAgentId } from '../../types/ids.js'
 import { runWithAgentContext } from '../../utils/agentContext.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
@@ -77,6 +77,7 @@ import {
 import { BASH_TOOL_NAME } from '../BashTool/toolName.js'
 import { BackgroundHint } from '../BashTool/UI.js'
 import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
+import { SEND_MESSAGE_TOOL_NAME } from '../SendMessageTool/constants.js'
 import { spawnTeammate } from '../shared/spawnMultiAgent.js'
 import { setAgentColor } from './agentColorManager.js'
 import {
@@ -221,15 +222,11 @@ const fullInputSchema = lazySchema(() => {
   return baseInputSchema()
     .merge(multiAgentInputSchema)
     .extend({
-      isolation: ("external" === 'ant'
-        ? z.enum(['worktree', 'remote'])
-        : z.enum(['worktree'])
-      )
+      isolation: z
+        .enum(['worktree'])
         .optional()
         .describe(
-          "external" === 'ant'
-            ? 'Isolation mode. "worktree" creates a temporary git worktree so the agent works on an isolated copy of the repo. "remote" launches the agent in a remote CCR environment (always runs in background).'
-            : 'Isolation mode. "worktree" creates a temporary git worktree so the agent works on an isolated copy of the repo.',
+          'Isolation mode. "worktree" creates a temporary git worktree so the agent works on an isolated copy of the repo.',
         ),
       cwd: z
         .string()
@@ -258,9 +255,12 @@ export const inputSchema = lazySchema(() => {
   // by forceAsync) or "schema hides a param that would've worked" (gate
   // flips off mid-session: everything still runs async via memoized
   // forceAsync). No Zod rejection, no crash — unlike required→optional.
+  const swarmsSchema = isAgentSwarmsEnabled()
+    ? schema
+    : schema.omit({ name: true, team_name: true })
   return isBackgroundTasksDisabled || isForkSubagentEnabled()
-    ? schema.omit({ run_in_background: true })
-    : schema
+    ? swarmsSchema.omit({ run_in_background: true })
+    : swarmsSchema
 })
 type InputSchema = ReturnType<typeof inputSchema>
 
@@ -359,11 +359,7 @@ export const AgentTool = buildTool({
       AGENT_TOOL_NAME,
     )
 
-    // Use inline env check instead of coordinatorModule to avoid circular
-    // dependency issues during test module loading.
-    const isCoordinator = feature('COORDINATOR_MODE')
-      ? isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE)
-      : false
+    const isCoordinator = isCoordinatorMode()
     return await getPrompt(filteredAgents, isCoordinator, allowedAgentTypes)
   },
   name: AGENT_TOOL_NAME,
@@ -739,11 +735,7 @@ export const AgentTool = buildTool({
         !isBackgroundTasksDisabled,
     }
 
-    // Use inline env check instead of coordinatorModule to avoid circular
-    // dependency issues during test module loading.
-    const isCoordinator = feature('COORDINATOR_MODE')
-      ? isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE)
-      : false
+    const isCoordinator = isCoordinatorMode()
 
     // Fork subagent experiment: force ALL spawns async for a unified
     // <task-notification> interaction model (not just fork spawns — all of them).
@@ -1225,6 +1217,7 @@ export const AgentTool = buildTool({
                         agentMessages,
                         backgroundedTaskId,
                         metadata,
+                        tracker,
                       )
 
                       // Mark task completed FIRST so TaskOutput(block=true)
@@ -1542,6 +1535,7 @@ export const AgentTool = buildTool({
             agentMessages,
             syncAgentId,
             metadata,
+            syncTracker,
           )
 
           if (feature('TRANSCRIPT_CLASSIFIER')) {
@@ -1626,8 +1620,8 @@ The agent is now running and will receive instructions via mailbox.`,
         ],
       }
     }
-    if ('status' in internalData && internalData.status === 'remote_launched') {
-      const r = internalData
+    if ('status' in internalData && (internalData.status as string) === 'remote_launched') {
+      const r = internalData as unknown as { taskId: string; sessionUrl: string; outputFile: string }
       return {
         tool_use_id: toolUseID,
         type: 'tool_result',
@@ -1640,7 +1634,10 @@ The agent is now running and will receive instructions via mailbox.`,
       }
     }
     if (data.status === 'async_launched') {
-      const prefix = `Async agent launched successfully.\nagentId: ${data.agentId} (internal ID - do not mention to user. Use SendMessage with to: '${data.agentId}' to continue this agent.)\nThe agent is working in the background. You will be notified automatically when it completes.`
+      const sendMsgHint = isAgentSwarmsEnabled()
+        ? ` Use ${SEND_MESSAGE_TOOL_NAME} with to: '${data.agentId}' to continue this agent.`
+        : ''
+      const prefix = `Async agent launched successfully.\nagentId: ${data.agentId} (internal ID - do not mention to user.${sendMsgHint})\nThe agent is working in the background. You will be notified automatically when it completes.`
       const instructions = data.canReadOutputFile
         ? `Do not duplicate this agent's work — avoid working with the same files or topics it is using. Work on non-overlapping tasks, or briefly tell the user what you launched and end your response.\noutput_file: ${data.outputFile}\nIf asked, you can check progress before completion by using ${FILE_READ_TOOL_NAME} or ${BASH_TOOL_NAME} tail on the output file.`
         : `Briefly tell the user what you launched and end your response. Do not generate any other text — agent results will arrive in a subsequent message.`
@@ -1665,7 +1662,7 @@ The agent is now running and will receive instructions via mailbox.`,
       // agentId/usage trailer below — a metadata-only block at the prompt tail.
       // Some models read that as "nothing to act on" and end their turn
       // immediately. Say so explicitly so the parent has something to react to.
-      const contentOrMarker =
+      const baseContent =
         data.content.length > 0
           ? data.content
           : [
@@ -1674,6 +1671,19 @@ The agent is now running and will receive instructions via mailbox.`,
                 text: '(Subagent completed but returned no output.)',
               },
             ]
+      // When the subagent stopped because of an API error / output-token cap,
+      // prepend a <status> block so the parent model can see *why* the child
+      // stopped and decide how to proceed. Without this the parent sees only
+      // the partial text and thinks the subagent finished cleanly.
+      const contentOrMarker = data.errorReason
+        ? [
+            {
+              type: 'text' as const,
+              text: `<status>stopped: ${data.errorReason}</status>`,
+            },
+            ...baseContent,
+          ]
+        : baseContent
       // One-shot built-ins (Explore, Plan) are never continued via SendMessage
       // — the agentId hint and <usage> block are dead weight (~135 chars ×
       // 34M Explore runs/week ≈ 1-2 Gtok/week). Telemetry doesn't parse this
@@ -1690,6 +1700,9 @@ The agent is now running and will receive instructions via mailbox.`,
           content: contentOrMarker,
         }
       }
+      const sendMsgHint = isAgentSwarmsEnabled()
+        ? ` (use ${SEND_MESSAGE_TOOL_NAME} with to: '${data.agentId}' to continue this agent)`
+        : ''
       return {
         tool_use_id: toolUseID,
         type: 'tool_result',
@@ -1697,7 +1710,7 @@ The agent is now running and will receive instructions via mailbox.`,
           ...contentOrMarker,
           {
             type: 'text',
-            text: `agentId: ${data.agentId} (use SendMessage with to: '${data.agentId}' to continue this agent)${worktreeInfoText}
+            text: `agentId: ${data.agentId}${sendMsgHint}${worktreeInfoText}
 <usage>total_tokens: ${data.totalTokens}
 tool_uses: ${data.totalToolUseCount}
 duration_ms: ${data.totalDurationMs}</usage>`,

@@ -21,11 +21,8 @@ import { useSelectedMessageBg } from '../messageActions.js'
 import { PrBadge } from '../PrBadge.js'
 import { ToolUseLoader } from '../ToolUseLoader.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const teamMemCollapsed = feature('TEAMMEM')
-  ? (require('./teamMemCollapsed.js') as typeof import('./teamMemCollapsed.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as teamMemCollapsedNs from './teamMemCollapsed.js'
+const teamMemCollapsed = feature('TEAMMEM') ? teamMemCollapsedNs : null
 
 // Hold each ⤿ hint for a minimum duration so fast-completing tool calls
 // (bash commands, file reads, search patterns) are actually readable instead
@@ -106,7 +103,7 @@ function VerboseToolUse({
       </Box>
       {isInProgress &&
         tool.renderToolUseProgressMessage?.(
-          lookups.progressMessagesByToolUseID.get(content.id) ?? [],
+          (lookups.progressMessagesByToolUseID.get(content.id) ?? []) as import('../../types/message.js').ProgressMessage<import('../../types/tools.js').ToolProgressData>[],
           { tools, verbose: true },
         )}
       {isResolved && !isError && toolResult !== undefined && (
@@ -212,7 +209,7 @@ export function CollapsedReadSearchContent({
   if (isActiveGroup) {
     for (const id of toolUseIds) {
       if (!inProgressToolUseIDs.has(id)) continue
-      const latest = lookups.progressMessagesByToolUseID.get(id)?.at(-1)?.data
+      const latest = lookups.progressMessagesByToolUseID.get(id)?.at(-1)?.data as Record<string, unknown> | undefined
       if (latest?.type === 'repl_tool_call' && latest.phase === 'start') {
         const input = latest.toolInput as {
           command?: string
@@ -223,7 +220,7 @@ export function CollapsedReadSearchContent({
           input.file_path ??
           (input.pattern ? `"${input.pattern}"` : undefined) ??
           input.command ??
-          latest.toolName
+          (latest.toolName as string | undefined)
       }
     }
   }
@@ -236,8 +233,8 @@ export function CollapsedReadSearchContent({
     for (const msg of groupMessages) {
       if (msg.type === 'assistant') {
         toolUses.push(msg)
-      } else if (msg.type === 'grouped_tool_use') {
-        toolUses.push(...msg.messages)
+      } else if ((msg as {type: string}).type === 'grouped_tool_use') {
+        toolUses.push(...(msg as unknown as {messages: NormalizedAssistantMessage[]}).messages)
       }
     }
 
@@ -361,17 +358,17 @@ export function CollapsedReadSearchContent({
     pushPart('push', 'pushed to', <Text bold>{branches.join(', ')}</Text>)
   }
   if (isFullscreenEnvEnabled() && message.branches?.length) {
-    const byAction = { merged: 'merged', rebased: 'rebased onto' }
+    const byAction: Record<string, string> = { merged: 'merged', rebased: 'rebased onto' }
     for (const b of message.branches) {
       pushPart(
         `br-${b.action}-${b.ref}`,
-        byAction[b.action],
+        byAction[b.action] ?? b.action,
         <Text bold>{b.ref}</Text>,
       )
     }
   }
   if (isFullscreenEnvEnabled() && message.prs?.length) {
-    const verbs = {
+    const verbs: Record<string, string> = {
       created: 'created',
       edited: 'edited',
       merged: 'merged',
@@ -382,7 +379,7 @@ export function CollapsedReadSearchContent({
     for (const pr of message.prs) {
       pushPart(
         `pr-${pr.action}-${pr.number}`,
-        verbs[pr.action],
+        verbs[pr.action] ?? pr.action,
         pr.url ? (
           <PrBadge number={pr.number} url={pr.url} bold />
         ) : (

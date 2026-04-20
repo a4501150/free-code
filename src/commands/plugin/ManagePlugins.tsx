@@ -74,6 +74,7 @@ import {
   type PersistablePluginScope,
   parsePluginIdentifier,
 } from '../../utils/plugins/pluginIdentifier.js'
+import type { PluginScope } from '../../utils/plugins/schemas.js'
 import { loadAllPlugins } from '../../utils/plugins/pluginLoader.js'
 import {
   loadPluginOptions,
@@ -94,7 +95,7 @@ import { PluginOptionsDialog } from './PluginOptionsDialog.js'
 import { PluginOptionsFlow } from './PluginOptionsFlow.js'
 import type { ViewState as ParentViewState } from './types.js'
 import { UnifiedInstalledCell } from './UnifiedInstalledCell.js'
-import type { UnifiedInstalledItem } from './unifiedTypes.js'
+import type { UnifiedInstalledItem, UnifiedInstalledItemScope } from './unifiedTypes.js'
 import { usePagination } from './usePagination.js'
 
 type Props = {
@@ -113,7 +114,7 @@ type FlaggedPluginInfo = {
   marketplace: string
   reason: string
   text: string
-  flaggedAt: string
+  flaggedAt?: string
 }
 
 type FailedPluginInfo = {
@@ -121,7 +122,7 @@ type FailedPluginInfo = {
   name: string
   marketplace: string
   errors: PluginError[]
-  scope: PersistablePluginScope
+  scope: UnifiedInstalledItemScope
 }
 
 type ViewState =
@@ -790,7 +791,7 @@ export function ManagePlugins({
         description: undefined,
         scope: client.config.scope,
         status: getMcpStatus(client),
-        client,
+        client: client as any,
       })
     }
 
@@ -835,7 +836,7 @@ export function ManagePlugins({
           description: undefined,
           scope: displayScope,
           status: getMcpStatus(client),
-          client,
+          client: client as any,
           indented: true,
         })
       }
@@ -1206,8 +1207,8 @@ export function ManagePlugins({
   ) => {
     if (!selectedPlugin) return
 
-    const pluginScope = selectedPlugin.scope || 'user'
-    const isBuiltin = pluginScope === 'builtin'
+    const pluginScope = (selectedPlugin.scope || 'user') as PluginScope
+    const isBuiltin = (selectedPlugin.scope || 'user') === 'builtin'
 
     // Built-in plugins can only be enabled/disabled, not updated/uninstalled.
     if (isBuiltin && (operation === 'update' || operation === 'uninstall')) {
@@ -1392,8 +1393,8 @@ export function ManagePlugins({
       const mergedSettings = getSettings_DEPRECATED()
       const currentPending = pendingToggles.get(pluginId)
       const isEnabled = mergedSettings?.enabledPlugins?.[pluginId] !== false
-      const pluginScope = item.scope
-      const isBuiltin = pluginScope === 'builtin'
+      const pluginScope = item.scope as PluginScope
+      const isBuiltin = item.scope === 'builtin'
       if (isBuiltin || isInstallableScope(pluginScope)) {
         const newPending = new Map(pendingToggles)
         // Omit scope — see handleSingleOperation's enable/disable comment.
@@ -1744,7 +1745,7 @@ export function ManagePlugins({
             setIsProcessing(true)
             setProcessError(null)
             const pluginId = viewState.plugin.id
-            const pluginScope = viewState.plugin.scope
+            const pluginScope = viewState.plugin.scope as PluginScope
             // Pass scope to uninstallPluginOp so it can find the correct V2
             // installation record and clean up on-disk files. Fall back to
             // default scope if not installable (e.g. 'managed', though that
@@ -1858,12 +1859,12 @@ export function ManagePlugins({
     (input, key) => {
       if (!selectedPlugin) return
       const pluginId = `${selectedPlugin.plugin.name}@${selectedPlugin.marketplace}`
-      const pluginScope = selectedPlugin.scope
+      const pluginScope = selectedPlugin.scope as PluginScope
       // Dialog is only reachable from the uninstall case (which guards on
       // isBuiltin), but TS can't track that across viewState transitions.
       if (
         !pluginScope ||
-        pluginScope === 'builtin' ||
+        pluginScope === ('builtin' as PluginScope) ||
         !isInstallableScope(pluginScope)
       )
         return
@@ -2128,7 +2129,7 @@ export function ManagePlugins({
           </Text>
           <Text>{fp.text}</Text>
           <Text dimColor>
-            Flagged on {new Date(fp.flaggedAt).toLocaleDateString()}
+            Flagged on {fp.flaggedAt ? new Date(fp.flaggedAt).toLocaleDateString() : 'unknown'}
           </Text>
         </Box>
 

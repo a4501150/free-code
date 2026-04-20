@@ -1,26 +1,26 @@
-import type { McpbManifest } from '@anthropic-ai/mcpb'
+import * as mcpbMod from '@anthropic-ai/mcpb'
+import type { McpbManifestAny as McpbManifest } from '@anthropic-ai/mcpb'
 import { errorMessage } from '../errors.js'
 import { jsonParse } from '../slowOperations.js'
 
 /**
  * Parses and validates a DXT manifest from a JSON object.
- *
- * Lazy-imports @anthropic-ai/mcpb: that package uses zod v3 which eagerly
- * creates 24 .bind(this) closures per schema instance (~300 instances between
- * schemas.js and schemas-loose.js). Deferring the import keeps ~700KB of bound
- * closures out of the startup heap for sessions that never touch .dxt/.mcpb.
  */
 export async function validateManifest(
   manifestJson: unknown,
 ): Promise<McpbManifest> {
-  const { McpbManifestSchema } = await import('@anthropic-ai/mcpb')
+  // McpbManifestSchema is accessed through the vAny re-export which wraps schemas/any.js
+  const McpbManifestSchema = (mcpbMod as unknown as { vAny?: { McpbManifestSchema?: unknown } }).vAny?.McpbManifestSchema as { safeParse: (v: unknown) => { success: boolean; data: McpbManifest; error: { flatten: () => { fieldErrors: Record<string, unknown[]>; formErrors: string[] } } } } | undefined
+  if (!McpbManifestSchema) {
+    throw new Error('McpbManifestSchema not found in @anthropic-ai/mcpb')
+  }
   const parseResult = McpbManifestSchema.safeParse(manifestJson)
 
   if (!parseResult.success) {
     const errors = parseResult.error.flatten()
     const errorMessages = [
       ...Object.entries(errors.fieldErrors).map(
-        ([field, errs]) => `${field}: ${errs?.join(', ')}`,
+        ([field, errs]) => `${field}: ${(errs as string[] | undefined)?.join(', ')}`,
       ),
       ...(errors.formErrors || []),
     ]

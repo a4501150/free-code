@@ -3,21 +3,16 @@ import { join } from 'path'
 import { getFsImplementation } from '../utils/fsOperations.js'
 import { getAutoMemPath, isAutoMemoryEnabled } from './paths.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const teamMemPaths = feature('TEAMMEM')
-  ? (require('./teamMemPaths.js') as typeof import('./teamMemPaths.js'))
-  : null
-
+import * as teamMemPathsNs from './teamMemPaths.js'
+const teamMemPaths = feature('TEAMMEM') ? teamMemPathsNs : null
 import { getKairosActive, getOriginalCwd } from '../bootstrap/state.js'
-import { getInitialSettings } from '../utils/settings/settings.js'
-/* eslint-enable @typescript-eslint/no-require-imports */
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
 } from '../services/analytics/index.js'
 import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
 import { isReplModeEnabled } from '../tools/REPLTool/constants.js'
 import { logForDebugging } from '../utils/debug.js'
-import { hasEmbeddedSearchTools } from '../utils/embeddedTools.js'
+import { shouldPreferBashForSearch } from '../utils/embeddedTools.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
 import { formatFileSize } from '../utils/format.js'
 import { getProjectDir } from '../utils/sessionStorage.js'
@@ -31,10 +26,22 @@ import {
 } from './memoryTypes.js'
 
 export const ENTRYPOINT_NAME = 'MEMORY.md'
-export const MAX_ENTRYPOINT_LINES = 200
-// ~125 chars/line at 200 lines. At p97 today; catches long-line indexes that
-// slip past the line cap (p100 observed: 197KB under 200 lines).
-export const MAX_ENTRYPOINT_BYTES = 25_000
+// Defaults raised from 200 / 25k — the prior caps silently dropped the bulk
+// of larger memory indexes. Users can still tighten with
+// `maxMemoryEntrypointLines` / `maxMemoryEntrypointBytes` in freecode.json.
+export const MAX_ENTRYPOINT_LINES_DEFAULT = 2000
+export const MAX_ENTRYPOINT_BYTES_DEFAULT = 200_000
+
+export function getMaxEntrypointLines(): number {
+  return (
+    getInitialSettings()?.maxMemoryEntrypointLines ?? MAX_ENTRYPOINT_LINES_DEFAULT
+  )
+}
+export function getMaxEntrypointBytes(): number {
+  return (
+    getInitialSettings()?.maxMemoryEntrypointBytes ?? MAX_ENTRYPOINT_BYTES_DEFAULT
+  )
+}
 const AUTO_MEM_DISPLAY_NAME = 'auto memory'
 
 export type EntrypointTruncation = {
@@ -59,10 +66,13 @@ export function truncateEntrypointContent(raw: string): EntrypointTruncation {
   const lineCount = contentLines.length
   const byteCount = trimmed.length
 
-  const wasLineTruncated = lineCount > MAX_ENTRYPOINT_LINES
+  const maxLines = getMaxEntrypointLines()
+  const maxBytes = getMaxEntrypointBytes()
+
+  const wasLineTruncated = lineCount > maxLines
   // Check original byte count — long lines are the failure mode the byte cap
   // targets, so post-line-truncation size would understate the warning.
-  const wasByteTruncated = byteCount > MAX_ENTRYPOINT_BYTES
+  const wasByteTruncated = byteCount > maxBytes
 
   if (!wasLineTruncated && !wasByteTruncated) {
     return {
@@ -75,19 +85,19 @@ export function truncateEntrypointContent(raw: string): EntrypointTruncation {
   }
 
   let truncated = wasLineTruncated
-    ? contentLines.slice(0, MAX_ENTRYPOINT_LINES).join('\n')
+    ? contentLines.slice(0, maxLines).join('\n')
     : trimmed
 
-  if (truncated.length > MAX_ENTRYPOINT_BYTES) {
-    const cutAt = truncated.lastIndexOf('\n', MAX_ENTRYPOINT_BYTES)
-    truncated = truncated.slice(0, cutAt > 0 ? cutAt : MAX_ENTRYPOINT_BYTES)
+  if (truncated.length > maxBytes) {
+    const cutAt = truncated.lastIndexOf('\n', maxBytes)
+    truncated = truncated.slice(0, cutAt > 0 ? cutAt : maxBytes)
   }
 
   const reason =
     wasByteTruncated && !wasLineTruncated
-      ? `${formatFileSize(byteCount)} (limit: ${formatFileSize(MAX_ENTRYPOINT_BYTES)}) — index entries are too long`
+      ? `${formatFileSize(byteCount)} (limit: ${formatFileSize(maxBytes)}) — index entries are too long`
       : wasLineTruncated && !wasByteTruncated
-        ? `${lineCount} lines (limit: ${MAX_ENTRYPOINT_LINES})`
+        ? `${lineCount} lines (limit: ${maxLines})`
         : `${lineCount} lines and ${formatFileSize(byteCount)}`
 
   return {
@@ -219,7 +229,7 @@ export function buildMemoryLines(
         '',
         `**Step 2** — add a pointer to that file in \`${ENTRYPOINT_NAME}\`. \`${ENTRYPOINT_NAME}\` is an index, not a memory — each entry should be one line, under ~150 characters: \`- [Title](file.md) — one-line hook\`. It has no frontmatter. Never write memory content directly into \`${ENTRYPOINT_NAME}\`.`,
         '',
-        `- \`${ENTRYPOINT_NAME}\` is always loaded into your conversation context — lines after ${MAX_ENTRYPOINT_LINES} will be truncated, so keep the index concise`,
+        `- \`${ENTRYPOINT_NAME}\` is always loaded into your conversation context — lines after ${getMaxEntrypointLines()} will be truncated, so keep the index concise`,
         '- Keep the name, description, and type fields in memory files up-to-date with the content',
         '- Organize memory semantically by topic, not chronologically',
         '- Update or remove memories that turn out to be wrong or outdated',
@@ -370,12 +380,11 @@ export function buildSearchingPastContextSection(autoMemDir: string): string[] {
     return []
   }
   const projectDir = getProjectDir(getOriginalCwd())
-  // Ant-native builds alias grep to embedded ugrep and remove the dedicated
-  // Grep tool, so give the model a real shell invocation there.
-  // In REPL mode, both Grep and Bash are hidden from direct use — the model
-  // calls them from inside REPL scripts, so the grep shell form is what it
-  // will write in the script anyway.
-  const embedded = hasEmbeddedSearchTools() || isReplModeEnabled()
+  // When Grep is stripped from the registry, give the model a real shell
+  // invocation. In REPL mode, both Grep and Bash are hidden from direct use —
+  // the model calls them from inside REPL scripts, so the grep shell form is
+  // what it will write in the script anyway.
+  const embedded = shouldPreferBashForSearch() || isReplModeEnabled()
   const memSearch = embedded
     ? `grep -rn "<search term>" ${autoMemDir} --include="*.md"`
     : `${GREP_TOOL_NAME} with pattern="<search term>" path="${autoMemDir}" glob="*.md"`

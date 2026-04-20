@@ -12,14 +12,12 @@ export const call: LocalCommandCall = async args => {
 
   switch (sub) {
     case 'mute': {
-      const config = getGlobalConfig()
-      saveGlobalConfig({ ...config, companionMuted: true })
+      saveGlobalConfig(config => ({ ...config, companionMuted: true }))
       return { type: 'text', value: 'Companion muted.' }
     }
 
     case 'unmute': {
-      const config = getGlobalConfig()
-      saveGlobalConfig({ ...config, companionMuted: false })
+      saveGlobalConfig(config => ({ ...config, companionMuted: false }))
       return { type: 'text', value: 'Companion unmuted.' }
     }
 

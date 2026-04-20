@@ -5,16 +5,15 @@ import { FILE_READ_TOOL_NAME } from 'src/tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from 'src/tools/FileWriteTool/prompt.js'
 import { GLOB_TOOL_NAME } from 'src/tools/GlobTool/prompt.js'
 import { GREP_TOOL_NAME } from 'src/tools/GrepTool/prompt.js'
-import { NOTEBOOK_EDIT_TOOL_NAME } from 'src/tools/NotebookEditTool/constants.js'
-import { hasEmbeddedSearchTools } from 'src/utils/embeddedTools.js'
+import { shouldPreferBashForSearch } from 'src/utils/embeddedTools.js'
 import { SMALL_FAST_MODEL_SENTINEL } from 'src/utils/model/agent.js'
 import { AGENT_TOOL_NAME } from '../constants.js'
 import type { BuiltInAgentDefinition } from '../loadAgentsDir.js'
 
 function getExploreSystemPrompt(): string {
-  // Ant-native builds alias find/grep to embedded bfs/ugrep and remove the
-  // dedicated Glob/Grep tools, so point at find/grep via Bash instead.
-  const embedded = hasEmbeddedSearchTools()
+  // When Glob/Grep are stripped from the registry, point at find/grep via
+  // Bash instead.
+  const embedded = shouldPreferBashForSearch()
   const globGuidance = embedded
     ? `- Use \`find\` via ${BASH_TOOL_NAME} for broad file pattern matching`
     : `- Use ${GLOB_TOOL_NAME} for broad file pattern matching`
@@ -70,7 +69,6 @@ export const EXPLORE_AGENT: BuiltInAgentDefinition = {
     EXIT_PLAN_MODE_TOOL_NAME,
     FILE_EDIT_TOOL_NAME,
     FILE_WRITE_TOOL_NAME,
-    NOTEBOOK_EDIT_TOOL_NAME,
   ],
   source: 'built-in',
   baseDir: 'built-in',

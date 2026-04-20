@@ -53,7 +53,7 @@ describe('REPL E2E', () => {
 
       const screen = await session.capturePane()
 
-      expect(screen).toContain('Opus 4.6')
+      expect(screen).toContain('Opus 4.7')
       expect(screen).toContain('API Usage Billing')
     })
   })

@@ -55,11 +55,14 @@ import { errorMessage, toError } from './errors.js'
 import { logError } from './log.js'
 import { normalizeMessagesForAPI } from './messages.js'
 import { getRuntimeMainLoopModel } from './model/model.js'
+import { isToolSearchEnabled } from './toolSearch.js'
+import { isDeferredTool } from '../tools/ToolSearchTool/prompt.js'
 import type { SettingSource } from './settings/constants.js'
 import { jsonStringify } from './slowOperations.js'
 import { buildEffectiveSystemPrompt } from './systemPrompt.js'
 import type { Theme } from './theme.js'
 import { getCurrentUsage } from './tokens.js'
+import * as contextCollapseIndexNs from '../services/contextCollapse/index.js'
 
 const RESERVED_CATEGORY_NAME = 'Autocompact buffer'
 const MANUAL_COMPACT_BUFFER_NAME = 'Compact buffer'
@@ -382,8 +385,6 @@ async function countBuiltInToolTokens(
   }
 
   // Check if tool search is enabled
-  const { isToolSearchEnabled } = await import('./toolSearch.js')
-  const { isDeferredTool } = await import('../tools/ToolSearchTool/prompt.js')
   const isDeferred = await isToolSearchEnabled(
     model ?? '',
     tools,
@@ -644,9 +645,6 @@ export async function countMcpToolTokens(
 
   // Check if tool search is enabled - if so, MCP tools are deferred
   // isToolSearchEnabled handles threshold calculation internally for TstAuto mode
-  const { isToolSearchEnabled } = await import('./toolSearch.js')
-  const { isDeferredTool } = await import('../tools/ToolSearchTool/prompt.js')
-
   const isDeferred = await isToolSearchEnabled(
     model,
     tools,
@@ -1087,10 +1085,7 @@ export async function analyzeContextUsage(
   let reservedTokens = 0
   let skipReservedBuffer = false
   if (feature('CONTEXT_COLLAPSE')) {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    const { isContextCollapseEnabled } =
-      require('../services/contextCollapse/index.js') as typeof import('../services/contextCollapse/index.js')
-    /* eslint-enable @typescript-eslint/no-require-imports */
+    const { isContextCollapseEnabled } = contextCollapseIndexNs
     if (isContextCollapseEnabled()) {
       skipReservedBuffer = true
     }

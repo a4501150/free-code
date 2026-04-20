@@ -6,7 +6,6 @@ import type { ExitReason } from 'src/entrypoints/agentSdkTypes.js'
 import {
   getIsInteractive,
   getIsScrollDraining,
-  getLastMainRequestId,
   getSessionId,
   isSessionPersistenceDisabled,
 } from '../bootstrap/state.js'
@@ -34,8 +33,11 @@ import { runCleanupFunctions } from './cleanupRegistry.js'
 import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
 import { isEnvTruthy } from './envUtils.js'
+import {
+  executeSessionEndHooks,
+  getSessionEndHookTimeoutMs,
+} from './hooks.js'
 import { getCurrentSessionTitle, sessionIdExists } from './sessionStorage.js'
-import { sleep } from './sleep.js'
 import { profileReport } from './startupProfiler.js'
 
 /**
@@ -392,9 +394,6 @@ export async function gracefulShutdown(
   // Resolve the SessionEnd hook budget before arming the failsafe so the
   // failsafe can scale with it. Without this, a user-configured 10s hook
   // budget is silently truncated by the 5s failsafe (gh-32712 follow-up).
-  const { executeSessionEndHooks, getSessionEndHookTimeoutMs } = await import(
-    './hooks.js'
-  )
   const sessionEndTimeoutMs = getSessionEndHookTimeoutMs()
 
   // Failsafe: guarantee process exits even if cleanup hangs (e.g., MCP connections).
@@ -470,22 +469,6 @@ export async function gracefulShutdown(
     profileReport()
   } catch {
     // Ignore profiling errors during shutdown
-  }
-
-  // Signal to inference that this session's cache can be evicted.
-  // Fires before analytics flush so the event makes it to the pipeline.
-  const lastRequestId = getLastMainRequestId()
-
-  // Flush analytics — capped at 500ms. Previously unbounded: the 1P exporter
-  // awaits all pending axios POSTs (10s each), eating the full failsafe budget.
-  // Lost analytics on slow networks are acceptable; a hanging exit is not.
-  try {
-    await Promise.race([
-      Promise.all([shutdown1PEventLogging(), shutdownDatadog()]),
-      sleep(500),
-    ])
-  } catch {
-    // Ignore analytics shutdown errors
   }
 
   if (options?.finalMessage) {

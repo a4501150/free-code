@@ -1,5 +1,6 @@
 import { feature } from 'bun:bundle'
 import { z } from 'zod/v4'
+import * as udsClientNs from '../../utils/udsClient.js'
 import type { Tool, ToolUseContext } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { findTeammateTaskByAgentId } from '../../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
@@ -696,10 +697,7 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
       if (feature('UDS_INBOX') && typeof input.message === 'string') {
         const addr = parseAddress(input.to)
         if (addr.scheme === 'uds') {
-          /* eslint-disable @typescript-eslint/no-require-imports */
-          const { sendToUdsSocket } =
-            require('../../utils/udsClient.js') as typeof import('../../utils/udsClient.js')
-          /* eslint-enable @typescript-eslint/no-require-imports */
+          const { sendToUdsSocket } = udsClientNs
           try {
             await sendToUdsSocket(addr.target, input.message)
             const preview = input.summary || truncate(input.message, 50)

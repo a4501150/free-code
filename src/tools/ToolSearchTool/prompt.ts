@@ -1,22 +1,18 @@
 import { feature } from 'bun:bundle'
 import type { Tool } from '../../Tool.js'
 import { AGENT_TOOL_NAME } from '../AgentTool/constants.js'
+import { isForkSubagentEnabled } from '../AgentTool/forkSubagent.js'
+import * as briefToolPromptNs from '../BriefTool/prompt.js'
+import * as sendUserFileToolPromptNs from '../SendUserFileTool/prompt.js'
 
 // Dead code elimination: Brief tool name only needed when KAIROS or KAIROS_BRIEF is on
-/* eslint-disable @typescript-eslint/no-require-imports */
 const BRIEF_TOOL_NAME: string | null =
   feature('KAIROS') || feature('KAIROS_BRIEF')
-    ? (
-        require('../BriefTool/prompt.js') as typeof import('../BriefTool/prompt.js')
-      ).BRIEF_TOOL_NAME
+    ? briefToolPromptNs.BRIEF_TOOL_NAME
     : null
 const SEND_USER_FILE_TOOL_NAME: string | null = feature('KAIROS')
-  ? (
-      require('../SendUserFileTool/prompt.js') as typeof import('../SendUserFileTool/prompt.js')
-    ).SEND_USER_FILE_TOOL_NAME
+  ? sendUserFileToolPromptNs.SEND_USER_FILE_TOOL_NAME
   : null
-
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 export { TOOL_SEARCH_TOOL_NAME } from './constants.js'
 
@@ -60,13 +56,12 @@ export function isDeferredTool(tool: Tool): boolean {
   if (tool.name === TOOL_SEARCH_TOOL_NAME) return false
 
   // Fork-first experiment: Agent must be available turn 1, not behind ToolSearch.
-  // Lazy require: static import of forkSubagent → coordinatorMode creates a cycle
-  // through constants/tools.ts at module init.
-  if (feature('FORK_SUBAGENT') && tool.name === AGENT_TOOL_NAME) {
-    type ForkMod = typeof import('../AgentTool/forkSubagent.js')
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const m = require('../AgentTool/forkSubagent.js') as ForkMod
-    if (m.isForkSubagentEnabled()) return false
+  if (
+    feature('FORK_SUBAGENT') &&
+    tool.name === AGENT_TOOL_NAME &&
+    isForkSubagentEnabled()
+  ) {
+    return false
   }
 
   // Brief is the primary communication channel whenever the tool is present.

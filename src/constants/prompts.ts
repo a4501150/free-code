@@ -14,7 +14,6 @@ import {
 import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
-import { TODO_WRITE_TOOL_NAME } from '../tools/TodoWriteTool/constants.js'
 import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
 import type { Tools } from '../Tool.js'
 import type { Command } from '../types/command.js'
@@ -31,7 +30,7 @@ import type {
 } from '../services/mcp/types.js'
 import { GLOB_TOOL_NAME } from 'src/tools/GlobTool/prompt.js'
 import { GREP_TOOL_NAME } from 'src/tools/GrepTool/prompt.js'
-import { hasEmbeddedSearchTools } from 'src/utils/embeddedTools.js'
+import { shouldPreferBashForSearch } from 'src/utils/embeddedTools.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from '../tools/AskUserQuestionTool/prompt.js'
 import {
   EXPLORE_AGENT,
@@ -47,6 +46,10 @@ import { isReplModeEnabled } from '../tools/REPLTool/constants.js'
 import { feature } from 'bun:bundle'
 import { shouldUseGlobalCacheScope } from '../utils/betas.js'
 import { isForkSubagentEnabled } from '../tools/AgentTool/forkSubagent.js'
+import * as cachedMCConfigNs from '../services/compact/cachedMCConfig.js'
+import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
+import * as briefToolModuleNs from '../tools/BriefTool/BriefTool.js'
+import * as discoverSkillsPromptNs from '../tools/DiscoverSkillsTool/prompt.js'
 import {
   systemPromptSection,
   DANGEROUS_uncachedSystemPromptSection,
@@ -59,36 +62,32 @@ import { loadMemoryPrompt } from '../memdir/memdir.js'
 import { isMcpInstructionsDeltaEnabled } from '../utils/mcpInstructionsDelta.js'
 
 // Dead code elimination: conditional imports for feature-gated modules
-/* eslint-disable @typescript-eslint/no-require-imports */
 const getCachedMCConfigForFRC = feature('CACHED_MICROCOMPACT')
-  ? (
-      require('../services/compact/cachedMCConfig.js') as typeof import('../services/compact/cachedMCConfig.js')
-    ).getCachedMCConfig
+  ? cachedMCConfigNs.getCachedMCConfig
   : null
 
+/* eslint-disable @typescript-eslint/no-require-imports */
 const proactiveModule =
   feature('KAIROS')
     ? require('../proactive/index.js')
     : null
+/* eslint-enable @typescript-eslint/no-require-imports */
 const BRIEF_PROACTIVE_SECTION: string | null =
   feature('KAIROS') || feature('KAIROS_BRIEF')
-    ? (
-        require('../tools/BriefTool/prompt.js') as typeof import('../tools/BriefTool/prompt.js')
-      ).BRIEF_PROACTIVE_SECTION
+    ? briefToolPromptNs.BRIEF_PROACTIVE_SECTION
     : null
 const briefToolModule =
   feature('KAIROS') || feature('KAIROS_BRIEF')
-    ? (require('../tools/BriefTool/BriefTool.js') as typeof import('../tools/BriefTool/BriefTool.js'))
+    ? briefToolModuleNs
     : null
 const DISCOVER_SKILLS_TOOL_NAME: string | null = feature(
   'EXPERIMENTAL_SKILL_SEARCH',
 )
-  ? (
-      require('../tools/DiscoverSkillsTool/prompt.js') as typeof import('../tools/DiscoverSkillsTool/prompt.js')
-    ).DISCOVER_SKILLS_TOOL_NAME
+  ? discoverSkillsPromptNs.DISCOVER_SKILLS_TOOL_NAME
   : null
 // Capture the module (not .isSkillSearchEnabled directly) so spyOn() in tests
 // patches what we actually call — a captured function ref would point past the spy.
+/* eslint-disable @typescript-eslint/no-require-imports */
 const skillSearchFeatureCheck = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? (require('../services/skillSearch/featureCheck.js') as typeof import('../services/skillSearch/featureCheck.js'))
   : null
@@ -248,9 +247,9 @@ When you encounter an obstacle, do not use destructive actions as a shortcut to 
 }
 
 function getUsingYourToolsSection(enabledTools: Set<string>): string {
-  const taskToolName = [TASK_CREATE_TOOL_NAME, TODO_WRITE_TOOL_NAME].find(n =>
-    enabledTools.has(n),
-  )
+  const taskToolName = enabledTools.has(TASK_CREATE_TOOL_NAME)
+    ? TASK_CREATE_TOOL_NAME
+    : undefined
 
   // In REPL mode, Read/Write/Edit/Glob/Grep/Bash/Agent are hidden from direct
   // use (REPL_ONLY_TOOLS). The "prefer dedicated tools over Bash" guidance is
@@ -265,9 +264,9 @@ function getUsingYourToolsSection(enabledTools: Set<string>): string {
     return [`# Using your tools`, ...prependBullets(items)].join(`\n`)
   }
 
-  // Ant-native builds alias find/grep to embedded bfs/ugrep and remove the
-  // dedicated Glob/Grep tools, so skip guidance pointing at them.
-  const embedded = hasEmbeddedSearchTools()
+  // When Glob/Grep are stripped (ant-native embedded bfs/ugrep, or default
+  // builds without DEDICATED_SEARCH_TOOLS), skip guidance pointing at them.
+  const embedded = shouldPreferBashForSearch()
 
   const providedToolSubitems = [
     `To read files use ${FILE_READ_TOOL_NAME} instead of cat, head, tail, or sed`,
@@ -338,7 +337,7 @@ function getSessionSpecificGuidanceSection(
   const hasSkills =
     skillToolCommands.length > 0 && enabledTools.has(SKILL_TOOL_NAME)
   const hasAgentTool = enabledTools.has(AGENT_TOOL_NAME)
-  const searchTools = hasEmbeddedSearchTools()
+  const searchTools = shouldPreferBashForSearch()
     ? `\`find\` or \`grep\` via the ${BASH_TOOL_NAME} tool`
     : `the ${GLOB_TOOL_NAME} or ${GREP_TOOL_NAME}`
 

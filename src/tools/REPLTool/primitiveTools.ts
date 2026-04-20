@@ -6,7 +6,6 @@ import { FileReadTool } from '../FileReadTool/FileReadTool.js'
 import { FileWriteTool } from '../FileWriteTool/FileWriteTool.js'
 import { GlobTool } from '../GlobTool/GlobTool.js'
 import { GrepTool } from '../GrepTool/GrepTool.js'
-import { NotebookEditTool } from '../NotebookEditTool/NotebookEditTool.js'
 
 let _primitiveTools: readonly Tool[] | undefined
 
@@ -33,7 +32,6 @@ export function getReplPrimitiveTools(): readonly Tool[] {
     GlobTool,
     GrepTool,
     BashTool,
-    NotebookEditTool,
     AgentTool,
   ])
 }

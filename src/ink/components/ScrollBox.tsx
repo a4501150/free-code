@@ -234,9 +234,9 @@ function ScrollBox({
   // commit, which is too late for the first frame.
   return (
     <ink-box
-      ref={el => {
+      ref={(el: DOMElement | null) => {
         domRef.current = el
-        if (el) el.scrollTop ??= 0
+        if (el) (el as unknown as {scrollTop?: number}).scrollTop ??= 0
       }}
       style={{
         flexWrap: 'nowrap',

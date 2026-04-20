@@ -6,6 +6,8 @@ import type {
   AssistantMessage,
   AttachmentMessage,
   ProgressMessage,
+  SystemMessage,
+  UserMessage,
 } from '../../types/message.js'
 import type { PermissionDecision } from '../../types/permissions.js'
 import { createAttachmentMessage } from '../../utils/attachments.js'
@@ -28,7 +30,12 @@ import { isMcpTool } from '../mcp/utils.js'
 import type { McpServerType, MessageUpdateLazy } from './toolExecution.js'
 
 export type PostToolUseHooksResult<Output> =
-  | MessageUpdateLazy<AttachmentMessage | ProgressMessage<HookProgress>>
+  | MessageUpdateLazy<
+      | AttachmentMessage
+      | ProgressMessage<HookProgress>
+      | SystemMessage
+      | UserMessage
+    >
   | { updatedMCPToolOutput: Output }
 
 export async function* runPostToolUseHooks<Input extends AnyObject, Output>(
@@ -87,7 +94,7 @@ export async function* runPostToolUseHooks<Input extends AnyObject, Output>(
             result.message.attachment.type === 'hook_blocking_error'
           )
         ) {
-          yield { message: result.message }
+          yield { message: result.message as any }
         }
 
         if (result.blockingError) {
@@ -210,7 +217,7 @@ export async function* runPostToolUseFailureHooks<Input extends AnyObject>(
             result.message.attachment.type === 'hook_blocking_error'
           )
         ) {
-          yield { message: result.message }
+          yield { message: result.message as any }
         }
 
         if (result.blockingError) {
@@ -413,7 +420,7 @@ export async function* runPreToolUseHooks(
     )) {
       try {
         if (result.message) {
-          yield { type: 'message', message: { message: result.message } }
+          yield { type: 'message', message: { message: result.message as any } }
         }
         if (result.blockingError) {
           const denialMessage = getPreToolHookBlockingMessage(

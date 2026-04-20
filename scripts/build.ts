@@ -81,11 +81,9 @@ const defaultFeatures = [
   'BUDDY',
   'HISTORY_SNIP',
   'KAIROS_DREAM',
-  'KAIROS_GITHUB_WEBHOOKS',
   'REVIEW_ARTIFACT',
   'RUN_SKILL_GENERATOR',
   'ULTRAPLAN',
-  'VERIFY_PLAN',
   'WORKFLOW_SCRIPTS',
   // Tier 3: Settings / env var / file gated
   'CACHED_MICROCOMPACT',
@@ -158,11 +156,12 @@ const defines = {
         'process.env.CLAUDE_CODE_EXPERIMENTAL_BUILD': JSON.stringify('true'),
       }
     : {}),
-  'process.env.CLAUDE_CODE_VERIFY_PLAN': JSON.stringify('true'),
+  ...(featureSet.has('VERIFY_PLAN')
+    ? { 'process.env.CLAUDE_CODE_VERIFY_PLAN': JSON.stringify('true') }
+    : {}),
   'MACRO.VERSION': JSON.stringify(version),
   'MACRO.BUILD_TIME': JSON.stringify(buildTime),
   'MACRO.PACKAGE_URL': JSON.stringify(pkg.name),
-  'MACRO.NATIVE_PACKAGE_URL': 'undefined',
   'MACRO.FEEDBACK_CHANNEL': JSON.stringify('github'),
   'MACRO.ISSUES_EXPLAINER': JSON.stringify(
     'This reconstructed source snapshot does not include Anthropic internal issue routing.',

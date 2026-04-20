@@ -54,6 +54,7 @@ import { clearSessionHooks } from '../../utils/hooks/sessionHooks.js'
 import { executeSubagentStartHooks } from '../../utils/hooks.js'
 import { createUserMessage } from '../../utils/messages.js'
 import { getAgentModel } from '../../utils/model/agent.js'
+import { formatSkillLoadingMetadata } from '../../utils/processUserInput/processSlashCommand.js'
 import {
   clearAgentTranscriptSubdir,
   recordSidechainTranscript,
@@ -602,9 +603,6 @@ export async function* runAgent({
     }
 
     // Load all skill contents concurrently and add to initial messages
-    const { formatSkillLoadingMetadata } = await import(
-      '../../utils/processUserInput/processSlashCommand.js'
-    )
     const loaded = await Promise.all(
       validSkills.map(async ({ skillName, skill }) => ({
         skillName,
@@ -819,15 +817,6 @@ export async function* runAgent({
     unregisterPerfettoAgent(agentId)
     // Release transcript subdir mapping
     clearAgentTranscriptSubdir(agentId)
-    // Release this agent's todos entry. Without this, every subagent that
-    // called TodoWrite leaves a key in AppState.todos forever (even after all
-    // items complete, the value is [] but the key stays). Whale sessions
-    // spawn hundreds of agents; each orphaned key is a small leak that adds up.
-    rootSetAppState(prev => {
-      if (!(agentId in prev.todos)) return prev
-      const { [agentId]: _removed, ...todos } = prev.todos
-      return { ...prev, todos }
-    })
     // Kill any background bash tasks this agent spawned. Without this, a
     // `run_in_background` shell loop (e.g. test fixture fake-logs.sh) outlives
     // the agent as a PPID=1 zombie once the main session eventually exits.

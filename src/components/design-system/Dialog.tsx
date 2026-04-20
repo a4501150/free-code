@@ -29,6 +29,8 @@ type DialogProps = {
    * press, delete-forward on ctrl+d with text). Defaults to `true`.
    */
   isCancelActive?: boolean
+  /** Optional submit handler triggered on Enter key press. */
+  onSubmit?: () => void
 }
 
 export function Dialog({

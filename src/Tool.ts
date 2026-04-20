@@ -374,7 +374,7 @@ export type Tool<
    * One-line capability phrase used by ToolSearch for keyword matching.
    * Helps the model find this tool via keyword search when it's deferred.
    * 3–10 words, no trailing period.
-   * Prefer terms not already in the tool name (e.g. 'jupyter' for NotebookEdit).
+   * Prefer terms not already in the tool name (e.g. 'spreadsheet' for Edit).
    */
   searchHint?: string
   call(
@@ -560,8 +560,8 @@ export type Tool<
   ): ToolResultBlockParam
   /**
    * Optional. When omitted, the tool result renders nothing (same as returning
-   * null). Omit for tools whose results are surfaced elsewhere (e.g., TodoWrite
-   * updates the todo panel, not the transcript).
+   * null). Omit for tools whose results are surfaced elsewhere (e.g., TaskUpdate
+   * updates the task panel, not the transcript).
    */
   renderToolResultMessage?(
     content: Output,
@@ -576,6 +576,9 @@ export type Tool<
       /** Original tool_use input, when available. Useful for compact result
        * summaries that reference what was requested (e.g. "Sent to #foo"). */
       input?: unknown
+      /** The tool_use ID of the completed call. Optional; consumed by the
+       * Agent tool for click-to-expand state keying. */
+      toolUseId?: string
     },
   ): React.ReactNode
   /**
@@ -630,6 +633,9 @@ export type Tool<
       terminalSize?: { columns: number; rows: number }
       inProgressToolCallCount?: number
       isTranscriptMode?: boolean
+      /** The tool_use ID of the in-progress call. Optional; consumed by the
+       * Agent tool for click-to-expand state keying. */
+      toolUseId?: string
     },
   ): React.ReactNode
   renderToolUseQueuedMessage?(): React.ReactNode
@@ -712,6 +718,8 @@ type DefaultableToolKeys =
   | 'checkPermissions'
   | 'toAutoClassifierInput'
   | 'userFacingName'
+  | 'maxResultSizeChars'
+  | 'mapToolResultToToolResultBlockParam'
 
 /**
  * Tool definition accepted by `buildTool`. Same shape as `Tool` but with the
@@ -766,6 +774,20 @@ const TOOL_DEFAULTS = {
     Promise.resolve({ behavior: 'allow', updatedInput: input }),
   toAutoClassifierInput: (_input?: unknown) => '',
   userFacingName: (_input?: unknown) => '',
+  // 200KB is the historical per-tool result cap — enough for most tools
+  // to surface output without OOMing the UI or context window. Tools with
+  // unusual size profiles override.
+  maxResultSizeChars: 200_000,
+  // Default JSON-encodes the output so content always becomes a string.
+  mapToolResultToToolResultBlockParam: (
+    content: unknown,
+    toolUseID: string,
+  ): ToolResultBlockParam => ({
+    tool_use_id: toolUseID,
+    type: 'tool_result' as const,
+    content:
+      typeof content === 'string' ? content : JSON.stringify(content ?? ''),
+  }),
 }
 
 // The defaults type is the ACTUAL shape of TOOL_DEFAULTS (optional params so

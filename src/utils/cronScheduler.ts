@@ -6,7 +6,7 @@
 // file + start a 1s check timer → on fire, call onFire(prompt). stop()
 // tears everything down.
 
-import type { FSWatcher } from 'chokidar'
+import chokidar, { type FSWatcher } from 'chokidar'
 import {
   getScheduledTasksEnabled,
   getSessionCronTasks,
@@ -378,7 +378,6 @@ export function createCronScheduler(
       enablePoll = null
     }
 
-    const { default: chokidar } = await import('chokidar')
     if (stopped) return
 
     // Acquire the per-project scheduler lock. Only the owning session runs

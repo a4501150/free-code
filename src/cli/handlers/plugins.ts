@@ -44,6 +44,7 @@ import {
   scopeToSettingSource,
 } from '../../utils/plugins/pluginIdentifier.js'
 import { loadAllPlugins } from '../../utils/plugins/pluginLoader.js'
+import { getPluginEditableScopes } from '../../utils/plugins/pluginStartupCheck.js'
 import type { PluginSource } from '../../utils/plugins/schemas.js'
 import {
   type ValidationResult,
@@ -157,9 +158,6 @@ export async function pluginListHandler(options: {
   if (options.cowork) setUseCoworkPlugins(true)
 
   const installedData = loadInstalledPluginsV2()
-  const { getPluginEditableScopes } = await import(
-    '../../utils/plugins/pluginStartupCheck.js'
-  )
   const enabledPlugins = getPluginEditableScopes()
 
   const pluginIds = Object.keys(installedData.plugins)
@@ -497,10 +495,9 @@ export async function marketplaceAddHandler(
 
     clearAllCaches()
 
-    let sourceType = marketplaceSource.source
+    let sourceType: string = marketplaceSource.source
     if (marketplaceSource.source === 'github') {
-      sourceType =
-        marketplaceSource.repo
+      sourceType = marketplaceSource.repo
     }
 
     cliOk(

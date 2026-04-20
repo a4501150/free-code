@@ -1,6 +1,5 @@
 import axios from 'axios'
 import { getOauthConfig, OAUTH_BETA_HEADER } from 'src/constants/oauth.js'
-import { getInitialSettings } from './settings/settings.js'
 import {
   getIsNonInteractiveSession,
   getKairosActive,

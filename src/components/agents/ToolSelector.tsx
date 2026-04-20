@@ -13,11 +13,13 @@ import { FileWriteTool } from 'src/tools/FileWriteTool/FileWriteTool.js'
 import { GlobTool } from 'src/tools/GlobTool/GlobTool.js'
 import { GrepTool } from 'src/tools/GrepTool/GrepTool.js'
 import { ListMcpResourcesTool } from 'src/tools/ListMcpResourcesTool/ListMcpResourcesTool.js'
-import { NotebookEditTool } from 'src/tools/NotebookEditTool/NotebookEditTool.js'
 import { ReadMcpResourceTool } from 'src/tools/ReadMcpResourceTool/ReadMcpResourceTool.js'
+import { TaskCreateTool } from 'src/tools/TaskCreateTool/TaskCreateTool.js'
+import { TaskGetTool } from 'src/tools/TaskGetTool/TaskGetTool.js'
+import { TaskListTool } from 'src/tools/TaskListTool/TaskListTool.js'
 import { TaskOutputTool } from 'src/tools/TaskOutputTool/TaskOutputTool.js'
 import { TaskStopTool } from 'src/tools/TaskStopTool/TaskStopTool.js'
-import { TodoWriteTool } from 'src/tools/TodoWriteTool/TodoWriteTool.js'
+import { TaskUpdateTool } from 'src/tools/TaskUpdateTool/TaskUpdateTool.js'
 import { WebFetchTool } from 'src/tools/WebFetchTool/WebFetchTool.js'
 import { WebSearchTool } from 'src/tools/WebSearchTool/WebSearchTool.js'
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
@@ -58,7 +60,10 @@ function getToolBuckets(): ToolBuckets {
         ExitPlanModeV2Tool.name,
         FileReadTool.name,
         WebFetchTool.name,
-        TodoWriteTool.name,
+        TaskCreateTool.name,
+        TaskGetTool.name,
+        TaskListTool.name,
+        TaskUpdateTool.name,
         WebSearchTool.name,
         TaskStopTool.name,
         TaskOutputTool.name,
@@ -71,7 +76,6 @@ function getToolBuckets(): ToolBuckets {
       toolNames: new Set([
         FileEditTool.name,
         FileWriteTool.name,
-        NotebookEditTool.name,
       ]),
     },
     EXECUTION: {

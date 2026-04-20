@@ -1,4 +1,3 @@
-import { DIAMOND_FILLED, DIAMOND_OPEN } from '../constants/figures.js'
 import { count } from '../utils/array.js'
 import type { BackgroundTaskState } from './types.js'
 
@@ -36,24 +35,6 @@ export function getPillLabel(tasks: BackgroundTaskState[]): string {
       }
       case 'local_agent':
         return n === 1 ? '1 local agent' : `${n} local agents`
-      case 'remote_agent': {
-        const first = tasks[0]!
-        // Per design mockup: ◇ open diamond while running/needs-input,
-        // ◆ filled once ExitPlanMode is awaiting approval.
-        if (n === 1 && first.type === 'remote_agent' && first.isUltraplan) {
-          switch (first.ultraplanPhase) {
-            case 'plan_ready':
-              return `${DIAMOND_FILLED} ultraplan ready`
-            case 'needs_input':
-              return `${DIAMOND_OPEN} ultraplan needs your input`
-            default:
-              return `${DIAMOND_OPEN} ultraplan`
-          }
-        }
-        return n === 1
-          ? `${DIAMOND_OPEN} 1 cloud session`
-          : `${DIAMOND_OPEN} ${n} cloud sessions`
-      }
       case 'local_workflow':
         return n === 1 ? '1 background workflow' : `${n} background workflows`
       case 'monitor_mcp':
@@ -68,15 +49,9 @@ export function getPillLabel(tasks: BackgroundTaskState[]): string {
 
 /**
  * True when the pill should show the dimmed " · ↓ to view" call-to-action.
- * Per the state diagram: only the two attention states (needs_input,
- * plan_ready) surface the CTA; plain running shows just the diamond + label.
+ * The remote-agent path was the only caller that returned true; no local
+ * task type surfaces a CTA, so this always returns false.
  */
-export function pillNeedsCta(tasks: BackgroundTaskState[]): boolean {
-  if (tasks.length !== 1) return false
-  const t = tasks[0]!
-  return (
-    t.type === 'remote_agent' &&
-    t.isUltraplan === true &&
-    t.ultraplanPhase !== undefined
-  )
+export function pillNeedsCta(_tasks: BackgroundTaskState[]): boolean {
+  return false
 }
