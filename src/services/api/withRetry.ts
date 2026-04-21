@@ -35,7 +35,10 @@ import { sleep } from '../../utils/sleep.js'
 import type { ThinkingConfig } from '../../utils/thinking.js'
 import { isMockRateLimitError } from '../rateLimitMocking.js'
 import { REPEATED_529_ERROR_MESSAGE } from './errors.js'
-import { extractConnectionErrorDetails } from './errorUtils.js'
+import {
+  extractConnectionErrorDetails,
+  getNormalizedError,
+} from './errorUtils.js'
 
 const abortError = () => new APIUserAbortError()
 
@@ -93,9 +96,13 @@ function isPersistentRetryEnabled(): boolean {
 }
 
 function isTransientCapacityError(error: unknown): boolean {
-  return (
-    is529Error(error) || (error instanceof APIError && error.status === 429)
-  )
+  if (!(error instanceof APIError)) return false
+  if (is529Error(error)) return true
+  if (error.status === 429) return true
+  // Mid-stream SSE errors surface as APIError with status === undefined;
+  // fall through to the embedded NormalizedApiError for classification.
+  const normalized = getNormalizedError(error)
+  return normalized?.kind === 'rate_limit' || normalized?.kind === 'overloaded'
 }
 
 function isStaleConnectionError(error: unknown): boolean {
@@ -228,7 +235,13 @@ export async function* withRetry<T>(
         wasFastModeActive &&
         !isPersistentRetryEnabled() &&
         error instanceof APIError &&
-        (error.status === 429 || is529Error(error))
+        (error.status === 429 ||
+          is529Error(error) ||
+          // Mid-stream capacity errors land here with status === undefined.
+          (() => {
+            const n = getNormalizedError(error)
+            return n?.kind === 'rate_limit' || n?.kind === 'overloaded'
+          })())
       ) {
         // If the 429 is specifically because extra usage (overage) is not
         // available, permanently disable fast mode with a specific message.
@@ -434,8 +447,8 @@ export function is529Error(error: unknown): boolean {
   if (!(error instanceof APIError)) {
     return false
   }
-
-  // Check for 529 status code or overloaded error in message
+  const normalized = getNormalizedError(error)
+  if (normalized?.kind === 'overloaded') return true
   return (
     error.status === 529 ||
     // See below: the SDK sometimes fails to properly pass the 529 status code during streaming
@@ -556,7 +569,26 @@ function shouldRetry(error: APIError): boolean {
     return true
   }
 
-  if (!error.status) return false
+  if (!error.status) {
+    // Mid-stream SSE errors come through with status === undefined. Use
+    // the embedded NormalizedApiError to drive the retry decision so a
+    // mid-stream 429 / 529 / transport error isn't silently dropped.
+    const normalized = getNormalizedError(error)
+    if (!normalized) return false
+    switch (normalized.kind) {
+      case 'rate_limit':
+        return !isClaudeAISubscriber() || isEnterpriseSubscriber()
+      case 'overloaded':
+      case 'transport':
+      case 'server':
+        return true
+      case 'auth':
+      case 'invalid_request':
+      case 'content_filter':
+      case 'unknown':
+        return false
+    }
+  }
 
   // Retry on request timeouts.
   if (error.status === 408) return true
@@ -609,6 +641,10 @@ function getRetryAfterMs(error: APIError): number | null {
     if (!isNaN(seconds)) {
       return seconds * 1000
     }
+  }
+  const normalized = getNormalizedError(error)
+  if (normalized?.retryAfterMs !== undefined) {
+    return normalized.retryAfterMs
   }
   return null
 }

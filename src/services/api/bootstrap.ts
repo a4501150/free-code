@@ -45,7 +45,12 @@ async function fetchBootstrapAPI(): Promise<BootstrapResponse | null> {
     return null
   }
 
-  if (!getProviderRegistry().getCapabilities().firstPartyFeatures) {
+  if (
+    !getProviderRegistry().resolveFirstPartyCapability(
+      undefined,
+      'supportsBootstrap',
+    )
+  ) {
     logForDebugging('[Bootstrap] Skipped: 3P provider')
     return null
   }

@@ -17,7 +17,8 @@
 import { Sha256 } from '@aws-crypto/sha256-js'
 import { SignatureV4 } from '@smithy/signature-v4'
 import type { ProviderConfig } from '../../utils/settings/types.js'
-import { mapStatusToErrorType } from './adapter-error-utils.js'
+import { bedrockAdapter } from './adapters/bedrock-adapter-impl.js'
+import { toAnthropicErrorType } from '../../utils/normalizedError.js'
 
 // ── AWS EventStream binary parsing ──────────────────────────────────
 //
@@ -220,11 +221,13 @@ function translateContentBlock(
     }
 
     case 'thinking':
-      return {
-        reasoningContent: {
-          reasoningText: { text: block.thinking || '' },
-        },
-      }
+      // Bedrock does not preserve signed thinking blocks across turns
+      // (signatures are stripped), so forwarding them is a net loss: it
+      // leaks prior reasoning into the next request but cannot be
+      // reconstructed as valid Anthropic-format thinking on the response.
+      // Per Step 5 of the provider-agnostic plan, we drop outbound
+      // thinking blocks entirely.
+      return null
 
     default:
       return null
@@ -442,9 +445,38 @@ function converseEventStreamToSSE(
 
             if (messageType === 'exception') {
               const errorText = new TextDecoder().decode(message.payload)
+              // Extract exception type from the ':exception-type' header or
+              // parse __type from the JSON payload.
+              let exceptionType = message.headers[':exception-type']
+              if (!exceptionType) {
+                try {
+                  const parsed = JSON.parse(errorText) as { __type?: string }
+                  if (parsed?.__type) {
+                    // "com.amazon.foo#ThrottlingException" → "ThrottlingException"
+                    const hash = parsed.__type.lastIndexOf('#')
+                    exceptionType =
+                      hash >= 0
+                        ? parsed.__type.slice(hash + 1)
+                        : parsed.__type
+                  }
+                } catch {
+                  // ignore parse errors; fall through with undefined exceptionType
+                }
+              }
+              const normalized = bedrockAdapter.normalizeError(
+                { exceptionType, body: errorText, mid_stream: true },
+                'bedrock-converse',
+              )
               controller.enqueue(
                 encoder.encode(
-                  `event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: errorText } })}\n\n`,
+                  `event: error\ndata: ${JSON.stringify({
+                    type: 'error',
+                    error: {
+                      type: toAnthropicErrorType(normalized.kind),
+                      message: normalized.message,
+                      normalized,
+                    },
+                  })}\n\n`,
                 ),
               )
               continue
@@ -500,6 +532,15 @@ function converseEventStreamToSSE(
                     ),
                   )
                 } else if (start?.reasoningContent) {
+                  // Bedrock Converse streams reasoningContent for Anthropic
+                  // models running on Bedrock. The AWS API strips
+                  // signatures, so we emit an unsigned synthetic `thinking`
+                  // block purely for UI visibility. Outbound translation
+                  // (`translateBlock`) drops thinking blocks on the way
+                  // back to Bedrock so they never reach the wire as input,
+                  // avoiding the "strip-on-next-turn" bug. Bedrock users
+                  // who need reasoning preserved across turns should use
+                  // the native Anthropic path.
                   controller.enqueue(
                     encoder.encode(
                       formatSSE(
@@ -507,7 +548,11 @@ function converseEventStreamToSSE(
                         JSON.stringify({
                           type: 'content_block_start',
                           index,
-                          content_block: { type: 'thinking', thinking: '' },
+                          content_block: {
+                            type: 'thinking',
+                            thinking: '',
+                            signature: '',
+                          },
                         }),
                       ),
                     ),
@@ -575,21 +620,25 @@ function converseEventStreamToSSE(
                     string,
                     unknown
                   >
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE(
-                        'content_block_delta',
-                        JSON.stringify({
-                          type: 'content_block_delta',
-                          index,
-                          delta: {
-                            type: 'thinking_delta',
-                            thinking: (reasoning.text as string) || '',
-                          },
-                        }),
+                  const reasoningText =
+                    typeof reasoning.text === 'string' ? reasoning.text : ''
+                  if (reasoningText.length > 0) {
+                    controller.enqueue(
+                      encoder.encode(
+                        formatSSE(
+                          'content_block_delta',
+                          JSON.stringify({
+                            type: 'content_block_delta',
+                            index,
+                            delta: {
+                              type: 'thinking_delta',
+                              thinking: reasoningText,
+                            },
+                          }),
+                        ),
                       ),
-                    ),
-                  )
+                    )
+                  }
                 }
                 break
               }
@@ -643,9 +692,20 @@ function converseEventStreamToSSE(
           }
         }
       } catch (err) {
+        const normalized = bedrockAdapter.normalizeError(
+          { mid_stream: true, cause: err },
+          'bedrock-converse',
+        )
         controller.enqueue(
           encoder.encode(
-            `event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: String(err) } })}\n\n`,
+            `event: error\ndata: ${JSON.stringify({
+              type: 'error',
+              error: {
+                type: toAnthropicErrorType(normalized.kind),
+                message: normalized.message,
+                normalized,
+              },
+            })}\n\n`,
           ),
         )
       }
@@ -720,14 +780,16 @@ function translateConverseResponse(
         input: toolUse.input || {},
       })
     } else if (block.reasoningContent) {
+      // Emitted as unsigned synthetic `thinking` block for UI visibility.
+      // Outbound translation drops thinking blocks so they never reach the
+      // wire as input. See the streaming-path comments above.
       const reasoning = block.reasoningContent as Record<string, unknown>
       const reasoningText = reasoning.reasoningText as
         | Record<string, unknown>
         | undefined
-      content.push({
-        type: 'thinking',
-        thinking: reasoningText?.text || '',
-      })
+      const text =
+        typeof reasoningText?.text === 'string' ? reasoningText.text : ''
+      content.push({ type: 'thinking', thinking: text, signature: '' })
     }
   }
 
@@ -848,16 +910,27 @@ export function createBedrockConverseFetch(
 
     if (!response.ok) {
       const errorText = await response.text()
+      const normalized = bedrockAdapter.normalizeError(
+        {
+          status: response.status,
+          body: errorText,
+          headers: response.headers,
+        },
+        'bedrock-converse',
+      )
       const errorBody = {
         type: 'error',
         error: {
-          type: mapStatusToErrorType(response.status),
-          message: `Bedrock Converse API error (${response.status}): ${errorText}`,
+          type: toAnthropicErrorType(normalized.kind),
+          message: `Bedrock Converse API error (${response.status}): ${normalized.message}`,
+          normalized,
         },
       }
+      const outHeaders = new Headers(response.headers)
+      outHeaders.set('Content-Type', 'application/json')
       return new Response(JSON.stringify(errorBody), {
         status: response.status,
-        headers: { 'Content-Type': 'application/json' },
+        headers: outHeaders,
       })
     }
 

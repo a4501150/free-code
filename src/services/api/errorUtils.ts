@@ -1,4 +1,39 @@
 import type { APIError } from '@anthropic-ai/sdk'
+import {
+  fromHttpStatus,
+  type NormalizedApiError,
+} from '../../utils/normalizedError.js'
+import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
+
+/**
+ * Resolve the {@link NormalizedApiError} associated with an APIError.
+ *
+ * Non-Anthropic adapters embed `error.normalized` on the synthetic error
+ * body via `toAnthropicErrorType`. For HTTP errors with a status code we
+ * synthesize a fresh one from the status; for mid-stream SSE errors
+ * (status === undefined) the embedded `normalized` is the only source.
+ */
+export function getNormalizedError(
+  error: APIError,
+): NormalizedApiError | undefined {
+  const embedded = (
+    error as APIError & { error?: { normalized?: NormalizedApiError } }
+  ).error?.normalized
+  if (embedded) return embedded
+  if (typeof error.status === 'number') {
+    const registry = getProviderRegistry()
+    const providerType =
+      registry.getDefaultProvider()?.config.type ?? 'anthropic'
+    return fromHttpStatus(
+      error.status,
+      error.message ?? '',
+      providerType,
+      error.headers as Headers | undefined,
+      error,
+    )
+  }
+  return undefined
+}
 
 // SSL/TLS error codes from OpenSSL (used by both Node.js and Bun)
 // See: https://www.openssl.org/docs/man3.1/man3/X509_STORE_CTX_get_error.html

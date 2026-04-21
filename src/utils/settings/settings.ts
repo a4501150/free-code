@@ -28,10 +28,7 @@ import {
   getEnabledSettingSources,
   type SettingSource,
 } from './constants.js'
-import {
-  migrateToFreecodeSettings,
-  migrateProjectSettingsToFreecode,
-} from './migrateToFreecode.js'
+import { migrateProjectSettingsToFreecode } from './migrateToFreecode.js'
 import { markInternalWrite } from './internalWrites.js'
 import {
   getManagedFilePath,
@@ -273,7 +270,8 @@ function getUserSettingsFilePath(): string {
     return 'cowork_settings.json'
   }
   // freecode.json is the single source of truth for user settings.
-  // Legacy settings.json is only read by migrateToFreecodeSettings().
+  // Legacy settings.json is only read by runLegacyToFreecodeMigration()
+  // (one-shot, user-consented migration from showSetupScreens).
   return 'freecode.json'
 }
 
@@ -660,13 +658,10 @@ function loadSettingsFromDisk(): SettingsWithErrors {
 
   isLoadingSettings = true
   try {
-    // Migrate legacy settings.json → freecode.json before reading.
-    // This ensures freecode.json exists when getUserSettingsFilePath() returns it.
-    try {
-      migrateToFreecodeSettings()
-    } catch {
-      // Non-fatal: migration is best-effort
-    }
+    // NOTE: user-global settings.json → freecode.json migration is NOT
+    // auto-run here. It is a user-consented, one-shot operation driven by
+    // showSetupScreens → MigrationPromptDialog →
+    // runLegacyToFreecodeMigration(). Settings load is read-only.
 
     // Migrate project-level .claude/settings.json → .claude/freecode.json
     try {

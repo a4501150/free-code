@@ -297,6 +297,12 @@ type Props = {
     cursorOffset: number
   } | null>
   voiceInterimRange?: { start: number; end: number } | null
+  /**
+   * Current conversation UUID. Forwarded to `PromptInputFooter` which uses
+   * it as a `key` on `StatusLine` to remount the subtree when `/clear`
+   * bumps the conversation ID.
+   */
+  conversationId: string
 }
 
 // Bottom slot has maxHeight="50%"; reserve lines for footer, border, status.
@@ -344,6 +350,7 @@ function PromptInput({
   isLocalJSXCommandActive = false,
   insertTextRef,
   voiceInterimRange,
+  conversationId,
 }: Props): React.ReactNode {
   const mainLoopModel = useMainLoopModel()
   // A local-jsx command (e.g., /mcp while agent is running) renders a full-
@@ -2986,6 +2993,7 @@ function PromptInput({
         onOpenTasksDialog={
           isFullscreenEnvEnabled() ? handleOpenTasksDialog : undefined
         }
+        conversationId={conversationId}
       />
       {isFullscreenEnvEnabled() ? null : autoModeOptInDialog}
       {isFullscreenEnvEnabled() ? (

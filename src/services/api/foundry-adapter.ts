@@ -14,7 +14,8 @@
  */
 
 import type { ProviderConfig } from '../../utils/settings/types.js'
-import { mapStatusToErrorType } from './adapter-error-utils.js'
+import { foundryAdapter } from './adapters/foundry-adapter-impl.js'
+import { toAnthropicErrorType } from '../../utils/normalizedError.js'
 
 /**
  * Creates a fetch function that intercepts Anthropic SDK calls and routes
@@ -88,16 +89,27 @@ export function createFoundryFetch(
 
     if (!response.ok) {
       const errorText = await response.text()
+      const normalized = foundryAdapter.normalizeError(
+        {
+          status: response.status,
+          body: errorText,
+          headers: response.headers,
+        },
+        'foundry',
+      )
       const errorBody = {
         type: 'error',
         error: {
-          type: mapStatusToErrorType(response.status),
-          message: `Foundry API error (${response.status}): ${errorText}`,
+          type: toAnthropicErrorType(normalized.kind),
+          message: `Foundry API error (${response.status}): ${normalized.message}`,
+          normalized,
         },
       }
+      const outHeaders = new Headers(response.headers)
+      outHeaders.set('Content-Type', 'application/json')
       return new Response(JSON.stringify(errorBody), {
         status: response.status,
-        headers: { 'Content-Type': 'application/json' },
+        headers: outHeaders,
       })
     }
 

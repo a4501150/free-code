@@ -172,7 +172,6 @@ import {
 } from 'src/utils/thinking.js'
 import {
   extractDiscoveredToolNames,
-  isDeferredToolsDeltaEnabled,
   isToolSearchEnabled,
 } from 'src/utils/toolSearch.js'
 import { API_MAX_MEDIA_PER_REQUEST } from '../../constants/apiLimits.js'
@@ -180,7 +179,6 @@ import * as betaConstants from '../../constants/betas.js'
 import { ADVISOR_BETA_HEADER } from '../../constants/betas.js'
 import * as cachedMicrocompactMod from '../compact/cachedMicrocompact.js'
 import {
-  formatDeferredToolLine,
   isDeferredTool,
   TOOL_SEARCH_TOOL_NAME,
 } from '../../tools/ToolSearchTool/prompt.js'
@@ -1250,26 +1248,6 @@ async function* queryModel(
   // so the fingerprint reflects the actual user input.
   const fingerprint = computeFingerprintFromMessages(messagesForAPI)
 
-  // When the delta attachment is enabled, deferred tools are announced
-  // via persisted deferred_tools_delta attachments instead of this
-  // ephemeral prepend (which busts cache whenever the pool changes).
-  if (useToolSearch && !isDeferredToolsDeltaEnabled()) {
-    const deferredToolList = tools
-      .filter(t => deferredToolNames.has(t.name))
-      .map(formatDeferredToolLine)
-      .sort()
-      .join('\n')
-    if (deferredToolList) {
-      messagesForAPI = [
-        createUserMessage({
-          content: `<available-deferred-tools>\n${deferredToolList}\n</available-deferred-tools>`,
-          isMeta: true,
-        }),
-        ...messagesForAPI,
-      ]
-    }
-  }
-
   // Chrome tool-search instructions: when the delta attachment is enabled,
   // filter(Boolean) works by converting each element to a boolean - empty strings become false and are filtered out.
   systemPrompt = asSystemPrompt(
@@ -1566,9 +1544,18 @@ async function* queryModel(
 
     // AFK mode beta: latched once auto mode is first activated. Still gated
     // by isAgenticQuery per-call so classifiers/compaction don't get it.
+    // Granular capability check: supportsAfkMode (with firstPartyFeatures
+    // fallback for back-compat). `shouldIncludeFirstPartyOnlyBetas()` is
+    // still consulted as a feature-wide kill switch (CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS).
     if (feature('TRANSCRIPT_CLASSIFIER')) {
+      const registry = getProviderRegistry()
+      const supportsAfk = registry.resolveFirstPartyCapability(
+        undefined,
+        'supportsAfkMode',
+      )
       if (
         afkHeaderLatched &&
+        supportsAfk &&
         shouldIncludeFirstPartyOnlyBetas() &&
         isAgenticQuery &&
         !betasParams.includes(AFK_MODE_BETA_HEADER)
@@ -1619,7 +1606,12 @@ async function* queryModel(
       tools: allTools,
       tool_choice: options.toolChoice,
       ...(useBetas && { betas: betasParams }),
-      metadata: getAPIMetadata(),
+      // metadata.user_id (device_id + account_uuid + session_id) is an
+      // Anthropic-platform identifier; don't leak it to Vertex/Foundry/etc.
+      // that translate or passthrough the Anthropic body.
+      ...(registry.isAnthropicType(retryContext.model) && {
+        metadata: getAPIMetadata(),
+      }),
       max_tokens: maxOutputTokens,
       thinking,
       ...(temperature !== undefined && { temperature }),
@@ -1907,7 +1899,20 @@ async function* queryModel(
                   thinking: '',
                   // initialize signature to ensure field exists even if signature_delta never arrives
                   signature: '',
-                }
+                  // In-memory provenance tag so outbound adapters can drop
+                  // foreign-provider thinking blocks. Not serialized to disk.
+                  sourceProvider:
+                    getProviderRegistry().getProviderType(options.model) ??
+                    undefined,
+                } as typeof contentBlocks[number]
+                break
+              case 'redacted_thinking':
+                contentBlocks[part.index] = {
+                  ...part.content_block,
+                  sourceProvider:
+                    getProviderRegistry().getProviderType(options.model) ??
+                    undefined,
+                } as typeof contentBlocks[number]
                 break
               default:
                 // even more awkwardly, the sdk mutates the contents of text blocks

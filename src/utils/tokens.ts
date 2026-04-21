@@ -2,6 +2,11 @@ import type { BetaUsage as Usage } from '@anthropic-ai/sdk/resources/beta/messag
 import { roughTokenCountEstimationForMessages } from '../services/tokenEstimation.js'
 import type { AssistantMessage, Message } from '../types/message.js'
 import { SYNTHETIC_MESSAGES, SYNTHETIC_MODEL } from './messages.js'
+import {
+  fromAnthropicUsage,
+  type NormalizedUsage,
+  totalInputTokens,
+} from './normalizedUsage.js'
 import { jsonStringify } from './slowOperations.js'
 
 export function getTokenUsage(message: Message): Usage | undefined {
@@ -135,12 +140,26 @@ export function messageTokenCountFromLastAPIResponse(
   return 0
 }
 
-export function getCurrentUsage(messages: Message[]): {
+/**
+ * Snake-case shape returned by `getCurrentUsage`. Retained for backward
+ * compatibility with consumers that spread the result into an Anthropic-shape
+ * payload (e.g. the statusline `last_usage` block). The underlying source is
+ * an Anthropic SDK `BetaUsage` captured on the last assistant message.
+ *
+ * Cache fields are surfaced as concrete numbers (0 when absent) here because
+ * the statusline payload is snake_case by design. UI sites that want the
+ * `undefined` semantic should consume {@link getCurrentNormalizedUsage}
+ * instead — it preserves the "provider does not distinguish this metric"
+ * signal via `undefined`.
+ */
+export type CurrentUsage = {
   input_tokens: number
   output_tokens: number
   cache_creation_input_tokens: number
   cache_read_input_tokens: number
-} | null {
+}
+
+export function getCurrentUsage(messages: Message[]): CurrentUsage | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i]
     const usage = message ? getTokenUsage(message) : undefined
@@ -154,6 +173,31 @@ export function getCurrentUsage(messages: Message[]): {
     }
   }
   return null
+}
+
+/**
+ * {@link NormalizedUsage}-returning variant of {@link getCurrentUsage}.
+ *
+ * Returns `undefined` for cache fields when the Anthropic `BetaUsage` shape
+ * explicitly has `null` — providers whose adapters surface `null` (because
+ * they do not distinguish that cost dimension) propagate through as
+ * `undefined` here, letting UI code hide columns.
+ */
+export function getCurrentNormalizedUsage(
+  messages: Message[],
+): NormalizedUsage | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    const usage = message ? getTokenUsage(message) : undefined
+    if (usage) return fromAnthropicUsage(usage)
+  }
+  return null
+}
+
+/** Equivalent to `totalInputTokens(getCurrentNormalizedUsage(messages))`. */
+export function getCurrentTotalInputTokens(messages: Message[]): number {
+  const u = getCurrentNormalizedUsage(messages)
+  return u ? totalInputTokens(u) : 0
 }
 
 export function doesMostRecentAssistantMessageExceed200k(

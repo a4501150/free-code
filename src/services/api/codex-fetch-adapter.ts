@@ -15,6 +15,9 @@
  * Endpoint: https://chatgpt.com/backend-api/codex/responses
  */
 
+import { codexAdapter } from './adapters/codex-adapter-impl.js'
+import { toAnthropicErrorType } from '../../utils/normalizedError.js'
+
 
 // No hardcoded model list — the provider registry (freecode.json) is the
 // single source of truth for available models. The adapter just passes
@@ -53,6 +56,14 @@ interface AnthropicContentBlock {
   input?: Record<string, unknown>
   tool_use_id?: string
   content?: string | AnthropicContentBlock[]
+  thinking?: string
+  signature?: string
+  // Codex-specific side-channel fields carried on `thinking` blocks so that
+  // prior-turn reasoning can be echoed verbatim back to OpenAI in `input[]`.
+  // See `response.output_item.done` handler in
+  // translateCodexStreamToAnthropic.
+  codexReasoningId?: string
+  codexEncryptedContent?: string
   [key: string]: unknown
 }
 
@@ -171,6 +182,27 @@ function translateMessages(
             name: block.name || '',
             arguments: JSON.stringify(block.input || {}),
           })
+        } else if (
+          block.type === 'thinking' &&
+          msg.role === 'assistant' &&
+          typeof block.codexReasoningId === 'string' &&
+          block.codexReasoningId.length > 0 &&
+          typeof block.codexEncryptedContent === 'string' &&
+          block.codexEncryptedContent.length > 0
+        ) {
+          // Echo prior-turn Codex reasoning back verbatim so the model can
+          // build on it. Blocks lacking the side-channel fields (foreign
+          // provenance, or imported transcripts) are skipped — reasoning
+          // continuity simply starts fresh at that message.
+          const summaryText = typeof block.thinking === 'string' ? block.thinking : ''
+          codexInput.push({
+            type: 'reasoning',
+            id: block.codexReasoningId,
+            encrypted_content: block.codexEncryptedContent,
+            summary: summaryText
+              ? [{ type: 'summary_text', text: summaryText }]
+              : [],
+          })
         }
       }
     }
@@ -226,6 +258,11 @@ function translateToCodexBody(anthropicBody: Record<string, unknown>, sessionId:
     // Route requests to the same backend node so the KV cache is reused.
     // The official Codex CLI uses the conversation UUID for this field.
     prompt_cache_key: sessionId,
+    // Request opaque `encrypted_content` on reasoning items in the response
+    // so we can echo them back in `input[]` on subsequent turns for
+    // stateless (store:false) reasoning continuity. Matches the official
+    // Codex CLI (codex-rs/core/src/client.rs).
+    include: ['reasoning.encrypted_content'],
   }
 
   // Add tools if present
@@ -313,7 +350,18 @@ async function translateCodexStreamToAnthropic(
       let currentToolCallArgs = ''
       let inToolCall = false
       let hadToolCalls = false
-      let inReasoningBlock = false
+
+      // ── Reasoning buffering state ─────────────────────────────
+      // Codex / OpenAI Responses streams `reasoning` items as:
+      //   output_item.added (id, empty content) → reasoning_*_delta (text)
+      //                                         → output_item.done (encrypted_content)
+      // We buffer text deltas so we can emit the full thinking block AT ONCE
+      // when output_item.done arrives — that's when `encrypted_content` is
+      // available, and we need it on the content_block_start so the block
+      // can be round-tripped on the next turn via the side-channel fields
+      // `codexReasoningId` / `codexEncryptedContent`.
+      let pendingReasoningId: string | null = null
+      let pendingReasoningText = ''
 
       try {
         const reader = codexResponse.body?.getReader()
@@ -358,19 +406,12 @@ async function translateCodexStreamToAnthropic(
             if (eventType === 'response.output_item.added') {
               const item = event.item as Record<string, unknown>
               if (item?.type === 'reasoning') {
-                inReasoningBlock = true
-                controller.enqueue(
-                  encoder.encode(
-                    formatSSE(
-                      'content_block_start',
-                      JSON.stringify({
-                        type: 'content_block_start',
-                        index: contentBlockIndex,
-                        content_block: { type: 'thinking', thinking: '' },
-                      }),
-                    ),
-                  ),
-                )
+                // Capture the reasoning item id for later round-tripping;
+                // do NOT emit SSE yet — encrypted_content only becomes
+                // available on output_item.done. Text deltas stream in
+                // between and are accumulated into pendingReasoningText.
+                pendingReasoningId = (item.id as string) || null
+                pendingReasoningText = ''
               } else if (item?.type === 'message') {
                 // New text message block starting
                 if (inToolCall) {
@@ -448,32 +489,19 @@ async function translateCodexStreamToAnthropic(
               }
             }
             
-            // Reasoning deltas
-            else if (eventType === 'response.reasoning.delta') {
-              const text = event.delta as string
-              if (typeof text === 'string' && text.length > 0) {
-                if (!inReasoningBlock) {
-                  inReasoningBlock = true
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE('content_block_start', JSON.stringify({
-                        type: 'content_block_start',
-                        index: contentBlockIndex,
-                        content_block: { type: 'thinking', thinking: '' },
-                      })),
-                    ),
-                  )
-                }
-                controller.enqueue(
-                  encoder.encode(
-                    formatSSE('content_block_delta', JSON.stringify({
-                      type: 'content_block_delta',
-                      index: contentBlockIndex,
-                      delta: { type: 'thinking_delta', thinking: text },
-                    })),
-                  ),
-                )
-                outputTokens += 1 // approximate token counts
+            // Reasoning deltas: accumulate into per-item buffer; emit
+            // once output_item.done fires with encrypted_content. Codex
+            // uses `response.reasoning_text.delta` and
+            // `response.reasoning_summary_text.delta`; older shapes use
+            // `response.reasoning.delta`. Treat all three identically.
+            else if (
+              eventType === 'response.reasoning_text.delta' ||
+              eventType === 'response.reasoning_summary_text.delta' ||
+              eventType === 'response.reasoning.delta'
+            ) {
+              const text = event.delta as string | undefined
+              if (typeof text === 'string') {
+                pendingReasoningText += text
               }
             }
 
@@ -526,18 +554,97 @@ async function translateCodexStreamToAnthropic(
                   currentTextBlockStarted = false
                 }
               } else if (item?.type === 'reasoning') {
-                if (inReasoningBlock) {
+                // Now we have {id, encrypted_content, summary}. Emit the
+                // full synthetic thinking sequence in one burst. The
+                // `codexReasoningId` / `codexEncryptedContent` extra
+                // fields ride along on the content_block_start payload
+                // via `...content_block` spread in claude.ts's streaming
+                // loop, surviving into the in-memory assistant message
+                // and through disk persistence so they can be echoed
+                // back in `input[]` on the next turn.
+                const reasoningId =
+                  (item.id as string) || pendingReasoningId || ''
+                const encryptedContent =
+                  (item.encrypted_content as string) || ''
+
+                // If no text delta arrived (e.g. summary-only mode with
+                // effort="none"), fall back to concatenating summary text.
+                if (!pendingReasoningText) {
+                  const summary = (item.summary as
+                    | Array<{ type?: string; text?: string }>
+                    | undefined) || []
+                  pendingReasoningText = summary
+                    .map(s =>
+                      s?.type === 'summary_text' && typeof s.text === 'string'
+                        ? s.text
+                        : '',
+                    )
+                    .join('')
+                }
+
+                // Skip emission entirely if we have no reasoning id to
+                // round-trip AND no text to show — nothing meaningful
+                // to carry.
+                if (reasoningId || pendingReasoningText || encryptedContent) {
+                  const startPayload: Record<string, unknown> = {
+                    type: 'thinking',
+                    thinking: '',
+                    signature: '',
+                  }
+                  if (reasoningId) {
+                    startPayload.codexReasoningId = reasoningId
+                  }
+                  if (encryptedContent) {
+                    startPayload.codexEncryptedContent = encryptedContent
+                  }
+
                   controller.enqueue(
                     encoder.encode(
-                      formatSSE('content_block_stop', JSON.stringify({
-                        type: 'content_block_stop',
-                        index: contentBlockIndex,
-                      })),
+                      formatSSE(
+                        'content_block_start',
+                        JSON.stringify({
+                          type: 'content_block_start',
+                          index: contentBlockIndex,
+                          content_block: startPayload,
+                        }),
+                      ),
+                    ),
+                  )
+
+                  if (pendingReasoningText) {
+                    controller.enqueue(
+                      encoder.encode(
+                        formatSSE(
+                          'content_block_delta',
+                          JSON.stringify({
+                            type: 'content_block_delta',
+                            index: contentBlockIndex,
+                            delta: {
+                              type: 'thinking_delta',
+                              thinking: pendingReasoningText,
+                            },
+                          }),
+                        ),
+                      ),
+                    )
+                  }
+
+                  controller.enqueue(
+                    encoder.encode(
+                      formatSSE(
+                        'content_block_stop',
+                        JSON.stringify({
+                          type: 'content_block_stop',
+                          index: contentBlockIndex,
+                        }),
+                      ),
                     ),
                   )
                   contentBlockIndex++
-                  inReasoningBlock = false
                 }
+
+                pendingReasoningId = null
+                pendingReasoningText = ''
               }
             }
 
@@ -563,42 +670,30 @@ async function translateCodexStreamToAnthropic(
           }
         }
       } catch (err) {
-        // If we're in the middle of a text block, emit the error there
-        if (!currentTextBlockStarted) {
-          controller.enqueue(
-            encoder.encode(
-              formatSSE('content_block_start', JSON.stringify({
-                type: 'content_block_start',
-                index: contentBlockIndex,
-                content_block: { type: 'text', text: '' },
-              })),
-            ),
-          )
-          currentTextBlockStarted = true
-        }
+        // Emit a proper SSE `event: error` so the SDK's error-handling
+        // pipeline (and withRetry) can classify this. Previously this
+        // injected `[Error: ...]` text into the assistant bubble, bypassing
+        // every downstream error consumer.
+        const normalized = codexAdapter.normalizeError(
+          { mid_stream: true, cause: err },
+          'openai-responses',
+        )
         controller.enqueue(
           encoder.encode(
-            formatSSE('content_block_delta', JSON.stringify({
-              type: 'content_block_delta',
-              index: contentBlockIndex,
-              delta: { type: 'text_delta', text: `\n\n[Error: ${String(err)}]` },
-            })),
+            `event: error\ndata: ${JSON.stringify({
+              type: 'error',
+              error: {
+                type: toAnthropicErrorType(normalized.kind),
+                message: normalized.message,
+                normalized,
+              },
+            })}\n\n`,
           ),
         )
       }
 
       // Close any remaining open blocks
       if (currentTextBlockStarted) {
-        controller.enqueue(
-          encoder.encode(
-            formatSSE('content_block_stop', JSON.stringify({
-              type: 'content_block_stop',
-              index: contentBlockIndex,
-            })),
-          ),
-        )
-      }
-      if (inReasoningBlock) {
         controller.enqueue(
           encoder.encode(
             formatSSE('content_block_stop', JSON.stringify({
@@ -679,11 +774,14 @@ async function translateCodexStreamToAnthropic(
     // Use 'tool_use' stop reason when model made tool calls
     const stopReason = hadToolCalls ? 'tool_use' : 'end_turn'
 
+    // Codex/Responses API does NOT report cache write cost — prefix caching
+    // is automatic. Surface as `null` so NormalizedUsage / StatusLine can
+    // differentiate "not tracked" from "0 tokens written".
     const usagePayload = {
       input_tokens: inputTokens,
       output_tokens: outputTokens,
       cache_read_input_tokens: cacheReadInputTokens,
-      cache_creation_input_tokens: 0,
+      cache_creation_input_tokens: null,
     }
 
     controller.enqueue(
@@ -804,16 +902,27 @@ export function createCodexFetch(
 
     if (!codexResponse.ok) {
       const errorText = await codexResponse.text()
+      const normalized = codexAdapter.normalizeError(
+        {
+          status: codexResponse.status,
+          body: errorText,
+          headers: codexResponse.headers,
+        },
+        'openai-responses',
+      )
       const errorBody = {
         type: 'error',
         error: {
-          type: 'api_error',
-          message: `Codex API error (${codexResponse.status}): ${errorText}`,
+          type: toAnthropicErrorType(normalized.kind),
+          message: `Codex API error (${codexResponse.status}): ${normalized.message}`,
+          normalized,
         },
       }
+      const outHeaders = new Headers(codexResponse.headers)
+      outHeaders.set('Content-Type', 'application/json')
       return new Response(JSON.stringify(errorBody), {
         status: codexResponse.status,
-        headers: { 'Content-Type': 'application/json' },
+        headers: outHeaders,
       })
     }
 

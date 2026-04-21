@@ -11,7 +11,8 @@
  */
 
 import type { ProviderConfig } from '../../utils/settings/types.js'
-import { mapStatusToErrorType } from './adapter-error-utils.js'
+import { vertexAnthropicAdapter } from './adapters/vertex-adapter-impl.js'
+import { toAnthropicErrorType } from '../../utils/normalizedError.js'
 
 /**
  * Creates a fetch function that intercepts Anthropic SDK calls and routes
@@ -115,16 +116,27 @@ export function createVertexFetch(
 
     if (!response.ok) {
       const errorText = await response.text()
+      const normalized = vertexAnthropicAdapter.normalizeError(
+        {
+          status: response.status,
+          body: errorText,
+          headers: response.headers,
+        },
+        'vertex',
+      )
       const errorBody = {
         type: 'error',
         error: {
-          type: mapStatusToErrorType(response.status),
-          message: `Vertex AI error (${response.status}): ${errorText}`,
+          type: toAnthropicErrorType(normalized.kind),
+          message: `Vertex AI error (${response.status}): ${normalized.message}`,
+          normalized,
         },
       }
+      const outHeaders = new Headers(response.headers)
+      outHeaders.set('Content-Type', 'application/json')
       return new Response(JSON.stringify(errorBody), {
         status: response.status,
-        headers: { 'Content-Type': 'application/json' },
+        headers: outHeaders,
       })
     }
 

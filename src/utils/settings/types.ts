@@ -407,12 +407,20 @@ export const PROVIDER_CREDENTIAL_REFRESH_TYPES = [
 export type ProviderCredentialRefreshType =
   (typeof PROVIDER_CREDENTIAL_REFRESH_TYPES)[number];
 
+/**
+ * @deprecated Token-counting dispatch now goes through the provider adapter
+ * registry (`src/services/api/adapters/`) — each adapter implements
+ * `countTokens` using its native mechanism. This enum is retained because
+ * beta header gating in `betas.ts` still branches on the hint string; it
+ * will be migrated to capability-specific flags in a later release.
+ */
 export const PROVIDER_TOKEN_COUNTING_METHODS = [
   "native",
   "bedrock-custom",
   "vertex-filtered",
 ] as const;
 
+/** @deprecated See {@link PROVIDER_TOKEN_COUNTING_METHODS}. */
 export type ProviderTokenCountingMethod =
   (typeof PROVIDER_TOKEN_COUNTING_METHODS)[number];
 
@@ -452,11 +460,75 @@ export const ProviderCapabilitiesSchema = lazySchema(() =>
       .optional()
       .describe("Type of credential refresh needed"),
 
-    // First-party features (settingsSync, teamMemory, policyLimits, etc.)
+    /**
+     * @deprecated Use the granular `supportsXxx` flags below. Retained as
+     * the fallback value when a specific flag is not set so existing
+     * `freecode.json` configs keep working.
+     */
     firstPartyFeatures: z
       .boolean()
       .optional()
-      .describe("Supports Anthropic first-party platform features"),
+      .describe(
+        "Deprecated catch-all. Prefer the granular supportsXxx flags — " +
+          "firstPartyFeatures is retained only as fallback when a specific " +
+          "capability flag is not set.",
+      ),
+
+    // ── Granular flags decomposed from firstPartyFeatures ──────────────
+    // Each is optional; call sites should use the pattern
+    //   caps.supportsXxx ?? caps.firstPartyFeatures ?? false
+    supportsToolSearch: z
+      .boolean()
+      .optional()
+      .describe("Provider supports the Anthropic tool search beta"),
+    supportsFastMode: z
+      .boolean()
+      .optional()
+      .describe("Provider supports fast mode (opus:fast) and related betas"),
+    showModelPricing: z
+      .boolean()
+      .optional()
+      .describe("UI should surface Anthropic-native pricing labels"),
+    supportsOAuthProfile: z
+      .boolean()
+      .optional()
+      .describe("Provider supports the Anthropic OAuth profile flow"),
+    supportsRemoteManagedSettings: z
+      .boolean()
+      .optional()
+      .describe("Provider supports remote-managed-settings sync"),
+    supportsPolicyLimits: z
+      .boolean()
+      .optional()
+      .describe("Provider reports Anthropic-native policy limit usage"),
+    supportsSettingsSync: z
+      .boolean()
+      .optional()
+      .describe("Provider supports cross-device settings sync"),
+    supportsTeamMemorySync: z
+      .boolean()
+      .optional()
+      .describe("Provider supports team memory sync"),
+    supportsBootstrap: z
+      .boolean()
+      .optional()
+      .describe(
+        "Provider supports the Anthropic bootstrap endpoint (feature flags, model catalog)",
+      ),
+    supportsAfkMode: z
+      .boolean()
+      .optional()
+      .describe("Provider supports the AFK mode beta header"),
+    preservesReasoningAcrossTurns: z
+      .boolean()
+      .optional()
+      .describe(
+        "Provider round-trips reasoning verbatim across turns. " +
+          "True for Anthropic / Vertex-Anthropic / Foundry (signed thinking blocks) " +
+          "and OpenAI-Responses (Codex opaque encrypted_content carried via a " +
+          "content-block side-channel). False means adapters drop thinking blocks " +
+          "from outbound history entirely.",
+      ),
 
     // Token counting
     tokenCountingMethod: z

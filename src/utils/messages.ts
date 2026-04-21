@@ -4971,13 +4971,30 @@ export function stripUnsignedThinkingBlocks(
     const content = msg.message.content
     if (!Array.isArray(content)) return msg
 
-    const filtered = content.filter(block => {
-      if (!isThinkingBlock(block)) return true
-      // Keep thinking blocks that have a non-empty signature
+    let blockChanged = false
+    const filtered: typeof content = []
+    for (const block of content) {
+      if (!isThinkingBlock(block)) {
+        filtered.push(block)
+        continue
+      }
+      // Drop thinking blocks without a valid signature (foreign-provider or partial).
       const sig = (block as any).signature
-      return typeof sig === 'string' && sig.length > 0
-    })
-    if (filtered.length === content.length) return msg
+      if (typeof sig !== 'string' || sig.length === 0) {
+        blockChanged = true
+        continue
+      }
+      // Strip the in-memory `sourceProvider` provenance tag before sending to
+      // Anthropic — the API rejects extra fields on thinking blocks.
+      if ('sourceProvider' in (block as any)) {
+        const { sourceProvider: _drop, ...rest } = block as any
+        filtered.push(rest)
+        blockChanged = true
+      } else {
+        filtered.push(block)
+      }
+    }
+    if (!blockChanged) return msg
 
     changed = true
     return {

@@ -39,7 +39,11 @@ import {
   type OverageDisabledReason,
 } from '../claudeAiLimits.js'
 import { shouldProcessRateLimits } from '../rateLimitMocking.js' // Used for /mock-limits command
-import { extractConnectionErrorDetails, formatAPIError } from './errorUtils.js'
+import {
+  extractConnectionErrorDetails,
+  formatAPIError,
+  getNormalizedError,
+} from './errorUtils.js'
 
 export const API_ERROR_MESSAGE_PREFIX = 'API Error'
 
@@ -430,7 +434,11 @@ export function getAssistantMessageFromError(
   if (
     error instanceof APIError &&
     error.status === 429 &&
-    shouldProcessRateLimits(isClaudeAISubscriber())
+    shouldProcessRateLimits(isClaudeAISubscriber()) &&
+    // Rate-limit banner copy reads Anthropic-native `anthropic-ratelimit-*`
+    // headers; gate strictly on provider identity so a 429 from a non-
+    // Anthropic provider falls through to generic error rendering.
+    (getNormalizedError(error)?.providerType ?? 'anthropic') === 'anthropic'
   ) {
     // Check if this is the new API with multiple rate limit headers
     const rateLimitType = error.headers?.get?.(
@@ -869,18 +877,19 @@ export function classifyAPIError(error: unknown): string {
     return 'capacity_off_switch'
   }
 
-  // Rate limiting
-  if (error instanceof APIError && error.status === 429) {
-    return 'rate_limit'
-  }
-
-  // Server overload (529)
-  if (
-    error instanceof APIError &&
-    (error.status === 529 ||
-      error.message?.includes('"type":"overloaded_error"'))
-  ) {
-    return 'server_overload'
+  // Rate limiting (HTTP or mid-stream via normalized)
+  if (error instanceof APIError) {
+    const normalized = getNormalizedError(error)
+    if (error.status === 429 || normalized?.kind === 'rate_limit') {
+      return 'rate_limit'
+    }
+    if (
+      error.status === 529 ||
+      normalized?.kind === 'overloaded' ||
+      error.message?.includes('"type":"overloaded_error"')
+    ) {
+      return 'server_overload'
+    }
   }
 
   // Prompt/content size errors

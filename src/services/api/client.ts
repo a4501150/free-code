@@ -26,16 +26,24 @@ import {
 } from '../../bootstrap/state.js'
 import { isDebugToStdErr, logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
-import { createCodexFetch } from './codex-fetch-adapter.js'
-import { createChatCompletionsFetch } from './openai-chat-completions-adapter.js'
-import { createBedrockConverseFetch } from './bedrock-converse-adapter.js'
-import { createVertexFetch } from './vertex-adapter.js'
-import { createFoundryFetch } from './foundry-adapter.js'
-import { createGeminiFetch } from './gemini-adapter.js'
+import type { ProviderAdapter } from './adapter.js'
+import type { ProviderType } from '../../utils/settings/types.js'
 import {
   getProviderRegistry,
   type ResolvedProvider,
 } from '../../utils/model/providerRegistry.js'
+
+/**
+ * Lazy-load the adapter registry. Direct static import would create a
+ * cycle: client.ts → adapters/index.ts → bedrock-adapter-impl.ts →
+ * tokenEstimation.ts → client.ts.
+ */
+// biome-ignore lint/performance/noRequireImports: lazy-load to break top-level cycle
+function getAdapterForProviderTypeSync(type: ProviderType): ProviderAdapter {
+  return require('./adapters/index.js').getAdapterForProviderType(
+    type,
+  ) as ProviderAdapter
+}
 
 function createStderrLogger(): ClientOptions['logger'] {
   return {
@@ -65,16 +73,29 @@ export async function getAnthropicClient({
   fetchOverride?: ClientOptions['fetch']
   source?: string
 }): Promise<Anthropic> {
+  // Resolve provider type early so we can gate Anthropic-platform-specific
+  // headers. Non-Anthropic-type providers (vertex, bedrock, foundry, openai,
+  // gemini) should not receive CLI identifiers like session-id / x-app /
+  // container-id — they're meaningless to those backends and leak session
+  // state across platforms.
+  const earlyRegistry = getProviderRegistry()
+  const resolvedProviderType =
+    (model ? earlyRegistry.getProviderForModel(model)?.config.type : null) ??
+    earlyRegistry.getDefaultProvider()?.config.type
+  const isAnthropicProvider = resolvedProviderType === 'anthropic'
+
   const containerId = process.env.CLAUDE_CODE_CONTAINER_ID
   const clientApp = process.env.CLAUDE_AGENT_SDK_CLIENT_APP
   const customHeaders = getCustomHeaders()
   const defaultHeaders: { [key: string]: string } = {
-    'x-app': 'cli',
     'User-Agent': getUserAgent(),
-    'X-Claude-Code-Session-Id': getSessionId(),
     ...customHeaders,
-    ...(containerId ? { 'x-claude-remote-container-id': containerId } : {}),
-    ...(clientApp ? { 'x-client-app': clientApp } : {}),
+    ...(isAnthropicProvider && {
+      'x-app': 'cli',
+      'X-Claude-Code-Session-Id': getSessionId(),
+      ...(containerId ? { 'x-claude-remote-container-id': containerId } : {}),
+      ...(clientApp ? { 'x-client-app': clientApp } : {}),
+    }),
   }
 
   logForDebugging(
@@ -84,7 +105,7 @@ export async function getAnthropicClient({
   const additionalProtectionEnabled = isEnvTruthy(
     process.env.CLAUDE_CODE_ADDITIONAL_PROTECTION,
   )
-  if (additionalProtectionEnabled) {
+  if (additionalProtectionEnabled && isAnthropicProvider) {
     defaultHeaders['x-anthropic-additional-protection'] = 'true'
   }
 
@@ -121,7 +142,7 @@ export async function getAnthropicClient({
   // All providers (anthropic, bedrock, vertex, foundry, openai, etc.)
   // are resolved through the registry. Legacy env vars are auto-migrated
   // to provider configs at registry init time.
-  const registry = getProviderRegistry()
+  const registry = earlyRegistry
 
   // 1. Try exact model match in registry
   const resolved = model
@@ -339,11 +360,14 @@ async function createClientForProvider(
     // ── OpenAI Chat Completions ─────────────────────────────────
     case 'openai-chat-completions': {
       const authHeaders = resolveAuthHeaders(provider)
-      const fetch = createChatCompletionsFetch(config, authHeaders)
+      const fetch = getAdapterForProviderTypeSync(config.type).createFetch(
+        config,
+        authHeaders,
+      )
       return new Anthropic({
         apiKey: 'provider-registry-placeholder',
         ...baseArgs,
-        fetch: fetch as unknown as typeof globalThis.fetch,
+        ...(fetch && { fetch: fetch as unknown as typeof globalThis.fetch }),
       })
     }
 
@@ -352,32 +376,42 @@ async function createClientForProvider(
       // Get Codex OAuth tokens at runtime (may have been refreshed)
       const codexTokens = getCodexOAuthTokens()
       const accessToken = codexTokens?.accessToken
+      let codexOpts:
+        | {
+            accessToken: string
+            getRefreshedToken?: () => string | null
+            baseUrl?: string
+            getSessionId: () => string
+          }
+        | null = null
       if (!accessToken) {
         // Fall back to auth headers from config
         const authHeaders = resolveAuthHeaders(provider)
         if (!authHeaders['Authorization']) return null
-        // TODO: createCodexFetch currently requires a token string directly;
-        // for now, extract from Authorization header
         const token = authHeaders['Authorization'].replace('Bearer ', '')
-        const codexFetch = createCodexFetch({ accessToken: token, baseUrl: config.baseUrl, getSessionId })
-        return new Anthropic({
-          apiKey: 'codex-placeholder',
-          ...baseArgs,
-          fetch: codexFetch as unknown as typeof globalThis.fetch,
-          ...(isDebugToStdErr() && { logger: createStderrLogger() }),
-        })
+        codexOpts = {
+          accessToken: token,
+          baseUrl: config.baseUrl,
+          getSessionId,
+        }
+      } else {
+        codexOpts = {
+          accessToken,
+          getRefreshedToken: () => getCodexOAuthTokens()?.accessToken ?? null,
+          baseUrl: config.baseUrl,
+          getSessionId,
+        }
       }
-      // Pass a callback so the adapter can get refreshed tokens without importing auth
-      const codexFetch = createCodexFetch({
-        accessToken,
-        getRefreshedToken: () => getCodexOAuthTokens()?.accessToken ?? null,
-        baseUrl: config.baseUrl,
-        getSessionId,
-      })
+      const codexFetch = getAdapterForProviderTypeSync(config.type).createFetch(
+        config,
+        codexOpts,
+      )
       return new Anthropic({
         apiKey: 'codex-placeholder',
         ...baseArgs,
-        fetch: codexFetch as unknown as typeof globalThis.fetch,
+        ...(codexFetch && {
+          fetch: codexFetch as unknown as typeof globalThis.fetch,
+        }),
         ...(isDebugToStdErr() && { logger: createStderrLogger() }),
       })
     }
@@ -400,11 +434,14 @@ async function createClientForProvider(
         }
         return null
       }
-      const fetch = createBedrockConverseFetch(config, getCredentials)
+      const fetch = getAdapterForProviderTypeSync(config.type).createFetch(
+        config,
+        getCredentials,
+      )
       return new Anthropic({
         apiKey: 'bedrock-placeholder',
         ...baseArgs,
-        fetch: fetch as unknown as typeof globalThis.fetch,
+        ...(fetch && { fetch: fetch as unknown as typeof globalThis.fetch }),
         ...(isDebugToStdErr() && { logger: createStderrLogger() }),
       })
     }
@@ -452,11 +489,14 @@ async function createClientForProvider(
           undefined
         return { token, projectId: projectId ?? undefined }
       }
-      const fetch = createVertexFetch(config, getAccessToken)
+      const fetch = getAdapterForProviderTypeSync(config.type).createFetch(
+        config,
+        getAccessToken,
+      )
       return new Anthropic({
         apiKey: 'vertex-placeholder',
         ...baseArgs,
-        fetch: fetch as unknown as typeof globalThis.fetch,
+        ...(fetch && { fetch: fetch as unknown as typeof globalThis.fetch }),
         ...(isDebugToStdErr() && { logger: createStderrLogger() }),
       })
     }
@@ -479,11 +519,14 @@ async function createClientForProvider(
         )
         return tokenProvider()
       }
-      const fetch = createFoundryFetch(config, getToken)
+      const fetch = getAdapterForProviderTypeSync(config.type).createFetch(
+        config,
+        getToken,
+      )
       return new Anthropic({
         apiKey: 'foundry-placeholder',
         ...baseArgs,
-        fetch: fetch as unknown as typeof globalThis.fetch,
+        ...(fetch && { fetch: fetch as unknown as typeof globalThis.fetch }),
         ...(isDebugToStdErr() && { logger: createStderrLogger() }),
       })
     }
@@ -519,11 +562,14 @@ async function createClientForProvider(
           undefined
         return { token, projectId: projectId ?? undefined }
       }
-      const fetch = createGeminiFetch(config, getAccessToken)
+      const fetch = getAdapterForProviderTypeSync(config.type).createFetch(
+        config,
+        getAccessToken,
+      )
       return new Anthropic({
         apiKey: 'gemini-placeholder',
         ...baseArgs,
-        fetch: fetch as unknown as typeof globalThis.fetch,
+        ...(fetch && { fetch: fetch as unknown as typeof globalThis.fetch }),
         ...(isDebugToStdErr() && { logger: createStderrLogger() }),
       })
     }

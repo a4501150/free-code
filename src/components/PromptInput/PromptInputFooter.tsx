@@ -61,6 +61,15 @@ type Props = {
   setHistoryQuery: (query: string) => void
   historyFailedMatch: boolean
   onOpenTasksDialog?: (taskId?: string) => void
+  /**
+   * Current conversation UUID. Used as a `key` on the rendered `StatusLine`
+   * so that `/clear` / compaction (which bump `conversationId`) force the
+   * status-line subtree to remount. Without the remount, a
+   * React-conditionally-rendered StatusLine will retain stale cumulative
+   * cache counters across the conversation-ID boundary — see the
+   * scroll-repin gotcha in CLAUDE.md for the matching ScrollBox path.
+   */
+  conversationId: string
 }
 
 function PromptInputFooter({
@@ -90,6 +99,7 @@ function PromptInputFooter({
   setHistoryQuery,
   historyFailedMatch,
   onOpenTasksDialog,
+  conversationId,
 }: Props): ReactNode {
   const settings = useSettings()
   const { columns, rows } = useTerminalSize()
@@ -162,6 +172,7 @@ function PromptInputFooter({
             !isPasting &&
             statusLineShouldDisplay(settings) && (
               <StatusLine
+                key={conversationId}
                 messagesRef={messagesRef}
                 lastAssistantMessageId={lastAssistantMessageId}
                 vimMode={vimMode}

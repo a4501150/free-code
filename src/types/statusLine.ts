@@ -1,3 +1,5 @@
+import type { CurrentUsage } from '../utils/tokens.js'
+
 /**
  * Input passed to the user-configured `statusLine` hook command.
  * Shape is mirrored from buildStatusLineCommandInput in
@@ -37,10 +39,31 @@ export type StatusLineCommandInput = {
   context_window: {
     total_input_tokens: number
     total_output_tokens: number
+    /**
+     * Session-cumulative tokens written to provider cache. `0` for providers
+     * that do not distinguish cache-write cost (OpenAI, Codex, Gemini without
+     * explicit cachedContent). See NormalizedUsage in
+     * src/utils/normalizedUsage.ts for the underlying semantic.
+     */
+    total_cache_creation_input_tokens: number
+    /** Session-cumulative tokens served from provider cache. */
+    total_cache_read_input_tokens: number
     context_window_size: number
-    current_usage: number
-    used_percentage: number
-    remaining_percentage: number
+    current_usage: CurrentUsage | null
+    used_percentage: number | null
+    remaining_percentage: number | null
+  }
+  /**
+   * Per-turn usage breakdown from the most recent API response. `0` on
+   * fields the provider does not report. Populated alongside the cumulative
+   * `context_window` counters so status-line scripts can display a "last
+   * turn cost N tokens" metric without re-reading the transcript.
+   */
+  last_usage?: {
+    input_tokens: number
+    output_tokens: number
+    cache_creation_input_tokens: number
+    cache_read_input_tokens: number
   }
   exceeds_200k_tokens: boolean
   rate_limits?: {

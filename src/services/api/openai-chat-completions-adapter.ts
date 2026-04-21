@@ -18,7 +18,8 @@
  */
 
 import type { ProviderConfig } from "../../utils/settings/types.js";
-import { mapStatusToErrorType } from "./adapter-error-utils.js";
+import { openaiChatCompletionsAdapter } from "./adapters/openai-chat-completions-adapter-impl.js";
+import { toAnthropicErrorType } from "../../utils/normalizedError.js";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -170,19 +171,21 @@ function translateMessages(
         messages.push({ role: "user", content: contentParts });
       }
     } else if (msg.role === "assistant") {
-      // Collect text content and tool_use blocks
+      // Collect text content and tool_use blocks.
+      //
+      // Thinking blocks are intentionally NOT translated into
+      // `reasoning_content` on outbound. They are synthetic unsigned blocks
+      // we emitted on inbound for UI visibility; forwarding them back as
+      // `reasoning_content` is semantically wrong because OpenAI Chat
+      // Completions does not accept assistant-turn `reasoning_content` as
+      // input anyway. Dropping on outbound is the mechanism that prevents
+      // the "strip-on-next-turn" bug — inbound emission is purely for UI.
       let textContent = "";
-      let reasoningContent = "";
       const toolCalls: ChatCompletionsMessage["tool_calls"] = [];
 
       for (const block of msg.content) {
         if (block.type === "text" && typeof block.text === "string") {
           textContent += block.text;
-        } else if (
-          block.type === "thinking" &&
-          typeof block.thinking === "string"
-        ) {
-          reasoningContent += block.thinking;
         } else if (block.type === "tool_use") {
           toolCalls.push({
             id: block.id || `call_${Date.now()}`,
@@ -193,6 +196,7 @@ function translateMessages(
             },
           });
         }
+        // thinking / redacted_thinking: dropped.
       }
 
       const assistantMsg: ChatCompletionsMessage = {
@@ -201,9 +205,6 @@ function translateMessages(
       };
       if (toolCalls.length > 0) {
         assistantMsg.tool_calls = toolCalls;
-      }
-      if (reasoningContent) {
-        assistantMsg.reasoning_content = reasoningContent;
       }
       messages.push(assistantMsg);
     }
@@ -403,42 +404,61 @@ async function translateStreamToAnthropic(
 
             if (delta) {
               // ── Reasoning content (thinking) ────────────────────
+              // OpenAI Chat Completions streams `reasoning_content` deltas
+              // for o-series / reasoning models. We emit these as unsigned
+              // synthetic `thinking` blocks so the user can see the model's
+              // reasoning live in the UI. Outbound translation (see
+              // `translateMessages` above) drops thinking blocks on the way
+              // back to OpenAI so they never reach the wire as input,
+              // avoiding the "strip-on-next-turn" bug. The reasoning token
+              // count is also captured via
+              // `completion_tokens_details.reasoning_tokens` and surfaces
+              // through NormalizedUsage.reasoningTokens.
               if (delta.reasoning_content) {
-                const text = delta.reasoning_content as string;
-                if (!inReasoningBlock) {
-                  inReasoningBlock = true;
+                const reasoningText = delta.reasoning_content as string;
+                if (reasoningText.length > 0) {
+                  if (!inReasoningBlock) {
+                    controller.enqueue(
+                      encoder.encode(
+                        formatSSE(
+                          "content_block_start",
+                          JSON.stringify({
+                            type: "content_block_start",
+                            index: contentBlockIndex,
+                            content_block: {
+                              type: "thinking",
+                              thinking: "",
+                              signature: "",
+                            },
+                          }),
+                        ),
+                      ),
+                    );
+                    inReasoningBlock = true;
+                  }
                   controller.enqueue(
                     encoder.encode(
                       formatSSE(
-                        "content_block_start",
+                        "content_block_delta",
                         JSON.stringify({
-                          type: "content_block_start",
+                          type: "content_block_delta",
                           index: contentBlockIndex,
-                          content_block: { type: "thinking", thinking: "" },
+                          delta: {
+                            type: "thinking_delta",
+                            thinking: reasoningText,
+                          },
                         }),
                       ),
                     ),
                   );
                 }
-                controller.enqueue(
-                  encoder.encode(
-                    formatSSE(
-                      "content_block_delta",
-                      JSON.stringify({
-                        type: "content_block_delta",
-                        index: contentBlockIndex,
-                        delta: { type: "thinking_delta", thinking: text },
-                      }),
-                    ),
-                  ),
-                );
               }
 
               // ── Text content ────────────────────────────────────
               if (delta.content) {
                 const text = delta.content as string;
                 if (text.length > 0) {
-                  // Close reasoning block if transitioning
+                  // Close reasoning block if open before starting text
                   if (inReasoningBlock) {
                     controller.enqueue(
                       encoder.encode(
@@ -631,9 +651,20 @@ async function translateStreamToAnthropic(
         }
       } catch (err) {
         // Emit error as SSE error event so the SDK error handling pipeline catches it
+        const normalized = openaiChatCompletionsAdapter.normalizeError(
+          { mid_stream: true, cause: err },
+          "openai-chat-completions",
+        );
         controller.enqueue(
           encoder.encode(
-            `event: error\ndata: ${JSON.stringify({ type: "error", error: { type: "api_error", message: String(err) } })}\n\n`,
+            `event: error\ndata: ${JSON.stringify({
+              type: "error",
+              error: {
+                type: toAnthropicErrorType(normalized.kind),
+                message: normalized.message,
+                normalized,
+              },
+            })}\n\n`,
           ),
         );
       }
@@ -751,11 +782,16 @@ function finishStream(
 ): void {
   const stopReason = hadToolCalls ? "tool_use" : "end_turn";
 
+  // OpenAI Chat Completions does NOT report cache write cost — prefix
+  // caching is automatic on OpenAI's side. Surface that explicitly as `null`
+  // so downstream consumers (NormalizedUsage, StatusLine) can distinguish
+  // "not tracked" from "0 tokens written" and hide the cache-write column
+  // instead of rendering a misleading 0.
   const usagePayload = {
     input_tokens: inputTokens,
     output_tokens: outputTokens,
     cache_read_input_tokens: cacheReadInputTokens,
-    cache_creation_input_tokens: 0,
+    cache_creation_input_tokens: null,
   };
 
   controller.enqueue(
@@ -846,16 +882,28 @@ export function createChatCompletionsFetch(
 
     if (!response.ok) {
       const errorText = await response.text();
+      const normalized = openaiChatCompletionsAdapter.normalizeError(
+        {
+          status: response.status,
+          body: errorText,
+          headers: response.headers,
+        },
+        "openai-chat-completions",
+      );
       const errorBody = {
         type: "error",
         error: {
-          type: mapStatusToErrorType(response.status),
-          message: `Chat Completions API error (${response.status}): ${errorText}`,
+          type: toAnthropicErrorType(normalized.kind),
+          message: `Chat Completions API error (${response.status}): ${normalized.message}`,
+          normalized,
         },
       };
+      // Preserve response headers so retry-after survives for withRetry.
+      const outHeaders = new Headers(response.headers);
+      outHeaders.set("Content-Type", "application/json");
       return new Response(JSON.stringify(errorBody), {
         status: response.status,
-        headers: { "Content-Type": "application/json" },
+        headers: outHeaders,
       });
     }
 

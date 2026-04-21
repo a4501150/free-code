@@ -225,6 +225,8 @@ import {
   sessionIdExists,
 } from './utils/sessionStorage.js'
 import { ensureMdmSettingsLoaded } from './utils/settings/mdm/settings.js'
+import { freecodeSettingsFileExists } from './utils/settings/freecodeSettings.js'
+import { legacySettingsFileExists } from './utils/settings/migrateToFreecode.js'
 import {
   getInitialSettings,
   getManagedSettingsKeysForLogging,
@@ -1161,6 +1163,22 @@ async function run(): Promise<CommanderCommand> {
 
     runMigrations()
     profileCheckpoint('preAction_after_migrations')
+
+    // Non-interactive users who still have only legacy ~/.claude/settings.json
+    // get a one-line stderr nudge. The provider registry's in-memory legacy
+    // env-var synthesis keeps this invocation working; migration itself
+    // happens only through the interactive setup-screen dialog.
+    if (
+      !process.stdout.isTTY &&
+      !freecodeSettingsFileExists() &&
+      legacySettingsFileExists()
+    ) {
+      process.stderr.write(
+        "Note: legacy ~/.claude/settings.json detected but no ~/.claude/freecode.json. " +
+          "Using env vars directly for this non-interactive run. " +
+          "Run 'claude' interactively once to migrate.\n",
+      )
+    }
 
     // Load remote managed settings for enterprise customers (non-blocking)
     // Fails open - if fetch fails, continues without remote settings

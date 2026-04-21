@@ -15,7 +15,8 @@
  */
 
 import type { ProviderConfig } from '../../utils/settings/types.js'
-import { mapStatusToErrorType } from './adapter-error-utils.js'
+import { geminiAdapter } from './adapters/gemini-adapter-impl.js'
+import { toAnthropicErrorType } from '../../utils/normalizedError.js'
 
 // -- Types ------------------------------------------------------------------
 
@@ -245,13 +246,18 @@ function translateToGeminiBody(
 
 // -- Finish reason mapping --------------------------------------------------
 
-function mapFinishReason(geminiReason: string | undefined): string {
+/**
+ * `null` → caller should emit a content-filter error SSE event instead of
+ * a normal stop_reason. Distinct sentinel from undefined because we can't
+ * use 'end_turn' for SAFETY / RECITATION — silent map would hide a content-
+ * filter rejection from the user.
+ */
+function mapFinishReason(geminiReason: string | undefined): string | null {
   if (!geminiReason) return 'end_turn'
+  if (geminiReason === 'SAFETY' || geminiReason === 'RECITATION') return null
   const map: Record<string, string> = {
     STOP: 'end_turn',
     MAX_TOKENS: 'max_tokens',
-    SAFETY: 'end_turn',
-    RECITATION: 'end_turn',
   }
   return map[geminiReason] || 'end_turn'
 }
@@ -524,14 +530,49 @@ async function translateGeminiStreamToAnthropicSSE(
             if (finishReason) {
               emitMessageStart()
               closeCurrentTextBlock()
+              // Surface content-filter rejections as a clear error banner
+              // instead of silently emitting stop_reason: end_turn with an
+              // empty body.
+              if (
+                finishReason === 'SAFETY' ||
+                finishReason === 'RECITATION'
+              ) {
+                const normalized = geminiAdapter.normalizeError(
+                  { finishReason },
+                  'gemini',
+                )
+                controller.enqueue(
+                  encoder.encode(
+                    `event: error\ndata: ${JSON.stringify({
+                      type: 'error',
+                      error: {
+                        type: toAnthropicErrorType(normalized.kind),
+                        message: normalized.message,
+                        normalized,
+                      },
+                    })}\n\n`,
+                  ),
+                )
+              }
             }
           }
         }
       } catch (err) {
         emitMessageStart()
+        const normalized = geminiAdapter.normalizeError(
+          { mid_stream: true, cause: err },
+          'gemini',
+        )
         controller.enqueue(
           encoder.encode(
-            `event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: String(err) } })}\n\n`,
+            `event: error\ndata: ${JSON.stringify({
+              type: 'error',
+              error: {
+                type: toAnthropicErrorType(normalized.kind),
+                message: normalized.message,
+                normalized,
+              },
+            })}\n\n`,
           ),
         )
       }
@@ -571,11 +612,15 @@ function finishGeminiStream(
 ): void {
   const stopReason = hadToolCalls ? 'tool_use' : 'end_turn'
 
+  // Gemini does NOT report cache-write cost unless the user explicitly
+  // creates a `cachedContent` resource (which goes through a separate API).
+  // Surface `null` for the default code path so NormalizedUsage can hide
+  // the cache-write column.
   const usagePayload = {
     input_tokens: inputTokens,
     output_tokens: outputTokens,
     cache_read_input_tokens: cacheReadInputTokens,
-    cache_creation_input_tokens: 0,
+    cache_creation_input_tokens: null,
   }
 
   controller.enqueue(
@@ -629,7 +674,25 @@ function translateGeminiResponseToAnthropic(
     const finishReason = candidate.finishReason as string | undefined
 
     if (finishReason) {
-      stopReason = mapFinishReason(finishReason)
+      const mapped = mapFinishReason(finishReason)
+      // Non-streaming response with SAFETY / RECITATION surfaces the
+      // content-filter as an Anthropic-shape error body rather than an
+      // empty assistant reply.
+      if (mapped === null) {
+        const normalized = geminiAdapter.normalizeError(
+          { finishReason },
+          'gemini',
+        )
+        return {
+          type: 'error',
+          error: {
+            type: toAnthropicErrorType(normalized.kind),
+            message: normalized.message,
+            normalized,
+          },
+        }
+      }
+      stopReason = mapped
     }
 
     if (candidateContent?.parts) {
@@ -666,7 +729,9 @@ function translateGeminiResponseToAnthropic(
       input_tokens: (usageMetadata?.promptTokenCount ?? 0) - (usageMetadata?.cachedContentTokenCount ?? 0),
       output_tokens: usageMetadata?.candidatesTokenCount ?? 0,
       cache_read_input_tokens: usageMetadata?.cachedContentTokenCount ?? 0,
-      cache_creation_input_tokens: 0,
+      // `null` = Gemini does not distinguish cache write cost in the default
+      // (non-cachedContent) path. See message_delta usagePayload above.
+      cache_creation_input_tokens: null,
     },
   }
 }
@@ -761,16 +826,27 @@ export function createGeminiFetch(
 
     if (!response.ok) {
       const errorText = await response.text()
+      const normalized = geminiAdapter.normalizeError(
+        {
+          status: response.status,
+          body: errorText,
+          headers: response.headers,
+        },
+        'gemini',
+      )
       const errorBody = {
         type: 'error',
         error: {
-          type: mapStatusToErrorType(response.status),
-          message: `Gemini API error (${response.status}): ${errorText}`,
+          type: toAnthropicErrorType(normalized.kind),
+          message: `Gemini API error (${response.status}): ${normalized.message}`,
+          normalized,
         },
       }
+      const outHeaders = new Headers(response.headers)
+      outHeaders.set('Content-Type', 'application/json')
       return new Response(JSON.stringify(errorBody), {
         status: response.status,
-        headers: { 'Content-Type': 'application/json' },
+        headers: outHeaders,
       })
     }
 
@@ -785,8 +861,13 @@ export function createGeminiFetch(
       geminiResponse,
       model,
     )
+    // Content-filter rejection returns an Anthropic-shape error body with
+    // type: 'error'; surface as non-200 so the SDK classifies it as a
+    // proper error instead of a normal assistant response.
+    const isError =
+      (anthropicResponse as { type?: string })?.type === 'error'
     return new Response(JSON.stringify(anthropicResponse), {
-      status: 200,
+      status: isError ? 400 : 200,
       headers: {
         'Content-Type': 'application/json',
         'x-request-id': `msg_gemini_${Date.now()}`,

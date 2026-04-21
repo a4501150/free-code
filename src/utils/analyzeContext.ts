@@ -16,7 +16,6 @@ import {
 } from '../services/compact/autoCompact.js'
 import {
   countMessagesTokensWithAPI,
-  countTokensViaHaikuFallback,
   roughTokenCountEstimation,
 } from '../services/tokenEstimation.js'
 import { estimateSkillFrontmatterTokens } from '../skills/loadSkillsDir.js'
@@ -51,7 +50,7 @@ import { getContextWindowForModel } from './context.js'
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
-import { errorMessage, toError } from './errors.js'
+import { toError } from './errors.js'
 import { logError } from './log.js'
 import { normalizeMessagesForAPI } from './messages.js'
 import { getRuntimeMainLoopModel } from './model/model.js'
@@ -80,34 +79,12 @@ async function countTokensWithFallback(
   messages: Anthropic.Beta.Messages.BetaMessageParam[],
   tools: Anthropic.Beta.Messages.BetaToolUnion[],
 ): Promise<number | null> {
-  try {
-    const result = await countMessagesTokensWithAPI(messages, tools)
-    if (result !== null) {
-      return result
-    }
-    logForDebugging(
-      `countTokensWithFallback: API returned null, trying haiku fallback (${tools.length} tools)`,
-    )
-  } catch (err) {
-    logForDebugging(`countTokensWithFallback: API failed: ${errorMessage(err)}`)
-    logError(err)
-  }
-
-  try {
-    const fallbackResult = await countTokensViaHaikuFallback(messages, tools)
-    if (fallbackResult === null) {
-      logForDebugging(
-        `countTokensWithFallback: haiku fallback also returned null (${tools.length} tools)`,
-      )
-    }
-    return fallbackResult
-  } catch (err) {
-    logForDebugging(
-      `countTokensWithFallback: haiku fallback failed: ${errorMessage(err)}`,
-    )
-    logError(err)
-    return null
-  }
+  const result = await countMessagesTokensWithAPI(messages, tools)
+  if (result !== null) return result
+  logForDebugging(
+    `countTokensWithFallback: API returned null, using rough estimate (${tools.length} tools)`,
+  )
+  return roughTokenCountEstimation(jsonStringify({ messages, tools }))
 }
 
 interface ContextCategory {

@@ -88,6 +88,22 @@ export function readFreecodeSettingsFile(): Record<string, unknown> | null {
 /**
  * Write to freecode.json (read-merge-write).
  * Preserves existing keys not in the partial update.
+ *
+ * Merge contract:
+ *   - Top-level keys overwrite shallowly. Pass `undefined` / omit to leave an
+ *     existing key unchanged; pass an explicit value to replace it.
+ *   - `providers` merges shallowly **by provider name**: incoming providers
+ *     overwrite the existing entry for that name; sibling providers
+ *     (different keys) are preserved. Callers MUST supply a complete
+ *     `ProviderConfig` per slot they touch — partial updates to inner fields
+ *     (e.g. changing only `baseUrl` of an existing provider) are NOT
+ *     supported via this function and will drop every other field of that
+ *     provider. To do that, read the file, mutate the parsed object, and
+ *     use the settings write APIs in settings.ts (or `updateProviderModelConfig`
+ *     for model-level edits).
+ *   - This behavior is load-bearing for `/login`: the OAuth completion writes
+ *     `{ providers: { 'claude-ai': {...full config} } }` and must preserve
+ *     sibling providers like `anthropic`.
  */
 export function writeFreecodeSettingsFile(
   partial: Record<string, unknown>,

@@ -283,7 +283,10 @@ export function isToolSearchEnabledOptimistic(): boolean {
   if (
     !process.env.ENABLE_TOOL_SEARCH &&
     getProviderRegistry().getDefaultProvider()?.config.type === 'anthropic' &&
-    !getProviderRegistry().getCapabilities().firstPartyFeatures
+    !getProviderRegistry().resolveFirstPartyCapability(
+      undefined,
+      'supportsToolSearch',
+    )
   ) {
     if (!loggedOptimistic) {
       loggedOptimistic = true
@@ -588,15 +591,6 @@ export type DeferredToolsDeltaScanContext = {
     | 'compact_partial'
     | 'reactive_compact'
   querySource?: string
-}
-
-/**
- * True → announce deferred tools via persisted delta attachments.
- * False → claude.ts keeps its per-call <available-deferred-tools>
- * header prepend (the attachment does not fire).
- */
-export function isDeferredToolsDeltaEnabled(): boolean {
-  return true
 }
 
 /**

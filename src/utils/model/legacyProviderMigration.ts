@@ -1,26 +1,26 @@
 /**
  * Legacy Provider Migration
  *
- * Auto-generates provider configs from legacy environment variables
- * when settings.providers is not explicitly configured.
+ * Pure function that synthesizes provider configs from legacy environment
+ * variables. Used both by the registry's in-memory fallback path (when no
+ * providers are configured on disk) and by the one-shot
+ * runLegacyToFreecodeMigration() at migration time.
  *
- * This ensures backward compatibility: existing users who rely on
- * ANTHROPIC_API_KEY, CLAUDE_CODE_USE_BEDROCK, etc. continue to work
- * without any config changes.
+ * No side effects: callers pass in the `env` bag to consult. No `process.env`
+ * reads, no settings-layer imports.
  */
 
 import type { ProviderConfig, ProviderModelConfig } from "../settings/types.js";
 import { isEnvTruthy } from "../envUtils.js";
 import { stripContextSuffix } from "./parseModelString.js";
 
-/** Return type of migrateFromLegacyEnvVars */
+/** Return type of synthesizeProvidersFromLegacy */
 export interface LegacyMigrationResult {
   providers: Record<string, ProviderConfig>;
   defaultModel?: string;
   defaultSubagentModel?: string;
   defaultSmallFastModel?: string;
 }
-import { getSettingsForSource } from "../settings/settings.js";
 
 // ── Default Claude models ────────────────────────────────────────────
 
@@ -326,24 +326,21 @@ const DEFAULT_CODEX_MODELS: ProviderModelConfig[] = [
 
 /**
  * Generate provider configs from legacy environment variables.
- * Called at startup when settings.providers is absent.
  *
+ * Pure function: the caller controls exactly which env bag is consulted.
+ *  - Registry in-memory fallback passes `process.env`.
+ *  - runLegacyToFreecodeMigration() passes `{ ...process.env, ...settings.env }`.
+ *
+ * @param opts.env - The environment to consult (required).
  * @param opts.oauthTokens - OAuth tokens from secure storage (if available).
- *   Passed in by the registry's lazy init to avoid circular deps.
  */
-export function migrateFromLegacyEnvVars(opts?: {
+export function synthesizeProvidersFromLegacy(opts: {
+  env: Record<string, string | undefined>;
   oauthTokens?: { accessToken: string } | null;
 }): LegacyMigrationResult {
   const providers: Record<string, ProviderConfig> = {};
-
-  // Read settings.env block as fallback — these env vars may not be in
-  // process.env yet if applySafeConfigEnvironmentVariables() hasn't run.
-  const settingsEnv =
-    (getSettingsForSource("userSettings")?.env as
-      | Record<string, string>
-      | undefined) ?? {};
-  const getEnv = (key: string): string | undefined =>
-    process.env[key] || settingsEnv[key];
+  const { env } = opts;
+  const getEnv = (key: string): string | undefined => env[key];
 
   if (isEnvTruthy(getEnv("CLAUDE_CODE_USE_BEDROCK"))) {
     const region = getEnv("AWS_REGION") || getEnv("AWS_DEFAULT_REGION");
@@ -439,7 +436,8 @@ export function migrateFromLegacyEnvVars(opts?: {
   }
 
   // Migrate legacy model selection to defaultModel/defaultSubagentModel.
-  // Sources: real env vars, managed env vars in settings.env, and settings.model.
+  // Sources: whatever env bag the caller supplied. Caller is responsible for
+  // merging process.env / settings.env / settings.model as appropriate.
   // Cannot use parseUserSpecifiedModel() here (registry not yet initialized),
   // so we do simple provider:modelId qualification.
   const defaultProviderName = Object.keys(providers)[0] ?? "anthropic";
@@ -450,9 +448,7 @@ export function migrateFromLegacyEnvVars(opts?: {
   };
 
   const envModel = getEnv("ANTHROPIC_MODEL");
-  const settingsModel = getSettingsForSource("userSettings")?.model;
-  const rawDefaultModel = envModel || settingsModel || undefined;
-  const defaultModel = rawDefaultModel ? qualify(rawDefaultModel) : undefined;
+  const defaultModel = envModel ? qualify(envModel) : undefined;
 
   const envSubagent = getEnv("CLAUDE_CODE_SUBAGENT_MODEL");
   const defaultSubagentModel = envSubagent ? qualify(envSubagent) : undefined;

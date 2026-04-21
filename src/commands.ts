@@ -323,7 +323,10 @@ export function meetsAvailabilityRequirement(cmd: Command): boolean {
         if (
           !isClaudeAISubscriber() &&
           !isUsing3PServices() &&
-          getProviderRegistry().getCapabilities().firstPartyFeatures
+          getProviderRegistry().resolveFirstPartyCapability(
+            undefined,
+            'supportsBootstrap',
+          )
         )
           return true
         break

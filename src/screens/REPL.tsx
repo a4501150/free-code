@@ -6084,6 +6084,7 @@ export function REPL({
                           feature('VOICE_MODE') ? insertTextRef : undefined
                         }
                         voiceInterimRange={voice.interimRange}
+                        conversationId={conversationId}
                       />
                       <SessionBackgroundHint
                         onBackgroundSession={handleBackgroundSession}

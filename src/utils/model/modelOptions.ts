@@ -40,7 +40,8 @@ function getDefaultOptionForUser(): ModelOption {
   const defaultModelId = getDefaultMainLoopModelSetting();
   const resolved = registry.getProviderForModel(defaultModelId);
   const pricingSuffix =
-    resolved?.model.pricing && registry.getCapabilities().firstPartyFeatures
+    resolved?.model.pricing &&
+    registry.resolveFirstPartyCapability(undefined, 'showModelPricing')
       ? ` · ${formatModelPricing({ inputTokens: resolved.model.pricing.input ?? 0, outputTokens: resolved.model.pricing.output ?? 0, promptCacheWriteTokens: resolved.model.pricing.cacheWrite ?? 0, promptCacheReadTokens: resolved.model.pricing.cacheRead ?? 0, webSearchRequests: resolved.model.pricing.webSearch ?? 0 })}`
       : "";
 
@@ -160,11 +161,14 @@ export function getGroupedModelOptions(
 
   for (const [providerName, providerConfig] of allProviders) {
     const isFirstParty = (() => {
-      // Derive firstPartyFeatures for this specific provider by checking
-      // any of its models (capabilities are per-provider, not per-model).
+      // Pricing display is gated specifically on showModelPricing now;
+      // fallback to firstPartyFeatures is handled inside resolveFirstPartyCapability.
       const firstModel = providerConfig.models[0];
       if (!firstModel) return false;
-      return registry.getCapabilities(firstModel.id).firstPartyFeatures;
+      return registry.resolveFirstPartyCapability(
+        firstModel.id,
+        'showModelPricing',
+      );
     })();
 
     const options: ModelOption[] = [];

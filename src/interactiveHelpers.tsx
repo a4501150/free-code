@@ -50,10 +50,21 @@ import {
   hasAutoModeOptIn,
   hasSkipDangerousModePermissionPrompt,
 } from './utils/settings/settings.js'
+import { resetSettingsCache } from './utils/settings/settingsCache.js'
+import {
+  freecodeSettingsFileExists,
+  writeFreecodeSettingsFile,
+} from './utils/settings/freecodeSettings.js'
+import {
+  legacySettingsFileExists,
+  runLegacyToFreecodeMigration,
+} from './utils/settings/migrateToFreecode.js'
+import { resetProviderRegistry } from './utils/model/providerRegistry.js'
 import { Text } from './ink.js'
 import { Onboarding } from './components/Onboarding.js'
 import { TrustDialog } from './components/TrustDialog/TrustDialog.js'
 import { ClaudeMdExternalIncludesDialog } from './components/ClaudeMdExternalIncludesDialog.js'
+import { MigrationPromptDialog } from './components/MigrationPromptDialog.js'
 import { GroveDialog } from './components/grove/Grove.js'
 import { ApproveApiKey } from './components/ApproveApiKey.js'
 import { BypassPermissionsModeDialog } from './components/BypassPermissionsModeDialog.js'
@@ -162,6 +173,24 @@ export async function showSetupScreens(
     process.env.IS_DEMO // Skip onboarding in demo mode
   ) {
     return false
+  }
+
+  // Legacy settings migration prompt. Runs before Onboarding so that when the
+  // user consents, the registry and settings cache pick up the freshly-written
+  // freecode.json in a clean state. A rejection writes an empty `{}` file to
+  // mark the decision so future launches skip this prompt (the state machine
+  // keys off on-disk file existence).
+  if (!freecodeSettingsFileExists() && legacySettingsFileExists()) {
+    const decision = await showSetupDialog<'yes' | 'no'>(root, done => (
+      <MigrationPromptDialog onDone={done} />
+    ))
+    if (decision === 'yes') {
+      runLegacyToFreecodeMigration()
+    } else {
+      writeFreecodeSettingsFile({})
+    }
+    resetSettingsCache()
+    resetProviderRegistry()
   }
 
   const config = getGlobalConfig()

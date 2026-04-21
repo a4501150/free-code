@@ -47,7 +47,12 @@ export function isRemoteManagedSettingsEligible(): boolean {
   if (cached !== undefined) return cached
 
   // 3p provider users and custom base URL users should not hit the settings endpoint
-  if (!getProviderRegistry().getCapabilities().firstPartyFeatures) {
+  if (
+    !getProviderRegistry().resolveFirstPartyCapability(
+      undefined,
+      'supportsRemoteManagedSettings',
+    )
+  ) {
     return (cached = setEligibility(false))
   }
 

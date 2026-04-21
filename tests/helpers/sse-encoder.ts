@@ -35,7 +35,22 @@ export type MockSuccessResponse = {
   model?: string
   content: MockContentBlock[]
   stop_reason: 'end_turn' | 'tool_use' | 'max_tokens'
-  usage?: { input_tokens: number; output_tokens: number }
+  usage?: {
+    input_tokens: number
+    output_tokens: number
+    /**
+     * Optional: input tokens written to cache this turn. When set, emitted
+     * on both `message_start` and `message_delta` so downstream tests can
+     * assert on statusline cache accounting. Defaults to 0 when unset.
+     */
+    cache_creation_input_tokens?: number
+    /**
+     * Optional: input tokens served from cache. Emitted on `message_start`
+     * to match Anthropic's real behavior (read-from-cache is known at the
+     * moment the request resolves). Defaults to 0 when unset.
+     */
+    cache_read_input_tokens?: number
+  }
 }
 
 export type MockResponse =
@@ -91,6 +106,8 @@ export function encodeSuccessSSE(response: MockSuccessResponse): string {
   const model = response.model ?? 'claude-sonnet-4-20250514'
   const inputTokens = response.usage?.input_tokens ?? 100
   const outputTokens = response.usage?.output_tokens ?? 50
+  const cacheCreationInputTokens = response.usage?.cache_creation_input_tokens ?? 0
+  const cacheReadInputTokens = response.usage?.cache_read_input_tokens ?? 0
 
   let sse = ''
 
@@ -108,8 +125,8 @@ export function encodeSuccessSSE(response: MockSuccessResponse): string {
       usage: {
         input_tokens: inputTokens,
         output_tokens: 0,
-        cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: cacheCreationInputTokens,
+        cache_read_input_tokens: cacheReadInputTokens,
       },
     },
   })
@@ -223,6 +240,8 @@ export function encodeSuccessSSE(response: MockSuccessResponse): string {
     },
     usage: {
       output_tokens: outputTokens,
+      cache_creation_input_tokens: cacheCreationInputTokens,
+      cache_read_input_tokens: cacheReadInputTokens,
     },
   })
 

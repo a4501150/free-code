@@ -16,6 +16,8 @@ import { DEFAULT_OUTPUT_STYLE_NAME } from '../constants/outputStyles.js'
 import { useNotifications } from '../context/notifications.js'
 import {
   getTotalAPIDuration,
+  getTotalCacheCreationInputTokens,
+  getTotalCacheReadInputTokens,
   getTotalCost,
   getTotalDuration,
   getTotalInputTokens,
@@ -134,11 +136,21 @@ function buildStatusLineCommandInput(
     context_window: {
       total_input_tokens: getTotalInputTokens(),
       total_output_tokens: getTotalOutputTokens(),
+      total_cache_creation_input_tokens: getTotalCacheCreationInputTokens(),
+      total_cache_read_input_tokens: getTotalCacheReadInputTokens(),
       context_window_size: contextWindowSize,
-      current_usage: (currentUsage as unknown as number) ?? 0,
-      used_percentage: contextPercentages.used ?? 0,
-      remaining_percentage: contextPercentages.remaining ?? 0,
+      current_usage: currentUsage,
+      used_percentage: contextPercentages.used,
+      remaining_percentage: contextPercentages.remaining,
     },
+    ...(currentUsage && {
+      last_usage: {
+        input_tokens: currentUsage.input_tokens,
+        output_tokens: currentUsage.output_tokens,
+        cache_creation_input_tokens: currentUsage.cache_creation_input_tokens,
+        cache_read_input_tokens: currentUsage.cache_read_input_tokens,
+      },
+    }),
     exceeds_200k_tokens: exceeds200kTokens,
     ...((rateLimits.five_hour || rateLimits.seven_day) && {
       rate_limits: rateLimits,

@@ -107,7 +107,12 @@ async function doDownloadUserSettings(
  * download a no-op there. Upload is independently guarded by getIsInteractive().
  */
 function isUsingOAuth(): boolean {
-  if (!getProviderRegistry().getCapabilities().firstPartyFeatures) {
+  if (
+    !getProviderRegistry().resolveFirstPartyCapability(
+      undefined,
+      'supportsSettingsSync',
+    )
+  ) {
     return false
   }
 

@@ -1847,9 +1847,14 @@ export type UserAccountInfo = {
 }
 
 export function getAccountInformation() {
-  const caps = getProviderRegistry().getCapabilities()
-  // Only provide account info for first-party Anthropic API
-  if (!caps.firstPartyFeatures) {
+  // Only provide account info for providers that support the Anthropic
+  // OAuth profile flow.
+  if (
+    !getProviderRegistry().resolveFirstPartyCapability(
+      undefined,
+      'supportsOAuthProfile',
+    )
+  ) {
     return undefined
   }
   const { source: authTokenSource } = getAuthTokenSource()

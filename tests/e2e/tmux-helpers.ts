@@ -36,6 +36,21 @@ export interface TmuxSessionOptions {
   additionalArgs?: string[]
   /** Project-level settings to write to settings.json */
   settings?: Record<string, unknown>
+  /**
+   * Pre-existing config dir to reuse (skips mkdtemp and does NOT rewrite
+   * .claude.json / settings.json). Used by resume/continue tests that need
+   * transcript files on disk to persist across a session restart.
+   */
+  reuseConfigDir?: string
+  /** Pre-existing HOME dir to reuse. Pairs with `reuseConfigDir`. */
+  reuseHomeDir?: string
+  /**
+   * Override the text waitForPrompt matches on. Needed when a custom
+   * `statusLine` is configured in settings — the default `? for shortcuts`
+   * hint is suppressed by PromptInputFooter when a user statusline is
+   * installed, so tests need a different idle marker.
+   */
+  readyText?: string
 }
 
 export class TmuxSession {
@@ -53,6 +68,14 @@ export class TmuxSession {
   private _additionalEnv: Record<string, string>
   private _additionalArgs: string[]
   private _settings: Record<string, unknown>
+  private _reuseConfigDir?: string
+  private _reuseHomeDir?: string
+  private _readyText: string
+  /**
+   * True when configDir/homeDir come from the caller (via reuseConfigDir /
+   * reuseHomeDir) and must NOT be deleted by stop().
+   */
+  private _ownsDirs = true
 
   constructor(options: TmuxSessionOptions) {
     this.sessionName = `claude_e2e_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -64,6 +87,9 @@ export class TmuxSession {
     this._additionalEnv = options.additionalEnv ?? {}
     this._additionalArgs = options.additionalArgs ?? []
     this._settings = options.settings ?? {}
+    this._reuseConfigDir = options.reuseConfigDir
+    this._reuseHomeDir = options.reuseHomeDir
+    this._readyText = options.readyText ?? 'for shortcuts'
   }
 
   /** Get the temp CWD path (only valid after start()) */
@@ -82,9 +108,20 @@ export class TmuxSession {
    * Pipes tmux pane output to a log file for debugging.
    */
   async start(): Promise<void> {
-    // Create isolated temp dirs
-    this.configDir = await mkdtemp(join(tmpdir(), 'claude-e2e-config-'))
-    this.homeDir = await mkdtemp(join(tmpdir(), 'claude-e2e-home-'))
+    // Create isolated temp dirs, or reuse caller-provided ones (used by the
+    // resume/continue tests that need the transcript to survive a restart).
+    if (this._reuseConfigDir) {
+      this.configDir = this._reuseConfigDir
+      this._ownsDirs = false
+    } else {
+      this.configDir = await mkdtemp(join(tmpdir(), 'claude-e2e-config-'))
+    }
+    if (this._reuseHomeDir) {
+      this.homeDir = this._reuseHomeDir
+      this._ownsDirs = false
+    } else {
+      this.homeDir = await mkdtemp(join(tmpdir(), 'claude-e2e-home-'))
+    }
     if (this._useTempCwd) {
       this.cwdDir = await mkdtemp(join(tmpdir(), 'claude-e2e-cwd-'))
       this._cwd = this.cwdDir
@@ -120,14 +157,22 @@ export class TmuxSession {
       JSON.stringify(config, null, 2),
     )
 
-    // Settings.json — defaults to empty to prevent MCP server loading from project config.
+    // freecode.json — defaults to empty to prevent MCP server loading from project config.
     // Tests can pass custom settings via the `settings` option.
+    // Write freecode.json (not settings.json) so the migration prompt dialog
+    // does not fire at startup; the state-machine key is "freecode.json exists".
     await writeFile(
-      join(this.configDir, 'settings.json'),
+      join(this.configDir, 'freecode.json'),
       JSON.stringify(this._settings, null, 2),
     )
 
-    // Build environment string
+    // Build environment string.
+    //
+    // We launch the child CLI under `env -i ...` (below) so the child process
+    // only sees exactly the variables listed here. Without this, host-level
+    // `ANTHROPIC_*` / `CLAUDE_CODE_*` env vars leak into the child and
+    // corrupt provider / tier-routing tests that rely on settings-driven
+    // configuration.
     const envVars: Record<string, string> = {
       ANTHROPIC_API_KEY: API_KEY,
       ANTHROPIC_AUTH_TOKEN: '', // unset to avoid auth conflict
@@ -143,6 +188,12 @@ export class TmuxSession {
       NO_COLOR: '1',
       DO_NOT_TRACK: '1',
       NODE_ENV: 'test',
+      // Enables the cross-session transcript persistence path that
+      // resume-context.test.ts drives via `--continue`.
+      TEST_ENABLE_SESSION_PERSISTENCE: '1',
+      // Stabilizes cursor-positioning escape sequences under tmux so pane
+      // captures are deterministic across hosts with different TERMs.
+      TERM: process.env.TERM ?? 'screen-256color',
       PATH: process.env.PATH ?? '/usr/bin:/bin:/usr/local/bin',
       ...this._additionalEnv,
     }
@@ -157,8 +208,10 @@ export class TmuxSession {
     // Kill any existing session with this name
     await exec(`tmux kill-session -t ${this.sessionName} 2>/dev/null || true`)
 
-    // Create the tmux session
-    const cmd = `tmux new-session -d -s ${this.sessionName} -x ${this._width} -y ${this._height} "cd ${shellEscape(this._cwd)} && ${envString} ${CLI_BINARY} ${cliArgs}; sleep 30"`
+    // Create the tmux session. `env -i` wipes the child env so only the keys
+    // listed in `envVars` are visible to the CLI process — this is what
+    // prevents host-level Anthropic env vars from polluting the test.
+    const cmd = `tmux new-session -d -s ${this.sessionName} -x ${this._width} -y ${this._height} "cd ${shellEscape(this._cwd)} && env -i ${envString} ${CLI_BINARY} ${cliArgs}; sleep 30"`
     await exec(cmd)
 
     this.started = true
@@ -167,22 +220,28 @@ export class TmuxSession {
     await exec(`tmux pipe-pane -t ${this.sessionName} -o 'cat >> ${shellEscape(this.logFile!)}'`)
 
     // Wait for the REPL to be ready
-    await this.waitForText('for shortcuts', 30_000)
+    await this.waitForText(this._readyText, 30_000)
   }
 
   /**
    * Stop the tmux session and clean up.
+   *
+   * Skips deletion of caller-provided reuseConfigDir / reuseHomeDir so the
+   * files produced during the first run (e.g. transcript .jsonl) remain on
+   * disk for a subsequent `--continue` session.
    */
   async stop(): Promise<void> {
     if (this.started) {
       await exec(`tmux kill-session -t ${this.sessionName} 2>/dev/null || true`)
       this.started = false
     }
-    if (this.configDir) {
-      await rm(this.configDir, { recursive: true, force: true }).catch(() => {})
-    }
-    if (this.homeDir) {
-      await rm(this.homeDir, { recursive: true, force: true }).catch(() => {})
+    if (this._ownsDirs) {
+      if (this.configDir) {
+        await rm(this.configDir, { recursive: true, force: true }).catch(() => {})
+      }
+      if (this.homeDir) {
+        await rm(this.homeDir, { recursive: true, force: true }).catch(() => {})
+      }
     }
     if (this.cwdDir) {
       await rm(this.cwdDir, { recursive: true, force: true }).catch(() => {})
@@ -274,7 +333,7 @@ export class TmuxSession {
 
   /** Wait until the CLI is idle (ready for next input). */
   async waitForPrompt(timeout = 30_000): Promise<string> {
-    return this.waitForText('for shortcuts', timeout)
+    return this.waitForText(this._readyText, timeout)
   }
 
   // ── Permission handling ────────────────────────────────────
@@ -302,7 +361,7 @@ export class TmuxSession {
         return 'approved'
       }
       // Check for idle prompt
-      if (screen.includes('for shortcuts')) {
+      if (screen.includes(this._readyText)) {
         return 'idle'
       }
       await sleep(interval)

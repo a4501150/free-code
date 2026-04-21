@@ -90,7 +90,12 @@ export function getFastModeUnavailableReason(): string | null {
   }
 
   // Only available for 1P (not Bedrock/Vertex/Foundry)
-  if (!getProviderRegistry().getCapabilities().firstPartyFeatures) {
+  if (
+    !getProviderRegistry().resolveFirstPartyCapability(
+      undefined,
+      'supportsFastMode',
+    )
+  ) {
     const reason = 'Fast mode is not available on Bedrock, Vertex, or Foundry'
     logForDebugging(`Fast mode unavailable: ${reason}`)
     return reason
@@ -152,7 +157,10 @@ export function isFastModeSupportedByModel(
   }
   const model = modelSetting ?? getDefaultMainLoopModelSetting()
   const parsedModel = parseUserSpecifiedModel(model)
-  return getProviderRegistry().getCapabilities(parsedModel).firstPartyFeatures
+  return getProviderRegistry().resolveFirstPartyCapability(
+    parsedModel,
+    'supportsFastMode',
+  )
 }
 
 // --- Fast mode runtime state ---

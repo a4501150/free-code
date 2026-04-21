@@ -711,6 +711,10 @@ describe("Provider Config E2E", () => {
             },
           },
         },
+        // Force settings to come only from the test-owned project settings.json
+        // so host-level or user-level settings cannot pollute the tier-routing
+        // resolution.
+        additionalArgs: ["--setting-sources", "project"],
       });
       await session.start();
 
@@ -766,6 +770,7 @@ describe("Provider Config E2E", () => {
             },
           },
         },
+        additionalArgs: ["--setting-sources", "project"],
       });
       await session.start();
 
@@ -811,6 +816,7 @@ describe("Provider Config E2E", () => {
             },
           },
         },
+        additionalArgs: ["--setting-sources", "project"],
       });
       await session.start();
 

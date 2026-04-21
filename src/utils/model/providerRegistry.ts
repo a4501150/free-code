@@ -7,11 +7,6 @@
  */
 
 import { getClaudeAIOAuthTokens } from "../oauthTokenReader.js";
-import {
-  readFreecodeSettingsFile,
-  reorderFreecodeSettingsFile,
-  writeFreecodeSettingsFile,
-} from "../settings/freecodeSettings.js";
 import { getInitialSettings } from "../settings/settings.js";
 import type {
   ProviderAuthConfig,
@@ -27,7 +22,7 @@ import {
   applyBedrockRegionPrefix,
   getBedrockRegionPrefix,
 } from "./bedrockInferenceProfiles.js";
-import { migrateFromLegacyEnvVars } from "./legacyProviderMigration.js";
+import { synthesizeProvidersFromLegacy } from "./legacyProviderMigration.js";
 import { parseModelString, stripContextSuffix } from "./parseModelString.js";
 
 // ── Capability defaults by provider type ──────────────────────────────
@@ -46,6 +41,18 @@ const ALL_FALSE_CAPABILITIES: Required<ProviderCapabilities> = {
   enrichModelIdErrors: false,
   webSearch: false,
   customSyspromptPrefix: true,
+  // Granular decomposition defaults (false when firstPartyFeatures is false)
+  supportsToolSearch: false,
+  supportsFastMode: false,
+  showModelPricing: false,
+  supportsOAuthProfile: false,
+  supportsRemoteManagedSettings: false,
+  supportsPolicyLimits: false,
+  supportsSettingsSync: false,
+  supportsTeamMemorySync: false,
+  supportsBootstrap: false,
+  supportsAfkMode: false,
+  preservesReasoningAcrossTurns: false,
 };
 
 const PROVIDER_CAPABILITY_DEFAULTS: Record<
@@ -66,54 +73,57 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     enrichModelIdErrors: false,
     webSearch: true,
     customSyspromptPrefix: true,
+    // All first-party features enabled on native Anthropic.
+    supportsToolSearch: true,
+    supportsFastMode: true,
+    showModelPricing: true,
+    supportsOAuthProfile: true,
+    supportsRemoteManagedSettings: true,
+    supportsPolicyLimits: true,
+    supportsSettingsSync: true,
+    supportsTeamMemorySync: true,
+    supportsBootstrap: true,
+    supportsAfkMode: true,
+    preservesReasoningAcrossTurns: true,
   },
   "bedrock-converse": {
-    globalCacheScope: false,
-    eagerInputStreaming: false,
-    clientRequestId: false,
-    betasInBody: false,
+    ...ALL_FALSE_CAPABILITIES,
     authManagedExternally: true,
     credentialRefresh: "aws",
-    firstPartyFeatures: false,
     tokenCountingMethod: "bedrock-custom",
-    opaqueDeploymentIds: false,
     regionPrefixPropagation: true,
     enrichModelIdErrors: true,
-    webSearch: false,
-    customSyspromptPrefix: true,
   },
   vertex: {
-    globalCacheScope: false,
-    eagerInputStreaming: false,
-    clientRequestId: false,
-    betasInBody: false,
+    ...ALL_FALSE_CAPABILITIES,
     authManagedExternally: true,
     credentialRefresh: "gcp",
-    firstPartyFeatures: false,
     tokenCountingMethod: "vertex-filtered",
-    opaqueDeploymentIds: false,
-    regionPrefixPropagation: false,
-    enrichModelIdErrors: false,
     webSearch: true,
     customSyspromptPrefix: false,
+    // Vertex-Anthropic preserves signed thinking blocks across turns.
+    preservesReasoningAcrossTurns: true,
   },
   foundry: {
-    globalCacheScope: false,
-    eagerInputStreaming: false,
-    clientRequestId: false,
-    betasInBody: false,
+    ...ALL_FALSE_CAPABILITIES,
     authManagedExternally: true,
-    credentialRefresh: "none",
-    firstPartyFeatures: false,
-    tokenCountingMethod: "native",
     opaqueDeploymentIds: true,
-    regionPrefixPropagation: false,
-    enrichModelIdErrors: false,
     webSearch: true,
-    customSyspromptPrefix: true,
+    // Foundry exposes Anthropic-compatible endpoints and preserves signed
+    // thinking blocks across turns.
+    preservesReasoningAcrossTurns: true,
   },
   "openai-chat-completions": { ...ALL_FALSE_CAPABILITIES },
-  "openai-responses": { ...ALL_FALSE_CAPABILITIES },
+  "openai-responses": {
+    ...ALL_FALSE_CAPABILITIES,
+    // The Codex adapter round-trips reasoning across turns by echoing
+    // opaque `{type:"reasoning", id, encrypted_content, summary}` items in
+    // `input[]` on each outbound request. The encrypted_content blob is
+    // carried across turns on the in-memory `thinking` content block via
+    // a Codex-specific side-channel (`codexReasoningId` /
+    // `codexEncryptedContent`). See codex-fetch-adapter.ts.
+    preservesReasoningAcrossTurns: true,
+  },
   gemini: {
     ...ALL_FALSE_CAPABILITIES,
     authManagedExternally: true,
@@ -410,6 +420,33 @@ export class ProviderRegistry {
   }
 
   /**
+   * Resolve a boolean first-party capability with firstPartyFeatures as the
+   * fallback. Used by call sites that previously read
+   * `caps.firstPartyFeatures` directly — they now read the specific flag
+   * and fall back to `firstPartyFeatures` for back-compat with existing
+   * configs that only set the umbrella flag.
+   */
+  resolveFirstPartyCapability(
+    model: string | undefined,
+    cap:
+      | "supportsToolSearch"
+      | "supportsFastMode"
+      | "showModelPricing"
+      | "supportsOAuthProfile"
+      | "supportsRemoteManagedSettings"
+      | "supportsPolicyLimits"
+      | "supportsSettingsSync"
+      | "supportsTeamMemorySync"
+      | "supportsBootstrap"
+      | "supportsAfkMode",
+  ): boolean {
+    const caps = this.getCapabilities(model);
+    const specific = caps[cap];
+    if (specific !== undefined && specific !== null) return !!specific;
+    return !!caps.firstPartyFeatures;
+  }
+
+  /**
    * Get a per-model capability flag from the provider config.
    * Returns the boolean value if the flag exists on the model config,
    * or undefined if not set (caller should fall back to hardcoded logic).
@@ -531,152 +568,64 @@ export class ProviderRegistry {
 /**
  * Get or lazily initialize the provider registry.
  *
- * Resolution order:
- * 1. freecode.json `providers` field (from settings merge)
- * 2. Legacy env var migration → persist to freecode.json for next run
+ * Resolution order (registry is read-only with respect to disk):
+ *   1. If `settings.providers` is present (from `freecode.json`), use it.
+ *   2. Otherwise, synthesize an in-memory providers block from legacy env
+ *      vars. No disk write — persisting to `freecode.json` is the job of
+ *      the user-consented `runLegacyToFreecodeMigration()` at setup time.
+ *
+ * The in-memory fallback lets env-var-only users (e.g. `ANTHROPIC_API_KEY`
+ * exported in their shell) keep working during the window before
+ * `showSetupScreens` prompts them to migrate, and for non-interactive
+ * invocations like `claude -p 'hi'`.
  */
 export function getProviderRegistry(): ProviderRegistry {
   if (!_instance) {
-    // Migration from settings.json → freecode.json is handled by loadSettingsFromDisk()
-    // before getInitialSettings() returns, so freecode.json is already populated.
     const settings = getInitialSettings();
+    const settingsObj = settings as Record<string, unknown>;
+
+    const readStr = (key: string): string | undefined =>
+      typeof settingsObj[key] === "string"
+        ? stripContextSuffix(settingsObj[key] as string)
+        : undefined;
+
+    const availableSubagentModels = Array.isArray(
+      settingsObj.availableSubagentModels,
+    )
+      ? (settingsObj.availableSubagentModels as string[])
+      : undefined;
 
     if (settings.providers) {
-      // Providers found in settings (freecode.json or settings.json)
-      const settingsObj = settings as Record<string, unknown>;
       _instance = new ProviderRegistry(
         settings.providers as Record<string, ProviderConfig>,
         {
-          defaultModel:
-            typeof settingsObj.defaultModel === "string"
-              ? stripContextSuffix(settingsObj.defaultModel)
-              : undefined,
-          defaultSubagentModel:
-            typeof settingsObj.defaultSubagentModel === "string"
-              ? stripContextSuffix(settingsObj.defaultSubagentModel)
-              : undefined,
-          defaultSmallFastModel:
-            typeof settingsObj.defaultSmallFastModel === "string"
-              ? stripContextSuffix(settingsObj.defaultSmallFastModel)
-              : undefined,
-          availableSubagentModels: Array.isArray(
-            settingsObj.availableSubagentModels,
-          )
-            ? (settingsObj.availableSubagentModels as string[])
-            : undefined,
-          defaultBalancedModel:
-            typeof settingsObj.defaultBalancedModel === "string"
-              ? stripContextSuffix(settingsObj.defaultBalancedModel)
-              : undefined,
-          defaultMostPowerfulModel:
-            typeof settingsObj.defaultMostPowerfulModel === "string"
-              ? stripContextSuffix(settingsObj.defaultMostPowerfulModel)
-              : undefined,
+          defaultModel: readStr("defaultModel"),
+          defaultSubagentModel: readStr("defaultSubagentModel"),
+          defaultSmallFastModel: readStr("defaultSmallFastModel"),
+          availableSubagentModels,
+          defaultBalancedModel: readStr("defaultBalancedModel"),
+          defaultMostPowerfulModel: readStr("defaultMostPowerfulModel"),
         },
       );
     } else {
-      // No providers in settings — run legacy env var migration
+      // In-memory fallback only — never writes to disk. The authoritative
+      // migration is runLegacyToFreecodeMigration() in the setup flow.
       const oauthTokens = getClaudeAIOAuthTokens();
-
-      const migrated = migrateFromLegacyEnvVars({ oauthTokens });
-
-      // Default models: settings cache (freecode.json) takes priority over
-      // legacy migration output. migrateToFreecodeSettings() may have already
-      // promoted defaultModel to freecode.json (and deleted the legacy "model"
-      // field), so the legacy migration no longer finds it.
-      const settingsObj = settings as Record<string, unknown>;
-      const defaultModel =
-        (typeof settingsObj.defaultModel === "string"
-          ? stripContextSuffix(settingsObj.defaultModel)
-          : undefined) || migrated.defaultModel;
-      const defaultSubagentModel =
-        (typeof settingsObj.defaultSubagentModel === "string"
-          ? stripContextSuffix(settingsObj.defaultSubagentModel)
-          : undefined) || migrated.defaultSubagentModel;
-      const defaultSmallFastModel =
-        (typeof settingsObj.defaultSmallFastModel === "string"
-          ? stripContextSuffix(settingsObj.defaultSmallFastModel)
-          : undefined) || migrated.defaultSmallFastModel;
+      const migrated = synthesizeProvidersFromLegacy({
+        env: process.env,
+        oauthTokens,
+      });
 
       _instance = new ProviderRegistry(migrated.providers, {
-        defaultModel,
-        defaultSubagentModel,
-        defaultSmallFastModel,
-        availableSubagentModels: Array.isArray(
-          settingsObj.availableSubagentModels,
-        )
-          ? (settingsObj.availableSubagentModels as string[])
-          : undefined,
-        defaultBalancedModel:
-          typeof settingsObj.defaultBalancedModel === "string"
-            ? stripContextSuffix(settingsObj.defaultBalancedModel)
-            : undefined,
-        defaultMostPowerfulModel:
-          typeof settingsObj.defaultMostPowerfulModel === "string"
-            ? stripContextSuffix(settingsObj.defaultMostPowerfulModel)
-            : undefined,
+        defaultModel: readStr("defaultModel") ?? migrated.defaultModel,
+        defaultSubagentModel:
+          readStr("defaultSubagentModel") ?? migrated.defaultSubagentModel,
+        defaultSmallFastModel:
+          readStr("defaultSmallFastModel") ?? migrated.defaultSmallFastModel,
+        availableSubagentModels,
+        defaultBalancedModel: readStr("defaultBalancedModel"),
+        defaultMostPowerfulModel: readStr("defaultMostPowerfulModel"),
       });
-
-      // Persist to freecode.json so future runs pick up the migration output
-      writeFreecodeSettingsFile({
-        providers: migrated.providers,
-        ...(defaultModel ? { defaultModel } : {}),
-        ...(defaultSubagentModel ? { defaultSubagentModel } : {}),
-        ...(defaultSmallFastModel ? { defaultSmallFastModel } : {}),
-      });
-
-      // Clean up provider-routing env vars from the env block — they are now
-      // baked into the provider config and top-level default* fields.
-      const currentSettings = readFreecodeSettingsFile() ?? {};
-      if (
-        currentSettings.env &&
-        typeof currentSettings.env === "object" &&
-        !Array.isArray(currentSettings.env)
-      ) {
-        const env = {
-          ...(currentSettings.env as Record<string, string>),
-        };
-        // Env vars consumed by the migration — now redundant with provider config.
-        // NOTE: ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY, and ANTHROPIC_FOUNDRY_API_KEY
-        // are NOT cleaned because the provider config references them by name via
-        // tokenEnv/keyEnv (resolved at request time from process.env).
-        const consumedVars = [
-          // Provider selection flags (now implied by provider type)
-          "CLAUDE_CODE_USE_BEDROCK",
-          "CLAUDE_CODE_USE_VERTEX",
-          "CLAUDE_CODE_USE_FOUNDRY",
-          "CLAUDE_CODE_USE_OPENAI",
-          // Base URLs (now in provider config baseUrl)
-          "ANTHROPIC_BASE_URL",
-          "ANTHROPIC_FOUNDRY_BASE_URL",
-          "ANTHROPIC_FOUNDRY_RESOURCE",
-          // Region/project (now in provider config auth)
-          "CLOUD_ML_REGION",
-          "ANTHROPIC_VERTEX_PROJECT_ID",
-          // Model defaults (now in defaultModel/defaultSubagentModel/defaultSmallFastModel)
-          "ANTHROPIC_MODEL",
-          "ANTHROPIC_SMALL_FAST_MODEL",
-          "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-          "CLAUDE_CODE_SUBAGENT_MODEL",
-          "ANTHROPIC_DEFAULT_OPUS_MODEL",
-          "ANTHROPIC_DEFAULT_SONNET_MODEL",
-        ];
-        let cleaned = false;
-        for (const key of consumedVars) {
-          if (key in env) {
-            delete env[key];
-            cleaned = true;
-          }
-        }
-        if (cleaned) {
-          writeFreecodeSettingsFile({
-            env: Object.keys(env).length > 0 ? env : undefined,
-          });
-        }
-      }
-
-      // Reorder keys for readability after migration is complete.
-      reorderFreecodeSettingsFile();
     }
   }
   return _instance;
