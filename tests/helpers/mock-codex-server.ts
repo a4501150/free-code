@@ -1,12 +1,12 @@
 /**
  * Mock Codex (OpenAI Responses API) Server
  *
- * A Bun.serve()-based HTTP server that responds to POST /codex/responses
+ * A Bun.serve()-based HTTP server that responds to POST /responses
  * with Responses-API-format SSE streaming responses. Used to test the
  * codex-fetch-adapter end-to-end, including reasoning round-trip via
  * opaque `encrypted_content`.
  *
- * The adapter is wired to POST {baseUrl}/codex/responses when baseUrl is
+ * The adapter is wired to POST {baseUrl}/responses when baseUrl is
  * set (proxy mode), skipping JWT account extraction.
  */
 
@@ -180,7 +180,7 @@ export class MockCodexServer {
   private async handleRequest(req: Request): Promise<Response> {
     const url = new URL(req.url)
 
-    if (req.method === 'POST' && url.pathname === '/codex/responses') {
+    if (req.method === 'POST' && url.pathname === '/responses') {
       return this.handleResponsesRequest(req)
     }
     return new Response('Not Found', { status: 404 })

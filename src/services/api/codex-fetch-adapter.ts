@@ -12,11 +12,12 @@
  * - Tool use (tool_use → function_call, tool_result → function_call_output)
  * - Streaming events translation
  *
- * Endpoint: https://chatgpt.com/backend-api/codex/responses
+ * Endpoint: {baseUrl}/responses (default: https://chatgpt.com/backend-api/codex/responses)
  */
 
 import { codexAdapter } from './adapters/codex-adapter-impl.js'
 import { toAnthropicErrorType } from '../../utils/normalizedError.js'
+import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 
 
 // No hardcoded model list — the provider registry (freecode.json) is the
@@ -82,16 +83,32 @@ interface AnthropicTool {
 
 /**
  * Translates Anthropic tool definitions to Codex format.
+ *
+ * The `strict` field is set from the model's `structuredOutputs` capability
+ * flag (see `ProviderModelSchema` in `utils/settings/types.ts`). When the
+ * flag is true → `strict: true` (OpenAI constrains `arguments` to the JSON
+ * Schema; requires `additionalProperties: false` on every object plus every
+ * property listed in `required`). When false → `strict: false` (best
+ * effort). When undefined → field omitted and the server's default applies.
+ *
  * @param anthropicTools - Array of Anthropic tool definitions
+ * @param model - Model ID used to look up provider capabilities
  * @returns Array of Codex-compatible tool objects
  */
-function translateTools(anthropicTools: AnthropicTool[]): Array<Record<string, unknown>> {
+function translateTools(
+  anthropicTools: AnthropicTool[],
+  model: string,
+): Array<Record<string, unknown>> {
+  const structuredOutputs = getProviderRegistry().getModelFlag(
+    model,
+    'structuredOutputs',
+  )
   return anthropicTools.map(tool => ({
     type: 'function',
     name: tool.name,
     description: tool.description || '',
     parameters: tool.input_schema || { type: 'object', properties: {} },
-    strict: null,
+    ...(structuredOutputs === undefined ? {} : { strict: structuredOutputs }),
   }))
 }
 
@@ -267,7 +284,7 @@ function translateToCodexBody(anthropicBody: Record<string, unknown>, sessionId:
 
   // Add tools if present
   if (anthropicTools.length > 0) {
-    codexBody.tools = translateTools(anthropicTools)
+    codexBody.tools = translateTools(anthropicTools, codexModel)
   }
 
   // Effort → reasoning_effort (OpenAI Responses API)
@@ -829,7 +846,7 @@ async function translateCodexStreamToAnthropic(
 
 // ── Main fetch interceptor ──────────────────────────────────────────
 
-const DEFAULT_CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex/responses'
+const DEFAULT_CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex'
 
 type CodexFetchOptions = {
   accessToken: string
@@ -840,14 +857,17 @@ type CodexFetchOptions = {
 
 /**
  * Creates a fetch function that intercepts Anthropic API calls and routes them to Codex.
+ *
+ * URL composition follows the same pattern as other adapters (e.g.
+ * openai-chat-completions): `baseUrl` is the root and the adapter appends
+ * its canonical path — here, `/responses`. Users configuring a proxy or
+ * alternate endpoint set `baseUrl` to everything before `/responses`.
  */
 export function createCodexFetch(
   opts: CodexFetchOptions,
 ): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
   const isProxied = !!opts.baseUrl
-  const codexBaseUrl = isProxied
-    ? `${opts.baseUrl!.replace(/\/$/, '')}/codex/responses`
-    : DEFAULT_CODEX_BASE_URL
+  const codexBaseUrl = `${(opts.baseUrl || DEFAULT_CODEX_BASE_URL).replace(/\/$/, '')}/responses`
   // Account ID only needed for direct ChatGPT backend (proxy handles it)
   const accountId = isProxied ? null : extractAccountId(opts.accessToken)
 
