@@ -19,8 +19,16 @@ const CLI_HIGHLIGHT: CliHighlight = {
   supportsLanguage: cliHighlight.supportsLanguage,
 }
 
+// Single shared promise. React.use() tracks promises by identity — returning
+// a fresh `Promise.resolve(CLI_HIGHLIGHT)` on every call made the <Markdown>
+// Suspense boundary re-evaluate on every parent re-render, briefly rendering
+// the highlight={null} fallback (visible as a syntax-highlight blink when the
+// parent re-renders on every keystroke, e.g. the Exit Plan Mode feedback input).
+const CLI_HIGHLIGHT_PROMISE: Promise<CliHighlight | null> =
+  Promise.resolve(CLI_HIGHLIGHT)
+
 export function getCliHighlightPromise(): Promise<CliHighlight | null> {
-  return Promise.resolve(CLI_HIGHLIGHT)
+  return CLI_HIGHLIGHT_PROMISE
 }
 
 /**

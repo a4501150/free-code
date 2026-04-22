@@ -10,10 +10,7 @@ export function useShimmerAnimation(
 ): [ref: (element: DOMElement | null) => void, glimmerIndex: number] {
   const glimmerSpeed = mode === 'requesting' ? 50 : 200
   // Pass null when stalled to unsubscribe from the clock — otherwise the
-  // setInterval keeps firing at 20fps even when the shimmer isn't visible.
-  // Notably, if the caller never attaches `ref` (e.g. conditional JSX),
-  // useTerminalViewport stays at its initial isVisible:true and the
-  // viewport-pause never kicks in, so this is the only stop mechanism.
+  // setInterval keeps firing at 20fps even when the shimmer isn't meaningful.
   const [ref, time] = useAnimationFrame(isStalled ? null : glimmerSpeed)
   const messageWidth = useMemo(() => stringWidth(message), [message])
 

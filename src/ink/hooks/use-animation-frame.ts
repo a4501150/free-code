@@ -31,27 +31,34 @@ export function useAnimationFrame(
   intervalMs: number | null = 16,
 ): [ref: (element: DOMElement | null) => void, time: number] {
   const clock = useContext(ClockContext)
-  const [viewportRef, { isVisible }] = useTerminalViewport()
+  // We still call useTerminalViewport so the returned ref is a viewport-aware
+  // ref for any caller that wants it, but we do NOT gate the clock
+  // subscription on isVisible. A previous version did, and deadlocked:
+  // when the spinner was laid out briefly off-viewport (e.g. while the Exit
+  // Plan Mode modal pushed it down), useAnimationFrame unsubscribed → no
+  // setTime → no re-render → useLayoutEffect in useTerminalViewport never
+  // re-ran → the return-to-visible transition was never detected, and the
+  // spinner stayed frozen until something else (like typing in the prompt
+  // input) forced a re-render up the tree.
+  const [viewportRef] = useTerminalViewport()
   const [time, setTime] = useState(() => clock?.now() ?? 0)
 
-  const active = isVisible && intervalMs !== null
-
   useEffect(() => {
-    if (!clock || !active) return
+    if (!clock || intervalMs === null) return
 
     let lastUpdate = clock.now()
 
     const onChange = (): void => {
       const now = clock.now()
-      if (now - lastUpdate >= intervalMs!) {
+      if (now - lastUpdate >= intervalMs) {
         lastUpdate = now
         setTime(now)
       }
     }
 
-    // keepAlive: true — visible animations drive the clock
+    // keepAlive: true — animations drive the clock
     return clock.subscribe(onChange, true)
-  }, [clock, intervalMs, active])
+  }, [clock, intervalMs])
 
   return [viewportRef, time]
 }
