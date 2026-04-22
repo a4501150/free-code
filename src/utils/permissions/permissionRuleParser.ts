@@ -16,7 +16,9 @@ const BRIEF_TOOL_NAME: string | null =
 // hooks, and persisted wire names resolve to the canonical name.
 const LEGACY_TOOL_NAME_ALIASES: Record<string, string> = {
   Task: AGENT_TOOL_NAME,
+  TaskStop: TASK_STOP_TOOL_NAME,
   KillShell: TASK_STOP_TOOL_NAME,
+  TaskOutput: TASK_OUTPUT_TOOL_NAME,
   AgentOutputTool: TASK_OUTPUT_TOOL_NAME,
   BashOutputTool: TASK_OUTPUT_TOOL_NAME,
   ...((feature('KAIROS') || feature('KAIROS_BRIEF')) && BRIEF_TOOL_NAME

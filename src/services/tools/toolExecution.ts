@@ -327,7 +327,8 @@ export async function* runToolUse(
   let tool = findToolByName(toolUseContext.options.tools, toolName)
 
   // If not found, check if it's a deprecated tool being called by alias
-  // (e.g., old transcripts calling "KillShell" which is now an alias for "TaskStop")
+  // (e.g., old transcripts calling "KillShell"/"TaskStop" which are now
+  // aliases for "BackgroundTaskStop")
   // Only fall back for tools where the name matches an alias, not the primary name
   if (!tool) {
     const fallbackTool = findToolByName(getAllBaseTools(), toolName)

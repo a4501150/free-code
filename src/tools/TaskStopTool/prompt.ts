@@ -1,4 +1,4 @@
-export const TASK_STOP_TOOL_NAME = 'TaskStop'
+export const TASK_STOP_TOOL_NAME = 'BackgroundTaskStop'
 
 export const DESCRIPTION = `
 - Stops a running background task by its ID

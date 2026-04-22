@@ -182,7 +182,8 @@ export function deletePermissionRuleFromSettings(
   }
 
   // Normalize raw settings entries via roundtrip parse→serialize so legacy
-  // names (e.g. "KillShell") match their canonical form ("TaskStop").
+  // names (e.g. "KillShell", "TaskStop") match their canonical form
+  // ("BackgroundTaskStop").
   const normalizeEntry = (raw: string): string =>
     permissionRuleValueToString(permissionRuleValueFromString(raw))
 
