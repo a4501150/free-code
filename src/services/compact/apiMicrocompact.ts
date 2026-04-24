@@ -27,29 +27,21 @@ export type ContextManagementConfig = {
   edits: ContextEditStrategy[]
 }
 
-// API-based microcompact implementation that uses native context management
+// Native context management. Always emits `keep: 'all'` so the server-side
+// default policy can't trim thinking out from under us. Matches the shape
+// shipped in the official CLI 2.1.119 after Anthropic removed the earlier
+// >1h-idle latch that caused the "forgetful/repetitive" regression.
 export function getAPIContextManagement(options?: {
   hasThinking?: boolean
-  isRedactThinkingActive?: boolean
-  clearAllThinking?: boolean
 }): ContextManagementConfig | undefined {
-  const {
-    hasThinking = false,
-    isRedactThinkingActive = false,
-    clearAllThinking = false,
-  } = options ?? {}
+  const { hasThinking = false } = options ?? {}
 
   const strategies: ContextEditStrategy[] = []
 
-  // Preserve thinking blocks in previous assistant turns. Skip when
-  // redact-thinking is active — redacted blocks have no model-visible content.
-  // When clearAllThinking is set (>1h idle = cache miss), keep only the last
-  // thinking turn — the API schema requires value >= 1, and omitting the edit
-  // falls back to the model-policy default (often "all"), which wouldn't clear.
-  if (hasThinking && !isRedactThinkingActive) {
+  if (hasThinking) {
     strategies.push({
       type: 'clear_thinking_20251015',
-      keep: clearAllThinking ? { type: 'thinking_turns', value: 1 } : 'all',
+      keep: 'all',
     })
   }
 

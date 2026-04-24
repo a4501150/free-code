@@ -112,14 +112,12 @@ import {
   getPromptCache1hAllowlist,
   getPromptCache1hEligible,
   getSessionId,
-  getThinkingClearLatched,
   setAfkModeHeaderLatched,
   setCacheEditingHeaderLatched,
   setFastModeHeaderLatched,
   setLastMainRequestId,
   setPromptCache1hAllowlist,
   setPromptCache1hEligible,
-  setThinkingClearLatched,
 } from 'src/bootstrap/state.js'
 import {
   AFK_MODE_BETA_HEADER,
@@ -127,7 +125,6 @@ import {
   EFFORT_BETA_HEADER,
   FAST_MODE_BETA_HEADER,
   PROMPT_CACHING_SCOPE_BETA_HEADER,
-  REDACT_THINKING_BETA_HEADER,
   STRUCTURED_OUTPUTS_BETA_HEADER,
   TASK_BUDGETS_BETA_HEADER,
 } from 'src/constants/betas.js'
@@ -223,7 +220,6 @@ import {
   type NonNullableUsage,
 } from './logging.js'
 import {
-  CACHE_TTL_1HOUR_MS,
   checkResponseForCacheBreak,
   recordPromptState,
 } from './promptCacheBreakDetection.js'
@@ -1337,20 +1333,6 @@ async function* queryModel(
     }
   }
 
-  // Only latch from agentic queries so a classifier call doesn't flip the
-  // main thread's context_management mid-turn.
-  let thinkingClearLatched = getThinkingClearLatched() === true
-  if (!thinkingClearLatched && isAgenticQuery) {
-    const lastCompletion = getLastApiCompletionTimestamp()
-    if (
-      lastCompletion !== null &&
-      Date.now() - lastCompletion > CACHE_TTL_1HOUR_MS
-    ) {
-      thinkingClearLatched = true
-      setThinkingClearLatched(true)
-    }
-  }
-
   const effort = resolveAppliedEffort(options.model, options.effortValue)
 
   if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
@@ -1515,11 +1497,11 @@ async function* queryModel(
       }
     }
 
-    // Get API context management strategies if enabled
+    // Get API context management strategies if enabled. Always emits
+    // `keep: 'all'` — see apiMicrocompact.ts for the rationale (matches
+    // official CLI 2.1.119 shape).
     const contextManagement = getAPIContextManagement({
       hasThinking,
-      isRedactThinkingActive: betasParams.includes(REDACT_THINKING_BETA_HEADER),
-      clearAllThinking: thinkingClearLatched,
     })
 
     const enablePromptCaching =
