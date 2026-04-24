@@ -12,7 +12,7 @@ import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
 import { writeFileSyncAndFlush_DEPRECATED } from '../file.js'
-import { safeParseJSON } from '../json.js'
+import { patchJsoncFile, safeParseJSONC } from '../json.js'
 import { logError } from '../log.js'
 import { jsonStringify } from '../slowOperations.js'
 
@@ -80,61 +80,51 @@ export function readFreecodeSettingsFile(): Record<string, unknown> | null {
     return null
   }
 
-  const parsed = safeParseJSON(content)
+  const parsed = safeParseJSONC(content)
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
   return parsed as Record<string, unknown>
 }
 
 /**
- * Write to freecode.json (read-merge-write).
- * Preserves existing keys not in the partial update.
+ * Write to freecode.json, preserving JSONC comments outside the changed scope.
  *
  * Merge contract:
- *   - Top-level keys overwrite shallowly. Pass `undefined` / omit to leave an
- *     existing key unchanged; pass an explicit value to replace it.
- *   - `providers` merges shallowly **by provider name**: incoming providers
- *     overwrite the existing entry for that name; sibling providers
- *     (different keys) are preserved. Callers MUST supply a complete
- *     `ProviderConfig` per slot they touch — partial updates to inner fields
- *     (e.g. changing only `baseUrl` of an existing provider) are NOT
- *     supported via this function and will drop every other field of that
- *     provider. To do that, read the file, mutate the parsed object, and
- *     use the settings write APIs in settings.ts (or `updateProviderModelConfig`
- *     for model-level edits).
- *   - This behavior is load-bearing for `/login`: the OAuth completion writes
- *     `{ providers: { 'claude-ai': {...full config} } }` and must preserve
- *     sibling providers like `anthropic`.
+ *   - Top-level keys overwrite shallowly. Omit a key to leave the existing
+ *     value unchanged; pass `undefined` to delete it.
+ *   - Keys in `SETTINGS_DEEP_KEYS` (e.g. `providers`, `mcpServers`, `permissions`)
+ *     merge one level deeper by child name: each child supplied in the partial
+ *     is re-emitted; children not listed are left untouched. Callers MUST
+ *     supply a complete value per child slot they touch — partial updates to
+ *     inner fields of a child (e.g. changing only `baseUrl` of an existing
+ *     provider) are NOT supported and will drop every other field of that
+ *     child. For model-level edits, use `updateProviderModelConfig`.
+ *   - Load-bearing for `/login`: OAuth completion writes
+ *     `{ providers: { 'claude-ai': {...full config} } }` and sibling providers
+ *     like `anthropic` are preserved (including any comments attached to them).
+ *
+ * Comment preservation:
+ *   - Comments outside a replaced node survive.
+ *   - Comments INSIDE a replaced child subtree are lost (the subtree is
+ *     replaced wholesale with the new serialized value).
  */
 export function writeFreecodeSettingsFile(
   partial: Record<string, unknown>,
 ): void {
   try {
     const filePath = getFreecodeSettingsFilePath()
-    const existing = readFreecodeSettingsFile() ?? {}
 
-    // Deep merge for providers: incoming providers overwrite by name
-    let mergedProviders = existing.providers
-    if (partial.providers && typeof partial.providers === 'object') {
-      mergedProviders = {
-        ...(typeof existing.providers === 'object' && existing.providers !== null
-          ? existing.providers
-          : {}),
-        ...(partial.providers as Record<string, unknown>),
+    let rawContent: string | null = null
+    try {
+      rawContent = readFileSync(filePath, 'utf8')
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logError(e)
+        return
       }
+      // ENOENT: patchJsoncFile handles null content by serializing fresh.
     }
 
-    const merged: Record<string, unknown> = {
-      ...existing,
-      ...partial,
-    }
-    if (mergedProviders !== undefined) {
-      merged.providers = mergedProviders
-    }
-
-    writeFileSyncAndFlush_DEPRECATED(
-      filePath,
-      jsonStringify(merged, null, 2) + '\n',
-    )
+    writeFileSyncAndFlush_DEPRECATED(filePath, patchJsoncFile(rawContent, partial))
   } catch (e) {
     logError(e)
   }
@@ -142,8 +132,15 @@ export function writeFreecodeSettingsFile(
 
 /**
  * Update a specific model entry within a provider's models array in freecode.json.
- * Does in-place mutation of the parsed object to preserve key ordering.
+ * Does in-place mutation of the parsed object to preserve model key ordering,
+ * then re-emits just the touched provider slot via `writeFreecodeSettingsFile`
+ * so sibling providers (and any comments attached to them) are left untouched.
+ *
  * Keys set to undefined in `updates` are deleted from the model entry.
+ *
+ * Note: inside-subtree comments on the touched provider (including the
+ * models array) are lost, consistent with the merge contract documented on
+ * `writeFreecodeSettingsFile`.
  */
 export function updateProviderModelConfig(
   providerName: string,
@@ -154,15 +151,15 @@ export function updateProviderModelConfig(
     const settings = readFreecodeSettingsFile()
     if (!settings) return
 
-    const providers = settings.providers as Record<string, { models?: Array<Record<string, unknown>> }> | undefined
+    const providers = settings.providers as
+      | Record<string, { models?: Array<Record<string, unknown>> }>
+      | undefined
     if (!providers) return
 
     const provider = providers[providerName]
     if (!provider?.models) return
 
-    const modelEntry = provider.models.find(
-      (m) => m.id === modelId,
-    )
+    const modelEntry = provider.models.find(m => m.id === modelId)
     if (!modelEntry) return
 
     for (const [key, value] of Object.entries(updates)) {
@@ -173,11 +170,7 @@ export function updateProviderModelConfig(
       }
     }
 
-    const filePath = getFreecodeSettingsFilePath()
-    writeFileSyncAndFlush_DEPRECATED(
-      filePath,
-      jsonStringify(settings, null, 2) + '\n',
-    )
+    writeFreecodeSettingsFile({ providers: { [providerName]: provider } })
   } catch (e) {
     logError(e)
   }
@@ -185,7 +178,11 @@ export function updateProviderModelConfig(
 
 /**
  * Reorder freecode.json keys in place for readability.
- * Direct read-reorder-write (not merge) so key order is fully replaced.
+ *
+ * Destroys comments by design — jsonc-parser cannot move comment tokens
+ * across key boundaries, so achieving canonical key order requires a full
+ * plain-JSON re-emit. Call only from one-shot migration paths (where the
+ * file has no user-authored comments yet), never from user-facing writes.
  */
 export function reorderFreecodeSettingsFile(): void {
   try {

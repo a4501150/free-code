@@ -18,7 +18,7 @@ import { writeFileSyncAndFlush_DEPRECATED } from '../file.js'
 import { readFileSync } from '../fileRead.js'
 import { getFsImplementation, safeResolvePath } from '../fsOperations.js'
 import { addFileGlobRuleToGitignore } from '../git/gitignore.js'
-import { safeParseJSON } from '../json.js'
+import { patchJsoncFile, safeParseJSONC, SETTINGS_DEEP_KEYS } from '../json.js'
 import { logError } from '../log.js'
 import { getPlatform } from '../platform.js'
 import { clone, jsonStringify } from '../slowOperations.js'
@@ -211,7 +211,7 @@ function parseSettingsFileUncached(path: string): {
       return { settings: {}, errors: [] }
     }
 
-    const data = safeParseJSON(content, false)
+    const data = safeParseJSONC(content, false)
 
     // Filter invalid permission rules before schema validation so one bad
     // rule doesn't cause the entire settings file to be rejected.
@@ -455,10 +455,10 @@ export function updateSettingsForSource(
         // File doesn't exist — fall through to merge with empty settings
       }
       if (content !== null) {
-        const rawData = safeParseJSON(content)
+        const rawData = safeParseJSONC(content)
         if (rawData === null) {
-          // JSON syntax error - return validation error instead of overwriting
-          // safeParseJSON will already log the error, so we'll just return the error here
+          // JSONC syntax error - return validation error instead of overwriting
+          // safeParseJSONC will already log the error, so we'll just return the error here
           return {
             error: new Error(
               `Invalid JSON syntax in settings file at ${filePath}`,
@@ -473,6 +473,14 @@ export function updateSettingsForSource(
         }
       }
     }
+
+    // Snapshot before mergeWith mutates `existingSettings` in place, so we
+    // can diff old-vs-new and feed only the genuinely-changed keys to
+    // patchJsoncFile (preserves JSONC comments on untouched keys).
+    const beforeSnapshot = clone(existingSettings || {}) as Record<
+      string,
+      unknown
+    >
 
     const updatedSettings = mergeWith(
       existingSettings || {},
@@ -498,12 +506,55 @@ export function updateSettingsForSource(
       },
     )
 
+    // Build a shallow patch of the keys that actually changed. For keys in
+    // SETTINGS_DEEP_KEYS, do a per-child diff so untouched sibling children
+    // (e.g. providers.anthropic when only providers['claude-ai'] changed)
+    // are NOT re-emitted — preserving inside-subtree comments on them.
+    const afterObj = updatedSettings as Record<string, unknown>
+    const isPlainObj = (v: unknown): v is Record<string, unknown> =>
+      v !== null && typeof v === 'object' && !Array.isArray(v)
+    const changed: Record<string, unknown> = {}
+    const topKeys = new Set([
+      ...Object.keys(beforeSnapshot),
+      ...Object.keys(afterObj),
+    ])
+    for (const k of topKeys) {
+      const a = beforeSnapshot[k]
+      const b = afterObj[k]
+      if (jsonStringify(a) === jsonStringify(b)) continue
+      if (SETTINGS_DEEP_KEYS.has(k) && isPlainObj(a) && isPlainObj(b)) {
+        const sub: Record<string, unknown> = {}
+        const childKeys = new Set([...Object.keys(a), ...Object.keys(b)])
+        for (const ck of childKeys) {
+          if (jsonStringify(a[ck]) !== jsonStringify(b[ck])) {
+            sub[ck] = b[ck]
+          }
+        }
+        if (Object.keys(sub).length > 0) changed[k] = sub
+      } else {
+        // Scalar / array / missing-on-one-side: replace wholesale.
+        // `b === undefined` (key deleted) → patchJsoncFile emits a delete edit.
+        changed[k] = b
+      }
+    }
+
+    // Re-read raw file content (preserves comments) for the JSONC patch.
+    let rawContent: string | null = null
+    try {
+      rawContent = readFileSync(filePath)
+    } catch (e) {
+      if (!isENOENT(e)) {
+        throw e
+      }
+      // ENOENT: patchJsoncFile handles null content by serializing fresh.
+    }
+
     // Mark this as an internal write before writing the file
     markInternalWrite(filePath)
 
     writeFileSyncAndFlush_DEPRECATED(
       filePath,
-      jsonStringify(updatedSettings, null, 2) + '\n',
+      patchJsoncFile(rawContent, changed),
     )
 
     // Invalidate the session cache since settings have been updated
@@ -1013,7 +1064,7 @@ export function rawSettingsContainsKey(key: string): boolean {
         continue
       }
 
-      const rawData = safeParseJSON(content, false)
+      const rawData = safeParseJSONC(content, false)
       if (rawData && typeof rawData === 'object' && key in rawData) {
         return true
       }

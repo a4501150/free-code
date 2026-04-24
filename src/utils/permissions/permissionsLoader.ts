@@ -1,6 +1,6 @@
 import { readFileSync } from '../fileRead.js'
 import { getFsImplementation, safeResolvePath } from '../fsOperations.js'
-import { safeParseJSON } from '../json.js'
+import { safeParseJSONC } from '../json.js'
 import { logError } from '../log.js'
 import {
   type EditableSettingSource,
@@ -73,7 +73,7 @@ function getSettingsForSourceLenient_FOR_EDITING_ONLY_NOT_FOR_READING(
       return {}
     }
 
-    const data = safeParseJSON(content, false)
+    const data = safeParseJSONC(content, false)
     // Return raw parsed JSON without validation to preserve all existing settings
     // This is safe because we're only using this for reading/appending, not for execution
     return data && typeof data === 'object' ? (data as SettingsJson) : null

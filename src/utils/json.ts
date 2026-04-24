@@ -3,6 +3,7 @@ import {
   applyEdits,
   modify,
   parse as parseJsonc,
+  type ParseError,
 } from 'jsonc-parser/lib/esm/main.js'
 import { stripBOM } from './jsonRead.js'
 import { logError } from './log.js'
@@ -59,18 +60,43 @@ export const safeParseJSON = Object.assign(
 
 /**
  * Safely parse JSON with comments (jsonc).
- * This is useful for VS Code configuration files like keybindings.json
- * which support comments and other jsonc features.
+ * Accepts line comments, block comments, and trailing commas.
+ * Strict-JSON compatible: all `safeParseJSON` input also parses here.
+ *
+ * @param shouldLogError defaults to true; pass false for paths that
+ *        surface their own validation errors and want to avoid double-logging
+ *        (e.g. settings parsing before schema validation).
  */
-export function safeParseJSONC(json: string | null | undefined): unknown {
+export function safeParseJSONC(
+  json: string | null | undefined,
+  shouldLogError: boolean = true,
+): unknown {
   if (!json) {
     return null
   }
   try {
     // Strip BOM before parsing - PowerShell 5.x adds BOM to UTF-8 files
-    return parseJsonc(stripBOM(json))
+    const errors: ParseError[] = []
+    const result = parseJsonc(stripBOM(json), errors, {
+      allowTrailingComma: true,
+    })
+    // jsonc-parser is lenient by default (returns partial trees on syntax
+    // errors). Match safeParseJSON's strict behavior: any syntax error → null.
+    if (errors.length > 0) {
+      if (shouldLogError) {
+        logError(
+          new Error(
+            `JSONC parse error (code ${errors[0]!.error}) at offset ${errors[0]!.offset}`,
+          ),
+        )
+      }
+      return null
+    }
+    return result
   } catch (e) {
-    logError(e)
+    if (shouldLogError) {
+      logError(e)
+    }
     return null
   }
 }
@@ -274,4 +300,115 @@ export function addItemToJSONCArray(content: string, newItem: unknown): string {
     logError(e)
     return jsonStringify([newItem], null, 4)
   }
+}
+
+/**
+ * Top-level keys in settings-style JSONC files that should receive
+ * 2-level (child-by-child) writes in `patchJsoncFile` so that sibling
+ * children's inside-subtree comments survive when only one child is edited.
+ *
+ * Exported so callers (e.g. settings writer's diff builder) can mirror
+ * the same set when computing the partial to pass in.
+ */
+export const SETTINGS_DEEP_KEYS: ReadonlySet<string> = new Set([
+  'providers',
+  'mcpServers',
+  'permissions',
+  'pluginConfigs',
+  'env',
+  'extraKnownMarketplaces',
+])
+
+/**
+ * Set (or delete) a value at a JSON path in a JSONC document, preserving
+ * all comments and formatting outside the modified node.
+ *
+ * - Pass `value = undefined` to delete the key.
+ * - `path` follows jsonc-parser conventions: string segments for object
+ *   keys, numbers for array indices. E.g. `['providers', 'claude-ai']`.
+ *
+ * Invariants:
+ *   - Comments OUTSIDE the replaced node survive.
+ *   - Comments INSIDE a replaced object/array subtree are lost (the
+ *     subtree is replaced with `JSON.stringify(value)`).
+ *   - Sibling keys and their surrounding comments are preserved.
+ *
+ * Returns the modified JSONC string. Returns `content` unchanged on error.
+ */
+export function modifyJsoncKey(
+  content: string,
+  path: (string | number)[],
+  value: unknown,
+  opts: { tabSize?: number } = {},
+): string {
+  try {
+    const clean = stripBOM(content)
+    const edits = modify(clean, path, value, {
+      formattingOptions: { insertSpaces: true, tabSize: opts.tabSize ?? 2 },
+    })
+    if (!edits || edits.length === 0) return clean
+    return applyEdits(clean, edits)
+  } catch (e) {
+    logError(e)
+    return content
+  }
+}
+
+/**
+ * Apply a partial update to a JSONC document, preserving comments.
+ *
+ * Algorithm:
+ *   For each key in `partial`:
+ *     - If key is in `deepKeys` AND the new value is a plain object:
+ *         Ensure the parent exists (seed `{}` if missing), then
+ *         per-child: `modifyJsoncKey(content, [key, childKey], childValue)`.
+ *         This preserves comments on sibling children that the caller
+ *         did NOT include in `partial[key]`.
+ *     - Else: `modifyJsoncKey(content, [key], newValue)` — whole-value replace.
+ *   A value of `undefined` deletes the corresponding key.
+ *
+ * Contract for callers with deep keys: include ONLY the children you want
+ * written. Every child listed is re-emitted (its inside-subtree comments
+ * die). Children omitted from `partial[deepKey]` are untouched.
+ *
+ * If `content` is empty/null, returns a freshly-serialized JSON document
+ * with trailing newline (no comments to preserve).
+ */
+export function patchJsoncFile(
+  content: string | null | undefined,
+  partial: Record<string, unknown>,
+  opts: { deepKeys?: ReadonlySet<string>; tabSize?: number } = {},
+): string {
+  const deepKeys = opts.deepKeys ?? SETTINGS_DEEP_KEYS
+  const tabSize = opts.tabSize ?? 2
+
+  // Fresh file: no comments to preserve, emit plain JSON.
+  if (!content || content.trim() === '') {
+    return jsonStringify(partial, null, tabSize) + '\n'
+  }
+
+  let result = stripBOM(content)
+
+  const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+    v !== null && typeof v === 'object' && !Array.isArray(v)
+
+  for (const [k, v] of Object.entries(partial)) {
+    if (deepKeys.has(k) && isPlainObject(v)) {
+      // Seed the parent object if missing or of wrong shape, so per-child
+      // writes have an object to land in. Avoids depending on jsonc-parser's
+      // intermediate-node auto-creation edge.
+      const parsed = parseJsonc(result) as Record<string, unknown> | null
+      const existing = parsed?.[k]
+      if (!isPlainObject(existing)) {
+        result = modifyJsoncKey(result, [k], {}, { tabSize })
+      }
+      for (const [childKey, childValue] of Object.entries(v)) {
+        result = modifyJsoncKey(result, [k, childKey], childValue, { tabSize })
+      }
+    } else {
+      result = modifyJsoncKey(result, [k], v, { tabSize })
+    }
+  }
+
+  return result.endsWith('\n') ? result : result + '\n'
 }
