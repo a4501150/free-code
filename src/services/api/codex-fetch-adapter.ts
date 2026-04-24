@@ -511,6 +511,13 @@ async function translateCodexStreamToAnthropic(
             // uses `response.reasoning_text.delta` and
             // `response.reasoning_summary_text.delta`; older shapes use
             // `response.reasoning.delta`. Treat all three identically.
+            //
+            // Same spec-authority rule as function_call_arguments: the
+            // `.done` event's `text` field is the authoritative final
+            // string. Deltas are an optional incremental channel. When the
+            // `.done` event is present we replace the accumulator with its
+            // `text`; for servers that emit only deltas (no `.done`), the
+            // accumulated buffer is used as-is.
             else if (
               eventType === 'response.reasoning_text.delta' ||
               eventType === 'response.reasoning_summary_text.delta' ||
@@ -519,6 +526,18 @@ async function translateCodexStreamToAnthropic(
               const text = event.delta as string | undefined
               if (typeof text === 'string') {
                 pendingReasoningText += text
+              }
+            }
+
+            // Reasoning terminal events — authoritative full text.
+            else if (
+              eventType === 'response.reasoning_text.done' ||
+              eventType === 'response.reasoning_summary_text.done' ||
+              eventType === 'response.reasoning.done'
+            ) {
+              const finalText = event.text as string | undefined
+              if (typeof finalText === 'string' && finalText.length > 0) {
+                pendingReasoningText = finalText
               }
             }
 
@@ -606,8 +625,15 @@ async function translateCodexStreamToAnthropic(
                 const encryptedContent =
                   (item.encrypted_content as string) || ''
 
-                // If no text delta arrived (e.g. summary-only mode with
-                // effort="none"), fall back to concatenating summary text.
+                // If no text delta or `.done` event arrived, fall back to
+                // scraping the terminal `output_item.done` payload.
+                //
+                // Two shapes in the wild:
+                //   - OpenAI summary-only mode (effort="none" or similar):
+                //     text lives in `item.summary[]` with type "summary_text".
+                //   - LM Studio / grammar-constrained full-reasoning mode:
+                //     text lives in `item.content[]` with type "reasoning_text".
+                // Try summary first (OpenAI canonical), then content.
                 if (!pendingReasoningText) {
                   const summary = (item.summary as
                     | Array<{ type?: string; text?: string }>
@@ -616,6 +642,18 @@ async function translateCodexStreamToAnthropic(
                     .map(s =>
                       s?.type === 'summary_text' && typeof s.text === 'string'
                         ? s.text
+                        : '',
+                    )
+                    .join('')
+                }
+                if (!pendingReasoningText) {
+                  const content = (item.content as
+                    | Array<{ type?: string; text?: string }>
+                    | undefined) || []
+                  pendingReasoningText = content
+                    .map(c =>
+                      c?.type === 'reasoning_text' && typeof c.text === 'string'
+                        ? c.text
                         : '',
                     )
                     .join('')
