@@ -523,29 +523,51 @@ async function translateCodexStreamToAnthropic(
             }
 
             // ── Tool call argument deltas ───────────────────────
+            // Per the OpenAI Responses API spec, `.done.arguments` is the
+            // authoritative final string; `.delta` events are an optional
+            // incremental channel. Grammar-constrained servers (LM Studio,
+            // vLLM with xgrammar, llama-server with json-schema grammar)
+            // emit only `.done` and skip deltas entirely. To be spec-correct
+            // for both shapes AND produce byte-identical output regardless of
+            // server streaming style, we silently accumulate deltas here and
+            // emit ONE `input_json_delta` on `.done`, preferring the
+            // authoritative `.done.arguments` over the accumulator.
+            //
+            // Live token-by-token streaming of tool args to the UI was never
+            // a user-visible feature: claude.ts skips BetaMessageStream's
+            // partialParse(); `contentBlock.input` is accumulated as a raw
+            // string and only JSON-parsed at content_block_stop inside
+            // normalizeContentFromAPI. So this change has zero UX cost.
             else if (eventType === 'response.function_call_arguments.delta') {
               const argDelta = event.delta as string
               if (typeof argDelta === 'string' && inToolCall) {
                 currentToolCallArgs += argDelta
-                controller.enqueue(
-                  encoder.encode(
-                    formatSSE('content_block_delta', JSON.stringify({
-                      type: 'content_block_delta',
-                      index: contentBlockIndex,
-                      delta: {
-                        type: 'input_json_delta',
-                        partial_json: argDelta,
-                      },
-                    })),
-                  ),
-                )
               }
             }
 
-            // Tool call arguments complete
+            // Tool call arguments complete — emit the canonical args as a
+            // single input_json_delta. Falls back to the delta accumulator
+            // only if the server omits `event.arguments` (non-conformant).
             else if (eventType === 'response.function_call_arguments.done') {
               if (inToolCall) {
-                currentToolCallArgs = (event.arguments as string) || currentToolCallArgs
+                const fullArgs =
+                  (typeof event.arguments === 'string' ? event.arguments : undefined) ??
+                  currentToolCallArgs
+                if (fullArgs) {
+                  controller.enqueue(
+                    encoder.encode(
+                      formatSSE('content_block_delta', JSON.stringify({
+                        type: 'content_block_delta',
+                        index: contentBlockIndex,
+                        delta: {
+                          type: 'input_json_delta',
+                          partial_json: fullArgs,
+                        },
+                      })),
+                    ),
+                  )
+                }
+                currentToolCallArgs = fullArgs
               }
             }
 
