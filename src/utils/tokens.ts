@@ -9,6 +9,15 @@ import {
 } from './normalizedUsage.js'
 import { jsonStringify } from './slowOperations.js'
 
+function isPlaceholderUsage(usage: Usage): boolean {
+  return (
+    usage.input_tokens === 0 &&
+    usage.output_tokens === 0 &&
+    (usage.cache_creation_input_tokens ?? 0) === 0 &&
+    (usage.cache_read_input_tokens ?? 0) === 0
+  )
+}
+
 export function getTokenUsage(message: Message): Usage | undefined {
   if (
     message?.type === 'assistant' &&
@@ -17,7 +26,8 @@ export function getTokenUsage(message: Message): Usage | undefined {
       message.message.content[0]?.type === 'text' &&
       SYNTHETIC_MESSAGES.has(message.message.content[0].text)
     ) &&
-    message.message.model !== SYNTHETIC_MODEL
+    message.message.model !== SYNTHETIC_MODEL &&
+    !isPlaceholderUsage(message.message.usage)
   ) {
     return message.message.usage
   }
