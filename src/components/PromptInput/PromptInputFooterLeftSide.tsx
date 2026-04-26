@@ -1,11 +1,6 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { feature } from 'bun:bundle'
-// Dead code elimination: conditional import for COORDINATOR_MODE
-/* eslint-disable @typescript-eslint/no-require-imports */
-const coordinatorModule = feature('COORDINATOR_MODE')
-  ? (require('../../coordinator/coordinatorMode.js') as typeof import('../../coordinator/coordinatorMode.js'))
-  : undefined
-/* eslint-enable @typescript-eslint/no-require-imports */
+import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import { Box, Text } from '../../ink.js'
 import * as React from 'react'
 import figures from 'figures'
@@ -239,18 +234,16 @@ function ModeIndicator({
   const hasSelection = useHasSelection()
   const selGetState = useSelection().getState
   const hasNextTick = nextTickAt !== null
-  const isCoordinator = feature('COORDINATOR_MODE')
-    ? coordinatorModule?.isCoordinatorMode() === true
-    : false
+  const isCoordinator = feature('COORDINATOR_MODE') ? isCoordinatorMode() : false
   const runningTaskCount = useMemo(
     () =>
       count(
         Object.values(tasks),
         t =>
           isBackgroundTask(t) &&
-          !(feature('COORDINATOR_MODE') ? isPanelAgentTask(t) : false),
+          !(isCoordinator ? isPanelAgentTask(t) : false),
       ),
-    [tasks],
+    [tasks, isCoordinator],
   )
   const tasksV2 = useTasksV2()
   const hasTaskItems = tasksV2 !== undefined && tasksV2.length > 0

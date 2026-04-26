@@ -1,5 +1,6 @@
 import { feature } from 'bun:bundle'
 import chalk from 'chalk'
+import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import * as path from 'path'
 import * as React from 'react'
 import {
@@ -524,14 +525,17 @@ function PromptInput({
   // exist. When only local_agent tasks are running (coordinator/fork mode), the
   // pill is absent, so the -1 sentinel would leave nothing visually selected.
   // In that case, skip -1 and treat 0 as the minimum selectable index.
+  const isCoordinatorModeActive = feature('COORDINATOR_MODE')
+    ? isCoordinatorMode()
+    : false
   const hasBgTaskPill = useMemo(
     () =>
       Object.values(tasks).some(
         t =>
           isBackgroundTask(t) &&
-          !(feature('COORDINATOR_MODE') ? isPanelAgentTask(t) : false),
+          !(isCoordinatorModeActive ? isPanelAgentTask(t) : false),
       ),
-    [tasks],
+    [tasks, isCoordinatorModeActive],
   )
   const minCoordinatorIndex = hasBgTaskPill ? -1 : 0
   // Clamp index when tasks complete and the list shrinks beneath the cursor
