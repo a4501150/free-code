@@ -141,7 +141,7 @@ export function shouldIncludeFirstPartyOnlyBetas(model?: string): boolean {
   const registry = getProviderRegistry()
   const providerType = model
     ? registry.getProviderType(model)
-    : registry.getDefaultProvider()?.config.type ?? null
+    : (registry.getDefaultProvider()?.config.type ?? null)
   return (
     (providerType === 'anthropic' || providerType === 'foundry') &&
     !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)
@@ -206,18 +206,20 @@ export const getAllModelBetas = memoize((model: string): string[] => {
   if (shouldIncludeFirstPartyOnlyBetas(model) && thinkingPreservationEnabled) {
     betaHeaders.push(CONTEXT_MANAGEMENT_BETA_HEADER)
   }
-  // Add strict tool use beta if experiment is enabled.
-  // Default is now true (kill switch in freecode.json: strictToolSchemas=false).
-  // For Anthropic-type providers, this broadens the strict beta to ALL tools
-  // (previously gated additionally on per-tool strict:true) when the model
-  // declares structuredOutputs. Per the design notes, this is intentional:
-  // toolToAPISchema now applies makeJsonSchemaStrict to every eligible tool.
-  const strictToolsEnabled =
-    (getInitialSettings()?.strictToolSchemas ?? true)
+  // The `structured-outputs-2025-12-15` beta on Anthropic-wire providers
+  // covers two use cases: response `output_format` (set in claude.ts only
+  // when the caller asks for it) and per-tool `strict: true`. The CLI no
+  // longer marks Anthropic tools `strict: true` from toolToAPISchema (the
+  // shape limits — 20 strict tools, 24 optional params, 16 anyOf params,
+  // no `minimum`/`maximum`/etc — make broad strict infeasible there), so
+  // this header is dead weight in the default tool-call path. The
+  // claude.ts `output_format` branch still adds it on demand. Anyone wiring
+  // up custom strict tools on an Anthropic-wire provider can opt in by
+  // explicitly setting `strictToolSchemas: true`.
   if (
     includeFirstPartyOnlyBetas &&
     modelSupportsStructuredOutputs(model) &&
-    strictToolsEnabled
+    getInitialSettings()?.strictToolSchemas === true
   ) {
     betaHeaders.push(STRUCTURED_OUTPUTS_BETA_HEADER)
   }
@@ -261,12 +263,10 @@ export const getModelBetas = memoize((model: string): string[] => {
   return modelBetas
 })
 
-export const getBodyBetas = memoize(
-  (model: string): string[] => {
-    const modelBetas = getAllModelBetas(model)
-    return modelBetas.filter(b => BODY_ONLY_BETAS.has(b))
-  },
-)
+export const getBodyBetas = memoize((model: string): string[] => {
+  const modelBetas = getAllModelBetas(model)
+  return modelBetas.filter(b => BODY_ONLY_BETAS.has(b))
+})
 
 /** @deprecated Use getBodyBetas instead */
 export const getBedrockExtraBodyParamsBetas = getBodyBetas

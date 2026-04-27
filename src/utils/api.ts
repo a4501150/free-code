@@ -109,20 +109,76 @@ function filterSwarmFieldsFromSchema(
   return filtered
 }
 
-function stripUnsupportedArrayBounds(schema: unknown): unknown {
+// JSON Schema validation keywords that strict-mode tool schemas reject.
+// Both OpenAI structured outputs and Anthropic structured-outputs strip
+// numeric/string/array constraints in strict mode; sending them is a 400.
+// We strip recursively, including inside `anyOf`/`oneOf`/`allOf` branches
+// and array `items`, when (and only when) the schema is being emitted in
+// strict shape.
+const STRICT_DISALLOWED_KEYWORDS = new Set([
+  // Numeric
+  'minimum',
+  'maximum',
+  'exclusiveMinimum',
+  'exclusiveMaximum',
+  'multipleOf',
+  // String
+  'minLength',
+  'maxLength',
+  'pattern',
+  'format',
+  // Array
+  'minItems',
+  'maxItems',
+  'uniqueItems',
+  'contains',
+  'minContains',
+  'maxContains',
+])
+
+function stripStrictDisallowedKeywords(schema: unknown): unknown {
   if (typeof schema !== 'object' || schema === null) return schema
   if (Array.isArray(schema)) {
-    return schema.map(item => stripUnsupportedArrayBounds(item))
+    return schema.map(item => stripStrictDisallowedKeywords(item))
   }
 
-  const node = schema as Record<string, unknown>
   const out: Record<string, unknown> = {}
-  const isArraySchema = node.type === 'array'
-  for (const [key, value] of Object.entries(node)) {
-    if (isArraySchema && (key === 'minItems' || key === 'maxItems')) continue
-    out[key] = stripUnsupportedArrayBounds(value)
+  for (const [key, value] of Object.entries(
+    schema as Record<string, unknown>,
+  )) {
+    if (STRICT_DISALLOWED_KEYWORDS.has(key)) continue
+    out[key] = stripStrictDisallowedKeywords(value)
   }
   return out
+}
+
+/**
+ * The broad strict-tool transform (every property required, additionalProperties:
+ * false, optional fields widened with null) is the schema shape OpenAI structured
+ * outputs / Codex Responses / Gemini structured outputs accept. Anthropic-wire
+ * providers (anthropic, foundry, vertex Claude, bedrock-converse) advertise a
+ * structured-outputs beta too — but its limits are far tighter than OpenAI's:
+ *
+ *   - 20 strict tools per request
+ *   - 24 optional params total across all strict schemas
+ *   - 16 parameters using anyOf/type-array
+ *   - no `minimum`/`maximum`/`minLength`/`pattern`/etc. anywhere
+ *
+ * The CLI ships >20 built-in tools with many optional fields, so applying the
+ * broad transform to Anthropic 400s the first request. Restrict the broad
+ * default-on path to providers where it actually fits; per-tool `strict: true`
+ * for Anthropic stays gated below the same way.
+ */
+function providerSupportsBroadStrictToolTransform(
+  model: string | undefined,
+): boolean {
+  if (!model) return false
+  const providerType = getProviderRegistry().getProviderType(model)
+  return (
+    providerType === 'openai-responses' ||
+    providerType === 'openai-chat-completions' ||
+    providerType === 'gemini'
+  )
 }
 
 export async function toolToAPISchema(
@@ -154,14 +210,17 @@ export async function toolToAPISchema(
   // PR#25424). MCP tools also set inputJSONSchema but each has a stable schema,
   // so including it preserves their GB-flip cache stability.
   //
-  // Strict-shape gates (structuredOutputs + strictToolSchemas) are also baked
-  // into the key — a mid-session model switch must not return a stale-shape
-  // (strict vs. non-strict) cached schema.
+  // Strict-shape gates (structuredOutputs + strictToolSchemas + provider
+  // wire-format) are baked into the key — a mid-session model switch must not
+  // return a stale-shape (strict vs. non-strict) cached schema.
   const strictToolsEnabled = getInitialSettings()?.strictToolSchemas ?? true
   const structuredOutputsForModel = options.model
     ? modelSupportsStructuredOutputs(options.model)
     : false
-  const strictKeySuffix = `s=${strictToolsEnabled ? 1 : 0}|so=${structuredOutputsForModel ? 1 : 0}`
+  const broadStrictForProvider = providerSupportsBroadStrictToolTransform(
+    options.model,
+  )
+  const strictKeySuffix = `s=${strictToolsEnabled ? 1 : 0}|so=${structuredOutputsForModel ? 1 : 0}|bs=${broadStrictForProvider ? 1 : 0}`
   const baseKey =
     'inputJSONSchema' in tool && tool.inputJSONSchema
       ? `${tool.name}:${jsonStringify(tool.inputJSONSchema)}`
@@ -186,11 +245,13 @@ export async function toolToAPISchema(
     }
 
     // Apply strict transform: when the resolved provider supports structured
-    // outputs (e.g. OpenAI Responses, modern OpenAI Chat), strict-mode
-    // requires `additionalProperties: false` on every object node and every
-    // property listed in `required`. Optional Zod fields become nullable so
-    // the model can explicitly omit them via `null`. Skip when:
+    // outputs broadly (OpenAI Responses, modern OpenAI Chat, Gemini),
+    // strict-mode requires `additionalProperties: false` on every object node
+    // and every property listed in `required`. Optional Zod fields become
+    // nullable so the model can explicitly omit them via `null`. Skip when:
     //   - The kill switch is off (settings.strictToolSchemas = false).
+    //   - The provider doesn't accept the broad shape (Anthropic/foundry/
+    //     vertex/bedrock-converse — see providerSupportsBroadStrictToolTransform).
     //   - The schema is tool-owned (MCP / StructuredOutput).
     //   - The Zod object opts out via `.passthrough()` (top-level
     //     `additionalProperties: {}`).
@@ -198,18 +259,18 @@ export async function toolToAPISchema(
     if (
       strictToolsEnabled &&
       structuredOutputsForModel &&
+      broadStrictForProvider &&
       !isToolOwnedSchema &&
       !isPassthroughSchema(input_schema)
     ) {
       input_schema = makeJsonSchemaStrict(
         input_schema,
       ) as Anthropic.Tool.InputSchema
+      input_schema = stripStrictDisallowedKeywords(
+        input_schema,
+      ) as Anthropic.Tool.InputSchema
       strictlyTransformed = true
     }
-
-    input_schema = stripUnsupportedArrayBounds(
-      input_schema,
-    ) as Anthropic.Tool.InputSchema
 
     base = {
       name: tool.name,
@@ -222,20 +283,11 @@ export async function toolToAPISchema(
       input_schema,
     }
 
-    // Mark `strict: true` whenever:
-    //   - The tool was rewritten into a strict shape above (default-on path
-    //     for any structuredOutputs provider), OR
-    //   - The legacy gate fires (per-tool `strict: true` on a non-rewritten
-    //     schema, e.g. tool-owned MCP/StructuredOutput where the caller
-    //     promises strict-shape and wants the API to enforce it).
+    // `strict: true` is only emitted alongside a strict-shaped schema. We
+    // either rewrote the schema above (broadStrictForProvider path) or we
+    // don't claim strict at all — sending `strict: true` without the matching
+    // shape 400s on every provider that actually enforces strict mode.
     if (strictlyTransformed) {
-      base.strict = true
-    } else if (
-      strictToolsEnabled &&
-      tool.strict === true &&
-      options.model &&
-      structuredOutputsForModel
-    ) {
       base.strict = true
     }
 
@@ -246,7 +298,10 @@ export async function toolToAPISchema(
     // with Claude 4.5 reject this field with 400. See GH#32742, PR #21729.
     if (
       (options.model
-        ? getProviderRegistry().getCapability(options.model, 'eagerInputStreaming')
+        ? getProviderRegistry().getCapability(
+            options.model,
+            'eagerInputStreaming',
+          )
         : getProviderRegistry().getCapabilities().eagerInputStreaming) &&
       ((getInitialSettings()?.fineGrainedToolStreaming ?? false) ||
         isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING))
@@ -363,7 +418,6 @@ export function splitSysPromptPrefix(
 ): SystemPromptBlock[] {
   const useGlobalCacheFeature = shouldUseGlobalCacheScope()
   if (useGlobalCacheFeature && options?.skipGlobalCacheForSystemPrompt) {
-
     // Filter out boundary marker, return blocks without global scope
     let attributionHeader: string | undefined
     let systemPromptPrefix: string | undefined
@@ -498,7 +552,6 @@ export function prependUserContext(
     ...messages,
   ]
 }
-
 
 // TODO: Generalize this to all tools
 export function normalizeToolInput<T extends Tool>(
