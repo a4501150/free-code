@@ -22,12 +22,23 @@ import type { z } from 'zod/v4'
 type ZodLikeDef = {
   type?: string
   innerType?: ZodLike
+  // ZodPipe uses `in` / `out` for its two ends instead of `innerType`. We drill
+  // into `out` (the output schema) so e.g. `z.preprocess(fn, z.optional(...))`
+  // is treated as optional rather than an opaque pipe.
+  out?: ZodLike
   shape?: Record<string, ZodLike>
   element?: ZodLike
 }
 type ZodLike = {
   _def?: ZodLikeDef
   shape?: Record<string, ZodLike>
+}
+
+/** Get the next schema down through a transparent wrapper. */
+function getInner(def: ZodLikeDef | undefined): ZodLike | undefined {
+  if (!def) return undefined
+  if (def.type === 'pipe') return def.out
+  return def.innerType
 }
 
 /**
@@ -40,7 +51,7 @@ function unwrap(node: ZodLike | undefined): ZodLike | undefined {
   while (cur) {
     const t = cur._def?.type
     if (t === 'optional' || t === 'default' || t === 'readonly' || t === 'pipe') {
-      cur = cur._def?.innerType
+      cur = getInner(cur._def)
       continue
     }
     break
@@ -50,19 +61,32 @@ function unwrap(node: ZodLike | undefined): ZodLike | undefined {
 
 function isOptionalNonNullable(node: unknown): boolean {
   if (typeof node !== 'object' || node === null) return false
-  const def = (node as ZodLike)._def
-  if (def?.type !== 'optional') return false
-  let inner: ZodLike | undefined = def.innerType
-  while (inner) {
-    const t = inner._def?.type
+  // Walk through every transparent wrapper. The field is optional-non-nullable
+  // iff the chain contains `optional` somewhere AND `nullable` nowhere. We
+  // can't shortcut on "outer must be `optional`": `semanticNumber()` wraps the
+  // inner schema in `z.preprocess` (`type: 'pipe'`) so the outer for
+  // `semanticNumber(z.number().optional())` is `pipe`, not `optional`.
+  // Without unwrapping pipe here, FileReadTool's `offset`/`limit` fields
+  // (and any other semantic-number optional) would slip through unstripped,
+  // and the model's strict-mode `null` would fail Zod parse downstream.
+  let cur: ZodLike | undefined = node as ZodLike
+  let foundOptional = false
+  while (cur) {
+    const t = cur._def?.type
     if (t === 'nullable') return false
-    if (t === 'default' || t === 'readonly' || t === 'pipe') {
-      inner = inner._def?.innerType
+    if (t === 'optional') foundOptional = true
+    if (
+      t === 'optional' ||
+      t === 'default' ||
+      t === 'readonly' ||
+      t === 'pipe'
+    ) {
+      cur = getInner(cur._def)
       continue
     }
     break
   }
-  return true
+  return foundOptional
 }
 
 /**

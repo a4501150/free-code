@@ -150,6 +150,7 @@ import {
   isPlanModeInterviewPhaseEnabled,
 } from './planModeV2.js'
 import { escapeRegExp } from './stringUtils.js'
+import { stripStrictNullInputs } from './stripStrictNullInputs.js'
 import { formatTeammateMessages } from './swarm/formatTeammateMessages.js'
 import {
   isToolReferenceBlock,
@@ -2674,6 +2675,19 @@ export function normalizeContentFromAPI(
         if (typeof normalizedInput === 'object' && normalizedInput !== null) {
           const tool = findToolByName(tools, contentBlock.name)
           if (tool) {
+            // Strip `null` values that strict-mode providers (OpenAI structured
+            // outputs) emit for fields the Zod schema marks `.optional()` but
+            // not `.nullable()`. makeJsonSchemaStrict widens those fields with
+            // null in the outbound schema; strict-mode models emit `null` to
+            // mean "omitted." Without stripping, every UI-side
+            // `tool.inputSchema.safeParse(content.input)` (AssistantToolUseMessage,
+            // permission requests, transcript renderers, etc.) fails — and tools
+            // whose `renderToolUseMessage` returns null on missing fields render
+            // an empty header, hiding the entire tool-use line.
+            normalizedInput = stripStrictNullInputs(
+              tool.inputSchema,
+              normalizedInput,
+            )
             try {
               normalizedInput = normalizeToolInput(
                 tool,
