@@ -19,7 +19,6 @@ import { codexAdapter } from './adapters/codex-adapter-impl.js'
 import { toAnthropicErrorType } from '../../utils/normalizedError.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 
-
 // No hardcoded model list — the provider registry (freecode.json) is the
 // single source of truth for available models. The adapter just passes
 // through whatever model ID the registry resolved.
@@ -257,7 +256,9 @@ function translateMessages(
             codexInput.push({
               type: 'message',
               role: 'assistant',
-              content: [{ type: 'output_text', text: block.text, annotations: [] }],
+              content: [
+                { type: 'output_text', text: block.text, annotations: [] },
+              ],
               status: 'completed',
             })
           }
@@ -281,7 +282,8 @@ function translateMessages(
           // build on it. Blocks lacking the side-channel fields (foreign
           // provenance, or imported transcripts) are skipped — reasoning
           // continuity simply starts fresh at that message.
-          const summaryText = typeof block.thinking === 'string' ? block.thinking : ''
+          const summaryText =
+            typeof block.thinking === 'string' ? block.thinking : ''
           codexInput.push({
             type: 'reasoning',
             id: block.codexReasoningId,
@@ -305,7 +307,10 @@ function translateMessages(
  * @param anthropicBody - The Anthropic request body to translate
  * @returns Object containing the translated Codex body and model
  */
-function translateToCodexBody(anthropicBody: Record<string, unknown>, sessionId: string): {
+function translateToCodexBody(
+  anthropicBody: Record<string, unknown>,
+  sessionId: string,
+): {
   codexBody: Record<string, unknown>
   codexModel: string
 } {
@@ -437,9 +442,7 @@ async function translateCodexStreamToAnthropic(
 
       // Emit ping
       controller.enqueue(
-        encoder.encode(
-          formatSSE('ping', JSON.stringify({ type: 'ping' })),
-        ),
+        encoder.encode(formatSSE('ping', JSON.stringify({ type: 'ping' }))),
       )
 
       // Track state for tool calls
@@ -494,7 +497,12 @@ async function translateCodexStreamToAnthropic(
       try {
         const reader = codexResponse.body?.getReader()
         if (!reader) {
-          emitTextBlock(controller, encoder, contentBlockIndex, 'Error: No response body')
+          emitTextBlock(
+            controller,
+            encoder,
+            contentBlockIndex,
+            'Error: No response body',
+          )
           finishStream(controller, encoder, outputTokens, inputTokens, 0, false)
           return
         }
@@ -544,7 +552,14 @@ async function translateCodexStreamToAnthropic(
                 // New text message block starting
                 if (inToolCall) {
                   // Close the previous tool call block
-                  closeToolCallBlock(controller, encoder, contentBlockIndex, currentToolCallId, currentToolCallName, currentToolCallArgs)
+                  closeToolCallBlock(
+                    controller,
+                    encoder,
+                    contentBlockIndex,
+                    currentToolCallId,
+                    currentToolCallName,
+                    currentToolCallArgs,
+                  )
                   contentBlockIndex++
                   inToolCall = false
                 }
@@ -553,10 +568,13 @@ async function translateCodexStreamToAnthropic(
                 if (currentTextBlockStarted) {
                   controller.enqueue(
                     encoder.encode(
-                      formatSSE('content_block_stop', JSON.stringify({
-                        type: 'content_block_stop',
-                        index: contentBlockIndex,
-                      })),
+                      formatSSE(
+                        'content_block_stop',
+                        JSON.stringify({
+                          type: 'content_block_stop',
+                          index: contentBlockIndex,
+                        }),
+                      ),
                     ),
                   )
                   contentBlockIndex++
@@ -564,7 +582,8 @@ async function translateCodexStreamToAnthropic(
                 }
 
                 // Start tool_use block (Anthropic format)
-                currentToolCallId = (item.call_id as string) || `toolu_${Date.now()}`
+                currentToolCallId =
+                  (item.call_id as string) || `toolu_${Date.now()}`
                 currentToolCallName = (item.name as string) || ''
                 currentToolCallArgs = (item.arguments as string) || ''
                 inToolCall = true
@@ -572,16 +591,19 @@ async function translateCodexStreamToAnthropic(
 
                 controller.enqueue(
                   encoder.encode(
-                    formatSSE('content_block_start', JSON.stringify({
-                      type: 'content_block_start',
-                      index: contentBlockIndex,
-                      content_block: {
-                        type: 'tool_use',
-                        id: currentToolCallId,
-                        name: currentToolCallName,
-                        input: {},
-                      },
-                    })),
+                    formatSSE(
+                      'content_block_start',
+                      JSON.stringify({
+                        type: 'content_block_start',
+                        index: contentBlockIndex,
+                        content_block: {
+                          type: 'tool_use',
+                          id: currentToolCallId,
+                          name: currentToolCallName,
+                          input: {},
+                        },
+                      }),
+                    ),
                   ),
                 )
               } else if (item?.type === 'web_search_call') {
@@ -591,10 +613,13 @@ async function translateCodexStreamToAnthropic(
                 if (currentTextBlockStarted) {
                   controller.enqueue(
                     encoder.encode(
-                      formatSSE('content_block_stop', JSON.stringify({
-                        type: 'content_block_stop',
-                        index: contentBlockIndex,
-                      })),
+                      formatSSE(
+                        'content_block_stop',
+                        JSON.stringify({
+                          type: 'content_block_stop',
+                          index: contentBlockIndex,
+                        }),
+                      ),
                     ),
                   )
                   contentBlockIndex++
@@ -602,10 +627,9 @@ async function translateCodexStreamToAnthropic(
                 }
 
                 const callId =
-                  (item.id as string) || `srvtoolu_${Date.now()}_${webSearchCount}`
-                const action = item.action as
-                  | { query?: string }
-                  | undefined
+                  (item.id as string) ||
+                  `srvtoolu_${Date.now()}_${webSearchCount}`
+                const action = item.action as { query?: string } | undefined
                 const query = (action?.query as string) || ''
 
                 // Open Anthropic server_tool_use block.
@@ -677,10 +701,13 @@ async function translateCodexStreamToAnthropic(
               if (state && !state.serverToolUseClosed) {
                 controller.enqueue(
                   encoder.encode(
-                    formatSSE('content_block_stop', JSON.stringify({
-                      type: 'content_block_stop',
-                      index: state.serverToolUseIndex,
-                    })),
+                    formatSSE(
+                      'content_block_stop',
+                      JSON.stringify({
+                        type: 'content_block_stop',
+                        index: state.serverToolUseIndex,
+                      }),
+                    ),
                   ),
                 )
                 state.serverToolUseClosed = true
@@ -696,28 +723,34 @@ async function translateCodexStreamToAnthropic(
                   // Start a new text content block
                   controller.enqueue(
                     encoder.encode(
-                      formatSSE('content_block_start', JSON.stringify({
-                        type: 'content_block_start',
-                        index: contentBlockIndex,
-                        content_block: { type: 'text', text: '' },
-                      })),
+                      formatSSE(
+                        'content_block_start',
+                        JSON.stringify({
+                          type: 'content_block_start',
+                          index: contentBlockIndex,
+                          content_block: { type: 'text', text: '' },
+                        }),
+                      ),
                     ),
                   )
                   currentTextBlockStarted = true
                 }
                 controller.enqueue(
                   encoder.encode(
-                    formatSSE('content_block_delta', JSON.stringify({
-                      type: 'content_block_delta',
-                      index: contentBlockIndex,
-                      delta: { type: 'text_delta', text },
-                    })),
+                    formatSSE(
+                      'content_block_delta',
+                      JSON.stringify({
+                        type: 'content_block_delta',
+                        index: contentBlockIndex,
+                        delta: { type: 'text_delta', text },
+                      }),
+                    ),
                   ),
                 )
                 outputTokens += 1
               }
             }
-            
+
             // Reasoning deltas: accumulate into per-item buffer; emit
             // once output_item.done fires with encrypted_content. Codex
             // uses `response.reasoning_text.delta` and
@@ -782,19 +815,23 @@ async function translateCodexStreamToAnthropic(
             else if (eventType === 'response.function_call_arguments.done') {
               if (inToolCall) {
                 const fullArgs =
-                  (typeof event.arguments === 'string' ? event.arguments : undefined) ??
-                  currentToolCallArgs
+                  (typeof event.arguments === 'string'
+                    ? event.arguments
+                    : undefined) ?? currentToolCallArgs
                 if (fullArgs) {
                   controller.enqueue(
                     encoder.encode(
-                      formatSSE('content_block_delta', JSON.stringify({
-                        type: 'content_block_delta',
-                        index: contentBlockIndex,
-                        delta: {
-                          type: 'input_json_delta',
-                          partial_json: fullArgs,
-                        },
-                      })),
+                      formatSSE(
+                        'content_block_delta',
+                        JSON.stringify({
+                          type: 'content_block_delta',
+                          index: contentBlockIndex,
+                          delta: {
+                            type: 'input_json_delta',
+                            partial_json: fullArgs,
+                          },
+                        }),
+                      ),
                     ),
                   )
                 }
@@ -806,7 +843,14 @@ async function translateCodexStreamToAnthropic(
             else if (eventType === 'response.output_item.done') {
               const item = event.item as Record<string, unknown>
               if (item?.type === 'function_call') {
-                closeToolCallBlock(controller, encoder, contentBlockIndex, currentToolCallId, currentToolCallName, currentToolCallArgs)
+                closeToolCallBlock(
+                  controller,
+                  encoder,
+                  contentBlockIndex,
+                  currentToolCallId,
+                  currentToolCallName,
+                  currentToolCallArgs,
+                )
                 contentBlockIndex++
                 inToolCall = false
                 currentToolCallArgs = ''
@@ -814,10 +858,13 @@ async function translateCodexStreamToAnthropic(
                 if (currentTextBlockStarted) {
                   controller.enqueue(
                     encoder.encode(
-                      formatSSE('content_block_stop', JSON.stringify({
-                        type: 'content_block_stop',
-                        index: contentBlockIndex,
-                      })),
+                      formatSSE(
+                        'content_block_stop',
+                        JSON.stringify({
+                          type: 'content_block_stop',
+                          index: contentBlockIndex,
+                        }),
+                      ),
                     ),
                   )
                   contentBlockIndex++
@@ -862,16 +909,21 @@ async function translateCodexStreamToAnthropic(
                 }
               } else if (item?.type === 'web_search_call') {
                 const callId = (item.id as string) || ''
-                const state = callId ? pendingWebSearches.get(callId) : undefined
+                const state = callId
+                  ? pendingWebSearches.get(callId)
+                  : undefined
                 // The completed event may not have fired yet on some shapes;
                 // close the server_tool_use block here defensively.
                 if (state && !state.serverToolUseClosed) {
                   controller.enqueue(
                     encoder.encode(
-                      formatSSE('content_block_stop', JSON.stringify({
-                        type: 'content_block_stop',
-                        index: state.serverToolUseIndex,
-                      })),
+                      formatSSE(
+                        'content_block_stop',
+                        JSON.stringify({
+                          type: 'content_block_stop',
+                          index: state.serverToolUseIndex,
+                        }),
+                      ),
                     ),
                   )
                   state.serverToolUseClosed = true
@@ -967,9 +1019,10 @@ async function translateCodexStreamToAnthropic(
                 //     text lives in `item.content[]` with type "reasoning_text".
                 // Try summary first (OpenAI canonical), then content.
                 if (!pendingReasoningText) {
-                  const summary = (item.summary as
-                    | Array<{ type?: string; text?: string }>
-                    | undefined) || []
+                  const summary =
+                    (item.summary as
+                      | Array<{ type?: string; text?: string }>
+                      | undefined) || []
                   pendingReasoningText = summary
                     .map(s =>
                       s?.type === 'summary_text' && typeof s.text === 'string'
@@ -979,9 +1032,10 @@ async function translateCodexStreamToAnthropic(
                     .join('')
                 }
                 if (!pendingReasoningText) {
-                  const content = (item.content as
-                    | Array<{ type?: string; text?: string }>
-                    | undefined) || []
+                  const content =
+                    (item.content as
+                      | Array<{ type?: string; text?: string }>
+                      | undefined) || []
                   pendingReasoningText = content
                     .map(c =>
                       c?.type === 'reasoning_text' && typeof c.text === 'string'
@@ -1060,7 +1114,9 @@ async function translateCodexStreamToAnthropic(
             // Response completed — extract usage
             else if (eventType === 'response.completed') {
               const response = event.response as Record<string, unknown>
-              const usage = response?.usage as Record<string, number | Record<string, number>> | undefined
+              const usage = response?.usage as
+                | Record<string, number | Record<string, number>>
+                | undefined
               if (usage) {
                 const totalInput = (usage.input_tokens as number) ?? 0
                 const totalOutput = (usage.output_tokens as number) ?? 0
@@ -1069,7 +1125,9 @@ async function translateCodexStreamToAnthropic(
                 // Anthropic reports marginal (non-cached) as input_tokens and cached
                 // separately as cache_read_input_tokens. Without this split the
                 // accumulated total_input_tokens grows quadratically over a conversation.
-                const details = usage.input_tokens_details as Record<string, number> | undefined
+                const details = usage.input_tokens_details as
+                  | Record<string, number>
+                  | undefined
                 const cached = details?.cached_tokens ?? 0
                 cacheReadInputTokens = cached
                 inputTokens = totalInput - cached
@@ -1105,15 +1163,25 @@ async function translateCodexStreamToAnthropic(
       if (currentTextBlockStarted) {
         controller.enqueue(
           encoder.encode(
-            formatSSE('content_block_stop', JSON.stringify({
-              type: 'content_block_stop',
-              index: contentBlockIndex,
-            })),
+            formatSSE(
+              'content_block_stop',
+              JSON.stringify({
+                type: 'content_block_stop',
+                index: contentBlockIndex,
+              }),
+            ),
           ),
         )
       }
       if (inToolCall) {
-        closeToolCallBlock(controller, encoder, contentBlockIndex, currentToolCallId, currentToolCallName, currentToolCallArgs)
+        closeToolCallBlock(
+          controller,
+          encoder,
+          contentBlockIndex,
+          currentToolCallId,
+          currentToolCallName,
+          currentToolCallArgs,
+        )
       }
 
       finishStream(
@@ -1138,10 +1206,13 @@ async function translateCodexStreamToAnthropic(
   ) {
     controller.enqueue(
       encoder.encode(
-        formatSSE('content_block_stop', JSON.stringify({
-          type: 'content_block_stop',
-          index,
-        })),
+        formatSSE(
+          'content_block_stop',
+          JSON.stringify({
+            type: 'content_block_stop',
+            index,
+          }),
+        ),
       ),
     )
   }
@@ -1154,28 +1225,37 @@ async function translateCodexStreamToAnthropic(
   ) {
     controller.enqueue(
       encoder.encode(
-        formatSSE('content_block_start', JSON.stringify({
-          type: 'content_block_start',
-          index,
-          content_block: { type: 'text', text: '' },
-        })),
+        formatSSE(
+          'content_block_start',
+          JSON.stringify({
+            type: 'content_block_start',
+            index,
+            content_block: { type: 'text', text: '' },
+          }),
+        ),
       ),
     )
     controller.enqueue(
       encoder.encode(
-        formatSSE('content_block_delta', JSON.stringify({
-          type: 'content_block_delta',
-          index,
-          delta: { type: 'text_delta', text },
-        })),
+        formatSSE(
+          'content_block_delta',
+          JSON.stringify({
+            type: 'content_block_delta',
+            index,
+            delta: { type: 'text_delta', text },
+          }),
+        ),
       ),
     )
     controller.enqueue(
       encoder.encode(
-        formatSSE('content_block_stop', JSON.stringify({
-          type: 'content_block_stop',
-          index,
-        })),
+        formatSSE(
+          'content_block_stop',
+          JSON.stringify({
+            type: 'content_block_stop',
+            index,
+          }),
+        ),
       ),
     )
   }
@@ -1277,7 +1357,10 @@ export function createCodexFetch(
   // Account ID only needed for direct ChatGPT backend (proxy handles it)
   const accountId = isProxied ? null : extractAccountId(opts.accessToken)
 
-  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  return async (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> => {
     const url = input instanceof Request ? input.url : String(input)
 
     // Only intercept Anthropic API message calls
@@ -1303,7 +1386,10 @@ export function createCodexFetch(
     const currentToken = opts.getRefreshedToken?.() || opts.accessToken
 
     // Translate to Codex format
-    const { codexBody, codexModel } = translateToCodexBody(anthropicBody, opts.getSessionId())
+    const { codexBody, codexModel } = translateToCodexBody(
+      anthropicBody,
+      opts.getSessionId(),
+    )
 
     // Call Codex API
     const sessionId = opts.getSessionId()
@@ -1315,7 +1401,7 @@ export function createCodexFetch(
       'OpenAI-Beta': 'responses=experimental',
       // session_id header helps the backend route requests to the same node
       // for prompt cache reuse (matches official Codex CLI behavior)
-      'session_id': sessionId,
+      session_id: sessionId,
     }
     if (accountId) {
       headers['chatgpt-account-id'] = accountId

@@ -17,61 +17,61 @@
  * - cache_control stripping
  */
 
-import type { ProviderConfig } from "../../utils/settings/types.js";
-import { openaiChatCompletionsAdapter } from "./adapters/openai-chat-completions-adapter-impl.js";
-import { toAnthropicErrorType } from "../../utils/normalizedError.js";
-import { getProviderRegistry } from "../../utils/model/providerRegistry.js";
+import type { ProviderConfig } from '../../utils/settings/types.js'
+import { openaiChatCompletionsAdapter } from './adapters/openai-chat-completions-adapter-impl.js'
+import { toAnthropicErrorType } from '../../utils/normalizedError.js'
+import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 
 // ── Types ───────────────────────────────────────────────────────────
 
 interface AnthropicContentBlock {
-  type: string;
-  text?: string;
-  id?: string;
-  name?: string;
-  input?: Record<string, unknown>;
-  tool_use_id?: string;
-  content?: string | AnthropicContentBlock[];
-  source?: Record<string, unknown>;
-  thinking?: string;
-  signature?: string;
-  cache_control?: unknown;
-  [key: string]: unknown;
+  type: string
+  text?: string
+  id?: string
+  name?: string
+  input?: Record<string, unknown>
+  tool_use_id?: string
+  content?: string | AnthropicContentBlock[]
+  source?: Record<string, unknown>
+  thinking?: string
+  signature?: string
+  cache_control?: unknown
+  [key: string]: unknown
 }
 
 interface AnthropicMessage {
-  role: string;
-  content: string | AnthropicContentBlock[];
+  role: string
+  content: string | AnthropicContentBlock[]
 }
 
 interface AnthropicTool {
-  name: string;
-  description?: string;
-  input_schema?: Record<string, unknown>;
-  cache_control?: unknown;
+  name: string
+  description?: string
+  input_schema?: Record<string, unknown>
+  cache_control?: unknown
 }
 
 interface ChatCompletionsMessage {
-  role: string;
-  content?: string | Array<Record<string, unknown>> | null;
+  role: string
+  content?: string | Array<Record<string, unknown>> | null
   tool_calls?: Array<{
-    id: string;
-    type: "function";
-    function: { name: string; arguments: string };
-  }>;
-  tool_call_id?: string;
-  name?: string;
-  reasoning_content?: string;
+    id: string
+    type: 'function'
+    function: { name: string; arguments: string }
+  }>
+  tool_call_id?: string
+  name?: string
+  reasoning_content?: string
 }
 
 interface ChatCompletionsTool {
-  type: "function";
+  type: 'function'
   function: {
-    name: string;
-    description?: string;
-    parameters?: Record<string, unknown>;
-    strict?: boolean;
-  };
+    name: string
+    description?: string
+    parameters?: Record<string, unknown>
+    strict?: boolean
+  }
 }
 
 // ── Tool translation ────────────────────────────────────────────────
@@ -80,12 +80,12 @@ function translateTools(
   anthropicTools: AnthropicTool[],
   options: { strict: boolean },
 ): ChatCompletionsTool[] {
-  return anthropicTools.map((tool) => ({
-    type: "function",
+  return anthropicTools.map(tool => ({
+    type: 'function',
     function: {
       name: tool.name,
       ...(tool.description ? { description: tool.description } : {}),
-      parameters: tool.input_schema || { type: "object", properties: {} },
+      parameters: tool.input_schema || { type: 'object', properties: {} },
       // OpenAI strict mode requires the parameters schema to satisfy the
       // strict subset (additionalProperties: false on every object, every
       // property in `required`). toolToAPISchema in src/utils/api.ts already
@@ -94,7 +94,7 @@ function translateTools(
       // those models — the schemas line up.
       ...(options.strict ? { strict: true } : {}),
     },
-  }));
+  }))
 }
 
 // ── Message translation: Anthropic → Chat Completions ───────────────
@@ -102,62 +102,62 @@ function translateTools(
 function translateMessages(
   anthropicMessages: AnthropicMessage[],
 ): ChatCompletionsMessage[] {
-  const messages: ChatCompletionsMessage[] = [];
+  const messages: ChatCompletionsMessage[] = []
 
   for (const msg of anthropicMessages) {
-    if (typeof msg.content === "string") {
-      messages.push({ role: msg.role, content: msg.content });
-      continue;
+    if (typeof msg.content === 'string') {
+      messages.push({ role: msg.role, content: msg.content })
+      continue
     }
 
-    if (!Array.isArray(msg.content)) continue;
+    if (!Array.isArray(msg.content)) continue
 
-    if (msg.role === "user") {
+    if (msg.role === 'user') {
       // Separate tool_result blocks from other content
-      const contentParts: Array<Record<string, unknown>> = [];
+      const contentParts: Array<Record<string, unknown>> = []
       const toolResults: Array<{
-        toolUseId: string;
-        content: string;
-      }> = [];
+        toolUseId: string
+        content: string
+      }> = []
 
       for (const block of msg.content) {
-        if (block.type === "tool_result") {
-          let outputText = "";
-          if (typeof block.content === "string") {
-            outputText = block.content;
+        if (block.type === 'tool_result') {
+          let outputText = ''
+          if (typeof block.content === 'string') {
+            outputText = block.content
           } else if (Array.isArray(block.content)) {
             outputText = block.content
-              .map((c) => {
-                if (c.type === "text") return c.text;
-                if (c.type === "image") return "[Image data]";
-                return "";
+              .map(c => {
+                if (c.type === 'text') return c.text
+                if (c.type === 'image') return '[Image data]'
+                return ''
               })
-              .join("\n");
+              .join('\n')
           }
           toolResults.push({
-            toolUseId: block.tool_use_id || "",
+            toolUseId: block.tool_use_id || '',
             content: outputText,
-          });
-        } else if (block.type === "text" && typeof block.text === "string") {
-          contentParts.push({ type: "text", text: block.text });
+          })
+        } else if (block.type === 'text' && typeof block.text === 'string') {
+          contentParts.push({ type: 'text', text: block.text })
         } else if (
-          block.type === "image" &&
-          typeof block.source === "object" &&
+          block.type === 'image' &&
+          typeof block.source === 'object' &&
           block.source !== null
         ) {
-          const src = block.source as Record<string, string>;
-          if (src.type === "base64") {
+          const src = block.source as Record<string, string>
+          if (src.type === 'base64') {
             contentParts.push({
-              type: "image_url",
+              type: 'image_url',
               image_url: {
                 url: `data:${src.media_type};base64,${src.data}`,
               },
-            });
-          } else if (src.type === "url") {
+            })
+          } else if (src.type === 'url') {
             contentParts.push({
-              type: "image_url",
+              type: 'image_url',
               image_url: { url: src.url },
-            });
+            })
           }
         }
       }
@@ -165,22 +165,22 @@ function translateMessages(
       // Emit tool results as separate tool-role messages
       for (const tr of toolResults) {
         messages.push({
-          role: "tool",
+          role: 'tool',
           tool_call_id: tr.toolUseId,
           content: tr.content,
-        });
+        })
       }
 
       // Emit user content if any
-      if (contentParts.length === 1 && contentParts[0].type === "text") {
+      if (contentParts.length === 1 && contentParts[0].type === 'text') {
         messages.push({
-          role: "user",
+          role: 'user',
           content: contentParts[0].text as string,
-        });
+        })
       } else if (contentParts.length > 0) {
-        messages.push({ role: "user", content: contentParts });
+        messages.push({ role: 'user', content: contentParts })
       }
-    } else if (msg.role === "assistant") {
+    } else if (msg.role === 'assistant') {
       // Collect text content and tool_use blocks.
       //
       // Thinking blocks are intentionally NOT translated into
@@ -190,37 +190,37 @@ function translateMessages(
       // Completions does not accept assistant-turn `reasoning_content` as
       // input anyway. Dropping on outbound is the mechanism that prevents
       // the "strip-on-next-turn" bug — inbound emission is purely for UI.
-      let textContent = "";
-      const toolCalls: ChatCompletionsMessage["tool_calls"] = [];
+      let textContent = ''
+      const toolCalls: ChatCompletionsMessage['tool_calls'] = []
 
       for (const block of msg.content) {
-        if (block.type === "text" && typeof block.text === "string") {
-          textContent += block.text;
-        } else if (block.type === "tool_use") {
+        if (block.type === 'text' && typeof block.text === 'string') {
+          textContent += block.text
+        } else if (block.type === 'tool_use') {
           toolCalls.push({
             id: block.id || `call_${Date.now()}`,
-            type: "function",
+            type: 'function',
             function: {
-              name: block.name || "",
+              name: block.name || '',
               arguments: JSON.stringify(block.input || {}),
             },
-          });
+          })
         }
         // thinking / redacted_thinking: dropped.
       }
 
       const assistantMsg: ChatCompletionsMessage = {
-        role: "assistant",
+        role: 'assistant',
         content: textContent || null,
-      };
-      if (toolCalls.length > 0) {
-        assistantMsg.tool_calls = toolCalls;
       }
-      messages.push(assistantMsg);
+      if (toolCalls.length > 0) {
+        assistantMsg.tool_calls = toolCalls
+      }
+      messages.push(assistantMsg)
     }
   }
 
-  return messages;
+  return messages
 }
 
 // ── Full request translation ────────────────────────────────────────
@@ -230,58 +230,57 @@ function translateToOpenAIBody(
   targetModel: string,
   options: { structuredOutputs: boolean },
 ): Record<string, unknown> {
-  const anthropicMessages = (anthropicBody.messages ||
-    []) as AnthropicMessage[];
+  const anthropicMessages = (anthropicBody.messages || []) as AnthropicMessage[]
   const systemPrompt = anthropicBody.system as
     | string
     | Array<{ type: string; text?: string; cache_control?: unknown }>
-    | undefined;
-  const anthropicTools = (anthropicBody.tools || []) as AnthropicTool[];
+    | undefined
+  const anthropicTools = (anthropicBody.tools || []) as AnthropicTool[]
 
-  const messages: ChatCompletionsMessage[] = [];
+  const messages: ChatCompletionsMessage[] = []
 
   // System prompt → system role message
   if (systemPrompt) {
-    let systemText = "";
-    if (typeof systemPrompt === "string") {
-      systemText = systemPrompt;
+    let systemText = ''
+    if (typeof systemPrompt === 'string') {
+      systemText = systemPrompt
     } else if (Array.isArray(systemPrompt)) {
       systemText = systemPrompt
-        .filter((b) => b.type === "text" && typeof b.text === "string")
-        .map((b) => b.text!)
-        .join("\n");
+        .filter(b => b.type === 'text' && typeof b.text === 'string')
+        .map(b => b.text!)
+        .join('\n')
     }
     if (systemText) {
-      messages.push({ role: "system", content: systemText });
+      messages.push({ role: 'system', content: systemText })
     }
   }
 
   // Translate messages
-  messages.push(...translateMessages(anthropicMessages));
+  messages.push(...translateMessages(anthropicMessages))
 
   const body: Record<string, unknown> = {
     model: targetModel,
     messages,
     stream: true,
     stream_options: { include_usage: true },
-  };
+  }
 
   // Tools
   if (anthropicTools.length > 0) {
     body.tools = translateTools(anthropicTools, {
       strict: options.structuredOutputs,
-    });
-    body.tool_choice = "auto";
+    })
+    body.tool_choice = 'auto'
   }
 
   // Max tokens
   if (anthropicBody.max_tokens) {
-    body.max_tokens = anthropicBody.max_tokens;
+    body.max_tokens = anthropicBody.max_tokens
   }
 
   // Temperature
   if (anthropicBody.temperature !== undefined) {
-    body.temperature = anthropicBody.temperature;
+    body.temperature = anthropicBody.temperature
   }
 
   // Effort → reasoning_effort
@@ -290,18 +289,18 @@ function translateToOpenAIBody(
   // (exact set varies by model — validated server-side).
   const outputConfig = anthropicBody.output_config as
     | { effort?: string }
-    | undefined;
+    | undefined
   if (outputConfig?.effort) {
-    body.reasoning_effort = outputConfig.effort;
+    body.reasoning_effort = outputConfig.effort
   }
 
-  return body;
+  return body
 }
 
 // ── SSE helpers ─────────────────────────────────────────────────────
 
 function formatSSE(event: string, data: string): string {
-  return `event: ${event}\ndata: ${data}\n\n`;
+  return `event: ${event}\ndata: ${data}\n\n`
 }
 
 // ── Streaming response translation: Chat Completions → Anthropic ────
@@ -310,27 +309,27 @@ async function translateStreamToAnthropic(
   openaiResponse: Response,
   modelId: string,
 ): Promise<Response> {
-  const messageId = `msg_oai_${Date.now()}`;
+  const messageId = `msg_oai_${Date.now()}`
 
   const readable = new ReadableStream({
     async start(controller) {
-      const encoder = new TextEncoder();
-      let contentBlockIndex = 0;
-      let outputTokens = 0;
-      let inputTokens = 0;
-      let cacheReadInputTokens = 0;
+      const encoder = new TextEncoder()
+      let contentBlockIndex = 0
+      let outputTokens = 0
+      let inputTokens = 0
+      let cacheReadInputTokens = 0
 
       // Emit message_start
       controller.enqueue(
         encoder.encode(
           formatSSE(
-            "message_start",
+            'message_start',
             JSON.stringify({
-              type: "message_start",
+              type: 'message_start',
               message: {
                 id: messageId,
-                type: "message",
-                role: "assistant",
+                type: 'message',
+                role: 'assistant',
                 content: [],
                 model: modelId,
                 stop_reason: null,
@@ -340,80 +339,85 @@ async function translateStreamToAnthropic(
             }),
           ),
         ),
-      );
+      )
 
       // Emit ping
       controller.enqueue(
-        encoder.encode(formatSSE("ping", JSON.stringify({ type: "ping" }))),
-      );
+        encoder.encode(formatSSE('ping', JSON.stringify({ type: 'ping' }))),
+      )
 
-      let currentTextBlockStarted = false;
-      let inReasoningBlock = false;
-      let hadToolCalls = false;
+      let currentTextBlockStarted = false
+      let inReasoningBlock = false
+      let hadToolCalls = false
       // Track tool call indices from OpenAI → our content block indices
-      const toolCallIndexMap = new Map<number, number>();
+      const toolCallIndexMap = new Map<number, number>()
 
       try {
-        const reader = openaiResponse.body?.getReader();
+        const reader = openaiResponse.body?.getReader()
         if (!reader) {
           emitTextBlock(
             controller,
             encoder,
             contentBlockIndex,
-            "Error: No response body",
-          );
-          finishStream(controller, encoder, outputTokens, inputTokens, 0, false);
-          return;
+            'Error: No response body',
+          )
+          finishStream(controller, encoder, outputTokens, inputTokens, 0, false)
+          return
         }
 
-        const decoder = new TextDecoder();
-        let buffer = "";
+        const decoder = new TextDecoder()
+        let buffer = ''
 
         while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+          const { done, value } = await reader.read()
+          if (done) break
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
 
           for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith("event:")) continue;
-            if (!trimmed.startsWith("data: ")) continue;
+            const trimmed = line.trim()
+            if (!trimmed || trimmed.startsWith('event:')) continue
+            if (!trimmed.startsWith('data: ')) continue
 
-            const dataStr = trimmed.slice(6);
-            if (dataStr === "[DONE]") continue;
+            const dataStr = trimmed.slice(6)
+            if (dataStr === '[DONE]') continue
 
-            let chunk: Record<string, unknown>;
+            let chunk: Record<string, unknown>
             try {
-              chunk = JSON.parse(dataStr);
+              chunk = JSON.parse(dataStr)
             } catch {
-              continue;
+              continue
             }
 
             // Usage chunk (stream_options.include_usage)
             if (chunk.usage) {
-              const usage = chunk.usage as Record<string, number | Record<string, number>>;
-              const totalInput = (usage.prompt_tokens as number) ?? inputTokens;
-              outputTokens = (usage.completion_tokens as number) ?? outputTokens;
+              const usage = chunk.usage as Record<
+                string,
+                number | Record<string, number>
+              >
+              const totalInput = (usage.prompt_tokens as number) ?? inputTokens
+              outputTokens = (usage.completion_tokens as number) ?? outputTokens
 
               // Split cached vs marginal input tokens to match Anthropic semantics.
               // OpenAI reports total prompt_tokens; prompt_tokens_details.cached_tokens
               // tells us how many were served from cache.
-              const details = usage.prompt_tokens_details as Record<string, number> | undefined;
-              const cached = details?.cached_tokens ?? 0;
-              cacheReadInputTokens = cached;
-              inputTokens = totalInput - cached;
+              const details = usage.prompt_tokens_details as
+                | Record<string, number>
+                | undefined
+              const cached = details?.cached_tokens ?? 0
+              cacheReadInputTokens = cached
+              inputTokens = totalInput - cached
             }
 
             const choices = chunk.choices as
               | Array<Record<string, unknown>>
-              | undefined;
-            if (!choices || choices.length === 0) continue;
-            const choice = choices[0];
-            const delta = choice.delta as Record<string, unknown> | undefined;
-            const finishReason = choice.finish_reason as string | null;
+              | undefined
+            if (!choices || choices.length === 0) continue
+            const choice = choices[0]
+            const delta = choice.delta as Record<string, unknown> | undefined
+            const finishReason = choice.finish_reason as string | null
 
             if (delta) {
               // ── Reasoning content (thinking) ────────────────────
@@ -428,104 +432,104 @@ async function translateStreamToAnthropic(
               // `completion_tokens_details.reasoning_tokens` and surfaces
               // through NormalizedUsage.reasoningTokens.
               if (delta.reasoning_content) {
-                const reasoningText = delta.reasoning_content as string;
+                const reasoningText = delta.reasoning_content as string
                 if (reasoningText.length > 0) {
                   if (!inReasoningBlock) {
                     controller.enqueue(
                       encoder.encode(
                         formatSSE(
-                          "content_block_start",
+                          'content_block_start',
                           JSON.stringify({
-                            type: "content_block_start",
+                            type: 'content_block_start',
                             index: contentBlockIndex,
                             content_block: {
-                              type: "thinking",
-                              thinking: "",
-                              signature: "",
+                              type: 'thinking',
+                              thinking: '',
+                              signature: '',
                             },
                           }),
                         ),
                       ),
-                    );
-                    inReasoningBlock = true;
+                    )
+                    inReasoningBlock = true
                   }
                   controller.enqueue(
                     encoder.encode(
                       formatSSE(
-                        "content_block_delta",
+                        'content_block_delta',
                         JSON.stringify({
-                          type: "content_block_delta",
+                          type: 'content_block_delta',
                           index: contentBlockIndex,
                           delta: {
-                            type: "thinking_delta",
+                            type: 'thinking_delta',
                             thinking: reasoningText,
                           },
                         }),
                       ),
                     ),
-                  );
+                  )
                 }
               }
 
               // ── Text content ────────────────────────────────────
               if (delta.content) {
-                const text = delta.content as string;
+                const text = delta.content as string
                 if (text.length > 0) {
                   // Close reasoning block if open before starting text
                   if (inReasoningBlock) {
                     controller.enqueue(
                       encoder.encode(
                         formatSSE(
-                          "content_block_stop",
+                          'content_block_stop',
                           JSON.stringify({
-                            type: "content_block_stop",
+                            type: 'content_block_stop',
                             index: contentBlockIndex,
                           }),
                         ),
                       ),
-                    );
-                    contentBlockIndex++;
-                    inReasoningBlock = false;
+                    )
+                    contentBlockIndex++
+                    inReasoningBlock = false
                   }
 
                   if (!currentTextBlockStarted) {
                     controller.enqueue(
                       encoder.encode(
                         formatSSE(
-                          "content_block_start",
+                          'content_block_start',
                           JSON.stringify({
-                            type: "content_block_start",
+                            type: 'content_block_start',
                             index: contentBlockIndex,
-                            content_block: { type: "text", text: "" },
+                            content_block: { type: 'text', text: '' },
                           }),
                         ),
                       ),
-                    );
-                    currentTextBlockStarted = true;
+                    )
+                    currentTextBlockStarted = true
                   }
                   controller.enqueue(
                     encoder.encode(
                       formatSSE(
-                        "content_block_delta",
+                        'content_block_delta',
                         JSON.stringify({
-                          type: "content_block_delta",
+                          type: 'content_block_delta',
                           index: contentBlockIndex,
-                          delta: { type: "text_delta", text },
+                          delta: { type: 'text_delta', text },
                         }),
                       ),
                     ),
-                  );
+                  )
                 }
               }
 
               // ── Tool calls ──────────────────────────────────────
               if (delta.tool_calls) {
                 const toolCalls = delta.tool_calls as Array<{
-                  index: number;
-                  id?: string;
-                  type?: string;
-                  function?: { name?: string; arguments?: string };
-                }>;
+                  index: number
+                  id?: string
+                  type?: string
+                  function?: { name?: string; arguments?: string }
+                }>
 
                 for (const tc of toolCalls) {
                   // Close text block if open and starting first tool call
@@ -536,16 +540,16 @@ async function translateStreamToAnthropic(
                     controller.enqueue(
                       encoder.encode(
                         formatSSE(
-                          "content_block_stop",
+                          'content_block_stop',
                           JSON.stringify({
-                            type: "content_block_stop",
+                            type: 'content_block_stop',
                             index: contentBlockIndex,
                           }),
                         ),
                       ),
-                    );
-                    contentBlockIndex++;
-                    currentTextBlockStarted = false;
+                    )
+                    contentBlockIndex++
+                    currentTextBlockStarted = false
                   }
 
                   // Close reasoning block if open
@@ -553,59 +557,59 @@ async function translateStreamToAnthropic(
                     controller.enqueue(
                       encoder.encode(
                         formatSSE(
-                          "content_block_stop",
+                          'content_block_stop',
                           JSON.stringify({
-                            type: "content_block_stop",
+                            type: 'content_block_stop',
                             index: contentBlockIndex,
                           }),
                         ),
                       ),
-                    );
-                    contentBlockIndex++;
-                    inReasoningBlock = false;
+                    )
+                    contentBlockIndex++
+                    inReasoningBlock = false
                   }
 
                   if (!toolCallIndexMap.has(tc.index)) {
                     // New tool call — emit content_block_start
-                    toolCallIndexMap.set(tc.index, contentBlockIndex);
-                    hadToolCalls = true;
+                    toolCallIndexMap.set(tc.index, contentBlockIndex)
+                    hadToolCalls = true
                     controller.enqueue(
                       encoder.encode(
                         formatSSE(
-                          "content_block_start",
+                          'content_block_start',
                           JSON.stringify({
-                            type: "content_block_start",
+                            type: 'content_block_start',
                             index: contentBlockIndex,
                             content_block: {
-                              type: "tool_use",
+                              type: 'tool_use',
                               id: tc.id || `toolu_${Date.now()}_${tc.index}`,
-                              name: tc.function?.name || "",
+                              name: tc.function?.name || '',
                               input: {},
                             },
                           }),
                         ),
                       ),
-                    );
+                    )
                   }
 
                   // Stream argument deltas
                   if (tc.function?.arguments) {
-                    const blockIdx = toolCallIndexMap.get(tc.index)!;
+                    const blockIdx = toolCallIndexMap.get(tc.index)!
                     controller.enqueue(
                       encoder.encode(
                         formatSSE(
-                          "content_block_delta",
+                          'content_block_delta',
                           JSON.stringify({
-                            type: "content_block_delta",
+                            type: 'content_block_delta',
                             index: blockIdx,
                             delta: {
-                              type: "input_json_delta",
+                              type: 'input_json_delta',
                               partial_json: tc.function.arguments,
                             },
                           }),
                         ),
                       ),
-                    );
+                    )
                   }
                 }
               }
@@ -618,47 +622,47 @@ async function translateStreamToAnthropic(
                 controller.enqueue(
                   encoder.encode(
                     formatSSE(
-                      "content_block_stop",
+                      'content_block_stop',
                       JSON.stringify({
-                        type: "content_block_stop",
+                        type: 'content_block_stop',
                         index: contentBlockIndex,
                       }),
                     ),
                   ),
-                );
-                contentBlockIndex++;
-                inReasoningBlock = false;
+                )
+                contentBlockIndex++
+                inReasoningBlock = false
               }
               if (currentTextBlockStarted) {
                 controller.enqueue(
                   encoder.encode(
                     formatSSE(
-                      "content_block_stop",
+                      'content_block_stop',
                       JSON.stringify({
-                        type: "content_block_stop",
+                        type: 'content_block_stop',
                         index: contentBlockIndex,
                       }),
                     ),
                   ),
-                );
-                contentBlockIndex++;
-                currentTextBlockStarted = false;
+                )
+                contentBlockIndex++
+                currentTextBlockStarted = false
               }
               // Close any open tool call blocks
               for (const [, blockIdx] of toolCallIndexMap) {
                 controller.enqueue(
                   encoder.encode(
                     formatSSE(
-                      "content_block_stop",
+                      'content_block_stop',
                       JSON.stringify({
-                        type: "content_block_stop",
+                        type: 'content_block_stop',
                         index: blockIdx,
                       }),
                     ),
                   ),
-                );
+                )
               }
-              toolCallIndexMap.clear();
+              toolCallIndexMap.clear()
             }
           }
         }
@@ -666,12 +670,12 @@ async function translateStreamToAnthropic(
         // Emit error as SSE error event so the SDK error handling pipeline catches it
         const normalized = openaiChatCompletionsAdapter.normalizeError(
           { mid_stream: true, cause: err },
-          "openai-chat-completions",
-        );
+          'openai-chat-completions',
+        )
         controller.enqueue(
           encoder.encode(
             `event: error\ndata: ${JSON.stringify({
-              type: "error",
+              type: 'error',
               error: {
                 type: toAnthropicErrorType(normalized.kind),
                 message: normalized.message,
@@ -679,7 +683,7 @@ async function translateStreamToAnthropic(
               },
             })}\n\n`,
           ),
-        );
+        )
       }
 
       // Close any remaining open blocks
@@ -687,40 +691,40 @@ async function translateStreamToAnthropic(
         controller.enqueue(
           encoder.encode(
             formatSSE(
-              "content_block_stop",
+              'content_block_stop',
               JSON.stringify({
-                type: "content_block_stop",
+                type: 'content_block_stop',
                 index: contentBlockIndex,
               }),
             ),
           ),
-        );
+        )
       }
       if (inReasoningBlock) {
         controller.enqueue(
           encoder.encode(
             formatSSE(
-              "content_block_stop",
+              'content_block_stop',
               JSON.stringify({
-                type: "content_block_stop",
+                type: 'content_block_stop',
                 index: contentBlockIndex,
               }),
             ),
           ),
-        );
+        )
       }
       for (const [, blockIdx] of toolCallIndexMap) {
         controller.enqueue(
           encoder.encode(
             formatSSE(
-              "content_block_stop",
+              'content_block_stop',
               JSON.stringify({
-                type: "content_block_stop",
+                type: 'content_block_stop',
                 index: blockIdx,
               }),
             ),
           ),
-        );
+        )
       }
 
       finishStream(
@@ -730,19 +734,19 @@ async function translateStreamToAnthropic(
         inputTokens,
         cacheReadInputTokens,
         hadToolCalls,
-      );
+      )
     },
-  });
+  })
 
   return new Response(readable, {
     status: 200,
     headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-      "x-request-id": messageId,
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'x-request-id': messageId,
     },
-  });
+  })
 }
 
 function emitTextBlock(
@@ -754,35 +758,35 @@ function emitTextBlock(
   controller.enqueue(
     encoder.encode(
       formatSSE(
-        "content_block_start",
+        'content_block_start',
         JSON.stringify({
-          type: "content_block_start",
+          type: 'content_block_start',
           index,
-          content_block: { type: "text", text: "" },
+          content_block: { type: 'text', text: '' },
         }),
       ),
     ),
-  );
+  )
   controller.enqueue(
     encoder.encode(
       formatSSE(
-        "content_block_delta",
+        'content_block_delta',
         JSON.stringify({
-          type: "content_block_delta",
+          type: 'content_block_delta',
           index,
-          delta: { type: "text_delta", text },
+          delta: { type: 'text_delta', text },
         }),
       ),
     ),
-  );
+  )
   controller.enqueue(
     encoder.encode(
       formatSSE(
-        "content_block_stop",
-        JSON.stringify({ type: "content_block_stop", index }),
+        'content_block_stop',
+        JSON.stringify({ type: 'content_block_stop', index }),
       ),
     ),
-  );
+  )
 }
 
 function finishStream(
@@ -793,7 +797,7 @@ function finishStream(
   cacheReadInputTokens: number,
   hadToolCalls: boolean,
 ): void {
-  const stopReason = hadToolCalls ? "tool_use" : "end_turn";
+  const stopReason = hadToolCalls ? 'tool_use' : 'end_turn'
 
   // OpenAI Chat Completions does NOT report cache write cost — prefix
   // caching is automatic on OpenAI's side. Surface that explicitly as `null`
@@ -805,32 +809,32 @@ function finishStream(
     output_tokens: outputTokens,
     cache_read_input_tokens: cacheReadInputTokens,
     cache_creation_input_tokens: null,
-  };
+  }
 
   controller.enqueue(
     encoder.encode(
       formatSSE(
-        "message_delta",
+        'message_delta',
         JSON.stringify({
-          type: "message_delta",
+          type: 'message_delta',
           delta: { stop_reason: stopReason, stop_sequence: null },
           usage: usagePayload,
         }),
       ),
     ),
-  );
+  )
   controller.enqueue(
     encoder.encode(
       formatSSE(
-        "message_stop",
+        'message_stop',
         JSON.stringify({
-          type: "message_stop",
+          type: 'message_stop',
           usage: usagePayload,
         }),
       ),
     ),
-  );
-  controller.close();
+  )
+  controller.close()
 }
 
 // ── Main fetch interceptor factory ──────────────────────────────────
@@ -843,88 +847,88 @@ export function createChatCompletionsFetch(
   config: ProviderConfig,
   authHeaders: Record<string, string>,
 ): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
-  const baseUrl = config.baseUrl || "https://api.openai.com/v1";
-  const targetModelId = config.models[0]?.id || "gpt-4";
+  const baseUrl = config.baseUrl || 'https://api.openai.com/v1'
+  const targetModelId = config.models[0]?.id || 'gpt-4'
 
   return async (
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<Response> => {
-    const url = input instanceof Request ? input.url : String(input);
+    const url = input instanceof Request ? input.url : String(input)
 
     // Only intercept Anthropic API message calls
-    if (!url.includes("/v1/messages")) {
-      return globalThis.fetch(input, init);
+    if (!url.includes('/v1/messages')) {
+      return globalThis.fetch(input, init)
     }
 
     // Parse the Anthropic request body
-    let anthropicBody: Record<string, unknown>;
+    let anthropicBody: Record<string, unknown>
     try {
       const bodyText =
         init?.body instanceof ReadableStream
           ? await new Response(init.body).text()
-          : typeof init?.body === "string"
+          : typeof init?.body === 'string'
             ? init.body
-            : "{}";
-      anthropicBody = JSON.parse(bodyText);
+            : '{}'
+      anthropicBody = JSON.parse(bodyText)
     } catch {
-      anthropicBody = {};
+      anthropicBody = {}
     }
 
     // Resolve model: use the model from the request if it matches a
     // configured model, otherwise use the first configured model
-    const requestModel = anthropicBody.model as string | undefined;
+    const requestModel = anthropicBody.model as string | undefined
     const resolvedModel = requestModel
-      ? config.models.find((m) => m.id === requestModel)?.id || targetModelId
-      : targetModelId;
+      ? config.models.find(m => m.id === requestModel)?.id || targetModelId
+      : targetModelId
 
     // Translate to Chat Completions format
     const structuredOutputs =
-      getProviderRegistry().getModelFlag(resolvedModel, "structuredOutputs") ===
-      true;
+      getProviderRegistry().getModelFlag(resolvedModel, 'structuredOutputs') ===
+      true
     const openaiBody = translateToOpenAIBody(anthropicBody, resolvedModel, {
       structuredOutputs,
-    });
+    })
 
     // Make the request
-    const endpoint = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
+    const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`
     const response = await globalThis.fetch(endpoint, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
-        Accept: "text/event-stream",
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
         ...authHeaders,
       },
       body: JSON.stringify(openaiBody),
-    });
+    })
 
     if (!response.ok) {
-      const errorText = await response.text();
+      const errorText = await response.text()
       const normalized = openaiChatCompletionsAdapter.normalizeError(
         {
           status: response.status,
           body: errorText,
           headers: response.headers,
         },
-        "openai-chat-completions",
-      );
+        'openai-chat-completions',
+      )
       const errorBody = {
-        type: "error",
+        type: 'error',
         error: {
           type: toAnthropicErrorType(normalized.kind),
           message: `Chat Completions API error (${response.status}): ${normalized.message}`,
           normalized,
         },
-      };
+      }
       // Preserve response headers so retry-after survives for withRetry.
-      const outHeaders = new Headers(response.headers);
-      outHeaders.set("Content-Type", "application/json");
+      const outHeaders = new Headers(response.headers)
+      outHeaders.set('Content-Type', 'application/json')
       return new Response(JSON.stringify(errorBody), {
         status: response.status,
         headers: outHeaders,
-      });
+      })
     }
 
-    return translateStreamToAnthropic(response, resolvedModel);
-  };
+    return translateStreamToAnthropic(response, resolvedModel)
+  }
 }
