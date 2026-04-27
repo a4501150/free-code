@@ -3,9 +3,11 @@ import type { BetaTool } from '@anthropic-ai/sdk/resources/beta/messages/message
 // Session-scoped cache of rendered tool schemas. Tool schemas render at server
 // position 2 (before system prompt), so any byte-level change busts the entire
 // ~11K-token tool block AND everything downstream. Settings flips
-// (strictToolSchemas, fineGrainedToolStreaming), MCP reconnects, or dynamic
-// content in tool.prompt() all cause this churn. Memoizing per-session locks
-// the schema bytes at first render.
+// (fineGrainedToolStreaming), MCP reconnects, or dynamic content in
+// tool.prompt() all cause this churn. Memoizing per-session locks the schema
+// bytes at first render. Cache key includes the wire-strict bit
+// (Anthropic-wire allowlist) so a mid-session provider switch returns the
+// correctly-shaped schema (see toolToAPISchema in api.ts).
 //
 // Lives in a leaf module so auth.ts can clear it without importing api.ts
 // (which would create a cycle via plans→settings→file→config→auth).

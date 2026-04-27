@@ -1533,12 +1533,6 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           "Enable fine-grained tool streaming (eager_input_streaming) to avoid buffering entire tool inputs before sending deltas.",
         ),
-      strictToolSchemas: z
-        .boolean()
-        .optional()
-        .describe(
-          "Enable strict tool schemas (structured outputs) for improved tool call reliability.",
-        ),
       systemReminderSmooshing: z
         .boolean()
         .optional()

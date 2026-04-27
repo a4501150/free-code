@@ -165,7 +165,6 @@ export const GrepTool = buildTool({
   searchHint: 'search file contents with regex (ripgrep)',
   // 20K chars - tool result persistence threshold
   maxResultSizeChars: 20_000,
-  strict: true,
   async description() {
     return getDescription()
   },

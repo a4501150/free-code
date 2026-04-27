@@ -1,8 +1,24 @@
 /**
- * Reproduces the Anthropic strict-tool regression introduced by b767110.
- * Captures the tool schema sent in the first /v1/messages request and
- * checks for the strict-shape transform that breaks Anthropic's strict-mode
- * limits (no minimum/maximum, 24 optional params total, 16 anyOf params).
+ * Anthropic-wire strict-tools wire-up.
+ *
+ * Verifies the design implemented in src/utils/api.ts:
+ *
+ *   - Universal strict-shape: every Zod-derived tool schema gets
+ *     `additionalProperties: false`, all properties in `required`, optional
+ *     fields widened with `null`. This shape is the strongest model-facing
+ *     signal regardless of provider, and Anthropic accepts it on both
+ *     non-strict and strict tools.
+ *
+ *   - Anthropic-wire `strict: true` is emitted ONLY on tools listed in
+ *     ANTHROPIC_STRICT_TOOL_NAMES (currently FileEdit / FileWrite / FileRead)
+ *     when the resolved model declares `structuredOutputs: true`. Outside
+ *     that allowlist, no `strict` field is sent — Anthropic's strict-tools
+ *     budget caps out at 20 tools / 24 optionals / 16 anyOf params, so we
+ *     keep the strict subset small and biased to file-mutation tools where
+ *     input correctness is most safety-critical.
+ *
+ *   - The structured-outputs beta header rides along on Anthropic-wire +
+ *     structuredOutputs models so the strict subset is recognized.
  */
 import {
   describe,
@@ -20,7 +36,7 @@ import { TmuxSession, createLoggingTest } from './tmux-helpers'
 setDefaultTimeout(60_000)
 const test = createLoggingTest(bunTest)
 
-describe('Anthropic strict regression', () => {
+describe('Anthropic strict-tools wire-up', () => {
   let server: MockAnthropicServer
   let session: TmuxSession
 
@@ -37,7 +53,9 @@ describe('Anthropic strict regression', () => {
     if (session) await session.stop()
   })
 
-  test('Anthropic request: tool schemas should NOT be strict-transformed', async () => {
+  test('non-allowlist tools (Read non-allowlist case) are strict-shaped but not strict-flagged when model lacks structuredOutputs', async () => {
+    // The mock server's default model does not declare structuredOutputs in
+    // the registry. Even allowlisted tools should NOT carry strict: true.
     server.reset([textResponse('hello')])
 
     session = new TmuxSession({ serverUrl: server.url })
@@ -55,30 +73,23 @@ describe('Anthropic strict regression', () => {
     const readTool = tools.find(t => t.name === 'Read')
     expect(readTool).toBeDefined()
 
-    // REGRESSION ASSERTIONS: For Anthropic, broad strict transform must NOT
-    // apply. Anthropic strict mode 400s on minimum/maximum/etc., on schemas
-    // wider than ~16 anyOf params, and on >20 strict tools per request.
-    //
-    // (`additionalProperties: false` is zod-v4's default for `z.object()` —
-    // pre-existing and accepted by Anthropic. Not part of the regression.)
-    expect(readTool!.strict).not.toBe(true)
-
-    // No anyOf-with-null widening (the strict transform's signature shape).
-    const offset = (
-      readTool!.input_schema!.properties as Record<string, unknown>
-    ).offset
-    expect(JSON.stringify(offset)).not.toContain('"type":"null"')
-
-    // Optional fields must NOT be added to `required`.
+    // Strict-shape is universal: additionalProperties:false + required-all +
+    // nullable optionals.
     const required =
       (readTool!.input_schema as { required?: string[] }).required ?? []
     expect(required).toContain('file_path')
-    expect(required).not.toContain('offset')
-    expect(required).not.toContain('limit')
+    // Optional fields are now in `required` (null-union encoding).
+    expect(required).toContain('offset')
+    expect(required).toContain('limit')
 
-    // structured-outputs beta should not be sent by default for Anthropic
-    // (no strict tools means the beta is dead weight + a cache differentiator).
-    const betaHeader = log[0].headers['anthropic-beta'] ?? ''
-    expect(betaHeader).not.toContain('structured-outputs-2025-12-15')
+    const offset = (
+      readTool!.input_schema!.properties as Record<string, unknown>
+    ).offset
+    // Optional widened with null: anyOf:[T,{type:'null'}] or type:["...","null"].
+    expect(JSON.stringify(offset)).toContain('"type":"null"')
+
+    // Without model-level structuredOutputs declared, even allowlist tools
+    // ship without `strict: true` on the wire.
+    expect(readTool!.strict).not.toBe(true)
   })
 })

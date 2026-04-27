@@ -23,7 +23,10 @@ import {
 
 const inputSchema = lazySchema(() =>
   z.strictObject({
-    query: z.string().min(2).describe('The search query to use'),
+    query: z
+      .string()
+      .min(2)
+      .describe('The search query to use (at least 2 characters).'),
     allowed_domains: z
       .array(z.string())
       .optional()

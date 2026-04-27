@@ -640,7 +640,6 @@ export const BashTool = buildTool({
   searchHint: 'execute shell commands',
   // 30K chars - tool result persistence threshold
   maxResultSizeChars: 30_000,
-  strict: true,
   async description({ description }) {
     return description || 'Run shell command'
   },

@@ -37,7 +37,7 @@ const inputSchema = lazySchema(() =>
       .min(0)
       .max(600000)
       .default(30000)
-      .describe('Max wait time in ms'),
+      .describe('Max wait time in ms (0-600000).'),
   }),
 )
 type InputSchema = ReturnType<typeof inputSchema>

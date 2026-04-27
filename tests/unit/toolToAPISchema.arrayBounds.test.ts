@@ -1,3 +1,11 @@
+/**
+ * Strict-disallowed validation keywords are now stripped universally on the
+ * Zod-derived strict-shape path (see toolToAPISchema in src/utils/api.ts).
+ * Anthropic strict-tools rejects them; OpenAI strict rejects a few of them
+ * (`format: "uri"`, etc.); the bounds the model needs are documented in
+ * `.describe()` text on each affected tool's Zod schema. Stripping universally
+ * keeps one schema shape across all providers.
+ */
 import { describe, expect, test } from 'bun:test'
 import { AskUserQuestionTool } from '../../src/tools/AskUserQuestionTool/AskUserQuestionTool.js'
 import { toolToAPISchema } from '../../src/utils/api.js'
@@ -41,11 +49,12 @@ function findStrictDisallowed(value: unknown, path = '$'): string[] {
 }
 
 describe('toolToAPISchema strict-disallowed keyword stripping', () => {
-  test('non-strict path preserves JSON Schema constraints (Anthropic accepts them)', async () => {
-    // Without a model OR with an Anthropic-wire provider, no strict transform
-    // applies, and constraint keywords (minItems/maxItems/minimum/maximum/…)
-    // are passed through. This is correct: only strict mode rejects them, and
-    // we don't want to silently lose validation info on the Anthropic path.
+  test('strict-shape path strips constraint keywords (universal)', async () => {
+    // AskUserQuestionTool's `questions` and nested `options` arrays carry
+    // .min/.max bounds that surface as minItems/maxItems in the raw Zod
+    // JSON Schema. Those bounds are now in the field descriptions
+    // ("Questions to ask the user (1-4 questions)" / "Must have 2-4
+    // options") and the schema itself is stripped clean.
     const schema = await toolToAPISchema(AskUserQuestionTool, {
       getToolPermissionContext: async () => ({}) as never,
       tools: [AskUserQuestionTool],
@@ -53,10 +62,6 @@ describe('toolToAPISchema strict-disallowed keyword stripping', () => {
     })
 
     const hits = findStrictDisallowed(schema)
-    // AskUserQuestionTool's `questions` and nested `options` arrays carry
-    // .min/.max bounds that surface as minItems/maxItems.
-    expect(hits.length).toBeGreaterThan(0)
-    expect(hits).toContain('$.input_schema.properties.questions.minItems')
-    expect(hits).toContain('$.input_schema.properties.questions.maxItems')
+    expect(hits).toEqual([])
   })
 })

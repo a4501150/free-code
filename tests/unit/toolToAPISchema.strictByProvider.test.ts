@@ -1,17 +1,23 @@
 /**
- * Unit test: the broad strict-tool transform is gated on provider wire format.
+ * Unit test: universal strict-shape, selective wire `strict: true`.
  *
- * - openai-responses / openai-chat-completions / gemini → strict transform
- *   applies; constraint keywords stripped; `strict: true` set.
- * - anthropic / foundry / vertex / bedrock-converse → transform skipped;
- *   schema passes through unchanged; `strict` not set.
+ * Design (see ANTHROPIC_STRICT_TOOL_NAMES + shouldEmitWireStrictForAnthropic
+ * in src/utils/api.ts):
  *
- * This is the regression guard for b767110: we used to apply the OpenAI-
- * shaped strict transform to every provider with `structuredOutputs: true`,
- * including Anthropic-wire providers — but Anthropic's structured-outputs
- * beta caps strict tools at 20 per request, total optional params at 24,
- * and rejects `minimum`/`maximum`/`pattern`/etc., so the broad transform
- * was 400'ing every Anthropic request.
+ *   - Every Zod-derived tool schema is rewritten to strict shape regardless
+ *     of provider: `additionalProperties: false` on every object, every
+ *     property in `required`, optional fields widened with null. Strict-
+ *     disallowed validation keywords (`minimum`, `minLength`, `pattern`,
+ *     `format`, `minItems`, etc.) are stripped at the same time.
+ *
+ *   - The wire-level `strict: true` flag is emitted only on the Anthropic-
+ *     wire allowlist (FileEdit, FileWrite, FileRead) when the resolved model
+ *     declares `structuredOutputs: true`. OpenAI Chat / Responses adapters
+ *     emit `strict: true` for ALL tools downstream from the model flag (not
+ *     tested here — adapter-level concern). Gemini never emits strict.
+ *
+ *   - Anthropic-wire non-allowlist tools and Anthropic models without
+ *     `structuredOutputs: true` get the strict-shape but no wire flag.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { z } from 'zod/v4'
@@ -31,9 +37,6 @@ const fakeToolSchema = z.object({
 })
 
 function makeFakeTool(name: string): Tool {
-  // Minimal stub matching the Tool surface that toolToAPISchema actually
-  // touches (name, description, prompt, inputSchema). Other Tool methods are
-  // unused in this codepath.
   return {
     name,
     description: () => Promise.resolve('test tool'),
@@ -80,7 +83,7 @@ function setupProvider(
   initProviderRegistry(providers)
 }
 
-describe('toolToAPISchema: broad strict gated on provider wire format', () => {
+describe('toolToAPISchema: universal strict-shape + selective wire strict', () => {
   beforeEach(() => {
     process.env.TEST_API_KEY = 'sk-test'
   })
@@ -89,7 +92,91 @@ describe('toolToAPISchema: broad strict gated on provider wire format', () => {
     clearToolSchemaCache()
   })
 
-  test('openai-responses with structuredOutputs=true → strict transform applies', async () => {
+  test('any provider: every Zod-derived tool gets strict-shape', async () => {
+    setupProvider('anthropic', 'anthropic', 'claude-test', false)
+    const tool = makeFakeTool('FakeTool')
+    const schema = (await toolToAPISchema(tool, {
+      getToolPermissionContext: async () => ({}) as never,
+      tools: [tool],
+      agents: [],
+      model: 'claude-test',
+    })) as { strict?: boolean; input_schema: Record<string, unknown> }
+
+    const inputSchema = schema.input_schema as {
+      additionalProperties?: unknown
+      required?: string[]
+      properties: Record<string, Record<string, unknown>>
+    }
+    expect(inputSchema.additionalProperties).toBe(false)
+    expect(new Set(inputSchema.required)).toEqual(
+      new Set(['file_path', 'offset', 'pattern']),
+    )
+    // Optional fields widened with null union.
+    const offset = inputSchema.properties.offset
+    expect(JSON.stringify(offset)).toContain('"type":"null"')
+    // Strict-disallowed keywords stripped universally so the same schema
+    // bytes work everywhere (Anthropic-strict allowlist + OpenAI strict).
+    expect(JSON.stringify(inputSchema)).not.toContain('"minimum"')
+    expect(JSON.stringify(inputSchema)).not.toContain('"minLength"')
+  })
+
+  test('Anthropic non-allowlist tool: strict-shape but no wire strict flag', async () => {
+    setupProvider('anthropic', 'anthropic', 'claude-test', true)
+    const tool = makeFakeTool('FakeTool') // not in allowlist
+    const schema = (await toolToAPISchema(tool, {
+      getToolPermissionContext: async () => ({}) as never,
+      tools: [tool],
+      agents: [],
+      model: 'claude-test',
+    })) as { strict?: boolean }
+
+    expect(schema.strict).not.toBe(true)
+  })
+
+  test('Anthropic allowlist tool + structuredOutputs model: wire strict emitted', async () => {
+    setupProvider('anthropic', 'anthropic', 'claude-test', true)
+    const tool = makeFakeTool('FileRead')
+    const schema = (await toolToAPISchema(tool, {
+      getToolPermissionContext: async () => ({}) as never,
+      tools: [tool],
+      agents: [],
+      model: 'claude-test',
+    })) as { strict?: boolean }
+
+    expect(schema.strict).toBe(true)
+  })
+
+  test('Anthropic allowlist tool + non-structuredOutputs model: no wire strict', async () => {
+    setupProvider('anthropic', 'anthropic', 'claude-old', false)
+    const tool = makeFakeTool('FileRead')
+    const schema = (await toolToAPISchema(tool, {
+      getToolPermissionContext: async () => ({}) as never,
+      tools: [tool],
+      agents: [],
+      model: 'claude-old',
+    })) as { strict?: boolean }
+
+    expect(schema.strict).not.toBe(true)
+  })
+
+  test('foundry (Anthropic-wire proxy) allowlist tool: wire strict emitted', async () => {
+    setupProvider('foundry', 'foundry', 'claude-test', true)
+    const tool = makeFakeTool('FileEdit')
+    const schema = (await toolToAPISchema(tool, {
+      getToolPermissionContext: async () => ({}) as never,
+      tools: [tool],
+      agents: [],
+      model: 'claude-test',
+    })) as { strict?: boolean }
+
+    expect(schema.strict).toBe(true)
+  })
+
+  test('OpenAI provider: strict-shape but no wire strict from toolToAPISchema (adapter sets it)', async () => {
+    // OpenAI Chat / Responses adapters emit strict from the model's
+    // `structuredOutputs` flag uniformly across all tools — that path is
+    // adapter-internal. toolToAPISchema does not duplicate it on the
+    // BetaTool itself, so the field is absent here.
     setupProvider('openai', 'openai-responses', 'gpt-test', true)
     const tool = makeFakeTool('FakeTool')
     const schema = (await toolToAPISchema(tool, {
@@ -99,65 +186,16 @@ describe('toolToAPISchema: broad strict gated on provider wire format', () => {
       model: 'gpt-test',
     })) as { strict?: boolean; input_schema: Record<string, unknown> }
 
-    expect(schema.strict).toBe(true)
+    expect(schema.strict).not.toBe(true)
     const inputSchema = schema.input_schema as {
       additionalProperties?: unknown
-      required?: string[]
-      properties: Record<string, Record<string, unknown>>
     }
     expect(inputSchema.additionalProperties).toBe(false)
-    // Every property must appear in `required` for strict mode.
-    expect(new Set(inputSchema.required)).toEqual(
-      new Set(['file_path', 'offset', 'pattern']),
-    )
-    // Optional fields widened with null.
-    const offset = inputSchema.properties.offset
-    expect(JSON.stringify(offset)).toContain('"type":"null"')
-    // Strict-disallowed keywords stripped (offset.minimum, pattern.minLength).
-    expect(JSON.stringify(inputSchema)).not.toContain('"minimum"')
-    expect(JSON.stringify(inputSchema)).not.toContain('"minLength"')
   })
 
-  test('anthropic with structuredOutputs=true → strict transform skipped', async () => {
-    setupProvider('anthropic', 'anthropic', 'claude-opus-4-7', true)
-    const tool = makeFakeTool('FakeTool')
-    const schema = (await toolToAPISchema(tool, {
-      getToolPermissionContext: async () => ({}) as never,
-      tools: [tool],
-      agents: [],
-      model: 'claude-opus-4-7',
-    })) as { strict?: boolean; input_schema: Record<string, unknown> }
-
-    expect(schema.strict).not.toBe(true)
-    const inputSchema = schema.input_schema as {
-      required?: string[]
-      properties: Record<string, Record<string, unknown>>
-    }
-    // Optional fields stay out of `required`.
-    expect(inputSchema.required).toEqual(['file_path'])
-    // Constraint keywords preserved (Anthropic non-strict accepts them).
-    expect(JSON.stringify(inputSchema)).toContain('"minimum"')
-    expect(JSON.stringify(inputSchema)).toContain('"minLength"')
-  })
-
-  test('foundry (Anthropic-wire proxy) → strict transform skipped', async () => {
-    setupProvider('foundry', 'foundry', 'claude-opus-4-7', true)
-    const tool = makeFakeTool('FakeTool')
-    const schema = (await toolToAPISchema(tool, {
-      getToolPermissionContext: async () => ({}) as never,
-      tools: [tool],
-      agents: [],
-      model: 'claude-opus-4-7',
-    })) as { strict?: boolean; input_schema: Record<string, unknown> }
-
-    expect(schema.strict).not.toBe(true)
-    const inputSchema = schema.input_schema as { required?: string[] }
-    expect(inputSchema.required).toEqual(['file_path'])
-  })
-
-  test('gemini with structuredOutputs=true → strict transform applies', async () => {
+  test('Gemini: strict-shape but never wire strict', async () => {
     setupProvider('gemini', 'gemini', 'gemini-test', true)
-    const tool = makeFakeTool('FakeTool')
+    const tool = makeFakeTool('FileEdit')
     const schema = (await toolToAPISchema(tool, {
       getToolPermissionContext: async () => ({}) as never,
       tools: [tool],
@@ -165,7 +203,7 @@ describe('toolToAPISchema: broad strict gated on provider wire format', () => {
       model: 'gemini-test',
     })) as { strict?: boolean; input_schema: Record<string, unknown> }
 
-    expect(schema.strict).toBe(true)
+    expect(schema.strict).not.toBe(true)
     const inputSchema = schema.input_schema as {
       additionalProperties?: unknown
     }
