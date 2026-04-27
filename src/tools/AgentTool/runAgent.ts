@@ -323,7 +323,7 @@ export async function* runAgent({
    * during long single-block streams (e.g. thinking) where no assistant
    * message is yielded for >60s. */
   onQueryProgress?: () => void
-}): AsyncGenerator<Message, void> {
+}): AsyncGenerator<Message | StreamEvent, void> {
   // Track subagent usage for feature discovery
 
   const appState = toolUseContext.getAppState()
@@ -749,6 +749,20 @@ export async function* runAgent({
         message.ttftMs != null
       ) {
         toolUseContext.pushApiMetricsEntry?.(message.ttftMs)
+        continue
+      }
+
+      // Forward message_delta usage events to the caller so the subagent
+      // progress tracker can pick up real usage from non-Anthropic providers
+      // (which only emit final usage at message_delta, not message_start).
+      // Don't record to transcript; the assistant message recorded later
+      // already carries the same usage (claude.ts mutates message.usage).
+      if (
+        message.type === 'stream_event' &&
+        message.event.type === 'message_delta' &&
+        message.event.usage
+      ) {
+        yield message
         continue
       }
 

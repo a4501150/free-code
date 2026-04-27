@@ -33,6 +33,7 @@ import {
   unregisterAgentForeground,
   updateAgentProgress as updateAsyncAgentProgress,
   updateProgressFromMessage,
+  updateProgressFromUsage,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { assembleToolPool } from './assembleToolPool.js'
 import { asAgentId } from '../../types/ids.js'
@@ -1186,12 +1187,40 @@ export const AgentTool = buildTool({
                             }
                           : undefined,
                       })) {
-                        agentMessages.push(msg)
+                        // Forward final usage from non-Anthropic providers'
+                        // message_delta stream events to the tracker. Don't
+                        // record to transcript or count tool uses.
+                        if (
+                          'type' in msg &&
+                          msg.type === 'stream_event' &&
+                          'event' in msg &&
+                          msg.event?.type === 'message_delta' &&
+                          msg.event.usage
+                        ) {
+                          updateProgressFromUsage(tracker, msg.event.usage)
+                          updateAsyncAgentProgress(
+                            backgroundedTaskId,
+                            getProgressUpdate(tracker),
+                            rootSetAppState,
+                          )
+                          emitTaskProgress(
+                            tracker,
+                            backgroundedTaskId,
+                            toolUseContext.toolUseId,
+                            description,
+                            startTime,
+                            undefined,
+                          )
+                          continue
+                        }
+
+                        const m = msg as MessageType
+                        agentMessages.push(m)
 
                         // Track progress for backgrounded agents
                         updateProgressFromMessage(
                           tracker,
-                          msg,
+                          m,
                           resolveActivity2,
                           toolUseContext.options.tools,
                         )
@@ -1201,7 +1230,7 @@ export const AgentTool = buildTool({
                           rootSetAppState,
                         )
 
-                        const lastToolName = getLastToolUseName(msg)
+                        const lastToolName = getLastToolUseName(m)
                         if (lastToolName) {
                           emitTaskProgress(
                             tracker,
@@ -1337,8 +1366,64 @@ export const AgentTool = buildTool({
               }
               const { result } = raceResult
               if (result.done) break
-              const message = result.value
+              const value = result.value
 
+              // Non-Anthropic providers emit final usage at message_delta, not
+              // message_start. Forward that to the tracker so the completed
+              // line shows real tokens. Don't push to agentMessages or emit
+              // a UI progress message — claude.ts has already mutated the
+              // assistant message's usage in place. Re-emit a passthrough
+              // onProgress against the latest assistant so React re-renders
+              // and the live token line picks up the post-mutation value.
+              if (
+                'type' in value &&
+                value.type === 'stream_event' &&
+                'event' in value &&
+                value.event?.type === 'message_delta' &&
+                value.event.usage
+              ) {
+                updateProgressFromUsage(syncTracker, value.event.usage)
+                if (foregroundTaskId) {
+                  if (getSdkAgentProgressSummariesEnabled()) {
+                    updateAsyncAgentProgress(
+                      foregroundTaskId,
+                      getProgressUpdate(syncTracker),
+                      rootSetAppState,
+                    )
+                  }
+                  emitTaskProgress(
+                    syncTracker,
+                    foregroundTaskId,
+                    toolUseContext.toolUseId,
+                    description,
+                    agentStartTime,
+                    undefined,
+                  )
+                }
+                if (onProgress) {
+                  const latestAssistant = agentMessages.findLast(
+                    (m): m is MessageType & { type: 'assistant' } =>
+                      m.type === 'assistant',
+                  )
+                  if (latestAssistant) {
+                    const normalized = normalizeMessages([latestAssistant])
+                    for (const m of normalized) {
+                      onProgress({
+                        toolUseID: `agent_${assistantMessage.message.id}`,
+                        data: {
+                          message: m,
+                          type: 'agent_progress',
+                          prompt: '',
+                          agentId: syncAgentId,
+                        },
+                      })
+                    }
+                  }
+                }
+                continue
+              }
+
+              const message = value as MessageType
               agentMessages.push(message)
 
               // Emit task_progress for the VS Code subagent panel

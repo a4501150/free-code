@@ -96,6 +96,36 @@ export type ActivityDescriptionResolver = (
   input: Record<string, unknown>,
 ) => string | undefined
 
+/**
+ * Usage shape compatible with both Anthropic BetaUsage (on assistant messages)
+ * and BetaMessageDeltaUsage (on stream_event message_delta events). Both carry
+ * the same input/cache/output token fields we care about.
+ */
+type ProgressUsage = {
+  input_tokens?: number | null
+  cache_creation_input_tokens?: number | null
+  cache_read_input_tokens?: number | null
+  output_tokens?: number | null
+}
+
+/**
+ * Update tracker tokens from a usage payload (without counting tool uses).
+ * Used for non-Anthropic providers that emit final usage at message_delta;
+ * the matching tool_use counting is done by updateProgressFromMessage so we
+ * don't double-count.
+ */
+export function updateProgressFromUsage(
+  tracker: ProgressTracker,
+  usage: ProgressUsage,
+): void {
+  // Keep latest input (it's cumulative in the API), sum outputs
+  tracker.latestInputTokens =
+    (usage.input_tokens ?? 0) +
+    (usage.cache_creation_input_tokens ?? 0) +
+    (usage.cache_read_input_tokens ?? 0)
+  tracker.cumulativeOutputTokens += usage.output_tokens ?? 0
+}
+
 export function updateProgressFromMessage(
   tracker: ProgressTracker,
   message: Message,
@@ -106,12 +136,20 @@ export function updateProgressFromMessage(
     return
   }
   const usage = message.message.usage
-  // Keep latest input (it's cumulative in the API), sum outputs
-  tracker.latestInputTokens =
-    usage.input_tokens +
-    (usage.cache_creation_input_tokens ?? 0) +
-    (usage.cache_read_input_tokens ?? 0)
-  tracker.cumulativeOutputTokens += usage.output_tokens
+  // Skip the usage-update branch when both input and output are 0 — this is
+  // the non-Anthropic message_start case where real usage arrives later in
+  // message_delta. Anthropic populates usage on every assistant message yield
+  // (input/cache at message_start, output growing each block), so its update
+  // path is unaffected. Non-Anthropic updates flow through
+  // updateProgressFromUsage on message_delta stream events.
+  if (usage.input_tokens > 0 || usage.output_tokens > 0) {
+    // Keep latest input (it's cumulative in the API), sum outputs
+    tracker.latestInputTokens =
+      usage.input_tokens +
+      (usage.cache_creation_input_tokens ?? 0) +
+      (usage.cache_read_input_tokens ?? 0)
+    tracker.cumulativeOutputTokens += usage.output_tokens
+  }
   for (const content of message.message.content) {
     if (content.type === 'tool_use') {
       tracker.toolUseCount++

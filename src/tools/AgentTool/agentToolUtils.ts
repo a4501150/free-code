@@ -30,9 +30,14 @@ import {
   type ProgressTracker,
   updateAgentProgress as updateAsyncAgentProgress,
   updateProgressFromMessage,
+  updateProgressFromUsage,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { asAgentId } from '../../types/ids.js'
-import type { AssistantMessage, Message as MessageType } from '../../types/message.js'
+import type {
+  AssistantMessage,
+  Message as MessageType,
+  StreamEvent,
+} from '../../types/message.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { AbortError, errorMessage } from '../../utils/errors.js'
@@ -380,7 +385,7 @@ export function emitTaskProgress(
   toolUseId: string | undefined,
   description: string,
   startTime: number,
-  lastToolName: string,
+  lastToolName: string | undefined,
 ): void {
   const progress = getProgressUpdate(tracker)
   emitTaskProgressEvent({
@@ -500,7 +505,7 @@ export async function runAsyncAgentLifecycle({
   abortController: AbortController
   makeStream: (
     onCacheSafeParams: ((p: CacheSafeParams) => void) | undefined,
-  ) => AsyncGenerator<MessageType, void>
+  ) => AsyncGenerator<MessageType | StreamEvent, void>
   metadata: Parameters<typeof finalizeAgentTool>[2]
   description: string
   toolUseContext: ToolUseContext
@@ -530,7 +535,36 @@ export async function runAsyncAgentLifecycle({
           stopSummarization = stop
         }
       : undefined
-    for await (const message of makeStream(onCacheSafeParams)) {
+    for await (const value of makeStream(onCacheSafeParams)) {
+      // Forward final usage from non-Anthropic providers' message_delta
+      // stream events to the tracker. Don't record to transcript or count
+      // tool uses (claude.ts mutates the assistant message's usage in place,
+      // so transcript reflects the final value at finalize time).
+      if (
+        'type' in value &&
+        value.type === 'stream_event' &&
+        'event' in value &&
+        value.event?.type === 'message_delta' &&
+        value.event.usage
+      ) {
+        updateProgressFromUsage(tracker, value.event.usage)
+        updateAsyncAgentProgress(
+          taskId,
+          getProgressUpdate(tracker),
+          rootSetAppState,
+        )
+        emitTaskProgress(
+          tracker,
+          taskId,
+          toolUseContext.toolUseId,
+          description,
+          metadata.startTime,
+          undefined,
+        )
+        continue
+      }
+
+      const message = value as MessageType
       agentMessages.push(message)
       // Append immediately when UI holds the task (retain). Bootstrap reads
       // disk in parallel and UUID-merges the prefix — disk-write-before-yield
