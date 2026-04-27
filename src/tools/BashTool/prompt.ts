@@ -28,7 +28,7 @@ function getBackgroundUsageNote(): string | null {
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
     return null
   }
-  return "Use `run_in_background: true` for long-running commands whose result you don't need immediately — you'll be notified when it finishes. Do not poll, and do not append `&` to the command."
+  return 'If you find yourself reaching for `sleep` or a poll loop to wait for a command — whether about to run it, or one you have already started — use `run_in_background: true` instead. Control returns immediately and the full output arrives in a later turn as a system notification.'
 }
 
 function getCommitAndPRInstructions(): string {

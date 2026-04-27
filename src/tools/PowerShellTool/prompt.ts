@@ -27,20 +27,7 @@ function getBackgroundUsageNote(): string | null {
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
     return null
   }
-  return `  - Use \`run_in_background: true\` for long-running commands whose result you don't need immediately — you'll be notified when it finishes. Do not poll.`
-}
-
-function getSleepGuidance(): string | null {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
-    return null
-  }
-  return `  - Avoid unnecessary \`Start-Sleep\` commands:
-    - Do not sleep between commands that can run immediately — just run them.
-    - If your command is long running and you would like to be notified when it finishes — simply run your command using \`run_in_background\`. There is no need to sleep in this case.
-    - Do not retry failing commands in a sleep loop — diagnose the root cause or consider an alternative approach.
-    - If waiting for a background task you started with \`run_in_background\`, you will be notified when it completes — do not poll.
-    - If you must poll an external process, use a check command rather than sleeping first.
-    - If you must sleep, keep the duration short (1-5 seconds) to avoid blocking the user.`
+  return `  - If you find yourself reaching for \`Start-Sleep\` or a poll loop to wait for a command — whether about to run it, or one you have already started — use \`run_in_background: true\` instead. Control returns immediately and the full output arrives in a later turn as a system notification.`
 }
 
 /**
@@ -72,7 +59,6 @@ function getEditionSection(edition: PowerShellEdition | null): string {
 
 export async function getPrompt(): Promise<string> {
   const backgroundNote = getBackgroundUsageNote()
-  const sleepGuidance = getSleepGuidance()
   const edition = await getPowerShellEdition()
 
   return `Executes a given PowerShell command with optional timeout. Working directory persists between commands; shell state (variables, functions) does not.
@@ -137,7 +123,6 @@ ${backgroundNote ? backgroundNote + '\n' : ''}\
     - Use \`;\` only when you need to run commands sequentially but don't care if earlier commands fail.
     - DO NOT use newlines to separate commands (newlines are ok in quoted strings and here-strings)
   - Do NOT prefix commands with \`cd\` or \`Set-Location\` -- the working directory is already set to the correct project directory automatically.
-${sleepGuidance ? sleepGuidance + '\n' : ''}\
   - For git commands:
     - Prefer to create a new commit rather than amending an existing commit.
     - Before running destructive operations (e.g., git reset --hard, git push --force, git checkout --), consider whether there is a safer alternative that achieves the same goal. Only use destructive operations when they are truly the best approach.

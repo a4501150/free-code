@@ -23,7 +23,7 @@ Use this to alert the user about:
 
 The notification will be delivered via the user's configured notification channel (terminal bell, iTerm2, Kitty, system notifications, etc.).
 
-Only use this when the information is genuinely time-sensitive or when the user is likely away from the terminal. Do not spam notifications for routine updates.`
+Each notification interrupts the user — only use it when an interruption is warranted (e.g., a task they care about has finished, or input is needed and you cannot continue without it).`
 
 const inputSchema = lazySchema(() =>
   z.strictObject({

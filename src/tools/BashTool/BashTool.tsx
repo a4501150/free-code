@@ -12,9 +12,7 @@ import type { AppState } from 'src/state/AppState.js'
 import { z } from 'zod/v4'
 import { getKairosActive } from '../../bootstrap/state.js'
 import { TOOL_SUMMARY_MAX_LENGTH } from '../../constants/toolLimits.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-} from '../../services/analytics/index.js'
+import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../../services/analytics/index.js'
 import { notifyVscodeFileUpdated } from '../../services/mcp/vscodeSdkMcp.js'
 import type {
   SetToolJSXFn,
@@ -339,9 +337,7 @@ const fullInputSchema = lazySchema(() =>
     timeout: semanticNumber(z.number().optional()).describe(
       `Optional timeout in milliseconds (max ${getMaxTimeoutMs()})`,
     ),
-    description: z
-      .string()
-      .optional()
+    description: z.string().optional()
       .describe(`Clear, concise description of what this command does in active voice. Never use words like "complex" or "risk" in the description - just describe what it does.
 
 For simple commands (git, npm, standard CLI tools), keep it brief (5-10 words):
@@ -354,7 +350,7 @@ For commands that are harder to parse at a glance (piped commands, obscure flags
 - git reset --hard origin/main → "Discard all local changes and match remote main"
 - curl -s url | jq '.data[]' → "Fetch JSON from URL and extract data array elements"`),
     run_in_background: semanticBoolean(z.boolean().optional()).describe(
-      `Run this command asynchronously; you'll be notified when it completes. Use only when you don't need the result before continuing (e.g., long-running build/test/server). NOT for parallelism — for independent commands whose results you need, send multiple Bash tool uses in a single message; they run concurrently and return together.`,
+      `Run this command asynchronously. Control returns to you immediately with a task ID and the path of the file the command's output is being streamed to; when the command finishes, that same path is delivered back to you as a system notification in a later turn (Read the file to see the full output). The notification arrives when the command finishes — sleeping or polling on your end does not change when it arrives. Use this whenever you'd otherwise reach for \`sleep\` or a poll loop to wait for a command. NOT a parallelism mechanism — for independent commands whose results you need together right now, send multiple Bash tool uses in a single message; they run concurrently in the foreground and return together.`,
     ),
     dangerouslyDisableSandbox: semanticBoolean(z.boolean().optional()).describe(
       'Set this to true to dangerously override sandbox mode and run commands without sandboxing.',
@@ -417,8 +413,7 @@ function getCommandTypeForLogging(
   command: string,
 ): AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS {
   const parts = splitCommand_DEPRECATED(command)
-  if (parts.length === 0)
-    return 'other'
+  if (parts.length === 0) return 'other'
 
   // Check each part of the command to see if any match common background commands
   for (const part of parts) {
@@ -809,7 +804,7 @@ export const BashTool = buildTool({
     if (backgroundTaskId) {
       const outputPath = getTaskOutputPath(backgroundTaskId)
       if (assistantAutoBackgrounded) {
-        backgroundInfo = `Command exceeded the assistant-mode blocking budget (${ASSISTANT_BLOCKING_BUDGET_MS / 1000}s) and was moved to the background with ID: ${backgroundTaskId}. It is still running — you will be notified when it completes. Output is being written to: ${outputPath}. In assistant mode, delegate long-running work to a subagent or use run_in_background to keep this conversation responsive.`
+        backgroundInfo = `Command exceeded the assistant-mode blocking budget (${ASSISTANT_BLOCKING_BUDGET_MS / 1000}s) and was moved to the background with ID: ${backgroundTaskId}. Output is being streamed to ${outputPath}; the full output will be delivered to you as a system notification in a later turn — sleeping or polling on your end does not change when it arrives. In assistant mode, delegate long-running work to a subagent or use \`run_in_background: true\` up front to keep this conversation responsive.`
       } else if (backgroundedByUser) {
         backgroundInfo = `Command was manually backgrounded by user with ID: ${backgroundTaskId}. Output is being written to: ${outputPath}`
       } else {

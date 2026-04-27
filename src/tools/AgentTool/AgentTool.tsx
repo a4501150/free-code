@@ -124,10 +124,9 @@ import {
 } from './UI.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule =
-  feature('KAIROS')
-    ? (require('../../proactive/index.js') as typeof import('../../proactive/index.js'))
-    : null
+const proactiveModule = feature('KAIROS')
+  ? (require('../../proactive/index.js') as typeof import('../../proactive/index.js'))
+  : null
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 // Progress display constants (for showing background hint)
@@ -172,7 +171,7 @@ const baseInputSchema = lazySchema(() =>
         })
         const description =
           "Optional model override for this agent. Takes precedence over the agent definition's model frontmatter. " +
-          'If omitted, uses the agent definition\'s model, or inherits from the parent.\n' +
+          "If omitted, uses the agent definition's model, or inherits from the parent.\n" +
           `Available models:\n${lines.join('\n')}`
         return z
           .enum(available as [string, ...string[]])
@@ -192,7 +191,7 @@ const baseInputSchema = lazySchema(() =>
       .boolean()
       .optional()
       .describe(
-        "Run this agent asynchronously; you'll be notified when it completes. Use only when you don't need the result before continuing (e.g., long-running work that should report back later). NOT a parallelism mechanism: to run agents in parallel whose results you need, send multiple Agent tool uses in a single message — those run concurrently in the foreground and all results return together.",
+        "Run this agent asynchronously. Control returns to you immediately with the agent's ID; when the agent finishes, its final report is delivered as a system notification in a later turn. The notification arrives when the agent finishes — sleeping or repeatedly checking on the agent does not change when it arrives. Use this whenever you would otherwise reach for `sleep` or repeatedly check on the agent's progress. NOT a parallelism mechanism — to run agents in parallel whose results you need together, send multiple Agent tool uses in a single message; they run concurrently in the foreground and all results return together.",
       ),
   }),
 )
@@ -633,15 +632,12 @@ export const AgentTool = buildTool({
       const parsed = parseUserSpecifiedModel(model)
       const resolved = getProviderRegistry().getProviderForModel(parsed)
       if (!resolved) {
-        const available =
-          getProviderRegistry().getAvailableSubagentModels()
+        const available = getProviderRegistry().getAvailableSubagentModels()
         const hint =
           available.length > 0
             ? ` Available models: ${available.join(', ')}`
             : ''
-        throw new Error(
-          `Unknown model "${model}".${hint}`,
-        )
+        throw new Error(`Unknown model "${model}".${hint}`)
       }
     }
 
@@ -1705,15 +1701,22 @@ The agent is now running and will receive instructions via mailbox.`,
         ],
       }
     }
-    if ('status' in internalData && (internalData.status as string) === 'remote_launched') {
-      const r = internalData as unknown as { taskId: string; sessionUrl: string; outputFile: string }
+    if (
+      'status' in internalData &&
+      (internalData.status as string) === 'remote_launched'
+    ) {
+      const r = internalData as unknown as {
+        taskId: string
+        sessionUrl: string
+        outputFile: string
+      }
       return {
         tool_use_id: toolUseID,
         type: 'tool_result',
         content: [
           {
             type: 'text',
-            text: `Remote agent launched in CCR.\ntaskId: ${r.taskId}\nsession_url: ${r.sessionUrl}\noutput_file: ${r.outputFile}\nThe agent is running remotely. You will be notified automatically when it completes.\nBriefly tell the user what you launched and end your response.`,
+            text: `Remote agent launched in CCR.\ntaskId: ${r.taskId}\nsession_url: ${r.sessionUrl}\noutput_file: ${r.outputFile}\nThe agent is running remotely; its final report will be delivered to you as a system notification in a later turn — sleeping or polling does not change when it arrives.\nBriefly tell the user what you launched and end your response.`,
           },
         ],
       }
@@ -1722,7 +1725,7 @@ The agent is now running and will receive instructions via mailbox.`,
       const sendMsgHint = isAgentSwarmsEnabled()
         ? ` Use ${SEND_MESSAGE_TOOL_NAME} with to: '${data.agentId}' to continue this agent.`
         : ''
-      const prefix = `Async agent launched successfully.\nagentId: ${data.agentId} (internal ID - do not mention to user.${sendMsgHint})\nThe agent is working in the background. You will be notified automatically when it completes.`
+      const prefix = `Async agent launched successfully.\nagentId: ${data.agentId} (internal ID - do not mention to user.${sendMsgHint})\nThe agent is working in the background; its final report will be delivered to you as a system notification in a later turn — sleeping or polling does not change when it arrives.`
       const instructions = data.canReadOutputFile
         ? `Do not duplicate this agent's work — avoid working with the same files or topics it is using. Work on non-overlapping tasks, or briefly tell the user what you launched and end your response.\noutput_file: ${data.outputFile}\nIf asked, you can check progress before completion by using ${FILE_READ_TOOL_NAME} or ${BASH_TOOL_NAME} tail on the output file.`
         : `Briefly tell the user what you launched and end your response. Do not generate any other text — agent results will arrive in a subsequent message.`
