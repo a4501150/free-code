@@ -222,10 +222,16 @@ export const getAllModelBetas = memoize((model: string): string[] => {
     betaHeaders.push(STRUCTURED_OUTPUTS_BETA_HEADER)
   }
 
-  // Add web search beta for providers that support it (provider-level capability)
+  // Add web search beta for Anthropic-compatible providers that support it
+  // server-side via the same `web_search_20250305` tool spec but require an
+  // explicit beta header (vertex, foundry). 1P Anthropic handles web search
+  // without a beta header. Native-translation providers (openai-responses)
+  // don't need this header — the codex adapter swaps the Anthropic tool for
+  // OpenAI's native `web_search_preview` and synthesizes the Anthropic
+  // result blocks itself.
   if (
     providerSupportsWebSearch(model) &&
-    providerType !== 'anthropic' // 1P handles web search server-side without beta header
+    (providerType === 'vertex' || providerType === 'foundry')
   ) {
     betaHeaders.push(WEB_SEARCH_BETA_HEADER)
   }

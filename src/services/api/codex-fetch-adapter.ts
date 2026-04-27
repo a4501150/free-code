@@ -77,7 +77,20 @@ interface AnthropicTool {
   name: string
   description?: string
   input_schema?: Record<string, unknown>
+  // Anthropic server-tool shape: `{type: 'web_search_20250305', name: 'web_search', ...}`
+  // and similar. Detected by presence of `type` (regular function tools omit it).
+  type?: string
+  allowed_domains?: string[]
+  blocked_domains?: string[]
+  max_uses?: number
 }
+
+/** Anthropic tool_choice payload as sent on outbound bodies. */
+type AnthropicToolChoice =
+  | { type: 'auto' }
+  | { type: 'any' }
+  | { type: 'tool'; name: string }
+  | undefined
 
 // ── Tool translation: Anthropic → Codex ─────────────────────────────
 
@@ -98,18 +111,62 @@ interface AnthropicTool {
 function translateTools(
   anthropicTools: AnthropicTool[],
   model: string,
-): Array<Record<string, unknown>> {
+): {
+  tools: Array<Record<string, unknown>>
+  hasWebSearch: boolean
+} {
   const structuredOutputs = getProviderRegistry().getModelFlag(
     model,
     'structuredOutputs',
   )
-  return anthropicTools.map(tool => ({
-    type: 'function',
-    name: tool.name,
-    description: tool.description || '',
-    parameters: tool.input_schema || { type: 'object', properties: {} },
-    ...(structuredOutputs === undefined ? {} : { strict: structuredOutputs }),
-  }))
+  const tools: Array<Record<string, unknown>> = []
+  let hasWebSearch = false
+  for (const tool of anthropicTools) {
+    // Anthropic web search server-tool → OpenAI native `web_search_preview`.
+    // The codex adapter synthesizes Anthropic `server_tool_use` /
+    // `web_search_tool_result` blocks from the Responses API's
+    // `web_search_call` events on the response side. `allowed_domains`,
+    // `blocked_domains`, and `max_uses` are not accepted by the OpenAI
+    // preview tool — drop them. (Lossy but acceptable for a v1 surface.)
+    if (tool.type === 'web_search_20250305') {
+      tools.push({ type: 'web_search_preview' })
+      hasWebSearch = true
+      continue
+    }
+    // Other server tools we don't handle yet — drop with a warning by
+    // omission; the function tool translation below covers regular tools.
+    if (tool.type && tool.type !== 'function') {
+      continue
+    }
+    tools.push({
+      type: 'function',
+      name: tool.name,
+      description: tool.description || '',
+      parameters: tool.input_schema || { type: 'object', properties: {} },
+      ...(structuredOutputs === undefined ? {} : { strict: structuredOutputs }),
+    })
+  }
+  return { tools, hasWebSearch }
+}
+
+/**
+ * Translate an Anthropic tool_choice payload to the OpenAI Responses API
+ * shape. Most cases pass through to `auto`; named-tool choice is honored
+ * only when the named tool is the (translated) web_search server tool.
+ */
+function translateToolChoice(
+  toolChoice: AnthropicToolChoice,
+  hasWebSearch: boolean,
+): Record<string, unknown> | string {
+  if (!toolChoice) return 'auto'
+  if (toolChoice.type === 'tool' && toolChoice.name === 'web_search') {
+    if (hasWebSearch) {
+      return { type: 'web_search_preview' }
+    }
+    return 'auto'
+  }
+  if (toolChoice.type === 'any') return 'required'
+  return 'auto'
 }
 
 // ── Message translation: Anthropic → Codex input ────────────────────
@@ -139,6 +196,13 @@ function translateMessages(
     if (msg.role === 'user') {
       const contentArr: Array<Record<string, unknown>> = []
       for (const block of msg.content) {
+        if (block.type === 'web_search_tool_result') {
+          // Synthetic Anthropic block from a prior turn's web search result
+          // (we synthesize these on the response side). The OpenAI Responses
+          // API has no input shape for them; drop and rely on the assistant's
+          // text response to carry the search outcome forward.
+          continue
+        }
         if (block.type === 'tool_result') {
           const callId = block.tool_use_id || `call_${toolCallCounter++}`
           let outputText = ''
@@ -182,6 +246,12 @@ function translateMessages(
     } else {
       // Process assistant or tool blocks
       for (const block of msg.content) {
+        if (block.type === 'server_tool_use') {
+          // Synthetic Anthropic block we emitted for a `web_search_call`.
+          // Has no representation in the Responses API `input[]` shape —
+          // drop. Subsequent turns just carry the assistant's text reply.
+          continue
+        }
         if (block.type === 'text' && typeof block.text === 'string') {
           if (msg.role === 'assistant') {
             codexInput.push({
@@ -283,9 +353,21 @@ function translateToCodexBody(anthropicBody: Record<string, unknown>, sessionId:
   }
 
   // Add tools if present
+  let hasWebSearch = false
   if (anthropicTools.length > 0) {
-    codexBody.tools = translateTools(anthropicTools, codexModel)
+    const translated = translateTools(anthropicTools, codexModel)
+    codexBody.tools = translated.tools
+    hasWebSearch = translated.hasWebSearch
   }
+
+  // Honor named tool_choice only for the web_search server tool. WebSearchTool
+  // forces `tool_choice: {type: 'tool', name: 'web_search'}`; without this
+  // translation the adapter would drop it and the model might pick a
+  // different (or no) tool, breaking the nested WebSearch query.
+  codexBody.tool_choice = translateToolChoice(
+    anthropicBody.tool_choice as AnthropicToolChoice,
+    hasWebSearch,
+  )
 
   // Effort → reasoning_effort (OpenAI Responses API)
   const outputConfig = anthropicBody.output_config as
@@ -367,6 +449,35 @@ async function translateCodexStreamToAnthropic(
       let currentToolCallArgs = ''
       let inToolCall = false
       let hadToolCalls = false
+
+      // ── Web search state ──────────────────────────────────────
+      // Codex emits `web_search_call` items with their own lifecycle:
+      //   output_item.added (item.type='web_search_call', id, action.query)
+      //   → response.web_search_call.in_progress / .searching
+      //   → response.web_search_call.completed
+      //   → output_item.done (item.action.results, citations)
+      // We synthesize Anthropic `server_tool_use` + `web_search_tool_result`
+      // blocks so the WebSearchTool consumer (which only knows Anthropic
+      // shapes) can read structured results.
+      let webSearchCount = 0
+      // Per-call state, keyed by Codex item id (call_id).
+      const pendingWebSearches = new Map<
+        string,
+        {
+          query: string
+          serverToolUseEmitted: boolean
+          serverToolUseClosed: boolean
+          serverToolUseIndex: number
+          resultEmitted: boolean
+        }
+      >()
+      // Citations harvested from output_text annotations, accumulated and
+      // attached to the most recent web_search if the structured
+      // `action.results` is missing.
+      const pendingCitations: Array<{
+        url: string
+        title: string
+      }> = []
 
       // ── Reasoning buffering state ─────────────────────────────
       // Codex / OpenAI Responses streams `reasoning` items as:
@@ -473,6 +584,107 @@ async function translateCodexStreamToAnthropic(
                     })),
                   ),
                 )
+              } else if (item?.type === 'web_search_call') {
+                // Close any open text block before opening a synthetic
+                // server_tool_use block. Don't touch function_call state —
+                // web_search runs in its own item lifecycle.
+                if (currentTextBlockStarted) {
+                  controller.enqueue(
+                    encoder.encode(
+                      formatSSE('content_block_stop', JSON.stringify({
+                        type: 'content_block_stop',
+                        index: contentBlockIndex,
+                      })),
+                    ),
+                  )
+                  contentBlockIndex++
+                  currentTextBlockStarted = false
+                }
+
+                const callId =
+                  (item.id as string) || `srvtoolu_${Date.now()}_${webSearchCount}`
+                const action = item.action as
+                  | { query?: string }
+                  | undefined
+                const query = (action?.query as string) || ''
+
+                // Open Anthropic server_tool_use block.
+                controller.enqueue(
+                  encoder.encode(
+                    formatSSE(
+                      'content_block_start',
+                      JSON.stringify({
+                        type: 'content_block_start',
+                        index: contentBlockIndex,
+                        content_block: {
+                          type: 'server_tool_use',
+                          id: callId,
+                          name: 'web_search',
+                          input: {},
+                        },
+                      }),
+                    ),
+                  ),
+                )
+                // Stream the query as input_json_delta so WebSearchTool's
+                // progress regex (`"query"\s*:\s*"..."`) can pick it up.
+                if (query) {
+                  controller.enqueue(
+                    encoder.encode(
+                      formatSSE(
+                        'content_block_delta',
+                        JSON.stringify({
+                          type: 'content_block_delta',
+                          index: contentBlockIndex,
+                          delta: {
+                            type: 'input_json_delta',
+                            partial_json: JSON.stringify({ query }),
+                          },
+                        }),
+                      ),
+                    ),
+                  )
+                }
+
+                pendingWebSearches.set(callId, {
+                  query,
+                  serverToolUseEmitted: true,
+                  serverToolUseClosed: false,
+                  serverToolUseIndex: contentBlockIndex,
+                  resultEmitted: false,
+                })
+                hadToolCalls = true
+                webSearchCount++
+              }
+            }
+
+            // Web search progress events — keep the synthetic server_tool_use
+            // block open and let WebSearchTool's UI progress fire on the
+            // input_json_delta we already emitted; nothing more to do here.
+            else if (
+              eventType === 'response.web_search_call.in_progress' ||
+              eventType === 'response.web_search_call.searching'
+            ) {
+              // no-op
+            }
+
+            // Web search completed — close the server_tool_use block. The
+            // structured result block is emitted at output_item.done where
+            // the action.results / item annotations are available.
+            else if (eventType === 'response.web_search_call.completed') {
+              const callId = (event.item_id as string) || ''
+              const state = callId ? pendingWebSearches.get(callId) : undefined
+              if (state && !state.serverToolUseClosed) {
+                controller.enqueue(
+                  encoder.encode(
+                    formatSSE('content_block_stop', JSON.stringify({
+                      type: 'content_block_stop',
+                      index: state.serverToolUseIndex,
+                    })),
+                  ),
+                )
+                state.serverToolUseClosed = true
+                contentBlockIndex++
               }
             }
 
@@ -610,6 +822,126 @@ async function translateCodexStreamToAnthropic(
                   )
                   contentBlockIndex++
                   currentTextBlockStarted = false
+                }
+                // Harvest url_citation annotations from the assistant
+                // message's output_text content. OpenAI returns search
+                // results either as `web_search_call.action.results` (handled
+                // below) or only as annotations on the assistant text.
+                const content = item.content as
+                  | Array<{
+                      type?: string
+                      annotations?: Array<{
+                        type?: string
+                        url?: string
+                        title?: string
+                      }>
+                    }>
+                  | undefined
+                if (Array.isArray(content)) {
+                  for (const part of content) {
+                    if (
+                      part?.type !== 'output_text' ||
+                      !Array.isArray(part.annotations)
+                    ) {
+                      continue
+                    }
+                    for (const ann of part.annotations) {
+                      if (
+                        ann?.type === 'url_citation' &&
+                        typeof ann.url === 'string' &&
+                        ann.url.length > 0
+                      ) {
+                        pendingCitations.push({
+                          url: ann.url,
+                          title:
+                            typeof ann.title === 'string' ? ann.title : ann.url,
+                        })
+                      }
+                    }
+                  }
+                }
+              } else if (item?.type === 'web_search_call') {
+                const callId = (item.id as string) || ''
+                const state = callId ? pendingWebSearches.get(callId) : undefined
+                // The completed event may not have fired yet on some shapes;
+                // close the server_tool_use block here defensively.
+                if (state && !state.serverToolUseClosed) {
+                  controller.enqueue(
+                    encoder.encode(
+                      formatSSE('content_block_stop', JSON.stringify({
+                        type: 'content_block_stop',
+                        index: state.serverToolUseIndex,
+                      })),
+                    ),
+                  )
+                  state.serverToolUseClosed = true
+                  contentBlockIndex++
+                }
+                if (!state || state.resultEmitted) {
+                  // Nothing else to do.
+                } else {
+                  // Prefer structured `action.results`; otherwise fall back
+                  // to the citations we harvested from output_text.
+                  const action = item.action as
+                    | {
+                        results?: Array<{
+                          url?: string
+                          title?: string
+                        }>
+                      }
+                    | undefined
+                  const structured = Array.isArray(action?.results)
+                    ? action!.results
+                    : []
+                  const results: Array<{ url: string; title: string }> = []
+                  for (const r of structured) {
+                    if (typeof r?.url === 'string' && r.url.length > 0) {
+                      results.push({
+                        url: r.url,
+                        title:
+                          typeof r.title === 'string' && r.title.length > 0
+                            ? r.title
+                            : r.url,
+                      })
+                    }
+                  }
+                  if (results.length === 0 && pendingCitations.length > 0) {
+                    results.push(...pendingCitations.splice(0))
+                  }
+
+                  controller.enqueue(
+                    encoder.encode(
+                      formatSSE(
+                        'content_block_start',
+                        JSON.stringify({
+                          type: 'content_block_start',
+                          index: contentBlockIndex,
+                          content_block: {
+                            type: 'web_search_tool_result',
+                            tool_use_id: callId,
+                            content: results.map(r => ({
+                              type: 'web_search_result',
+                              url: r.url,
+                              title: r.title,
+                            })),
+                          },
+                        }),
+                      ),
+                    ),
+                  )
+                  controller.enqueue(
+                    encoder.encode(
+                      formatSSE(
+                        'content_block_stop',
+                        JSON.stringify({
+                          type: 'content_block_stop',
+                          index: contentBlockIndex,
+                        }),
+                      ),
+                    ),
+                  )
+                  contentBlockIndex++
+                  state.resultEmitted = true
                 }
               } else if (item?.type === 'reasoning') {
                 // Now we have {id, encrypted_content, summary}. Emit the
@@ -784,7 +1116,15 @@ async function translateCodexStreamToAnthropic(
         closeToolCallBlock(controller, encoder, contentBlockIndex, currentToolCallId, currentToolCallName, currentToolCallArgs)
       }
 
-      finishStream(controller, encoder, outputTokens, inputTokens, cacheReadInputTokens, hadToolCalls)
+      finishStream(
+        controller,
+        encoder,
+        outputTokens,
+        inputTokens,
+        cacheReadInputTokens,
+        hadToolCalls,
+        webSearchCount,
+      )
     },
   })
 
@@ -847,6 +1187,7 @@ async function translateCodexStreamToAnthropic(
     inputTokens: number,
     cacheReadInputTokens: number,
     hadToolCalls: boolean,
+    webSearchRequests = 0,
   ) {
     // Use 'tool_use' stop reason when model made tool calls
     const stopReason = hadToolCalls ? 'tool_use' : 'end_turn'
@@ -854,11 +1195,16 @@ async function translateCodexStreamToAnthropic(
     // Codex/Responses API does NOT report cache write cost — prefix caching
     // is automatic. Surface as `null` so NormalizedUsage / StatusLine can
     // differentiate "not tracked" from "0 tokens written".
-    const usagePayload = {
+    const usagePayload: Record<string, unknown> = {
       input_tokens: inputTokens,
       output_tokens: outputTokens,
       cache_read_input_tokens: cacheReadInputTokens,
       cache_creation_input_tokens: null,
+    }
+    if (webSearchRequests > 0) {
+      usagePayload.server_tool_use = {
+        web_search_requests: webSearchRequests,
+      }
     }
 
     controller.enqueue(
