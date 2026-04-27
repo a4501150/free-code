@@ -18,6 +18,7 @@
 import { codexAdapter } from './adapters/codex-adapter-impl.js'
 import { toAnthropicErrorType } from '../../utils/normalizedError.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
+import { logForDebugging } from '../../utils/debug.js'
 
 // No hardcoded model list — the provider registry (freecode.json) is the
 // single source of truth for available models. The adapter just passes
@@ -528,6 +529,15 @@ async function translateCodexStreamToAnthropic(
       let pendingReasoningId: string | null = null
       let pendingReasoningText = ''
 
+      // Diagnostic counters — emitted at stream end so we can trace
+      // empty-completion / silent-failure cases under --debug.
+      let firstSseLogged = false
+      let chunkCount = 0
+      const eventTypeCounts: Record<string, number> = {}
+      let sawResponseCompleted = false
+      let sawResponseFailed = false
+      const streamStart = Date.now()
+
       try {
         const reader = codexResponse.body?.getReader()
         if (!reader) {
@@ -561,16 +571,92 @@ async function translateCodexStreamToAnthropic(
 
             if (!trimmed.startsWith('data: ')) continue
             const dataStr = trimmed.slice(6)
-            if (dataStr === '[DONE]') continue
+            if (dataStr === '[DONE]') {
+              if (!firstSseLogged) {
+                logForDebugging(
+                  `[codex-adapter] first SSE was [DONE] (empty stream) model=${codexModel}`,
+                  { level: 'warn' },
+                )
+                firstSseLogged = true
+              }
+              continue
+            }
 
             let event: Record<string, unknown>
             try {
               event = JSON.parse(dataStr)
-            } catch {
+            } catch (e) {
+              logForDebugging(
+                `[codex-adapter] SSE JSON parse failed: ${(e as Error)?.message ?? String(e)} :: ${dataStr.slice(0, 200)}`,
+                { level: 'warn' },
+              )
               continue
+            }
+            chunkCount++
+            if (!firstSseLogged) {
+              logForDebugging(
+                `[codex-adapter] first SSE chunk model=${codexModel}: ${dataStr.slice(0, 500)}`,
+              )
+              firstSseLogged = true
             }
 
             const eventType = event.type as string
+            if (eventType) {
+              eventTypeCounts[eventType] = (eventTypeCounts[eventType] ?? 0) + 1
+              if (eventType === 'response.completed')
+                sawResponseCompleted = true
+              if (
+                eventType === 'response.failed' ||
+                eventType === 'error' ||
+                eventType.endsWith('.failed')
+              ) {
+                sawResponseFailed = true
+                logForDebugging(
+                  `[codex-adapter] failure event ${eventType}: ${dataStr.slice(0, 500)}`,
+                  { level: 'error' },
+                )
+                // Surface the upstream error to the SDK pipeline. Codex
+                // Responses API delivers terminal failures as either a
+                // top-level `error` event (payload at `event.error`) or
+                // `response.failed` (payload at `event.response.error`).
+                // Without translating these to an Anthropic-shaped
+                // `event: error`, the for-loop would keep running,
+                // finishStream() would close cleanly with 0 content blocks,
+                // and the user sees an empty turn — the silent-failure bug.
+                const errPayload =
+                  (event.error as Record<string, unknown> | undefined) ??
+                  ((event.response as Record<string, unknown> | undefined)
+                    ?.error as Record<string, unknown> | undefined)
+                // Reshape to `{error: {…}}` so normalizeError's body parser
+                // (which only looks at top-level `.error`) classifies both
+                // event shapes consistently.
+                const normalizedBody = errPayload
+                  ? JSON.stringify({ error: errPayload })
+                  : dataStr
+                const fallbackMessage =
+                  (errPayload?.message as string | undefined) ??
+                  `Codex ${eventType}`
+                const normalized = codexAdapter.normalizeError(
+                  { body: normalizedBody, mid_stream: true },
+                  'openai-responses',
+                )
+                controller.enqueue(
+                  encoder.encode(
+                    `event: error\ndata: ${JSON.stringify({
+                      type: 'error',
+                      error: {
+                        type: toAnthropicErrorType(normalized.kind),
+                        message: normalized.message || fallbackMessage,
+                        normalized,
+                      },
+                    })}\n\n`,
+                  ),
+                )
+                // Don't process further events after a terminal failure;
+                // the upstream stream has ended semantically.
+                continue
+              }
+            }
 
             // ── Text output events ──────────────────────────────
             if (eventType === 'response.output_item.added') {
@@ -1175,6 +1261,10 @@ async function translateCodexStreamToAnthropic(
         // pipeline (and withRetry) can classify this. Previously this
         // injected `[Error: ...]` text into the assistant bubble, bypassing
         // every downstream error consumer.
+        logForDebugging(
+          `[codex-adapter] stream loop threw: ${(err as Error)?.message ?? String(err)} stack=${(err as Error)?.stack?.split('\n').slice(0, 3).join(' | ') ?? 'none'}`,
+          { level: 'error' },
+        )
         const normalized = codexAdapter.normalizeError(
           { mid_stream: true, cause: err },
           'openai-responses',
@@ -1217,6 +1307,10 @@ async function translateCodexStreamToAnthropic(
           currentToolCallArgs,
         )
       }
+
+      logForDebugging(
+        `[codex-adapter] stream end model=${codexModel} duration_ms=${Date.now() - streamStart} chunks=${chunkCount} content_blocks=${contentBlockIndex} input=${inputTokens} output=${outputTokens} cacheRead=${cacheReadInputTokens} hadToolCalls=${hadToolCalls} webSearch=${webSearchCount} response.completed=${sawResponseCompleted} response.failed=${sawResponseFailed} eventTypes=${JSON.stringify(eventTypeCounts)}`,
+      )
 
       finishStream(
         controller,
@@ -1440,11 +1534,34 @@ export function createCodexFetch(
     if (accountId) {
       headers['chatgpt-account-id'] = accountId
     }
+    const reqBodyStr = JSON.stringify(codexBody)
+    const reqInputCount = Array.isArray(
+      (codexBody as { input?: unknown[] }).input,
+    )
+      ? ((codexBody as { input: unknown[] }).input.length as number)
+      : 0
+    const reqToolCount = Array.isArray(
+      (codexBody as { tools?: unknown[] }).tools,
+    )
+      ? ((codexBody as { tools: unknown[] }).tools.length as number)
+      : 0
+    const reqReasoning =
+      (codexBody as { reasoning?: { effort?: string } }).reasoning?.effort ??
+      'none'
+    logForDebugging(
+      `[codex-adapter] POST ${codexBaseUrl} model=${codexModel} input_items=${reqInputCount} tools=${reqToolCount} reasoning=${reqReasoning} body_bytes=${reqBodyStr.length}`,
+    )
+
+    const fetchStart = Date.now()
     const codexResponse = await globalThis.fetch(codexBaseUrl, {
       method: 'POST',
       headers,
-      body: JSON.stringify(codexBody),
+      body: reqBodyStr,
     })
+
+    logForDebugging(
+      `[codex-adapter] response status=${codexResponse.status} content-type=${codexResponse.headers.get('content-type') ?? ''} ttfb_ms=${Date.now() - fetchStart}`,
+    )
 
     if (!codexResponse.ok) {
       const errorText = await codexResponse.text()

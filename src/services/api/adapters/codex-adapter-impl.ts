@@ -6,7 +6,11 @@
  * without a Codex provider don't pay the cost.
  */
 import type { ProviderAdapter, FetchFn, TokenBreakdown } from '../adapter.js'
-import type { ProviderCapabilities, ProviderConfig, ProviderType } from '../../../utils/settings/types.js'
+import type {
+  ProviderCapabilities,
+  ProviderConfig,
+  ProviderType,
+} from '../../../utils/settings/types.js'
 import {
   fromHttpStatus,
   type NormalizedApiError,
@@ -40,7 +44,8 @@ function serializeForTokenization(
     }
     if (!Array.isArray(m.content)) continue
     for (const block of m.content) {
-      if (block.type === 'text') parts.push((block as { text: string }).text ?? '')
+      if (block.type === 'text')
+        parts.push((block as { text: string }).text ?? '')
       else if (block.type === 'tool_use')
         parts.push(
           `${(block as { name?: string }).name ?? ''}(${JSON.stringify(
@@ -76,9 +81,7 @@ export const codexAdapter: ProviderAdapter = {
   createFetch(_config: ProviderConfig, authArgs: unknown): FetchFn {
     // Codex's factory is single-arg (CodexFetchOptions carries baseUrl);
     // config is not consulted.
-    return createCodexFetch(
-      authArgs as Parameters<typeof createCodexFetch>[0],
-    )
+    return createCodexFetch(authArgs as Parameters<typeof createCodexFetch>[0])
   },
 
   async countTokens(
@@ -88,9 +91,8 @@ export const codexAdapter: ProviderAdapter = {
     options?: { system?: string; betas?: string[] },
   ): Promise<TokenBreakdown | null> {
     try {
-      const enc = (await import(
-        'gpt-tokenizer/encoding/o200k_base'
-      )) as unknown as GptTokenizerModule
+      const enc =
+        (await import('gpt-tokenizer/encoding/o200k_base')) as unknown as GptTokenizerModule
       const serialized = serializeForTokenization(
         messages,
         tools,
@@ -114,6 +116,7 @@ export const codexAdapter: ProviderAdapter = {
     }
     // Parse OpenAI Responses error shape: { error: { code, type, message } }
     let code: string | undefined
+    let apiErrorType: string | undefined
     let errMessage: string | undefined
     if (r.body) {
       try {
@@ -126,29 +129,37 @@ export const codexAdapter: ProviderAdapter = {
                 error?: { code?: string; type?: string; message?: string }
               })
         code = parsed?.error?.code
+        apiErrorType = parsed?.error?.type
         errMessage = parsed?.error?.message
       } catch {
         // body is not JSON.
       }
     }
 
-    const reclassifyByCode = (
-      base: NormalizedApiError,
-    ): NormalizedApiError => {
+    const reclassifyByCode = (base: NormalizedApiError): NormalizedApiError => {
       if (r.refusal) return { ...base, kind: 'content_filter' }
-      if (!code) return base
       if (code === 'content_filter') return { ...base, kind: 'content_filter' }
       if (code === 'rate_limit_exceeded' || code === 'insufficient_quota') {
         return { ...base, kind: 'rate_limit' }
       }
       if (code === 'invalid_api_key') return { ...base, kind: 'auth' }
+      // Context-window overflow + any explicit invalid_request_error from
+      // upstream become `invalid_request` so the UI surfaces a precise
+      // error type and `withRetry` doesn't burn budget retrying it.
+      if (
+        code === 'context_length_exceeded' ||
+        apiErrorType === 'invalid_request_error'
+      ) {
+        return { ...base, kind: 'invalid_request' }
+      }
       return base
     }
 
     if (typeof r.status === 'number') {
       const base = fromHttpStatus(
         r.status,
-        errMessage ?? (typeof r.body === 'string' ? r.body : `HTTP ${r.status}`),
+        errMessage ??
+          (typeof r.body === 'string' ? r.body : `HTTP ${r.status}`),
         providerType,
         r.headers,
         raw,
@@ -157,9 +168,15 @@ export const codexAdapter: ProviderAdapter = {
     }
 
     const causeMsg =
-      r.cause instanceof Error ? r.cause.message : String(r.cause ?? 'stream error')
+      r.cause instanceof Error
+        ? r.cause.message
+        : String(r.cause ?? 'stream error')
     const base: NormalizedApiError = {
-      kind: r.refusal ? 'content_filter' : r.mid_stream ? 'unknown' : 'transport',
+      kind: r.refusal
+        ? 'content_filter'
+        : r.mid_stream
+          ? 'unknown'
+          : 'transport',
       message: errMessage ?? causeMsg,
       providerType,
       raw,

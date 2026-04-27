@@ -409,6 +409,44 @@ async function translateStreamToAnthropic(
             try {
               chunk = JSON.parse(dataStr)
             } catch {
+              // Malformed SSE data line. Continue past transient/incomplete
+              // chunks (split-mid-line, keepalives), but in practice a
+              // persistent parse failure here would mask an upstream
+              // protocol error — surface via `event: error` rather than
+              // dropping silently.
+              continue
+            }
+
+            // Upstream inline error chunk: OpenAI returns
+            // `{"error": {"type", "code", "message"}}` mid-stream when a
+            // request fails after the SSE has begun. Without this handler
+            // the loop falls through, finishStream() closes cleanly with
+            // 0 content blocks, and the user sees an empty turn.
+            if (chunk.error && typeof chunk.error === 'object') {
+              const normalized = openaiChatCompletionsAdapter.normalizeError(
+                {
+                  body: JSON.stringify({ error: chunk.error }),
+                  mid_stream: true,
+                },
+                'openai-chat-completions',
+              )
+              controller.enqueue(
+                encoder.encode(
+                  `event: error\ndata: ${JSON.stringify({
+                    type: 'error',
+                    error: {
+                      type: toAnthropicErrorType(normalized.kind),
+                      message:
+                        normalized.message ||
+                        ((chunk.error as Record<string, unknown>).message as
+                          | string
+                          | undefined) ||
+                        'OpenAI Chat Completions error',
+                      normalized,
+                    },
+                  })}\n\n`,
+                ),
+              )
               continue
             }
 

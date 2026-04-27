@@ -72,7 +72,7 @@ function translateTools(
   anthropicTools: AnthropicTool[],
 ): Record<string, unknown> {
   return {
-    functionDeclarations: anthropicTools.map((tool) => ({
+    functionDeclarations: anthropicTools.map(tool => ({
       name: tool.name,
       ...(tool.description ? { description: tool.description } : {}),
       parameters: tool.input_schema || { type: 'object', properties: {} },
@@ -122,8 +122,8 @@ function translateToGeminiBody(
       systemText = systemPrompt
     } else if (Array.isArray(systemPrompt)) {
       systemText = systemPrompt
-        .filter((b) => b.type === 'text' && typeof b.text === 'string')
-        .map((b) => b.text!)
+        .filter(b => b.type === 'text' && typeof b.text === 'string')
+        .map(b => b.text!)
         .join('\n')
     }
     if (systemText) {
@@ -170,7 +170,7 @@ function translateToGeminiBody(
             resultContent = block.content
           } else if (Array.isArray(block.content)) {
             resultContent = block.content
-              .map((c) => {
+              .map(c => {
                 if (c.type === 'text') return c.text
                 if (c.type === 'image') return '[Image data]'
                 return ''
@@ -305,9 +305,7 @@ async function translateGeminiStreamToAnthropicSSE(
           ),
         )
         controller.enqueue(
-          encoder.encode(
-            formatSSE('ping', JSON.stringify({ type: 'ping' })),
-          ),
+          encoder.encode(formatSSE('ping', JSON.stringify({ type: 'ping' }))),
         )
       }
 
@@ -397,6 +395,44 @@ async function translateGeminiStreamToAnthropicSSE(
             try {
               chunk = JSON.parse(dataStr)
             } catch {
+              // Continue past transient/incomplete chunks; persistent parse
+              // failures would mask an upstream protocol error but those are
+              // rare in practice for Gemini's well-formed JSON-line stream.
+              continue
+            }
+
+            // Upstream inline error chunk: Gemini returns
+            // `{"error": {"code", "status", "message"}}` mid-stream when the
+            // request fails after streaming has begun (rate-limit, quota,
+            // server overload, etc.). Without this handler the loop falls
+            // through to candidates check, sees none, continues silently —
+            // the user sees an empty turn (the silent-failure bug).
+            if (chunk.error && typeof chunk.error === 'object') {
+              emitMessageStart()
+              const normalized = geminiAdapter.normalizeError(
+                {
+                  body: JSON.stringify({ error: chunk.error }),
+                  mid_stream: true,
+                },
+                'gemini',
+              )
+              controller.enqueue(
+                encoder.encode(
+                  `event: error\ndata: ${JSON.stringify({
+                    type: 'error',
+                    error: {
+                      type: toAnthropicErrorType(normalized.kind),
+                      message:
+                        normalized.message ||
+                        ((chunk.error as Record<string, unknown>).message as
+                          | string
+                          | undefined) ||
+                        'Gemini API error',
+                      normalized,
+                    },
+                  })}\n\n`,
+                ),
+              )
               continue
             }
 
@@ -533,10 +569,7 @@ async function translateGeminiStreamToAnthropicSSE(
               // Surface content-filter rejections as a clear error banner
               // instead of silently emitting stop_reason: end_turn with an
               // empty body.
-              if (
-                finishReason === 'SAFETY' ||
-                finishReason === 'RECITATION'
-              ) {
+              if (finishReason === 'SAFETY' || finishReason === 'RECITATION') {
                 const normalized = geminiAdapter.normalizeError(
                   { finishReason },
                   'gemini',
@@ -726,7 +759,9 @@ function translateGeminiResponseToAnthropic(
     stop_reason: stopReason,
     stop_sequence: null,
     usage: {
-      input_tokens: (usageMetadata?.promptTokenCount ?? 0) - (usageMetadata?.cachedContentTokenCount ?? 0),
+      input_tokens:
+        (usageMetadata?.promptTokenCount ?? 0) -
+        (usageMetadata?.cachedContentTokenCount ?? 0),
       output_tokens: usageMetadata?.candidatesTokenCount ?? 0,
       cache_read_input_tokens: usageMetadata?.cachedContentTokenCount ?? 0,
       // `null` = Gemini does not distinguish cache write cost in the default
@@ -752,8 +787,7 @@ export function createGeminiFetch(
   const region = config.auth?.gcp?.region || 'us-central1'
   const configProjectId = config.auth?.gcp?.projectId
   const baseUrl =
-    config.baseUrl ||
-    `https://${region}-aiplatform.googleapis.com/v1`
+    config.baseUrl || `https://${region}-aiplatform.googleapis.com/v1`
 
   return async (
     input: RequestInfo | URL,
@@ -806,11 +840,7 @@ export function createGeminiFetch(
     // Copy through relevant headers from SDK
     const initHeaders = init?.headers as Record<string, string> | undefined
     if (initHeaders) {
-      for (const key of [
-        'x-app',
-        'User-Agent',
-        'X-Claude-Code-Session-Id',
-      ]) {
+      for (const key of ['x-app', 'User-Agent', 'X-Claude-Code-Session-Id']) {
         if (initHeaders[key]) {
           requestHeaders[key] = initHeaders[key]
         }
@@ -864,8 +894,7 @@ export function createGeminiFetch(
     // Content-filter rejection returns an Anthropic-shape error body with
     // type: 'error'; surface as non-200 so the SDK classifies it as a
     // proper error instead of a normal assistant response.
-    const isError =
-      (anthropicResponse as { type?: string })?.type === 'error'
+    const isError = (anthropicResponse as { type?: string })?.type === 'error'
     return new Response(JSON.stringify(anthropicResponse), {
       status: isError ? 400 : 200,
       headers: {
