@@ -286,7 +286,7 @@ const fullInputSchema = lazySchema(() =>
         'Clear, concise description of what this command does in active voice.',
       ),
     run_in_background: semanticBoolean(z.boolean().optional()).describe(
-      `Set to true to run this command in the background. Use Read to read the output later.`,
+      `Run this command asynchronously; you'll be notified when it completes. Use only when you don't need the result before continuing (e.g., long-running build/test/server). NOT for parallelism — for independent commands whose results you need, send multiple PowerShell tool uses in a single message; they run concurrently and return together.`,
     ),
     dangerouslyDisableSandbox: semanticBoolean(z.boolean().optional()).describe(
       'Set this to true to dangerously override sandbox mode and run commands without sandboxing.',

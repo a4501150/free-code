@@ -354,7 +354,7 @@ For commands that are harder to parse at a glance (piped commands, obscure flags
 - git reset --hard origin/main → "Discard all local changes and match remote main"
 - curl -s url | jq '.data[]' → "Fetch JSON from URL and extract data array elements"`),
     run_in_background: semanticBoolean(z.boolean().optional()).describe(
-      `Set to true to run this command in the background. Use Read to read the output later.`,
+      `Run this command asynchronously; you'll be notified when it completes. Use only when you don't need the result before continuing (e.g., long-running build/test/server). NOT for parallelism — for independent commands whose results you need, send multiple Bash tool uses in a single message; they run concurrently and return together.`,
     ),
     dangerouslyDisableSandbox: semanticBoolean(z.boolean().optional()).describe(
       'Set this to true to dangerously override sandbox mode and run commands without sandboxing.',

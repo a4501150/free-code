@@ -163,14 +163,6 @@ ${whenNotToUseSection}
 Usage notes:
 - Always include a short description (3-5 words) summarizing what the agent will do${concurrencyNote}
 - The agent returns a single message back to you; the result is not visible to the user, so send a concise summary yourself.${
-    // eslint-disable-next-line custom-rules/no-process-env-top-level
-    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS) &&
-    !isInProcessTeammate() &&
-    !forkEnabled
-      ? `
-- Use \`run_in_background\` when you have independent parallel work; you'll be notified on completion (do NOT sleep or poll). Otherwise run in foreground when you need the result before proceeding.`
-      : ''
-  }${
     isAgentSwarmsEnabled()
       ? `
 - To continue a previously spawned agent, use ${SEND_MESSAGE_TOOL_NAME} with the agent's ID or name as the \`to\` field. The agent resumes with its full context preserved. ${forkEnabled ? 'Each fresh Agent invocation with a subagent_type starts without context — provide a complete task description.' : 'Each Agent invocation starts fresh — provide a complete task description.'}`

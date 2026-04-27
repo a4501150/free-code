@@ -192,7 +192,7 @@ const baseInputSchema = lazySchema(() =>
       .boolean()
       .optional()
       .describe(
-        'Set to true to run this agent in the background. You will be notified when it completes.',
+        "Run this agent asynchronously; you'll be notified when it completes. Use only when you don't need the result before continuing (e.g., long-running work that should report back later). NOT a parallelism mechanism: to run agents in parallel whose results you need, send multiple Agent tool uses in a single message — those run concurrently in the foreground and all results return together.",
       ),
   }),
 )
