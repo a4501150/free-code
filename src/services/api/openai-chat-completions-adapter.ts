@@ -76,25 +76,46 @@ interface ChatCompletionsTool {
 
 // ── Tool translation ────────────────────────────────────────────────
 
+/**
+ * Tool-owned schemas (MCP servers, StructuredOutput) and `.passthrough()`
+ * opt-outs skip `makeJsonSchemaStrict` in toolToAPISchema (src/utils/api.ts),
+ * so they reach the adapter without the strict-shape invariants OpenAI
+ * requires (recursive `additionalProperties: false`, all properties in
+ * `required`). Setting `strict: true` on them would 400 the entire request,
+ * not just the offending tool — one rogue MCP tool kills every turn.
+ *
+ * Detect via the root-level `additionalProperties: false` marker that
+ * `makeJsonSchemaStrict` always sets — present iff the tool went through
+ * the universal strict transform. Keeps the gate adapter-local and
+ * self-defending: if a future tool category bypasses the transform, this
+ * still does the right thing.
+ */
+function isStrictCompatibleSchema(schema: unknown): boolean {
+  return (
+    typeof schema === 'object' &&
+    schema !== null &&
+    (schema as { additionalProperties?: unknown }).additionalProperties ===
+      false
+  )
+}
+
 function translateTools(
   anthropicTools: AnthropicTool[],
   options: { strict: boolean },
 ): ChatCompletionsTool[] {
-  return anthropicTools.map(tool => ({
-    type: 'function',
-    function: {
-      name: tool.name,
-      ...(tool.description ? { description: tool.description } : {}),
-      parameters: tool.input_schema || { type: 'object', properties: {} },
-      // OpenAI strict mode requires the parameters schema to satisfy the
-      // strict subset (additionalProperties: false on every object, every
-      // property in `required`). toolToAPISchema in src/utils/api.ts already
-      // produces strict-shaped parameters when the resolved provider has
-      // structuredOutputs=true, so we set strict here unconditionally for
-      // those models — the schemas line up.
-      ...(options.strict ? { strict: true } : {}),
-    },
-  }))
+  return anthropicTools.map(tool => {
+    const parameters = tool.input_schema || { type: 'object', properties: {} }
+    const wireStrict = options.strict && isStrictCompatibleSchema(parameters)
+    return {
+      type: 'function',
+      function: {
+        name: tool.name,
+        ...(tool.description ? { description: tool.description } : {}),
+        parameters,
+        ...(wireStrict ? { strict: true } : {}),
+      },
+    }
+  })
 }
 
 // ── Message translation: Anthropic → Chat Completions ───────────────

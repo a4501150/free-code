@@ -94,14 +94,38 @@ type AnthropicToolChoice =
 // ── Tool translation: Anthropic → Codex ─────────────────────────────
 
 /**
+ * Tool-owned schemas (MCP servers, StructuredOutput) and `.passthrough()`
+ * opt-outs skip `makeJsonSchemaStrict` in toolToAPISchema (src/utils/api.ts),
+ * so they reach the adapter without the strict-shape invariants OpenAI
+ * requires (recursive `additionalProperties: false`, all properties in
+ * `required`). Setting `strict: true` on them would 400 the entire request,
+ * not just the offending tool — one rogue MCP tool kills every turn.
+ *
+ * Detect via the root-level `additionalProperties: false` marker that
+ * `makeJsonSchemaStrict` always sets — present iff the tool went through
+ * the universal strict transform.
+ */
+function isStrictCompatibleSchema(schema: unknown): boolean {
+  return (
+    typeof schema === 'object' &&
+    schema !== null &&
+    (schema as { additionalProperties?: unknown }).additionalProperties ===
+      false
+  )
+}
+
+/**
  * Translates Anthropic tool definitions to Codex format.
  *
  * The `strict` field is set from the model's `structuredOutputs` capability
- * flag (see `ProviderModelSchema` in `utils/settings/types.ts`). When the
- * flag is true → `strict: true` (OpenAI constrains `arguments` to the JSON
- * Schema; requires `additionalProperties: false` on every object plus every
- * property listed in `required`). When false → `strict: false` (best
- * effort). When undefined → field omitted and the server's default applies.
+ * flag (see `ProviderModelSchema` in `utils/settings/types.ts`):
+ *
+ *   - undefined → field omitted (server default applies).
+ *   - false → `strict: false` for every tool (explicit best-effort).
+ *   - true → `strict: true` only for tools whose schema is strict-compatible
+ *     (root `additionalProperties: false`). Tool-owned (MCP/StructuredOutput)
+ *     and passthrough tools omit the field to avoid the entire request 400'ing
+ *     on a single non-conforming schema.
  *
  * @param anthropicTools - Array of Anthropic tool definitions
  * @param model - Model ID used to look up provider capabilities
@@ -137,12 +161,22 @@ function translateTools(
     if (tool.type && tool.type !== 'function') {
       continue
     }
+    const parameters = tool.input_schema || { type: 'object', properties: {} }
+    let strictField: { strict: boolean } | Record<string, never> = {}
+    if (structuredOutputs === true) {
+      if (isStrictCompatibleSchema(parameters)) {
+        strictField = { strict: true }
+      }
+      // else: omit — schema would 400 under strict; let server default apply.
+    } else if (structuredOutputs === false) {
+      strictField = { strict: false }
+    }
     tools.push({
       type: 'function',
       name: tool.name,
       description: tool.description || '',
-      parameters: tool.input_schema || { type: 'object', properties: {} },
-      ...(structuredOutputs === undefined ? {} : { strict: structuredOutputs }),
+      parameters,
+      ...strictField,
     })
   }
   return { tools, hasWebSearch }
