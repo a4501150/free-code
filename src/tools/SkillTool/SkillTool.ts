@@ -177,6 +177,10 @@ async function executeForkedSkill(
       availableTools: context.options.tools,
       override: { agentId },
     })) {
+      if (message.type === 'stream_event') {
+        continue
+      }
+
       agentMessages.push(message)
 
       // Report progress for tool uses (like AgentTool does)

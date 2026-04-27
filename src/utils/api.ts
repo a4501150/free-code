@@ -109,6 +109,22 @@ function filterSwarmFieldsFromSchema(
   return filtered
 }
 
+function stripUnsupportedArrayBounds(schema: unknown): unknown {
+  if (typeof schema !== 'object' || schema === null) return schema
+  if (Array.isArray(schema)) {
+    return schema.map(item => stripUnsupportedArrayBounds(item))
+  }
+
+  const node = schema as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  const isArraySchema = node.type === 'array'
+  for (const [key, value] of Object.entries(node)) {
+    if (isArraySchema && (key === 'minItems' || key === 'maxItems')) continue
+    out[key] = stripUnsupportedArrayBounds(value)
+  }
+  return out
+}
+
 export async function toolToAPISchema(
   tool: Tool,
   options: {
@@ -190,6 +206,10 @@ export async function toolToAPISchema(
       ) as Anthropic.Tool.InputSchema
       strictlyTransformed = true
     }
+
+    input_schema = stripUnsupportedArrayBounds(
+      input_schema,
+    ) as Anthropic.Tool.InputSchema
 
     base = {
       name: tool.name,

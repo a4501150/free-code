@@ -1,0 +1,11 @@
+node_modules/
+dist/
+/cli
+/cli-dev
+openclaw/
+.compiled-src/
+scratchpad/
+
+src/utils/ansiToPng.ts
+element_clones/
+assets/

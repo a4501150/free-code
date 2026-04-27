@@ -39,6 +39,7 @@ import {
   createProgressTracker,
   getProgressUpdate,
   updateProgressFromMessage,
+  updateProgressFromUsage,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import type { CustomAgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import { runAgent } from '../../tools/AgentTool/runAgent.js'
@@ -1197,6 +1198,22 @@ export async function runInProcessTeammate(
               )
               workWasAborted = true
               break
+            }
+
+            if (message.type === 'stream_event') {
+              if (
+                message.event.type === 'message_delta' &&
+                message.event.usage
+              ) {
+                updateProgressFromUsage(tracker, message.event.usage)
+                const progress = getProgressUpdate(tracker)
+                updateTaskState(
+                  taskId,
+                  task => ({ ...task, progress }),
+                  setAppState,
+                )
+              }
+              continue
             }
 
             iterationMessages.push(message)

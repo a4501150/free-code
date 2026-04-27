@@ -207,6 +207,10 @@ async function executeForkedSlashCommand(
         availableTools: freshTools,
         override: { agentId },
       })) {
+        if (message.type === 'stream_event') {
+          continue
+        }
+
         agentMessages.push(message)
       }
       const resultText = extractResultText(agentMessages, 'Command completed')
@@ -287,6 +291,10 @@ async function executeForkedSlashCommand(
       model: command.model as string | undefined,
       availableTools: context.options.tools,
     })) {
+      if (message.type === 'stream_event') {
+        continue
+      }
+
       agentMessages.push(message)
       const normalizedNew = normalizeMessages([message])
 
@@ -409,7 +417,6 @@ export async function processSlashCommand(
       // Not a file path — treat as command name
     }
     if (looksLikeCommand(commandName) && !isFilePath) {
-
       const unknownMessage = `Unknown skill: ${commandName}`
       return {
         messages: [
@@ -484,8 +491,7 @@ export async function processSlashCommand(
   // Local slash commands that skip messages
   if (newMessages.length === 0) {
     const eventData: Record<string, string | boolean | number | undefined> = {
-      input:
-        sanitizedCommandName,
+      input: sanitizedCommandName,
     }
 
     // Add plugin metadata if this is a plugin command
@@ -496,21 +502,14 @@ export async function processSlashCommand(
       // _PROTO_* routes to PII-tagged plugin_name/marketplace_name BQ columns
       // (unredacted, all users); plugin_name/plugin_repository stay in
       // additional_metadata as redacted variants for general-access dashboards.
-      eventData._PROTO_plugin_name =
-        pluginManifest.name
+      eventData._PROTO_plugin_name = pluginManifest.name
       if (marketplace) {
-        eventData._PROTO_marketplace_name =
-          marketplace
+        eventData._PROTO_marketplace_name = marketplace
       }
-      eventData.plugin_repository = (
-        isOfficial ? repository : 'third-party'
-      )
-      eventData.plugin_name = (
-        isOfficial ? pluginManifest.name : 'third-party'
-      )
+      eventData.plugin_repository = isOfficial ? repository : 'third-party'
+      eventData.plugin_name = isOfficial ? pluginManifest.name : 'third-party'
       if (isOfficial && pluginManifest.version) {
-        eventData.plugin_version =
-          pluginManifest.version
+        eventData.plugin_version = pluginManifest.version
       }
       Object.assign(
         eventData,
@@ -552,8 +551,7 @@ export async function processSlashCommand(
 
   // A valid command
   const eventData: Record<string, string | boolean | number | undefined> = {
-    input:
-      sanitizedCommandName,
+    input: sanitizedCommandName,
   }
 
   // Add plugin metadata if this is a plugin command
@@ -561,21 +559,14 @@ export async function processSlashCommand(
     const { pluginManifest, repository } = returnedCommand.pluginInfo
     const { marketplace } = parsePluginIdentifier(repository)
     const isOfficial = isOfficialMarketplaceName(marketplace)
-    eventData._PROTO_plugin_name =
-      pluginManifest.name
+    eventData._PROTO_plugin_name = pluginManifest.name
     if (marketplace) {
-      eventData._PROTO_marketplace_name =
-        marketplace
+      eventData._PROTO_marketplace_name = marketplace
     }
-    eventData.plugin_repository = (
-      isOfficial ? repository : 'third-party'
-    )
-    eventData.plugin_name = (
-      isOfficial ? pluginManifest.name : 'third-party'
-    )
+    eventData.plugin_repository = isOfficial ? repository : 'third-party'
+    eventData.plugin_name = isOfficial ? pluginManifest.name : 'third-party'
     if (isOfficial && pluginManifest.version) {
-      eventData.plugin_version =
-        pluginManifest.version
+      eventData.plugin_version = pluginManifest.version
     }
     Object.assign(
       eventData,
