@@ -207,8 +207,13 @@ export const getAllModelBetas = memoize((model: string): string[] => {
     betaHeaders.push(CONTEXT_MANAGEMENT_BETA_HEADER)
   }
   // Add strict tool use beta if experiment is enabled.
+  // Default is now true (kill switch in freecode.json: strictToolSchemas=false).
+  // For Anthropic-type providers, this broadens the strict beta to ALL tools
+  // (previously gated additionally on per-tool strict:true) when the model
+  // declares structuredOutputs. Per the design notes, this is intentional:
+  // toolToAPISchema now applies makeJsonSchemaStrict to every eligible tool.
   const strictToolsEnabled =
-    (getInitialSettings()?.strictToolSchemas ?? false)
+    (getInitialSettings()?.strictToolSchemas ?? true)
   if (
     includeFirstPartyOnlyBetas &&
     modelSupportsStructuredOutputs(model) &&

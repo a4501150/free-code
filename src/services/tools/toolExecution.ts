@@ -43,6 +43,7 @@ import type {
 import { count } from '../../utils/array.js'
 import { createAttachmentMessage } from '../../utils/attachments.js'
 import { logForDebugging } from '../../utils/debug.js'
+import { stripStrictNullInputs } from '../../utils/stripStrictNullInputs.js'
 import {
   AbortError,
   errorMessage,
@@ -515,8 +516,14 @@ async function checkPermissionsAndCallTool(
     progress: ToolProgress<ToolProgressData> | ProgressMessage<HookProgress>,
   ) => void,
 ): Promise<MessageUpdateLazy[]> {
+  // Strict-mode providers (OpenAI structured outputs) require every property
+  // present in the JSON schema's `required` set, including those that the
+  // Zod schema marks `.optional()`. makeJsonSchemaStrict widens those with
+  // `null`, and the model emits `null` for "omitted" — but `.optional()`
+  // (without `.nullable()`) rejects `null`. Strip those keys before parsing.
+  const coercedInput = stripStrictNullInputs(tool.inputSchema, input)
   // Validate input types with zod (surprisingly, the model is not great at generating valid input)
-  const parsedInput = tool.inputSchema.safeParse(input)
+  const parsedInput = tool.inputSchema.safeParse(coercedInput)
   if (!parsedInput.success) {
     let errorContent = formatZodValidationError(tool.name, parsedInput.error)
 

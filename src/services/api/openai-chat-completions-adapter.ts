@@ -20,6 +20,7 @@
 import type { ProviderConfig } from "../../utils/settings/types.js";
 import { openaiChatCompletionsAdapter } from "./adapters/openai-chat-completions-adapter-impl.js";
 import { toAnthropicErrorType } from "../../utils/normalizedError.js";
+import { getProviderRegistry } from "../../utils/model/providerRegistry.js";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -69,6 +70,7 @@ interface ChatCompletionsTool {
     name: string;
     description?: string;
     parameters?: Record<string, unknown>;
+    strict?: boolean;
   };
 }
 
@@ -76,6 +78,7 @@ interface ChatCompletionsTool {
 
 function translateTools(
   anthropicTools: AnthropicTool[],
+  options: { strict: boolean },
 ): ChatCompletionsTool[] {
   return anthropicTools.map((tool) => ({
     type: "function",
@@ -83,6 +86,13 @@ function translateTools(
       name: tool.name,
       ...(tool.description ? { description: tool.description } : {}),
       parameters: tool.input_schema || { type: "object", properties: {} },
+      // OpenAI strict mode requires the parameters schema to satisfy the
+      // strict subset (additionalProperties: false on every object, every
+      // property in `required`). toolToAPISchema in src/utils/api.ts already
+      // produces strict-shaped parameters when the resolved provider has
+      // structuredOutputs=true, so we set strict here unconditionally for
+      // those models — the schemas line up.
+      ...(options.strict ? { strict: true } : {}),
     },
   }));
 }
@@ -218,6 +228,7 @@ function translateMessages(
 function translateToOpenAIBody(
   anthropicBody: Record<string, unknown>,
   targetModel: string,
+  options: { structuredOutputs: boolean },
 ): Record<string, unknown> {
   const anthropicMessages = (anthropicBody.messages ||
     []) as AnthropicMessage[];
@@ -257,7 +268,9 @@ function translateToOpenAIBody(
 
   // Tools
   if (anthropicTools.length > 0) {
-    body.tools = translateTools(anthropicTools);
+    body.tools = translateTools(anthropicTools, {
+      strict: options.structuredOutputs,
+    });
     body.tool_choice = "auto";
   }
 
@@ -866,7 +879,12 @@ export function createChatCompletionsFetch(
       : targetModelId;
 
     // Translate to Chat Completions format
-    const openaiBody = translateToOpenAIBody(anthropicBody, resolvedModel);
+    const structuredOutputs =
+      getProviderRegistry().getModelFlag(resolvedModel, "structuredOutputs") ===
+      true;
+    const openaiBody = translateToOpenAIBody(anthropicBody, resolvedModel, {
+      structuredOutputs,
+    });
 
     // Make the request
     const endpoint = `${baseUrl.replace(/\/$/, "")}/chat/completions`;

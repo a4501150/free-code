@@ -31,6 +31,10 @@ import {
   modelSupportsStructuredOutputs,
   shouldUseGlobalCacheScope,
 } from './betas.js'
+import {
+  isPassthroughSchema,
+  makeJsonSchemaStrict,
+} from './jsonSchemaStrict.js'
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
@@ -133,19 +137,29 @@ export async function toolToAPISchema(
   // call — name-only keying returned a stale schema (5.4% → 51% err rate, see
   // PR#25424). MCP tools also set inputJSONSchema but each has a stable schema,
   // so including it preserves their GB-flip cache stability.
-  const cacheKey =
+  //
+  // Strict-shape gates (structuredOutputs + strictToolSchemas) are also baked
+  // into the key — a mid-session model switch must not return a stale-shape
+  // (strict vs. non-strict) cached schema.
+  const strictToolsEnabled = getInitialSettings()?.strictToolSchemas ?? true
+  const structuredOutputsForModel = options.model
+    ? modelSupportsStructuredOutputs(options.model)
+    : false
+  const strictKeySuffix = `s=${strictToolsEnabled ? 1 : 0}|so=${structuredOutputsForModel ? 1 : 0}`
+  const baseKey =
     'inputJSONSchema' in tool && tool.inputJSONSchema
       ? `${tool.name}:${jsonStringify(tool.inputJSONSchema)}`
       : tool.name
+  const cacheKey = `${baseKey}|${strictKeySuffix}`
   const cache = getToolSchemaCache()
   let base = cache.get(cacheKey)
   if (!base) {
-    const strictToolsEnabled =
-      (getInitialSettings()?.strictToolSchemas ?? false)
-    // Use tool's JSON schema directly if provided, otherwise convert Zod schema
+    // Tool-owned schema (MCP, StructuredOutput) — caller controls the shape;
+    // we never rewrite. Otherwise convert from Zod.
+    const isToolOwnedSchema = 'inputJSONSchema' in tool && tool.inputJSONSchema
     let input_schema = (
-      'inputJSONSchema' in tool && tool.inputJSONSchema
-        ? tool.inputJSONSchema
+      isToolOwnedSchema
+        ? tool.inputJSONSchema!
         : zodToJsonSchema(tool.inputSchema)
     ) as Anthropic.Tool.InputSchema
 
@@ -153,6 +167,28 @@ export async function toolToAPISchema(
     // This ensures external non-EAP users don't see swarm features in the schema
     if (!isAgentSwarmsEnabled()) {
       input_schema = filterSwarmFieldsFromSchema(tool.name, input_schema)
+    }
+
+    // Apply strict transform: when the resolved provider supports structured
+    // outputs (e.g. OpenAI Responses, modern OpenAI Chat), strict-mode
+    // requires `additionalProperties: false` on every object node and every
+    // property listed in `required`. Optional Zod fields become nullable so
+    // the model can explicitly omit them via `null`. Skip when:
+    //   - The kill switch is off (settings.strictToolSchemas = false).
+    //   - The schema is tool-owned (MCP / StructuredOutput).
+    //   - The Zod object opts out via `.passthrough()` (top-level
+    //     `additionalProperties: {}`).
+    let strictlyTransformed = false
+    if (
+      strictToolsEnabled &&
+      structuredOutputsForModel &&
+      !isToolOwnedSchema &&
+      !isPassthroughSchema(input_schema)
+    ) {
+      input_schema = makeJsonSchemaStrict(
+        input_schema,
+      ) as Anthropic.Tool.InputSchema
+      strictlyTransformed = true
     }
 
     base = {
@@ -166,16 +202,19 @@ export async function toolToAPISchema(
       input_schema,
     }
 
-    // Only add strict if:
-    // 1. Feature flag is enabled
-    // 2. Tool has strict: true
-    // 3. Model is provided and supports it (not all models support it right now)
-    //    (if model is not provided, assume we can't use strict tools)
-    if (
+    // Mark `strict: true` whenever:
+    //   - The tool was rewritten into a strict shape above (default-on path
+    //     for any structuredOutputs provider), OR
+    //   - The legacy gate fires (per-tool `strict: true` on a non-rewritten
+    //     schema, e.g. tool-owned MCP/StructuredOutput where the caller
+    //     promises strict-shape and wants the API to enforce it).
+    if (strictlyTransformed) {
+      base.strict = true
+    } else if (
       strictToolsEnabled &&
       tool.strict === true &&
       options.model &&
-      modelSupportsStructuredOutputs(options.model)
+      structuredOutputsForModel
     ) {
       base.strict = true
     }
