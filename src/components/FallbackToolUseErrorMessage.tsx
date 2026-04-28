@@ -8,7 +8,7 @@ import { useShortcutDisplay } from '../keybindings/useShortcutDisplay.js'
 import { countCharInString } from '../utils/stringUtils.js'
 import { MessageResponse } from './MessageResponse.js'
 
-const MAX_RENDERED_LINES = 10
+export const MAX_RENDERED_LINES = 10
 
 type Props = {
   result: ToolResultBlockParam['content']
@@ -27,7 +27,13 @@ export function FallbackToolUseErrorMessage({
   let error: string
 
   if (typeof result !== 'string') {
-    error = 'Tool execution failed'
+    const text = Array.isArray(result)
+      ? result
+          .flatMap(b => (b?.type === 'text' ? [b.text] : []))
+          .join('\n')
+          .trim()
+      : ''
+    error = text || 'Tool execution failed'
   } else {
     const extractedError = extractTag(result, 'tool_use_error') ?? result
     // Remove sandbox_violations tags from error display (Claude still sees them in the tool result)

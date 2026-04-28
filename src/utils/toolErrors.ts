@@ -7,11 +7,20 @@ export function formatError(error: unknown): string {
     return error.message || INTERRUPT_MESSAGE_FOR_TOOL_USE
   }
   if (!(error instanceof Error)) {
-    return String(error)
+    const str = String(error)
+    if (str === '[object Object]') {
+      try {
+        return JSON.stringify(error)
+      } catch {
+        return str
+      }
+    }
+    return str
   }
   const parts = getErrorParts(error)
   const fullMessage =
-    parts.filter(Boolean).join('\n').trim() || 'Command failed with no output'
+    parts.filter(Boolean).join('\n').trim() ||
+    `${error.name || 'Error'} (no output)`
   if (fullMessage.length <= 10000) {
     return fullMessage
   }

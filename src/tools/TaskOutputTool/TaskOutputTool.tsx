@@ -4,7 +4,6 @@ import { FallbackToolUseErrorMessage } from '../../components/FallbackToolUseErr
 import { FallbackToolUseRejectedMessage } from '../../components/FallbackToolUseRejectedMessage.js'
 import { MessageResponse } from '../../components/MessageResponse.js'
 import { Box, Text } from '../../ink.js'
-import { useShortcutDisplay } from '../../keybindings/useShortcutDisplay.js'
 import type { TaskType } from '../../Task.js'
 import type { Tool } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
@@ -407,6 +406,18 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
     renderToolUseErrorMessage(result, { verbose }) {
       return <FallbackToolUseErrorMessage result={result} verbose={verbose} />
     },
+
+    isResultTruncated(output: TaskOutputToolOutput): boolean {
+      if (!output?.task) return false
+      // Verbose render shows description, prompt, response, error;
+      // non-verbose only shows a one-line dim hint. Always truncated when
+      // there's something to expand to.
+      return Boolean(
+        output.task.output?.trim() ||
+          output.task.result?.trim() ||
+          output.task.error,
+      )
+    },
   } satisfies ToolDef<InputSchema, TaskOutputToolOutput>)
 
 function TaskOutputResultDisplay({
@@ -418,11 +429,6 @@ function TaskOutputResultDisplay({
   verbose?: boolean
   theme: ThemeName
 }): React.ReactNode {
-  const expandShortcut = useShortcutDisplay(
-    'app:toggleTranscript',
-    'Global',
-    'ctrl+o',
-  )
   const result: TaskOutputToolOutput =
     typeof content === 'string' ? jsonParse(content) : content
 
@@ -487,7 +493,7 @@ function TaskOutputResultDisplay({
       }
       return (
         <MessageResponse>
-          <Text dimColor>Read output ({expandShortcut} to expand)</Text>
+          <Text dimColor>Read output</Text>
         </MessageResponse>
       )
     }

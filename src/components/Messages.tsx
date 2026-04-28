@@ -49,6 +49,7 @@ import {
 import { plural } from '../utils/stringUtils.js'
 import { renderableSearchText } from '../utils/transcriptSearch.js'
 import { Divider } from './design-system/Divider.js'
+import { MAX_RENDERED_LINES } from './FallbackToolUseErrorMessage.js'
 import type { UnseenDivider } from './FullscreenLayout.js'
 import { LogoV2 } from './LogoV2/LogoV2.js'
 import { StreamingMarkdown } from './Markdown.js'
@@ -746,8 +747,16 @@ const MessagesImpl = ({
       }
       if (msg.type !== 'user') return false
       const b = msg.message.content[0]
-      if (b?.type !== 'tool_result' || b.is_error || !msg.toolUseResult)
-        return false
+      if (b?.type !== 'tool_result' || !msg.toolUseResult) return false
+
+      if (b.is_error) {
+        // Error content is a string per toolExecution.ts:1334-1355.
+        // Match FallbackToolUseErrorMessage's MAX_RENDERED_LINES truncation:
+        // only worth expanding when there's hidden content.
+        const errorContent = typeof b.content === 'string' ? b.content : ''
+        return errorContent.split('\n').length > MAX_RENDERED_LINES
+      }
+
       const name = lookupsRef.current.toolUseByToolUseID.get(
         b.tool_use_id,
       )?.name
