@@ -174,7 +174,7 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
     },
 
     async description() {
-      return '[Deprecated] — prefer Read on the task output file path'
+      return '[Deprecated] — prefer Read on the task output file path after you receive a task-completion <task-notification>; calling this tool is no different from sleep and/or polling on task status'
     },
 
     isConcurrencySafe(_input) {
