@@ -246,21 +246,26 @@ const fullInputSchema = lazySchema(() => {
 // type, but call() destructures via the explicit AgentToolInput type below
 // which always includes all optional fields.
 export const inputSchema = lazySchema(() => {
-  let schema = fullInputSchema()
   // feature() is compile-time DCE: exactly one branch survives per build, so
   // the resulting schema is fixed for the lifetime of the binary. Stripping
   // optional fields the build doesn't support keeps them out of the JSON
-  // schema the model sees.
-  if (!feature('KAIROS')) schema = schema.omit({ cwd: true })
-  if (!feature('WORKTREE_MODE')) schema = schema.omit({ isolation: true })
+  // schema the model sees. Use ternaries (const) instead of `let` reassignment
+  // so the union return type is preserved through each step.
+  const fullSchema = fullInputSchema()
+  const afterKairosGate = !feature('KAIROS')
+    ? fullSchema.omit({ cwd: true })
+    : fullSchema
+  const afterWorktreeGate = !feature('WORKTREE_MODE')
+    ? afterKairosGate.omit({ isolation: true })
+    : afterKairosGate
 
   // isAgentSwarmsEnabled() / isBackgroundTasksDisabled / isForkSubagentEnabled
   // can read from disk and flip mid-session. The optional-only fields stripped
   // here (name, team_name, run_in_background) are widened back via the explicit
   // AgentToolInput type so call() destructuring is unaffected by the gate flip.
   const swarmsSchema = isAgentSwarmsEnabled()
-    ? schema
-    : schema.omit({ name: true, team_name: true })
+    ? afterWorktreeGate
+    : afterWorktreeGate.omit({ name: true, team_name: true })
   return isBackgroundTasksDisabled || isForkSubagentEnabled()
     ? swarmsSchema.omit({ run_in_background: true })
     : swarmsSchema
