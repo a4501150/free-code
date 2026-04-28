@@ -181,9 +181,7 @@ const EPHEMERAL_PROGRESS_TYPES = new Set([
   'bash_progress',
   'powershell_progress',
   'mcp_progress',
-  ...(feature('KAIROS')
-    ? (['sleep_progress'] as const)
-    : []),
+  ...(feature('KAIROS') ? (['sleep_progress'] as const) : []),
 ])
 export function isEphemeralToolProgress(dataType: unknown): boolean {
   return typeof dataType === 'string' && EPHEMERAL_PROGRESS_TYPES.has(dataType)
@@ -986,7 +984,9 @@ class Project {
 
         const transcriptMessage: TranscriptMessage = {
           parentUuid: isCompactBoundary ? null : effectiveParentUuid,
-          logicalParentUuid: isCompactBoundary ? (parentUuid ?? undefined) : undefined,
+          logicalParentUuid: isCompactBoundary
+            ? (parentUuid ?? undefined)
+            : undefined,
           isSidechain,
           teamName: teamInfo?.teamName,
           agentName: teamInfo?.agentName,
@@ -1245,10 +1245,7 @@ class Project {
     }
   }
 
-  private async persistToRemote(
-    _sessionId: UUID,
-    _entry: TranscriptMessage,
-  ) {
+  private async persistToRemote(_sessionId: UUID, _entry: TranscriptMessage) {
     // CCR remote persistence infrastructure removed — no-op.
   }
 }
@@ -1756,7 +1753,6 @@ function applySnipRemovals(messages: Map<UUID, TranscriptMessage>): void {
     messages.set(uuid, { ...msg, parentUuid: resolve(msg.parentUuid) })
     relinkedCount++
   }
-
 }
 
 /**
@@ -2256,7 +2252,6 @@ async function trackSessionBranchingAnalytics(
   const branchCounts = Array.from(sessionIdCounts.values()).filter(c => c > 1)
   const sessionsWithBranches = branchCounts.length
   const totalBranches = branchCounts.reduce((sum, count) => sum + count, 0)
-
 }
 
 export async function fetchLogs(limit?: number): Promise<LogOption[]> {
@@ -4549,10 +4544,7 @@ function extractFirstPromptFromChunk(chunk: string): string {
         if (bashInput) return `! ${bashInput}`
 
         if (SKIP_FIRST_PROMPT_PATTERN.test(result)) {
-          if (
-            (feature('KAIROS')) &&
-            result.startsWith(`<${TICK_TAG}>`)
-          )
+          if (feature('KAIROS') && result.startsWith(`<${TICK_TAG}>`))
             hasTickMessages = true
           continue
         }
@@ -4570,8 +4562,7 @@ function extractFirstPromptFromChunk(chunk: string): string {
   if (firstCommandFallback) return firstCommandFallback
   // Proactive sessions have only tick messages — give them a synthetic prompt
   // so they're not filtered out by enrichLogs
-  if ((feature('KAIROS')) && hasTickMessages)
-    return 'Proactive session'
+  if (feature('KAIROS') && hasTickMessages) return 'Proactive session'
   return ''
 }
 

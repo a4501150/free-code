@@ -186,7 +186,6 @@ export function emitStatusChange(limits: ClaudeAILimits) {
   const hoursTillReset = Math.round(
     (limits.resetsAt ? limits.resetsAt - Date.now() / 1000 : 0) / (60 * 60),
   )
-
 }
 
 async function makeTestQuery() {

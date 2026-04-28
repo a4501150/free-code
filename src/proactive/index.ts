@@ -108,9 +108,7 @@ export function setContextBlocked(blocked: boolean): void {
  * Subscribe to proactive state changes. Follows useSyncExternalStore contract:
  * returns an unsubscribe function, calls subscribers synchronously on change.
  */
-export function subscribeToProactiveChanges(
-  callback: () => void,
-): () => void {
+export function subscribeToProactiveChanges(callback: () => void): () => void {
   subscribers.add(callback)
   return () => {
     subscribers.delete(callback)

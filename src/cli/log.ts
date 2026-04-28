@@ -3,10 +3,7 @@ import { loadConversationForResume } from '../utils/conversationRecovery.js'
 import { renderMessagesToPlainText } from '../utils/exportRenderer.js'
 import { errorMessage } from '../utils/errors.js'
 import { logError } from '../utils/log.js'
-import {
-  getLogByIndex,
-  loadMessageLogs,
-} from '../utils/sessionStorage.js'
+import { getLogByIndex, loadMessageLogs } from '../utils/sessionStorage.js'
 import { validateUuid } from '../utils/uuid.js'
 import type { LogOption } from '../types/logs.js'
 
@@ -59,7 +56,8 @@ export async function logHandler(
     }
     const logs = await loadMessageLogs()
     logOption =
-      logs.find(l => l.sessionId === sessionId || l.leafUuid === sessionId) ?? null
+      logs.find(l => l.sessionId === sessionId || l.leafUuid === sessionId) ??
+      null
     if (!logOption) {
       // biome-ignore lint/suspicious/noConsole:: user-facing CLI output
       console.error(`No conversation found with session ID: ${logId}`)

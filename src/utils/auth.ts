@@ -50,11 +50,7 @@ import {
   saveGlobalConfig,
 } from './config.js'
 import { logAntError, logForDebugging } from './debug.js'
-import {
-  getClaudeConfigHomeDir,
-  isBareMode,
-  isEnvTruthy,
-} from './envUtils.js'
+import { getClaudeConfigHomeDir, isBareMode, isEnvTruthy } from './envUtils.js'
 import { errorMessage } from './errors.js'
 import { execSyncWithDefaults_DEPRECATED } from './execFileNoThrow.js'
 import * as lockfile from './lockfile.js'
@@ -1184,8 +1180,7 @@ export function saveOAuthTokensIfNeeded(tokens: OAuthTokens): {
   }
 
   const secureStorage = getSecureStorage()
-  const storageBackend =
-    secureStorage.name
+  const storageBackend = secureStorage.name
 
   try {
     const storageData = secureStorage.read() || {}
@@ -1217,7 +1212,6 @@ export function saveOAuthTokensIfNeeded(tokens: OAuthTokens): {
   }
 }
 
-
 /**
  * Clears all OAuth token caches. Call this on 401 errors to ensure
  * the next token read comes from secure storage, not stale in-memory caches.
@@ -1240,7 +1234,7 @@ export function clearOAuthTokenCache(): void {
  * Does NOT overwrite or interfere with Anthropic's claudeAiOauth block.
  */
 export function saveCodexOAuthTokens(tokens: CodexTokens): void {
-  saveGlobalConfig((cfg) => ({
+  saveGlobalConfig(cfg => ({
     ...cfg,
     codexOAuth: {
       accessToken: tokens.accessToken,
@@ -1278,7 +1272,7 @@ export function getCodexOAuthTokens(): CodexTokens | null {
  * Removes Codex OAuth tokens from GlobalConfig (e.g., on logout).
  */
 export function clearCodexOAuthTokens(): void {
-  saveGlobalConfig((cfg) => {
+  saveGlobalConfig(cfg => {
     const { codexOAuth: _removed, ...rest } = cfg
     return rest as typeof cfg
   })
@@ -1500,9 +1494,14 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
     // the "claude-ai" slot (distinct from a user-owned "anthropic" proxy).
     try {
       const existing = readFreecodeSettingsFile() ?? {}
-      const providers = existing.providers as Record<string, Record<string, unknown>> | undefined
+      const providers = existing.providers as
+        | Record<string, Record<string, unknown>>
+        | undefined
       const claudeAiProvider = providers?.['claude-ai']
-      if (claudeAiProvider && (claudeAiProvider.auth as Record<string, unknown>)?.active === 'oauth') {
+      if (
+        claudeAiProvider &&
+        (claudeAiProvider.auth as Record<string, unknown>)?.active === 'oauth'
+      ) {
         writeFreecodeSettingsFile({
           providers: {
             'claude-ai': {
@@ -1554,7 +1553,10 @@ export function isClaudeAISubscriber(): boolean {
 export function isCodexSubscriber(): boolean {
   // Only treat as Codex subscriber when explicitly using OpenAI provider
   const providerType = getProviderRegistry().getDefaultProvider()?.config.type
-  if (providerType !== 'openai-chat-completions' && providerType !== 'openai-responses') {
+  if (
+    providerType !== 'openai-chat-completions' &&
+    providerType !== 'openai-responses'
+  ) {
     return false
   }
 

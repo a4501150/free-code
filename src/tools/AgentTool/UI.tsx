@@ -48,10 +48,7 @@ import {
   renderModelName,
 } from '../../utils/model/model.js'
 import type { Theme, ThemeName } from '../../utils/theme.js'
-import type {
-  outputSchema,
-  Progress,
-} from './AgentTool.js'
+import type { outputSchema, Progress } from './AgentTool.js'
 import { inputSchema } from './AgentTool.js'
 import { getAgentColor } from './agentColorManager.js'
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
@@ -1286,8 +1283,7 @@ function GroupedAgentToolUseView({
         parsedInput.data.run_in_background === true
       const outputStatus = (result?.output as { status?: string } | undefined)
         ?.status
-      const backgroundedMidExecution =
-        outputStatus === 'async_launched'
+      const backgroundedMidExecution = outputStatus === 'async_launched'
       const isAsync =
         launchedAsAsync || backgroundedMidExecution || isTeammateSpawn
 
@@ -1309,8 +1305,7 @@ function GroupedAgentToolUseView({
         mainModel,
         toolSpecifiedModel,
       )
-      const effectiveModel =
-        resolvedModel !== mainModel ? resolvedModel : null
+      const effectiveModel = resolvedModel !== mainModel ? resolvedModel : null
 
       return {
         id: param.id,
@@ -1383,13 +1378,14 @@ function GroupedAgentToolUseView({
         const toolUse = toolUses[index]!
         const firstData = toolUse.progressMessages[0]?.data
         const rowPrompt =
-          firstData && hasProgressMessage(firstData) ? firstData.prompt : undefined
+          firstData && hasProgressMessage(firstData)
+            ? firstData.prompt
+            : undefined
         // Completed row's final response text blocks — only present once the
         // agent has fully resolved. Grouped view reuses AgentResponseDisplay
         // inside AgentRowWithExpand to mirror the single-agent expanded view.
         const rowContent =
-          toolUse.result?.output &&
-          toolUse.result.output.status === 'completed'
+          toolUse.result?.output && toolUse.result.output.status === 'completed'
             ? toolUse.result.output.content
             : undefined
         const progressLine = (

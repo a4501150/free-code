@@ -89,9 +89,7 @@ describe('Internal-command survivors', () => {
       'No messages in the current context to summarize.',
       30_000,
     )
-    expect(screen).toContain(
-      'No messages in the current context to summarize.',
-    )
+    expect(screen).toContain('No messages in the current context to summarize.')
   })
 
   test('/debug-tool-call reports no tool calls when history is empty', async () => {
@@ -100,10 +98,7 @@ describe('Internal-command survivors', () => {
     await session.start()
 
     await session.sendLine('/debug-tool-call')
-    const screen = await session.waitForText(
-      'No tool calls recorded',
-      30_000,
-    )
+    const screen = await session.waitForText('No tool calls recorded', 30_000)
     expect(screen).toContain('No tool calls recorded in the current session')
   })
 
@@ -122,9 +117,9 @@ describe('Internal-command survivors', () => {
     // typeahead suggestion list should NOT expand it into a match. Submit it
     // and verify the CLI rejects it as an unknown command.
     await session.sendSpecialKey('Enter')
-    const after = await session.waitForText('Unknown command', 15_000).catch(
-      () => '',
-    )
+    const after = await session
+      .waitForText('Unknown command', 15_000)
+      .catch(() => '')
     // Either an "Unknown command" message appears, or the CLI emits nothing
     // visible for the command (stale input). In both cases, the command
     // should not execute its prompt body.

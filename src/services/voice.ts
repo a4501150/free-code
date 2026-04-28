@@ -148,7 +148,9 @@ export async function checkVoiceDependencies(): Promise<{
   if (process.platform === 'win32') {
     return {
       available: false,
-      missing: ['Voice mode is not supported on Windows (no SoX or arecord available)'],
+      missing: [
+        'Voice mode is not supported on Windows (no SoX or arecord available)',
+      ],
       installCommand: null,
     }
   }
@@ -263,7 +265,9 @@ export async function startRecording(
   logForDebugging(`[voice] startRecording called, platform=${process.platform}`)
 
   if (process.platform === 'win32') {
-    logForDebugging('[voice] Windows recording not supported without native module')
+    logForDebugging(
+      '[voice] Windows recording not supported without native module',
+    )
     return false
   }
 

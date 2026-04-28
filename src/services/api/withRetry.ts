@@ -296,10 +296,7 @@ export async function* withRetry<T>(
       if (is529Error(error)) {
         consecutive529Errors++
         if (consecutive529Errors >= MAX_529_RETRIES) {
-          if (
-            !process.env.IS_SANDBOX &&
-            !isPersistentRetryEnabled()
-          ) {
+          if (!process.env.IS_SANDBOX && !isPersistentRetryEnabled()) {
             throw new CannotRetryError(
               new Error(REPEATED_529_ERROR_MESSAGE),
               retryContext,

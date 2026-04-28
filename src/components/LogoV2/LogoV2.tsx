@@ -357,8 +357,7 @@ export function LogoV2(): React.ReactNode {
             {/* Vertical divider */}
             {layoutMode === 'horizontal' && (
               <Box
-                alignSelf={"stretch" as "auto"}
-
+                alignSelf={'stretch' as 'auto'}
                 flexShrink={0}
                 borderStyle="single"
                 borderColor="claude"
@@ -443,4 +442,3 @@ export function LogoV2(): React.ReactNode {
     </>
   )
 }
-

@@ -297,11 +297,7 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
                     0,
                   )
                   return (
-                    <Box
-                      key={serverName}
-                      flexDirection="column"
-                      marginTop={1}
-                    >
+                    <Box key={serverName} flexDirection="column" marginTop={1}>
                       <Box>
                         <Text dimColor>mcp__{serverName}</Text>
                         <Text dimColor>
@@ -338,11 +334,7 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
                     0,
                   )
                   return (
-                    <Box
-                      key={serverName}
-                      flexDirection="column"
-                      marginTop={1}
-                    >
+                    <Box key={serverName} flexDirection="column" marginTop={1}>
                       <Box>
                         <Text dimColor>mcp__{serverName}</Text>
                         <Text dimColor>
@@ -375,11 +367,7 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
                 {Array.from(
                   groupByServer(mcpTools.filter(t => !t.isLoaded)).entries(),
                 ).map(([serverName, serverTools]) => (
-                  <Box
-                    key={serverName}
-                    flexDirection="column"
-                    marginTop={1}
-                  >
+                  <Box key={serverName} flexDirection="column" marginTop={1}>
                     <Box>
                       <Text dimColor>mcp__{serverName}</Text>
                       <Text dimColor>
@@ -401,8 +389,6 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
             )}
           </Box>
         )}
-
-
 
         {agents.length > 0 && (
           <Box flexDirection="column" marginTop={1}>
@@ -462,7 +448,6 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
             )}
           </Box>
         )}
-
       </Box>
       <ContextSuggestions suggestions={generateContextSuggestions(data)} />
     </Box>

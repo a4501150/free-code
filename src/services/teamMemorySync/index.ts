@@ -157,8 +157,8 @@ function isUsingOAuth(): boolean {
   const tokens = getClaudeAIOAuthTokens()
   return Boolean(
     tokens?.accessToken &&
-      tokens.scopes?.includes(CLAUDE_AI_INFERENCE_SCOPE) &&
-      tokens.scopes.includes(CLAUDE_AI_PROFILE_SCOPE),
+    tokens.scopes?.includes(CLAUDE_AI_INFERENCE_SCOPE) &&
+    tokens.scopes.includes(CLAUDE_AI_PROFILE_SCOPE),
   )
 }
 
@@ -1187,8 +1187,7 @@ function logPull(
     errorType?: string
     status?: number
   },
-): void {
-}
+): void {}
 
 function logPush(
   startTime: number,
@@ -1204,5 +1203,4 @@ function logPush(
     serverMaxEntries?: number
     serverReceivedEntries?: number
   },
-): void {
-}
+): void {}

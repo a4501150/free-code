@@ -754,8 +754,7 @@ export async function partialCompactConversation(
 
     const failureMetadata = {
       preCompactTokenCount,
-      direction:
-        direction,
+      direction: direction,
       messagesSummarized: messagesToSummarize.length,
     }
 

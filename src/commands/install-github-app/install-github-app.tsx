@@ -58,8 +58,7 @@ function InstallGitHubApp(props: {
   })
   useExitOnCtrlCDWithKeybindings()
 
-  React.useEffect(() => {
-  }, [])
+  React.useEffect(() => {}, [])
 
   const checkGitHubCLI = useCallback(async () => {
     const warnings: Warning[] = []
@@ -202,7 +201,6 @@ function InstallGitHubApp(props: {
             ],
           }))
         } else {
-
           setState(prev => ({
             ...prev,
             step: 'error',

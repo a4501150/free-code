@@ -61,8 +61,20 @@ const getRipgrepConfig = memoize((): RipgrepConfig => {
   const execDir = path.dirname(process.execPath)
   const execRgBin =
     process.platform === 'win32'
-      ? path.resolve(execDir, 'vendor', 'ripgrep', `${process.arch}-win32`, 'rg.exe')
-      : path.resolve(execDir, 'vendor', 'ripgrep', `${process.arch}-${process.platform}`, 'rg')
+      ? path.resolve(
+          execDir,
+          'vendor',
+          'ripgrep',
+          `${process.arch}-win32`,
+          'rg.exe',
+        )
+      : path.resolve(
+          execDir,
+          'vendor',
+          'ripgrep',
+          `${process.arch}-${process.platform}`,
+          'rg',
+        )
   if (existsSync(execRgBin)) {
     return { mode: 'builtin', command: execRgBin, args: [] }
   }

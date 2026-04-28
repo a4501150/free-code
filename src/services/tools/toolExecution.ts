@@ -721,7 +721,6 @@ async function checkPermissionsAndCallTool(
     )
   }
 
-
   const toolAttributes: Record<string, string | number | boolean> = {}
   if (processedInput && typeof processedInput === 'object') {
     if (tool.name === FILE_READ_TOOL_NAME && 'file_path' in processedInput) {

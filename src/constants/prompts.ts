@@ -18,9 +18,7 @@ import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
 import type { Tools } from '../Tool.js'
 import type { Command } from '../types/command.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
-import {
-  getPublicModelDisplayName,
-} from '../utils/model/model.js'
+import { getPublicModelDisplayName } from '../utils/model/model.js'
 import { getSkillToolCommands } from 'src/commands.js'
 import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
 import { getOutputStyleConfig } from './outputStyles.js'
@@ -67,19 +65,16 @@ const getCachedMCConfigForFRC = feature('CACHED_MICROCOMPACT')
   : null
 
 /* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule =
-  feature('KAIROS')
-    ? require('../proactive/index.js')
-    : null
+const proactiveModule = feature('KAIROS')
+  ? require('../proactive/index.js')
+  : null
 /* eslint-enable @typescript-eslint/no-require-imports */
 const BRIEF_PROACTIVE_SECTION: string | null =
   feature('KAIROS') || feature('KAIROS_BRIEF')
     ? briefToolPromptNs.BRIEF_PROACTIVE_SECTION
     : null
 const briefToolModule =
-  feature('KAIROS') || feature('KAIROS_BRIEF')
-    ? briefToolModuleNs
-    : null
+  feature('KAIROS') || feature('KAIROS_BRIEF') ? briefToolModuleNs : null
 const DISCOVER_SKILLS_TOOL_NAME: string | null = feature(
   'EXPERIMENTAL_SKILL_SEARCH',
 )
@@ -109,7 +104,6 @@ export const CLAUDE_CODE_DOCS_MAP_URL =
  */
 export const SYSTEM_PROMPT_DYNAMIC_BOUNDARY =
   '__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__'
-
 
 function getHooksSection(): string {
   return `Users may configure 'hooks', shell commands that execute in response to events like tool calls, in settings. Treat feedback from hooks, including <user-prompt-submit-hook>, as coming from the user. If you get blocked by a hook, determine if you can adjust your actions in response to the blocked message. If not, ask the user to check their hooks configuration.`
@@ -187,7 +181,7 @@ function getSimpleDoingTasksSection(): string {
     `Don't add error handling, fallbacks, or validation for scenarios that can't happen. Trust internal code and framework guarantees. Only validate at system boundaries (user input, external APIs). Don't use feature flags or backwards-compatibility shims when you can just change the code.`,
     `Don't create helpers, utilities, or abstractions for one-time operations. Don't design for hypothetical future requirements. The right amount of complexity is what the task actually requires—no speculative abstractions, but no half-finished implementations either. Three similar lines of code is better than a premature abstraction.`,
     // @[MODEL LAUNCH]: Update comment writing for Capybara — remove or soften once the model stops over-commenting by default
-    ...(getInitialSettings()?.enhancedPromptGuidance ?? false
+    ...((getInitialSettings()?.enhancedPromptGuidance ?? false)
       ? [
           `Default to writing no comments. Only add one when the WHY is non-obvious: a hidden constraint, a subtle invariant, a workaround for a specific bug, behavior that would surprise a reader. If removing the comment wouldn't confuse a future reader, don't write it.`,
           `Don't explain WHAT the code does, since well-named identifiers already do that. Don't reference the current task, fix, or callers ("used by X", "added for the Y flow", "handles the case from issue #123"), since those belong in the PR description and rot as the codebase evolves.`,
@@ -207,7 +201,7 @@ function getSimpleDoingTasksSection(): string {
     `The user will primarily request you to perform software engineering tasks. These may include solving bugs, adding new functionality, refactoring code, explaining code, and more. When given an unclear or generic instruction, consider it in the context of these software engineering tasks and the current working directory. For example, if the user asks you to change "methodName" to snake case, do not reply with just "method_name", instead find the method in the code and modify the code.`,
     `You are highly capable and often allow users to complete ambitious tasks that would otherwise be too complex or take too long. You should defer to user judgement about whether a task is too large to attempt.`,
     // @[MODEL LAUNCH]: capy v8 assertiveness counterweight (PR #24302) — un-gate once validated on external via A/B
-    ...(getInitialSettings()?.enhancedPromptGuidance ?? false
+    ...((getInitialSettings()?.enhancedPromptGuidance ?? false)
       ? [
           `If you notice the user's request is based on a misconception, or spot a bug adjacent to what they asked about, say so. You're a collaborator, not just an executor—users benefit from your judgment, not just your compliance.`,
         ]
@@ -220,7 +214,7 @@ function getSimpleDoingTasksSection(): string {
     ...codeStyleSubitems,
     `Avoid backwards-compatibility hacks like renaming unused _vars, re-exporting types, adding // removed comments for removed code, etc. If you are certain that something is unused, you can delete it completely.`,
     // @[MODEL LAUNCH]: False-claims mitigation for Capybara v8 (29-30% FC rate vs v4's 16.7%)
-    ...(getInitialSettings()?.enhancedPromptGuidance ?? false
+    ...((getInitialSettings()?.enhancedPromptGuidance ?? false)
       ? [
           `Report outcomes faithfully: if tests fail, say so with the relevant output; if you did not run a verification step, say that rather than implying it succeeded. Never claim "all tests pass" when output shows failures, never suppress or simplify failing checks (tests, lints, type errors) to manufacture a green result, and never characterize incomplete or broken work as done. Equally, when a check did pass or a task is complete, state it plainly — do not hedge confirmed results with unnecessary disclaimers, downgrade finished work to "partial," or re-verify things you already checked. The goal is an accurate report, not a defensive one.`,
         ]
@@ -442,10 +436,7 @@ export async function getSystemPrompt(
   const settings = getInitialSettings()
   const enabledTools = new Set(tools.map(_ => _.name))
 
-  if (
-    (feature('KAIROS')) &&
-    proactiveModule?.isProactiveActive()
-  ) {
+  if (feature('KAIROS') && proactiveModule?.isProactiveActive()) {
     logForDebugging(`[SystemPrompt] path=simple-proactive`)
     return [
       `\nYou are an autonomous agent. Use the available tools to do useful work.
@@ -505,7 +496,7 @@ ${CYBER_RISK_INSTRUCTION}`,
     ),
     // Numeric length anchors — research shows ~1.2% output token reduction vs
     // qualitative "be concise". Ant-only to measure quality impact first.
-    ...(getInitialSettings()?.enhancedPromptGuidance ?? false
+    ...((getInitialSettings()?.enhancedPromptGuidance ?? false)
       ? [
           systemPromptSection(
             'numeric_length_anchors',
@@ -770,16 +761,12 @@ function getBriefSection(): string | null {
   if (!briefToolModule?.isBriefEnabled()) return null
   // When proactive is active, getProactiveSection() already appends the
   // section inline. Skip here to avoid duplicating it in the system prompt.
-  if (
-    (feature('KAIROS')) &&
-    proactiveModule?.isProactiveActive()
-  )
-    return null
+  if (feature('KAIROS') && proactiveModule?.isProactiveActive()) return null
   return BRIEF_PROACTIVE_SECTION
 }
 
 function getProactiveSection(): string | null {
-  if (!(feature('KAIROS'))) return null
+  if (!feature('KAIROS')) return null
   if (!proactiveModule?.isProactiveActive()) return null
 
   return `# Autonomous work

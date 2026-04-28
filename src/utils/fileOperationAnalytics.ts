@@ -4,25 +4,16 @@ import { createHash } from 'crypto'
  * Creates a truncated SHA256 hash (16 chars) for file paths
  * Used for privacy-preserving analytics on file operations
  */
-function hashFilePath(
-  filePath: string,
-): string {
-  return createHash('sha256')
-    .update(filePath)
-    .digest('hex')
-    .slice(0, 16)
+function hashFilePath(filePath: string): string {
+  return createHash('sha256').update(filePath).digest('hex').slice(0, 16)
 }
 
 /**
  * Creates a full SHA256 hash (64 chars) for file contents
  * Used for deduplication and change detection analytics
  */
-function hashFileContent(
-  content: string,
-): string {
-  return createHash('sha256')
-    .update(content)
-    .digest('hex')
+function hashFileContent(content: string): string {
+  return createHash('sha256').update(content).digest('hex')
 }
 
 // Maximum content size to hash (100KB)
@@ -40,8 +31,7 @@ export function logFileOperation(params: {
   type?: 'create' | 'update'
 }): void {
   const metadata: Record<string, string | number | boolean> = {
-    operation:
-      params.operation,
+    operation: params.operation,
     tool: params.tool,
     filePathHash: hashFilePath(params.filePath),
   }
@@ -56,8 +46,6 @@ export function logFileOperation(params: {
   }
 
   if (params.type !== undefined) {
-    metadata.type =
-      params.type
+    metadata.type = params.type
   }
-
 }

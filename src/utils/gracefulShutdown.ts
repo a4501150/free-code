@@ -33,10 +33,7 @@ import { runCleanupFunctions } from './cleanupRegistry.js'
 import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
 import { isEnvTruthy } from './envUtils.js'
-import {
-  executeSessionEndHooks,
-  getSessionEndHookTimeoutMs,
-} from './hooks.js'
+import { executeSessionEndHooks, getSessionEndHookTimeoutMs } from './hooks.js'
 import { getCurrentSessionTitle, sessionIdExists } from './sessionStorage.js'
 import { profileReport } from './startupProfiler.js'
 

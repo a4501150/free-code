@@ -48,7 +48,12 @@ export function GroupedToolUseContent({
   }
 
   const toolUsesData = message.messages.map(msg => {
-    const content = msg.message.content[0] as { id: string; type: string; name?: string; input?: unknown }
+    const content = msg.message.content[0] as {
+      id: string
+      type: string
+      name?: string
+      input?: unknown
+    }
     const result = resultsByToolUseId.get(content.id)
     return {
       param: content as ToolUseBlockParam,

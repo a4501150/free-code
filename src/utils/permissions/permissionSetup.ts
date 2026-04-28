@@ -31,7 +31,9 @@ import { loadAllPermissionRulesFromDisk } from './permissionsLoader.js'
 
 import * as autoModeStateNs from './autoModeState.js'
 
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER') ? autoModeStateNs : null
+const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
+  ? autoModeStateNs
+  : null
 
 import { resolve } from 'path'
 import {

@@ -85,9 +85,7 @@ export async function countMessagesTokensWithAPI(
   return withTokenCountVCR(messages, tools, async () => {
     try {
       const model = getMainLoopModel()
-      const { getAdapterForModel } = await import(
-        './api/adapters/index.js'
-      )
+      const { getAdapterForModel } = await import('./api/adapters/index.js')
       const adapter = getAdapterForModel(model)
       const betas = getModelBetas(model)
       const breakdown = await adapter.countTokens(messages, tools, model, {
@@ -314,7 +312,12 @@ function roughTokenCountEstimationForBlock(
     return 2000
   }
   if (block.type === 'tool_result') {
-    return roughTokenCountEstimationForContent(block.content as string | import('@anthropic-ai/sdk/resources/messages.mjs').ContentBlockParam[] | undefined)
+    return roughTokenCountEstimationForContent(
+      block.content as
+        | string
+        | import('@anthropic-ai/sdk/resources/messages.mjs').ContentBlockParam[]
+        | undefined,
+    )
   }
   if (block.type === 'tool_use') {
     // input is the JSON the model generated — arbitrarily large (bash

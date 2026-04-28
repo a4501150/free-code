@@ -271,13 +271,14 @@ export async function* handleOrphanedPermission(
     input: finalInput,
   }
 
-  const canUseTool: CanUseToolFn = async () => ({
-    ...permissionResult,
-    decisionReason: {
-      type: 'mode' as const,
-      mode: 'default' as const,
-    },
-  } as any)
+  const canUseTool: CanUseToolFn = async () =>
+    ({
+      ...permissionResult,
+      decisionReason: {
+        type: 'mode' as const,
+        mode: 'default' as const,
+      },
+    }) as any
 
   // Add the assistant message with tool_use to messages BEFORE executing
   // so the conversation history is complete (tool_use -> tool_result).

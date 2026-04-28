@@ -414,8 +414,8 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
       // there's something to expand to.
       return Boolean(
         output.task.output?.trim() ||
-          output.task.result?.trim() ||
-          output.task.error,
+        output.task.result?.trim() ||
+        output.task.error,
       )
     },
   } satisfies ToolDef<InputSchema, TaskOutputToolOutput>)

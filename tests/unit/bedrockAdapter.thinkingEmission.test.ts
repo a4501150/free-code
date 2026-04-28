@@ -214,8 +214,7 @@ describe('Bedrock Converse adapter: inbound reasoning emission', () => {
       const thinkingDeltas = events.filter(
         e =>
           e.event === 'content_block_delta' &&
-          (e.data.delta as Record<string, unknown>)?.type ===
-            'thinking_delta',
+          (e.data.delta as Record<string, unknown>)?.type === 'thinking_delta',
       )
       expect(thinkingDeltas).toHaveLength(2)
       const concatenated = thinkingDeltas

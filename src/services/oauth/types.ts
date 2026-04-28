@@ -9,7 +9,10 @@
 export type SubscriptionType = 'pro' | 'max' | 'team' | 'enterprise'
 
 /** Rate-limit tier assigned by the server. */
-export type RateLimitTier = 'default_claude_max_5x' | 'default_claude_max_20x' | string
+export type RateLimitTier =
+  | 'default_claude_max_5x'
+  | 'default_claude_max_20x'
+  | string
 
 /** Billing backend. */
 export type BillingType =

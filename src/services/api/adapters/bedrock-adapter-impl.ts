@@ -8,7 +8,11 @@
  * adapter is mostly a pass-through.
  */
 import type { ProviderAdapter, FetchFn, TokenBreakdown } from '../adapter.js'
-import type { ProviderCapabilities, ProviderConfig, ProviderType } from '../../../utils/settings/types.js'
+import type {
+  ProviderCapabilities,
+  ProviderConfig,
+  ProviderType,
+} from '../../../utils/settings/types.js'
 import {
   fromHttpStatus,
   type NormalizedApiError,
@@ -111,7 +115,9 @@ export const bedrockAdapter: ProviderAdapter = {
     }
 
     const causeMsg =
-      r.cause instanceof Error ? r.cause.message : String(r.cause ?? 'stream error')
+      r.cause instanceof Error
+        ? r.cause.message
+        : String(r.cause ?? 'stream error')
     return {
       kind: r.mid_stream ? 'unknown' : 'transport',
       message: errMessage ?? causeMsg,

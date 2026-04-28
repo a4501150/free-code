@@ -282,7 +282,8 @@ async function maybePersistLargeToolResult(
   // Use tool-specific threshold if provided, otherwise fall back to the
   // user-configurable global byte cap (toolResultTokenCap × BYTES_PER_TOKEN).
   const tokenCap =
-    getInitialSettings()?.toolResultTokenCap ?? MAX_TOOL_RESULT_BYTES / BYTES_PER_TOKEN
+    getInitialSettings()?.toolResultTokenCap ??
+    MAX_TOOL_RESULT_BYTES / BYTES_PER_TOKEN
   const globalByteCap = tokenCap * BYTES_PER_TOKEN
   const threshold = persistenceThreshold ?? globalByteCap
   if (size <= threshold) {

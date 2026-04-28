@@ -20,7 +20,9 @@ import {
 
 const inputSchema = lazySchema(() =>
   z.strictObject({
-    path: z.string().describe('Path to the file to send (absolute or relative to cwd).'),
+    path: z
+      .string()
+      .describe('Path to the file to send (absolute or relative to cwd).'),
     description: z
       .string()
       .optional()

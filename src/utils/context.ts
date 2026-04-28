@@ -40,7 +40,10 @@ export function getContextWindowForModel(
   // Per-model contextWindow from freecode.json takes priority
   const resolved = getProviderRegistry().getProviderForModel(model)
   if (resolved?.model.contextWindow && resolved.model.contextWindow > 0) {
-    if (is1mContextDisabled() && resolved.model.contextWindow > MODEL_CONTEXT_WINDOW_DEFAULT) {
+    if (
+      is1mContextDisabled() &&
+      resolved.model.contextWindow > MODEL_CONTEXT_WINDOW_DEFAULT
+    ) {
       return MODEL_CONTEXT_WINDOW_DEFAULT
     }
     return resolved.model.contextWindow

@@ -102,9 +102,7 @@ import {
   isPersistError,
   persistToolResult,
 } from '../../utils/toolResultStorage.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-} from '../analytics/index.js'
+import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../analytics/index.js'
 import {
   type ElicitationWaitingState,
   runElicitationHooks,
@@ -303,8 +301,7 @@ function mcpBaseUrlAnalytics(serverRef: ScopedMcpServerConfig): {
   const url = getLoggingSafeMcpBaseUrl(serverRef)
   return url
     ? {
-        mcpServerBaseUrl:
-          url,
+        mcpServerBaseUrl: url,
       }
     : {}
 }
@@ -1644,7 +1641,7 @@ export const fetchToolsForClient = memoizeWithLRU(
 
       // Filter tools by includeTools/excludeTools config
       const { includeTools, excludeTools } = client.config
-      const toolsToProcess = allTools.filter((tool) => {
+      const toolsToProcess = allTools.filter(tool => {
         if (excludeTools?.includes(tool.name)) return false
         if (includeTools && !includeTools.includes(tool.name)) return false
         return true

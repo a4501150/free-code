@@ -22,7 +22,6 @@ export async function sendNotification(
   await executeNotificationHooks(notif)
 
   const methodUsed = await sendToChannel(channel, notif, terminal)
-
 }
 
 const DEFAULT_TITLE = 'Claude Code'
@@ -123,7 +122,9 @@ async function isAppleTerminalBellDisabled(): Promise<boolean> {
       return false
     }
 
-    const parsed: Record<string, unknown> = plist.parse(defaultsOutput.stdout) as Record<string, unknown>
+    const parsed: Record<string, unknown> = plist.parse(
+      defaultsOutput.stdout,
+    ) as Record<string, unknown>
     const windowSettings = parsed?.['Window Settings'] as
       | Record<string, unknown>
       | undefined

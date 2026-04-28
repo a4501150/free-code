@@ -698,8 +698,7 @@ async function toggleTeammateVisibility(
 async function hideTeammate(
   teammate: TeammateStatus,
   teamName: string,
-): Promise<void> {
-}
+): Promise<void> {}
 
 /**
  * Show a previously hidden teammate pane using the backend abstraction.
@@ -708,8 +707,7 @@ async function hideTeammate(
 async function showTeammate(
   teammate: TeammateStatus,
   teamName: string,
-): Promise<void> {
-}
+): Promise<void> {}
 
 /**
  * Send a mode change message to a single teammate

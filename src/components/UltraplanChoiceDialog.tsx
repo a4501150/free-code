@@ -43,7 +43,10 @@ export function UltraplanChoiceDialog({
             'info',
           ),
           createUserMessage({
-            content: prepareUserContent({ inputString: plan, precedingInputBlocks: [] }),
+            content: prepareUserContent({
+              inputString: plan,
+              precedingInputBlocks: [],
+            }),
           }),
         ])
       }
@@ -69,15 +72,12 @@ export function UltraplanChoiceDialog({
     plan.length > 2000 ? plan.slice(0, 2000) + '\n\n... (truncated)' : plan
 
   return (
-    <Dialog
-      title="Ultraplan ready"
-      onCancel={() => handleChoice('dismiss')}
-    >
+    <Dialog title="Ultraplan ready" onCancel={() => handleChoice('dismiss')}>
       <Box flexDirection="column" gap={1}>
         <Box
           flexDirection="column"
           borderStyle="single"
-          borderColor={"gray" as "permission"}
+          borderColor={'gray' as 'permission'}
           paddingX={1}
           height={Math.min(displayPlan.split('\n').length + 2, 20)}
           overflow="hidden"

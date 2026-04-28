@@ -34,7 +34,12 @@ export function CondensedLogo(): ReactNode {
   const effortValue = useAppState(s => s.effortValue)
   const model = useMainLoopModel()
   const modelDisplayName = renderModelSetting(model)
-  const { version, cwd, billingType, agentName: agentNameFromSettings } = getLogoDisplayData()
+  const {
+    version,
+    cwd,
+    billingType,
+    agentName: agentNameFromSettings,
+  } = getLogoDisplayData()
 
   // Prefer AppState.agent (set from --agent CLI flag) over settings
   const agentName = agent ?? agentNameFromSettings
@@ -87,32 +92,32 @@ export function CondensedLogo(): ReactNode {
   return (
     <OffscreenFreeze>
       <Box flexDirection="row" gap={2} alignItems="center">
-      {isFullscreenEnvEnabled() ? <AnimatedClawd /> : <Clawd />}
+        {isFullscreenEnvEnabled() ? <AnimatedClawd /> : <Clawd />}
 
-      {/* Info */}
-      <Box flexDirection="column">
-        <Text>
-          <Text bold>Claude Code</Text>{' '}
-          <Text dimColor>v{truncatedVersion}</Text>
-        </Text>
-        {shouldSplit ? (
-          <>
-            <Text dimColor>{truncatedModel}</Text>
-            <Text dimColor>{truncatedBilling}</Text>
-          </>
-        ) : (
-          <Text dimColor>
-            {truncatedModel} · {truncatedBilling}
+        {/* Info */}
+        <Box flexDirection="column">
+          <Text>
+            <Text bold>Claude Code</Text>{' '}
+            <Text dimColor>v{truncatedVersion}</Text>
           </Text>
-        )}
-        <Text dimColor>
-          {agentName ? `@${agentName} · ${truncatedCwd}` : truncatedCwd}
-        </Text>
-        {showGuestPassesUpsell && <GuestPassesUpsell />}
-        {!showGuestPassesUpsell && showOverageCreditUpsell && (
-          <OverageCreditUpsell maxWidth={textWidth} twoLine />
-        )}
-      </Box>
+          {shouldSplit ? (
+            <>
+              <Text dimColor>{truncatedModel}</Text>
+              <Text dimColor>{truncatedBilling}</Text>
+            </>
+          ) : (
+            <Text dimColor>
+              {truncatedModel} · {truncatedBilling}
+            </Text>
+          )}
+          <Text dimColor>
+            {agentName ? `@${agentName} · ${truncatedCwd}` : truncatedCwd}
+          </Text>
+          {showGuestPassesUpsell && <GuestPassesUpsell />}
+          {!showGuestPassesUpsell && showOverageCreditUpsell && (
+            <OverageCreditUpsell maxWidth={textWidth} twoLine />
+          )}
+        </Box>
       </Box>
     </OffscreenFreeze>
   )

@@ -4,10 +4,7 @@ import { loadConversationForResume } from '../utils/conversationRecovery.js'
 import { renderMessagesToPlainText } from '../utils/exportRenderer.js'
 import { errorMessage, isENOENT } from '../utils/errors.js'
 import { logError } from '../utils/log.js'
-import {
-  getLogByIndex,
-  loadMessageLogs,
-} from '../utils/sessionStorage.js'
+import { getLogByIndex, loadMessageLogs } from '../utils/sessionStorage.js'
 import { validateUuid } from '../utils/uuid.js'
 import type { LogOption } from '../types/logs.js'
 import type { Message } from '../types/message.js'
@@ -32,7 +29,9 @@ export async function exportHandler(
   if (maybeSessionId) {
     const logs = await loadMessageLogs()
     logOption =
-      logs.find(l => l.sessionId === maybeSessionId || l.leafUuid === maybeSessionId) ?? null
+      logs.find(
+        l => l.sessionId === maybeSessionId || l.leafUuid === maybeSessionId,
+      ) ?? null
     if (!logOption) {
       // biome-ignore lint/suspicious/noConsole:: user-facing CLI output
       console.error(`No conversation found with session ID: ${source}`)
@@ -60,9 +59,7 @@ export async function exportHandler(
         console.error(`File not found: ${resolved}`)
       } else {
         // biome-ignore lint/suspicious/noConsole:: user-facing CLI output
-        console.error(
-          `Unable to read ${resolved}: ${errorMessage(e)}`,
-        )
+        console.error(`Unable to read ${resolved}: ${errorMessage(e)}`)
       }
       // eslint-disable-next-line custom-rules/no-process-exit
       process.exit(1)

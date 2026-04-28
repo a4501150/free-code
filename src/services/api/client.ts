@@ -116,9 +116,8 @@ export async function getAnthropicClient({
   // Only inject API key / bearer token headers when the default provider
   // uses apiKey or bearer auth (not OAuth). This avoids conflicting
   // Authorization headers when OAuth is configured.
-  const defaultAuthActive = getProviderRegistry()
-    .getDefaultProvider()
-    ?.config.auth?.active
+  const defaultAuthActive =
+    getProviderRegistry().getDefaultProvider()?.config.auth?.active
   if (defaultAuthActive !== 'oauth') {
     await configureApiKeyHeaders(defaultHeaders, getIsNonInteractiveSession())
   }
@@ -145,9 +144,7 @@ export async function getAnthropicClient({
   const registry = earlyRegistry
 
   // 1. Try exact model match in registry
-  const resolved = model
-    ? registry.getProviderForModel(model)
-    : null
+  const resolved = model ? registry.getProviderForModel(model) : null
 
   if (resolved) {
     const client = await createClientForProvider(resolved, ARGS, { apiKey })
@@ -160,11 +157,9 @@ export async function getAnthropicClient({
   // itself returns 404 if the model doesn't exist).
   const defaultResolved = resolveDefaultProvider(registry)
   if (defaultResolved) {
-    const client = await createClientForProvider(
-      defaultResolved,
-      ARGS,
-      { apiKey },
-    )
+    const client = await createClientForProvider(defaultResolved, ARGS, {
+      apiKey,
+    })
     if (client) return client
   }
 
@@ -295,9 +290,7 @@ function resolveAuthHeaders(
     case 'bearer': {
       const token =
         auth.bearer?.token ||
-        (auth.bearer?.tokenEnv
-          ? process.env[auth.bearer.tokenEnv]
-          : undefined)
+        (auth.bearer?.tokenEnv ? process.env[auth.bearer.tokenEnv] : undefined)
       if (!token) return {}
       return { Authorization: `Bearer ${token}` }
     }
@@ -376,14 +369,12 @@ async function createClientForProvider(
       // Get Codex OAuth tokens at runtime (may have been refreshed)
       const codexTokens = getCodexOAuthTokens()
       const accessToken = codexTokens?.accessToken
-      let codexOpts:
-        | {
-            accessToken: string
-            getRefreshedToken?: () => string | null
-            baseUrl?: string
-            getSessionId: () => string
-          }
-        | null = null
+      let codexOpts: {
+        accessToken: string
+        getRefreshedToken?: () => string | null
+        baseUrl?: string
+        getSessionId: () => string
+      } | null = null
       if (!accessToken) {
         // Fall back to auth headers from config
         const authHeaders = resolveAuthHeaders(provider)
@@ -462,9 +453,7 @@ async function createClientForProvider(
           process.env['GOOGLE_APPLICATION_CREDENTIALS'] ||
           process.env['google_application_credentials']
 
-        const googleAuth = isEnvTruthy(
-          process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH,
-        )
+        const googleAuth = isEnvTruthy(process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH)
           ? ({
               getClient: () => ({
                 getRequestHeaders: () => ({}),
@@ -480,9 +469,12 @@ async function createClientForProvider(
             })
 
         const authClient = await googleAuth.getClient()
-        const headers = await authClient.getRequestHeaders() as unknown as Record<string, string | undefined>
-        const token =
-          headers['Authorization']?.replace('Bearer ', '') || ''
+        const headers =
+          (await authClient.getRequestHeaders()) as unknown as Record<
+            string,
+            string | undefined
+          >
+        const token = headers['Authorization']?.replace('Bearer ', '') || ''
         const projectId =
           headers['x-goog-user-project'] ||
           (await googleAuth.getProjectId()) ||
@@ -553,9 +545,12 @@ async function createClientForProvider(
         })
 
         const authClient = await googleAuth.getClient()
-        const headers = await authClient.getRequestHeaders() as unknown as Record<string, string | undefined>
-        const token =
-          headers['Authorization']?.replace('Bearer ', '') || ''
+        const headers =
+          (await authClient.getRequestHeaders()) as unknown as Record<
+            string,
+            string | undefined
+          >
+        const token = headers['Authorization']?.replace('Bearer ', '') || ''
         const projectId =
           headers['x-goog-user-project'] ||
           (await googleAuth.getProjectId()) ||

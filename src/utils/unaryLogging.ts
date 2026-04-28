@@ -1,4 +1,3 @@
-
 export type CompletionType =
   | 'str_replace_single'
   | 'str_replace_multi'
@@ -16,5 +15,4 @@ type LogEvent = {
   }
 }
 
-export async function logUnaryEvent(event: LogEvent): Promise<void> {
-}
+export async function logUnaryEvent(event: LogEvent): Promise<void> {}

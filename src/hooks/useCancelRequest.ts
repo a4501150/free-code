@@ -85,10 +85,8 @@ export function CancelRequestHandler(props: CancelRequestHandlerProps): null {
 
   const handleCancel = useCallback(() => {
     const cancelProps = {
-      source:
-        'escape',
-      streamMode:
-        streamMode,
+      source: 'escape',
+      streamMode: streamMode,
     }
 
     // Priority 1: If there's an active task running, cancel it first

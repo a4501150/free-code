@@ -145,9 +145,7 @@ import {
   MACOS_OPTION_SPECIAL_CHARS,
 } from '../../utils/keyboardShortcuts.js'
 import { logError } from '../../utils/log.js'
-import {
-  modelDisplayString,
-} from '../../utils/model/model.js'
+import { modelDisplayString } from '../../utils/model/model.js'
 import { setAutoModeActive } from '../../utils/permissions/autoModeState.js'
 import {
   cyclePermissionMode,
@@ -410,9 +408,7 @@ function PromptInput({
   const setAppState = useSetAppState()
   const tasks = useAppState(s => s.tasks)
   // WebBrowser pill — visible when a browser is open
-  const bagelFooterVisible = useAppState(s =>
-        false,
-  )
+  const bagelFooterVisible = useAppState(s => false)
   const teamContext = useAppState(s => s.teamContext)
   const queuedCommands = useCommandQueue()
   const promptSuggestionState = useAppState(s => s.promptSuggestion)
@@ -2567,9 +2563,7 @@ function PromptInput({
       setShowModelPicker(false)
       const effectiveFastMode = (isFastMode ?? false) && !wasFastModeDisabled
       let message = `Model set to ${modelDisplayString(model)}`
-      if (
-        isBilledAsExtraUsage(model, effectiveFastMode)
-      ) {
+      if (isBilledAsExtraUsage(model, effectiveFastMode)) {
         message += ' · Billed as extra usage'
       }
       if (wasFastModeDisabled) {

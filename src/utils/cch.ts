@@ -1,8 +1,8 @@
 import xxhash from 'xxhash-wasm'
 
-const CCH_SEED = 0x6E52736AC806831En
+const CCH_SEED = 0x6e52736ac806831en
 const CCH_PLACEHOLDER = 'cch=00000'
-const CCH_MASK = 0xFFFFFn
+const CCH_MASK = 0xfffffn
 
 let hasherPromise: ReturnType<typeof xxhash> | null = null
 

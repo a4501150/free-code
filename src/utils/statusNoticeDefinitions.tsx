@@ -246,7 +246,6 @@ const jetbrainsPluginNotice: StatusNoticeDefinition = {
   },
 }
 
-
 // All notice definitions
 export const statusNoticeDefinitions: StatusNoticeDefinition[] = [
   largeMemoryFilesNotice,

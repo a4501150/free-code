@@ -314,7 +314,6 @@ export async function fetchAndStoreUserRoles(
         }
       : current.oauthAccount,
   }))
-
 }
 
 export async function createAndStoreApiKey(

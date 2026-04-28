@@ -35,7 +35,10 @@ import {
   updateSettingsForSource,
 } from '../utils/settings/settings.js'
 import { updateProviderModelConfig } from '../utils/settings/freecodeSettings.js'
-import { getProviderRegistry, resetProviderRegistry } from '../utils/model/providerRegistry.js'
+import {
+  getProviderRegistry,
+  resetProviderRegistry,
+} from '../utils/model/providerRegistry.js'
 import { parseModelString } from '../utils/model/parseModelString.js'
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js'
 import { Select } from './CustomSelect/index.js'
@@ -558,7 +561,9 @@ function cycleEffortLevel(
   if (direction === 'right') {
     return levels[(currentIndex + 1) % levels.length]! as EffortLevel
   } else {
-    return levels[(currentIndex - 1 + levels.length) % levels.length]! as EffortLevel
+    return levels[
+      (currentIndex - 1 + levels.length) % levels.length
+    ]! as EffortLevel
   }
 }
 

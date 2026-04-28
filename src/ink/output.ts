@@ -540,7 +540,9 @@ export default class Output {
         } else if (op.type === 'write') {
           const lineCount = op.text.split('\n').length
           if (op.y <= bottomRow && op.y + lineCount > bottomRow - 1) {
-            statusOps.push(`write(x=${op.x},y=${op.y},lines=${lineCount},len=${op.text.length})`)
+            statusOps.push(
+              `write(x=${op.x},y=${op.y},lines=${lineCount},len=${op.text.length})`,
+            )
           }
         } else if (op.type === 'clear') {
           const { x, y, width, height } = op.region
@@ -550,7 +552,9 @@ export default class Output {
         }
       }
       if (statusOps.length > 0) {
-        logForDebugging(`status-row ops (y=${bottomRow}): ${statusOps.join(' → ')}`)
+        logForDebugging(
+          `status-row ops (y=${bottomRow}): ${statusOps.join(' → ')}`,
+        )
       }
     }
 

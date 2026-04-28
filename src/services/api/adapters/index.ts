@@ -26,9 +26,7 @@ const ADAPTERS: Record<ProviderType, ProviderAdapter> = {
   gemini: geminiAdapter,
 }
 
-export function getAdapterForProviderType(
-  type: ProviderType,
-): ProviderAdapter {
+export function getAdapterForProviderType(type: ProviderType): ProviderAdapter {
   return ADAPTERS[type]
 }
 

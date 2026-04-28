@@ -40,7 +40,10 @@ import {
 import { isFastModeEnabled } from './utils/fastMode.js'
 import { formatDuration, formatNumber } from './utils/format.js'
 import type { FpsMetrics } from './utils/fpsTracker.js'
-import { getPublicModelDisplayName, renderModelName } from './utils/model/model.js'
+import {
+  getPublicModelDisplayName,
+  renderModelName,
+} from './utils/model/model.js'
 import { calculateUSDCost } from './utils/modelCost.js'
 export {
   getTotalCostUSD as getTotalCost,

@@ -9,9 +9,7 @@ type Props = {
   isEmbedded?: boolean
 }
 
-export function ResumeTask({
-  onCancel,
-}: Props): React.ReactNode {
+export function ResumeTask({ onCancel }: Props): React.ReactNode {
   const escKey = useShortcutDisplay('confirm:no', 'Confirmation', 'Esc')
 
   useKeybinding('confirm:no', onCancel, { context: 'Confirmation' })

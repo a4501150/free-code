@@ -95,7 +95,10 @@ import { PluginOptionsDialog } from './PluginOptionsDialog.js'
 import { PluginOptionsFlow } from './PluginOptionsFlow.js'
 import type { ViewState as ParentViewState } from './types.js'
 import { UnifiedInstalledCell } from './UnifiedInstalledCell.js'
-import type { UnifiedInstalledItem, UnifiedInstalledItemScope } from './unifiedTypes.js'
+import type {
+  UnifiedInstalledItem,
+  UnifiedInstalledItemScope,
+} from './unifiedTypes.js'
 import { usePagination } from './usePagination.js'
 
 type Props = {
@@ -2129,7 +2132,10 @@ export function ManagePlugins({
           </Text>
           <Text>{fp.text}</Text>
           <Text dimColor>
-            Flagged on {fp.flaggedAt ? new Date(fp.flaggedAt).toLocaleDateString() : 'unknown'}
+            Flagged on{' '}
+            {fp.flaggedAt
+              ? new Date(fp.flaggedAt).toLocaleDateString()
+              : 'unknown'}
           </Text>
         </Box>
 

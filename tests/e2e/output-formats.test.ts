@@ -133,8 +133,8 @@ async function runHeadless(options: HeadlessOptions): Promise<HeadlessResult> {
       case 'stream-json': {
         const lines = (stdout as string)
           .split('\n')
-          .filter((l) => l.trim().length > 0)
-        parsed = lines.map((l) => {
+          .filter(l => l.trim().length > 0)
+        parsed = lines.map(l => {
           try {
             return JSON.parse(l)
           } catch {
@@ -172,9 +172,7 @@ function filterMessages(
   )
 }
 
-function getResultMessage(
-  parsed: unknown,
-): Record<string, unknown> | null {
+function getResultMessage(parsed: unknown): Record<string, unknown> | null {
   const results = filterMessages(parsed, 'result')
   return results.length > 0 ? results[results.length - 1] : null
 }
@@ -259,7 +257,7 @@ describe('Output Formats', () => {
     expect(Array.isArray(parsed)).toBe(true)
     expect(parsed.length).toBeGreaterThan(1)
 
-    const types = parsed.map((m) => m.type)
+    const types = parsed.map(m => m.type)
     expect(types).toContain('assistant')
     expect(types).toContain('result')
   })

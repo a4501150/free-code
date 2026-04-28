@@ -29,18 +29,9 @@ declare module 'proper-lockfile' {
     file: string,
     options?: LockOptions,
   ): Promise<() => Promise<void>>
-  export function lockSync(
-    file: string,
-    options?: LockOptions,
-  ): () => void
-  export function unlock(
-    file: string,
-    options?: UnlockOptions,
-  ): Promise<void>
+  export function lockSync(file: string, options?: LockOptions): () => void
+  export function unlock(file: string, options?: UnlockOptions): Promise<void>
   export function unlockSync(file: string, options?: UnlockOptions): void
-  export function check(
-    file: string,
-    options?: CheckOptions,
-  ): Promise<boolean>
+  export function check(file: string, options?: CheckOptions): Promise<boolean>
   export function checkSync(file: string, options?: CheckOptions): boolean
 }

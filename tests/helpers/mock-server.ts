@@ -45,10 +45,10 @@ export class MockAnthropicServer {
   }
 
   async start(): Promise<{ port: number; url: string }> {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       this.server = Bun.serve({
         port: 0, // OS-assigned
-        fetch: async (req) => {
+        fetch: async req => {
           return this.handleRequest(req)
         },
       })

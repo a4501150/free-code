@@ -31,7 +31,7 @@ const test = createLoggingTest(bunTest)
  * Lines with only 2 │ (left + right border, no divider) don't count.
  */
 function countDividerLines(lines: string[]): number {
-  return lines.filter((line) => {
+  return lines.filter(line => {
     const matches = [...line.matchAll(/│/g)]
     return matches.length >= 3
   }).length

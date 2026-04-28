@@ -6,7 +6,10 @@
  */
 
 import { getProviderRegistry } from './providerRegistry.js'
-import { getDefaultMainLoopModel, parseUserSpecifiedModel } from './modelResolution.js'
+import {
+  getDefaultMainLoopModel,
+  parseUserSpecifiedModel,
+} from './modelResolution.js'
 import type { ModelName, ModelSetting } from './modelTypes.js'
 import { stripProviderPrefix } from './parseModelStringWithRegistry.js'
 
@@ -60,9 +63,7 @@ export function renderModelSetting(setting: string): string {
   return renderModelName(setting)
 }
 
-export function renderDefaultModelSetting(
-  setting: string,
-): string {
+export function renderDefaultModelSetting(setting: string): string {
   return renderModelName(parseUserSpecifiedModel(setting))
 }
 

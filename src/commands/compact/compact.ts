@@ -31,9 +31,7 @@ import {
   type SystemPrompt,
 } from '../../utils/systemPrompt.js'
 
-const reactiveCompact = feature('REACTIVE_COMPACT')
-  ? reactiveCompactNs
-  : null
+const reactiveCompact = feature('REACTIVE_COMPACT') ? reactiveCompactNs : null
 
 export const call: LocalCommandCall = async (args, context) => {
   const { abortController } = context
@@ -205,7 +203,8 @@ async function compactViaReactive(
     // — both callers (here and tryReactiveCompact) run PreCompact outside so
     // they can merge its userDisplayMessage with PostCompact's here. This
     // caller additionally runs it concurrently with getCacheSharingParams.
-    const outcomeResult = (outcome as unknown as { result: CompactionResult }).result
+    const outcomeResult = (outcome as unknown as { result: CompactionResult })
+      .result
     const combinedMessage =
       [hookResult.userDisplayMessage, outcomeResult.userDisplayMessage]
         .filter(Boolean)

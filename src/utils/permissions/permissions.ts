@@ -58,8 +58,12 @@ import {
 import * as classifierDecisionNs from './classifierDecision.js'
 import * as autoModeStateNs from './autoModeState.js'
 
-const classifierDecisionModule = feature('TRANSCRIPT_CLASSIFIER') ? classifierDecisionNs : null
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER') ? autoModeStateNs : null
+const classifierDecisionModule = feature('TRANSCRIPT_CLASSIFIER')
+  ? classifierDecisionNs
+  : null
+const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
+  ? autoModeStateNs
+  : null
 
 import {
   addToTurnClassifierDuration,
@@ -93,7 +97,6 @@ import {
   classifyYoloAction,
   formatActionForClassifier,
 } from './yoloClassifier.js'
-
 
 const PERMISSION_RULE_SOURCES = [
   ...SETTING_SOURCES,

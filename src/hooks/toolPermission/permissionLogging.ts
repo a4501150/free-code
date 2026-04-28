@@ -89,8 +89,7 @@ function baseMetadata(
   waitMs: number | undefined,
 ): { [key: string]: string | boolean | number | undefined } {
   return {
-    messageID:
-      messageId,
+    messageID: messageId,
     toolName: toolName,
     sandboxEnabled: SandboxManager.isSandboxingEnabled(),
     // Only include wait time when the user was actually prompted (not auto-approved)

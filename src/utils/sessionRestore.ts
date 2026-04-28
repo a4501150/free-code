@@ -80,7 +80,6 @@ export function restoreSessionStateFromLog(
     })
   }
 
-
   // Restore context-collapse commit log + staged snapshot. Must run before
   // the first query() so projectView() can rebuild the collapsed view from
   // the resumed Message[]. Called unconditionally (even with
@@ -93,7 +92,6 @@ export function restoreSessionStateFromLog(
       result.contextCollapseSnapshot,
     )
   }
-
 }
 
 /**

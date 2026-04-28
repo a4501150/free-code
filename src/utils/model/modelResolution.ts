@@ -6,30 +6,30 @@
  * generation (that lives in modelDisplay.ts).
  */
 
-import { getMainLoopModelOverride } from "../../bootstrap/state.js";
-import type { PermissionMode } from "../permissions/PermissionMode.js";
-import { getProviderRegistry } from "./providerRegistry.js";
-import type { ModelName, ModelSetting } from "./modelTypes.js";
-import { qualifyModel, stripContextSuffix } from "./parseModelString.js";
-import { parseModelStringFromRegistry } from "./parseModelStringWithRegistry.js";
-import { getInitialSettings } from "../settings/settings.js";
+import { getMainLoopModelOverride } from '../../bootstrap/state.js'
+import type { PermissionMode } from '../permissions/PermissionMode.js'
+import { getProviderRegistry } from './providerRegistry.js'
+import type { ModelName, ModelSetting } from './modelTypes.js'
+import { qualifyModel, stripContextSuffix } from './parseModelString.js'
+import { parseModelStringFromRegistry } from './parseModelStringWithRegistry.js'
+import { getInitialSettings } from '../settings/settings.js'
 
 // Re-export types from modelTypes for backward compat
-export type { ModelShortName, ModelName, ModelSetting } from "./modelTypes.js";
+export type { ModelShortName, ModelName, ModelSetting } from './modelTypes.js'
 
 export function getSmallFastModel(): ModelName {
   // Priority: env var > freecode.json defaultSmallFastModel > defaultModel
   if (process.env.ANTHROPIC_SMALL_FAST_MODEL) {
     return qualifyWithDefault(
       stripContextSuffix(process.env.ANTHROPIC_SMALL_FAST_MODEL),
-    );
+    )
   }
-  const configured = getProviderRegistry().getConfiguredDefaultSmallFastModel();
+  const configured = getProviderRegistry().getConfiguredDefaultSmallFastModel()
   if (configured) {
-    return configured as ModelName;
+    return configured as ModelName
   }
   // Fall back to the main default model (no separate "haiku" fallback)
-  return getDefaultMainLoopModel();
+  return getDefaultMainLoopModel()
 }
 
 /**
@@ -45,24 +45,24 @@ export function getSmallFastModel(): ModelName {
  * 4. Settings (from user's saved settings)
  */
 export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
-  let specifiedModel: ModelSetting | undefined;
+  let specifiedModel: ModelSetting | undefined
 
-  const modelOverride = getMainLoopModelOverride();
+  const modelOverride = getMainLoopModelOverride()
   if (modelOverride !== undefined) {
     // Session override from /model command or --model flag — highest priority
-    specifiedModel = modelOverride;
+    specifiedModel = modelOverride
   } else {
     // Priority: env var > freecode.json defaultModel
-    const envModel = process.env.ANTHROPIC_MODEL;
+    const envModel = process.env.ANTHROPIC_MODEL
     if (envModel) {
-      specifiedModel = stripContextSuffix(envModel);
+      specifiedModel = stripContextSuffix(envModel)
     } else {
-      const registry = getProviderRegistry();
-      specifiedModel = registry.getConfiguredDefaultModel() || undefined;
+      const registry = getProviderRegistry()
+      specifiedModel = registry.getConfiguredDefaultModel() || undefined
     }
   }
 
-  return specifiedModel;
+  return specifiedModel
 }
 
 /**
@@ -78,11 +78,11 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
  * @returns The resolved model name to use
  */
 export function getMainLoopModel(): ModelName {
-  const model = getUserSpecifiedModelSetting();
+  const model = getUserSpecifiedModelSetting()
   if (model !== undefined && model !== null) {
-    return parseUserSpecifiedModel(model);
+    return parseUserSpecifiedModel(model)
   }
-  return getDefaultMainLoopModel();
+  return getDefaultMainLoopModel()
 }
 
 /**
@@ -90,11 +90,11 @@ export function getMainLoopModel(): ModelName {
  * If the model is already qualified, returns it as-is.
  */
 function qualifyWithDefault(bareModelId: string): ModelName {
-  const registry = getProviderRegistry();
-  const parsed = parseModelStringFromRegistry(bareModelId);
+  const registry = getProviderRegistry()
+  const parsed = parseModelStringFromRegistry(bareModelId)
   // Use the parsed provider if it was explicitly qualified, otherwise use default
-  const provider = parsed.provider || registry.getDefaultProviderName() || "";
-  return qualifyModel(provider, parsed.modelId);
+  const provider = parsed.provider || registry.getDefaultProviderName() || ''
+  return qualifyModel(provider, parsed.modelId)
 }
 
 /**
@@ -102,21 +102,21 @@ function qualifyWithDefault(bareModelId: string): ModelName {
  * If planModeModel is configured, uses it in plan mode.
  */
 export function getRuntimeMainLoopModel(params: {
-  permissionMode: PermissionMode;
-  mainLoopModel: string;
-  exceeds200kTokens?: boolean;
+  permissionMode: PermissionMode
+  mainLoopModel: string
+  exceeds200kTokens?: boolean
 }): ModelName {
-  const { permissionMode, mainLoopModel, exceeds200kTokens = false } = params;
+  const { permissionMode, mainLoopModel, exceeds200kTokens = false } = params
 
   // If planModeModel is configured and we're in plan mode, use it
-  if (permissionMode === "plan" && !exceeds200kTokens) {
-    const planModel = getInitialSettings().planModeModel;
+  if (permissionMode === 'plan' && !exceeds200kTokens) {
+    const planModel = getInitialSettings().planModeModel
     if (planModel) {
-      return parseUserSpecifiedModel(planModel);
+      return parseUserSpecifiedModel(planModel)
     }
   }
 
-  return mainLoopModel;
+  return mainLoopModel
 }
 
 /**
@@ -125,20 +125,20 @@ export function getRuntimeMainLoopModel(params: {
  * Returns freecode.json defaultModel, or the first model ID from the registry.
  */
 export function getDefaultMainLoopModelSetting(): ModelName | string {
-  const registry = getProviderRegistry();
-  const configured = registry.getConfiguredDefaultModel();
+  const registry = getProviderRegistry()
+  const configured = registry.getConfiguredDefaultModel()
   if (configured) {
-    return configured;
+    return configured
   }
   // Fall back to first model in the registry
-  const allModels = registry.getAllModels();
+  const allModels = registry.getAllModels()
   if (allModels.length > 0) {
-    const first = allModels[0]!;
-    return qualifyModel(first.providerName, first.model.id);
+    const first = allModels[0]!
+    return qualifyModel(first.providerName, first.model.id)
   }
   throw new Error(
     'No models are configured in the provider registry. Configure at least one provider model or set a default model.',
-  );
+  )
 }
 
 /**
@@ -146,7 +146,7 @@ export function getDefaultMainLoopModelSetting(): ModelName | string {
  * (bypassing any user-specified values).
  */
 export function getDefaultMainLoopModel(): ModelName {
-  return parseUserSpecifiedModel(getDefaultMainLoopModelSetting());
+  return parseUserSpecifiedModel(getDefaultMainLoopModelSetting())
 }
 
 /**
@@ -154,12 +154,12 @@ export function getDefaultMainLoopModel(): ModelName {
  * Qualifies bare model IDs with the default provider prefix.
  */
 export function parseUserSpecifiedModel(modelInput: string): ModelName {
-  const parsed = parseModelStringFromRegistry(modelInput);
+  const parsed = parseModelStringFromRegistry(modelInput)
   // Return the qualified string, preserving original case for custom model
   // names (e.g., Azure Foundry deployment IDs)
-  return qualifyModel(parsed.provider, parsed.modelId);
+  return qualifyModel(parsed.provider, parsed.modelId)
 }
 
 export function normalizeModelStringForAPI(model: string): string {
-  return parseModelStringFromRegistry(model).modelId;
+  return parseModelStringFromRegistry(model).modelId
 }

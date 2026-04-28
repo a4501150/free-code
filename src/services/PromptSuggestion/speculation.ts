@@ -125,8 +125,7 @@ function logSpeculation(
   messages: Message[],
   boundary: CompletionBoundary | null,
   extras?: Record<string, string | number | boolean | undefined>,
-): void {
-}
+): void {}
 
 function countToolsInMessages(messages: Message[]): number {
   const blocks = messages
@@ -672,12 +671,8 @@ export async function startSpeculation(
       null,
       {
         error_type: error instanceof Error ? error.name : 'Unknown',
-        error_message: errorMessage(error).slice(
-          0,
-          200,
-        ),
-        error_phase:
-          'start',
+        error_message: errorMessage(error).slice(0, 200),
+        error_phase: 'start',
         is_pipelined: isPipelined,
       },
     )
@@ -946,12 +941,8 @@ export async function handleSpeculationAccept(
       speculationState.boundary,
       {
         error_type: error instanceof Error ? error.name : 'Unknown',
-        error_message: errorMessage(error).slice(
-          0,
-          200,
-        ),
-        error_phase:
-          'accept',
+        error_message: errorMessage(error).slice(0, 200),
+        error_phase: 'accept',
         is_pipelined: speculationState.isPipelined,
       },
     )

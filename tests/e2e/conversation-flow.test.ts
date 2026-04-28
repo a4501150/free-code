@@ -88,7 +88,7 @@ describe('Conversation Flow E2E', () => {
       expect(Array.isArray(tools)).toBe(true)
       expect(tools.length).toBeGreaterThan(0)
 
-      const toolNames = tools.map((t) => t.name)
+      const toolNames = tools.map(t => t.name)
       expect(toolNames).toContain('Bash')
       expect(toolNames).toContain('Read')
       expect(toolNames).toContain('Edit')
@@ -127,10 +127,7 @@ describe('Conversation Flow E2E', () => {
             type: string
             tool_use_id?: string
           }>) {
-            if (
-              block.type === 'tool_result' &&
-              block.tool_use_id === toolId
-            ) {
+            if (block.type === 'tool_result' && block.tool_use_id === toolId) {
               foundToolResult = true
             }
           }
@@ -227,12 +224,8 @@ describe('Conversation Flow E2E', () => {
 
     test('two sequential tool calls', async () => {
       server.reset([
-        toolUseResponse([
-          { name: 'Bash', input: { command: 'echo "step1"' } },
-        ]),
-        toolUseResponse([
-          { name: 'Bash', input: { command: 'echo "step2"' } },
-        ]),
+        toolUseResponse([{ name: 'Bash', input: { command: 'echo "step1"' } }]),
+        toolUseResponse([{ name: 'Bash', input: { command: 'echo "step2"' } }]),
         textResponse('Completed both steps: step1 and step2'),
       ])
       session = new TmuxSession({ serverUrl: server.url })
@@ -246,15 +239,9 @@ describe('Conversation Flow E2E', () => {
 
     test('three-turn chain', async () => {
       server.reset([
-        toolUseResponse([
-          { name: 'Bash', input: { command: 'echo "a"' } },
-        ]),
-        toolUseResponse([
-          { name: 'Bash', input: { command: 'echo "b"' } },
-        ]),
-        toolUseResponse([
-          { name: 'Bash', input: { command: 'echo "c"' } },
-        ]),
+        toolUseResponse([{ name: 'Bash', input: { command: 'echo "a"' } }]),
+        toolUseResponse([{ name: 'Bash', input: { command: 'echo "b"' } }]),
+        toolUseResponse([{ name: 'Bash', input: { command: 'echo "c"' } }]),
         textResponse('All three commands completed: a, b, c'),
       ])
       session = new TmuxSession({ serverUrl: server.url })
@@ -293,14 +280,14 @@ describe('Conversation Flow E2E', () => {
         content: unknown
       }>
 
-      const toolResultMsg = messages.find((m) => {
+      const toolResultMsg = messages.find(m => {
         if (m.role !== 'user') return false
         const content = m.content as Array<{
           type: string
           tool_use_id?: string
         }>
         return content?.some(
-          (c) => c.type === 'tool_result' && c.tool_use_id === toolId,
+          c => c.type === 'tool_result' && c.tool_use_id === toolId,
         )
       })
 
@@ -309,9 +296,7 @@ describe('Conversation Flow E2E', () => {
 
     test('message ordering preserved across turns', async () => {
       server.reset([
-        toolUseResponse([
-          { name: 'Bash', input: { command: 'echo "first"' } },
-        ]),
+        toolUseResponse([{ name: 'Bash', input: { command: 'echo "first"' } }]),
         toolUseResponse([
           { name: 'Bash', input: { command: 'echo "second"' } },
         ]),
@@ -375,12 +360,8 @@ describe('Conversation Flow E2E', () => {
 
     test('max-turns=3 allows multi-turn chain', async () => {
       server.reset([
-        toolUseResponse([
-          { name: 'Bash', input: { command: 'echo "turn1"' } },
-        ]),
-        toolUseResponse([
-          { name: 'Bash', input: { command: 'echo "turn2"' } },
-        ]),
+        toolUseResponse([{ name: 'Bash', input: { command: 'echo "turn1"' } }]),
+        toolUseResponse([{ name: 'Bash', input: { command: 'echo "turn2"' } }]),
         textResponse('Completed within 3 turns'),
       ])
       session = new TmuxSession({
@@ -479,10 +460,9 @@ describe('Conversation Flow E2E', () => {
 
     test('thinking followed by tool use', async () => {
       server.reset([
-        thinkingToolUseResponse(
-          'I need to check the filesystem first.',
-          [{ name: 'Bash', input: { command: 'ls -la' } }],
-        ),
+        thinkingToolUseResponse('I need to check the filesystem first.', [
+          { name: 'Bash', input: { command: 'ls -la' } },
+        ]),
         textResponse('Listed the directory contents.'),
       ])
       session = new TmuxSession({

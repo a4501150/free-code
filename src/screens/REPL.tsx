@@ -373,16 +373,14 @@ import * as useProactiveNs from '../proactive/useProactive.js'
 import * as useScheduledTasksNs from '../hooks/useScheduledTasks.js'
 // Dead code elimination: conditional import for loop mode
 /* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule =
-  feature('KAIROS')
-    ? require('../proactive/index.js')
-    : null
+const proactiveModule = feature('KAIROS')
+  ? require('../proactive/index.js')
+  : null
 /* eslint-enable @typescript-eslint/no-require-imports */
 const PROACTIVE_NO_OP_SUBSCRIBE = (_cb: () => void) => () => {}
 const PROACTIVE_FALSE = () => false
 const SUGGEST_BG_PR_NOOP = (_p: string, _n: string): boolean => false
-const useProactive =
-  feature('KAIROS') ? useProactiveNs.useProactive : null
+const useProactive = feature('KAIROS') ? useProactiveNs.useProactive : null
 const useScheduledTasks = feature('AGENT_TRIGGERS')
   ? useScheduledTasksNs.useScheduledTasks
   : null
@@ -942,10 +940,7 @@ export function REPL({
   const [localCommands, setLocalCommands] = useState(initialCommands)
 
   // Watch for skill file changes and reload all commands
-  useSkillsChange(
-    getProjectRoot(),
-    setLocalCommands,
-  )
+  useSkillsChange(getProjectRoot(), setLocalCommands)
 
   // Track proactive mode for tools dependency - SleepTool filters by proactive state
   const proactiveActive = React.useSyncExternalStore(
@@ -1112,10 +1107,7 @@ export function REPL({
   )
 
   useIdeLogging(mcp.clients)
-  useIdeSelection(
-    mcp.clients,
-    setIDESelection,
-  )
+  useIdeSelection(mcp.clients, setIDESelection)
 
   const [streamMode, setStreamMode] = useState<SpinnerMode>('responding')
   // Ref mirror so onSubmit can read the latest value without adding
@@ -1716,9 +1708,7 @@ export function REPL({
   })
 
   // Use whichever remote mode is active
-  const activeRemote = sshRemote.isRemoteMode
-    ? sshRemote
-    : directConnect
+  const activeRemote = sshRemote.isRemoteMode ? sshRemote : directConnect
 
   const [pastedContents, setPastedContents] = useState<
     Record<number, PastedContent>
@@ -2023,7 +2013,6 @@ export function REPL({
     elicitation.queue.length > 0 ||
     workerSandboxPermissions.queue.length > 0
 
-
   // Initialize IDE integration
   useIDEIntegration({
     autoConnectIdeFlag,
@@ -2066,9 +2055,8 @@ export function REPL({
               getActiveAgentsFromList,
             } = loadAgentsDirNs
             getAgentDefinitionsWithOverrides.cache.clear?.()
-            const freshAgentDefs = await getAgentDefinitionsWithOverrides(
-              getOriginalCwd(),
-            )
+            const freshAgentDefs =
+              await getAgentDefinitionsWithOverrides(getOriginalCwd())
 
             setAppState(prev => ({
               ...prev,
@@ -2245,7 +2233,6 @@ export function REPL({
 
         // Clear input to ensure no residual state
         setInputValue('')
-
       } catch (error) {
         throw error
       }
@@ -2678,7 +2665,6 @@ export function REPL({
             resolvePromise: resolveOnce,
           },
         ])
-
       })
     },
     [setAppState, store],
@@ -3336,7 +3322,7 @@ export function REPL({
           freshMcpClients,
           isScratchpadEnabled() ? getScratchpadDir() : undefined,
         ),
-        ...((feature('KAIROS')) &&
+        ...(feature('KAIROS') &&
         proactiveModule?.isProactiveActive() &&
         !terminalFocusRef.current
           ? {
@@ -3439,7 +3425,6 @@ export function REPL({
       // Returns null if already running — no separate check-then-set.
       const thisGeneration = queryGuard.tryStart()
       if (thisGeneration === null) {
-
         // Extract and enqueue user message text, skipping meta messages
         // (e.g. expanded skill content, tick prompts) that should not be
         // replayed as user-visible text.
@@ -6026,7 +6011,6 @@ export function REPL({
                       onResponse={handleLspResponse}
                     />
                   )}
-
 
                 {mrRender()}
 

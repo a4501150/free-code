@@ -27,8 +27,8 @@ export function TruncationIndicator({
   return (
     <MessageResponse height={1}>
       <Text color="error" dimColor>
-        ⚠ Response truncated: {label}. Raise `maxOutputTokens` in
-        freecode.json to continue.
+        ⚠ Response truncated: {label}. Raise `maxOutputTokens` in freecode.json
+        to continue.
       </Text>
     </MessageResponse>
   )

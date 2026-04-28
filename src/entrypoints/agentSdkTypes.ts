@@ -374,4 +374,3 @@ export type InboundPrompt = {
   content: string | unknown[]
   uuid?: string
 }
-

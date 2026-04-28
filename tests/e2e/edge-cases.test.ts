@@ -5,7 +5,14 @@
  * through the full interactive REPL.
  */
 
-import { describe, test as bunTest, expect, beforeAll, afterAll, afterEach } from 'bun:test'
+import {
+  describe,
+  test as bunTest,
+  expect,
+  beforeAll,
+  afterAll,
+  afterEach,
+} from 'bun:test'
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
@@ -38,7 +45,9 @@ describe('Edge Cases', () => {
       await session.start()
 
       // No tool use — just a text response, no permission needed
-      await session.submitAndWaitForResponse('Test with "double quotes" and backslashes')
+      await session.submitAndWaitForResponse(
+        'Test with "double quotes" and backslashes',
+      )
 
       // Verify the prompt was sent correctly to the API
       const log = server.getRequestLog()

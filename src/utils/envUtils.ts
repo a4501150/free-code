@@ -112,7 +112,6 @@ export function shouldMaintainProjectWorkingDir(): boolean {
   return isEnvTruthy(process.env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR)
 }
 
-
 // @[MODEL LAUNCH]: Add a Vertex region override env var for the new model.
 /**
  * Model prefix → env var for Vertex region overrides.

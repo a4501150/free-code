@@ -1197,7 +1197,6 @@ export async function performMCPOAuthFlow(
         )
         logMCPDebug(serverName, `Token expires_in: ${savedTokens.expires_in}`)
       }
-
     } else {
       throw new Error('Unexpected auth result: ' + result)
     }
@@ -1612,7 +1611,10 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
 
     // Return current tokens (may be expired if refresh failed or not needed yet)
     if (!tokenData.accessToken) {
-      logMCPDebug(this.serverName, `No access token cached — returning undefined`)
+      logMCPDebug(
+        this.serverName,
+        `No access token cached — returning undefined`,
+      )
       return undefined
     }
     const tokens: OAuthTokens = {
@@ -2113,8 +2115,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
     const emitRefreshEvent = (
       outcome: 'success' | 'failure',
       reason?: MCPRefreshFailureReason,
-    ): void => {
-    }
+    ): void => {}
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {

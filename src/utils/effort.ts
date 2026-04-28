@@ -85,7 +85,12 @@ export function parseEffortValue(value: unknown): EffortValue | undefined {
 export function toPersistableEffort(
   value: EffortValue | undefined,
 ): EffortLevel | undefined {
-  if (value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh') {
+  if (
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh'
+  ) {
     return value
   }
   if (value === 'max' && (getInitialSettings()?.numericEffort ?? false)) {
@@ -149,7 +154,10 @@ export function resolveAppliedEffort(
   }
   const selectedEffort = getSelectedEffortForModel(model)
   const resolved =
-    envOverride ?? appStateEffortValue ?? selectedEffort ?? getDefaultEffortForModel(model)
+    envOverride ??
+    appStateEffortValue ??
+    selectedEffort ??
+    getDefaultEffortForModel(model)
   // API rejects 'max' on non-Opus-4.6 models — downgrade to 'high'.
   if (resolved === 'max' && !modelSupportsMaxEffort(model)) {
     return 'high'
@@ -206,7 +214,10 @@ export function convertEffortValueToLevel(value: EffortValue): EffortLevel {
     // rather than passing them through unchecked.
     return isEffortLevel(value) ? value : 'high'
   }
-  if ((getInitialSettings()?.numericEffort ?? false) && typeof value === 'number') {
+  if (
+    (getInitialSettings()?.numericEffort ?? false) &&
+    typeof value === 'number'
+  ) {
     if (value <= 50) return 'low'
     if (value <= 85) return 'medium'
     if (value <= 100) return 'high'
@@ -243,7 +254,10 @@ export function getEffortLevelDescription(level: EffortLevel): string {
  * @returns Human-readable description
  */
 export function getEffortValueDescription(value: EffortValue): string {
-  if ((getInitialSettings()?.numericEffort ?? false) && typeof value === 'number') {
+  if (
+    (getInitialSettings()?.numericEffort ?? false) &&
+    typeof value === 'number'
+  ) {
     return `Numeric effort value of ${value}`
   }
 

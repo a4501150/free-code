@@ -151,7 +151,6 @@ async function handleSessionFileAccess(
   // Memdir access tracking
   const filePath = getFilePathFromInput(input.tool_name, input.tool_input)
   if (filePath && isAutoMemFile(filePath)) {
-
     switch (input.tool_name) {
       case FILE_READ_TOOL_NAME:
         break
@@ -164,7 +163,6 @@ async function handleSessionFileAccess(
 
   // Team memory access tracking
   if (feature('TEAMMEM') && filePath && teamMemPaths!.isTeamMemFile(filePath)) {
-
     switch (input.tool_name) {
       case FILE_READ_TOOL_NAME:
         break

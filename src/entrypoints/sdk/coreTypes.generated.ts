@@ -78,7 +78,9 @@ export type HookEvent = z.infer<ReturnType<typeof HookEventSchema>>
 
 export type ModelUsage = z.infer<ReturnType<typeof ModelUsageSchema>>
 
-export type PermissionUpdate = z.infer<ReturnType<typeof PermissionUpdateSchema>>
+export type PermissionUpdate = z.infer<
+  ReturnType<typeof PermissionUpdateSchema>
+>
 
 // SDKAssistantMessageError is the *reason* enum on the wire; it has always
 // been a string like 'rate_limit' or 'server_error' despite past types
@@ -95,9 +97,13 @@ export type SDKAssistantMessageError = SDKAssistantErrorReason
 
 export type SDKStatus = z.infer<ReturnType<typeof SDKStatusSchema>>
 
-export type SDKRateLimitInfo = z.infer<ReturnType<typeof SDKRateLimitInfoSchema>>
+export type SDKRateLimitInfo = z.infer<
+  ReturnType<typeof SDKRateLimitInfoSchema>
+>
 
-export type SDKAssistantMessage = z.infer<ReturnType<typeof SDKAssistantMessageSchema>>
+export type SDKAssistantMessage = z.infer<
+  ReturnType<typeof SDKAssistantMessageSchema>
+>
 
 export type SDKPartialAssistantMessage = z.infer<
   ReturnType<typeof SDKPartialAssistantMessageSchema>
@@ -109,15 +115,21 @@ export type SDKUserMessageReplay = z.infer<
   ReturnType<typeof SDKUserMessageReplaySchema>
 >
 
-export type SDKResultMessage = z.infer<ReturnType<typeof SDKResultMessageSchema>>
+export type SDKResultMessage = z.infer<
+  ReturnType<typeof SDKResultMessageSchema>
+>
 
-export type SDKSystemMessage = z.infer<ReturnType<typeof SDKSystemMessageSchema>>
+export type SDKSystemMessage = z.infer<
+  ReturnType<typeof SDKSystemMessageSchema>
+>
 
 export type SDKCompactBoundaryMessage = z.infer<
   ReturnType<typeof SDKCompactBoundaryMessageSchema>
 >
 
-export type SDKStatusMessage = z.infer<ReturnType<typeof SDKStatusMessageSchema>>
+export type SDKStatusMessage = z.infer<
+  ReturnType<typeof SDKStatusMessageSchema>
+>
 
 export type SDKToolProgressMessage = z.infer<
   ReturnType<typeof SDKToolProgressMessageSchema>
@@ -234,14 +246,20 @@ export type AsyncHookJSONOutput = z.infer<
 export type PermissionResult =
   | { behavior: 'allow'; updatedInput?: Record<string, unknown> }
   | { behavior: 'deny'; message?: string }
-  | { behavior: 'ask'; updatedInput?: Record<string, unknown>; message?: string }
+  | {
+      behavior: 'ask'
+      updatedInput?: Record<string, unknown>
+      message?: string
+    }
 
 export type ModelInfo = z.infer<ReturnType<typeof ModelInfoSchema>>
 export type McpServerConfigForProcessTransport = z.infer<
   ReturnType<typeof McpServerConfigForProcessTransportSchema>
 >
 export type McpServerStatus = z.infer<ReturnType<typeof McpServerStatusSchema>>
-export type RewindFilesResult = z.infer<ReturnType<typeof RewindFilesResultSchema>>
+export type RewindFilesResult = z.infer<
+  ReturnType<typeof RewindFilesResultSchema>
+>
 
 // ---------------------------------------------------------------------------
 // Legacy shapes retained for type-only consumers that hit `[key: string]`

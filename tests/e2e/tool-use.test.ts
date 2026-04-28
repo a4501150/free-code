@@ -54,9 +54,9 @@ function getToolResults(
       is_error?: boolean
     }>
   }>
-  const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')
+  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')
   if (!lastUserMsg || !Array.isArray(lastUserMsg.content)) return []
-  return lastUserMsg.content.filter((c) => c.type === 'tool_result') as Array<{
+  return lastUserMsg.content.filter(c => c.type === 'tool_result') as Array<{
     type: string
     tool_use_id: string
     content: unknown
@@ -126,9 +126,7 @@ describe('Tool Use E2E', () => {
 
     test('failed command sets is_error', async () => {
       server.reset([
-        toolUseResponse([
-          { name: 'Bash', input: { command: 'exit 1' } },
-        ]),
+        toolUseResponse([{ name: 'Bash', input: { command: 'exit 1' } }]),
         textResponse('Command failed'),
       ])
 
@@ -167,9 +165,7 @@ describe('Tool Use E2E', () => {
       )
 
       server.reset([
-        toolUseResponse([
-          { name: 'Read', input: { file_path: testFile } },
-        ]),
+        toolUseResponse([{ name: 'Read', input: { file_path: testFile } }]),
         textResponse('File read successfully'),
       ])
 
@@ -203,16 +199,11 @@ describe('Tool Use E2E', () => {
       await session.start()
 
       const testFile = join(session.cwd, 'test-edit.txt')
-      await writeFile(
-        testFile,
-        'The quick brown fox jumps over the lazy dog.',
-      )
+      await writeFile(testFile, 'The quick brown fox jumps over the lazy dog.')
 
       // Read first (required before Edit), then Edit, then text
       server.reset([
-        toolUseResponse([
-          { name: 'Read', input: { file_path: testFile } },
-        ]),
+        toolUseResponse([{ name: 'Read', input: { file_path: testFile } }]),
         toolUseResponse([
           {
             name: 'Edit',
@@ -265,8 +256,7 @@ describe('Tool Use E2E', () => {
             name: 'Write',
             input: {
               file_path: newFile,
-              content:
-                'This file was created by the Write tool.\nSecond line.',
+              content: 'This file was created by the Write tool.\nSecond line.',
             },
           },
         ]),
@@ -285,9 +275,7 @@ describe('Tool Use E2E', () => {
 
       // Verify the file exists on disk with expected content
       const fileContent = await readFile(newFile, 'utf-8')
-      expect(fileContent).toContain(
-        'This file was created by the Write tool.',
-      )
+      expect(fileContent).toContain('This file was created by the Write tool.')
       expect(fileContent).toContain('Second line.')
     })
   })
@@ -339,7 +327,7 @@ describe('Tool Use E2E', () => {
       }
 
       const allContent = toolResults
-        .map((tr) => resultContentString(tr))
+        .map(tr => resultContentString(tr))
         .join('\n')
       expect(allContent).toContain('parallel_bash_output')
       expect(allContent).toContain('parallel read content')
@@ -373,7 +361,7 @@ describe('Tool Use E2E', () => {
       const lastMsg = messages[messages.length - 1]
       expect(lastMsg.role).toBe('user')
       const content = lastMsg.content as Array<{ type: string }>
-      const toolResults = content.filter((c) => c.type === 'tool_result')
+      const toolResults = content.filter(c => c.type === 'tool_result')
       expect(toolResults.length).toBe(2)
     })
 
@@ -403,7 +391,7 @@ describe('Tool Use E2E', () => {
       }>
       const lastMsg = messages[messages.length - 1]
       const content = lastMsg.content as Array<{ type: string }>
-      const toolResults = content.filter((c) => c.type === 'tool_result')
+      const toolResults = content.filter(c => c.type === 'tool_result')
       expect(toolResults.length).toBe(3)
     })
 
@@ -435,7 +423,7 @@ describe('Tool Use E2E', () => {
         type: string
         is_error?: boolean
       }>
-      const toolResults = content.filter((c) => c.type === 'tool_result')
+      const toolResults = content.filter(c => c.type === 'tool_result')
       expect(toolResults.length).toBe(2)
     })
 
@@ -445,9 +433,7 @@ describe('Tool Use E2E', () => {
           { name: 'Bash', input: { command: 'echo "p1"' } },
           { name: 'Bash', input: { command: 'echo "p2"' } },
         ]),
-        toolUseResponse([
-          { name: 'Bash', input: { command: 'echo "seq"' } },
-        ]),
+        toolUseResponse([{ name: 'Bash', input: { command: 'echo "seq"' } }]),
         textResponse('All done: p1, p2, seq'),
       ])
 

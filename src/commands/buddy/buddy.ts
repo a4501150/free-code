@@ -1,8 +1,4 @@
-import {
-  companionUserId,
-  getCompanion,
-  roll,
-} from '../../buddy/companion.js'
+import { companionUserId, getCompanion, roll } from '../../buddy/companion.js'
 import { RARITY_STARS } from '../../buddy/types.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'

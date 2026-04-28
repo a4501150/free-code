@@ -648,5 +648,4 @@ function logForkAgentQueryEvent({
     totalInputTokens > 0
       ? totalUsage.cache_read_input_tokens / totalInputTokens
       : 0
-
 }

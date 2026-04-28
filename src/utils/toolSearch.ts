@@ -384,8 +384,7 @@ export async function isToolSearchEnabled(
     mode: ToolSearchMode,
     reason: string,
     extraProps?: Record<string, number>,
-  ): void {
-  }
+  ): void {}
 
   // Check if model supports tool_reference
   if (!modelSupportsToolReference(model)) {

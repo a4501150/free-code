@@ -96,11 +96,7 @@ export function createVertexFetch(
 
     // Copy through relevant headers
     if (initHeaders) {
-      for (const key of [
-        'x-app',
-        'User-Agent',
-        'X-Claude-Code-Session-Id',
-      ]) {
+      for (const key of ['x-app', 'User-Agent', 'X-Claude-Code-Session-Id']) {
         if (initHeaders[key]) {
           requestHeaders[key] = initHeaders[key]
         }

@@ -4,7 +4,10 @@ import { getAuthTokenSource } from '../../utils/auth.js'
 import { getGlobalClaudeFile } from '../../utils/env.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { getAgentModel } from '../../utils/model/agent.js'
-import { getMainLoopModel, getSmallFastModel } from '../../utils/model/modelResolution.js'
+import {
+  getMainLoopModel,
+  getSmallFastModel,
+} from '../../utils/model/modelResolution.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 import { getProjectsDir } from '../../utils/sessionStorage.js'
 
@@ -36,11 +39,15 @@ export const call: LocalCommandCall = async () => {
   const primaryModel = getMainLoopModel()
   const subagentModel = getAgentModel('inherit', primaryModel)
   const smallFastModel = getSmallFastModel()
-  const balancedModel = registry.getConfiguredDefaultBalancedModel() ?? '(inherit)'
+  const balancedModel =
+    registry.getConfiguredDefaultBalancedModel() ?? '(inherit)'
   const mostPowerfulModel =
     registry.getConfiguredDefaultMostPowerfulModel() ?? '(inherit)'
 
-  const runtime = typeof Bun !== 'undefined' ? `Bun ${Bun.version}` : `Node ${process.version}`
+  const runtime =
+    typeof Bun !== 'undefined'
+      ? `Bun ${Bun.version}`
+      : `Node ${process.version}`
 
   const sections: string[] = []
 

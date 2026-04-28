@@ -59,7 +59,6 @@ export type SpinnerAnimationRowProps = {
   // Thinking (state owned by parent, mode-dependent)
   thinkingStatus: 'thinking' | number | null
   effortSuffix: string
-
 }
 
 /**
@@ -235,7 +234,6 @@ export function SpinnerAnimationRow({
     wantsTimerAndTokens &&
     totalTokens > 0 &&
     availableSpace > usedAfterTimer + tokensWidth
-
 
   const thinkingOnly =
     showThinking &&

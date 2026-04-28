@@ -26,7 +26,11 @@ type AnthropicRequestBody = {
 describe('OpenAI Chat Completions adapter: thinking-block handling', () => {
   test('drops thinking blocks when translating to OpenAI messages', async () => {
     let capturedBody: {
-      messages?: Array<{ role: string; content: unknown; reasoning_content?: unknown }>
+      messages?: Array<{
+        role: string
+        content: unknown
+        reasoning_content?: unknown
+      }>
     } = {}
     const upstreamFetch = async (_url: string, init?: RequestInit) => {
       const body = init?.body
@@ -92,7 +96,7 @@ describe('OpenAI Chat Completions adapter: thinking-block handling', () => {
       }
 
       const messages = capturedBody.messages!
-      const assistantMsg = messages.find((m) => m.role === 'assistant')!
+      const assistantMsg = messages.find(m => m.role === 'assistant')!
       expect(assistantMsg).toBeDefined()
       // The thinking block's content MUST NOT appear anywhere in the
       // outbound assistant message. `reasoning_content` MUST NOT be set.

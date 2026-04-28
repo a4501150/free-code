@@ -65,12 +65,24 @@ export async function findModifiedFiles(
   outputsDir: string,
 ): Promise<string[]> {
   // Use recursive flag to get all entries in one call
-  let entries: { isSymbolicLink(): boolean; isFile(): boolean; name: string; parentPath?: string; path?: string }[]
+  let entries: {
+    isSymbolicLink(): boolean
+    isFile(): boolean
+    name: string
+    parentPath?: string
+    path?: string
+  }[]
   try {
-    entries = await fs.readdir(outputsDir, {
+    entries = (await fs.readdir(outputsDir, {
       withFileTypes: true,
       recursive: true,
-    }) as { isSymbolicLink(): boolean; isFile(): boolean; name: string; parentPath?: string; path?: string }[]
+    })) as {
+      isSymbolicLink(): boolean
+      isFile(): boolean
+      name: string
+      parentPath?: string
+      path?: string
+    }[]
   } catch {
     // Directory doesn't exist or is not accessible
     return []

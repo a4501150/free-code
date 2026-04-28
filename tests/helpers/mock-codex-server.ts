@@ -87,17 +87,14 @@ function encodeResponsesSSE(
           type: 'reasoning',
           id: response.reasoningId,
           encrypted_content: response.encryptedContent,
-          summary: [
-            { type: 'summary_text', text: response.reasoningText },
-          ],
+          summary: [{ type: 'summary_text', text: response.reasoningText }],
         },
       }),
     )
   }
 
   // Message block for text
-  const text =
-    response.kind === 'text' ? response.text : response.text
+  const text = response.kind === 'text' ? response.text : response.text
   parts.push(
     sseLines('response.output_item.added', {
       item: { type: 'message' },

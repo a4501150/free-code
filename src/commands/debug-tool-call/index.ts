@@ -1,9 +1,6 @@
 import * as React from 'react'
 import { DebugToolCallPicker } from './picker.js'
-import type {
-  Command,
-  LocalJSXCommandCall,
-} from '../../types/command.js'
+import type { Command, LocalJSXCommandCall } from '../../types/command.js'
 import {
   buildMessageLookups,
   normalizeMessages,
@@ -26,7 +23,8 @@ export function extractToolResultText(
   if (!resultMsg) return '(no result yet)'
   if (resultMsg.type !== 'user') return '(unexpected result message type)'
   const content = resultMsg.message.content
-  if (typeof content === 'string') return truncateString(content, MAX_RESULT_BYTES)
+  if (typeof content === 'string')
+    return truncateString(content, MAX_RESULT_BYTES)
   if (!Array.isArray(content)) return '(result has no content)'
   const parts: string[] = []
   for (const block of content) {
@@ -45,7 +43,10 @@ export function extractToolResultText(
       }
     }
   }
-  return truncateString(parts.join('\n').trim() || '(empty result)', MAX_RESULT_BYTES)
+  return truncateString(
+    parts.join('\n').trim() || '(empty result)',
+    MAX_RESULT_BYTES,
+  )
 }
 
 export function buildInspectionText(

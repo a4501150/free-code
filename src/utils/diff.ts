@@ -71,7 +71,6 @@ export function countLinesChanged(
 
   getLocCounter()?.add(numAdditions, { type: 'added' })
   getLocCounter()?.add(numRemovals, { type: 'removed' })
-
 }
 
 export function getPatchFromContents({

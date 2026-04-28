@@ -361,9 +361,7 @@ export function copyTextOf(msg: NavigableMessage): string {
     case 'collapsed_read_search':
       return msg.messages
         .flatMap(m =>
-          m.type === 'user'
-            ? [toolResultText(m as NormalizedUserMessage)]
-            : [],
+          m.type === 'user' ? [toolResultText(m as NormalizedUserMessage)] : [],
         )
         .filter(Boolean)
         .join('\n\n')

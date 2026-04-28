@@ -114,12 +114,32 @@ class TerminalPanel {
     // 5 spawnSync calls into 1.
     // biome-ignore format: one tmux command per line
     spawnSync('tmux', [
-      '-L', socket,
-      'bind-key', '-n', 'M-j', 'detach-client', ';',
-      'set-option', '-g', 'status-style', 'bg=default', ';',
-      'set-option', '-g', 'status-left', '', ';',
-      'set-option', '-g', 'status-right', ' Alt+J to return to Claude ', ';',
-      'set-option', '-g', 'status-right-style', 'fg=brightblack',
+      '-L',
+      socket,
+      'bind-key',
+      '-n',
+      'M-j',
+      'detach-client',
+      ';',
+      'set-option',
+      '-g',
+      'status-style',
+      'bg=default',
+      ';',
+      'set-option',
+      '-g',
+      'status-left',
+      '',
+      ';',
+      'set-option',
+      '-g',
+      'status-right',
+      ' Alt+J to return to Claude ',
+      ';',
+      'set-option',
+      '-g',
+      'status-right-style',
+      'fg=brightblack',
     ])
 
     if (!this.cleanupRegistered) {

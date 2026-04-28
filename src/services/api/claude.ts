@@ -77,9 +77,7 @@ import {
   stripToolReferenceBlocksFromUserMessage,
   stripUnsignedThinkingBlocks,
 } from '../../utils/messages.js'
-import {
-  getSmallFastModel,
-} from '../../utils/model/model.js'
+import { getSmallFastModel } from '../../utils/model/model.js'
 import {
   asSystemPrompt,
   type SystemPrompt,
@@ -360,7 +358,8 @@ function should1hCacheTTL(querySource?: QuerySource): boolean {
   // 3P Bedrock users get 1h TTL when opted in via env var — they manage their own billing
   // No remote gating needed since 3P users don't have remote config
   if (
-    getProviderRegistry().getDefaultProvider()?.config.type === 'bedrock-converse' &&
+    getProviderRegistry().getDefaultProvider()?.config.type ===
+      'bedrock-converse' &&
     isEnvTruthy(process.env.ENABLE_PROMPT_CACHING_1H_BEDROCK)
   ) {
     return true
@@ -371,8 +370,7 @@ function should1hCacheTTL(querySource?: QuerySource): boolean {
   // would bust the server-side prompt cache (~20K tokens per flip).
   let userEligible = getPromptCache1hEligible()
   if (userEligible === null) {
-    userEligible =
-      isClaudeAISubscriber() && !currentLimits.isUsingOverage
+    userEligible = isClaudeAISubscriber() && !currentLimits.isUsingOverage
     setPromptCache1hEligible(userEligible)
   }
   if (!userEligible) return false
@@ -381,7 +379,11 @@ function should1hCacheTTL(querySource?: QuerySource): boolean {
   // TTLs when the disk cache updates mid-request
   let allowlist = getPromptCache1hAllowlist()
   if (allowlist === null) {
-    allowlist = getInitialSettings()?.promptCache1hAllowlist ?? ['repl_main_thread*', 'sdk', 'auto_mode']
+    allowlist = getInitialSettings()?.promptCache1hAllowlist ?? [
+      'repl_main_thread*',
+      'sdk',
+      'auto_mode',
+    ]
     setPromptCache1hAllowlist(allowlist)
   }
 
@@ -965,7 +967,6 @@ async function* queryModel(
   StreamEvent | AssistantMessage | SystemAPIErrorMessage,
   void
 > {
-
   // Derive previous request ID from the last assistant message in this query chain.
   // This is scoped per message array (main thread, subagent, teammate each have their own),
   // so concurrent agents don't clobber each other's request chain tracking.
@@ -1088,8 +1089,13 @@ async function* queryModel(
   // Add tool search beta header if enabled - required for defer_loading to be accepted
   // Header differs by provider: 1P/Foundry use advanced-tool-use, Vertex/Bedrock use tool-search-tool
   // For Bedrock, this header must go in extraBodyParams, not the betas array
-  const toolSearchHeader = useToolSearch ? getToolSearchBetaHeader(options.model) : null
-  if (toolSearchHeader && !registry.getCapability(options.model, 'betasInBody')) {
+  const toolSearchHeader = useToolSearch
+    ? getToolSearchBetaHeader(options.model)
+    : null
+  if (
+    toolSearchHeader &&
+    !registry.getCapability(options.model, 'betasInBody')
+  ) {
     if (!betas.includes(toolSearchHeader)) {
       betas.push(toolSearchHeader)
     }
@@ -1417,13 +1423,15 @@ async function* queryModel(
     const betasParams = [...betas]
 
     // For providers with betasInBody, include both model-based betas and dynamically-added tool search header
-    const bedrockBetas =
-      registry.getCapability(retryContext.model, 'betasInBody')
-        ? [
-            ...getBodyBetas(retryContext.model),
-            ...(toolSearchHeader ? [toolSearchHeader] : []),
-          ]
-        : []
+    const bedrockBetas = registry.getCapability(
+      retryContext.model,
+      'betasInBody',
+    )
+      ? [
+          ...getBodyBetas(retryContext.model),
+          ...(toolSearchHeader ? [toolSearchHeader] : []),
+        ]
+      : []
     const extraBodyParams = getExtraBodyParams(bedrockBetas)
 
     const outputConfig: BetaOutputConfig = {
@@ -1458,8 +1466,7 @@ async function* queryModel(
     }
 
     const maxOutputTokens =
-      options.maxOutputTokensOverride ||
-      getModelMaxOutputTokens(options.model)
+      options.maxOutputTokensOverride || getModelMaxOutputTokens(options.model)
 
     const hasThinking =
       thinkingConfig.type !== 'disabled' &&
@@ -1692,7 +1699,10 @@ async function* queryModel(
         // Generate and track client request ID so timeouts (which return no
         // server request ID) can still be correlated with server logs.
         // First-party only — 3P providers don't log it (inc-4029 class).
-        clientRequestId = registry.getCapability(context.model, 'clientRequestId')
+        clientRequestId = registry.getCapability(
+          context.model,
+          'clientRequestId',
+        )
           ? randomUUID()
           : undefined
 
@@ -1886,7 +1896,7 @@ async function* queryModel(
                   sourceProvider:
                     getProviderRegistry().getProviderType(options.model) ??
                     undefined,
-                } as typeof contentBlocks[number]
+                } as (typeof contentBlocks)[number]
                 break
               case 'redacted_thinking':
                 contentBlocks[part.index] = {
@@ -1894,7 +1904,7 @@ async function* queryModel(
                   sourceProvider:
                     getProviderRegistry().getProviderType(options.model) ??
                     undefined,
-                } as typeof contentBlocks[number]
+                } as (typeof contentBlocks)[number]
                 break
               default:
                 // even more awkwardly, the sdk mutates the contents of text blocks
@@ -1952,8 +1962,9 @@ async function* queryModel(
                     feature('CONNECTOR_TEXT') &&
                     contentBlock.type === 'connector_text'
                   ) {
-                    ;(contentBlock as unknown as { signature: string }).signature =
-                      delta.signature
+                    ;(
+                      contentBlock as unknown as { signature: string }
+                    ).signature = delta.signature
                     break
                   }
                   if (contentBlock.type !== 'thinking') {
@@ -2633,7 +2644,6 @@ export function addCacheBreakpoints(
   pinnedEdits?: CachedMCPinnedEdits[],
   skipCacheWrite = false,
 ): MessageParam[] {
-
   // Exactly one message-level cache_control marker per request. Mycro's
   // turn-to-turn eviction (page_manager/index.rs: Index::insert) frees
   // local-attention KV pages at any cached prefix position NOT in
@@ -2949,4 +2959,3 @@ export function adjustParamsForNonStreaming<
     max_tokens: cappedMaxTokens,
   }
 }
-

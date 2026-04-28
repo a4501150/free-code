@@ -1,11 +1,6 @@
 import figures from 'figures'
 import { join } from 'path'
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { KeybindingWarnings } from 'src/components/KeybindingWarnings.js'
 import { McpParsingWarnings } from 'src/components/mcp/McpParsingWarnings.js'
 import { getModelMaxOutputTokens } from 'src/utils/context.js'
@@ -61,7 +56,6 @@ type AgentInfo = {
   projectDirExists: boolean
   failedFiles?: Array<{ path: string; error: string }>
 }
-
 
 export function Doctor({ onDone }: Props): React.ReactNode {
   const agentDefinitions = useAppState(s => s.agentDefinitions)
@@ -260,8 +254,9 @@ export function Doctor({ onDone }: Props): React.ReactNode {
           {pluginsErrors.map((error, i) => (
             <Text key={i} dimColor>
               {'  '}└ {error.source || 'unknown'}
-              {'plugin' in error && error.plugin ? ` [${error.plugin}]` : ''}:{' '}
-              {getPluginErrorMessage(error)}
+              {'plugin' in error && error.plugin
+                ? ` [${error.plugin}]`
+                : ''}: {getPluginErrorMessage(error)}
             </Text>
           ))}
         </Box>

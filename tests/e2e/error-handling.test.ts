@@ -5,9 +5,20 @@
  * (4xx, 5xx, truncated streams) through the full interactive REPL.
  */
 
-import { describe, test as bunTest, expect, beforeAll, afterAll, afterEach } from 'bun:test'
+import {
+  describe,
+  test as bunTest,
+  expect,
+  beforeAll,
+  afterAll,
+  afterEach,
+} from 'bun:test'
 import { MockAnthropicServer } from '../helpers/mock-server'
-import { errorResponse, rawResponse, textResponse } from '../helpers/fixture-builders'
+import {
+  errorResponse,
+  rawResponse,
+  textResponse,
+} from '../helpers/fixture-builders'
 import { TmuxSession, createLoggingTest } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
@@ -44,7 +55,10 @@ describe('Error Handling', () => {
 
       // submitAndWaitForResponse includes a delay before polling,
       // preventing false match on stale "for shortcuts" in scrollback
-      const screen = await session.submitAndWaitForResponse('trigger 400', 15_000)
+      const screen = await session.submitAndWaitForResponse(
+        'trigger 400',
+        15_000,
+      )
 
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
       // CLI should still be alive (not crashed)
@@ -62,7 +76,10 @@ describe('Error Handling', () => {
       })
       await session.start()
 
-      const screen = await session.submitAndWaitForResponse('trigger 401', 15_000)
+      const screen = await session.submitAndWaitForResponse(
+        'trigger 401',
+        15_000,
+      )
 
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
       // Should indicate auth error somewhere on screen
@@ -88,7 +105,10 @@ describe('Error Handling', () => {
       })
       await session.start()
 
-      const screen = await session.submitAndWaitForResponse('trigger rate limit', 30_000)
+      const screen = await session.submitAndWaitForResponse(
+        'trigger rate limit',
+        30_000,
+      )
 
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
       // Either retried and got success, or showed rate limit error
@@ -96,9 +116,7 @@ describe('Error Handling', () => {
     })
 
     test('500 Internal Server Error is handled gracefully', async () => {
-      server.reset([
-        errorResponse(500, 'api_error', 'Internal server error'),
-      ])
+      server.reset([errorResponse(500, 'api_error', 'Internal server error')])
 
       session = new TmuxSession({
         serverUrl: server.url,
@@ -106,7 +124,10 @@ describe('Error Handling', () => {
       })
       await session.start()
 
-      const screen = await session.submitAndWaitForResponse('trigger 500', 15_000)
+      const screen = await session.submitAndWaitForResponse(
+        'trigger 500',
+        15_000,
+      )
 
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
       expect(screen.length).toBeGreaterThan(0)
@@ -123,7 +144,10 @@ describe('Error Handling', () => {
       })
       await session.start()
 
-      const screen = await session.submitAndWaitForResponse('trigger 529', 15_000)
+      const screen = await session.submitAndWaitForResponse(
+        'trigger 529',
+        15_000,
+      )
 
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
       expect(screen.length).toBeGreaterThan(0)
@@ -179,7 +203,10 @@ describe('Error Handling', () => {
       })
       await session.start()
 
-      const screen = await session.submitAndWaitForResponse('trigger truncated response', 30_000)
+      const screen = await session.submitAndWaitForResponse(
+        'trigger truncated response',
+        30_000,
+      )
 
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
       // CLI should still be alive

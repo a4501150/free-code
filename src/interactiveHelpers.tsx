@@ -168,7 +168,7 @@ export async function showSetupScreens(
   devChannels?: ChannelEntry[],
 ): Promise<boolean> {
   if (
-    ("production" as string) === 'test' ||
+    ('production' as string) === 'test' ||
     isEnvTruthy(false) ||
     process.env.IS_DEMO // Skip onboarding in demo mode
   ) {

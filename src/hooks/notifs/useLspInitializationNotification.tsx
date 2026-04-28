@@ -29,9 +29,7 @@ export function useLspInitializationNotification(): void {
   // render (the arg expression runs even though useState ignores it after
   // mount). Showed up as 7.2s isEnvTruthy self-time during PageUp spam
   // after #24498 swapped cheap !!process.env.X for isEnvTruthy().
-  const [shouldPoll, setShouldPoll] = React.useState(() =>
-    isEnvTruthy("true"),
-  )
+  const [shouldPoll, setShouldPoll] = React.useState(() => isEnvTruthy('true'))
   // Track which errors we've already notified about to avoid duplicates
   const notifiedErrorsRef = React.useRef<Set<string>>(new Set())
 

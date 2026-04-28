@@ -309,8 +309,7 @@ async function* queryLoop(
           depth: 0,
         }
 
-    const queryChainIdForAnalytics =
-      queryTracking.chainId
+    const queryChainIdForAnalytics = queryTracking.chainId
 
     toolUseContext = {
       ...toolUseContext,
@@ -580,231 +579,230 @@ async function* queryLoop(
     try {
       let streamingFallbackOccured = false
       queryCheckpoint('query_api_streaming_start')
-          for await (const message of deps.callModel({
-            messages: prependUserContext(messagesForQuery, userContext),
-            systemPrompt: fullSystemPrompt,
-            thinkingConfig: toolUseContext.options.thinkingConfig,
-            tools: toolUseContext.options.tools,
-            signal: toolUseContext.abortController.signal,
-            options: {
-              async getToolPermissionContext() {
-                const appState = toolUseContext.getAppState()
-                return appState.toolPermissionContext
-              },
-              model: currentModel,
-              ...(config.gates.fastModeEnabled && {
-                fastMode: appState.fastMode,
-              }),
-              toolChoice: undefined,
-              isNonInteractiveSession:
-                toolUseContext.options.isNonInteractiveSession,
-              onStreamingFallback: () => {
-                streamingFallbackOccured = true
-              },
-              querySource,
-              agents: toolUseContext.options.agentDefinitions.activeAgents,
-              allowedAgentTypes:
-                toolUseContext.options.agentDefinitions.allowedAgentTypes,
-              hasAppendSystemPrompt:
-                !!toolUseContext.options.appendSystemPrompt,
-              maxOutputTokensOverride: params.maxOutputTokensOverride,
-              fetchOverride: dumpPromptsFetch,
-              mcpTools: appState.mcp.tools,
-              hasPendingMcpServers: appState.mcp.clients.some(
-                c => c.type === 'pending',
-              ),
-              queryTracking,
-              effortValue: appState.effortValue,
-              advisorModel: appState.advisorModel,
-              skipCacheWrite,
-              agentId: toolUseContext.agentId,
-              addNotification: toolUseContext.addNotification,
-              ...(params.taskBudget && {
-                taskBudget: {
-                  total: params.taskBudget.total,
-                  ...(taskBudgetRemaining !== undefined && {
-                    remaining: taskBudgetRemaining,
-                  }),
-                },
+      for await (const message of deps.callModel({
+        messages: prependUserContext(messagesForQuery, userContext),
+        systemPrompt: fullSystemPrompt,
+        thinkingConfig: toolUseContext.options.thinkingConfig,
+        tools: toolUseContext.options.tools,
+        signal: toolUseContext.abortController.signal,
+        options: {
+          async getToolPermissionContext() {
+            const appState = toolUseContext.getAppState()
+            return appState.toolPermissionContext
+          },
+          model: currentModel,
+          ...(config.gates.fastModeEnabled && {
+            fastMode: appState.fastMode,
+          }),
+          toolChoice: undefined,
+          isNonInteractiveSession:
+            toolUseContext.options.isNonInteractiveSession,
+          onStreamingFallback: () => {
+            streamingFallbackOccured = true
+          },
+          querySource,
+          agents: toolUseContext.options.agentDefinitions.activeAgents,
+          allowedAgentTypes:
+            toolUseContext.options.agentDefinitions.allowedAgentTypes,
+          hasAppendSystemPrompt: !!toolUseContext.options.appendSystemPrompt,
+          maxOutputTokensOverride: params.maxOutputTokensOverride,
+          fetchOverride: dumpPromptsFetch,
+          mcpTools: appState.mcp.tools,
+          hasPendingMcpServers: appState.mcp.clients.some(
+            c => c.type === 'pending',
+          ),
+          queryTracking,
+          effortValue: appState.effortValue,
+          advisorModel: appState.advisorModel,
+          skipCacheWrite,
+          agentId: toolUseContext.agentId,
+          addNotification: toolUseContext.addNotification,
+          ...(params.taskBudget && {
+            taskBudget: {
+              total: params.taskBudget.total,
+              ...(taskBudgetRemaining !== undefined && {
+                remaining: taskBudgetRemaining,
               }),
             },
-          })) {
-            // We won't use the tool_calls from the first attempt
-            // We could.. but then we'd have to merge assistant messages
-            // with different ids and double up on full the tool_results
-            if (streamingFallbackOccured) {
-              // Yield tombstones for orphaned messages so they're removed from UI and transcript.
-              // These partial messages (especially thinking blocks) have invalid signatures
-              // that would cause "thinking blocks cannot be modified" API errors.
-              for (const msg of assistantMessages) {
-                yield { type: 'tombstone' as const, message: msg }
-              }
+          }),
+        },
+      })) {
+        // We won't use the tool_calls from the first attempt
+        // We could.. but then we'd have to merge assistant messages
+        // with different ids and double up on full the tool_results
+        if (streamingFallbackOccured) {
+          // Yield tombstones for orphaned messages so they're removed from UI and transcript.
+          // These partial messages (especially thinking blocks) have invalid signatures
+          // that would cause "thinking blocks cannot be modified" API errors.
+          for (const msg of assistantMessages) {
+            yield { type: 'tombstone' as const, message: msg }
+          }
 
-              assistantMessages.length = 0
-              toolResults.length = 0
-              toolUseBlocks.length = 0
-              needsFollowUp = false
+          assistantMessages.length = 0
+          toolResults.length = 0
+          toolUseBlocks.length = 0
+          needsFollowUp = false
 
-              // Discard pending results from the failed streaming attempt and create
-              // a fresh executor. This prevents orphan tool_results (with old tool_use_ids)
-              // from being yielded after the fallback response arrives.
-              if (streamingToolExecutor) {
-                streamingToolExecutor.discard()
-                streamingToolExecutor = new StreamingToolExecutor(
-                  toolUseContext.options.tools,
-                  canUseTool,
-                  toolUseContext,
-                )
-              }
-            }
-            // Backfill tool_use inputs on a cloned message before yield so
-            // SDK stream output and transcript serialization see legacy/derived
-            // fields. The original `message` is left untouched for
-            // assistantMessages.push below — it flows back to the API and
-            // mutating it would break prompt caching (byte mismatch).
-            let yieldMessage: typeof message = message
-            if (message.type === 'assistant') {
-              let clonedContent: typeof message.message.content | undefined
-              for (let i = 0; i < message.message.content.length; i++) {
-                const block = message.message.content[i]!
-                if (
-                  block.type === 'tool_use' &&
-                  typeof block.input === 'object' &&
-                  block.input !== null
-                ) {
-                  const tool = findToolByName(
-                    toolUseContext.options.tools,
-                    block.name,
-                  )
-                  if (tool?.backfillObservableInput) {
-                    const originalInput = block.input as Record<string, unknown>
-                    const inputCopy = { ...originalInput }
-                    tool.backfillObservableInput(inputCopy)
-                    // Only yield a clone when backfill ADDED fields; skip if
-                    // it only OVERWROTE existing ones (e.g. file tools
-                    // expanding file_path). Overwrites change the serialized
-                    // transcript and break VCR fixture hashes on resume,
-                    // while adding nothing the SDK stream needs — hooks get
-                    // the expanded path via toolExecution.ts separately.
-                    const addedFields = Object.keys(inputCopy).some(
-                      k => !(k in originalInput),
-                    )
-                    if (addedFields) {
-                      clonedContent ??= [...message.message.content]
-                      clonedContent[i] = { ...block, input: inputCopy }
-                    }
-                  }
-                }
-              }
-              if (clonedContent) {
-                yieldMessage = {
-                  ...message,
-                  message: { ...message.message, content: clonedContent },
-                }
-              }
-            }
-            // Withhold recoverable errors (prompt-too-long, max-output-tokens)
-            // until we know whether recovery (collapse drain / reactive
-            // compact / truncation retry) can succeed. Still pushed to
-            // assistantMessages so the recovery checks below find them.
-            // Either subsystem's withhold is sufficient — they're
-            // independent so turning one off doesn't break the other's
-            // recovery path.
-            //
-            // feature() only works in if/ternary conditions (bun:bundle
-            // tree-shaking constraint), so the collapse check is nested
-            // rather than composed.
-            let withheld = false
-            if (feature('CONTEXT_COLLAPSE')) {
-              if (
-                contextCollapse?.isWithheldPromptTooLong(
-                  message,
-                  isPromptTooLongMessage as (message: unknown) => boolean,
-                  querySource,
-                )
-              ) {
-                withheld = true
-              }
-            }
-            if (reactiveCompact?.isWithheldPromptTooLong(message)) {
-              withheld = true
-            }
+          // Discard pending results from the failed streaming attempt and create
+          // a fresh executor. This prevents orphan tool_results (with old tool_use_ids)
+          // from being yielded after the fallback response arrives.
+          if (streamingToolExecutor) {
+            streamingToolExecutor.discard()
+            streamingToolExecutor = new StreamingToolExecutor(
+              toolUseContext.options.tools,
+              canUseTool,
+              toolUseContext,
+            )
+          }
+        }
+        // Backfill tool_use inputs on a cloned message before yield so
+        // SDK stream output and transcript serialization see legacy/derived
+        // fields. The original `message` is left untouched for
+        // assistantMessages.push below — it flows back to the API and
+        // mutating it would break prompt caching (byte mismatch).
+        let yieldMessage: typeof message = message
+        if (message.type === 'assistant') {
+          let clonedContent: typeof message.message.content | undefined
+          for (let i = 0; i < message.message.content.length; i++) {
+            const block = message.message.content[i]!
             if (
-              mediaRecoveryEnabled &&
-              reactiveCompact?.isWithheldMediaSizeError(message)
+              block.type === 'tool_use' &&
+              typeof block.input === 'object' &&
+              block.input !== null
             ) {
-              withheld = true
-            }
-            if (!withheld) {
-              yield yieldMessage
-            }
-            if (message.type === 'assistant') {
-              assistantMessages.push(message)
-
-              const msgToolUseBlocks = message.message.content.filter(
-                content => content.type === 'tool_use',
-              ) as ToolUseBlock[]
-              if (msgToolUseBlocks.length > 0) {
-                toolUseBlocks.push(...msgToolUseBlocks)
-                needsFollowUp = true
-              }
-
-              if (
-                streamingToolExecutor &&
-                !toolUseContext.abortController.signal.aborted
-              ) {
-                for (const toolBlock of msgToolUseBlocks) {
-                  streamingToolExecutor.addTool(toolBlock, message)
-                }
-              }
-            }
-
-            if (
-              streamingToolExecutor &&
-              !toolUseContext.abortController.signal.aborted
-            ) {
-              for (const result of streamingToolExecutor.getCompletedResults()) {
-                if (result.message) {
-                  yield result.message
-                  toolResults.push(
-                    ...normalizeMessagesForAPI(
-                      [result.message],
-                      toolUseContext.options.tools,
-                    ).filter(_ => _.type === 'user'),
-                  )
+              const tool = findToolByName(
+                toolUseContext.options.tools,
+                block.name,
+              )
+              if (tool?.backfillObservableInput) {
+                const originalInput = block.input as Record<string, unknown>
+                const inputCopy = { ...originalInput }
+                tool.backfillObservableInput(inputCopy)
+                // Only yield a clone when backfill ADDED fields; skip if
+                // it only OVERWROTE existing ones (e.g. file tools
+                // expanding file_path). Overwrites change the serialized
+                // transcript and break VCR fixture hashes on resume,
+                // while adding nothing the SDK stream needs — hooks get
+                // the expanded path via toolExecution.ts separately.
+                const addedFields = Object.keys(inputCopy).some(
+                  k => !(k in originalInput),
+                )
+                if (addedFields) {
+                  clonedContent ??= [...message.message.content]
+                  clonedContent[i] = { ...block, input: inputCopy }
                 }
               }
             }
           }
-          queryCheckpoint('query_api_streaming_end')
-
-          // Yield deferred microcompact boundary message using actual API-reported
-          // token deletion count instead of client-side estimates.
-          // Entire block gated behind feature() so the excluded string
-          // is eliminated from external builds.
-          if (feature('CACHED_MICROCOMPACT') && pendingCacheEdits) {
-            const lastAssistant = assistantMessages.at(-1)
-            // The API field is cumulative/sticky across requests, so we
-            // subtract the baseline captured before this request to get the delta.
-            const usage = lastAssistant?.message.usage
-            const cumulativeDeleted = usage
-              ? ((usage as unknown as Record<string, number>)
-                  .cache_deleted_input_tokens ?? 0)
-              : 0
-            const deletedTokens = Math.max(
-              0,
-              cumulativeDeleted - pendingCacheEdits.baselineCacheDeletedTokens,
+          if (clonedContent) {
+            yieldMessage = {
+              ...message,
+              message: { ...message.message, content: clonedContent },
+            }
+          }
+        }
+        // Withhold recoverable errors (prompt-too-long, max-output-tokens)
+        // until we know whether recovery (collapse drain / reactive
+        // compact / truncation retry) can succeed. Still pushed to
+        // assistantMessages so the recovery checks below find them.
+        // Either subsystem's withhold is sufficient — they're
+        // independent so turning one off doesn't break the other's
+        // recovery path.
+        //
+        // feature() only works in if/ternary conditions (bun:bundle
+        // tree-shaking constraint), so the collapse check is nested
+        // rather than composed.
+        let withheld = false
+        if (feature('CONTEXT_COLLAPSE')) {
+          if (
+            contextCollapse?.isWithheldPromptTooLong(
+              message,
+              isPromptTooLongMessage as (message: unknown) => boolean,
+              querySource,
             )
-            if (deletedTokens > 0) {
-              yield createMicrocompactBoundaryMessage(
-                pendingCacheEdits.trigger,
-                0,
-                deletedTokens,
-                pendingCacheEdits.deletedToolIds,
-                [],
+          ) {
+            withheld = true
+          }
+        }
+        if (reactiveCompact?.isWithheldPromptTooLong(message)) {
+          withheld = true
+        }
+        if (
+          mediaRecoveryEnabled &&
+          reactiveCompact?.isWithheldMediaSizeError(message)
+        ) {
+          withheld = true
+        }
+        if (!withheld) {
+          yield yieldMessage
+        }
+        if (message.type === 'assistant') {
+          assistantMessages.push(message)
+
+          const msgToolUseBlocks = message.message.content.filter(
+            content => content.type === 'tool_use',
+          ) as ToolUseBlock[]
+          if (msgToolUseBlocks.length > 0) {
+            toolUseBlocks.push(...msgToolUseBlocks)
+            needsFollowUp = true
+          }
+
+          if (
+            streamingToolExecutor &&
+            !toolUseContext.abortController.signal.aborted
+          ) {
+            for (const toolBlock of msgToolUseBlocks) {
+              streamingToolExecutor.addTool(toolBlock, message)
+            }
+          }
+        }
+
+        if (
+          streamingToolExecutor &&
+          !toolUseContext.abortController.signal.aborted
+        ) {
+          for (const result of streamingToolExecutor.getCompletedResults()) {
+            if (result.message) {
+              yield result.message
+              toolResults.push(
+                ...normalizeMessagesForAPI(
+                  [result.message],
+                  toolUseContext.options.tools,
+                ).filter(_ => _.type === 'user'),
               )
             }
           }
+        }
+      }
+      queryCheckpoint('query_api_streaming_end')
+
+      // Yield deferred microcompact boundary message using actual API-reported
+      // token deletion count instead of client-side estimates.
+      // Entire block gated behind feature() so the excluded string
+      // is eliminated from external builds.
+      if (feature('CACHED_MICROCOMPACT') && pendingCacheEdits) {
+        const lastAssistant = assistantMessages.at(-1)
+        // The API field is cumulative/sticky across requests, so we
+        // subtract the baseline captured before this request to get the delta.
+        const usage = lastAssistant?.message.usage
+        const cumulativeDeleted = usage
+          ? ((usage as unknown as Record<string, number>)
+              .cache_deleted_input_tokens ?? 0)
+          : 0
+        const deletedTokens = Math.max(
+          0,
+          cumulativeDeleted - pendingCacheEdits.baselineCacheDeletedTokens,
+        )
+        if (deletedTokens > 0) {
+          yield createMicrocompactBoundaryMessage(
+            pendingCacheEdits.trigger,
+            0,
+            deletedTokens,
+            pendingCacheEdits.deletedToolIds,
+            [],
+          )
+        }
+      }
     } catch (error) {
       logError(error)
       const errorMessage =

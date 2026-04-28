@@ -121,7 +121,10 @@ function clearSelectedEffortForModel(model: string): void {
   resetProviderRegistry()
 }
 
-export function executeEffort(args: string, model?: string): EffortCommandResult {
+export function executeEffort(
+  args: string,
+  model?: string,
+): EffortCommandResult {
   const normalized = args.toLowerCase()
   if (normalized === 'auto' || normalized === 'unset') {
     return unsetEffortLevel(model)

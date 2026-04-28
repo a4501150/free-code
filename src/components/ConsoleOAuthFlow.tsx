@@ -83,8 +83,7 @@ export function ConsoleOAuthFlow({
   const textInputColumns = useTerminalSize().columns - PASTE_HERE_MSG.length - 1
 
   // Log forced login method on mount
-  useEffect(() => {
-  }, [forceLoginMethod])
+  useEffect(() => {}, [forceLoginMethod])
 
   // Retry logic
   useEffect(() => {
@@ -183,7 +182,6 @@ export function ConsoleOAuthFlow({
 
   const startOAuth = useCallback(async () => {
     try {
-
       const result = await oauthService
         .startOAuthFlow(
           async url => {

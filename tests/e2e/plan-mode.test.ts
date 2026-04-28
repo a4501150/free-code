@@ -25,7 +25,8 @@ setDefaultTimeout(120_000)
 function longText(label: string, lines = 30): string {
   return Array.from(
     { length: lines },
-    (_, i) => `${label} line ${i + 1}: Lorem ipsum dolor sit amet, consectetur adipiscing elit.`,
+    (_, i) =>
+      `${label} line ${i + 1}: Lorem ipsum dolor sit amet, consectetur adipiscing elit.`,
   ).join('\n')
 }
 
@@ -58,7 +59,9 @@ describe('Plan Mode E2E', () => {
         textResponse(longText('Response-2', 50)),
         textResponse(longText('Response-3', 50)),
         // Response after /clear + new prompt
-        textResponse('POST_CLEAR_VISIBLE: This response should be visible after clearing.'),
+        textResponse(
+          'POST_CLEAR_VISIBLE: This response should be visible after clearing.',
+        ),
       ])
 
       session = new TmuxSession({
@@ -211,7 +214,9 @@ describe('Plan Mode E2E', () => {
         // After EnterPlanMode, the model "plans" — this text response
         // triggers another API call whose request contains the plan_mode
         // attachment with the plan file path.
-        textResponse('I have analyzed the codebase and will now write my plan.'),
+        textResponse(
+          'I have analyzed the codebase and will now write my plan.',
+        ),
       ])
 
       await session.submitAndWaitForResponse('First prompt')
@@ -263,7 +268,10 @@ describe('Plan Mode E2E', () => {
       const { writeFileSync, mkdirSync } = await import('node:fs')
       const { dirname } = await import('node:path')
       mkdirSync(dirname(planFilePath), { recursive: true })
-      writeFileSync(planFilePath, '# Plan\n\nStep 1: Implement feature\nStep 2: Add tests\nStep 3: Verify')
+      writeFileSync(
+        planFilePath,
+        '# Plan\n\nStep 1: Implement feature\nStep 2: Add tests\nStep 3: Verify',
+      )
 
       // Phase 3: Queue ExitPlanMode and the post-approval response.
       // After clear-context approval, the plan is sent as a new initial
@@ -275,10 +283,18 @@ describe('Plan Mode E2E', () => {
           [{ name: 'ExitPlanMode', input: {} }],
           'Here is my implementation plan with clear context.',
         ),
-        textResponse('CLEAR_CONTEXT_VISIBLE: Implementing after context clear.'),
-        textResponse('CLEAR_CONTEXT_VISIBLE: Implementing after context clear.'),
-        textResponse('CLEAR_CONTEXT_VISIBLE: Implementing after context clear.'),
-        textResponse('CLEAR_CONTEXT_VISIBLE: Implementing after context clear.'),
+        textResponse(
+          'CLEAR_CONTEXT_VISIBLE: Implementing after context clear.',
+        ),
+        textResponse(
+          'CLEAR_CONTEXT_VISIBLE: Implementing after context clear.',
+        ),
+        textResponse(
+          'CLEAR_CONTEXT_VISIBLE: Implementing after context clear.',
+        ),
+        textResponse(
+          'CLEAR_CONTEXT_VISIBLE: Implementing after context clear.',
+        ),
       ])
 
       // Send another prompt to trigger ExitPlanMode.

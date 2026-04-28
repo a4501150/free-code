@@ -103,7 +103,9 @@ function initSessionMemoryCompactConfig(): void {
   const settingsConfig = getInitialSettings()?.sessionMemoryCompactConfig
   const config: SessionMemoryCompactConfig = {
     minTokens: settingsConfig?.minTokens ?? DEFAULT_SM_COMPACT_CONFIG.minTokens,
-    minTextBlockMessages: settingsConfig?.minTextBlockMessages ?? DEFAULT_SM_COMPACT_CONFIG.minTextBlockMessages,
+    minTextBlockMessages:
+      settingsConfig?.minTextBlockMessages ??
+      DEFAULT_SM_COMPACT_CONFIG.minTextBlockMessages,
     maxTokens: settingsConfig?.maxTokens ?? DEFAULT_SM_COMPACT_CONFIG.maxTokens,
   }
   setSessionMemoryCompactConfig(config)
@@ -390,8 +392,10 @@ export function shouldUseSessionMemoryCompaction(): boolean {
   }
 
   const settings = getInitialSettings()
-  return (settings?.sessionMemory ?? false) &&
+  return (
+    (settings?.sessionMemory ?? false) &&
     (settings?.sessionMemoryCompact ?? false)
+  )
 }
 
 /**

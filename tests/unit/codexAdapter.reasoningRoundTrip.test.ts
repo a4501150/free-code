@@ -125,13 +125,12 @@ describe('Codex adapter: reasoning round-trip', () => {
       const thinkingDeltas = events.filter(
         e =>
           e.event === 'content_block_delta' &&
-          (e.data.delta as Record<string, unknown>)?.type ===
-            'thinking_delta',
+          (e.data.delta as Record<string, unknown>)?.type === 'thinking_delta',
       )
       expect(thinkingDeltas).toHaveLength(1)
-      expect((thinkingDeltas[0].data.delta as Record<string, string>).thinking).toBe(
-        'Let me think about it.',
-      )
+      expect(
+        (thinkingDeltas[0].data.delta as Record<string, string>).thinking,
+      ).toBe('Let me think about it.')
 
       // Followed by a text block.
       const textStart = events.find(

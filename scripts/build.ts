@@ -1,7 +1,9 @@
 import { chmodSync, existsSync, mkdirSync, cpSync, rmSync } from 'fs'
 import { dirname, resolve } from 'path'
 
-const pkg = await Bun.file(new URL('../package.json', import.meta.url)).json() as {
+const pkg = (await Bun.file(
+  new URL('../package.json', import.meta.url),
+).json()) as {
   name: string
   version: string
 }
@@ -148,9 +150,7 @@ const externals: string[] = []
 const defines = {
   'process.env.USER_TYPE': JSON.stringify('external'),
   'process.env.CLAUDE_CODE_FORCE_FULL_LOGO': JSON.stringify('true'),
-  ...(dev
-    ? { 'process.env.NODE_ENV': JSON.stringify('development') }
-    : {}),
+  ...(dev ? { 'process.env.NODE_ENV': JSON.stringify('development') } : {}),
   ...(dev
     ? {
         'process.env.CLAUDE_CODE_EXPERIMENTAL_BUILD': JSON.stringify('true'),
@@ -175,7 +175,9 @@ const defines = {
 // babel-plugin-react-compiler for automatic memoization. Enabled with
 // --react-compiler flag. The compiled output goes to .compiled-src/ and
 // bun build points at that instead of src/.
-const entrypoint = useReactCompiler ? './.compiled-src/entrypoints/cli.tsx' : './src/entrypoints/cli.tsx'
+const entrypoint = useReactCompiler
+  ? './.compiled-src/entrypoints/cli.tsx'
+  : './src/entrypoints/cli.tsx'
 
 if (useReactCompiler) {
   console.log('Running React Compiler pre-transform...')
@@ -195,9 +197,12 @@ if (useReactCompiler) {
       'npx',
       'babel',
       compiledDir,
-      '--out-dir', compiledDir,
-      '--extensions', '.tsx',
-      '--config-file', resolve(process.cwd(), 'babel.react-compiler.json'),
+      '--out-dir',
+      compiledDir,
+      '--extensions',
+      '.tsx',
+      '--config-file',
+      resolve(process.cwd(), 'babel.react-compiler.json'),
       '--keep-file-extension',
     ],
     cwd: process.cwd(),

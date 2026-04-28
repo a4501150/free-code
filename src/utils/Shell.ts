@@ -321,7 +321,7 @@ export async function exec(
         GIT_EDITOR: 'true',
         CLAUDECODE: '1',
         ...envOverrides,
-        ...(getInitialSettings()?.shellSessionId ?? false
+        ...((getInitialSettings()?.shellSessionId ?? false)
           ? {
               CLAUDE_CODE_SESSION_ID: getSessionId(),
             }
@@ -409,8 +409,7 @@ export async function exec(
             invalidateSessionEnvCache()
             void onCwdChangedForHooks(cwd, newCwd)
           }
-        } catch {
-        }
+        } catch {}
       }
       // Clean up the temp file used for cwd tracking
       try {

@@ -1,4 +1,3 @@
-
 import {
   getCurrentProjectConfig,
   saveCurrentProjectConfig,

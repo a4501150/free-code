@@ -13,13 +13,11 @@ type Props = {
 export function BypassPermissionsModeDialog({
   onAccept,
 }: Props): React.ReactNode {
-  React.useEffect(() => {
-  }, [])
+  React.useEffect(() => {}, [])
 
   function onChange(value: 'accept' | 'decline') {
     switch (value) {
       case 'accept': {
-
         updateSettingsForSource('userSettings', {
           skipDangerousModePermissionPrompt: true,
         })

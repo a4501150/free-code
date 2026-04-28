@@ -85,4 +85,3 @@ describe('openai-chat-completions adapter countTokens', () => {
     expect(withTools!.inputTokens).toBeGreaterThan(withoutTools!.inputTokens)
   })
 })
-

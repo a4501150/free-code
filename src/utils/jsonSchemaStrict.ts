@@ -41,7 +41,8 @@ function permitsNull(schema: unknown): boolean {
   const s = schema as JsonSchema
   if (s.type === 'null') return true
   if (s.nullable === true) return true
-  if (Array.isArray(s.type) && (s.type as unknown[]).includes('null')) return true
+  if (Array.isArray(s.type) && (s.type as unknown[]).includes('null'))
+    return true
   for (const key of ['anyOf', 'oneOf'] as const) {
     const variants = s[key]
     if (Array.isArray(variants) && variants.some(v => permitsNull(v))) {
@@ -82,9 +83,7 @@ export function makeJsonSchemaStrict(schema: unknown): unknown {
   for (const [key, value] of Object.entries(node)) {
     if (key === 'properties' && typeof value === 'object' && value !== null) {
       const transformed: JsonSchema = {}
-      for (const [propKey, propValue] of Object.entries(
-        value as JsonSchema,
-      )) {
+      for (const [propKey, propValue] of Object.entries(value as JsonSchema)) {
         transformed[propKey] = makeJsonSchemaStrict(propValue)
       }
       out[key] = transformed

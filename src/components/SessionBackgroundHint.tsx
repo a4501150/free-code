@@ -61,10 +61,7 @@ export function SessionBackgroundHint({
           c.hasUsedBackgroundTask ? c : { ...c, hasUsedBackgroundTask: true },
         )
       }
-    } else if (
-      isEnvTruthy("false") &&
-      isLoading
-    ) {
+    } else if (isEnvTruthy('false') && isLoading) {
       // New behavior - double-press to background session (gated)
       handleDoublePress()
     }
@@ -73,7 +70,7 @@ export function SessionBackgroundHint({
   // Only eat ctrl+b when there's something to background. Without this gate
   // the binding double-fires with readline backward-char at an idle prompt.
   const hasForeground = useAppState(hasForegroundTasks)
-  const sessionBgEnabled = isEnvTruthy("false")
+  const sessionBgEnabled = isEnvTruthy('false')
   useKeybinding('task:background', handleBackground, {
     context: 'Task',
     isActive: hasForeground || (sessionBgEnabled && isLoading),

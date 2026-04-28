@@ -1,7 +1,11 @@
 import { getDirectConnectServerUrl, getSessionId } from '../bootstrap/state.js'
 import { stringWidth } from '../ink/stringWidth.js'
 import type { LogOption } from '../types/logs.js'
-import { getSubscriptionName, isClaudeAISubscriber, isCodexSubscriber } from './auth.js'
+import {
+  getSubscriptionName,
+  isClaudeAISubscriber,
+  isCodexSubscriber,
+} from './auth.js'
 import { getCwd } from './cwd.js'
 import { getDisplayPath } from './file.js'
 import {
@@ -324,8 +328,9 @@ export function getRecentReleaseNotesSync(
     return []
   }
 
-  return getRecentReleaseNotes(currentVersion, lastSeenVersion, changelog).slice(
-    0,
-    maxItems,
-  )
+  return getRecentReleaseNotes(
+    currentVersion,
+    lastSeenVersion,
+    changelog,
+  ).slice(0, maxItems)
 }

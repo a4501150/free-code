@@ -236,7 +236,7 @@ function ScrollBox({
     <ink-box
       ref={(el: DOMElement | null) => {
         domRef.current = el
-        if (el) (el as unknown as {scrollTop?: number}).scrollTop ??= 0
+        if (el) (el as unknown as { scrollTop?: number }).scrollTop ??= 0
       }}
       style={{
         flexWrap: 'nowrap',

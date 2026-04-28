@@ -586,7 +586,6 @@ async function performPostCreationSetup(
 
   // Copy gitignored files specified in .worktreeinclude (best-effort)
   await copyWorktreeIncludeFiles(repoRoot, worktreePath)
-
 }
 
 /**
@@ -1358,58 +1357,57 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
 
   // Standard behavior: create or attach
   if (isAlreadyInTmux) {
-      // Already in tmux - create detached session, then switch to it (sibling)
-      // Check if session already exists first
-      if (sessionExists) {
-        // Just switch to existing session
-        spawnSync('tmux', ['switch-client', '-t', tmuxSessionName], {
-          stdio: 'inherit',
-        })
-      } else {
-        // Create new detached session
-        spawnSync(
-          'tmux',
-          [
-            'new-session',
-            '-d', // detached
-            '-s',
-            tmuxSessionName,
-            '-c',
-            worktreeDir,
-            '--',
-            process.execPath,
-            ...newArgs,
-          ],
-          { cwd: worktreeDir, env: tmuxEnv },
-        )
-
-        // Switch to the new session
-        spawnSync('tmux', ['switch-client', '-t', tmuxSessionName], {
-          stdio: 'inherit',
-        })
-      }
-    } else {
-      // Not in tmux - create and attach (original behavior)
-      const tmuxArgs = [
-        ...tmuxGlobalArgs,
-        'new-session',
-        '-A', // Attach if exists, create if not
-        '-s',
-        tmuxSessionName,
-        '-c',
-        worktreeDir,
-        '--', // Separator before command
-        process.execPath,
-        ...newArgs,
-      ]
-
-      spawnSync('tmux', tmuxArgs, {
+    // Already in tmux - create detached session, then switch to it (sibling)
+    // Check if session already exists first
+    if (sessionExists) {
+      // Just switch to existing session
+      spawnSync('tmux', ['switch-client', '-t', tmuxSessionName], {
         stdio: 'inherit',
-        cwd: worktreeDir,
-        env: tmuxEnv,
+      })
+    } else {
+      // Create new detached session
+      spawnSync(
+        'tmux',
+        [
+          'new-session',
+          '-d', // detached
+          '-s',
+          tmuxSessionName,
+          '-c',
+          worktreeDir,
+          '--',
+          process.execPath,
+          ...newArgs,
+        ],
+        { cwd: worktreeDir, env: tmuxEnv },
+      )
+
+      // Switch to the new session
+      spawnSync('tmux', ['switch-client', '-t', tmuxSessionName], {
+        stdio: 'inherit',
       })
     }
+  } else {
+    // Not in tmux - create and attach (original behavior)
+    const tmuxArgs = [
+      ...tmuxGlobalArgs,
+      'new-session',
+      '-A', // Attach if exists, create if not
+      '-s',
+      tmuxSessionName,
+      '-c',
+      worktreeDir,
+      '--', // Separator before command
+      process.execPath,
+      ...newArgs,
+    ]
+
+    spawnSync('tmux', tmuxArgs, {
+      stdio: 'inherit',
+      cwd: worktreeDir,
+      env: tmuxEnv,
+    })
+  }
 
   return { handled: true }
 }
-

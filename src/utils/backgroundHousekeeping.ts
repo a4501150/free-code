@@ -5,7 +5,9 @@ import { initSkillImprovement } from './hooks/skillImprovement.js'
 import * as extractMemoriesNs from '../services/extractMemories/extractMemories.js'
 import * as registerProtocolNs from './deepLink/registerProtocol.js'
 
-const extractMemoriesModule = feature('EXTRACT_MEMORIES') ? extractMemoriesNs : null
+const extractMemoriesModule = feature('EXTRACT_MEMORIES')
+  ? extractMemoriesNs
+  : null
 const registerProtocolModule = feature('LODESTONE') ? registerProtocolNs : null
 
 import { getIsInteractive, getLastInteractionTime } from '../bootstrap/state.js'
@@ -57,12 +59,10 @@ export function startBackgroundHousekeeping(): void {
       ).unref()
       return
     }
-
   }
 
   setTimeout(
     runVerySlowOps,
     DELAY_VERY_SLOW_OPERATIONS_THAT_HAPPEN_EVERY_SESSION,
   ).unref()
-
 }

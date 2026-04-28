@@ -124,8 +124,7 @@ function createPermissionContext(
         opts?.permissionPromptStartTimeMs,
       )
     },
-    logCancelled() {
-    },
+    logCancelled() {},
     async persistPermissions(updates: PermissionUpdate[]) {
       if (updates.length === 0) return false
       persistPermissionUpdates(updates)

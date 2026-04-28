@@ -56,7 +56,9 @@ import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
 import * as sendUserFileToolPromptNs from '../tools/SendUserFileTool/prompt.js'
 
 const BRIEF_TOOL_NAME: string | null =
-  feature('KAIROS') || feature('KAIROS_BRIEF') ? briefToolPromptNs.BRIEF_TOOL_NAME : null
+  feature('KAIROS') || feature('KAIROS_BRIEF')
+    ? briefToolPromptNs.BRIEF_TOOL_NAME
+    : null
 const LEGACY_BRIEF_TOOL_NAME: string | null =
   feature('KAIROS') || feature('KAIROS_BRIEF')
     ? briefToolPromptNs.LEGACY_BRIEF_TOOL_NAME
@@ -489,7 +491,7 @@ export async function loadConversationForResume(
           const listAllLiveSessions = udsRecord[listAllLiveSessionsKey]
           const live = (await listAllLiveSessions?.()) ?? []
           skip = new Set(
-            live.flatMap((s: {kind?: string; sessionId?: string}) =>
+            live.flatMap((s: { kind?: string; sessionId?: string }) =>
               s.kind && s.kind !== 'interactive' && s.sessionId
                 ? [s.sessionId]
                 : [],

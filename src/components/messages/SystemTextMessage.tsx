@@ -431,4 +431,3 @@ function ThinkingMessage({
     </Box>
   )
 }
-

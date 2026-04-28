@@ -65,10 +65,7 @@ export function applyGrouping(
   const toolsWithGrouping = getToolsWithGrouping(tools)
 
   // First pass: group tool uses by message.id + tool name
-  const groups = new Map<
-    string,
-    NormalizedAssistantMessage[]
-  >()
+  const groups = new Map<string, NormalizedAssistantMessage[]>()
 
   for (const msg of messages) {
     const info = getToolUseInfo(msg)
@@ -81,10 +78,7 @@ export function applyGrouping(
   }
 
   // Identify valid groups (2+ items) and collect their tool use IDs
-  const validGroups = new Map<
-    string,
-    NormalizedAssistantMessage[]
-  >()
+  const validGroups = new Map<string, NormalizedAssistantMessage[]>()
   const groupedToolUseIds = new Set<string>()
 
   for (const [key, group] of groups) {

@@ -7,7 +7,11 @@
  * via Azure tokens) — not relevant to the token-counting code path.
  */
 import type { ProviderAdapter, FetchFn, TokenBreakdown } from '../adapter.js'
-import type { ProviderCapabilities, ProviderConfig, ProviderType } from '../../../utils/settings/types.js'
+import type {
+  ProviderCapabilities,
+  ProviderConfig,
+  ProviderType,
+} from '../../../utils/settings/types.js'
 import type { NormalizedApiError } from '../../../utils/normalizedError.js'
 import { createFoundryFetch } from '../foundry-adapter.js'
 import { anthropicAdapter } from './anthropic-adapter.js'

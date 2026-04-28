@@ -89,9 +89,9 @@ export function BaseTextInput({
 
   const showArgumentHint = Boolean(
     props.argumentHint &&
-      props.value &&
-      commandWithoutArgs &&
-      props.value.startsWith('/'),
+    props.value &&
+    commandWithoutArgs &&
+    props.value.startsWith('/'),
   )
 
   // Filter out highlights that contain the cursor position

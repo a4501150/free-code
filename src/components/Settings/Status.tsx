@@ -70,9 +70,7 @@ function buildSecondarySection({
 }
 
 export async function buildDiagnostics(): Promise<Diagnostic[]> {
-  return [
-    ...(await buildMemoryDiagnostics()),
-  ]
+  return [...(await buildMemoryDiagnostics())]
 }
 
 function PropertyValue({

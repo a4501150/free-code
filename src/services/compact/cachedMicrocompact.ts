@@ -1,7 +1,4 @@
-import {
-  getCachedMCConfig,
-  type CachedMCConfig,
-} from './cachedMCConfig.js'
+import { getCachedMCConfig, type CachedMCConfig } from './cachedMCConfig.js'
 
 export type CacheEditsBlock = {
   type: 'cache_edits'

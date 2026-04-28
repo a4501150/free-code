@@ -1,10 +1,7 @@
 import { randomBytes } from 'crypto'
 import { execa } from 'execa'
 import { basename, extname, isAbsolute, join } from 'path'
-import {
-  IMAGE_MAX_HEIGHT,
-  IMAGE_MAX_WIDTH,
-} from '../constants/apiLimits.js'
+import { IMAGE_MAX_HEIGHT, IMAGE_MAX_WIDTH } from '../constants/apiLimits.js'
 import { getImageProcessor } from '../tools/FileReadTool/imageProcessor.js'
 import { logForDebugging } from './debug.js'
 import { execFileNoThrowWithCwd } from './execFileNoThrow.js'
@@ -288,12 +285,18 @@ export async function tryReadImageFromPath(
       }
     }
   } catch (e) {
-    logForDebugging(`Failed to read image file: ${imagePath} — ${(e as Error).message}`, { level: 'warn' })
+    logForDebugging(
+      `Failed to read image file: ${imagePath} — ${(e as Error).message}`,
+      { level: 'warn' },
+    )
     logError(e as Error)
     return null
   }
   if (!imageBuffer) {
-    logForDebugging(`Image file not readable (not absolute or clipboard mismatch): ${imagePath}`, { level: 'warn' })
+    logForDebugging(
+      `Image file not readable (not absolute or clipboard mismatch): ${imagePath}`,
+      { level: 'warn' },
+    )
     return null
   }
   if (imageBuffer.length === 0) {

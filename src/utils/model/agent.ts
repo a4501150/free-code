@@ -64,7 +64,8 @@ export function getAgentModel(
   const envSubagent = envSubagentRaw
     ? stripContextSuffix(envSubagentRaw)
     : undefined
-  const configSubagent = getProviderRegistry().getConfiguredDefaultSubagentModel()
+  const configSubagent =
+    getProviderRegistry().getConfiguredDefaultSubagentModel()
   const subagentOverride = envSubagent || configSubagent
   if (subagentOverride) {
     return parseUserSpecifiedModel(subagentOverride)
@@ -74,9 +75,7 @@ export function getAgentModel(
 
   // Helper to propagate region prefix from parent model for Bedrock cross-region inference.
   // Operates on the bare model ID, then re-qualifies with the provider prefix.
-  const applyParentRegionPrefix = (
-    resolvedModel: string,
-  ): string => {
+  const applyParentRegionPrefix = (resolvedModel: string): string => {
     const parsed = parseModelStringFromRegistry(resolvedModel)
     const prefixed = registry.propagateModelPrefix(
       stripProviderPrefix(parentModel),
@@ -157,7 +156,8 @@ export function getAgentModelDisplay(model: string | undefined): string {
     return 'Inherit from parent'
   }
   if (model === MOST_POWERFUL_MODEL_SENTINEL) {
-    const mostPowerful = getProviderRegistry().getConfiguredDefaultMostPowerfulModel()
+    const mostPowerful =
+      getProviderRegistry().getConfiguredDefaultMostPowerfulModel()
     if (mostPowerful) {
       const displayName = getPublicModelDisplayName(mostPowerful)
       return displayName ?? mostPowerful

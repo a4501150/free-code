@@ -295,8 +295,7 @@ export function PrivacySettingsDialog({
 }: PrivacySettingsDialogProps): React.ReactNode {
   const [groveEnabled, setGroveEnabled] = useState(settings.grove_enabled)
 
-  React.useEffect(() => {
-  }, [])
+  React.useEffect(() => {}, [])
 
   useInput(async (input, key) => {
     // Toggle the setting when enter/tab/space is pressed

@@ -5,7 +5,15 @@
  * scroll up/down a bit more, then type /clear → blank screen.
  */
 
-import { describe, test as bunTest, expect, beforeAll, afterAll, afterEach, setDefaultTimeout } from 'bun:test'
+import {
+  describe,
+  test as bunTest,
+  expect,
+  beforeAll,
+  afterAll,
+  afterEach,
+  setDefaultTimeout,
+} from 'bun:test'
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse } from '../helpers/fixture-builders'
 import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'

@@ -1,4 +1,7 @@
-import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
+import type {
+  CallToolResult,
+  ToolAnnotations,
+} from '@modelcontextprotocol/sdk/types.js'
 import type { ZodTypeAny } from 'zod/v4'
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'max' | 'xhigh'

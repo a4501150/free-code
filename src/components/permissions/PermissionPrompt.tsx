@@ -119,8 +119,7 @@ export function PermissionPrompt<T extends string>({
 
       const { type } = option.feedbackConfig
       const analyticsProps = {
-        toolName:
-          toolAnalyticsContext?.toolName,
+        toolName: toolAnalyticsContext?.toolName,
         isMcp: toolAnalyticsContext?.isMcp ?? false,
       }
 
@@ -164,8 +163,7 @@ export function PermissionPrompt<T extends string>({
 
         // Log accept/reject submission with feedback context
         const analyticsProps = {
-          toolName:
-            toolAnalyticsContext?.toolName,
+          toolName: toolAnalyticsContext?.toolName,
           isMcp: toolAnalyticsContext?.isMcp ?? false,
           has_instructions: !!trimmedFeedback,
           instructions_length: trimmedFeedback?.length ?? 0,
@@ -174,7 +172,6 @@ export function PermissionPrompt<T extends string>({
               ? acceptFeedbackModeEntered
               : rejectFeedbackModeEntered,
         }
-
       }
 
       onSelect(value, feedback)

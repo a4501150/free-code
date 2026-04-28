@@ -257,9 +257,7 @@ export function initializePerfettoTracing(): void {
   )
 
   if (!envValue || isEnvDefinedFalsy(envValue)) {
-    logForDebugging(
-      '[Perfetto] Tracing disabled (env var not set or disabled)',
-    )
+    logForDebugging('[Perfetto] Tracing disabled (env var not set or disabled)')
     return
   }
 

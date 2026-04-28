@@ -23,9 +23,7 @@ let ITermBackendClass: (new () => PaneBackend) | null = null
 /**
  * Registers the TmuxBackend class. Called by TmuxBackend.ts at module init.
  */
-export function registerTmuxBackend(
-  backendClass: new () => PaneBackend,
-): void {
+export function registerTmuxBackend(backendClass: new () => PaneBackend): void {
   TmuxBackendClass = backendClass
 }
 

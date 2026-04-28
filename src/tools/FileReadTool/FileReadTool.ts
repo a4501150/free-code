@@ -342,10 +342,7 @@ export const FileReadTool = buildTool({
     const maxSizeInstruction = limits.includeMaxSizeInPrompt
       ? `Files larger than ${formatFileSize(limits.maxSizeBytes)} will return an error; use offset and limit for larger files`
       : ''
-    return renderPromptTemplate(
-      pickLineFormatInstruction(),
-      maxSizeInstruction,
-    )
+    return renderPromptTemplate(pickLineFormatInstruction(), maxSizeInstruction)
   },
   get inputSchema(): InputSchema {
     return inputSchema()
@@ -706,7 +703,10 @@ function shouldIncludeFileReadMitigation(): boolean {
   // Skip mitigation for high-tier models (pricing >= $5/Mtok input)
   const model = getMainLoopModel()
   const resolved = getProviderRegistry().getProviderForModel(model)
-  if (resolved?.model.pricing?.input !== undefined && resolved.model.pricing.input >= 5) {
+  if (
+    resolved?.model.pricing?.input !== undefined &&
+    resolved.model.pricing.input >= 5
+  ) {
     return false
   }
   return true

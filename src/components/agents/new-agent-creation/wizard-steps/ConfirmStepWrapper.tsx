@@ -35,7 +35,9 @@ export function ConfirmStepWrapper({
           wizardData.finalAgent.agentType,
           wizardData.finalAgent.whenToUse,
           wizardData.finalAgent.tools,
-          (wizardData.finalAgent as import('../../../../tools/AgentTool/loadAgentsDir.js').CustomAgentDefinition).getSystemPrompt(),
+          (
+            wizardData.finalAgent as import('../../../../tools/AgentTool/loadAgentsDir.js').CustomAgentDefinition
+          ).getSystemPrompt(),
           true,
           wizardData.finalAgent.color,
           wizardData.finalAgent.model,

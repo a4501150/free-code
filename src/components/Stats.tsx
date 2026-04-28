@@ -449,7 +449,6 @@ function OverviewTab({
         </Box>
       </Box>
 
-
       {/* Shot stats (ant-only) */}
       {shotStatsData && (
         <>

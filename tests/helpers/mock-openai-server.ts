@@ -56,7 +56,9 @@ function nextMessageId(): string {
   return `chatcmpl-test-${String(++messageIdCounter).padStart(4, '0')}`
 }
 
-function encodeOpenAISSE(response: OpenAITextResponse | OpenAIToolCallResponse): string {
+function encodeOpenAISSE(
+  response: OpenAITextResponse | OpenAIToolCallResponse,
+): string {
   const id = nextMessageId()
   const model = response.model || 'test-model'
   const chunks: string[] = []
@@ -227,10 +229,10 @@ export class MockOpenAIServer {
   }
 
   async start(): Promise<{ port: number; url: string }> {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       this.server = Bun.serve({
         port: 0,
-        fetch: async (req) => {
+        fetch: async req => {
           return this.handleRequest(req)
         },
       })
@@ -265,10 +267,7 @@ export class MockOpenAIServer {
   private async handleRequest(req: Request): Promise<Response> {
     const url = new URL(req.url)
 
-    if (
-      req.method === 'POST' &&
-      url.pathname === '/v1/chat/completions'
-    ) {
+    if (req.method === 'POST' && url.pathname === '/v1/chat/completions') {
       return this.handleCompletionsRequest(req)
     }
 

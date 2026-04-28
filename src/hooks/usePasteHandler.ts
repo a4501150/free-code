@@ -61,7 +61,6 @@ export function usePasteHandler({
     }
   }, [])
 
-
   const checkClipboardForImageImpl = React.useCallback(() => {
     if (!onImagePaste || !isMountedRef.current) return
 
@@ -140,48 +139,50 @@ export function usePasteHandler({
               // Process all image paths
               void Promise.all(
                 imagePaths.map(imagePath => tryReadImageFromPath(imagePath)),
-              ).then(results => {
-                const validImages = results.filter(
-                  (r): r is NonNullable<typeof r> => r !== null,
-                )
-
-                if (validImages.length > 0) {
-                  // Successfully read at least one image
-                  for (const imageData of validImages) {
-                    const filename = basename(imageData.path)
-                    onImagePaste(
-                      imageData.base64,
-                      imageData.mediaType,
-                      filename,
-                      imageData.dimensions,
-                      imageData.path,
-                    )
-                  }
-                  // If some paths weren't images, paste them as text
-                  const nonImageLines = lines.filter(
-                    line => !isImageFilePath(line),
+              )
+                .then(results => {
+                  const validImages = results.filter(
+                    (r): r is NonNullable<typeof r> => r !== null,
                   )
-                  if (nonImageLines.length > 0 && onPaste) {
-                    onPaste(nonImageLines.join('\n'))
+
+                  if (validImages.length > 0) {
+                    // Successfully read at least one image
+                    for (const imageData of validImages) {
+                      const filename = basename(imageData.path)
+                      onImagePaste(
+                        imageData.base64,
+                        imageData.mediaType,
+                        filename,
+                        imageData.dimensions,
+                        imageData.path,
+                      )
+                    }
+                    // If some paths weren't images, paste them as text
+                    const nonImageLines = lines.filter(
+                      line => !isImageFilePath(line),
+                    )
+                    if (nonImageLines.length > 0 && onPaste) {
+                      onPaste(nonImageLines.join('\n'))
+                    }
+                    setIsPasting(false)
+                  } else if (isTempScreenshot && isMacOS) {
+                    // For temporary screenshot files that no longer exist, try clipboard
+                    checkClipboardForImage()
+                  } else {
+                    if (onPaste) {
+                      onPaste(pastedText)
+                    }
+                    setIsPasting(false)
                   }
-                  setIsPasting(false)
-                } else if (isTempScreenshot && isMacOS) {
-                  // For temporary screenshot files that no longer exist, try clipboard
-                  checkClipboardForImage()
-                } else {
+                })
+                .catch(error => {
+                  // If image processing fails, fall back to pasting raw text
+                  logError(error as Error)
                   if (onPaste) {
                     onPaste(pastedText)
                   }
                   setIsPasting(false)
-                }
-              }).catch((error) => {
-                // If image processing fails, fall back to pasting raw text
-                logError(error as Error)
-                if (onPaste) {
-                  onPaste(pastedText)
-                }
-                setIsPasting(false)
-              })
+                })
               return { chunks: [], timeoutId: null }
             }
 
@@ -248,7 +249,9 @@ export function usePasteHandler({
       .some(line => isImageFilePath(line.trim()))
 
     if (input.length > 10) {
-      logForDebugging(`[paste] input chunk (${input.length} chars): isFromPaste=${isFromPaste}, hasImageFilePath=${hasImageFilePath}, pastePending=${pastePendingRef.current}, input=${JSON.stringify(input.slice(0, 120))}`)
+      logForDebugging(
+        `[paste] input chunk (${input.length} chars): isFromPaste=${isFromPaste}, hasImageFilePath=${hasImageFilePath}, pastePending=${pastePendingRef.current}, input=${JSON.stringify(input.slice(0, 120))}`,
+      )
     }
 
     // Handle empty paste (clipboard image on macOS)

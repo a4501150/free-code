@@ -19,9 +19,7 @@ function listIdOf(opts: ListId): string {
 }
 
 function formatTask(task: Task, indent = ''): string {
-  const parts = [
-    `${indent}#${task.id} [${task.status}] ${task.subject}`,
-  ]
+  const parts = [`${indent}#${task.id} [${task.status}] ${task.subject}`]
   if (task.owner) parts.push(`${indent}  owner: ${task.owner}`)
   if (task.blockedBy.length > 0)
     parts.push(`${indent}  blockedBy: ${task.blockedBy.join(', ')}`)
@@ -168,9 +166,7 @@ export async function taskUpdateHandler(
 }
 
 /** `claude task dir` */
-export async function taskDirHandler(opts: {
-  list?: string
-}): Promise<void> {
+export async function taskDirHandler(opts: { list?: string }): Promise<void> {
   // biome-ignore lint/suspicious/noConsole:: user-facing CLI output
   console.log(getTasksDir(listIdOf(opts)))
 }

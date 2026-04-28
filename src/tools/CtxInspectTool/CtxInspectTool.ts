@@ -5,9 +5,7 @@ import { lazySchema } from '../../utils/lazySchema.js'
 const inputSchema = lazySchema(() => z.strictObject({}))
 type InputSchema = ReturnType<typeof inputSchema>
 
-const outputSchema = lazySchema(() =>
-  z.object({ info: z.string() }),
-)
+const outputSchema = lazySchema(() => z.object({ info: z.string() }))
 type OutputSchema = ReturnType<typeof outputSchema>
 
 type Output = z.infer<OutputSchema>

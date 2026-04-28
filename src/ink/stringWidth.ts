@@ -248,6 +248,8 @@ function appleTerminalWidthCorrection(str: string): number {
 
 export const stringWidth: (str: string) => number = bunStringWidth
   ? IS_APPLE_TERMINAL
-    ? str => bunStringWidth(str, BUN_STRING_WIDTH_OPTS) + appleTerminalWidthCorrection(str)
+    ? str =>
+        bunStringWidth(str, BUN_STRING_WIDTH_OPTS) +
+        appleTerminalWidthCorrection(str)
     : str => bunStringWidth(str, BUN_STRING_WIDTH_OPTS)
   : stringWidthJavaScript

@@ -285,7 +285,6 @@ export async function startTeamMemoryWatcher(): Promise<void> {
   // and the alternative (lazy start on notifyTeamMemoryWrite) creates
   // a bootstrap dead zone for fresh repos.
   await startFileWatcher(getTeamMemPath())
-
 }
 
 /**

@@ -987,7 +987,6 @@ export async function copyFileHistoryForResume(log: LogOption): Promise<void> {
         }
       }),
     )
-
   } catch (error) {
     logError(error)
   }

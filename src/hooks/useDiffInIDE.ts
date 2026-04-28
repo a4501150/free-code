@@ -80,7 +80,6 @@ export function useDiffInIDE({
     }
 
     try {
-
       const { oldContent, newContent } = await showDiffInIDE(
         filePath,
         edits,

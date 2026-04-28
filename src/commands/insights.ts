@@ -1,11 +1,5 @@
 import { diffLines } from 'diff'
-import {
-  mkdir,
-  readdir,
-  readFile,
-  unlink,
-  writeFile,
-} from 'fs/promises'
+import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises'
 import { extname, join } from 'path'
 import type { Command } from '../commands.js'
 import { queryWithModel } from '../services/api/claude.js'
@@ -55,14 +49,16 @@ type RemoteHostInfo = {
 /* eslint-disable custom-rules/no-process-env-top-level */
 const getRunningRemoteHosts: () => Promise<string[]> = async () => []
 
-const getRemoteHostSessionCount: (_hs: string) => Promise<number> =
-  async () => 0
+const getRemoteHostSessionCount: (_hs: string) => Promise<number> = async () =>
+  0
 
 const collectFromRemoteHost: (
   _hs: string,
   _destDir: string,
-) => Promise<{ copied: number; skipped: number }> =
-  async () => ({ copied: 0, skipped: 0 })
+) => Promise<{ copied: number; skipped: number }> = async () => ({
+  copied: 0,
+  skipped: 0,
+})
 
 const collectAllRemoteHostData: (_destDir: string) => Promise<{
   hosts: RemoteHostInfo[]
@@ -2506,7 +2502,10 @@ async function scanAllSessions(): Promise<LiteSessionInfo[]> {
 
   let dirents: { isDirectory(): boolean; name: string }[]
   try {
-    dirents = await readdir(projectsDir, { withFileTypes: true }) as { isDirectory(): boolean; name: string }[]
+    dirents = (await readdir(projectsDir, { withFileTypes: true })) as {
+      isDirectory(): boolean
+      name: string
+    }[]
   } catch {
     return []
   }

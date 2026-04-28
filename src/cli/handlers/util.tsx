@@ -19,7 +19,6 @@ import { isAnthropicAuthEnabled } from '../../utils/auth.js'
 import { ConsoleOAuthFlow } from '../../components/ConsoleOAuthFlow.js'
 
 export async function setupTokenHandler(root: Root): Promise<void> {
-
   const showAuthWarning = !isAnthropicAuthEnabled()
   await new Promise<void>(resolve => {
     root.render(
@@ -74,7 +73,6 @@ function DoctorWithPlugins({
 }
 
 export async function doctorHandler(root: Root): Promise<void> {
-
   await new Promise<void>(resolve => {
     root.render(
       <AppStateProvider>
@@ -96,4 +94,3 @@ export async function doctorHandler(root: Root): Promise<void> {
   root.unmount()
   process.exit(0)
 }
-

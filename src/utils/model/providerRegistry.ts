@@ -6,8 +6,8 @@
  * with a unified config-driven lookup.
  */
 
-import { getClaudeAIOAuthTokens } from "../oauthTokenReader.js";
-import { getInitialSettings } from "../settings/settings.js";
+import { getClaudeAIOAuthTokens } from '../oauthTokenReader.js'
+import { getInitialSettings } from '../settings/settings.js'
 import type {
   ProviderAuthConfig,
   ProviderCacheConfig,
@@ -16,14 +16,14 @@ import type {
   ProviderConfig,
   ProviderModelConfig,
   ProviderType,
-} from "../settings/types.js";
-import { getInferenceProfileBackingModel } from "./bedrock.js";
+} from '../settings/types.js'
+import { getInferenceProfileBackingModel } from './bedrock.js'
 import {
   applyBedrockRegionPrefix,
   getBedrockRegionPrefix,
-} from "./bedrockInferenceProfiles.js";
-import { synthesizeProvidersFromLegacy } from "./legacyProviderMigration.js";
-import { parseModelString, stripContextSuffix } from "./parseModelString.js";
+} from './bedrockInferenceProfiles.js'
+import { synthesizeProvidersFromLegacy } from './legacyProviderMigration.js'
+import { parseModelString, stripContextSuffix } from './parseModelString.js'
 
 // ── Capability defaults by provider type ──────────────────────────────
 
@@ -33,9 +33,9 @@ const ALL_FALSE_CAPABILITIES: Required<ProviderCapabilities> = {
   clientRequestId: false,
   betasInBody: false,
   authManagedExternally: false,
-  credentialRefresh: "none",
+  credentialRefresh: 'none',
   firstPartyFeatures: false,
-  tokenCountingMethod: "native",
+  tokenCountingMethod: 'native',
   opaqueDeploymentIds: false,
   regionPrefixPropagation: false,
   enrichModelIdErrors: false,
@@ -53,7 +53,7 @@ const ALL_FALSE_CAPABILITIES: Required<ProviderCapabilities> = {
   supportsBootstrap: false,
   supportsAfkMode: false,
   preservesReasoningAcrossTurns: false,
-};
+}
 
 const PROVIDER_CAPABILITY_DEFAULTS: Record<
   ProviderType,
@@ -65,9 +65,9 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     clientRequestId: true,
     betasInBody: false,
     authManagedExternally: false,
-    credentialRefresh: "none",
+    credentialRefresh: 'none',
     firstPartyFeatures: true,
-    tokenCountingMethod: "native",
+    tokenCountingMethod: 'native',
     opaqueDeploymentIds: false,
     regionPrefixPropagation: false,
     enrichModelIdErrors: false,
@@ -86,19 +86,19 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     supportsAfkMode: true,
     preservesReasoningAcrossTurns: true,
   },
-  "bedrock-converse": {
+  'bedrock-converse': {
     ...ALL_FALSE_CAPABILITIES,
     authManagedExternally: true,
-    credentialRefresh: "aws",
-    tokenCountingMethod: "bedrock-custom",
+    credentialRefresh: 'aws',
+    tokenCountingMethod: 'bedrock-custom',
     regionPrefixPropagation: true,
     enrichModelIdErrors: true,
   },
   vertex: {
     ...ALL_FALSE_CAPABILITIES,
     authManagedExternally: true,
-    credentialRefresh: "gcp",
-    tokenCountingMethod: "vertex-filtered",
+    credentialRefresh: 'gcp',
+    tokenCountingMethod: 'vertex-filtered',
     webSearch: true,
     customSyspromptPrefix: false,
     // Vertex-Anthropic preserves signed thinking blocks across turns.
@@ -113,8 +113,8 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     // thinking blocks across turns.
     preservesReasoningAcrossTurns: true,
   },
-  "openai-chat-completions": { ...ALL_FALSE_CAPABILITIES },
-  "openai-responses": {
+  'openai-chat-completions': { ...ALL_FALSE_CAPABILITIES },
+  'openai-responses': {
     ...ALL_FALSE_CAPABILITIES,
     // The Codex adapter round-trips reasoning across turns by echoing
     // opaque `{type:"reasoning", id, encrypted_content, summary}` items in
@@ -133,20 +133,20 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
   gemini: {
     ...ALL_FALSE_CAPABILITIES,
     authManagedExternally: true,
-    credentialRefresh: "gcp" as const,
+    credentialRefresh: 'gcp' as const,
   },
-};
+}
 
 /**
  * Check if an Anthropic provider config points to the official API URL.
  * Used to distinguish native Anthropic from proxy setups.
  */
 function isOfficialAnthropicBaseUrl(baseUrl: string | undefined): boolean {
-  if (!baseUrl) return true; // no baseUrl = official Anthropic API
+  if (!baseUrl) return true // no baseUrl = official Anthropic API
   try {
-    return new URL(baseUrl).host === "api.anthropic.com";
+    return new URL(baseUrl).host === 'api.anthropic.com'
   } catch {
-    return false;
+    return false
   }
 }
 
@@ -160,12 +160,12 @@ function deriveCapabilities(
 ): Required<ProviderCapabilities> {
   const defaults = PROVIDER_CAPABILITY_DEFAULTS[config.type] ?? {
     ...ALL_FALSE_CAPABILITIES,
-  };
+  }
 
   // Anthropic proxies (non-official baseUrl) lose first-party-only features
-  let base = { ...defaults };
+  let base = { ...defaults }
   if (
-    config.type === "anthropic" &&
+    config.type === 'anthropic' &&
     !isOfficialAnthropicBaseUrl(config.baseUrl)
   ) {
     base = {
@@ -174,110 +174,110 @@ function deriveCapabilities(
       eagerInputStreaming: false,
       clientRequestId: false,
       firstPartyFeatures: false,
-    };
+    }
   }
 
   // Merge explicit overrides from config.capabilities
   if (config.capabilities) {
     for (const [key, value] of Object.entries(config.capabilities)) {
       if (value !== undefined) {
-        (base as Record<string, unknown>)[key] = value;
+        ;(base as Record<string, unknown>)[key] = value
       }
     }
   }
 
-  return base;
+  return base
 }
 
 // ── Types ────────────────────────────────────────────────────────────
 
 export interface ResolvedProvider {
-  providerName: string;
-  config: ProviderConfig;
-  model: ProviderModelConfig;
+  providerName: string
+  config: ProviderConfig
+  model: ProviderModelConfig
 }
 
 export interface ConfiguredModel {
-  providerName: string;
-  config: ProviderConfig;
-  model: ProviderModelConfig;
+  providerName: string
+  config: ProviderConfig
+  model: ProviderModelConfig
 }
 
 // ── Registry ─────────────────────────────────────────────────────────
 
-let _instance: ProviderRegistry | null = null;
+let _instance: ProviderRegistry | null = null
 
 export class ProviderRegistry {
-  private readonly providers: Map<string, ProviderConfig>;
+  private readonly providers: Map<string, ProviderConfig>
   /** Qualified "providerName:modelId" → entry */
   private readonly qualifiedIndex: Map<
     string,
     { providerName: string; config: ProviderConfig; model: ProviderModelConfig }
-  >;
+  >
   /** canonical model ID → entry (e.g. 'claude-opus-4-6' → provider entry) */
   private readonly canonicalIdIndex: Map<
     string,
     { providerName: string; config: ProviderConfig; model: ProviderModelConfig }
-  >;
+  >
   /** provider name → resolved capabilities (cached) */
   private readonly capabilitiesCache: Map<
     string,
     Required<ProviderCapabilities>
-  >;
+  >
   /** Set of all provider names (lowercased) for the parser */
-  private readonly providerNames: Set<string>;
+  private readonly providerNames: Set<string>
 
   /** Provider-qualified default model from freecode.json (e.g. "anthropic:claude-opus-4-6") */
-  private readonly _defaultModel: string | undefined;
+  private readonly _defaultModel: string | undefined
   /** Provider-qualified default subagent model from freecode.json */
-  private readonly _defaultSubagentModel: string | undefined;
+  private readonly _defaultSubagentModel: string | undefined
   /** Provider-qualified default small/fast model from freecode.json */
-  private readonly _defaultSmallFastModel: string | undefined;
+  private readonly _defaultSmallFastModel: string | undefined
   /** Provider-qualified available subagent models from freecode.json (max 3) */
-  private readonly _availableSubagentModels: string[];
+  private readonly _availableSubagentModels: string[]
   /** Provider-qualified default balanced model from freecode.json */
-  private readonly _defaultBalancedModel: string | undefined;
+  private readonly _defaultBalancedModel: string | undefined
   /** Provider-qualified default most-powerful model from freecode.json */
-  private readonly _defaultMostPowerfulModel: string | undefined;
+  private readonly _defaultMostPowerfulModel: string | undefined
 
   constructor(
     providers: Record<string, ProviderConfig>,
     opts?: {
-      defaultModel?: string;
-      defaultSubagentModel?: string;
-      defaultSmallFastModel?: string;
-      availableSubagentModels?: string[];
-      defaultBalancedModel?: string;
-      defaultMostPowerfulModel?: string;
+      defaultModel?: string
+      defaultSubagentModel?: string
+      defaultSmallFastModel?: string
+      availableSubagentModels?: string[]
+      defaultBalancedModel?: string
+      defaultMostPowerfulModel?: string
     },
   ) {
-    this.providers = new Map(Object.entries(providers));
-    this.qualifiedIndex = new Map();
-    this.canonicalIdIndex = new Map();
-    this.capabilitiesCache = new Map();
+    this.providers = new Map(Object.entries(providers))
+    this.qualifiedIndex = new Map()
+    this.canonicalIdIndex = new Map()
+    this.capabilitiesCache = new Map()
     this.providerNames = new Set(
-      [...this.providers.keys()].map((n) => n.toLowerCase()),
-    );
-    this._defaultModel = opts?.defaultModel;
-    this._defaultSubagentModel = opts?.defaultSubagentModel;
-    this._defaultSmallFastModel = opts?.defaultSmallFastModel;
-    this._availableSubagentModels = opts?.availableSubagentModels ?? [];
-    this._defaultBalancedModel = opts?.defaultBalancedModel;
-    this._defaultMostPowerfulModel = opts?.defaultMostPowerfulModel;
-    this.buildIndex();
+      [...this.providers.keys()].map(n => n.toLowerCase()),
+    )
+    this._defaultModel = opts?.defaultModel
+    this._defaultSubagentModel = opts?.defaultSubagentModel
+    this._defaultSmallFastModel = opts?.defaultSmallFastModel
+    this._availableSubagentModels = opts?.availableSubagentModels ?? []
+    this._defaultBalancedModel = opts?.defaultBalancedModel
+    this._defaultMostPowerfulModel = opts?.defaultMostPowerfulModel
+    this.buildIndex()
   }
 
   private buildIndex(): void {
     for (const [name, config] of this.providers) {
-      const lowerName = name.toLowerCase();
+      const lowerName = name.toLowerCase()
       for (const model of config.models) {
-        const entry = { providerName: name, config, model };
+        const entry = { providerName: name, config, model }
         // Index by qualified "providerName:modelId"
-        this.qualifiedIndex.set(`${lowerName}:${model.id}`, entry);
+        this.qualifiedIndex.set(`${lowerName}:${model.id}`, entry)
         // Index by canonical model ID (the bare model id string)
-        const canonicalKey = model.id.toLowerCase();
+        const canonicalKey = model.id.toLowerCase()
         if (!this.canonicalIdIndex.has(canonicalKey)) {
-          this.canonicalIdIndex.set(canonicalKey, entry);
+          this.canonicalIdIndex.set(canonicalKey, entry)
         }
       }
     }
@@ -290,54 +290,54 @@ export class ProviderRegistry {
    * Used by parseModelString() to identify provider prefixes.
    */
   getProviderNames(): Set<string> {
-    return this.providerNames;
+    return this.providerNames
   }
 
   /**
    * Get the name of the default (first) provider.
    */
   getDefaultProviderName(): string | null {
-    const first = this.providers.keys().next();
-    if (first.done) return null;
-    return first.value;
+    const first = this.providers.keys().next()
+    if (first.done) return null
+    return first.value
   }
 
   getProviderForModel(qualifiedModel: string): ResolvedProvider | null {
     const parsed = parseModelString(
       qualifiedModel,
       this.providerNames,
-      this.getDefaultProviderName() ?? "",
-    );
-    const key = `${parsed.provider.toLowerCase()}:${parsed.modelId}`;
-    const entry = this.qualifiedIndex.get(key);
-    if (!entry) return null;
+      this.getDefaultProviderName() ?? '',
+    )
+    const key = `${parsed.provider.toLowerCase()}:${parsed.modelId}`
+    const entry = this.qualifiedIndex.get(key)
+    if (!entry) return null
     return {
       providerName: entry.providerName,
       config: entry.config,
       model: entry.model,
-    };
+    }
   }
 
   getProvider(name: string): ProviderConfig | undefined {
-    return this.providers.get(name);
+    return this.providers.get(name)
   }
 
   getAllProviders(): Map<string, ProviderConfig> {
-    return new Map(this.providers);
+    return new Map(this.providers)
   }
 
   getAllModels(): ConfiguredModel[] {
-    const result: ConfiguredModel[] = [];
+    const result: ConfiguredModel[] = []
     for (const [name, config] of this.providers) {
       for (const model of config.models) {
-        result.push({ providerName: name, config, model });
+        result.push({ providerName: name, config, model })
       }
     }
-    return result;
+    return result
   }
 
   hasProviders(): boolean {
-    return this.providers.size > 0;
+    return this.providers.size > 0
   }
 
   /**
@@ -345,47 +345,47 @@ export class ProviderRegistry {
    * Returns the provider entry if found, or null if the canonical ID is not registered.
    */
   getModelByCanonicalId(canonicalId: string): ResolvedProvider | null {
-    const entry = this.canonicalIdIndex.get(canonicalId.toLowerCase());
-    if (!entry) return null;
+    const entry = this.canonicalIdIndex.get(canonicalId.toLowerCase())
+    if (!entry) return null
     return {
       providerName: entry.providerName,
       config: entry.config,
       model: entry.model,
-    };
+    }
   }
 
   // ── Per-model queries ────────────────────────────────────────────
 
   getProviderCacheType(model: string): ProviderCacheType {
-    const provider = this.getProviderForModel(model);
-    return provider?.config.cache?.type ?? "explicit-breakpoint";
+    const provider = this.getProviderForModel(model)
+    return provider?.config.cache?.type ?? 'explicit-breakpoint'
   }
 
   getProviderType(model: string): ProviderType | null {
-    const provider = this.getProviderForModel(model);
-    return provider?.config.type ?? null;
+    const provider = this.getProviderForModel(model)
+    return provider?.config.type ?? null
   }
 
   getProviderAuth(model: string): ProviderAuthConfig | undefined {
-    const provider = this.getProviderForModel(model);
-    return provider?.config.auth;
+    const provider = this.getProviderForModel(model)
+    return provider?.config.auth
   }
 
   // ── Per-model config queries ──────────────────────────────────────
 
   getModelEffortLevels(model: string): string[] | undefined {
-    const provider = this.getProviderForModel(model);
-    return provider?.model.effortLevels;
+    const provider = this.getProviderForModel(model)
+    return provider?.model.effortLevels
   }
 
   getModelDefaultEffort(model: string): string | undefined {
-    const provider = this.getProviderForModel(model);
-    return provider?.model.defaultEffort;
+    const provider = this.getProviderForModel(model)
+    return provider?.model.defaultEffort
   }
 
   getModelSelectedEffort(model: string): string | undefined {
-    const provider = this.getProviderForModel(model);
-    return provider?.model.selectedEffort;
+    const provider = this.getProviderForModel(model)
+    return provider?.model.selectedEffort
   }
 
   // ── Capability queries ──────────────────────────────────────────────
@@ -399,20 +399,20 @@ export class ProviderRegistry {
     const resolved = model
       ? this.getProviderForModel(model)
       : (() => {
-          const def = this.getDefaultProvider();
+          const def = this.getDefaultProvider()
           return def
             ? { providerName: def.name, config: def.config, model: undefined }
-            : null;
-        })();
+            : null
+        })()
 
-    if (!resolved) return { ...ALL_FALSE_CAPABILITIES };
+    if (!resolved) return { ...ALL_FALSE_CAPABILITIES }
 
-    const cached = this.capabilitiesCache.get(resolved.providerName);
-    if (cached) return { ...cached };
+    const cached = this.capabilitiesCache.get(resolved.providerName)
+    if (cached) return { ...cached }
 
-    const caps = deriveCapabilities(resolved.config);
-    this.capabilitiesCache.set(resolved.providerName, caps);
-    return { ...caps };
+    const caps = deriveCapabilities(resolved.config)
+    this.capabilitiesCache.set(resolved.providerName, caps)
+    return { ...caps }
   }
 
   /**
@@ -422,7 +422,7 @@ export class ProviderRegistry {
     model: string,
     cap: K,
   ): Required<ProviderCapabilities>[K] {
-    return this.getCapabilities(model)[cap];
+    return this.getCapabilities(model)[cap]
   }
 
   /**
@@ -435,21 +435,21 @@ export class ProviderRegistry {
   resolveFirstPartyCapability(
     model: string | undefined,
     cap:
-      | "supportsToolSearch"
-      | "supportsFastMode"
-      | "showModelPricing"
-      | "supportsOAuthProfile"
-      | "supportsRemoteManagedSettings"
-      | "supportsPolicyLimits"
-      | "supportsSettingsSync"
-      | "supportsTeamMemorySync"
-      | "supportsBootstrap"
-      | "supportsAfkMode",
+      | 'supportsToolSearch'
+      | 'supportsFastMode'
+      | 'showModelPricing'
+      | 'supportsOAuthProfile'
+      | 'supportsRemoteManagedSettings'
+      | 'supportsPolicyLimits'
+      | 'supportsSettingsSync'
+      | 'supportsTeamMemorySync'
+      | 'supportsBootstrap'
+      | 'supportsAfkMode',
   ): boolean {
-    const caps = this.getCapabilities(model);
-    const specific = caps[cap];
-    if (specific !== undefined && specific !== null) return !!specific;
-    return !!caps.firstPartyFeatures;
+    const caps = this.getCapabilities(model)
+    const specific = caps[cap]
+    if (specific !== undefined && specific !== null) return !!specific
+    return !!caps.firstPartyFeatures
   }
 
   /**
@@ -461,10 +461,10 @@ export class ProviderRegistry {
     model: string,
     flag: keyof ProviderModelConfig,
   ): boolean | undefined {
-    const resolved = this.getProviderForModel(model);
-    if (!resolved) return undefined;
-    const value = resolved.model[flag];
-    return typeof value === "boolean" ? value : undefined;
+    const resolved = this.getProviderForModel(model)
+    if (!resolved) return undefined
+    const value = resolved.model[flag]
+    return typeof value === 'boolean' ? value : undefined
   }
 
   /**
@@ -473,9 +473,9 @@ export class ProviderRegistry {
    * speaks the Anthropic Messages API wire format.
    */
   isAnthropicType(model: string): boolean {
-    const provider = this.getProviderForModel(model);
-    if (!provider) return false;
-    return provider.config.type === "anthropic";
+    const provider = this.getProviderForModel(model)
+    if (!provider) return false
+    return provider.config.type === 'anthropic'
   }
 
   /**
@@ -483,9 +483,9 @@ export class ProviderRegistry {
    * Useful for code that just needs "the default provider".
    */
   getDefaultProvider(): { name: string; config: ProviderConfig } | null {
-    const first = this.providers.entries().next();
-    if (first.done) return null;
-    return { name: first.value[0], config: first.value[1] };
+    const first = this.providers.entries().next()
+    if (first.done) return null
+    return { name: first.value[0], config: first.value[1] }
   }
 
   /**
@@ -493,7 +493,7 @@ export class ProviderRegistry {
    * Returns a provider-qualified string (e.g. "anthropic:claude-opus-4-6") or undefined.
    */
   getConfiguredDefaultModel(): string | undefined {
-    return this._defaultModel;
+    return this._defaultModel
   }
 
   /**
@@ -501,7 +501,7 @@ export class ProviderRegistry {
    * Returns a provider-qualified string or undefined.
    */
   getConfiguredDefaultSubagentModel(): string | undefined {
-    return this._defaultSubagentModel;
+    return this._defaultSubagentModel
   }
 
   /**
@@ -509,7 +509,7 @@ export class ProviderRegistry {
    * Returns a provider-qualified string or undefined.
    */
   getConfiguredDefaultSmallFastModel(): string | undefined {
-    return this._defaultSmallFastModel;
+    return this._defaultSmallFastModel
   }
 
   /**
@@ -517,7 +517,7 @@ export class ProviderRegistry {
    * Returns an array of provider-qualified model IDs (max 3), or empty if not configured.
    */
   getAvailableSubagentModels(): string[] {
-    return this._availableSubagentModels;
+    return this._availableSubagentModels
   }
 
   /**
@@ -525,7 +525,7 @@ export class ProviderRegistry {
    * Returns a provider-qualified string or undefined.
    */
   getConfiguredDefaultBalancedModel(): string | undefined {
-    return this._defaultBalancedModel;
+    return this._defaultBalancedModel
   }
 
   /**
@@ -533,7 +533,7 @@ export class ProviderRegistry {
    * Returns a provider-qualified string or undefined.
    */
   getConfiguredDefaultMostPowerfulModel(): string | undefined {
-    return this._defaultMostPowerfulModel;
+    return this._defaultMostPowerfulModel
   }
 
   /**
@@ -543,12 +543,12 @@ export class ProviderRegistry {
    */
   async resolveModelId(model: string): Promise<string> {
     if (
-      this.getProviderType(model) === "bedrock-converse" &&
-      model.includes("application-inference-profile")
+      this.getProviderType(model) === 'bedrock-converse' &&
+      model.includes('application-inference-profile')
     ) {
-      return (await getInferenceProfileBackingModel(model)) ?? model;
+      return (await getInferenceProfileBackingModel(model)) ?? model
     }
-    return model;
+    return model
   }
 
   /**
@@ -558,14 +558,14 @@ export class ProviderRegistry {
    * For all other providers, returns childModel unchanged.
    */
   propagateModelPrefix(parentModel: string, childModel: string): string {
-    if (!this.getCapability(parentModel, "regionPrefixPropagation")) {
-      return childModel;
+    if (!this.getCapability(parentModel, 'regionPrefixPropagation')) {
+      return childModel
     }
-    const parentPrefix = getBedrockRegionPrefix(parentModel);
-    if (!parentPrefix) return childModel;
+    const parentPrefix = getBedrockRegionPrefix(parentModel)
+    if (!parentPrefix) return childModel
     // Don't override if child already has a prefix
-    if (getBedrockRegionPrefix(childModel)) return childModel;
-    return applyBedrockRegionPrefix(childModel, parentPrefix);
+    if (getBedrockRegionPrefix(childModel)) return childModel
+    return applyBedrockRegionPrefix(childModel, parentPrefix)
   }
 }
 
@@ -587,71 +587,71 @@ export class ProviderRegistry {
  */
 export function getProviderRegistry(): ProviderRegistry {
   if (!_instance) {
-    const settings = getInitialSettings();
-    const settingsObj = settings as Record<string, unknown>;
+    const settings = getInitialSettings()
+    const settingsObj = settings as Record<string, unknown>
 
     const readStr = (key: string): string | undefined =>
-      typeof settingsObj[key] === "string"
+      typeof settingsObj[key] === 'string'
         ? stripContextSuffix(settingsObj[key] as string)
-        : undefined;
+        : undefined
 
     const availableSubagentModels = Array.isArray(
       settingsObj.availableSubagentModels,
     )
       ? (settingsObj.availableSubagentModels as string[])
-      : undefined;
+      : undefined
 
     if (settings.providers) {
       _instance = new ProviderRegistry(
         settings.providers as Record<string, ProviderConfig>,
         {
-          defaultModel: readStr("defaultModel"),
-          defaultSubagentModel: readStr("defaultSubagentModel"),
-          defaultSmallFastModel: readStr("defaultSmallFastModel"),
+          defaultModel: readStr('defaultModel'),
+          defaultSubagentModel: readStr('defaultSubagentModel'),
+          defaultSmallFastModel: readStr('defaultSmallFastModel'),
           availableSubagentModels,
-          defaultBalancedModel: readStr("defaultBalancedModel"),
-          defaultMostPowerfulModel: readStr("defaultMostPowerfulModel"),
+          defaultBalancedModel: readStr('defaultBalancedModel'),
+          defaultMostPowerfulModel: readStr('defaultMostPowerfulModel'),
         },
-      );
+      )
     } else {
       // In-memory fallback only — never writes to disk. The authoritative
       // migration is runLegacyToFreecodeMigration() in the setup flow.
-      const oauthTokens = getClaudeAIOAuthTokens();
+      const oauthTokens = getClaudeAIOAuthTokens()
       const migrated = synthesizeProvidersFromLegacy({
         env: process.env,
         oauthTokens,
-      });
+      })
 
       _instance = new ProviderRegistry(migrated.providers, {
-        defaultModel: readStr("defaultModel") ?? migrated.defaultModel,
+        defaultModel: readStr('defaultModel') ?? migrated.defaultModel,
         defaultSubagentModel:
-          readStr("defaultSubagentModel") ?? migrated.defaultSubagentModel,
+          readStr('defaultSubagentModel') ?? migrated.defaultSubagentModel,
         defaultSmallFastModel:
-          readStr("defaultSmallFastModel") ?? migrated.defaultSmallFastModel,
+          readStr('defaultSmallFastModel') ?? migrated.defaultSmallFastModel,
         availableSubagentModels,
-        defaultBalancedModel: readStr("defaultBalancedModel"),
-        defaultMostPowerfulModel: readStr("defaultMostPowerfulModel"),
-      });
+        defaultBalancedModel: readStr('defaultBalancedModel'),
+        defaultMostPowerfulModel: readStr('defaultMostPowerfulModel'),
+      })
     }
   }
-  return _instance;
+  return _instance
 }
 
 export function initProviderRegistry(
   providers: Record<string, ProviderConfig>,
   opts?: {
-    defaultModel?: string;
-    defaultSubagentModel?: string;
-    defaultSmallFastModel?: string;
-    availableSubagentModels?: string[];
-    defaultBalancedModel?: string;
-    defaultMostPowerfulModel?: string;
+    defaultModel?: string
+    defaultSubagentModel?: string
+    defaultSmallFastModel?: string
+    availableSubagentModels?: string[]
+    defaultBalancedModel?: string
+    defaultMostPowerfulModel?: string
   },
 ): ProviderRegistry {
-  _instance = new ProviderRegistry(providers, opts);
-  return _instance;
+  _instance = new ProviderRegistry(providers, opts)
+  return _instance
 }
 
 export function resetProviderRegistry(): void {
-  _instance = null;
+  _instance = null
 }

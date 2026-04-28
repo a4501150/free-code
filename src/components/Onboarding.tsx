@@ -43,14 +43,12 @@ export function Onboarding({ onDone }: Props): React.ReactNode {
   const [oauthEnabled] = useState(() => isAnthropicAuthEnabled())
   const [theme, setTheme] = useTheme()
 
-  useEffect(() => {
-  }, [oauthEnabled])
+  useEffect(() => {}, [oauthEnabled])
 
   function goToNextStep() {
     if (currentStepIndex < steps.length - 1) {
       const nextIndex = currentStepIndex + 1
       setCurrentStepIndex(nextIndex)
-
     } else {
       onDone()
     }

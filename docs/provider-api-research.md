@@ -8,7 +8,7 @@ Research compiled 2026-04-21. Sources cited inline.
 
 These are the dimensions where providers fundamentally diverge in ways that force per-provider logic, not just field renaming:
 
-1. **Conversation shape: messages array vs items array.** Anthropic, Chat Completions, Bedrock Converse all use a `messages[]` array with role/content entries. The OpenAI Responses API uses a flat `input[]` / `output[]` of heterogeneous *items* where tool calls and tool results are first-class items, not content blocks nested inside a message. Translating multi-step tool-call turns between these two shapes is lossy when reasoning items appear between tool calls (o3/o4-mini behavior).
+1. **Conversation shape: messages array vs items array.** Anthropic, Chat Completions, Bedrock Converse all use a `messages[]` array with role/content entries. The OpenAI Responses API uses a flat `input[]` / `output[]` of heterogeneous _items_ where tool calls and tool results are first-class items, not content blocks nested inside a message. Translating multi-step tool-call turns between these two shapes is lossy when reasoning items appear between tool calls (o3/o4-mini behavior).
 
 2. **Tool-call correlation ID model is structurally different across four providers.** Anthropic uses `tool_use.id` / `tool_result.tool_use_id` (ID inside content blocks). Chat Completions uses `tool_calls[].id` (array on the assistant message) correlated to a separate `tool` role message with `tool_call_id`. Responses API uses `call_id` on top-level `function_call` / `function_call_output` items. Gemini matches by **name only** (no ID). Bedrock Converse uses `toolUse.toolUseId` / `toolResult.toolUseId` (same pattern as Anthropic but different field names). No mechanical mapping exists between name-only (Gemini) and ID-based systems.
 
@@ -46,6 +46,7 @@ anthropic-beta: <comma-separated beta flags>
 ```
 
 Top-level envelope:
+
 - `model` (required)
 - `messages` (required) — array of `{role: "user"|"assistant", content: string | ContentBlock[]}`
 - `max_tokens` (required)
@@ -59,6 +60,7 @@ Top-level envelope:
 System prompt supports `cache_control` per block when passed as an array, enabling selective cache placement on the system prompt independently from messages.
 
 Tool declaration format:
+
 ```json
 {
   "name": "get_weather",
@@ -72,16 +74,16 @@ Built-in server tools (web_search, code_execution, bash, str_replace_editor) use
 
 #### Content Block Taxonomy
 
-| Block type | Direction | Key fields |
-|---|---|---|
-| `text` | both | `text` |
-| `image` | user | `source: {type:"base64"|"url", media_type, data|url}` |
-| `document` | user | `source: {type:"base64"|"url"|"text"|"content", ...}`, `title`, `citations` |
-| `tool_use` | assistant | `id`, `name`, `input` (object) |
-| `tool_result` | user | `tool_use_id`, `content` (string or blocks), `is_error` |
-| `thinking` | assistant | `thinking` (text), `signature` (encrypted token) |
-| `redacted_thinking` | assistant | `data` (opaque encrypted blob) |
-| `search_result` | user/assistant | `source`, `title`, `content` |
+| Block type          | Direction      | Key fields                                              |
+| ------------------- | -------------- | ------------------------------------------------------- | ----------------------- | ------ | -------------------------------------- |
+| `text`              | both           | `text`                                                  |
+| `image`             | user           | `source: {type:"base64"                                 | "url", media_type, data | url}`  |
+| `document`          | user           | `source: {type:"base64"                                 | "url"                   | "text" | "content", ...}`, `title`, `citations` |
+| `tool_use`          | assistant      | `id`, `name`, `input` (object)                          |
+| `tool_result`       | user           | `tool_use_id`, `content` (string or blocks), `is_error` |
+| `thinking`          | assistant      | `thinking` (text), `signature` (encrypted token)        |
+| `redacted_thinking` | assistant      | `data` (opaque encrypted blob)                          |
+| `search_result`     | user/assistant | `source`, `title`, `content`                            |
 
 #### Tool-Call Correlation
 
@@ -90,6 +92,7 @@ Built-in server tools (web_search, code_execution, bash, str_replace_editor) use
 #### Streaming
 
 SSE events in order:
+
 1. `message_start` — envelope with `message.id`, `model`, initial `usage`
 2. `content_block_start` — `{index, content_block: {type, ...}}`
 3. `ping` — keepalive
@@ -147,6 +150,7 @@ Error types: `invalid_request_error`, `authentication_error`, `permission_error`
 #### Bedrock and Vertex Variants
 
 On **AWS Bedrock**:
+
 - `anthropic_version: "bedrock-2023-05-31"` moves from header to **request body**
 - Auth: AWS SigV4 signing
 - Endpoint: `POST https://bedrock-runtime.<region>.amazonaws.com/model/<modelId>/invoke`
@@ -154,6 +158,7 @@ On **AWS Bedrock**:
 - Feature parity lags the direct API
 
 On **Google Vertex AI**:
+
 - `anthropic_version: "vertex-2023-10-16"` in **request body**
 - Model moved from body to **URL path**
 - Auth: GCP OAuth2 Bearer (Application Default Credentials)
@@ -174,6 +179,7 @@ Authorization: Bearer <key>
 ```
 
 Top-level envelope:
+
 - `model` (required)
 - `messages` (required) — array of message objects
 - `tools` — array of function declarations
@@ -186,6 +192,7 @@ Top-level envelope:
 System prompt: a message with `role: "system"` in the `messages[]` array (no special top-level field).
 
 Tool declaration:
+
 ```json
 {
   "type": "function",
@@ -201,12 +208,12 @@ Tool declaration:
 
 Messages carry a `role` and `content`. Content is a string or array of typed parts.
 
-| Role | Content types | Notes |
-|---|---|---|
-| `system` | string or text parts | Instructions; placed first in messages[] |
-| `user` | text, image_url | Images via URL or base64 data URL |
+| Role        | Content types                            | Notes                                               |
+| ----------- | ---------------------------------------- | --------------------------------------------------- |
+| `system`    | string or text parts                     | Instructions; placed first in messages[]            |
+| `user`      | text, image_url                          | Images via URL or base64 data URL                   |
 | `assistant` | string or content parts + `tool_calls[]` | `tool_calls` is a sibling field, not a content part |
-| `tool` | string or array | Result of a tool; correlates via `tool_call_id` |
+| `tool`      | string or array                          | Result of a tool; correlates via `tool_call_id`     |
 
 No native document, thinking, or reasoning content blocks. No `tool_use` block type — tool invocations are surfaced via `choices[0].message.tool_calls[]`.
 
@@ -227,6 +234,7 @@ Arguments are a **JSON-encoded string**, not a parsed object. Parallel tool call
 #### Streaming
 
 Chunks are `chat.completion.chunk` objects with a `delta` field instead of `message`:
+
 - Text: `delta.content` increments
 - Tool calls: `delta.tool_calls[].function.arguments` increments (chunked JSON string); `delta.tool_calls[].index` identifies which call
 - First chunk includes `delta.role`
@@ -283,6 +291,7 @@ Authorization: Bearer <key>
 ```
 
 Top-level envelope:
+
 - `model` (required)
 - `input` — string or array of input items
 - `instructions` — top-level system-level field (separate from `input`, analogous to system prompt)
@@ -294,6 +303,7 @@ Top-level envelope:
 - `stream` — boolean
 
 Tool declaration (flat/internally-tagged):
+
 ```json
 { "type": "function", "name": "get_weather", "description": "...", "parameters": {...} }
 ```
@@ -302,12 +312,12 @@ Tool declaration (flat/internally-tagged):
 
 The fundamental unit is an **Item** (not a message). The `input` array and `output` array contain a union of item types:
 
-| Item type | Direction | Key fields |
-|---|---|---|
-| `message` | both | `role`, `content: [{type:"output_text",text}]` |
-| `function_call` | output | `call_id`, `name`, `arguments` (JSON string) |
-| `function_call_output` | input | `call_id`, `output` (string) |
-| `reasoning` | output | `id`, `encrypted_content` (ZDR mode) or `summary` |
+| Item type              | Direction | Key fields                                        |
+| ---------------------- | --------- | ------------------------------------------------- |
+| `message`              | both      | `role`, `content: [{type:"output_text",text}]`    |
+| `function_call`        | output    | `call_id`, `name`, `arguments` (JSON string)      |
+| `function_call_output` | input     | `call_id`, `output` (string)                      |
+| `reasoning`            | output    | `id`, `encrypted_content` (ZDR mode) or `summary` |
 
 A `message` item can contain `output_text` content parts. There is no `tool_use` content block nested inside a message — tool invocations are separate top-level items. This is the critical structural difference from Chat Completions and Anthropic.
 
@@ -321,21 +331,21 @@ For stateless multi-turn with reasoning (ZDR), reasoning items must be included 
 
 Semantic named events (not just raw JSON chunks):
 
-| Event | Meaning |
-|---|---|
-| `response.created` | Response object created |
-| `response.output_item.added` | New output item started (message, function_call, reasoning) |
-| `response.output_text.delta` | Text delta for a message's output_text part |
-| `response.output_text.done` | Text part complete |
-| `response.function_call_arguments.delta` | Chunked JSON for function call arguments |
-| `response.function_call_arguments.done` | Function call arguments complete |
-| `response.reasoning_text.delta` | Reasoning text delta |
-| `response.reasoning_text.done` | Reasoning text complete |
-| `response.reasoning_summary_text.delta` | Summary delta |
-| `response.reasoning_summary_text.done` | Summary complete |
-| `response.output_item.done` | Item finalized |
-| `response.done` | Entire response complete; `status` field on the response object |
-| `error` | Error event |
+| Event                                    | Meaning                                                         |
+| ---------------------------------------- | --------------------------------------------------------------- |
+| `response.created`                       | Response object created                                         |
+| `response.output_item.added`             | New output item started (message, function_call, reasoning)     |
+| `response.output_text.delta`             | Text delta for a message's output_text part                     |
+| `response.output_text.done`              | Text part complete                                              |
+| `response.function_call_arguments.delta` | Chunked JSON for function call arguments                        |
+| `response.function_call_arguments.done`  | Function call arguments complete                                |
+| `response.reasoning_text.delta`          | Reasoning text delta                                            |
+| `response.reasoning_text.done`           | Reasoning text complete                                         |
+| `response.reasoning_summary_text.delta`  | Summary delta                                                   |
+| `response.reasoning_summary_text.done`   | Summary complete                                                |
+| `response.output_item.done`              | Item finalized                                                  |
+| `response.done`                          | Entire response complete; `status` field on the response object |
+| `error`                                  | Error event                                                     |
 
 #### Usage Fields
 
@@ -385,11 +395,13 @@ x-goog-api-key: <key>
 ```
 
 Streaming:
+
 ```
 POST https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse
 ```
 
 Top-level envelope:
+
 - `contents` (required) — array of `Content` objects
 - `systemInstruction` — `Content` object with text parts (top-level, not in `contents[]`)
 - `tools` — array of tool objects
@@ -399,6 +411,7 @@ Top-level envelope:
 - `cachedContent` — reference to a pre-created cache resource (`cachedContents/{id}`)
 
 Tool declaration:
+
 ```json
 {
   "functionDeclarations": [
@@ -417,14 +430,14 @@ Tools are grouped inside a `Tool` object that contains `functionDeclarations[]` 
 
 Each `Content` has `role: "user"|"model"` and `parts[]`. Part types:
 
-| Part type | Structure |
-|---|---|
-| Text | `{"text": "..."}` |
-| Inline data (image/audio) | `{"inline_data": {"mime_type": "...", "data": "<base64>"}}` |
-| File data | `{"file_data": {"mime_type": "...", "file_uri": "..."}}` |
-| `functionCall` | `{"functionCall": {"name": "...", "id": "...", "args": {...}}}` |
-| `functionResponse` | `{"functionResponse": {"name": "...", "id": "...", "response": {...}}}` |
-| Thought (thinking) | Part with `thought: true` boolean field |
+| Part type                 | Structure                                                               |
+| ------------------------- | ----------------------------------------------------------------------- |
+| Text                      | `{"text": "..."}`                                                       |
+| Inline data (image/audio) | `{"inline_data": {"mime_type": "...", "data": "<base64>"}}`             |
+| File data                 | `{"file_data": {"mime_type": "...", "file_uri": "..."}}`                |
+| `functionCall`            | `{"functionCall": {"name": "...", "id": "...", "args": {...}}}`         |
+| `functionResponse`        | `{"functionResponse": {"name": "...", "id": "...", "response": {...}}}` |
+| Thought (thinking)        | Part with `thought: true` boolean field                                 |
 
 No separate roles for function results — `functionResponse` parts live in a `Content` with `role: "user"`. There is no concept of a `tool` role.
 
@@ -460,6 +473,7 @@ Not applicable to automatic/implicit caching — no prefix-based caching is avai
 #### Reasoning/Thinking
 
 Configured via `generationConfig.thinkingConfig`:
+
 - Gemini 2.5 models: `{"thinkingBudget": N}` (integer; 0=off, -1=dynamic)
 - Gemini 3 models: `{"thinkingLevel": "minimal"|"low"|"medium"|"high"}`
 
@@ -470,6 +484,7 @@ For multi-turn conversations with function calling + thinking (Gemini 2.5+), tho
 #### Error Model
 
 HTTP errors return:
+
 ```json
 { "error": { "code": N, "message": "...", "status": "<gRPC status string>" } }
 ```
@@ -506,6 +521,7 @@ Authorization: AWS Signature Version 4
 ```
 
 Top-level envelope:
+
 - `messages` (required) — array of `Message` objects
 - `system` — array of `SystemContentBlock` objects (`[{"text":"..."}]`)
 - `inferenceConfig` — `{maxTokens, temperature, topP, stopSequences}`
@@ -517,6 +533,7 @@ Top-level envelope:
 System prompt: array of `SystemContentBlock` (currently only `text` type).
 
 Tool declaration:
+
 ```json
 {
   "toolSpec": {
@@ -533,16 +550,16 @@ Note the extra `inputSchema.json` nesting and use of `toolSpec` wrapper. Tool in
 
 `ContentBlock` is a **union type** — only one field may be set per block:
 
-| Field | Type | Notes |
-|---|---|---|
-| `text` | string | Plain text |
-| `image` | `ImageBlock` | `{format:"jpeg"|"png"|"gif"|"webp", source:{bytes|s3Location}}` |
-| `document` | `DocumentBlock` | PDF, Word, etc. — up to 4.5 MB, max 5 per message |
-| `video` | `VideoBlock` | Video content |
-| `toolUse` | `ToolUseBlock` | `{toolUseId, name, input}` — model requests a tool |
-| `toolResult` | `ToolResultBlock` | `{toolUseId, content, status:"success"|"error"}` |
-| `reasoning` | `ReasoningBlock` | Chain-of-thought; encrypted on Bedrock for Claude thinking |
-| `searchResult` | `SearchResultBlock` | Retrieved search content |
+| Field          | Type                | Notes                                                      |
+| -------------- | ------------------- | ---------------------------------------------------------- | --------- | ----- | --------------------- | ------------- |
+| `text`         | string              | Plain text                                                 |
+| `image`        | `ImageBlock`        | `{format:"jpeg"                                            | "png"     | "gif" | "webp", source:{bytes | s3Location}}` |
+| `document`     | `DocumentBlock`     | PDF, Word, etc. — up to 4.5 MB, max 5 per message          |
+| `video`        | `VideoBlock`        | Video content                                              |
+| `toolUse`      | `ToolUseBlock`      | `{toolUseId, name, input}` — model requests a tool         |
+| `toolResult`   | `ToolResultBlock`   | `{toolUseId, content, status:"success"                     | "error"}` |
+| `reasoning`    | `ReasoningBlock`    | Chain-of-thought; encrypted on Bedrock for Claude thinking |
+| `searchResult` | `SearchResultBlock` | Retrieved search content                                   |
 
 Up to 20 images and 5 documents per message. Images: max 3.75 MB, 8000×8000 px.
 
@@ -558,19 +575,19 @@ POST /model/{modelId}/converse-stream
 
 The response is an event-stream union. Events:
 
-| Event key | Structure | Notes |
-|---|---|---|
-| `messageStart` | `{role}` | Start of assistant turn |
-| `contentBlockStart` | `{contentBlockIndex, start}` | Block opening |
-| `contentBlockDelta` | `{contentBlockIndex, delta}` | Incremental content |
-| `contentBlockStop` | `{contentBlockIndex}` | Block closed |
-| `messageStop` | `{stopReason, additionalModelResponseFields}` | Turn complete |
-| `metadata` | `{usage, metrics, trace, ...}` | Token counts arrive here, at end of stream |
-| `internalServerException` | exception | HTTP 500, mid-stream |
-| `modelStreamErrorException` | exception | HTTP 424, mid-stream |
-| `throttlingException` | exception | HTTP 429, mid-stream |
-| `validationException` | exception | HTTP 400, mid-stream |
-| `serviceUnavailableException` | exception | HTTP 503, mid-stream |
+| Event key                     | Structure                                     | Notes                                      |
+| ----------------------------- | --------------------------------------------- | ------------------------------------------ |
+| `messageStart`                | `{role}`                                      | Start of assistant turn                    |
+| `contentBlockStart`           | `{contentBlockIndex, start}`                  | Block opening                              |
+| `contentBlockDelta`           | `{contentBlockIndex, delta}`                  | Incremental content                        |
+| `contentBlockStop`            | `{contentBlockIndex}`                         | Block closed                               |
+| `messageStop`                 | `{stopReason, additionalModelResponseFields}` | Turn complete                              |
+| `metadata`                    | `{usage, metrics, trace, ...}`                | Token counts arrive here, at end of stream |
+| `internalServerException`     | exception                                     | HTTP 500, mid-stream                       |
+| `modelStreamErrorException`   | exception                                     | HTTP 424, mid-stream                       |
+| `throttlingException`         | exception                                     | HTTP 429, mid-stream                       |
+| `validationException`         | exception                                     | HTTP 400, mid-stream                       |
+| `serviceUnavailableException` | exception                                     | HTTP 503, mid-stream                       |
 
 Usage is emitted in the `metadata` event at the **end** of the stream (not in the initial response or mid-stream). Error exceptions are typed union members of the stream, not raw HTTP errors — a key difference that enables reliable mid-stream error detection.
 
@@ -590,6 +607,7 @@ Usage is emitted in the `metadata` event at the **end** of the stream (not in th
 #### Prompt Caching
 
 For the Converse API, explicit cache markers use a `cachePoint` object appended to content arrays:
+
 ```json
 { "cachePoint": { "type": "default", "ttl": "5m"|"1h" } }
 ```
@@ -616,85 +634,85 @@ No API version header. Model capabilities are gated by model ID. `additionalMode
 
 ### Content Block Types
 
-| Block concept | Anthropic | OpenAI Chat Completions | OpenAI Responses | Gemini | Bedrock Converse |
-|---|---|---|---|---|---|
-| Plain text | `{type:"text"}` | `content` string / `{type:"text"}` | `output_text` in message | `{text:"..."}` part | `{text:"..."}` |
-| Image | `{type:"image",source:{type,media_type,data}}` | `{type:"image_url",image_url:{url}}` | (same as Chat) | `{inline_data:{mime_type,data}}` or `file_data` | `{image:{format,source:{bytes}}}` |
-| Document/file | `{type:"document",source:{...}}` | Not native | Not native | `file_data` | `{document:{...}}` |
-| Tool invocation | `{type:"tool_use",id,name,input}` in assistant | `tool_calls[{id,function.name,function.arguments}]` on assistant message | `function_call` top-level item with `call_id` | `{functionCall:{name,id?,args}}` part | `{toolUse:{toolUseId,name,input}}` |
-| Tool result | `{type:"tool_result",tool_use_id,content}` in user | Role `"tool"` message with `tool_call_id` | `function_call_output` item with `call_id` | `{functionResponse:{name,id?,response}}` part in user Content | `{toolResult:{toolUseId,content,status}}` |
-| Thinking/reasoning | `{type:"thinking",thinking,signature}` | Not supported | `reasoning` item | Part with `thought:true` | `{reasoning:{...}}` (Claude-specific) |
-| Redacted thinking | `{type:"redacted_thinking",data}` | Not supported | Encrypted in reasoning item | Not exposed | Encrypted on Bedrock |
+| Block concept      | Anthropic                                          | OpenAI Chat Completions                                                  | OpenAI Responses                              | Gemini                                                        | Bedrock Converse                          |
+| ------------------ | -------------------------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------- |
+| Plain text         | `{type:"text"}`                                    | `content` string / `{type:"text"}`                                       | `output_text` in message                      | `{text:"..."}` part                                           | `{text:"..."}`                            |
+| Image              | `{type:"image",source:{type,media_type,data}}`     | `{type:"image_url",image_url:{url}}`                                     | (same as Chat)                                | `{inline_data:{mime_type,data}}` or `file_data`               | `{image:{format,source:{bytes}}}`         |
+| Document/file      | `{type:"document",source:{...}}`                   | Not native                                                               | Not native                                    | `file_data`                                                   | `{document:{...}}`                        |
+| Tool invocation    | `{type:"tool_use",id,name,input}` in assistant     | `tool_calls[{id,function.name,function.arguments}]` on assistant message | `function_call` top-level item with `call_id` | `{functionCall:{name,id?,args}}` part                         | `{toolUse:{toolUseId,name,input}}`        |
+| Tool result        | `{type:"tool_result",tool_use_id,content}` in user | Role `"tool"` message with `tool_call_id`                                | `function_call_output` item with `call_id`    | `{functionResponse:{name,id?,response}}` part in user Content | `{toolResult:{toolUseId,content,status}}` |
+| Thinking/reasoning | `{type:"thinking",thinking,signature}`             | Not supported                                                            | `reasoning` item                              | Part with `thought:true`                                      | `{reasoning:{...}}` (Claude-specific)     |
+| Redacted thinking  | `{type:"redacted_thinking",data}`                  | Not supported                                                            | Encrypted in reasoning item                   | Not exposed                                                   | Encrypted on Bedrock                      |
 
 ### Tool-Call ID Model
 
-| Provider | ID field | Location | Result correlation | Same-name parallel calls |
-|---|---|---|---|---|
-| Anthropic | `tool_use.id` (e.g. `toolu_...`) | Inside content block | `tool_result.tool_use_id` | Each gets distinct ID |
-| Chat Completions | `tool_calls[].id` (e.g. `call_...`) | Sibling array on assistant message | `tool` role msg `tool_call_id` | Each gets distinct ID in array |
-| Responses API | `call_id` on `function_call` item | Top-level item field | `function_call_output.call_id` | Each gets distinct `call_id` |
-| Gemini | None (legacy) / `functionCall.id` (Gemini 2.5+ with thinking) | Inside Part | `functionResponse.name` match | Breaks without `id` |
-| Bedrock Converse | `toolUse.toolUseId` | Inside content block | `toolResult.toolUseId` | Each gets distinct ID |
+| Provider         | ID field                                                      | Location                           | Result correlation             | Same-name parallel calls       |
+| ---------------- | ------------------------------------------------------------- | ---------------------------------- | ------------------------------ | ------------------------------ |
+| Anthropic        | `tool_use.id` (e.g. `toolu_...`)                              | Inside content block               | `tool_result.tool_use_id`      | Each gets distinct ID          |
+| Chat Completions | `tool_calls[].id` (e.g. `call_...`)                           | Sibling array on assistant message | `tool` role msg `tool_call_id` | Each gets distinct ID in array |
+| Responses API    | `call_id` on `function_call` item                             | Top-level item field               | `function_call_output.call_id` | Each gets distinct `call_id`   |
+| Gemini           | None (legacy) / `functionCall.id` (Gemini 2.5+ with thinking) | Inside Part                        | `functionResponse.name` match  | Breaks without `id`            |
+| Bedrock Converse | `toolUse.toolUseId`                                           | Inside content block               | `toolResult.toolUseId`         | Each gets distinct ID          |
 
 ### Streaming Event Types
 
-| Phase | Anthropic | Chat Completions | Responses API | Gemini | Bedrock Converse |
-|---|---|---|---|---|---|
-| Stream open | `message_start` | First chunk | `response.created` | First SSE data | `messageStart` |
-| Text delta | `content_block_delta` / `text_delta` | `delta.content` | `response.output_text.delta` | Partial `GenerateContentResponse` | `contentBlockDelta` |
-| Tool args delta | `input_json_delta` | `delta.tool_calls[].function.arguments` | `response.function_call_arguments.delta` | No delta (whole args in one part) | `contentBlockDelta` |
-| Reasoning delta | `thinking_delta` | Not applicable | `response.reasoning_text.delta` | (no streaming delta) | Not exposed |
-| Usage | `message_delta` usage | Final chunk (if `stream_options.include_usage`) | `response.done` object | Not in stream | `metadata` event |
-| Stream end | `message_stop` | `data: [DONE]` | `response.done` | Stream closes | `messageStop` |
-| Mid-stream error | `event: error` | `data:{error:{...}}` | `error` event | HTTP drop | Typed exception events |
+| Phase            | Anthropic                            | Chat Completions                                | Responses API                            | Gemini                            | Bedrock Converse       |
+| ---------------- | ------------------------------------ | ----------------------------------------------- | ---------------------------------------- | --------------------------------- | ---------------------- |
+| Stream open      | `message_start`                      | First chunk                                     | `response.created`                       | First SSE data                    | `messageStart`         |
+| Text delta       | `content_block_delta` / `text_delta` | `delta.content`                                 | `response.output_text.delta`             | Partial `GenerateContentResponse` | `contentBlockDelta`    |
+| Tool args delta  | `input_json_delta`                   | `delta.tool_calls[].function.arguments`         | `response.function_call_arguments.delta` | No delta (whole args in one part) | `contentBlockDelta`    |
+| Reasoning delta  | `thinking_delta`                     | Not applicable                                  | `response.reasoning_text.delta`          | (no streaming delta)              | Not exposed            |
+| Usage            | `message_delta` usage                | Final chunk (if `stream_options.include_usage`) | `response.done` object                   | Not in stream                     | `metadata` event       |
+| Stream end       | `message_stop`                       | `data: [DONE]`                                  | `response.done`                          | Stream closes                     | `messageStop`          |
+| Mid-stream error | `event: error`                       | `data:{error:{...}}`                            | `error` event                            | HTTP drop                         | Typed exception events |
 
 ### Usage Fields
 
-| Field concept | Anthropic | Chat Completions | Responses API | Gemini | Bedrock Converse |
-|---|---|---|---|---|---|
-| Input tokens | `input_tokens` | `prompt_tokens` | `input_tokens` | `promptTokenCount` | `inputTokens` |
-| Output tokens | `output_tokens` | `completion_tokens` | `output_tokens` | `candidatesTokenCount` | `outputTokens` |
-| Cache write tokens | `cache_creation_input_tokens` | (none) | (none) | (none — separate billing) | `cacheWriteInputTokens` |
-| Cache read tokens | `cache_read_input_tokens` | `prompt_tokens_details.cached_tokens` | (same as Chat) | `cachedContentTokenCount` | `cacheReadInputTokens` |
-| Reasoning tokens | (in `output_tokens`) | Not applicable | `reasoning_tokens` (separate) | `thoughtsTokenCount` | (in output, model-specific) |
-| Count without generating | `/v1/messages/count_tokens` | No endpoint | No endpoint | `/{model}:countTokens` | `bedrock-runtime:count_tokens` |
+| Field concept            | Anthropic                     | Chat Completions                      | Responses API                 | Gemini                    | Bedrock Converse               |
+| ------------------------ | ----------------------------- | ------------------------------------- | ----------------------------- | ------------------------- | ------------------------------ |
+| Input tokens             | `input_tokens`                | `prompt_tokens`                       | `input_tokens`                | `promptTokenCount`        | `inputTokens`                  |
+| Output tokens            | `output_tokens`               | `completion_tokens`                   | `output_tokens`               | `candidatesTokenCount`    | `outputTokens`                 |
+| Cache write tokens       | `cache_creation_input_tokens` | (none)                                | (none)                        | (none — separate billing) | `cacheWriteInputTokens`        |
+| Cache read tokens        | `cache_read_input_tokens`     | `prompt_tokens_details.cached_tokens` | (same as Chat)                | `cachedContentTokenCount` | `cacheReadInputTokens`         |
+| Reasoning tokens         | (in `output_tokens`)          | Not applicable                        | `reasoning_tokens` (separate) | `thoughtsTokenCount`      | (in output, model-specific)    |
+| Count without generating | `/v1/messages/count_tokens`   | No endpoint                           | No endpoint                   | `/{model}:countTokens`    | `bedrock-runtime:count_tokens` |
 
 ### Cache Model
 
-| Dimension | Anthropic | OpenAI (Chat + Responses) | Gemini | Bedrock Converse |
-|---|---|---|---|---|
-| User control | Explicit `cache_control` breakpoints | None (fully automatic) | Explicit `cachedContent` resource | Explicit `cachePoint` or `cache_control` |
-| Placement | Per-block markers in request | Automatic prefix matching (first 1024+ tokens) | Entire pre-created `cachedContent` object | CachePoint appended to content arrays |
-| Default TTL | 5 min (was 1h pre-March 2025) | 5–10 min inactivity / max 1h | 1 hour (configurable) | 5 min default; 1h for select models |
-| Discount on cache read | 90% (0.1x) | 50% | 75–90% | Varies by model |
-| Cache write cost | 1.25x (5 min) or 2x (1h) | No write cost | Standard input rate | Varies |
-| Minimum tokens | 1024 | 1024 | 2048 | 1024 |
-| Storage billing | No | No | Yes (hourly per M tokens) | No |
-| Placement constraints | Longer TTL before shorter TTL | None | N/A (separate resource) | Longer TTL before shorter TTL |
+| Dimension              | Anthropic                            | OpenAI (Chat + Responses)                      | Gemini                                    | Bedrock Converse                         |
+| ---------------------- | ------------------------------------ | ---------------------------------------------- | ----------------------------------------- | ---------------------------------------- |
+| User control           | Explicit `cache_control` breakpoints | None (fully automatic)                         | Explicit `cachedContent` resource         | Explicit `cachePoint` or `cache_control` |
+| Placement              | Per-block markers in request         | Automatic prefix matching (first 1024+ tokens) | Entire pre-created `cachedContent` object | CachePoint appended to content arrays    |
+| Default TTL            | 5 min (was 1h pre-March 2025)        | 5–10 min inactivity / max 1h                   | 1 hour (configurable)                     | 5 min default; 1h for select models      |
+| Discount on cache read | 90% (0.1x)                           | 50%                                            | 75–90%                                    | Varies by model                          |
+| Cache write cost       | 1.25x (5 min) or 2x (1h)             | No write cost                                  | Standard input rate                       | Varies                                   |
+| Minimum tokens         | 1024                                 | 1024                                           | 2048                                      | 1024                                     |
+| Storage billing        | No                                   | No                                             | Yes (hourly per M tokens)                 | No                                       |
+| Placement constraints  | Longer TTL before shorter TTL        | None                                           | N/A (separate resource)                   | Longer TTL before shorter TTL            |
 
 ### Reasoning Model
 
-| Dimension | Anthropic | OpenAI Responses | Gemini |
-|---|---|---|---|
-| Budget control | `thinking.budget_tokens` (integer) | `reasoning.effort` (enum) | `thinkingBudget` (integer) or `thinkingLevel` (enum, Gemini 3 only) |
-| Reasoning visible | Yes — `thinking` blocks with text | Partial — `reasoning_summary` only; raw thinking encrypted | Yes — thought parts with summarized text (best-effort) |
-| Reinject across turns | Must echo `thinking` + `redacted_thinking` blocks verbatim | Automatic via `previous_response_id`; manual via `encrypted_content` in ZDR mode | Must pass thought parts with signatures verbatim; no merging |
-| Integrity token | `signature` field on thinking block | `encrypted_content` on reasoning item | Signature on individual parts |
-| Billed as | Output tokens | Output tokens (separate `reasoning_tokens` field) | Output tokens (`thoughtsTokenCount`) |
+| Dimension             | Anthropic                                                  | OpenAI Responses                                                                 | Gemini                                                              |
+| --------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Budget control        | `thinking.budget_tokens` (integer)                         | `reasoning.effort` (enum)                                                        | `thinkingBudget` (integer) or `thinkingLevel` (enum, Gemini 3 only) |
+| Reasoning visible     | Yes — `thinking` blocks with text                          | Partial — `reasoning_summary` only; raw thinking encrypted                       | Yes — thought parts with summarized text (best-effort)              |
+| Reinject across turns | Must echo `thinking` + `redacted_thinking` blocks verbatim | Automatic via `previous_response_id`; manual via `encrypted_content` in ZDR mode | Must pass thought parts with signatures verbatim; no merging        |
+| Integrity token       | `signature` field on thinking block                        | `encrypted_content` on reasoning item                                            | Signature on individual parts                                       |
+| Billed as             | Output tokens                                              | Output tokens (separate `reasoning_tokens` field)                                | Output tokens (`thoughtsTokenCount`)                                |
 
 ### Error and Finish-Reason Model
 
-| Dimension | Anthropic | Chat Completions | Responses API | Gemini | Bedrock Converse |
-|---|---|---|---|---|---|
-| Error body | `{type:"error",error:{type,message}}` | `{error:{type,code,message,param}}` | Same as Chat | `{error:{code,status,message}}` | AWS exception shape |
-| Rate limit error | `rate_limit_error` | `rate_limit_error` | same | `RESOURCE_EXHAUSTED` (429) | `ThrottlingException` (429) |
-| Context window exceeded | `invalid_request_error` + message | `context_length_exceeded` code | `incomplete_details.reason` | `INVALID_ARGUMENT` | `model_context_window_exceeded` stop reason |
-| Mid-stream errors | SSE `event: error` | `data:{error:{...}}` chunk | `error` event | HTTP stream drop | Typed union events in stream |
-| Safety block | `refusal` stop reason | `content_filter` finish reason | `incomplete` status | `SAFETY` / `PROHIBITED_CONTENT` finishReason | `content_filtered` stop reason |
-| Natural end | `end_turn` | `stop` | `status: "completed"` | `STOP` | `end_turn` |
-| Token limit | `max_tokens` | `length` | `incomplete` + `max_output_tokens` reason | `MAX_TOKENS` | `max_tokens` |
-| Tool call requested | `tool_use` | `tool_calls` | N/A (items model) | `MALFORMED_FUNCTION_CALL` (error case) | `tool_use` |
-| Malformed function call | (validation error) | (not named) | (not named) | `MALFORMED_FUNCTION_CALL` | `malformed_tool_use` |
+| Dimension               | Anthropic                             | Chat Completions                    | Responses API                             | Gemini                                       | Bedrock Converse                            |
+| ----------------------- | ------------------------------------- | ----------------------------------- | ----------------------------------------- | -------------------------------------------- | ------------------------------------------- |
+| Error body              | `{type:"error",error:{type,message}}` | `{error:{type,code,message,param}}` | Same as Chat                              | `{error:{code,status,message}}`              | AWS exception shape                         |
+| Rate limit error        | `rate_limit_error`                    | `rate_limit_error`                  | same                                      | `RESOURCE_EXHAUSTED` (429)                   | `ThrottlingException` (429)                 |
+| Context window exceeded | `invalid_request_error` + message     | `context_length_exceeded` code      | `incomplete_details.reason`               | `INVALID_ARGUMENT`                           | `model_context_window_exceeded` stop reason |
+| Mid-stream errors       | SSE `event: error`                    | `data:{error:{...}}` chunk          | `error` event                             | HTTP stream drop                             | Typed union events in stream                |
+| Safety block            | `refusal` stop reason                 | `content_filter` finish reason      | `incomplete` status                       | `SAFETY` / `PROHIBITED_CONTENT` finishReason | `content_filtered` stop reason              |
+| Natural end             | `end_turn`                            | `stop`                              | `status: "completed"`                     | `STOP`                                       | `end_turn`                                  |
+| Token limit             | `max_tokens`                          | `length`                            | `incomplete` + `max_output_tokens` reason | `MAX_TOKENS`                                 | `max_tokens`                                |
+| Tool call requested     | `tool_use`                            | `tool_calls`                        | N/A (items model)                         | `MALFORMED_FUNCTION_CALL` (error case)       | `tool_use`                                  |
+| Malformed function call | (validation error)                    | (not named)                         | (not named)                               | `MALFORMED_FUNCTION_CALL`                    | `malformed_tool_use`                        |
 
 ---
 
@@ -728,7 +746,7 @@ No API version header. Model capabilities are gated by model ID. `additionalMode
 
 **Auth and deployment variants require per-provider logic regardless of wire shape.** SigV4 signing (Bedrock), GCP OAuth2 + model-in-URL (Vertex), API key (Anthropic direct, OpenAI, Gemini AI Studio) are orthogonal to the request body schema. Any abstraction must accommodate per-provider auth even if the body format were identical.
 
-**Conclusion:** Anthropic's Messages shape is a reasonable *default* internal representation for an Anthropic-first CLI — it covers the common case (text, tools, images) with low adapter overhead for Bedrock and Vertex (same wire format, different auth/wrapping). For OpenAI Chat Completions the adapter overhead is modest (role-based tool messages vs content blocks, `tool_calls` array vs `tool_use` block). For Gemini the adapter is heavier (name-based correlation, different streaming shape, resource-based caching). For OpenAI Responses the adapter is structurally lossy for multi-turn reasoning-interleaved tool use. A truly provider-agnostic abstraction that avoids loss would need to represent: (1) tool call correlation as a first-class ID that can be provider-native or synthetic, (2) reasoning blobs as tagged opaque provider-specific payloads, (3) caching intent separately from caching implementation (stripped vs. breakpointed vs. resource ID). Whether the overhead of that richer abstraction is justified depends on whether OpenAI Responses and Gemini are first-class citizens or secondary targets.
+**Conclusion:** Anthropic's Messages shape is a reasonable _default_ internal representation for an Anthropic-first CLI — it covers the common case (text, tools, images) with low adapter overhead for Bedrock and Vertex (same wire format, different auth/wrapping). For OpenAI Chat Completions the adapter overhead is modest (role-based tool messages vs content blocks, `tool_calls` array vs `tool_use` block). For Gemini the adapter is heavier (name-based correlation, different streaming shape, resource-based caching). For OpenAI Responses the adapter is structurally lossy for multi-turn reasoning-interleaved tool use. A truly provider-agnostic abstraction that avoids loss would need to represent: (1) tool call correlation as a first-class ID that can be provider-native or synthetic, (2) reasoning blobs as tagged opaque provider-specific payloads, (3) caching intent separately from caching implementation (stripped vs. breakpointed vs. resource ID). Whether the overhead of that richer abstraction is justified depends on whether OpenAI Responses and Gemini are first-class citizens or secondary targets.
 
 ---
 

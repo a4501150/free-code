@@ -99,7 +99,6 @@ export class AuthCodeListener {
     this.pendingResponse.writeHead(302, { Location: successUrl })
     this.pendingResponse.end()
     this.pendingResponse = null
-
   }
 
   /**
@@ -116,7 +115,6 @@ export class AuthCodeListener {
     this.pendingResponse.writeHead(302, { Location: errorUrl })
     this.pendingResponse.end()
     this.pendingResponse = null
-
   }
 
   private startLocalListener(onReady: () => Promise<void>): void {

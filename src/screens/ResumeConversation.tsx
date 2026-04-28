@@ -248,9 +248,8 @@ export function ResumeConversation({
           const { getAgentDefinitionsWithOverrides, getActiveAgentsFromList } =
             loadAgentsDirNs
           getAgentDefinitionsWithOverrides.cache.clear?.()
-          const freshAgentDefs = await getAgentDefinitionsWithOverrides(
-            getOriginalCwd(),
-          )
+          const freshAgentDefs =
+            await getAgentDefinitionsWithOverrides(getOriginalCwd())
           setAppState(prev => ({
             ...prev,
             agentDefinitions: {

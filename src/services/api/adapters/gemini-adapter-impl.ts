@@ -9,7 +9,11 @@
  * rough estimator can take over.
  */
 import type { ProviderAdapter, FetchFn, TokenBreakdown } from '../adapter.js'
-import type { ProviderCapabilities, ProviderConfig, ProviderType } from '../../../utils/settings/types.js'
+import type {
+  ProviderCapabilities,
+  ProviderConfig,
+  ProviderType,
+} from '../../../utils/settings/types.js'
 import {
   fromHttpStatus,
   type NormalizedApiError,
@@ -126,9 +130,9 @@ export const geminiAdapter: ProviderAdapter = {
     options?: { system?: string; betas?: string[] },
   ): Promise<TokenBreakdown | null> {
     try {
-      const resolved = getProviderRegistry().getProviderForModel(model) as
-        | ResolvedProvider
-        | null
+      const resolved = getProviderRegistry().getProviderForModel(
+        model,
+      ) as ResolvedProvider | null
       if (!resolved || resolved.config.type !== 'gemini') return null
 
       const access = await getGcpAccessToken(resolved.config)
@@ -234,7 +238,8 @@ export const geminiAdapter: ProviderAdapter = {
     if (typeof r.status === 'number') {
       const base = fromHttpStatus(
         r.status,
-        errMessage ?? (typeof r.body === 'string' ? r.body : `HTTP ${r.status}`),
+        errMessage ??
+          (typeof r.body === 'string' ? r.body : `HTTP ${r.status}`),
         providerType,
         r.headers,
         raw,
@@ -243,7 +248,9 @@ export const geminiAdapter: ProviderAdapter = {
     }
 
     const causeMsg =
-      r.cause instanceof Error ? r.cause.message : String(r.cause ?? 'stream error')
+      r.cause instanceof Error
+        ? r.cause.message
+        : String(r.cause ?? 'stream error')
     const base: NormalizedApiError = {
       kind: r.mid_stream ? 'unknown' : 'transport',
       message: errMessage ?? causeMsg,

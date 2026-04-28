@@ -6,9 +6,7 @@ import { getAutoMemPath, isAutoMemoryEnabled } from './paths.js'
 import * as teamMemPathsNs from './teamMemPaths.js'
 const teamMemPaths = feature('TEAMMEM') ? teamMemPathsNs : null
 import { getKairosActive, getOriginalCwd } from '../bootstrap/state.js'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-} from '../services/analytics/index.js'
+import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../services/analytics/index.js'
 import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
 import { isReplModeEnabled } from '../tools/REPLTool/constants.js'
 import { logForDebugging } from '../utils/debug.js'
@@ -34,12 +32,14 @@ export const MAX_ENTRYPOINT_BYTES_DEFAULT = 200_000
 
 export function getMaxEntrypointLines(): number {
   return (
-    getInitialSettings()?.maxMemoryEntrypointLines ?? MAX_ENTRYPOINT_LINES_DEFAULT
+    getInitialSettings()?.maxMemoryEntrypointLines ??
+    MAX_ENTRYPOINT_LINES_DEFAULT
   )
 }
 export function getMaxEntrypointBytes(): number {
   return (
-    getInitialSettings()?.maxMemoryEntrypointBytes ?? MAX_ENTRYPOINT_BYTES_DEFAULT
+    getInitialSettings()?.maxMemoryEntrypointBytes ??
+    MAX_ENTRYPOINT_BYTES_DEFAULT
   )
 }
 const AUTO_MEM_DISPLAY_NAME = 'auto memory'
@@ -303,8 +303,7 @@ export function buildMemoryPrompt(params: {
       line_count: t.lineCount,
       was_truncated: t.wasLineTruncated,
       was_byte_truncated: t.wasByteTruncated,
-      memory_type:
-        memoryType,
+      memory_type: memoryType,
     })
     lines.push(`## ${ENTRYPOINT_NAME}`, '', t.content)
   } else {
@@ -430,8 +429,7 @@ export async function loadMemoryPrompt(): Promise<string | null> {
   // telemetry block below, matching the non-KAIROS path.
   if (feature('KAIROS') && autoEnabled && getKairosActive()) {
     logMemoryDirCounts(getAutoMemPath(), {
-      memory_type:
-        'auto',
+      memory_type: 'auto',
     })
     return buildAssistantDailyLogPrompt(skipIndex)
   }
@@ -457,12 +455,10 @@ export async function loadMemoryPrompt(): Promise<string | null> {
       // for autoDir here.
       await ensureMemoryDirExists(teamDir)
       logMemoryDirCounts(autoDir, {
-        memory_type:
-          'auto',
+        memory_type: 'auto',
       })
       logMemoryDirCounts(teamDir, {
-        memory_type:
-          'team',
+        memory_type: 'team',
       })
       return teamMemPrompts!.buildCombinedMemoryPrompt(
         extraGuidelines,
@@ -477,8 +473,7 @@ export async function loadMemoryPrompt(): Promise<string | null> {
     // checking. The prompt text reflects this ("already exists").
     await ensureMemoryDirExists(autoDir)
     logMemoryDirCounts(autoDir, {
-      memory_type:
-        'auto',
+      memory_type: 'auto',
     })
     return buildMemoryLines(
       'auto memory',

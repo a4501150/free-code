@@ -1,9 +1,6 @@
 import { useCallback, useEffect } from 'react'
 import type { Command } from '../commands.js'
-import {
-  clearCommandsCache,
-  getCommands,
-} from '../commands.js'
+import { clearCommandsCache, getCommands } from '../commands.js'
 import { logError } from '../utils/log.js'
 import { skillChangeDetector } from '../utils/skills/skillChangeDetector.js'
 

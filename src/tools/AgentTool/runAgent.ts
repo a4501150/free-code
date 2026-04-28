@@ -377,8 +377,7 @@ export async function* runAgent({
   // Dropping claudeMd here saves ~5-15 Gtok/week across 34M+ Explore spawns.
   // Explicit override.userContext from callers is preserved untouched.
   const shouldOmitClaudeMd =
-    agentDefinition.omitClaudeMd &&
-    !override?.userContext
+    agentDefinition.omitClaudeMd && !override?.userContext
   const { claudeMd: _omittedClaudeMd, ...userContextNoClaudeMd } =
     baseUserContext
   const resolvedUserContext = shouldOmitClaudeMd

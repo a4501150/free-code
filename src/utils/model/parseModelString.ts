@@ -67,10 +67,7 @@ export function toQualifiedString(parsed: ParsedModelString): string {
 /**
  * Build a qualified model string from parts.
  */
-export function qualifyModel(
-  provider: string,
-  modelId: string,
-): string {
+export function qualifyModel(provider: string, modelId: string): string {
   return `${provider}:${modelId}`
 }
 

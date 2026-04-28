@@ -556,7 +556,6 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
       ripgrepStatusRaw.mode === 'system' ? ripgrepStatusRaw.path : null,
   }
 
-
   const diagnostic: DiagnosticInfo = {
     installationType,
     version,

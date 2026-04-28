@@ -1136,7 +1136,6 @@ const COMMAND_ALLOWLIST: Record<string, CommandConfig> = {
   ...DOCKER_READ_ONLY_COMMANDS,
 }
 
-
 function getCommandAllowlist(): Record<string, CommandConfig> {
   let allowlist: Record<string, CommandConfig> = COMMAND_ALLOWLIST
   // On Windows, xargs can be used as a data-to-code bridge: if a file contains

@@ -523,7 +523,9 @@ function renderNodeToOutput(
       )
     }
     if (node.dirty && Math.floor(y) >= 45 && Math.floor(height) <= 3) {
-      logForDebugging(`dirty-node y=${Math.floor(y)}: type=${node.nodeName} wrap=${node.style.textWrap} cached=${!!cached} x=${Math.floor(x)} w=${Math.floor(width)} h=${Math.floor(height)}${cached ? ` cX=${Math.floor(cached.x)} cY=${Math.floor(cached.y)} cW=${Math.floor(cached.width)}` : ''}`)
+      logForDebugging(
+        `dirty-node y=${Math.floor(y)}: type=${node.nodeName} wrap=${node.style.textWrap} cached=${!!cached} x=${Math.floor(x)} w=${Math.floor(width)} h=${Math.floor(height)}${cached ? ` cX=${Math.floor(cached.x)} cY=${Math.floor(cached.y)} cW=${Math.floor(cached.width)}` : ''}`,
+      )
     }
 
     // Read before deleting — hasRemovedChild disables prevScreen blitting
@@ -722,9 +724,9 @@ function renderNodeToOutput(
             yogaNode.getComputedPadding(LayoutEdge.Bottom),
         )
 
-        const content = node.childNodes.find(c => (c as DOMElement).yogaNode) as
-          | DOMElement
-          | undefined
+        const content = node.childNodes.find(
+          c => (c as DOMElement).yogaNode,
+        ) as DOMElement | undefined
         const contentYoga = content?.yogaNode
         // scrollHeight is the intrinsic height of the content wrapper.
         // Do NOT add getComputedTop() — that's the wrapper's offset

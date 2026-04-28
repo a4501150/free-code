@@ -1,4 +1,3 @@
-
 // Document extensions that are handled specially
 export const DOCUMENT_EXTENSIONS = new Set(['pdf'])
 

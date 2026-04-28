@@ -13,9 +13,7 @@
 
 import { createHash } from 'crypto'
 import { sep } from 'path'
-import {
-  type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-} from '../../services/analytics/index.js'
+import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../../services/analytics/index.js'
 import type {
   LoadedPlugin,
   PluginError,
@@ -145,18 +143,11 @@ export function buildPluginTelemetryFields(
   const isAnthropicControlled =
     scope === 'official' || scope === 'default-bundle'
   return {
-    plugin_id_hash: hashPluginId(
-      name,
-      marketplace,
-    ),
-    plugin_scope:
-      scope,
-    plugin_name_redacted: (isAnthropicControlled
-      ? name
-      : 'third-party'),
-    marketplace_name_redacted: (isAnthropicControlled && marketplace
-      ? marketplace
-      : 'third-party'),
+    plugin_id_hash: hashPluginId(name, marketplace),
+    plugin_scope: scope,
+    plugin_name_redacted: isAnthropicControlled ? name : 'third-party',
+    marketplace_name_redacted:
+      isAnthropicControlled && marketplace ? marketplace : 'third-party',
     is_official_plugin: isAnthropicControlled,
   }
 }
@@ -193,7 +184,6 @@ export function logPluginsEnabledForSession(
 ): void {
   for (const plugin of plugins) {
     const { marketplace } = parsePluginIdentifier(plugin.repository)
-
   }
 }
 

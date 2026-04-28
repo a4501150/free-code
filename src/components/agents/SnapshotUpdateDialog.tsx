@@ -30,10 +30,7 @@ export function SnapshotUpdateDialog({
   )
 
   return (
-    <Dialog
-      title="Agent memory snapshot update"
-      onCancel={onCancel}
-    >
+    <Dialog title="Agent memory snapshot update" onCancel={onCancel}>
       <Box flexDirection="column" gap={1}>
         <Text>
           A newer project snapshot is available for agent{' '}
@@ -54,14 +51,12 @@ export function SnapshotUpdateDialog({
           {
             value: 'replace' as const,
             label: 'Replace',
-            description:
-              'Overwrite local memory with the snapshot',
+            description: 'Overwrite local memory with the snapshot',
           },
           {
             value: 'keep' as const,
             label: 'Keep local',
-            description:
-              'Keep your current local memory and skip this update',
+            description: 'Keep your current local memory and skip this update',
           },
         ]}
         onChange={(value: Choice) => handleChoice(value)}

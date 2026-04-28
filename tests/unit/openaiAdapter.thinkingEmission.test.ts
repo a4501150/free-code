@@ -34,7 +34,9 @@ function parseAnthropicSSE(text: string): SSEEvent[] {
   return events
 }
 
-async function drainToString(body: ReadableStream<Uint8Array>): Promise<string> {
+async function drainToString(
+  body: ReadableStream<Uint8Array>,
+): Promise<string> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let out = ''
@@ -110,8 +112,7 @@ describe('OpenAI Chat Completions adapter: inbound reasoning emission', () => {
       const thinkingDeltas = events.filter(
         e =>
           e.event === 'content_block_delta' &&
-          (e.data.delta as Record<string, unknown>)?.type ===
-            'thinking_delta',
+          (e.data.delta as Record<string, unknown>)?.type === 'thinking_delta',
       )
       expect(thinkingDeltas.length).toBe(2)
       const concatenated = thinkingDeltas
@@ -121,19 +122,14 @@ describe('OpenAI Chat Completions adapter: inbound reasoning emission', () => {
 
       // Exactly one content_block_stop for the thinking block, then
       // text block opens at the next index.
-      const blockStarts = events.filter(
-        e => e.event === 'content_block_start',
-      )
-      const blockStops = events.filter(
-        e => e.event === 'content_block_stop',
-      )
+      const blockStarts = events.filter(e => e.event === 'content_block_start')
+      const blockStops = events.filter(e => e.event === 'content_block_stop')
       expect(blockStarts.length).toBe(2) // thinking + text
       expect(blockStops.length).toBe(2)
       // Thinking block index is 0, text block is 1
       expect(thinkingStarts[0].data.index).toBe(0)
       const textStart = blockStarts.find(
-        e =>
-          (e.data.content_block as Record<string, unknown>)?.type === 'text',
+        e => (e.data.content_block as Record<string, unknown>)?.type === 'text',
       )
       expect(textStart?.data.index).toBe(1)
     } finally {

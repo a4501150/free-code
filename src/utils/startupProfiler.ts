@@ -181,5 +181,4 @@ export function logStartupPerf(): void {
 
   // Add checkpoint count for debugging
   metadata.checkpoint_count = marks.length
-
 }

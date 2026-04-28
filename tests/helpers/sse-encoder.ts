@@ -106,7 +106,8 @@ export function encodeSuccessSSE(response: MockSuccessResponse): string {
   const model = response.model ?? 'claude-sonnet-4-20250514'
   const inputTokens = response.usage?.input_tokens ?? 100
   const outputTokens = response.usage?.output_tokens ?? 50
-  const cacheCreationInputTokens = response.usage?.cache_creation_input_tokens ?? 0
+  const cacheCreationInputTokens =
+    response.usage?.cache_creation_input_tokens ?? 0
   const cacheReadInputTokens = response.usage?.cache_read_input_tokens ?? 0
 
   let sse = ''
@@ -256,10 +257,7 @@ export function encodeSuccessSSE(response: MockSuccessResponse): string {
 /**
  * Encode an error response as a JSON body (not SSE).
  */
-export function encodeErrorJSON(
-  errorType: string,
-  message: string,
-): string {
+export function encodeErrorJSON(errorType: string, message: string): string {
   return JSON.stringify({
     type: 'error',
     error: {

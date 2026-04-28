@@ -75,12 +75,7 @@ function ModelPickerWrapper({
       }
     }
 
-    if (
-      isBilledAsExtraUsage(
-        model,
-        wasFastModeToggledOn === true,
-      )
-    ) {
+    if (isBilledAsExtraUsage(model, wasFastModeToggledOn === true)) {
       message += ` · Billed as extra usage`
     }
 
@@ -175,12 +170,7 @@ function SetModelAndClose({
         }
       }
 
-      if (
-        isBilledAsExtraUsage(
-          modelValue,
-          wasFastModeToggledOn === true,
-        )
-      ) {
+      if (isBilledAsExtraUsage(modelValue, wasFastModeToggledOn === true)) {
         message += ` · Billed as extra usage`
       }
 

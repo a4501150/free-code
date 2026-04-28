@@ -25,7 +25,11 @@ import {
 } from '../../constants/codex-oauth.js'
 import { openBrowser } from '../../utils/browser.js'
 import { logError } from '../../utils/log.js'
-import { generateCodeChallenge, generateCodeVerifier, generateState } from './crypto.js'
+import {
+  generateCodeChallenge,
+  generateCodeVerifier,
+  generateState,
+} from './crypto.js'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,7 +92,9 @@ export function extractCodexAccountId(accessToken: string): string | null {
   const authClaim = payload[CODEX_JWT_AUTH_CLAIM]
   if (!authClaim || typeof authClaim !== 'object') return null
   const accountId = (authClaim as Record<string, unknown>).chatgpt_account_id
-  return typeof accountId === 'string' && accountId.length > 0 ? accountId : null
+  return typeof accountId === 'string' && accountId.length > 0
+    ? accountId
+    : null
 }
 
 // ── Authorization URL ─────────────────────────────────────────────────────────
@@ -145,8 +151,14 @@ async function postToTokenUrl(body: URLSearchParams): Promise<TokenResult> {
       refresh_token?: string
       expires_in?: number
     }
-    if (!json.access_token || !json.refresh_token || typeof json.expires_in !== 'number') {
-      logError(new Error('[codex-oauth] token response missing required fields'))
+    if (
+      !json.access_token ||
+      !json.refresh_token ||
+      typeof json.expires_in !== 'number'
+    ) {
+      logError(
+        new Error('[codex-oauth] token response missing required fields'),
+      )
       return { type: 'failed' }
     }
     return {
@@ -195,7 +207,9 @@ export async function exchangeCodexCode(
 /**
  * Refreshes an expired Codex access token.
  */
-export async function refreshCodexToken(refreshToken: string): Promise<CodexTokens> {
+export async function refreshCodexToken(
+  refreshToken: string,
+): Promise<CodexTokens> {
   const result = await postToTokenUrl(
     new URLSearchParams({
       grant_type: 'refresh_token',
@@ -228,11 +242,13 @@ export async function refreshCodexToken(refreshToken: string): Promise<CodexToke
  * Falls back gracefully if port 1455 is already in use (the user will need
  * to paste the redirect URL manually).
  */
-export async function startCodexCallbackServer(expectedState: string): Promise<LocalServer> {
+export async function startCodexCallbackServer(
+  expectedState: string,
+): Promise<LocalServer> {
   let settleWait: ((value: { code: string } | null) => void) | null = null
   let server: Server | null = null
 
-  const waitPromise = new Promise<{ code: string } | null>((resolve) => {
+  const waitPromise = new Promise<{ code: string } | null>(resolve => {
     settleWait = resolve
   })
 
@@ -253,7 +269,7 @@ export async function startCodexCallbackServer(expectedState: string): Promise<L
     close: doClose,
   }
 
-  return new Promise<LocalServer>((resolve) => {
+  return new Promise<LocalServer>(resolve => {
     const s = createServer((req, res) => {
       try {
         const url = new URL(req.url ?? '', 'http://localhost')
@@ -331,7 +347,7 @@ export async function runCodexOAuthFlow(
 
     if (onManualInput) {
       // Race: browser callback vs. manual paste
-      const manualPromise = onManualInput().then((input) => {
+      const manualPromise = onManualInput().then(input => {
         callbackServer.cancelWait()
         return input
       })

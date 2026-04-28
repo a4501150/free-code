@@ -1026,7 +1026,6 @@ export function activateConditionalSkillsForPaths(
   }
 
   if (activated.length > 0) {
-
     // Notify listeners that skills were loaded (so they can clear caches)
     skillsLoaded.emit()
   }

@@ -2148,9 +2148,7 @@ export function normalizeMessagesForAPI(
           // relocateToolReferenceSiblings in post-processing below moves
           // existing siblings to a later non-ref message instead of adding
           // one here. When setting is off, this is the fallback.
-          if (
-            !(getInitialSettings()?.deferredToolRefRelocation ?? true)
-          ) {
+          if (!(getInitialSettings()?.deferredToolRefRelocation ?? true)) {
             const contentAfterStrip = normalizedMessage.message.content
             if (
               Array.isArray(contentAfterStrip) &&
@@ -2260,10 +2258,10 @@ export function normalizeMessagesForAPI(
           const rawAttachmentMessage = normalizeAttachmentForAPI(
             message.attachment,
           )
-          const attachmentMessage = (getInitialSettings()
-            ?.systemReminderSmooshing ?? false)
-            ? rawAttachmentMessage.map(ensureSystemReminderWrap)
-            : rawAttachmentMessage
+          const attachmentMessage =
+            (getInitialSettings()?.systemReminderSmooshing ?? false)
+              ? rawAttachmentMessage.map(ensureSystemReminderWrap)
+              : rawAttachmentMessage
 
           // If the last message is also a user message, merge them
           const lastMessage = last(result)
@@ -2287,9 +2285,10 @@ export function normalizeMessagesForAPI(
   // Runs after merge (siblings are in place) and before ID tagging (so
   // tags reflect final positions). When gate is OFF, this is a noop and
   // the TOOL_REFERENCE_TURN_BOUNDARY injection above serves as fallback.
-  const relocated = (getInitialSettings()?.deferredToolRefRelocation ?? true)
-    ? relocateToolReferenceSiblings(result)
-    : result
+  const relocated =
+    (getInitialSettings()?.deferredToolRefRelocation ?? true)
+      ? relocateToolReferenceSiblings(result)
+      : result
 
   // Filter orphaned thinking-only assistant messages (likely introduced by
   // compaction slicing away intervening messages between a failed streaming
@@ -2318,9 +2317,10 @@ export function normalizeMessagesForAPI(
   // Gated together: the merge exists solely to feed the smoosh; running it
   // ungated changes VCR fixture hashes for @-mention scenarios (adjacent
   // [prompt, attachment] users) without any benefit when the smoosh is off.
-  const smooshed = (getInitialSettings()?.systemReminderSmooshing ?? false)
-    ? smooshSystemReminderSiblings(mergeAdjacentUserMessages(withNonEmpty))
-    : withNonEmpty
+  const smooshed =
+    (getInitialSettings()?.systemReminderSmooshing ?? false)
+      ? smooshSystemReminderSiblings(mergeAdjacentUserMessages(withNonEmpty))
+      : withNonEmpty
 
   // Unconditional — catches transcripts persisted before smooshIntoToolResult
   // learned to filter on is_error. Without this a resumed session with an

@@ -142,9 +142,7 @@ export function getSubagentLogName(): string | undefined {
   if (!isSubagentContext(context) || !context.subagentName) {
     return undefined
   }
-  return (
-    context.isBuiltIn ? context.subagentName : 'user-defined'
-  )
+  return context.isBuiltIn ? context.subagentName : 'user-defined'
 }
 
 /**

@@ -10,9 +10,7 @@ const inputSchema = lazySchema(() =>
 )
 type InputSchema = ReturnType<typeof inputSchema>
 
-const outputSchema = lazySchema(() =>
-  z.object({ started: z.boolean() }),
-)
+const outputSchema = lazySchema(() => z.object({ started: z.boolean() }))
 type OutputSchema = ReturnType<typeof outputSchema>
 
 type Output = z.infer<OutputSchema>

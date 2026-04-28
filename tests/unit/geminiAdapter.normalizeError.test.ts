@@ -6,10 +6,7 @@ import { geminiAdapter } from '../../src/services/api/adapters/gemini-adapter-im
 
 describe('geminiAdapter.normalizeError', () => {
   test('finishReason SAFETY → content_filter', () => {
-    const e = geminiAdapter.normalizeError(
-      { finishReason: 'SAFETY' },
-      'gemini',
-    )
+    const e = geminiAdapter.normalizeError({ finishReason: 'SAFETY' }, 'gemini')
     expect(e.kind).toBe('content_filter')
     expect(e.message).toContain('SAFETY')
   })

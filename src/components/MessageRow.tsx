@@ -104,7 +104,10 @@ export function hasContentAfterIndex(
     // merged into the current collapsed group on the next render cycle
     if (msg?.type === 'grouped_tool_use') {
       const firstBlock = msg.messages[0]?.message.content[0]
-      const firstInput = firstBlock && 'input' in firstBlock ? (firstBlock as { input: unknown }).input : undefined
+      const firstInput =
+        firstBlock && 'input' in firstBlock
+          ? (firstBlock as { input: unknown }).input
+          : undefined
       if (
         getToolSearchOrReadInfo(msg.toolName, firstInput, tools).isCollapsible
       ) {

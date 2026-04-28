@@ -107,7 +107,6 @@ export async function setupGitHubActions(
   },
 ) {
   try {
-
     // Check if repository exists
     const repoCheckResult = await execFileNoThrow('gh', [
       'api',
@@ -213,7 +212,6 @@ export async function setupGitHubActions(
         repoName,
       ])
       if (setSecretResult.code !== 0) {
-
         const helpText =
           '\n\nNeed help? Common issues:\n' +
           '· Permission denied → Run: gh auth refresh -h github.com -s repo\n' +

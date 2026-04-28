@@ -6,10 +6,7 @@
  * parseModelString ↔ providerRegistry cycle.
  */
 
-import {
-  parseModelString,
-  type ParsedModelString,
-} from './parseModelString.js'
+import { parseModelString, type ParsedModelString } from './parseModelString.js'
 import { getProviderRegistry } from './providerRegistry.js'
 
 /**

@@ -85,9 +85,7 @@ export type Output = z.infer<OutputSchema>
 export function isBriefEntitled(): boolean {
   // Positive ternary — see docs/feature-gating.md. Negative early-return
   // would not eliminate the GB gate string from external builds.
-  return feature('KAIROS') || feature('KAIROS_BRIEF')
-    ? true
-    : false
+  return feature('KAIROS') || feature('KAIROS_BRIEF') ? true : false
 }
 
 /**

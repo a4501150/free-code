@@ -309,7 +309,9 @@ export class LogUpdate {
         const pLine = readLine(prev.screen, slY).trimEnd()
         const nLine = readLine(next.screen, slY).trimEnd()
         if (pLine !== nLine) {
-          logForDebugging(`diff-row y=${slY} prev[${pLine.length}]="${pLine.slice(0, 120)}" next[${nLine.length}]="${nLine.slice(0, 120)}"`)
+          logForDebugging(
+            `diff-row y=${slY} prev[${pLine.length}]="${pLine.slice(0, 120)}" next[${nLine.length}]="${nLine.slice(0, 120)}"`,
+          )
         }
       }
     }
@@ -321,7 +323,9 @@ export class LogUpdate {
     const statusDiffCells: string[] = []
     diffEach(prev.screen, next.screen, (x, y, removed, added) => {
       if (y === statusRowY) {
-        statusDiffCells.push(`x=${x}:${removed?.char ?? '∅'}→${added?.char ?? '∅'}`)
+        statusDiffCells.push(
+          `x=${x}:${removed?.char ?? '∅'}→${added?.char ?? '∅'}`,
+        )
       }
       // Skip new rows - we'll render them directly after
       if (growing && y >= prev.screen.height) {
@@ -397,7 +401,9 @@ export class LogUpdate {
       }
     })
     if (statusDiffCells.length > 0) {
-      logForDebugging(`diff-cells y=${statusRowY}: ${statusDiffCells.join(' ')}`)
+      logForDebugging(
+        `diff-cells y=${statusRowY}: ${statusDiffCells.join(' ')}`,
+      )
     }
     if (needsFullReset) {
       return fullResetSequence_CAUSES_FLICKER(next, 'offscreen', stylePool, {

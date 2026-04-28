@@ -21,8 +21,7 @@ export function AutoModeOptInDialog({
   onDecline,
   declineExits,
 }: Props): React.ReactNode {
-  React.useEffect(() => {
-  }, [])
+  React.useEffect(() => {}, [])
 
   function onChange(value: 'accept' | 'accept-default' | 'decline') {
     switch (value) {

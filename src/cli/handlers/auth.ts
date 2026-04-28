@@ -55,7 +55,7 @@ import {
  */
 function hasAnyAnthropicScope(scopes: string[] | undefined): boolean {
   if (!scopes?.length) return false
-  return scopes.some((s) => s.startsWith('user:') || s.startsWith('org:'))
+  return scopes.some(s => s.startsWith('user:') || s.startsWith('org:'))
 }
 
 /**
@@ -94,7 +94,7 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
   const storageResult = saveOAuthTokensIfNeeded(tokens)
   clearOAuthTokenCache()
 
-// Roles and first-token-date may fail for limited-scope tokens (e.g.
+  // Roles and first-token-date may fail for limited-scope tokens (e.g.
   // inference-only from setup-token). They're not required for core auth.
   await fetchAndStoreUserRoles(tokens.accessToken).catch(err =>
     logForDebugging(String(err), { level: 'error' }),
@@ -120,7 +120,7 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken ?? '',
       expiresAt: tokens.expiresAt ?? Date.now() + 3600_000,
-      accountId: (tokens.tokenAccount?.uuid ?? ''),
+      accountId: tokens.tokenAccount?.uuid ?? '',
     })
   }
 
@@ -232,7 +232,6 @@ export async function authLogin({
     const scopes = envScopes.split(/\s+/).filter(Boolean)
 
     try {
-
       const tokens = await refreshOAuthToken(envRefreshToken, { scopes })
       await installOAuthTokens(tokens)
 
@@ -266,7 +265,6 @@ export async function authLogin({
   const oauthService = new OAuthService()
 
   try {
-
     const result = await oauthService.startOAuthFlow(
       async url => {
         process.stdout.write('Opening browser to sign in…\n')
@@ -308,8 +306,7 @@ export async function authStatus(opts: {
 }): Promise<void> {
   const { source: authTokenSource, hasToken } = getAuthTokenSource()
   const { source: apiKeySource } = getAnthropicApiKeyWithSource()
-  const hasApiKeyEnvVar =
-    !!process.env.ANTHROPIC_API_KEY
+  const hasApiKeyEnvVar = !!process.env.ANTHROPIC_API_KEY
   const oauthAccount = getOauthAccountInfo()
   const subscriptionType = getSubscriptionType()
   const using3P = isUsing3PServices()
@@ -364,7 +361,8 @@ export async function authStatus(opts: {
       )
     }
   } else {
-    const apiProvider = getProviderRegistry().getDefaultProvider()?.config.type ?? 'anthropic'
+    const apiProvider =
+      getProviderRegistry().getDefaultProvider()?.config.type ?? 'anthropic'
     const resolvedApiKeySource =
       apiKeySource !== 'none'
         ? apiKeySource

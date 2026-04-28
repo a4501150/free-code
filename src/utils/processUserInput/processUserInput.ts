@@ -42,10 +42,7 @@ import {
   maybeResizeAndDownsampleImageBlock,
 } from '../imageResizer.js'
 import { storeImages } from '../imageStore.js'
-import {
-  createSystemMessage,
-  createUserMessage,
-} from '../messages.js'
+import { createSystemMessage, createUserMessage } from '../messages.js'
 import { queryCheckpoint } from '../queryProfiler.js'
 import {
   hasUltraplanKeyword,

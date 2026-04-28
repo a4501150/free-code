@@ -128,7 +128,6 @@ export async function createBashShellProvider(
       const addStdinRedirect = shouldAddStdinRedirect(normalizedCommand)
       let quotedCommand = quoteShellCommand(normalizedCommand, addStdinRedirect)
 
-
       // Special handling for pipes: move stdin redirect after first command
       // This ensures the redirect applies to the first command, not to eval itself.
       // Without this, `eval 'rg foo | wc -l' \< /dev/null` becomes

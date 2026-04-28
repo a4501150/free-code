@@ -48,7 +48,9 @@ const COMPACTABLE_TOOLS = new Set<string>([
 
 // --- Cached microcompact state (ant-only, gated by feature('CACHED_MICROCOMPACT')) ---
 
-const cachedMCModule = feature('CACHED_MICROCOMPACT') ? cachedMicrocompactMod : null
+const cachedMCModule = feature('CACHED_MICROCOMPACT')
+  ? cachedMicrocompactMod
+  : null
 let cachedMCState: import('./cachedMicrocompact.js').CachedMCState | null = null
 let pendingCacheEdits:
   | import('./cachedMicrocompact.js').CacheEditsBlock

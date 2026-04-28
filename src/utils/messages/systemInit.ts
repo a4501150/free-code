@@ -88,6 +88,9 @@ export function buildSystemInitMessage(inputs: SystemInitInputs): SDKMessage {
     ;(initMessage as Record<string, unknown>).messaging_socket_path =
       udsMessagingNs.getUdsMessagingSocketPath()
   }
-  ;(initMessage as Record<string, unknown>).fast_mode_state = getFastModeState(inputs.model, inputs.fastMode)
+  ;(initMessage as Record<string, unknown>).fast_mode_state = getFastModeState(
+    inputs.model,
+    inputs.fastMode,
+  )
   return initMessage
 }

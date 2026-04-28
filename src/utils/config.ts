@@ -140,10 +140,7 @@ const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
 
 export type InstallMethod = 'local' | 'native' | 'global' | 'unknown'
 
-export {
-  EDITOR_MODES,
-  NOTIFICATION_CHANNELS,
-} from './configConstants.js'
+export { EDITOR_MODES, NOTIFICATION_CHANNELS } from './configConstants.js'
 
 import type { EDITOR_MODES, NOTIFICATION_CHANNELS } from './configConstants.js'
 
@@ -409,7 +406,6 @@ export type GlobalConfig = {
   // Idle-return dialog tracking
   idleReturnDismissed?: boolean // "Don't ask again" picked
 
-
   // Emergency tip tracking - stores the last shown tip to prevent re-showing
   lastShownEmergencyTip?: string
 
@@ -478,11 +474,9 @@ export type GlobalConfig = {
   // PR status footer configuration
   prStatusFooterEnabled?: boolean // Show PR review status in footer (default: true)
 
-
   // Cached org-level fast mode status from the API.
   // Used to detect cross-session changes and notify users.
   penguinModeOrgEnabled?: boolean
-
 
   // Cached extra usage disabled reason from the last API response
   // undefined = no cache, null = extra usage enabled, string = disabled reason.

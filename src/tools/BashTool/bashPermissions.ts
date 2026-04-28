@@ -396,7 +396,6 @@ const SAFE_ENV_VARS = new Set([
   'BLOCKSIZE', // alternative block size
 ])
 
-
 /**
  * Strips full-line comments from a command.
  * This handles cases where Claude adds comments in bash commands, e.g.:

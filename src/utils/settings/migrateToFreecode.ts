@@ -16,17 +16,17 @@
  * No circular deps — only uses fs, path, and envUtils.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
-import { homedir } from "os";
-import { getClaudeConfigHomeDir } from "../envUtils.js";
-import { safeParseJSON } from "../json.js";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { join, dirname } from 'path'
+import { homedir } from 'os'
+import { getClaudeConfigHomeDir } from '../envUtils.js'
+import { safeParseJSON } from '../json.js'
 import {
   orderFreecodeKeys,
   writeFreecodeSettingsFile,
-} from "./freecodeSettings.js";
-import { synthesizeProvidersFromLegacy } from "../model/legacyProviderMigration.js";
-import { stripContextSuffix } from "../model/parseModelString.js";
+} from './freecodeSettings.js'
+import { synthesizeProvidersFromLegacy } from '../model/legacyProviderMigration.js'
+import { stripContextSuffix } from '../model/parseModelString.js'
 
 /**
  * Env vars that become redundant once the migration has written a complete
@@ -40,28 +40,28 @@ import { stripContextSuffix } from "../model/parseModelString.js";
  */
 const CONSUMED_ENV_VARS: readonly string[] = [
   // Provider selection flags (now implied by provider type).
-  "CLAUDE_CODE_USE_BEDROCK",
-  "CLAUDE_CODE_USE_VERTEX",
-  "CLAUDE_CODE_USE_FOUNDRY",
-  "CLAUDE_CODE_USE_OPENAI",
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_USE_OPENAI',
   // Base URLs (now in provider config baseUrl).
-  "ANTHROPIC_BASE_URL",
-  "ANTHROPIC_FOUNDRY_BASE_URL",
-  "ANTHROPIC_FOUNDRY_RESOURCE",
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_FOUNDRY_BASE_URL',
+  'ANTHROPIC_FOUNDRY_RESOURCE',
   // Region / project (now in provider config auth).
-  "CLOUD_ML_REGION",
-  "ANTHROPIC_VERTEX_PROJECT_ID",
+  'CLOUD_ML_REGION',
+  'ANTHROPIC_VERTEX_PROJECT_ID',
   // Model defaults (now promoted to defaultModel / etc.).
-  "ANTHROPIC_MODEL",
-  "ANTHROPIC_SMALL_FAST_MODEL",
-  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-  "CLAUDE_CODE_SUBAGENT_MODEL",
-  "ANTHROPIC_DEFAULT_OPUS_MODEL",
-  "ANTHROPIC_DEFAULT_SONNET_MODEL",
-];
+  'ANTHROPIC_MODEL',
+  'ANTHROPIC_SMALL_FAST_MODEL',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  'CLAUDE_CODE_SUBAGENT_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
+]
 
 function legacySettingsPath(): string {
-  return join(getClaudeConfigHomeDir(), "settings.json");
+  return join(getClaudeConfigHomeDir(), 'settings.json')
 }
 
 /**
@@ -69,20 +69,20 @@ function legacySettingsPath(): string {
  * Direct existence check — does not go through the settings cache.
  */
 export function legacySettingsFileExists(): boolean {
-  return existsSync(legacySettingsPath());
+  return existsSync(legacySettingsPath())
 }
 
 function readLegacySettings(): Record<string, unknown> | null {
-  if (!legacySettingsFileExists()) return null;
+  if (!legacySettingsFileExists()) return null
   try {
-    const parsed = safeParseJSON(readFileSync(legacySettingsPath(), "utf8"));
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+    const parsed = safeParseJSON(readFileSync(legacySettingsPath(), 'utf8'))
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
     }
   } catch {
     // Non-fatal
   }
-  return null;
+  return null
 }
 
 /**
@@ -92,18 +92,18 @@ function readLegacySettings(): Record<string, unknown> | null {
 function readGlobalClaudeJson(): Record<string, unknown> | null {
   const configPath = join(
     process.env.CLAUDE_CONFIG_DIR || homedir(),
-    ".claude.json",
-  );
-  if (!existsSync(configPath)) return null;
+    '.claude.json',
+  )
+  if (!existsSync(configPath)) return null
   try {
-    const parsed = safeParseJSON(readFileSync(configPath, "utf8"));
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+    const parsed = safeParseJSON(readFileSync(configPath, 'utf8'))
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
     }
   } catch {
     // Non-fatal
   }
-  return null;
+  return null
 }
 
 /**
@@ -117,64 +117,68 @@ function readGlobalClaudeJson(): Record<string, unknown> | null {
  *   - Resetting the settings cache + provider registry after this returns.
  */
 export function runLegacyToFreecodeMigration(): void {
-  const legacy = readLegacySettings();
-  const globalJson = readGlobalClaudeJson();
-  const legacyEnv = (legacy?.env ?? {}) as Record<string, string | undefined>;
+  const legacy = readLegacySettings()
+  const globalJson = readGlobalClaudeJson()
+  const legacyEnv = (legacy?.env ?? {}) as Record<string, string | undefined>
 
-  const out: Record<string, unknown> = { ...(legacy ?? {}) };
+  const out: Record<string, unknown> = { ...(legacy ?? {}) }
   // Legacy `model` is superseded by top-level `defaultModel` (qualified).
-  delete out.model;
+  delete out.model
 
-  const { providers, defaultModel, defaultSubagentModel, defaultSmallFastModel } =
-    synthesizeProvidersFromLegacy({
-      env: { ...process.env, ...legacyEnv },
-    });
+  const {
+    providers,
+    defaultModel,
+    defaultSubagentModel,
+    defaultSmallFastModel,
+  } = synthesizeProvidersFromLegacy({
+    env: { ...process.env, ...legacyEnv },
+  })
 
   // Promote synthesized defaults, but let an explicit pre-existing field win
   // over env-derived output (matches the old per-field-guarded behavior).
-  if (defaultModel && !out.defaultModel) out.defaultModel = defaultModel;
+  if (defaultModel && !out.defaultModel) out.defaultModel = defaultModel
   if (defaultSubagentModel && !out.defaultSubagentModel)
-    out.defaultSubagentModel = defaultSubagentModel;
+    out.defaultSubagentModel = defaultSubagentModel
   if (defaultSmallFastModel && !out.defaultSmallFastModel)
-    out.defaultSmallFastModel = defaultSmallFastModel;
+    out.defaultSmallFastModel = defaultSmallFastModel
 
   // Legacy `settings.json.model` (not an env var) also gets promoted to
   // `defaultModel` if nothing stronger set it. Qualify with the default
   // provider so the registry can resolve it.
-  if (!out.defaultModel && typeof legacy?.model === "string") {
-    const defaultProviderName = Object.keys(providers)[0] ?? "anthropic";
-    const bare = stripContextSuffix(legacy.model);
-    out.defaultModel = bare.includes(":")
+  if (!out.defaultModel && typeof legacy?.model === 'string') {
+    const defaultProviderName = Object.keys(providers)[0] ?? 'anthropic'
+    const bare = stripContextSuffix(legacy.model)
+    out.defaultModel = bare.includes(':')
       ? bare
-      : `${defaultProviderName}:${bare}`;
+      : `${defaultProviderName}:${bare}`
   }
 
   // Strip env vars whose value now lives in the providers block.
-  const env = { ...(out.env as Record<string, string> | undefined ?? {}) };
+  const env = { ...((out.env as Record<string, string> | undefined) ?? {}) }
   for (const key of CONSUMED_ENV_VARS) {
-    delete env[key];
+    delete env[key]
   }
   if (Object.keys(env).length > 0) {
-    out.env = env;
+    out.env = env
   } else {
-    delete out.env;
+    delete out.env
   }
 
   // Pull mcpServers over from ~/.claude.json if missing.
   if (!out.mcpServers) {
-    const mcpServers = globalJson?.mcpServers;
+    const mcpServers = globalJson?.mcpServers
     if (
       mcpServers &&
-      typeof mcpServers === "object" &&
+      typeof mcpServers === 'object' &&
       Object.keys(mcpServers as Record<string, unknown>).length > 0
     ) {
-      out.mcpServers = mcpServers;
+      out.mcpServers = mcpServers
     }
   }
 
-  out.providers = providers;
+  out.providers = providers
 
-  writeFreecodeSettingsFile(orderFreecodeKeys(out));
+  writeFreecodeSettingsFile(orderFreecodeKeys(out))
 }
 
 /**
@@ -186,26 +190,26 @@ export function runLegacyToFreecodeMigration(): void {
  */
 export function migrateProjectSettingsToFreecode(projectRoot: string): void {
   const pairs: Array<[string, string]> = [
-    ["settings.json", "freecode.json"],
-    ["settings.local.json", "freecode.local.json"],
-  ];
+    ['settings.json', 'freecode.json'],
+    ['settings.local.json', 'freecode.local.json'],
+  ]
 
   for (const [oldName, newName] of pairs) {
-    const oldPath = join(projectRoot, ".claude", oldName);
-    const newPath = join(projectRoot, ".claude", newName);
+    const oldPath = join(projectRoot, '.claude', oldName)
+    const newPath = join(projectRoot, '.claude', newName)
 
-    if (existsSync(newPath)) continue;
-    if (!existsSync(oldPath)) continue;
+    if (existsSync(newPath)) continue
+    if (!existsSync(oldPath)) continue
 
     try {
-      const content = readFileSync(oldPath, "utf8");
+      const content = readFileSync(oldPath, 'utf8')
       // Validate it's valid JSON before writing
-      const parsed = safeParseJSON(content);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        continue;
+      const parsed = safeParseJSON(content)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        continue
       }
-      mkdirSync(dirname(newPath), { recursive: true });
-      writeFileSync(newPath, JSON.stringify(parsed, null, 2) + "\n", "utf8");
+      mkdirSync(dirname(newPath), { recursive: true })
+      writeFileSync(newPath, JSON.stringify(parsed, null, 2) + '\n', 'utf8')
     } catch {
       // Non-fatal: skip this file if anything goes wrong
     }

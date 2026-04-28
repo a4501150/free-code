@@ -6,7 +6,14 @@
  * submission, multi-turn conversations, slash commands, and keyboard input.
  */
 
-import { describe, test as bunTest, expect, beforeAll, afterAll, afterEach } from 'bun:test'
+import {
+  describe,
+  test as bunTest,
+  expect,
+  beforeAll,
+  afterAll,
+  afterEach,
+} from 'bun:test'
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
@@ -95,13 +102,17 @@ describe('REPL E2E', () => {
     })
 
     test('unicode and CJK characters preserved', async () => {
-      const unicodeText = 'Symbols: \u2714 \u2718 \u2605 and CJK: \u4F60\u597D\u4E16\u754C'
+      const unicodeText =
+        'Symbols: \u2714 \u2718 \u2605 and CJK: \u4F60\u597D\u4E16\u754C'
       server.reset([textResponse(unicodeText)])
       session = new TmuxSession({ serverUrl: server.url })
       await session.start()
 
       await session.sendLine('Show unicode')
-      const screen = await session.waitForText('\u4F60\u597D\u4E16\u754C', 15_000)
+      const screen = await session.waitForText(
+        '\u4F60\u597D\u4E16\u754C',
+        15_000,
+      )
 
       expect(screen).toContain('\u4F60\u597D\u4E16\u754C')
       expect(screen).toContain('\u2714')
@@ -135,7 +146,10 @@ describe('REPL E2E', () => {
       await session.start()
 
       await session.sendLine('Say hello to me')
-      const screen = await session.waitForText('Hello from the mock API!', 15_000)
+      const screen = await session.waitForText(
+        'Hello from the mock API!',
+        15_000,
+      )
 
       expect(screen).toContain('Hello from the mock API!')
     })

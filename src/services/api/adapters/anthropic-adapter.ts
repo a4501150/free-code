@@ -5,7 +5,11 @@
  * the Anthropic SDK client. Native wire format — no message translation.
  */
 import type { ProviderAdapter, FetchFn, TokenBreakdown } from '../adapter.js'
-import type { ProviderCapabilities, ProviderConfig, ProviderType } from '../../../utils/settings/types.js'
+import type {
+  ProviderCapabilities,
+  ProviderConfig,
+  ProviderType,
+} from '../../../utils/settings/types.js'
 import {
   fromHttpStatus,
   type NormalizedApiError,
@@ -17,7 +21,10 @@ export const anthropicAdapter: ProviderAdapter = {
   providerType: 'anthropic',
   capabilities: {} as ProviderCapabilities,
 
-  createFetch(_config: ProviderConfig, _authArgs: unknown): FetchFn | undefined {
+  createFetch(
+    _config: ProviderConfig,
+    _authArgs: unknown,
+  ): FetchFn | undefined {
     // Anthropic uses the SDK's native fetch; no adapter-level override.
     return undefined
   },
@@ -55,7 +62,9 @@ export const anthropicAdapter: ProviderAdapter = {
       try {
         const parsed =
           typeof r.body === 'string'
-            ? (JSON.parse(r.body) as { error?: { type?: string; message?: string } })
+            ? (JSON.parse(r.body) as {
+                error?: { type?: string; message?: string }
+              })
             : (r.body as { error?: { type?: string; message?: string } })
         innerType = parsed?.error?.type
         innerMessage = parsed?.error?.message
@@ -67,7 +76,8 @@ export const anthropicAdapter: ProviderAdapter = {
     if (typeof r.status === 'number') {
       const base = fromHttpStatus(
         r.status,
-        innerMessage ?? (typeof r.body === 'string' ? r.body : `HTTP ${r.status}`),
+        innerMessage ??
+          (typeof r.body === 'string' ? r.body : `HTTP ${r.status}`),
         providerType,
         r.headers,
         raw,
@@ -100,7 +110,9 @@ export const anthropicAdapter: ProviderAdapter = {
       }
     }
     const causeMsg =
-      r.cause instanceof Error ? r.cause.message : String(r.cause ?? 'stream error')
+      r.cause instanceof Error
+        ? r.cause.message
+        : String(r.cause ?? 'stream error')
     return {
       kind: r.mid_stream ? 'unknown' : 'transport',
       message: innerMessage ?? causeMsg,

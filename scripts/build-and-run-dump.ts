@@ -11,7 +11,9 @@ import { dirname, resolve } from 'path'
 
 const [, , jsonOut, mdOut] = process.argv
 if (!jsonOut || !mdOut) {
-  console.error('Usage: bun run scripts/build-and-run-dump.ts <json-out> <md-out>')
+  console.error(
+    'Usage: bun run scripts/build-and-run-dump.ts <json-out> <md-out>',
+  )
   process.exit(2)
 }
 

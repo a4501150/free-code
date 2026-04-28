@@ -34,7 +34,8 @@ import { logForDebugging } from './debug.js'
 import { envDynamic } from './envDynamic.js'
 import { errorMessage, isFsInaccessible } from './errors.js'
 
-const ideOnboardingDialog = (): typeof ideOnboardingDialogNs => ideOnboardingDialogNs
+const ideOnboardingDialog = (): typeof ideOnboardingDialogNs =>
+  ideOnboardingDialogNs
 import {
   checkWSLDistroMatch,
   WindowsToWSLConverter,
@@ -1376,4 +1377,3 @@ const detectHostIP = memoize(
   },
   (isIdeRunningInWindows, port) => `${isIdeRunningInWindows}:${port}`,
 )
-

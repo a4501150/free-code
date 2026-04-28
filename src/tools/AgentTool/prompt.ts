@@ -42,7 +42,11 @@ function getModelDisplayForPrompt(model: string | undefined): string {
   if (!model) return ''
   try {
     const display = getAgentModelDisplayName(model)
-    if (display === 'Inherit from parent (default)' || display === 'Inherit from parent') return ''
+    if (
+      display === 'Inherit from parent (default)' ||
+      display === 'Inherit from parent'
+    )
+      return ''
     return ` (Default model: ${display})`
   } catch {
     return ` (Default model: ${model})`

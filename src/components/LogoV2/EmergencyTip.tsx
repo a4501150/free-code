@@ -4,7 +4,6 @@ import { Box, Text } from 'src/ink.js'
 import { getGlobalConfig, saveGlobalConfig } from 'src/utils/config.js'
 import { getInitialSettings } from 'src/utils/settings/settings.js'
 
-
 export function EmergencyTip(): React.ReactNode {
   const tip = useMemo(getTipOfFeed, [])
   // Memoize to prevent re-reads after we save - we want the value at mount time

@@ -15,11 +15,7 @@ const LocalWorkflowTask: Task | null = feature('WORKFLOW_SCRIPTS')
  * Note: Returns array inline to avoid circular dependency issues with top-level const
  */
 export function getAllTasks(): Task[] {
-  const tasks: Task[] = [
-    LocalShellTask,
-    LocalAgentTask,
-    DreamTask,
-  ]
+  const tasks: Task[] = [LocalShellTask, LocalAgentTask, DreamTask]
   if (LocalWorkflowTask) tasks.push(LocalWorkflowTask)
   return tasks
 }

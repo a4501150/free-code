@@ -393,7 +393,6 @@ export async function getURLMarkdownContent(
           throw new DomainCheckFailedError(hostname)
       }
     }
-
   } catch (e) {
     if (
       e instanceof DomainBlockedError ||

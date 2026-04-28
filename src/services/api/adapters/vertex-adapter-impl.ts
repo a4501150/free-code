@@ -7,7 +7,11 @@
  * so usage normalization mirrors the native adapter.
  */
 import type { ProviderAdapter, FetchFn, TokenBreakdown } from '../adapter.js'
-import type { ProviderCapabilities, ProviderConfig, ProviderType } from '../../../utils/settings/types.js'
+import type {
+  ProviderCapabilities,
+  ProviderConfig,
+  ProviderType,
+} from '../../../utils/settings/types.js'
 import {
   fromHttpStatus,
   type NormalizedApiError,
@@ -40,7 +44,7 @@ export const vertexAnthropicAdapter: ProviderAdapter = {
       tools,
       model,
       betas: options?.betas ?? [],
-      filterBetas: (b) => VERTEX_COUNT_TOKENS_ALLOWED_BETAS.has(b),
+      filterBetas: b => VERTEX_COUNT_TOKENS_ALLOWED_BETAS.has(b),
     })
     if (inputTokens == null) return null
     return { inputTokens, outputTokens: 0 }
@@ -50,11 +54,20 @@ export const vertexAnthropicAdapter: ProviderAdapter = {
     // Vertex-Anthropic returns Anthropic-shape error bodies; delegate to the
     // Anthropic adapter's classifier and override providerType.
     const base = anthropicAdapter.normalizeError(raw, providerType)
-    const r = (raw ?? {}) as { status?: number; headers?: Headers | Record<string, string> }
+    const r = (raw ?? {}) as {
+      status?: number
+      headers?: Headers | Record<string, string>
+    }
     // Fallback: if the body wasn't parseable, Anthropic adapter already
     // handled status. No-op here.
     if (typeof r.status === 'number' && base.kind === 'unknown') {
-      return fromHttpStatus(r.status, base.message, providerType, r.headers, raw)
+      return fromHttpStatus(
+        r.status,
+        base.message,
+        providerType,
+        r.headers,
+        raw,
+      )
     }
     return base
   },

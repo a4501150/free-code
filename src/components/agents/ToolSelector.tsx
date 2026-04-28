@@ -73,10 +73,7 @@ function getToolBuckets(): ToolBuckets {
     },
     EDIT: {
       name: 'Edit tools',
-      toolNames: new Set([
-        FileEditTool.name,
-        FileWriteTool.name,
-      ]),
+      toolNames: new Set([FileEditTool.name, FileWriteTool.name]),
     },
     EXECUTION: {
       name: 'Execution tools',

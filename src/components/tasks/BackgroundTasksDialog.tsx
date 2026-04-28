@@ -599,8 +599,7 @@ export function BackgroundTasksDialog({
           <Box flexDirection="column">
             {teammateTasks.length > 0 && (
               <Box flexDirection="column">
-                {(bashTasks.length > 0 ||
-                  agentTasks.length > 0) && (
+                {(bashTasks.length > 0 || agentTasks.length > 0) && (
                   <Text dimColor>
                     <Text bold>{'  '}Agents</Text> (
                     {count(teammateTasks, i => i.type !== 'leader')})
@@ -620,8 +619,7 @@ export function BackgroundTasksDialog({
                 flexDirection="column"
                 marginTop={teammateTasks.length > 0 ? 1 : 0}
               >
-                {(teammateTasks.length > 0 ||
-                  agentTasks.length > 0) && (
+                {(teammateTasks.length > 0 || agentTasks.length > 0) && (
                   <Text dimColor>
                     <Text bold>{'  '}Shells</Text> ({bashTasks.length})
                   </Text>

@@ -339,10 +339,9 @@ import { setupPluginHookHotReload } from '../utils/plugins/loadPluginHooks.js'
 const coordinatorModeModule = feature('COORDINATOR_MODE')
   ? (require('../coordinator/coordinatorMode.js') as typeof import('../coordinator/coordinatorMode.js'))
   : null
-const proactiveModule =
-  feature('KAIROS')
-    ? (require('../proactive/index.js') as typeof import('../proactive/index.js'))
-    : null
+const proactiveModule = feature('KAIROS')
+  ? (require('../proactive/index.js') as typeof import('../proactive/index.js'))
+  : null
 const cronSchedulerModule = feature('AGENT_TRIGGERS')
   ? (require('../utils/cronScheduler.js') as typeof import('../utils/cronScheduler.js'))
   : null
@@ -469,7 +468,6 @@ export async function runHeadless(
     setSDKStatus?: (status: SDKStatus) => void
   },
 ): Promise<void> {
-
   // Fire user settings download now so it overlaps with the MCP/tool setup
   // below. Managed settings already started in main.tsx preAction; this gives
   // user settings a similar head start. The cached promise is joined in
@@ -521,7 +519,6 @@ export async function runHeadless(
     await checkGroveForNonInteractive()
   }
   headlessProfilerCheckpoint('after_grove_check')
-
 
   if (options.resumeSessionAt && !options.resume) {
     process.stderr.write(`Error: --resume-session-at requires --resume\n`)
@@ -1731,29 +1728,28 @@ function runHeadlessStreaming(
   // Proactive mode: schedule a tick to keep the model looping autonomously.
   // setTimeout(0) yields to the event loop so pending stdin messages
   // (interrupts, user messages) are processed before the tick fires.
-  const scheduleProactiveTick =
-    feature('KAIROS')
-      ? () => {
-          setTimeout(() => {
-            if (
-              !proactiveModule?.isProactiveActive() ||
-              proactiveModule.isProactivePaused() ||
-              inputClosed
-            ) {
-              return
-            }
-            const tickContent = `<${TICK_TAG}>${new Date().toLocaleTimeString()}</${TICK_TAG}>`
-            enqueue({
-              mode: 'prompt' as const,
-              value: tickContent,
-              uuid: randomUUID(),
-              priority: 'later',
-              isMeta: true,
-            })
-            void run()
-          }, 0)
-        }
-      : undefined
+  const scheduleProactiveTick = feature('KAIROS')
+    ? () => {
+        setTimeout(() => {
+          if (
+            !proactiveModule?.isProactiveActive() ||
+            proactiveModule.isProactivePaused() ||
+            inputClosed
+          ) {
+            return
+          }
+          const tickContent = `<${TICK_TAG}>${new Date().toLocaleTimeString()}</${TICK_TAG}>`
+          enqueue({
+            mode: 'prompt' as const,
+            value: tickContent,
+            uuid: randomUUID(),
+            priority: 'later',
+            isMeta: true,
+          })
+          void run()
+        }, 0)
+      }
+    : undefined
 
   // Abort the current operation when a 'now' priority message arrives.
   subscribeToCommandQueue(() => {
@@ -1989,7 +1985,7 @@ function runHeadlessStreaming(
 
           const input = command.value
 
-// Abort any in-flight suggestion generation and track acceptance
+          // Abort any in-flight suggestion generation and track acceptance
           suggestionState.abortController?.abort()
           suggestionState.abortController = null
           suggestionState.pendingSuggestion = null
@@ -2851,7 +2847,9 @@ function runHeadlessStreaming(
             sdkClient.type === 'connected' &&
             sdkClient.client?.transport?.onmessage
           ) {
-            sdkClient.client.transport.onmessage(mcpRequest.message as import('@modelcontextprotocol/sdk/types.js').JSONRPCMessage)
+            sdkClient.client.transport.onmessage(
+              mcpRequest.message as import('@modelcontextprotocol/sdk/types.js').JSONRPCMessage,
+            )
           }
           sendControlResponseSuccess(message)
         } else if (message.request.subtype === 'rewind_files') {
@@ -3686,7 +3684,13 @@ function runHeadlessStreaming(
 
       enqueue({
         mode: 'prompt' as const,
-        value: (message.message as { content: string | import('@anthropic-ai/sdk/resources/messages.mjs').ContentBlockParam[] }).content,
+        value: (
+          message.message as {
+            content:
+              | string
+              | import('@anthropic-ai/sdk/resources/messages.mjs').ContentBlockParam[]
+          }
+        ).content,
         uuid: message.uuid as UUID | undefined,
         priority: message.priority,
       })
@@ -4059,7 +4063,13 @@ async function handleInitializeRequest(
       // getAccountInformation() returns undefined under 3P providers, so the
       // other fields are all absent. apiProvider disambiguates "not logged
       // in" (firstParty + tokenSource:none) from "3P, login not applicable".
-      apiProvider: (getProviderRegistry().getDefaultProvider()?.config.type ?? 'anthropic') as 'firstParty' | 'bedrock' | 'vertex' | 'foundry' | undefined,
+      apiProvider: (getProviderRegistry().getDefaultProvider()?.config.type ??
+        'anthropic') as
+        | 'firstParty'
+        | 'bedrock'
+        | 'vertex'
+        | 'foundry'
+        | undefined,
     },
     pid: process.pid,
   }
@@ -4304,8 +4314,7 @@ function handleChannelEnable(
     return respondError(gate.reason)
   }
 
-  const pluginId =
-    `${entry.name}@${entry.marketplace}`
+  const pluginId = `${entry.name}@${entry.marketplace}`
   logMCPDebug(serverName, 'Channel notifications registered')
 
   // Identical enqueue shape to the interactive register block in
@@ -4372,9 +4381,7 @@ function reregisterChannelHandlerAfterReconnect(
 
   const entry = findChannelEntry(connection.name, getAllowedChannels())
   const pluginId =
-    entry?.kind === 'plugin'
-      ? (`${entry.name}@${entry.marketplace}`)
-      : undefined
+    entry?.kind === 'plugin' ? `${entry.name}@${entry.marketplace}` : undefined
 
   logMCPDebug(
     connection.name,
@@ -4472,7 +4479,6 @@ async function loadInitialMessages(
   // Handle continue in print mode
   if (options.continue) {
     try {
-
       const result = await loadConversationForResume(
         undefined /* sessionId */,
         undefined /* file path */,
@@ -4491,9 +4497,8 @@ async function loadInitialMessages(
               // eslint-disable-next-line @typescript-eslint/no-require-imports
               require('../tools/AgentTool/loadAgentsDir.js') as typeof import('../tools/AgentTool/loadAgentsDir.js')
             getAgentDefinitionsWithOverrides.cache.clear?.()
-            const freshAgentDefs = await getAgentDefinitionsWithOverrides(
-              getCwd(),
-            )
+            const freshAgentDefs =
+              await getAgentDefinitionsWithOverrides(getCwd())
 
             setAppState(prev => ({
               ...prev,
@@ -4553,7 +4558,6 @@ async function loadInitialMessages(
   // URLs are [ANT-ONLY]
   if (options.resume) {
     try {
-
       // In print mode - we require a valid session ID, JSONL file or URL
       const parsedSessionId = parseSessionIdentifier(
         typeof options.resume === 'string' ? options.resume : '',
@@ -4619,9 +4623,8 @@ async function loadInitialMessages(
             // eslint-disable-next-line @typescript-eslint/no-require-imports
             require('../tools/AgentTool/loadAgentsDir.js') as typeof import('../tools/AgentTool/loadAgentsDir.js')
           getAgentDefinitionsWithOverrides.cache.clear?.()
-          const freshAgentDefs = await getAgentDefinitionsWithOverrides(
-            getCwd(),
-          )
+          const freshAgentDefs =
+            await getAgentDefinitionsWithOverrides(getCwd())
 
           setAppState(prev => ({
             ...prev,
@@ -4778,7 +4781,8 @@ export async function handleOrphanedPermissionResponse({
       mode: 'orphaned-permission' as const,
       value: [],
       orphanedPermission: {
-        permissionResult: permissionResult as unknown as import('../entrypoints/sdk/coreTypes.generated.js').PermissionResult,
+        permissionResult:
+          permissionResult as unknown as import('../entrypoints/sdk/coreTypes.generated.js').PermissionResult,
         assistantMessage,
       },
     })

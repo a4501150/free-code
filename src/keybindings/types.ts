@@ -6,10 +6,7 @@
  * here so consumers can import them without pulling in Zod.
  */
 
-import type {
-  KEYBINDING_ACTIONS,
-  KEYBINDING_CONTEXTS,
-} from './schema.js'
+import type { KEYBINDING_ACTIONS, KEYBINDING_CONTEXTS } from './schema.js'
 
 /** Valid keybinding context name — keep in sync with KEYBINDING_CONTEXTS. */
 export type KeybindingContextName = (typeof KEYBINDING_CONTEXTS)[number]

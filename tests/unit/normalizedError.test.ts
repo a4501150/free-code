@@ -57,7 +57,9 @@ describe('toAnthropicErrorType', () => {
     expect(toAnthropicErrorType('rate_limit')).toBe('rate_limit_error')
     expect(toAnthropicErrorType('overloaded')).toBe('overloaded_error')
     expect(toAnthropicErrorType('auth')).toBe('authentication_error')
-    expect(toAnthropicErrorType('invalid_request')).toBe('invalid_request_error')
+    expect(toAnthropicErrorType('invalid_request')).toBe(
+      'invalid_request_error',
+    )
     expect(toAnthropicErrorType('content_filter')).toBe('refusal')
     expect(toAnthropicErrorType('transport')).toBe('api_error')
     expect(toAnthropicErrorType('server')).toBe('api_error')

@@ -250,7 +250,6 @@ export function ManageMarketplaces({
           })
           updatedCount++
           refreshedMarketplaces.add(state.name.toLowerCase())
-
         }
       }
 

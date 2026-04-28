@@ -89,21 +89,21 @@ free-code supports **five API providers** out of the box. Set the corresponding 
 
 Use Anthropic's first-party API directly.
 
-| Model | ID |
-|---|---|
-| Claude Opus 4.6 | `claude-opus-4-6` |
+| Model             | ID                  |
+| ----------------- | ------------------- |
+| Claude Opus 4.6   | `claude-opus-4-6`   |
 | Claude Sonnet 4.6 | `claude-sonnet-4-6` |
-| Claude Haiku 4.5 | `claude-haiku-4-5` |
+| Claude Haiku 4.5  | `claude-haiku-4-5`  |
 
 ### OpenAI Codex
 
 Use OpenAI's Codex models for code generation. Requires a Codex subscription.
 
-| Model | ID |
-|---|---|
+| Model                       | ID              |
+| --------------------------- | --------------- |
 | GPT-5.3 Codex (recommended) | `gpt-5.3-codex` |
-| GPT-5.4 | `gpt-5.4` |
-| GPT-5.4 Mini | `gpt-5.4-mini` |
+| GPT-5.4                     | `gpt-5.4`       |
+| GPT-5.4 Mini                | `gpt-5.4-mini`  |
 
 ```bash
 export CLAUDE_CODE_USE_OPENAI=1
@@ -122,13 +122,13 @@ free-code
 
 Uses your standard AWS credentials (environment variables, `~/.aws/config`, or IAM role). Models are mapped to Bedrock ARN format automatically (e.g., `us.anthropic.claude-opus-4-6-v1`).
 
-| Variable | Purpose |
-|---|---|
-| `CLAUDE_CODE_USE_BEDROCK` | Enable Bedrock provider |
+| Variable                            | Purpose                           |
+| ----------------------------------- | --------------------------------- |
+| `CLAUDE_CODE_USE_BEDROCK`           | Enable Bedrock provider           |
 | `AWS_REGION` / `AWS_DEFAULT_REGION` | AWS region (default: `us-east-1`) |
-| `ANTHROPIC_BEDROCK_BASE_URL` | Custom Bedrock endpoint |
-| `AWS_BEARER_TOKEN_BEDROCK` | Bearer token auth |
-| `CLAUDE_CODE_SKIP_BEDROCK_AUTH` | Skip auth (testing) |
+| `ANTHROPIC_BEDROCK_BASE_URL`        | Custom Bedrock endpoint           |
+| `AWS_BEARER_TOKEN_BEDROCK`          | Bearer token auth                 |
+| `CLAUDE_CODE_SKIP_BEDROCK_AUTH`     | Skip auth (testing)               |
 
 ### Google Cloud Vertex AI
 
@@ -155,13 +155,13 @@ Supports custom deployment IDs as model names.
 
 ### Provider Selection Summary
 
-| Provider | Env Variable | Auth Method |
-|---|---|---|
-| Anthropic (default) | -- | `ANTHROPIC_API_KEY` or OAuth |
-| OpenAI Codex | `CLAUDE_CODE_USE_OPENAI=1` | OAuth via OpenAI |
-| AWS Bedrock | `CLAUDE_CODE_USE_BEDROCK=1` | AWS credentials |
-| Google Vertex AI | `CLAUDE_CODE_USE_VERTEX=1` | `gcloud` ADC |
-| Anthropic Foundry | `CLAUDE_CODE_USE_FOUNDRY=1` | `ANTHROPIC_FOUNDRY_API_KEY` |
+| Provider            | Env Variable                | Auth Method                  |
+| ------------------- | --------------------------- | ---------------------------- |
+| Anthropic (default) | --                          | `ANTHROPIC_API_KEY` or OAuth |
+| OpenAI Codex        | `CLAUDE_CODE_USE_OPENAI=1`  | OAuth via OpenAI             |
+| AWS Bedrock         | `CLAUDE_CODE_USE_BEDROCK=1` | AWS credentials              |
+| Google Vertex AI    | `CLAUDE_CODE_USE_VERTEX=1`  | `gcloud` ADC                 |
+| Anthropic Foundry   | `CLAUDE_CODE_USE_FOUNDRY=1` | `ANTHROPIC_FOUNDRY_API_KEY`  |
 
 ---
 
@@ -190,13 +190,13 @@ bun run build
 
 ### Build Variants
 
-| Command | Output | Features | Description |
-|---|---|---|---|
-| `bun run build` | `./cli` | `VOICE_MODE` only | Production-like binary |
-| `bun run build:dev` | `./cli-dev` | `VOICE_MODE` only | Dev version stamp |
-| `bun run build:dev:full` | `./cli-dev` | All 30 experimental flags | Full unlock build |
-| `bun run compile` | `./dist/cli` | `VOICE_MODE` only | Alternative output path |
-| `bun run dev` | *(runs from source)* | `VOICE_MODE` only | No compile step, slower startup |
+| Command                  | Output               | Features                  | Description                     |
+| ------------------------ | -------------------- | ------------------------- | ------------------------------- |
+| `bun run build`          | `./cli`              | `VOICE_MODE` only         | Production-like binary          |
+| `bun run build:dev`      | `./cli-dev`          | `VOICE_MODE` only         | Dev version stamp               |
+| `bun run build:dev:full` | `./cli-dev`          | All 30 experimental flags | Full unlock build               |
+| `bun run compile`        | `./dist/cli`         | `VOICE_MODE` only         | Alternative output path         |
+| `bun run dev`            | _(runs from source)_ | `VOICE_MODE` only         | No compile step, slower startup |
 
 ### React Compiler (Optional)
 
@@ -247,15 +247,15 @@ bun run dev
 
 ### Environment Variables Reference
 
-| Variable | Purpose |
-|---|---|
-| `ANTHROPIC_API_KEY` | Anthropic API key |
-| `ANTHROPIC_AUTH_TOKEN` | Auth token (alternative) |
-| `ANTHROPIC_MODEL` | Override default model |
-| `ANTHROPIC_BASE_URL` | Custom API endpoint |
-| `CLAUDE_CODE_SUBAGENT_MODEL` | Override model for all subagents (default: inherit parent model) |
-| `CLAUDE_CODE_OAUTH_TOKEN` | OAuth token via env |
-| `CLAUDE_CODE_API_KEY_HELPER_TTL_MS` | API key helper cache TTL |
+| Variable                            | Purpose                                                          |
+| ----------------------------------- | ---------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`                 | Anthropic API key                                                |
+| `ANTHROPIC_AUTH_TOKEN`              | Auth token (alternative)                                         |
+| `ANTHROPIC_MODEL`                   | Override default model                                           |
+| `ANTHROPIC_BASE_URL`                | Custom API endpoint                                              |
+| `CLAUDE_CODE_SUBAGENT_MODEL`        | Override model for all subagents (default: inherit parent model) |
+| `CLAUDE_CODE_OAUTH_TOKEN`           | OAuth token via env                                              |
+| `CLAUDE_CODE_API_KEY_HELPER_TTL_MS` | API key helper cache TTL                                         |
 
 ---
 
@@ -265,34 +265,34 @@ The `bun run build:dev:full` build enables all 30 flags in `fullExperimentalFeat
 
 ### Interaction & UI
 
-| Flag | Description |
-|---|---|
-| `ULTRAPLAN` | Multi-agent planning with Opus-class model (requires CCR, currently disabled) |
-| `ULTRATHINK` | Deep thinking mode -- type "ultrathink" to boost reasoning effort |
-| `VOICE_MODE` | Push-to-talk voice input and dictation |
-| `TOKEN_BUDGET` | Token budget tracking and usage warnings |
-| `HISTORY_PICKER` | Interactive prompt history picker |
-| `MESSAGE_ACTIONS` | Message action entrypoints in the UI |
-| `QUICK_SEARCH` | Prompt quick-search |
-| `SHOT_STATS` | Shot-distribution stats |
+| Flag              | Description                                                                   |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `ULTRAPLAN`       | Multi-agent planning with Opus-class model (requires CCR, currently disabled) |
+| `ULTRATHINK`      | Deep thinking mode -- type "ultrathink" to boost reasoning effort             |
+| `VOICE_MODE`      | Push-to-talk voice input and dictation                                        |
+| `TOKEN_BUDGET`    | Token budget tracking and usage warnings                                      |
+| `HISTORY_PICKER`  | Interactive prompt history picker                                             |
+| `MESSAGE_ACTIONS` | Message action entrypoints in the UI                                          |
+| `QUICK_SEARCH`    | Prompt quick-search                                                           |
+| `SHOT_STATS`      | Shot-distribution stats                                                       |
 
 ### Agents, Memory & Planning
 
-| Flag | Description |
-|---|---|
-| `BUILTIN_EXPLORE_PLAN_AGENTS` | Built-in explore/plan agent presets |
-| `VERIFICATION_AGENT` | Verification agent for task validation |
-| `AGENT_TRIGGERS` | Local cron/trigger tools for background automation |
-| `EXTRACT_MEMORIES` | Post-query automatic memory extraction |
-| `COMPACTION_REMINDERS` | Smart reminders around context compaction |
-| `CACHED_MICROCOMPACT` | Cached microcompact state through query flows |
-| `TEAMMEM` | Team-memory files and watcher hooks |
+| Flag                          | Description                                        |
+| ----------------------------- | -------------------------------------------------- |
+| `BUILTIN_EXPLORE_PLAN_AGENTS` | Built-in explore/plan agent presets                |
+| `VERIFICATION_AGENT`          | Verification agent for task validation             |
+| `AGENT_TRIGGERS`              | Local cron/trigger tools for background automation |
+| `EXTRACT_MEMORIES`            | Post-query automatic memory extraction             |
+| `COMPACTION_REMINDERS`        | Smart reminders around context compaction          |
+| `CACHED_MICROCOMPACT`         | Cached microcompact state through query flows      |
+| `TEAMMEM`                     | Team-memory files and watcher hooks                |
 
 ### Tools & Infrastructure
 
-| Flag | Description |
-|---|---|
-| `BASH_CLASSIFIER` | Classifier-assisted bash permission decisions |
+| Flag                           | Description                                    |
+| ------------------------------ | ---------------------------------------------- |
+| `BASH_CLASSIFIER`              | Classifier-assisted bash permission decisions  |
 | `PROMPT_CACHE_BREAK_DETECTION` | Cache-break detection in compaction/query flow |
 
 See [FEATURES.md](FEATURES.md) for the complete audit of all 66 flags, including broken flags with reconstruction notes.
@@ -332,16 +332,16 @@ src/
 
 ## Tech Stack
 
-| | |
-|---|---|
-| **Runtime** | [Bun](https://bun.sh) |
-| **Language** | TypeScript |
-| **Terminal UI** | React + [Ink](https://github.com/vadimdemedes/ink) |
-| **CLI Parsing** | [Commander.js](https://github.com/tj/commander.js) |
-| **Schema Validation** | Zod v4 |
-| **Code Search** | ripgrep (bundled) |
-| **Protocols** | MCP, LSP |
-| **APIs** | Anthropic Messages, OpenAI Codex, AWS Bedrock, Google Vertex AI |
+|                       |                                                                 |
+| --------------------- | --------------------------------------------------------------- |
+| **Runtime**           | [Bun](https://bun.sh)                                           |
+| **Language**          | TypeScript                                                      |
+| **Terminal UI**       | React + [Ink](https://github.com/vadimdemedes/ink)              |
+| **CLI Parsing**       | [Commander.js](https://github.com/tj/commander.js)              |
+| **Schema Validation** | Zod v4                                                          |
+| **Code Search**       | ripgrep (bundled)                                               |
+| **Protocols**         | MCP, LSP                                                        |
+| **APIs**              | Anthropic Messages, OpenAI Codex, AWS Bedrock, Google Vertex AI |
 
 ---
 
@@ -349,9 +349,9 @@ src/
 
 A full copy of this repository is permanently pinned on IPFS via Filecoin:
 
-| | |
-|---|---|
-| **CID** | `bafybeiegvef3dt24n2znnnmzcud2vxat7y7rl5ikz7y7yoglxappim54bm` |
+|             |                                                                                   |
+| ----------- | --------------------------------------------------------------------------------- |
+| **CID**     | `bafybeiegvef3dt24n2znnnmzcud2vxat7y7rl5ikz7y7yoglxappim54bm`                     |
 | **Gateway** | https://w3s.link/ipfs/bafybeiegvef3dt24n2znnnmzcud2vxat7y7rl5ikz7y7yoglxappim54bm |
 
 If this repo gets taken down, the code lives on.

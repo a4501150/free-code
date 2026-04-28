@@ -81,7 +81,8 @@ export function readFreecodeSettingsFile(): Record<string, unknown> | null {
   }
 
   const parsed = safeParseJSONC(content)
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+    return null
   return parsed as Record<string, unknown>
 }
 
@@ -124,7 +125,10 @@ export function writeFreecodeSettingsFile(
       // ENOENT: patchJsoncFile handles null content by serializing fresh.
     }
 
-    writeFileSyncAndFlush_DEPRECATED(filePath, patchJsoncFile(rawContent, partial))
+    writeFileSyncAndFlush_DEPRECATED(
+      filePath,
+      patchJsoncFile(rawContent, partial),
+    )
   } catch (e) {
     logError(e)
   }

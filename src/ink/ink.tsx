@@ -351,7 +351,7 @@ export default class Ink {
       noop, // onDefaultTransitionIndicator
     )
 
-    if (("production" as string) === 'development') {
+    if (('production' as string) === 'development') {
       reconciler.injectIntoDevTools({
         bundleType: 0,
         // Reporting React DOM's version, not Ink's

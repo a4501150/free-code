@@ -17,9 +17,7 @@ export async function up(): Promise<void> {
   const found = await findClaudeMd(resolve(process.cwd()))
   if (!found) {
     // biome-ignore lint/suspicious/noConsole:: user-facing CLI output
-    console.error(
-      'No CLAUDE.md found walking up from the current directory.',
-    )
+    console.error('No CLAUDE.md found walking up from the current directory.')
     // eslint-disable-next-line custom-rules/no-process-exit
     process.exit(1)
   }

@@ -6,9 +6,7 @@ import { SNIP_TOOL_NAME, DESCRIPTION, PROMPT } from './prompt.js'
 const inputSchema = lazySchema(() => z.strictObject({}))
 type InputSchema = ReturnType<typeof inputSchema>
 
-const outputSchema = lazySchema(() =>
-  z.object({ snipped: z.boolean() }),
-)
+const outputSchema = lazySchema(() => z.object({ snipped: z.boolean() }))
 type OutputSchema = ReturnType<typeof outputSchema>
 
 type Output = z.infer<OutputSchema>

@@ -102,7 +102,6 @@ export const SDKControlInterruptRequestSchema = lazySchema(() =>
     .describe('Interrupts the currently running conversation turn.'),
 )
 
-
 export const SDKControlPermissionRequestSchema = lazySchema(() =>
   z
     .object({
@@ -451,7 +450,6 @@ export const SDKControlMcpToggleRequestSchema = lazySchema(() =>
     .describe('Enables or disables an MCP server.'),
 )
 
-
 export const SDKControlStopTaskRequestSchema = lazySchema(() =>
   z
     .object({
@@ -622,7 +620,6 @@ export const SDKControlSideQuestionRequestSchema = lazySchema(() =>
       'Runs a forked "side question" against the current conversation context.',
     ),
 )
-
 
 // ============================================================================
 // Control Request/Response Wrappers

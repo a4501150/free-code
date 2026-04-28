@@ -39,5 +39,7 @@ export function getCliHighlightPromise(): Promise<CliHighlight | null> {
 export async function getLanguageName(file_path: string): Promise<string> {
   const ext = extname(file_path).slice(1)
   if (!ext) return 'unknown'
-  return (hljs.getLanguage(ext) as { name?: string } | undefined)?.name ?? 'unknown'
+  return (
+    (hljs.getLanguage(ext) as { name?: string } | undefined)?.name ?? 'unknown'
+  )
 }

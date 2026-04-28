@@ -20,9 +20,7 @@ import * as voiceNs from '../context/voice.js'
 
 // DCE: voice context is ant-only. External builds get a passthrough.
 const VoiceProvider: (props: { children: React.ReactNode }) => React.ReactNode =
-  feature('VOICE_MODE')
-    ? voiceNs.VoiceProvider
-    : ({ children }) => children
+  feature('VOICE_MODE') ? voiceNs.VoiceProvider : ({ children }) => children
 import {
   type AppState,
   type AppStateStore,

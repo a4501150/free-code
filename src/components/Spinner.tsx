@@ -95,7 +95,6 @@ const SPINNER_FRAMES = [
   ...[...DEFAULT_CHARACTERS].reverse(),
 ]
 
-
 type Props = {
   mode: SpinnerMode
   loadingStartTimeRef: React.RefObject<number>
@@ -495,8 +494,8 @@ function BriefSpinner({
   // pausing isn't needed.
   const [, time] = useAnimationFrame(reducedMotion ? null : 120)
 
-  const runningCount = useAppState(
-    s => count(Object.values(s.tasks), isBackgroundTask),
+  const runningCount = useAppState(s =>
+    count(Object.values(s.tasks), isBackgroundTask),
   )
 
   const showConnWarning = false
@@ -551,8 +550,8 @@ function BriefSpinner({
 // working/idle/disconnected. See BriefSpinner's comment for the
 // Notifications overlay coupling.
 export function BriefIdleStatus(): React.ReactNode {
-  const runningCount = useAppState(
-    s => count(Object.values(s.tasks), isBackgroundTask),
+  const runningCount = useAppState(s =>
+    count(Object.values(s.tasks), isBackgroundTask),
   )
   const { columns } = useTerminalSize()
 
@@ -605,7 +604,6 @@ export function Spinner(): React.ReactNode {
     </Box>
   )
 }
-
 
 function findNextPendingTask(tasks: Task[] | undefined): Task | undefined {
   if (!tasks) {

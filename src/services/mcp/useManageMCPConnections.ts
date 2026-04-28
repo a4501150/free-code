@@ -481,7 +481,7 @@ export function useManageMCPConnections(
             // stay unlogged here. is_dev/entry_kind segment the rest.
             const pluginId =
               entry?.kind === 'plugin'
-                ? (`${entry.name}@${entry.marketplace}`)
+                ? `${entry.name}@${entry.marketplace}`
                 : undefined
             // Skip capability-miss — every non-channel MCP server trips it.
             switch (gate.action) {
@@ -609,10 +609,8 @@ export function useManageMCPConnections(
                   const newCount = newTools.length
                   if (previousToolsPromise) {
                     previousToolsPromise.then(
-                      (previousTools: Tool[]) => {
-                      },
-                      () => {
-                      },
+                      (previousTools: Tool[]) => {},
+                      () => {},
                     )
                   }
                   updateServer({ ...client, tools: newTools })
@@ -936,7 +934,6 @@ export function useManageMCPConnections(
         else if (serverConfig.scope === 'local') counts.user++
         else if (serverConfig.scope === 'dynamic') counts.plugin++
         else if (serverConfig.scope === 'claudeai') counts.claudeai++
-
       }
     }
 

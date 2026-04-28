@@ -106,7 +106,6 @@ export const TeamDeleteTool: Tool<InputSchema, Output> = buildTool({
 
       // Clear leader team name so getTaskListId() falls back to session ID
       clearLeaderTeamName()
-
     }
 
     // Clear team context and inbox from app state

@@ -53,7 +53,11 @@ describe('safeParseJSONC', () => {
 
 describe('modifyJsoncKey', () => {
   test('updates a leaf value and preserves surrounding comments', () => {
-    const out = modifyJsoncKey(FIXTURE, ['defaultModel'], 'anthropic:claude-haiku-4-5')
+    const out = modifyJsoncKey(
+      FIXTURE,
+      ['defaultModel'],
+      'anthropic:claude-haiku-4-5',
+    )
     expect(out).toContain('// my provider config')
     expect(out).toContain('// keep anthropic')
     expect(out).toContain('/* model default */')

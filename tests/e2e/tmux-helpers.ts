@@ -217,7 +217,9 @@ export class TmuxSession {
     this.started = true
 
     // Pipe pane output to log file for debugging
-    await exec(`tmux pipe-pane -t ${this.sessionName} -o 'cat >> ${shellEscape(this.logFile!)}'`)
+    await exec(
+      `tmux pipe-pane -t ${this.sessionName} -o 'cat >> ${shellEscape(this.logFile!)}'`,
+    )
 
     // Wait for the REPL to be ready
     await this.waitForText(this._readyText, 30_000)
@@ -237,7 +239,9 @@ export class TmuxSession {
     }
     if (this._ownsDirs) {
       if (this.configDir) {
-        await rm(this.configDir, { recursive: true, force: true }).catch(() => {})
+        await rm(this.configDir, { recursive: true, force: true }).catch(
+          () => {},
+        )
       }
       if (this.homeDir) {
         await rm(this.homeDir, { recursive: true, force: true }).catch(() => {})
@@ -257,7 +261,9 @@ export class TmuxSession {
     try {
       const log = await Bun.file(this.logFile).text()
       // biome-ignore lint/suspicious/noConsole: intentional debug output
-      console.log(`\n=== tmux log (${this.sessionName}) ===\n${log}\n=== end ===\n`)
+      console.log(
+        `\n=== tmux log (${this.sessionName}) ===\n${log}\n=== end ===\n`,
+      )
     } catch {
       // Log file might not exist yet
     }
@@ -343,7 +349,10 @@ export class TmuxSession {
    * If a permission dialog appears, approve it by pressing Enter.
    * Returns 'approved' if a dialog was handled, 'idle' if the prompt returned.
    */
-  async waitForPermissionOrIdle(timeout = 30_000, interval = 100): Promise<'approved' | 'idle'> {
+  async waitForPermissionOrIdle(
+    timeout = 30_000,
+    interval = 100,
+  ): Promise<'approved' | 'idle'> {
     const start = Date.now()
     while (Date.now() - start < timeout) {
       const screen = await this.capturePaneWithHistory()
@@ -383,10 +392,7 @@ export class TmuxSession {
    * @param prompt The user prompt to submit
    * @param timeout Total timeout for the entire operation
    */
-  async submitAndApprove(
-    prompt: string,
-    timeout = 60_000,
-  ): Promise<string> {
+  async submitAndApprove(prompt: string, timeout = 60_000): Promise<string> {
     await this.sendLine(prompt)
     await sleep(500)
 
@@ -431,7 +437,7 @@ async function exec(cmd: string): Promise<string> {
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 export { sleep }

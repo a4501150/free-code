@@ -27,8 +27,8 @@ export function MigrationPromptDialog({ onDone }: Props): React.ReactNode {
         <Text bold>~/.claude/freecode.json</Text>. Migrate now?
       </Text>
       <Text dimColor>
-        Your settings.json is not modified. A new freecode.json will be
-        written alongside it.
+        Your settings.json is not modified. A new freecode.json will be written
+        alongside it.
       </Text>
       <Select
         defaultValue="yes"

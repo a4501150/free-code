@@ -156,7 +156,10 @@ import {
   VALID_UPDATE_SCOPES,
 } from './services/plugins/pluginCliCommands.js'
 import { initBundledSkills } from './skills/bundled/index.js'
-import { replaceFromSnapshot, markSnapshotSynced } from './tools/AgentTool/agentMemorySnapshot.js'
+import {
+  replaceFromSnapshot,
+  markSnapshotSynced,
+} from './tools/AgentTool/agentMemorySnapshot.js'
 import {
   getActiveAgentsFromList,
   getAgentDefinitionsWithOverrides,
@@ -169,11 +172,7 @@ import type { Message as MessageType } from './types/message.js'
 import { getContextWindowForModel } from './utils/context.js'
 import { loadConversationForResume } from './utils/conversationRecovery.js'
 import { buildDeepLinkBanner } from './utils/deepLink/banner.js'
-import {
-  hasNodeOption,
-  isBareMode,
-  isEnvTruthy,
-} from './utils/envUtils.js'
+import { hasNodeOption, isBareMode, isEnvTruthy } from './utils/envUtils.js'
 import { refreshExampleCommands } from './utils/exampleCommands.js'
 import type { FpsMetrics } from './utils/fpsTracker.js'
 import { getWorktreePaths } from './utils/getWorktreePaths.js'
@@ -401,11 +400,7 @@ import {
   probeRunningServer,
 } from './server/lockfile.js'
 import { runConnectHeadless } from './server/connectHeadless.js'
-import {
-  authLogin,
-  authStatus,
-  authLogout,
-} from './cli/handlers/auth.js'
+import { authLogin, authStatus, authLogout } from './cli/handlers/auth.js'
 import {
   pluginValidateHandler,
   pluginListHandler,
@@ -531,7 +526,6 @@ function getCertEnvVarTelemetry(): Record<string, boolean> {
   }
   return result
 }
-
 
 // @[MODEL LAUNCH]: Consider any migrations you may need for model strings.
 // Bump this when adding a new sync migration so existing users re-run the set.
@@ -882,7 +876,6 @@ export async function main() {
       const exitCode = await handleDeepLinkUri(uri)
       process.exit(exitCode)
     }
-
   }
 
   // `claude ssh <host> [dir]` — strip from argv so the main command handler
@@ -1174,8 +1167,8 @@ async function run(): Promise<CommanderCommand> {
       legacySettingsFileExists()
     ) {
       process.stderr.write(
-        "Note: legacy ~/.claude/settings.json detected but no ~/.claude/freecode.json. " +
-          "Using env vars directly for this non-interactive run. " +
+        'Note: legacy ~/.claude/settings.json detected but no ~/.claude/freecode.json. ' +
+          'Using env vars directly for this non-interactive run. ' +
           "Run 'claude' interactively once to migrate.\n",
       )
     }
@@ -2053,7 +2046,6 @@ async function run(): Promise<CommanderCommand> {
             .filter(([, config]) => config.type !== 'sdk')
             .map(([name]) => name)
 
-
           // Add dynamic scope to all configs. type:'sdk' entries pass through
           // unchanged — they're extracted into sdkMcpConfigs downstream and
           // passed to print.ts. The Python SDK relies on this path (it doesn't
@@ -2202,13 +2194,7 @@ async function run(): Promise<CommanderCommand> {
             const ids = entries.flatMap(e =>
               e.kind === 'plugin' ? [`${e.name}@${e.marketplace}`] : [],
             )
-            return ids.length > 0
-              ? (ids
-                  .sort()
-                  .join(
-                    ',',
-                  ))
-              : undefined
+            return ids.length > 0 ? ids.sort().join(',') : undefined
           }
         }
       }
@@ -2739,7 +2725,7 @@ async function run(): Promise<CommanderCommand> {
       // the generic proactive prompt would tell it to call a tool it can't
       // access and conflict with delegation instructions.
       if (
-        (feature('KAIROS')) &&
+        feature('KAIROS') &&
         ((options as { proactive?: boolean }).proactive ||
           isEnvTruthy(process.env.CLAUDE_CODE_PROACTIVE)) &&
         !coordinatorModeModule?.isCoordinatorMode()
@@ -2823,10 +2809,18 @@ async function run(): Promise<CommanderCommand> {
               ? `${mergePrompt}\n\n${inputPrompt}`
               : mergePrompt
           } else if (choice === 'replace') {
-            await replaceFromSnapshot(agentDef.agentType, agentDef.memory!, agentDef.pendingSnapshotUpdate!.snapshotTimestamp)
+            await replaceFromSnapshot(
+              agentDef.agentType,
+              agentDef.memory!,
+              agentDef.pendingSnapshotUpdate!.snapshotTimestamp,
+            )
           } else {
             // 'keep' — mark snapshot as synced so we don't prompt again
-            await markSnapshotSynced(agentDef.agentType, agentDef.memory!, agentDef.pendingSnapshotUpdate!.snapshotTimestamp)
+            await markSnapshotSynced(
+              agentDef.agentType,
+              agentDef.memory!,
+              agentDef.pendingSnapshotUpdate!.snapshotTimestamp,
+            )
           }
           agentDef.pendingSnapshotUpdate = undefined
         }
@@ -3069,8 +3063,6 @@ async function run(): Promise<CommanderCommand> {
             : undefined,
       })
 
-
-
       logManagedSettings()
 
       // Register PID file for concurrent-session detection (~/.claude/sessions/)
@@ -3082,8 +3074,7 @@ async function run(): Promise<CommanderCommand> {
         if (sessionNameArg) {
           void updateSessionName(sessionNameArg)
         }
-        void countConcurrentSessions().then(count => {
-        })
+        void countConcurrentSessions().then(count => {})
       })
 
       // Initialize versioned plugins system (triggers V1→V2 migration if
@@ -3825,10 +3816,7 @@ async function run(): Promise<CommanderCommand> {
           renderAndRun,
         )
         return
-      } else if (
-        options.resume ||
-        options.fromPr
-      ) {
+      } else if (options.resume || options.fromPr) {
         // Handle resume flow - from file (ant-only), session ID, or interactive selector
 
         // Clear stale caches before resuming to ensure fresh file/skill discovery
@@ -3924,7 +3912,11 @@ async function run(): Promise<CommanderCommand> {
 
           await launchRepl(
             root,
-            { getFpsMetrics, stats, initialState: processedResume.initialState },
+            {
+              getFpsMetrics,
+              stats,
+              initialState: processedResume.initialState,
+            },
             {
               ...sessionConfig,
               mainThreadAgentDefinition:
@@ -4894,11 +4886,7 @@ Examples:
     .option('--pending', 'Show only pending tasks')
     .option('--json', 'Output as JSON')
     .action(
-      async (opts: {
-        list?: string
-        pending?: boolean
-        json?: boolean
-      }) => {
+      async (opts: { list?: string; pending?: boolean; json?: boolean }) => {
         await taskListHandler(opts)
         // eslint-disable-next-line custom-rules/no-process-exit
         process.exit(0)
@@ -4919,10 +4907,7 @@ Examples:
     .command('update <id>')
     .description('Update a task')
     .option('-l, --list <id>', 'Task list ID (defaults to "tasklist")')
-    .option(
-      '-s, --status <status>',
-      `Set status (${TASK_STATUSES.join(', ')})`,
-    )
+    .option('-s, --status <status>', `Set status (${TASK_STATUSES.join(', ')})`)
     .option('--subject <text>', 'Update subject')
     .option('-d, --description <text>', 'Update description')
     .option('--owner <agentId>', 'Set owner')
@@ -5037,7 +5022,7 @@ async function logTenguInit({
 
 function maybeActivateProactive(options: unknown): void {
   if (
-    (feature('KAIROS')) &&
+    feature('KAIROS') &&
     ((options as { proactive?: boolean }).proactive ||
       isEnvTruthy(process.env.CLAUDE_CODE_PROACTIVE))
   ) {

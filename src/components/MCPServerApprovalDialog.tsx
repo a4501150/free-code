@@ -17,7 +17,6 @@ export function MCPServerApprovalDialog({
   onDone,
 }: Props): React.ReactNode {
   function onChange(value: 'yes' | 'yes_all' | 'no') {
-
     switch (value) {
       case 'yes':
       case 'yes_all': {

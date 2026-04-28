@@ -29,7 +29,6 @@ import { jsonParse, jsonStringify } from '../utils/slowOperations.js'
 const KEEPALIVE_MSG = '{"type":"KeepAlive"}'
 const CLOSE_STREAM_MSG = '{"type":"CloseStream"}'
 
-
 // ─── Constants ───────────────────────────────────────────────────────
 
 const VOICE_STREAM_PATH = '/api/ws/speech_to_text/voice_stream'

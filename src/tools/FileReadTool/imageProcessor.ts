@@ -71,16 +71,33 @@ export async function getImageCreator(): Promise<SharpCreator> {
 
   const creator: SharpCreator = (options: SharpCreatorOptions) => {
     const { width, height, background } = options.create
-    const image = new Jimp({ width, height, color: ((background.r << 24) | (background.g << 16) | (background.b << 8) | 0xff) >>> 0 })
+    const image = new Jimp({
+      width,
+      height,
+      color:
+        ((background.r << 24) |
+          (background.g << 16) |
+          (background.b << 8) |
+          0xff) >>>
+        0,
+    })
 
     const instance: SharpInstance = {
       async metadata() {
         return { width, height, format: 'png' }
       },
-      resize() { return instance },
-      jpeg() { return instance },
-      png() { return instance },
-      webp() { return instance },
+      resize() {
+        return instance
+      },
+      jpeg() {
+        return instance
+      },
+      png() {
+        return instance
+      },
+      webp() {
+        return instance
+      },
       async toBuffer() {
         return Buffer.from(await image.getBuffer('image/png'))
       },
@@ -98,11 +115,21 @@ export async function getImageCreator(): Promise<SharpCreator> {
  * which has a broken dependency (simple-xml-to-json).
  */
 async function createJimpSharpAdapter(): Promise<SharpFunction> {
-  const Jimp = createJimp({ formats: [jpeg, png, bmp], plugins: [resizeMethods] })
+  const Jimp = createJimp({
+    formats: [jpeg, png, bmp],
+    plugins: [resizeMethods],
+  })
 
   return function jimpSharp(input: Buffer): SharpInstance {
-    let pendingResize: { width: number; height: number; options?: { fit?: string; withoutEnlargement?: boolean } } | null = null
-    let pendingFormat: { type: 'jpeg'; quality: number } | { type: 'png'; options?: { compressionLevel?: number } } | null = null
+    let pendingResize: {
+      width: number
+      height: number
+      options?: { fit?: string; withoutEnlargement?: boolean }
+    } | null = null
+    let pendingFormat:
+      | { type: 'jpeg'; quality: number }
+      | { type: 'png'; options?: { compressionLevel?: number } }
+      | null = null
 
     const instance: SharpInstance = {
       async metadata() {
@@ -111,10 +138,15 @@ async function createJimpSharpAdapter(): Promise<SharpFunction> {
         let format = 'unknown'
         if (mime === 'image/png') format = 'png'
         else if (mime === 'image/jpeg') format = 'jpeg'
-        else if (mime === 'image/bmp' || mime === 'image/x-ms-bmp') format = 'bmp'
+        else if (mime === 'image/bmp' || mime === 'image/x-ms-bmp')
+          format = 'bmp'
         return { width: image.width, height: image.height, format }
       },
-      resize(width: number, height: number, options?: { fit?: string; withoutEnlargement?: boolean }) {
+      resize(
+        width: number,
+        height: number,
+        options?: { fit?: string; withoutEnlargement?: boolean },
+      ) {
         pendingResize = { width, height, options }
         return instance
       },
@@ -143,7 +175,10 @@ async function createJimpSharpAdapter(): Promise<SharpFunction> {
             targetH = Math.min(height, image.height)
           }
           if (options?.fit === 'inside') {
-            const ratio = Math.min(targetW / image.width, targetH / image.height)
+            const ratio = Math.min(
+              targetW / image.width,
+              targetH / image.height,
+            )
             targetW = Math.round(image.width * ratio)
             targetH = Math.round(image.height * ratio)
           }
@@ -151,7 +186,11 @@ async function createJimpSharpAdapter(): Promise<SharpFunction> {
         }
 
         if (pendingFormat?.type === 'jpeg') {
-          return Buffer.from(await image.getBuffer('image/jpeg', { quality: pendingFormat.quality }))
+          return Buffer.from(
+            await image.getBuffer('image/jpeg', {
+              quality: pendingFormat.quality,
+            }),
+          )
         }
         return Buffer.from(await image.getBuffer('image/png'))
       },

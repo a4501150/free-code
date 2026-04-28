@@ -89,8 +89,7 @@ const PROD_OAUTH_CONFIG = {
     'https://platform.claude.com/buy_credits?returnUrl=/oauth/code/success%3Fapp%3Dclaude-code',
   CLAUDEAI_SUCCESS_URL:
     'https://platform.claude.com/oauth/code/success?app=claude-code',
-  OPENAI_SUCCESS_URL:
-    'https://openai.com/oauth/success?app=claude-code',
+  OPENAI_SUCCESS_URL: 'https://openai.com/oauth/success?app=claude-code',
   MANUAL_REDIRECT_URL: 'https://platform.claude.com/oauth/code/callback',
   CLIENT_ID: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
   // No suffix for production config
@@ -108,7 +107,6 @@ const PROD_OAUTH_CONFIG = {
  */
 export const MCP_CLIENT_METADATA_URL =
   'https://claude.ai/oauth/claude-code-client-metadata'
-
 
 // Allowed base URLs for CLAUDE_CODE_CUSTOM_OAUTH_URL override.
 // Only FedStart/PubSec deployments are permitted to prevent OAuth tokens

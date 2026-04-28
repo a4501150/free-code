@@ -50,7 +50,12 @@ function unwrap(node: ZodLike | undefined): ZodLike | undefined {
   let cur = node
   while (cur) {
     const t = cur._def?.type
-    if (t === 'optional' || t === 'default' || t === 'readonly' || t === 'pipe') {
+    if (
+      t === 'optional' ||
+      t === 'default' ||
+      t === 'readonly' ||
+      t === 'pipe'
+    ) {
       cur = getInner(cur._def)
       continue
     }
@@ -93,7 +98,9 @@ function isOptionalNonNullable(node: unknown): boolean {
  * Get the `.shape` of a Zod object schema, drilling through wrappers like
  * optional/nullable/default. Returns undefined for non-object schemas.
  */
-function getShape(node: ZodLike | undefined): Record<string, ZodLike> | undefined {
+function getShape(
+  node: ZodLike | undefined,
+): Record<string, ZodLike> | undefined {
   const target = unwrap(node)
   if (!target) return undefined
   // ZodObject has `shape` directly on the instance

@@ -62,9 +62,7 @@ import {
   restoreDangerousPermissions,
   stripDangerousPermissionsForAutoMode,
 } from '../../../utils/permissions/permissionSetup.js'
-import {
-  isPlanModeInterviewPhaseEnabled,
-} from '../../../utils/planModeV2.js'
+import { isPlanModeInterviewPhaseEnabled } from '../../../utils/planModeV2.js'
 import { getPlan, getPlanFilePath } from '../../../utils/plans.js'
 import {
   editFileInEditor,
@@ -387,7 +385,9 @@ export function ExitPlanModePermissionRequest({
         blurb: '',
         seedPlan: currentPlan,
         getAppState: store.getState,
-        setAppState: store.setState as unknown as (f: (prev: unknown) => unknown) => void,
+        setAppState: store.setState as unknown as (
+          f: (prev: unknown) => unknown,
+        ) => void,
         signal: new AbortController().signal,
       })
         .then(msg =>

@@ -34,7 +34,7 @@ export async function launchUltraplan(_opts: {
   return 'ultraplan requires Claude Code on the web infrastructure which is not available in this build.'
 }
 
-const call: LocalJSXCommandCall = async (onDone) => {
+const call: LocalJSXCommandCall = async onDone => {
   onDone(
     'ultraplan requires Claude Code on the web infrastructure which is not available in this build.',
     { display: 'system' },

@@ -103,7 +103,10 @@ function VerboseToolUse({
       </Box>
       {isInProgress &&
         tool.renderToolUseProgressMessage?.(
-          (lookups.progressMessagesByToolUseID.get(content.id) ?? []) as import('../../types/message.js').ProgressMessage<import('../../types/tools.js').ToolProgressData>[],
+          (lookups.progressMessagesByToolUseID.get(content.id) ??
+            []) as import('../../types/message.js').ProgressMessage<
+            import('../../types/tools.js').ToolProgressData
+          >[],
           { tools, verbose: true },
         )}
       {isResolved && !isError && toolResult !== undefined && (
@@ -209,7 +212,8 @@ export function CollapsedReadSearchContent({
   if (isActiveGroup) {
     for (const id of toolUseIds) {
       if (!inProgressToolUseIDs.has(id)) continue
-      const latest = lookups.progressMessagesByToolUseID.get(id)?.at(-1)?.data as Record<string, unknown> | undefined
+      const latest = lookups.progressMessagesByToolUseID.get(id)?.at(-1)
+        ?.data as Record<string, unknown> | undefined
       if (latest?.type === 'repl_tool_call' && latest.phase === 'start') {
         const input = latest.toolInput as {
           command?: string
@@ -233,8 +237,11 @@ export function CollapsedReadSearchContent({
     for (const msg of groupMessages) {
       if (msg.type === 'assistant') {
         toolUses.push(msg)
-      } else if ((msg as {type: string}).type === 'grouped_tool_use') {
-        toolUses.push(...(msg as unknown as {messages: NormalizedAssistantMessage[]}).messages)
+      } else if ((msg as { type: string }).type === 'grouped_tool_use') {
+        toolUses.push(
+          ...(msg as unknown as { messages: NormalizedAssistantMessage[] })
+            .messages,
+        )
       }
     }
 
@@ -358,7 +365,10 @@ export function CollapsedReadSearchContent({
     pushPart('push', 'pushed to', <Text bold>{branches.join(', ')}</Text>)
   }
   if (isFullscreenEnvEnabled() && message.branches?.length) {
-    const byAction: Record<string, string> = { merged: 'merged', rebased: 'rebased onto' }
+    const byAction: Record<string, string> = {
+      merged: 'merged',
+      rebased: 'rebased onto',
+    }
     for (const b of message.branches) {
       pushPart(
         `br-${b.action}-${b.ref}`,

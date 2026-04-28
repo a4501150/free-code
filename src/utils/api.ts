@@ -226,9 +226,7 @@ function shouldEmitWireStrictForAnthropic(
   if (!ANTHROPIC_STRICT_TOOL_NAMES.has(toolName)) return false
   // Only when the model itself declares structured-outputs support — Claude
   // Sonnet/Opus 4.5+ etc. Older Claudes ignore the strict flag and may 400.
-  return (
-    getProviderRegistry().getModelFlag(model, 'structuredOutputs') === true
-  )
+  return getProviderRegistry().getModelFlag(model, 'structuredOutputs') === true
 }
 
 export async function toolToAPISchema(

@@ -21,7 +21,10 @@ import type { SDKAssistantErrorReason } from '../entrypoints/agentSdkTypes.js'
 import type { Attachment } from '../utils/attachments.js'
 import type { ToolProgressData } from './tools.js'
 import type { PermissionMode } from './permissions.js'
-import type { QueueOperation, QueueOperationMessage } from './messageQueueTypes.js'
+import type {
+  QueueOperation,
+  QueueOperationMessage,
+} from './messageQueueTypes.js'
 import type { HookProgress } from './hooks.js'
 import type { UUID } from 'crypto'
 

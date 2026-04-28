@@ -52,4 +52,3 @@ export function isPlanModeInterviewPhaseEnabled(): boolean {
   if (isEnvDefinedFalsy(env)) return false
   return getInitialSettings()?.planModeInterviewPhase ?? false
 }
-

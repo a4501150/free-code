@@ -50,10 +50,9 @@ import { PrBadge } from '../PrBadge.js'
 
 // Dead code elimination: conditional import for proactive mode
 /* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule =
-  feature('KAIROS')
-    ? require('../../proactive/index.js')
-    : null
+const proactiveModule = feature('KAIROS')
+  ? require('../../proactive/index.js')
+  : null
 /* eslint-enable @typescript-eslint/no-require-imports */
 const NO_OP_SUBSCRIBE = (_cb: () => void) => () => {}
 const NULL = () => null
@@ -234,14 +233,15 @@ function ModeIndicator({
   const hasSelection = useHasSelection()
   const selGetState = useSelection().getState
   const hasNextTick = nextTickAt !== null
-  const isCoordinator = feature('COORDINATOR_MODE') ? isCoordinatorMode() : false
+  const isCoordinator = feature('COORDINATOR_MODE')
+    ? isCoordinatorMode()
+    : false
   const runningTaskCount = useMemo(
     () =>
       count(
         Object.values(tasks),
         t =>
-          isBackgroundTask(t) &&
-          !(isCoordinator ? isPanelAgentTask(t) : false),
+          isBackgroundTask(t) && !(isCoordinator ? isPanelAgentTask(t) : false),
       ),
     [tasks, isCoordinator],
   )
@@ -429,7 +429,7 @@ function ModeIndicator({
         />
       </Text>,
     )
-  } else if ((feature('KAIROS')) && hasNextTick) {
+  } else if (feature('KAIROS') && hasNextTick) {
     parts.push(<ProactiveCountdown key="proactive" />)
   } else if (!hasTeammatePills && showHint) {
     parts.push(...hintParts)
@@ -465,8 +465,9 @@ function ModeIndicator({
   }
 
   // Add "↓ to manage tasks" hint when panel has visible rows
-  const hasCoordinatorTasks =
-    feature('COORDINATOR_MODE') ? getVisibleAgentTasks(tasks).length > 0 : false
+  const hasCoordinatorTasks = feature('COORDINATOR_MODE')
+    ? getVisibleAgentTasks(tasks).length > 0
+    : false
 
   // Tasks pill renders as a Box sibling (not a parts entry) so its
   // click-target Box isn't nested inside <Text wrap="truncate"> — the

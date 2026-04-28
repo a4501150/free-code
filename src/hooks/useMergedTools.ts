@@ -31,9 +31,5 @@ export function useMergedTools(
       assembled,
       toolPermissionContext.mode,
     )
-  }, [
-    initialTools,
-    mcpTools,
-    toolPermissionContext,
-  ])
+  }, [initialTools, mcpTools, toolPermissionContext])
 }

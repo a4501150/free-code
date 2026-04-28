@@ -248,7 +248,6 @@ export async function handlePromptSubmit(
       immediateCommand.type === 'local-jsx' &&
       (queryGuard.isActive || isExternalLoading)
     ) {
-
       // Clear input
       onInputChange('')
       setCursorOffset(0)
@@ -549,9 +548,7 @@ async function executeUserInput(params: ExecuteUserInputParams): Promise<void> {
           abortController,
           shouldQuery,
           allowedTools ?? [],
-          model
-            ? parseUserSpecifiedModel(model)
-            : mainLoopModel,
+          model ? parseUserSpecifiedModel(model) : mainLoopModel,
           shouldCallBeforeQuery ? onBeforeQuery : undefined,
           primaryInput,
           effort,

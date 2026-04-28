@@ -338,8 +338,7 @@ export const ToolSearchTool = buildTool({
     function logSearchOutcome(
       matches: string[],
       queryType: 'select' | 'keyword',
-    ): void {
-    }
+    ): void {}
 
     // Check for select: prefix — direct tool selection.
     // Supports comma-separated multi-select: `select:A,B,C`.

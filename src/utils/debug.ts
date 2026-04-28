@@ -63,7 +63,8 @@ export const isDebugMode = memoize((): boolean => {
  * with --debug. Returns true if logging was already active.
  */
 export function enableDebugLogging(): boolean {
-  const wasActive = isDebugMode() || (getInitialSettings()?.alwaysDebugLog ?? false)
+  const wasActive =
+    isDebugMode() || (getInitialSettings()?.alwaysDebugLog ?? false)
   runtimeDebugEnabled = true
   isDebugMode.cache.clear?.()
   return wasActive

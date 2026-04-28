@@ -53,7 +53,9 @@ const briefCommand =
   feature('KAIROS') || feature('KAIROS_BRIEF') ? briefCmdMod.default : null
 const voiceCommand = feature('VOICE_MODE') ? voiceCmdMod.default : null
 const initVerifiers = feature('VERIFY_PLAN') ? initVerifiersMod.default : null
-const workflowsCmd = feature('WORKFLOW_SCRIPTS') ? workflowsCmdMod.default : null
+const workflowsCmd = feature('WORKFLOW_SCRIPTS')
+  ? workflowsCmdMod.default
+  : null
 const clearSkillIndexCache = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? localSearchMod.clearSkillIndexCache
   : null

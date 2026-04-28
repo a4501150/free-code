@@ -189,8 +189,7 @@ export function MessageSelector({
   }
 
   // Log when selector is opened
-  useEffect(() => {
-  }, [])
+  useEffect(() => {}, [])
 
   // Helper to restore conversation without confirmation
   async function restoreConversationDirectly(message: UserMessage) {

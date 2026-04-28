@@ -25,7 +25,11 @@ import * as pushNotificationMod from './tools/PushNotificationTool/PushNotificat
 // so its absence is tolerated silently.
 /* eslint-disable @typescript-eslint/no-require-imports */
 let REPLTool: any = null
-try { REPLTool = require('./tools/REPLTool/REPLTool.js').REPLTool ?? null } catch { /* REPLTool not available */ }
+try {
+  REPLTool = require('./tools/REPLTool/REPLTool.js').REPLTool ?? null
+} catch {
+  /* REPLTool not available */
+}
 /* eslint-enable @typescript-eslint/no-require-imports */
 const SleepTool = feature('KAIROS') ? sleepToolMod.SleepTool : null
 const cronTools = feature('AGENT_TRIGGERS')

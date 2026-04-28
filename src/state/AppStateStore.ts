@@ -77,12 +77,7 @@ export type SpeculationState =
 
 export const IDLE_SPECULATION_STATE: SpeculationState = { status: 'idle' }
 
-export type FooterItem =
-  | 'tasks'
-  | 'tmux'
-  | 'bagel'
-  | 'teams'
-  | 'companion'
+export type FooterItem = 'tasks' | 'tmux' | 'bagel' | 'teams' | 'companion'
 
 export type AppState = DeepImmutable<{
   settings: SettingsJson

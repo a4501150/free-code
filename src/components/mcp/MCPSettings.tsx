@@ -73,8 +73,7 @@ export function MCPSettings({ onComplete }: Props): React.ReactNode {
             const hasToolsAndConnected =
               client.type === 'connected' &&
               filterToolsByServer(mcp.tools, client.name).length > 0
-            isAuthenticated =
-              Boolean(tokens) || hasToolsAndConnected
+            isAuthenticated = Boolean(tokens) || hasToolsAndConnected
           }
 
           const baseInfo = {

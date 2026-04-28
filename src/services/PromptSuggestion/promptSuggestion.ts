@@ -430,7 +430,6 @@ export function logSuggestionOutcome(
     Math.round((userInput.length / (suggestion.length || 1)) * 100) / 100
   const wasAccepted = userInput === suggestion
   const timeMs = Math.max(0, Date.now() - emittedAt)
-
 }
 
 export function logSuggestionSuppressed(

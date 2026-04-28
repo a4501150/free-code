@@ -48,8 +48,12 @@ export function getModelCosts(model: string, usage: Usage): ModelCosts {
     const base: ModelCosts = {
       inputTokens: p.input ?? DEFAULT_UNKNOWN_MODEL_COST.inputTokens,
       outputTokens: p.output ?? DEFAULT_UNKNOWN_MODEL_COST.outputTokens,
-      promptCacheWriteTokens: p.cacheWrite ?? (p.input ?? DEFAULT_UNKNOWN_MODEL_COST.inputTokens) * 1.25,
-      promptCacheReadTokens: p.cacheRead ?? (p.input ?? DEFAULT_UNKNOWN_MODEL_COST.inputTokens) * 0.1,
+      promptCacheWriteTokens:
+        p.cacheWrite ??
+        (p.input ?? DEFAULT_UNKNOWN_MODEL_COST.inputTokens) * 1.25,
+      promptCacheReadTokens:
+        p.cacheRead ??
+        (p.input ?? DEFAULT_UNKNOWN_MODEL_COST.inputTokens) * 0.1,
       webSearchRequests: p.webSearch ?? 0,
     }
 
@@ -59,8 +63,10 @@ export function getModelCosts(model: string, usage: Usage): ModelCosts {
       return {
         inputTokens: base.inputTokens * FAST_MODE_MULTIPLIER,
         outputTokens: base.outputTokens * FAST_MODE_MULTIPLIER,
-        promptCacheWriteTokens: base.promptCacheWriteTokens * FAST_MODE_MULTIPLIER,
-        promptCacheReadTokens: base.promptCacheReadTokens * FAST_MODE_MULTIPLIER,
+        promptCacheWriteTokens:
+          base.promptCacheWriteTokens * FAST_MODE_MULTIPLIER,
+        promptCacheReadTokens:
+          base.promptCacheReadTokens * FAST_MODE_MULTIPLIER,
         webSearchRequests: base.webSearchRequests,
       }
     }

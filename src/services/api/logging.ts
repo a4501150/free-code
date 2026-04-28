@@ -134,20 +134,17 @@ function getAnthropicEnvMetadata() {
   return {
     ...(process.env.ANTHROPIC_BASE_URL
       ? {
-          baseUrl: process.env
-            .ANTHROPIC_BASE_URL,
+          baseUrl: process.env.ANTHROPIC_BASE_URL,
         }
       : {}),
     ...(process.env.ANTHROPIC_MODEL
       ? {
-          envModel: process.env
-            .ANTHROPIC_MODEL,
+          envModel: process.env.ANTHROPIC_MODEL,
         }
       : {}),
     ...(process.env.ANTHROPIC_SMALL_FAST_MODEL
       ? {
-          envSmallFastModel: process.env
-            .ANTHROPIC_SMALL_FAST_MODEL,
+          envSmallFastModel: process.env.ANTHROPIC_SMALL_FAST_MODEL,
         }
       : {}),
   }
@@ -184,8 +181,7 @@ export function logAPIQuery({
   effortValue?: EffortLevel | null
   fastMode?: boolean
   previousRequestId?: string | null
-}): void {
-}
+}): void {}
 
 export function logAPIError({
   error,
@@ -274,7 +270,6 @@ export function logAPIError({
     error: errStr,
     attempt,
   })
-
 }
 
 function logAPISuccess({
@@ -436,8 +431,7 @@ export function logAPISuccessAndDuration({
           block.type === 'mcp_tool_use'
         ) {
           const inputLen = jsonStringify(block.input).length
-          toolLengths[block.name] =
-            (toolLengths[block.name] ?? 0) + inputLen
+          toolLengths[block.name] = (toolLengths[block.name] ?? 0) + inputLen
           hasToolUse = true
         }
       }
@@ -507,7 +501,6 @@ export function logAPISuccessAndDuration({
         )
         .join('\n') || undefined
 
-
     // Check if any tool_use blocks were in the output
     hasToolCall = newMessages.some(m =>
       m.message.content.some(c => c.type === 'tool_use'),
@@ -528,5 +521,4 @@ export function logAPISuccessAndDuration({
     requestSetupMs,
     attemptStartTimes,
   })
-
 }

@@ -345,7 +345,6 @@ export function LogSelector({
     })
   }, [baseFilteredLogs, searchQuery])
 
-
   // Merge title matches with async deep search results
   const { filteredLogs, snippets } = React.useMemo(() => {
     const snippetMap = new Map<LogOption, Snippet>()
@@ -1091,9 +1090,7 @@ export function LogSelector({
         ) : viewMode === 'search' ? (
           <Text dimColor>
             <Byline>
-              <Text>
-                {'Type to Search'}
-              </Text>
+              <Text>{'Type to Search'}</Text>
               <KeyboardShortcutHint shortcut="Enter" action="select" />
               <ConfigurableShortcutHint
                 action="confirm:no"

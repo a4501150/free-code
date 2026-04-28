@@ -97,10 +97,9 @@ const LogoHeader = React.memo(function LogoHeader({
 
 // Dead code elimination: conditional import for proactive mode
 /* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule =
-  feature('KAIROS')
-    ? require('../proactive/index.js')
-    : null
+const proactiveModule = feature('KAIROS')
+  ? require('../proactive/index.js')
+  : null
 /* eslint-enable @typescript-eslint/no-require-imports */
 import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
 import * as sendUserFileToolPromptNs from '../tools/SendUserFileTool/prompt.js'

@@ -104,7 +104,7 @@ env var override > freecode.json field > hardcoded fallback.
 ### Feature-flag gotchas
 
 - **Tier comments inside `defaultFeatures` describe the runtime gate, not the build gate.** All flags in `defaultFeatures` are compiled in by default; the tier (1 CLI flag, 2 slash command, 3 setting/env/file, 4 keyword nudge, always-on) just tells you what additionally has to happen at runtime before the feature does anything user-visible. `VOICE_MODE` sits in the "always on" tier because nothing runtime-gates it — once compiled, the push-to-talk keybinding and voice UI are unconditionally wired up; contrast with e.g. `DAEMON` (needs `claude daemon` subcommand) or `KAIROS` (needs a settings toggle).
-- **Orphan flags exist.** Flags can be referenced via `feature('FLAG')` in `src/` while appearing in *neither* `defaultFeatures` nor `fullExperimentalFeatures`. Those can only be enabled with an explicit `--feature=FLAG` at build time — easy to forget and end up shipping dead code. Audit with:
+- **Orphan flags exist.** Flags can be referenced via `feature('FLAG')` in `src/` while appearing in _neither_ `defaultFeatures` nor `fullExperimentalFeatures`. Those can only be enabled with an explicit `--feature=FLAG` at build time — easy to forget and end up shipping dead code. Audit with:
   ```
   comm -23 \
     <(grep -rhoE "feature\(['\"][A-Z_]+['\"]\)" src | sed -E "s/.*['\"]([A-Z_]+)['\"].*/\1/" | sort -u) \

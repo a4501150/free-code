@@ -14,6 +14,5 @@ export async function logSkillsLoaded(
 
   for (const skill of skills) {
     if (skill.type !== 'prompt') continue
-
   }
 }

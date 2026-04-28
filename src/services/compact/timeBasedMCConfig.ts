@@ -34,5 +34,8 @@ const TIME_BASED_MC_CONFIG_DEFAULTS: TimeBasedMCConfig = {
 }
 
 export function getTimeBasedMCConfig(): TimeBasedMCConfig {
-  return getInitialSettings()?.timeBasedMicrocompactConfig ?? TIME_BASED_MC_CONFIG_DEFAULTS
+  return (
+    getInitialSettings()?.timeBasedMicrocompactConfig ??
+    TIME_BASED_MC_CONFIG_DEFAULTS
+  )
 }

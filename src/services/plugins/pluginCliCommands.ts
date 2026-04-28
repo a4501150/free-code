@@ -64,11 +64,9 @@ function handlePluginCommandError(
     ? (() => {
         const { name, marketplace } = parsePluginIdentifier(plugin)
         return {
-          _PROTO_plugin_name:
-            name,
+          _PROTO_plugin_name: name,
           ...(marketplace && {
-            _PROTO_marketplace_name:
-              marketplace,
+            _PROTO_marketplace_name: marketplace,
           }),
           ...buildPluginTelemetryFields(
             name,

@@ -9,7 +9,9 @@ import type { PermissionRuleValue } from './PermissionRule.js'
 import * as briefToolPromptNs from '../../tools/BriefTool/prompt.js'
 
 const BRIEF_TOOL_NAME: string | null =
-  feature('KAIROS') || feature('KAIROS_BRIEF') ? briefToolPromptNs.BRIEF_TOOL_NAME : null
+  feature('KAIROS') || feature('KAIROS_BRIEF')
+    ? briefToolPromptNs.BRIEF_TOOL_NAME
+    : null
 
 // Maps legacy tool names to their current canonical names.
 // When a tool is renamed, add old → new here so permission rules,

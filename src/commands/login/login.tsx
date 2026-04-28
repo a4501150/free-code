@@ -34,11 +34,7 @@ export async function call(
   }> = []
   for (const [name, config] of providers) {
     const authType = config.auth?.active
-    if (
-      authType &&
-      authType !== 'oauth' &&
-      authType !== 'apiKey'
-    ) {
+    if (authType && authType !== 'oauth' && authType !== 'apiKey') {
       nonOAuthProviders.push({ name, authType })
     }
   }
@@ -123,11 +119,7 @@ function ProviderAuthInfo(props: {
   const mainLoopModel = useMainLoopModel()
 
   if (showOAuth) {
-    return (
-      <Login
-        onDone={success => props.onLoginAnthropic(success)}
-      />
-    )
+    return <Login onDone={success => props.onLoginAnthropic(success)} />
   }
 
   const authInstructions: Record<string, string> = {
@@ -153,9 +145,7 @@ function ProviderAuthInfo(props: {
         )
       }
       onSubmit={
-        props.hasAnthropicProvider
-          ? () => setShowOAuth(true)
-          : undefined
+        props.hasAnthropicProvider ? () => setShowOAuth(true) : undefined
       }
     >
       <Box flexDirection="column" gap={1}>

@@ -22,11 +22,7 @@ import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
 import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
-import {
-  type Task,
-  listTasks,
-  getTaskListId,
-} from './tasks.js'
+import { type Task, listTasks, getTaskListId } from './tasks.js'
 import { getPlanFilePath, getPlan } from './plans.js'
 import { getConnectedIdeName } from './ide.js'
 import {
@@ -89,7 +85,9 @@ const skillSearchModules = feature('EXPERIMENTAL_SKILL_SEARCH')
       prefetch: skillSearchPrefetchNs,
     }
   : null
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER') ? autoModeStateNs : null
+const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
+  ? autoModeStateNs
+  : null
 import {
   MAX_LINES_TO_READ,
   FILE_READ_TOOL_NAME,
@@ -182,7 +180,9 @@ import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
 import * as sessionTranscriptNs from '../services/sessionTranscript/sessionTranscript.js'
 
 const BRIEF_TOOL_NAME: string | null =
-  feature('KAIROS') || feature('KAIROS_BRIEF') ? briefToolPromptNs.BRIEF_TOOL_NAME : null
+  feature('KAIROS') || feature('KAIROS_BRIEF')
+    ? briefToolPromptNs.BRIEF_TOOL_NAME
+    : null
 const sessionTranscriptModule = feature('KAIROS') ? sessionTranscriptNs : null
 import { hasUltrathinkKeyword, isUltrathinkEnabled } from './thinking.js'
 import {
@@ -251,10 +251,14 @@ const MAX_MEMORY_LINES_DEFAULT = 5000
 const MAX_MEMORY_BYTES_DEFAULT = 100_000
 
 function getMaxMemoryLines(): number {
-  return getSettings_DEPRECATED()?.maxMemoryFileLines ?? MAX_MEMORY_LINES_DEFAULT
+  return (
+    getSettings_DEPRECATED()?.maxMemoryFileLines ?? MAX_MEMORY_LINES_DEFAULT
+  )
 }
 function getMaxMemoryBytes(): number {
-  return getSettings_DEPRECATED()?.maxMemoryFileBytes ?? MAX_MEMORY_BYTES_DEFAULT
+  return (
+    getSettings_DEPRECATED()?.maxMemoryFileBytes ?? MAX_MEMORY_BYTES_DEFAULT
+  )
 }
 
 export const RELEVANT_MEMORIES_CONFIG = {
@@ -1895,8 +1899,7 @@ async function processAtMentionedFiles(
             limit: lineEnd && lineStart ? lineEnd - lineStart + 1 : undefined,
           },
         )
-      } catch {
-      }
+      } catch {}
     }),
   )
   return results.filter(Boolean) as Attachment[]
@@ -2290,10 +2293,7 @@ export function startRelevantMemoryPrefetch(
   messages: ReadonlyArray<Message>,
   toolUseContext: ToolUseContext,
 ): MemoryPrefetch | undefined {
-  if (
-    !isAutoMemoryEnabled() ||
-    false
-  ) {
+  if (!isAutoMemoryEnabled() || false) {
     return undefined
   }
 
@@ -3510,7 +3510,12 @@ async function getTeammateMailboxAttachments(
           )
 
           // Unassign tasks owned by this teammate
-          await unassignTeammateTasks(teamName!, id, teammateToRemove!, 'shutdown')
+          await unassignTeammateTasks(
+            teamName!,
+            id,
+            teammateToRemove!,
+            'shutdown',
+          )
 
           // Remove from teamContext in AppState
           toolUseContext.setAppState(prev => {

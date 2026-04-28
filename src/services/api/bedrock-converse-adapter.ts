@@ -52,7 +52,9 @@ function parseEventStreamMessage(buffer: Uint8Array): {
   while (offset < headersEnd) {
     const nameLen = buffer[offset]!
     offset += 1
-    const name = new TextDecoder().decode(buffer.slice(offset, offset + nameLen))
+    const name = new TextDecoder().decode(
+      buffer.slice(offset, offset + nameLen),
+    )
     offset += nameLen
 
     const headerType = buffer[offset]!
@@ -271,7 +273,7 @@ function translateToolConfig(
   toolChoice?: Record<string, unknown>,
 ): Record<string, unknown> {
   const toolConfig: Record<string, unknown> = {
-    tools: anthropicTools.map((tool) => ({
+    tools: anthropicTools.map(tool => ({
       toolSpec: {
         name: tool.name,
         ...(tool.description ? { description: tool.description } : {}),
@@ -404,9 +406,7 @@ function converseEventStreamToSSE(
 
       // Emit ping
       controller.enqueue(
-        encoder.encode(
-          formatSSE('ping', JSON.stringify({ type: 'ping' })),
-        ),
+        encoder.encode(formatSSE('ping', JSON.stringify({ type: 'ping' }))),
       )
 
       try {
@@ -455,9 +455,7 @@ function converseEventStreamToSSE(
                     // "com.amazon.foo#ThrottlingException" → "ThrottlingException"
                     const hash = parsed.__type.lastIndexOf('#')
                     exceptionType =
-                      hash >= 0
-                        ? parsed.__type.slice(hash + 1)
-                        : parsed.__type
+                      hash >= 0 ? parsed.__type.slice(hash + 1) : parsed.__type
                   }
                 } catch {
                   // ignore parse errors; fall through with undefined exceptionType
@@ -660,8 +658,7 @@ function converseEventStreamToSSE(
               }
 
               case 'messageStop': {
-                stopReason =
-                  (eventPayload.stopReason as string) || 'end_turn'
+                stopReason = (eventPayload.stopReason as string) || 'end_turn'
                 break
               }
 
@@ -802,7 +799,10 @@ function translateConverseResponse(
     stop_reason: stopReason,
     stop_sequence: null,
     usage: {
-      input_tokens: (usage?.inputTokens ?? 0) - (usage?.cacheReadInputTokens ?? 0) - (usage?.cacheWriteInputTokens ?? 0),
+      input_tokens:
+        (usage?.inputTokens ?? 0) -
+        (usage?.cacheReadInputTokens ?? 0) -
+        (usage?.cacheWriteInputTokens ?? 0),
       output_tokens: usage?.outputTokens ?? 0,
       cache_read_input_tokens: usage?.cacheReadInputTokens ?? 0,
       cache_creation_input_tokens: usage?.cacheWriteInputTokens ?? 0,
@@ -823,8 +823,7 @@ export function createBedrockConverseFetch(
 ): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
   const region = config.auth?.aws?.region || 'us-east-1'
   const baseUrl =
-    config.baseUrl ||
-    `https://bedrock-runtime.${region}.amazonaws.com`
+    config.baseUrl || `https://bedrock-runtime.${region}.amazonaws.com`
 
   return async (
     input: RequestInfo | URL,
@@ -876,11 +875,7 @@ export function createBedrockConverseFetch(
     // Copy through relevant headers from the SDK
     const initHeaders = init?.headers as Record<string, string> | undefined
     if (initHeaders) {
-      for (const key of [
-        'x-app',
-        'User-Agent',
-        'X-Claude-Code-Session-Id',
-      ]) {
+      for (const key of ['x-app', 'User-Agent', 'X-Claude-Code-Session-Id']) {
         if (initHeaders[key]) {
           requestHeaders[key] = initHeaders[key]
         }

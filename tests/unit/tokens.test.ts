@@ -2,14 +2,12 @@ import { describe, expect, test } from 'bun:test'
 import type { Message } from '../../src/types/message.js'
 import { getCurrentUsage } from '../../src/utils/tokens.js'
 
-function assistantMessage(
-  usage: {
-    input_tokens: number
-    output_tokens: number
-    cache_creation_input_tokens?: number | null
-    cache_read_input_tokens?: number | null
-  },
-): Message {
+function assistantMessage(usage: {
+  input_tokens: number
+  output_tokens: number
+  cache_creation_input_tokens?: number | null
+  cache_read_input_tokens?: number | null
+}): Message {
   return {
     type: 'assistant',
     uuid: crypto.randomUUID(),
