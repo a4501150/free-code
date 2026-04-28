@@ -1,8 +1,10 @@
+import { getAllowedChannels } from '../../bootstrap/state.js'
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from '../../tools/AskUserQuestionTool/prompt.js'
 import { ENTER_PLAN_MODE_TOOL_NAME } from '../../tools/EnterPlanModeTool/constants.js'
 import { EXIT_PLAN_MODE_TOOL_NAME } from '../../tools/ExitPlanModeTool/constants.js'
 import { SKILL_TOOL_NAME } from '../../tools/SkillTool/constants.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
 import { getIsGit } from '../../utils/git.js'
 import { registerBundledSkill } from '../bundledSkills.js'
 
@@ -90,6 +92,10 @@ When all agents have reported, render the final table and a one-line summary (e.
 
 const NOT_A_GIT_REPO_MESSAGE = `This is not a git repository. The \`/batch\` command requires a git repo because it spawns agents in isolated git worktrees and creates PRs from each. Initialize a repo first, or run this from inside an existing one.`
 
+const BACKGROUND_TASKS_DISABLED_MESSAGE = `The \`/batch\` command requires background tasks, but \`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS\` is set in the environment. Unset that variable and try again — \`/batch\` spawns each work unit as a background agent so they run in parallel.`
+
+const CHANNEL_MODE_ACTIVE_MESSAGE = `The \`/batch\` command relies on plan-mode and AskUserQuestion tools, which are disabled while a channel is active. Disconnect from any active channels (e.g., via \`/channels\`) and try again.`
+
 const MISSING_INSTRUCTION_MESSAGE = `Provide an instruction describing the batch change you want to make.
 
 Examples:
@@ -116,6 +122,14 @@ export function registerBatchSkill(): void {
       const isGit = await getIsGit()
       if (!isGit) {
         return [{ type: 'text', text: NOT_A_GIT_REPO_MESSAGE }]
+      }
+
+      if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
+        return [{ type: 'text', text: BACKGROUND_TASKS_DISABLED_MESSAGE }]
+      }
+
+      if (getAllowedChannels().length > 0) {
+        return [{ type: 'text', text: CHANNEL_MODE_ACTIVE_MESSAGE }]
       }
 
       return [{ type: 'text', text: buildPrompt(instruction) }]

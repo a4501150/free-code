@@ -1300,11 +1300,13 @@ async function getAutoModeAttachments(
 ): Promise<Attachment[]> {
   const appState = toolUseContext.getAppState()
   const permissionContext = appState.toolPermissionContext
+  // Plan mode supplies its own behavioral guidance via the plan-mode reminder.
+  // The auto-mode template ("execute immediately", "do not enter plan mode")
+  // contradicts plan mode, so we only emit auto-mode attachments when the user
+  // is actually in `auto`. The classifier's effect on plan mode is a
+  // permission-layer concern handled elsewhere.
   const inAuto = permissionContext.mode === 'auto'
-  const inPlanWithAuto =
-    permissionContext.mode === 'plan' &&
-    (autoModeStateModule?.isAutoModeActive() ?? false)
-  if (!inAuto && !inPlanWithAuto) {
+  if (!inAuto) {
     return []
   }
 

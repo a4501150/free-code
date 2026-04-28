@@ -232,7 +232,9 @@ const fullInputSchema = lazySchema(() => {
         .string()
         .optional()
         .describe(
-          'Absolute path to run the agent in. Overrides the working directory for all filesystem and shell operations within this agent. Mutually exclusive with isolation: "worktree".',
+          feature('WORKTREE_MODE')
+            ? 'Absolute path to run the agent in. Overrides the working directory for all filesystem and shell operations within this agent. Mutually exclusive with isolation: "worktree".'
+            : 'Absolute path to run the agent in. Overrides the working directory for all filesystem and shell operations within this agent.',
         ),
     })
 })
@@ -244,17 +246,18 @@ const fullInputSchema = lazySchema(() => {
 // type, but call() destructures via the explicit AgentToolInput type below
 // which always includes all optional fields.
 export const inputSchema = lazySchema(() => {
-  const schema = feature('KAIROS')
-    ? fullInputSchema()
-    : fullInputSchema().omit({ cwd: true })
+  let schema = fullInputSchema()
+  // feature() is compile-time DCE: exactly one branch survives per build, so
+  // the resulting schema is fixed for the lifetime of the binary. Stripping
+  // optional fields the build doesn't support keeps them out of the JSON
+  // schema the model sees.
+  if (!feature('KAIROS')) schema = schema.omit({ cwd: true })
+  if (!feature('WORKTREE_MODE')) schema = schema.omit({ isolation: true })
 
-  // Feature-flag-in-lazySchema is acceptable here (unlike subagent_type, which
-  // was removed in 906da6c723): the divergence window is one-session-per-
-  // gate-flip via _CACHED_MAY_BE_STALE disk read, and worst case is either
-  // "schema shows a no-op param" (gate flips on mid-session: param ignored
-  // by forceAsync) or "schema hides a param that would've worked" (gate
-  // flips off mid-session: everything still runs async via memoized
-  // forceAsync). No Zod rejection, no crash — unlike required→optional.
+  // isAgentSwarmsEnabled() / isBackgroundTasksDisabled / isForkSubagentEnabled
+  // can read from disk and flip mid-session. The optional-only fields stripped
+  // here (name, team_name, run_in_background) are widened back via the explicit
+  // AgentToolInput type so call() destructuring is unaffected by the gate flip.
   const swarmsSchema = isAgentSwarmsEnabled()
     ? schema
     : schema.omit({ name: true, team_name: true })

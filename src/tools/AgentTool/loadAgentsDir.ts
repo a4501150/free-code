@@ -32,6 +32,7 @@ import {
   clearPluginAgentCache,
   loadPluginAgents,
 } from '../../utils/plugins/loadPluginAgents.js'
+import { isWorktreeModeEnabled } from '../../utils/worktreeModeEnabled.js'
 import { HooksSchema, type HooksSettings } from '../../utils/settings/types.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { FILE_EDIT_TOOL_NAME } from '../FileEditTool/constants.js'
@@ -437,10 +438,43 @@ export function parseAgentFromJson(
   try {
     const parsed = AgentJsonSchema().parse(definition)
 
+    // Strip frontmatter fields whose backing feature is disabled at runtime.
+    // Each emits one warn-level log so the user can see why their declaration
+    // had no effect; the resolved values feed the agent definition below.
+    let background = parsed.background
+    if (
+      background &&
+      isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
+    ) {
+      logForDebugging(
+        `Agent '${name}' sets background: true but background tasks are disabled (CLAUDE_CODE_DISABLE_BACKGROUND_TASKS). Stripping field.`,
+        { level: 'warn' },
+      )
+      background = undefined
+    }
+
+    let memory = parsed.memory
+    if (memory && !isAutoMemoryEnabled()) {
+      logForDebugging(
+        `Agent '${name}' sets memory: '${memory}' but auto memory is disabled. Stripping field.`,
+        { level: 'warn' },
+      )
+      memory = undefined
+    }
+
+    let isolation = parsed.isolation
+    if (isolation && !isWorktreeModeEnabled()) {
+      logForDebugging(
+        `Agent '${name}' sets isolation: '${isolation}' but worktree mode is disabled. Stripping field.`,
+        { level: 'warn' },
+      )
+      isolation = undefined
+    }
+
     let tools = parseAgentToolsFromFrontmatter(parsed.tools)
 
     // If memory is enabled, inject Write/Edit/Read tools for memory access
-    if (isAutoMemoryEnabled() && parsed.memory && tools !== undefined) {
+    if (isAutoMemoryEnabled() && memory && tools !== undefined) {
       const toolSet = new Set(tools)
       for (const tool of [
         FILE_WRITE_TOOL_NAME,
@@ -466,10 +500,8 @@ export function parseAgentFromJson(
       ...(tools !== undefined ? { tools } : {}),
       ...(disallowedTools !== undefined ? { disallowedTools } : {}),
       getSystemPrompt: () => {
-        if (isAutoMemoryEnabled() && parsed.memory) {
-          return (
-            systemPrompt + '\n\n' + loadAgentMemoryPrompt(name, parsed.memory)
-          )
+        if (isAutoMemoryEnabled() && memory) {
+          return systemPrompt + '\n\n' + loadAgentMemoryPrompt(name, memory)
         }
         return systemPrompt
       },
@@ -488,9 +520,9 @@ export function parseAgentFromJson(
         ? { skills: parsed.skills }
         : {}),
       ...(parsed.initialPrompt ? { initialPrompt: parsed.initialPrompt } : {}),
-      ...(parsed.background ? { background: parsed.background } : {}),
-      ...(parsed.memory ? { memory: parsed.memory } : {}),
-      ...(parsed.isolation ? { isolation: parsed.isolation } : {}),
+      ...(background ? { background } : {}),
+      ...(memory ? { memory } : {}),
+      ...(isolation ? { isolation } : {}),
     }
 
     return agent
@@ -574,8 +606,18 @@ export function parseAgentFromMarkdown(
       )
     }
 
-    const background =
+    let background: true | undefined =
       backgroundRaw === 'true' || backgroundRaw === true ? true : undefined
+    if (
+      background &&
+      isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
+    ) {
+      logForDebugging(
+        `Agent file ${filePath} sets background: true but background tasks are disabled (CLAUDE_CODE_DISABLE_BACKGROUND_TASKS). Stripping field.`,
+        { level: 'warn' },
+      )
+      background = undefined
+    }
 
     // Parse memory scope
     const VALID_MEMORY_SCOPES: AgentMemoryScope[] = ['user', 'project', 'local']
@@ -590,6 +632,13 @@ export function parseAgentFromMarkdown(
         )
       }
     }
+    if (memory && !isAutoMemoryEnabled()) {
+      logForDebugging(
+        `Agent file ${filePath} sets memory: '${memory}' but auto memory is disabled. Stripping field.`,
+        { level: 'warn' },
+      )
+      memory = undefined
+    }
 
     type IsolationMode = 'worktree'
     const VALID_ISOLATION_MODES: readonly IsolationMode[] = ['worktree']
@@ -603,6 +652,13 @@ export function parseAgentFromMarkdown(
           `Agent file ${filePath} has invalid isolation value '${isolationRaw}'. Valid options: ${VALID_ISOLATION_MODES.join(', ')}`,
         )
       }
+    }
+    if (isolation && !isWorktreeModeEnabled()) {
+      logForDebugging(
+        `Agent file ${filePath} sets isolation: '${isolation}' but worktree mode is disabled. Stripping field.`,
+        { level: 'warn' },
+      )
+      isolation = undefined
     }
 
     // Parse effort from frontmatter (supports string levels and integers)

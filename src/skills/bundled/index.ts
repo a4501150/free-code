@@ -33,7 +33,9 @@ export function initBundledSkills(): void {
   registerSkillifySkill()
   registerRememberSkill()
   registerSimplifySkill()
-  registerBatchSkill()
+  if (feature('WORKTREE_MODE')) {
+    registerBatchSkill()
+  }
   if (feature('KAIROS') || feature('KAIROS_DREAM')) {
     dreamNs.registerDreamSkill()
   }

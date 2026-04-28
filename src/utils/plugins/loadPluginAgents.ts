@@ -13,6 +13,7 @@ import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
 import { getPluginErrorMessage } from '../../types/plugin.js'
 import { logForDebugging } from '../debug.js'
 import { EFFORT_LEVELS, parseEffortValue } from '../effort.js'
+import { isEnvTruthy } from '../envUtils.js'
 import {
   coerceDescriptionToString,
   parseFrontmatter,
@@ -23,6 +24,7 @@ import {
   parseAgentToolsFromFrontmatter,
   parseSlashCommandToolsFromFrontmatter,
 } from '../markdownConfigLoader.js'
+import { isWorktreeModeEnabled } from '../worktreeModeEnabled.js'
 import { loadAllPluginsCacheOnly } from './pluginLoader.js'
 import {
   loadPluginOptions,
@@ -105,8 +107,18 @@ async function loadAgentFromFile(
       model = trimmed.toLowerCase() === 'inherit' ? 'inherit' : trimmed
     }
     const backgroundRaw = frontmatter.background
-    const background =
+    let background: true | undefined =
       backgroundRaw === 'true' || backgroundRaw === true ? true : undefined
+    if (
+      background &&
+      isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
+    ) {
+      logForDebugging(
+        `Plugin agent file ${filePath} sets background: true but background tasks are disabled (CLAUDE_CODE_DISABLE_BACKGROUND_TASKS). Stripping field.`,
+        { level: 'warn' },
+      )
+      background = undefined
+    }
     // Substitute ${CLAUDE_PLUGIN_ROOT} so agents can reference bundled files,
     // and ${user_config.X} (non-sensitive only) so they can embed configured
     // usernames, endpoints, etc. Sensitive refs resolve to a placeholder.
@@ -134,11 +146,25 @@ async function loadAgentFromFile(
         )
       }
     }
+    if (memory && !isAutoMemoryEnabled()) {
+      logForDebugging(
+        `Plugin agent file ${filePath} sets memory: '${memory}' but auto memory is disabled. Stripping field.`,
+        { level: 'warn' },
+      )
+      memory = undefined
+    }
 
     // Parse isolation mode
     const isolationRaw = frontmatter.isolation as string | undefined
-    const isolation =
+    let isolation: 'worktree' | undefined =
       isolationRaw === 'worktree' ? ('worktree' as const) : undefined
+    if (isolation && !isWorktreeModeEnabled()) {
+      logForDebugging(
+        `Plugin agent file ${filePath} sets isolation: '${isolation}' but worktree mode is disabled. Stripping field.`,
+        { level: 'warn' },
+      )
+      isolation = undefined
+    }
 
     // Parse effort (string level or integer)
     const effortRaw = frontmatter.effort
