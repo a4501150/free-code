@@ -64,6 +64,14 @@ const XTVERSION_RE = /^\x1bP>\|(.*?)(?:\x07|\x1b\\)$/s
 // eslint-disable-next-line no-control-regex
 const SGR_MOUSE_RE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/
 
+// Head-anchored variants used by the orphan-mouse text-token path. Fast
+// scrolling can coalesce multiple wheel events into one buffered text token
+// (e.g. `[<64;140;22M[<65;130;28M`); we peel matches one at a time off the
+// front rather than requiring a single anchored full-token match.
+const ORPHAN_SGR_MOUSE_HEAD_RE = /^\[<\d+;\d+;\d+[Mm]/
+// eslint-disable-next-line no-control-regex
+const ORPHAN_X10_MOUSE_HEAD_RE = /^\[M[\x60-\x7f][\x20-\uffff]{2}/
+
 function createPasteKey(content: string): ParsedKey {
   return {
     kind: 'key',
@@ -260,8 +268,8 @@ export function parseMultipleKeypresses(
       if (inPaste) {
         pasteBuffer += token.value
       } else if (
-        /^\[<\d+;\d+;\d+[Mm]$/.test(token.value) ||
-        /^\[M[\x60-\x7f][\x20-\uffff]{2}$/.test(token.value)
+        ORPHAN_SGR_MOUSE_HEAD_RE.test(token.value) ||
+        ORPHAN_X10_MOUSE_HEAD_RE.test(token.value)
       ) {
         // Orphaned SGR/X10 mouse tail (fullscreen only — mouse tracking is off
         // otherwise). A heavy render blocked the event loop past App's 50ms
@@ -274,9 +282,27 @@ export function parseMultipleKeypresses(
         // range would match typed input like `[MAX]` batched into one read
         // and silently drop it as a phantom click. Click/drag orphans leak
         // as visible garbage instead; deletable garbage beats silent loss.
-        const resynthesized = '\x1b' + token.value
-        const mouse = parseMouseEvent(resynthesized)
-        keys.push(mouse ?? parseKeypress(resynthesized))
+        //
+        // Fast scrolling can coalesce multiple wheel events into a single
+        // text token (e.g. `[<64;140;22M[<65;130;28M`). Loop and peel each
+        // leading match instead of requiring a single anchored match — the
+        // anchored form silently leaked the entire run into the prompt as
+        // typed text. Any non-mouse trailing remainder still goes through
+        // parseKeypress so legitimate typed input isn't dropped.
+        let rest = token.value
+        while (rest.length > 0) {
+          const sgr = ORPHAN_SGR_MOUSE_HEAD_RE.exec(rest)
+          const x10 = ORPHAN_X10_MOUSE_HEAD_RE.exec(rest)
+          const match = sgr ?? x10
+          if (!match) break
+          const resynthesized = '\x1b' + match[0]
+          const mouse = parseMouseEvent(resynthesized)
+          keys.push(mouse ?? parseKeypress(resynthesized))
+          rest = rest.slice(match[0].length)
+        }
+        if (rest.length > 0) {
+          keys.push(parseKeypress(rest))
+        }
       } else {
         keys.push(parseKeypress(token.value))
       }
