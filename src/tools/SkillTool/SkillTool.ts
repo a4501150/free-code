@@ -649,16 +649,9 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
 
         // Override effort level if skill specifies one
         if (effort !== undefined) {
-          const previousGetAppState = modifiedContext.getAppState
           modifiedContext = {
             ...modifiedContext,
-            getAppState() {
-              const appState = previousGetAppState()
-              return {
-                ...appState,
-                effortValue: effort,
-              }
-            },
+            effortOverride: effort,
           }
         }
 

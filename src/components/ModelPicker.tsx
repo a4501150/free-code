@@ -10,14 +10,13 @@ import {
 } from 'src/utils/fastMode.js'
 import { Box, Text } from '../ink.js'
 import { useKeybindings } from '../keybindings/useKeybinding.js'
-import { useAppState, useSetAppState } from '../state/AppState.js'
+import { useAppState } from '../state/AppState.js'
 import {
   convertEffortValueToLevel,
   type EffortLevel,
   getDefaultEffortForModel,
   getModelEffortLevels,
   modelSupportsEffort,
-  resolvePickerEffortPersistence,
   toPersistableEffort,
 } from '../utils/effort.js'
 import {
@@ -30,10 +29,6 @@ import {
   getGroupedModelOptions,
   type ModelOptionGroup,
 } from '../utils/model/modelOptions.js'
-import {
-  getSettingsForSource,
-  updateSettingsForSource,
-} from '../utils/settings/settings.js'
 import { updateProviderModelConfig } from '../utils/settings/freecodeSettings.js'
 import {
   getProviderRegistry,
@@ -58,10 +53,10 @@ export type Props = {
   /** Overrides the dim header line below "Select model". */
   headerText?: string
   /**
-   * When true, skip writing effortLevel to userSettings on selection.
-   * Used by the assistant installer wizard where the model choice is
-   * project-scoped (written to the assistant's .claude/freecode.json via
-   * install.ts) and should not leak to the user's global ~/.claude/settings.
+   * When true, skip writing per-model selectedEffort to provider config on
+   * selection. Used by the assistant installer wizard where the model choice
+   * is project-scoped (written to the assistant's .claude/freecode.json via
+   * install.ts) and should not leak to the user's global ~/.claude/freecode.json.
    */
   skipSettingsWrite?: boolean
 }
@@ -85,7 +80,6 @@ export function ModelPicker({
   headerText,
   skipSettingsWrite,
 }: Props): React.ReactNode {
-  const setAppState = useSetAppState()
   const exitState = useExitOnCtrlCDWithKeybindings()
   const maxVisible = 10
 
@@ -96,11 +90,8 @@ export function ModelPicker({
   )
 
   const [hasToggledEffort, setHasToggledEffort] = useState(false)
-  const effortValue = useAppState(s => s.effortValue)
-  const [effort, setEffort] = useState<EffortLevel | undefined>(
-    effortValue !== undefined
-      ? convertEffortValueToLevel(effortValue)
-      : undefined,
+  const [effort, setEffort] = useState<EffortLevel | undefined>(() =>
+    getDefaultEffortLevelForOption(initialValue),
   )
 
   // Get model options grouped by provider
@@ -187,11 +178,11 @@ export function ModelPicker({
   const handleFocus = useCallback(
     (value: string) => {
       setFocusedValue(value)
-      if (!hasToggledEffort && effortValue === undefined) {
+      if (!hasToggledEffort) {
         setEffort(getDefaultEffortLevelForOption(value))
       }
     },
-    [hasToggledEffort, effortValue],
+    [hasToggledEffort],
   )
 
   const handleCycleEffort = useCallback(
@@ -219,33 +210,21 @@ export function ModelPicker({
   )
 
   function handleSelect(value: string): void {
-    if (!skipSettingsWrite) {
-      const effortLevel = resolvePickerEffortPersistence(
-        effort,
-        getDefaultEffortLevelForOption(value),
-        getSettingsForSource('userSettings')?.effortLevel,
-        hasToggledEffort,
-      )
-      const persistable = toPersistableEffort(effortLevel)
-      if (persistable !== undefined) {
-        updateSettingsForSource('userSettings', { effortLevel: persistable })
-      }
-      setAppState(prev => ({ ...prev, effortValue: effortLevel }))
-
-      // Persist selectedEffort per-model in provider config when user explicitly toggled effort
-      if (hasToggledEffort && value !== NO_PREFERENCE) {
-        const resolvedModel = resolveOptionModel(value)
-        if (resolvedModel && modelSupportsEffort(resolvedModel)) {
-          const registry = getProviderRegistry()
-          const providerNames = registry.getProviderNames()
-          const defaultProvider = registry.getDefaultProviderName() ?? ''
-          const parsed = parseModelString(value, providerNames, defaultProvider)
-          const effortToWrite = toPersistableEffort(effort)
-          updateProviderModelConfig(parsed.provider, parsed.modelId, {
-            selectedEffort: effortToWrite,
-          })
-          resetProviderRegistry()
-        }
+    // Persist selectedEffort per-model in provider config when the user
+    // explicitly toggled effort in the picker. No global effortLevel write —
+    // effort is now strictly per-model.
+    if (!skipSettingsWrite && hasToggledEffort && value !== NO_PREFERENCE) {
+      const resolvedModel = resolveOptionModel(value)
+      if (resolvedModel && modelSupportsEffort(resolvedModel)) {
+        const registry = getProviderRegistry()
+        const providerNames = registry.getProviderNames()
+        const defaultProvider = registry.getDefaultProviderName() ?? ''
+        const parsed = parseModelString(value, providerNames, defaultProvider)
+        const effortToWrite = toPersistableEffort(effort)
+        updateProviderModelConfig(parsed.provider, parsed.modelId, {
+          selectedEffort: effortToWrite,
+        })
+        resetProviderRegistry()
       }
     }
 
@@ -270,13 +249,13 @@ export function ModelPicker({
         const firstOpt = groupSelectOptions[idx]?.[0]
         if (firstOpt) {
           setFocusedValue(firstOpt.value)
-          if (!hasToggledEffort && effortValue === undefined) {
+          if (!hasToggledEffort) {
             setEffort(getDefaultEffortLevelForOption(firstOpt.value))
           }
         }
       }
     },
-    [groups, groupSelectOptions, hasToggledEffort, effortValue],
+    [groups, groupSelectOptions, hasToggledEffort],
   )
 
   const effortIndicator = (

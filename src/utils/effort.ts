@@ -99,65 +99,22 @@ export function toPersistableEffort(
   return undefined
 }
 
-export function getInitialEffortSetting(): EffortLevel | undefined {
-  // toPersistableEffort filters 'max' for non-ants on read, so a manually
-  // edited freecode.json doesn't leak session-scoped max into a fresh session.
-  return toPersistableEffort(getInitialSettings().effortLevel)
-}
-
-/**
- * Decide what effort level (if any) to persist when the user selects a model
- * in ModelPicker. Keeps an explicit prior /effort choice sticky even when it
- * matches the picked model's default, while letting purely-default and
- * session-ephemeral effort (CLI --effort, EffortCallout default) fall through
- * to undefined so it follows future model-default changes.
- *
- * priorPersisted must come from userSettings on disk
- * (getSettingsForSource('userSettings')?.effortLevel), NOT merged settings
- * (project/policy layers would leak into the user's global freecode.json)
- * and NOT AppState.effortValue (includes session-scoped sources that
- * deliberately do not write to freecode.json).
- */
-export function resolvePickerEffortPersistence(
-  picked: EffortLevel | undefined,
-  modelDefault: EffortLevel,
-  priorPersisted: EffortLevel | undefined,
-  toggledInPicker: boolean,
-): EffortLevel | undefined {
-  const hadExplicit = priorPersisted !== undefined || toggledInPicker
-  return hadExplicit || picked !== modelDefault ? picked : undefined
-}
-
-export function getEffortEnvOverride(): EffortValue | null | undefined {
-  const envOverride = process.env.CLAUDE_CODE_EFFORT_LEVEL
-  return envOverride?.toLowerCase() === 'unset' ||
-    envOverride?.toLowerCase() === 'auto'
-    ? null
-    : parseEffortValue(envOverride)
-}
-
 /**
  * Resolve the effort value that will actually be sent to the API for a given
- * model, following the full precedence chain:
- *   env CLAUDE_CODE_EFFORT_LEVEL → appState.effortValue → selectedEffort from config → defaultEffort from config → hardcoded defaults
+ * model, following the precedence chain:
+ *   effortOverride (skill/agent frontmatter, per-execution-context)
+ *     → selectedEffort from provider config (user picker selection)
+ *     → defaultEffort from provider config (model default, with ultrathink fallback)
  *
- * Returns undefined when no effort parameter should be sent (env set to
- * 'unset', or no default exists for the model).
+ * Returns undefined when no effort parameter should be sent.
  */
 export function resolveAppliedEffort(
   model: string,
-  appStateEffortValue: EffortValue | undefined,
+  effortOverride: EffortValue | undefined,
 ): EffortValue | undefined {
-  const envOverride = getEffortEnvOverride()
-  if (envOverride === null) {
-    return undefined
-  }
   const selectedEffort = getSelectedEffortForModel(model)
   const resolved =
-    envOverride ??
-    appStateEffortValue ??
-    selectedEffort ??
-    getDefaultEffortForModel(model)
+    effortOverride ?? selectedEffort ?? getDefaultEffortForModel(model)
   // API rejects 'max' on non-Opus-4.6 models — downgrade to 'high'.
   if (resolved === 'max' && !modelSupportsMaxEffort(model)) {
     return 'high'
@@ -179,28 +136,27 @@ function getSelectedEffortForModel(model: string): EffortValue | undefined {
  * with the 'high' fallback (what the API uses when no effort param is sent).
  * Single source of truth for the status bar and /effort output (CC-1088).
  */
-export function getDisplayedEffortLevel(
-  model: string,
-  appStateEffort: EffortValue | undefined,
-): EffortLevel {
-  const resolved = resolveAppliedEffort(model, appStateEffort) ?? 'high'
+export function getDisplayedEffortLevel(model: string): EffortLevel {
+  const resolved = resolveAppliedEffort(model, undefined) ?? 'high'
   return convertEffortValueToLevel(resolved)
 }
 
 /**
  * Build the ` with {level} effort` suffix shown in Logo/Spinner.
- * Returns empty string if the user hasn't explicitly set an effort value.
+ * Returns empty string if the resolved level matches the model's default.
  * Delegates to resolveAppliedEffort() so the displayed level matches what
  * the API actually receives (including max→high clamp for non-Opus models).
  */
-export function getEffortSuffix(
-  model: string,
-  effortValue: EffortValue | undefined,
-): string {
-  if (effortValue === undefined) return ''
-  const resolved = resolveAppliedEffort(model, effortValue)
+export function getEffortSuffix(model: string): string {
+  const resolved = resolveAppliedEffort(model, undefined)
   if (resolved === undefined) return ''
-  return ` with ${convertEffortValueToLevel(resolved)} effort`
+  const resolvedLevel = convertEffortValueToLevel(resolved)
+  const modelDefault = getDefaultEffortForModel(model)
+  const defaultLevel = modelDefault
+    ? convertEffortValueToLevel(modelDefault)
+    : 'high'
+  if (resolvedLevel === defaultLevel) return ''
+  return ` with ${resolvedLevel} effort`
 }
 
 export function isValidNumericEffort(value: number): boolean {
@@ -265,26 +221,6 @@ export function getEffortValueDescription(value: EffortValue): string {
     return getEffortLevelDescription(value)
   }
   return 'Balanced approach with standard implementation and testing'
-}
-
-export type OpusDefaultEffortConfig = {
-  enabled: boolean
-  dialogTitle: string
-  dialogDescription: string
-}
-
-const OPUS_DEFAULT_EFFORT_CONFIG_DEFAULT: OpusDefaultEffortConfig = {
-  enabled: true,
-  dialogTitle: 'We recommend medium effort for Opus',
-  dialogDescription:
-    'Effort determines how long Claude thinks for when completing your task. We recommend medium effort for most tasks to balance speed and intelligence and maximize rate limits. Use ultrathink to trigger high effort when needed.',
-}
-
-export function getOpusDefaultEffortConfig(): OpusDefaultEffortConfig {
-  return {
-    ...OPUS_DEFAULT_EFFORT_CONFIG_DEFAULT,
-    ...(getInitialSettings()?.opusDefaultEffortConfig ?? {}),
-  }
 }
 
 // @[MODEL LAUNCH]: Set defaultEffort on the model entry in legacyProviderMigration.ts.

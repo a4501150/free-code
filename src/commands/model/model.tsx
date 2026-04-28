@@ -5,7 +5,11 @@ import { ModelPicker } from '../../components/ModelPicker.js'
 import { COMMON_HELP_ARGS, COMMON_INFO_ARGS } from '../../constants/xml.js'
 import { useAppState, useSetAppState } from '../../state/AppState.js'
 import type { LocalJSXCommandCall } from '../../types/command.js'
-import type { EffortLevel } from '../../utils/effort.js'
+import {
+  convertEffortValueToLevel,
+  type EffortLevel,
+  resolveAppliedEffort,
+} from '../../utils/effort.js'
 import { isBilledAsExtraUsage } from '../../utils/extraUsage.js'
 import {
   clearFastModeCooldown,
@@ -15,6 +19,7 @@ import {
 } from '../../utils/fastMode.js'
 import {
   getDefaultMainLoopModelSetting,
+  parseUserSpecifiedModel,
   renderDefaultModelSetting,
 } from '../../utils/model/model.js'
 import { validateModel } from '../../utils/model/validateModel.js'
@@ -195,10 +200,17 @@ function ShowModelAndClose({
 }): React.ReactNode {
   const mainLoopModel = useAppState(s => s.mainLoopModel)
   const mainLoopModelForSession = useAppState(s => s.mainLoopModelForSession)
-  const effortValue = useAppState(s => s.effortValue)
   const displayModel = renderModelLabel(mainLoopModel)
-  const effortInfo =
-    effortValue !== undefined ? ` (effort: ${effortValue})` : ''
+  const resolvedModel = parseUserSpecifiedModel(
+    mainLoopModelForSession ??
+      mainLoopModel ??
+      getDefaultMainLoopModelSetting(),
+  )
+  const effortInfo = (() => {
+    const resolved = resolveAppliedEffort(resolvedModel, undefined)
+    if (resolved === undefined) return ''
+    return ` (effort: ${convertEffortValueToLevel(resolved)})`
+  })()
 
   if (mainLoopModelForSession) {
     onDone(

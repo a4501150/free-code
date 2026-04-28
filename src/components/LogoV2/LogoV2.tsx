@@ -81,7 +81,6 @@ export function LogoV2(): React.ReactNode {
   const showGuestPassesUpsell = useShowGuestPassesUpsell()
   const showOverageCreditUpsell = useShowOverageCreditUpsell()
   const agent = useAppState(s => s.agent)
-  const effortValue = useAppState(s => s.effortValue)
 
   const config = getGlobalConfig()
 
@@ -161,7 +160,7 @@ export function LogoV2(): React.ReactNode {
   // Prefer AppState.agent (set from --agent CLI flag) over settings
   const agentName = agent ?? agentNameFromSettings
   // -20 to account for the max length of subscription name " · Claude Enterprise".
-  const effortSuffix = getEffortSuffix(model, effortValue)
+  const effortSuffix = getEffortSuffix(model)
   const modelDisplayName = truncate(
     fullModelDisplayName + effortSuffix,
     LEFT_PANEL_MAX_WIDTH - 20,

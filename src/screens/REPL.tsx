@@ -419,10 +419,6 @@ import {
   type ActiveSpeculationState,
 } from '../services/PromptSuggestion/speculation.js'
 import { IdeOnboardingDialog } from '../components/IdeOnboardingDialog.js'
-import {
-  EffortCallout,
-  shouldShowEffortCallout,
-} from '../components/EffortCallout.js'
 import type { EffortValue } from '../utils/effort.js'
 import { activityManager } from '../utils/activityManager.js'
 import { createAbortController } from '../utils/abortController.js'
@@ -1010,9 +1006,6 @@ export function REPL({
   const [ideInstallationStatus, setIDEInstallationStatus] =
     useState<IDEExtensionInstallationStatus | null>(null)
   const [showIdeOnboarding, setShowIdeOnboarding] = useState(false)
-  const [showEffortCallout, setShowEffortCallout] = useState(() =>
-    shouldShowEffortCallout(mainLoopModel),
-  )
   // notifications
   useCanSwitchToExistingSubscription()
   useIDEStatusIndicator({ ideSelection, mcpClients, ideInstallationStatus })
@@ -2317,7 +2310,6 @@ export function REPL({
     | 'init-onboarding'
     | 'ide-onboarding'
     | 'model-switch'
-    | 'effort-callout'
     | 'lsp-recommendation'
     | 'plugin-hint'
     | 'desktop-upsell'
@@ -2372,9 +2364,6 @@ export function REPL({
 
     // Onboarding dialogs (special conditions)
     if (allowDialogsWithAnimation && showIdeOnboarding) return 'ide-onboarding'
-
-    // Effort callout (shown once for Opus 4.6 users when effort is enabled)
-    if (allowDialogsWithAnimation && showEffortCallout) return 'effort-callout'
 
     // LSP plugin recommendation (lowest priority - non-blocking suggestion)
     if (allowDialogsWithAnimation && lspRecommendation)
@@ -3278,15 +3267,12 @@ export function REPL({
       const { tools: freshTools, mcpClients: freshMcpClients } =
         toolUseContext.options
 
-      // Scope the skill's effort override to this turn's context only —
-      // wrapping getAppState keeps the override out of the global store so
-      // background agents and UI subscribers (Spinner, LogoV2) never see it.
+      // Scope the skill's effort override to this turn's context only.
+      // Setting effortOverride on the tool-use context keeps it out of the
+      // global store so background agents and UI subscribers (Spinner,
+      // LogoV2) never see it.
       if (effort !== undefined) {
-        const previousGetAppState = toolUseContext.getAppState
-        toolUseContext.getAppState = () => ({
-          ...previousGetAppState(),
-          effortValue: effort,
-        })
+        toolUseContext.effortOverride = effort
       }
 
       queryCheckpoint('query_context_loading_start')
@@ -5974,20 +5960,6 @@ export function REPL({
                   <IdeOnboardingDialog
                     onDone={() => setShowIdeOnboarding(false)}
                     installationStatus={ideInstallationStatus}
-                  />
-                )}
-                {focusedInputDialog === 'effort-callout' && (
-                  <EffortCallout
-                    model={mainLoopModel}
-                    onDone={selection => {
-                      setShowEffortCallout(false)
-                      if (selection !== 'dismiss') {
-                        setAppState(prev => ({
-                          ...prev,
-                          effortValue: selection,
-                        }))
-                      }
-                    }}
                   />
                 )}
                 {exitFlow}

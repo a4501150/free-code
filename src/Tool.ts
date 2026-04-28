@@ -56,6 +56,7 @@ import type {
   ToolProgressData,
   WebSearchProgress,
 } from './types/tools.js'
+import type { EffortValue } from './utils/effort.js'
 import type { FileStateCache } from './utils/fileStateCache.js'
 import type { DenialTrackingState } from './utils/permissions/denialTracking.js'
 import type { SystemPrompt } from './utils/systemPromptType.js'
@@ -181,6 +182,10 @@ export type ToolUseContext = {
   readFileState: FileStateCache
   getAppState(): AppState
   setAppState(f: (prev: AppState) => AppState): void
+  /** Per-execution-context effort override. Set by skills/agents with
+   *  `effort:` frontmatter. undefined for normal user-driven turns.
+   *  Propagated to subagents by createSubagentContext (child override wins). */
+  effortOverride?: EffortValue
   /**
    * Always-shared setAppState for session-scoped infrastructure (background
    * tasks, session hooks). Unlike setAppState, which is no-op for async agents

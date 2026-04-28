@@ -7,7 +7,6 @@ import {
 } from '../constants/figures.js'
 import {
   type EffortLevel,
-  type EffortValue,
   getDisplayedEffortLevel,
   modelSupportsEffort,
 } from '../utils/effort.js'
@@ -16,12 +15,9 @@ import {
  * Build the text for the effort-changed notification, e.g. "◐ medium · /effort".
  * Returns undefined if the model doesn't support effort.
  */
-export function getEffortNotificationText(
-  effortValue: EffortValue | undefined,
-  model: string,
-): string | undefined {
+export function getEffortNotificationText(model: string): string | undefined {
   if (!modelSupportsEffort(model)) return undefined
-  const level = getDisplayedEffortLevel(model, effortValue)
+  const level = getDisplayedEffortLevel(model)
   return `${effortLevelToSymbol(level)} ${level} · /effort`
 }
 

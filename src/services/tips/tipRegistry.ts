@@ -14,7 +14,7 @@ import { is1PApiCustomer } from '../../utils/auth.js'
 import { countConcurrentSessions } from '../../utils/concurrentSessions.js'
 import { getGlobalConfig } from '../../utils/config.js'
 import {
-  getEffortEnvOverride,
+  getDisplayedEffortLevel,
   modelSupportsEffort,
 } from '../../utils/effort.js'
 import { env } from '../../utils/env.js'
@@ -481,13 +481,16 @@ const externalTips: Tip[] = [
     cooldownSessions: 3,
     isRelevant: async () => {
       if (!is1PApiCustomer()) return false
-      if (!modelSupportsEffort(getMainLoopModel())) return false
-      if (getSettingsForSource('policySettings')?.effortLevel !== undefined) {
+      const model = getMainLoopModel()
+      if (!modelSupportsEffort(model)) return false
+      const displayed = getDisplayedEffortLevel(model)
+      if (
+        displayed === 'high' ||
+        displayed === 'max' ||
+        displayed === 'xhigh'
+      ) {
         return false
       }
-      if (getEffortEnvOverride() !== undefined) return false
-      const persisted = getInitialSettings().effortLevel
-      if (persisted === 'high' || persisted === 'max') return false
       return true
     },
   },

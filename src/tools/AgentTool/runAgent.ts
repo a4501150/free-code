@@ -39,6 +39,7 @@ import type {
   UserMessage,
 } from '../../types/message.js'
 import { createAttachmentMessage } from '../../utils/attachments.js'
+import { parseEffortValue } from '../../utils/effort.js'
 import { AbortError } from '../../utils/errors.js'
 import {
   cloneFileStateCache,
@@ -465,22 +466,12 @@ export async function* runAgent({
       }
     }
 
-    // Override effort level if agent defines one
-    const effortValue =
-      agentDefinition.effort !== undefined
-        ? agentDefinition.effort
-        : state.effortValue
-
-    if (
-      toolPermissionContext === state.toolPermissionContext &&
-      effortValue === state.effortValue
-    ) {
+    if (toolPermissionContext === state.toolPermissionContext) {
       return state
     }
     return {
       ...state,
       toolPermissionContext,
-      effortValue,
     }
   }
 
@@ -695,6 +686,10 @@ export async function* runAgent({
     criticalSystemReminder_EXPERIMENTAL:
       agentDefinition.criticalSystemReminder_EXPERIMENTAL,
     contentReplacementState,
+    effortOverride:
+      agentDefinition.effort !== undefined
+        ? parseEffortValue(agentDefinition.effort)
+        : undefined,
   })
 
   // Preserve tool use results for subagents with viewable transcripts (in-process teammates)

@@ -31,7 +31,6 @@ import {
 export function CondensedLogo(): ReactNode {
   const { columns } = useTerminalSize()
   const agent = useAppState(s => s.agent)
-  const effortValue = useAppState(s => s.effortValue)
   const model = useMainLoopModel()
   const modelDisplayName = renderModelSetting(model)
   const {
@@ -69,7 +68,7 @@ export function CondensedLogo(): ReactNode {
     Math.max(textWidth - versionPrefix.length, 6),
   )
 
-  const effortSuffix = getEffortSuffix(model, effortValue)
+  const effortSuffix = getEffortSuffix(model)
   const { shouldSplit, truncatedModel, truncatedBilling } =
     formatModelAndBilling(
       modelDisplayName + effortSuffix,

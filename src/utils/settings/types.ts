@@ -1169,11 +1169,6 @@ export const SettingsSchema = lazySchema(() =>
           'When false, thinking is disabled. When absent or true, thinking is ' +
             'enabled automatically for supported models.',
         ),
-      effortLevel: z
-        .enum(['low', 'medium', 'high', 'max', 'xhigh'])
-        .optional()
-        .catch(undefined)
-        .describe('Persisted effort level for supported models.'),
       planModeModel: z
         .string()
         .optional()
@@ -1769,16 +1764,6 @@ export const SettingsSchema = lazySchema(() =>
         .optional()
         .describe(
           'Configuration for session memory compaction token limits and message thresholds.',
-        ),
-      opusDefaultEffortConfig: z
-        .object({
-          enabled: z.boolean(),
-          dialogTitle: z.string(),
-          dialogDescription: z.string(),
-        })
-        .optional()
-        .describe(
-          'Configuration for the Opus default effort recommendation dialog.',
         ),
       briefSlashCommand: z
         .boolean()

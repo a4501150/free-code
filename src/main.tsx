@@ -27,7 +27,6 @@ startKeychainPrefetch()
 import { feature } from 'bun:bundle'
 import {
   Command as CommanderCommand,
-  InvalidArgumentError,
   Option,
 } from '@commander-js/extra-typings'
 import chalk from 'chalk'
@@ -86,7 +85,6 @@ import {
   saveGlobalConfig,
 } from './utils/config.js'
 import { seedEarlyInput, stopCapturingEarlyInput } from './utils/earlyInput.js'
-import { getInitialEffortSetting, parseEffortValue } from './utils/effort.js'
 import {
   getInitialFastModeSetting,
   isFastModeEnabled,
@@ -1490,21 +1488,6 @@ async function run(): Promise<CommanderCommand> {
     .option(
       '--model <model>',
       `Model for the current session. Provide a full model ID (e.g. 'claude-sonnet-4-6') or a provider-qualified model ID (e.g. 'anthropic:claude-sonnet-4-6').`,
-    )
-    .addOption(
-      new Option(
-        '--effort <level>',
-        `Effort level for the current session (low, medium, high, max)`,
-      ).argParser((rawValue: string) => {
-        const value = rawValue.toLowerCase()
-        const allowed = ['low', 'medium', 'high', 'max']
-        if (!allowed.includes(value)) {
-          throw new InvalidArgumentError(
-            `It must be one of: ${allowed.join(', ')}`,
-          )
-        }
-        return value
-      }),
     )
     .option(
       '--agent <agent>',
@@ -3177,8 +3160,6 @@ async function run(): Promise<CommanderCommand> {
             tools: mcpTools,
           },
           toolPermissionContext,
-          effortValue:
-            parseEffortValue(options.effort) ?? getInitialEffortSetting(),
           ...(isFastModeEnabled() && {
             fastMode: getInitialFastModeSetting(effectiveModel ?? null),
           }),
@@ -3569,8 +3550,6 @@ async function run(): Promise<CommanderCommand> {
         initialMessage: inputPrompt
           ? { message: createUserMessage({ content: String(inputPrompt) }) }
           : null,
-        effortValue:
-          parseEffortValue(options.effort) ?? getInitialEffortSetting(),
         activeOverlays: new Set<string>(),
         fastMode: getInitialFastModeSetting(resolvedInitialModel),
         ...(isAdvisorEnabled() && advisorModel && { advisorModel }),
@@ -3591,9 +3570,9 @@ async function run(): Promise<CommanderCommand> {
 
       const initialTools = mcpTools
 
-      // Increment numStartups synchronously — first-render readers like
-      // shouldShowEffortCallout (via useState initializer) need the updated
-      // value before setImmediate fires. Defer only telemetry.
+      // Increment numStartups synchronously — first-render readers (via
+      // useState initializers) need the updated value before setImmediate
+      // fires. Defer only telemetry.
       saveGlobalConfig(current => ({
         ...current,
         numStartups: (current.numStartups ?? 0) + 1,

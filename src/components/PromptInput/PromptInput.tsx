@@ -439,7 +439,6 @@ function PromptInput({
   const isFastMode = useAppState(s =>
     isFastModeEnabled() ? s.fastMode : false,
   )
-  const effortValue = useAppState(s => s.effortValue)
   const viewedTeammate = getViewedTeammateTask(store.getState())
   const viewingAgentName = viewedTeammate?.identity.agentName
   // identity.color is typed as `string | undefined` (not AgentColorName) because
@@ -2468,7 +2467,7 @@ function PromptInput({
   // client's effort, not the connected agent's.
   const effortNotificationText = briefOwnsGap
     ? undefined
-    : getEffortNotificationText(effortValue, mainLoopModel)
+    : getEffortNotificationText(mainLoopModel)
   useEffect(() => {
     if (!effortNotificationText) {
       removeNotification('effort-level')

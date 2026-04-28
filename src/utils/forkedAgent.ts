@@ -297,6 +297,10 @@ export type SubagentContextOverrides = {
    * state reconstructed from the resumed sidechain so the same results
    * are re-replaced (prompt cache stability). */
   contentReplacementState?: ContentReplacementState
+  /** Per-execution-context effort override (skill/agent frontmatter).
+   * When provided, takes precedence over parent's effortOverride.
+   * Otherwise the parent's value propagates so nested subagents inherit. */
+  effortOverride?: import('./effort.js').EffortValue
 }
 
 /**
@@ -454,6 +458,8 @@ export function createSubagentContext(
     criticalSystemReminder_EXPERIMENTAL:
       overrides?.criticalSystemReminder_EXPERIMENTAL,
     requireCanUseTool: overrides?.requireCanUseTool,
+    // Effort override: child override wins; otherwise inherit from parent.
+    effortOverride: overrides?.effortOverride ?? parentContext.effortOverride,
   }
 }
 
