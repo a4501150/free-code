@@ -616,6 +616,14 @@ export type Tool<
    */
   isResultTruncated?(output: Output): boolean
   /**
+   * Returns true while the tool is in progress when click-to-expand on the
+   * in-progress row would reveal more content (e.g., a live tail of the
+   * task's output). Same affordance as isResultTruncated, but for the
+   * pending tool_use block before a result exists. Unset means the
+   * in-progress row is never clickable.
+   */
+  isProgressTruncated?(): boolean
+  /**
    * Renders an optional tag to display after the tool use message.
    * Used for additional metadata like timeout, model, resume ID, etc.
    * Returns null to not display anything.

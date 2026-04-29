@@ -2,13 +2,11 @@ import { feature } from 'bun:bundle'
 import { stat } from 'fs/promises'
 import {
   OUTPUT_FILE_TAG,
-  STATUS_TAG,
   SUMMARY_TAG,
   TASK_ID_TAG,
   TASK_NOTIFICATION_TAG,
   TOOL_USE_ID_TAG,
 } from '../../constants/xml.js'
-import { abortSpeculation } from '../../services/PromptSuggestion/speculation.js'
 import type { AppState } from '../../state/AppState.js'
 import type {
   LocalShellSpawnInput,
@@ -41,9 +39,14 @@ import {
   type LocalShellTaskState,
 } from './guards.js'
 import { killTask } from './killShellTasks.js'
+import {
+  BACKGROUND_BASH_SUMMARY_PREFIX,
+  enqueueShellNotification,
+} from './notifications.js'
 
-/** Prefix that identifies a LocalShellTask summary to the UI collapse transform. */
-export const BACKGROUND_BASH_SUMMARY_PREFIX = 'Background command '
+// Re-export so existing importers (e.g., collapseBackgroundBashNotifications)
+// that pull this from LocalShellTask.js keep working.
+export { BACKGROUND_BASH_SUMMARY_PREFIX } from './notifications.js'
 
 const STALL_CHECK_INTERVAL_MS = 5_000
 const STALL_THRESHOLD_MS = 45_000
@@ -141,69 +144,6 @@ The command is likely blocked on an interactive prompt. Kill this task and re-ru
     cancelled = true
     clearInterval(timer)
   }
-}
-
-function enqueueShellNotification(
-  taskId: string,
-  description: string,
-  status: 'completed' | 'failed' | 'killed',
-  exitCode: number | undefined,
-  setAppState: SetAppState,
-  toolUseId?: string,
-  kind: BashTaskKind = 'bash',
-  agentId?: AgentId,
-): void {
-  // Atomically check and set notified flag to prevent duplicate notifications.
-  // If the task was already marked as notified (e.g., by TaskStopTool), skip
-  // enqueueing to avoid sending redundant messages to the model.
-  let shouldEnqueue = false
-  updateTaskState(taskId, setAppState, task => {
-    if (task.notified) {
-      return task
-    }
-    shouldEnqueue = true
-    return { ...task, notified: true }
-  })
-
-  if (!shouldEnqueue) {
-    return
-  }
-
-  // Abort any active speculation — background task state changed, so speculated
-  // results may reference stale task output. The prompt suggestion text is
-  // preserved; only the pre-computed response is discarded.
-  abortSpeculation(setAppState)
-
-  let summary: string
-  switch (status) {
-    case 'completed':
-      summary = `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" completed${exitCode !== undefined ? ` (exit code ${exitCode})` : ''}`
-      break
-    case 'failed':
-      summary = `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" failed${exitCode !== undefined ? ` with exit code ${exitCode}` : ''}`
-      break
-    case 'killed':
-      summary = `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" was stopped`
-      break
-  }
-
-  const outputPath = getTaskOutputPath(taskId)
-  const toolUseIdLine = toolUseId
-    ? `\n<${TOOL_USE_ID_TAG}>${toolUseId}</${TOOL_USE_ID_TAG}>`
-    : ''
-  const message = `<${TASK_NOTIFICATION_TAG}>
-<${TASK_ID_TAG}>${taskId}</${TASK_ID_TAG}>${toolUseIdLine}
-<${OUTPUT_FILE_TAG}>${outputPath}</${OUTPUT_FILE_TAG}>
-<${STATUS_TAG}>${status}</${STATUS_TAG}>
-<${SUMMARY_TAG}>${escapeXml(summary)}</${SUMMARY_TAG}>
-</${TASK_NOTIFICATION_TAG}>`
-
-  enqueuePendingNotification({
-    value: message,
-    mode: 'task-notification',
-    priority: 'later',
-    agentId,
-  })
 }
 
 export const LocalShellTask: Task = {

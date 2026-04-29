@@ -9,11 +9,21 @@ import { logError } from '../../utils/log.js'
 import { dequeueAllMatching } from '../../utils/messageQueueManager.js'
 import { evictTaskOutput } from '../../utils/task/diskOutput.js'
 import { updateTaskState } from '../../utils/task/framework.js'
-import { isLocalShellTask } from './guards.js'
+import { type BashTaskKind, isLocalShellTask } from './guards.js'
+import { enqueueShellNotification } from './notifications.js'
 
 type SetAppStateFn = (updater: (prev: AppState) => AppState) => void
 
 export function killTask(taskId: string, setAppState: SetAppStateFn): void {
+  // Capture the fields needed for the post-kill notification before the state
+  // update transitions the task to 'killed' (and clears `shellCommand` etc.).
+  let notificationArgs: {
+    description: string
+    toolUseId?: string
+    kind: BashTaskKind | undefined
+    agentId?: AgentId
+  } | null = null
+
   updateTaskState(taskId, setAppState, task => {
     if (task.status !== 'running' || !isLocalShellTask(task)) {
       return task
@@ -32,16 +42,47 @@ export function killTask(taskId: string, setAppState: SetAppStateFn): void {
       clearTimeout(task.cleanupTimeoutId)
     }
 
+    notificationArgs = {
+      description: task.description,
+      toolUseId: task.toolUseId,
+      kind: task.kind,
+      agentId: task.agentId,
+    }
+
     return {
       ...task,
       status: 'killed',
-      notified: true,
+      // `notified` is intentionally NOT set here. The follow-up
+      // `enqueueShellNotification` call below sets `notified: true`
+      // atomically as part of its enqueue (see notifications.ts) so the
+      // existing duplicate-suppression contract is preserved while the
+      // killed notification actually reaches the LLM.
       shellCommand: null,
       unregisterCleanup: undefined,
       cleanupTimeoutId: undefined,
       endTime: Date.now(),
     }
   })
+
+  if (notificationArgs) {
+    const args: {
+      description: string
+      toolUseId?: string
+      kind: BashTaskKind | undefined
+      agentId?: AgentId
+    } = notificationArgs
+    enqueueShellNotification(
+      taskId,
+      args.description,
+      'killed',
+      undefined,
+      setAppState,
+      args.toolUseId,
+      args.kind,
+      args.agentId,
+    )
+  }
+
   void evictTaskOutput(taskId)
 }
 

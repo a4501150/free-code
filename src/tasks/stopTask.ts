@@ -4,7 +4,6 @@
 import type { AppState } from '../state/AppState.js'
 import type { TaskStateBase } from '../Task.js'
 import { getTaskByType } from '../tasks.js'
-import { emitTaskTerminatedSdk } from '../utils/sdkEventQueue.js'
 import { isLocalShellTask } from './LocalShellTask/guards.js'
 
 export class StopTaskError extends Error {
@@ -29,11 +28,13 @@ type StopTaskResult = {
 }
 
 /**
- * Look up a task by ID, validate it is running, kill it, and mark it as notified.
+ * Look up a task by ID, validate it is running, and kill it.
  *
- * Throws {@link StopTaskError} when the task cannot be stopped (not found,
- * not running, or unsupported type). Callers can inspect `error.code` to
- * distinguish the failure reason.
+ * The kill itself emits the LLM-facing <task-notification> (and the
+ * corresponding SDK task_notification event in --print mode), so this
+ * function does not have to. Throws {@link StopTaskError} when the task
+ * cannot be stopped (not found, not running, or unsupported type). Callers
+ * can inspect `error.code` to distinguish the failure reason.
  */
 export async function stopTask(
   taskId: string,
@@ -64,35 +65,13 @@ export async function stopTask(
 
   await taskImpl.kill(taskId, setAppState)
 
-  // Bash: suppress the "exit code 137" notification (noise). Agent tasks: don't
-  // suppress — the AbortError catch sends a notification carrying
-  // extractPartialResult(agentMessages), which is the payload not noise.
-  if (isLocalShellTask(task)) {
-    let suppressed = false
-    setAppState(prev => {
-      const prevTask = prev.tasks[taskId]
-      if (!prevTask || prevTask.notified) {
-        return prev
-      }
-      suppressed = true
-      return {
-        ...prev,
-        tasks: {
-          ...prev.tasks,
-          [taskId]: { ...prevTask, notified: true },
-        },
-      }
-    })
-    // Suppressing the XML notification also suppresses print.ts's parsed
-    // task_notification SDK event — emit it directly so SDK consumers see
-    // the task close.
-    if (suppressed) {
-      emitTaskTerminatedSdk(taskId, 'stopped', {
-        toolUseId: task.toolUseId,
-        summary: task.description,
-      })
-    }
-  }
+  // Bash tasks: `taskImpl.kill` (killTask) now emits the killed
+  // <task-notification> itself (via enqueueShellNotification). In --print
+  // mode that XML is parsed and re-emitted as an SDK task_notification (see
+  // print.ts:1905+), so we don't need a direct emitTaskTerminatedSdk here —
+  // emitting both would double-emit the SDK event. Agent tasks: the
+  // AbortError catch in AgentTool.tsx sends a notification carrying
+  // extractPartialResult(agentMessages); leave it alone.
 
   const command = isLocalShellTask(task) ? task.command : task.description
 

@@ -3,13 +3,17 @@ import React, {
   use,
   useDeferredValue,
   useEffect,
+  useRef,
   useState,
 } from 'react'
 import type { DeepImmutable } from 'src/types/utils.js'
 import type { CommandResultDisplay } from '../../commands.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
-import { Box, Text } from '../../ink.js'
+import ScrollBox, {
+  type ScrollBoxHandle,
+} from '../../ink/components/ScrollBox.js'
+import { Box, Text, useInput } from '../../ink.js'
 import { useKeybindings } from '../../keybindings/useKeybinding.js'
 import type { LocalShellTaskState } from '../../tasks/LocalShellTask/guards.js'
 import {
@@ -22,6 +26,10 @@ import { getTaskOutputPath } from '../../utils/task/diskOutput.js'
 import { Byline } from '../design-system/Byline.js'
 import { Dialog } from '../design-system/Dialog.js'
 import { KeyboardShortcutHint } from '../design-system/KeyboardShortcutHint.js'
+import {
+  applyModalPagerAction,
+  modalPagerAction,
+} from '../ScrollKeybindingHandler.js'
 
 type Props = {
   shell: DeepImmutable<LocalShellTaskState>
@@ -33,7 +41,14 @@ type Props = {
   onBack?: () => void
 }
 
-const SHELL_DETAIL_TAIL_BYTES = 8192
+// Cap how much of the output file we pull into memory for the dialog. 1MB
+// covers virtually every interactive shell log; truly huge logs still get
+// truncated by tailFile/getTaskOutput with a "[NKB of earlier output
+// omitted]" prefix. Users wanting the full log can Read the output file
+// directly (path is documented in the BackgroundTaskOutput tool description).
+const SHELL_DETAIL_TAIL_BYTES = 1_048_576
+
+const OUTPUT_VIEWPORT_HEIGHT = 20
 
 type TaskOutputResult = {
   content: string
@@ -86,6 +101,24 @@ export function ShellDetailDialog({
     return () => clearInterval(timer)
   }, [shell.id, shell.status])
 
+  // Imperative scroll handle for keyboard navigation in the output ScrollBox.
+  const scrollRef = useRef<ScrollBoxHandle | null>(null)
+
+  // Drive the bare j/k/g/G/etc. pager bindings against the ScrollBox.
+  // useInput is naturally scoped to the lifetime of this mounted dialog, so
+  // it only fires while the detail view is visible.
+  useInput((input, key, event) => {
+    const s = scrollRef.current
+    if (!s) return
+    const sticky = applyModalPagerAction(
+      s,
+      modalPagerAction(input, key),
+      () => {},
+    )
+    if (sticky === null) return
+    event.stopImmediatePropagation()
+  })
+
   // Handle standard close action
   const handleClose = () =>
     onDone('Shell details dismissed', { display: 'system' })
@@ -134,6 +167,7 @@ export function ShellDetailDialog({
             <Byline>
               {onBack && <KeyboardShortcutHint shortcut="←" action="go back" />}
               <KeyboardShortcutHint shortcut="Esc/Enter/Space" action="close" />
+              <KeyboardShortcutHint shortcut="↑↓/PgUp/PgDn" action="scroll" />
               {shell.status === 'running' && onKillShell && (
                 <KeyboardShortcutHint shortcut="x" action="stop" />
               )}
@@ -180,6 +214,7 @@ export function ShellDetailDialog({
             <ShellOutputContent
               outputPromise={deferredOutputPromise}
               columns={columns}
+              scrollRef={scrollRef}
             />
           </Suspense>
         </Box>
@@ -191,56 +226,83 @@ export function ShellDetailDialog({
 type ShellOutputContentProps = {
   outputPromise: Promise<TaskOutputResult>
   columns: number
+  scrollRef: React.MutableRefObject<ScrollBoxHandle | null>
 }
 
 function ShellOutputContent({
   outputPromise,
   columns,
+  scrollRef,
 }: ShellOutputContentProps): React.ReactNode {
   const { content, bytesTotal } = use(outputPromise)
+
+  // Trim trailing newline so the last visible line isn't a blank row.
+  const trimmedContent = content.replace(/\n+$/, '')
+  const lines = trimmedContent ? trimmedContent.split('\n') : []
+  const isIncomplete = bytesTotal > content.length
+
+  // Position info derived from the imperative ScrollBox handle. We refresh
+  // it on subscribe + a low-frequency timer so the "lines X-Y of Z" footer
+  // updates as the user scrolls or as new output comes in via stickyScroll.
+  const [position, setPosition] = useState<{
+    top: number
+    height: number
+    total: number
+  }>({ top: 0, height: OUTPUT_VIEWPORT_HEIGHT, total: lines.length })
+
+  useEffect(() => {
+    const refresh = () => {
+      const s = scrollRef.current
+      if (!s) return
+      setPosition({
+        top: s.getScrollTop(),
+        height: s.getViewportHeight() || OUTPUT_VIEWPORT_HEIGHT,
+        total: lines.length,
+      })
+    }
+    refresh()
+    const unsubscribe = scrollRef.current?.subscribe(refresh)
+    // Cover the stickyScroll case where the renderer pins to bottom without
+    // calling subscribe listeners.
+    const timer = setInterval(refresh, 500)
+    return () => {
+      unsubscribe?.()
+      clearInterval(timer)
+    }
+  }, [lines.length, scrollRef])
 
   if (!content) {
     return <Text dimColor>No output available</Text>
   }
 
-  // Find last 10 line boundaries via lastIndexOf
-  const starts: number[] = []
-  let pos = content.length
-  for (let i = 0; i < 10 && pos > 0; i++) {
-    const prev = content.lastIndexOf('\n', pos - 1)
-    starts.push(prev + 1)
-    pos = prev
-  }
-  starts.reverse()
-  const isIncomplete = bytesTotal > content.length
-
-  // Build lines, skip empty trailing/leading segments
-  const rendered: string[] = []
-  for (let i = 0; i < starts.length; i++) {
-    const start = starts[i]!
-    const end = i < starts.length - 1 ? starts[i + 1]! - 1 : content.length
-    const line = content.slice(start, end)
-    if (line) rendered.push(line)
-  }
+  const visibleStart = Math.max(1, position.top + 1)
+  const visibleEnd = Math.min(position.total, position.top + position.height)
+  const positionLabel =
+    position.total === 0
+      ? 'no output'
+      : `lines ${visibleStart}-${visibleEnd} of ${position.total}`
 
   return (
     <>
-      <Box
+      <ScrollBox
+        ref={scrollRef}
+        stickyScroll
+        flexDirection="column"
+        flexShrink={0}
         borderStyle="round"
         paddingX={1}
-        flexDirection="column"
-        height={12}
+        height={OUTPUT_VIEWPORT_HEIGHT}
         maxWidth={columns - 6}
       >
-        {rendered.map((line, i) => (
+        {lines.map((line, i) => (
           <Text key={i} wrap="truncate-end">
-            {line}
+            {line || ' '}
           </Text>
         ))}
-      </Box>
+      </ScrollBox>
       <Text dimColor italic>
-        {`Showing ${rendered.length} lines`}
-        {isIncomplete ? ` of ${formatFileSize(bytesTotal)}` : ''}
+        {positionLabel}
+        {isIncomplete ? ` (${formatFileSize(bytesTotal)} on disk)` : ''}
       </Text>
     </>
   )

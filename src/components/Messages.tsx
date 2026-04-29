@@ -736,7 +736,17 @@ const MessagesImpl = ({
     (msg: RenderableMessage): boolean => {
       if (msg.type === 'collapsed_read_search') return true
       if (msg.type === 'assistant') {
-        const b = msg.message.content[0] as unknown as AdvisorBlock | undefined
+        const first = msg.message.content[0]
+        // In-progress tool_use rows are clickable when the tool reports it
+        // has more to show via isProgressTruncated (e.g., a live tail of a
+        // background task's output). Verbose propagation in the row map
+        // already passes verbose=true to renderToolUseProgressMessage when
+        // the row is expanded.
+        if (first?.type === 'tool_use') {
+          const tool = findToolByName(tools, first.name)
+          return tool?.isProgressTruncated?.() ?? false
+        }
+        const b = first as unknown as AdvisorBlock | undefined
         return (
           b != null &&
           isAdvisorBlock(b) &&

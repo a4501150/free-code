@@ -90,6 +90,7 @@ export type MCPProgress =
 
 export type TaskOutputProgress = {
   type: 'waiting_for_task'
+  taskId?: string
   taskDescription?: string
   taskType?: string
 }

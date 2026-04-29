@@ -1,9 +1,16 @@
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { z } from 'zod/v4'
 import { FallbackToolUseErrorMessage } from '../../components/FallbackToolUseErrorMessage.js'
 import { FallbackToolUseRejectedMessage } from '../../components/FallbackToolUseRejectedMessage.js'
 import { MessageResponse } from '../../components/MessageResponse.js'
-import { Box, Text } from '../../ink.js'
+import {
+  applyModalPagerAction,
+  modalPagerAction,
+} from '../../components/ScrollKeybindingHandler.js'
+import ScrollBox, {
+  type ScrollBoxHandle,
+} from '../../ink/components/ScrollBox.js'
+import { Box, Text, useInput } from '../../ink.js'
 import type { TaskType } from '../../Task.js'
 import type { Tool } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
@@ -19,11 +26,15 @@ import { jsonParse } from '../../utils/slowOperations.js'
 import { countCharInString } from '../../utils/stringUtils.js'
 import { getTaskOutput } from '../../utils/task/diskOutput.js'
 import { updateTaskState } from '../../utils/task/framework.js'
+import { subscribeTaskOutput } from '../../utils/task/livePoller.js'
 import { formatTaskOutput } from '../../utils/task/outputFormatting.js'
 import type { ThemeName } from '../../utils/theme.js'
 import { AgentPromptDisplay, AgentResponseDisplay } from '../AgentTool/UI.js'
 import BashToolResultMessage from '../BashTool/BashToolResultMessage.js'
 import { TASK_OUTPUT_TOOL_NAME } from './constants.js'
+
+const PROGRESS_COMPACT_TAIL_LINES = 4
+const PROGRESS_EXPANDED_HEIGHT = 20
 
 const inputSchema = lazySchema(() =>
   z.strictObject({
@@ -174,7 +185,7 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
     },
 
     async description() {
-      return '[Deprecated] — prefer Read on the task output file path after you receive a task-completion <task-notification>; calling this tool is no different from sleep and/or polling on task status'
+      return '[Deprecated] — prefer Read on the task output file path, calling this tool is the same as polling on task until it exit with an exist code'
     },
 
     isConcurrencySafe(_input) {
@@ -271,6 +282,7 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
           toolUseID: `task-output-waiting-${Date.now()}`,
           data: {
             type: 'waiting_for_task',
+            taskId: task_id,
             taskDescription: task.description,
             taskType: task.type,
           },
@@ -370,22 +382,19 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
       return <Text dimColor> {input.task_id}</Text>
     },
 
-    renderToolUseProgressMessage(progressMessages) {
+    renderToolUseProgressMessage(progressMessages, { verbose, toolUseId }) {
       const lastProgress = progressMessages[progressMessages.length - 1]
       const progressData = lastProgress?.data as
-        | { taskDescription?: string; taskType?: string }
+        | { taskId?: string; taskDescription?: string; taskType?: string }
         | undefined
 
       return (
-        <Box flexDirection="column">
-          {progressData?.taskDescription && (
-            <Text>&nbsp;&nbsp;{progressData.taskDescription}</Text>
-          )}
-          <Text>
-            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Waiting for task{' '}
-            <Text dimColor>(esc to give additional instructions)</Text>
-          </Text>
-        </Box>
+        <TaskOutputProgressDisplay
+          taskId={progressData?.taskId}
+          taskDescription={progressData?.taskDescription}
+          verbose={verbose}
+          toolUseId={toolUseId}
+        />
       )
     },
 
@@ -418,7 +427,128 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
         output.task.error,
       )
     },
+    isProgressTruncated(): boolean {
+      // The compact in-progress row only shows the last few lines of live
+      // output; the expanded row shows the full polled tail in a ScrollBox.
+      // Always advertise as truncated so the click-to-expand affordance is
+      // available while the tool is blocking on the task.
+      return true
+    },
   } satisfies ToolDef<InputSchema, TaskOutputToolOutput>)
+
+function TaskOutputProgressDisplay({
+  taskId,
+  taskDescription,
+  verbose,
+  toolUseId: _toolUseId,
+}: {
+  taskId?: string
+  taskDescription?: string
+  verbose: boolean
+  toolUseId?: string
+}): React.ReactNode {
+  const [content, setContent] = useState<string>('')
+
+  useEffect(() => {
+    if (!taskId) return
+    const unsubscribe = subscribeTaskOutput(taskId, setContent)
+    return () => unsubscribe()
+  }, [taskId])
+
+  // Trim trailing newline so the last visible row isn't blank.
+  const trimmed = content.replace(/\n+$/, '')
+  const lines = trimmed ? trimmed.split('\n') : []
+
+  if (verbose) {
+    return (
+      <ExpandedTaskOutputProgress
+        taskDescription={taskDescription}
+        lines={lines}
+      />
+    )
+  }
+
+  const tail = lines.slice(-PROGRESS_COMPACT_TAIL_LINES)
+
+  return (
+    <Box flexDirection="column">
+      {taskDescription && <Text>&nbsp;&nbsp;{taskDescription}</Text>}
+      <Text>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Waiting for task{' '}
+        <Text dimColor>
+          (esc to give additional instructions, click to expand)
+        </Text>
+      </Text>
+      {tail.length > 0 && (
+        <Box flexDirection="column" paddingLeft={5}>
+          {tail.map((line, i) => (
+            <Text key={i} dimColor wrap="truncate-end">
+              {line || ' '}
+            </Text>
+          ))}
+        </Box>
+      )}
+    </Box>
+  )
+}
+
+function ExpandedTaskOutputProgress({
+  taskDescription,
+  lines,
+}: {
+  taskDescription?: string
+  lines: string[]
+}): React.ReactNode {
+  const scrollRef = useRef<ScrollBoxHandle | null>(null)
+
+  // Wire ↑/↓/j/k/PgUp/PgDn/Ctrl-U/Ctrl-D/g/G/Home/End against the ScrollBox.
+  // useInput is naturally scoped to the lifetime of this mounted component —
+  // unmounts when the row collapses. stickyScroll keeps newest output in
+  // view by default; manual scroll breaks the pin so the view stays put as
+  // new content streams in.
+  useInput((input, key, event) => {
+    const s = scrollRef.current
+    if (!s) return
+    const sticky = applyModalPagerAction(
+      s,
+      modalPagerAction(input, key),
+      () => {},
+    )
+    if (sticky === null) return
+    event.stopImmediatePropagation()
+  })
+
+  return (
+    <Box flexDirection="column">
+      {taskDescription && <Text>&nbsp;&nbsp;{taskDescription}</Text>}
+      <Text>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Waiting for task{' '}
+        <Text dimColor>(↑↓/PgUp/PgDn scroll, click to collapse)</Text>
+      </Text>
+      <Box paddingLeft={5}>
+        {lines.length === 0 ? (
+          <Text dimColor>(no output yet)</Text>
+        ) : (
+          <ScrollBox
+            ref={scrollRef}
+            stickyScroll
+            flexDirection="column"
+            flexShrink={0}
+            borderStyle="round"
+            paddingX={1}
+            height={PROGRESS_EXPANDED_HEIGHT}
+          >
+            {lines.map((line, i) => (
+              <Text key={i} wrap="truncate-end">
+                {line || ' '}
+              </Text>
+            ))}
+          </ScrollBox>
+        )}
+      </Box>
+    </Box>
+  )
+}
 
 function TaskOutputResultDisplay({
   content,
