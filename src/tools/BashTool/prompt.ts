@@ -28,7 +28,7 @@ function getBackgroundUsageNote(): string | null {
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
     return null
   }
-  return 'If you find yourself reaching for `sleep` or a poll loop to wait for a command — whether about to run it, or one you have already started — use `run_in_background: true` instead. Control returns immediately and the full output arrives in a later turn as a system notification.'
+  return "If you're about to use `sleep` or a poll loop to wait for a command, use `run_in_background: true` instead. The tool returns immediately with the output file path, and a system notification with that path arrives in a later turn when the command finishes."
 }
 
 function getCommitAndPRInstructions(): string {
