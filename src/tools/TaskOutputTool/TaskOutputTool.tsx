@@ -185,7 +185,7 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
     },
 
     async description() {
-      return '[Deprecated] — prefer Read on the task output file path; calling this tool is the same as polling the task until it exits with an exit code'
+      return '[Deprecated] — prefer Read on the task output file path'
     },
 
     isConcurrencySafe(_input) {
@@ -209,7 +209,7 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
 - Retrieves output from a running or completed background task
 - Takes a task_id parameter identifying the task
 - Returns the task output along with status information
-- Use block=true (default) to wait for task completion
+- Use block=true (default) — blocks until the task completes, equivalent to sleeping and polling the task until it exits with an exit code or hits the timeout.
 - Use block=false for non-blocking check of current status
 - Task IDs can be found using the /tasks command`
     },
