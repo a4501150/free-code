@@ -185,7 +185,7 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
     },
 
     async description() {
-      return '[Deprecated] — prefer Read on the task output file path, calling this tool is the same as polling on task until it exit with an exist code'
+      return '[Deprecated] — prefer Read on the task output file path; calling this tool is the same as polling the task until it exits with an exit code'
     },
 
     isConcurrencySafe(_input) {

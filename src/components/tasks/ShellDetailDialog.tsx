@@ -48,7 +48,17 @@ type Props = {
 // directly (path is documented in the BackgroundTaskOutput tool description).
 const SHELL_DETAIL_TAIL_BYTES = 1_048_576
 
-const OUTPUT_VIEWPORT_HEIGHT = 20
+// Hard cap for the output ScrollBox. Actual viewport is computed per-render
+// against the terminal height so the dialog fits without overflowing into
+// the messages area above; see `outputHeight` below.
+const OUTPUT_VIEWPORT_HEIGHT_MAX = 20
+// Floor so the box stays usable even on very short terminals.
+const OUTPUT_VIEWPORT_HEIGHT_MIN = 5
+// Vertical chrome the dialog draws around the ScrollBox (Pane divider/pad,
+// title, status/runtime/command, gap, "Output:" label, ScrollBox border ×2,
+// position label, input guide). Subtracted from `rows` so the messages area
+// above retains some breathing room.
+const OUTPUT_VIEWPORT_CHROME_ROWS = 18
 
 type TaskOutputResult = {
   content: string
@@ -77,7 +87,11 @@ export function ShellDetailDialog({
   onKillShell,
   onBack,
 }: Props): React.ReactNode {
-  const { columns } = useTerminalSize()
+  const { columns, rows } = useTerminalSize()
+  const outputHeight = Math.max(
+    OUTPUT_VIEWPORT_HEIGHT_MIN,
+    Math.min(OUTPUT_VIEWPORT_HEIGHT_MAX, rows - OUTPUT_VIEWPORT_CHROME_ROWS),
+  )
 
   // Promise created in initializer (not during render). For running shells,
   // the effect timer replaces it periodically to pick up new output.
@@ -214,6 +228,7 @@ export function ShellDetailDialog({
             <ShellOutputContent
               outputPromise={deferredOutputPromise}
               columns={columns}
+              outputHeight={outputHeight}
               scrollRef={scrollRef}
             />
           </Suspense>
@@ -226,12 +241,14 @@ export function ShellDetailDialog({
 type ShellOutputContentProps = {
   outputPromise: Promise<TaskOutputResult>
   columns: number
+  outputHeight: number
   scrollRef: React.MutableRefObject<ScrollBoxHandle | null>
 }
 
 function ShellOutputContent({
   outputPromise,
   columns,
+  outputHeight,
   scrollRef,
 }: ShellOutputContentProps): React.ReactNode {
   const { content, bytesTotal } = use(outputPromise)
@@ -248,7 +265,7 @@ function ShellOutputContent({
     top: number
     height: number
     total: number
-  }>({ top: 0, height: OUTPUT_VIEWPORT_HEIGHT, total: lines.length })
+  }>({ top: 0, height: outputHeight, total: lines.length })
 
   useEffect(() => {
     const refresh = () => {
@@ -256,7 +273,7 @@ function ShellOutputContent({
       if (!s) return
       setPosition({
         top: s.getScrollTop(),
-        height: s.getViewportHeight() || OUTPUT_VIEWPORT_HEIGHT,
+        height: s.getViewportHeight() || outputHeight,
         total: lines.length,
       })
     }
@@ -269,7 +286,7 @@ function ShellOutputContent({
       unsubscribe?.()
       clearInterval(timer)
     }
-  }, [lines.length, scrollRef])
+  }, [lines.length, outputHeight, scrollRef])
 
   if (!content) {
     return <Text dimColor>No output available</Text>
@@ -288,11 +305,10 @@ function ShellOutputContent({
         ref={scrollRef}
         stickyScroll
         flexDirection="column"
-        flexShrink={0}
         borderStyle="round"
         paddingX={1}
-        height={OUTPUT_VIEWPORT_HEIGHT}
-        maxWidth={columns - 6}
+        height={outputHeight}
+        maxWidth={Math.max(20, columns - 8)}
       >
         {lines.map((line, i) => (
           <Text key={i} wrap="truncate-end">
