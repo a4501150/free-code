@@ -2705,6 +2705,16 @@ function PromptInput({
   )
 
   if (showBashesDialog) {
+    // In fullscreen, REPL routes BackgroundTasksDialog through the modal
+    // slot so it gets the full-terminal vertical budget instead of the
+    // bottom slot's maxHeight=50% cap (which caused yoga to squish the
+    // dialog and clip the input guide). Return null here so PromptInput's
+    // own UI doesn't render behind the modal. Non-fullscreen keeps the
+    // inline render — there's no modal slot in that mode and no maxHeight
+    // constraint, so the dialog fits naturally.
+    if (isFullscreenEnvEnabled()) {
+      return null
+    }
     return (
       <BackgroundTasksDialog
         onDone={() => setShowBashesDialog(false)}

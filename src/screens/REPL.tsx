@@ -476,6 +476,7 @@ import {
   useUnseenDivider,
   computeUnseenDivider,
 } from '../components/FullscreenLayout.js'
+import { BackgroundTasksDialog } from '../components/tasks/BackgroundTasksDialog.js'
 import {
   isFullscreenEnvEnabled,
   maybeGetTmuxMouseHint,
@@ -5476,12 +5477,15 @@ export function REPL({
   // on its own row (above input in fullscreen, below in scrollback) instead
   // of row-beside. Wide terminals keep the row layout with sprite on the right.
   const companionNarrow = transcriptCols < MIN_COLS_FOR_FULL_SPRITE
-  // Hide the sprite when PromptInput early-returns BackgroundTasksDialog.
-  // The sprite sits as a row sibling of PromptInput, so the dialog's Pane
-  // divider draws at useTerminalSize() width but only gets terminalWidth -
-  // spriteWidth — divider stops short and dialog text wraps early. Don't
-  // check footerSelection: pill FOCUS (arrow-down to tasks pill) must keep
-  // the sprite visible so arrow-right can navigate to it.
+  // Hide the sprite while BackgroundTasksDialog is open. In non-fullscreen,
+  // PromptInput early-returns the dialog inline and the sprite would sit as
+  // a row sibling, shrinking the dialog's available width. In fullscreen,
+  // the dialog routes through FullscreenLayout's modal slot (centeredModal
+  // below) which paints over the bottom slot — the sprite would render
+  // beneath the modal but the row-sibling layout collapses without
+  // PromptInput, so just hide it. Don't check footerSelection: pill FOCUS
+  // (arrow-down to tasks pill) must keep the sprite visible so arrow-right
+  // can navigate to it.
   const companionVisible =
     !toolJSX?.shouldHidePromptInput && !focusedInputDialog && !showBashesDialog
 
@@ -5494,7 +5498,30 @@ export function REPL({
   // /config, /theme, /diff, ...) both go here now.
   const toolJsxCentered =
     isFullscreenEnvEnabled() && toolJSX?.isLocalJSXCommand === true
-  const centeredModal: React.ReactNode = toolJsxCentered ? toolJSX!.jsx : null
+  // BackgroundTasksDialog (and its child ShellDetailDialog) also routes
+  // through the modal slot in fullscreen so it gets the full-terminal budget
+  // (rows - MODAL_TRANSCRIPT_PEEK) instead of the bottom slot's maxHeight=50%
+  // cap. The 50% cap caused yoga to squish deep children to h=0 when the
+  // dialog was tall (overlapping rows like "Output:" + position label) and
+  // clipped the input guide below the viewport. PromptInput returns null in
+  // this case so its input doesn't render behind the modal.
+  const showBashesDialogInModal = isFullscreenEnvEnabled() && !!showBashesDialog
+  const centeredModal: React.ReactNode = toolJsxCentered ? (
+    toolJSX!.jsx
+  ) : showBashesDialogInModal ? (
+    <BackgroundTasksDialog
+      onDone={() => setShowBashesDialog(false)}
+      toolUseContext={getToolUseContext(
+        messages,
+        [],
+        new AbortController(),
+        mainLoopModel,
+      )}
+      initialDetailTaskId={
+        typeof showBashesDialog === 'string' ? showBashesDialog : undefined
+      }
+    />
+  ) : null
 
   // <AlternateScreen> at the root: everything below is inside its
   // <Box height={rows}>. Handlers/contexts are zero-height so ScrollBox's

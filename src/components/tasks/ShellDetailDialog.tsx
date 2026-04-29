@@ -8,6 +8,7 @@ import React, {
 } from 'react'
 import type { DeepImmutable } from 'src/types/utils.js'
 import type { CommandResultDisplay } from '../../commands.js'
+import { useModalOrTerminalSize } from '../../context/modalContext.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
 import ScrollBox, {
@@ -87,7 +88,14 @@ export function ShellDetailDialog({
   onKillShell,
   onBack,
 }: Props): React.ReactNode {
-  const { columns, rows } = useTerminalSize()
+  // useModalOrTerminalSize gives us the modal's restricted rows when the
+  // dialog is rendered in FullscreenLayout's modal slot, and the full
+  // terminal size otherwise. Without this, `rows - chrome` would compute
+  // against the full terminal height even though the modal slot only
+  // has `terminalRows - MODAL_TRANSCRIPT_PEEK - 1` available, and the
+  // ScrollBox would overflow modal's overflow=hidden.
+  const terminalSize = useTerminalSize()
+  const { columns, rows } = useModalOrTerminalSize(terminalSize)
   const outputHeight = Math.max(
     OUTPUT_VIEWPORT_HEIGHT_MIN,
     Math.min(OUTPUT_VIEWPORT_HEIGHT_MAX, rows - OUTPUT_VIEWPORT_CHROME_ROWS),
