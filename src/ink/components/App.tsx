@@ -155,8 +155,8 @@ export default class App extends PureComponent<Props, State> {
   // Timer for flushing incomplete escape sequences
   incompleteEscapeTimer: NodeJS.Timeout | null = null
   // Timeout durations for incomplete sequences (ms)
-  readonly NORMAL_TIMEOUT = 50 // Short timeout for regular esc sequences
-  readonly PASTE_TIMEOUT = 500 // Longer timeout for paste operations
+  readonly NORMAL_TIMEOUT = 50 // Short timeout for lone-ESC (real Escape press)
+  readonly PASTE_TIMEOUT = 500 // Longer timeout for paste / mid-sequence buffers
 
   // Terminal query/response dispatch. Responses arrive on stdin (parsed
   // out by parse-keypress) and are routed to pending promise resolvers.
@@ -350,6 +350,34 @@ export default class App extends PureComponent<Props, State> {
     }
   }
 
+  // Compute the flush timeout for the current incomplete buffer.
+  // - IN_PASTE: long timeout — paste content can include slow-arriving bytes.
+  // - Mid CSI / OSC / DCS / APC (`\x1b[…`, `\x1b]…`, `\x1bP…`, `\x1b_…`):
+  //   long timeout. These can be split across stdin chunks on slow SSH /
+  //   tmux backbuffer drain. Flushing a partial CSI leaks its bytes into
+  //   the prompt — parseKeypress can't classify e.g. `\x1b[<65;1` and the
+  //   tail bytes `15;25M` arrive separately as text, concatenating to
+  //   `[<65;115;25M` in the input field. 500ms is well above typical
+  //   inter-chunk gaps for a single CSI; on the rare malformed-sequence
+  //   case we still flush eventually rather than hanging input forever.
+  // - Everything else (lone `\x1b`, `\x1b\x1b`, `\x1b<intermediate>` =
+  //   Alt+Space etc., `\x1bO…` = SS3 / Alt+O): short timeout — these are
+  //   complete-as-buffered keypresses that the user expects to register
+  //   quickly. The CSI/OSC/DCS leak doesn't apply because parseKeypress's
+  //   META_KEY_CODE_RE / `\x1b ` / SS3 paths classify them on first try.
+  computeFlushTimeout(): number {
+    if (this.keyParseState.mode === 'IN_PASTE') return this.PASTE_TIMEOUT
+    const buf = this.keyParseState.incomplete
+    if (buf.length >= 2 && buf.charCodeAt(0) === 0x1b) {
+      const c = buf.charCodeAt(1)
+      // 0x5b='[' 0x5d=']' 0x50='P' 0x5f='_'
+      if (c === 0x5b || c === 0x5d || c === 0x50 || c === 0x5f) {
+        return this.PASTE_TIMEOUT
+      }
+    }
+    return this.NORMAL_TIMEOUT
+  }
+
   // Helper to flush incomplete escape sequences
   flushIncomplete = (): void => {
     // Clear the timer reference
@@ -369,7 +397,7 @@ export default class App extends PureComponent<Props, State> {
     if (this.props.stdin.readableLength > 0) {
       this.incompleteEscapeTimer = setTimeout(
         this.flushIncomplete,
-        this.NORMAL_TIMEOUT,
+        this.computeFlushTimeout(),
       )
       return
     }
@@ -408,9 +436,7 @@ export default class App extends PureComponent<Props, State> {
       }
       this.incompleteEscapeTimer = setTimeout(
         this.flushIncomplete,
-        this.keyParseState.mode === 'IN_PASTE'
-          ? this.PASTE_TIMEOUT
-          : this.NORMAL_TIMEOUT,
+        this.computeFlushTimeout(),
       )
     }
   }

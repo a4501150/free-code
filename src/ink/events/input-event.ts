@@ -79,22 +79,33 @@ function parseKey(keypress: ParsedKey): [Key, string] {
     input = ''
   }
 
-  // Suppress ESC-less SGR mouse fragments. When a heavy React commit blocks
-  // the event loop past App's 50ms NORMAL_TIMEOUT flush, a CSI split across
-  // stdin chunks gets its buffered ESC flushed as a lone Escape key, and the
-  // continuation arrives as a text token with name='' — which falls through
-  // all of parseKeypress's ESC-anchored regexes and the nonAlphanumericKeys
-  // clear below (name is falsy). The fragment then leaks into the prompt as
-  // literal `[<64;74;16M`. This is the same defensive sink as the F13 guard
-  // above; the underlying tokenizer-flush race is upstream of this layer.
-  if (!keypress.name && /^\[<\d+;\d+;\d+[Mm]/.test(input)) {
-    input = ''
-  }
-
   // Strip meta if it's still remaining after `parseKeypress`
   // TODO(vadimdemedes): remove this in the next major version.
   if (input.startsWith('\u001B')) {
     input = input.slice(1)
+  }
+
+  // Suppress orphan SGR mouse fragments. When the parser flushes mid-CSI
+  // (heavy-render race or cross-chunk split over slow SSH/tmux), the
+  // partial leaks into the prompt with no name. Three sub-patterns can
+  // leak — App.computeFlushTimeout reduces frequency upstream by waiting
+  // longer for in-flight CSI continuations, but the timer eventually
+  // fires for truly stuck/malformed sequences and lands here:
+  //   1) Complete event:   `[<\d+;\d+;\d+[Mm]`         — orphan-handler missed text token
+  //   2) Partial CSI:      `[<\d+(?:;\d*)*`            — partial flushed as sequence with name=''
+  //   3) Tail text:        `[\d;]+[Mm]`                — bytes that arrived after a partial flush
+  // Together (1)+(2)+(3) cover the visible-garbage cases in the prompt
+  // (`[<65;115;25M` from a `[<65;1` + `15;25M` split). Only suppress when
+  // keypress.name is empty AND not a paste — keys with a real name
+  // (wheel/escape/etc) were already classified by parseKeypress, and a
+  // paste of literal `[<65;115;25M` (e.g. terminal log content) is
+  // legitimate user input that must reach the prompt.
+  if (
+    !keypress.name &&
+    !keypress.isPasted &&
+    (/^\[<\d+(?:;\d*)*[Mm]?$/.test(input) || /^[\d;]+[Mm]$/.test(input))
+  ) {
+    input = ''
   }
 
   // Track whether we've already processed this as a special sequence
