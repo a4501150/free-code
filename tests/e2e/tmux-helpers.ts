@@ -108,6 +108,11 @@ export class TmuxSession {
    * Pipes tmux pane output to a log file for debugging.
    */
   async start(): Promise<void> {
+    // Fail fast with an actionable error if tmux is missing, instead of
+    // letting the eventual `waitForText` time out 30s later with no signal
+    // about why. Cached at module scope — invoked exactly once per process.
+    await ensureTmuxAvailable()
+
     // Create isolated temp dirs, or reuse caller-provided ones (used by the
     // resume/continue tests that need the transcript to survive a restart).
     if (this._reuseConfigDir) {
@@ -431,9 +436,57 @@ async function exec(cmd: string): Promise<string> {
     stdout: 'pipe',
     stderr: 'pipe',
   })
-  const stdout = await new Response(proc.stdout).text()
+  // Drain both streams concurrently. Reading both is required to avoid
+  // deadlock when the child writes more than the pipe buffer to either
+  // stream before we read.
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ])
   await proc.exited
+  if (proc.exitCode !== 0) {
+    throw new Error(
+      `command failed (exit ${proc.exitCode}): ${cmd}\n` +
+        (stderr ? `stderr: ${stderr.trim()}\n` : '') +
+        (stdout ? `stdout: ${stdout.trim()}\n` : ''),
+    )
+  }
   return stdout
+}
+
+/**
+ * Verifies tmux is on PATH before starting any session. Throws with a
+ * platform-appropriate install hint if missing — fail-fast in 50ms instead
+ * of a 30s `waitForText` timeout with no actionable signal.
+ *
+ * Cached at module scope so a multi-test e2e run only invokes
+ * `command -v tmux` once. Re-throws the cached rejection on subsequent
+ * calls so every test in the run reports the same clear error.
+ */
+let _tmuxCheck: Promise<void> | null = null
+async function ensureTmuxAvailable(): Promise<void> {
+  if (!_tmuxCheck) {
+    _tmuxCheck = (async () => {
+      const proc = Bun.spawn(
+        ['bash', '-c', 'command -v tmux >/dev/null 2>&1'],
+        { stdout: 'ignore', stderr: 'ignore' },
+      )
+      await proc.exited
+      if (proc.exitCode !== 0) {
+        const hint =
+          process.platform === 'darwin'
+            ? 'brew install tmux'
+            : process.platform === 'linux'
+              ? 'apt-get install tmux  (or your distro equivalent: dnf, pacman, apk, …)'
+              : 'see https://github.com/tmux/tmux'
+        throw new Error(
+          `E2E tests require tmux but it was not found in PATH.\n` +
+            `  Install: ${hint}\n`,
+        )
+      }
+    })()
+  }
+  return _tmuxCheck
 }
 
 function sleep(ms: number): Promise<void> {
