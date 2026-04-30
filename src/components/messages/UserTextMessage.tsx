@@ -95,12 +95,21 @@ export function UserTextMessage({
   }
 
   // Bash inputs!
-  if (param.text.includes('<bash-input>')) {
+  // startsWith (not includes): synthetic messages always begin with the tag —
+  // see processBashCommand.tsx, processSlashCommand.tsx, swarm/inProcessRunner.ts,
+  // tasks/*/notifications, forkSubagent.ts, services/mcp/channelNotification.ts.
+  // Using `.includes()` here would route any user-pasted prompt that mentions
+  // these tag names into a synthetic-message renderer, which then returns null
+  // (e.g. UserAgentNotificationMessage with no <summary>) and the user's prompt
+  // vanishes from the REPL. user-memory-input / mcp-resource-update /
+  // mcp-polling-update kept as `.includes()` because their constructors aren't
+  // visible in src/ — too risky to assume their text-prefix shape.
+  if (param.text.startsWith('<bash-input>')) {
     return <UserBashInputMessage addMargin={addMargin} param={param} />
   }
 
   // Slash commands/
-  if (param.text.includes(`<${COMMAND_MESSAGE_TAG}>`)) {
+  if (param.text.startsWith(`<${COMMAND_MESSAGE_TAG}>`)) {
     return <UserCommandMessage addMargin={addMargin} param={param} />
   }
 
@@ -111,7 +120,7 @@ export function UserTextMessage({
   // Teammate messages - only check when swarms enabled
   if (
     isAgentSwarmsEnabled() &&
-    param.text.includes(`<${TEAMMATE_MESSAGE_TAG}`)
+    param.text.startsWith(`<${TEAMMATE_MESSAGE_TAG}`)
   ) {
     return (
       <UserTeammateMessage
@@ -123,7 +132,7 @@ export function UserTextMessage({
   }
 
   // Task notifications (agent completions, bash completions, etc.)
-  if (param.text.includes(`<${TASK_NOTIFICATION_TAG}`)) {
+  if (param.text.startsWith(`<${TASK_NOTIFICATION_TAG}`)) {
     return <UserAgentNotificationMessage addMargin={addMargin} param={param} />
   }
 
@@ -139,7 +148,7 @@ export function UserTextMessage({
   // only the directive. FORK_BOILERPLATE_TAG is inlined so the import doesn't
   // ship in external builds where feature('FORK_SUBAGENT') is false.
   if (feature('FORK_SUBAGENT')) {
-    if (param.text.includes('<fork-boilerplate>')) {
+    if (param.text.startsWith('<fork-boilerplate>')) {
       const { UserForkBoilerplateMessage } = userForkBoilerplateNs
       return <UserForkBoilerplateMessage addMargin={addMargin} param={param} />
     }
@@ -149,7 +158,7 @@ export function UserTextMessage({
   // CROSS_SESSION_MESSAGE_TAG is inlined so the import doesn't ship in
   // external builds where feature('UDS_INBOX') is false.
   if (feature('UDS_INBOX')) {
-    if (param.text.includes('<cross-session-message')) {
+    if (param.text.startsWith('<cross-session-message')) {
       const { UserCrossSessionMessage } = userCrossSessionNs
       return <UserCrossSessionMessage addMargin={addMargin} param={param} />
     }
@@ -157,7 +166,7 @@ export function UserTextMessage({
 
   // Inbound channel message (MCP server push).
   if (feature('KAIROS') || feature('KAIROS_CHANNELS')) {
-    if (param.text.includes('<channel source="')) {
+    if (param.text.startsWith('<channel source="')) {
       const { UserChannelMessage } = userChannelNs
       return <UserChannelMessage addMargin={addMargin} param={param} />
     }
