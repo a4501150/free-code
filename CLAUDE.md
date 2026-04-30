@@ -152,6 +152,18 @@ Re-pin call sites that defend this invariant (each covers a distinct code path �
 
 **Where the fingerprint is emitted:** only for Anthropic-type providers — `registry.isAnthropicType(options.model) ? getAttributionHeader(fingerprint) : ''`. Non-Anthropic providers' system prompts don't carry the `cc_version` line.
 
+### codex-fetch-adapter: llama.cpp `/v1/responses` SSE quirks
+
+`/v1/responses` from llama.cpp does not match real OpenAI's canonical streaming order, and the codex-fetch-adapter ([src/services/api/codex-fetch-adapter.ts](src/services/api/codex-fetch-adapter.ts)) has explicit workarounds for both. Verified live 2026-04-30 against Qwen3.6-27B and 35B-A3B GGUF.
+
+**1. Late `output_item.done(reasoning)` (block-index collision).** llama.cpp emits the entire `output_item.added(message)` + `output_text.delta` stream BEFORE firing `output_item.done(reasoning)`. Real OpenAI closes the reasoning item before opening the next. If we wait for the late `.done` to emit the synthetic Anthropic thinking block, it lands at the same `contentBlockIndex` as the already-open text block and corrupts block tracking — `claude.ts` throws `"Content block not found"` on the trailing `content_block_stop`. Workaround: open the thinking block eagerly on `output_item.added(reasoning)` and close it on the message/function_call boundary (or canonical `.done`, whichever fires first). Tracked via `inThinkingBlock` + `reasoningEmitted` flags in the adapter.
+
+**2. Missing `response.function_call_arguments.done`.** llama.cpp streams `.delta` events for tool-call arguments but never emits `.done`. The `input_json_delta` emit path was originally gated solely on `.done` ⇒ tool input reaches claude.ts as `{}`, the model says "Ran tool" but the tool ran with empty args. Workaround: also emit `input_json_delta` from `item.arguments` on `output_item.done(function_call)`, deduped against the canonical `.done` path via `toolArgsEmitted`.
+
+**3. Encrypted-content side-channel for streaming thinking.** Reasoning text streams live to the UI via `thinking_delta`, opened on `output_item.added(reasoning)`. But OpenAI's stateful `encrypted_content` only arrives on `output_item.done(reasoning)`, after the `content_block_start` was already emitted. To preserve cross-turn round-trip without giving up live streaming, the adapter emits a `codex_reasoning_meta_delta` (a custom delta type) just before `content_block_stop` carrying `codexEncryptedContent` + `codexReasoningId`. `claude.ts` content_block_delta handler patches the active thinking block with these fields ([src/services/api/claude.ts](src/services/api/claude.ts) — search `codex_reasoning_meta_delta`). Real Anthropic streams never emit this delta type — it's a safe additive extension.
+
+`/v1/chat/completions` does not have any of these issues (no item lifecycle, flat delta stream); the openai-chat-completions adapter is unaffected.
+
 ### Yoga percentage-height collapse inside ScrollBox
 
 A node inside a ScrollBox with `height="100%"` can collapse to 0 after being culled by `renderScrolledChildren` and then re-entering the viewport on scroll-back. `dropSubtreeCache` removes the nodeCache entry, and Yoga percentage resolution needs a definite parent height — a content-sized flex-row parent does not provide one on relayout.

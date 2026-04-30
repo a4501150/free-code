@@ -1934,6 +1934,38 @@ async function* queryModel(
                 throw new Error('Content block is not a connector_text block')
               }
               contentBlock.connector_text += delta.connector_text
+            } else if (
+              // Codex / OpenAI Responses side-channel update for thinking
+              // blocks. Used by codex-fetch-adapter to deliver
+              // `codexEncryptedContent` (only available on output_item.done)
+              // to a thinking block whose content_block_start was emitted
+              // earlier (eagerly, on output_item.added) so reasoning could
+              // stream live to the UI. Without this update, real OpenAI's
+              // stateful encrypted blob would be lost and cross-turn
+              // reasoning round-trip would break for OpenAI providers.
+              // No-op for non-thinking blocks.
+              (delta.type as string) === 'codex_reasoning_meta_delta'
+            ) {
+              if (contentBlock.type === 'thinking') {
+                const d = delta as unknown as {
+                  codexReasoningId?: string
+                  codexEncryptedContent?: string
+                }
+                if (typeof d.codexReasoningId === 'string') {
+                  ;(
+                    contentBlock as unknown as {
+                      codexReasoningId?: string
+                    }
+                  ).codexReasoningId = d.codexReasoningId
+                }
+                if (typeof d.codexEncryptedContent === 'string') {
+                  ;(
+                    contentBlock as unknown as {
+                      codexEncryptedContent?: string
+                    }
+                  ).codexEncryptedContent = d.codexEncryptedContent
+                }
+              }
             } else {
               switch (delta.type) {
                 case 'citations_delta':

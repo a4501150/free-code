@@ -517,6 +517,12 @@ async function translateCodexStreamToAnthropic(
       let currentToolCallArgs = ''
       let inToolCall = false
       let hadToolCalls = false
+      // Tracks whether we've already emitted input_json_delta for the
+      // current tool_use block — used to dedupe between the canonical
+      // `function_call_arguments.done` path (real OpenAI) and the
+      // `output_item.done(function_call)` fallback path (llama.cpp omits
+      // the .done event for arguments).
+      let toolArgsEmitted = false
 
       // ── Web search state ──────────────────────────────────────
       // Codex emits `web_search_call` items with their own lifecycle:
@@ -551,13 +557,183 @@ async function translateCodexStreamToAnthropic(
       // Codex / OpenAI Responses streams `reasoning` items as:
       //   output_item.added (id, empty content) → reasoning_*_delta (text)
       //                                         → output_item.done (encrypted_content)
-      // We buffer text deltas so we can emit the full thinking block AT ONCE
-      // when output_item.done arrives — that's when `encrypted_content` is
-      // available, and we need it on the content_block_start so the block
-      // can be round-tripped on the next turn via the side-channel fields
-      // `codexReasoningId` / `codexEncryptedContent`.
+      // Reasoning lifecycle: stream thinking incrementally (better UX) and
+      // close the block early on message/function_call item boundaries to
+      // dodge llama.cpp's non-canonical event ordering (it emits reasoning's
+      // `output_item.done` AFTER message text has streamed). Without an
+      // early-close, the synthetic thinking block lands at the same
+      // contentBlockIndex as the already-open text block and corrupts block
+      // tracking in claude.ts ("Content block not found").
       let pendingReasoningId: string | null = null
       let pendingReasoningText = ''
+      let inThinkingBlock = false
+      let reasoningEmitted = false
+
+      const startThinkingBlock = (reasoningId: string | null): void => {
+        if (inThinkingBlock || reasoningEmitted) return
+        const startPayload: Record<string, unknown> = {
+          type: 'thinking',
+          thinking: '',
+          signature: '',
+        }
+        if (reasoningId) startPayload.codexReasoningId = reasoningId
+        // codexEncryptedContent is unavailable here (only on output_item.done).
+        // It is patched onto the block later via a `codex_reasoning_meta_delta`
+        // emitted just before content_block_stop in closeThinkingBlock — see
+        // claude.ts content_block_delta handler. This preserves round-trip
+        // continuity for OpenAI-stateful providers while allowing reasoning
+        // text to stream live to the UI.
+        controller.enqueue(
+          encoder.encode(
+            formatSSE(
+              'content_block_start',
+              JSON.stringify({
+                type: 'content_block_start',
+                index: contentBlockIndex,
+                content_block: startPayload,
+              }),
+            ),
+          ),
+        )
+        inThinkingBlock = true
+      }
+
+      const streamThinkingDelta = (text: string): void => {
+        if (!inThinkingBlock || !text) return
+        controller.enqueue(
+          encoder.encode(
+            formatSSE(
+              'content_block_delta',
+              JSON.stringify({
+                type: 'content_block_delta',
+                index: contentBlockIndex,
+                delta: { type: 'thinking_delta', thinking: text },
+              }),
+            ),
+          ),
+        )
+      }
+
+      const closeThinkingBlock = (finalItem?: {
+        id?: string
+        encrypted_content?: string
+        summary?: Array<{ type?: string; text?: string }>
+        content?: Array<{ type?: string; text?: string }>
+      }): void => {
+        if (reasoningEmitted) return
+
+        // Side-channel update: when output_item.done(reasoning) fires
+        // (canonical OpenAI ordering), it carries the authoritative
+        // encrypted_content. The block was content_block_start'd earlier
+        // (eagerly on output_item.added) without this field. Emit a
+        // codex_reasoning_meta_delta so claude.ts can patch the active
+        // thinking block before content_block_stop. The same delta also
+        // forwards the canonical reasoning id in case the start payload
+        // captured an empty/preliminary one. No-op for the llama.cpp
+        // ordering where finalItem isn't passed (reasoning was closed
+        // early at message/function_call.added with no .done payload yet).
+        if (inThinkingBlock && finalItem) {
+          const finalId = (finalItem.id as string) || ''
+          const finalEncrypted = (finalItem.encrypted_content as string) || ''
+          if (finalId || finalEncrypted) {
+            const metaDelta: Record<string, unknown> = {
+              type: 'codex_reasoning_meta_delta',
+            }
+            if (finalId) metaDelta.codexReasoningId = finalId
+            if (finalEncrypted) metaDelta.codexEncryptedContent = finalEncrypted
+            controller.enqueue(
+              encoder.encode(
+                formatSSE(
+                  'content_block_delta',
+                  JSON.stringify({
+                    type: 'content_block_delta',
+                    index: contentBlockIndex,
+                    delta: metaDelta,
+                  }),
+                ),
+              ),
+            )
+          }
+        }
+
+        // If we never opened (no reasoning item ever fired), but the .done
+        // payload has text we'd otherwise lose, open lazily here. Skip
+        // entirely if there's nothing meaningful.
+        if (!inThinkingBlock) {
+          let fallbackText = ''
+          if (finalItem) {
+            const summary = finalItem.summary || []
+            fallbackText = summary
+              .map(s =>
+                s?.type === 'summary_text' && typeof s.text === 'string'
+                  ? s.text
+                  : '',
+              )
+              .join('')
+            if (!fallbackText) {
+              const content = finalItem.content || []
+              fallbackText = content
+                .map(c =>
+                  c?.type === 'reasoning_text' && typeof c.text === 'string'
+                    ? c.text
+                    : '',
+                )
+                .join('')
+            }
+          }
+          const fallbackId =
+            (finalItem?.id as string) || pendingReasoningId || ''
+          if (!fallbackId && !fallbackText) {
+            pendingReasoningId = null
+            pendingReasoningText = ''
+            return
+          }
+          startThinkingBlock(fallbackId)
+          if (fallbackText) streamThinkingDelta(fallbackText)
+        } else if (finalItem && !pendingReasoningText) {
+          // We opened but received no streaming deltas (e.g. canonical
+          // OpenAI summary-only mode). Backfill from the .done payload.
+          const summary = finalItem.summary || []
+          let fallbackText = summary
+            .map(s =>
+              s?.type === 'summary_text' && typeof s.text === 'string'
+                ? s.text
+                : '',
+            )
+            .join('')
+          if (!fallbackText) {
+            const content = finalItem.content || []
+            fallbackText = content
+              .map(c =>
+                c?.type === 'reasoning_text' && typeof c.text === 'string'
+                  ? c.text
+                  : '',
+              )
+              .join('')
+          }
+          if (fallbackText) streamThinkingDelta(fallbackText)
+        }
+
+        controller.enqueue(
+          encoder.encode(
+            formatSSE(
+              'content_block_stop',
+              JSON.stringify({
+                type: 'content_block_stop',
+                index: contentBlockIndex,
+              }),
+            ),
+          ),
+        )
+        contentBlockIndex++
+        inThinkingBlock = false
+        reasoningEmitted = true
+        pendingReasoningId = null
+        pendingReasoningText = ''
+      }
+
+      // Back-compat alias: existing callers refer to flushPendingReasoning.
+      const flushPendingReasoning = closeThinkingBlock
 
       // Diagnostic counters — emitted at stream end so we can trace
       // empty-completion / silent-failure cases under --debug.
@@ -692,13 +868,23 @@ async function translateCodexStreamToAnthropic(
             if (eventType === 'response.output_item.added') {
               const item = event.item as Record<string, unknown>
               if (item?.type === 'reasoning') {
-                // Capture the reasoning item id for later round-tripping;
-                // do NOT emit SSE yet — encrypted_content only becomes
-                // available on output_item.done. Text deltas stream in
-                // between and are accumulated into pendingReasoningText.
+                // Open the synthetic Anthropic thinking block eagerly so
+                // reasoning_text deltas can stream live to the UI. The
+                // codexReasoningId rides along on the start payload for
+                // round-trip continuity. encrypted_content is not yet
+                // available (only on .done) — see startThinkingBlock for
+                // the trade-off.
                 pendingReasoningId = (item.id as string) || null
                 pendingReasoningText = ''
+                reasoningEmitted = false
+                startThinkingBlock(pendingReasoningId)
               } else if (item?.type === 'message') {
+                // Flush any pending reasoning at the message boundary —
+                // see flushPendingReasoning rationale. Real OpenAI's
+                // canonical ordering means pendingReasoningId is already
+                // null here (cleared by the prior reasoning .done), so the
+                // helper is a no-op for that path.
+                flushPendingReasoning()
                 // New text message block starting
                 if (inToolCall) {
                   // Close the previous tool call block
@@ -714,6 +900,9 @@ async function translateCodexStreamToAnthropic(
                   inToolCall = false
                 }
               } else if (item?.type === 'function_call') {
+                // Flush pending reasoning before opening the tool_use
+                // block — same rationale as the message branch above.
+                flushPendingReasoning()
                 // Close text block if open
                 if (currentTextBlockStarted) {
                   controller.enqueue(
@@ -738,6 +927,7 @@ async function translateCodexStreamToAnthropic(
                 currentToolCallArgs = (item.arguments as string) || ''
                 inToolCall = true
                 hadToolCalls = true
+                toolArgsEmitted = false
 
                 controller.enqueue(
                   encoder.encode(
@@ -901,37 +1091,49 @@ async function translateCodexStreamToAnthropic(
               }
             }
 
-            // Reasoning deltas: accumulate into per-item buffer; emit
-            // once output_item.done fires with encrypted_content. Codex
-            // uses `response.reasoning_text.delta` and
+            // Reasoning deltas: stream live as thinking_delta to the open
+            // thinking block (opened eagerly on output_item.added(reasoning)),
+            // and accumulate into pendingReasoningText for the .done-fallback
+            // path. Codex uses `response.reasoning_text.delta` /
             // `response.reasoning_summary_text.delta`; older shapes use
             // `response.reasoning.delta`. Treat all three identically.
-            //
-            // Same spec-authority rule as function_call_arguments: the
-            // `.done` event's `text` field is the authoritative final
-            // string. Deltas are an optional incremental channel. When the
-            // `.done` event is present we replace the accumulator with its
-            // `text`; for servers that emit only deltas (no `.done`), the
-            // accumulated buffer is used as-is.
             else if (
               eventType === 'response.reasoning_text.delta' ||
               eventType === 'response.reasoning_summary_text.delta' ||
               eventType === 'response.reasoning.delta'
             ) {
               const text = event.delta as string | undefined
-              if (typeof text === 'string') {
+              if (typeof text === 'string' && text.length > 0) {
                 pendingReasoningText += text
+                streamThinkingDelta(text)
               }
             }
 
-            // Reasoning terminal events — authoritative full text.
+            // Reasoning terminal events — authoritative full text. If the
+            // server's deltas drifted from the canonical text, emit the
+            // missing tail as a single delta. (Common case: deltas match
+            // exactly and this is a no-op.)
             else if (
               eventType === 'response.reasoning_text.done' ||
               eventType === 'response.reasoning_summary_text.done' ||
               eventType === 'response.reasoning.done'
             ) {
               const finalText = event.text as string | undefined
-              if (typeof finalText === 'string' && finalText.length > 0) {
+              if (
+                typeof finalText === 'string' &&
+                finalText.length > pendingReasoningText.length &&
+                finalText.startsWith(pendingReasoningText)
+              ) {
+                const tail = finalText.slice(pendingReasoningText.length)
+                streamThinkingDelta(tail)
+                pendingReasoningText = finalText
+              } else if (
+                typeof finalText === 'string' &&
+                finalText.length > 0 &&
+                pendingReasoningText.length === 0
+              ) {
+                // No deltas streamed at all — emit the whole thing.
+                streamThinkingDelta(finalText)
                 pendingReasoningText = finalText
               }
             }
@@ -984,6 +1186,7 @@ async function translateCodexStreamToAnthropic(
                       ),
                     ),
                   )
+                  toolArgsEmitted = true
                 }
                 currentToolCallArgs = fullArgs
               }
@@ -993,6 +1196,38 @@ async function translateCodexStreamToAnthropic(
             else if (eventType === 'response.output_item.done') {
               const item = event.item as Record<string, unknown>
               if (item?.type === 'function_call') {
+                // llama.cpp omits `response.function_call_arguments.done` —
+                // it only streams `.delta`. The .done emit-path therefore
+                // never fires the input_json_delta and claude.ts ends up
+                // with an empty tool_use input. Authoritative full args
+                // live on `item.arguments` here. Emit a single
+                // input_json_delta from item.arguments (preferred) or the
+                // accumulated delta buffer (fallback). Idempotent against
+                // the .done path: if .done already emitted, currentToolCallArgs
+                // was set to that value too, but item.arguments is identical
+                // so the second emit is the same payload — claude.ts merges
+                // input_json_delta strings, so we just dedupe by checking
+                // whether we already emitted on .done.
+                const itemArgs =
+                  typeof item.arguments === 'string' ? item.arguments : ''
+                const fullArgs = itemArgs || currentToolCallArgs
+                if (fullArgs && !toolArgsEmitted) {
+                  controller.enqueue(
+                    encoder.encode(
+                      formatSSE(
+                        'content_block_delta',
+                        JSON.stringify({
+                          type: 'content_block_delta',
+                          index: contentBlockIndex,
+                          delta: {
+                            type: 'input_json_delta',
+                            partial_json: fullArgs,
+                          },
+                        }),
+                      ),
+                    ),
+                  )
+                }
                 closeToolCallBlock(
                   controller,
                   encoder,
@@ -1004,6 +1239,7 @@ async function translateCodexStreamToAnthropic(
                 contentBlockIndex++
                 inToolCall = false
                 currentToolCallArgs = ''
+                toolArgsEmitted = false
               } else if (item?.type === 'message') {
                 if (currentTextBlockStarted) {
                   controller.enqueue(
@@ -1146,118 +1382,14 @@ async function translateCodexStreamToAnthropic(
                   state.resultEmitted = true
                 }
               } else if (item?.type === 'reasoning') {
-                // Now we have {id, encrypted_content, summary}. Emit the
-                // full synthetic thinking sequence in one burst. The
-                // `codexReasoningId` / `codexEncryptedContent` extra
-                // fields ride along on the content_block_start payload
-                // via `...content_block` spread in claude.ts's streaming
-                // loop, surviving into the in-memory assistant message
-                // and through disk persistence so they can be echoed
-                // back in `input[]` on the next turn.
-                const reasoningId =
-                  (item.id as string) || pendingReasoningId || ''
-                const encryptedContent =
-                  (item.encrypted_content as string) || ''
-
-                // If no text delta or `.done` event arrived, fall back to
-                // scraping the terminal `output_item.done` payload.
-                //
-                // Two shapes in the wild:
-                //   - OpenAI summary-only mode (effort="none" or similar):
-                //     text lives in `item.summary[]` with type "summary_text".
-                //   - LM Studio / grammar-constrained full-reasoning mode:
-                //     text lives in `item.content[]` with type "reasoning_text".
-                // Try summary first (OpenAI canonical), then content.
-                if (!pendingReasoningText) {
-                  const summary =
-                    (item.summary as
-                      | Array<{ type?: string; text?: string }>
-                      | undefined) || []
-                  pendingReasoningText = summary
-                    .map(s =>
-                      s?.type === 'summary_text' && typeof s.text === 'string'
-                        ? s.text
-                        : '',
-                    )
-                    .join('')
-                }
-                if (!pendingReasoningText) {
-                  const content =
-                    (item.content as
-                      | Array<{ type?: string; text?: string }>
-                      | undefined) || []
-                  pendingReasoningText = content
-                    .map(c =>
-                      c?.type === 'reasoning_text' && typeof c.text === 'string'
-                        ? c.text
-                        : '',
-                    )
-                    .join('')
-                }
-
-                // Skip emission entirely if we have no reasoning id to
-                // round-trip AND no text to show — nothing meaningful
-                // to carry.
-                if (reasoningId || pendingReasoningText || encryptedContent) {
-                  const startPayload: Record<string, unknown> = {
-                    type: 'thinking',
-                    thinking: '',
-                    signature: '',
-                  }
-                  if (reasoningId) {
-                    startPayload.codexReasoningId = reasoningId
-                  }
-                  if (encryptedContent) {
-                    startPayload.codexEncryptedContent = encryptedContent
-                  }
-
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE(
-                        'content_block_start',
-                        JSON.stringify({
-                          type: 'content_block_start',
-                          index: contentBlockIndex,
-                          content_block: startPayload,
-                        }),
-                      ),
-                    ),
-                  )
-
-                  if (pendingReasoningText) {
-                    controller.enqueue(
-                      encoder.encode(
-                        formatSSE(
-                          'content_block_delta',
-                          JSON.stringify({
-                            type: 'content_block_delta',
-                            index: contentBlockIndex,
-                            delta: {
-                              type: 'thinking_delta',
-                              thinking: pendingReasoningText,
-                            },
-                          }),
-                        ),
-                      ),
-                    )
-                  }
-
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE(
-                        'content_block_stop',
-                        JSON.stringify({
-                          type: 'content_block_stop',
-                          index: contentBlockIndex,
-                        }),
-                      ),
-                    ),
-                  )
-                  contentBlockIndex++
-                }
-
-                pendingReasoningId = null
-                pendingReasoningText = ''
+                // Canonical OpenAI ordering arrives here: reasoning's .done
+                // fires before any subsequent message/function_call item
+                // starts. flushPendingReasoning is idempotent — it's a
+                // no-op if an early-flush already ran from the message /
+                // function_call boundary (the llama.cpp out-of-order path).
+                flushPendingReasoning(
+                  item as Parameters<typeof flushPendingReasoning>[0],
+                )
               }
             }
 
