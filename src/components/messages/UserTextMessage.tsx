@@ -4,6 +4,7 @@ import * as React from 'react'
 import { NO_CONTENT_MESSAGE } from '../../constants/messages.js'
 import {
   COMMAND_MESSAGE_TAG,
+  COMMAND_NAME_TAG,
   LOCAL_COMMAND_CAVEAT_TAG,
   TASK_NOTIFICATION_TAG,
   TEAMMATE_MESSAGE_TAG,
@@ -109,7 +110,18 @@ export function UserTextMessage({
   }
 
   // Slash commands/
-  if (param.text.startsWith(`<${COMMAND_MESSAGE_TAG}>`)) {
+  // The main slash-command path (formatCommandInputTags in messages.ts) emits
+  // `<command-name>…</command-name>\n<command-message>…</command-message>\n…`,
+  // so the synthetic text starts with <command-name>, not <command-message>.
+  // Loading-state metadata (formatSlashCommandLoadingMetadata,
+  // formatSkillLoadingMetadata) starts with <command-message>. Match both —
+  // and require the <command-message> tag to actually be present so a stray
+  // user paste of `<command-name>…` without it falls through to UserPromptMessage.
+  if (
+    (param.text.startsWith(`<${COMMAND_NAME_TAG}>`) ||
+      param.text.startsWith(`<${COMMAND_MESSAGE_TAG}>`)) &&
+    param.text.includes(`<${COMMAND_MESSAGE_TAG}>`)
+  ) {
     return <UserCommandMessage addMargin={addMargin} param={param} />
   }
 
