@@ -309,24 +309,54 @@ function translateMessages(
           block.type === 'thinking' &&
           msg.role === 'assistant' &&
           typeof block.codexReasoningId === 'string' &&
-          block.codexReasoningId.length > 0 &&
-          typeof block.codexEncryptedContent === 'string' &&
-          block.codexEncryptedContent.length > 0
+          block.codexReasoningId.length > 0
         ) {
-          // Echo prior-turn Codex reasoning back verbatim so the model can
-          // build on it. Blocks lacking the side-channel fields (foreign
-          // provenance, or imported transcripts) are skipped — reasoning
-          // continuity simply starts fresh at that message.
+          // Echo prior-turn Codex reasoning back so the model can build on it.
+          // Two backends to satisfy in one shape:
+          //   - OpenAI Codex / GPT-5.x: stateful; uses opaque
+          //     `encrypted_content` for continuity. Visible `summary[]` may
+          //     be empty (high-effort summary-less mode).
+          //   - llama.cpp /v1/responses (Qwen3.x with --chat-template-kwargs
+          //     preserve_thinking=true): stateless; always returns
+          //     encrypted_content:"" on responses, and reads
+          //     `content[].text` (type "reasoning_text") into
+          //     `message.reasoning_content` on input. `summary[]` is
+          //     parsed-and-discarded server-side but its presence is a
+          //     type-discriminator on the input parser.
+          // Foreign-provenance / imported transcripts have no
+          // `codexReasoningId` and are skipped above — reasoning continuity
+          // simply restarts at that message.
           const summaryText =
             typeof block.thinking === 'string' ? block.thinking : ''
-          codexInput.push({
+          const encryptedContent =
+            typeof block.codexEncryptedContent === 'string'
+              ? block.codexEncryptedContent
+              : ''
+
+          // Skip the round-trip only when there's literally nothing to carry.
+          if (!summaryText && !encryptedContent) {
+            continue
+          }
+
+          const reasoningItem: Record<string, unknown> = {
             type: 'reasoning',
             id: block.codexReasoningId,
-            encrypted_content: block.codexEncryptedContent,
+            encrypted_content: encryptedContent,
             summary: summaryText
               ? [{ type: 'summary_text', text: summaryText }]
               : [],
-          })
+          }
+          // `content[]` is what llama.cpp actually reads; OpenAI tolerates
+          // it per the Responses-API input spec. Omit when no visible text
+          // exists (real-OpenAI summary-less path) — an empty `content[]`
+          // would 400 on llama.cpp's parser.
+          if (summaryText) {
+            reasoningItem.content = [
+              { type: 'reasoning_text', text: summaryText },
+            ]
+          }
+
+          codexInput.push(reasoningItem)
         }
       }
     }

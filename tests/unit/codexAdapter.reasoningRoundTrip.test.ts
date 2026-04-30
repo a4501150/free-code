@@ -218,6 +218,13 @@ describe('Codex adapter: reasoning round-trip', () => {
       expect(summary[0].type).toBe('summary_text')
       expect(summary[0].text).toBe('Prior reasoning summary')
 
+      // `content[]` must accompany the summary on the OpenAI happy path —
+      // it's what llama.cpp reads, and OpenAI tolerates it per spec.
+      const content = reasoningItem!.content as Array<Record<string, unknown>>
+      expect(content).toEqual([
+        { type: 'reasoning_text', text: 'Prior reasoning summary' },
+      ])
+
       // The reasoning item must appear BEFORE the text message that comes
       // from the same assistant turn (in original block order).
       const reasoningIdx = input.findIndex(i => i.type === 'reasoning')
@@ -291,6 +298,322 @@ describe('Codex adapter: reasoning round-trip', () => {
       expect(reasoningItem).toBeUndefined()
       // The thinking text must NOT have leaked into any other item.
       expect(JSON.stringify(input)).not.toContain('foreign provenance')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test('outbound — llama.cpp reasoning with empty encrypted_content emits content[] with reasoning_text', async () => {
+    let capturedBody: Record<string, unknown> = {}
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      if (typeof init?.body === 'string') {
+        capturedBody = JSON.parse(init.body)
+      }
+      const sse = [
+        'event: response.completed',
+        'data: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":0}}}',
+        '',
+        '',
+      ].join('\n')
+      return new Response(sse, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    try {
+      const adapterFetch = createCodexFetch({
+        accessToken: 'unused',
+        baseUrl: 'http://localhost',
+        getSessionId: () => 'test-session',
+      })
+
+      const reasoningText = 'Qwen preserved thinking for turn one.'
+      const anthropicBody = {
+        model: 'gpt-test',
+        messages: [
+          { role: 'user', content: 'first question' },
+          {
+            role: 'assistant',
+            content: [
+              {
+                type: 'thinking',
+                thinking: reasoningText,
+                signature: '',
+                codexReasoningId: 'rs_llama_prev_turn',
+                // Explicitly empty — simulates llama.cpp's stateless response
+                // shape where encrypted_content:"" is returned and stored.
+                codexEncryptedContent: '',
+              },
+              { type: 'text', text: 'Prior answer' },
+            ],
+          },
+          { role: 'user', content: 'follow up' },
+        ],
+      }
+
+      const response = await adapterFetch('http://localhost/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(anthropicBody),
+      })
+      if (response.body) {
+        const reader = response.body.getReader()
+        while (!(await reader.read()).done) {
+          /* noop */
+        }
+      }
+
+      const input = capturedBody.input as Array<Record<string, unknown>>
+      const reasoningItem = input.find(i => i.type === 'reasoning')
+      expect(reasoningItem).toBeDefined()
+      expect(reasoningItem!.id).toBe('rs_llama_prev_turn')
+      expect(reasoningItem!.encrypted_content).toBe('')
+      expect(reasoningItem!.summary).toEqual([
+        { type: 'summary_text', text: reasoningText },
+      ])
+      expect(reasoningItem!.content).toEqual([
+        { type: 'reasoning_text', text: reasoningText },
+      ])
+
+      const reasoningIdx = input.findIndex(i => i.type === 'reasoning')
+      const messageIdx = input.findIndex(
+        i => i.type === 'message' && i.role === 'assistant',
+      )
+      expect(reasoningIdx).toBeGreaterThan(-1)
+      expect(messageIdx).toBeGreaterThan(reasoningIdx)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test('outbound — llama.cpp reasoning with codexEncryptedContent field absent still round-trips', async () => {
+    // The streaming-emit gate at codex-fetch-adapter.ts:1180 only stores
+    // `codexEncryptedContent` when the inbound encrypted_content is truthy.
+    // For llama.cpp (always returns ""), the in-memory thinking block ends
+    // up with the field ENTIRELY ABSENT — this test exercises that real
+    // shape, distinct from Test A which sets it to '' explicitly.
+    let capturedBody: Record<string, unknown> = {}
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      if (typeof init?.body === 'string') {
+        capturedBody = JSON.parse(init.body)
+      }
+      const sse = [
+        'event: response.completed',
+        'data: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":0}}}',
+        '',
+        '',
+      ].join('\n')
+      return new Response(sse, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    try {
+      const adapterFetch = createCodexFetch({
+        accessToken: 'unused',
+        baseUrl: 'http://localhost',
+        getSessionId: () => 'test-session',
+      })
+
+      const reasoningText = 'Qwen reasoning, no encrypted content stored.'
+      const anthropicBody = {
+        model: 'gpt-test',
+        messages: [
+          {
+            role: 'assistant',
+            content: [
+              {
+                type: 'thinking',
+                thinking: reasoningText,
+                signature: '',
+                codexReasoningId: 'rs_llama_absent_field',
+                // codexEncryptedContent intentionally omitted — mirrors the
+                // in-memory shape produced when streaming-inbound dropped
+                // an empty encrypted_content.
+              },
+              { type: 'text', text: 'Prior answer' },
+            ],
+          },
+          { role: 'user', content: 'follow up' },
+        ],
+      }
+
+      const response = await adapterFetch('http://localhost/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(anthropicBody),
+      })
+      if (response.body) {
+        const reader = response.body.getReader()
+        while (!(await reader.read()).done) {
+          /* noop */
+        }
+      }
+
+      const input = capturedBody.input as Array<Record<string, unknown>>
+      const reasoningItem = input.find(i => i.type === 'reasoning')
+      expect(reasoningItem).toBeDefined()
+      expect(reasoningItem!.id).toBe('rs_llama_absent_field')
+      // The type guard in the adapter must default missing field to ''.
+      expect(reasoningItem!.encrypted_content).toBe('')
+      expect(reasoningItem!.summary).toEqual([
+        { type: 'summary_text', text: reasoningText },
+      ])
+      expect(reasoningItem!.content).toEqual([
+        { type: 'reasoning_text', text: reasoningText },
+      ])
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test('outbound — summary-less encrypted reasoning emits no content field', async () => {
+    // Real-OpenAI Codex/GPT-5.x high-effort path: encrypted_content present
+    // but visible thinking text empty. We must round-trip the encrypted
+    // blob with summary:[] and NO content field — emitting an empty
+    // content[] would 400 on llama.cpp's parser.
+    let capturedBody: Record<string, unknown> = {}
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      if (typeof init?.body === 'string') {
+        capturedBody = JSON.parse(init.body)
+      }
+      const sse = [
+        'event: response.completed',
+        'data: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":0}}}',
+        '',
+        '',
+      ].join('\n')
+      return new Response(sse, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    try {
+      const adapterFetch = createCodexFetch({
+        accessToken: 'unused',
+        baseUrl: 'http://localhost',
+        getSessionId: () => 'test-session',
+      })
+
+      const anthropicBody = {
+        model: 'gpt-test',
+        messages: [
+          {
+            role: 'assistant',
+            content: [
+              {
+                type: 'thinking',
+                thinking: '',
+                signature: '',
+                codexReasoningId: 'rs_summaryless_prev_turn',
+                codexEncryptedContent: 'ENC_ONLY_BLOB',
+              },
+              { type: 'text', text: 'Prior answer' },
+            ],
+          },
+          { role: 'user', content: 'follow up' },
+        ],
+      }
+
+      const response = await adapterFetch('http://localhost/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(anthropicBody),
+      })
+      if (response.body) {
+        const reader = response.body.getReader()
+        while (!(await reader.read()).done) {
+          /* noop */
+        }
+      }
+
+      const input = capturedBody.input as Array<Record<string, unknown>>
+      const reasoningItem = input.find(i => i.type === 'reasoning')
+      expect(reasoningItem).toBeDefined()
+      expect(reasoningItem!.id).toBe('rs_summaryless_prev_turn')
+      expect(reasoningItem!.encrypted_content).toBe('ENC_ONLY_BLOB')
+      expect(reasoningItem!.summary).toEqual([])
+      // Critical: no content field at all (not [], not undefined-as-key —
+      // the property must be absent so JSON.stringify omits it).
+      expect(
+        Object.prototype.hasOwnProperty.call(reasoningItem!, 'content'),
+      ).toBe(false)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test('outbound — reasoning block with id but no text or encrypted_content is skipped', async () => {
+    let capturedBody: Record<string, unknown> = {}
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      if (typeof init?.body === 'string') {
+        capturedBody = JSON.parse(init.body)
+      }
+      const sse = [
+        'event: response.completed',
+        'data: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":0}}}',
+        '',
+        '',
+      ].join('\n')
+      return new Response(sse, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    try {
+      const adapterFetch = createCodexFetch({
+        accessToken: 'unused',
+        baseUrl: 'http://localhost',
+        getSessionId: () => 'test-session',
+      })
+
+      const anthropicBody = {
+        model: 'gpt-test',
+        messages: [
+          {
+            role: 'assistant',
+            content: [
+              {
+                type: 'thinking',
+                thinking: '',
+                signature: '',
+                codexReasoningId: 'rs_empty_noop',
+                codexEncryptedContent: '',
+              },
+              { type: 'text', text: 'hello' },
+            ],
+          },
+        ],
+      }
+
+      const response = await adapterFetch('http://localhost/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(anthropicBody),
+      })
+      if (response.body) {
+        const reader = response.body.getReader()
+        while (!(await reader.read()).done) {
+          /* noop */
+        }
+      }
+
+      const input = capturedBody.input as Array<Record<string, unknown>>
+      const reasoningItem = input.find(i => i.type === 'reasoning')
+      expect(reasoningItem).toBeUndefined()
+      expect(JSON.stringify(input)).not.toContain('rs_empty_noop')
+      // The text block must still translate normally.
+      expect(
+        input.some(i => i.type === 'message' && i.role === 'assistant'),
+      ).toBe(true)
     } finally {
       globalThis.fetch = originalFetch
     }

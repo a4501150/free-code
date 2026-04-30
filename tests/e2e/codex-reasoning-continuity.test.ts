@@ -131,9 +131,111 @@ describe('Codex reasoning continuity E2E', () => {
     const summary = reasoningItem!.summary as Array<Record<string, unknown>>
     expect(Array.isArray(summary)).toBe(true)
     expect(summary[0]?.type).toBe('summary_text')
+    expect(summary[0]?.text).toBe('Reasoning aloud for turn one.')
+
+    // `content[]` is the field llama.cpp reads into reasoning_content; we
+    // also emit it on the OpenAI happy path now (tolerated per spec).
+    const content = reasoningItem!.content as Array<Record<string, unknown>>
+    expect(content).toEqual([
+      { type: 'reasoning_text', text: 'Reasoning aloud for turn one.' },
+    ])
 
     // The turn 1 reasoning item must appear BEFORE any assistant
     // text-message item from turn 1 (in original block order).
+    const reasoningIdx = input.findIndex(i => i.type === 'reasoning')
+    const turn1MsgIdx = input.findIndex(
+      i => i.type === 'message' && i.role === 'assistant',
+    )
+    expect(reasoningIdx).toBeGreaterThan(-1)
+    if (turn1MsgIdx !== -1) {
+      expect(reasoningIdx).toBeLessThan(turn1MsgIdx)
+    }
+  })
+
+  test('turn 2 request input[] echoes llama.cpp reasoning text with empty encrypted_content', async () => {
+    // Validates the stateless-backend continuity path: llama.cpp /v1/responses
+    // (e.g. Qwen3.x with --chat-template-kwargs preserve_thinking=true)
+    // returns encrypted_content:"" because it has no server-side state to
+    // encrypt. The harness must still echo the prior turn's reasoning back
+    // via content[].text — that's what llama.cpp's input parser reads into
+    // message.reasoning_content for the chat template to render.
+    const turn1ReasoningText = 'Qwen preserved thinking for turn one.'
+
+    const primeTurn2 = () => ({
+      kind: 'reasoning_text' as const,
+      reasoningId: 'rs_llama_turn2_XYZ',
+      encryptedContent: '',
+      reasoningText: 'Building on preserved llama.cpp thinking.',
+      text: 'LlamaTurn2Answer',
+    })
+    codexServer.reset([
+      {
+        kind: 'reasoning_text' as const,
+        reasoningId: 'rs_llama_turn1_ABC',
+        encryptedContent: '',
+        reasoningText: turn1ReasoningText,
+        text: 'LlamaTurn1Answer',
+      },
+      primeTurn2(),
+      primeTurn2(),
+      primeTurn2(),
+      primeTurn2(),
+      primeTurn2(),
+    ])
+    anthropicServer.reset([textResponse('fallback')])
+
+    session = new TmuxSession({
+      serverUrl: anthropicServer.url,
+      settings: {
+        providers: {
+          'test-codex': {
+            type: 'openai-responses',
+            baseUrl: codexServer.url,
+            auth: {
+              active: 'bearer',
+              bearer: { token: 'test-codex-bearer' },
+            },
+            models: [{ id: 'gpt-5-codex', label: 'Codex' }],
+          },
+        },
+      },
+      additionalArgs: ['--model', 'gpt-5-codex'],
+    })
+    await session.start()
+
+    await session.sendLine('First llama question please')
+    await session.waitForText('LlamaTurn1Answer', 20_000)
+
+    const turn1Count = codexServer.getRequestCount()
+
+    await session.sendLine('Second llama follow-up question')
+    await session.waitForText('LlamaTurn2Answer', 20_000)
+
+    const requests = codexServer.getRequestLog()
+    expect(requests.length).toBeGreaterThanOrEqual(turn1Count + 1)
+
+    for (const req of requests) {
+      expect(Array.isArray(req.body.include)).toBe(true)
+      expect(req.body.include).toContain('reasoning.encrypted_content')
+    }
+
+    const turn2First = requests[turn1Count]!
+    const input = (turn2First.body.input || []) as Array<
+      Record<string, unknown>
+    >
+    const reasoningItem = input.find(i => i.type === 'reasoning')
+    expect(reasoningItem).toBeDefined()
+    expect(reasoningItem!.id).toBe('rs_llama_turn1_ABC')
+    // Critical: empty encrypted_content must NOT block the round-trip.
+    expect(reasoningItem!.encrypted_content).toBe('')
+    expect(reasoningItem!.summary).toEqual([
+      { type: 'summary_text', text: turn1ReasoningText },
+    ])
+    // Critical: content[] is what llama.cpp's input parser reads.
+    expect(reasoningItem!.content).toEqual([
+      { type: 'reasoning_text', text: turn1ReasoningText },
+    ])
+
     const reasoningIdx = input.findIndex(i => i.type === 'reasoning')
     const turn1MsgIdx = input.findIndex(
       i => i.type === 'message' && i.role === 'assistant',
