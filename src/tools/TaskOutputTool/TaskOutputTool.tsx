@@ -204,7 +204,7 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
     },
 
     async prompt() {
-      return `DEPRECATED: Prefer using the Read tool on the task's output file path instead. Background tasks return their output file path in the tool result, and you receive a <task-notification> with the same path when the task completes — Read that file directly.
+      return `DEPRECATED: Prefer using the Read tool on the task's output file path. Background tasks return their output file path immediately when the task is created — Read that file to see the task's streaming stdout/stderr as it accumulates. When the task completes (exits with an exit code), you receive a <task-notification> system message with the task's id, status (completed/failed/killed), exit code, and summary.
 
 - Retrieves output from a running or completed background task
 - Takes a task_id parameter identifying the task

@@ -28,7 +28,7 @@ function getBackgroundUsageNote(): string | null {
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
     return null
   }
-  return "If you're about to use `sleep` or a poll loop to wait for a command, use `run_in_background: true` instead. The tool returns immediately with the output file path, and a system notification with that path arrives in a later turn when the command finishes."
+  return "If you're about to use `sleep` or a polling loop, use `run_in_background: true` instead. The tool returns immediately with a task ID and a file path that streams the command's stdout/stderr (Read the file to see output as it accumulates). When the command exits, a <task-notification> system message arrives in a later turn with the task's id, status (completed/failed/killed), exit code, and summary. The notification only fires when the bash command exits — sleeping or polling on your end does not change when it arrives. For polling external state via bash, wrap the polling in a single backgrounded bash loop with a clear exit condition (e.g. `while ! check; do sleep 5; done`). If you need to background commands that never terminate (so the notification never fires) — for example, `tail -f`, dev servers, long-running watchers — Read the output file path to peek at progress, and stop the task via BackgroundTaskStop when it's no longer needed."
 }
 
 function getCommitAndPRInstructions(): string {
