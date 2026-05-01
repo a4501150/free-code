@@ -20,6 +20,7 @@ import { CtrlOToExpand } from '../CtrlOToExpand.js'
 import { useSelectedMessageBg } from '../messageActions.js'
 import { PrBadge } from '../PrBadge.js'
 import { ToolUseLoader } from '../ToolUseLoader.js'
+import { UserToolErrorMessage } from './UserToolResultMessage/UserToolErrorMessage.js'
 
 import * as teamMemCollapsedNs from './teamMemCollapsed.js'
 const teamMemCollapsed = feature('TEAMMEM') ? teamMemCollapsedNs : null
@@ -118,6 +119,36 @@ function VerboseToolUse({
           })}
         </Box>
       )}
+      {isResolved &&
+        isError &&
+        resultMsg?.type === 'user' &&
+        (() => {
+          // Surface error details (classifier denies, tool errors, etc.) when
+          // the user expands the collapsed group via ctrl+o. Without this, an
+          // auto-mode classifier deny would never reach the standard
+          // UserToolErrorMessage path because the bash tool_result is part of
+          // the collapsed group.
+          const errorBlock = Array.isArray(resultMsg.message.content)
+            ? resultMsg.message.content.find(
+                (
+                  b,
+                ): b is import('@anthropic-ai/sdk/resources/index.mjs').ToolResultBlockParam =>
+                  b.type === 'tool_result' && b.tool_use_id === content.id,
+              )
+            : undefined
+          if (!errorBlock) return null
+          return (
+            <UserToolErrorMessage
+              progressMessagesForMessage={
+                lookups.progressMessagesByToolUseID.get(content.id) ?? []
+              }
+              tool={tool}
+              tools={tools}
+              param={errorBlock}
+              verbose={true}
+            />
+          )
+        })()}
     </Box>
   )
 }

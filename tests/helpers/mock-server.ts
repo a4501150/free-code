@@ -7,10 +7,36 @@
 
 import {
   type MockResponse,
+  type MockSuccessResponse,
   encodeSuccessSSE,
   encodeErrorJSON,
   resetMessageCounter,
 } from './sse-encoder'
+
+/**
+ * Encode a MockSuccessResponse as a non-streaming JSON Anthropic Message
+ * (matches the body shape SDK callers get when stream:false). Used by the
+ * mock when callers like sideQuery() / client.beta.messages.create() send
+ * stream:false — those expect JSON, not SSE.
+ */
+function encodeSuccessJSON(response: MockSuccessResponse, id: string): string {
+  return JSON.stringify({
+    id,
+    type: 'message',
+    role: 'assistant',
+    model: response.model ?? 'claude-sonnet-4-20250514',
+    content: response.content,
+    stop_reason: response.stop_reason,
+    stop_sequence: null,
+    usage: {
+      input_tokens: response.usage?.input_tokens ?? 100,
+      output_tokens: response.usage?.output_tokens ?? 50,
+      cache_creation_input_tokens:
+        response.usage?.cache_creation_input_tokens ?? 0,
+      cache_read_input_tokens: response.usage?.cache_read_input_tokens ?? 0,
+    },
+  })
+}
 
 export interface RequestLogEntry {
   method: string
@@ -134,8 +160,28 @@ export class MockAnthropicServer {
 
     const mockResponse = this.responses[responseIndex]
 
+    // Non-streaming callers (sideQuery / client.beta.messages.create without
+    // stream:true) need JSON, not SSE. The Anthropic SDK only parses SSE when
+    // the request was made in streaming mode, so always returning SSE breaks
+    // these callers (the SDK throws and treats the response as unavailable).
+    const isStreaming = body.stream === true
+
     switch (mockResponse.kind) {
       case 'success': {
+        const requestId = `req_test_${String(responseIndex + 1).padStart(4, '0')}`
+        if (!isStreaming) {
+          const jsonBody = encodeSuccessJSON(
+            mockResponse.response,
+            `msg_test_${String(responseIndex + 1).padStart(4, '0')}`,
+          )
+          return new Response(jsonBody, {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/json',
+              'request-id': requestId,
+            },
+          })
+        }
         const sseBody = encodeSuccessSSE(mockResponse.response)
         return new Response(sseBody, {
           status: 200,
@@ -143,7 +189,7 @@ export class MockAnthropicServer {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
             Connection: 'keep-alive',
-            'request-id': `req_test_${String(responseIndex + 1).padStart(4, '0')}`,
+            'request-id': requestId,
           },
         })
       }

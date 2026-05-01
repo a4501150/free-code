@@ -34,6 +34,12 @@ export interface TmuxSessionOptions {
   additionalEnv?: Record<string, string>
   /** Extra CLI args to append */
   additionalArgs?: string[]
+  /**
+   * Override the CLI binary path. Defaults to ./cli (the standard build).
+   * Use ./cli-dev for tests that need full experimental features compiled in
+   * (e.g., TRANSCRIPT_CLASSIFIER for auto-mode classifier flows).
+   */
+  cliBinary?: string
   /** Project-level settings to write to settings.json */
   settings?: Record<string, unknown>
   /**
@@ -71,6 +77,7 @@ export class TmuxSession {
   private _reuseConfigDir?: string
   private _reuseHomeDir?: string
   private _readyText: string
+  private _cliBinary: string
   /**
    * True when configDir/homeDir come from the caller (via reuseConfigDir /
    * reuseHomeDir) and must NOT be deleted by stop().
@@ -90,6 +97,7 @@ export class TmuxSession {
     this._reuseConfigDir = options.reuseConfigDir
     this._reuseHomeDir = options.reuseHomeDir
     this._readyText = options.readyText ?? 'for shortcuts'
+    this._cliBinary = options.cliBinary ?? CLI_BINARY
   }
 
   /** Get the temp CWD path (only valid after start()) */
@@ -216,7 +224,7 @@ export class TmuxSession {
     // Create the tmux session. `env -i` wipes the child env so only the keys
     // listed in `envVars` are visible to the CLI process — this is what
     // prevents host-level Anthropic env vars from polluting the test.
-    const cmd = `tmux new-session -d -s ${this.sessionName} -x ${this._width} -y ${this._height} "cd ${shellEscape(this._cwd)} && env -i ${envString} ${CLI_BINARY} ${cliArgs}; sleep 30"`
+    const cmd = `tmux new-session -d -s ${this.sessionName} -x ${this._width} -y ${this._height} "cd ${shellEscape(this._cwd)} && env -i ${envString} ${this._cliBinary} ${cliArgs}; sleep 30"`
     await exec(cmd)
 
     this.started = true
