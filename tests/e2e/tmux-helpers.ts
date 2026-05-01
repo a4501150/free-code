@@ -386,6 +386,16 @@ export class TmuxSession {
       if (screen.includes(this._readyText)) {
         return 'idle'
       }
+      // The "? for shortcuts" footer is suppressed when background tasks are
+      // present (replaced by task status UI). Detect idle via completion
+      // notifications that only appear after the turn ends.
+      if (
+        screen.includes('Started in background.') ||
+        screen.includes('Ran 1 bash command') ||
+        screen.includes('bash commands')
+      ) {
+        return 'idle'
+      }
       await sleep(interval)
     }
     await this.dumpLog()

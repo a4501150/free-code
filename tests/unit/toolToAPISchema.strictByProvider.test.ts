@@ -113,7 +113,9 @@ describe('toolToAPISchema: universal strict-shape + selective wire strict', () =
     )
     // Optional fields widened with null union.
     const offset = inputSchema.properties.offset
-    expect(JSON.stringify(offset)).toContain('"type":"null"')
+    // The widenWithNull function emits flat type arrays: type: ["number", "null"].
+    // Check that the type includes null (as array element or standalone).
+    expect(offset.type).toEqual(expect.arrayContaining(['null']))
     // Strict-disallowed keywords stripped universally so the same schema
     // bytes work everywhere (Anthropic-strict allowlist + OpenAI strict).
     expect(JSON.stringify(inputSchema)).not.toContain('"minimum"')

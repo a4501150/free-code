@@ -85,8 +85,8 @@ describe('Anthropic strict-tools wire-up', () => {
     const offset = (
       readTool!.input_schema!.properties as Record<string, unknown>
     ).offset
-    // Optional widened with null: anyOf:[T,{type:'null'}] or type:["...","null"].
-    expect(JSON.stringify(offset)).toContain('"type":"null"')
+    // Optional widened with null: type:["...","null"] (flat array format).
+    expect(offset.type).toEqual(expect.arrayContaining(['null']))
 
     // Without model-level structuredOutputs declared, even allowlist tools
     // ship without `strict: true` on the wire.
