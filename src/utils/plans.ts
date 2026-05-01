@@ -11,7 +11,7 @@ import type {
   UserMessage,
 } from 'src/types/message.js'
 import { getPlanSlugCache, getSessionId } from '../bootstrap/state.js'
-import { EXIT_PLAN_MODE_V2_TOOL_NAME } from '../tools/ExitPlanModeTool/constants.js'
+import { EXIT_PLAN_MODE_TOOL_NAME } from '../tools/ExitPlanModeTool/constants.js'
 import { getCwd } from './cwd.js'
 import { recordTranscript } from './sessionStorage.js'
 import { logForDebugging } from './debug.js'
@@ -290,7 +290,7 @@ function recoverPlanFromMessages(log: LogOption): string | null {
         for (const block of content) {
           if (
             block.type === 'tool_use' &&
-            block.name === EXIT_PLAN_MODE_V2_TOOL_NAME
+            block.name === EXIT_PLAN_MODE_TOOL_NAME
           ) {
             const input = block.input as Record<string, unknown> | undefined
             const plan = input?.plan

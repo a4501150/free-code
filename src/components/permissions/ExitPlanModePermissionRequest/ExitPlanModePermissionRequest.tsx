@@ -29,8 +29,7 @@ import type { KeyboardEvent } from '../../../ink/events/keyboard-event.js'
 import { Box, Text } from '../../../ink.js'
 import type { AppState } from '../../../state/AppStateStore.js'
 import { AGENT_TOOL_NAME } from '../../../tools/AgentTool/constants.js'
-import { EXIT_PLAN_MODE_V2_TOOL_NAME } from '../../../tools/ExitPlanModeTool/constants.js'
-import type { AllowedPrompt } from '../../../tools/ExitPlanModeTool/ExitPlanModeV2Tool.js'
+import type { AllowedPrompt } from '../../../tools/ExitPlanModeTool/ExitPlanModeTool.js'
 import { TEAM_CREATE_TOOL_NAME } from '../../../tools/TeamCreateTool/constants.js'
 import { isAgentSwarmsEnabled } from '../../../utils/agentSwarmsEnabled.js'
 import {
@@ -62,12 +61,9 @@ import {
   restoreDangerousPermissions,
   stripDangerousPermissionsForAutoMode,
 } from '../../../utils/permissions/permissionSetup.js'
-import { isPlanModeInterviewPhaseEnabled } from '../../../utils/planModeV2.js'
+import { isPlanModeInterviewPhaseEnabled } from '../../../utils/planMode.js'
 import { getPlan, getPlanFilePath } from '../../../utils/plans.js'
-import {
-  editFileInEditor,
-  editPromptInEditor,
-} from '../../../utils/promptEditor.js'
+import { editFileInEditor } from '../../../utils/promptEditor.js'
 import {
   getCurrentSessionTitle,
   getTranscriptPath,
@@ -278,15 +274,7 @@ export function ExitPlanModePermissionRequest({
   )
   const hasImages = imageAttachments.length > 0
 
-  // TODO: Delete the branch after moving to V2
-  // Use tool name to detect V2 instead of checking input.plan, because PR #10394
-  // injects plan content into input.plan for hooks/SDK, which broke the old detection
-  // (see issue #10878)
-  const isV2 = toolUseConfirm.tool.name === EXIT_PLAN_MODE_V2_TOOL_NAME
-  const inputPlan = isV2
-    ? undefined
-    : (toolUseConfirm.input.plan as string | undefined)
-  const planFilePath = isV2 ? getPlanFilePath() : undefined
+  const planFilePath = getPlanFilePath()
 
   // Extract allowed prompts requested by the plan (Ant-only feature)
   const allowedPrompts = toolUseConfirm.input.allowedPrompts as
@@ -294,11 +282,10 @@ export function ExitPlanModePermissionRequest({
     | undefined
 
   // Get the raw plan to check if it's empty
-  const rawPlan = inputPlan ?? getPlan()
+  const rawPlan = getPlan()
   const isEmpty = !rawPlan || rawPlan.trim() === ''
 
   const [currentPlan, setCurrentPlan] = useState(() => {
-    if (inputPlan) return inputPlan
     const plan = getPlan()
     return (
       plan ?? 'No plan found. Please write your plan to the plan file first.'
@@ -324,35 +311,19 @@ export function ExitPlanModePermissionRequest({
       e.preventDefault()
 
       void (async () => {
-        if (isV2 && planFilePath) {
-          const result = await editFileInEditor(planFilePath)
-          if (result.error) {
-            addNotification({
-              key: 'external-editor-error',
-              text: result.error,
-              color: 'warning',
-              priority: 'high',
-            })
-          }
-          if (result.content !== null) {
-            if (result.content !== currentPlan) setPlanEditedLocally(true)
-            setCurrentPlan(result.content)
-            setShowSaveMessage(true)
-          }
-        } else {
-          const result = await editPromptInEditor(currentPlan)
-          if (result.error) {
-            addNotification({
-              key: 'external-editor-error',
-              text: result.error,
-              color: 'warning',
-              priority: 'high',
-            })
-          }
-          if (result.content !== null && result.content !== currentPlan) {
-            setCurrentPlan(result.content)
-            setShowSaveMessage(true)
-          }
+        const result = await editFileInEditor(planFilePath)
+        if (result.error) {
+          addNotification({
+            key: 'external-editor-error',
+            text: result.error,
+            color: 'warning',
+            priority: 'high',
+          })
+        }
+        if (result.content !== null) {
+          if (result.content !== currentPlan) setPlanEditedLocally(true)
+          setCurrentPlan(result.content)
+          setShowSaveMessage(true)
         }
       })()
       return
@@ -397,10 +368,10 @@ export function ExitPlanModePermissionRequest({
       return
     }
 
-    // V1: pass plan in input. V2: plan is on disk, but if the user edited it
-    // via Ctrl+G we pass it through so the tool echoes the edit in tool_result
+    // The tool reads the plan from disk; pass plan in input only when the user
+    // edited it via Ctrl+G so the tool echoes the edit in tool_result
     // (otherwise the model never sees the user's changes).
-    const updatedInput = isV2 && !planEditedLocally ? {} : { plan: currentPlan }
+    const updatedInput = planEditedLocally ? { plan: currentPlan } : {}
 
     // If auto was active during plan (from auto mode or opt-in) and NOT going
     // to auto, deactivate auto + restore permissions + fire exit attachment.
@@ -657,7 +628,7 @@ export function ExitPlanModePermissionRequest({
             <Text bold dimColor>
               {editorName}
             </Text>
-            {isV2 && planFilePath && (
+            {planFilePath && (
               <Text dimColor> · {getDisplayPath(planFilePath)}</Text>
             )}
             {showSaveMessage && (
@@ -679,7 +650,6 @@ export function ExitPlanModePermissionRequest({
     options,
     pastedContents,
     editorName,
-    isV2,
     planFilePath,
     showSaveMessage,
   ])
@@ -818,7 +788,7 @@ export function ExitPlanModePermissionRequest({
             <Text bold dimColor>
               {editorName}
             </Text>
-            {isV2 && planFilePath && (
+            {planFilePath && (
               <Text dimColor> · {getDisplayPath(planFilePath)}</Text>
             )}
           </Box>

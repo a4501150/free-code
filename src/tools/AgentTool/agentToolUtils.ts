@@ -56,7 +56,7 @@ import {
 import { emitTaskProgress as emitTaskProgressEvent } from '../../utils/task/sdkProgress.js'
 import { isInProcessTeammate } from '../../utils/teammateContext.js'
 import { getTokenCountFromUsage } from '../../utils/tokens.js'
-import { EXIT_PLAN_MODE_V2_TOOL_NAME } from '../ExitPlanModeTool/constants.js'
+import { EXIT_PLAN_MODE_TOOL_NAME } from '../ExitPlanModeTool/constants.js'
 import { AGENT_TOOL_NAME, LEGACY_AGENT_TOOL_NAME } from './constants.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 export type ResolvedAgentTools = {
@@ -86,7 +86,7 @@ export function filterToolsForAgent({
     // Allow ExitPlanMode for agents in plan mode (e.g., in-process teammates)
     // This bypasses both the ALL_AGENT_DISALLOWED_TOOLS and async tool filters
     if (
-      toolMatchesName(tool, EXIT_PLAN_MODE_V2_TOOL_NAME) &&
+      toolMatchesName(tool, EXIT_PLAN_MODE_TOOL_NAME) &&
       permissionMode === 'plan'
     ) {
       return true

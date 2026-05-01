@@ -24,6 +24,10 @@ import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
 import { type Task, listTasks, getTaskListId } from './tasks.js'
 import { getPlanFilePath, getPlan } from './plans.js'
+import {
+  type PlanModeRenderContext,
+  snapshotPlanModeRenderContext,
+} from './planMode.js'
 import { getConnectedIdeName } from './ide.js'
 import {
   filterInjectedMemoryFiles,
@@ -539,6 +543,14 @@ export type Attachment =
       isSubAgent?: boolean
       planFilePath: string
       planExists: boolean
+      /**
+       * Snapshotted at attachment creation time so re-rendering this
+       * attachment on later turns doesn't drift when subscription tier or
+       * project config changes mid-session — drift would bust the prompt
+       * cache prefix. Optional for backwards compatibility with attachments
+       * loaded from older transcripts; render path falls back to live values.
+       */
+      renderContext?: PlanModeRenderContext
     }
   | {
       type: 'plan_mode_reentry'
@@ -1195,6 +1207,7 @@ async function getPlanModeAttachments(
     isSubAgent: !!toolUseContext.agentId,
     planFilePath,
     planExists: existingPlan !== null,
+    renderContext: snapshotPlanModeRenderContext(),
   })
 
   return attachments

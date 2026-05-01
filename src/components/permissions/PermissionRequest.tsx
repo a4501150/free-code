@@ -1,7 +1,7 @@
 import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { EnterPlanModeTool } from 'src/tools/EnterPlanModeTool/EnterPlanModeTool.js'
-import { ExitPlanModeV2Tool } from 'src/tools/ExitPlanModeTool/ExitPlanModeV2Tool.js'
+import { ExitPlanModeTool } from 'src/tools/ExitPlanModeTool/ExitPlanModeTool.js'
 import { useNotifyAfterTimeout } from '../../hooks/useNotifyAfterTimeout.js'
 import { useKeybinding } from '../../keybindings/useKeybinding.js'
 import type { AnyObject, Tool, ToolUseContext } from '../../Tool.js'
@@ -71,7 +71,7 @@ function permissionComponentForTool(
       return ReviewArtifactPermissionRequest ?? FallbackPermissionRequest
     case WebFetchTool:
       return WebFetchPermissionRequest
-    case ExitPlanModeV2Tool:
+    case ExitPlanModeTool:
       return ExitPlanModePermissionRequest
     case EnterPlanModeTool:
       return EnterPlanModePermissionRequest
@@ -147,7 +147,7 @@ function getNotificationMessage(toolUseConfirm: ToolUseConfirm): string {
     toolUseConfirm.input as never,
   )
 
-  if (toolUseConfirm.tool === ExitPlanModeV2Tool) {
+  if (toolUseConfirm.tool === ExitPlanModeTool) {
     return 'Claude Code needs your approval for the plan'
   }
 

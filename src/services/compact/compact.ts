@@ -35,6 +35,7 @@ import {
   getDeferredToolsDeltaAttachment,
   getMcpInstructionsDeltaAttachment,
 } from '../../utils/attachments.js'
+import { snapshotPlanModeRenderContext } from '../../utils/planMode.js'
 import { getMemoryPath } from '../../utils/config.js'
 import {
   COMPACT_MAX_OUTPUT_TOKENS,
@@ -1378,6 +1379,7 @@ export async function createPlanModeAttachmentIfNeeded(
     isSubAgent: !!context.agentId,
     planFilePath,
     planExists,
+    renderContext: snapshotPlanModeRenderContext(),
   })
 }
 

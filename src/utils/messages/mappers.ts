@@ -12,7 +12,7 @@ import type {
   SDKRateLimitInfo,
 } from 'src/entrypoints/agentSdkTypes.js'
 import type { ClaudeAILimits } from 'src/services/claudeAiLimits.js'
-import { EXIT_PLAN_MODE_V2_TOOL_NAME } from 'src/tools/ExitPlanModeTool/constants.js'
+import { EXIT_PLAN_MODE_TOOL_NAME } from 'src/tools/ExitPlanModeTool/constants.js'
 import type {
   AssistantMessage,
   CompactMetadata,
@@ -271,7 +271,7 @@ function normalizeAssistantMessageForSDK(
       return block
     }
 
-    if (block.name === EXIT_PLAN_MODE_V2_TOOL_NAME) {
+    if (block.name === EXIT_PLAN_MODE_TOOL_NAME) {
       const plan = getPlan()
       if (plan) {
         return {

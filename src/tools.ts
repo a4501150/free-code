@@ -48,7 +48,7 @@ const PushNotificationTool =
     : null
 import { TaskOutputTool } from './tools/TaskOutputTool/TaskOutputTool.js'
 import { WebSearchTool } from './tools/WebSearchTool/WebSearchTool.js'
-import { ExitPlanModeV2Tool } from './tools/ExitPlanModeTool/ExitPlanModeV2Tool.js'
+import { ExitPlanModeTool } from './tools/ExitPlanModeTool/ExitPlanModeTool.js'
 import { TestingPermissionTool } from './tools/testing/TestingPermissionTool.js'
 import { GrepTool } from './tools/GrepTool/GrepTool.js'
 import { SendMessageTool } from './tools/SendMessageTool/SendMessageTool.js'
@@ -168,7 +168,7 @@ export function getAllBaseTools(): Tools {
     // trick as ripgrep). When available, find/grep in Claude's shell are aliased
     // to these fast tools, so the dedicated Glob/Grep tools are unnecessary.
     ...(shouldPreferBashForSearch() ? [] : [GlobTool, GrepTool]),
-    ExitPlanModeV2Tool,
+    ExitPlanModeTool,
     FileReadTool,
     FileEditTool,
     FileWriteTool,
