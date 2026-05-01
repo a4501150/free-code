@@ -1365,19 +1365,12 @@ export async function createPluginFromPath(
   }
 
   // Step 3: Auto-detect optional directories in parallel
-  const [
-    commandsDirExists,
-    agentsDirExists,
-    skillsDirExists,
-    outputStylesDirExists,
-  ] = await Promise.all([
-    !manifest.commands ? pathExists(join(pluginPath, 'commands')) : false,
-    !manifest.agents ? pathExists(join(pluginPath, 'agents')) : false,
-    !manifest.skills ? pathExists(join(pluginPath, 'skills')) : false,
-    !manifest.outputStyles
-      ? pathExists(join(pluginPath, 'output-styles'))
-      : false,
-  ])
+  const [commandsDirExists, agentsDirExists, skillsDirExists] =
+    await Promise.all([
+      !manifest.commands ? pathExists(join(pluginPath, 'commands')) : false,
+      !manifest.agents ? pathExists(join(pluginPath, 'agents')) : false,
+      !manifest.skills ? pathExists(join(pluginPath, 'skills')) : false,
+    ])
 
   const commandsPath = join(pluginPath, 'commands')
   if (commandsDirExists) {
@@ -1573,34 +1566,6 @@ export async function createPluginFromPath(
 
     if (validPaths.length > 0) {
       plugin.skillsPaths = validPaths
-    }
-  }
-
-  // Step 4d: Register output-styles directory if detected
-  const outputStylesPath = join(pluginPath, 'output-styles')
-  if (outputStylesDirExists) {
-    plugin.outputStylesPath = outputStylesPath
-  }
-
-  // Step 4e: Process additional output style paths from manifest
-  if (manifest.outputStyles) {
-    const outputStylePaths = Array.isArray(manifest.outputStyles)
-      ? manifest.outputStyles
-      : [manifest.outputStyles]
-
-    const validPaths = await validatePluginPaths(
-      outputStylePaths,
-      pluginPath,
-      manifest.name,
-      source,
-      'output-styles',
-      'Output style',
-      'specified in manifest but',
-      errors,
-    )
-
-    if (validPaths.length > 0) {
-      plugin.outputStylesPaths = validPaths
     }
   }
 
@@ -2648,28 +2613,6 @@ async function finishLoadingPluginFromPath(
       logForDebugging(`Plugin ${entry.name} has no entry.skills defined`)
     }
 
-    // Process output styles from marketplace entry
-    if (entry.outputStyles) {
-      const outputStylePaths = Array.isArray(entry.outputStyles)
-        ? entry.outputStyles
-        : [entry.outputStyles]
-
-      const validPaths = await validatePluginPaths(
-        outputStylePaths,
-        pluginPath,
-        entry.name,
-        pluginId,
-        'output-styles',
-        'Output style',
-        'from marketplace entry',
-        errors,
-      )
-
-      if (validPaths.length > 0) {
-        plugin.outputStylesPaths = validPaths
-      }
-    }
-
     // Process inline hooks from marketplace entry
     if (entry.hooks) {
       plugin.hooksConfig = entry.hooks as HooksSettings
@@ -2677,18 +2620,14 @@ async function finishLoadingPluginFromPath(
   } else if (
     !entry.strict &&
     hasManifest &&
-    (entry.commands ||
-      entry.agents ||
-      entry.skills ||
-      entry.hooks ||
-      entry.outputStyles)
+    (entry.commands || entry.agents || entry.skills || entry.hooks)
   ) {
-    // In non-strict mode with plugin.json, marketplace entries for commands/agents/skills/hooks/outputStyles are conflicts
+    // In non-strict mode with plugin.json, marketplace entries for commands/agents/skills/hooks are conflicts
     const error = new Error(
-      `Plugin ${entry.name} has both plugin.json and marketplace manifest entries for commands/agents/skills/hooks/outputStyles. This is a conflict.`,
+      `Plugin ${entry.name} has both plugin.json and marketplace manifest entries for commands/agents/skills/hooks. This is a conflict.`,
     )
     logForDebugging(
-      `Plugin ${entry.name} has both plugin.json and marketplace manifest entries for commands/agents/skills/hooks/outputStyles. This is a conflict.`,
+      `Plugin ${entry.name} has both plugin.json and marketplace manifest entries for commands/agents/skills/hooks. This is a conflict.`,
       { level: 'error' },
     )
     logError(error)
@@ -2699,7 +2638,7 @@ async function finishLoadingPluginFromPath(
     })
     return null
   } else if (hasManifest) {
-    // Has plugin.json - marketplace can supplement commands/agents/skills/hooks/outputStyles
+    // Has plugin.json - marketplace can supplement commands/agents/skills/hooks
 
     // Supplement commands from marketplace entry
     if (entry.commands) {
@@ -2869,31 +2808,6 @@ async function finishLoadingPluginFromPath(
 
       if (validPaths.length > 0) {
         plugin.skillsPaths = [...(plugin.skillsPaths || []), ...validPaths]
-      }
-    }
-
-    // Supplement output styles from marketplace entry
-    if (entry.outputStyles) {
-      const outputStylePaths = Array.isArray(entry.outputStyles)
-        ? entry.outputStyles
-        : [entry.outputStyles]
-
-      const validPaths = await validatePluginPaths(
-        outputStylePaths,
-        pluginPath,
-        entry.name,
-        pluginId,
-        'output-styles',
-        'Output style',
-        'from marketplace entry',
-        errors,
-      )
-
-      if (validPaths.length > 0) {
-        plugin.outputStylesPaths = [
-          ...(plugin.outputStylesPaths || []),
-          ...validPaths,
-        ]
       }
     }
 

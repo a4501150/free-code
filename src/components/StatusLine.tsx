@@ -12,7 +12,6 @@ import {
   getSessionId,
   onCostUpdate,
 } from '../bootstrap/state.js'
-import { DEFAULT_OUTPUT_STYLE_NAME } from '../constants/outputStyles.js'
 import { useNotifications } from '../context/notifications.js'
 import {
   getTotalAPIDuration,
@@ -81,8 +80,6 @@ function buildStatusLineCommandInput(
     mainLoopModel,
     exceeds200kTokens,
   })
-  const outputStyleName = settings?.outputStyle || DEFAULT_OUTPUT_STYLE_NAME
-
   const currentUsage = getCurrentUsage(messages)
   const contextWindowSize = getContextWindowForModel(
     runtimeModel,
@@ -123,9 +120,6 @@ function buildStatusLineCommandInput(
       added_dirs: addedDirs,
     },
     version: MACRO.VERSION,
-    output_style: {
-      name: outputStyleName,
-    },
     cost: {
       total_cost_usd: getTotalCost(),
       total_duration_ms: getTotalDuration(),

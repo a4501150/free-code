@@ -53,9 +53,6 @@ export const BASE_DELAY_MS = 500
 // default to no-retry — add here only if the user is waiting on the result.
 const FOREGROUND_529_RETRY_SOURCES = new Set<QuerySource>([
   'repl_main_thread',
-  'repl_main_thread:outputStyle:custom',
-  'repl_main_thread:outputStyle:Explanatory',
-  'repl_main_thread:outputStyle:Learning',
   'sdk',
   'agent:custom',
   'agent:default',

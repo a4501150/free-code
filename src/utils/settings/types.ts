@@ -1105,10 +1105,6 @@ export const SettingsSchema = lazySchema(() =>
         .string()
         .optional()
         .describe('Path to a script that outputs OpenTelemetry headers'),
-      outputStyle: z
-        .string()
-        .optional()
-        .describe('Controls the output style for assistant responses'),
       language: z
         .string()
         .optional()
@@ -1796,12 +1792,6 @@ export const SettingsSchema = lazySchema(() =>
         .optional()
         .describe(
           'Enable enhanced cross-project resume with worktree detection.',
-        ),
-      enhancedPromptGuidance: z
-        .boolean()
-        .optional()
-        .describe(
-          'Enable enhanced prompt guidance (assertiveness, comment guidelines, false-claims mitigation, length anchors).',
         ),
       errorLogSink: z
         .boolean()

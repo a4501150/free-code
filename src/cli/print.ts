@@ -141,10 +141,6 @@ import {
   processSetupHooks,
   takeInitialUserMessage,
 } from 'src/utils/sessionStart.js'
-import {
-  DEFAULT_OUTPUT_STYLE_NAME,
-  getAllOutputStyles,
-} from 'src/constants/outputStyles.js'
 import { TEAMMATE_MESSAGE_TAG, TICK_TAG } from 'src/constants/xml.js'
 import {
   getSettings_DEPRECATED,
@@ -4012,10 +4008,6 @@ async function handleInitializeRequest(
     }
   }
 
-  const settings = getSettings_DEPRECATED()
-  const outputStyle = settings?.outputStyle || DEFAULT_OUTPUT_STYLE_NAME
-  const availableOutputStyles = await getAllOutputStyles(getCwd())
-
   // Get account information
   const accountInfo = getAccountInformation()
   if (request.hooks) {
@@ -4050,8 +4042,6 @@ async function handleInitializeRequest(
       // 'inherit' is an internal sentinel; normalize to undefined for the public API
       model: agent.model === 'inherit' ? undefined : agent.model,
     })),
-    output_style: outputStyle,
-    available_output_styles: Object.keys(availableOutputStyles),
     models: modelInfos,
     account: {
       email: accountInfo?.email,

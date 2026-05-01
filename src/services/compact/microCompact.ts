@@ -237,12 +237,8 @@ function collectCompactableToolIds(messages: Message[]): string[] {
   return ids
 }
 
-// Prefix-match because promptCategory.ts sets the querySource to
-// 'repl_main_thread:outputStyle:<style>' when a non-default output style
-// is active. The bare 'repl_main_thread' is only used for the default style.
-// query.ts:350/1451 use the same startsWith pattern; the pre-existing
-// cached-MC `=== 'repl_main_thread'` check was a latent bug — users with a
-// non-default output style were silently excluded from cached MC.
+// Prefix-match (querySource only ever exact-equals 'repl_main_thread' today,
+// but we keep startsWith for forward-compat with potential future suffixes).
 function isMainThreadSource(querySource: QuerySource | undefined): boolean {
   return !querySource || querySource.startsWith('repl_main_thread')
 }
@@ -497,8 +493,6 @@ function maybeTimeBasedMicrocompact(
   // notifyCacheDeletion (not notifyCompaction) because it's already imported
   // here and achieves the same false-positive suppression — adding the second
   // symbol to the import was flagged by the circular-deps check.
-  // Pass the actual querySource: getTrackingKey returns the full source string
-  // (e.g. 'repl_main_thread:outputStyle:custom'), not just the prefix.
   if (feature('PROMPT_CACHE_BREAK_DETECTION') && querySource) {
     notifyCacheDeletion(querySource)
   }

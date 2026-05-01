@@ -107,7 +107,6 @@ import exit from './commands/exit/index.js'
 import exportCommand from './commands/export/index.js'
 import model from './commands/model/index.js'
 import tag from './commands/tag/index.js'
-import outputStyle from './commands/output-style/index.js'
 import upgrade from './commands/upgrade/index.js'
 import {
   extraUsage,
@@ -189,7 +188,6 @@ const COMMANDS = memoize((): Command[] => [
   mobile,
   model,
   oauthRefresh,
-  outputStyle,
   plugin,
   pr_comments,
   releaseNotes,

@@ -166,8 +166,6 @@ export type EditorMode = 'emacs' | (typeof EDITOR_MODES)[number]
 
 export type DiffTool = 'terminal' | 'auto'
 
-export type OutputStyle = string
-
 export type GlobalConfig = {
   /**
    * @deprecated Use settings.apiKeyHelper instead.

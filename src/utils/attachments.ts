@@ -529,10 +529,6 @@ export type Attachment =
       isMeta?: boolean
     }
   | {
-      type: 'output_style'
-      style: string
-    }
-  | {
       type: 'diagnostics'
       files: DiagnosticFile[]
       isNew: boolean
@@ -922,9 +918,6 @@ export async function getAttachments(
         ),
         maybe('ide_opened_file', async () =>
           getOpenedFileFromIDE(ideSelection, toolUseContext),
-        ),
-        maybe('output_style', async () =>
-          Promise.resolve(getOutputStyleAttachment()),
         ),
         maybe('diagnostics', async () =>
           getDiagnosticAttachments(toolUseContext),
@@ -1547,23 +1540,6 @@ function getCriticalSystemReminderAttachment(
     return []
   }
   return [{ type: 'critical_system_reminder', content: reminder }]
-}
-
-function getOutputStyleAttachment(): Attachment[] {
-  const settings = getSettings_DEPRECATED()
-  const outputStyle = settings?.outputStyle || 'default'
-
-  // Only show for non-default styles
-  if (outputStyle === 'default') {
-    return []
-  }
-
-  return [
-    {
-      type: 'output_style',
-      style: outputStyle,
-    },
-  ]
 }
 
 async function getSelectedLinesFromIDE(

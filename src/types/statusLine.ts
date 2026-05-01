@@ -26,9 +26,6 @@ export type StatusLineCommandInput = {
     added_dirs: string[]
   }
   version: string
-  output_style: {
-    name: string
-  }
   cost: {
     total_cost_usd: number
     total_duration_ms: number

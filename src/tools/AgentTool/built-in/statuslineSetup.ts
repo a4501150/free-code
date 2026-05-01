@@ -49,9 +49,6 @@ How to use the statusLine command:
        "added_dirs": ["string"]  // Directories added via /add-dir
      },
      "version": "string",        // Claude Code app version (e.g., "1.0.71")
-     "output_style": {
-       "name": "string",         // Output style name (e.g., "default", "Explanatory", "Learning")
-     },
      "context_window": {
        "total_input_tokens": number,       // Total input tokens used in session (cumulative)
        "total_output_tokens": number,      // Total output tokens used in session (cumulative)
@@ -94,7 +91,6 @@ How to use the statusLine command:
    You can use this JSON data in your command like:
    - $(cat | jq -r '.model.display_name')
    - $(cat | jq -r '.workspace.current_dir')
-   - $(cat | jq -r '.output_style.name')
 
    Or store it in a variable first:
    - input=$(cat); echo "$(echo "$input" | jq -r '.model.display_name') in $(echo "$input" | jq -r '.workspace.current_dir')"

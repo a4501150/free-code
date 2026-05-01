@@ -2,18 +2,13 @@
  * Categorizes the origin of a model query for analytics, hook routing,
  * caching decisions, and prompt-specific behavior.
  *
- * Open-ended via `(string & {})` because two call sites in
- * src/utils/promptCategory.ts synthesize dynamic values with
- * `as QuerySource`:
- *   - `agent:builtin:${agentType}` (see getQuerySourceForAgent)
- *   - `repl_main_thread:outputStyle:${style}` (see getQuerySourceForREPL)
+ * Open-ended via `(string & {})` because src/utils/promptCategory.ts
+ * synthesizes `agent:builtin:${agentType}` with `as QuerySource`.
  */
 export type QuerySource =
   | 'user'
   | 'sdk'
   | 'repl_main_thread'
-  | 'repl_main_thread:outputStyle:custom'
-  | `repl_main_thread:outputStyle:${string}`
   | 'agent:default'
   | 'agent:custom'
   | `agent:builtin:${string}`

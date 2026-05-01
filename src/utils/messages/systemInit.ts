@@ -2,7 +2,6 @@ import { feature } from 'bun:bundle'
 import { randomUUID } from 'crypto'
 import * as udsMessagingNs from '../udsMessaging.js'
 import { getSdkBetas, getSessionId } from 'src/bootstrap/state.js'
-import { DEFAULT_OUTPUT_STYLE_NAME } from 'src/constants/outputStyles.js'
 import type {
   PermissionMode,
   SDKMessage,
@@ -15,7 +14,6 @@ import {
 import { getAnthropicApiKeyWithSource } from '../auth.js'
 import { getCwd } from '../cwd.js'
 import { getFastModeState } from '../fastMode.js'
-import { getSettings_DEPRECATED } from '../settings/settings.js'
 
 // TODO(next-minor): remove this translation once SDK consumers have migrated
 // to the 'Agent' tool name. The wire name was renamed Task → Agent in #19647,
@@ -49,9 +47,6 @@ export type SystemInitInputs = {
  *     stream message per query turn
  */
 export function buildSystemInitMessage(inputs: SystemInitInputs): SDKMessage {
-  const settings = getSettings_DEPRECATED()
-  const outputStyle = settings?.outputStyle ?? DEFAULT_OUTPUT_STYLE_NAME
-
   const initMessage: SDKMessage = {
     type: 'system',
     subtype: 'init',
@@ -71,7 +66,6 @@ export function buildSystemInitMessage(inputs: SystemInitInputs): SDKMessage {
     apiKeySource: getAnthropicApiKeyWithSource().source as any,
     betas: getSdkBetas(),
     claude_code_version: MACRO.VERSION,
-    output_style: outputStyle,
     agents: inputs.agents.map(agent => agent.agentType),
     skills: inputs.skills
       .filter(s => s.userInvocable !== false)

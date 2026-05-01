@@ -19,7 +19,6 @@ import {
   type GlobalConfig,
   saveGlobalConfig,
   getCurrentProjectConfig,
-  type OutputStyle,
 } from '../../utils/config.js'
 import { normalizeApiKeyForConfig } from '../../utils/authPortable.js'
 import {
@@ -60,7 +59,6 @@ import {
 } from '../ChannelDowngradeDialog.js'
 import { Dialog } from '../design-system/Dialog.js'
 import { Select } from '../CustomSelect/index.js'
-import { OutputStylePicker } from '../OutputStylePicker.js'
 import { LanguagePicker } from '../LanguagePicker.js'
 import {
   getExternalClaudeMdIncludes,
@@ -83,7 +81,6 @@ import {
   updateSettingsForSource,
 } from '../../utils/settings/settings.js'
 import { getUserMsgOptIn, setUserMsgOptIn } from '../../bootstrap/state.js'
-import { DEFAULT_OUTPUT_STYLE_NAME } from 'src/constants/outputStyles.js'
 import { isEnvTruthy } from 'src/utils/envUtils.js'
 import type {
   LocalJSXCommandContext,
@@ -154,7 +151,6 @@ type SubMenu =
   | 'Model'
   | 'TeammateModel'
   | 'ExternalIncludes'
-  | 'OutputStyle'
   | 'ChannelDowngrade'
   | 'Language'
   | 'EnableAutoUpdates'
@@ -173,10 +169,6 @@ export function Config({
   const initialConfig = React.useRef(getGlobalConfig())
   const [settingsData, setSettingsData] = useState(getInitialSettings())
   const initialSettingsData = React.useRef(getInitialSettings())
-  const [currentOutputStyle, setCurrentOutputStyle] = useState<OutputStyle>(
-    settingsData?.outputStyle || DEFAULT_OUTPUT_STYLE_NAME,
-  )
-  const initialOutputStyle = React.useRef(currentOutputStyle)
   const [currentLanguage, setCurrentLanguage] = useState<string | undefined>(
     settingsData?.language,
   )
@@ -549,21 +541,6 @@ export function Config({
         setSettingsData(prev => ({
           ...prev,
           contentReplacementState: enabled,
-        }))
-      },
-    },
-    {
-      id: 'enhancedPromptGuidance',
-      label: 'Enhanced prompt guidance',
-      value: settingsData?.enhancedPromptGuidance ?? false,
-      type: 'boolean' as const,
-      onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          enhancedPromptGuidance: enabled,
-        })
-        setSettingsData(prev => ({
-          ...prev,
-          enhancedPromptGuidance: enabled,
         }))
       },
     },
@@ -1047,13 +1024,6 @@ export function Config({
           },
         ]
       : []),
-    {
-      id: 'outputStyle',
-      label: 'Output style',
-      value: currentOutputStyle,
-      type: 'managedEnum' as const,
-      onChange: () => {}, // handled by OutputStylePicker submenu
-    },
     ...(showDefaultViewPicker
       ? [
           {
@@ -1435,11 +1405,6 @@ export function Config({
         `Set notifications to ${chalk.bold(globalConfig.preferredNotifChannel)}`,
       )
     }
-    if (currentOutputStyle !== initialOutputStyle.current) {
-      formattedChanges.push(
-        `Set output style to ${chalk.bold(currentOutputStyle)}`,
-      )
-    }
     if (currentLanguage !== initialLanguage.current) {
       formattedChanges.push(
         `Set response language to ${chalk.bold(currentLanguage ?? 'Default (English)')}`,
@@ -1536,7 +1501,6 @@ export function Config({
     changes,
     globalConfig,
     mainLoopModel,
-    currentOutputStyle,
     currentLanguage,
     settingsData?.autoUpdatesChannel,
     isFastModeEnabled()
@@ -1566,7 +1530,6 @@ export function Config({
       spinnerTipsEnabled: il?.spinnerTipsEnabled,
       prefersReducedMotion: il?.prefersReducedMotion,
       defaultView: il?.defaultView,
-      outputStyle: il?.outputStyle,
     })
     const iu = initialUserSettings
     updateSettingsForSource('userSettings', {
@@ -1597,7 +1560,6 @@ export function Config({
           ? undefined
           : { ...iu.permissions, defaultMode: iu.permissions.defaultMode },
       // Group B settings
-      enhancedPromptGuidance: iu?.enhancedPromptGuidance,
       terminalRecording: iu?.terminalRecording,
       crossProjectResume: iu?.crossProjectResume,
       alwaysDebugLog: iu?.alwaysDebugLog,
@@ -1695,7 +1657,6 @@ export function Config({
       setting.id === 'model' ||
       setting.id === 'teammateDefaultModel' ||
       setting.id === 'showExternalIncludesDialog' ||
-      setting.id === 'outputStyle' ||
       setting.id === 'language'
     ) {
       // managedEnum items open a submenu — isDirty is set by the submenu's
@@ -1715,10 +1676,6 @@ export function Config({
           return
         case 'showExternalIncludesDialog':
           setShowSubmenu('ExternalIncludes')
-          setTabsHidden(true)
-          return
-        case 'outputStyle':
-          setShowSubmenu('OutputStyle')
           setTabsHidden(true)
           return
         case 'language':
@@ -2009,38 +1966,6 @@ export function Config({
                 context="Confirmation"
                 fallback="Esc"
                 description="disable external includes"
-              />
-            </Byline>
-          </Text>
-        </>
-      ) : showSubmenu === 'OutputStyle' ? (
-        <>
-          <OutputStylePicker
-            initialStyle={currentOutputStyle}
-            onComplete={style => {
-              isDirty.current = true
-              setCurrentOutputStyle(style ?? DEFAULT_OUTPUT_STYLE_NAME)
-              setShowSubmenu(null)
-              setTabsHidden(false)
-
-              // Save to local settings
-              updateSettingsForSource('localSettings', {
-                outputStyle: style,
-              })
-            }}
-            onCancel={() => {
-              setShowSubmenu(null)
-              setTabsHidden(false)
-            }}
-          />
-          <Text dimColor>
-            <Byline>
-              <KeyboardShortcutHint shortcut="Enter" action="confirm" />
-              <ConfigurableShortcutHint
-                action="confirm:no"
-                context="Confirmation"
-                fallback="Esc"
-                description="cancel"
               />
             </Byline>
           </Text>

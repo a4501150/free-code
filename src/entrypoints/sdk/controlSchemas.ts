@@ -79,8 +79,6 @@ export const SDKControlInitializeResponseSchema = lazySchema(() =>
     .object({
       commands: z.array(SlashCommandSchema()),
       agents: z.array(AgentInfoSchema()),
-      output_style: z.string(),
-      available_output_styles: z.array(z.string()),
       models: z.array(ModelInfoSchema()),
       account: AccountInfoSchema(),
       pid: z
