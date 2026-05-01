@@ -920,6 +920,54 @@ async function translateCodexStreamToAnthropic(
                   currentTextBlockStarted = false
                 }
 
+                // Eager-close the previously open tool_use, if any.
+                // llama.cpp emits ALL parallel-tool `output_item.added`
+                // events BEFORE any `output_item.done` events (verified
+                // live 2026-04-30 with 27B Q6_K + harness emitting 3
+                // parallel tool calls). Without this eager-close, each
+                // new function_call.added would overwrite
+                // currentToolCallId/Name/Args and emit a fresh
+                // content_block_start at the SAME contentBlockIndex as
+                // the prior still-open tool_use — claude.ts then sees
+                // multiple content_block_starts at one index and
+                // collapses every parallel call into the first one
+                // rendered. The matching .done events for the eagerly
+                // closed calls are detected as stale below and skipped.
+                // Canonical OpenAI ordering (each item's full lifecycle
+                // before next opens) leaves inToolCall=false here, so
+                // this branch is inert for upstream Codex.
+                if (inToolCall) {
+                  if (currentToolCallArgs && !toolArgsEmitted) {
+                    controller.enqueue(
+                      encoder.encode(
+                        formatSSE(
+                          'content_block_delta',
+                          JSON.stringify({
+                            type: 'content_block_delta',
+                            index: contentBlockIndex,
+                            delta: {
+                              type: 'input_json_delta',
+                              partial_json: currentToolCallArgs,
+                            },
+                          }),
+                        ),
+                      ),
+                    )
+                  }
+                  closeToolCallBlock(
+                    controller,
+                    encoder,
+                    contentBlockIndex,
+                    currentToolCallId,
+                    currentToolCallName,
+                    currentToolCallArgs,
+                  )
+                  contentBlockIndex++
+                  inToolCall = false
+                  currentToolCallArgs = ''
+                  toolArgsEmitted = false
+                }
+
                 // Start tool_use block (Anthropic format)
                 currentToolCallId =
                   (item.call_id as string) || `toolu_${Date.now()}`
@@ -1196,50 +1244,73 @@ async function translateCodexStreamToAnthropic(
             else if (eventType === 'response.output_item.done') {
               const item = event.item as Record<string, unknown>
               if (item?.type === 'function_call') {
-                // llama.cpp omits `response.function_call_arguments.done` —
-                // it only streams `.delta`. The .done emit-path therefore
-                // never fires the input_json_delta and claude.ts ends up
-                // with an empty tool_use input. Authoritative full args
-                // live on `item.arguments` here. Emit a single
-                // input_json_delta from item.arguments (preferred) or the
-                // accumulated delta buffer (fallback). Idempotent against
-                // the .done path: if .done already emitted, currentToolCallArgs
-                // was set to that value too, but item.arguments is identical
-                // so the second emit is the same payload — claude.ts merges
-                // input_json_delta strings, so we just dedupe by checking
-                // whether we already emitted on .done.
-                const itemArgs =
-                  typeof item.arguments === 'string' ? item.arguments : ''
-                const fullArgs = itemArgs || currentToolCallArgs
-                if (fullArgs && !toolArgsEmitted) {
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE(
-                        'content_block_delta',
-                        JSON.stringify({
-                          type: 'content_block_delta',
-                          index: contentBlockIndex,
-                          delta: {
-                            type: 'input_json_delta',
-                            partial_json: fullArgs,
-                          },
-                        }),
+                // Stale .done detection. llama.cpp emits all parallel-tool
+                // .added events before any .done events; the eager-close in
+                // .added (above) already closed every tool_use except the
+                // most recently opened one. A .done for an earlier call_id
+                // therefore arrives when the currently open tool_use belongs
+                // to a *later* call_id — closing here would close the wrong
+                // block. Skip stale .done's; the live one (matching
+                // currentToolCallId, or the only one if call_id is missing)
+                // falls through to the existing close logic.
+                const itemCallId = (item.call_id as string) || ''
+                const stale =
+                  !inToolCall ||
+                  (itemCallId !== '' &&
+                    currentToolCallId !== '' &&
+                    itemCallId !== currentToolCallId)
+                if (stale) {
+                  // No-op: this tool_use was eagerly closed at the next
+                  // function_call.added. The currently open block (if any)
+                  // belongs to a later call_id and will close on its own
+                  // .done.
+                } else {
+                  // llama.cpp omits `response.function_call_arguments.done` —
+                  // it only streams `.delta`. The .done emit-path therefore
+                  // never fires the input_json_delta and claude.ts ends up
+                  // with an empty tool_use input. Authoritative full args
+                  // live on `item.arguments` here. Emit a single
+                  // input_json_delta from item.arguments (preferred) or the
+                  // accumulated delta buffer (fallback). Idempotent against
+                  // the .done path: if .done already emitted,
+                  // currentToolCallArgs was set to that value too, but
+                  // item.arguments is identical so the second emit is the
+                  // same payload — claude.ts merges input_json_delta
+                  // strings, so we just dedupe by checking whether we
+                  // already emitted on .done.
+                  const itemArgs =
+                    typeof item.arguments === 'string' ? item.arguments : ''
+                  const fullArgs = itemArgs || currentToolCallArgs
+                  if (fullArgs && !toolArgsEmitted) {
+                    controller.enqueue(
+                      encoder.encode(
+                        formatSSE(
+                          'content_block_delta',
+                          JSON.stringify({
+                            type: 'content_block_delta',
+                            index: contentBlockIndex,
+                            delta: {
+                              type: 'input_json_delta',
+                              partial_json: fullArgs,
+                            },
+                          }),
+                        ),
                       ),
-                    ),
+                    )
+                  }
+                  closeToolCallBlock(
+                    controller,
+                    encoder,
+                    contentBlockIndex,
+                    currentToolCallId,
+                    currentToolCallName,
+                    currentToolCallArgs,
                   )
+                  contentBlockIndex++
+                  inToolCall = false
+                  currentToolCallArgs = ''
+                  toolArgsEmitted = false
                 }
-                closeToolCallBlock(
-                  controller,
-                  encoder,
-                  contentBlockIndex,
-                  currentToolCallId,
-                  currentToolCallName,
-                  currentToolCallArgs,
-                )
-                contentBlockIndex++
-                inToolCall = false
-                currentToolCallArgs = ''
-                toolArgsEmitted = false
               } else if (item?.type === 'message') {
                 if (currentTextBlockStarted) {
                   controller.enqueue(
