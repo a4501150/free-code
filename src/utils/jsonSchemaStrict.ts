@@ -54,11 +54,28 @@ function permitsNull(schema: unknown): boolean {
 
 /**
  * Wrap `schema` so it accepts null in addition to its existing type.
- * Uses `anyOf` to preserve `description`, `default`, etc. on the original.
+ *
+ * When the schema's top level has a single string `type` keyword, emit
+ * `type: [..., "null"]` so constrained-output decoders (llama.cpp grammars,
+ * vLLM xgrammar, etc.) don't see a nested `anyOf`. qwen3.6 / similar small
+ * models double-quote string values when they encounter `anyOf:[{string},
+ * {null}]` — the flat `type: ["string","null"]` shape side-steps that quirk
+ * and is semantically identical. `enum`, `const`, `properties`, `items`
+ * carry over on the same node, preserving the original constraints.
+ *
+ * Composite schemas (top-level `anyOf`/`oneOf`/`allOf`, or no `type` keyword)
+ * fall back to the `anyOf` wrapping. `permitsNull` already recognizes
+ * array-typed `type` containing `"null"`, so the transform stays idempotent.
  */
 function widenWithNull(schema: unknown): JsonSchema {
   if (permitsNull(schema)) {
     return schema as JsonSchema
+  }
+  if (typeof schema === 'object' && schema !== null && !Array.isArray(schema)) {
+    const s = schema as JsonSchema
+    if (typeof s.type === 'string') {
+      return { ...s, type: [s.type, 'null'] }
+    }
   }
   return {
     anyOf: [schema, { type: 'null' }],

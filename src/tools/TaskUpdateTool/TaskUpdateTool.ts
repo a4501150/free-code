@@ -14,8 +14,8 @@ import {
   getTask,
   getTaskListId,
   listTasks,
+  TASK_STATUSES,
   type TaskStatus,
-  TaskStatusSchema,
   updateTask,
 } from '../../utils/tasks.js'
 import {
@@ -30,8 +30,11 @@ import { TASK_UPDATE_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, PROMPT } from './prompt.js'
 
 const inputSchema = lazySchema(() => {
-  // Extended status schema that includes 'deleted' as a special action
-  const TaskUpdateStatusSchema = TaskStatusSchema().or(z.literal('deleted'))
+  // 'deleted' is a write-only action verb on the update path — TaskSchema
+  // (persisted shape) and TaskList/TaskGet only ever expose the three real
+  // statuses, so it stays out of TASK_STATUSES. A single flat enum here keeps
+  // the model-facing JSON Schema simple (one enum, no nested anyOf union).
+  const TaskUpdateStatusSchema = z.enum([...TASK_STATUSES, 'deleted'] as const)
 
   return z.strictObject({
     taskId: z.string().describe('The ID of the task to update'),

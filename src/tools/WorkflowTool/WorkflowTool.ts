@@ -34,6 +34,14 @@ export const WorkflowTool = buildTool({
   userFacingName() {
     return 'Workflow'
   },
+  // call() is a stub returning {started: false} — bundled/index.ts is
+  // also a stub ("real implementation is not available in this build").
+  // Keep the wiring intact for when the real workflow runtime lands;
+  // hide the tool from the model in the meantime so it doesn't ship
+  // visible-but-broken.
+  isEnabled() {
+    return false
+  },
   isReadOnly() {
     return false
   },

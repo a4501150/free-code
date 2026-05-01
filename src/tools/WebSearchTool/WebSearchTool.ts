@@ -76,13 +76,22 @@ export type { WebSearchProgress } from '../../types/tools.js'
 import type { WebSearchProgress } from '../../types/tools.js'
 
 function makeToolSchema(input: Input): BetaWebSearchTool20250305 {
-  return {
+  // Anthropic's web_search_20250305 rejects `allowed_domains: []` /
+  // `blocked_domains: []` with "Empty list of domains is ambiguous." Drop
+  // empty (and undefined) arrays so the tool spec carries domains only when
+  // the model actually scoped the search.
+  const out: BetaWebSearchTool20250305 = {
     type: 'web_search_20250305',
     name: 'web_search',
-    allowed_domains: input.allowed_domains,
-    blocked_domains: input.blocked_domains,
     max_uses: 8, // Hardcoded to 8 searches maximum
   }
+  if (input.allowed_domains?.length) {
+    out.allowed_domains = input.allowed_domains
+  }
+  if (input.blocked_domains?.length) {
+    out.blocked_domains = input.blocked_domains
+  }
+  return out
 }
 
 function makeOutputFromSearchResponse(

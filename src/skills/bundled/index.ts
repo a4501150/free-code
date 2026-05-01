@@ -6,7 +6,6 @@ import { registerLoremIpsumSkill } from './loremIpsum.js'
 import { registerRememberSkill } from './remember.js'
 import { registerSimplifySkill } from './simplify.js'
 import { registerSkillifySkill } from './skillify.js'
-import { registerUpdateConfigSkill } from './updateConfig.js'
 import * as verifyNs from './verify.js'
 import * as dreamNs from './dream.js'
 import * as hunterNs from './hunter.js'
@@ -23,7 +22,6 @@ import * as runSkillGeneratorNs from './runSkillGenerator.js'
  * 3. Import and call that function here
  */
 export function initBundledSkills(): void {
-  registerUpdateConfigSkill()
   registerKeybindingsSkill()
   if (feature('VERIFY_PLAN')) {
     verifyNs.registerVerifySkill()
