@@ -53,7 +53,7 @@ async function drainToString(
 }
 
 describe('Codex adapter: reasoning round-trip', () => {
-  test('inbound — buffered reasoning emitted once on output_item.done with encrypted_content', async () => {
+  test('inbound — reasoning streams live; codex side-channel fields arrive on a codex_reasoning_meta_delta before content_block_stop', async () => {
     const responsesSSE = [
       'event: response.output_item.added',
       'data: {"type":"response.output_item.added","item":{"type":"reasoning","id":"rs_test_123","summary":[]}}',
@@ -107,6 +107,10 @@ describe('Codex adapter: reasoning round-trip', () => {
 
       const events = parseAnthropicSSE(await drainToString(response.body!))
 
+      // Thinking block opens eagerly on output_item.added(reasoning) so
+      // reasoning text can stream live to the UI. codexReasoningId is
+      // available at that point (rides on the start payload);
+      // codexEncryptedContent is not (only arrives on output_item.done).
       const thinkingStarts = events.filter(
         e =>
           e.event === 'content_block_start' &&
@@ -119,18 +123,44 @@ describe('Codex adapter: reasoning round-trip', () => {
         unknown
       >
       expect(thinkingBlock.codexReasoningId).toBe('rs_test_123')
-      expect(thinkingBlock.codexEncryptedContent).toBe('ENC_BLOB_XYZ')
+      expect(thinkingBlock.codexEncryptedContent).toBeUndefined()
       expect(thinkingBlock.signature).toBe('')
 
+      // One thinking_delta per reasoning_text.delta — live streaming, not buffered.
       const thinkingDeltas = events.filter(
         e =>
           e.event === 'content_block_delta' &&
           (e.data.delta as Record<string, unknown>)?.type === 'thinking_delta',
       )
-      expect(thinkingDeltas).toHaveLength(1)
-      expect(
-        (thinkingDeltas[0].data.delta as Record<string, string>).thinking,
-      ).toBe('Let me think about it.')
+      expect(thinkingDeltas).toHaveLength(2)
+      const concatenated = thinkingDeltas
+        .map(e => (e.data.delta as Record<string, string>).thinking)
+        .join('')
+      expect(concatenated).toBe('Let me think about it.')
+
+      // codexEncryptedContent arrives via a codex_reasoning_meta_delta
+      // emitted just before content_block_stop. claude.ts patches the
+      // active thinking block with these fields. Real Anthropic streams
+      // never emit this delta type — safe additive extension.
+      const metaDeltas = events.filter(
+        e =>
+          e.event === 'content_block_delta' &&
+          (e.data.delta as Record<string, unknown>)?.type ===
+            'codex_reasoning_meta_delta',
+      )
+      expect(metaDeltas).toHaveLength(1)
+      const metaDelta = metaDeltas[0].data.delta as Record<string, string>
+      expect(metaDelta.codexReasoningId).toBe('rs_test_123')
+      expect(metaDelta.codexEncryptedContent).toBe('ENC_BLOB_XYZ')
+
+      // The meta delta must arrive before the thinking block's content_block_stop.
+      const metaDeltaIdx = events.indexOf(metaDeltas[0])
+      const thinkingStopIdx = events.findIndex(
+        e =>
+          e.event === 'content_block_stop' &&
+          (e.data.index as number) === (thinkingStarts[0].data.index as number),
+      )
+      expect(thinkingStopIdx).toBeGreaterThan(metaDeltaIdx)
 
       // Followed by a text block.
       const textStart = events.find(
