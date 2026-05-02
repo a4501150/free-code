@@ -29,6 +29,9 @@ All tests are e2e — they launch the compiled `./cli` against a mock API server
 - **Debug logging is suppressed under tests.** `tmux-helpers.ts` sets `NODE_ENV=test`, and `shouldLogDebugMessage` in [src/utils/debug.ts](src/utils/debug.ts) drops `logForDebugging` calls unless `--debug` / `--debug-to-stderr` is passed via `additionalArgs`. For ad-hoc diagnostics, `console.error` from the CLI is captured in the tmux pane; `session.dumpLog()` surfaces it.
 - **Trust `server.getRequestLog()[i].body.*` over `capturePane*`.** Pane scrapes render ANSI, which can make adjacent escape codes look like suffixes on field values (e.g. a bold `\x1b[1m` next to a model ID can appear as `model-id[1m]` in scraped text). The mock server's JSON-parsed request body is the source of truth.
 - **Bun's default test timeout is 5s;** e2e tests need more. Add `setDefaultTimeout(...)` at the top of new test files — see existing files for the pattern.
+- **Prefer shared polling helpers over fixed sleeps.** Use `waitFor`, `waitForRequestCount`, `waitForRequest`, and `TmuxSession.waitForScreen(...)` for observable conditions. If a fixed `sleep(...)` is unavoidable, keep it local and make the missing observable condition obvious.
+- **Prompt suggestions are disabled in `TmuxSession` by default** (`CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=0`) because hidden forked-agent suggestion calls consume mock server responses. Tests that enable prompt suggestions must account for the extra requests.
+- **Group tmux e2e turns only when startup and history assumptions are safe.** Keep fresh sessions for startup config, CLI args, empty-context behavior, resume/continue state, and unusual stream/error state. When grouping turns, call `server.reset(...)` only after the previous turn is idle, then assert against the request log after that reset rather than absolute indexes from earlier turns.
 
 ### Subagent model resolution tests
 

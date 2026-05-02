@@ -18,7 +18,7 @@ import {
   setDefaultTimeout,
 } from 'bun:test'
 import { MockAnthropicServer } from '../helpers/mock-server'
-import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
+import { TmuxSession, createLoggingTest } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
@@ -42,41 +42,67 @@ describe('Internal-command survivors', () => {
     if (session) await session.stop()
   })
 
-  test('/env prints Build, Provider, Models, and Paths sections', async () => {
-    server.reset([])
-    session = new TmuxSession({ serverUrl: server.url })
-    await session.start()
-
-    await session.sendLine('/env')
-    // Wait for "Relevant env vars" — that's the last section, so by the time
-    // it appears all earlier sections have rendered into the pane history.
-    const screen = await session.waitForText('Relevant env vars', 30_000)
-
-    expect(screen).toContain('Build')
-    expect(screen).toContain('Provider')
-    expect(screen).toContain('Models')
-    expect(screen).toContain('Primary:')
-    expect(screen).toContain('Paths')
-  })
-
-  test('/version prints a version string', async () => {
+  test('stateless internal survivor commands render expected output', async () => {
     server.reset([])
     session = new TmuxSession({ serverUrl: server.url })
     await session.start()
 
     await session.sendLine('/version')
-    const { match } = await session.waitForPattern(/\d+\.\d+\.\d+/, 30_000)
-    expect(match[0]).toMatch(/^\d+\.\d+\.\d+/)
-  })
-
-  test('/oauth-refresh reports no OAuth session when only an API key is configured', async () => {
-    server.reset([])
-    session = new TmuxSession({ serverUrl: server.url })
-    await session.start()
+    const versionScreen = await session.waitForScreen(
+      screen =>
+        screen.includes('❯ /version') && /\b\d+\.\d+\.\d+ \(built/.test(screen),
+      {
+        timeoutMs: 30_000,
+        description: '/version output',
+        currentPaneOnly: true,
+      },
+    )
+    const version = versionScreen.match(/\b(\d+\.\d+\.\d+) \(built/)?.[1]
+    expect(version).toMatch(/^\d+\.\d+\.\d+/)
 
     await session.sendLine('/oauth-refresh')
-    const screen = await session.waitForText('No OAuth session', 30_000)
-    expect(screen).toContain('No OAuth session')
+    const oauthScreen = await session.waitForScreen(
+      screen => screen.includes('No OAuth session'),
+      {
+        timeoutMs: 30_000,
+        description: '/oauth-refresh output',
+        currentPaneOnly: true,
+      },
+    )
+    expect(oauthScreen).toContain('No OAuth session')
+
+    await session.sendText('/init-verifiers')
+    const typedScreen = await session.waitForScreen(
+      screen => screen.includes('/init-verifiers'),
+      {
+        timeoutMs: 10_000,
+        description: '/init-verifiers typed into prompt',
+        currentPaneOnly: true,
+      },
+    )
+    await session.sendSpecialKey('Enter')
+    const after = await session
+      .waitForScreen(
+        screen =>
+          screen.includes('Unknown command') ||
+          screen.includes('Unknown skill'),
+        {
+          timeoutMs: 15_000,
+          description: '/init-verifiers unknown-command output',
+          currentPaneOnly: true,
+        },
+      )
+      .catch(() => '')
+    expect(typedScreen).not.toContain('Create verifier skill(s)')
+    expect(after).not.toContain('Create verifier skill(s)')
+
+    await session.sendLine('/env')
+    const envScreen = await session.waitForText('Relevant env vars', 30_000)
+    expect(envScreen).toContain('Build')
+    expect(envScreen).toContain('Provider')
+    expect(envScreen).toContain('Models')
+    expect(envScreen).toContain('Primary:')
+    expect(envScreen).toContain('Paths')
   })
 
   test('/summary returns a friendly message when there is nothing in scope', async () => {
@@ -100,30 +126,5 @@ describe('Internal-command survivors', () => {
     await session.sendLine('/debug-tool-call')
     const screen = await session.waitForText('No tool calls recorded', 30_000)
     expect(screen).toContain('No tool calls recorded in the current session')
-  })
-
-  test('/init-verifiers is absent from the default build', async () => {
-    server.reset([])
-    session = new TmuxSession({ serverUrl: server.url })
-    await session.start()
-
-    // Typing "/init-ver" in the prompt should not surface an autocomplete hit
-    // for /init-verifiers. Typeahead shows the command in the pane when it
-    // exists, so the absence is detectable by scraping for the string.
-    await session.sendText('/init-verifiers')
-    await sleep(500)
-    const screen = await session.capturePaneWithHistory()
-    // The string being typed will appear in the input line, but the
-    // typeahead suggestion list should NOT expand it into a match. Submit it
-    // and verify the CLI rejects it as an unknown command.
-    await session.sendSpecialKey('Enter')
-    const after = await session
-      .waitForText('Unknown command', 15_000)
-      .catch(() => '')
-    // Either an "Unknown command" message appears, or the CLI emits nothing
-    // visible for the command (stale input). In both cases, the command
-    // should not execute its prompt body.
-    expect(screen).not.toContain('Create verifier skill(s)')
-    expect(after).not.toContain('Create verifier skill(s)')
   })
 })

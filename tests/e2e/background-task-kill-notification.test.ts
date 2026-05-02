@@ -30,6 +30,7 @@ import {
   type RequestLogEntry,
 } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
+import { waitForRequest } from '../helpers/mock-server-wait'
 import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
 
 setDefaultTimeout(180_000)
@@ -99,8 +100,8 @@ describe('Background task kill notification', () => {
       ]),
       // Turn 1 follow-up: model acknowledges and ends the turn.
       textResponse('Started in background.'),
-      // Turn 2: the user types "ok" — the request body should carry the
-      // queued <task-notification status=killed> from the dialog kill.
+      // Turn 2: the killed <task-notification> is auto-processed once the
+      // dialog closes after the task leaves the background list.
       textResponse('Acknowledged.'),
     ])
 
@@ -132,43 +133,35 @@ describe('Background task kill notification', () => {
     // Press x to kill the running shell. ShellDetailDialog.handleKeyDown
     // routes 'x' to onKillShell → killShellTask → LocalShellTask.kill →
     // killTask. With the fix, killTask now enqueues the killed
-    // <task-notification> directly.
+    // <task-notification> directly. The only running task then leaves the
+    // background list, the auto-skipped detail dialog closes, and the queue
+    // processor drains the notification as its own turn.
     await session.sendSpecialKey('x')
-    // Give the kill flow + state update + queue write a beat to settle.
-    await sleep(500)
-    // Close the dialog (Esc) so the prompt regains focus.
-    await session.sendSpecialKey('Escape')
-    await session.waitForPrompt(10_000)
+    await session.waitForText('Acknowledged.', 10_000)
 
-    // Turn 2 — submit any user message. The queued task-notification
-    // should be drained into this request body.
-    await session.submitAndWaitForResponse('ok')
-
-    const log = server.getRequestLog()
-    // Locate the request whose body contains the killed task-notification.
-    // Don't assume the index — depending on whether Turn 1 produced one
-    // request or two (tool_use + tool_result), the killed notification
-    // might land on whichever request follows the dialog kill.
-    const matching = log
-      .map((req, idx) => ({ req, idx, text: userTextBlob(req) }))
-      .filter(
-        ({ text }) =>
+    const matching = await waitForRequest(
+      server,
+      req => {
+        const text = userTextBlob(req)
+        return (
           /<task-notification>/i.test(text) &&
-          /<status>killed<\/status>/i.test(text),
-      )
+          /<status>killed<\/status>/i.test(text)
+        )
+      },
+      {
+        timeoutMs: 10_000,
+        description: 'killed background task notification request',
+        onTimeout: () => {
+          const summaries = server.getRequestLog().map((req, idx) => {
+            const blob = userTextBlob(req)
+            const head = blob.length > 200 ? `${blob.slice(0, 200)}…` : blob
+            return `  request[${idx}]: ${head}`
+          })
+          return `No request body contained <task-notification>...<status>killed</status>.\n${summaries.join('\n')}`
+        },
+      },
+    )
 
-    if (matching.length === 0) {
-      // Surface diagnostic context — easier to debug than a bare expect.
-      const summaries = log.map((req, idx) => {
-        const blob = userTextBlob(req)
-        const head = blob.length > 200 ? `${blob.slice(0, 200)}…` : blob
-        return `  request[${idx}]: ${head}`
-      })
-      throw new Error(
-        `No request body contained <task-notification>...<status>killed</status>.\n${summaries.join('\n')}`,
-      )
-    }
-
-    expect(matching.length).toBeGreaterThan(0)
+    expect(matching).toBeDefined()
   })
 })

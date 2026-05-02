@@ -17,6 +17,7 @@
 import { mkdtemp, writeFile, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { sleep, waitFor, type WaitForOptions } from '../helpers/wait-helpers'
 
 const PROJECT_ROOT = join(import.meta.dir, '..', '..')
 const CLI_BINARY = join(PROJECT_ROOT, 'cli')
@@ -198,6 +199,7 @@ export class TmuxSession {
       CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
       CLAUDE_CODE_DISABLE_THINKING: '1',
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
+      CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
       NO_COLOR: '1',
       DO_NOT_TRACK: '1',
       NODE_ENV: 'test',
@@ -318,17 +320,11 @@ export class TmuxSession {
     timeout = 30_000,
     interval = 100,
   ): Promise<string> {
-    const start = Date.now()
-    while (Date.now() - start < timeout) {
-      const screen = await this.capturePaneWithHistory()
-      if (screen.includes(text)) return screen
-      await sleep(interval)
-    }
-    await this.dumpLog()
-    const finalScreen = await this.capturePaneWithHistory()
-    throw new Error(
-      `Timed out waiting for text "${text}" after ${timeout}ms.\nScreen content:\n${finalScreen}`,
-    )
+    return this.waitForScreen(screen => screen.includes(text), {
+      timeoutMs: timeout,
+      intervalMs: interval,
+      description: `text "${text}"`,
+    })
   }
 
   async waitForPattern(
@@ -336,17 +332,51 @@ export class TmuxSession {
     timeout = 30_000,
     interval = 100,
   ): Promise<{ screen: string; match: RegExpMatchArray }> {
-    const start = Date.now()
-    while (Date.now() - start < timeout) {
-      const screen = await this.capturePaneWithHistory()
-      const match = screen.match(pattern)
-      if (match) return { screen, match }
-      await sleep(interval)
+    const screen = await this.waitForScreen(
+      screen => screen.match(pattern) !== null,
+      {
+        timeoutMs: timeout,
+        intervalMs: interval,
+        description: `pattern ${pattern}`,
+      },
+    )
+    const match = screen.match(pattern)
+    if (!match) {
+      throw new Error(
+        `Pattern ${pattern} matched during wait but not after capture`,
+      )
     }
-    await this.dumpLog()
-    const finalScreen = await this.capturePaneWithHistory()
-    throw new Error(
-      `Timed out waiting for pattern ${pattern} after ${timeout}ms.\nScreen content:\n${finalScreen}`,
+    return { screen, match }
+  }
+
+  async waitForScreen(
+    predicate: (screen: string) => boolean,
+    options: WaitForOptions & {
+      historyLines?: number
+      currentPaneOnly?: boolean
+    } = {},
+  ): Promise<string> {
+    return waitFor(
+      () =>
+        options.currentPaneOnly
+          ? this.capturePane()
+          : this.capturePaneWithHistory(options.historyLines),
+      predicate,
+      {
+        ...options,
+        onTimeout: async () => {
+          await this.dumpLog()
+          const finalScreen = options.currentPaneOnly
+            ? await this.capturePane()
+            : await this.capturePaneWithHistory(options.historyLines)
+          const extra = options.onTimeout
+            ? await options.onTimeout()
+            : undefined
+          return [extra, `Screen content:\n${finalScreen}`]
+            .filter(Boolean)
+            .join('\n')
+        },
+      },
     )
   }
 
@@ -366,43 +396,32 @@ export class TmuxSession {
     timeout = 30_000,
     interval = 100,
   ): Promise<'approved' | 'idle'> {
-    const start = Date.now()
-    while (Date.now() - start < timeout) {
-      const screen = await this.capturePaneWithHistory()
-      // Check for permission dialog (various prompts)
-      if (
-        screen.includes('Do you want to proceed?') ||
-        screen.includes('Do you want to make this edit') ||
-        screen.includes('Do you want to create') ||
-        screen.includes('Do you want to run') ||
-        screen.includes('Do you want to allow')
-      ) {
-        // Press Enter to accept the default "Yes" option
+    return waitFor(
+      () => this.capturePaneWithHistory(),
+      screen => getPermissionOrIdleState(screen, this._readyText) !== null,
+      {
+        timeoutMs: timeout,
+        intervalMs: interval,
+        description: 'permission dialog or idle prompt',
+        onTimeout: async () => {
+          await this.dumpLog()
+          const finalScreen = await this.capturePaneWithHistory()
+          return `Screen content:\n${finalScreen}`
+        },
+      },
+    ).then(async screen => {
+      const result = getPermissionOrIdleState(screen, this._readyText)
+      if (result === 'approved') {
         await this.sendSpecialKey('Enter')
         await sleep(300)
-        return 'approved'
       }
-      // Check for idle prompt
-      if (screen.includes(this._readyText)) {
-        return 'idle'
+      if (!result) {
+        throw new Error(
+          'Permission or idle state matched during wait but not after capture',
+        )
       }
-      // The "? for shortcuts" footer is suppressed when background tasks are
-      // present (replaced by task status UI). Detect idle via completion
-      // notifications that only appear after the turn ends.
-      if (
-        screen.includes('Started in background.') ||
-        screen.includes('Ran 1 bash command') ||
-        screen.includes('bash commands')
-      ) {
-        return 'idle'
-      }
-      await sleep(interval)
-    }
-    await this.dumpLog()
-    const finalScreen = await this.capturePaneWithHistory()
-    throw new Error(
-      `Timed out waiting for permission dialog or idle prompt after ${timeout}ms.\nScreen content:\n${finalScreen}`,
-    )
+      return result
+    })
   }
 
   /**
@@ -441,6 +460,48 @@ export class TmuxSession {
     await sleep(500)
     return this.waitForPrompt(timeout)
   }
+}
+
+export async function withTmuxSession<T>(
+  options: TmuxSessionOptions,
+  fn: (session: TmuxSession) => Promise<T>,
+): Promise<T> {
+  const session = new TmuxSession(options)
+  await session.start()
+  try {
+    return await fn(session)
+  } finally {
+    await session.stop()
+  }
+}
+
+function getPermissionOrIdleState(
+  screen: string,
+  readyText: string,
+): 'approved' | 'idle' | null {
+  if (
+    screen.includes('Do you want to proceed?') ||
+    screen.includes('Do you want to make this edit') ||
+    screen.includes('Do you want to create') ||
+    screen.includes('Do you want to run') ||
+    screen.includes('Do you want to allow')
+  ) {
+    return 'approved'
+  }
+
+  if (screen.includes(readyText)) {
+    return 'idle'
+  }
+
+  if (
+    screen.includes('Started in background.') ||
+    screen.includes('Ran 1 bash command') ||
+    screen.includes('bash commands')
+  ) {
+    return 'idle'
+  }
+
+  return null
 }
 
 // --- Utilities ---
@@ -505,10 +566,6 @@ async function ensureTmuxAvailable(): Promise<void> {
     })()
   }
   return _tmuxCheck
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 export { sleep }

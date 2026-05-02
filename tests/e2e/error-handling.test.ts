@@ -25,6 +25,7 @@ const test = createLoggingTest(bunTest)
 
 describe('Error Handling', () => {
   let server: MockAnthropicServer
+  let session: TmuxSession
 
   beforeAll(async () => {
     server = new MockAnthropicServer()
@@ -35,54 +36,30 @@ describe('Error Handling', () => {
     server.stop()
   })
 
+  afterEach(async () => {
+    if (session) await session.stop()
+  })
+
   describe('HTTP Error Codes', () => {
-    let session: TmuxSession
+    test('non-retried HTTP errors are handled gracefully', async () => {
+      session = new TmuxSession({
+        serverUrl: server.url,
+        additionalEnv: { CLAUDE_CODE_MAX_RETRIES: '0' },
+      })
+      await session.start()
 
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
-    test('400 Bad Request is handled gracefully', async () => {
       server.reset([
         errorResponse(400, 'invalid_request_error', 'Invalid request body'),
       ])
-
-      session = new TmuxSession({
-        serverUrl: server.url,
-        additionalEnv: { CLAUDE_CODE_MAX_RETRIES: '0' },
-      })
-      await session.start()
-
-      // submitAndWaitForResponse includes a delay before polling,
-      // preventing false match on stale "for shortcuts" in scrollback
-      const screen = await session.submitAndWaitForResponse(
-        'trigger 400',
-        15_000,
-      )
-
+      let screen = await session.submitAndWaitForResponse('trigger 400', 15_000)
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
-      // CLI should still be alive (not crashed)
       expect(screen.length).toBeGreaterThan(0)
-    })
 
-    test('401 Unauthorized shows auth error', async () => {
       server.reset([
         errorResponse(401, 'authentication_error', 'Invalid API key'),
       ])
-
-      session = new TmuxSession({
-        serverUrl: server.url,
-        additionalEnv: { CLAUDE_CODE_MAX_RETRIES: '0' },
-      })
-      await session.start()
-
-      const screen = await session.submitAndWaitForResponse(
-        'trigger 401',
-        15_000,
-      )
-
+      screen = await session.submitAndWaitForResponse('trigger 401', 15_000)
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
-      // Should indicate auth error somewhere on screen
       expect(
         screen.includes('401') ||
           screen.includes('auth') ||
@@ -91,6 +68,18 @@ describe('Error Handling', () => {
           screen.includes('error') ||
           screen.includes('Error'),
       ).toBe(true)
+
+      server.reset([errorResponse(500, 'api_error', 'Internal server error')])
+      screen = await session.submitAndWaitForResponse('trigger 500', 15_000)
+      expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
+      expect(screen.length).toBeGreaterThan(0)
+
+      server.reset([
+        errorResponse(529, 'overloaded_error', 'API is overloaded'),
+      ])
+      screen = await session.submitAndWaitForResponse('trigger 529', 15_000)
+      expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
+      expect(screen.length).toBeGreaterThan(0)
     })
 
     test('429 Rate Limited then success on retry', async () => {
@@ -111,56 +100,11 @@ describe('Error Handling', () => {
       )
 
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
-      // Either retried and got success, or showed rate limit error
-      expect(screen.length).toBeGreaterThan(0)
-    })
-
-    test('500 Internal Server Error is handled gracefully', async () => {
-      server.reset([errorResponse(500, 'api_error', 'Internal server error')])
-
-      session = new TmuxSession({
-        serverUrl: server.url,
-        additionalEnv: { CLAUDE_CODE_MAX_RETRIES: '0' },
-      })
-      await session.start()
-
-      const screen = await session.submitAndWaitForResponse(
-        'trigger 500',
-        15_000,
-      )
-
-      expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
-      expect(screen.length).toBeGreaterThan(0)
-    })
-
-    test('529 Overloaded is handled gracefully', async () => {
-      server.reset([
-        errorResponse(529, 'overloaded_error', 'API is overloaded'),
-      ])
-
-      session = new TmuxSession({
-        serverUrl: server.url,
-        additionalEnv: { CLAUDE_CODE_MAX_RETRIES: '0' },
-      })
-      await session.start()
-
-      const screen = await session.submitAndWaitForResponse(
-        'trigger 529',
-        15_000,
-      )
-
-      expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
       expect(screen.length).toBeGreaterThan(0)
     })
   })
 
   describe('Stream Errors', () => {
-    let session: TmuxSession
-
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
     test('connection closed mid-stream (truncated SSE)', async () => {
       const partialSSE = [
         'event: message_start',
@@ -209,7 +153,6 @@ describe('Error Handling', () => {
       )
 
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
-      // CLI should still be alive
       expect(screen.length).toBeGreaterThan(0)
     })
   })

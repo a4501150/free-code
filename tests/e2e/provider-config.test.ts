@@ -54,90 +54,7 @@ describe('Provider Config E2E', () => {
       if (session) await session.stop()
     })
 
-    test('routes requests through Chat Completions adapter', async () => {
-      // Configure an OpenAI Chat Completions provider with a model
-      // that the CLI will select when started with --model
-      openaiServer.reset([{ kind: 'text', text: 'Hello from OpenAI!' }])
-      anthropicServer.reset([textResponse('fallback')])
-
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
-        settings: {
-          providers: {
-            'test-openai': {
-              type: 'openai-chat-completions',
-              baseUrl: `${openaiServer.url}/v1`,
-              auth: {
-                active: 'apiKey',
-                apiKey: { key: 'test-openai-key' },
-              },
-              models: [{ id: 'test-model', label: 'Test Model' }],
-            },
-          },
-        },
-        additionalArgs: ['--model', 'test-model'],
-      })
-      await session.start()
-
-      await session.sendLine('Say hello')
-      const screen = await session.waitForText('Hello from OpenAI', 15_000)
-      expect(screen).toContain('Hello from OpenAI')
-
-      // Verify the request went to the OpenAI server
-      const openaiRequests = openaiServer.getRequestLog()
-      expect(openaiRequests.length).toBeGreaterThanOrEqual(1)
-      expect(openaiRequests[0]!.body.model).toBe('test-model')
-
-      // Verify it was a Chat Completions format request
-      expect(openaiRequests[0]!.body.messages).toBeDefined()
-      expect(openaiRequests[0]!.body.stream).toBe(true)
-    })
-
-    test('translates system prompt to system message', async () => {
-      openaiServer.reset([{ kind: 'text', text: 'OK' }])
-      anthropicServer.reset([textResponse('fallback')])
-
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
-        settings: {
-          providers: {
-            'test-openai': {
-              type: 'openai-chat-completions',
-              baseUrl: `${openaiServer.url}/v1`,
-              auth: {
-                active: 'apiKey',
-                apiKey: { key: 'test-key' },
-              },
-              models: [{ id: 'test-model' }],
-            },
-          },
-        },
-        additionalArgs: ['--model', 'test-model'],
-      })
-      await session.start()
-
-      await session.sendLine('Hello')
-      await session.waitForText('OK', 15_000)
-
-      const requests = openaiServer.getRequestLog()
-      expect(requests.length).toBeGreaterThanOrEqual(1)
-
-      const messages = requests[0]!.body.messages as Array<{
-        role: string
-        content: unknown
-      }>
-      // Should have a system message (from system prompt) and a user message
-      const systemMsg = messages.find(m => m.role === 'system')
-      expect(systemMsg).toBeDefined()
-
-      const userMsg = messages.find(m => m.role === 'user')
-      expect(userMsg).toBeDefined()
-    })
-
-    test('sends auth headers correctly', async () => {
-      openaiServer.reset([{ kind: 'text', text: 'Authed' }])
-      anthropicServer.reset([textResponse('fallback')])
-
+    test('routes, translates, authenticates, and handles tool use', async () => {
       session = new TmuxSession({
         serverUrl: anthropicServer.url,
         settings: {
@@ -149,7 +66,7 @@ describe('Provider Config E2E', () => {
                 active: 'apiKey',
                 apiKey: { key: 'my-secret-key-123' },
               },
-              models: [{ id: 'test-model' }],
+              models: [{ id: 'test-model', label: 'Test Model' }],
             },
           },
         },
@@ -157,19 +74,29 @@ describe('Provider Config E2E', () => {
       })
       await session.start()
 
-      await session.sendLine('Test auth')
-      await session.waitForText('Authed', 15_000)
+      openaiServer.reset([{ kind: 'text', text: 'Hello from OpenAI!' }])
+      anthropicServer.reset([textResponse('fallback')])
+      await session.sendLine('Say hello')
+      const screen = await session.waitForText('Hello from OpenAI', 15_000)
+      expect(screen).toContain('Hello from OpenAI')
+      await session.waitForPrompt(15_000)
 
-      const requests = openaiServer.getRequestLog()
-      expect(requests.length).toBeGreaterThanOrEqual(1)
-      expect(requests[0]!.headers['authorization']).toBe(
+      let openaiRequests = openaiServer.getRequestLog()
+      expect(openaiRequests.length).toBeGreaterThanOrEqual(1)
+      expect(openaiRequests[0]!.body.model).toBe('test-model')
+      expect(openaiRequests[0]!.body.messages).toBeDefined()
+      expect(openaiRequests[0]!.body.stream).toBe(true)
+      expect(openaiRequests[0]!.headers['authorization']).toBe(
         'Bearer my-secret-key-123',
       )
-    })
 
-    test('tool use through Chat Completions adapter', async () => {
-      // First response: tool call to read a file
-      // Second response: text after tool result
+      const messages = openaiRequests[0]!.body.messages as Array<{
+        role: string
+        content: unknown
+      }>
+      expect(messages.find(m => m.role === 'system')).toBeDefined()
+      expect(messages.find(m => m.role === 'user')).toBeDefined()
+
       openaiServer.reset([
         {
           kind: 'tool_call',
@@ -187,36 +114,15 @@ describe('Provider Config E2E', () => {
         { kind: 'text', text: 'Tool executed successfully!' },
       ])
       anthropicServer.reset([textResponse('fallback')])
-
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
-        settings: {
-          providers: {
-            'test-openai': {
-              type: 'openai-chat-completions',
-              baseUrl: `${openaiServer.url}/v1`,
-              auth: {
-                active: 'apiKey',
-                apiKey: { key: 'test-key' },
-              },
-              models: [{ id: 'test-model' }],
-            },
-          },
-        },
-        additionalArgs: ['--model', 'test-model'],
-      })
-      await session.start()
-
       await session.submitAndApprove('Run a test command')
-      const screen = await session.waitForText(
+      const toolScreen = await session.waitForText(
         'Tool executed successfully',
         20_000,
       )
-      expect(screen).toContain('Tool executed successfully')
+      expect(toolScreen).toContain('Tool executed successfully')
 
-      // Verify tool definitions were sent in Chat Completions format
-      const requests = openaiServer.getRequestLog()
-      const firstReq = requests[0]!
+      openaiRequests = openaiServer.getRequestLog()
+      const firstReq = openaiRequests[0]!
       expect(firstReq.body.tools).toBeDefined()
       const tools = firstReq.body.tools as Array<{
         type: string
@@ -225,17 +131,14 @@ describe('Provider Config E2E', () => {
       expect(tools[0]!.type).toBe('function')
       expect(tools[0]!.function).toBeDefined()
 
-      // Second request should contain tool result
-      if (requests.length >= 2) {
-        const secondReq = requests[1]!
-        const msgs = secondReq.body.messages as Array<{
-          role: string
-          tool_call_id?: string
-        }>
-        const toolMsg = msgs.find(m => m.role === 'tool')
-        expect(toolMsg).toBeDefined()
-        expect(toolMsg!.tool_call_id).toBe('call_test_001')
-      }
+      const secondReq = openaiRequests[1]!
+      const msgs = secondReq.body.messages as Array<{
+        role: string
+        tool_call_id?: string
+      }>
+      const toolMsg = msgs.find(m => m.role === 'tool')
+      expect(toolMsg).toBeDefined()
+      expect(toolMsg!.tool_call_id).toBe('call_test_001')
     })
   })
 
@@ -277,7 +180,7 @@ describe('Provider Config E2E', () => {
       if (session) await session.stop()
     })
 
-    test('qualified name routes to correct provider (openai)', async () => {
+    test('qualified OpenAI model routes to correct provider and model ID', async () => {
       // Both providers share the same model ID "shared-model".
       // Using "test-openai:shared-model" should route to the OpenAI server.
       openaiServer.reset([{ kind: 'text', text: 'From OpenAI provider' }])
@@ -353,42 +256,6 @@ describe('Provider Config E2E', () => {
       const anthropicRequests = anthropicServer.getRequestLog()
       expect(anthropicRequests.length).toBeGreaterThanOrEqual(1)
       expect(openaiServer.getRequestLog().length).toBe(0)
-    })
-
-    test('qualified model ID resolves to correct provider', async () => {
-      openaiServer.reset([{ kind: 'text', text: 'OpenAI resolved!' }])
-      anthropicServer.reset([textResponse('fallback')])
-
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
-        settings: {
-          providers: {
-            'test-anthropic': {
-              type: 'anthropic',
-              baseUrl: anthropicServer.url,
-              auth: { active: 'apiKey', apiKey: { key: 'test-key' } },
-              models: [{ id: 'shared-model' }],
-            },
-            'test-openai': {
-              type: 'openai-chat-completions',
-              baseUrl: `${openaiServer.url}/v1`,
-              auth: { active: 'apiKey', apiKey: { key: 'test-key' } },
-              models: [{ id: 'shared-model' }],
-            },
-          },
-        },
-        additionalArgs: ['--model', 'test-openai:shared-model'],
-      })
-      await session.start()
-
-      await session.sendLine('Hello')
-      const screen = await session.waitForText('OpenAI resolved', 15_000)
-      expect(screen).toContain('OpenAI resolved')
-
-      // Verify the request went to OpenAI with the model ID
-      const openaiRequests = openaiServer.getRequestLog()
-      expect(openaiRequests.length).toBeGreaterThanOrEqual(1)
-      expect(openaiRequests[0]!.body.model).toBe('shared-model')
     })
   })
 

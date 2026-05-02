@@ -28,7 +28,8 @@ import {
   textResponse,
   rawResponse,
 } from '../helpers/fixture-builders'
-import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
+import { waitForRequestCount } from '../helpers/mock-server-wait'
+import { TmuxSession, createLoggingTest } from './tmux-helpers'
 
 setDefaultTimeout(120_000)
 
@@ -118,18 +119,11 @@ describe('Auto Mode Classifier Deny E2E', () => {
     //   4. main loop continuation after the deny tool_result
     // The auto-mode banner "shift+tab to cycle" is always on screen so
     // waitForPrompt returns immediately and isn't a useful idle signal.
-    const expectedRequests = 4
-    const deadline = Date.now() + 60_000
-    while (
-      Date.now() < deadline &&
-      server.getRequestCount() < expectedRequests
-    ) {
-      await sleep(200)
-    }
-    // Allow a final render tick after the last response.
-    await sleep(1000)
-
-    const screen = await session.capturePaneWithHistory(2000)
+    await waitForRequestCount(server, 4, {
+      timeoutMs: 60_000,
+      description: 'auto-mode classifier collapsed-view requests',
+    })
+    const screen = await session.waitForText('Acknowledged.', 10_000)
 
     // Diagnostic: dump the entire pane for inspection.
     // biome-ignore lint/suspicious/noConsole: intentional diagnostic output
@@ -205,17 +199,11 @@ describe('Auto Mode Classifier Deny E2E', () => {
 
     await session.sendLine('please run rm -rf /tmp/anything-special')
 
-    const expectedRequests = 4
-    const deadline = Date.now() + 60_000
-    while (
-      Date.now() < deadline &&
-      server.getRequestCount() < expectedRequests
-    ) {
-      await sleep(200)
-    }
-    await sleep(1000)
-
-    const screen = await session.capturePaneWithHistory(2000)
+    await waitForRequestCount(server, 4, {
+      timeoutMs: 60_000,
+      description: 'auto-mode classifier verbose-view requests',
+    })
+    const screen = await session.waitForText('Acknowledged.', 10_000)
     // biome-ignore lint/suspicious/noConsole: intentional diagnostic output
     console.log(
       '\n========== VERBOSE PANE ==========\n' +

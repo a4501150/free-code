@@ -18,16 +18,17 @@ import {
   afterAll,
   afterEach,
 } from 'bun:test'
+import { writeFile, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import {
   MockAnthropicServer,
   type RequestLogEntry,
 } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
+import { waitForRequestCount } from '../helpers/mock-server-wait'
+import { TmuxSession, createLoggingTest } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
-import { writeFile, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -80,6 +81,7 @@ function resultContentString(
 
 describe('Tool Use E2E', () => {
   let server: MockAnthropicServer
+  let session: TmuxSession
 
   beforeAll(async () => {
     server = new MockAnthropicServer()
@@ -90,125 +92,74 @@ describe('Tool Use E2E', () => {
     server.stop()
   })
 
-  // ─── Bash ───────────────────────────────────────────────
+  afterEach(async () => {
+    if (session) await session.stop()
+  })
 
-  describe('Bash', () => {
-    let session: TmuxSession
+  describe('Basic Tools', () => {
+    test('basic Bash, Read, Edit, and Write tool results', async () => {
+      session = new TmuxSession({ serverUrl: server.url })
+      await session.start()
 
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
-    test('successful command returns output, is_error false', async () => {
       server.reset([
         toolUseResponse([
           { name: 'Bash', input: { command: 'echo "hello from bash"' } },
         ]),
         textResponse('Done'),
       ])
-
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
-
-      // 1 tool call → 1 permission approval
       await session.submitAndApprove('Run echo hello')
-
-      const log = server.getRequestLog()
-      expect(log.length).toBeGreaterThanOrEqual(2)
-
-      const toolResults = getToolResults(log)
+      let log = await waitForRequestCount(server, 2, {
+        description: 'Bash success tool_result request',
+      })
+      let toolResults = getToolResults(log)
       expect(toolResults.length).toBe(1)
       expect(toolResults[0].is_error).not.toBe(true)
+      expect(resultContentString(toolResults[0])).toContain('hello from bash')
 
-      const content = resultContentString(toolResults[0])
-      expect(content).toContain('hello from bash')
-    })
-
-    test('failed command sets is_error', async () => {
       server.reset([
         toolUseResponse([{ name: 'Bash', input: { command: 'exit 1' } }]),
         textResponse('Command failed'),
       ])
-
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
-
-      // 1 tool call → 1 permission approval
       await session.submitAndApprove('Run failing command')
-
-      const log = server.getRequestLog()
-      expect(log.length).toBeGreaterThanOrEqual(2)
-
-      const toolResults = getToolResults(log)
+      log = await waitForRequestCount(server, 2, {
+        description: 'Bash failure tool_result request',
+      })
+      toolResults = getToolResults(log)
       expect(toolResults.length).toBe(1)
       expect(toolResults[0].is_error).toBe(true)
-    })
-  })
 
-  // ─── Read ───────────────────────────────────────────────
-
-  describe('Read', () => {
-    let session: TmuxSession
-
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
-    test('reads file content correctly', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
-
-      const testFile = join(session.cwd, 'test-read.txt')
+      const readFilePath = join(session.cwd, 'test-read.txt')
       await writeFile(
-        testFile,
+        readFilePath,
         'Read integration test content line one\nLine two',
       )
-
       server.reset([
-        toolUseResponse([{ name: 'Read', input: { file_path: testFile } }]),
+        toolUseResponse([{ name: 'Read', input: { file_path: readFilePath } }]),
         textResponse('File read successfully'),
       ])
-
-      // 1 tool call → 1 permission approval
       await session.submitAndApprove('Read the test file')
-
-      const log = server.getRequestLog()
-      expect(log.length).toBeGreaterThanOrEqual(2)
-
-      const toolResults = getToolResults(log)
+      log = await waitForRequestCount(server, 2, {
+        description: 'Read tool_result request',
+      })
+      toolResults = getToolResults(log)
       expect(toolResults.length).toBe(1)
       expect(toolResults[0].is_error).not.toBe(true)
+      const readContent = resultContentString(toolResults[0])
+      expect(readContent).toContain('Read integration test content line one')
+      expect(readContent).toContain('Line two')
 
-      const content = resultContentString(toolResults[0])
-      expect(content).toContain('Read integration test content line one')
-      expect(content).toContain('Line two')
-    })
-  })
-
-  // ─── Edit ───────────────────────────────────────────────
-
-  describe('Edit', () => {
-    let session: TmuxSession
-
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
-    test('replaces string in file and verifies disk change', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
-
-      const testFile = join(session.cwd, 'test-edit.txt')
-      await writeFile(testFile, 'The quick brown fox jumps over the lazy dog.')
-
-      // Read first (required before Edit), then Edit, then text
+      const editFilePath = join(session.cwd, 'test-edit.txt')
+      await writeFile(
+        editFilePath,
+        'The quick brown fox jumps over the lazy dog.',
+      )
       server.reset([
-        toolUseResponse([{ name: 'Read', input: { file_path: testFile } }]),
+        toolUseResponse([{ name: 'Read', input: { file_path: editFilePath } }]),
         toolUseResponse([
           {
             name: 'Edit',
             input: {
-              file_path: testFile,
+              file_path: editFilePath,
               old_string: 'quick brown fox',
               new_string: 'slow red turtle',
             },
@@ -216,40 +167,18 @@ describe('Tool Use E2E', () => {
         ]),
         textResponse('Edit complete'),
       ])
-
-      // 2 tool calls (Read + Edit) → 2 permission approvals
       await session.submitAndApprove('Edit the file')
-
-      const log = server.getRequestLog()
-      expect(log.length).toBeGreaterThanOrEqual(3)
-
-      // Check the Edit tool result (3rd request, index 2)
-      const toolResults = getToolResults(log, 2)
+      log = await waitForRequestCount(server, 3, {
+        description: 'Edit tool_result request',
+      })
+      toolResults = getToolResults(log, 2)
       expect(toolResults.length).toBe(1)
       expect(toolResults[0].is_error).not.toBe(true)
-
-      // Verify the file was actually changed on disk
-      const fileContent = await readFile(testFile, 'utf-8')
-      expect(fileContent).toContain('slow red turtle')
-      expect(fileContent).not.toContain('quick brown fox')
-    })
-  })
-
-  // ─── Write ──────────────────────────────────────────────
-
-  describe('Write', () => {
-    let session: TmuxSession
-
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
-    test('creates new file with content', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      const editedContent = await readFile(editFilePath, 'utf-8')
+      expect(editedContent).toContain('slow red turtle')
+      expect(editedContent).not.toContain('quick brown fox')
 
       const newFile = join(session.cwd, 'newly-written.txt')
-
       server.reset([
         toolUseResponse([
           {
@@ -262,18 +191,13 @@ describe('Tool Use E2E', () => {
         ]),
         textResponse('File written'),
       ])
-
-      // 1 tool call → 1 permission approval
       await session.submitAndApprove('Write a new file')
-
-      const log = server.getRequestLog()
-      expect(log.length).toBeGreaterThanOrEqual(2)
-
-      const toolResults = getToolResults(log)
+      log = await waitForRequestCount(server, 2, {
+        description: 'Write tool_result request',
+      })
+      toolResults = getToolResults(log)
       expect(toolResults.length).toBe(1)
       expect(toolResults[0].is_error).not.toBe(true)
-
-      // Verify the file exists on disk with expected content
       const fileContent = await readFile(newFile, 'utf-8')
       expect(fileContent).toContain('This file was created by the Write tool.')
       expect(fileContent).toContain('Second line.')
@@ -286,16 +210,8 @@ describe('Tool Use E2E', () => {
   // via `find` / `grep` / `rg`). Config tool was removed entirely in c07726a.
   // Tests for those registrations were deleted along with the tools.
 
-  // ─── Parallel Tool Calls ──────────────────────────────
-
   describe('Parallel Tool Calls', () => {
-    let session: TmuxSession
-
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
-    test('Bash + Read: both results returned correctly', async () => {
+    test('parallel Bash and file tools return all tool_results', async () => {
       session = new TmuxSession({ serverUrl: server.url })
       await session.start()
 
@@ -312,60 +228,35 @@ describe('Tool Use E2E', () => {
         ]),
         textResponse('Both tools completed'),
       ])
-
-      // 2 parallel tool calls → 2 permission approvals
       await session.submitAndApprove('Run bash and read file')
-
-      const log = server.getRequestLog()
-      expect(log.length).toBeGreaterThanOrEqual(2)
-
-      const toolResults = getToolResults(log)
+      let log = await waitForRequestCount(server, 2, {
+        description: 'Bash + Read parallel tool_result request',
+      })
+      let toolResults = getToolResults(log)
       expect(toolResults.length).toBe(2)
-
       for (const tr of toolResults) {
         expect(tr.is_error).not.toBe(true)
       }
-
       const allContent = toolResults
         .map(tr => resultContentString(tr))
         .join('\n')
       expect(allContent).toContain('parallel_bash_output')
       expect(allContent).toContain('parallel read content')
-    })
 
-    test('two parallel Bash calls', async () => {
       server.reset([
         toolUseResponse([
           { name: 'Bash', input: { command: 'echo "parallel_a"' } },
           { name: 'Bash', input: { command: 'echo "parallel_b"' } },
         ]),
-        textResponse(
-          'Both parallel commands completed: parallel_a and parallel_b',
-        ),
+        textResponse('Both parallel commands completed'),
       ])
-
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
-
-      // 2 parallel tool calls → 2 permission approvals
       await session.submitAndApprove('Run two commands in parallel')
-
-      const log = server.getRequestLog()
-      expect(log.length).toBeGreaterThanOrEqual(2)
-
-      const secondRequest = log[1]
-      const messages = secondRequest.body.messages as Array<{
-        role: string
-        content: unknown
-      }>
-      const lastMsg = messages[messages.length - 1]
-      expect(lastMsg.role).toBe('user')
-      const content = lastMsg.content as Array<{ type: string }>
-      const toolResults = content.filter(c => c.type === 'tool_result')
+      log = await waitForRequestCount(server, 2, {
+        description: 'two parallel Bash tool_result request',
+      })
+      toolResults = getToolResults(log)
       expect(toolResults.length).toBe(2)
-    })
 
-    test('three parallel tool calls', async () => {
       server.reset([
         toolUseResponse([
           { name: 'Bash', input: { command: 'echo "one"' } },
@@ -374,28 +265,18 @@ describe('Tool Use E2E', () => {
         ]),
         textResponse('All three completed'),
       ])
-
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
-
-      // 3 parallel tool calls → 3 permission approvals
       await session.submitAndApprove('Run three commands')
-
-      const log = server.getRequestLog()
-      expect(log.length).toBeGreaterThanOrEqual(2)
-
-      const secondRequest = log[1]
-      const messages = secondRequest.body.messages as Array<{
-        role: string
-        content: unknown
-      }>
-      const lastMsg = messages[messages.length - 1]
-      const content = lastMsg.content as Array<{ type: string }>
-      const toolResults = content.filter(c => c.type === 'tool_result')
+      log = await waitForRequestCount(server, 2, {
+        description: 'three parallel Bash tool_result request',
+      })
+      toolResults = getToolResults(log)
       expect(toolResults.length).toBe(3)
     })
 
-    test('mixed parallel: one succeeds, one fails', async () => {
+    test('parallel mixed failure and sequential follow-up are handled', async () => {
+      session = new TmuxSession({ serverUrl: server.url })
+      await session.start()
+
       server.reset([
         toolUseResponse([
           { name: 'Bash', input: { command: 'echo "success"' } },
@@ -403,31 +284,13 @@ describe('Tool Use E2E', () => {
         ]),
         textResponse('One command succeeded and one failed'),
       ])
-
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
-
-      // 2 parallel tool calls → 2 permission approvals
       await session.submitAndApprove('Run mixed commands')
-
-      const log = server.getRequestLog()
-      expect(log.length).toBeGreaterThanOrEqual(2)
-
-      const secondRequest = log[1]
-      const messages = secondRequest.body.messages as Array<{
-        role: string
-        content: unknown
-      }>
-      const lastMsg = messages[messages.length - 1]
-      const content = lastMsg.content as Array<{
-        type: string
-        is_error?: boolean
-      }>
-      const toolResults = content.filter(c => c.type === 'tool_result')
+      let log = await waitForRequestCount(server, 2, {
+        description: 'mixed parallel Bash tool_result request',
+      })
+      let toolResults = getToolResults(log)
       expect(toolResults.length).toBe(2)
-    })
 
-    test('parallel tools followed by sequential tool', async () => {
       server.reset([
         toolUseResponse([
           { name: 'Bash', input: { command: 'echo "p1"' } },
@@ -436,27 +299,15 @@ describe('Tool Use E2E', () => {
         toolUseResponse([{ name: 'Bash', input: { command: 'echo "seq"' } }]),
         textResponse('All done: p1, p2, seq'),
       ])
-
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
-
-      // 2 parallel + 1 sequential = 3 permission approvals
       await session.submitAndApprove('Run parallel then sequential')
-
-      const log = server.getRequestLog()
+      log = await waitForRequestCount(server, 3, {
+        description: 'parallel then sequential tool requests',
+      })
       expect(log.length).toBeGreaterThanOrEqual(3)
     })
   })
 
-  // ─── Parallel Agent Tool Calls ────────────────────
-
   describe('Parallel Agent Tool Calls', () => {
-    let session: TmuxSession
-
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
     test('multiple concurrent agents complete without infinite re-render crash', async () => {
       // Regression test: GroupedAgentToolUseView renders a live timer via
       // useNow() when multiple agents run concurrently. A broken getSnapshot
