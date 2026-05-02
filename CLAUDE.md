@@ -1,178 +1,78 @@
 # CLAUDE.md
 
-Guidance for Claude Code when working in this repository.
+Guidance for agents working in this repository. Keep this file short: prefer links to source-of-truth files over copied config values, command tables, schemas, or code examples.
 
-## Quickstart
+## Start here
 
-- Build/run/test commands: see `scripts` in [package.json](package.json).
-- Binaries: `./cli` (standard build) and `./cli-dev` (dev build). `./cli` is what `bun test` runs against.
-- Auth: set `ANTHROPIC_API_KEY`, or run `./cli /login` for OAuth.
+- Use [package.json](package.json) for current build, run, format, typecheck, and test scripts.
+- The standard built CLI is `./cli`; the dev build is `./cli-dev`. E2E tests drive the built `./cli`, so rebuild after source edits before running them.
+- Main entry points: [src/entrypoints/cli.tsx](src/entrypoints/cli.tsx), [src/screens/REPL.tsx](src/screens/REPL.tsx), and [src/QueryEngine.ts](src/QueryEngine.ts).
+- Registries: [src/commands.ts](src/commands.ts) and [src/tools.ts](src/tools.ts). Implementations live under [src/commands/](src/commands/) and [src/tools/](src/tools/).
+- Major subsystems live under [src/services/](src/services/), [src/state/](src/state/), [src/hooks/](src/hooks/), [src/components/](src/components/), [src/skills/](src/skills/), [src/plugins/](src/plugins/), [src/voice/](src/voice/), and [src/tasks/](src/tasks/).
 
-## High-level architecture
+## Source-of-truth map
 
-- Entry point: [src/entrypoints/cli.tsx](src/entrypoints/cli.tsx) bootstraps the CLI.
-- Main UI: [src/screens/REPL.tsx](src/screens/REPL.tsx) (Ink/React).
-- Query pipeline: [src/QueryEngine.ts](src/QueryEngine.ts) coordinates message flow, tool use, and model calls.
-- Registries: [src/commands.ts](src/commands.ts) (slash commands) and [src/tools.ts](src/tools.ts) (tools). Bodies live under `src/commands/` and `src/tools/`.
-- Subsystems: `src/services/` (API, OAuth, MCP), `src/state/`, `src/hooks/`, `src/components/`, `src/skills/`, `src/plugins/`, `src/bridge/` (IDE), `src/voice/`, `src/tasks/` (background).
+Read these files instead of duplicating their contents here:
+
+- Settings/freecode schema and defaults: [src/utils/settings/types.ts](src/utils/settings/types.ts).
+- Settings migration: [src/utils/settings/migrateToFreecode.ts](src/utils/settings/migrateToFreecode.ts).
+- Provider registry and model lookup: [src/utils/model/providerRegistry.ts](src/utils/model/providerRegistry.ts).
+- Legacy provider migration: [src/utils/model/legacyProviderMigration.ts](src/utils/model/legacyProviderMigration.ts).
+- Agent model resolution and sentinels: [src/utils/model/agent.ts](src/utils/model/agent.ts).
+- Model helpers: [src/utils/model/modelResolution.ts](src/utils/model/modelResolution.ts), [src/utils/model/modelDisplay.ts](src/utils/model/modelDisplay.ts), and [src/utils/model/model.ts](src/utils/model/model.ts).
+- API client impure shell: [src/services/api/client.ts](src/services/api/client.ts).
+- Provider adapters: [src/services/api/](src/services/api/).
+- API constants: [src/constants/api.ts](src/constants/api.ts).
+- Build flags, defines, and React Compiler staging: [scripts/build.ts](scripts/build.ts).
+- Runtime env semantics: search source references and read [src/utils/envUtils.ts](src/utils/envUtils.ts).
 
 ## Testing
 
-All tests are e2e — they launch the compiled `./cli` against a mock API server and drive it through tmux. Infrastructure: `tests/helpers/` (mock servers, fixture builders) and `tests/e2e/tmux-helpers.ts` (`TmuxSession`). Read existing tests in `tests/e2e/` for patterns before writing new ones.
+- E2E tests launch the compiled CLI through tmux. Test harnesses and fixture builders live in [tests/helpers/](tests/helpers/) and [tests/e2e/tmux-helpers.ts](tests/e2e/tmux-helpers.ts).
+- Unit tests live in [tests/unit/](tests/unit/) and cover adapters, settings, token handling, schemas, and parsing utilities.
+- After source edits, run `bun run build` before E2E tests; otherwise tests may exercise a stale `./cli`.
+- Run the suites that cover the changed subsystem. If no suite covers the behavior, add or update a focused test.
+- For new E2E files, copy timing/session patterns from existing [tests/e2e/](tests/e2e/) files rather than inventing new sleeps.
 
-**Rebuild first, always.** Tests run against `./cli`, not `./cli-dev`. Run `bun run build` after any source edit — a stale binary masks behavior changes. Test commands: see `scripts` in `package.json`.
+### Test gotchas
 
-**When to run.** Run the e2e suites whose domain your change touches before committing. If no suite covers your subsystem, add one.
+- `TmuxSession` runs with `NODE_ENV=test`; debug logging is suppressed unless debug flags are passed. For ad-hoc diagnostics, CLI `console.error` output is visible through the tmux log helpers.
+- Prefer mock server request logs over pane scraping when asserting API payloads; rendered ANSI can contaminate scraped text.
+- E2E tests need explicit timeouts and polling helpers such as `waitFor`, `waitForRequestCount`, `waitForRequest`, and `TmuxSession.waitForScreen`.
+- Prompt suggestions are disabled in `TmuxSession` by default because hidden suggestion calls consume mock server responses. Tests that enable them must account for extra requests.
+- Group multiple turns in one tmux session only when startup, history, resume, and stream-state assumptions are irrelevant. Reset mock servers only after the previous turn is idle.
+- To test subagent model resolution, use a unique marker in the subagent system prompt and locate the subagent request in the mock server log. For feature-flag-gated built-ins, prefer a user-defined markdown agent in the test fixture. See [tests/e2e/provider-config.test.ts](tests/e2e/provider-config.test.ts).
 
-### Gotchas (not obvious from source)
+## Provider system rules
 
-- **Debug logging is suppressed under tests.** `tmux-helpers.ts` sets `NODE_ENV=test`, and `shouldLogDebugMessage` in [src/utils/debug.ts](src/utils/debug.ts) drops `logForDebugging` calls unless `--debug` / `--debug-to-stderr` is passed via `additionalArgs`. For ad-hoc diagnostics, `console.error` from the CLI is captured in the tmux pane; `session.dumpLog()` surfaces it.
-- **Trust `server.getRequestLog()[i].body.*` over `capturePane*`.** Pane scrapes render ANSI, which can make adjacent escape codes look like suffixes on field values (e.g. a bold `\x1b[1m` next to a model ID can appear as `model-id[1m]` in scraped text). The mock server's JSON-parsed request body is the source of truth.
-- **Bun's default test timeout is 5s;** e2e tests need more. Add `setDefaultTimeout(...)` at the top of new test files — see existing files for the pattern.
-- **Prefer shared polling helpers over fixed sleeps.** Use `waitFor`, `waitForRequestCount`, `waitForRequest`, and `TmuxSession.waitForScreen(...)` for observable conditions. If a fixed `sleep(...)` is unavoidable, keep it local and make the missing observable condition obvious.
-- **Prompt suggestions are disabled in `TmuxSession` by default** (`CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=0`) because hidden forked-agent suggestion calls consume mock server responses. Tests that enable prompt suggestions must account for the extra requests.
-- **Group tmux e2e turns only when startup and history assumptions are safe.** Keep fresh sessions for startup config, CLI args, empty-context behavior, resume/continue state, and unusual stream/error state. When grouping turns, call `server.reset(...)` only after the previous turn is idle, then assert against the request log after that reset rather than absolute indexes from earlier turns.
+- Provider configuration is driven by `freecode.json`; when providers are absent, legacy env/config migration synthesizes them. Read the source-of-truth files above for exact schemas and resolution order.
+- Keep adapters pure: no direct env reads and no auth imports inside provider adapters. Auth/config enters through `ProviderConfig` and injected callbacks; [src/services/api/client.ts](src/services/api/client.ts) owns the impure boundary.
+- Query capabilities through the registry instead of branching on provider identity. Special cases for Anthropic proxies, first-party features, and cache behavior belong in the provider/model layer.
+- Auth is independent of wire format. Do not assume a provider type implies a specific auth method.
+- Do not hardcode Anthropic URLs or API versions outside [src/constants/api.ts](src/constants/api.ts).
+- Anthropic-platform-only body metadata and headers must stay gated to Anthropic-type providers. This prevents meaningless identifiers and per-session cache-key churn on other providers.
+- `defaultSubagentModel` is a hard override for subagent routing. If changing tiered agent model behavior, read [src/utils/model/agent.ts](src/utils/model/agent.ts) and the provider-config tests first.
 
-### Subagent model resolution tests
+## Build and settings rules
 
-To test what model a subagent resolves to: give the subagent a unique marker in its system prompt, then match `body.system` in `server.getRequestLog()` to locate its request. For feature-flag-gated built-in agents (e.g. Plan, gated by `BUILTIN_EXPLORE_PLAN_AGENTS`), the stock `./cli` doesn't include them — use a user-defined markdown agent in `<cwd>/.claude/agents/` instead, written before `session.start()`. Working reference: `Subagent Model Tier Routing` in [tests/e2e/provider-config.test.ts](tests/e2e/provider-config.test.ts).
+- Feature flags are compile-time `feature(...)` gates. Before adding or changing a flag, inspect [scripts/build.ts](scripts/build.ts) and existing source references so the flag is intentionally default, dev-full, or explicitly build-only.
+- Do not reintroduce React Compiler artifacts into source. The checked-in `.tsx` files are the clean pre-compilation source; compiler output belongs only in the build staging path.
+- Do not copy settings tables, default model lists, env-var lists, or feature-flag lists into this file. Link to the schema or build script instead.
 
-## Provider system
+## Non-obvious gotchas
 
-Model/provider is config-driven via the `providers` field in `freecode.json`. Each provider has a wire-format type, auth config, and model list. When `freecode.json` has no `providers`, a legacy migration synthesizes one from env vars.
+### Scroll re-pin after context clear or conversation ID changes
 
-### Data flow
+Virtual scrolling caches item heights by message UUID and conversation ID. If you modify clear, compact, plan-mode approval, or any path that bumps `conversationId`, ensure scroll is re-pinned after the bump and after async operations that can render intermediate empty ranges. Read [src/hooks/useVirtualScroll.ts](src/hooks/useVirtualScroll.ts), [src/commands/clear/conversation.ts](src/commands/clear/conversation.ts), and the relevant REPL code before changing these paths.
 
-```
-freecode.json providers  (or legacy env-var migration)
-  → ProviderRegistry (singleton, lazy-init)
-    → resolveDefaultProvider() / getProviderForModel(model)
-      → createClientForProvider()
-        → Anthropic SDK + per-type fetch adapter (or native for `anthropic`)
-```
+### Fingerprint stability depends on the first API user message
 
-### Source of truth
+Anthropic attribution uses a fingerprint derived from the first API user message. Do not add per-turn dynamic content ahead of it, reshape the stable user-context prepend, remove module-level memoization from user context, or clear user-context caches except at semantic invalidation boundaries such as prompt injection changes, compact, or clear. Read [src/utils/fingerprint.ts](src/utils/fingerprint.ts), [src/utils/api.ts](src/utils/api.ts), [src/context.ts](src/context.ts), [src/services/api/claude.ts](src/services/api/claude.ts), and the compact/clear cleanup code before touching this flow.
 
-Read these files — do not duplicate their contents here.
+### Codex Responses adapter must tolerate noncanonical llama.cpp SSE
 
-- [src/utils/settings/types.ts](src/utils/settings/types.ts) — Zod schemas: `ProviderConfig`, `ProviderModelSchema`, `ProviderAuthConfig`, `ProviderCacheConfig`, `ProviderCapabilitiesSchema`. Also the schema for every freecode.json setting (models, metadata, capabilities, pricing, thinking flags, etc.).
-- [src/utils/model/providerRegistry.ts](src/utils/model/providerRegistry.ts) — registry singleton, capability derivation, model indexing, `resolveModelId()`, `propagateModelPrefix()`.
-- [src/utils/model/legacyProviderMigration.ts](src/utils/model/legacyProviderMigration.ts) — legacy env vars → provider config (resolves provider-specific env vars into `config.baseUrl`/`config.auth`).
-- [src/utils/settings/migrateToFreecode.ts](src/utils/settings/migrateToFreecode.ts) — one-time settings.json → freecode.json migration (incl. `mcpServers` pulled from `~/.claude.json`). Each field promotion is guarded individually so new promotions take effect on existing installs.
-- [src/utils/model/agent.ts](src/utils/model/agent.ts) — agent model resolution; sentinel definitions.
-- [src/utils/model/modelResolution.ts](src/utils/model/modelResolution.ts), [src/utils/model/modelDisplay.ts](src/utils/model/modelDisplay.ts), [src/utils/model/model.ts](src/utils/model/model.ts) (barrel).
-- [src/services/api/client.ts](src/services/api/client.ts) — `getAnthropicClient()`; the only impure shell that creates auth closures for adapters.
-- `src/services/api/*-adapter.ts` — one adapter per non-Anthropic wire format.
-- [src/constants/api.ts](src/constants/api.ts) — `ANTHROPIC_API_VERSION` and `getApiBaseUrl()`.
+The codex `/v1/responses` adapter intentionally handles llama.cpp event-order differences for reasoning blocks, missing function-call argument done events, reasoning metadata side-channel deltas, and parallel tool-call item ordering. Do not simplify these state-machine branches without running the codex adapter unit tests and checking [src/services/api/codex-fetch-adapter.ts](src/services/api/codex-fetch-adapter.ts), [src/services/api/claude.ts](src/services/api/claude.ts), and [tests/unit/](tests/unit/).
 
-### Rules when touching the provider system
+### ScrollBox children should not rely on percentage height
 
-- **Adapters are pure.** Zero `process.env` reads, zero auth imports. Everything comes through `ProviderConfig` and injected callbacks. The "impure shell" lives only in [src/services/api/client.ts](src/services/api/client.ts).
-- **Query capabilities, not provider identity.** Use `registry.getCapability(model, 'capName')` instead of `isBedrockProvider()` / `isVertexProvider()`. Capabilities are derived from `config.type` with special handling for Anthropic proxies (non-official baseUrl ⇒ `firstPartyFeatures: false`). See `ProviderCapabilitiesSchema` in types.ts.
-- **Auth is orthogonal to wire format.** Any of `apiKey`, `bearer`, `oauth`, `aws`, `gcp`, `azure` can pair with any provider type. Resolution reads `config.auth.active`.
-- **Cache behavior is per-provider** via `cache.type`: `explicit-breakpoint` (keep `cache_control` markers), `automatic-prefix` (strip markers, provider caches automatically), `none` (strip markers, no caching). Enforced in `getPromptCachingEnabled()` in [src/services/api/claude.ts](src/services/api/claude.ts).
-- **No hardcoded Anthropic URLs or version strings** outside [src/constants/api.ts](src/constants/api.ts). All non-SDK Anthropic HTTP calls go through `getApiBaseUrl()` + `ANTHROPIC_API_VERSION`.
-- **Anthropic-platform identifiers are gated on `registry.isAnthropicType(model)`.** The CLI-specific `metadata.user_id` body field (contains `device_id` + `account_uuid` + `session_id`) and the Anthropic-platform request headers (`x-app`, `X-Claude-Code-Session-Id`, `x-claude-remote-container-id`, `x-client-app`, `x-anthropic-additional-protection`) are emitted only when the resolved provider's `config.type === 'anthropic'`. Enforced in `paramsFromContext` in [src/services/api/claude.ts](src/services/api/claude.ts) (`metadata`) and in `getAnthropicClient` in [src/services/api/client.ts](src/services/api/client.ts) (`defaultHeaders`, via `isAnthropicProvider` resolved from `model` or the default provider). This matches the existing `getAttributionHeader(fingerprint)` gate in claude.ts. Rationale: these identifiers are meaningless to vertex/bedrock/foundry/openai/gemini, and a rotating `session_id` in the body would be a per-session cache-key differentiator on providers that hash the full body. If you add a new CLI-platform identifier, add it under the same gate.
-
-### Agent model sentinels
-
-Built-in agents use sentinel strings instead of hardcoded model IDs; resolved at runtime by `getAgentModel()` in [src/utils/model/agent.ts](src/utils/model/agent.ts):
-
-- `'smallFast'` → `defaultSmallFastModel` (used by Explore, claude-code-guide)
-- `'balanced'` → `defaultBalancedModel` → falls back to inherit (used by statusline-setup, magicDocs)
-- `'mostPowerful'` → `defaultMostPowerfulModel` → falls back to inherit (used by Plan)
-- `'inherit'` → parent model
-
-`defaultSubagentModel` (or env `CLAUDE_CODE_SUBAGENT_MODEL`) is a **hard override** that beats tool-specified and agent-definition models — including the tier sentinels above. Users who want tiered subagent routing should leave `defaultSubagentModel` unset and configure the three tier fields (`defaultSmallFastModel` / `defaultBalancedModel` / `defaultMostPowerfulModel`) instead.
-
-### Resolution priority (primary / subagent / smallFast model)
-
-env var override > freecode.json field > hardcoded fallback.
-
-### Known limitations (do not "fix" these without context)
-
-- **Circular dep `providerRegistry.ts` ↔ `auth.ts`**: mitigated by lazy `require()` in providerRegistry.
-- **`modelResolution.ts` env reads** (`ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`): user-facing config, acceptable.
-- **Adapter fallback model IDs** (e.g. `'gemini-2.0-flash'`, `'gpt-4'`): adapter-internal defaults, acceptable.
-- **Fast mode hardcodes `'opus'`** ([src/utils/fastMode.ts](src/utils/fastMode.ts)): this is an Anthropic API protocol value gated by `firstPartyFeatures`, not a provider-system model ID. Intentional; marked `@[MODEL LAUNCH]`.
-- **Substring model-family checks** (`.includes('opus')` / `['haiku']` etc. at a handful of call sites in claude.ts, errors.ts, toolSearch.ts, rateLimitMocking.ts): fragile but low-priority; should eventually become capability queries.
-- **`modelDisplay.ts` has several overlapping display helpers** (`getPublicModelDisplayName`, `renderModelName`, `getPublicModelName`, etc.). Prime candidates for inlining — check call counts before consolidating.
-
-## Build system
-
-- Build script: [scripts/build.ts](scripts/build.ts). Read this for: the full feature-flag list, which flags are in the default set vs. `fullExperimentalFeatures` (dev-full), and all `--define` macro values.
-- **Feature flags** use Bun's `feature('FLAG')` — untouched flags are stripped entirely at build time (compile-time DCE). Pass `--feature=FLAG` or `--feature-set=dev-full`.
-- **React Compiler is optional** (`--react-compiler`). Default builds skip it. The `.tsx` files in `src/` are the **clean pre-compilation source** — do not reintroduce compiler artifacts (`_c()`, `$[N]` patterns) when editing.
-
-### Feature-flag gotchas
-
-- **Tier comments inside `defaultFeatures` describe the runtime gate, not the build gate.** All flags in `defaultFeatures` are compiled in by default; the tier (1 CLI flag, 2 slash command, 3 setting/env/file, 4 keyword nudge, always-on) just tells you what additionally has to happen at runtime before the feature does anything user-visible. `VOICE_MODE` sits in the "always on" tier because nothing runtime-gates it — once compiled, the push-to-talk keybinding and voice UI are unconditionally wired up; contrast with e.g. `DAEMON` (needs `claude daemon` subcommand) or `KAIROS` (needs a settings toggle).
-- **Orphan flags exist.** Flags can be referenced via `feature('FLAG')` in `src/` while appearing in _neither_ `defaultFeatures` nor `fullExperimentalFeatures`. Those can only be enabled with an explicit `--feature=FLAG` at build time — easy to forget and end up shipping dead code. Audit with:
-  ```
-  comm -23 \
-    <(grep -rhoE "feature\(['\"][A-Z_]+['\"]\)" src | sed -E "s/.*['\"]([A-Z_]+)['\"].*/\1/" | sort -u) \
-    <(grep -oE "'[A-Z_]+'" scripts/build.ts | tr -d "'" | sort -u)
-  ```
-  Before adding a new flag, decide intentionally whether it belongs in `defaultFeatures` (shipped on), `fullExperimentalFeatures` (opt-in via `dev-full`), or is genuinely build-only.
-- **Known orphan: `VERIFY_PLAN`** — gates the bundled `/verify` skill and the `/init-verifiers` command. Enable with `--feature=VERIFY_PLAN`.
-
-## Settings (freecode.json) and environment variables
-
-- **Settings schema** (the authoritative list of every setting + its default): [src/utils/settings/types.ts](src/utils/settings/types.ts). Do not maintain a duplicate table here.
-- **Default model fields** (`defaultModel`, `defaultSubagentModel`, `defaultSmallFastModel`, `defaultBalancedModel`, `defaultMostPowerfulModel`, `availableSubagentModels`) live in freecode.json. See the schema; resolution priority above applies.
-- **Runtime environment variables**: full list is in the source — grep for `isEnvTruthy(` and `process.env.CLAUDE_CODE_` / `process.env.ANTHROPIC_`. `isEnvTruthy` is defined in [src/utils/envUtils.ts](src/utils/envUtils.ts); truthy values are `'1'`, `'true'`, `'yes'`, `'on'` (case-insensitive).
-
-## Gotchas
-
-### Scroll re-pin after context clear / conversationId bump
-
-The virtual scroll ([src/hooks/useVirtualScroll.ts](src/hooks/useVirtualScroll.ts)) caches item heights keyed by message UUID + `conversationId`. `clearConversation` ([src/commands/clear/conversation.ts](src/commands/clear/conversation.ts)) does `setMessages([])` + `setConversationId(randomUUID())`, invalidating the entire cache. Without `scrollToBottom()` after the bump, stale `scrollTop` lands in an empty offset range ⇒ **blank screen** (recovers on user scroll).
-
-**Invariant**: `stickyScroll=true` on ScrollBox ⇒ `useVirtualScroll` uses the tail-walk path (always shows the last N items). When `stickyScroll=false`, the visible range is computed from `scrollTop` — stale `scrollTop` after cache wipe ⇒ empty range ⇒ blank.
-
-Re-pin call sites that defend this invariant (each covers a distinct code path — read the surrounding code before removing any):
-
-- `scrollToBottom()` immediately after `setConversationId()` inside `clearConversation`.
-- `scrollToBottom()` at the end of `clearConversation` (covers standalone `/clear`, which bypasses `processInitialMessage`).
-- `setTimeout(repinScroll, 0)` after `onQuery` in `processInitialMessage` in REPL.tsx (plan-mode path; catches intermediate renders across `await` boundaries).
-- `repinScroll()` in the `lastMsgIsHuman` and `focusedInputDialog` effects in REPL.tsx.
-
-**Rule**: if you modify `clearConversation`, compaction, or plan-mode approval, ensure `scrollToBottom()` fires after every `setConversationId()` bump and after every async op that can trigger an intermediate render.
-
-### Fingerprint stability depends on `msg[0]` being byte-stable
-
-`getAttributionHeader(fingerprint)` at [src/services/api/claude.ts](src/services/api/claude.ts) becomes the first block of the `system` array for Anthropic-type providers. `fingerprint = SHA256(SALT + msg[4] + msg[7] + msg[20] + MACRO.VERSION)[:3]` where `msg` is the text of the **first user message** in `messagesForAPI` ([src/utils/fingerprint.ts](src/utils/fingerprint.ts)). Any change to that text changes the system prompt prefix and busts the prompt cache across the whole session.
-
-**What `msg[0]` actually is:** `prependUserContext` at [src/utils/api.ts:428-438](src/utils/api.ts) always prepends a synthetic `<system-reminder>…</system-reminder>` meta user message built from `Object.entries(userContext)`. `userContext` comes from `getUserContext` in [src/context.ts:153](src/context.ts), which is `lodash.memoize`d at module scope. Same object ref → same ordered entries → byte-identical template string → byte-identical fingerprint across turns.
-
-**Do-not-touch invariants (violating any of these turns every turn into a cache bust):**
-
-- `prependUserContext` must keep producing byte-identical content across turns of the same session. It is allowed to early-return unchanged (e.g., `NODE_ENV=test` path) but must not reshape the string template with per-turn-varying content.
-- `getUserContext` must stay memoized at module scope. Don't replace it with a per-call read, and don't add per-turn-dynamic content (timestamps with seconds, random IDs, `process.uptime()`, etc.) into the object.
-- `getUserContext.cache.clear()` is only legal at **semantic cache-invalidation boundaries**: `setSystemPromptInjection`, `/compact` ([commands/compact/compact.ts](src/commands/compact/compact.ts), [services/compact/postCompactCleanup.ts](src/services/compact/postCompactCleanup.ts)), and `/clear` ([commands/clear/caches.ts](src/commands/clear/caches.ts)). If you add a new call site, confirm it's on a path that already blows away the cache for other reasons.
-- All delta / session attachments (`deferred_tools_delta`, `mcp_instructions_delta`, `skill_listing`, `date_change`, etc.) append to the **tail** of the conversation. Never insert an attachment or meta message ahead of `msg[0]` or you'll change its text.
-- Don't introduce a new per-turn synthetic prepend at `messagesForAPI[0]` (we deleted one — see [src/services/api/claude.ts](src/services/api/claude.ts) around the `fingerprint = computeFingerprintFromMessages(…)` call for the "must run before synthetic injection" comment that remains as guardrail).
-
-**Where the fingerprint is emitted:** only for Anthropic-type providers — `registry.isAnthropicType(options.model) ? getAttributionHeader(fingerprint) : ''`. Non-Anthropic providers' system prompts don't carry the `cc_version` line.
-
-### codex-fetch-adapter: llama.cpp `/v1/responses` SSE quirks
-
-`/v1/responses` from llama.cpp does not match real OpenAI's canonical streaming order, and the codex-fetch-adapter ([src/services/api/codex-fetch-adapter.ts](src/services/api/codex-fetch-adapter.ts)) has explicit workarounds for both. Verified live 2026-04-30 against Qwen3.6-27B and 35B-A3B GGUF.
-
-**1. Late `output_item.done(reasoning)` (block-index collision).** llama.cpp emits the entire `output_item.added(message)` + `output_text.delta` stream BEFORE firing `output_item.done(reasoning)`. Real OpenAI closes the reasoning item before opening the next. If we wait for the late `.done` to emit the synthetic Anthropic thinking block, it lands at the same `contentBlockIndex` as the already-open text block and corrupts block tracking — `claude.ts` throws `"Content block not found"` on the trailing `content_block_stop`. Workaround: open the thinking block eagerly on `output_item.added(reasoning)` and close it on the message/function_call boundary (or canonical `.done`, whichever fires first). Tracked via `inThinkingBlock` + `reasoningEmitted` flags in the adapter.
-
-**2. Missing `response.function_call_arguments.done`.** llama.cpp streams `.delta` events for tool-call arguments but never emits `.done`. The `input_json_delta` emit path was originally gated solely on `.done` ⇒ tool input reaches claude.ts as `{}`, the model says "Ran tool" but the tool ran with empty args. Workaround: also emit `input_json_delta` from `item.arguments` on `output_item.done(function_call)`, deduped against the canonical `.done` path via `toolArgsEmitted`.
-
-**3. Encrypted-content side-channel for streaming thinking.** Reasoning text streams live to the UI via `thinking_delta`, opened on `output_item.added(reasoning)`. But OpenAI's stateful `encrypted_content` only arrives on `output_item.done(reasoning)`, after the `content_block_start` was already emitted. To preserve cross-turn round-trip without giving up live streaming, the adapter emits a `codex_reasoning_meta_delta` (a custom delta type) just before `content_block_stop` carrying `codexEncryptedContent` + `codexReasoningId`. `claude.ts` content_block_delta handler patches the active thinking block with these fields ([src/services/api/claude.ts](src/services/api/claude.ts) — search `codex_reasoning_meta_delta`). Real Anthropic streams never emit this delta type — it's a safe additive extension.
-
-**4. Parallel tool calls: all `.added` first, then all `.done`.** When the model emits N parallel function calls in a single response, llama.cpp opens _every_ `output_item.added(function_call)` (with their arg deltas grouped per call_id) BEFORE firing any `output_item.done`. Real OpenAI Responses closes each tool item before opening the next. Without compensation, each new `.added` overwrites `currentToolCallId/Args` and emits a fresh `content_block_start` at the SAME `contentBlockIndex` as the prior still-open `tool_use` — claude.ts collapses every parallel call into the first one rendered (UI shows only `Bash(...)` for call #1, but the model thinks all N ran). Workaround: in `output_item.added(function_call)`, eagerly close the previously open `tool_use` (emit accumulated args + `content_block_stop` + bump index) before opening the new one. In `output_item.done(function_call)`, detect a stale `.done` whose `call_id !== currentToolCallId` (already eagerly closed) and skip. Both branches are inert under canonical OpenAI ordering since `inToolCall === false` between items there. Tests at [tests/unit/codexAdapter.parallelToolCalls.test.ts](tests/unit/codexAdapter.parallelToolCalls.test.ts) cover both orderings.
-
-`/v1/chat/completions` does not have any of these issues (no item lifecycle, flat delta stream); the openai-chat-completions adapter is unaffected.
-
-### Yoga percentage-height collapse inside ScrollBox
-
-A node inside a ScrollBox with `height="100%"` can collapse to 0 after being culled by `renderScrolledChildren` and then re-entering the viewport on scroll-back. `dropSubtreeCache` removes the nodeCache entry, and Yoga percentage resolution needs a definite parent height — a content-sized flex-row parent does not provide one on relayout.
-
-**Symptom**: a border-only `<Box>` (e.g. a vertical divider) disappears after scroll-back.
-
-**Fix**: inside ScrollBox content, use `minHeight={N}` or `alignSelf="stretch"` + `flexShrink={0}` instead of `height="100%"`. Applied at [src/components/LogoV2/LogoV2.tsx](src/components/LogoV2/LogoV2.tsx) (vertical divider, `minHeight={9}`).
+Inside ScrollBox content, a Yoga node with percentage height can collapse after culling and re-entry. Prefer an explicit minimum height or stretch with no shrink for divider-like children. See [src/components/LogoV2/LogoV2.tsx](src/components/LogoV2/LogoV2.tsx) for the current pattern.
