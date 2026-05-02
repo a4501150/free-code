@@ -81,27 +81,37 @@ export async function countTokensWithAPI(
 export async function countMessagesTokensWithAPI(
   messages: Anthropic.Beta.Messages.BetaMessageParam[],
   tools: Anthropic.Beta.Messages.BetaToolUnion[],
+  options?: {
+    model?: string
+    system?: string
+  },
 ): Promise<number | null> {
-  return withTokenCountVCR(messages, tools, async () => {
-    try {
-      const model = getMainLoopModel()
-      const { getAdapterForModel } = await import('./api/adapters/index.js')
-      const adapter = getAdapterForModel(model)
-      const betas = getModelBetas(model)
-      const breakdown = await adapter.countTokens(messages, tools, model, {
-        betas,
-      })
-      if (!breakdown) return null
-      return (
-        breakdown.inputTokens +
-        (breakdown.cacheReadTokens ?? 0) +
-        (breakdown.cacheWriteTokens ?? 0)
-      )
-    } catch (error) {
-      logError(error)
-      return null
-    }
-  })
+  return withTokenCountVCR(
+    messages,
+    tools,
+    async () => {
+      try {
+        const model = options?.model ?? getMainLoopModel()
+        const { getAdapterForModel } = await import('./api/adapters/index.js')
+        const adapter = getAdapterForModel(model)
+        const betas = getModelBetas(model)
+        const breakdown = await adapter.countTokens(messages, tools, model, {
+          betas,
+          system: options?.system,
+        })
+        if (!breakdown) return null
+        return (
+          breakdown.inputTokens +
+          (breakdown.cacheReadTokens ?? 0) +
+          (breakdown.cacheWriteTokens ?? 0)
+        )
+      } catch (error) {
+        logError(error)
+        return null
+      }
+    },
+    options,
+  )
 }
 
 /**
@@ -117,12 +127,14 @@ export async function countTokensViaAnthropicEndpoint({
   model,
   betas,
   filterBetas,
+  system,
 }: {
   messages: Anthropic.Beta.Messages.BetaMessageParam[]
   tools: Anthropic.Beta.Messages.BetaToolUnion[]
   model: string
   betas: string[]
   filterBetas?: (beta: string) => boolean
+  system?: string
 }): Promise<number | null> {
   const containsThinking = hasThinkingBlocks(messages)
   const anthropic = await getAnthropicClient({
@@ -136,6 +148,7 @@ export async function countTokensViaAnthropicEndpoint({
     messages:
       messages.length > 0 ? messages : [{ role: 'user', content: 'foo' }],
     tools,
+    ...(system && { system }),
     ...(filteredBetas.length > 0 && { betas: filteredBetas }),
     ...(containsThinking && {
       thinking: {
@@ -162,6 +175,7 @@ export async function countTokensViaBedrock(args: {
   tools: Anthropic.Beta.Messages.BetaToolUnion[]
   betas: string[]
   containsThinking: boolean
+  system?: string
 }): Promise<number | null> {
   return countTokensWithBedrock(args)
 }
@@ -346,12 +360,14 @@ async function countTokensWithBedrock({
   tools,
   betas,
   containsThinking,
+  system,
 }: {
   model: string
   messages: Anthropic.Beta.Messages.BetaMessageParam[]
   tools: Anthropic.Beta.Messages.BetaToolUnion[]
   betas: string[]
   containsThinking: boolean
+  system?: string
 }): Promise<number | null> {
   try {
     const client = await createBedrockRuntimeClient()
@@ -370,6 +386,7 @@ async function countTokensWithBedrock({
       messages:
         messages.length > 0 ? messages : [{ role: 'user', content: 'foo' }],
       max_tokens: containsThinking ? TOKEN_COUNT_MAX_TOKENS : 1,
+      ...(system && { system }),
       ...(tools.length > 0 && { tools }),
       ...(betas.length > 0 && { anthropic_beta: betas }),
       ...(containsThinking && {

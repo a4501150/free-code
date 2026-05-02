@@ -48,6 +48,7 @@ export const bedrockAdapter: ProviderAdapter = {
       tools,
       betas: options?.betas ?? [],
       containsThinking: hasThinkingBlocks(messages),
+      system: options?.system,
     })
     if (inputTokens == null) return null
     return { inputTokens, outputTokens: 0 }

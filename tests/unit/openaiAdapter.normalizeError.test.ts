@@ -41,6 +41,23 @@ describe('openaiChatCompletionsAdapter.normalizeError', () => {
     expect(e.kind).toBe('auth')
   })
 
+  test('HTTP 400 with context_length_exceeded code → invalid_request', () => {
+    const e = openaiChatCompletionsAdapter.normalizeError(
+      {
+        status: 400,
+        body: JSON.stringify({
+          error: {
+            code: 'context_length_exceeded',
+            message: 'Maximum context length exceeded',
+          },
+        }),
+      },
+      'openai-chat-completions',
+    )
+    expect(e.kind).toBe('invalid_request')
+    expect(e.message).toBe('Maximum context length exceeded')
+  })
+
   test('mid-stream with insufficient_quota code → rate_limit', () => {
     const e = openaiChatCompletionsAdapter.normalizeError(
       {

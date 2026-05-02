@@ -109,6 +109,10 @@ export class MockAnthropicServer {
   private async handleRequest(req: Request): Promise<Response> {
     const url = new URL(req.url)
 
+    if (req.method === 'POST' && url.pathname === '/v1/messages/count_tokens') {
+      return this.handleCountTokensRequest(req)
+    }
+
     // Only handle POST /v1/messages (the Anthropic SDK endpoint)
     if (req.method === 'POST' && url.pathname === '/v1/messages') {
       return this.handleMessagesRequest(req)
@@ -116,6 +120,26 @@ export class MockAnthropicServer {
 
     // Return 404 for anything else
     return new Response('Not Found', { status: 404 })
+  }
+
+  private async handleCountTokensRequest(req: Request): Promise<Response> {
+    let body: RequestLogEntry['body'] = {}
+    try {
+      body = (await req.json()) as RequestLogEntry['body']
+    } catch {
+      // If body parsing fails, continue with empty body
+    }
+
+    const serialized = JSON.stringify(body)
+    return new Response(
+      JSON.stringify({
+        input_tokens: Math.max(1, Math.ceil(serialized.length / 4)),
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    )
   }
 
   private async handleMessagesRequest(req: Request): Promise<Response> {

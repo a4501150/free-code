@@ -1,5 +1,6 @@
 import { feature } from 'bun:bundle'
 import type Anthropic from '@anthropic-ai/sdk'
+import type { APIError } from '@anthropic-ai/sdk'
 import type { BetaToolUnion } from '@anthropic-ai/sdk/resources/beta/messages.js'
 import { mkdir, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
@@ -12,7 +13,12 @@ import {
 } from '../../bootstrap/state.js'
 
 import { getCacheControl } from '../../services/api/claude.js'
+import { getNormalizedError } from '../../services/api/errorUtils.js'
 import { parsePromptTooLongTokenCounts } from '../../services/api/errors.js'
+import {
+  countMessagesTokensWithAPI,
+  roughTokenCountEstimation,
+} from '../../services/tokenEstimation.js'
 import { getDefaultMaxRetries } from '../../services/api/withRetry.js'
 import type { Tool, ToolPermissionContext, Tools } from '../../Tool.js'
 import type { Message } from '../../types/message.js'
@@ -25,6 +31,7 @@ import { errorMessage } from '../errors.js'
 import { lazySchema } from '../lazySchema.js'
 import { extractTextContent } from '../messages.js'
 import { getMainLoopModel } from '../model/model.js'
+import { getProviderRegistry } from '../model/providerRegistry.js'
 import {
   getAutoModeConfig,
   getSettingsWithErrors,
@@ -396,38 +403,410 @@ export function buildTranscriptForClassifier(
     .join('')
 }
 
-/**
- * Build the CLAUDE.md prefix message for the classifier. Returns null when
- * CLAUDE.md is disabled or empty. The content is wrapped in a delimiter that
- * tells the classifier this is user-provided configuration — actions
- * described here reflect user intent. cache_control is set because the
- * content is static per-session, making the system + CLAUDE.md prefix a
- * stable cache prefix across classifier calls.
- *
- * Reads from bootstrap/state.ts cache (populated by context.ts) instead of
- * importing claudemd.ts directly — claudemd → permissions/filesystem →
- * permissions → yoloClassifier is a cycle. context.ts already gates on
- * CLAUDE_CODE_DISABLE_CLAUDE_MDS and normalizes '' to null before caching.
- * If the cache is unpopulated (tests, or an entrypoint that never calls
- * getUserContext), the classifier proceeds without CLAUDE.md — same as
- * pre-PR behavior.
- */
-function buildClaudeMdMessage(): Anthropic.MessageParam | null {
-  const claudeMd = getCachedClaudeMdContent()
-  if (claudeMd === null) return null
+const AUTO_CLASSIFIER_MAX_INPUT_TOKENS = 64_000
+const AUTO_CLASSIFIER_TARGET_INPUT_TOKENS = 56_000
+const AUTO_CLASSIFIER_MIN_HISTORY_TOKENS = 4_000
+const AUTO_CLASSIFIER_CLAUDE_MD_MAX_TOKENS = 8_000
+const AUTO_CLASSIFIER_HISTORY_BLOCK_MAX_TOKENS = 8_000
+const AUTO_CLASSIFIER_MIN_TRUNCATED_BLOCK_TOKENS = 64
+
+type SerializedClassifierBlock = {
+  role: TranscriptEntry['role']
+  text: string
+  estimatedTokens: number
+  truncated: boolean
+}
+
+type BoundedClaudeMdMessage = {
+  message: Anthropic.MessageParam | null
+  estimatedTokens: number
+  charLength: number
+  truncated: boolean
+}
+
+type BoundedTranscript = {
+  blocks: SerializedClassifierBlock[]
+  omittedBlocks: number
+  truncatedBlocks: number
+  estimatedTokens: number
+}
+
+type BoundedClassifierInput = {
+  prefixMessages: Anthropic.MessageParam[]
+  userContentBlocks: Anthropic.TextBlockParam[]
+  userPrompt: string
+  promptLengths: NonNullable<YoloClassifierResult['promptLengths']>
+  inputTokenBudget: number
+  transcriptEntries: number
+}
+
+type BoundedClassifierInputResult =
+  | { type: 'ok'; input: BoundedClassifierInput }
+  | { type: 'overflow'; result: YoloClassifierResult }
+
+function estimateClassifierTokens(text: string): number {
+  return roughTokenCountEstimation(text)
+}
+
+function getClassifierInputTokenBudget(model: string): number {
+  const contextWindow =
+    getProviderRegistry().getProviderForModel(model)?.model.contextWindow
+  if (typeof contextWindow === 'number' && Number.isFinite(contextWindow)) {
+    return Math.max(
+      1024,
+      Math.min(
+        AUTO_CLASSIFIER_MAX_INPUT_TOKENS,
+        Math.floor(contextWindow * 0.75),
+      ),
+    )
+  }
+  return AUTO_CLASSIFIER_MAX_INPUT_TOKENS
+}
+
+function getClassifierTargetInputTokens(inputTokenBudget: number): number {
+  return Math.max(
+    1024,
+    Math.min(AUTO_CLASSIFIER_TARGET_INPUT_TOKENS, inputTokenBudget - 1024),
+  )
+}
+
+function omissionMarker(chars: number, reason: string): string {
+  return `<auto_classifier_omitted chars="${chars}" reason="${reason}" />`
+}
+
+function truncateMiddleByEstimatedTokens(
+  text: string,
+  maxTokens: number,
+  reason: string,
+): { text: string; truncated: boolean } {
+  if (estimateClassifierTokens(text) <= maxTokens) {
+    return { text, truncated: false }
+  }
+  const marker = `\n${omissionMarker(text.length, reason)}\n`
+  const maxChars = Math.max(0, maxTokens * 4 - marker.length)
+  if (maxChars <= 0) {
+    return { text: marker, truncated: true }
+  }
+  const headChars = Math.ceil(maxChars / 2)
+  const tailChars = Math.floor(maxChars / 2)
   return {
+    text:
+      text.slice(0, headChars) + marker + text.slice(text.length - tailChars),
+    truncated: true,
+  }
+}
+
+function transcriptBlocksFromMessage(
+  msg: Message,
+): Array<{ role: TranscriptEntry['role']; block: TranscriptBlock }> {
+  if (msg.type === 'attachment' && msg.attachment.type === 'queued_command') {
+    const prompt = msg.attachment.prompt
+    let text: string | null = null
+    if (typeof prompt === 'string') {
+      text = prompt
+    } else if (Array.isArray(prompt)) {
+      text =
+        prompt
+          .filter(
+            (block): block is { type: 'text'; text: string } =>
+              block.type === 'text',
+          )
+          .map(block => block.text)
+          .join('\n') || null
+    }
+    return text === null
+      ? []
+      : [{ role: 'user', block: { type: 'text', text } }]
+  }
+
+  if (msg.type === 'user') {
+    const content = msg.message.content
+    if (typeof content === 'string') {
+      return [{ role: 'user', block: { type: 'text', text: content } }]
+    }
+    if (!Array.isArray(content)) return []
+    return content
+      .filter(
+        (block): block is { type: 'text'; text: string } =>
+          block.type === 'text',
+      )
+      .map(block => ({
+        role: 'user' as const,
+        block: { type: 'text' as const, text: block.text },
+      }))
+  }
+
+  if (msg.type === 'assistant') {
+    return msg.message.content
+      .filter(block => block.type === 'tool_use')
+      .map(block => ({
+        role: 'assistant' as const,
+        block: {
+          type: 'tool_use' as const,
+          name: block.name,
+          input: block.input,
+        },
+      }))
+  }
+
+  return []
+}
+
+function countTranscriptBlocks(
+  messages: Message[],
+  startInclusive: number,
+  endExclusive: number,
+): number {
+  let count = 0
+  for (let i = startInclusive; i < endExclusive; i++) {
+    count += transcriptBlocksFromMessage(messages[i]!).length
+  }
+  return count
+}
+
+function collectBoundedTranscriptBlocks(
+  messages: Message[],
+  lookup: ToolLookup,
+  targetHistoryTokens: number,
+): BoundedTranscript {
+  const blocks: SerializedClassifierBlock[] = []
+  let remainingTokens = targetHistoryTokens
+  let omittedBlocks = 0
+  let truncatedBlocks = 0
+  let estimatedTokens = 0
+
+  for (
+    let messageIndex = messages.length - 1;
+    messageIndex >= 0;
+    messageIndex--
+  ) {
+    const candidates = transcriptBlocksFromMessage(messages[messageIndex]!)
+    for (
+      let blockIndex = candidates.length - 1;
+      blockIndex >= 0;
+      blockIndex--
+    ) {
+      const candidate = candidates[blockIndex]!
+      if (remainingTokens <= 0) {
+        omittedBlocks += blockIndex + 1
+        omittedBlocks += countTranscriptBlocks(messages, 0, messageIndex)
+        return {
+          blocks: blocks.reverse(),
+          omittedBlocks,
+          truncatedBlocks,
+          estimatedTokens,
+        }
+      }
+
+      let text = toCompactBlock(candidate.block, candidate.role, lookup)
+      if (text === '') continue
+
+      let estimated = estimateClassifierTokens(text)
+      let truncated = false
+      const blockBudget = Math.min(
+        remainingTokens,
+        AUTO_CLASSIFIER_HISTORY_BLOCK_MAX_TOKENS,
+      )
+      if (estimated > blockBudget) {
+        if (blockBudget < AUTO_CLASSIFIER_MIN_TRUNCATED_BLOCK_TOKENS) {
+          omittedBlocks++
+          continue
+        }
+        const truncatedBlock = truncateMiddleByEstimatedTokens(
+          text,
+          blockBudget,
+          'history_block_budget',
+        )
+        text = truncatedBlock.text
+        truncated = truncatedBlock.truncated
+        estimated = estimateClassifierTokens(text)
+        if (estimated > remainingTokens) {
+          omittedBlocks++
+          continue
+        }
+      }
+
+      blocks.push({
+        role: candidate.role,
+        text,
+        estimatedTokens: estimated,
+        truncated,
+      })
+      remainingTokens -= estimated
+      estimatedTokens += estimated
+      if (truncated) truncatedBlocks++
+    }
+  }
+
+  return {
+    blocks: blocks.reverse(),
+    omittedBlocks,
+    truncatedBlocks,
+    estimatedTokens,
+  }
+}
+
+function buildBoundedClaudeMdMessage(
+  maxTokens: number,
+): BoundedClaudeMdMessage {
+  const claudeMd = getCachedClaudeMdContent()
+  if (
+    claudeMd === null ||
+    maxTokens < AUTO_CLASSIFIER_MIN_TRUNCATED_BLOCK_TOKENS
+  ) {
+    return {
+      message: null,
+      estimatedTokens: 0,
+      charLength: 0,
+      truncated: false,
+    }
+  }
+
+  const prefix =
+    `The following is the user's CLAUDE.md configuration. These are ` +
+    `instructions the user provided to the agent and should be treated ` +
+    `as part of the user's intent when evaluating actions.\n\n` +
+    `<user_claude_md>\n`
+  const suffix = `\n</user_claude_md>`
+  const wrapperTokens = estimateClassifierTokens(prefix + suffix)
+  const bodyBudget = Math.max(0, maxTokens - wrapperTokens)
+  const boundedBody = truncateMiddleByEstimatedTokens(
+    claudeMd,
+    bodyBudget,
+    'claude_md_budget',
+  )
+  const text = prefix + boundedBody.text + suffix
+  const message: Anthropic.MessageParam = {
     role: 'user',
     content: [
       {
         type: 'text',
-        text:
-          `The following is the user's CLAUDE.md configuration. These are ` +
-          `instructions the user provided to the agent and should be treated ` +
-          `as part of the user's intent when evaluating actions.\n\n` +
-          `<user_claude_md>\n${claudeMd}\n</user_claude_md>`,
+        text,
         cache_control: getCacheControl({ querySource: 'auto_mode' }),
       },
     ],
+  }
+  return {
+    message,
+    estimatedTokens: estimateClassifierTokens(text),
+    charLength: text.length,
+    truncated: boundedBody.truncated,
+  }
+}
+
+function buildBoundedClassifierInput({
+  messages,
+  lookup,
+  actionCompact,
+  systemPrompt,
+  model,
+}: {
+  messages: Message[]
+  lookup: ToolLookup
+  actionCompact: string
+  systemPrompt: string
+  model: string
+}): BoundedClassifierInputResult {
+  const inputTokenBudget = getClassifierInputTokenBudget(model)
+  const targetInputTokens = getClassifierTargetInputTokens(inputTokenBudget)
+  const systemTokens = estimateClassifierTokens(systemPrompt)
+  const actionTokens = estimateClassifierTokens(actionCompact)
+  const wrapperTokens = estimateClassifierTokens(
+    '<transcript>\n</transcript>\n' + XML_S2_SUFFIX,
+  )
+
+  if (systemTokens + actionTokens + wrapperTokens > inputTokenBudget) {
+    return {
+      type: 'overflow',
+      result: {
+        shouldBlock: true,
+        reason: 'Classifier action exceeded context budget',
+        model,
+        transcriptTooLong: true,
+        promptLengths: {
+          systemPrompt: systemPrompt.length,
+          toolCalls: actionCompact.length,
+          userPrompts: 0,
+          estimatedInputTokens: systemTokens + actionTokens + wrapperTokens,
+          inputTokenBudget,
+        },
+      },
+    }
+  }
+
+  const claudeMdBudgetAvailable = Math.max(
+    0,
+    targetInputTokens -
+      systemTokens -
+      actionTokens -
+      wrapperTokens -
+      AUTO_CLASSIFIER_MIN_HISTORY_TOKENS,
+  )
+  const claudeMd = buildBoundedClaudeMdMessage(
+    Math.min(AUTO_CLASSIFIER_CLAUDE_MD_MAX_TOKENS, claudeMdBudgetAvailable),
+  )
+  const historyBudget = Math.max(
+    0,
+    targetInputTokens -
+      systemTokens -
+      actionTokens -
+      wrapperTokens -
+      claudeMd.estimatedTokens,
+  )
+  const boundedTranscript = collectBoundedTranscriptBlocks(
+    messages,
+    lookup,
+    historyBudget,
+  )
+
+  let toolCallsLength = actionCompact.length
+  let userPromptsLength = 0
+  const userContentBlocks: Anthropic.TextBlockParam[] = []
+  for (const block of boundedTranscript.blocks) {
+    if (block.role === 'user') {
+      userPromptsLength += block.text.length
+    } else {
+      toolCallsLength += block.text.length
+    }
+    userContentBlocks.push({ type: 'text' as const, text: block.text })
+  }
+
+  userContentBlocks.push({
+    type: 'text' as const,
+    text: actionCompact,
+    cache_control: getCacheControl({ querySource: 'auto_mode' }),
+  })
+
+  const prefixMessages = claudeMd.message ? [claudeMd.message] : []
+  const userPrompt = userContentBlocks.map(b => b.text).join('')
+  const estimatedInputTokens =
+    systemTokens +
+    claudeMd.estimatedTokens +
+    boundedTranscript.estimatedTokens +
+    actionTokens +
+    wrapperTokens
+
+  return {
+    type: 'ok',
+    input: {
+      prefixMessages,
+      userContentBlocks,
+      userPrompt,
+      inputTokenBudget,
+      transcriptEntries: boundedTranscript.blocks.length,
+      promptLengths: {
+        systemPrompt: systemPrompt.length,
+        toolCalls: toolCallsLength,
+        userPrompts: userPromptsLength,
+        claudeMd: claudeMd.charLength,
+        selectedTranscriptBlocks: boundedTranscript.blocks.length,
+        omittedTranscriptBlocks: boundedTranscript.omittedBlocks,
+        truncatedTranscriptBlocks:
+          boundedTranscript.truncatedBlocks + (claudeMd.truncated ? 1 : 0),
+        estimatedInputTokens,
+        inputTokenBudget,
+      },
+    },
   }
 }
 
@@ -623,6 +1002,48 @@ function getClassifierThinkingConfig(
   return [false, 0]
 }
 
+async function preflightClassifierInput({
+  model,
+  systemPrompt,
+  messages,
+  tools,
+  promptLengths,
+}: {
+  model: string
+  systemPrompt: string
+  messages: Anthropic.MessageParam[]
+  tools: BetaToolUnion[]
+  promptLengths: NonNullable<YoloClassifierResult['promptLengths']>
+}): Promise<YoloClassifierResult | null> {
+  const inputTokenBudget =
+    promptLengths.inputTokenBudget ?? getClassifierInputTokenBudget(model)
+  const count = await countMessagesTokensWithAPI(
+    messages as Anthropic.Beta.Messages.BetaMessageParam[],
+    tools,
+    { model, system: systemPrompt },
+  )
+  if (count === null) {
+    return {
+      shouldBlock: true,
+      reason: 'Classifier token counting unavailable - blocking for safety',
+      model,
+      unavailable: true,
+      promptLengths,
+    }
+  }
+  promptLengths.preflightInputTokens = count
+  if (count > inputTokenBudget) {
+    return {
+      shouldBlock: true,
+      reason: 'Classifier transcript exceeded context window',
+      model,
+      transcriptTooLong: true,
+      promptLengths,
+    }
+  }
+  return null
+}
+
 /**
  * XML classifier for auto mode security decisions. Supports three modes:
  *
@@ -647,11 +1068,7 @@ async function classifyYoloActionXml(
     Anthropic.TextBlockParam | Anthropic.ImageBlockParam
   >,
   model: string,
-  promptLengths: {
-    systemPrompt: number
-    toolCalls: number
-    userPrompts: number
-  },
+  promptLengths: NonNullable<YoloClassifierResult['promptLengths']>,
   signal: AbortSignal,
   dumpContextInfo: {
     mainLoopTokens: number
@@ -723,6 +1140,15 @@ async function classifyYoloActionXml(
         ...(mode !== 'fast' && { stop_sequences: ['</block>'] }),
         querySource: 'auto_mode',
       }
+      const stage1Preflight = await preflightClassifierInput({
+        model,
+        systemPrompt: xmlSystemPrompt,
+        messages: stage1Opts.messages,
+        tools: [],
+        promptLengths,
+      })
+      if (stage1Preflight) return stage1Preflight
+
       const stage1Raw = await sideQuery(stage1Opts)
       stage1DurationMs = Date.now() - stage1Start
       stage1Usage = extractUsage(stage1Raw)
@@ -809,6 +1235,15 @@ async function classifyYoloActionXml(
       signal,
       querySource: 'auto_mode' as const,
     }
+    const stage2Preflight = await preflightClassifierInput({
+      model,
+      systemPrompt: xmlSystemPrompt,
+      messages: stage2Opts.messages,
+      tools: [],
+      promptLengths,
+    })
+    if (stage2Preflight) return stage2Preflight
+
     const stage2Raw = await sideQuery(stage2Opts)
     const stage2DurationMs = Date.now() - stage2Start
     const stage2Usage = extractUsage(stage2Raw)
@@ -909,7 +1344,7 @@ async function classifyYoloActionXml(
           ? 'Stage 2 classifier error - blocking based on stage 1 assessment'
           : 'Classifier unavailable - blocking for safety',
       model,
-      unavailable: stage1Usage === undefined,
+      unavailable: tooLong ? false : stage1Usage === undefined,
       transcriptTooLong: Boolean(tooLong),
       stage: stage1Usage ? 'thinking' : undefined,
       durationMs: Date.now() - overallStart,
@@ -960,49 +1395,30 @@ export async function classifyYoloAction(
   }
 
   const systemPrompt = await buildYoloSystemPrompt(context)
-  const transcriptEntries = buildTranscriptEntries(messages)
-  const claudeMdMessage = buildClaudeMdMessage()
-  const prefixMessages: Anthropic.MessageParam[] = claudeMdMessage
-    ? [claudeMdMessage]
-    : []
-
-  let toolCallsLength = actionCompact.length
-  let userPromptsLength = 0
-  const userContentBlocks: Anthropic.TextBlockParam[] = []
-  for (const entry of transcriptEntries) {
-    for (const block of entry.content) {
-      const serialized = toCompactBlock(block, entry.role, lookup)
-      if (serialized === '') continue
-      switch (entry.role) {
-        case 'user':
-          userPromptsLength += serialized.length
-          break
-        case 'assistant':
-          toolCallsLength += serialized.length
-          break
-        default: {
-          const _exhaustive: never = entry.role
-          void _exhaustive
-        }
-      }
-      userContentBlocks.push({ type: 'text' as const, text: serialized })
-    }
+  const model = getClassifierModel()
+  const boundedInput = buildBoundedClassifierInput({
+    messages,
+    lookup,
+    actionCompact,
+    systemPrompt,
+    model,
+  })
+  if (boundedInput.type === 'overflow') {
+    return boundedInput.result
   }
 
-  const userPrompt = userContentBlocks.map(b => b.text).join('') + actionCompact
-  const promptLengths = {
-    systemPrompt: systemPrompt.length,
-    toolCalls: toolCallsLength,
-    userPrompts: userPromptsLength,
-  }
+  const {
+    prefixMessages,
+    userContentBlocks,
+    userPrompt,
+    promptLengths,
+    inputTokenBudget,
+    transcriptEntries,
+  } = boundedInput.input
 
-  // Compare main-loop context vs classifier transcript to track projection
-  // divergence. tokenCountWithEstimation is cheap (walks back to last API
-  // response usage + estimates the tail slice) so we compute unconditionally
-  // for telemetry. The classifier prompt should stay strictly smaller than
-  // main-loop context so auto-compact fires before the classifier overflows.
-  const classifierChars = systemPrompt.length + userPrompt.length
-  const classifierTokensEst = Math.round(classifierChars / 4)
+  const classifierChars =
+    systemPrompt.length + (promptLengths.claudeMd ?? 0) + userPrompt.length
+  const classifierTokensEst = promptLengths.estimatedInputTokens ?? 0
   const mainLoopTokens = tokenCountWithEstimation(messages)
   if (isDebugMode()) {
     logForDebugging(
@@ -1010,10 +1426,14 @@ export async function classifyYoloAction(
         `mainLoopTokens=${mainLoopTokens} ` +
         `classifierChars=${classifierChars} ` +
         `classifierTokensEst=${classifierTokensEst} ` +
+        `inputTokenBudget=${inputTokenBudget} ` +
         `(sys=${promptLengths.systemPrompt} ` +
+        `claudeMd=${promptLengths.claudeMd ?? 0} ` +
         `tools=${promptLengths.toolCalls} ` +
         `user=${promptLengths.userPrompts}) ` +
-        `transcriptEntries=${transcriptEntries.length} ` +
+        `selectedBlocks=${promptLengths.selectedTranscriptBlocks ?? 0} ` +
+        `omittedBlocks=${promptLengths.omittedTranscriptBlocks ?? 0} ` +
+        `truncatedBlocks=${promptLengths.truncatedTranscriptBlocks ?? 0} ` +
         `messages=${messages.length}`,
     )
     logForDebugging(
@@ -1021,22 +1441,6 @@ export async function classifyYoloAction(
         `${actionCompact.length > 500 ? actionCompact.slice(0, 500) + '…' : actionCompact}`,
     )
   }
-
-  // Use getCacheControl for consistency with the main agent loop —
-  // respects TTL allowlist and query-source gating.
-  const cacheControl = getCacheControl({ querySource: 'auto_mode' })
-  // Place cache_control on the action block. In the two-stage classifier,
-  // stage 2 shares the same transcript+action prefix as stage 1 — the
-  // breakpoint here gives stage 2 a guaranteed cache hit on the full prefix.
-  // Budget: system (1) + CLAUDE.md (0–1) + action (1) = 2–3, under the
-  // API limit of 4 cache_control blocks.
-  userContentBlocks.push({
-    type: 'text' as const,
-    text: actionCompact,
-    cache_control: cacheControl,
-  })
-
-  const model = getClassifierModel()
 
   // Dispatch to 2-stage XML classifier if enabled via config
   if (isTwoStageClassifierEnabled()) {
@@ -1052,7 +1456,7 @@ export async function classifyYoloAction(
         mainLoopTokens: mainLoopTokens ?? tokenCountWithEstimation(messages),
         classifierChars,
         classifierTokensEst,
-        transcriptEntries: transcriptEntries.length,
+        transcriptEntries,
         messages: messages.length,
         action: actionCompact,
       },
@@ -1088,6 +1492,15 @@ export async function classifyYoloAction(
       signal,
       querySource: 'auto_mode' as const,
     }
+    const preflight = await preflightClassifierInput({
+      model,
+      systemPrompt,
+      messages: sideQueryOpts.messages,
+      tools: [YOLO_CLASSIFIER_TOOL_SCHEMA],
+      promptLengths,
+    })
+    if (preflight) return preflight
+
     const result = await sideQuery(sideQueryOpts)
     void maybeDumpAutoMode(sideQueryOpts, result, start)
     setLastClassifierRequests([sideQueryOpts])
@@ -1208,7 +1621,7 @@ export async function classifyYoloAction(
         mainLoopTokens,
         classifierChars,
         classifierTokensEst,
-        transcriptEntries: transcriptEntries.length,
+        transcriptEntries,
         messages: messages.length,
         action: actionCompact,
         model,
@@ -1229,7 +1642,7 @@ export async function classifyYoloAction(
         ? 'Classifier transcript exceeded context window'
         : 'Classifier unavailable - blocking for safety',
       model,
-      unavailable: true,
+      unavailable: !tooLong,
       transcriptTooLong: Boolean(tooLong),
       errorDumpPath,
     }
@@ -1343,11 +1756,25 @@ function logAutoModeOutcome(
 function detectPromptTooLong(
   error: unknown,
 ): ReturnType<typeof parsePromptTooLongTokenCounts> | undefined {
-  if (!(error instanceof Error)) return undefined
-  if (!error.message.toLowerCase().includes('prompt is too long')) {
-    return undefined
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  const normalized =
+    typeof error === 'object' && error !== null
+      ? getNormalizedError(error as APIError)
+      : undefined
+  const rawText = normalized?.raw ? jsonStringify(normalized.raw) : ''
+  const haystack = `${message}\n${normalized?.message ?? ''}\n${rawText}`
+  const lower = haystack.toLowerCase()
+  if (lower.includes('prompt is too long')) {
+    return parsePromptTooLongTokenCounts(haystack)
   }
-  return parsePromptTooLongTokenCounts(error.message)
+  if (
+    lower.includes('context_length_exceeded') ||
+    lower.includes('maximum context length') ||
+    lower.includes('context length')
+  ) {
+    return parsePromptTooLongTokenCounts(haystack)
+  }
+  return undefined
 }
 
 /**
@@ -1372,4 +1799,10 @@ export function formatActionForClassifier(
     role: 'assistant',
     content: [{ type: 'tool_use', name: toolName, input: toolInput }],
   }
+}
+
+export const __test__ = {
+  buildBoundedClassifierInput,
+  buildToolLookup,
+  detectPromptTooLong,
 }

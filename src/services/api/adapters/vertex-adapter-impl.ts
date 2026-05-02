@@ -45,6 +45,7 @@ export const vertexAnthropicAdapter: ProviderAdapter = {
       model,
       betas: options?.betas ?? [],
       filterBetas: b => VERTEX_COUNT_TOKENS_ALLOWED_BETAS.has(b),
+      system: options?.system,
     })
     if (inputTokens == null) return null
     return { inputTokens, outputTokens: 0 }

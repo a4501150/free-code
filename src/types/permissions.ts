@@ -365,6 +365,13 @@ export type YoloClassifierResult = {
     systemPrompt: number
     toolCalls: number
     userPrompts: number
+    claudeMd?: number
+    selectedTranscriptBlocks?: number
+    omittedTranscriptBlocks?: number
+    truncatedTranscriptBlocks?: number
+    estimatedInputTokens?: number
+    preflightInputTokens?: number
+    inputTokenBudget?: number
   }
   /** Path where error prompts were dumped (only set when unavailable due to API error) */
   errorDumpPath?: string

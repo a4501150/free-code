@@ -84,4 +84,22 @@ describe('openai-chat-completions adapter countTokens', () => {
     )
     expect(withTools!.inputTokens).toBeGreaterThan(withoutTools!.inputTokens)
   })
+
+  test('includes system prompt in the count', async () => {
+    const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [
+      { role: 'user', content: 'hi' },
+    ]
+    const withoutSystem = await openaiChatCompletionsAdapter.countTokens(
+      messages,
+      [],
+      'gpt-4o-mini',
+    )
+    const withSystem = await openaiChatCompletionsAdapter.countTokens(
+      messages,
+      [],
+      'gpt-4o-mini',
+      { system: 'Important safety policy '.repeat(100) },
+    )
+    expect(withSystem!.inputTokens).toBeGreaterThan(withoutSystem!.inputTokens)
+  })
 })

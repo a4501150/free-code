@@ -18,7 +18,8 @@ import { TASK_UPDATE_TOOL_NAME } from '../../tools/TaskUpdateTool/constants.js'
 import { TEAM_CREATE_TOOL_NAME } from '../../tools/TeamCreateTool/constants.js'
 import { TEAM_DELETE_TOOL_NAME } from '../../tools/TeamDeleteTool/constants.js'
 import { TOOL_SEARCH_TOOL_NAME } from '../../tools/ToolSearchTool/prompt.js'
-import { YOLO_CLASSIFIER_TOOL_NAME } from './yoloClassifier.js'
+
+const YOLO_CLASSIFIER_TOOL_NAME = 'classify_result'
 
 // Feature-gated tool names: conditional references so Bun can DCE these when disabled.
 // Gates mirror tools.ts. Keeps the tool name strings out of cli.js.

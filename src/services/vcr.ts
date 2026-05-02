@@ -375,6 +375,7 @@ export async function withTokenCountVCR(
   messages: unknown[],
   tools: unknown[],
   f: () => Promise<number | null>,
+  metadata?: unknown,
 ): Promise<number | null> {
   // Dehydrate before hashing so fixture keys survive cwd/config-home/tempdir
   // variation and message UUID/timestamp churn. System prompts embed the
@@ -383,7 +384,7 @@ export async function withTokenCountVCR(
   // every test run produces a new hash and fixtures never hit in CI.
   const cwdSlug = getCwd().replace(/[^a-zA-Z0-9]/g, '-')
   const dehydrated = (
-    dehydrateValue(jsonStringify({ messages, tools })) as string
+    dehydrateValue(jsonStringify({ messages, tools, metadata })) as string
   )
     .replaceAll(cwdSlug, '[CWD_SLUG]')
     .replace(

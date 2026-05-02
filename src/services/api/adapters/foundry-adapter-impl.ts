@@ -40,6 +40,7 @@ export const foundryAdapter: ProviderAdapter = {
       tools,
       model,
       betas: options?.betas ?? [],
+      system: options?.system,
     })
     if (inputTokens == null) return null
     return { inputTokens, outputTokens: 0 }
