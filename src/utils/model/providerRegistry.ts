@@ -123,12 +123,6 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     // a Codex-specific side-channel (`codexReasoningId` /
     // `codexEncryptedContent`). See codex-fetch-adapter.ts.
     preservesReasoningAcrossTurns: true,
-    // The Codex adapter translates Anthropic's `web_search_20250305` server
-    // tool to OpenAI's native `web_search_preview` tool and synthesizes
-    // Anthropic `server_tool_use` / `web_search_tool_result` content blocks
-    // from `web_search_call` events. WebSearchTool consumes those blocks
-    // unchanged. See codex-fetch-adapter.ts.
-    webSearch: true,
   },
   gemini: {
     ...ALL_FALSE_CAPABILITIES,

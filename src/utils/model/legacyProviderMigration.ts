@@ -395,6 +395,7 @@ export function synthesizeProvidersFromLegacy(opts: {
       type: 'openai-responses',
       baseUrl: 'https://chatgpt.com/backend-api/codex',
       cache: { type: 'automatic-prefix' },
+      capabilities: { webSearch: true },
       auth: {
         active: 'oauth',
         oauth: { accessToken: '' }, // filled at runtime from Codex OAuth tokens

@@ -648,4 +648,186 @@ describe('Codex adapter: reasoning round-trip', () => {
       globalThis.fetch = originalFetch
     }
   })
+
+  test('inbound — reasoning closes on response.completed without a done event', async () => {
+    const responsesSSE = [
+      'event: response.output_item.added',
+      'data: {"type":"response.output_item.added","item":{"type":"reasoning","id":"rs_unclosed","summary":[]}}',
+      '',
+      'event: response.reasoning_text.delta',
+      'data: {"type":"response.reasoning_text.delta","delta":"still thinking"}',
+      '',
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":1}}}',
+      '',
+      '',
+    ].join('\n')
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(responsesSSE, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      })) as unknown as typeof globalThis.fetch
+
+    try {
+      const adapterFetch = createCodexFetch({
+        accessToken: 'unused',
+        baseUrl: 'http://localhost',
+        getSessionId: () => 'test-session',
+      })
+      const response = await adapterFetch('http://localhost/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-test',
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      })
+      const events = parseAnthropicSSE(await drainToString(response.body!))
+      const thinkingStart = events.find(
+        e =>
+          e.event === 'content_block_start' &&
+          (e.data.content_block as Record<string, unknown>)?.type ===
+            'thinking',
+      )
+      expect(thinkingStart).toBeDefined()
+      const thinkingStopIdx = events.findIndex(
+        e =>
+          e.event === 'content_block_stop' &&
+          e.data.index === thinkingStart!.data.index,
+      )
+      const messageDeltaIdx = events.findIndex(e => e.event === 'message_delta')
+      expect(thinkingStopIdx).toBeGreaterThan(-1)
+      expect(messageDeltaIdx).toBeGreaterThan(thinkingStopIdx)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test('inbound — reasoning closes before a tool block when reasoning done arrives late', async () => {
+    const responsesSSE = [
+      'event: response.output_item.added',
+      'data: {"type":"response.output_item.added","item":{"type":"reasoning","id":"rs_late","summary":[]}}',
+      '',
+      'event: response.reasoning_text.delta',
+      'data: {"type":"response.reasoning_text.delta","delta":"choose tool"}',
+      '',
+      'event: response.output_item.added',
+      'data: {"type":"response.output_item.added","item":{"type":"function_call","name":"BackgroundTaskOutput","call_id":"fc_block","arguments":""}}',
+      '',
+      'event: response.output_item.done',
+      'data: {"type":"response.output_item.done","item":{"type":"function_call","name":"BackgroundTaskOutput","call_id":"fc_block","arguments":"{\\"task_id\\":\\"task-1\\"}"}}',
+      '',
+      'event: response.output_item.done',
+      'data: {"type":"response.output_item.done","item":{"type":"reasoning","id":"rs_late","encrypted_content":""}}',
+      '',
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":1}}}',
+      '',
+      '',
+    ].join('\n')
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(responsesSSE, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      })) as unknown as typeof globalThis.fetch
+
+    try {
+      const adapterFetch = createCodexFetch({
+        accessToken: 'unused',
+        baseUrl: 'http://localhost',
+        getSessionId: () => 'test-session',
+      })
+      const response = await adapterFetch('http://localhost/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-test',
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      })
+      const events = parseAnthropicSSE(await drainToString(response.body!))
+      const thinkingStart = events.find(
+        e =>
+          e.event === 'content_block_start' &&
+          (e.data.content_block as Record<string, unknown>)?.type ===
+            'thinking',
+      )
+      const thinkingStopIdx = events.findIndex(
+        e =>
+          e.event === 'content_block_stop' &&
+          e.data.index === thinkingStart!.data.index,
+      )
+      const toolStartIdx = events.findIndex(
+        e =>
+          e.event === 'content_block_start' &&
+          (e.data.content_block as Record<string, unknown>)?.type ===
+            'tool_use',
+      )
+      const stopReason = events.find(e => e.event === 'message_delta')?.data
+        .delta as Record<string, unknown>
+      expect(thinkingStopIdx).toBeGreaterThan(-1)
+      expect(toolStartIdx).toBeGreaterThan(thinkingStopIdx)
+      expect(stopReason.stop_reason).toBe('tool_use')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test('inbound — done-only summary-less encrypted reasoning emits metadata and stops', async () => {
+    const responsesSSE = [
+      'event: response.output_item.done',
+      'data: {"type":"response.output_item.done","item":{"type":"reasoning","id":"rs_done_only","encrypted_content":"ENC_ONLY","summary":[]}}',
+      '',
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":1}}}',
+      '',
+      '',
+    ].join('\n')
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(responsesSSE, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      })) as unknown as typeof globalThis.fetch
+
+    try {
+      const adapterFetch = createCodexFetch({
+        accessToken: 'unused',
+        baseUrl: 'http://localhost',
+        getSessionId: () => 'test-session',
+      })
+      const response = await adapterFetch('http://localhost/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-test',
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      })
+      const events = parseAnthropicSSE(await drainToString(response.body!))
+      const metaDelta = events.find(
+        e =>
+          e.event === 'content_block_delta' &&
+          (e.data.delta as Record<string, unknown>)?.type ===
+            'codex_reasoning_meta_delta',
+      )
+      const thinkingStop = events.find(e => e.event === 'content_block_stop')
+      expect(metaDelta).toBeDefined()
+      expect(
+        (metaDelta!.data.delta as Record<string, unknown>).codexReasoningId,
+      ).toBe('rs_done_only')
+      expect(
+        (metaDelta!.data.delta as Record<string, unknown>)
+          .codexEncryptedContent,
+      ).toBe('ENC_ONLY')
+      expect(thinkingStop).toBeDefined()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
 })

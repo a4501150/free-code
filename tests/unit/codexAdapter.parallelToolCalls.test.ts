@@ -322,4 +322,75 @@ describe('Codex adapter: parallel tool calls', () => {
     expect(toolBlocks[0]).toMatchObject({ id: 'fcSolo', name: 'bash' })
     expect(JSON.parse(toolBlocks[0].input)).toEqual({ cmd: 'ls' })
   })
+
+  test('done-only function call renders from output_item.done arguments', async () => {
+    const responsesSSE = [
+      'event: response.output_item.done',
+      'data: {"type":"response.output_item.done","item":{"type":"function_call","name":"bash","call_id":"fcDoneOnly","arguments":"{\\"cmd\\":\\"pwd\\"}"}}',
+      '',
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":3,"output_tokens":3}}}',
+      '',
+      '',
+    ].join('\n')
+
+    const events = await runAdapter(responsesSSE)
+    const toolBlocks = extractToolUseBlocks(events)
+    expect(toolBlocks).toHaveLength(1)
+    expect(toolBlocks[0]).toMatchObject({ id: 'fcDoneOnly', name: 'bash' })
+    expect(JSON.parse(toolBlocks[0].input)).toEqual({ cmd: 'pwd' })
+  })
+
+  test('argument deltas route by item_id after another function call is added', async () => {
+    const responsesSSE = [
+      'event: response.output_item.added',
+      'data: {"type":"response.output_item.added","item":{"type":"function_call","name":"bash","call_id":"fc1","arguments":""}}',
+      '',
+      'event: response.output_item.added',
+      'data: {"type":"response.output_item.added","item":{"type":"function_call","name":"read_file","call_id":"fc2","arguments":""}}',
+      '',
+      'event: response.function_call_arguments.delta',
+      'data: {"type":"response.function_call_arguments.delta","item_id":"fc1","delta":"{\\"cmd\\":\\"date\\"}"}',
+      '',
+      'event: response.function_call_arguments.delta',
+      'data: {"type":"response.function_call_arguments.delta","item_id":"fc2","delta":"{\\"path\\":\\"/x\\"}"}',
+      '',
+      'event: response.output_item.done',
+      'data: {"type":"response.output_item.done","item":{"type":"function_call","name":"bash","call_id":"fc1","arguments":""}}',
+      '',
+      'event: response.output_item.done',
+      'data: {"type":"response.output_item.done","item":{"type":"function_call","name":"read_file","call_id":"fc2","arguments":""}}',
+      '',
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":3,"output_tokens":3}}}',
+      '',
+      '',
+    ].join('\n')
+
+    const events = await runAdapter(responsesSSE)
+    const toolBlocks = extractToolUseBlocks(events)
+    expect(toolBlocks).toHaveLength(2)
+    expect(toolBlocks[0]).toMatchObject({ id: 'fc1', name: 'bash' })
+    expect(toolBlocks[1]).toMatchObject({ id: 'fc2', name: 'read_file' })
+    expect(JSON.parse(toolBlocks[0].input)).toEqual({ cmd: 'date' })
+    expect(JSON.parse(toolBlocks[1].input)).toEqual({ path: '/x' })
+  })
+
+  test('response.completed output can synthesize an unfinalized function call', async () => {
+    const responsesSSE = [
+      'event: response.output_item.added',
+      'data: {"type":"response.output_item.added","item":{"type":"function_call","name":"bash","call_id":"fcCompleted","arguments":""}}',
+      '',
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"output":[{"type":"function_call","name":"bash","call_id":"fcCompleted","arguments":"{\\"cmd\\":\\"echo hi\\"}"}],"usage":{"input_tokens":3,"output_tokens":3}}}',
+      '',
+      '',
+    ].join('\n')
+
+    const events = await runAdapter(responsesSSE)
+    const toolBlocks = extractToolUseBlocks(events)
+    expect(toolBlocks).toHaveLength(1)
+    expect(toolBlocks[0]).toMatchObject({ id: 'fcCompleted', name: 'bash' })
+    expect(JSON.parse(toolBlocks[0].input)).toEqual({ cmd: 'echo hi' })
+  })
 })

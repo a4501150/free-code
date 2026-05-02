@@ -139,22 +139,17 @@ function translateTools(
   tools: Array<Record<string, unknown>>
   hasWebSearch: boolean
 } {
-  const structuredOutputs = getProviderRegistry().getModelFlag(
-    model,
-    'structuredOutputs',
-  )
+  const registry = getProviderRegistry()
+  const structuredOutputs = registry.getModelFlag(model, 'structuredOutputs')
+  const supportsWebSearch = registry.getCapability(model, 'webSearch')
   const tools: Array<Record<string, unknown>> = []
   let hasWebSearch = false
   for (const tool of anthropicTools) {
-    // Anthropic web search server-tool → OpenAI native `web_search_preview`.
-    // The codex adapter synthesizes Anthropic `server_tool_use` /
-    // `web_search_tool_result` blocks from the Responses API's
-    // `web_search_call` events on the response side. `allowed_domains`,
-    // `blocked_domains`, and `max_uses` are not accepted by the OpenAI
-    // preview tool — drop them. (Lossy but acceptable for a v1 surface.)
     if (tool.type === 'web_search_20250305') {
-      tools.push({ type: 'web_search_preview' })
-      hasWebSearch = true
+      if (supportsWebSearch) {
+        tools.push({ type: 'web_search_preview' })
+        hasWebSearch = true
+      }
       continue
     }
     // Other server tools we don't handle yet — drop with a warning by
@@ -462,6 +457,130 @@ function formatSSE(event: string, data: string): string {
   return `event: ${event}\ndata: ${data}\n\n`
 }
 
+type CodexStreamItem = Record<string, unknown>
+
+type StreamItemState = {
+  key: string
+  type: string
+  order: number
+  id?: string
+  callId?: string
+  name?: string
+  item?: CodexStreamItem
+  finalItem?: CodexStreamItem
+  argumentDeltas: string
+  argumentsDone?: string
+  textStreamed: string
+  reasoningText: string
+  rendered: boolean
+  serverToolUseIndex?: number
+  serverToolUseClosed: boolean
+  webSearchResultEmitted: boolean
+  webSearchCounted: boolean
+}
+
+type OpenCodexBlock =
+  | { kind: 'text'; key: string; index: number }
+  | { kind: 'thinking'; key: string; index: number }
+  | { kind: 'server_tool_use'; key: string; index: number }
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+function extractMessageText(item: CodexStreamItem | undefined): string {
+  const content = item?.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .map(part => {
+      if (!part || typeof part !== 'object') return ''
+      const p = part as Record<string, unknown>
+      const type = p.type
+      if (type === 'output_text' || type === 'text') {
+        return typeof p.text === 'string' ? p.text : ''
+      }
+      return ''
+    })
+    .join('')
+}
+
+function extractReasoningText(item: CodexStreamItem | undefined): string {
+  const summary = item?.summary
+  if (Array.isArray(summary)) {
+    const text = summary
+      .map(part => {
+        if (!part || typeof part !== 'object') return ''
+        const p = part as Record<string, unknown>
+        return p.type === 'summary_text' && typeof p.text === 'string'
+          ? p.text
+          : ''
+      })
+      .join('')
+    if (text) return text
+  }
+
+  const content = item?.content
+  if (Array.isArray(content)) {
+    return content
+      .map(part => {
+        if (!part || typeof part !== 'object') return ''
+        const p = part as Record<string, unknown>
+        return p.type === 'reasoning_text' && typeof p.text === 'string'
+          ? p.text
+          : ''
+      })
+      .join('')
+  }
+
+  return ''
+}
+
+function harvestMessageCitations(
+  item: CodexStreamItem | undefined,
+  pendingCitations: Array<{ url: string; title: string }>,
+): void {
+  const content = item?.content
+  if (!Array.isArray(content)) return
+  for (const part of content) {
+    if (!part || typeof part !== 'object') continue
+    const p = part as Record<string, unknown>
+    if (p.type !== 'output_text' || !Array.isArray(p.annotations)) continue
+    for (const ann of p.annotations) {
+      if (!ann || typeof ann !== 'object') continue
+      const a = ann as Record<string, unknown>
+      if (a.type === 'url_citation' && typeof a.url === 'string' && a.url) {
+        pendingCitations.push({
+          url: a.url,
+          title: typeof a.title === 'string' && a.title ? a.title : a.url,
+        })
+      }
+    }
+  }
+}
+
+function extractWebSearchResults(
+  item: CodexStreamItem | undefined,
+): Array<{ url: string; title: string }> {
+  const action = item?.action as
+    | { results?: Array<{ url?: string; title?: string }> }
+    | undefined
+  if (!Array.isArray(action?.results)) return []
+  const results: Array<{ url: string; title: string }> = []
+  for (const result of action.results) {
+    if (typeof result?.url === 'string' && result.url.length > 0) {
+      results.push({
+        url: result.url,
+        title:
+          typeof result.title === 'string' && result.title.length > 0
+            ? result.title
+            : result.url,
+      })
+    }
+  }
+  return results
+}
+
 /**
  * Translates Codex streaming response to Anthropic format.
  * Converts Codex SSE events into Anthropic-compatible streaming events.
@@ -482,261 +601,493 @@ async function translateCodexStreamToAnthropic(
       let outputTokens = 0
       let inputTokens = 0
       let cacheReadInputTokens = 0
-
-      // Emit Anthropic message_start
-      controller.enqueue(
-        encoder.encode(
-          formatSSE(
-            'message_start',
-            JSON.stringify({
-              type: 'message_start',
-              message: {
-                id: messageId,
-                type: 'message',
-                role: 'assistant',
-                content: [],
-                model: codexModel,
-                stop_reason: null,
-                stop_sequence: null,
-                usage: { input_tokens: 0, output_tokens: 0 },
-              },
-            }),
-          ),
-        ),
-      )
-
-      // Emit ping
-      controller.enqueue(
-        encoder.encode(formatSSE('ping', JSON.stringify({ type: 'ping' }))),
-      )
-
-      // Track state for tool calls
-      let currentTextBlockStarted = false
-      let currentToolCallId = ''
-      let currentToolCallName = ''
-      let currentToolCallArgs = ''
-      let inToolCall = false
       let hadToolCalls = false
-      // Tracks whether we've already emitted input_json_delta for the
-      // current tool_use block — used to dedupe between the canonical
-      // `function_call_arguments.done` path (real OpenAI) and the
-      // `output_item.done(function_call)` fallback path (llama.cpp omits
-      // the .done event for arguments).
-      let toolArgsEmitted = false
-
-      // ── Web search state ──────────────────────────────────────
-      // Codex emits `web_search_call` items with their own lifecycle:
-      //   output_item.added (item.type='web_search_call', id, action.query)
-      //   → response.web_search_call.in_progress / .searching
-      //   → response.web_search_call.completed
-      //   → output_item.done (item.action.results, citations)
-      // We synthesize Anthropic `server_tool_use` + `web_search_tool_result`
-      // blocks so the WebSearchTool consumer (which only knows Anthropic
-      // shapes) can read structured results.
       let webSearchCount = 0
-      // Per-call state, keyed by Codex item id (call_id).
-      const pendingWebSearches = new Map<
-        string,
-        {
-          query: string
-          serverToolUseEmitted: boolean
-          serverToolUseClosed: boolean
-          serverToolUseIndex: number
-          resultEmitted: boolean
+      let streamFinished = false
+
+      const enqueue = (event: string, data: Record<string, unknown>): void => {
+        controller.enqueue(
+          encoder.encode(formatSSE(event, JSON.stringify(data))),
+        )
+      }
+
+      enqueue('message_start', {
+        type: 'message_start',
+        message: {
+          id: messageId,
+          type: 'message',
+          role: 'assistant',
+          content: [],
+          model: codexModel,
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: 0, output_tokens: 0 },
+        },
+      })
+      enqueue('ping', { type: 'ping' })
+
+      const items = new Map<string, StreamItemState>()
+      let nextItemOrder = 0
+      let nextSyntheticItemId = 0
+      let currentMessageKey: string | null = null
+      let currentReasoningKey: string | null = null
+      let openBlock: OpenCodexBlock | null = null
+      const pendingCitations: Array<{ url: string; title: string }> = []
+
+      const getItemKey = (
+        event: Record<string, unknown>,
+        item: CodexStreamItem | undefined,
+        typeHint?: string,
+        fallbackKey?: string | null,
+      ): { key: string; type: string } => {
+        const type = readString(item?.type) ?? typeHint ?? 'unknown'
+        const identity =
+          readString(item?.id) ??
+          readString(item?.call_id) ??
+          readString(event.item_id) ??
+          readString(event.call_id)
+        if (identity) return { key: `${type}:${identity}`, type }
+        if (fallbackKey) return { key: fallbackKey, type }
+        return { key: `${type}:synthetic_${nextSyntheticItemId++}`, type }
+      }
+
+      const upsertItem = (
+        event: Record<string, unknown>,
+        item: CodexStreamItem | undefined,
+        typeHint?: string,
+        fallbackKey?: string | null,
+      ): StreamItemState => {
+        const { key, type } = getItemKey(event, item, typeHint, fallbackKey)
+        let state = items.get(key)
+        if (!state) {
+          state = {
+            key,
+            type,
+            order: nextItemOrder++,
+            argumentDeltas: '',
+            textStreamed: '',
+            reasoningText: '',
+            rendered: false,
+            serverToolUseClosed: false,
+            webSearchResultEmitted: false,
+            webSearchCounted: false,
+          }
+          items.set(key, state)
         }
-      >()
-      // Citations harvested from output_text annotations, accumulated and
-      // attached to the most recent web_search if the structured
-      // `action.results` is missing.
-      const pendingCitations: Array<{
-        url: string
-        title: string
-      }> = []
+        state.type = type
+        if (item) {
+          state.item = item
+          const id = readString(item.id)
+          const callId = readString(item.call_id)
+          const name = readString(item.name)
+          if (id) state.id = id
+          if (callId) state.callId = callId
+          if (name) state.name = name
+        }
+        return state
+      }
 
-      // ── Reasoning buffering state ─────────────────────────────
-      // Codex / OpenAI Responses streams `reasoning` items as:
-      //   output_item.added (id, empty content) → reasoning_*_delta (text)
-      //                                         → output_item.done (encrypted_content)
-      // Reasoning lifecycle: stream thinking incrementally (better UX) and
-      // close the block early on message/function_call item boundaries to
-      // dodge llama.cpp's non-canonical event ordering (it emits reasoning's
-      // `output_item.done` AFTER message text has streamed). Without an
-      // early-close, the synthetic thinking block lands at the same
-      // contentBlockIndex as the already-open text block and corrupts block
-      // tracking in claude.ts ("Content block not found").
-      let pendingReasoningId: string | null = null
-      let pendingReasoningText = ''
-      let inThinkingBlock = false
-      let reasoningEmitted = false
+      const emitBlockStop = (index: number): void => {
+        enqueue('content_block_stop', {
+          type: 'content_block_stop',
+          index,
+        })
+      }
 
-      const startThinkingBlock = (reasoningId: string | null): void => {
-        if (inThinkingBlock || reasoningEmitted) return
+      const emitInputJsonDelta = (index: number, partialJson: string): void => {
+        if (!partialJson) return
+        enqueue('content_block_delta', {
+          type: 'content_block_delta',
+          index,
+          delta: { type: 'input_json_delta', partial_json: partialJson },
+        })
+      }
+
+      const closeThinkingBlock = (
+        state: StreamItemState,
+        finalItem?: CodexStreamItem,
+      ): void => {
+        if (state.rendered) {
+          const encrypted = readString(finalItem?.encrypted_content) ?? ''
+          if (encrypted) {
+            logForDebugging(
+              `[codex-adapter] late reasoning encrypted_content after block close key=${state.key}`,
+              { level: 'warn' },
+            )
+          }
+          return
+        }
+
+        const fallbackText = extractReasoningText(finalItem)
+        if (
+          !openBlock ||
+          openBlock.kind !== 'thinking' ||
+          openBlock.key !== state.key
+        ) {
+          const hasMeaningfulPayload =
+            state.id ||
+            readString(finalItem?.id) ||
+            state.reasoningText ||
+            fallbackText ||
+            readString(finalItem?.encrypted_content)
+          if (!hasMeaningfulPayload) return
+          closeOpenBlock()
+          const startPayload: Record<string, unknown> = {
+            type: 'thinking',
+            thinking: '',
+            signature: '',
+          }
+          const reasoningId = readString(finalItem?.id) ?? state.id
+          if (reasoningId) startPayload.codexReasoningId = reasoningId
+          enqueue('content_block_start', {
+            type: 'content_block_start',
+            index: contentBlockIndex,
+            content_block: startPayload,
+          })
+          openBlock = {
+            kind: 'thinking',
+            key: state.key,
+            index: contentBlockIndex,
+          }
+          if (!state.reasoningText && fallbackText) {
+            state.reasoningText = fallbackText
+            enqueue('content_block_delta', {
+              type: 'content_block_delta',
+              index: contentBlockIndex,
+              delta: { type: 'thinking_delta', thinking: fallbackText },
+            })
+          }
+        } else if (!state.reasoningText && fallbackText) {
+          state.reasoningText = fallbackText
+          enqueue('content_block_delta', {
+            type: 'content_block_delta',
+            index: openBlock.index,
+            delta: { type: 'thinking_delta', thinking: fallbackText },
+          })
+        }
+
+        if (openBlock?.kind !== 'thinking' || openBlock.key !== state.key)
+          return
+
+        const finalId = readString(finalItem?.id) ?? ''
+        const finalEncrypted = readString(finalItem?.encrypted_content) ?? ''
+        if (finalId || finalEncrypted) {
+          const delta: Record<string, unknown> = {
+            type: 'codex_reasoning_meta_delta',
+          }
+          if (finalId) delta.codexReasoningId = finalId
+          if (finalEncrypted) delta.codexEncryptedContent = finalEncrypted
+          enqueue('content_block_delta', {
+            type: 'content_block_delta',
+            index: openBlock.index,
+            delta,
+          })
+        }
+
+        emitBlockStop(openBlock.index)
+        contentBlockIndex++
+        openBlock = null
+        state.rendered = true
+      }
+
+      const closeWebSearchServerTool = (state: StreamItemState): void => {
+        if (state.serverToolUseClosed) return
+        const index = state.serverToolUseIndex
+        if (typeof index !== 'number') return
+        emitBlockStop(index)
+        state.serverToolUseClosed = true
+        if (
+          openBlock?.kind === 'server_tool_use' &&
+          openBlock.key === state.key
+        ) {
+          openBlock = null
+        }
+        contentBlockIndex = Math.max(contentBlockIndex, index + 1)
+      }
+
+      function closeOpenBlock(): void {
+        if (!openBlock) return
+        const state = items.get(openBlock.key)
+        if (openBlock.kind === 'thinking' && state) {
+          closeThinkingBlock(state)
+          return
+        }
+        if (openBlock.kind === 'server_tool_use' && state) {
+          closeWebSearchServerTool(state)
+          return
+        }
+        emitBlockStop(openBlock.index)
+        contentBlockIndex++
+        openBlock = null
+      }
+
+      const startThinkingBlock = (state: StreamItemState): void => {
+        if (state.rendered) return
+        if (openBlock?.kind === 'thinking' && openBlock.key === state.key)
+          return
+        closeOpenBlock()
         const startPayload: Record<string, unknown> = {
           type: 'thinking',
           thinking: '',
           signature: '',
         }
-        if (reasoningId) startPayload.codexReasoningId = reasoningId
-        // codexEncryptedContent is unavailable here (only on output_item.done).
-        // It is patched onto the block later via a `codex_reasoning_meta_delta`
-        // emitted just before content_block_stop in closeThinkingBlock — see
-        // claude.ts content_block_delta handler. This preserves round-trip
-        // continuity for OpenAI-stateful providers while allowing reasoning
-        // text to stream live to the UI.
-        controller.enqueue(
-          encoder.encode(
-            formatSSE(
-              'content_block_start',
-              JSON.stringify({
-                type: 'content_block_start',
-                index: contentBlockIndex,
-                content_block: startPayload,
-              }),
-            ),
-          ),
-        )
-        inThinkingBlock = true
+        if (state.id) startPayload.codexReasoningId = state.id
+        enqueue('content_block_start', {
+          type: 'content_block_start',
+          index: contentBlockIndex,
+          content_block: startPayload,
+        })
+        openBlock = {
+          kind: 'thinking',
+          key: state.key,
+          index: contentBlockIndex,
+        }
       }
 
-      const streamThinkingDelta = (text: string): void => {
-        if (!inThinkingBlock || !text) return
-        controller.enqueue(
-          encoder.encode(
-            formatSSE(
-              'content_block_delta',
-              JSON.stringify({
-                type: 'content_block_delta',
-                index: contentBlockIndex,
-                delta: { type: 'thinking_delta', thinking: text },
-              }),
-            ),
-          ),
+      const streamThinkingDelta = (
+        state: StreamItemState,
+        text: string,
+      ): void => {
+        if (!text || state.rendered) return
+        startThinkingBlock(state)
+        if (openBlock?.kind !== 'thinking' || openBlock.key !== state.key)
+          return
+        state.reasoningText += text
+        enqueue('content_block_delta', {
+          type: 'content_block_delta',
+          index: openBlock.index,
+          delta: { type: 'thinking_delta', thinking: text },
+        })
+      }
+
+      const streamTextDelta = (state: StreamItemState, text: string): void => {
+        if (!text) return
+        if (openBlock?.kind !== 'text' || openBlock.key !== state.key) {
+          closeOpenBlock()
+          enqueue('content_block_start', {
+            type: 'content_block_start',
+            index: contentBlockIndex,
+            content_block: { type: 'text', text: '' },
+          })
+          openBlock = { kind: 'text', key: state.key, index: contentBlockIndex }
+        }
+        state.textStreamed += text
+        enqueue('content_block_delta', {
+          type: 'content_block_delta',
+          index: openBlock.index,
+          delta: { type: 'text_delta', text },
+        })
+        outputTokens += 1
+      }
+
+      const renderMessageDone = (
+        state: StreamItemState,
+        finalItem?: CodexStreamItem,
+      ): void => {
+        if (state.rendered) return
+        const finalText = extractMessageText(finalItem)
+        if (!state.textStreamed && finalText) {
+          streamTextDelta(state, finalText)
+        } else if (
+          finalText &&
+          finalText.length > state.textStreamed.length &&
+          finalText.startsWith(state.textStreamed)
+        ) {
+          streamTextDelta(state, finalText.slice(state.textStreamed.length))
+        }
+        harvestMessageCitations(finalItem, pendingCitations)
+        if (openBlock?.kind === 'text' && openBlock.key === state.key) {
+          closeOpenBlock()
+        }
+        state.rendered = true
+      }
+
+      const getFunctionArguments = (state: StreamItemState): string => {
+        const finalArgs = readString(state.finalItem?.arguments)
+        const initialArgs = readString(state.item?.arguments)
+        return (
+          finalArgs ||
+          state.argumentsDone ||
+          state.argumentDeltas ||
+          initialArgs ||
+          ''
         )
       }
 
-      const closeThinkingBlock = (finalItem?: {
-        id?: string
-        encrypted_content?: string
-        summary?: Array<{ type?: string; text?: string }>
-        content?: Array<{ type?: string; text?: string }>
-      }): void => {
-        if (reasoningEmitted) return
-
-        // Side-channel update: when output_item.done(reasoning) fires
-        // (canonical OpenAI ordering), it carries the authoritative
-        // encrypted_content. The block was content_block_start'd earlier
-        // (eagerly on output_item.added) without this field. Emit a
-        // codex_reasoning_meta_delta so claude.ts can patch the active
-        // thinking block before content_block_stop. The same delta also
-        // forwards the canonical reasoning id in case the start payload
-        // captured an empty/preliminary one. No-op for the llama.cpp
-        // ordering where finalItem isn't passed (reasoning was closed
-        // early at message/function_call.added with no .done payload yet).
-        if (inThinkingBlock && finalItem) {
-          const finalId = (finalItem.id as string) || ''
-          const finalEncrypted = (finalItem.encrypted_content as string) || ''
-          if (finalId || finalEncrypted) {
-            const metaDelta: Record<string, unknown> = {
-              type: 'codex_reasoning_meta_delta',
-            }
-            if (finalId) metaDelta.codexReasoningId = finalId
-            if (finalEncrypted) metaDelta.codexEncryptedContent = finalEncrypted
-            controller.enqueue(
-              encoder.encode(
-                formatSSE(
-                  'content_block_delta',
-                  JSON.stringify({
-                    type: 'content_block_delta',
-                    index: contentBlockIndex,
-                    delta: metaDelta,
-                  }),
-                ),
-              ),
-            )
-          }
-        }
-
-        // If we never opened (no reasoning item ever fired), but the .done
-        // payload has text we'd otherwise lose, open lazily here. Skip
-        // entirely if there's nothing meaningful.
-        if (!inThinkingBlock) {
-          let fallbackText = ''
-          if (finalItem) {
-            const summary = finalItem.summary || []
-            fallbackText = summary
-              .map(s =>
-                s?.type === 'summary_text' && typeof s.text === 'string'
-                  ? s.text
-                  : '',
-              )
-              .join('')
-            if (!fallbackText) {
-              const content = finalItem.content || []
-              fallbackText = content
-                .map(c =>
-                  c?.type === 'reasoning_text' && typeof c.text === 'string'
-                    ? c.text
-                    : '',
-                )
-                .join('')
-            }
-          }
-          const fallbackId =
-            (finalItem?.id as string) || pendingReasoningId || ''
-          if (!fallbackId && !fallbackText) {
-            pendingReasoningId = null
-            pendingReasoningText = ''
-            return
-          }
-          startThinkingBlock(fallbackId)
-          if (fallbackText) streamThinkingDelta(fallbackText)
-        } else if (finalItem && !pendingReasoningText) {
-          // We opened but received no streaming deltas (e.g. canonical
-          // OpenAI summary-only mode). Backfill from the .done payload.
-          const summary = finalItem.summary || []
-          let fallbackText = summary
-            .map(s =>
-              s?.type === 'summary_text' && typeof s.text === 'string'
-                ? s.text
-                : '',
-            )
-            .join('')
-          if (!fallbackText) {
-            const content = finalItem.content || []
-            fallbackText = content
-              .map(c =>
-                c?.type === 'reasoning_text' && typeof c.text === 'string'
-                  ? c.text
-                  : '',
-              )
-              .join('')
-          }
-          if (fallbackText) streamThinkingDelta(fallbackText)
-        }
-
-        controller.enqueue(
-          encoder.encode(
-            formatSSE(
-              'content_block_stop',
-              JSON.stringify({
-                type: 'content_block_stop',
-                index: contentBlockIndex,
-              }),
-            ),
-          ),
-        )
+      const renderFunctionTool = (state: StreamItemState): void => {
+        if (state.rendered) return
+        closeOpenBlock()
+        const id = state.callId || state.id || state.key
+        const name = readString(state.finalItem?.name) ?? state.name ?? ''
+        enqueue('content_block_start', {
+          type: 'content_block_start',
+          index: contentBlockIndex,
+          content_block: {
+            type: 'tool_use',
+            id,
+            name,
+            input: {},
+          },
+        })
+        emitInputJsonDelta(contentBlockIndex, getFunctionArguments(state))
+        emitBlockStop(contentBlockIndex)
         contentBlockIndex++
-        inThinkingBlock = false
-        reasoningEmitted = true
-        pendingReasoningId = null
-        pendingReasoningText = ''
+        hadToolCalls = true
+        state.rendered = true
       }
 
-      // Back-compat alias: existing callers refer to flushPendingReasoning.
-      const flushPendingReasoning = closeThinkingBlock
+      const renderWebSearchStart = (state: StreamItemState): void => {
+        if (typeof state.serverToolUseIndex === 'number') return
+        closeOpenBlock()
+        const callId = state.id || state.key
+        const action = state.item?.action as { query?: string } | undefined
+        const query = typeof action?.query === 'string' ? action.query : ''
+        enqueue('content_block_start', {
+          type: 'content_block_start',
+          index: contentBlockIndex,
+          content_block: {
+            type: 'server_tool_use',
+            id: callId,
+            name: 'web_search',
+            input: {},
+          },
+        })
+        emitInputJsonDelta(contentBlockIndex, JSON.stringify({ query }))
+        state.serverToolUseIndex = contentBlockIndex
+        openBlock = {
+          kind: 'server_tool_use',
+          key: state.key,
+          index: contentBlockIndex,
+        }
+        if (!state.webSearchCounted) {
+          webSearchCount++
+          state.webSearchCounted = true
+        }
+        hadToolCalls = true
+      }
 
-      // Diagnostic counters — emitted at stream end so we can trace
-      // empty-completion / silent-failure cases under --debug.
+      const renderWebSearchDone = (
+        state: StreamItemState,
+        finalItem?: CodexStreamItem,
+      ): void => {
+        if (state.webSearchResultEmitted) return
+        if (typeof state.serverToolUseIndex !== 'number') {
+          renderWebSearchStart(state)
+        }
+        closeWebSearchServerTool(state)
+        let results = extractWebSearchResults(finalItem)
+        if (results.length === 0 && pendingCitations.length > 0) {
+          results = pendingCitations.splice(0)
+        }
+        enqueue('content_block_start', {
+          type: 'content_block_start',
+          index: contentBlockIndex,
+          content_block: {
+            type: 'web_search_tool_result',
+            tool_use_id: state.id || state.key,
+            content: results.map(result => ({
+              type: 'web_search_result',
+              url: result.url,
+              title: result.title,
+            })),
+          },
+        })
+        emitBlockStop(contentBlockIndex)
+        contentBlockIndex++
+        state.webSearchResultEmitted = true
+        state.rendered = true
+        hadToolCalls = true
+      }
+
+      const handleItemDone = (
+        state: StreamItemState,
+        finalItem?: CodexStreamItem,
+      ): void => {
+        if (finalItem) state.finalItem = finalItem
+        if (state.type === 'function_call') {
+          renderFunctionTool(state)
+        } else if (state.type === 'message') {
+          renderMessageDone(state, finalItem)
+        } else if (state.type === 'web_search_call') {
+          renderWebSearchDone(state, finalItem)
+        } else if (state.type === 'reasoning') {
+          closeThinkingBlock(state, finalItem)
+        }
+      }
+
+      const synthesizeUnrenderedOutputItems = (
+        response: Record<string, unknown>,
+      ): void => {
+        const output = response.output
+        if (!Array.isArray(output)) return
+        for (const item of output) {
+          if (!item || typeof item !== 'object') continue
+          const finalItem = item as CodexStreamItem
+          const state = upsertItem({}, finalItem)
+          if (!state.rendered) handleItemDone(state, finalItem)
+        }
+      }
+
+      const finishStream = (): void => {
+        if (streamFinished) return
+        closeOpenBlock()
+        const stopReason = hadToolCalls ? 'tool_use' : 'end_turn'
+        const usagePayload: Record<string, unknown> = {
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+          cache_read_input_tokens: cacheReadInputTokens,
+          cache_creation_input_tokens: null,
+        }
+        if (webSearchCount > 0) {
+          usagePayload.server_tool_use = {
+            web_search_requests: webSearchCount,
+          }
+        }
+        enqueue('message_delta', {
+          type: 'message_delta',
+          delta: { stop_reason: stopReason, stop_sequence: null },
+          usage: usagePayload,
+        })
+        enqueue('message_stop', {
+          type: 'message_stop',
+          'amazon-bedrock-invocationMetrics': {
+            inputTokenCount: inputTokens,
+            outputTokenCount: outputTokens,
+            invocationLatency: 0,
+            firstByteLatency: 0,
+          },
+          usage: usagePayload,
+        })
+        streamFinished = true
+        controller.close()
+      }
+
+      const emitErrorAndClose = (
+        message: string,
+        raw: unknown,
+        level: 'warn' | 'error' = 'error',
+      ): void => {
+        if (streamFinished) return
+        closeOpenBlock()
+        logForDebugging(`[codex-adapter] ${message}`, { level })
+        const normalized = codexAdapter.normalizeError(
+          typeof raw === 'object' && raw !== null
+            ? { ...(raw as Record<string, unknown>), mid_stream: true }
+            : { mid_stream: true, cause: raw },
+          'openai-responses',
+        )
+        enqueue('error', {
+          type: 'error',
+          error: {
+            type: toAnthropicErrorType(normalized.kind),
+            message: normalized.message || message,
+            normalized,
+          },
+        })
+        streamFinished = true
+        controller.close()
+      }
+
       let firstSseLogged = false
       let chunkCount = 0
       const eventTypeCounts: Record<string, number> = {}
@@ -747,13 +1098,11 @@ async function translateCodexStreamToAnthropic(
       try {
         const reader = codexResponse.body?.getReader()
         if (!reader) {
-          emitTextBlock(
-            controller,
-            encoder,
-            contentBlockIndex,
+          streamTextDelta(
+            upsertItem({}, { type: 'message' }, 'message'),
             'Error: No response body',
           )
-          finishStream(controller, encoder, outputTokens, inputTokens, 0, false)
+          finishStream()
           return
         }
 
@@ -770,11 +1119,7 @@ async function translateCodexStreamToAnthropic(
 
           for (const line of lines) {
             const trimmed = line.trim()
-            if (!trimmed) continue
-
-            // Parse "event: xxx" lines
-            if (trimmed.startsWith('event: ')) continue
-
+            if (!trimmed || trimmed.startsWith('event: ')) continue
             if (!trimmed.startsWith('data: ')) continue
             const dataStr = trimmed.slice(6)
             if (dataStr === '[DONE]') {
@@ -798,6 +1143,7 @@ async function translateCodexStreamToAnthropic(
               )
               continue
             }
+
             chunkCount++
             if (!firstSseLogged) {
               logForDebugging(
@@ -806,666 +1152,118 @@ async function translateCodexStreamToAnthropic(
               firstSseLogged = true
             }
 
-            const eventType = event.type as string
+            const eventType = readString(event.type) ?? ''
             if (eventType) {
               eventTypeCounts[eventType] = (eventTypeCounts[eventType] ?? 0) + 1
-              if (eventType === 'response.completed')
-                sawResponseCompleted = true
-              if (
-                eventType === 'response.failed' ||
-                eventType === 'error' ||
-                eventType.endsWith('.failed')
-              ) {
-                sawResponseFailed = true
-                logForDebugging(
-                  `[codex-adapter] failure event ${eventType}: ${dataStr.slice(0, 500)}`,
-                  { level: 'error' },
-                )
-                // Surface the upstream error to the SDK pipeline. Codex
-                // Responses API delivers terminal failures as either a
-                // top-level `error` event (payload at `event.error`) or
-                // `response.failed` (payload at `event.response.error`).
-                // Without translating these to an Anthropic-shaped
-                // `event: error`, the for-loop would keep running,
-                // finishStream() would close cleanly with 0 content blocks,
-                // and the user sees an empty turn — the silent-failure bug.
-                const errPayload =
-                  (event.error as Record<string, unknown> | undefined) ??
-                  ((event.response as Record<string, unknown> | undefined)
-                    ?.error as Record<string, unknown> | undefined)
-                // Reshape to `{error: {…}}` so normalizeError's body parser
-                // (which only looks at top-level `.error`) classifies both
-                // event shapes consistently.
-                const normalizedBody = errPayload
-                  ? JSON.stringify({ error: errPayload })
-                  : dataStr
-                const fallbackMessage =
-                  (errPayload?.message as string | undefined) ??
-                  `Codex ${eventType}`
-                const normalized = codexAdapter.normalizeError(
-                  { body: normalizedBody, mid_stream: true },
-                  'openai-responses',
-                )
-                controller.enqueue(
-                  encoder.encode(
-                    `event: error\ndata: ${JSON.stringify({
-                      type: 'error',
-                      error: {
-                        type: toAnthropicErrorType(normalized.kind),
-                        message: normalized.message || fallbackMessage,
-                        normalized,
-                      },
-                    })}\n\n`,
-                  ),
-                )
-                // Don't process further events after a terminal failure;
-                // the upstream stream has ended semantically.
-                continue
-              }
             }
 
-            // ── Text output events ──────────────────────────────
-            if (eventType === 'response.output_item.added') {
-              const item = event.item as Record<string, unknown>
-              if (item?.type === 'reasoning') {
-                // Open the synthetic Anthropic thinking block eagerly so
-                // reasoning_text deltas can stream live to the UI. The
-                // codexReasoningId rides along on the start payload for
-                // round-trip continuity. encrypted_content is not yet
-                // available (only on .done) — see startThinkingBlock for
-                // the trade-off.
-                pendingReasoningId = (item.id as string) || null
-                pendingReasoningText = ''
-                reasoningEmitted = false
-                startThinkingBlock(pendingReasoningId)
-              } else if (item?.type === 'message') {
-                // Flush any pending reasoning at the message boundary —
-                // see flushPendingReasoning rationale. Real OpenAI's
-                // canonical ordering means pendingReasoningId is already
-                // null here (cleared by the prior reasoning .done), so the
-                // helper is a no-op for that path.
-                flushPendingReasoning()
-                // New text message block starting
-                if (inToolCall) {
-                  // Close the previous tool call block
-                  closeToolCallBlock(
-                    controller,
-                    encoder,
-                    contentBlockIndex,
-                    currentToolCallId,
-                    currentToolCallName,
-                    currentToolCallArgs,
-                  )
-                  contentBlockIndex++
-                  inToolCall = false
-                }
-              } else if (item?.type === 'function_call') {
-                // Flush pending reasoning before opening the tool_use
-                // block — same rationale as the message branch above.
-                flushPendingReasoning()
-                // Close text block if open
-                if (currentTextBlockStarted) {
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE(
-                        'content_block_stop',
-                        JSON.stringify({
-                          type: 'content_block_stop',
-                          index: contentBlockIndex,
-                        }),
-                      ),
-                    ),
-                  )
-                  contentBlockIndex++
-                  currentTextBlockStarted = false
-                }
-
-                // Eager-close the previously open tool_use, if any.
-                // llama.cpp emits ALL parallel-tool `output_item.added`
-                // events BEFORE any `output_item.done` events (verified
-                // live 2026-04-30 with 27B Q6_K + harness emitting 3
-                // parallel tool calls). Without this eager-close, each
-                // new function_call.added would overwrite
-                // currentToolCallId/Name/Args and emit a fresh
-                // content_block_start at the SAME contentBlockIndex as
-                // the prior still-open tool_use — claude.ts then sees
-                // multiple content_block_starts at one index and
-                // collapses every parallel call into the first one
-                // rendered. The matching .done events for the eagerly
-                // closed calls are detected as stale below and skipped.
-                // Canonical OpenAI ordering (each item's full lifecycle
-                // before next opens) leaves inToolCall=false here, so
-                // this branch is inert for upstream Codex.
-                if (inToolCall) {
-                  if (currentToolCallArgs && !toolArgsEmitted) {
-                    controller.enqueue(
-                      encoder.encode(
-                        formatSSE(
-                          'content_block_delta',
-                          JSON.stringify({
-                            type: 'content_block_delta',
-                            index: contentBlockIndex,
-                            delta: {
-                              type: 'input_json_delta',
-                              partial_json: currentToolCallArgs,
-                            },
-                          }),
-                        ),
-                      ),
-                    )
-                  }
-                  closeToolCallBlock(
-                    controller,
-                    encoder,
-                    contentBlockIndex,
-                    currentToolCallId,
-                    currentToolCallName,
-                    currentToolCallArgs,
-                  )
-                  contentBlockIndex++
-                  inToolCall = false
-                  currentToolCallArgs = ''
-                  toolArgsEmitted = false
-                }
-
-                // Start tool_use block (Anthropic format)
-                currentToolCallId =
-                  (item.call_id as string) || `toolu_${Date.now()}`
-                currentToolCallName = (item.name as string) || ''
-                currentToolCallArgs = (item.arguments as string) || ''
-                inToolCall = true
-                hadToolCalls = true
-                toolArgsEmitted = false
-
-                controller.enqueue(
-                  encoder.encode(
-                    formatSSE(
-                      'content_block_start',
-                      JSON.stringify({
-                        type: 'content_block_start',
-                        index: contentBlockIndex,
-                        content_block: {
-                          type: 'tool_use',
-                          id: currentToolCallId,
-                          name: currentToolCallName,
-                          input: {},
-                        },
-                      }),
-                    ),
-                  ),
-                )
-              } else if (item?.type === 'web_search_call') {
-                // Close any open text block before opening a synthetic
-                // server_tool_use block. Don't touch function_call state —
-                // web_search runs in its own item lifecycle.
-                if (currentTextBlockStarted) {
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE(
-                        'content_block_stop',
-                        JSON.stringify({
-                          type: 'content_block_stop',
-                          index: contentBlockIndex,
-                        }),
-                      ),
-                    ),
-                  )
-                  contentBlockIndex++
-                  currentTextBlockStarted = false
-                }
-
-                const callId =
-                  (item.id as string) ||
-                  `srvtoolu_${Date.now()}_${webSearchCount}`
-                const action = item.action as { query?: string } | undefined
-                const query = (action?.query as string) || ''
-
-                // Open Anthropic server_tool_use block.
-                controller.enqueue(
-                  encoder.encode(
-                    formatSSE(
-                      'content_block_start',
-                      JSON.stringify({
-                        type: 'content_block_start',
-                        index: contentBlockIndex,
-                        content_block: {
-                          type: 'server_tool_use',
-                          id: callId,
-                          name: 'web_search',
-                          input: {},
-                        },
-                      }),
-                    ),
-                  ),
-                )
-                // Stream the query as input_json_delta so WebSearchTool's
-                // progress regex (`"query"\s*:\s*"..."`) can pick it up.
-                if (query) {
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE(
-                        'content_block_delta',
-                        JSON.stringify({
-                          type: 'content_block_delta',
-                          index: contentBlockIndex,
-                          delta: {
-                            type: 'input_json_delta',
-                            partial_json: JSON.stringify({ query }),
-                          },
-                        }),
-                      ),
-                    ),
-                  )
-                }
-
-                pendingWebSearches.set(callId, {
-                  query,
-                  serverToolUseEmitted: true,
-                  serverToolUseClosed: false,
-                  serverToolUseIndex: contentBlockIndex,
-                  resultEmitted: false,
-                })
-                hadToolCalls = true
-                webSearchCount++
-              }
-            }
-
-            // Web search progress events — keep the synthetic server_tool_use
-            // block open and let WebSearchTool's UI progress fire on the
-            // input_json_delta we already emitted; nothing more to do here.
-            else if (
-              eventType === 'response.web_search_call.in_progress' ||
-              eventType === 'response.web_search_call.searching'
+            if (
+              eventType === 'response.failed' ||
+              eventType === 'error' ||
+              eventType.endsWith('.failed')
             ) {
-              // no-op
+              sawResponseFailed = true
+              const errPayload =
+                (event.error as Record<string, unknown> | undefined) ??
+                ((event.response as Record<string, unknown> | undefined)
+                  ?.error as Record<string, unknown> | undefined)
+              const fallbackMessage =
+                readString(errPayload?.message) ?? `Codex ${eventType}`
+              emitErrorAndClose(fallbackMessage, {
+                body: errPayload
+                  ? JSON.stringify({ error: errPayload })
+                  : dataStr,
+              })
+              return
             }
 
-            // Web search completed — close the server_tool_use block. The
-            // structured result block is emitted at output_item.done where
-            // the action.results / item annotations are available.
-            else if (eventType === 'response.web_search_call.completed') {
-              const callId = (event.item_id as string) || ''
-              const state = callId ? pendingWebSearches.get(callId) : undefined
-              if (state && !state.serverToolUseClosed) {
-                controller.enqueue(
-                  encoder.encode(
-                    formatSSE(
-                      'content_block_stop',
-                      JSON.stringify({
-                        type: 'content_block_stop',
-                        index: state.serverToolUseIndex,
-                      }),
-                    ),
-                  ),
-                )
-                state.serverToolUseClosed = true
-                contentBlockIndex++
+            if (eventType === 'response.output_item.added') {
+              const item = event.item as CodexStreamItem | undefined
+              const state = upsertItem(event, item)
+              if (state.type === 'reasoning') {
+                currentReasoningKey = state.key
+                startThinkingBlock(state)
+              } else if (state.type === 'message') {
+                currentMessageKey = state.key
+                if (openBlock) closeOpenBlock()
+              } else if (state.type === 'function_call') {
+                if (openBlock) closeOpenBlock()
+              } else if (state.type === 'web_search_call') {
+                renderWebSearchStart(state)
               }
-            }
-
-            // Text deltas
-            else if (eventType === 'response.output_text.delta') {
-              const text = event.delta as string
-              if (typeof text === 'string' && text.length > 0) {
-                if (!currentTextBlockStarted) {
-                  // Start a new text content block
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE(
-                        'content_block_start',
-                        JSON.stringify({
-                          type: 'content_block_start',
-                          index: contentBlockIndex,
-                          content_block: { type: 'text', text: '' },
-                        }),
-                      ),
-                    ),
-                  )
-                  currentTextBlockStarted = true
-                }
-                controller.enqueue(
-                  encoder.encode(
-                    formatSSE(
-                      'content_block_delta',
-                      JSON.stringify({
-                        type: 'content_block_delta',
-                        index: contentBlockIndex,
-                        delta: { type: 'text_delta', text },
-                      }),
-                    ),
-                  ),
-                )
-                outputTokens += 1
-              }
-            }
-
-            // Reasoning deltas: stream live as thinking_delta to the open
-            // thinking block (opened eagerly on output_item.added(reasoning)),
-            // and accumulate into pendingReasoningText for the .done-fallback
-            // path. Codex uses `response.reasoning_text.delta` /
-            // `response.reasoning_summary_text.delta`; older shapes use
-            // `response.reasoning.delta`. Treat all three identically.
-            else if (
+            } else if (eventType === 'response.output_text.delta') {
+              const state = upsertItem(
+                event,
+                undefined,
+                'message',
+                currentMessageKey,
+              )
+              currentMessageKey = state.key
+              const text = readString(event.delta)
+              if (text) streamTextDelta(state, text)
+            } else if (
               eventType === 'response.reasoning_text.delta' ||
               eventType === 'response.reasoning_summary_text.delta' ||
               eventType === 'response.reasoning.delta'
             ) {
-              const text = event.delta as string | undefined
-              if (typeof text === 'string' && text.length > 0) {
-                pendingReasoningText += text
-                streamThinkingDelta(text)
-              }
-            }
-
-            // Reasoning terminal events — authoritative full text. If the
-            // server's deltas drifted from the canonical text, emit the
-            // missing tail as a single delta. (Common case: deltas match
-            // exactly and this is a no-op.)
-            else if (
+              const state = upsertItem(
+                event,
+                undefined,
+                'reasoning',
+                currentReasoningKey,
+              )
+              currentReasoningKey = state.key
+              const text = readString(event.delta)
+              if (text) streamThinkingDelta(state, text)
+            } else if (
               eventType === 'response.reasoning_text.done' ||
               eventType === 'response.reasoning_summary_text.done' ||
               eventType === 'response.reasoning.done'
             ) {
-              const finalText = event.text as string | undefined
+              const state = upsertItem(
+                event,
+                undefined,
+                'reasoning',
+                currentReasoningKey,
+              )
+              currentReasoningKey = state.key
+              const finalText = readString(event.text)
               if (
-                typeof finalText === 'string' &&
-                finalText.length > pendingReasoningText.length &&
-                finalText.startsWith(pendingReasoningText)
+                finalText &&
+                finalText.length > state.reasoningText.length &&
+                finalText.startsWith(state.reasoningText)
               ) {
-                const tail = finalText.slice(pendingReasoningText.length)
-                streamThinkingDelta(tail)
-                pendingReasoningText = finalText
-              } else if (
-                typeof finalText === 'string' &&
-                finalText.length > 0 &&
-                pendingReasoningText.length === 0
-              ) {
-                // No deltas streamed at all — emit the whole thing.
-                streamThinkingDelta(finalText)
-                pendingReasoningText = finalText
-              }
-            }
-
-            // ── Tool call argument deltas ───────────────────────
-            // Per the OpenAI Responses API spec, `.done.arguments` is the
-            // authoritative final string; `.delta` events are an optional
-            // incremental channel. Grammar-constrained servers (LM Studio,
-            // vLLM with xgrammar, llama-server with json-schema grammar)
-            // emit only `.done` and skip deltas entirely. To be spec-correct
-            // for both shapes AND produce byte-identical output regardless of
-            // server streaming style, we silently accumulate deltas here and
-            // emit ONE `input_json_delta` on `.done`, preferring the
-            // authoritative `.done.arguments` over the accumulator.
-            //
-            // Live token-by-token streaming of tool args to the UI was never
-            // a user-visible feature: claude.ts skips BetaMessageStream's
-            // partialParse(); `contentBlock.input` is accumulated as a raw
-            // string and only JSON-parsed at content_block_stop inside
-            // normalizeContentFromAPI. So this change has zero UX cost.
-            else if (eventType === 'response.function_call_arguments.delta') {
-              const argDelta = event.delta as string
-              if (typeof argDelta === 'string' && inToolCall) {
-                currentToolCallArgs += argDelta
-              }
-            }
-
-            // Tool call arguments complete — emit the canonical args as a
-            // single input_json_delta. Falls back to the delta accumulator
-            // only if the server omits `event.arguments` (non-conformant).
-            else if (eventType === 'response.function_call_arguments.done') {
-              if (inToolCall) {
-                const fullArgs =
-                  (typeof event.arguments === 'string'
-                    ? event.arguments
-                    : undefined) ?? currentToolCallArgs
-                if (fullArgs) {
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE(
-                        'content_block_delta',
-                        JSON.stringify({
-                          type: 'content_block_delta',
-                          index: contentBlockIndex,
-                          delta: {
-                            type: 'input_json_delta',
-                            partial_json: fullArgs,
-                          },
-                        }),
-                      ),
-                    ),
-                  )
-                  toolArgsEmitted = true
-                }
-                currentToolCallArgs = fullArgs
-              }
-            }
-
-            // Output item done — close blocks
-            else if (eventType === 'response.output_item.done') {
-              const item = event.item as Record<string, unknown>
-              if (item?.type === 'function_call') {
-                // Stale .done detection. llama.cpp emits all parallel-tool
-                // .added events before any .done events; the eager-close in
-                // .added (above) already closed every tool_use except the
-                // most recently opened one. A .done for an earlier call_id
-                // therefore arrives when the currently open tool_use belongs
-                // to a *later* call_id — closing here would close the wrong
-                // block. Skip stale .done's; the live one (matching
-                // currentToolCallId, or the only one if call_id is missing)
-                // falls through to the existing close logic.
-                const itemCallId = (item.call_id as string) || ''
-                const stale =
-                  !inToolCall ||
-                  (itemCallId !== '' &&
-                    currentToolCallId !== '' &&
-                    itemCallId !== currentToolCallId)
-                if (stale) {
-                  // No-op: this tool_use was eagerly closed at the next
-                  // function_call.added. The currently open block (if any)
-                  // belongs to a later call_id and will close on its own
-                  // .done.
-                } else {
-                  // llama.cpp omits `response.function_call_arguments.done` —
-                  // it only streams `.delta`. The .done emit-path therefore
-                  // never fires the input_json_delta and claude.ts ends up
-                  // with an empty tool_use input. Authoritative full args
-                  // live on `item.arguments` here. Emit a single
-                  // input_json_delta from item.arguments (preferred) or the
-                  // accumulated delta buffer (fallback). Idempotent against
-                  // the .done path: if .done already emitted,
-                  // currentToolCallArgs was set to that value too, but
-                  // item.arguments is identical so the second emit is the
-                  // same payload — claude.ts merges input_json_delta
-                  // strings, so we just dedupe by checking whether we
-                  // already emitted on .done.
-                  const itemArgs =
-                    typeof item.arguments === 'string' ? item.arguments : ''
-                  const fullArgs = itemArgs || currentToolCallArgs
-                  if (fullArgs && !toolArgsEmitted) {
-                    controller.enqueue(
-                      encoder.encode(
-                        formatSSE(
-                          'content_block_delta',
-                          JSON.stringify({
-                            type: 'content_block_delta',
-                            index: contentBlockIndex,
-                            delta: {
-                              type: 'input_json_delta',
-                              partial_json: fullArgs,
-                            },
-                          }),
-                        ),
-                      ),
-                    )
-                  }
-                  closeToolCallBlock(
-                    controller,
-                    encoder,
-                    contentBlockIndex,
-                    currentToolCallId,
-                    currentToolCallName,
-                    currentToolCallArgs,
-                  )
-                  contentBlockIndex++
-                  inToolCall = false
-                  currentToolCallArgs = ''
-                  toolArgsEmitted = false
-                }
-              } else if (item?.type === 'message') {
-                if (currentTextBlockStarted) {
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE(
-                        'content_block_stop',
-                        JSON.stringify({
-                          type: 'content_block_stop',
-                          index: contentBlockIndex,
-                        }),
-                      ),
-                    ),
-                  )
-                  contentBlockIndex++
-                  currentTextBlockStarted = false
-                }
-                // Harvest url_citation annotations from the assistant
-                // message's output_text content. OpenAI returns search
-                // results either as `web_search_call.action.results` (handled
-                // below) or only as annotations on the assistant text.
-                const content = item.content as
-                  | Array<{
-                      type?: string
-                      annotations?: Array<{
-                        type?: string
-                        url?: string
-                        title?: string
-                      }>
-                    }>
-                  | undefined
-                if (Array.isArray(content)) {
-                  for (const part of content) {
-                    if (
-                      part?.type !== 'output_text' ||
-                      !Array.isArray(part.annotations)
-                    ) {
-                      continue
-                    }
-                    for (const ann of part.annotations) {
-                      if (
-                        ann?.type === 'url_citation' &&
-                        typeof ann.url === 'string' &&
-                        ann.url.length > 0
-                      ) {
-                        pendingCitations.push({
-                          url: ann.url,
-                          title:
-                            typeof ann.title === 'string' ? ann.title : ann.url,
-                        })
-                      }
-                    }
-                  }
-                }
-              } else if (item?.type === 'web_search_call') {
-                const callId = (item.id as string) || ''
-                const state = callId
-                  ? pendingWebSearches.get(callId)
-                  : undefined
-                // The completed event may not have fired yet on some shapes;
-                // close the server_tool_use block here defensively.
-                if (state && !state.serverToolUseClosed) {
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE(
-                        'content_block_stop',
-                        JSON.stringify({
-                          type: 'content_block_stop',
-                          index: state.serverToolUseIndex,
-                        }),
-                      ),
-                    ),
-                  )
-                  state.serverToolUseClosed = true
-                  contentBlockIndex++
-                }
-                if (!state || state.resultEmitted) {
-                  // Nothing else to do.
-                } else {
-                  // Prefer structured `action.results`; otherwise fall back
-                  // to the citations we harvested from output_text.
-                  const action = item.action as
-                    | {
-                        results?: Array<{
-                          url?: string
-                          title?: string
-                        }>
-                      }
-                    | undefined
-                  const structured = Array.isArray(action?.results)
-                    ? action!.results
-                    : []
-                  const results: Array<{ url: string; title: string }> = []
-                  for (const r of structured) {
-                    if (typeof r?.url === 'string' && r.url.length > 0) {
-                      results.push({
-                        url: r.url,
-                        title:
-                          typeof r.title === 'string' && r.title.length > 0
-                            ? r.title
-                            : r.url,
-                      })
-                    }
-                  }
-                  if (results.length === 0 && pendingCitations.length > 0) {
-                    results.push(...pendingCitations.splice(0))
-                  }
-
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE(
-                        'content_block_start',
-                        JSON.stringify({
-                          type: 'content_block_start',
-                          index: contentBlockIndex,
-                          content_block: {
-                            type: 'web_search_tool_result',
-                            tool_use_id: callId,
-                            content: results.map(r => ({
-                              type: 'web_search_result',
-                              url: r.url,
-                              title: r.title,
-                            })),
-                          },
-                        }),
-                      ),
-                    ),
-                  )
-                  controller.enqueue(
-                    encoder.encode(
-                      formatSSE(
-                        'content_block_stop',
-                        JSON.stringify({
-                          type: 'content_block_stop',
-                          index: contentBlockIndex,
-                        }),
-                      ),
-                    ),
-                  )
-                  contentBlockIndex++
-                  state.resultEmitted = true
-                }
-              } else if (item?.type === 'reasoning') {
-                // Canonical OpenAI ordering arrives here: reasoning's .done
-                // fires before any subsequent message/function_call item
-                // starts. flushPendingReasoning is idempotent — it's a
-                // no-op if an early-flush already ran from the message /
-                // function_call boundary (the llama.cpp out-of-order path).
-                flushPendingReasoning(
-                  item as Parameters<typeof flushPendingReasoning>[0],
+                streamThinkingDelta(
+                  state,
+                  finalText.slice(state.reasoningText.length),
                 )
+              } else if (finalText && state.reasoningText.length === 0) {
+                streamThinkingDelta(state, finalText)
               }
-            }
-
-            // Response completed — extract usage
-            else if (eventType === 'response.completed') {
+            } else if (eventType === 'response.function_call_arguments.delta') {
+              const state = upsertItem(event, undefined, 'function_call')
+              const delta = readString(event.delta)
+              if (delta) state.argumentDeltas += delta
+            } else if (eventType === 'response.function_call_arguments.done') {
+              const state = upsertItem(event, undefined, 'function_call')
+              const args = readString(event.arguments)
+              if (args !== undefined) state.argumentsDone = args
+            } else if (
+              eventType === 'response.web_search_call.in_progress' ||
+              eventType === 'response.web_search_call.searching'
+            ) {
+              // no-op; server_tool_use start carries the query for progress UI.
+            } else if (eventType === 'response.web_search_call.completed') {
+              const state = upsertItem(event, undefined, 'web_search_call')
+              closeWebSearchServerTool(state)
+            } else if (eventType === 'response.output_item.done') {
+              const item = event.item as CodexStreamItem | undefined
+              const type = readString(item?.type)
+              const fallbackKey = type === 'message' ? currentMessageKey : null
+              const state = upsertItem(event, item, type, fallbackKey)
+              handleItemDone(state, item)
+            } else if (eventType === 'response.completed') {
+              sawResponseCompleted = true
               const response = event.response as Record<string, unknown>
               const usage = response?.usage as
                 | Record<string, number | Record<string, number>>
@@ -1473,11 +1271,6 @@ async function translateCodexStreamToAnthropic(
               if (usage) {
                 const totalInput = (usage.input_tokens as number) ?? 0
                 const totalOutput = (usage.output_tokens as number) ?? 0
-
-                // Split cached vs marginal input tokens to match Anthropic semantics.
-                // Anthropic reports marginal (non-cached) as input_tokens and cached
-                // separately as cache_read_input_tokens. Without this split the
-                // accumulated total_input_tokens grows quadratically over a conversation.
                 const details = usage.input_tokens_details as
                   | Record<string, number>
                   | undefined
@@ -1486,199 +1279,49 @@ async function translateCodexStreamToAnthropic(
                 inputTokens = totalInput - cached
                 outputTokens = totalOutput
               }
+              synthesizeUnrenderedOutputItems(response ?? {})
+              for (const state of [...items.values()].sort(
+                (a, b) => a.order - b.order,
+              )) {
+                if (
+                  !state.rendered &&
+                  (state.type === 'function_call' ||
+                    state.type === 'web_search_call')
+                ) {
+                  logForDebugging(
+                    `[codex-adapter] synthesizing ${state.type} without output_item.done key=${state.key}`,
+                    { level: 'warn' },
+                  )
+                  handleItemDone(state, state.finalItem)
+                }
+              }
+              logForDebugging(
+                `[codex-adapter] stream end model=${codexModel} duration_ms=${Date.now() - streamStart} chunks=${chunkCount} content_blocks=${contentBlockIndex} input=${inputTokens} output=${outputTokens} cacheRead=${cacheReadInputTokens} hadToolCalls=${hadToolCalls} webSearch=${webSearchCount} response.completed=${sawResponseCompleted} response.failed=${sawResponseFailed} eventTypes=${JSON.stringify(eventTypeCounts)}`,
+              )
+              finishStream()
+              return
             }
           }
         }
       } catch (err) {
-        // Emit a proper SSE `event: error` so the SDK's error-handling
-        // pipeline (and withRetry) can classify this. Previously this
-        // injected `[Error: ...]` text into the assistant bubble, bypassing
-        // every downstream error consumer.
         logForDebugging(
           `[codex-adapter] stream loop threw: ${(err as Error)?.message ?? String(err)} stack=${(err as Error)?.stack?.split('\n').slice(0, 3).join(' | ') ?? 'none'}`,
           { level: 'error' },
         )
-        const normalized = codexAdapter.normalizeError(
-          { mid_stream: true, cause: err },
-          'openai-responses',
+        emitErrorAndClose(
+          (err as Error)?.message ?? 'Codex stream loop failed',
+          { cause: err },
         )
-        controller.enqueue(
-          encoder.encode(
-            `event: error\ndata: ${JSON.stringify({
-              type: 'error',
-              error: {
-                type: toAnthropicErrorType(normalized.kind),
-                message: normalized.message,
-                normalized,
-              },
-            })}\n\n`,
-          ),
-        )
+        return
       }
 
-      // Close any remaining open blocks
-      if (currentTextBlockStarted) {
-        controller.enqueue(
-          encoder.encode(
-            formatSSE(
-              'content_block_stop',
-              JSON.stringify({
-                type: 'content_block_stop',
-                index: contentBlockIndex,
-              }),
-            ),
-          ),
-        )
+      if (!sawResponseCompleted && !streamFinished) {
+        emitErrorAndClose('Codex stream ended before response.completed', {
+          cause: new Error('Codex stream ended before response.completed'),
+        })
       }
-      if (inToolCall) {
-        closeToolCallBlock(
-          controller,
-          encoder,
-          contentBlockIndex,
-          currentToolCallId,
-          currentToolCallName,
-          currentToolCallArgs,
-        )
-      }
-
-      logForDebugging(
-        `[codex-adapter] stream end model=${codexModel} duration_ms=${Date.now() - streamStart} chunks=${chunkCount} content_blocks=${contentBlockIndex} input=${inputTokens} output=${outputTokens} cacheRead=${cacheReadInputTokens} hadToolCalls=${hadToolCalls} webSearch=${webSearchCount} response.completed=${sawResponseCompleted} response.failed=${sawResponseFailed} eventTypes=${JSON.stringify(eventTypeCounts)}`,
-      )
-
-      finishStream(
-        controller,
-        encoder,
-        outputTokens,
-        inputTokens,
-        cacheReadInputTokens,
-        hadToolCalls,
-        webSearchCount,
-      )
     },
   })
-
-  function closeToolCallBlock(
-    controller: ReadableStreamDefaultController,
-    encoder: TextEncoder,
-    index: number,
-    _toolCallId: string,
-    _toolCallName: string,
-    _toolCallArgs: string,
-  ) {
-    controller.enqueue(
-      encoder.encode(
-        formatSSE(
-          'content_block_stop',
-          JSON.stringify({
-            type: 'content_block_stop',
-            index,
-          }),
-        ),
-      ),
-    )
-  }
-
-  function emitTextBlock(
-    controller: ReadableStreamDefaultController,
-    encoder: TextEncoder,
-    index: number,
-    text: string,
-  ) {
-    controller.enqueue(
-      encoder.encode(
-        formatSSE(
-          'content_block_start',
-          JSON.stringify({
-            type: 'content_block_start',
-            index,
-            content_block: { type: 'text', text: '' },
-          }),
-        ),
-      ),
-    )
-    controller.enqueue(
-      encoder.encode(
-        formatSSE(
-          'content_block_delta',
-          JSON.stringify({
-            type: 'content_block_delta',
-            index,
-            delta: { type: 'text_delta', text },
-          }),
-        ),
-      ),
-    )
-    controller.enqueue(
-      encoder.encode(
-        formatSSE(
-          'content_block_stop',
-          JSON.stringify({
-            type: 'content_block_stop',
-            index,
-          }),
-        ),
-      ),
-    )
-  }
-
-  function finishStream(
-    controller: ReadableStreamDefaultController,
-    encoder: TextEncoder,
-    outputTokens: number,
-    inputTokens: number,
-    cacheReadInputTokens: number,
-    hadToolCalls: boolean,
-    webSearchRequests = 0,
-  ) {
-    // Use 'tool_use' stop reason when model made tool calls
-    const stopReason = hadToolCalls ? 'tool_use' : 'end_turn'
-
-    // Codex/Responses API does NOT report cache write cost — prefix caching
-    // is automatic. Surface as `null` so NormalizedUsage / StatusLine can
-    // differentiate "not tracked" from "0 tokens written".
-    const usagePayload: Record<string, unknown> = {
-      input_tokens: inputTokens,
-      output_tokens: outputTokens,
-      cache_read_input_tokens: cacheReadInputTokens,
-      cache_creation_input_tokens: null,
-    }
-    if (webSearchRequests > 0) {
-      usagePayload.server_tool_use = {
-        web_search_requests: webSearchRequests,
-      }
-    }
-
-    controller.enqueue(
-      encoder.encode(
-        formatSSE(
-          'message_delta',
-          JSON.stringify({
-            type: 'message_delta',
-            delta: { stop_reason: stopReason, stop_sequence: null },
-            usage: usagePayload,
-          }),
-        ),
-      ),
-    )
-    controller.enqueue(
-      encoder.encode(
-        formatSSE(
-          'message_stop',
-          JSON.stringify({
-            type: 'message_stop',
-            'amazon-bedrock-invocationMetrics': {
-              inputTokenCount: inputTokens,
-              outputTokenCount: outputTokens,
-              invocationLatency: 0,
-              firstByteLatency: 0,
-            },
-            usage: usagePayload,
-          }),
-        ),
-      ),
-    )
-    controller.close()
-  }
 
   return new Response(readable, {
     status: 200,

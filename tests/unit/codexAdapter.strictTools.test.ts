@@ -12,10 +12,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { createCodexFetch } from '../../src/services/api/codex-fetch-adapter.js'
 import {
+  getProviderRegistry,
   initProviderRegistry,
   resetProviderRegistry,
 } from '../../src/utils/model/providerRegistry.js'
-import type { ProviderConfig } from '../../src/utils/settings/types.js'
+import { synthesizeProvidersFromLegacy } from '../../src/utils/model/legacyProviderMigration.js'
+import type {
+  ProviderCapabilities,
+  ProviderConfig,
+} from '../../src/utils/settings/types.js'
 
 type CapturedBody = {
   tools?: Array<{
@@ -24,13 +29,18 @@ type CapturedBody = {
     strict?: boolean
     parameters?: unknown
   }>
+  tool_choice?: unknown
 }
 
-function setupProvider(structuredOutputs: boolean | undefined) {
+function setupProvider(
+  structuredOutputs: boolean | undefined,
+  capabilities?: ProviderCapabilities,
+) {
   resetProviderRegistry()
   const providers: Record<string, ProviderConfig> = {
     codex: {
       type: 'openai-responses',
+      ...(capabilities ? { capabilities } : {}),
       auth: { active: 'apiKey', apiKey: { keyEnv: 'TEST_API_KEY' } },
       models: [
         {
@@ -45,7 +55,15 @@ function setupProvider(structuredOutputs: boolean | undefined) {
 
 async function runAdapterWithTools(
   structuredOutputs: boolean | undefined,
-  tools: Array<{ name: string; input_schema: unknown }>,
+  tools: Array<{
+    name: string
+    input_schema?: unknown
+    type?: string
+  }>,
+  options?: {
+    capabilities?: ProviderCapabilities
+    tool_choice?: unknown
+  },
 ): Promise<CapturedBody> {
   let captured: CapturedBody = {}
   const originalFetch = globalThis.fetch
@@ -65,7 +83,7 @@ async function runAdapterWithTools(
     })
   }) as unknown as typeof globalThis.fetch
   try {
-    setupProvider(structuredOutputs)
+    setupProvider(structuredOutputs, options?.capabilities)
     const adapterFetch = createCodexFetch({
       accessToken: 'unused',
       baseUrl: 'http://localhost',
@@ -78,6 +96,7 @@ async function runAdapterWithTools(
         model: 'gpt-test',
         messages: [{ role: 'user', content: 'hi' }],
         tools,
+        ...(options?.tool_choice ? { tool_choice: options.tool_choice } : {}),
       }),
     })
     if (response.body) {
@@ -87,6 +106,70 @@ async function runAdapterWithTools(
       }
     }
     return captured
+  } finally {
+    globalThis.fetch = originalFetch
+    resetProviderRegistry()
+  }
+}
+
+type SSEEvent = { event: string; data: Record<string, unknown> }
+
+function parseAnthropicSSE(text: string): SSEEvent[] {
+  const events: SSEEvent[] = []
+  for (const chunk of text.split('\n\n')) {
+    if (!chunk.trim()) continue
+    let eventName = ''
+    let dataLine = ''
+    for (const line of chunk.split('\n')) {
+      if (line.startsWith('event: ')) eventName = line.slice(7).trim()
+      else if (line.startsWith('data: ')) dataLine = line.slice(6)
+    }
+    if (!eventName || !dataLine) continue
+    events.push({ event: eventName, data: JSON.parse(dataLine) })
+  }
+  return events
+}
+
+async function drainToString(
+  body: ReadableStream<Uint8Array>,
+): Promise<string> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let out = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    out += decoder.decode(value, { stream: true })
+  }
+  out += decoder.decode()
+  return out
+}
+
+async function runAdapterWithResponseSSE(
+  responsesSSE: string,
+): Promise<SSEEvent[]> {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async () =>
+    new Response(responsesSSE, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })) as unknown as typeof globalThis.fetch
+  try {
+    setupProvider(undefined, { webSearch: true })
+    const adapterFetch = createCodexFetch({
+      accessToken: 'unused',
+      baseUrl: 'http://localhost',
+      getSessionId: () => 'test-session',
+    })
+    const response = await adapterFetch('http://localhost/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-test',
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    })
+    return parseAnthropicSSE(await drainToString(response.body!))
   } finally {
     globalThis.fetch = originalFetch
     resetProviderRegistry()
@@ -212,5 +295,127 @@ describe('Codex adapter: strict tool gating', () => {
     )
     expect(byName['StrictTool']).toBe(true)
     expect(byName['mcp__server__tool']).toBeUndefined()
+  })
+
+  test('openai-responses provider default does not enable web search', () => {
+    setupProvider(undefined)
+    expect(getProviderRegistry().getCapability('gpt-test', 'webSearch')).toBe(
+      false,
+    )
+  })
+
+  test('legacy official Codex provider opts into web search', () => {
+    const migrated = synthesizeProvidersFromLegacy({
+      env: { CLAUDE_CODE_USE_OPENAI: '1' },
+      oauthTokens: null,
+    })
+    expect(migrated.providers.codex?.capabilities?.webSearch).toBe(true)
+  })
+
+  test('web search tool translates only when provider capability enables it', async () => {
+    const captured = await runAdapterWithTools(
+      undefined,
+      [
+        {
+          name: 'web_search',
+          type: 'web_search_20250305',
+        },
+      ],
+      {
+        capabilities: { webSearch: true },
+        tool_choice: { type: 'tool', name: 'web_search' },
+      },
+    )
+
+    expect(captured.tools).toEqual([{ type: 'web_search_preview' }])
+    expect(captured.tool_choice).toEqual({ type: 'web_search_preview' })
+  })
+
+  test('web search tool is dropped for local Responses-compatible providers by default', async () => {
+    const captured = await runAdapterWithTools(
+      undefined,
+      [
+        {
+          name: 'web_search',
+          type: 'web_search_20250305',
+        },
+      ],
+      { tool_choice: { type: 'tool', name: 'web_search' } },
+    )
+
+    expect(captured.tools).toEqual([])
+    expect(captured.tool_choice).toBe('auto')
+  })
+
+  test('web_search_call renders server tool use, result block, and tool_use stop reason', async () => {
+    const responsesSSE = [
+      'event: response.output_item.added',
+      'data: {"type":"response.output_item.added","item":{"type":"web_search_call","id":"ws_1","action":{"query":"latest docs"}}}',
+      '',
+      'event: response.web_search_call.completed',
+      'data: {"type":"response.web_search_call.completed","item_id":"ws_1"}',
+      '',
+      'event: response.output_item.done',
+      'data: {"type":"response.output_item.done","item":{"type":"web_search_call","id":"ws_1","action":{"query":"latest docs","results":[{"url":"https://example.com/docs","title":"Docs"}]}}}',
+      '',
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":2,"output_tokens":1}}}',
+      '',
+      '',
+    ].join('\n')
+
+    const events = await runAdapterWithResponseSSE(responsesSSE)
+    const serverToolUse = events.find(
+      e =>
+        e.event === 'content_block_start' &&
+        (e.data.content_block as Record<string, unknown>)?.type ===
+          'server_tool_use',
+    )
+    const resultBlock = events.find(
+      e =>
+        e.event === 'content_block_start' &&
+        (e.data.content_block as Record<string, unknown>)?.type ===
+          'web_search_tool_result',
+    )
+    const messageDelta = events.find(e => e.event === 'message_delta')
+      ?.data as Record<string, unknown>
+    const delta = messageDelta.delta as Record<string, unknown>
+    const usage = messageDelta.usage as {
+      server_tool_use?: { web_search_requests?: number }
+    }
+
+    expect(serverToolUse).toBeDefined()
+    expect(resultBlock).toBeDefined()
+    expect(delta.stop_reason).toBe('tool_use')
+    expect(usage.server_tool_use?.web_search_requests).toBe(1)
+  })
+
+  test('done-only web_search_call synthesizes server tool use before result', async () => {
+    const responsesSSE = [
+      'event: response.output_item.done',
+      'data: {"type":"response.output_item.done","item":{"type":"web_search_call","id":"ws_done","action":{"query":"done only","results":[{"url":"https://example.com","title":"Example"}]}}}',
+      '',
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":2,"output_tokens":1}}}',
+      '',
+      '',
+    ].join('\n')
+
+    const events = await runAdapterWithResponseSSE(responsesSSE)
+    const serverToolUseIdx = events.findIndex(
+      e =>
+        e.event === 'content_block_start' &&
+        (e.data.content_block as Record<string, unknown>)?.type ===
+          'server_tool_use',
+    )
+    const resultBlockIdx = events.findIndex(
+      e =>
+        e.event === 'content_block_start' &&
+        (e.data.content_block as Record<string, unknown>)?.type ===
+          'web_search_tool_result',
+    )
+
+    expect(serverToolUseIdx).toBeGreaterThan(-1)
+    expect(resultBlockIdx).toBeGreaterThan(serverToolUseIdx)
   })
 })
