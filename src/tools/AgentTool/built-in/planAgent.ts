@@ -72,7 +72,7 @@ REMEMBER: You can ONLY explore and plan. You CANNOT and MUST NOT write, edit, or
 export const PLAN_AGENT: BuiltInAgentDefinition = {
   agentType: 'Plan',
   whenToUse:
-    'Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.',
+    'Software architect agent for designing implementation plans. Use this inside plan mode during the design phase, or outside plan mode as a read-only planning consultant. Calling this agent does not enter plan mode automatically. If approval-before-coding is needed and you are not already in plan mode, call EnterPlanMode first, then use this agent during plan-mode design if needed. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.',
   disallowedTools: [
     AGENT_TOOL_NAME,
     EXIT_PLAN_MODE_TOOL_NAME,

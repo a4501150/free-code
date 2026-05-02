@@ -205,7 +205,7 @@ export const ExitPlanModeTool: Tool<InputSchema, Output> = buildTool({
       return {
         result: false,
         message:
-          'You are not in plan mode. This tool is only for exiting plan mode after writing a plan. If your plan was already approved, continue with implementation.',
+          'You are not in plan mode. This tool is only for exiting plan mode after writing a plan-mode plan. If your plan was already approved, continue with implementation. If approval-before-coding is required, call EnterPlanMode first.',
         errorCode: 1,
       }
     }
