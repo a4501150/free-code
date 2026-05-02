@@ -1245,8 +1245,8 @@ Include 3 friction categories with 2 examples each.`,
    - Good for: database queries, Slack integration, GitHub issue lookup, connecting to internal APIs
 
 2. **Custom Skills**: Reusable prompts you define as markdown files that run with a single /command.
-   - How to use: Create \`.claude/skills/commit/SKILL.md\` with instructions. Then type \`/commit\` to run it.
-   - Good for: repetitive workflows - /commit, /review, /test, /deploy, /pr, or complex multi-step workflows
+   - How to use: Create \`.claude/skills/release-checklist/SKILL.md\` with instructions. Then type \`/release-checklist\` to run it.
+   - Good for: repetitive workflows - /review, /test, /deploy, /pr, or complex multi-step workflows
 
 3. **Hooks**: Shell commands that auto-run at specific lifecycle events.
    - How to use: Add to \`.claude/freecode.json\` under "hooks" key.

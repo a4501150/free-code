@@ -139,7 +139,7 @@ async function executeForkedSlashCommand(
   // depends on assistant-mode invariants: scheduled_tasks.json exists,
   // the main agent knows to pipe results through SendUserMessage, and
   // isMeta prompts are hidden. Outside assistant mode, context:fork commands
-  // are user-invoked skills (/commit etc.) that should run synchronously
+  // are user-invoked skills that should run synchronously
   // with the progress UI.
   if (feature('KAIROS') && (await context.getAppState()).kairosEnabled) {
     // Standalone abortController — background subagents survive main-thread

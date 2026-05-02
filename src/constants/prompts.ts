@@ -318,7 +318,7 @@ function getSessionSpecificGuidanceSection(
         ]
       : []),
     hasSkills
-      ? `/<skill-name> (e.g., /commit) is shorthand for users to invoke a user-invocable skill. When executed, the skill gets expanded to a full prompt. Use the ${SKILL_TOOL_NAME} tool to execute them. IMPORTANT: Only use ${SKILL_TOOL_NAME} for skills listed in its user-invocable skills section - do not guess or use built-in CLI commands.`
+      ? `/<skill-name> is shorthand for users to invoke a user-invocable skill. When executed, the skill gets expanded to a full prompt. Use the ${SKILL_TOOL_NAME} tool to execute it only when the name appears in the available skills listing. IMPORTANT: Only use ${SKILL_TOOL_NAME} for listed skills - do not infer skills from examples, common workflows, or built-in CLI commands.`
       : null,
     DISCOVER_SKILLS_TOOL_NAME !== null &&
     hasSkills &&

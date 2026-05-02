@@ -101,7 +101,7 @@ export function getCoordinatorUserContext(
 export function getCoordinatorSystemPrompt(): string {
   const workerCapabilities = isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)
     ? 'Workers have access to Bash, Read, and Edit tools, plus MCP tools from configured MCP servers.'
-    : 'Workers have access to standard tools, MCP tools from configured MCP servers, and project skills via the Skill tool. Delegate skill invocations (e.g. /commit, /verify) to workers.'
+    : 'Workers have access to standard tools, MCP tools from configured MCP servers, and project skills via the Skill tool. Delegate only listed skill invocations to workers; do not infer skill names from common workflows or built-in CLI commands.'
 
   return `You are Claude Code, an AI assistant that orchestrates software engineering tasks across multiple workers.
 

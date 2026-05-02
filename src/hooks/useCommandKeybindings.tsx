@@ -38,7 +38,7 @@ const NOOP_HELPERS: PromptInputHelpers = {
 /**
  * Registers keybinding handlers for all "command:*" actions found in the
  * user's keybinding configuration. When triggered, each handler submits
- * the corresponding slash command (e.g., "command:commit" submits "/commit").
+ * the corresponding slash command (e.g., "command:help" submits "/help").
  */
 export function CommandKeybindingHandlers({
   onSubmit,

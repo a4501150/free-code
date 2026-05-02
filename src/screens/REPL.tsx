@@ -3181,7 +3181,7 @@ export function REPL({
             ? getContentText(firstUserMessage.message.content)
             : null
         // Skip synthetic breadcrumbs — slash-command output, prompt-skill
-        // expansions (/commit → <command-message>), local-command headers
+        // expansions (<skill> → <command-message>), local-command headers
         // (/help → <command-name>), and bash-mode (!cmd → <bash-input>).
         // None of these are the user's topic; wait for real prose.
         if (

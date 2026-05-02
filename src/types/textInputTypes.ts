@@ -13,9 +13,9 @@ import type { AssistantMessage, MessageOrigin } from './message.js'
  * Inline ghost text for mid-input command autocomplete
  */
 export type InlineGhostText = {
-  /** The ghost text to display (e.g., "mit" for /commit) */
+  /** The ghost text to display (e.g., "lp" for /help) */
   readonly text: string
-  /** The full command name (e.g., "commit") */
+  /** The full command name (e.g., "help") */
   readonly fullCommand: string
   /** Position in the input where the ghost text should appear */
   readonly insertPosition: number
