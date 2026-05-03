@@ -620,21 +620,6 @@ export function Config({
       },
     },
     {
-      id: 'slowOperationTracking',
-      label: 'Slow operation tracking',
-      value: settingsData?.slowOperationTracking ?? false,
-      type: 'boolean' as const,
-      onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          slowOperationTracking: enabled,
-        })
-        setSettingsData(prev => ({
-          ...prev,
-          slowOperationTracking: enabled,
-        }))
-      },
-    },
-    {
       id: 'memoryUsageIndicator',
       label: 'Memory usage indicator',
       value: settingsData?.memoryUsageIndicator ?? false,
@@ -1565,7 +1550,6 @@ export function Config({
       alwaysDebugLog: iu?.alwaysDebugLog,
       replMode: iu?.replMode,
       magicDocs: iu?.magicDocs,
-      slowOperationTracking: iu?.slowOperationTracking,
       memoryUsageIndicator: iu?.memoryUsageIndicator,
       shellSessionId: iu?.shellSessionId,
       numericEffort: iu?.numericEffort,

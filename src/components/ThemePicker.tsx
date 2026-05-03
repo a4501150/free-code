@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js'
 import { useTerminalSize } from '../hooks/useTerminalSize.js'
@@ -88,9 +87,6 @@ export function ThemePicker({
   )
 
   const themeOptions: { label: string; value: ThemeSetting }[] = [
-    ...(feature('AUTO_THEME')
-      ? [{ label: 'Auto (match terminal)', value: 'auto' as const }]
-      : []),
     { label: 'Dark mode', value: 'dark' },
     { label: 'Light mode', value: 'light' },
     {

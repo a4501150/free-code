@@ -304,7 +304,6 @@ export type RemoteAgentMetadata = {
   spawnedAt: number
   toolUseId?: string
   isLongRunning?: boolean
-  isUltraplan?: boolean
   isRemoteReview?: boolean
   remoteTaskMetadata?: Record<string, unknown>
 }
@@ -642,7 +641,7 @@ class Project {
    * reads during progressive loading.
    *
    * Called from two contexts with different file-ordering implications:
-   * - During compaction (compact.ts, reactiveCompact.ts): writes metadata
+   * - During compaction (compact.ts): writes metadata
    *   just before the boundary marker is emitted - these entries end up
    *   before the boundary and are recovered by scanPreBoundaryMetadata.
    * - On session exit (cleanup handler): writes metadata at EOF after all

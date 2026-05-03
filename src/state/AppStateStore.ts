@@ -314,18 +314,6 @@ export type AppState = DeepImmutable<{
   fastMode?: boolean
   // Advisor model for server-side advisor tool (undefined = disabled).
   advisorModel?: string
-  // Set synchronously in launchUltraplan before the detached flow starts.
-  // Prevents duplicate launches. Cleared by launchDetached on completion or failure.
-  ultraplanLaunching?: boolean
-  // URL of the active ultraplan session, if any.
-  ultraplanSessionUrl?: string
-  // Approved ultraplan awaiting user choice (implement here vs fresh session).
-  // Cleared by UltraplanChoiceDialog.
-  ultraplanPendingChoice?: { plan: string; sessionId: string; taskId: string }
-  // Pre-launch permission dialog. Set by /ultraplan (slash or keyword);
-  // cleared by UltraplanLaunchDialog on choice.
-  ultraplanLaunchPending?: { blurb: string }
-  isUltraplanMode?: boolean
   // Channel permission callbacks — permission prompts over Telegram/iMessage/etc.
   // Races against local UI + bridge + hooks + classifier via claim() in
   // interactiveHandler.ts. Constructed once in useManageMCPConnections.

@@ -5,7 +5,6 @@ import { feature } from 'bun:bundle'
 process.env.COREPACK_ENABLE_AUTO_PIN = '0'
 
 import * as bg from '../cli/bg.js'
-import { environmentRunnerMain } from '../environment-runner/main.js'
 import { selfHostedRunnerMain } from '../self-hosted-runner/main.js'
 import { templatesMain } from '../cli/handlers/templateJobs.js'
 import { daemonMain } from '../daemon/main.js'
@@ -119,14 +118,6 @@ async function main(): Promise<void> {
     // loop handles that prevent natural exit.
     // eslint-disable-next-line custom-rules/no-process-exit
     process.exit(0)
-  }
-
-  // Fast-path for `claude environment-runner`: headless BYOC runner.
-  // feature() must stay inline for build-time dead code elimination.
-  if (feature('BYOC_ENVIRONMENT_RUNNER') && args[0] === 'environment-runner') {
-    profileCheckpoint('cli_environment_runner_path')
-    await environmentRunnerMain(args.slice(1))
-    return
   }
 
   // Fast-path for `claude self-hosted-runner`: headless self-hosted-runner

@@ -882,8 +882,6 @@ export function REPL({
   const tasks = useAppState(s => s.tasks)
   const workerSandboxPermissions = useAppState(s => s.workerSandboxPermissions)
   const elicitation = useAppState(s => s.elicitation)
-  const ultraplanPendingChoice = useAppState(s => s.ultraplanPendingChoice)
-  const ultraplanLaunchPending = useAppState(s => s.ultraplanLaunchPending)
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const setAppState = useSetAppState()
 
@@ -1790,17 +1788,6 @@ export function REPL({
   const [isSearchingHistory, setIsSearchingHistory] = useState(false)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
 
-  // showBashesDialog is REPL-level so it survives PromptInput unmounting.
-  // When ultraplan approval fires while the pill dialog is open, PromptInput
-  // unmounts (focusedInputDialog → 'ultraplan-choice') but this stays true;
-  // after accepting, PromptInput remounts into an empty "No tasks" dialog
-  // (the completed ultraplan task has been filtered out). Close it here.
-  useEffect(() => {
-    if (ultraplanPendingChoice && showBashesDialog) {
-      setShowBashesDialog(false)
-    }
-  }, [ultraplanPendingChoice, showBashesDialog])
-
   const isTerminalFocused = useTerminalFocus()
   const terminalFocusRef = useRef(isTerminalFocused)
   terminalFocusRef.current = isTerminalFocused
@@ -2314,8 +2301,6 @@ export function REPL({
     | 'lsp-recommendation'
     | 'plugin-hint'
     | 'desktop-upsell'
-    | 'ultraplan-choice'
-    | 'ultraplan-launch'
     | undefined {
     // Exit states always take precedence
     if (isExiting || exitFlow) return undefined
@@ -2346,22 +2331,6 @@ export function REPL({
 
     if (allowDialogsWithAnimation && showingCostDialog) return 'cost'
     if (allowDialogsWithAnimation && idleReturnPending) return 'idle-return'
-
-    if (
-      feature('ULTRAPLAN') &&
-      allowDialogsWithAnimation &&
-      !isLoading &&
-      ultraplanPendingChoice
-    )
-      return 'ultraplan-choice'
-
-    if (
-      feature('ULTRAPLAN') &&
-      allowDialogsWithAnimation &&
-      !isLoading &&
-      ultraplanLaunchPending
-    )
-      return 'ultraplan-launch'
 
     // Onboarding dialogs (special conditions)
     if (allowDialogsWithAnimation && showIdeOnboarding) return 'ide-onboarding'
@@ -5298,9 +5267,7 @@ export function REPL({
           // exists — without one, ctrl+c falls through to CancelRequestHandler.
           <ScrollKeybindingHandler
             scrollRef={scrollRef}
-            // Yield wheel/ctrl+u/d to UltraplanChoiceDialog's own scroll
-            // handler while the modal is showing.
-            isActive={focusedInputDialog !== 'ultraplan-choice'}
+            isActive={true}
             // g/G/j/k/ctrl+u/ctrl+d would eat keystrokes the search bar
             // wants. Off while searching.
             isModal={!searchOpen}

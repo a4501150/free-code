@@ -11,7 +11,6 @@ import { useKeybinding } from '../keybindings/useKeybinding.js'
 import type { Screen } from '../screens/REPL.js'
 import { useAppState, useSetAppState } from '../state/AppState.js'
 import { count } from '../utils/array.js'
-import { getTerminalPanel } from '../utils/terminalPanel.js'
 import { getAllInProcessTeammateTasks } from '../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
 import * as briefToolNs from '../tools/BriefTool/BriefTool.js'
 
@@ -187,17 +186,6 @@ export function GlobalKeybindingHandlers({
       context: 'Global',
     },
   )
-
-  // Toggle built-in terminal panel (meta+j).
-  // toggle() blocks in spawnSync until the user detaches from tmux.
-  const handleToggleTerminal = useCallback(() => {
-    if (feature('TERMINAL_PANEL')) {
-      getTerminalPanel().toggle()
-    }
-  }, [])
-  useKeybinding('app:toggleTerminal', handleToggleTerminal, {
-    context: 'Global',
-  })
 
   // Clear screen and force full redraw (ctrl+l). Recovery path when the
   // terminal was cleared externally (macOS Cmd+K) and Ink's diff engine

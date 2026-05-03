@@ -1823,12 +1823,6 @@ export const SettingsSchema = lazySchema(() =>
         .boolean()
         .optional()
         .describe('Inject CLAUDE_CODE_SESSION_ID into shell subprocesses.'),
-      slowOperationTracking: z
-        .boolean()
-        .optional()
-        .describe(
-          'Track and warn about slow synchronous operations (300ms threshold).',
-        ),
       terminalRecording: z
         .boolean()
         .optional()

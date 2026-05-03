@@ -12,7 +12,6 @@ import React, {
 import { useNotifications } from 'src/context/notifications.js'
 import {
   useAppState,
-  useAppStateStore,
   useSetAppState,
 } from 'src/state/AppState.js'
 import {
@@ -24,7 +23,6 @@ import {
   setNeedsPlanModeExitAttachment,
 } from '../../../bootstrap/state.js'
 import { generateSessionName } from '../../../commands/rename/generateSessionName.js'
-import { launchUltraplan } from '../../../commands/ultraplan.js'
 import type { KeyboardEvent } from '../../../ink/events/keyboard-event.js'
 import { Box, Text } from '../../../ink.js'
 import type { AppState } from '../../../state/AppStateStore.js'
@@ -40,7 +38,6 @@ import { getExternalEditor } from '../../../utils/editor.js'
 import { getDisplayPath } from '../../../utils/file.js'
 import { toIDEDisplayName } from '../../../utils/ide.js'
 import { logError } from '../../../utils/log.js'
-import { enqueuePendingNotification } from '../../../utils/messageQueueManager.js'
 import { createUserMessage } from '../../../utils/messages.js'
 import {
   getMainLoopModel,
@@ -98,7 +95,6 @@ type ResponseValue =
   | 'yes-default-keep-context'
   | 'yes-resume-auto-mode'
   | 'yes-auto-clear-context'
-  | 'ultraplan'
   | 'no'
 
 /**
@@ -193,7 +189,6 @@ export function ExitPlanModePermissionRequest({
 }: PermissionRequestProps): React.ReactNode {
   const toolPermissionContext = useAppState(s => s.toolPermissionContext)
   const setAppState = useSetAppState()
-  const store = useAppStateStore()
   const { addNotification } = useNotifications()
   // Feedback text from the 'No' option's input. Threaded through onAllow as
   // acceptFeedback when the user approves — lets users annotate the plan
@@ -206,15 +201,6 @@ export function ExitPlanModePermissionRequest({
 
   const showClearContext =
     useAppState(s => s.settings.showClearContextOnPlanAccept) ?? false
-  const ultraplanSessionUrl = useAppState(s => s.ultraplanSessionUrl)
-  const ultraplanLaunching = useAppState(s => s.ultraplanLaunching)
-  // Hide the Ultraplan button while a session is active or launching —
-  // selecting it would dismiss the dialog and reject locally before
-  // launchUltraplan can notice the session exists and return "already polling".
-  // feature() must sit directly in an if/ternary (bun:bundle DCE constraint).
-  const showUltraplan = feature('ULTRAPLAN')
-    ? !ultraplanSessionUrl && !ultraplanLaunching
-    : false
   const usage = toolUseConfirm.assistantMessage.message.usage
   const { mode, isAutoModeAvailable, isBypassPermissionsModeAvailable } =
     toolPermissionContext
@@ -222,7 +208,6 @@ export function ExitPlanModePermissionRequest({
     () =>
       buildPlanApprovalOptions({
         showClearContext,
-        showUltraplan,
         usedPercent: showClearContext
           ? getContextUsedPercent(usage, mode)
           : null,
@@ -232,7 +217,6 @@ export function ExitPlanModePermissionRequest({
       }),
     [
       showClearContext,
-      showUltraplan,
       usage,
       mode,
       isAutoModeAvailable,
@@ -342,31 +326,6 @@ export function ExitPlanModePermissionRequest({
   async function handleResponse(value: ResponseValue): Promise<void> {
     const trimmedFeedback = planFeedback.trim()
     const acceptFeedback = trimmedFeedback || undefined
-
-    // Ultraplan: reject locally, send the plan as a seed draft.
-    // Dialog dismisses immediately so the query loop unblocks; the launch
-    // runs detached and its message lands via the command queue.
-    if (value === 'ultraplan') {
-      onDone()
-      onReject()
-      toolUseConfirm.onReject(
-        'Plan being refined via Ultraplan — please wait for the result.',
-      )
-      void launchUltraplan({
-        blurb: '',
-        seedPlan: currentPlan,
-        getAppState: store.getState,
-        setAppState: store.setState as unknown as (
-          f: (prev: unknown) => unknown,
-        ) => void,
-        signal: new AbortController().signal,
-      })
-        .then(msg =>
-          enqueuePendingNotification({ value: msg, mode: 'task-notification' }),
-        )
-        .catch(logError)
-      return
-    }
 
     // The tool reads the plan from disk; pass plan in input only when the user
     // edited it via Ctrl+G so the tool echoes the edit in tool_result
@@ -807,14 +766,12 @@ export function ExitPlanModePermissionRequest({
 /** @internal Exported for testing. */
 export function buildPlanApprovalOptions({
   showClearContext,
-  showUltraplan,
   usedPercent,
   isAutoModeAvailable,
   isBypassPermissionsModeAvailable,
   onFeedbackChange,
 }: {
   showClearContext: boolean
-  showUltraplan: boolean
   usedPercent: number | null
   isAutoModeAvailable: boolean | undefined
   isBypassPermissionsModeAvailable: boolean | undefined
@@ -864,13 +821,6 @@ export function buildPlanApprovalOptions({
     label: 'Yes, manually approve edits',
     value: 'yes-default-keep-context',
   })
-
-  if (showUltraplan) {
-    options.push({
-      label: 'No, refine with Ultraplan on Claude Code on the web',
-      value: 'ultraplan',
-    })
-  }
 
   options.push({
     type: 'input',

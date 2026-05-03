@@ -2,19 +2,13 @@
  * Session cache clearing utilities.
  * This module is imported at startup by main.tsx, so keep imports minimal.
  */
-import { feature } from 'bun:bundle'
 import {
   clearInvokedSkills,
   setLastEmittedDate,
 } from '../../bootstrap/state.js'
 import { clearCommandsCache } from '../../commands.js'
 import { getSessionStartDate } from '../../constants/common.js'
-import {
-  getGitStatus,
-  getSystemContext,
-  getUserContext,
-  setSystemPromptInjection,
-} from '../../context.js'
+import { getGitStatus, getSystemContext, getUserContext } from '../../context.js'
 import { clearFileSuggestionCaches } from '../../hooks/fileSuggestions.js'
 import { clearAllPendingCallbacks } from '../../hooks/useSwarmPermissionPoller.js'
 import { clearAllDumpState } from '../../services/api/dumpPrompts.js'
@@ -60,9 +54,6 @@ export function clearSessionCaches(
 
   // Clear prompt cache break detection state
   if (!hasPreserved) resetPromptCacheBreakDetection()
-
-  // Clear system prompt injection (cache breaker)
-  setSystemPromptInjection(null)
 
   // Clear last emitted date so it's re-detected on next turn
   setLastEmittedDate(null)

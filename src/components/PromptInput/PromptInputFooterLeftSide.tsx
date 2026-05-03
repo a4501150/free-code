@@ -350,8 +350,6 @@ function ModeIndicator({
   const hasTeammatePills =
     hasInProcessTeammates || (!showSpinnerTree && isViewingTeammate)
 
-  // Rendered before the tasks pill so a long pill label (e.g. ultraplan URL)
-  // doesn't push the mode indicator off-screen.
   const modePart =
     currentMode && hasActiveMode ? (
       <Text color={getModeColor(currentMode)} key="mode">

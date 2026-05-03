@@ -44,7 +44,6 @@ import * as voiceCmdMod from './commands/voice/index.js'
 import * as initVerifiersMod from './commands/init-verifiers.js'
 import * as workflowsCmdMod from './commands/workflows/index.js'
 import * as localSearchMod from './services/skillSearch/localSearch.js'
-import * as ultraplanMod from './commands/ultraplan.js'
 import * as peersCmdMod from './commands/peers/index.js'
 import * as forkCmdMod from './commands/fork/index.js'
 import * as buddyMod from './commands/buddy/index.js'
@@ -59,7 +58,6 @@ const workflowsCmd = feature('WORKFLOW_SCRIPTS')
 const clearSkillIndexCache = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? localSearchMod.clearSkillIndexCache
   : null
-const ultraplan = feature('ULTRAPLAN') ? ultraplanMod.default : null
 const peersCmd = feature('UDS_INBOX') ? peersCmdMod.default : null
 const forkCmd = feature('FORK_SUBAGENT') ? forkCmdMod.default : null
 const buddy = feature('BUDDY') ? buddyMod.default : null
@@ -235,7 +233,6 @@ const COMMANDS = memoize((): Command[] => [
   ...(peersCmd ? [peersCmd] : []),
   tasks,
   ...(workflowsCmd ? [workflowsCmd] : []),
-  ...(ultraplan ? [ultraplan] : []),
 ])
 
 export const builtInCommandNames = memoize(
@@ -434,26 +431,6 @@ export function clearCommandsCache(): void {
   clearPluginCommandCache()
   clearPluginSkillsCache()
   clearSkillCaches()
-}
-
-/**
- * Filter AppState.mcp.commands to MCP-provided skills (prompt-type,
- * model-invocable, loaded from MCP). These live outside getCommands() so
- * callers that need MCP skills in their skill index thread them through
- * separately.
- */
-export function getMcpSkillCommands(
-  mcpCommands: readonly Command[],
-): readonly Command[] {
-  if (feature('MCP_SKILLS')) {
-    return mcpCommands.filter(
-      cmd =>
-        cmd.type === 'prompt' &&
-        cmd.loadedFrom === 'mcp' &&
-        !cmd.disableModelInvocation,
-    )
-  }
-  return []
 }
 
 // SkillTool shows ALL prompt-based commands that the model can invoke

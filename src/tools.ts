@@ -80,22 +80,14 @@ export {
   ASYNC_AGENT_ALLOWED_TOOLS,
   COORDINATOR_MODE_ALLOWED_TOOLS,
 } from './constants/tools.js'
-import * as overflowTestMod from './tools/OverflowTestTool/OverflowTestTool.js'
 import * as ctxInspectMod from './tools/CtxInspectTool/CtxInspectTool.js'
-import * as terminalCaptureMod from './tools/TerminalCaptureTool/TerminalCaptureTool.js'
 import * as coordinatorModeMod from './coordinator/coordinatorMode.js'
 import * as listPeersMod from './tools/ListPeersTool/ListPeersTool.js'
 import * as workflowToolMod from './tools/WorkflowTool/WorkflowTool.js'
 import * as workflowBundledMod from './tools/WorkflowTool/bundled/index.js'
 import * as powerShellMod from './tools/PowerShellTool/PowerShellTool.js'
-const OverflowTestTool = feature('OVERFLOW_TEST_TOOL')
-  ? overflowTestMod.OverflowTestTool
-  : null
 const CtxInspectTool = feature('CONTEXT_COLLAPSE')
   ? ctxInspectMod.CtxInspectTool
-  : null
-const TerminalCaptureTool = feature('TERMINAL_PANEL')
-  ? terminalCaptureMod.TerminalCaptureTool
   : null
 const coordinatorModeModule = feature('COORDINATOR_MODE')
   ? coordinatorModeMod
@@ -182,9 +174,7 @@ export function getAllBaseTools(): Tools {
     TaskGetTool,
     TaskUpdateTool,
     TaskListTool,
-    ...(OverflowTestTool ? [OverflowTestTool] : []),
     ...(CtxInspectTool ? [CtxInspectTool] : []),
-    ...(TerminalCaptureTool ? [TerminalCaptureTool] : []),
     ...(isEnvTruthy(process.env.ENABLE_LSP_TOOL) ? [LSPTool] : []),
     ...(isWorktreeModeEnabled() ? [EnterWorktreeTool, ExitWorktreeTool] : []),
     SendMessageTool,

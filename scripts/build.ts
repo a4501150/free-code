@@ -85,7 +85,6 @@ const defaultFeatures = [
   'KAIROS_DREAM',
   'REVIEW_ARTIFACT',
   'RUN_SKILL_GENERATOR',
-  'ULTRAPLAN',
   'WORKFLOW_SCRIPTS',
   // Tier 3: Settings / env var / file gated
   'CACHED_MICROCOMPACT',

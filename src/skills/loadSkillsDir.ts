@@ -58,7 +58,6 @@ import { getManagedFilePath } from '../utils/settings/managedPath.js'
 import { isRestrictedToPluginOnly } from '../utils/settings/pluginOnlyPolicy.js'
 import { HooksSchema, type HooksSettings } from '../utils/settings/types.js'
 import { createSignal } from '../utils/signal.js'
-import { registerMCPSkillBuilders } from './mcpSkillBuilders.js'
 
 export type LoadedFrom =
   | 'commands_DEPRECATED'
@@ -1049,14 +1048,3 @@ export function clearDynamicSkills(): void {
   conditionalSkills.clear()
   activatedConditionalSkillNames.clear()
 }
-
-// Expose createSkillCommand + parseSkillFrontmatterFields to MCP skill
-// discovery via a leaf registry module. See mcpSkillBuilders.ts for why this
-// indirection exists (a literal dynamic import from mcpSkills.ts fans a single
-// edge out into many cycle violations; a variable-specifier dynamic import
-// passes dep-cruiser but fails to resolve in Bun-bundled binaries at runtime).
-// eslint-disable-next-line custom-rules/no-top-level-side-effects -- write-once registration, idempotent
-registerMCPSkillBuilders({
-  createSkillCommand,
-  parseSkillFrontmatterFields,
-})

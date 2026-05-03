@@ -168,9 +168,7 @@ export async function shouldAutoCompact(
   // flow owns the headroom problem. Autocompact firing at effective-13k
   // (~93% of effective) sits right between collapse's commit-start (90%)
   // and blocking (95%), so it would race collapse and usually win, nuking
-  // granular context that collapse was about to save. Gating here rather
-  // than in isAutoCompactEnabled() keeps reactiveCompact alive as the 413
-  // fallback (it consults isAutoCompactEnabled directly) and leaves
+  // granular context that collapse was about to save while leaving
   // sessionMemory + manual /compact working.
   //
   // Consult isContextCollapseEnabled (not the raw gate) so the

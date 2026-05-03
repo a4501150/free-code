@@ -18,18 +18,6 @@ import type {
   ServerResource,
 } from './types.js'
 
-import * as mcpSkillsNs from '../../skills/mcpSkills.js'
-const fetchMcpSkillsForClient = feature('MCP_SKILLS')
-  ? mcpSkillsNs.fetchMcpSkillsForClient
-  : null
-/* eslint-disable @typescript-eslint/no-require-imports */
-const clearSkillIndexCache = feature('EXPERIMENTAL_SKILL_SEARCH')
-  ? (
-      require('../skillSearch/localSearch.js') as typeof import('../skillSearch/localSearch.js')
-    ).clearSkillIndexCache
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
-
 import {
   PromptListChangedNotificationSchema,
   ResourceListChangedNotificationSchema,
@@ -633,22 +621,12 @@ export function useManageMCPConnections(
                   `Received prompts/list_changed notification, refreshing prompts`,
                 )
                 try {
-                  // Skills come from resources, not prompts — don't invalidate their
-                  // cache here. fetchMcpSkillsForClient returns the cached result.
                   fetchCommandsForClient.cache.delete(client.name)
-                  const [mcpPrompts, mcpSkills] = await Promise.all([
-                    fetchCommandsForClient(client),
-                    feature('MCP_SKILLS')
-                      ? fetchMcpSkillsForClient!(client)
-                      : Promise.resolve([]),
-                  ])
+                  const commands = await fetchCommandsForClient(client)
                   updateServer({
                     ...client,
-                    commands: [...mcpPrompts, ...mcpSkills],
+                    commands,
                   })
-                  // MCP skills changed — invalidate skill-search index so
-                  // next discovery rebuilds with the new set.
-                  clearSkillIndexCache?.()
                 } catch (error) {
                   logMCPError(
                     client.name,
@@ -669,31 +647,8 @@ export function useManageMCPConnections(
                 )
                 try {
                   fetchResourcesForClient.cache.delete(client.name)
-                  if (feature('MCP_SKILLS')) {
-                    // Skills are discovered from resources, so refresh them too.
-                    // Invalidate prompts cache as well: we write commands here,
-                    // and a concurrent prompts/list_changed could otherwise have
-                    // us stomp its fresh result with our cached stale one.
-                    fetchMcpSkillsForClient!.cache.delete(client.name)
-                    fetchCommandsForClient.cache.delete(client.name)
-                    const [newResources, mcpPrompts, mcpSkills] =
-                      await Promise.all([
-                        fetchResourcesForClient(client),
-                        fetchCommandsForClient(client),
-                        fetchMcpSkillsForClient!(client),
-                      ])
-                    updateServer({
-                      ...client,
-                      resources: newResources,
-                      commands: [...mcpPrompts, ...mcpSkills],
-                    })
-                    // MCP skills changed — invalidate skill-search index so
-                    // next discovery rebuilds with the new set.
-                    clearSkillIndexCache?.()
-                  } else {
-                    const newResources = await fetchResourcesForClient(client)
-                    updateServer({ ...client, resources: newResources })
-                  }
+                  const newResources = await fetchResourcesForClient(client)
+                  updateServer({ ...client, resources: newResources })
                 } catch (error) {
                   logMCPError(
                     client.name,

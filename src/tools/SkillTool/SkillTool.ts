@@ -1,6 +1,5 @@
 import { feature } from 'bun:bundle'
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
-import uniqBy from 'lodash-es/uniqBy.js'
 import { dirname } from 'path'
 import { getProjectRoot } from 'src/bootstrap/state.js'
 import {
@@ -69,23 +68,8 @@ import {
   renderToolUseRejectedMessage,
 } from './UI.js'
 
-/**
- * Gets all commands including MCP skills/prompts from AppState.
- * SkillTool needs this because getCommands() only returns local/bundled skills.
- */
-async function getAllCommands(context: ToolUseContext): Promise<Command[]> {
-  // Only include MCP skills (loadedFrom === 'mcp'), not plain MCP prompts.
-  // Before this filter, the model could invoke MCP prompts via SkillTool
-  // if it guessed the mcp__server__prompt name — they weren't discoverable
-  // but were technically reachable.
-  const mcpSkills = context
-    .getAppState()
-    .mcp.commands.filter(
-      cmd => cmd.type === 'prompt' && cmd.loadedFrom === 'mcp',
-    )
-  if (mcpSkills.length === 0) return getCommands(getProjectRoot())
-  const localCommands = await getCommands(getProjectRoot())
-  return uniqBy([...localCommands, ...mcpSkills], 'name')
+async function getAllCommands(_context: ToolUseContext): Promise<Command[]> {
+  return getCommands(getProjectRoot())
 }
 
 // Re-export Progress from centralized types to break import cycles

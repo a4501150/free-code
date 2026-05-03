@@ -67,9 +67,8 @@ import { maybeResizeAndDownsampleImageBlock } from './imageResizer.js'
 import type { PastedContent } from './config.js'
 import { getGlobalConfig } from './config.js'
 import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js'
-import { getSkillToolCommands, getMcpSkillCommands } from '../commands.js'
+import { getSkillToolCommands } from '../commands.js'
 import type { Command } from '../types/command.js'
-import uniqBy from 'lodash-es/uniqBy.js'
 import { getProjectRoot } from '../bootstrap/state.js'
 import { formatCommandsWithinBudget } from '../tools/SkillTool/prompt.js'
 import { getContextWindowForModel } from './context.js'
@@ -1527,7 +1526,7 @@ export function getAgentListingDeltaAttachment(
   ]
 }
 
-// Exported for compact.ts / reactiveCompact.ts — single source of truth for the gate.
+// Exported for compact.ts — single source of truth for the gate.
 export function getMcpInstructionsDeltaAttachment(
   mcpClients: MCPServerConnection[],
   tools: Tools,
@@ -2511,9 +2510,7 @@ async function getDynamicSkillAttachments(
 }
 
 // Track which skills have been sent to avoid re-sending. Keyed by agentId
-// (empty string = main thread) so subagents get their own turn-0 listing —
-// without per-agent scoping, the main thread populating this Set would cause
-// every subagent's filterToBundledAndMcp result to dedup to empty.
+// (empty string = main thread) so subagents get their own turn-0 listing.
 const sentSkillNames = new Map<string, Set<string>>()
 
 // Called when the skill set genuinely changes (plugin reload, skill file
@@ -2545,27 +2542,8 @@ export function suppressNextSkillListing(): void {
 }
 let suppressNext = false
 
-// When skill-search is enabled and the filtered (bundled + MCP) listing exceeds
-// this count, fall back to bundled-only. Protects MCP-heavy users (100+ servers)
-// from truncation while keeping the turn-0 guarantee for typical setups.
-const FILTERED_LISTING_MAX = 30
-
-/**
- * Filter skills to bundled (Anthropic-curated) + MCP (user-connected) only.
- * Used when skill-search is enabled to resolve the turn-0 gap for subagents:
- * these sources are small, intent-signaled, and won't hit the truncation budget.
- * User/project/plugin skills (the long tail — 200+) go through discovery instead.
- *
- * Falls back to bundled-only if bundled+mcp exceeds FILTERED_LISTING_MAX.
- */
-export function filterToBundledAndMcp(commands: Command[]): Command[] {
-  const filtered = commands.filter(
-    cmd => cmd.loadedFrom === 'bundled' || cmd.loadedFrom === 'mcp',
-  )
-  if (filtered.length > FILTERED_LISTING_MAX) {
-    return filtered.filter(cmd => cmd.loadedFrom === 'bundled')
-  }
-  return filtered
+function filterToBundled(commands: Command[]): Command[] {
+  return commands.filter(cmd => cmd.loadedFrom === 'bundled')
 }
 
 async function getSkillListingAttachments(
@@ -2583,27 +2561,18 @@ async function getSkillListingAttachments(
   }
 
   const cwd = getProjectRoot()
-  const localCommands = await getSkillToolCommands(cwd)
-  const mcpSkills = getMcpSkillCommands(
-    toolUseContext.getAppState().mcp.commands,
-  )
-  let allCommands =
-    mcpSkills.length > 0
-      ? uniqBy([...localCommands, ...mcpSkills], 'name')
-      : localCommands
+  let allCommands = await getSkillToolCommands(cwd)
 
-  // When skill search is active, filter to bundled + MCP instead of full
+  // When skill search is active, filter to bundled skills instead of full
   // suppression. Resolves the turn-0 gap: main thread gets turn-0 discovery
   // via getTurnZeroSkillDiscovery (blocking), but subagents use the async
-  // subagent_spawn signal (collected post-tools, visible turn 1). Bundled +
-  // MCP are small and intent-signaled; user/project/plugin skills go through
-  // discovery. feature() first for DCE — the property-access string leaks
-  // otherwise even with ?. on null.
+  // subagent_spawn signal (collected post-tools, visible turn 1). User/project/plugin
+  // skills go through discovery.
   if (
     feature('EXPERIMENTAL_SKILL_SEARCH') &&
     skillSearchModules?.featureCheck.isSkillSearchEnabled()
   ) {
-    allCommands = filterToBundledAndMcp(allCommands)
+    allCommands = filterToBundled(allCommands)
   }
 
   const agentKey = toolUseContext.agentId ?? ''

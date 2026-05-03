@@ -23,16 +23,8 @@ const YOLO_CLASSIFIER_TOOL_NAME = 'classify_result'
 
 // Feature-gated tool names: conditional references so Bun can DCE these when disabled.
 // Gates mirror tools.ts. Keeps the tool name strings out of cli.js.
-import * as terminalCaptureToolPromptNs from '../../tools/TerminalCaptureTool/prompt.js'
-import * as overflowTestToolNs from '../../tools/OverflowTestTool/OverflowTestTool.js'
 import * as workflowToolConstantsNs from '../../tools/WorkflowTool/constants.js'
 
-const TERMINAL_CAPTURE_TOOL_NAME = feature('TERMINAL_PANEL')
-  ? terminalCaptureToolPromptNs.TERMINAL_CAPTURE_TOOL_NAME
-  : null
-const OVERFLOW_TEST_TOOL_NAME = feature('OVERFLOW_TEST_TOOL')
-  ? overflowTestToolNs.OVERFLOW_TEST_TOOL_NAME
-  : null
 const WORKFLOW_TOOL_NAME = feature('WORKFLOW_SCRIPTS')
   ? workflowToolConstantsNs.WORKFLOW_TOOL_NAME
   : null
@@ -74,9 +66,6 @@ const SAFE_YOLO_ALLOWLISTED_TOOLS = new Set([
   ...(WORKFLOW_TOOL_NAME ? [WORKFLOW_TOOL_NAME] : []),
   // Misc safe
   SLEEP_TOOL_NAME,
-  // Feature-gated safe tools (gates mirror tools.ts)
-  ...(TERMINAL_CAPTURE_TOOL_NAME ? [TERMINAL_CAPTURE_TOOL_NAME] : []),
-  ...(OVERFLOW_TEST_TOOL_NAME ? [OVERFLOW_TEST_TOOL_NAME] : []),
   // Internal classifier tool
   YOLO_CLASSIFIER_TOOL_NAME,
 ])

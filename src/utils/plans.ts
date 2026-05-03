@@ -17,13 +17,22 @@ import { recordTranscript } from './sessionStorage.js'
 import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir } from './envUtils.js'
 import { isENOENT } from './errors.js'
-import { getEnvironmentKind } from './filePersistence/outputsScanner.js'
 import { getFsImplementation } from './fsOperations.js'
 import { logError } from './log.js'
 import { getInitialSettings } from './settings/settings.js'
 import { generateWordSlug } from './words.js'
 
 const MAX_SLUG_RETRIES = 10
+
+type EnvironmentKind = 'byoc' | 'anthropic_cloud'
+
+function getEnvironmentKind(): EnvironmentKind | null {
+  const kind = process.env.CLAUDE_CODE_ENVIRONMENT_KIND
+  if (kind === 'byoc' || kind === 'anthropic_cloud') {
+    return kind
+  }
+  return null
+}
 
 /**
  * Get or generate a word slug for the current session's plan.
