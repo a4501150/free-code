@@ -341,11 +341,7 @@ import {
   fileHistoryEnabled,
   fileHistoryHasAnyChanges,
 } from '../utils/fileHistory.js'
-import {
-  type AttributionState,
-  incrementPromptCount,
-} from '../utils/commitAttribution.js'
-import { recordAttributionSnapshot } from '../utils/sessionStorage.js'
+import { type AttributionState } from '../utils/commitAttribution.js'
 import {
   computeStandaloneAgentContext,
   restoreAgentFromSession,

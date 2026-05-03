@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { stat } from 'fs/promises'
 import { PRODUCT_URL } from '../constants/product.js'
 import { TERMINAL_OUTPUT_TAGS } from '../constants/xml.js'
@@ -334,13 +333,9 @@ export async function getEnhancedPRAttribution(
       : ''
   const summary = `🤖 Generated with [Claude Code](${PRODUCT_URL}) (${claudePercent}% ${promptCount}-shotted by ${shortModelName}${memSuffix})`
 
-  // Append trailer lines for squash-merge survival. Only for allowlisted repos
-  // (INTERNAL_MODEL_REPOS) and only in builds with COMMIT_ATTRIBUTION enabled —
-  // attributionTrailer.ts contains excluded strings, so reach it via dynamic
-  // import behind feature(). When the repo is configured with
-  // squash_merge_commit_message=PR_BODY (cli, apps), the PR body becomes the
-  // squash commit body verbatim — trailer lines at the end become proper git
-  // trailers on the squash commit.
+  // When the repo is configured with squash_merge_commit_message=PR_BODY, the
+  // PR body becomes the squash commit body verbatim, so trailer-like lines at
+  // the end become proper git trailers on the squash commit.
   logForDebugging(`PR Attribution: returning summary: ${summary}`)
   return summary
 }
