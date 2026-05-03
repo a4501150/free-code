@@ -614,6 +614,7 @@ export function renderToolUseProgressMessage(
     inProgressToolCallCount,
     isTranscriptMode = false,
     toolUseId,
+    isAgentRunning = true,
   }: {
     tools: Tools
     verbose: boolean
@@ -621,6 +622,7 @@ export function renderToolUseProgressMessage(
     inProgressToolCallCount?: number
     isTranscriptMode?: boolean
     toolUseId?: string
+    isAgentRunning?: boolean
   },
 ): React.ReactNode {
   if (!progressMessages.length) {
@@ -674,11 +676,12 @@ export function renderToolUseProgressMessage(
 
   if (shouldUseCondensedMode) {
     const { toolUseCount, tokens } = getProgressStats()
+    const statusText = isAgentRunning ? 'In progress…' : 'Stopped'
 
     return (
       <MessageResponse height={1}>
         <Text dimColor>
-          In progress… · <Text bold>{toolUseCount}</Text> tool{' '}
+          {statusText} · <Text bold>{toolUseCount}</Text> tool{' '}
           {toolUseCount === 1 ? 'use' : 'uses'}
           {tokens && ` · ${formatNumber(tokens)} tokens`} ·{' '}
           <ConfigurableShortcutHint
@@ -694,11 +697,10 @@ export function renderToolUseProgressMessage(
   }
 
   // Process messages to group consecutive search/read operations into summaries (ants only)
-  // isAgentRunning=true since this is the progress view while the agent is still running
   const processedMessages = processProgressMessages(
     progressMessages,
     tools,
-    true,
+    isAgentRunning,
   )
 
   // For display, take the last few processed messages
@@ -757,6 +759,9 @@ export function renderToolUseProgressMessage(
       )
       .map(pm => pm.data),
   )
+  const inProgressToolUseIDs = isAgentRunning
+    ? collapsedInProgressIDs
+    : new Set<string>()
 
   const body = (
     <MessageResponse>
@@ -796,8 +801,9 @@ export function renderToolUseProgressMessage(
                   tools={tools}
                   verbose={verbose}
                   subagentLookups={subagentLookups}
-                  collapsedInProgressIDs={collapsedInProgressIDs}
+                  inProgressToolUseIDs={inProgressToolUseIDs}
                   suppressInlineStats={hiddenToolUseCount > 0}
+                  isAgentRunning={isAgentRunning}
                 />
               )
             }
@@ -814,7 +820,7 @@ export function renderToolUseProgressMessage(
                 tools={tools}
                 commands={[]}
                 verbose={verbose}
-                inProgressToolUseIDs={collapsedInProgressIDs}
+                inProgressToolUseIDs={inProgressToolUseIDs}
                 progressMessagesForMessage={[]}
                 shouldAnimate={false}
                 shouldShowDot={false}
@@ -826,7 +832,10 @@ export function renderToolUseProgressMessage(
           })}
         </SubAgentProvider>
         {hiddenToolUseCount > 0 && (
-          <PlusNMoreWithStats allProgressMessages={progressMessages} />
+          <PlusNMoreWithStats
+            allProgressMessages={progressMessages}
+            isAgentRunning={isAgentRunning}
+          />
         )}
       </Box>
     </MessageResponse>
@@ -914,6 +923,7 @@ export function renderToolUseRejectedMessage(
         tools,
         verbose,
         isTranscriptMode,
+        isAgentRunning: false,
       })}
       <FallbackToolUseRejectedMessage />
     </>
@@ -940,6 +950,7 @@ export function renderToolUseErrorMessage(
         tools,
         verbose,
         isTranscriptMode,
+        isAgentRunning: false,
       })}
       <FallbackToolUseErrorMessage result={result} verbose={verbose} />
     </>
@@ -1047,21 +1058,23 @@ function SingleAgentLastLineWithStats({
   tools,
   verbose,
   subagentLookups,
-  collapsedInProgressIDs,
+  inProgressToolUseIDs,
   suppressInlineStats = false,
+  isAgentRunning = true,
 }: {
   lastProcessed: Extract<ProcessedMessage, { type: 'original' }>
   allProgressMessages: ProgressMessage<Progress>[]
   tools: Tools
   verbose: boolean
   subagentLookups: ReturnType<typeof buildSubagentLookups>['lookups']
-  collapsedInProgressIDs: Set<string>
+  inProgressToolUseIDs: Set<string>
   /** When true, don't append the aggregate stats on this row — caller is
    *  rendering them on the `+N more tool uses` summary line instead. */
   suppressInlineStats?: boolean
+  isAgentRunning?: boolean
 }): React.ReactNode {
   const [theme] = useTheme()
-  const nowMs = useNow(true)
+  const nowMs = useNow(isAgentRunning)
 
   const fallback = (
     <MessageComponent
@@ -1071,7 +1084,7 @@ function SingleAgentLastLineWithStats({
       tools={tools}
       commands={[]}
       verbose={verbose}
-      inProgressToolUseIDs={collapsedInProgressIDs}
+      inProgressToolUseIDs={inProgressToolUseIDs}
       progressMessagesForMessage={[]}
       shouldAnimate={false}
       shouldShowDot={false}
@@ -1173,10 +1186,12 @@ function SingleAgentLastLineWithStats({
  */
 function PlusNMoreWithStats({
   allProgressMessages,
+  isAgentRunning = true,
 }: {
   allProgressMessages: ProgressMessage<Progress>[]
+  isAgentRunning?: boolean
 }): React.ReactNode {
-  const nowMs = useNow(true)
+  const nowMs = useNow(isAgentRunning)
   const stats = calculateAgentStats(allProgressMessages, undefined, nowMs)
   const parts: string[] = []
   if (stats.toolUseCount > 0) {

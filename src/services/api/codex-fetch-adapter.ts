@@ -1108,6 +1108,7 @@ async function translateCodexStreamToAnthropic(
 
         const decoder = new TextDecoder()
         let buffer = ''
+        let sseEventName = ''
 
         while (true) {
           const { done, value } = await reader.read()
@@ -1122,9 +1123,15 @@ async function translateCodexStreamToAnthropic(
 
           for (const line of lines) {
             const trimmed = line.trim()
-            if (!trimmed || trimmed.startsWith('event: ')) continue
+            if (!trimmed) continue
+            if (trimmed.startsWith('event: ')) {
+              sseEventName = trimmed.slice(7).trim()
+              continue
+            }
             if (!trimmed.startsWith('data: ')) continue
             const dataStr = trimmed.slice(6)
+            const framedEventName = sseEventName
+            sseEventName = ''
             if (dataStr === '[DONE]') {
               if (!firstSseLogged) {
                 logForDebugging(
@@ -1133,7 +1140,12 @@ async function translateCodexStreamToAnthropic(
                 )
                 firstSseLogged = true
               }
-              continue
+              sawResponseCompleted = true
+              logForDebugging(
+                `[codex-adapter] stream end via [DONE] model=${codexModel} duration_ms=${Date.now() - streamStart} chunks=${chunkCount} content_blocks=${contentBlockIndex} input=${inputTokens} output=${outputTokens} cacheRead=${cacheReadInputTokens} hadToolCalls=${hadToolCalls} webSearch=${webSearchCount} response.completed=${sawResponseCompleted} response.failed=${sawResponseFailed} eventTypes=${JSON.stringify(eventTypeCounts)}`,
+              )
+              finishStream()
+              return
             }
 
             let event: Record<string, unknown>
@@ -1155,7 +1167,13 @@ async function translateCodexStreamToAnthropic(
               firstSseLogged = true
             }
 
-            const eventType = readString(event.type) ?? ''
+            const responseStatus = readString(
+              (event.response as Record<string, unknown> | undefined)?.status,
+            )
+            const eventType =
+              readString(event.type) ||
+              framedEventName ||
+              (responseStatus === 'completed' ? 'response.completed' : '')
             if (eventType) {
               eventTypeCounts[eventType] = (eventTypeCounts[eventType] ?? 0) + 1
             }
