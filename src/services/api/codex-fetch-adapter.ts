@@ -1111,9 +1111,12 @@ async function translateCodexStreamToAnthropic(
 
         while (true) {
           const { done, value } = await reader.read()
-          if (done) break
-
-          buffer += decoder.decode(value, { stream: true })
+          if (done) {
+            buffer += decoder.decode()
+            if (buffer.trim()) buffer += '\n'
+          } else {
+            buffer += decoder.decode(value, { stream: true })
+          }
           const lines = buffer.split('\n')
           buffer = lines.pop() || ''
 
@@ -1302,6 +1305,7 @@ async function translateCodexStreamToAnthropic(
               return
             }
           }
+          if (done) break
         }
       } catch (err) {
         logForDebugging(
@@ -1318,6 +1322,7 @@ async function translateCodexStreamToAnthropic(
       if (!sawResponseCompleted && !streamFinished) {
         emitErrorAndClose('Codex stream ended before response.completed', {
           cause: new Error('Codex stream ended before response.completed'),
+          stream_truncated: true,
         })
       }
     },

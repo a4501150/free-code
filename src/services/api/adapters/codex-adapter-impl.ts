@@ -113,6 +113,7 @@ export const codexAdapter: ProviderAdapter = {
       mid_stream?: boolean
       cause?: unknown
       refusal?: boolean
+      stream_truncated?: boolean
     }
     // Parse OpenAI Responses error shape: { error: { code, type, message } }
     let code: string | undefined
@@ -174,9 +175,11 @@ export const codexAdapter: ProviderAdapter = {
     const base: NormalizedApiError = {
       kind: r.refusal
         ? 'content_filter'
-        : r.mid_stream
-          ? 'unknown'
-          : 'transport',
+        : r.stream_truncated
+          ? 'transport'
+          : r.mid_stream
+            ? 'unknown'
+            : 'transport',
       message: errMessage ?? causeMsg,
       providerType,
       raw,

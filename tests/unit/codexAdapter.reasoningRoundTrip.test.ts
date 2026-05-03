@@ -830,4 +830,87 @@ describe('Codex adapter: reasoning round-trip', () => {
       globalThis.fetch = originalFetch
     }
   })
+
+  test('inbound — parses final response.completed without trailing newline', async () => {
+    const responsesSSE = [
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":5,"output_tokens":0}}}',
+    ].join('\n')
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(responsesSSE, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      })) as unknown as typeof globalThis.fetch
+
+    try {
+      const adapterFetch = createCodexFetch({
+        accessToken: 'unused',
+        baseUrl: 'http://localhost',
+        getSessionId: () => 'test-session',
+      })
+      const response = await adapterFetch('http://localhost/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-test',
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      })
+      const events = parseAnthropicSSE(await drainToString(response.body!))
+      expect(events.some(e => e.event === 'error')).toBe(false)
+      expect(events.find(e => e.event === 'message_stop')).toBeDefined()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test('inbound — truncated stream before response.completed emits transport error', async () => {
+    const responsesSSE = [
+      'event: response.output_text.delta',
+      'data: {"type":"response.output_text.delta","delta":"partial"}',
+      '',
+      '',
+    ].join('\n')
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(responsesSSE, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      })) as unknown as typeof globalThis.fetch
+
+    try {
+      const adapterFetch = createCodexFetch({
+        accessToken: 'unused',
+        baseUrl: 'http://localhost',
+        getSessionId: () => 'test-session',
+      })
+      const response = await adapterFetch('http://localhost/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-test',
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      })
+      const events = parseAnthropicSSE(await drainToString(response.body!))
+      const error = events.find(e => e.event === 'error')
+      expect(error).toBeDefined()
+      expect(
+        (
+          (error!.data.error as Record<string, unknown>).normalized as Record<
+            string,
+            unknown
+          >
+        ).kind,
+      ).toBe('transport')
+      expect((error!.data.error as Record<string, unknown>).message).toContain(
+        'response.completed',
+      )
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
 })

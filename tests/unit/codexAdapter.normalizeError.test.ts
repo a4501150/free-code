@@ -30,6 +30,19 @@ describe('codexAdapter.normalizeError', () => {
     expect(e.message).toContain('abrupt close')
   })
 
+  test('truncated stream before response.completed → transport', () => {
+    const e = codexAdapter.normalizeError(
+      {
+        mid_stream: true,
+        stream_truncated: true,
+        cause: new Error('Codex stream ended before response.completed'),
+      },
+      'openai-responses',
+    )
+    expect(e.kind).toBe('transport')
+    expect(e.message).toContain('response.completed')
+  })
+
   test('HTTP 401 → auth', () => {
     const e = codexAdapter.normalizeError(
       { status: 401, body: '' },
