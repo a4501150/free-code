@@ -34,14 +34,14 @@ function getBackgroundUsageNote(): string | null {
 function getCommitAndPRInstructions(): string {
   if (!shouldIncludeGitInstructions()) return ''
 
-  const { commit: commitAttribution, pr: prAttribution } = getAttributionTexts()
+  const { commit: commitFooter, pr: prFooter } = getAttributionTexts()
 
-  const commitLine = commitAttribution
-    ? `- For git commits, pass multi-line messages via a HEREDOC (\`git commit -m "$(cat <<'EOF' ... EOF\n)"\`) to preserve newlines and avoid shell-escaping issues. Include \`${commitAttribution}\` at the end of the message.`
+  const commitLine = commitFooter
+    ? `- For git commits, pass multi-line messages via a HEREDOC (\`git commit -m "$(cat <<'EOF' ... EOF\n)"\`) to preserve newlines and avoid shell-escaping issues. Include \`${commitFooter}\` at the end of the message.`
     : `- For git commits, pass multi-line messages via a HEREDOC (\`git commit -m "$(cat <<'EOF' ... EOF\n)"\`) to preserve newlines and avoid shell-escaping issues.`
 
-  const prLine = prAttribution
-    ? `- For \`gh pr create\`, pass the body via a HEREDOC (same pattern). End the body with \`${prAttribution}\`.`
+  const prLine = prFooter
+    ? `- For \`gh pr create\`, pass the body via a HEREDOC (same pattern). End the body with \`${prFooter}\`.`
     : `- For \`gh pr create\`, pass the body via a HEREDOC (same pattern).`
 
   return `# Git commits and pull requests

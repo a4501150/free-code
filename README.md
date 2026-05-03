@@ -261,7 +261,7 @@ bun run dev
 
 ## Experimental Features
 
-The `bun run build:dev:full` build enables all 30 flags in `fullExperimentalFeatures`. Highlights:
+The `bun run build:dev:full` build enables the flags in `fullExperimentalFeatures`. Highlights:
 
 ### Interaction & UI
 
@@ -274,7 +274,6 @@ The `bun run build:dev:full` build enables all 30 flags in `fullExperimentalFeat
 | `HISTORY_PICKER`  | Interactive prompt history picker                                             |
 | `MESSAGE_ACTIONS` | Message action entrypoints in the UI                                          |
 | `QUICK_SEARCH`    | Prompt quick-search                                                           |
-| `SHOT_STATS`      | Shot-distribution stats                                                       |
 
 ### Agents, Memory & Planning
 

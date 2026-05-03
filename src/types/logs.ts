@@ -39,7 +39,6 @@ export type LogOption = {
   customTitle?: string // Optional user-set custom title
   tag?: string // Optional tag for the session (searchable in /resume)
   fileHistorySnapshots?: FileHistorySnapshot[] // Optional file history snapshots
-  attributionSnapshots?: AttributionSnapshotMessage[] // Optional attribution snapshots
   gitBranch?: string // Git branch at the end of the session
   projectPath?: string // Original project directory path
   prNumber?: number // GitHub PR number linked to this session
@@ -190,32 +189,6 @@ export type FileHistorySnapshotMessage = {
   isSnapshotUpdate: boolean
 }
 
-/**
- * Per-file attribution state tracking Claude's character contributions.
- */
-export type FileAttributionState = {
-  contentHash: string // SHA-256 hash of file content
-  claudeContribution: number // Characters written by Claude
-  mtime: number // File modification time
-}
-
-/**
- * Attribution snapshot message stored in session transcript.
- * Tracks character-level contributions by Claude for commit attribution.
- */
-export type AttributionSnapshotMessage = {
-  type: 'attribution-snapshot'
-  messageId: UUID
-  surface: string // Client surface (cli, ide, web, api)
-  fileStates: Record<string, FileAttributionState>
-  promptCount?: number // Total prompts in session
-  promptCountAtLastCommit?: number // Prompts at last commit
-  permissionPromptCount?: number // Total permission prompts shown
-  permissionPromptCountAtLastCommit?: number // Permission prompts at last commit
-  escapeCount?: number // Total ESC presses (cancelled permission prompts)
-  escapeCountAtLastCommit?: number // ESC presses at last commit
-}
-
 export type TranscriptMessage = SerializedMessage & {
   parentUuid: UUID | null
   logicalParentUuid?: UUID | null // Preserves logical parent when parentUuid is nullified for session breaks
@@ -247,7 +220,6 @@ export type Entry =
   | AgentSettingMessage
   | PRLinkMessage
   | FileHistorySnapshotMessage
-  | AttributionSnapshotMessage
   | QueueOperationMessage
   | SpeculationAcceptMessage
   | ModeEntry

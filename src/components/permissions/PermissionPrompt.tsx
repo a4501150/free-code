@@ -2,7 +2,6 @@ import React, { type ReactNode, useCallback, useMemo, useState } from 'react'
 import { Box, Text } from '../../ink.js'
 import type { KeybindingAction } from '../../keybindings/types.js'
 import { useKeybindings } from '../../keybindings/useKeybinding.js'
-import { useSetAppState } from '../../state/AppState.js'
 import { type OptionWithDescription, Select } from '../CustomSelect/select.js'
 
 export type FeedbackType = 'accept' | 'reject'
@@ -52,7 +51,6 @@ export function PermissionPrompt<T extends string>({
   question = 'Do you want to proceed?',
   toolAnalyticsContext,
 }: PermissionPromptProps<T>): React.ReactNode {
-  const setAppState = useSetAppState()
   const [acceptFeedback, setAcceptFeedback] = useState('')
   const [rejectFeedback, setRejectFeedback] = useState('')
   const [acceptInputMode, setAcceptInputMode] = useState(false)
@@ -200,18 +198,9 @@ export function PermissionPrompt<T extends string>({
 
   useKeybindings(keybindingHandlers, { context: 'Confirmation' })
 
-  // Handle cancel (Esc)
   const handleCancel = useCallback(() => {
-    // Increment escape count for attribution tracking
-    setAppState(prev => ({
-      ...prev,
-      attribution: {
-        ...prev.attribution,
-        escapeCount: prev.attribution.escapeCount + 1,
-      },
-    }))
     onCancel?.()
-  }, [onCancel, setAppState])
+  }, [onCancel])
 
   return (
     <Box flexDirection="column">

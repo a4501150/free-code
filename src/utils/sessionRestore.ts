@@ -19,18 +19,10 @@ import {
   getAgentDefinitionsWithOverrides,
 } from '../tools/AgentTool/loadAgentsDir.js'
 import { asSessionId } from '../types/ids.js'
-import type {
-  AttributionSnapshotMessage,
-  PersistedWorktreeSession,
-} from '../types/logs.js'
+import type { PersistedWorktreeSession } from '../types/logs.js'
 import type { Message } from '../types/message.js'
 import { renameRecordingForSession } from './asciicast.js'
 import { clearMemoryFileCaches } from './claudemd.js'
-import {
-  type AttributionState,
-  attributionRestoreStateFromLog,
-  restoreAttributionStateFromSnapshots,
-} from './commitAttribution.js'
 import { updateSessionName } from './concurrentSessions.js'
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
@@ -57,11 +49,10 @@ import {
 type ResumeResult = {
   messages?: Message[]
   fileHistorySnapshots?: FileHistorySnapshot[]
-  attributionSnapshots?: AttributionSnapshotMessage[]
 }
 
 /**
- * Restore session state (file history, attribution) from log on resume.
+ * Restore session state from log on resume.
  * Used by both SDK (print.ts) and interactive (REPL.tsx, main.tsx) resume paths.
  */
 export function restoreSessionStateFromLog(
@@ -74,18 +65,6 @@ export function restoreSessionStateFromLog(
       setAppState(prev => ({ ...prev, fileHistory: newState }))
     })
   }
-
-}
-
-/**
- * Compute restored attribution state from log snapshots.
- * Used for computing initial state before render (e.g., main.tsx --continue).
- * Returns undefined if attribution feature is disabled or no snapshots exist.
- */
-export function computeRestoredAttributionState(
-  result: ResumeResult,
-): AttributionState | undefined {
-  return undefined
 }
 
 /**
@@ -218,7 +197,6 @@ type CoordinatorModeApi = {
 type ResumeLoadResult = {
   messages: Message[]
   fileHistorySnapshots?: FileHistorySnapshot[]
-  attributionSnapshots?: AttributionSnapshotMessage[]
   contentReplacements?: ContentReplacementRecord[]
   sessionId: UUID | undefined
   agentName?: string
@@ -331,7 +309,6 @@ export async function processResumedConversation(
     forkSession: boolean
     sessionIdOverride?: string
     transcriptPath?: string
-    includeAttribution?: boolean
   },
   context: {
     modeApi: CoordinatorModeApi | null
@@ -406,7 +383,6 @@ export async function processResumedConversation(
     adoptResumedSessionFile()
   }
 
-
   // Restore agent setting from resumed session
   const { agentDefinition: restoredAgent, agentType: resumedAgentType } =
     restoreAgentFromSession(
@@ -421,9 +397,6 @@ export async function processResumedConversation(
   }
 
   // Compute initial state before render (per CLAUDE.md guidelines)
-  const restoredAttribution = opts.includeAttribution
-    ? computeRestoredAttributionState(result)
-    : undefined
   const standaloneAgentContext = computeStandaloneAgentContext(
     result.agentName,
     result.agentColor,
@@ -448,7 +421,6 @@ export async function processResumedConversation(
     initialState: {
       ...context.initialState,
       ...(resumedAgentType && { agent: resumedAgentType }),
-      ...(restoredAttribution && { attribution: restoredAttribution }),
       ...(standaloneAgentContext && { standaloneAgentContext }),
       agentDefinitions: refreshedAgentDefs,
     },

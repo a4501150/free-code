@@ -7,7 +7,6 @@ import type {
 import { extractRules } from 'src/utils/permissions/PermissionUpdate.js'
 import { permissionRuleValueToString } from 'src/utils/permissions/permissionRuleParser.js'
 import type { ToolUseConfirm } from '../../components/permissions/PermissionRequest.js'
-import { useSetAppState } from '../../state/AppState.js'
 import { env } from '../../utils/env.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { type CompletionType, logUnaryEvent } from '../../utils/unaryLogging.js'
@@ -91,13 +90,10 @@ export function usePermissionRequestLogging(
   toolUseConfirm: ToolUseConfirm,
   unaryEvent: UnaryEvent,
 ): void {
-  const setAppState = useSetAppState()
   // Guard against effect re-firing if toolUseConfirm's object reference
   // changes during a single dialog's lifetime (e.g., parent re-renders with a
-  // fresh object). Without this, the unconditional setAppState below can
-  // cascade into an infinite microtask loop.
-  // The component is keyed by toolUseID, so this ref resets on remount —
-  // we only need to dedupe re-fires WITHIN one dialog instance.
+  // fresh object). The component is keyed by toolUseID, so this ref resets on
+  // remount — we only need to dedupe re-fires WITHIN one dialog instance.
   const loggedToolUseID = useRef<string | null>(null)
 
   useEffect(() => {
@@ -105,15 +101,6 @@ export function usePermissionRequestLogging(
       return
     }
     loggedToolUseID.current = toolUseConfirm.toolUseID
-
-    // Increment permission prompt count for attribution tracking
-    setAppState(prev => ({
-      ...prev,
-      attribution: {
-        ...prev.attribution,
-        permissionPromptCount: prev.attribution.permissionPromptCount + 1,
-      },
-    }))
 
     void logUnaryEvent({
       completion_type: unaryEvent.completion_type,
@@ -124,5 +111,5 @@ export function usePermissionRequestLogging(
         platform: env.platform,
       },
     })
-  }, [toolUseConfirm, unaryEvent, setAppState])
+  }, [toolUseConfirm, unaryEvent])
 }

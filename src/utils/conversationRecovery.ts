@@ -5,7 +5,6 @@ import { getCwd } from 'src/utils/cwd.js'
 import { addInvokedSkill } from '../bootstrap/state.js'
 import { asSessionId } from '../types/ids.js'
 import type {
-  AttributionSnapshotMessage,
   LogOption,
   PersistedWorktreeSession,
   SerializedMessage,
@@ -448,7 +447,6 @@ export async function loadConversationForResume(
   messages: Message[]
   turnInterruptionState: TurnInterruptionState
   fileHistorySnapshots?: FileHistorySnapshot[]
-  attributionSnapshots?: AttributionSnapshotMessage[]
   contentReplacements?: ContentReplacementRecord[]
   sessionId: UUID | undefined
   // Session metadata for restoring agent context
@@ -535,7 +533,6 @@ export async function loadConversationForResume(
       messages,
       turnInterruptionState: deserialized.turnInterruptionState,
       fileHistorySnapshots: log?.fileHistorySnapshots,
-      attributionSnapshots: log?.attributionSnapshots,
       contentReplacements: log?.contentReplacements,
       sessionId,
       // Include session metadata for restoring agent context on resume

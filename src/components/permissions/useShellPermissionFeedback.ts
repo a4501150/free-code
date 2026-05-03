@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useSetAppState } from '../../state/AppState.js'
 import type { ToolUseConfirm } from './PermissionRequest.js'
 import { logUnaryPermissionEvent } from './utils.js'
 
@@ -32,7 +31,6 @@ export function useShellPermissionFeedback({
   handleReject: (feedback?: string) => void
   handleFocus: (value: string) => void
 } {
-  const setAppState = useSetAppState()
   const [rejectFeedback, setRejectFeedback] = useState('')
   const [acceptFeedback, setAcceptFeedback] = useState('')
   const [yesInputMode, setYesInputMode] = useState(false)
@@ -71,18 +69,6 @@ export function useShellPermissionFeedback({
   function handleReject(feedback?: string) {
     const trimmedFeedback = feedback?.trim()
     const hasFeedback = !!trimmedFeedback
-
-    // Log escape if no feedback was provided (user pressed ESC)
-    if (!hasFeedback) {
-      // Increment escape count for attribution tracking
-      setAppState(prev => ({
-        ...prev,
-        attribution: {
-          ...prev.attribution,
-          escapeCount: prev.attribution.escapeCount + 1,
-        },
-      }))
-    }
 
     logUnaryPermissionEvent(
       'tool_use_single',

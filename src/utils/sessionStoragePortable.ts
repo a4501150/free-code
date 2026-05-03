@@ -511,13 +511,9 @@ function parseBoundaryLine(
 }
 
 /**
- * Single forward chunked read for the --resume load path. Attr-snap lines
- * are skipped at the fd level; compact boundaries truncate in-stream. Peak
- * is the output size, not the file size.
- *
- * The surviving (last) attr-snap is appended at EOF instead of in-place;
- * restoreAttributionStateFromSnapshots only reads [length-1] so position
- * doesn't matter.
+ * Single forward chunked read for the --resume load path. Legacy attr-snap
+ * lines are skipped at the fd level; compact boundaries truncate in-stream.
+ * Peak is the output size, not the file size.
  */
 
 type Sink = { buf: Buffer; len: number; cap: number }
@@ -551,21 +547,15 @@ function hasPrefix(
 const ATTR_SNAP_PREFIX = Buffer.from('{"type":"attribution-snapshot"')
 const SYSTEM_PREFIX = Buffer.from('{"type":"system"')
 const LF = 0x0a
-const LF_BYTE = Buffer.from([LF])
 const BOUNDARY_SEARCH_BOUND = 256 // marker sits ~28 bytes in; 256 is slack
 
 type LoadState = {
   out: Sink
   boundaryStartOffset: number
   hasPreservedSegment: boolean
-  lastSnapSrc: Buffer | null // most-recent attr-snap, appended at EOF
-  lastSnapLen: number
-  lastSnapBuf: Buffer | undefined
   bufFileOff: number // file offset of buf[0]
   carryLen: number
   carryBuf: Buffer | undefined
-  straddleSnapCarryLen: number // per-chunk; reset by processStraddle
-  straddleSnapTailEnd: number
 }
 
 // Line spanning the chunk seam. 0 = fall through to concat.
@@ -574,17 +564,13 @@ function processStraddle(
   chunk: Buffer,
   bytesRead: number,
 ): number {
-  s.straddleSnapCarryLen = 0
-  s.straddleSnapTailEnd = 0
   if (s.carryLen === 0) return 0
   const cb = s.carryBuf!
   const firstNl = chunk.indexOf(LF)
   if (firstNl === -1 || firstNl >= bytesRead) return 0
   const tailEnd = firstNl + 1
   if (hasPrefix(cb, ATTR_SNAP_PREFIX, 0, s.carryLen)) {
-    s.straddleSnapCarryLen = s.carryLen
-    s.straddleSnapTailEnd = tailEnd
-    s.lastSnapSrc = null
+    // Drop the legacy attribution snapshot line spanning the chunk seam.
   } else if (s.carryLen < ATTR_SNAP_PREFIX.length) {
     return 0 // too short to rule out attr-snap
   } else {
@@ -599,7 +585,6 @@ function processStraddle(
         s.out.len = 0
         s.boundaryStartOffset = s.bufFileOff
         s.hasPreservedSegment = false
-        s.lastSnapSrc = null
       }
     }
     sinkWrite(s.out, cb, 0, s.carryLen)
@@ -615,12 +600,10 @@ function scanChunkLines(
   s: LoadState,
   buf: Buffer,
   boundaryMarker: Buffer,
-): { lastSnapStart: number; lastSnapEnd: number; trailStart: number } {
+): number {
   let boundaryAt = buf.indexOf(boundaryMarker)
   let runStart = 0
   let lineStart = 0
-  let lastSnapStart = -1
-  let lastSnapEnd = -1
   let nl = buf.indexOf(LF)
   while (nl !== -1) {
     const lineEnd = nl + 1
@@ -629,8 +612,6 @@ function scanChunkLines(
     }
     if (hasPrefix(buf, ATTR_SNAP_PREFIX, lineStart, lineEnd)) {
       sinkWrite(s.out, buf, runStart, lineStart)
-      lastSnapStart = lineStart
-      lastSnapEnd = lineEnd
       runStart = lineEnd
     } else if (
       boundaryAt >= lineStart &&
@@ -643,9 +624,6 @@ function scanChunkLines(
         s.out.len = 0
         s.boundaryStartOffset = s.bufFileOff + lineStart
         s.hasPreservedSegment = false
-        s.lastSnapSrc = null
-        lastSnapStart = -1
-        s.straddleSnapCarryLen = 0
         runStart = lineStart
       }
       boundaryAt = buf.indexOf(
@@ -657,33 +635,7 @@ function scanChunkLines(
     nl = buf.indexOf(LF, lineStart)
   }
   sinkWrite(s.out, buf, runStart, lineStart)
-  return { lastSnapStart, lastSnapEnd, trailStart: lineStart }
-}
-
-// In-buf snap wins over straddle (later in file). carryBuf still valid here.
-function captureSnap(
-  s: LoadState,
-  buf: Buffer,
-  chunk: Buffer,
-  lastSnapStart: number,
-  lastSnapEnd: number,
-): void {
-  if (lastSnapStart !== -1) {
-    s.lastSnapLen = lastSnapEnd - lastSnapStart
-    if (s.lastSnapBuf === undefined || s.lastSnapLen > s.lastSnapBuf.length) {
-      s.lastSnapBuf = Buffer.allocUnsafe(s.lastSnapLen)
-    }
-    buf.copy(s.lastSnapBuf, 0, lastSnapStart, lastSnapEnd)
-    s.lastSnapSrc = s.lastSnapBuf
-  } else if (s.straddleSnapCarryLen > 0) {
-    s.lastSnapLen = s.straddleSnapCarryLen + s.straddleSnapTailEnd
-    if (s.lastSnapBuf === undefined || s.lastSnapLen > s.lastSnapBuf.length) {
-      s.lastSnapBuf = Buffer.allocUnsafe(s.lastSnapLen)
-    }
-    s.carryBuf!.copy(s.lastSnapBuf, 0, 0, s.straddleSnapCarryLen)
-    chunk.copy(s.lastSnapBuf, s.straddleSnapCarryLen, 0, s.straddleSnapTailEnd)
-    s.lastSnapSrc = s.lastSnapBuf
-  }
+  return lineStart
 }
 
 function captureCarry(s: LoadState, buf: Buffer, trailStart: number): void {
@@ -699,18 +651,9 @@ function captureCarry(s: LoadState, buf: Buffer, trailStart: number): void {
 function finalizeOutput(s: LoadState): void {
   if (s.carryLen > 0) {
     const cb = s.carryBuf!
-    if (hasPrefix(cb, ATTR_SNAP_PREFIX, 0, s.carryLen)) {
-      s.lastSnapSrc = cb
-      s.lastSnapLen = s.carryLen
-    } else {
+    if (!hasPrefix(cb, ATTR_SNAP_PREFIX, 0, s.carryLen)) {
       sinkWrite(s.out, cb, 0, s.carryLen)
     }
-  }
-  if (s.lastSnapSrc) {
-    if (s.out.len > 0 && s.out.buf[s.out.len - 1] !== LF) {
-      sinkWrite(s.out, LF_BYTE, 0, 1)
-    }
-    sinkWrite(s.out, s.lastSnapSrc, 0, s.lastSnapLen)
   }
 }
 
@@ -733,20 +676,13 @@ export async function readTranscriptForLoad(
       // min just right-sizes the initial buf, no grows.
       buf: Buffer.allocUnsafe(Math.min(fileSize, 8 * 1024 * 1024)),
       len: 0,
-      // +1: finalizeOutput may insert one LF between a non-LF-terminated
-      // carry and the reordered last attr-snap (crash-truncated file).
-      cap: fileSize + 1,
+      cap: fileSize,
     },
     boundaryStartOffset: 0,
     hasPreservedSegment: false,
-    lastSnapSrc: null,
-    lastSnapLen: 0,
-    lastSnapBuf: undefined,
     bufFileOff: 0,
     carryLen: 0,
     carryBuf: undefined,
-    straddleSnapCarryLen: 0,
-    straddleSnapTailEnd: 0,
   }
 
   const chunk = Buffer.allocUnsafe(CHUNK_SIZE)
@@ -775,10 +711,9 @@ export async function readTranscriptForLoad(
         buf = chunk.subarray(chunkOff, bytesRead)
       }
 
-      const r = scanChunkLines(s, buf, boundaryMarker)
-      captureSnap(s, buf, chunk, r.lastSnapStart, r.lastSnapEnd)
-      captureCarry(s, buf, r.trailStart)
-      s.bufFileOff += r.trailStart
+      const trailStart = scanChunkLines(s, buf, boundaryMarker)
+      captureCarry(s, buf, trailStart)
+      s.bufFileOff += trailStart
     }
     finalizeOutput(s)
   } finally {

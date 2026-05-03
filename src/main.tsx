@@ -267,7 +267,6 @@ import { isXaaEnabled } from 'src/services/mcp/xaaIdpLogin.js'
 import { getRelevantTips } from 'src/services/tips/tipRegistry.js'
 import { registerCleanup } from 'src/utils/cleanupRegistry.js'
 import { eagerParseCliFlag } from 'src/utils/cliArgs.js'
-import { createEmptyAttributionState } from 'src/utils/commitAttribution.js'
 import {
   countConcurrentSessions,
   registerSession,
@@ -1023,7 +1022,7 @@ async function run(): Promise<CommanderCommand> {
     )
     .option(
       '--bare',
-      'Minimal mode: skip hooks, LSP, plugin sync, attribution, auto-memory, background prefetches, keychain reads, and CLAUDE.md auto-discovery. Sets CLAUDE_CODE_SIMPLE=1. Anthropic auth is strictly ANTHROPIC_API_KEY or apiKeyHelper via --settings (OAuth and keychain are never read). 3P providers (Bedrock/Vertex/Foundry) use their own credentials. Skills still resolve via /skill-name. Explicitly provide context via: --system-prompt[-file], --append-system-prompt[-file], --add-dir (CLAUDE.md dirs), --mcp-config, --settings, --agents, --plugin-dir.',
+      'Minimal mode: skip hooks, LSP, plugin sync, auto-memory, background prefetches, keychain reads, and CLAUDE.md auto-discovery. Sets CLAUDE_CODE_SIMPLE=1. Anthropic auth is strictly ANTHROPIC_API_KEY or apiKeyHelper via --settings (OAuth and keychain are never read). 3P providers (Bedrock/Vertex/Foundry) use their own credentials. Skills still resolve via /skill-name. Explicitly provide context via: --system-prompt[-file], --append-system-prompt[-file], --add-dir (CLAUDE.md dirs), --mcp-config, --settings, --agents, --plugin-dir.',
       () => true,
     )
     .addOption(
@@ -3297,7 +3296,6 @@ async function run(): Promise<CommanderCommand> {
           trackedFiles: new Set(),
           snapshotSequence: 0,
         },
-        attribution: createEmptyAttributionState(),
         thinkingEnabled,
         promptSuggestionEnabled: shouldEnablePromptSuggestion(),
         sessionHooks: new Map(),
@@ -3407,7 +3405,6 @@ async function run(): Promise<CommanderCommand> {
             result,
             {
               forkSession: !!options.forkSession,
-              includeAttribution: true,
               transcriptPath: result.fullPath,
             },
             resumeContext,

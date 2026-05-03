@@ -341,7 +341,6 @@ import {
   fileHistoryEnabled,
   fileHistoryHasAnyChanges,
 } from '../utils/fileHistory.js'
-import { type AttributionState } from '../utils/commitAttribution.js'
 import {
   computeStandaloneAgentContext,
   restoreAgentFromSession,
@@ -1637,7 +1636,6 @@ export function REPL({
   )
   const hasInterruptibleToolInProgressRef = useRef(false)
 
-
   const [pastedContents, setPastedContents] = useState<
     Record<number, PastedContent>
   >({})
@@ -2725,15 +2723,6 @@ export function REPL({
             const updated = updater(prev.fileHistory)
             if (updated === prev.fileHistory) return prev
             return { ...prev, fileHistory: updated }
-          })
-        },
-        updateAttributionState(
-          updater: (prev: AttributionState) => AttributionState,
-        ) {
-          setAppState(prev => {
-            const updated = updater(prev.attribution)
-            if (updated === prev.attribution) return prev
-            return { ...prev, attribution: updated }
           })
         },
         openMessageSelector: () => {
@@ -3925,11 +3914,7 @@ export function REPL({
         // Show the placeholder in the same React batch as setInputValue('').
         // Skip for slash/bash (they have their own echo) and speculation
         // (setMessages directly with no gap to bridge).
-        if (
-          !isSlashCommand &&
-          inputMode === 'prompt' &&
-          !speculationAccept
-        ) {
+        if (!isSlashCommand && inputMode === 'prompt' && !speculationAccept) {
           setUserInputOnProcessing(input)
           // showSpinner includes userInputOnProcessing, so the spinner appears
           // on this render. Reset timing refs now (before queryGuard.reserve()
@@ -3937,9 +3922,6 @@ export function REPL({
           // isQueryActive transition above does the same reset — idempotent.
           resetTimingRefs()
         }
-
-        // Increment prompt count for attribution tracking and save snapshot
-        // The snapshot persists promptCount so it survives compaction
       }
 
       // Handle speculation acceptance
@@ -5746,7 +5728,7 @@ export function REPL({
                         await clearConversation({
                           setMessages,
                           readFileState: readFileState.current,
-                                          loadedNestedMemoryPaths:
+                          loadedNestedMemoryPaths:
                             loadedNestedMemoryPathsRef.current,
                           getAppState: () => store.getState(),
                           setAppState,

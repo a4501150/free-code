@@ -70,7 +70,6 @@ These are in the dev-full list but not the default list.
 - `POWERSHELL_AUTO_MODE` — enables PowerShell-specific auto-mode permission handling.
 - `PROMPT_CACHE_BREAK_DETECTION` — enables cache-break detection around compaction/query/API flow.
 - `QUICK_SEARCH` — enables prompt quick-search behavior.
-- `SHOT_STATS` — enables additional shot-distribution stats views.
 - `TEAMMEM` — enables team-memory files, watcher hooks, and related UI messages.
 - `TOKEN_BUDGET` — enables token budget tracking, prompt triggers, and token warning UI.
 - `TRANSCRIPT_CLASSIFIER` — enables transcript-classifier checks for auto mode.
@@ -81,7 +80,6 @@ These are in the dev-full list but not the default list.
 
 These are referenced in source but are not in the default or dev-full lists.
 
-- `COMMIT_ATTRIBUTION` — adds git commit co-author attribution.
 - `DEDICATED_SEARCH_TOOLS` — enables dedicated search-tool behavior where referenced.
 - `VERIFY_PLAN` — enables plan verification guidance and task/todo verification nudges.
 - `WORKTREE_MODE` — enables worktree-mode behavior where referenced.
