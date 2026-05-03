@@ -195,7 +195,10 @@ function SpinnerWithVerbInner({
     let showDurationTimer: ReturnType<typeof setTimeout> | null = null
     let clearStatusTimer: ReturnType<typeof setTimeout> | null = null
 
-    if (mode === 'thinking') {
+    if (mode === 'requesting') {
+      thinkingStartRef.current = null
+      setThinkingStatus(null)
+    } else if (mode === 'thinking') {
       // Started thinking
       if (thinkingStartRef.current === null) {
         thinkingStartRef.current = Date.now()

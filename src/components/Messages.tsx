@@ -53,7 +53,7 @@ import { MAX_RENDERED_LINES } from './FallbackToolUseErrorMessage.js'
 import type { UnseenDivider } from './FullscreenLayout.js'
 import { LogoV2 } from './LogoV2/LogoV2.js'
 import { StreamingMarkdown } from './Markdown.js'
-import { hasContentAfterIndex, MessageRow } from './MessageRow.js'
+import { MessageRow } from './MessageRow.js'
 import {
   InVirtualListContext,
   type MessageActionsNav,
@@ -810,28 +810,12 @@ const MessagesImpl = ({
   const renderMessageRow = (msg: RenderableMessage, index: number) => {
     const prevType = index > 0 ? renderableMessages[index - 1]?.type : undefined
     const isUserContinuation = msg.type === 'user' && prevType === 'user'
-    // hasContentAfter is only consumed for collapsed_read_search groups;
-    // skip the scan for everything else. streamingText is rendered as a
-    // sibling after this map, so it's never in renderableMessages — OR it
-    // in explicitly so the group flips to past tense as soon as text starts
-    // streaming instead of waiting for the block to finalize.
-    const hasContentAfter =
-      msg.type === 'collapsed_read_search' &&
-      (!!streamingText ||
-        hasContentAfterIndex(
-          renderableMessages,
-          index,
-          tools,
-          streamingToolUseIDs,
-        ))
-
     const k = messageKey(msg)
     const row = (
       <MessageRow
         key={k}
         message={msg}
         isUserContinuation={isUserContinuation}
-        hasContentAfter={hasContentAfter}
         tools={tools}
         commands={commands}
         verbose={

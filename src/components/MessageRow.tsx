@@ -6,7 +6,6 @@ import type { Tools } from '../Tool.js'
 import type { RenderableMessage } from '../types/message.js'
 import {
   getDisplayMessageFromCollapsed,
-  getToolSearchOrReadInfo,
   getToolUseIdsFromCollapsedGroup,
   hasAnyToolInProgress,
 } from '../utils/collapseReadSearch.js'
@@ -27,12 +26,6 @@ export type Props = {
   message: RenderableMessage
   /** Whether the previous message in renderableMessages is also a user message. */
   isUserContinuation: boolean
-  /**
-   * Whether there is non-skippable content after this message in renderableMessages.
-   * Only needs to be accurate for `collapsed_read_search` messages — used to decide
-   * if the collapsed group spinner should stay active. Pass `false` otherwise.
-   */
-  hasContentAfter: boolean
   tools: Tools
   commands: Command[]
   verbose: boolean
@@ -48,81 +41,9 @@ export type Props = {
   lookups: ReturnType<typeof buildMessageLookups>
 }
 
-/**
- * Scans forward from `index+1` to check if any "real" content follows. Used to
- * decide whether a collapsed read/search group should stay in its active
- * (grey dot, present-tense "Reading…") state while the query is still loading.
- *
- * Exported so Messages.tsx can compute this once per message and pass the
- * result as a boolean prop — avoids passing the full `renderableMessages` array
- * to each MessageRow (which React Compiler would pin in the fiber's memoCache,
- * accumulating every historical version of the array ≈ 1-2MB over a 7-turn session).
- */
-export function hasContentAfterIndex(
-  messages: RenderableMessage[],
-  index: number,
-  tools: Tools,
-  streamingToolUseIDs: Set<string>,
-): boolean {
-  for (let i = index + 1; i < messages.length; i++) {
-    const msg = messages[i]
-    if (msg?.type === 'assistant') {
-      const content = msg.message.content[0]
-      if (
-        content?.type === 'thinking' ||
-        content?.type === 'redacted_thinking'
-      ) {
-        continue
-      }
-      if (content?.type === 'tool_use') {
-        if (
-          getToolSearchOrReadInfo(content.name, content.input, tools)
-            .isCollapsible
-        ) {
-          continue
-        }
-        // Non-collapsible tool uses appear in syntheticStreamingToolUseMessages
-        // before their ID is added to inProgressToolUseIDs. Skip while streaming
-        // to avoid briefly finalizing the read group.
-        if (streamingToolUseIDs.has(content.id)) {
-          continue
-        }
-      }
-      return true
-    }
-    if (msg?.type === 'system' || msg?.type === 'attachment') {
-      continue
-    }
-    // Tool results arrive while the collapsed group is still being built
-    if (msg?.type === 'user') {
-      const content = msg.message.content[0]
-      if (content?.type === 'tool_result') {
-        continue
-      }
-    }
-    // Collapsible grouped_tool_use messages arrive transiently before being
-    // merged into the current collapsed group on the next render cycle
-    if (msg?.type === 'grouped_tool_use') {
-      const firstBlock = msg.messages[0]?.message.content[0]
-      const firstInput =
-        firstBlock && 'input' in firstBlock
-          ? (firstBlock as { input: unknown }).input
-          : undefined
-      if (
-        getToolSearchOrReadInfo(msg.toolName, firstInput, tools).isCollapsible
-      ) {
-        continue
-      }
-    }
-    return true
-  }
-  return false
-}
-
 function MessageRowImpl({
   message: msg,
   isUserContinuation,
-  hasContentAfter,
   tools,
   commands,
   verbose,
@@ -141,14 +62,17 @@ function MessageRowImpl({
   const isGrouped = msg.type === 'grouped_tool_use'
   const isCollapsed = msg.type === 'collapsed_read_search'
 
-  // A collapsed group is "active" (grey dot, present tense "Reading…") when its tools
-  // are still executing OR when the overall query is still running with nothing after it.
-  // hasAnyToolInProgress takes priority: if tools are running, always show active regardless
-  // of what else is in the message list (avoids false finalization during parallel execution).
+  const hasUnresolvedCollapsedGroupTool =
+    isCollapsed &&
+    isLoading &&
+    getToolUseIdsFromCollapsedGroup(msg).some(
+      id => !lookups.resolvedToolUseIDs.has(id),
+    )
+
   const isActiveCollapsedGroup =
     isCollapsed &&
     (hasAnyToolInProgress(msg, inProgressToolUseIDs) ||
-      (isLoading && !hasContentAfter))
+      hasUnresolvedCollapsedGroupTool)
 
   const displayMsg = isGrouped
     ? msg.displayMessage
