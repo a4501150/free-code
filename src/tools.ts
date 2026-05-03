@@ -49,7 +49,6 @@ const PushNotificationTool =
 import { TaskOutputTool } from './tools/TaskOutputTool/TaskOutputTool.js'
 import { WebSearchTool } from './tools/WebSearchTool/WebSearchTool.js'
 import { ExitPlanModeTool } from './tools/ExitPlanModeTool/ExitPlanModeTool.js'
-import { TestingPermissionTool } from './tools/testing/TestingPermissionTool.js'
 import { GrepTool } from './tools/GrepTool/GrepTool.js'
 import { SendMessageTool } from './tools/SendMessageTool/SendMessageTool.js'
 import { TeamCreateTool } from './tools/TeamCreateTool/TeamCreateTool.js'
@@ -168,7 +167,6 @@ export function getAllBaseTools(): Tools {
     ...(SendUserFileTool ? [SendUserFileTool] : []),
     ...(PushNotificationTool ? [PushNotificationTool] : []),
     ...(getPowerShellTool() ? [getPowerShellTool()] : []),
-    ...(process.env.NODE_ENV === 'test' ? [TestingPermissionTool] : []),
     ListMcpResourcesTool,
     ReadMcpResourceTool,
   ]
