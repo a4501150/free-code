@@ -47,7 +47,6 @@ import {
   type SessionLogResult,
 } from '../utils/sessionStorage.js'
 import * as loadAgentsDirNs from '../tools/AgentTool/loadAgentsDir.js'
-import * as contextCollapsePersistNs from '../services/contextCollapse/persist.js'
 import type { ThinkingConfig } from '../utils/thinking.js'
 import type { ContentReplacementRecord } from '../utils/toolResultStorage.js'
 import { REPL } from './REPL.js'
@@ -309,12 +308,6 @@ export function ResumeConversation({
         }
       }
 
-      if (feature('CONTEXT_COLLAPSE')) {
-        contextCollapsePersistNs.restoreFromEntries(
-          result.contextCollapseCommits ?? [],
-          result.contextCollapseSnapshot,
-        )
-      }
 
       setLogs([])
       setResumeData({

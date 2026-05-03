@@ -19,22 +19,14 @@ if (!jsonOut || !mdOut) {
 
 // Keep this list in sync with `defaultFeatures` in scripts/build.ts.
 const defaultFeatures = [
-  'BG_SESSIONS',
   'DAEMON',
-  'DIRECT_CONNECT',
   'DUMP_SYSTEM_PROMPT',
   'HARD_FAIL',
-  'SELF_HOSTED_RUNNER',
-  'SSH_REMOTE',
   'STREAMLINED_OUTPUT',
-  'TEMPLATES',
   'UNATTENDED_RETRY',
   'BUDDY',
   'HISTORY_SNIP',
   'KAIROS_DREAM',
-  'REVIEW_ARTIFACT',
-  'RUN_SKILL_GENERATOR',
-  'WORKFLOW_SCRIPTS',
   'CACHED_MICROCOMPACT',
   'COORDINATOR_MODE',
   'KAIROS',

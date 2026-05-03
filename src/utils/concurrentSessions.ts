@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { chmod, mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import {
@@ -22,35 +21,20 @@ function getSessionsDir(): string {
   return join(getClaudeConfigHomeDir(), 'sessions')
 }
 
-/**
- * Kind override from env. Set by the spawner (`claude --bg`, daemon
- * supervisor) so the child can register without the parent having to
- * write the file for it — cleanup-on-exit wiring then works for free.
- * Gated so the env-var string is DCE'd from external builds.
- */
 function envSessionKind(): SessionKind | undefined {
-  if (feature('BG_SESSIONS')) {
-    const k = process.env.CLAUDE_CODE_SESSION_KIND
-    if (k === 'bg' || k === 'daemon' || k === 'daemon-worker') return k
-  }
   return undefined
 }
 
-/**
- * True when this REPL is running inside a `claude --bg` tmux session.
- * Exit paths (/exit, ctrl+c, ctrl+d) should detach the attached client
- * instead of killing the process.
- */
 export function isBgSession(): boolean {
-  return envSessionKind() === 'bg'
+  return false
 }
 
 /**
  * Write a PID file for this session and register cleanup.
  *
  * Registers all top-level sessions — interactive CLI, SDK (vscode, desktop,
- * typescript, python, -p), bg/daemon spawns — so `claude ps` sees everything
- * the user might be running. Skips only teammates/subagents, which would
+ * typescript, python, -p), and daemon spawns — so concurrency checks see
+ * active sessions. Skips only teammates/subagents, which would
  * conflate swarm usage with genuine concurrency and pollute ps with noise.
  *
  * Returns true if registered, false if skipped.
@@ -83,21 +67,10 @@ export async function registerSession(): Promise<boolean> {
         startedAt: Date.now(),
         kind,
         entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT,
-        ...(feature('UDS_INBOX')
-          ? { messagingSocketPath: process.env.CLAUDE_CODE_MESSAGING_SOCKET }
-          : {}),
-        ...(feature('BG_SESSIONS')
-          ? {
-              name: process.env.CLAUDE_CODE_SESSION_NAME,
-              logPath: process.env.CLAUDE_CODE_SESSION_LOG,
-              agent: process.env.CLAUDE_CODE_AGENT,
-            }
-          : {}),
       }),
     )
     // --resume / /resume mutates getSessionId() via switchSession. Without
-    // this, the PID file's sessionId goes stale and `claude ps` sparkline
-    // reads the wrong transcript.
+    // this, the PID file's sessionId goes stale.
     onSessionSwitch(id => {
       void updatePidFile({ sessionId: id })
     })
@@ -135,18 +108,10 @@ export async function updateSessionName(
   await updatePidFile({ name })
 }
 
-/**
- * Push live activity state for `claude ps`. Fire-and-forget from REPL's
- * status-change effect — a dropped write just means ps falls back to
- * transcript-tail derivation for one refresh.
- */
-export async function updateSessionActivity(patch: {
+export async function updateSessionActivity(_patch: {
   status?: SessionStatus
   waitingFor?: string
-}): Promise<void> {
-  if (!feature('BG_SESSIONS')) return
-  await updatePidFile({ ...patch, updatedAt: Date.now() })
-}
+}): Promise<void> {}
 
 /**
  * Count live concurrent CLI sessions (including this one).

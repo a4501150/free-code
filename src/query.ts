@@ -6,12 +6,9 @@ import type {
 import type { CanUseToolFn } from './hooks/useCanUseTool.js'
 import {
   calculateTokenWarningState,
-  isAutoCompactEnabled,
   type AutoCompactTrackingState,
 } from './services/compact/autoCompact.js'
 import { buildPostCompactMessages } from './services/compact/compact.js'
-import * as contextCollapseNs from './services/contextCollapse/index.js'
-const contextCollapse = feature('CONTEXT_COLLAPSE') ? contextCollapseNs : null
 import { ImageSizeError } from './utils/imageValidation.js'
 import { ImageResizeError } from './utils/imageResizer.js'
 import { findToolByName, type ToolUseContext } from './Tool.js'
@@ -27,10 +24,7 @@ import type {
   TombstoneMessage,
 } from './types/message.js'
 import { logError } from './utils/log.js'
-import {
-  PROMPT_TOO_LONG_ERROR_MESSAGE,
-  isPromptTooLongMessage,
-} from './services/api/errors.js'
+import { PROMPT_TOO_LONG_ERROR_MESSAGE } from './services/api/errors.js'
 import { logAntError, logForDebugging } from './utils/debug.js'
 import {
   createUserMessage,
@@ -50,13 +44,6 @@ import {
   getAttachmentMessages,
   startRelevantMemoryPrefetch,
 } from './utils/attachments.js'
-/* eslint-disable @typescript-eslint/no-require-imports */
-const skillPrefetch = feature('EXPERIMENTAL_SKILL_SEARCH')
-  ? (require('./services/skillSearch/prefetch.js') as typeof import('./services/skillSearch/prefetch.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
-import * as jobClassifierNs from './jobs/classifier.js'
-const jobClassifier = feature('TEMPLATES') ? jobClassifierNs : null
 import {
   remove as removeFromQueue,
   getCommandsByMaxPriority,
@@ -95,8 +82,6 @@ import { count } from './utils/array.js'
 
 import * as snipCompactNs from './services/compact/snipCompact.js'
 const snipModule = feature('HISTORY_SNIP') ? snipCompactNs : null
-import * as taskSummaryNs from './utils/taskSummary.js'
-const taskSummaryModule = feature('BG_SESSIONS') ? taskSummaryNs : null
 
 function* yieldMissingToolResultBlocks(
   assistantMessages: AssistantMessage[],
@@ -270,20 +255,6 @@ async function* queryLoop(
       turnCount,
     } = state
 
-    // Skill discovery prefetch — per-iteration (uses findWritePivot guard
-    // that returns early on non-write iterations). Discovery runs while the
-    // model streams and tools execute; awaited post-tools alongside the
-    // memory prefetch consume. Replaces the blocking assistant_turn path
-    // that ran inside getAttachmentMessages (97% of those calls found
-    // nothing in prod). Turn-0 user-input discovery still blocks in
-    // userInputAttachments — that's the one signal where there's no prior
-    // work to hide under.
-    const pendingSkillPrefetch = skillPrefetch?.startSkillDiscoveryPrefetch(
-      null,
-      messages,
-      toolUseContext,
-    )
-
     yield { type: 'stream_request_start' }
 
     queryCheckpoint('query_fn_entry')
@@ -373,27 +344,6 @@ async function* queryLoop(
       ? microcompactResult.compactionInfo?.pendingCacheEdits
       : undefined
     queryCheckpoint('query_microcompact_end')
-
-    // Project the collapsed context view and maybe commit more collapses.
-    // Runs BEFORE autocompact so that if collapse gets us under the
-    // autocompact threshold, autocompact is a no-op and we keep granular
-    // context instead of a single summary.
-    //
-    // Nothing is yielded — the collapsed view is a read-time projection
-    // over the REPL's full history. Summary messages live in the collapse
-    // store, not the REPL array. This is what makes collapses persist
-    // across turns: projectView() replays the commit log on every entry.
-    // Within a turn, the view flows forward via state.messages at the
-    // continue site (query.ts:1192), and the next projectView() no-ops
-    // because the archived messages are already gone from its input.
-    if (feature('CONTEXT_COLLAPSE') && contextCollapse) {
-      const collapseResult = await contextCollapse.applyCollapsesIfNeeded(
-        messagesForQuery,
-        toolUseContext,
-        querySource,
-      )
-      messagesForQuery = collapseResult.messages
-    }
 
     const fullSystemPrompt = asSystemPrompt(
       appendSystemContext(systemPrompt, systemContext),
@@ -524,21 +474,10 @@ async function* queryLoop(
     // Also skip for compact/session_memory queries — these are forked agents that
     // inherit the full conversation and would deadlock if blocked here (the compact
     // agent needs to run to REDUCE the token count).
-    // Same skip for context-collapse: its recoverFromOverflow drains staged
-    // collapses on a REAL API 413. A synthetic preempt here would return before
-    // the API call and starve that recovery path. The isAutoCompactEnabled()
-    // conjunct preserves the user's explicit "no automatic anything" config.
-    let collapseOwnsIt = false
-    if (feature('CONTEXT_COLLAPSE')) {
-      collapseOwnsIt =
-        (contextCollapse?.isContextCollapseEnabled() ?? false) &&
-        isAutoCompactEnabled()
-    }
     if (
       !compactionResult &&
       querySource !== 'compact' &&
-      querySource !== 'session_memory' &&
-      !collapseOwnsIt
+      querySource !== 'session_memory'
     ) {
       const { isAtBlockingLimit } = calculateTokenWarningState(
         tokenCountWithEstimation(messagesForQuery) - snipTokensFreed,
@@ -679,28 +618,7 @@ async function* queryLoop(
             }
           }
         }
-        // Withhold recoverable errors until we know whether context-collapse
-        // recovery can succeed. Still pushed to assistantMessages so the
-        // recovery checks below find them.
-        //
-        // feature() only works in if/ternary conditions (bun:bundle
-        // tree-shaking constraint), so the collapse check is nested
-        // rather than composed.
-        let withheld = false
-        if (feature('CONTEXT_COLLAPSE')) {
-          if (
-            contextCollapse?.isWithheldPromptTooLong(
-              message,
-              isPromptTooLongMessage as (message: unknown) => boolean,
-              querySource,
-            )
-          ) {
-            withheld = true
-          }
-        }
-        if (!withheld) {
-          yield yieldMessage
-        }
+        yield yieldMessage
         if (message.type === 'assistant') {
           assistantMessages.push(message)
 
@@ -854,43 +772,6 @@ async function* queryLoop(
 
     if (!needsFollowUp) {
       const lastMessage = assistantMessages.at(-1)
-
-      const isWithheld413 =
-        lastMessage?.type === 'assistant' &&
-        lastMessage.isApiErrorMessage &&
-        isPromptTooLongMessage(lastMessage)
-      if (
-        isWithheld413 &&
-        feature('CONTEXT_COLLAPSE') &&
-        contextCollapse &&
-        state.transition?.reason !== 'collapse_drain_retry'
-      ) {
-        const drained = contextCollapse.recoverFromOverflow(
-          messagesForQuery,
-          querySource,
-        )
-        if (drained.committed > 0) {
-          const next: State = {
-            messages: drained.messages,
-            toolUseContext,
-            autoCompactTracking: tracking,
-            pendingToolUseSummary: undefined,
-            stopHookActive: undefined,
-            turnCount,
-            transition: {
-              reason: 'collapse_drain_retry',
-              committed: drained.committed,
-            },
-          }
-          state = next
-          continue
-        }
-      }
-      if (feature('CONTEXT_COLLAPSE') && isWithheld413) {
-        yield lastMessage
-        void executeStopFailureHooks(lastMessage, toolUseContext)
-        return { reason: 'prompt_too_long' }
-      }
 
       // Skip stop hooks when the last message is an API error (rate limit,
       // prompt-too-long, auth failure, etc.). The model never produced a
@@ -1189,19 +1070,6 @@ async function* queryLoop(
       pendingMemoryPrefetch.consumedOnIteration = turnCount - 1
     }
 
-    // Inject prefetched skill discovery. collectSkillDiscoveryPrefetch emits
-    // hidden_by_main_turn — true when the prefetch resolved before this point
-    // (should be >98% at AKI@250ms / Haiku@573ms vs turn durations of 2-30s).
-    if (skillPrefetch && pendingSkillPrefetch) {
-      const skillAttachments =
-        await skillPrefetch.collectSkillDiscoveryPrefetch(pendingSkillPrefetch)
-      for (const att of skillAttachments as import('./utils/attachments.js').Attachment[]) {
-        const msg = createAttachmentMessage(att)
-        yield msg
-        toolResults.push(msg)
-      }
-    }
-
     // Remove only commands that were actually consumed as attachments.
     // Prompt and task-notification commands are converted to attachments above.
     const consumedCommands = queuedCommandsSnapshot.filter(
@@ -1245,29 +1113,6 @@ async function* queryLoop(
 
     // Each time we have tool results and are about to recurse, that's a turn
     const nextTurnCount = turnCount + 1
-
-    // Periodic task summary for `claude ps` — fires mid-turn so a
-    // long-running agent still refreshes what it's working on. Gated
-    // only on !agentId so every top-level conversation (REPL, SDK, HFI,
-    // remote) generates summaries; subagents/forks don't.
-    if (feature('BG_SESSIONS')) {
-      if (
-        !toolUseContext.agentId &&
-        taskSummaryModule!.shouldGenerateTaskSummary()
-      ) {
-        taskSummaryModule!.maybeGenerateTaskSummary({
-          systemPrompt,
-          userContext,
-          systemContext,
-          toolUseContext,
-          forkContextMessages: [
-            ...messagesForQuery,
-            ...assistantMessages,
-            ...toolResults,
-          ],
-        })
-      }
-    }
 
     // Check if we've reached the max turns limit
     if (maxTurns && nextTurnCount > maxTurns) {

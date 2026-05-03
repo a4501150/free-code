@@ -80,27 +80,11 @@ export {
   ASYNC_AGENT_ALLOWED_TOOLS,
   COORDINATOR_MODE_ALLOWED_TOOLS,
 } from './constants/tools.js'
-import * as ctxInspectMod from './tools/CtxInspectTool/CtxInspectTool.js'
 import * as coordinatorModeMod from './coordinator/coordinatorMode.js'
-import * as listPeersMod from './tools/ListPeersTool/ListPeersTool.js'
-import * as workflowToolMod from './tools/WorkflowTool/WorkflowTool.js'
-import * as workflowBundledMod from './tools/WorkflowTool/bundled/index.js'
 import * as powerShellMod from './tools/PowerShellTool/PowerShellTool.js'
-const CtxInspectTool = feature('CONTEXT_COLLAPSE')
-  ? ctxInspectMod.CtxInspectTool
-  : null
 const coordinatorModeModule = feature('COORDINATOR_MODE')
   ? coordinatorModeMod
   : null
-const ListPeersTool = feature('UDS_INBOX') ? listPeersMod.ListPeersTool : null
-// initBundledWorkflows has intentional side effects on module bootstrap —
-// invoking it here behind the feature gate is the entire reason this branch
-// exists in addition to the static import.
-let WorkflowTool: typeof workflowToolMod.WorkflowTool | null = null
-if (feature('WORKFLOW_SCRIPTS')) {
-  workflowBundledMod.initBundledWorkflows()
-  WorkflowTool = workflowToolMod.WorkflowTool
-}
 import type { ToolPermissionContext } from './Tool.js'
 import { shouldPreferBashForSearch } from './utils/embeddedTools.js'
 import { isEnvTruthy } from './utils/envUtils.js'
@@ -174,15 +158,12 @@ export function getAllBaseTools(): Tools {
     TaskGetTool,
     TaskUpdateTool,
     TaskListTool,
-    ...(CtxInspectTool ? [CtxInspectTool] : []),
     ...(isEnvTruthy(process.env.ENABLE_LSP_TOOL) ? [LSPTool] : []),
     ...(isWorktreeModeEnabled() ? [EnterWorktreeTool, ExitWorktreeTool] : []),
     SendMessageTool,
-    ...(ListPeersTool ? [ListPeersTool] : []),
     ...(isAgentSwarmsEnabled() ? [TeamCreateTool, TeamDeleteTool] : []),
     ...(VerifyPlanExecutionTool ? [VerifyPlanExecutionTool] : []),
     ...(isReplModeEnabled() && REPLTool ? [REPLTool] : []),
-    ...(WorkflowTool ? [WorkflowTool] : []),
     ...(SleepTool ? [SleepTool] : []),
     ...cronTools,
     BriefTool,

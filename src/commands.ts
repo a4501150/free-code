@@ -42,24 +42,12 @@ import * as proactiveMod from './commands/proactive.js'
 import * as briefCmdMod from './commands/brief.js'
 import * as voiceCmdMod from './commands/voice/index.js'
 import * as initVerifiersMod from './commands/init-verifiers.js'
-import * as workflowsCmdMod from './commands/workflows/index.js'
-import * as localSearchMod from './services/skillSearch/localSearch.js'
-import * as peersCmdMod from './commands/peers/index.js'
-import * as forkCmdMod from './commands/fork/index.js'
 import * as buddyMod from './commands/buddy/index.js'
 const proactive = feature('KAIROS') ? proactiveMod.default : null
 const briefCommand =
   feature('KAIROS') || feature('KAIROS_BRIEF') ? briefCmdMod.default : null
 const voiceCommand = feature('VOICE_MODE') ? voiceCmdMod.default : null
 const initVerifiers = feature('VERIFY_PLAN') ? initVerifiersMod.default : null
-const workflowsCmd = feature('WORKFLOW_SCRIPTS')
-  ? workflowsCmdMod.default
-  : null
-const clearSkillIndexCache = feature('EXPERIMENTAL_SKILL_SEARCH')
-  ? localSearchMod.clearSkillIndexCache
-  : null
-const peersCmd = feature('UDS_INBOX') ? peersCmdMod.default : null
-const forkCmd = feature('FORK_SUBAGENT') ? forkCmdMod.default : null
 const buddy = feature('BUDDY') ? buddyMod.default : null
 import thinkback from './commands/thinkback/index.js'
 import thinkbackPlay from './commands/thinkback-play/index.js'
@@ -214,7 +202,6 @@ const COMMANDS = memoize((): Command[] => [
   usageReport,
   version,
   vim,
-  ...(forkCmd ? [forkCmd] : []),
   ...(buddy ? [buddy] : []),
   ...(proactive ? [proactive] : []),
   ...(briefCommand ? [briefCommand] : []),
@@ -230,9 +217,7 @@ const COMMANDS = memoize((): Command[] => [
   logout,
   login(),
   passes,
-  ...(peersCmd ? [peersCmd] : []),
   tasks,
-  ...(workflowsCmd ? [workflowsCmd] : []),
 ])
 
 export const builtInCommandNames = memoize(
@@ -292,11 +277,6 @@ async function getSkills(cwd: string): Promise<{
   }
 }
 
-import * as createWorkflowCommandMod from './tools/WorkflowTool/createWorkflowCommand.js'
-const getWorkflowCommands = feature('WORKFLOW_SCRIPTS')
-  ? createWorkflowCommandMod.getWorkflowCommands
-  : null
-
 /**
  * Filters commands by their declared `availability` (auth/provider requirement).
  * Commands without `availability` are treated as universal.
@@ -345,18 +325,12 @@ const loadAllCommands = memoize(async (cwd: string): Promise<Command[]> => {
   const [
     { skillDirCommands, pluginSkills, bundledSkills, builtinPluginSkills },
     pluginCommands,
-    workflowCommands,
-  ] = await Promise.all([
-    getSkills(cwd),
-    getPluginCommands(),
-    getWorkflowCommands ? getWorkflowCommands(cwd) : Promise.resolve([]),
-  ])
+  ] = await Promise.all([getSkills(cwd), getPluginCommands()])
 
   return [
     ...bundledSkills,
     ...builtinPluginSkills,
     ...skillDirCommands,
-    ...workflowCommands,
     ...pluginCommands,
     ...pluginSkills,
     ...COMMANDS(),
@@ -419,11 +393,6 @@ export function clearCommandMemoizationCaches(): void {
   loadAllCommands.cache?.clear?.()
   getSkillToolCommands.cache?.clear?.()
   getSlashCommandToolSkills.cache?.clear?.()
-  // getSkillIndex in skillSearch/localSearch.ts is a separate memoization layer
-  // built ON TOP of getSkillToolCommands/getCommands. Clearing only the inner
-  // caches is a no-op for the outer — lodash memoize returns the cached result
-  // without ever reaching the cleared inners. Must clear it explicitly.
-  clearSkillIndexCache?.()
 }
 
 export function clearCommandsCache(): void {

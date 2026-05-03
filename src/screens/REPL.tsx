@@ -1,6 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { feature } from 'bun:bundle'
-import { spawnSync } from 'child_process'
 import {
   snapshotOutputTokensForTurn,
   getCurrentTurnTokenBudget,
@@ -132,10 +131,6 @@ import { PromptDialog } from '../components/hooks/PromptDialog.js'
 import type { PromptRequest, PromptResponse } from '../types/hooks.js'
 import PromptInput from '../components/PromptInput/PromptInput.js'
 import { PromptInputQueuedCommands } from '../components/PromptInput/PromptInputQueuedCommands.js'
-import { useDirectConnect } from '../hooks/useDirectConnect.js'
-import type { DirectConnectConfig } from '../server/directConnectManager.js'
-import { useSSHSession } from '../hooks/useSSHSession.js'
-import type { SSHSession } from '../ssh/createSSHSession.js'
 import { useMoreRight } from '../moreright/useMoreRight.js'
 import {
   SpinnerWithVerb,
@@ -287,7 +282,6 @@ import { type IDESelection, useIdeSelection } from '../hooks/useIdeSelection.js'
 import { getTools, assembleToolPool } from '../tools.js'
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
 import * as loadAgentsDirNs from '../tools/AgentTool/loadAgentsDir.js'
-import * as contextCollapseNs from '../services/contextCollapse/index.js'
 import { clearConversation } from '../commands/clear/conversation.js'
 import { renameRecordingForSession } from '../utils/asciicast.js'
 import { resolveAgentTools } from '../tools/AgentTool/agentToolUtils.js'
@@ -359,11 +353,7 @@ import {
   restoreWorktreeForResume,
   exitRestoredWorktree,
 } from '../utils/sessionRestore.js'
-import {
-  isBgSession,
-  updateSessionName,
-  updateSessionActivity,
-} from '../utils/concurrentSessions.js'
+import { updateSessionName } from '../utils/concurrentSessions.js'
 import {
   isInProcessTeammateTask,
   type InProcessTeammateTaskState,
@@ -470,7 +460,6 @@ import {
   MIN_COLS_FOR_FULL_SPRITE,
 } from '../buddy/CompanionSprite.js'
 import { fireCompanionObserver } from '../buddy/observer.js'
-import type { RemoteMessageContent } from '../utils/oauthApi.js'
 import {
   FullscreenLayout,
   useUnseenDivider,
@@ -798,10 +787,6 @@ export type Props = {
   disableSlashCommands?: boolean
   // Task list id: when set, enables tasks mode that watches a task list and auto-processes tasks.
   taskListId?: string
-  // Direct connect config for `claude connect` mode (connects to a claude server)
-  directConnectConfig?: DirectConnectConfig
-  // SSH session for `claude ssh` mode (local REPL, remote tools over ssh)
-  sshSession?: SSHSession
   // Thinking configuration to use when thinking is enabled
   thinkingConfig: ThinkingConfig
 }
@@ -830,8 +815,6 @@ export function REPL({
   mainThreadAgentDefinition: initialMainThreadAgentDefinition,
   disableSlashCommands = false,
   taskListId,
-  directConnectConfig,
-  sshSession,
   thinkingConfig,
 }: Props): React.ReactNode {
   // Env-var gates hoisted to mount-time — isEnvTruthy does toLowerCase+trim+
@@ -1419,27 +1402,6 @@ export function REPL({
         ? 'busy'
         : 'idle'
 
-  const waitingFor =
-    sessionStatus !== 'waiting'
-      ? undefined
-      : toolUseConfirmQueue.length > 0
-        ? `approve ${toolUseConfirmQueue[0]!.tool.name}`
-        : pendingWorkerRequest
-          ? 'worker request'
-          : pendingSandboxRequest
-            ? 'sandbox request'
-            : isShowingLocalJSXCommand
-              ? 'dialog open'
-              : 'input needed'
-
-  // Push status to the PID file for `claude ps`. Fire-and-forget; ps falls
-  // back to transcript-tail derivation when this is missing/stale.
-  useEffect(() => {
-    if (feature('BG_SESSIONS')) {
-      void updateSessionActivity({ status: sessionStatus, waitingFor })
-    }
-  }, [sessionStatus, waitingFor])
-
   const showStatusInTerminalTab =
     getGlobalConfig().showStatusInTerminalTab ?? false
   useTabStatus(titleDisabled || !showStatusInTerminalTab ? null : sessionStatus)
@@ -1679,28 +1641,6 @@ export function REPL({
   )
   const hasInterruptibleToolInProgressRef = useRef(false)
 
-  // Direct connect hook - manages WebSocket to a claude server for `claude connect` mode
-  const directConnect = useDirectConnect({
-    config: directConnectConfig,
-    setMessages,
-    setIsLoading: setIsExternalLoading,
-    setToolUseConfirmQueue,
-    tools: combinedInitialTools,
-  })
-
-  // SSH session hook - manages ssh child process for `claude ssh` mode.
-  // Same callback shape as useDirectConnect; only the transport under the
-  // hood differs (ChildProcess stdin/stdout vs WebSocket).
-  const sshRemote = useSSHSession({
-    session: sshSession,
-    setMessages,
-    setIsLoading: setIsExternalLoading,
-    setToolUseConfirmQueue,
-    tools: combinedInitialTools,
-  })
-
-  // Use whichever remote mode is active
-  const activeRemote = sshRemote.isRemoteMode ? sshRemote : directConnect
 
   const [pastedContents, setPastedContents] = useState<
     Record<number, PastedContent>
@@ -2231,12 +2171,6 @@ export function REPL({
   const readFileState = useRef(initialReadFileState)
   const bashTools = useRef(new Set<string>())
   const bashToolsProcessedIdx = useRef(0)
-  // Session-scoped skill discovery tracking (feeds was_discovered on
-  // tengu_skill_tool_invocation). Must persist across getToolUseContext
-  // rebuilds within a session: turn-0 discovery writes via processUserInput
-  // before onQuery builds its own context, and discovery on turn N must
-  // still attribute a SkillTool call on turn N+k. Cleared in clearConversation.
-  const discoveredSkillNamesRef = useRef(new Set<string>())
   // Session-level dedup for nested_memory CLAUDE.md attachments.
   // readFileState is a 100-entry LRU; once it evicts a CLAUDE.md path,
   // the next discovery cycle re-injects it. Cleared in clearConversation.
@@ -2496,9 +2430,6 @@ export function REPL({
       }
       setPromptQueue([])
       abortController?.abort('user-cancel')
-    } else if (activeRemote.isRemoteMode) {
-      // Remote mode: send interrupt signal to remote
-      activeRemote.cancelRequest()
     } else {
       abortController?.abort('user-cancel')
     }
@@ -2827,7 +2758,6 @@ export function REPL({
         nestedMemoryAttachmentTriggers: new Set<string>(),
         loadedNestedMemoryPaths: loadedNestedMemoryPathsRef.current,
         dynamicSkillDirTriggers: new Set<string>(),
-        discoveredSkillNames: discoveredSkillNamesRef.current,
         setResponseLength,
         setStreamMode,
         onCompactProgress: event => {
@@ -3588,7 +3518,6 @@ export function REPL({
         await clearConversation({
           setMessages,
           readFileState: readFileState.current,
-          discoveredSkillNames: discoveredSkillNamesRef.current,
           loadedNestedMemoryPaths: loadedNestedMemoryPathsRef.current,
           getAppState: () => store.getState(),
           setAppState,
@@ -3913,11 +3842,6 @@ export function REPL({
         }
       }
 
-      // Remote mode: skip empty input early before any state mutations
-      if (activeRemote.isRemoteMode && !input.trim()) {
-        return
-      }
-
       // Idle-return: prompt returning users to start fresh when the
       // conversation is large and the cache is cold.
       {
@@ -3975,15 +3899,11 @@ export function REPL({
       // - When loading, the submitted input will be queued and handlePromptSubmit
       //   will clear the input field (onInputChange('')), which would clobber the
       //   restored stash. Defer restoration to after handlePromptSubmit (below).
-      //   Remote mode is exempt: it sends via WebSocket and returns early without
-      //   calling handlePromptSubmit, so there's no clobbering risk — restore eagerly.
       // In both deferred cases, the stash is restored after await handlePromptSubmit.
       const isSlashCommand = !speculationAccept && input.trim().startsWith('/')
-      // Submit runs "now" (not queued) when not already loading, or when
-      // accepting speculation, or in remote mode (which sends via WS and
-      // returns early without calling handlePromptSubmit).
-      const submitsNow =
-        !isLoading || speculationAccept || activeRemote.isRemoteMode
+      // Submit runs "now" (not queued) when not already loading or when
+      // accepting speculation.
+      const submitsNow = !isLoading || speculationAccept
       if (stashedPrompt !== undefined && !isSlashCommand && submitsNow) {
         setInputValue(stashedPrompt.text)
         helpers.setCursorOffset(stashedPrompt.cursorOffset)
@@ -4007,13 +3927,12 @@ export function REPL({
         tipPickedThisTurnRef.current = false
 
         // Show the placeholder in the same React batch as setInputValue('').
-        // Skip for slash/bash (they have their own echo), speculation and remote
-        // mode (both setMessages directly with no gap to bridge).
+        // Skip for slash/bash (they have their own echo) and speculation
+        // (setMessages directly with no gap to bridge).
         if (
           !isSlashCommand &&
           inputMode === 'prompt' &&
-          !speculationAccept &&
-          !activeRemote.isRemoteMode
+          !speculationAccept
         ) {
           setUserInputOnProcessing(input)
           // showSpinner includes userInputOnProcessing, so the spinner appears
@@ -4045,84 +3964,6 @@ export function REPL({
           setAbortController(newAbortController)
           void onQuery([], newAbortController, true, [], mainLoopModel)
         }
-        return
-      }
-
-      // Remote mode: send input via stream-json instead of local query.
-      // Permission requests from the remote are bridged into toolUseConfirmQueue
-      // and rendered using the standard PermissionRequest component.
-      //
-      // local-jsx slash commands (e.g. /agents, /config) render UI in THIS
-      // process — they have no remote equivalent. Let those fall through to
-      // handlePromptSubmit so they execute locally. Prompt commands and
-      // plain text go to the remote.
-      if (
-        activeRemote.isRemoteMode &&
-        !(
-          isSlashCommand &&
-          commands.find(c => {
-            const name = input.trim().slice(1).split(/\s/)[0]
-            return (
-              isCommandEnabled(c) &&
-              (c.name === name ||
-                c.aliases?.includes(name!) ||
-                getCommandName(c) === name)
-            )
-          })?.type === 'local-jsx'
-        )
-      ) {
-        // Build content blocks when there are pasted attachments (images)
-        const pastedValues = Object.values(pastedContents)
-        const imageContents = pastedValues.filter(c => c.type === 'image')
-        const imagePasteIds =
-          imageContents.length > 0 ? imageContents.map(c => c.id) : undefined
-
-        let messageContent: string | ContentBlockParam[] = input.trim()
-        let remoteContent: RemoteMessageContent = input.trim()
-        if (pastedValues.length > 0) {
-          const contentBlocks: ContentBlockParam[] = []
-          const remoteBlocks: Array<{ type: string; [key: string]: unknown }> =
-            []
-
-          const trimmedInput = input.trim()
-          if (trimmedInput) {
-            contentBlocks.push({ type: 'text', text: trimmedInput })
-            remoteBlocks.push({ type: 'text', text: trimmedInput })
-          }
-
-          for (const pasted of pastedValues) {
-            if (pasted.type === 'image') {
-              const source = {
-                type: 'base64' as const,
-                media_type: (pasted.mediaType ?? 'image/png') as
-                  | 'image/jpeg'
-                  | 'image/png'
-                  | 'image/gif'
-                  | 'image/webp',
-                data: pasted.content,
-              }
-              contentBlocks.push({ type: 'image', source })
-              remoteBlocks.push({ type: 'image', source })
-            } else {
-              contentBlocks.push({ type: 'text', text: pasted.content })
-              remoteBlocks.push({ type: 'text', text: pasted.content })
-            }
-          }
-
-          messageContent = contentBlocks
-          remoteContent = remoteBlocks
-        }
-
-        // Create and add user message to UI
-        // Note: empty input already handled by early return above
-        const userMessage = createUserMessage({
-          content: messageContent,
-          imagePasteIds,
-        })
-        setMessages(prev => [...prev, userMessage])
-
-        // Send to remote session
-        await activeRemote.sendMessage(remoteContent)
         return
       }
 
@@ -4290,14 +4131,6 @@ export function REPL({
 
   const handleExit = useCallback(async () => {
     setIsExiting(true)
-    // In bg sessions, always detach instead of kill — even when a worktree is
-    // active. Without this guard, the worktree branch below short-circuits into
-    // ExitFlow (which calls gracefulShutdown) before exit.tsx is ever loaded.
-    if (feature('BG_SESSIONS') && isBgSession()) {
-      spawnSync('tmux', ['detach-client'], { stdio: 'ignore' })
-      setIsExiting(false)
-      return
-    }
     const showWorktree = getCurrentWorktreeSession() !== null
     if (showWorktree) {
       setExitFlow(
@@ -4344,16 +4177,6 @@ export function REPL({
       // Reset cached microcompact state so stale pinned cache edits
       // don't reference tool_use_ids from truncated messages
       resetMicrocompactState()
-      if (feature('CONTEXT_COLLAPSE')) {
-        // Rewind truncates the REPL array. Commits whose archived span
-        // was past the rewind point can't be projected anymore
-        // (projectView silently skips them) but the staged queue and ID
-        // maps reference stale uuids. Simplest safe reset: drop
-        // everything. The ctx-agent will re-stage on the next
-        // threshold crossing.
-        contextCollapseNs.resetContextCollapse()
-      }
-
       // Restore state from the message we're rewinding to
       setAppState(prev => ({
         ...prev,
@@ -5927,8 +5750,7 @@ export function REPL({
                         await clearConversation({
                           setMessages,
                           readFileState: readFileState.current,
-                          discoveredSkillNames: discoveredSkillNamesRef.current,
-                          loadedNestedMemoryPaths:
+                                          loadedNestedMemoryPaths:
                             loadedNestedMemoryPathsRef.current,
                           getAppState: () => store.getState(),
                           setAppState,

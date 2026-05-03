@@ -178,12 +178,6 @@ export class QueryEngine {
   private totalUsage: NonNullableUsage
   private hasHandledOrphanedPermission = false
   private readFileState: FileStateCache
-  // Turn-scoped skill discovery tracking (feeds was_discovered on
-  // tengu_skill_tool_invocation). Must persist across the two
-  // processUserInputContext rebuilds inside submitMessage, but is cleared
-  // at the start of each submitMessage to avoid unbounded growth across
-  // many turns in SDK mode.
-  private discoveredSkillNames = new Set<string>()
   private loadedNestedMemoryPaths = new Set<string>()
 
   constructor(config: QueryEngineConfig) {
@@ -223,7 +217,6 @@ export class QueryEngine {
       orphanedPermission,
     } = this.config
 
-    this.discoveredSkillNames.clear()
     setCwd(cwd)
     const persistSession = !isSessionPersistenceDisabled()
     const startTime = Date.now()
@@ -358,7 +351,6 @@ export class QueryEngine {
       nestedMemoryAttachmentTriggers: new Set<string>(),
       loadedNestedMemoryPaths: this.loadedNestedMemoryPaths,
       dynamicSkillDirTriggers: new Set<string>(),
-      discoveredSkillNames: this.discoveredSkillNames,
       setInProgressToolUseIDs: () => {},
       setResponseLength: () => {},
       updateFileHistoryState: (
@@ -506,7 +498,6 @@ export class QueryEngine {
       nestedMemoryAttachmentTriggers: new Set<string>(),
       loadedNestedMemoryPaths: this.loadedNestedMemoryPaths,
       dynamicSkillDirTriggers: new Set<string>(),
-      discoveredSkillNames: this.discoveredSkillNames,
       setInProgressToolUseIDs: () => {},
       setResponseLength: () => {},
       updateFileHistoryState: processUserInputContext.updateFileHistoryState,

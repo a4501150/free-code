@@ -1,7 +1,4 @@
-import { feature } from 'bun:bundle'
 import { microcompactMessages } from '../../services/compact/microCompact.js'
-import * as contextCollapseOpsNs from '../../services/contextCollapse/operations.js'
-import * as contextCollapseIndexNs from '../../services/contextCollapse/index.js'
 import type { AppState } from '../../state/AppStateStore.js'
 import type { Tools, ToolUseContext } from '../../Tool.js'
 import type { AgentDefinitionsResult } from '../../tools/AgentTool/loadAgentsDir.js'
@@ -48,11 +45,7 @@ export async function collectContextData(
     },
   } = context
 
-  let apiView = getMessagesAfterCompactBoundary(messages)
-  if (feature('CONTEXT_COLLAPSE')) {
-    const { projectView } = contextCollapseOpsNs
-    apiView = projectView(apiView)
-  }
+  const apiView = getMessagesAfterCompactBoundary(messages)
 
   const { messages: compactedMessages } = await microcompactMessages(apiView)
   const appState = getAppState()
@@ -105,42 +98,6 @@ function formatContextAsMarkdownTable(data: ContextData): string {
   let output = `## Context Usage\n\n`
   output += `**Model:** ${model}  \n`
   output += `**Tokens:** ${formatTokens(totalTokens)} / ${formatTokens(rawMaxTokens)} (${percentage}%)\n`
-
-  // Context-collapse status. Always show when the runtime gate is on —
-  // the user needs to know which strategy is managing their context
-  // even before anything has fired.
-  if (feature('CONTEXT_COLLAPSE')) {
-    const { getStats, isContextCollapseEnabled } = contextCollapseIndexNs
-    if (isContextCollapseEnabled()) {
-      const s = getStats()
-      const { health: h } = s
-
-      const parts = []
-      if (s.collapsedSpans > 0) {
-        parts.push(
-          `${s.collapsedSpans} ${plural(s.collapsedSpans, 'span')} summarized (${s.collapsedMessages} messages)`,
-        )
-      }
-      if (s.stagedSpans > 0) parts.push(`${s.stagedSpans} staged`)
-      const summary =
-        parts.length > 0
-          ? parts.join(', ')
-          : h.totalSpawns > 0
-            ? `${h.totalSpawns} ${plural(h.totalSpawns, 'spawn')}, nothing staged yet`
-            : 'waiting for first trigger'
-      output += `**Context strategy:** collapse (${summary})\n`
-
-      if (h.totalErrors > 0) {
-        output += `**Collapse errors:** ${h.totalErrors}/${h.totalSpawns} spawns failed`
-        if (h.lastError) {
-          output += ` (last: ${h.lastError.slice(0, 80)})`
-        }
-        output += '\n'
-      } else if (h.emptySpawnWarningEmitted) {
-        output += `**Collapse idle:** ${h.totalEmptySpawns} consecutive empty runs\n`
-      }
-    }
-  }
   output += '\n'
 
   // Main categories table

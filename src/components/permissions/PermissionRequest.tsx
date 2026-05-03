@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { EnterPlanModeTool } from 'src/tools/EnterPlanModeTool/EnterPlanModeTool.js'
 import { ExitPlanModeTool } from 'src/tools/ExitPlanModeTool/ExitPlanModeTool.js'
@@ -29,27 +28,6 @@ import { PowerShellPermissionRequest } from './PowerShellPermissionRequest/Power
 import { SkillPermissionRequest } from './SkillPermissionRequest/SkillPermissionRequest.js'
 import { WebFetchPermissionRequest } from './WebFetchPermissionRequest/WebFetchPermissionRequest.js'
 
-import * as reviewArtifactToolNs from '../../tools/ReviewArtifactTool/ReviewArtifactTool.js'
-import * as reviewArtifactPermNs from './ReviewArtifactPermissionRequest/ReviewArtifactPermissionRequest.js'
-import * as workflowToolNs from '../../tools/WorkflowTool/WorkflowTool.js'
-import * as workflowPermNs from '../../tools/WorkflowTool/WorkflowPermissionRequest.js'
-
-const ReviewArtifactTool = feature('REVIEW_ARTIFACT')
-  ? reviewArtifactToolNs.ReviewArtifactTool
-  : null
-
-const ReviewArtifactPermissionRequest = feature('REVIEW_ARTIFACT')
-  ? reviewArtifactPermNs.ReviewArtifactPermissionRequest
-  : null
-
-const WorkflowTool = feature('WORKFLOW_SCRIPTS')
-  ? workflowToolNs.WorkflowTool
-  : null
-
-const WorkflowPermissionRequest = feature('WORKFLOW_SCRIPTS')
-  ? workflowPermNs.WorkflowPermissionRequest
-  : null
-
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
 import type { z } from 'zod/v4'
 import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js'
@@ -67,8 +45,6 @@ function permissionComponentForTool(
       return BashPermissionRequest
     case PowerShellTool:
       return PowerShellPermissionRequest
-    case ReviewArtifactTool:
-      return ReviewArtifactPermissionRequest ?? FallbackPermissionRequest
     case WebFetchTool:
       return WebFetchPermissionRequest
     case ExitPlanModeTool:
@@ -79,8 +55,6 @@ function permissionComponentForTool(
       return SkillPermissionRequest
     case AskUserQuestionTool:
       return AskUserQuestionPermissionRequest
-    case WorkflowTool:
-      return WorkflowPermissionRequest ?? FallbackPermissionRequest
     case GlobTool:
     case GrepTool:
     case FileReadTool:
@@ -153,13 +127,6 @@ function getNotificationMessage(toolUseConfirm: ToolUseConfirm): string {
 
   if (toolUseConfirm.tool === EnterPlanModeTool) {
     return 'Claude Code wants to enter plan mode'
-  }
-
-  if (
-    feature('REVIEW_ARTIFACT') &&
-    toolUseConfirm.tool === ReviewArtifactTool
-  ) {
-    return 'Claude needs your approval for a review artifact'
   }
 
   if (!toolName || toolName.trim() === '') {

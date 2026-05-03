@@ -326,7 +326,6 @@ import { drainSdkEvents } from '../utils/sdkEventQueue.js'
 import { errorMessage, toError } from '../utils/errors.js'
 import { sleep } from '../utils/sleep.js'
 import { isExtractModeActive } from '../memdir/paths.js'
-import { setOnEnqueue } from '../utils/udsMessaging.js'
 import { setupPluginHookHotReload } from '../utils/plugins/loadPluginHooks.js'
 
 // Dead code elimination: conditional imports
@@ -2094,8 +2093,7 @@ function runHeadlessStreaming(
                 if (
                   getRunningTasks(currentState).some(
                     t =>
-                      (t.type === 'local_agent' ||
-                        t.type === 'local_workflow') &&
+                      t.type === 'local_agent' &&
                       isBackgroundTask(t),
                   )
                 ) {
@@ -2526,16 +2524,6 @@ function runHeadlessStreaming(
         output.done()
       }
     }
-  }
-
-  // Set up UDS inbox callback so the query loop is kicked off
-  // when a message arrives via the UDS socket in headless mode.
-  if (feature('UDS_INBOX')) {
-    setOnEnqueue(() => {
-      if (!inputClosed) {
-        void run()
-      }
-    })
   }
 
   // Cron scheduler: runs scheduled_tasks.json tasks in SDK/-p mode.

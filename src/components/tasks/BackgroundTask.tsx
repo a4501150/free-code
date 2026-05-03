@@ -56,31 +56,6 @@ export function BackgroundTask({
         </Text>
       )
     }
-    case 'local_workflow':
-      return (
-        <Text>
-          {truncate(
-            task.workflowName ?? task.summary ?? task.description,
-            activityLimit,
-            true,
-          )}{' '}
-          <TaskStatusText
-            status={task.status}
-            label={
-              task.status === 'running'
-                ? `${task.agentCount ?? 0} ${plural(task.agentCount ?? 0, 'agent')}`
-                : task.status === 'completed'
-                  ? 'done'
-                  : undefined
-            }
-            suffix={
-              task.status === 'completed' && !task.notified
-                ? ', unread'
-                : undefined
-            }
-          />
-        </Text>
-      )
     case 'monitor_mcp':
       return (
         <Text>

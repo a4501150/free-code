@@ -1,6 +1,5 @@
 import { promises as fsp } from 'fs'
 import { getSdkAgentProgressSummariesEnabled } from '../../bootstrap/state.js'
-import { getSystemPrompt } from '../../constants/prompts.js'
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import type { ToolUseContext } from '../../Tool.js'
@@ -22,14 +21,11 @@ import {
   getAgentTranscript,
   readAgentMetadata,
 } from '../../utils/sessionStorage.js'
-import { buildEffectiveSystemPrompt } from '../../utils/systemPrompt.js'
-import type { SystemPrompt } from '../../utils/systemPromptType.js'
 import { getTaskOutputPath } from '../../utils/task/diskOutput.js'
 import { getParentSessionId } from '../../utils/teammate.js'
 import { reconstructForSubagentResume } from '../../utils/toolResultStorage.js'
 import { runAsyncAgentLifecycle } from './agentToolUtils.js'
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
-import { FORK_AGENT, isForkSubagentEnabled } from './forkSubagent.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 import { isBuiltInAgent } from './loadAgentsDir.js'
 import { runAgent } from './runAgent.js'
@@ -98,11 +94,7 @@ export async function resumeAgentBackground({
 
   // Skip filterDeniedAgents re-gating — original spawn already passed permission checks
   let selectedAgent: AgentDefinition
-  let isResumedFork = false
-  if (meta?.agentType === FORK_AGENT.agentType) {
-    selectedAgent = FORK_AGENT
-    isResumedFork = true
-  } else if (meta?.agentType) {
+  if (meta?.agentType) {
     const found = toolUseContext.options.agentDefinitions.activeAgents.find(
       a => a.agentType === meta.agentType,
     )
@@ -112,40 +104,6 @@ export async function resumeAgentBackground({
   }
 
   const uiDescription = meta?.description ?? '(resumed)'
-
-  let forkParentSystemPrompt: SystemPrompt | undefined
-  if (isResumedFork) {
-    if (toolUseContext.renderedSystemPrompt) {
-      forkParentSystemPrompt = toolUseContext.renderedSystemPrompt
-    } else {
-      const mainThreadAgentDefinition = appState.agent
-        ? appState.agentDefinitions.activeAgents.find(
-            a => a.agentType === appState.agent,
-          )
-        : undefined
-      const additionalWorkingDirectories = Array.from(
-        appState.toolPermissionContext.additionalWorkingDirectories.keys(),
-      )
-      const defaultSystemPrompt = await getSystemPrompt(
-        toolUseContext.options.tools,
-        toolUseContext.options.mainLoopModel,
-        additionalWorkingDirectories,
-        toolUseContext.options.mcpClients,
-      )
-      forkParentSystemPrompt = buildEffectiveSystemPrompt({
-        mainThreadAgentDefinition,
-        toolUseContext,
-        customSystemPrompt: toolUseContext.options.customSystemPrompt,
-        defaultSystemPrompt,
-        appendSystemPrompt: toolUseContext.options.appendSystemPrompt,
-      })
-    }
-    if (!forkParentSystemPrompt) {
-      throw new Error(
-        'Cannot resume fork agent: unable to reconstruct parent system prompt',
-      )
-    }
-  }
 
   // Resolve model for analytics metadata (runAgent resolves its own internally)
   const resolvedAgentModel = getAgentModel(
@@ -159,9 +117,7 @@ export async function resumeAgentBackground({
     ...appState.toolPermissionContext,
     mode: selectedAgent.permissionMode ?? 'acceptEdits',
   }
-  const workerTools = isResumedFork
-    ? toolUseContext.options.tools
-    : assembleToolPool(workerPermissionContext, appState.mcp.tools)
+  const workerTools = assembleToolPool(workerPermissionContext, appState.mcp.tools)
 
   const runAgentParams: Parameters<typeof runAgent>[0] = {
     agentDefinition: selectedAgent,
@@ -177,17 +133,8 @@ export async function resumeAgentBackground({
       isBuiltInAgent(selectedAgent),
     ),
     model: undefined,
-    // Fork resume: pass parent's system prompt (cache-identical prefix).
-    // Non-fork: undefined → runAgent recomputes under wrapWithCwd so
-    // getCwd() sees resumedWorktreePath.
-    override: isResumedFork
-      ? { systemPrompt: forkParentSystemPrompt }
-      : undefined,
+    override: undefined,
     availableTools: workerTools,
-    // Transcript already contains the parent context slice from the
-    // original fork. Re-supplying it would cause duplicate tool_use IDs.
-    forkContextMessages: undefined,
-    ...(isResumedFork && { useExactTools: true }),
     // Re-persist so metadata survives runAgent's writeAgentMetadata overwrite
     worktreePath: resumedWorktreePath,
     description: meta?.description,
@@ -248,9 +195,7 @@ export async function resumeAgentBackground({
         rootSetAppState,
         agentIdForCleanup: agentId,
         enableSummarization:
-          isCoordinatorMode() ||
-          isForkSubagentEnabled() ||
-          getSdkAgentProgressSummariesEnabled(),
+          isCoordinatorMode() || getSdkAgentProgressSummariesEnabled(),
         getWorktreeResult: async () =>
           resumedWorktreePath ? { worktreePath: resumedWorktreePath } : {},
       }),

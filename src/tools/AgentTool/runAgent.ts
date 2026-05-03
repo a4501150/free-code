@@ -260,7 +260,6 @@ export async function* runAgent({
   allowedTools,
   onCacheSafeParams,
   contentReplacementState,
-  useExactTools,
   worktreePath,
   description,
   transcriptSubdir,
@@ -304,12 +303,6 @@ export async function* runAgent({
    * the same tool results are re-replaced (prompt cache stability). When
    * omitted, createSubagentContext clones the parent's state. */
   contentReplacementState?: ContentReplacementState
-  /** When true, use availableTools directly without filtering through
-   * resolveAgentTools(). Also inherits the parent's thinkingConfig and
-   * isNonInteractiveSession instead of overriding them. Used by the fork
-   * subagent path to produce byte-identical API request prefixes for
-   * prompt cache hits. */
-  useExactTools?: boolean
   /** Worktree path if the agent was spawned with isolation: "worktree".
    * Persisted to metadata so resume can restore the correct cwd. */
   worktreePath?: string
@@ -475,9 +468,11 @@ export async function* runAgent({
     }
   }
 
-  const resolvedTools = useExactTools
-    ? availableTools
-    : resolveAgentTools(agentDefinition, availableTools, isAsync).resolvedTools
+  const resolvedTools = resolveAgentTools(
+    agentDefinition,
+    availableTools,
+    isAsync,
+  ).resolvedTools
 
   const additionalWorkingDirectories = Array.from(
     appState.toolPermissionContext.additionalWorkingDirectories.keys(),
@@ -640,33 +635,20 @@ export async function* runAgent({
 
   // Build agent-specific options
   const agentOptions: ToolUseContext['options'] = {
-    isNonInteractiveSession: useExactTools
-      ? toolUseContext.options.isNonInteractiveSession
-      : isAsync
-        ? true
-        : (toolUseContext.options.isNonInteractiveSession ?? false),
+    isNonInteractiveSession: isAsync
+      ? true
+      : (toolUseContext.options.isNonInteractiveSession ?? false),
     appendSystemPrompt: toolUseContext.options.appendSystemPrompt,
     tools: allTools,
     commands: [],
     debug: toolUseContext.options.debug,
     verbose: toolUseContext.options.verbose,
     mainLoopModel: resolvedAgentModel,
-    // For fork children (useExactTools), inherit thinking config to match the
-    // parent's API request prefix for prompt cache hits. For regular
-    // sub-agents, disable thinking to control output token costs.
-    thinkingConfig: useExactTools
-      ? toolUseContext.options.thinkingConfig
-      : { type: 'disabled' as const },
+    // Disable thinking in subagents to control output token costs.
+    thinkingConfig: { type: 'disabled' as const },
     mcpClients: mergedMcpClients,
     mcpResources: toolUseContext.options.mcpResources,
     agentDefinitions: toolUseContext.options.agentDefinitions,
-    // Fork children (useExactTools path) need querySource on context.options
-    // for the recursive-fork guard at AgentTool.tsx call() — it checks
-    // options.querySource === 'agent:builtin:fork'. This survives autocompact
-    // (which rewrites messages, not context.options). Without this, the guard
-    // reads undefined and only the message-scan fallback fires — which
-    // autocompact defeats by replacing the fork-boilerplate message.
-    ...(useExactTools && { querySource }),
   }
 
   // Create subagent context using shared helper
@@ -819,7 +801,6 @@ export async function* runAgent({
     }
     // Release cloned file state cache memory
     agentToolUseContext.readFileState.clear()
-    // Release the cloned fork context messages
     initialMessages.length = 0
     // Release perfetto agent registry entry
     unregisterPerfettoAgent(agentId)
@@ -884,7 +865,6 @@ async function getAgentSystemPrompt(
   additionalWorkingDirectories: string[],
   resolvedTools: readonly Tool[],
 ): Promise<string[]> {
-  const enabledToolNames = new Set(resolvedTools.map(t => t.name))
   try {
     const agentPrompt = agentDefinition.getSystemPrompt({ toolUseContext })
     const prompts = [agentPrompt]
@@ -893,14 +873,12 @@ async function getAgentSystemPrompt(
       prompts,
       resolvedAgentModel,
       additionalWorkingDirectories,
-      enabledToolNames,
     )
   } catch (_error) {
     return enhanceSystemPromptWithEnvDetails(
       [DEFAULT_AGENT_PROMPT],
       resolvedAgentModel,
       additionalWorkingDirectories,
-      enabledToolNames,
     )
   }
 }

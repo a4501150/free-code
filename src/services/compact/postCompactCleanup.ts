@@ -1,5 +1,3 @@
-import { feature } from 'bun:bundle'
-import * as contextCollapseNs from '../contextCollapse/index.js'
 import type { QuerySource } from '../../constants/querySource.js'
 import { clearSystemPromptSections } from '../../constants/systemPromptSections.js'
 import { getUserContext } from '../../context.js'
@@ -40,11 +38,6 @@ export function runPostCompactCleanup(querySource?: QuerySource): void {
     querySource === 'sdk'
 
   resetMicrocompactState()
-  if (feature('CONTEXT_COLLAPSE')) {
-    if (isMainThreadCompact) {
-      contextCollapseNs.resetContextCollapse()
-    }
-  }
   if (isMainThreadCompact) {
     // getUserContext is a memoized outer layer wrapping getClaudeMds() →
     // getMemoryFiles(). If only the inner getMemoryFiles cache is cleared,

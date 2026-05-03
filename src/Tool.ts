@@ -226,8 +226,6 @@ export type ToolUseContext = {
    */
   loadedNestedMemoryPaths?: Set<string>
   dynamicSkillDirTriggers?: Set<string>
-  /** Skill names surfaced via skill_discovery this session. Telemetry only (feeds was_discovered). */
-  discoveredSkillNames?: Set<string>
   userModified?: boolean
   setInProgressToolUseIDs: (f: (prev: Set<string>) => Set<string>) => void
   /** Only wired in interactive (REPL) contexts; SDK/QueryEngine don't set this. */
@@ -296,12 +294,7 @@ export type ToolUseContext = {
    * resumeAgentBackground threads one reconstructed from sidechain records.
    */
   contentReplacementState?: ContentReplacementState
-  /**
-   * Parent's rendered system prompt bytes, frozen at turn start.
-   * Used by fork subagents to share the parent's prompt cache — re-calling
-   * getSystemPrompt() at fork-spawn time can diverge (cold→warm config)
-   * and bust the cache. See forkSubagent.ts.
-   */
+  /** Parent's rendered system prompt bytes, frozen at turn start. */
   renderedSystemPrompt?: SystemPrompt
 }
 

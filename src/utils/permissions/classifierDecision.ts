@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { ASK_USER_QUESTION_TOOL_NAME } from '../../tools/AskUserQuestionTool/prompt.js'
 import { ENTER_PLAN_MODE_TOOL_NAME } from '../../tools/EnterPlanModeTool/constants.js'
 import { EXIT_PLAN_MODE_TOOL_NAME } from '../../tools/ExitPlanModeTool/constants.js'
@@ -20,14 +19,6 @@ import { TEAM_DELETE_TOOL_NAME } from '../../tools/TeamDeleteTool/constants.js'
 import { TOOL_SEARCH_TOOL_NAME } from '../../tools/ToolSearchTool/prompt.js'
 
 const YOLO_CLASSIFIER_TOOL_NAME = 'classify_result'
-
-// Feature-gated tool names: conditional references so Bun can DCE these when disabled.
-// Gates mirror tools.ts. Keeps the tool name strings out of cli.js.
-import * as workflowToolConstantsNs from '../../tools/WorkflowTool/constants.js'
-
-const WORKFLOW_TOOL_NAME = feature('WORKFLOW_SCRIPTS')
-  ? workflowToolConstantsNs.WORKFLOW_TOOL_NAME
-  : null
 
 /**
  * Tools that are safe and don't need any classifier checking.
@@ -62,8 +53,6 @@ const SAFE_YOLO_ALLOWLISTED_TOOLS = new Set([
   // Agent cleanup
   TEAM_DELETE_TOOL_NAME,
   SEND_MESSAGE_TOOL_NAME,
-  // Workflow orchestration — subagents go through canUseTool individually
-  ...(WORKFLOW_TOOL_NAME ? [WORKFLOW_TOOL_NAME] : []),
   // Misc safe
   SLEEP_TOOL_NAME,
   // Internal classifier tool

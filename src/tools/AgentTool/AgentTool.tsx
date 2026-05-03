@@ -11,10 +11,7 @@ import {
   clearInvokedSkillsForAgent,
   getSdkAgentProgressSummariesEnabled,
 } from '../../bootstrap/state.js'
-import {
-  enhanceSystemPromptWithEnvDetails,
-  getSystemPrompt,
-} from '../../constants/prompts.js'
+import { enhanceSystemPromptWithEnvDetails } from '../../constants/prompts.js'
 import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
 import { startAgentSummarization } from '../../services/AgentSummary/agentSummary.js'
 import { clearDumpState } from '../../services/api/dumpPrompts.js'
@@ -39,7 +36,7 @@ import { assembleToolPool } from './assembleToolPool.js'
 import { asAgentId } from '../../types/ids.js'
 import { runWithAgentContext } from '../../utils/agentContext.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
-import { getCwd, runWithCwdOverride } from '../../utils/cwd.js'
+import { runWithCwdOverride } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { AbortError, errorMessage, toError } from '../../utils/errors.js'
@@ -63,7 +60,6 @@ import {
 import { enqueueSdkEvent } from '../../utils/sdkEventQueue.js'
 import { writeAgentMetadata } from '../../utils/sessionStorage.js'
 import { sleep } from '../../utils/sleep.js'
-import { buildEffectiveSystemPrompt } from '../../utils/systemPrompt.js'
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
 import { getTaskOutputPath } from '../../utils/task/diskOutput.js'
 import { getParentSessionId, isTeammate } from '../../utils/teammate.js'
@@ -96,13 +92,6 @@ import {
   LEGACY_AGENT_TOOL_NAME,
   ONE_SHOT_BUILTIN_AGENT_TYPES,
 } from './constants.js'
-import {
-  buildForkedMessages,
-  buildWorktreeNotice,
-  FORK_AGENT,
-  isForkSubagentEnabled,
-  isInForkChild,
-} from './forkSubagent.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 import {
   filterAgentsByMcpRequirements,
@@ -259,14 +248,14 @@ export const inputSchema = lazySchema(() => {
     ? afterKairosGate.omit({ isolation: true })
     : afterKairosGate
 
-  // isAgentSwarmsEnabled() / isBackgroundTasksDisabled / isForkSubagentEnabled
-  // can read from disk and flip mid-session. The optional-only fields stripped
-  // here (name, team_name, run_in_background) are widened back via the explicit
-  // AgentToolInput type so call() destructuring is unaffected by the gate flip.
+  // isAgentSwarmsEnabled() / isBackgroundTasksDisabled can read from disk and
+  // flip mid-session. The optional-only fields stripped here (name, team_name,
+  // run_in_background) are widened back via the explicit AgentToolInput type so
+  // call() destructuring is unaffected by the gate flip.
   const swarmsSchema = isAgentSwarmsEnabled()
     ? afterWorktreeGate
     : afterWorktreeGate.omit({ name: true, team_name: true })
-  return isBackgroundTasksDisabled || isForkSubagentEnabled()
+  return isBackgroundTasksDisabled
     ? swarmsSchema.omit({ run_in_background: true })
     : swarmsSchema
 })
@@ -274,8 +263,7 @@ type InputSchema = ReturnType<typeof inputSchema>
 
 // Explicit type widens the schema inference to always include all optional
 // fields even when .omit() strips them for gating (cwd, run_in_background).
-// subagent_type is optional; call() defaults it to general-purpose when the
-// fork gate is off, or routes to the fork path when the gate is on.
+// subagent_type is optional; call() defaults it to general-purpose.
 type AgentToolInput = z.infer<ReturnType<typeof baseInputSchema>> & {
   name?: string
   team_name?: string
@@ -474,70 +462,43 @@ export const AgentTool = buildTool({
       return { data: spawnResult } as unknown as { data: Output }
     }
 
-    // Fork subagent experiment routing:
-    // - subagent_type set: use it (explicit wins)
-    // - subagent_type omitted, gate on: fork path (undefined)
-    // - subagent_type omitted, gate off: default general-purpose
-    const effectiveType =
-      subagent_type ??
-      (isForkSubagentEnabled() ? undefined : GENERAL_PURPOSE_AGENT.agentType)
-    const isForkPath = effectiveType === undefined
+    const effectiveType = subagent_type ?? GENERAL_PURPOSE_AGENT.agentType
 
-    let selectedAgent: AgentDefinition
-    if (isForkPath) {
-      // Recursive fork guard: fork children keep the Agent tool in their
-      // pool for cache-identical tool defs, so reject fork attempts at call
-      // time. Primary check is querySource (compaction-resistant — set on
-      // context.options at spawn time, survives autocompact's message
-      // rewrite). Message-scan fallback catches any path where querySource
-      // wasn't threaded.
-      if (
-        toolUseContext.options.querySource ===
-          `agent:builtin:${FORK_AGENT.agentType}` ||
-        isInForkChild(toolUseContext.messages)
-      ) {
-        throw new Error(
-          'Fork is not available inside a forked worker. Complete your task directly using your tools.',
-        )
-      }
-      selectedAgent = FORK_AGENT
-    } else {
-      // Filter agents to exclude those denied via Agent(AgentName) syntax
-      const allAgents = toolUseContext.options.agentDefinitions.activeAgents
-      const { allowedAgentTypes } = toolUseContext.options.agentDefinitions
-      const agents = filterDeniedAgents(
-        // When allowedAgentTypes is set (from Agent(x,y) tool spec), restrict to those types
-        allowedAgentTypes
-          ? allAgents.filter(a => allowedAgentTypes.includes(a.agentType))
-          : allAgents,
-        appState.toolPermissionContext,
-        AGENT_TOOL_NAME,
+    // Filter agents to exclude those denied via Agent(AgentName) syntax
+    const allAgents = toolUseContext.options.agentDefinitions.activeAgents
+    const { allowedAgentTypes } = toolUseContext.options.agentDefinitions
+    const agents = filterDeniedAgents(
+      // When allowedAgentTypes is set (from Agent(x,y) tool spec), restrict to those types
+      allowedAgentTypes
+        ? allAgents.filter(a => allowedAgentTypes.includes(a.agentType))
+        : allAgents,
+      appState.toolPermissionContext,
+      AGENT_TOOL_NAME,
+    )
+
+    const found = agents.find(agent => agent.agentType === effectiveType)
+    if (!found) {
+      // Check if the agent exists but is denied by permission rules
+      const agentExistsButDenied = allAgents.find(
+        agent => agent.agentType === effectiveType,
       )
-
-      const found = agents.find(agent => agent.agentType === effectiveType)
-      if (!found) {
-        // Check if the agent exists but is denied by permission rules
-        const agentExistsButDenied = allAgents.find(
-          agent => agent.agentType === effectiveType,
+      if (agentExistsButDenied) {
+        const denyRule = getDenyRuleForAgent(
+          appState.toolPermissionContext,
+          AGENT_TOOL_NAME,
+          effectiveType,
         )
-        if (agentExistsButDenied) {
-          const denyRule = getDenyRuleForAgent(
-            appState.toolPermissionContext,
-            AGENT_TOOL_NAME,
-            effectiveType,
-          )
-          throw new Error(
-            `Agent type '${effectiveType}' has been denied by permission rule '${AGENT_TOOL_NAME}(${effectiveType})' from ${denyRule?.source ?? 'settings'}.`,
-          )
-        }
         throw new Error(
-          `Agent type '${effectiveType}' not found. Available agents: ${agents
-            .map(a => a.agentType)
-            .join(', ')}`,
+          `Agent type '${effectiveType}' has been denied by permission rule '${AGENT_TOOL_NAME}(${effectiveType})' from ${denyRule?.source ?? 'settings'}.`,
         )
       }
-      selectedAgent = found
+      throw new Error(
+        `Agent type '${effectiveType}' not found. Available agents: ${agents
+          .map(a => a.agentType)
+          .join(', ')}`,
+      )
     }
+    const selectedAgent: AgentDefinition = found
 
     // Same lifecycle constraint as the run_in_background guard above, but for
     // agent definitions that force background via `background: true`. Checked
@@ -653,81 +614,38 @@ export const AgentTool = buildTool({
     const resolvedAgentModel = getAgentModel(
       selectedAgent.model,
       toolUseContext.options.mainLoopModel,
-      isForkPath ? undefined : model,
+      model,
       permissionMode,
     )
 
     // Resolve effective isolation mode (explicit param overrides agent def)
     const effectiveIsolation = isolation ?? selectedAgent.isolation
 
-    // System prompt + prompt messages: branch on fork path.
-    //
-    // Fork path: child inherits the PARENT's system prompt (not FORK_AGENT's)
-    // for cache-identical API request prefixes. Prompt messages are built via
-    // buildForkedMessages() which clones the parent's full assistant message
-    // (all tool_use blocks) + placeholder tool_results + per-child directive.
-    //
-    // Normal path: build the selected agent's own system prompt with env
-    // details, and use a simple user message for the prompt.
     let enhancedSystemPrompt: string[] | undefined
-    let forkParentSystemPrompt:
-      | ReturnType<typeof buildEffectiveSystemPrompt>
-      | undefined
     let promptMessages: MessageType[]
 
-    if (isForkPath) {
-      if (toolUseContext.renderedSystemPrompt) {
-        forkParentSystemPrompt = toolUseContext.renderedSystemPrompt
-      } else {
-        // Fallback: recompute. May diverge from parent's cached bytes if
-        // config state changed between parent turn-start and fork spawn.
-        const mainThreadAgentDefinition = appState.agent
-          ? appState.agentDefinitions.activeAgents.find(
-              a => a.agentType === appState.agent,
-            )
-          : undefined
-        const additionalWorkingDirectories = Array.from(
-          appState.toolPermissionContext.additionalWorkingDirectories.keys(),
-        )
-        const defaultSystemPrompt = await getSystemPrompt(
-          toolUseContext.options.tools,
-          toolUseContext.options.mainLoopModel,
-          additionalWorkingDirectories,
-          toolUseContext.options.mcpClients,
-        )
-        forkParentSystemPrompt = buildEffectiveSystemPrompt({
-          mainThreadAgentDefinition,
-          toolUseContext,
-          customSystemPrompt: toolUseContext.options.customSystemPrompt,
-          defaultSystemPrompt,
-          appendSystemPrompt: toolUseContext.options.appendSystemPrompt,
-        })
-      }
-      promptMessages = buildForkedMessages(prompt, assistantMessage)
-    } else {
-      try {
-        const additionalWorkingDirectories = Array.from(
-          appState.toolPermissionContext.additionalWorkingDirectories.keys(),
-        )
+    try {
+      const additionalWorkingDirectories = Array.from(
+        appState.toolPermissionContext.additionalWorkingDirectories.keys(),
+      )
 
-        // All agents have getSystemPrompt - pass toolUseContext to all
-        const agentPrompt = selectedAgent.getSystemPrompt({ toolUseContext })
+      // All agents have getSystemPrompt - pass toolUseContext to all
+      const agentPrompt = selectedAgent.getSystemPrompt({ toolUseContext })
 
-        // Log agent memory loaded event for subagents
+      // Log agent memory loaded event for subagents
 
-        // Apply environment details enhancement
-        enhancedSystemPrompt = await enhanceSystemPromptWithEnvDetails(
-          [agentPrompt],
-          resolvedAgentModel,
-          additionalWorkingDirectories,
-        )
-      } catch (error) {
-        logForDebugging(
-          `Failed to get system prompt for agent ${selectedAgent.agentType}: ${errorMessage(error)}`,
-        )
-      }
-      promptMessages = [createUserMessage({ content: prompt })]
+      // Apply environment details enhancement
+      enhancedSystemPrompt = await enhanceSystemPromptWithEnvDetails(
+        [agentPrompt],
+        resolvedAgentModel,
+        additionalWorkingDirectories,
+      )
+    } catch (error) {
+      logForDebugging(
+        `Failed to get system prompt for agent ${selectedAgent.agentType}: ${errorMessage(error)}`,
+      )
     }
+    promptMessages = [createUserMessage({ content: prompt })]
 
     const metadata = {
       prompt,
@@ -742,17 +660,10 @@ export const AgentTool = buildTool({
 
     const isCoordinator = isCoordinatorMode()
 
-    // Fork subagent experiment: force ALL spawns async for a unified
-    // <task-notification> interaction model (not just fork spawns — all of them).
-    const forceAsync = isForkSubagentEnabled()
-
     // Assistant mode: force all agents async. Synchronous subagents hold the
     // main loop's turn open until they complete — the daemon's inputQueue
     // backs up, and the first overdue cron catch-up on spawn becomes N
-    // serial subagent turns blocking all user input. Same gate as
-    // executeForkedSlashCommand's fire-and-forget path; the
-    // <task-notification> re-entry there is handled by the else branch
-    // below (registerAsyncAgentTask + notifyOnCompletion).
+    // serial subagent turns blocking all user input.
     const assistantForceAsync = feature('KAIROS')
       ? appState.kairosEnabled
       : false
@@ -761,7 +672,6 @@ export const AgentTool = buildTool({
       (run_in_background === true ||
         selectedAgent.background === true ||
         isCoordinator ||
-        forceAsync ||
         assistantForceAsync ||
         (proactiveModule?.isProactiveActive() ?? false)) &&
       !isBackgroundTasksDisabled
@@ -796,17 +706,6 @@ export const AgentTool = buildTool({
       worktreeInfo = await createAgentWorktree(slug)
     }
 
-    // Fork + worktree: inject a notice telling the child to translate paths
-    // and re-read potentially stale files. Appended after the fork directive
-    // so it appears as the most recent guidance the child sees.
-    if (isForkPath && worktreeInfo) {
-      promptMessages.push(
-        createUserMessage({
-          content: buildWorktreeNotice(getCwd(), worktreeInfo.worktreePath),
-        }),
-      )
-    }
-
     const runAgentParams: Parameters<typeof runAgent>[0] = {
       agentDefinition: selectedAgent,
       promptMessages,
@@ -819,28 +718,15 @@ export const AgentTool = buildTool({
           selectedAgent.agentType,
           isBuiltInAgent(selectedAgent),
         ),
-      model: isForkPath ? undefined : model,
-      // Fork path: pass parent's system prompt AND parent's exact tool
-      // array (cache-identical prefix). workerTools is rebuilt under
-      // permissionMode 'bubble' which differs from the parent's mode, so
-      // its tool-def serialization diverges and breaks cache at the first
-      // differing tool. useExactTools also inherits the parent's
-      // thinkingConfig and isNonInteractiveSession (see runAgent.ts).
-      //
-      // Normal path: when a cwd override is in effect (worktree isolation
-      // or explicit cwd), skip the pre-built system prompt so runAgent's
-      // buildAgentSystemPrompt() runs inside wrapWithCwd where getCwd()
-      // returns the override path.
-      override: isForkPath
-        ? { systemPrompt: forkParentSystemPrompt }
-        : enhancedSystemPrompt && !worktreeInfo && !cwd
+      model,
+      // When a cwd override is in effect (worktree isolation or explicit cwd),
+      // skip the pre-built system prompt so runAgent's buildAgentSystemPrompt()
+      // runs inside wrapWithCwd where getCwd() returns the override path.
+      override:
+        enhancedSystemPrompt && !worktreeInfo && !cwd
           ? { systemPrompt: asSystemPrompt(enhancedSystemPrompt) }
           : undefined,
-      availableTools: isForkPath ? toolUseContext.options.tools : workerTools,
-      // Pass parent conversation when the fork-subagent path needs full
-      // context. useExactTools inherits thinkingConfig (runAgent.ts:624).
-      forkContextMessages: isForkPath ? toolUseContext.messages : undefined,
-      ...(isForkPath && { useExactTools: true }),
+      availableTools: workerTools,
       worktreePath: worktreeInfo?.worktreePath,
       description,
     }
@@ -952,9 +838,7 @@ export const AgentTool = buildTool({
             rootSetAppState,
             agentIdForCleanup: asyncAgentId,
             enableSummarization:
-              isCoordinator ||
-              isForkSubagentEnabled() ||
-              getSdkAgentProgressSummariesEnabled(),
+              isCoordinator || getSdkAgentProgressSummariesEnabled(),
             getWorktreeResult: cleanupWorktreeIfNeeded,
           }),
         ),

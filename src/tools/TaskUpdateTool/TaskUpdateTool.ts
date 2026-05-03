@@ -333,7 +333,7 @@ export const TaskUpdateTool = buildTool({
     // public SDK surface.
     let verificationNudgeNeeded = false
     if (
-      feature('VERIFICATION_AGENT') &&
+      feature('VERIFY_PLAN') &&
       (getInitialSettings()?.verificationNudge ?? true) &&
       !context.agentId &&
       updates.status === 'completed'

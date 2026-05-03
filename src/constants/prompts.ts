@@ -42,11 +42,9 @@ import { isEnvTruthy } from '../utils/envUtils.js'
 import { isReplModeEnabled } from '../tools/REPLTool/constants.js'
 import { feature } from 'bun:bundle'
 import { shouldUseGlobalCacheScope } from '../utils/betas.js'
-import { isForkSubagentEnabled } from '../tools/AgentTool/forkSubagent.js'
 import * as cachedMCConfigNs from '../services/compact/cachedMCConfig.js'
 import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
 import * as briefToolModuleNs from '../tools/BriefTool/BriefTool.js'
-import * as discoverSkillsPromptNs from '../tools/DiscoverSkillsTool/prompt.js'
 import {
   systemPromptSection,
   DANGEROUS_uncachedSystemPromptSection,
@@ -74,18 +72,6 @@ const BRIEF_PROACTIVE_SECTION: string | null =
     : null
 const briefToolModule =
   feature('KAIROS') || feature('KAIROS_BRIEF') ? briefToolModuleNs : null
-const DISCOVER_SKILLS_TOOL_NAME: string | null = feature(
-  'EXPERIMENTAL_SKILL_SEARCH',
-)
-  ? discoverSkillsPromptNs.DISCOVER_SKILLS_TOOL_NAME
-  : null
-// Capture the module (not .isSkillSearchEnabled directly) so spyOn() in tests
-// patches what we actually call — a captured function ref would point past the spy.
-/* eslint-disable @typescript-eslint/no-require-imports */
-const skillSearchFeatureCheck = feature('EXPERIMENTAL_SKILL_SEARCH')
-  ? (require('../services/skillSearch/featureCheck.js') as typeof import('../services/skillSearch/featureCheck.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 import { CYBER_RISK_INSTRUCTION } from './cyberRiskInstruction.js'
 
 export const CLAUDE_CODE_DOCS_MAP_URL =
@@ -255,30 +241,7 @@ function getUsingYourToolsSection(enabledTools: Set<string>): string {
 }
 
 function getAgentToolSection(): string {
-  return isForkSubagentEnabled()
-    ? `Calling ${AGENT_TOOL_NAME} without a subagent_type creates a fork, which runs in the background and keeps its tool output out of your context \u2014 so you can keep chatting with the user while it works. Reach for it when research or multi-step implementation work would otherwise fill your context with raw output you won't need again. **If you ARE the fork** \u2014 execute directly; do not re-delegate.`
-    : `Use the ${AGENT_TOOL_NAME} tool with specialized agents when the task at hand matches the agent's description. Subagents are valuable for parallelizing independent queries or for protecting the main context window from excessive results, but they should not be used excessively when not needed. Importantly, avoid duplicating work that subagents are already doing - if you delegate research to a subagent, do not also perform the same searches yourself.`
-}
-
-/**
- * Guidance for the skill_discovery attachment ("Skills relevant to your
- * task:") and the DiscoverSkills tool. Shared between the main-session
- * getUsingYourToolsSection bullet and the subagent path in
- * enhanceSystemPromptWithEnvDetails — subagents receive skill_discovery
- * attachments (post #22830) but don't go through getSystemPrompt, so
- * without this they'd see the reminders with no framing.
- *
- * feature() guard is internal — external builds DCE the string literal
- * along with the DISCOVER_SKILLS_TOOL_NAME interpolation.
- */
-function getDiscoverSkillsGuidance(): string | null {
-  if (
-    feature('EXPERIMENTAL_SKILL_SEARCH') &&
-    DISCOVER_SKILLS_TOOL_NAME !== null
-  ) {
-    return `Relevant skills are automatically surfaced each turn as "Skills relevant to your task:" reminders. If you're about to do something those don't cover — a mid-task pivot, an unusual workflow, a multi-step plan — call ${DISCOVER_SKILLS_TOOL_NAME} with a specific description of what you're doing. Skills already visible or loaded are filtered automatically. Skip this if the surfaced skills already cover your next action.`
-  }
-  return null
+  return `Use the ${AGENT_TOOL_NAME} tool with specialized agents when the task at hand matches the agent's description. Subagents are valuable for parallelizing independent queries or for protecting the main context window from excessive results, but they should not be used excessively when not needed. Importantly, avoid duplicating work that subagents are already doing - if you delegate research to a subagent, do not also perform the same searches yourself.`
 }
 
 /**
@@ -306,12 +269,8 @@ function getSessionSpecificGuidanceSection(
     getIsNonInteractiveSession()
       ? null
       : `If you need the user to run a shell command themselves (e.g., an interactive login like \`gcloud auth login\`), suggest they type \`! <command>\` in the prompt — the \`!\` prefix runs the command in this session so its output lands directly in the conversation.`,
-    // isForkSubagentEnabled() reads getIsNonInteractiveSession() — must be
-    // post-boundary or it fragments the static prefix on session type.
     hasAgentTool ? getAgentToolSection() : null,
-    ...(hasAgentTool &&
-    areExplorePlanAgentsEnabled() &&
-    !isForkSubagentEnabled()
+    ...(hasAgentTool && areExplorePlanAgentsEnabled()
       ? [
           `For simple, directed codebase searches (e.g. for a specific file/class/function) use ${searchTools} directly.`,
           `For broader codebase exploration and deep research, use the ${AGENT_TOOL_NAME} tool with subagent_type=${EXPLORE_AGENT.agentType}. This is slower than using ${searchTools} directly, so use this only when a simple, directed search proves to be insufficient or when your task will clearly require more than ${EXPLORE_AGENT_MIN_QUERIES} queries.`,
@@ -320,15 +279,10 @@ function getSessionSpecificGuidanceSection(
     hasSkills
       ? `/<skill-name> is shorthand for users to invoke a user-invocable skill. When executed, the skill gets expanded to a full prompt. Use the ${SKILL_TOOL_NAME} tool to execute it only when the name appears in the available skills listing. IMPORTANT: Only use ${SKILL_TOOL_NAME} for listed skills - do not infer skills from examples, common workflows, or built-in CLI commands.`
       : null,
-    DISCOVER_SKILLS_TOOL_NAME !== null &&
-    hasSkills &&
-    enabledTools.has(DISCOVER_SKILLS_TOOL_NAME)
-      ? getDiscoverSkillsGuidance()
-      : null,
     hasAgentTool &&
-    feature('VERIFICATION_AGENT') &&
+    feature('VERIFY_PLAN') &&
     (getInitialSettings()?.verificationNudge ?? true)
-      ? `The contract: when non-trivial implementation happens on your turn, independent adversarial verification must happen before you report completion \u2014 regardless of who did the implementing (you directly, a fork you spawned, or a subagent). You are the one reporting to the user; you own the gate. Non-trivial means: 3+ file edits, backend/API changes, or infrastructure changes. Spawn the ${AGENT_TOOL_NAME} tool with subagent_type="${VERIFICATION_AGENT_TYPE}". Your own checks, caveats, and a fork's self-checks do NOT substitute \u2014 only the verifier assigns a verdict; you cannot self-assign PARTIAL. Pass the original user request, all files changed (by anyone), the approach, and the plan file path if applicable. Flag concerns if you have them but do NOT share test results or claim things work. On FAIL: fix, resume the verifier with its findings plus your fix, repeat until PASS. On PASS: spot-check it \u2014 re-run 2-3 commands from its report, confirm every PASS has a Command run block with output that matches your re-run. If any PASS lacks a command block or diverges, resume the verifier with the specifics. On PARTIAL (from the verifier): report what passed and what could not be verified.`
+      ? `The contract: when non-trivial implementation happens on your turn, independent adversarial verification must happen before you report completion \u2014 regardless of who did the implementing (you directly or a subagent). You are the one reporting to the user; you own the gate. Non-trivial means: 3+ file edits, backend/API changes, or infrastructure changes. Spawn the ${AGENT_TOOL_NAME} tool with subagent_type="${VERIFICATION_AGENT_TYPE}". Your own checks and caveats do NOT substitute \u2014 only the verifier assigns a verdict; you cannot self-assign PARTIAL. Pass the original user request, all files changed (by anyone), the approach, and the plan file path if applicable. Flag concerns if you have them but do NOT share test results or claim things work. On FAIL: fix, resume the verifier with its findings plus your fix, repeat until PASS. On PASS: spot-check it \u2014 re-run 2-3 commands from its report, confirm every PASS has a Command run block with output that matches your re-run. If any PASS lacks a command block or diverges, resume the verifier with the specifics. On PARTIAL (from the verifier): report what passed and what could not be verified.`
       : null,
   ].filter(item => item !== null)
 
@@ -641,33 +595,14 @@ export async function enhanceSystemPromptWithEnvDetails(
   existingSystemPrompt: string[],
   model: string,
   additionalWorkingDirectories?: string[],
-  enabledToolNames?: ReadonlySet<string>,
 ): Promise<string[]> {
   const notes = `Notes:
 - Agent threads always have their cwd reset between bash calls, as a result please only use absolute file paths.
 - In your final response, share file paths (always absolute, never relative) that are relevant to the task. Include code snippets only when the exact text is load-bearing (e.g., a bug you found, a function signature the caller asked for) — do not recap code you merely read.
 - For clear communication with the user the assistant MUST avoid using emojis.
 - Do not use a colon before tool calls. Text like "Let me read the file:" followed by a read tool call should just be "Let me read the file." with a period.`
-  // Subagents get skill_discovery attachments (prefetch.ts runs in query(),
-  // no agentId guard since #22830) but don't go through getSystemPrompt —
-  // surface the same DiscoverSkills framing the main session gets. Gated on
-  // enabledToolNames when the caller provides it (runAgent.ts does).
-  // AgentTool.tsx:768 builds the prompt before assembleToolPool:830 so it
-  // omits this param — `?? true` preserves guidance there.
-  const discoverSkillsGuidance =
-    feature('EXPERIMENTAL_SKILL_SEARCH') &&
-    skillSearchFeatureCheck?.isSkillSearchEnabled() &&
-    DISCOVER_SKILLS_TOOL_NAME !== null &&
-    (enabledToolNames?.has(DISCOVER_SKILLS_TOOL_NAME) ?? true)
-      ? getDiscoverSkillsGuidance()
-      : null
   const envInfo = await computeEnvInfo(model, additionalWorkingDirectories)
-  return [
-    ...existingSystemPrompt,
-    notes,
-    ...(discoverSkillsGuidance !== null ? [discoverSkillsGuidance] : []),
-    envInfo,
-  ]
+  return [...existingSystemPrompt, notes, envInfo]
 }
 
 /**

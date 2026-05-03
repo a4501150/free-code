@@ -69,23 +69,15 @@ function getVersionChangelog(): string {
 
 const defaultFeatures = [
   // Tier 1: CLI flag / subcommand gated
-  'BG_SESSIONS',
   'DAEMON',
-  'DIRECT_CONNECT',
   'DUMP_SYSTEM_PROMPT',
   'HARD_FAIL',
-  'SELF_HOSTED_RUNNER',
-  'SSH_REMOTE',
   'STREAMLINED_OUTPUT',
-  'TEMPLATES',
   'UNATTENDED_RETRY',
   // Tier 2: Slash command / skill gated
   'BUDDY',
   'HISTORY_SNIP',
   'KAIROS_DREAM',
-  'REVIEW_ARTIFACT',
-  'RUN_SKILL_GENERATOR',
-  'WORKFLOW_SCRIPTS',
   // Tier 3: Settings / env var / file gated
   'CACHED_MICROCOMPACT',
   'COORDINATOR_MODE',

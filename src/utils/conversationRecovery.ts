@@ -6,8 +6,6 @@ import { addInvokedSkill } from '../bootstrap/state.js'
 import { asSessionId } from '../types/ids.js'
 import type {
   AttributionSnapshotMessage,
-  ContextCollapseCommitEntry,
-  ContextCollapseSnapshotEntry,
   LogOption,
   PersistedWorktreeSession,
   SerializedMessage,
@@ -19,7 +17,6 @@ import type {
 } from '../types/message.js'
 import { PERMISSION_MODES } from '../types/permissions.js'
 import { suppressNextSkillListing } from './attachments.js'
-import * as udsClientMod from './udsClient.js'
 import {
   copyFileHistoryForResume,
   type FileHistorySnapshot,
@@ -453,8 +450,6 @@ export async function loadConversationForResume(
   fileHistorySnapshots?: FileHistorySnapshot[]
   attributionSnapshots?: AttributionSnapshotMessage[]
   contentReplacements?: ContentReplacementRecord[]
-  contextCollapseCommits?: ContextCollapseCommitEntry[]
-  contextCollapseSnapshot?: ContextCollapseSnapshotEntry
   sessionId: UUID | undefined
   // Session metadata for restoring agent context
   agentName?: string
@@ -476,37 +471,9 @@ export async function loadConversationForResume(
     let sessionId: UUID | undefined
 
     if (source === undefined) {
-      // --continue: most recent session, skipping live --bg/daemon sessions
-      // that are actively writing their own transcript.
-      const logsPromise = loadMessageLogs()
-      let skip = new Set<string>()
-      if (feature('BG_SESSIONS')) {
-        try {
-          const udsRecord = udsClientMod as unknown as Record<
-            string,
-            | (() => Promise<Array<{ kind?: string; sessionId?: string }>>)
-            | undefined
-          >
-          const listAllLiveSessionsKey = 'listAllLiveSessions'
-          const listAllLiveSessions = udsRecord[listAllLiveSessionsKey]
-          const live = (await listAllLiveSessions?.()) ?? []
-          skip = new Set(
-            live.flatMap((s: { kind?: string; sessionId?: string }) =>
-              s.kind && s.kind !== 'interactive' && s.sessionId
-                ? [s.sessionId]
-                : [],
-            ),
-          )
-        } catch {
-          // UDS unavailable — treat all sessions as continuable
-        }
-      }
-      const logs = await logsPromise
-      log =
-        logs.find(l => {
-          const id = getSessionIdFromLog(l)
-          return !id || !skip.has(id)
-        }) ?? null
+      // --continue: most recent session.
+      const logs = await loadMessageLogs()
+      log = logs[0] ?? null
     } else if (sourceJsonlFile) {
       // --resume with a .jsonl path (cli/print.ts routes on suffix).
       // Same chain walk as the sid branch below — only the starting
@@ -570,8 +537,6 @@ export async function loadConversationForResume(
       fileHistorySnapshots: log?.fileHistorySnapshots,
       attributionSnapshots: log?.attributionSnapshots,
       contentReplacements: log?.contentReplacements,
-      contextCollapseCommits: log?.contextCollapseCommits,
-      contextCollapseSnapshot: log?.contextCollapseSnapshot,
       sessionId,
       // Include session metadata for restoring agent context on resume
       agentName: log?.agentName,

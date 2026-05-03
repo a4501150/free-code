@@ -28,8 +28,6 @@ import { UserPlanMessage } from './UserPlanMessage.js'
 import { UserPromptMessage } from './UserPromptMessage.js'
 import { UserResourceUpdateMessage } from './UserResourceUpdateMessage.js'
 import { UserTeammateMessage } from './UserTeammateMessage.js'
-import * as userForkBoilerplateNs from './UserForkBoilerplateMessage.js'
-import * as userCrossSessionNs from './UserCrossSessionMessage.js'
 import * as userChannelNs from './UserChannelMessage.js'
 
 type Props = {
@@ -98,7 +96,7 @@ export function UserTextMessage({
   // Bash inputs!
   // startsWith (not includes): synthetic messages always begin with the tag —
   // see processBashCommand.tsx, processSlashCommand.tsx, swarm/inProcessRunner.ts,
-  // tasks/*/notifications, forkSubagent.ts, services/mcp/channelNotification.ts.
+  // tasks/*/notifications, services/mcp/channelNotification.ts.
   // Using `.includes()` here would route any user-pasted prompt that mentions
   // these tag names into a synthetic-message renderer, which then returns null
   // (e.g. UserAgentNotificationMessage with no <summary>) and the user's prompt
@@ -154,26 +152,6 @@ export function UserTextMessage({
     param.text.includes('<mcp-polling-update')
   ) {
     return <UserResourceUpdateMessage addMargin={addMargin} param={param} />
-  }
-
-  // Fork child's first message: collapse the rules/format boilerplate, show
-  // only the directive. FORK_BOILERPLATE_TAG is inlined so the import doesn't
-  // ship in external builds where feature('FORK_SUBAGENT') is false.
-  if (feature('FORK_SUBAGENT')) {
-    if (param.text.startsWith('<fork-boilerplate>')) {
-      const { UserForkBoilerplateMessage } = userForkBoilerplateNs
-      return <UserForkBoilerplateMessage addMargin={addMargin} param={param} />
-    }
-  }
-
-  // Cross-session UDS message (from another Claude session's SendMessage).
-  // CROSS_SESSION_MESSAGE_TAG is inlined so the import doesn't ship in
-  // external builds where feature('UDS_INBOX') is false.
-  if (feature('UDS_INBOX')) {
-    if (param.text.startsWith('<cross-session-message')) {
-      const { UserCrossSessionMessage } = userCrossSessionNs
-      return <UserCrossSessionMessage addMargin={addMargin} param={param} />
-    }
   }
 
   // Inbound channel message (MCP server push).

@@ -49,7 +49,7 @@ export function getBuiltInAgents(): AgentDefinition[] {
     agents.push(CLAUDE_CODE_GUIDE_AGENT)
   }
 
-  if (feature('VERIFICATION_AGENT')) {
+  if (feature('VERIFY_PLAN')) {
     agents.push(VERIFICATION_AGENT)
   }
 

@@ -11,7 +11,6 @@ import type { CacheSafeParams } from '../../utils/forkedAgent.js'
 import { logError } from '../../utils/log.js'
 import { tokenCountWithEstimation } from '../../utils/tokens.js'
 import { notifyCompaction } from '../api/promptCacheBreakDetection.js'
-import { isContextCollapseEnabled } from '../contextCollapse/index.js'
 import { setLastSummarizedMessageId } from '../SessionMemory/sessionMemoryUtils.js'
 import {
   type CompactionResult,
@@ -148,37 +147,8 @@ export async function shouldAutoCompact(
   if (querySource === 'session_memory' || querySource === 'compact') {
     return false
   }
-  // marble_origami is the ctx-agent — if ITS context blows up and
-  // autocompact fires, runPostCompactCleanup calls resetContextCollapse()
-  // which destroys the MAIN thread's committed log (module-level state
-  // shared across forks). Inside feature() so the string DCEs from
-  // external builds (it's in excluded-strings.txt).
-  if (feature('CONTEXT_COLLAPSE')) {
-    if (querySource === 'marble_origami') {
-      return false
-    }
-  }
-
   if (!isAutoCompactEnabled()) {
     return false
-  }
-
-  // Context-collapse mode: same suppression. Collapse IS the context
-  // management system when it's on — the 90% commit / 95% blocking-spawn
-  // flow owns the headroom problem. Autocompact firing at effective-13k
-  // (~93% of effective) sits right between collapse's commit-start (90%)
-  // and blocking (95%), so it would race collapse and usually win, nuking
-  // granular context that collapse was about to save while leaving
-  // sessionMemory + manual /compact working.
-  //
-  // Consult isContextCollapseEnabled (not the raw gate) so the
-  // CLAUDE_CONTEXT_COLLAPSE env override is honored here too. The leaf module
-  // contextWindowSize.ts breaks the former init-time cycle — autoCompact is
-  // now the consumer side of the former loop.
-  if (feature('CONTEXT_COLLAPSE')) {
-    if (isContextCollapseEnabled()) {
-      return false
-    }
   }
 
   const tokenCount = tokenCountWithEstimation(messages) - snipTokensFreed

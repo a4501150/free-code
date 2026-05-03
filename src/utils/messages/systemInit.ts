@@ -1,6 +1,4 @@
-import { feature } from 'bun:bundle'
 import { randomUUID } from 'crypto'
-import * as udsMessagingNs from '../udsMessaging.js'
 import { getSdkBetas, getSessionId } from 'src/bootstrap/state.js'
 import type {
   PermissionMode,
@@ -76,11 +74,6 @@ export function buildSystemInitMessage(inputs: SystemInitInputs): SDKMessage {
       source: plugin.source,
     })),
     uuid: randomUUID(),
-  }
-  // Hidden from public SDK types — ant-only UDS messaging socket path
-  if (feature('UDS_INBOX')) {
-    ;(initMessage as Record<string, unknown>).messaging_socket_path =
-      udsMessagingNs.getUdsMessagingSocketPath()
   }
   ;(initMessage as Record<string, unknown>).fast_mode_state = getFastModeState(
     inputs.model,

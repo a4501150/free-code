@@ -2,10 +2,7 @@
  * Effective context window size — leaf module.
  *
  * Returns the usable context window for a model (context window minus the
- * tokens reserved for compact-summary output). Extracted from autoCompact.ts
- * so contextCollapse/index.ts can depend on it without closing the
- * autoCompact → contextCollapse cycle (the feature-full contextCollapse
- * build imports this helper).
+ * tokens reserved for compact-summary output).
  */
 
 import { getSdkBetas } from '../../bootstrap/state.js'

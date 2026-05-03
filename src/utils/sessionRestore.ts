@@ -21,8 +21,6 @@ import {
 import { asSessionId } from '../types/ids.js'
 import type {
   AttributionSnapshotMessage,
-  ContextCollapseCommitEntry,
-  ContextCollapseSnapshotEntry,
   PersistedWorktreeSession,
 } from '../types/logs.js'
 import type { Message } from '../types/message.js'
@@ -55,14 +53,11 @@ import {
   getCurrentWorktreeSession,
   restoreWorktreeSession,
 } from './worktree.js'
-import * as contextCollapsePersistNs from '../services/contextCollapse/persist.js'
 
 type ResumeResult = {
   messages?: Message[]
   fileHistorySnapshots?: FileHistorySnapshot[]
   attributionSnapshots?: AttributionSnapshotMessage[]
-  contextCollapseCommits?: ContextCollapseCommitEntry[]
-  contextCollapseSnapshot?: ContextCollapseSnapshotEntry
 }
 
 /**
@@ -80,18 +75,6 @@ export function restoreSessionStateFromLog(
     })
   }
 
-  // Restore context-collapse commit log + staged snapshot. Must run before
-  // the first query() so projectView() can rebuild the collapsed view from
-  // the resumed Message[]. Called unconditionally (even with
-  // undefined/empty entries) because restoreFromEntries resets the store
-  // first — without that, an in-session /resume into a session with no
-  // commits would leave the prior session's stale commit log intact.
-  if (feature('CONTEXT_COLLAPSE')) {
-    contextCollapsePersistNs.restoreFromEntries(
-      result.contextCollapseCommits ?? [],
-      result.contextCollapseSnapshot,
-    )
-  }
 }
 
 /**
@@ -237,8 +220,6 @@ type ResumeLoadResult = {
   fileHistorySnapshots?: FileHistorySnapshot[]
   attributionSnapshots?: AttributionSnapshotMessage[]
   contentReplacements?: ContentReplacementRecord[]
-  contextCollapseCommits?: ContextCollapseCommitEntry[]
-  contextCollapseSnapshot?: ContextCollapseSnapshotEntry
   sessionId: UUID | undefined
   agentName?: string
   agentColor?: string
@@ -425,16 +406,6 @@ export async function processResumedConversation(
     adoptResumedSessionFile()
   }
 
-  // Restore context-collapse commit log + staged snapshot. The interactive
-  // /resume path goes through restoreSessionStateFromLog (REPL.tsx); CLI
-  // --continue/--resume goes through here instead. Called unconditionally
-  // — see the restoreSessionStateFromLog callsite above for why.
-  if (feature('CONTEXT_COLLAPSE')) {
-    contextCollapsePersistNs.restoreFromEntries(
-      result.contextCollapseCommits ?? [],
-      result.contextCollapseSnapshot,
-    )
-  }
 
   // Restore agent setting from resumed session
   const { agentDefinition: restoredAgent, agentType: resumedAgentType } =

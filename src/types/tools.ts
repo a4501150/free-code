@@ -95,23 +95,6 @@ export type TaskOutputProgress = {
   taskType?: string
 }
 
-/**
- * SDK-side progress record produced for workflow tasks by
- * emitTaskProgress. Mirrors the fields `LocalWorkflowTaskState` tracks per
- * sub-agent.
- */
-export type SdkWorkflowProgress = {
-  type: 'sdk_workflow_progress'
-  agentId: string
-  agentType?: string
-  description?: string
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'killed' | 'skipped'
-  totalTokens?: number
-  toolUses?: number
-  durationMs?: number
-  summary?: string
-}
-
 /** Progress emitted by the REPL pseudo-tool — JSX injected directly. */
 export type REPLToolProgress = {
   type: 'repl_progress'
@@ -131,5 +114,4 @@ export type ToolProgressData =
   | AgentToolProgress
   | MCPProgress
   | TaskOutputProgress
-  | SdkWorkflowProgress
   | REPLToolProgress

@@ -4,9 +4,6 @@ import { feature } from 'bun:bundle'
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
 process.env.COREPACK_ENABLE_AUTO_PIN = '0'
 
-import * as bg from '../cli/bg.js'
-import { selfHostedRunnerMain } from '../self-hosted-runner/main.js'
-import { templatesMain } from '../cli/handlers/templateJobs.js'
 import { daemonMain } from '../daemon/main.js'
 import { runDaemonWorker } from '../daemon/workerRegistry.js'
 import { main as cliMain } from '../main.js'
@@ -75,59 +72,6 @@ async function main(): Promise<void> {
     return
   }
 
-  // Fast-path for `claude ps|logs|attach|kill` and `--bg`/`--background`.
-  // Session management against the ~/.claude/sessions/ registry.
-  if (
-    feature('BG_SESSIONS') &&
-    (args[0] === 'ps' ||
-      args[0] === 'logs' ||
-      args[0] === 'attach' ||
-      args[0] === 'kill' ||
-      args.includes('--bg') ||
-      args.includes('--background'))
-  ) {
-    profileCheckpoint('cli_bg_path')
-    enableConfigs()
-    switch (args[0]) {
-      case 'ps':
-        await bg.psHandler(args.slice(1))
-        break
-      case 'logs':
-        await bg.logsHandler(args[1])
-        break
-      case 'attach':
-        await bg.attachHandler(args[1])
-        break
-      case 'kill':
-        await bg.killHandler(args[1])
-        break
-      default:
-        await bg.handleBgFlag(args)
-    }
-    return
-  }
-
-  // Fast-path for template job commands.
-  if (
-    feature('TEMPLATES') &&
-    (args[0] === 'new' || args[0] === 'list' || args[0] === 'reply')
-  ) {
-    profileCheckpoint('cli_templates_path')
-    await templatesMain(args)
-    // process.exit (not return) — mountFleetView's Ink TUI can leave event
-    // loop handles that prevent natural exit.
-    // eslint-disable-next-line custom-rules/no-process-exit
-    process.exit(0)
-  }
-
-  // Fast-path for `claude self-hosted-runner`: headless self-hosted-runner
-  // targeting the SelfHostedRunnerWorkerService API (register + poll; poll IS
-  // heartbeat). feature() must stay inline for build-time dead code elimination.
-  if (feature('SELF_HOSTED_RUNNER') && args[0] === 'self-hosted-runner') {
-    profileCheckpoint('cli_self_hosted_runner_path')
-    await selfHostedRunnerMain(args.slice(1))
-    return
-  }
 
   // Fast-path for --worktree --tmux: exec into tmux before loading full CLI
   const hasTmuxFlag = args.includes('--tmux') || args.includes('--tmux=classic')

@@ -8,9 +8,7 @@ import { registerSimplifySkill } from './simplify.js'
 import { registerSkillifySkill } from './skillify.js'
 import * as verifyNs from './verify.js'
 import * as dreamNs from './dream.js'
-import * as hunterNs from './hunter.js'
 import * as loopNs from './loop.js'
-import * as runSkillGeneratorNs from './runSkillGenerator.js'
 
 /**
  * Initialize all bundled skills.
@@ -37,16 +35,10 @@ export function initBundledSkills(): void {
   if (feature('KAIROS') || feature('KAIROS_DREAM')) {
     dreamNs.registerDreamSkill()
   }
-  if (feature('REVIEW_ARTIFACT')) {
-    hunterNs.registerHunterSkill()
-  }
   if (feature('AGENT_TRIGGERS')) {
     // /loop's isEnabled delegates to isKairosCronEnabled() — same lazy
     // per-invocation pattern as the cron tools. Registered unconditionally;
     // the skill's own isEnabled callback decides visibility.
     loopNs.registerLoopSkill()
-  }
-  if (feature('RUN_SKILL_GENERATOR')) {
-    runSkillGeneratorNs.registerRunSkillGeneratorSkill()
   }
 }

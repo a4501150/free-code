@@ -307,7 +307,6 @@ import {
   setAllowedSettingSources,
   setClientType,
   setCwdState,
-  setDirectConnectServerUrl,
   setFlagSettingsPath,
   setInitialMainLoopModel,
   setInlinePlugins,
@@ -332,10 +331,6 @@ import { migrateBypassPermissionsAcceptedToSettings } from './migrations/migrate
 import { migrateEnableAllProjectMcpServersToSettings } from './migrations/migrateEnableAllProjectMcpServersToSettings.js'
 import { resetAutoModeOptInForDefaultOffer } from './migrations/resetAutoModeOptInForDefaultOffer.js'
 /* eslint-enable @typescript-eslint/no-require-imports */
-import {
-  createDirectConnectSession,
-  DirectConnectError,
-} from './server/createDirectConnectSession.js'
 import { initializeLspServerManager } from './services/lsp/manager.js'
 import { shouldEnablePromptSuggestion } from './services/PromptSuggestion/promptSuggestion.js'
 import {
@@ -366,17 +361,11 @@ import {
 } from './utils/worktree.js'
 import { initSinks } from './utils/sinks.js'
 import { handleDeepLinkUri } from './utils/deepLink/protocolHandler.js'
-import { parseConnectUrl } from './server/parseConnectUrl.js'
 import { applyCoordinatorToolFilter } from './utils/toolPool.js'
 import { setup } from './setup.js'
 import { buildMergePrompt } from './components/agents/SnapshotUpdateDialog.js'
 import { runHeadless } from 'src/cli/print.js'
 import { clearSessionCaches } from './commands/clear/caches.js'
-import {
-  createSSHSession,
-  createLocalSSHSession,
-  SSHSessionError,
-} from './ssh/createSSHSession.js'
 import {
   mcpServeHandler,
   mcpRemoveHandler,
@@ -386,18 +375,6 @@ import {
   mcpAddFromDesktopHandler,
   mcpResetChoicesHandler,
 } from './cli/handlers/mcp.js'
-import { randomBytes } from 'crypto'
-import { startServer } from './server/server.js'
-import { SessionManager } from './server/sessionManager.js'
-import { DangerousBackend } from './server/backends/dangerousBackend.js'
-import { printBanner } from './server/serverBanner.js'
-import { createServerLogger } from './server/serverLog.js'
-import {
-  writeServerLock,
-  removeServerLock,
-  probeRunningServer,
-} from './server/lockfile.js'
-import { runConnectHeadless } from './server/connectHeadless.js'
 import { authLogin, authStatus, authLogout } from './cli/handlers/auth.js'
 import {
   pluginValidateHandler,
@@ -761,39 +738,6 @@ function initializeEntrypoint(isNonInteractive: boolean): void {
   process.env.CLAUDE_CODE_ENTRYPOINT = isNonInteractive ? 'sdk-cli' : 'cli'
 }
 
-// Set by early argv processing when `claude open <url>` is detected (interactive mode only)
-type PendingConnect = {
-  url: string | undefined
-  authToken: string | undefined
-  dangerouslySkipPermissions: boolean
-}
-const _pendingConnect: PendingConnect | undefined = feature('DIRECT_CONNECT')
-  ? { url: undefined, authToken: undefined, dangerouslySkipPermissions: false }
-  : undefined
-
-// `claude ssh <host> [dir]` — parsed from argv early (same pattern as
-// DIRECT_CONNECT above) so the main command path can pick it up and hand
-// the REPL an SSH-backed session instead of a local one.
-type PendingSSH = {
-  host: string | undefined
-  cwd: string | undefined
-  permissionMode: string | undefined
-  dangerouslySkipPermissions: boolean
-  /** --local: spawn the child CLI directly, skip ssh/probe/deploy. e2e test mode. */
-  local: boolean
-  /** Extra CLI args to forward to the remote CLI on initial spawn (--resume, -c). */
-  extraCliArgs: string[]
-}
-const _pendingSSH: PendingSSH | undefined = feature('SSH_REMOTE')
-  ? {
-      host: undefined,
-      cwd: undefined,
-      permissionMode: undefined,
-      dangerouslySkipPermissions: false,
-      local: false,
-      extraCliArgs: [],
-    }
-  : undefined
 
 export async function main() {
   profileCheckpoint('main_function_start')
@@ -820,48 +764,6 @@ export async function main() {
   })
   profileCheckpoint('main_warning_handler_initialized')
 
-  // Check for cc:// or cc+unix:// URL in argv — rewrite so the main command
-  // handles it, giving the full interactive TUI instead of a stripped-down subcommand.
-  // For headless (-p), we rewrite to the internal `open` subcommand.
-  if (feature('DIRECT_CONNECT')) {
-    const rawCliArgs = process.argv.slice(2)
-    const ccIdx = rawCliArgs.findIndex(
-      a => a.startsWith('cc://') || a.startsWith('cc+unix://'),
-    )
-    if (ccIdx !== -1 && _pendingConnect) {
-      const ccUrl = rawCliArgs[ccIdx]!
-      const parsed = parseConnectUrl(ccUrl)
-      _pendingConnect.dangerouslySkipPermissions = rawCliArgs.includes(
-        '--dangerously-skip-permissions',
-      )
-
-      if (rawCliArgs.includes('-p') || rawCliArgs.includes('--print')) {
-        // Headless: rewrite to internal `open` subcommand
-        const stripped = rawCliArgs.filter((_, i) => i !== ccIdx)
-        const dspIdx = stripped.indexOf('--dangerously-skip-permissions')
-        if (dspIdx !== -1) {
-          stripped.splice(dspIdx, 1)
-        }
-        process.argv = [
-          process.argv[0]!,
-          process.argv[1]!,
-          'open',
-          ccUrl,
-          ...stripped,
-        ]
-      } else {
-        // Interactive: strip cc:// URL and flags, run main command
-        _pendingConnect.url = parsed.serverUrl
-        _pendingConnect.authToken = parsed.authToken
-        const stripped = rawCliArgs.filter((_, i) => i !== ccIdx)
-        const dspIdx = stripped.indexOf('--dangerously-skip-permissions')
-        if (dspIdx !== -1) {
-          stripped.splice(dspIdx, 1)
-        }
-        process.argv = [process.argv[0]!, process.argv[1]!, ...stripped]
-      }
-    }
-  }
 
   // Handle deep link URIs early — this is invoked by the OS protocol handler
   // and should bail out before full init since it only needs to parse the URI
@@ -876,109 +778,6 @@ export async function main() {
     }
   }
 
-  // `claude ssh <host> [dir]` — strip from argv so the main command handler
-  // runs (full interactive TUI), stash the host/dir for the REPL branch at
-  // ~line 3720 to pick up. Headless (-p) mode not supported in v1: SSH
-  // sessions need the local REPL to drive them (interrupt, permissions).
-  if (feature('SSH_REMOTE') && _pendingSSH) {
-    const rawCliArgs = process.argv.slice(2)
-    // SSH-specific flags can appear before the host positional (e.g.
-    // `ssh --permission-mode auto host /tmp` — standard POSIX flags-before-
-    // positionals). Pull them all out BEFORE checking whether a host was
-    // given, so `claude ssh --permission-mode auto host` and `claude ssh host
-    // --permission-mode auto` are equivalent. The host check below only needs
-    // to guard against `-h`/`--help` (which commander should handle).
-    if (rawCliArgs[0] === 'ssh') {
-      const localIdx = rawCliArgs.indexOf('--local')
-      if (localIdx !== -1) {
-        _pendingSSH.local = true
-        rawCliArgs.splice(localIdx, 1)
-      }
-      const dspIdx = rawCliArgs.indexOf('--dangerously-skip-permissions')
-      if (dspIdx !== -1) {
-        _pendingSSH.dangerouslySkipPermissions = true
-        rawCliArgs.splice(dspIdx, 1)
-      }
-      const pmIdx = rawCliArgs.indexOf('--permission-mode')
-      if (
-        pmIdx !== -1 &&
-        rawCliArgs[pmIdx + 1] &&
-        !rawCliArgs[pmIdx + 1]!.startsWith('-')
-      ) {
-        _pendingSSH.permissionMode = rawCliArgs[pmIdx + 1]
-        rawCliArgs.splice(pmIdx, 2)
-      }
-      const pmEqIdx = rawCliArgs.findIndex(a =>
-        a.startsWith('--permission-mode='),
-      )
-      if (pmEqIdx !== -1) {
-        _pendingSSH.permissionMode = rawCliArgs[pmEqIdx]!.split('=')[1]
-        rawCliArgs.splice(pmEqIdx, 1)
-      }
-      // Forward session-resume + model flags to the remote CLI's initial spawn.
-      // --continue/-c and --resume <uuid> operate on the REMOTE session history
-      // (which persists under the remote's ~/.claude/projects/<cwd>/).
-      // --model controls which model the remote uses.
-      const extractFlag = (
-        flag: string,
-        opts: { hasValue?: boolean; as?: string } = {},
-      ) => {
-        const i = rawCliArgs.indexOf(flag)
-        if (i !== -1) {
-          _pendingSSH.extraCliArgs.push(opts.as ?? flag)
-          const val = rawCliArgs[i + 1]
-          if (opts.hasValue && val && !val.startsWith('-')) {
-            _pendingSSH.extraCliArgs.push(val)
-            rawCliArgs.splice(i, 2)
-          } else {
-            rawCliArgs.splice(i, 1)
-          }
-        }
-        const eqI = rawCliArgs.findIndex(a => a.startsWith(`${flag}=`))
-        if (eqI !== -1) {
-          _pendingSSH.extraCliArgs.push(
-            opts.as ?? flag,
-            rawCliArgs[eqI]!.slice(flag.length + 1),
-          )
-          rawCliArgs.splice(eqI, 1)
-        }
-      }
-      extractFlag('-c', { as: '--continue' })
-      extractFlag('--continue')
-      extractFlag('--resume', { hasValue: true })
-      extractFlag('--model', { hasValue: true })
-    }
-    // After pre-extraction, any remaining dash-arg at [1] is either -h/--help
-    // (commander handles) or an unknown-to-ssh flag (fall through to commander
-    // so it surfaces a proper error). Only a non-dash arg is the host.
-    if (
-      rawCliArgs[0] === 'ssh' &&
-      rawCliArgs[1] &&
-      !rawCliArgs[1].startsWith('-')
-    ) {
-      _pendingSSH.host = rawCliArgs[1]
-      // Optional positional cwd.
-      let consumed = 2
-      if (rawCliArgs[2] && !rawCliArgs[2].startsWith('-')) {
-        _pendingSSH.cwd = rawCliArgs[2]
-        consumed = 3
-      }
-      const rest = rawCliArgs.slice(consumed)
-
-      // Headless (-p) mode is not supported with SSH in v1 — reject early
-      // so the flag doesn't silently cause local execution.
-      if (rest.includes('-p') || rest.includes('--print')) {
-        process.stderr.write(
-          'Error: headless (-p/--print) mode is not supported with claude ssh\n',
-        )
-        gracefulShutdownSync(1)
-        return
-      }
-
-      // Rewrite argv so the main command sees remaining flags but not `ssh`.
-      process.argv = [process.argv[0]!, process.argv[1]!, ...rest]
-    }
-  }
 
   // Check for -p/--print and --init-only flags early to set isInteractiveSession before init()
   // This is needed because telemetry initialization calls auth functions that need this flag
@@ -1671,9 +1470,6 @@ async function run(): Promise<CommanderCommand> {
 
       const agentsJson = options.agents
       const agentCli = options.agent
-      if (feature('BG_SESSIONS') && agentCli) {
-        process.env.CLAUDE_CODE_AGENT = agentCli
-      }
 
       // NOTE: LSP manager initialization is intentionally deferred until after
       // the trust dialog is accepted. This prevents plugin LSP servers from
@@ -2376,12 +2172,9 @@ async function run(): Promise<CommanderCommand> {
       profileCheckpoint('action_before_setup')
       logForDebugging('[STARTUP] Running setup()...')
       const setupStart = Date.now()
-      const messagingSocketPath = feature('UDS_INBOX')
-        ? (options as { messagingSocketPath?: string }).messagingSocketPath
-        : undefined
-      // Parallelize setup() with commands+agents loading. setup()'s ~28ms is
-      // mostly startUdsMessaging (socket bind, ~20ms) — not disk-bound, so it
-      // doesn't contend with getCommands' file reads. Gated on !worktreeEnabled
+      // Parallelize setup() with commands+agents loading. setup() is mostly
+      // filesystem setup and session initialization, so it doesn't contend with
+      // getCommands' file reads. Gated on !worktreeEnabled
       // since --worktree makes setup() process.chdir() (setup.ts:203), and
       // commands/agents need the post-chdir cwd.
       const preSetupCwd = getCwd()
@@ -2402,7 +2195,6 @@ async function run(): Promise<CommanderCommand> {
         tmuxEnabled,
         sessionId ? validateUuid(sessionId) : undefined,
         worktreePRNumber,
-        messagingSocketPath,
       )
       const commandsPromise = worktreeEnabled ? null : getCommands(preSetupCwd)
       const agentDefsPromise = worktreeEnabled
@@ -2418,20 +2210,7 @@ async function run(): Promise<CommanderCommand> {
       )
       profileCheckpoint('action_after_setup')
 
-      // Replay user messages into stream-json only when the socket was
-      // explicitly requested. The auto-generated socket is passive — it
-      // lets tools inject if they want to, but turning it on by default
-      // shouldn't reshape stream-json for SDK consumers who never touch it.
-      // Callers who inject and also want those injections visible in the
-      // stream pass --messaging-socket-path explicitly (or --replay-user-messages).
-      let effectiveReplayUserMessages = !!options.replayUserMessages
-      if (feature('UDS_INBOX')) {
-        if (!effectiveReplayUserMessages && outputFormat === 'stream-json') {
-          effectiveReplayUserMessages = !!(
-            options as { messagingSocketPath?: string }
-          ).messagingSocketPath
-        }
-      }
+      const effectiveReplayUserMessages = !!options.replayUserMessages
 
       if (getIsNonInteractiveSession()) {
         // Apply full merged settings env now (including project-scoped
@@ -3665,136 +3444,6 @@ async function run(): Promise<CommanderCommand> {
           logError(error)
           process.exit(1)
         }
-      } else if (feature('DIRECT_CONNECT') && _pendingConnect?.url) {
-        // `claude connect <url>` — full interactive TUI connected to a remote server
-        let directConnectConfig
-        try {
-          const session = await createDirectConnectSession({
-            serverUrl: _pendingConnect.url,
-            authToken: _pendingConnect.authToken,
-            cwd: getOriginalCwd(),
-            dangerouslySkipPermissions:
-              _pendingConnect.dangerouslySkipPermissions,
-          })
-          if (session.workDir) {
-            setOriginalCwd(session.workDir)
-            setCwdState(session.workDir)
-          }
-          setDirectConnectServerUrl(_pendingConnect.url)
-          directConnectConfig = session.config
-        } catch (err) {
-          return await exitWithError(
-            root,
-            err instanceof DirectConnectError ? err.message : String(err),
-            () => gracefulShutdown(1),
-          )
-        }
-
-        const connectInfoMessage = createSystemMessage(
-          `Connected to server at ${_pendingConnect.url}\nSession: ${directConnectConfig.sessionId}`,
-          'info',
-        )
-
-        await launchRepl(
-          root,
-          { getFpsMetrics, stats, initialState },
-          {
-            debug: debug || debugToStderr,
-            commands,
-            initialTools: [],
-            initialMessages: [connectInfoMessage],
-            mcpClients: [],
-            autoConnectIdeFlag: ide,
-            mainThreadAgentDefinition,
-            disableSlashCommands,
-            directConnectConfig,
-            thinkingConfig,
-          },
-          renderAndRun,
-        )
-        return
-      } else if (feature('SSH_REMOTE') && _pendingSSH?.host) {
-        // `claude ssh <host> [dir]` — probe remote, deploy binary if needed,
-        // spawn ssh with unix-socket -R forward to a local auth proxy, hand
-        // the REPL an SSHSession. Tools run remotely, UI renders locally.
-        // `--local` skips probe/deploy/ssh and spawns the current binary
-        // directly with the same env — e2e test of the proxy/auth plumbing.
-        let sshSession
-        try {
-          if (_pendingSSH.local) {
-            process.stderr.write('Starting local ssh-proxy test session...\n')
-            sshSession = createLocalSSHSession({
-              cwd: _pendingSSH.cwd,
-              permissionMode: _pendingSSH.permissionMode,
-              dangerouslySkipPermissions:
-                _pendingSSH.dangerouslySkipPermissions,
-            })
-          } else {
-            process.stderr.write(`Connecting to ${_pendingSSH.host}…\n`)
-            // In-place progress: \r + EL0 (erase to end of line). Final \n on
-            // success so the next message lands on a fresh line. No-op when
-            // stderr isn't a TTY (piped/redirected) — \r would just emit noise.
-            const isTTY = process.stderr.isTTY
-            let hadProgress = false
-            sshSession = await createSSHSession(
-              {
-                host: _pendingSSH.host,
-                cwd: _pendingSSH.cwd,
-                localVersion: MACRO.VERSION,
-                permissionMode: _pendingSSH.permissionMode,
-                dangerouslySkipPermissions:
-                  _pendingSSH.dangerouslySkipPermissions,
-                extraCliArgs: _pendingSSH.extraCliArgs,
-              },
-              isTTY
-                ? {
-                    onProgress: msg => {
-                      hadProgress = true
-                      process.stderr.write(`\r  ${msg}\x1b[K`)
-                    },
-                  }
-                : {},
-            )
-            if (hadProgress) process.stderr.write('\n')
-          }
-          setOriginalCwd(sshSession.remoteCwd)
-          setCwdState(sshSession.remoteCwd)
-          setDirectConnectServerUrl(
-            _pendingSSH.local ? 'local' : _pendingSSH.host,
-          )
-        } catch (err) {
-          return await exitWithError(
-            root,
-            err instanceof SSHSessionError ? err.message : String(err),
-            () => gracefulShutdown(1),
-          )
-        }
-
-        const sshInfoMessage = createSystemMessage(
-          _pendingSSH.local
-            ? `Local ssh-proxy test session\ncwd: ${sshSession.remoteCwd}\nAuth: unix socket → local proxy`
-            : `SSH session to ${_pendingSSH.host}\nRemote cwd: ${sshSession.remoteCwd}\nAuth: unix socket -R → local proxy`,
-          'info',
-        )
-
-        await launchRepl(
-          root,
-          { getFpsMetrics, stats, initialState },
-          {
-            debug: debug || debugToStderr,
-            commands,
-            initialTools: [],
-            initialMessages: [sshInfoMessage],
-            mcpClients: [],
-            autoConnectIdeFlag: ide,
-            mainThreadAgentDefinition,
-            disableSlashCommands,
-            sshSession,
-            thinkingConfig,
-          },
-          renderAndRun,
-        )
-        return
       } else if (options.resume || options.fromPr) {
         // Handle resume flow - from file (ant-only), session ID, or interactive selector
 
@@ -4042,15 +3691,6 @@ async function run(): Promise<CommanderCommand> {
     )
   }
 
-  if (feature('UDS_INBOX')) {
-    program.addOption(
-      new Option(
-        '--messaging-socket-path <path>',
-        'Unix domain socket path for the UDS messaging server (defaults to a tmp path)',
-      ),
-    )
-  }
-
   if (feature('KAIROS') || feature('KAIROS_BRIEF')) {
     program.addOption(
       new Option(
@@ -4137,20 +3777,16 @@ async function run(): Promise<CommanderCommand> {
 
   profileCheckpoint('run_main_options_built')
 
-  // -p/--print mode: skip subcommand registration. The 52 subcommands
+  // -p/--print mode: skip subcommand registration. The subcommands
   // (mcp, auth, plugin, skill, task, config, doctor, update, etc.) are
   // never dispatched in print mode — commander routes the prompt to the
   // default action. The subcommand registration path was measured at ~65ms
   // on baseline — mostly the isBridgeEnabled() call (25ms settings Zod parse
   // + 40ms sync keychain subprocess), both hidden by the try/catch that
-  // always returns false before enableConfigs(). cc:// URLs are rewritten to
-  // `open` at main() line ~851 BEFORE this runs, so argv check is safe here.
+  // always returns false before enableConfigs().
   const isPrintMode =
     process.argv.includes('-p') || process.argv.includes('--print')
-  const isCcUrl = process.argv.some(
-    a => a.startsWith('cc://') || a.startsWith('cc+unix://'),
-  )
-  if (isPrintMode && !isCcUrl) {
+  if (isPrintMode) {
     profileCheckpoint('run_before_parse')
     await program.parseAsync(process.argv)
     profileCheckpoint('run_after_parse')
@@ -4258,197 +3894,6 @@ async function run(): Promise<CommanderCommand> {
     .action(async () => {
       await mcpResetChoicesHandler()
     })
-
-  // claude server
-  if (feature('DIRECT_CONNECT')) {
-    program
-      .command('server')
-      .description('Start a Claude Code session server')
-      .option('--port <number>', 'HTTP port', '0')
-      .option('--host <string>', 'Bind address', '0.0.0.0')
-      .option('--auth-token <token>', 'Bearer token for auth')
-      .option('--unix <path>', 'Listen on a unix domain socket')
-      .option(
-        '--workspace <dir>',
-        'Default working directory for sessions that do not specify cwd',
-      )
-      .option(
-        '--idle-timeout <ms>',
-        'Idle timeout for detached sessions in ms (0 = never expire)',
-        '600000',
-      )
-      .option(
-        '--max-sessions <n>',
-        'Maximum concurrent sessions (0 = unlimited)',
-        '32',
-      )
-      .action(
-        async (opts: {
-          port: string
-          host: string
-          authToken?: string
-          unix?: string
-          workspace?: string
-          idleTimeout: string
-          maxSessions: string
-        }) => {
-          const existing = await probeRunningServer()
-          if (existing) {
-            process.stderr.write(
-              `A claude server is already running (pid ${existing.pid}) at ${existing.httpUrl}\n`,
-            )
-            process.exit(1)
-          }
-
-          const authToken =
-            opts.authToken ??
-            `sk-ant-cc-${randomBytes(16).toString('base64url')}`
-
-          const config = {
-            port: parseInt(opts.port, 10),
-            host: opts.host,
-            authToken,
-            unix: opts.unix,
-            workspace: opts.workspace,
-            idleTimeoutMs: parseInt(opts.idleTimeout, 10),
-            maxSessions: parseInt(opts.maxSessions, 10),
-          }
-
-          const backend = new DangerousBackend()
-          const sessionManager = new SessionManager(backend, {
-            idleTimeoutMs: config.idleTimeoutMs,
-            maxSessions: config.maxSessions,
-          })
-          const logger = createServerLogger()
-
-          const server = startServer(config, sessionManager, logger)
-          const actualPort = server.port ?? config.port
-          printBanner(config, authToken, actualPort)
-
-          await writeServerLock({
-            pid: process.pid,
-            port: actualPort,
-            host: config.host,
-            httpUrl: config.unix
-              ? `unix:${config.unix}`
-              : `http://${config.host}:${actualPort}`,
-            startedAt: Date.now(),
-          })
-
-          let shuttingDown = false
-          const shutdown = async () => {
-            if (shuttingDown) return
-            shuttingDown = true
-            // Stop accepting new connections before tearing down sessions.
-            server.stop(true)
-            await sessionManager.destroyAll()
-            await removeServerLock()
-            process.exit(0)
-          }
-          process.once('SIGINT', () => void shutdown())
-          process.once('SIGTERM', () => void shutdown())
-        },
-      )
-  }
-
-  // `claude ssh <host> [dir]` — registered here only so --help shows it.
-  // The actual interactive flow is handled by early argv rewriting in main()
-  // (parallels the DIRECT_CONNECT/cc:// pattern above). If commander reaches
-  // this action it means the argv rewrite didn't fire (e.g. user ran
-  // `claude ssh` with no host) — just print usage.
-  if (feature('SSH_REMOTE')) {
-    program
-      .command('ssh <host> [dir]')
-      .description(
-        'Run Claude Code on a remote host over SSH. Deploys the binary and ' +
-          'tunnels API auth back through your local machine — no remote setup needed.',
-      )
-      .option(
-        '--permission-mode <mode>',
-        'Permission mode for the remote session',
-      )
-      .option(
-        '--dangerously-skip-permissions',
-        'Skip all permission prompts on the remote (dangerous)',
-      )
-      .option(
-        '--local',
-        'e2e test mode — spawn the child CLI locally (skip ssh/deploy). ' +
-          'Exercises the auth proxy and unix-socket plumbing without a remote host.',
-      )
-      .action(async () => {
-        // Argv rewriting in main() should have consumed `ssh <host>` before
-        // commander runs. Reaching here means host was missing or the
-        // rewrite predicate didn't match.
-        process.stderr.write(
-          'Usage: claude ssh <user@host | ssh-config-alias> [dir]\n\n' +
-            "Runs Claude Code on a remote Linux host. You don't need to install\n" +
-            'anything on the remote or run `claude auth login` there — the binary is\n' +
-            'deployed over SSH and API auth tunnels back through your local machine.\n',
-        )
-        process.exit(1)
-      })
-  }
-
-  // claude connect — subcommand only handles -p (headless) mode.
-  // Interactive mode (without -p) is handled by early argv rewriting in main()
-  // which redirects to the main command with full TUI support.
-  if (feature('DIRECT_CONNECT')) {
-    program
-      .command('open <cc-url>')
-      .description(
-        'Connect to a Claude Code server (internal — use cc:// URLs)',
-      )
-      .option('-p, --print [prompt]', 'Print mode (headless)')
-      .option(
-        '--output-format <format>',
-        'Output format: text, json, stream-json',
-        'text',
-      )
-      .action(
-        async (
-          ccUrl: string,
-          opts: {
-            print?: string | boolean
-            outputFormat: string
-          },
-        ) => {
-          const { serverUrl, authToken } = parseConnectUrl(ccUrl)
-
-          let connectConfig
-          try {
-            const session = await createDirectConnectSession({
-              serverUrl,
-              authToken,
-              cwd: getOriginalCwd(),
-              dangerouslySkipPermissions:
-                _pendingConnect?.dangerouslySkipPermissions,
-            })
-            if (session.workDir) {
-              setOriginalCwd(session.workDir)
-              setCwdState(session.workDir)
-            }
-            setDirectConnectServerUrl(serverUrl)
-            connectConfig = session.config
-          } catch (err) {
-            // biome-ignore lint/suspicious/noConsole: intentional error output
-            console.error(
-              err instanceof DirectConnectError ? err.message : String(err),
-            )
-            process.exit(1)
-          }
-
-          const prompt = typeof opts.print === 'string' ? opts.print : ''
-          const interactive = opts.print === true
-          await runConnectHeadless(
-            connectConfig,
-            prompt,
-            opts.outputFormat,
-            interactive,
-          )
-        },
-      )
-  }
 
   // claude auth
 

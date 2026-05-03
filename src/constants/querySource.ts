@@ -25,7 +25,6 @@ export type QuerySource =
   | 'hook_prompt'
   | 'insights'
   | 'magic_docs'
-  | 'marble_origami'
   | 'mcp_datetime_parse'
   | 'memdir_relevance'
   | 'model_validation'

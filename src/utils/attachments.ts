@@ -72,22 +72,8 @@ import type { Command } from '../types/command.js'
 import { getProjectRoot } from '../bootstrap/state.js'
 import { formatCommandsWithinBudget } from '../tools/SkillTool/prompt.js'
 import { getContextWindowForModel } from './context.js'
-import type { DiscoverySignal } from '../services/skillSearch/signals.js'
-// Conditional references for DCE. All skill-search string literals that would
-// otherwise leak into external builds live inside these modules. The only
-// surfaces in THIS file are: the maybe() call (gated via spread below) and
-// the skill_listing suppression check (uses the same skillSearchModules null
-// check). The type-only DiscoverySignal import above is erased at compile time.
-import * as skillSearchFeatureCheckNs from '../services/skillSearch/featureCheck.js'
-import * as skillSearchPrefetchNs from '../services/skillSearch/prefetch.js'
 import * as autoModeStateNs from './permissions/autoModeState.js'
 
-const skillSearchModules = feature('EXPERIMENTAL_SKILL_SEARCH')
-  ? {
-      featureCheck: skillSearchFeatureCheckNs,
-      prefetch: skillSearchPrefetchNs,
-    }
-  : null
 const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
   ? autoModeStateNs
   : null
@@ -514,12 +500,6 @@ export type Attachment =
       isInitial: boolean
     }
   | {
-      type: 'skill_discovery'
-      skills: { name: string; description: string; shortId?: string }[]
-      signal: DiscoverySignal
-      source: 'native' | 'aki' | 'both'
-    }
-  | {
       type: 'queued_command'
       prompt: string | Array<ContentBlockParam>
       source_uuid?: UUID
@@ -769,31 +749,6 @@ export async function getAttachments(
             ),
           ),
         ),
-        // Skill discovery on turn 0 (user input as signal). Inter-turn
-        // discovery runs via startSkillDiscoveryPrefetch in query.ts,
-        // gated on write-pivot detection — see skillSearch/prefetch.ts.
-        // feature() here lets DCE drop the 'skill_discovery' string (and the
-        // function it calls) from external builds.
-        //
-        // skipSkillDiscovery gates out the SKILL.md-expansion path
-        // (getMessagesForPromptSlashCommand). When a skill is invoked, its
-        // SKILL.md content is passed as `input` here to extract @-mentions —
-        // but that content is NOT user intent and must not trigger discovery.
-        // Without this gate, a 110KB SKILL.md fires ~3.3s of chunked AKI
-        // queries on every skill invocation (session 13a9afae).
-        ...(feature('EXPERIMENTAL_SKILL_SEARCH') &&
-        skillSearchModules &&
-        !options?.skipSkillDiscovery
-          ? [
-              maybe('skill_discovery', () =>
-                skillSearchModules.prefetch.getTurnZeroSkillDiscovery(
-                  input,
-                  messages ?? [],
-                  context,
-                ),
-              ),
-            ]
-          : []),
       ]
     : []
 
@@ -856,11 +811,6 @@ export async function getAttachments(
     // relevant_memories moved to async prefetch (startRelevantMemoryPrefetch)
     maybe('dynamic_skill', () => getDynamicSkillAttachments(context)),
     maybe('skill_listing', () => getSkillListingAttachments(context)),
-    // Inter-turn skill discovery now runs via startSkillDiscoveryPrefetch
-    // (query.ts, concurrent with the main turn). The blocking call that
-    // previously lived here was the assistant_turn signal — 97% of those
-    // Haiku calls found nothing in prod. Prefetch + await-at-collection
-    // replaces it; see src/services/skillSearch/prefetch.ts.
     maybe('plan_mode', () => getPlanModeAttachments(messages, toolUseContext)),
     maybe('plan_mode_exit', () => getPlanModeExitAttachment(toolUseContext)),
     ...(feature('TRANSCRIPT_CLASSIFIER')
@@ -2542,10 +2492,6 @@ export function suppressNextSkillListing(): void {
 }
 let suppressNext = false
 
-function filterToBundled(commands: Command[]): Command[] {
-  return commands.filter(cmd => cmd.loadedFrom === 'bundled')
-}
-
 async function getSkillListingAttachments(
   toolUseContext: ToolUseContext,
 ): Promise<Attachment[]> {
@@ -2561,19 +2507,7 @@ async function getSkillListingAttachments(
   }
 
   const cwd = getProjectRoot()
-  let allCommands = await getSkillToolCommands(cwd)
-
-  // When skill search is active, filter to bundled skills instead of full
-  // suppression. Resolves the turn-0 gap: main thread gets turn-0 discovery
-  // via getTurnZeroSkillDiscovery (blocking), but subagents use the async
-  // subagent_spawn signal (collected post-tools, visible turn 1). User/project/plugin
-  // skills go through discovery.
-  if (
-    feature('EXPERIMENTAL_SKILL_SEARCH') &&
-    skillSearchModules?.featureCheck.isSkillSearchEnabled()
-  ) {
-    allCommands = filterToBundled(allCommands)
-  }
+  const allCommands = await getSkillToolCommands(cwd)
 
   const agentKey = toolUseContext.agentId ?? ''
   let sent = sentSkillNames.get(agentKey)
@@ -2628,10 +2562,6 @@ async function getSkillListingAttachments(
     },
   ]
 }
-
-// getSkillDiscoveryAttachment moved to skillSearch/prefetch.ts as
-// getTurnZeroSkillDiscovery — keeps the 'skill_discovery' string literal inside
-// a feature-gated module so it doesn't leak into external builds.
 
 export function extractAtMentionedFiles(content: string): string[] {
   // Extract filenames mentioned with @ symbol, including line range syntax: @file.txt#L10-20

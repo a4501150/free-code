@@ -1,7 +1,5 @@
 import { feature } from 'bun:bundle'
 import type { Tool } from '../../Tool.js'
-import { AGENT_TOOL_NAME } from '../AgentTool/constants.js'
-import { isForkSubagentEnabled } from '../AgentTool/forkSubagent.js'
 import * as briefToolPromptNs from '../BriefTool/prompt.js'
 import * as sendUserFileToolPromptNs from '../SendUserFileTool/prompt.js'
 
@@ -54,15 +52,6 @@ export function isDeferredTool(tool: Tool): boolean {
 
   // Never defer ToolSearch itself — the model needs it to load everything else
   if (tool.name === TOOL_SEARCH_TOOL_NAME) return false
-
-  // Fork-first experiment: Agent must be available turn 1, not behind ToolSearch.
-  if (
-    feature('FORK_SUBAGENT') &&
-    tool.name === AGENT_TOOL_NAME &&
-    isForkSubagentEnabled()
-  ) {
-    return false
-  }
 
   // Brief is the primary communication channel whenever the tool is present.
   // Its prompt contains the text-visibility contract, which the model must

@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import figures from 'figures'
 import React, {
   type ReactNode,
@@ -26,8 +25,6 @@ import type { LocalAgentTaskState } from 'src/tasks/LocalAgentTask/LocalAgentTas
 import { LocalAgentTask } from 'src/tasks/LocalAgentTask/LocalAgentTask.js'
 import type { LocalShellTaskState } from 'src/tasks/LocalShellTask/guards.js'
 import { LocalShellTask } from 'src/tasks/LocalShellTask/LocalShellTask.js'
-// Type import is erased at build time — safe even though module is ant-gated.
-import type { LocalWorkflowTaskState } from 'src/tasks/LocalWorkflowTask/LocalWorkflowTask.js'
 import type { MonitorMcpTaskState } from 'src/tasks/MonitorMcpTask/MonitorMcpTask.js'
 import {
   type BackgroundTaskState,
@@ -89,13 +86,6 @@ type ListItem =
     }
   | {
       id: string
-      type: 'local_workflow'
-      label: string
-      status: string
-      task: DeepImmutable<LocalWorkflowTaskState>
-    }
-  | {
-      id: string
       type: 'monitor_mcp'
       label: string
       status: string
@@ -114,22 +104,6 @@ type ListItem =
       label: string
       status: 'running'
     }
-
-// WORKFLOW_SCRIPTS is ant-only (build_flags.yaml). Static imports can be
-// DCE-eliminated by Bun when the feature flag is off and the module is
-// side-effect-free. Gate with feature() so the bundler eliminates the branch.
-import * as workflowDetailDialogNs from './WorkflowDetailDialog.js'
-// Relative path, not `src/...` path-mapping — Bun's DCE can statically
-// resolve + eliminate `./` imports, but path-mapped strings stay opaque
-// and survive as dead literals in the bundle. Matches tasks.ts pattern.
-import * as workflowTaskNs from '../../tasks/LocalWorkflowTask/LocalWorkflowTask.js'
-const WorkflowDetailDialog = feature('WORKFLOW_SCRIPTS')
-  ? workflowDetailDialogNs.WorkflowDetailDialog
-  : null
-const workflowTaskModule = feature('WORKFLOW_SCRIPTS') ? workflowTaskNs : null
-const killWorkflowTask = workflowTaskModule?.killWorkflowTask ?? null
-const skipWorkflowAgent = workflowTaskModule?.skipWorkflowAgent ?? null
-const retryWorkflowAgent = workflowTaskModule?.retryWorkflowAgent ?? null
 
 // Helper to get filtered background tasks (excludes foregrounded local_agent)
 function getSelectableBackgroundTasks(
@@ -189,7 +163,6 @@ export function BackgroundTasksDialog({
     bashTasks,
     agentTasks,
     teammateTasks,
-    workflowTasks,
     mcpMonitors,
     dreamTasks,
     allSelectableItems,
@@ -213,7 +186,6 @@ export function BackgroundTasksDialog({
     const agent = sorted.filter(
       item => item.type === 'local_agent' && item.id !== foregroundedTaskId,
     )
-    const workflows = sorted.filter(item => item.type === 'local_workflow')
     const monitorMcp = sorted.filter(item => item.type === 'monitor_mcp')
     const dreamTasks = sorted.filter(item => item.type === 'dream')
     // In spinner-tree mode, exclude teammates from the dialog (they appear in the tree)
@@ -235,12 +207,11 @@ export function BackgroundTasksDialog({
     return {
       bashTasks: bash,
       agentTasks: agent,
-      workflowTasks: workflows,
       mcpMonitors: monitorMcp,
       dreamTasks,
       teammateTasks: [...leaderItem, ...teammates],
       // Order MUST match JSX render order (teammates \u2192 bash \u2192 monitorMcp \u2192
-      // agent \u2192 workflows \u2192 dream) so \u2193/\u2191 navigation moves the cursor
+      // agent \u2192 dream) so \u2193/\u2191 navigation moves the cursor
       // visually downward.
       allSelectableItems: [
         ...leaderItem,
@@ -248,7 +219,6 @@ export function BackgroundTasksDialog({
         ...bash,
         ...monitorMcp,
         ...agent,
-        ...workflows,
         ...dreamTasks,
       ],
     }
@@ -314,12 +284,6 @@ export function BackgroundTasksDialog({
       ) {
         void killTeammateTask(currentSelection.id)
       } else if (
-        currentSelection.type === 'local_workflow' &&
-        currentSelection.status === 'running' &&
-        killWorkflowTask
-      ) {
-        killWorkflowTask(currentSelection.id, setAppState)
-      } else if (
         currentSelection.type === 'dream' &&
         currentSelection.status === 'running'
       ) {
@@ -366,12 +330,7 @@ export function BackgroundTasksDialog({
   useEffect(() => {
     if (viewState.mode !== 'list') {
       const task = (typedTasks ?? {})[viewState.itemId]
-      // Workflow tasks get a grace: their detail view stays open through
-      // completion so the user sees the final state before eviction.
-      if (
-        !task ||
-        (task.type !== 'local_workflow' && !isBackgroundTask(task))
-      ) {
+      if (!task || !isBackgroundTask(task)) {
         // Task was removed or is no longer a background task (e.g. killed).
         // If we skipped the list on mount, close the dialog entirely.
         if (skippedListOnMount.current) {
@@ -454,31 +413,6 @@ export function BackgroundTasksDialog({
             key={`teammate-${task.id}`}
           />
         )
-      case 'local_workflow':
-        if (!WorkflowDetailDialog) return null
-        return (
-          <WorkflowDetailDialog
-            workflow={task}
-            onDone={onDone}
-            onKill={
-              task.status === 'running' && killWorkflowTask
-                ? () => killWorkflowTask(task.id, setAppState)
-                : undefined
-            }
-            onSkipAgent={
-              task.status === 'running' && skipWorkflowAgent
-                ? agentId => skipWorkflowAgent(task.id, agentId, setAppState)
-                : undefined
-            }
-            onRetryAgent={
-              task.status === 'running' && retryWorkflowAgent
-                ? agentId => retryWorkflowAgent(task.id, agentId, setAppState)
-                : undefined
-            }
-            onBack={goBackToList}
-            key={`workflow-${task.id}`}
-          />
-        )
       case 'monitor_mcp':
         return null
       case 'dream':
@@ -551,7 +485,6 @@ export function BackgroundTasksDialog({
     ...((currentSelection?.type === 'local_bash' ||
       currentSelection?.type === 'local_agent' ||
       currentSelection?.type === 'in_process_teammate' ||
-      currentSelection?.type === 'local_workflow' ||
       currentSelection?.type === 'monitor_mcp' ||
       currentSelection?.type === 'dream') &&
     currentSelection.status === 'running'
@@ -684,33 +617,6 @@ export function BackgroundTasksDialog({
               </Box>
             )}
 
-            {workflowTasks.length > 0 && (
-              <Box
-                flexDirection="column"
-                marginTop={
-                  teammateTasks.length > 0 ||
-                  bashTasks.length > 0 ||
-                  mcpMonitors.length > 0 ||
-                  agentTasks.length > 0
-                    ? 1
-                    : 0
-                }
-              >
-                <Text dimColor>
-                  <Text bold>{'  '}Workflows</Text> ({workflowTasks.length})
-                </Text>
-                <Box flexDirection="column">
-                  {workflowTasks.map(item => (
-                    <Item
-                      key={item.id}
-                      item={item}
-                      isSelected={item.id === currentSelection?.id}
-                    />
-                  ))}
-                </Box>
-              </Box>
-            )}
-
             {dreamTasks.length > 0 && (
               <Box
                 flexDirection="column"
@@ -718,8 +624,7 @@ export function BackgroundTasksDialog({
                   teammateTasks.length > 0 ||
                   bashTasks.length > 0 ||
                   mcpMonitors.length > 0 ||
-                  agentTasks.length > 0 ||
-                  workflowTasks.length > 0
+                  agentTasks.length > 0
                     ? 1
                     : 0
                 }
@@ -765,14 +670,6 @@ function toListItem(task: BackgroundTaskState): ListItem {
         id: task.id,
         type: 'in_process_teammate',
         label: `@${task.identity.agentName}`,
-        status: task.status,
-        task,
-      }
-    case 'local_workflow':
-      return {
-        id: task.id,
-        type: 'local_workflow',
-        label: task.summary ?? task.description,
         status: task.status,
         task,
       }
