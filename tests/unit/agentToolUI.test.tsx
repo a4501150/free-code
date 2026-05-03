@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as React from 'react'
 import {
+  calculateAgentProgressTokens,
   renderToolUseErrorMessage,
   renderToolUseRejectedMessage,
 } from '../../src/tools/AgentTool/UI.js'
@@ -25,10 +26,24 @@ function collectPropValues(node: React.ReactNode, propName: string): unknown[] {
   return values
 }
 
-function agentProgressMessage(): ProgressMessage<Progress> {
+function agentProgressMessage({
+  progressId = 'progress-1',
+  assistantId = 'assistant-1',
+  messageId = 'msg-1',
+  inputTokens = 10,
+  outputTokens = 5,
+  toolUseId = 'tool-1',
+}: {
+  progressId?: string
+  assistantId?: string
+  messageId?: string
+  inputTokens?: number
+  outputTokens?: number
+  toolUseId?: string
+} = {}): ProgressMessage<Progress> {
   return {
     type: 'progress',
-    uuid: 'progress-1',
+    uuid: progressId,
     timestamp: '2026-05-03T00:00:00.000Z',
     toolUseID: 'agent-tool-1',
     data: {
@@ -37,25 +52,25 @@ function agentProgressMessage(): ProgressMessage<Progress> {
       agentId: 'agent-1',
       message: {
         type: 'assistant',
-        uuid: 'assistant-1',
+        uuid: assistantId,
         timestamp: '2026-05-03T00:00:00.000Z',
         message: {
-          id: 'msg-1',
+          id: messageId,
           type: 'message',
           role: 'assistant',
           model: 'test-model',
           stop_reason: null,
           stop_sequence: null,
           usage: {
-            input_tokens: 10,
-            output_tokens: 5,
+            input_tokens: inputTokens,
+            output_tokens: outputTokens,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
           },
           content: [
             {
               type: 'tool_use',
-              id: 'tool-1',
+              id: toolUseId,
               name: 'Bash',
               input: { command: 'echo hi' },
             },
@@ -67,6 +82,53 @@ function agentProgressMessage(): ProgressMessage<Progress> {
 }
 
 describe('AgentTool UI', () => {
+  test('agent progress tokens stay visible across zero-usage updates', () => {
+    expect(
+      calculateAgentProgressTokens([
+        agentProgressMessage({ inputTokens: 1000, outputTokens: 250 }),
+        agentProgressMessage({
+          progressId: 'progress-2',
+          assistantId: 'assistant-2',
+          messageId: 'msg-2',
+          inputTokens: 0,
+          outputTokens: 0,
+          toolUseId: 'tool-2',
+        }),
+      ]),
+    ).toBe(1250)
+  })
+
+  test('agent progress tokens deduplicate updates for the same assistant message', () => {
+    expect(
+      calculateAgentProgressTokens([
+        agentProgressMessage({ inputTokens: 1000, outputTokens: 100 }),
+        agentProgressMessage({
+          progressId: 'progress-2',
+          assistantId: 'assistant-1',
+          messageId: 'msg-1',
+          inputTokens: 1000,
+          outputTokens: 180,
+        }),
+      ]),
+    ).toBe(1180)
+  })
+
+  test('agent progress tokens include cumulative output from completed turns', () => {
+    expect(
+      calculateAgentProgressTokens([
+        agentProgressMessage({ inputTokens: 1000, outputTokens: 100 }),
+        agentProgressMessage({
+          progressId: 'progress-2',
+          assistantId: 'assistant-2',
+          messageId: 'msg-2',
+          inputTokens: 1500,
+          outputTokens: 200,
+          toolUseId: 'tool-2',
+        }),
+      ]),
+    ).toBe(1800)
+  })
+
   test('rejected agent progress is rendered as no longer running', () => {
     const node = renderToolUseRejectedMessage(
       {

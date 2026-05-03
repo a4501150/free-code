@@ -605,6 +605,51 @@ export function renderAgentToolUseTag(
 
 const INITIALIZING_TEXT = 'Initializing…'
 
+export function calculateAgentProgressTokens(
+  progressMessages: ProgressMessage<Progress>[],
+): number | null {
+  const usageByMessageId = new Map<
+    string,
+    { inputTokens: number; outputTokens: number }
+  >()
+
+  for (const progressMessage of progressMessages) {
+    if (
+      !hasProgressMessage(progressMessage.data) ||
+      progressMessage.data.message.type !== 'assistant'
+    ) {
+      continue
+    }
+
+    const assistantMessage = progressMessage.data.message.message
+    const usage = assistantMessage.usage
+    const inputTokens =
+      (usage.cache_creation_input_tokens ?? 0) +
+      (usage.cache_read_input_tokens ?? 0) +
+      usage.input_tokens
+    const outputTokens = usage.output_tokens
+    if (inputTokens === 0 && outputTokens === 0) {
+      continue
+    }
+
+    usageByMessageId.set(assistantMessage.id, { inputTokens, outputTokens })
+  }
+
+  if (usageByMessageId.size === 0) {
+    return null
+  }
+
+  let latestInputTokens = 0
+  let cumulativeOutputTokens = 0
+  for (const usage of usageByMessageId.values()) {
+    latestInputTokens = usage.inputTokens
+    cumulativeOutputTokens += usage.outputTokens
+  }
+
+  const totalTokens = latestInputTokens + cumulativeOutputTokens
+  return totalTokens > 0 ? totalTokens : null
+}
+
 export function renderToolUseProgressMessage(
   progressMessages: ProgressMessage<Progress>[],
   {
@@ -656,22 +701,10 @@ export function renderToolUseProgressMessage(
       return content.some(c => c.type === 'tool_use')
     })
 
-    const latestAssistant = progressMessages.findLast(
-      (msg): msg is ProgressMessage<AgentToolProgress> =>
-        hasProgressMessage(msg.data) && msg.data.message.type === 'assistant',
-    )
-
-    let tokens = null
-    if (latestAssistant?.data.message.type === 'assistant') {
-      const usage = latestAssistant.data.message.message.usage
-      tokens =
-        (usage.cache_creation_input_tokens ?? 0) +
-        (usage.cache_read_input_tokens ?? 0) +
-        usage.input_tokens +
-        usage.output_tokens
+    return {
+      toolUseCount,
+      tokens: calculateAgentProgressTokens(progressMessages),
     }
-
-    return { toolUseCount, tokens }
   }
 
   if (shouldUseCondensedMode) {
@@ -990,20 +1023,7 @@ function calculateAgentStats(
     )
   })
 
-  const latestAssistant = progressMessages.findLast(
-    (msg): msg is ProgressMessage<AgentToolProgress> =>
-      hasProgressMessage(msg.data) && msg.data.message.type === 'assistant',
-  )
-
-  let tokens = null
-  if (latestAssistant?.data.message.type === 'assistant') {
-    const usage = latestAssistant.data.message.message.usage
-    tokens =
-      (usage.cache_creation_input_tokens ?? 0) +
-      (usage.cache_read_input_tokens ?? 0) +
-      usage.input_tokens +
-      usage.output_tokens
-  }
+  const tokens = calculateAgentProgressTokens(progressMessages)
 
   // Live elapsed time derived from the first progress message's timestamp.
   // Null when no progress messages have arrived yet (we don't know when the
