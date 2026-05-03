@@ -3,12 +3,10 @@ import { initAutoDream } from '../services/autoDream/autoDream.js'
 import { initMagicDocs } from '../services/MagicDocs/magicDocs.js'
 import { initSkillImprovement } from './hooks/skillImprovement.js'
 import * as extractMemoriesNs from '../services/extractMemories/extractMemories.js'
-import * as registerProtocolNs from './deepLink/registerProtocol.js'
 
 const extractMemoriesModule = feature('EXTRACT_MEMORIES')
   ? extractMemoriesNs
   : null
-const registerProtocolModule = feature('LODESTONE') ? registerProtocolNs : null
 
 import { getIsInteractive, getLastInteractionTime } from '../bootstrap/state.js'
 import { cleanupOldMessageFilesInBackground } from './cleanup.js'
@@ -25,10 +23,6 @@ export function startBackgroundHousekeeping(): void {
   }
   initAutoDream()
   void autoUpdateMarketplacesAndPluginsInBackground()
-  if (feature('LODESTONE') && getIsInteractive()) {
-    void registerProtocolModule!.ensureDeepLinkProtocolRegistered()
-  }
-
   let needsCleanup = true
   async function runVerySlowOps(): Promise<void> {
     // If the user did something in the last minute, don't make them wait for these slow operations to run.

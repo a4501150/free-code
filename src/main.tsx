@@ -169,7 +169,6 @@ import type { LogOption } from './types/logs.js'
 import type { Message as MessageType } from './types/message.js'
 import { getContextWindowForModel } from './utils/context.js'
 import { loadConversationForResume } from './utils/conversationRecovery.js'
-import { buildDeepLinkBanner } from './utils/deepLink/banner.js'
 import { hasNodeOption, isBareMode, isEnvTruthy } from './utils/envUtils.js'
 import { refreshExampleCommands } from './utils/exampleCommands.js'
 import type { FpsMetrics } from './utils/fpsTracker.js'
@@ -359,7 +358,6 @@ import {
   parsePRReference,
 } from './utils/worktree.js'
 import { initSinks } from './utils/sinks.js'
-import { handleDeepLinkUri } from './utils/deepLink/protocolHandler.js'
 import { applyCoordinatorToolFilter } from './utils/toolPool.js'
 import { setup } from './setup.js'
 import { buildMergePrompt } from './components/agents/SnapshotUpdateDialog.js'
@@ -761,19 +759,6 @@ export async function main() {
     process.exit(0)
   })
   profileCheckpoint('main_warning_handler_initialized')
-
-  // Handle deep link URIs early — this is invoked by the OS protocol handler
-  // and should bail out before full init since it only needs to parse the URI
-  // and open a terminal.
-  if (feature('LODESTONE')) {
-    const handleUriIdx = process.argv.indexOf('--handle-uri')
-    if (handleUriIdx !== -1 && process.argv[handleUriIdx + 1]) {
-      enableConfigs()
-      const uri = process.argv[handleUriIdx + 1]!
-      const exitCode = await handleDeepLinkUri(uri)
-      process.exit(exitCode)
-    }
-  }
 
   // Check for -p/--print and --init-only flags early to set isInteractiveSession before init()
   // This is needed because telemetry initialization calls auth functions that need this flag
@@ -1232,29 +1217,6 @@ async function run(): Promise<CommanderCommand> {
         '--prefill <text>',
         'Pre-fill the prompt input with text without submitting it',
       ).hideHelp(),
-    )
-    .addOption(
-      new Option(
-        '--deep-link-origin',
-        'Signal that this session was launched from a deep link',
-      ).hideHelp(),
-    )
-    .addOption(
-      new Option(
-        '--deep-link-repo <slug>',
-        'Repo slug the deep link ?repo= parameter resolved to the current cwd',
-      ).hideHelp(),
-    )
-    .addOption(
-      new Option(
-        '--deep-link-last-fetch <ms>',
-        'FETCH_HEAD mtime in epoch ms, precomputed by the deep link trampoline',
-      )
-        .argParser(v => {
-          const n = Number(v)
-          return Number.isFinite(n) ? n : undefined
-        })
-        .hideHelp(),
     )
     .option(
       '--from-pr [value]',
@@ -3584,39 +3546,8 @@ async function run(): Promise<CommanderCommand> {
           )
         }
 
-        // If launched via a deep link, show a provenance banner so the user
-        // knows the session originated externally. Linux xdg-open and
-        // browsers with "always allow" set dispatch the link with no OS-level
-        // confirmation, so this is the only signal the user gets that the
-        // prompt — and the working directory / CLAUDE.md it implies — came
-        // from an external source rather than something they typed.
-        let deepLinkBanner: ReturnType<typeof createSystemMessage> | null = null
-        if (feature('LODESTONE')) {
-          if (options.deepLinkOrigin) {
-            deepLinkBanner = createSystemMessage(
-              buildDeepLinkBanner({
-                cwd: getCwd(),
-                prefillLength: options.prefill?.length,
-                repo: options.deepLinkRepo,
-                lastFetch:
-                  options.deepLinkLastFetch !== undefined
-                    ? new Date(options.deepLinkLastFetch)
-                    : undefined,
-              }),
-              'warning',
-            )
-          } else if (options.prefill) {
-            deepLinkBanner = createSystemMessage(
-              'Launched with a pre-filled prompt — review it before pressing Enter.',
-              'warning',
-            )
-          }
-        }
-        const initialMessages = deepLinkBanner
-          ? [deepLinkBanner, ...hookMessages]
-          : hookMessages.length > 0
-            ? hookMessages
-            : undefined
+        const initialMessages =
+          hookMessages.length > 0 ? hookMessages : undefined
 
         await launchRepl(
           root,

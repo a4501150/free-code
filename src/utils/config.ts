@@ -412,15 +412,6 @@ export type GlobalConfig = {
   // Fullscreen in-app text selection behavior
   copyOnSelect?: boolean // Auto-copy to clipboard on mouse-up (undefined → true; lets cmd+c "work" via no-op)
 
-  // GitHub repo path mapping for deep link directory resolution
-  // Key: "owner/repo" (lowercase), Value: array of absolute paths where repo is cloned
-  githubRepoPaths?: Record<string, string[]>
-
-  // Terminal emulator to launch for claude-cli:// deep links. Captured from
-  // TERM_PROGRAM during interactive sessions since the deep link handler runs
-  // headless (LaunchServices/xdg) with no TERM_PROGRAM set.
-  deepLinkTerminal?: string
-
   // iTerm2 it2 CLI setup
   iterm2It2SetupComplete?: boolean // Whether it2 setup has been verified
   preferTmuxOverIterm2?: boolean // User preference to always use tmux over iTerm2 split panes

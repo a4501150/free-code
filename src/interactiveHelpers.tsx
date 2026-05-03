@@ -38,10 +38,8 @@ import {
   getGlobalConfig,
   saveGlobalConfig,
 } from './utils/config.js'
-import { updateDeepLinkTerminalPreference } from './utils/deepLink/terminalPreference.js'
 import { isEnvTruthy } from './utils/envUtils.js'
 import { type FpsMetrics, FpsTracker } from './utils/fpsTracker.js'
-import { updateGithubRepoPathMapping } from './utils/githubRepoPathMapping.js'
 import { applyConfigEnvironmentVariables } from './utils/managedEnv.js'
 import type { PermissionMode } from './utils/permissions/PermissionMode.js'
 import { getBaseRenderOptions } from './utils/renderOptions.js'
@@ -255,13 +253,6 @@ export async function showSetupScreens(
         />
       ))
     }
-  }
-
-  // Track current repo path for teleport directory switching (fire-and-forget)
-  // This must happen AFTER trust to prevent untrusted directories from poisoning the mapping
-  void updateGithubRepoPathMapping()
-  if (feature('LODESTONE')) {
-    updateDeepLinkTerminalPreference()
   }
 
   // Apply full environment variables after trust dialog is accepted OR in bypass mode

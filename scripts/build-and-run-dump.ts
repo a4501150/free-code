@@ -32,7 +32,6 @@ const defaultFeatures = [
   'KAIROS_BRIEF',
   'KAIROS_CHANNELS',
   'KAIROS_PUSH_NOTIFICATION',
-  'LODESTONE',
   'NEW_INIT',
   'ULTRATHINK',
   'VOICE_MODE',

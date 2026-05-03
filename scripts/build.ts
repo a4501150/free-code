@@ -83,7 +83,6 @@ const defaultFeatures = [
   'KAIROS_BRIEF',
   'KAIROS_CHANNELS',
   'KAIROS_PUSH_NOTIFICATION',
-  'LODESTONE',
   'NEW_INIT',
   // Tier 4: Active but benign (user keyword / prompt nudge)
   'ULTRATHINK',
