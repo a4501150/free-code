@@ -126,14 +126,12 @@ export type Input = z.infer<InputSchema>
 
 export const LSPTool = buildTool({
   name: LSP_TOOL_NAME,
-  searchHint: 'code intelligence (definitions, references, symbols, hover)',
   maxResultSizeChars: 100_000,
   isLsp: true,
   async description() {
     return DESCRIPTION
   },
   userFacingName,
-  shouldDefer: true,
   isEnabled() {
     return isLspConnected()
   },

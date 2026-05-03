@@ -18,7 +18,9 @@ export type SdkMcpToolDefinition<Schema extends AnyZodRawShape> = {
   inputSchema: Schema
   handler: (args: InferShape<Schema>, extra: unknown) => Promise<CallToolResult>
   annotations?: ToolAnnotations
+  /** @deprecated Accepted for compatibility and ignored. */
   searchHint?: string
+  /** @deprecated Accepted for compatibility and ignored. */
   alwaysLoad?: boolean
 }
 

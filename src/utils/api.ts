@@ -55,10 +55,9 @@ import { getToolSchemaCache } from './toolSchemaCache.js'
 import { windowsPathToPosixPath } from './windowsPaths.js'
 import { zodToJsonSchema } from './zodToJsonSchema.js'
 
-// Extended BetaTool type with strict mode and defer_loading support
+// Extended BetaTool type with strict mode and cache-control support
 type BetaToolWithExtras = BetaTool & {
   strict?: boolean
-  defer_loading?: boolean
   cache_control?: {
     type: 'ephemeral'
     scope?: 'global' | 'org'
@@ -237,8 +236,6 @@ export async function toolToAPISchema(
     agents: AgentDefinition[]
     allowedAgentTypes?: string[]
     model?: string
-    /** When true, mark this tool with defer_loading for tool search */
-    deferLoading?: boolean
     cacheControl?: {
       type: 'ephemeral'
       scope?: 'global' | 'org'
@@ -347,8 +344,7 @@ export async function toolToAPISchema(
     cache.set(cacheKey, base)
   }
 
-  // Per-request overlay: defer_loading and cache_control vary by call
-  // (tool search defers different tools per turn; cache markers move).
+  // Per-request overlay: cache markers move between calls.
   // Explicit field copy avoids mutating the cached base and sidesteps
   // BetaTool.cache_control's `| null` clashing with our narrower type.
   const schema: BetaToolWithExtras = {
@@ -359,21 +355,16 @@ export async function toolToAPISchema(
     ...(base.eager_input_streaming && { eager_input_streaming: true }),
   }
 
-  // Add defer_loading if requested (for tool search feature)
-  if (options.deferLoading) {
-    schema.defer_loading = true
-  }
-
   if (options.cacheControl) {
     schema.cache_control = options.cacheControl
   }
 
   // CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS is the kill switch for beta API
   // shapes. Proxy gateways (ANTHROPIC_BASE_URL → LiteLLM → Bedrock) reject
-  // fields like defer_loading with "Extra inputs are not permitted". The gates
-  // above each field are scattered and not all provider-aware, so this strips
-  // everything not in the base-tool allowlist at the one choke point all tool
-  // schemas pass through — including fields added in the future.
+  // beta fields with "Extra inputs are not permitted". The gates above each
+  // field are scattered and not all provider-aware, so this strips everything
+  // not in the base-tool allowlist at the one choke point all tool schemas pass
+  // through — including fields added in the future.
   // cache_control is allowlisted: the base {type: 'ephemeral'} shape is
   // standard prompt caching (Bedrock/Vertex supported); the beta sub-fields
   // (scope, ttl) are already gated upstream by shouldIncludeFirstPartyOnlyBetas

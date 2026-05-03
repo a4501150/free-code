@@ -473,10 +473,6 @@ export const ProviderCapabilitiesSchema = lazySchema(() =>
     // ── Granular flags decomposed from firstPartyFeatures ──────────────
     // Each is optional; call sites should use the pattern
     //   caps.supportsXxx ?? caps.firstPartyFeatures ?? false
-    supportsToolSearch: z
-      .boolean()
-      .optional()
-      .describe('Provider supports the Anthropic tool search beta'),
     supportsFastMode: z
       .boolean()
       .optional()
@@ -1523,12 +1519,6 @@ export const SettingsSchema = lazySchema(() =>
         .optional()
         .describe(
           'Enable system-reminder wrapping and message smooshing for better prompt caching and API structure.',
-        ),
-      deferredToolRefRelocation: z
-        .boolean()
-        .optional()
-        .describe(
-          'Enable deferred tool reference relocation to fix premature stop sequences after tool results.',
         ),
       streamingToolExecution: z
         .boolean()

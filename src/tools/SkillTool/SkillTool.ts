@@ -221,7 +221,6 @@ export type Output = z.input<OutputSchema>
 
 export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
   name: SKILL_TOOL_NAME,
-  searchHint: 'invoke a slash-command skill',
   maxResultSizeChars: 100_000,
   get inputSchema(): InputSchema {
     return inputSchema()

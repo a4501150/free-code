@@ -93,9 +93,8 @@ export function getMcpInstructionsDelta(
   // A previously-announced server that is no longer connected → removed.
   // There is no "announced but now has no instructions" case for a still-
   // connected server: InitializeResult is immutable, and client-side
-  // instruction gates are session-stable in practice. (/model can flip
-  // the model gate, but deferred_tools_delta has the same property and
-  // we treat history as historical — no retroactive retractions.)
+  // instruction gates are session-stable in practice. Treat history as
+  // historical — no retroactive retractions.
   const removed: string[] = []
   for (const n of announced) {
     if (!connectedNames.has(n)) removed.push(n)

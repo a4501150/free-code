@@ -63,7 +63,9 @@ const inputSchema = lazySchema(() =>
   z.object({
     to: z
       .string()
-      .describe('Recipient: teammate name, or "*" for broadcast to all teammates'),
+      .describe(
+        'Recipient: teammate name, or "*" for broadcast to all teammates',
+      ),
     summary: z
       .string()
       .optional()
@@ -511,7 +513,6 @@ async function handlePlanRejection(
 export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
   buildTool({
     name: SEND_MESSAGE_TOOL_NAME,
-    searchHint: 'send messages to agent teammates (swarm protocol)',
     maxResultSizeChars: 100_000,
 
     userFacingName() {
@@ -521,7 +522,6 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
     get inputSchema(): InputSchema {
       return inputSchema()
     },
-    shouldDefer: true,
 
     isEnabled() {
       return isAgentSwarmsEnabled()

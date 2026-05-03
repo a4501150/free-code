@@ -45,7 +45,6 @@ type Output = z.infer<OutputSchema>
 
 export const SendUserFileTool = buildTool({
   name: SEND_USER_FILE_TOOL_NAME,
-  searchHint: 'send file deliver attachment user',
   maxResultSizeChars: 50_000,
 
   async description() {

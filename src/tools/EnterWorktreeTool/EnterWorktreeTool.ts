@@ -51,7 +51,6 @@ export type Output = z.infer<OutputSchema>
 
 export const EnterWorktreeTool: Tool<InputSchema, Output> = buildTool({
   name: ENTER_WORKTREE_TOOL_NAME,
-  searchHint: 'create an isolated git worktree and switch into it',
   maxResultSizeChars: 100_000,
   async description() {
     return 'Creates an isolated worktree (via git or configured hooks) and switches the session into it'
@@ -68,7 +67,6 @@ export const EnterWorktreeTool: Tool<InputSchema, Output> = buildTool({
   userFacingName() {
     return 'Creating worktree'
   },
-  shouldDefer: true,
   toAutoClassifierInput(input) {
     return input.name ?? ''
   },

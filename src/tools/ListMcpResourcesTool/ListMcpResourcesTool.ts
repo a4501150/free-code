@@ -47,9 +47,7 @@ export const ListMcpResourcesTool = buildTool({
   toAutoClassifierInput(input) {
     return input.server ?? ''
   },
-  shouldDefer: true,
   name: LIST_MCP_RESOURCES_TOOL_NAME,
-  searchHint: 'list resources from connected MCP servers',
   maxResultSizeChars: 100_000,
   async description() {
     return DESCRIPTION

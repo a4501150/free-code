@@ -138,7 +138,6 @@ import { formatFileSize } from './format.js'
 import { validateImagesForAPI } from './imageValidation.js'
 import { safeParseJSON } from './json.js'
 import { logError, logMCPDebug } from './log.js'
-import { normalizeLegacyToolName } from './permissions/permissionRuleParser.js'
 import {
   type PlanModeRenderContext,
   snapshotPlanModeRenderContext,
@@ -146,10 +145,6 @@ import {
 import { escapeRegExp } from './stringUtils.js'
 import { stripStrictNullInputs } from './stripStrictNullInputs.js'
 import { formatTeammateMessages } from './swarm/formatTeammateMessages.js'
-import {
-  isToolReferenceBlock,
-  isToolSearchEnabledOptimistic,
-} from './toolSearch.js'
 import * as snipCompactNs from '../services/compact/snipCompact.js'
 import * as snipProjectionNs from '../services/compact/snipProjection.js'
 
@@ -157,6 +152,17 @@ const MEMORY_CORRECTION_HINT =
   "\n\nNote: The user's next message may contain a correction or preference. Pay close attention — if they explain what went wrong or how they'd prefer you to work, consider saving that to memory for future sessions."
 
 const TOOL_REFERENCE_TURN_BOUNDARY = 'Tool loaded.'
+const LEGACY_TOOL_SEARCH_TOOL_NAME = 'ToolSearch'
+
+function isToolReferenceBlock(
+  block: unknown,
+): block is { type: 'tool_reference' } {
+  return (
+    typeof block === 'object' &&
+    block !== null &&
+    (block as { type?: unknown }).type === 'tool_reference'
+  )
+}
 
 /**
  * Appends a memory correction hint to a rejection/cancellation message
@@ -1521,86 +1527,6 @@ export function isSystemLocalCommandMessage(
 }
 
 /**
- * Strips tool_reference blocks for tools that no longer exist from tool_result content.
- * This handles the case where a session was saved with MCP tools that are no longer
- * available (e.g., MCP server was disconnected, renamed, or removed).
- * Without this filtering, the API rejects with "Tool reference not found in available tools".
- */
-function stripUnavailableToolReferencesFromUserMessage(
-  message: UserMessage,
-  availableToolNames: Set<string>,
-): UserMessage {
-  const content = message.message.content
-  if (!Array.isArray(content)) {
-    return message
-  }
-
-  // Check if any tool_reference blocks point to unavailable tools
-  const hasUnavailableReference = content.some(
-    block =>
-      block.type === 'tool_result' &&
-      Array.isArray(block.content) &&
-      block.content.some(c => {
-        if (!isToolReferenceBlock(c)) return false
-        const toolName = (c as { tool_name?: string }).tool_name
-        return (
-          toolName && !availableToolNames.has(normalizeLegacyToolName(toolName))
-        )
-      }),
-  )
-
-  if (!hasUnavailableReference) {
-    return message
-  }
-
-  return {
-    ...message,
-    message: {
-      ...message.message,
-      content: content.map(block => {
-        if (block.type !== 'tool_result' || !Array.isArray(block.content)) {
-          return block
-        }
-
-        // Filter out tool_reference blocks for unavailable tools
-        const filteredContent = block.content.filter(c => {
-          if (!isToolReferenceBlock(c)) return true
-          const rawToolName = (c as { tool_name?: string }).tool_name
-          if (!rawToolName) return true
-          const toolName = normalizeLegacyToolName(rawToolName)
-          const isAvailable = availableToolNames.has(toolName)
-          if (!isAvailable) {
-            logForDebugging(
-              `Filtering out tool_reference for unavailable tool: ${toolName}`,
-              { level: 'warn' },
-            )
-          }
-          return isAvailable
-        })
-
-        // If all content was filtered out, replace with a placeholder
-        if (filteredContent.length === 0) {
-          return {
-            ...block,
-            content: [
-              {
-                type: 'text' as const,
-                text: '[Tool references removed - tools no longer available]',
-              },
-            ],
-          }
-        }
-
-        return {
-          ...block,
-          content: filteredContent,
-        }
-      }),
-    },
-  }
-}
-
-/**
  * Appends a [id:...] message ID tag to the last text block of a user message.
  * Only mutates the API-bound copy, not the stored message.
  * This lets Claude reference message IDs when calling the snip tool.
@@ -1658,9 +1584,8 @@ function appendMessageTagToUserMessage(message: UserMessage): UserMessage {
 }
 
 /**
- * Strips tool_reference blocks from tool_result content in a user message.
- * tool_reference blocks are only valid when the tool search beta is enabled.
- * When tool search is disabled, we need to remove these blocks to avoid API errors.
+ * Strips legacy tool_reference blocks from tool_result content in a user message.
+ * tool_reference blocks are no longer valid in API-bound requests.
  */
 export function stripToolReferenceBlocksFromUserMessage(
   message: UserMessage,
@@ -1702,7 +1627,7 @@ export function stripToolReferenceBlocksFromUserMessage(
             content: [
               {
                 type: 'text' as const,
-                text: '[Tool references removed - tool search not enabled]',
+                text: '[Legacy tool references removed]',
               },
             ],
           }
@@ -1718,9 +1643,8 @@ export function stripToolReferenceBlocksFromUserMessage(
 }
 
 /**
- * Strips the 'caller' field from tool_use blocks in an assistant message.
- * The 'caller' field is only valid when the tool search beta is enabled.
- * When tool search is disabled, we need to remove this field to avoid API errors.
+ * Strips the legacy 'caller' field from tool_use blocks in an assistant message.
+ * The field is no longer valid in API-bound requests.
  *
  * NOTE: This function only strips the 'caller' field - it does NOT normalize
  * tool inputs (that's done by normalizeToolInputForAPI in normalizeMessagesForAPI).
@@ -1757,6 +1681,54 @@ export function stripCallerFieldFromAssistantMessage(
       }),
     },
   }
+}
+
+function stripLegacyToolSearchExchanges(
+  messages: (UserMessage | AssistantMessage)[],
+): (UserMessage | AssistantMessage)[] {
+  const toolSearchIds = new Set<string>()
+  for (const message of messages) {
+    if (message.type !== 'assistant') continue
+    for (const block of message.message.content) {
+      if (
+        block.type === 'tool_use' &&
+        block.name === LEGACY_TOOL_SEARCH_TOOL_NAME
+      ) {
+        toolSearchIds.add(block.id)
+      }
+    }
+  }
+
+  if (toolSearchIds.size === 0) {
+    return messages
+  }
+
+  return messages
+    .map(message => {
+      if (message.type === 'assistant') {
+        const content = message.message.content.filter(
+          block => block.type !== 'tool_use' || !toolSearchIds.has(block.id),
+        )
+        return content.length > 0
+          ? { ...message, message: { ...message.message, content } }
+          : null
+      }
+
+      const content = message.message.content
+      if (!Array.isArray(content)) {
+        return message
+      }
+      const filtered = content.filter(
+        block =>
+          block.type !== 'tool_result' || !toolSearchIds.has(block.tool_use_id),
+      )
+      return filtered.length > 0
+        ? { ...message, message: { ...message.message, content: filtered } }
+        : null
+    })
+    .filter(
+      (message): message is UserMessage | AssistantMessage => message !== null,
+    )
 }
 
 /**
@@ -1978,9 +1950,6 @@ export function normalizeMessagesForAPI(
   messages: Message[],
   tools: Tools = [],
 ): (UserMessage | AssistantMessage)[] {
-  // Build set of available tool names for filtering unavailable tool references
-  const availableToolNames = new Set(tools.map(t => t.name))
-
   // First, reorder attachments to bubble up until they hit a tool result or assistant message
   // Then strip virtual messages — they're display-only (e.g. REPL inner tool
   // calls) and must never reach the API.
@@ -2084,19 +2053,10 @@ export function normalizeMessagesForAPI(
           // multiple user messages in a row; 1P API does and merges them
           // into a single user turn
 
-          // When tool search is NOT enabled, strip all tool_reference blocks from
-          // tool_result content, as these are only valid with the tool search beta.
-          // When tool search IS enabled, strip only tool_reference blocks for
-          // tools that no longer exist (e.g., MCP server was disconnected).
-          let normalizedMessage = message
-          if (!isToolSearchEnabledOptimistic()) {
-            normalizedMessage = stripToolReferenceBlocksFromUserMessage(message)
-          } else {
-            normalizedMessage = stripUnavailableToolReferencesFromUserMessage(
-              message,
-              availableToolNames,
-            )
-          }
+          // ToolSearch was removed from the active runtime; old sessions can still
+          // contain beta-only tool_reference blocks, which must never reach the API.
+          let normalizedMessage =
+            stripToolReferenceBlocksFromUserMessage(message)
 
           // Strip document/image blocks from the specific meta user message that
           // preceded a PDF/image/request-too-large error, to prevent re-sending
@@ -2124,48 +2084,6 @@ export function normalizeMessagesForAPI(
             }
           }
 
-          // Server renders tool_reference expansion as <functions>...</functions>
-          // (same tags as the system prompt's tool block). When this is at the
-          // prompt tail, capybara models sample the stop sequence at ~10% (A/B:
-          // 21/200 vs 0/200 on v3-prod). A sibling text block inserts a clean
-          // "\n\nHuman: ..." turn boundary. Injected here (API-prep) rather than
-          // stored in the message so it never renders in the REPL, and is
-          // auto-skipped when strip* above removes all tool_reference content.
-          // Must be a sibling, NOT inside tool_result.content — mixing text with
-          // tool_reference inside the block is a server ValueError.
-          // Idempotent: query.ts calls this per-tool-result; the output flows
-          // back through here via claude.ts on the next API request. The first
-          // pass's sibling gets a \n[id:xxx] suffix from appendMessageTag below,
-          // so startsWith matches both bare and tagged forms.
-          //
-          // Gated OFF when deferredToolRefRelocation setting is active —
-          // relocateToolReferenceSiblings in post-processing below moves
-          // existing siblings to a later non-ref message instead of adding
-          // one here. When setting is off, this is the fallback.
-          if (!(getInitialSettings()?.deferredToolRefRelocation ?? true)) {
-            const contentAfterStrip = normalizedMessage.message.content
-            if (
-              Array.isArray(contentAfterStrip) &&
-              !contentAfterStrip.some(
-                b =>
-                  b.type === 'text' &&
-                  b.text.startsWith(TOOL_REFERENCE_TURN_BOUNDARY),
-              ) &&
-              contentHasToolReference(contentAfterStrip)
-            ) {
-              normalizedMessage = {
-                ...normalizedMessage,
-                message: {
-                  ...normalizedMessage.message,
-                  content: [
-                    ...contentAfterStrip,
-                    { type: 'text', text: TOOL_REFERENCE_TURN_BOUNDARY },
-                  ],
-                },
-              }
-            }
-          }
-
           // If the last message is also a user message, merge them
           const lastMessage = last(result)
           if (lastMessage?.type === 'user') {
@@ -2182,10 +2100,6 @@ export function normalizeMessagesForAPI(
         }
         case 'assistant': {
           // Normalize tool inputs for API (strip fields like plan from ExitPlanModeV2)
-          // When tool search is NOT enabled, we must strip tool_search-specific fields
-          // like 'caller' from tool_use blocks, as these are only valid with the
-          // tool search beta header
-          const toolSearchEnabled = isToolSearchEnabledOptimistic()
           const normalizedMessage: AssistantMessage = {
             ...message,
             message: {
@@ -2201,18 +2115,6 @@ export function normalizeMessagesForAPI(
                     : block.input
                   const canonicalName = tool?.name ?? block.name
 
-                  // When tool search is enabled, preserve all fields including 'caller'
-                  if (toolSearchEnabled) {
-                    return {
-                      ...block,
-                      name: canonicalName,
-                      input: normalizedInput,
-                    }
-                  }
-
-                  // When tool search is NOT enabled, explicitly construct tool_use
-                  // block with only standard API fields to avoid sending fields like
-                  // 'caller' that may be stored in sessions from tool search runs
                   return {
                     type: 'tool_use' as const,
                     id: block.id,
@@ -2273,16 +2175,11 @@ export function normalizeMessagesForAPI(
       }
     })
 
-  // Relocate text siblings off tool_reference messages — prevents the
-  // anomalous two-consecutive-human-turns pattern that teaches the model
-  // to emit the stop sequence after tool results. See #21049.
-  // Runs after merge (siblings are in place) and before ID tagging (so
-  // tags reflect final positions). When gate is OFF, this is a noop and
-  // the TOOL_REFERENCE_TURN_BOUNDARY injection above serves as fallback.
-  const relocated =
-    (getInitialSettings()?.deferredToolRefRelocation ?? true)
-      ? relocateToolReferenceSiblings(result)
-      : result
+  const withoutLegacyToolSearch = stripLegacyToolSearchExchanges(result)
+
+  // Relocate text siblings off legacy tool_reference messages before ID tagging
+  // so tags reflect final positions.
+  const relocated = relocateToolReferenceSiblings(withoutLegacyToolSearch)
 
   // Filter orphaned thinking-only assistant messages (likely introduced by
   // compaction slicing away intervening messages between a failed streaming
@@ -3016,7 +2913,6 @@ export function handleMessageFromStream(
         case 'web_fetch_tool_result':
         case 'bash_code_execution_tool_result':
         case 'text_editor_code_execution_tool_result':
-        case 'tool_search_tool_result':
         case 'compaction':
           onSetStreamMode('tool-input')
           return
@@ -4044,16 +3940,23 @@ You have exited auto mode. The user may now want to interact more directly. You 
         }),
       ])
     }
-    case 'deferred_tools_delta': {
+    case 'deferred_tools_delta':
+      return []
+    case 'mcp_tools_delta': {
       const parts: string[] = []
-      if (attachment.addedLines.length > 0) {
+      if (attachment.addedNames.length > 0) {
         parts.push(
-          `The following deferred tools are now available via ToolSearch:\n${attachment.addedLines.join('\n')}`,
+          `The following MCP tools are now available:\n${attachment.addedNames.join('\n')}`,
+        )
+      }
+      if (attachment.changedNames.length > 0) {
+        parts.push(
+          `The schemas or descriptions for the following MCP tools have changed. Use the latest tool schema when calling them:\n${attachment.changedNames.join('\n')}`,
         )
       }
       if (attachment.removedNames.length > 0) {
         parts.push(
-          `The following deferred tools are no longer available (their MCP server disconnected). Do not search for them — ToolSearch will return no match:\n${attachment.removedNames.join('\n')}`,
+          `The following MCP tools are no longer available:\n${attachment.removedNames.join('\n')}`,
         )
       }
       return wrapMessagesInSystemReminder([

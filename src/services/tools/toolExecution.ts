@@ -27,10 +27,6 @@ import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
-import {
-  isDeferredTool,
-  TOOL_SEARCH_TOOL_NAME,
-} from '../../tools/ToolSearchTool/prompt.js'
 import { getAllBaseTools } from '../../tools.js'
 import type { HookProgress } from '../../types/hooks.js'
 import type {
@@ -89,11 +85,6 @@ import {
   processPreMappedToolResultBlock,
   processToolResultBlock,
 } from '../../utils/toolResultStorage.js'
-import {
-  extractDiscoveredToolNames,
-  isToolSearchEnabledOptimistic,
-  isToolSearchToolAvailable,
-} from '../../utils/toolSearch.js'
 import {
   McpAuthError,
   McpToolCallError_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -474,33 +465,6 @@ function streamedCheckPermissionsAndCallTool(
   return stream
 }
 
-/**
- * Appended to Zod errors when a deferred tool wasn't in the discovered-tool
- * set — re-runs the claude.ts schema-filter scan dispatch-time to detect the
- * mismatch. The raw Zod error ("expected array, got string") doesn't tell the
- * model to re-load the tool; this hint does. Null if the schema was sent.
- */
-export function buildSchemaNotSentHint(
-  tool: Tool,
-  messages: Message[],
-  tools: readonly { name: string }[],
-): string | null {
-  // Optimistic gating — reconstructing claude.ts's full useToolSearch
-  // computation is fragile. These two gates prevent pointing at a ToolSearch
-  // that isn't callable; occasional misfires (Haiku, tst-auto below threshold)
-  // cost one extra round-trip on an already-failing path.
-  if (!isToolSearchEnabledOptimistic()) return null
-  if (!isToolSearchToolAvailable(tools)) return null
-  if (!isDeferredTool(tool)) return null
-  const discovered = extractDiscoveredToolNames(messages)
-  if (discovered.has(tool.name)) return null
-  return (
-    `\n\nThis tool's schema was not sent to the API — it was not in the discovered-tool set derived from message history. ` +
-    `Without the schema in your prompt, typed parameters (arrays, numbers, booleans) get emitted as strings and the client-side parser rejects them. ` +
-    `Load the tool first: call ${TOOL_SEARCH_TOOL_NAME} with query "select:${tool.name}", then retry this call.`
-  )
-}
-
 async function checkPermissionsAndCallTool(
   tool: Tool,
   toolUseID: string,
@@ -526,15 +490,6 @@ async function checkPermissionsAndCallTool(
   const parsedInput = tool.inputSchema.safeParse(coercedInput)
   if (!parsedInput.success) {
     let errorContent = formatZodValidationError(tool.name, parsedInput.error)
-
-    const schemaHint = buildSchemaNotSentHint(
-      tool,
-      toolUseContext.messages,
-      toolUseContext.options.tools,
-    )
-    if (schemaHint) {
-      errorContent += schemaHint
-    }
 
     logForDebugging(
       `${tool.name} tool input error: ${errorContent.slice(0, 200)}`,

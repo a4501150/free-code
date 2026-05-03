@@ -10,8 +10,6 @@ import {
   PROMPT_CACHING_SCOPE_BETA_HEADER,
   REDACT_THINKING_BETA_HEADER,
   STRUCTURED_OUTPUTS_BETA_HEADER,
-  TOOL_SEARCH_BETA_HEADER_1P,
-  TOOL_SEARCH_BETA_HEADER_3P,
   WEB_SEARCH_BETA_HEADER,
 } from '../constants/betas.js'
 import { OAUTH_BETA_HEADER } from '../constants/oauth.js'
@@ -113,23 +111,6 @@ export function modelSupportsAutoMode(_model: string): boolean {
     return true
   }
   return false
-}
-
-/**
- * Get the correct tool search beta header for the current API provider.
- * Providers using Anthropic wire format (anthropic, foundry, proxies) use the 1P header.
- * Cloud providers with custom APIs (Bedrock Converse, Vertex) use the 3P header.
- */
-export function getToolSearchBetaHeader(model?: string): string {
-  const registry = getProviderRegistry()
-  const caps = model
-    ? registry.getCapabilities(model)
-    : registry.getCapabilities()
-  // 3P providers have non-native token counting methods (bedrock-custom, vertex-filtered)
-  if (caps.tokenCountingMethod !== 'native') {
-    return TOOL_SEARCH_BETA_HEADER_3P
-  }
-  return TOOL_SEARCH_BETA_HEADER_1P
 }
 
 /**

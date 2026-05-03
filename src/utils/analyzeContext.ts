@@ -53,8 +53,6 @@ import { toError } from './errors.js'
 import { logError } from './log.js'
 import { normalizeMessagesForAPI } from './messages.js'
 import { getRuntimeMainLoopModel } from './model/model.js'
-import { isToolSearchEnabled } from './toolSearch.js'
-import { isDeferredTool } from '../tools/ToolSearchTool/prompt.js'
 import type { SettingSource } from './settings/constants.js'
 import { jsonStringify } from './slowOperations.js'
 import { buildEffectiveSystemPrompt } from './systemPrompt.js'
@@ -89,8 +87,6 @@ interface ContextCategory {
   name: string
   tokens: number
   color: keyof Theme
-  /** When true, these tokens are deferred and don't count toward context usage */
-  isDeferred?: boolean
 }
 
 interface GridSquare {
@@ -112,13 +108,6 @@ interface McpTool {
   name: string
   serverName: string
   tokens: number
-  isLoaded?: boolean
-}
-
-export interface DeferredBuiltinTool {
-  name: string
-  tokens: number
-  isLoaded: boolean
 }
 
 export interface SystemToolDetail {
@@ -174,8 +163,6 @@ export interface ContextData {
   readonly model: string
   readonly memoryFiles: MemoryFile[]
   readonly mcpTools: McpTool[]
-  /** Ant-only: per-tool breakdown of deferred built-in tools */
-  readonly deferredBuiltinTools?: DeferredBuiltinTool[]
   /** Ant-only: per-tool breakdown of always-loaded built-in tools */
   readonly systemTools?: SystemToolDetail[]
   /** Ant-only: per-section breakdown of system prompt */
@@ -342,129 +329,28 @@ async function countBuiltInToolTokens(
   getToolPermissionContext: () => Promise<ToolPermissionContext>,
   agentInfo: AgentDefinitionsResult | null,
   model?: string,
-  messages?: Message[],
 ): Promise<{
   builtInToolTokens: number
-  deferredBuiltinDetails: DeferredBuiltinTool[]
-  deferredBuiltinTokens: number
   systemToolDetails: SystemToolDetail[]
 }> {
   const builtInTools = tools.filter(tool => !tool.isMcp)
   if (builtInTools.length < 1) {
     return {
       builtInToolTokens: 0,
-      deferredBuiltinDetails: [],
-      deferredBuiltinTokens: 0,
       systemToolDetails: [],
     }
   }
 
-  // Check if tool search is enabled
-  const isDeferred = await isToolSearchEnabled(
-    model ?? '',
-    tools,
+  const builtInToolTokens = await countToolDefinitionTokens(
+    builtInTools,
     getToolPermissionContext,
-    agentInfo?.activeAgents ?? [],
-    'analyzeBuiltIn',
+    agentInfo,
+    model,
   )
 
-  // Separate always-loaded and deferred builtin tools using dynamic isDeferredTool check
-  const alwaysLoadedTools = builtInTools.filter(t => !isDeferredTool(t))
-  const deferredBuiltinTools = builtInTools.filter(t => isDeferredTool(t))
-
-  // Count always-loaded tools
-  const alwaysLoadedTokens =
-    alwaysLoadedTools.length > 0
-      ? await countToolDefinitionTokens(
-          alwaysLoadedTools,
-          getToolPermissionContext,
-          agentInfo,
-          model,
-        )
-      : 0
-
-  // Build per-tool breakdown for always-loaded tools (ant-only, proportional
-  // split of the bulk count based on rough schema size estimation). Excludes
-  // SkillTool since its tokens are shown in the separate Skills category.
-  const systemToolDetails: SystemToolDetail[] = []
-
-  // Count deferred builtin tools individually for details
-  const deferredBuiltinDetails: DeferredBuiltinTool[] = []
-  let loadedDeferredTokens = 0
-  let totalDeferredTokens = 0
-
-  if (deferredBuiltinTools.length > 0 && isDeferred) {
-    // Find which deferred tools have been used in messages
-    const loadedToolNames = new Set<string>()
-    if (messages) {
-      const deferredToolNameSet = new Set(deferredBuiltinTools.map(t => t.name))
-      for (const msg of messages) {
-        if (msg.type === 'assistant') {
-          for (const block of msg.message.content) {
-            if (
-              'type' in block &&
-              block.type === 'tool_use' &&
-              'name' in block &&
-              typeof block.name === 'string' &&
-              deferredToolNameSet.has(block.name)
-            ) {
-              loadedToolNames.add(block.name)
-            }
-          }
-        }
-      }
-    }
-
-    // Count each deferred tool
-    const tokensByTool = await Promise.all(
-      deferredBuiltinTools.map(t =>
-        countToolDefinitionTokens(
-          [t],
-          getToolPermissionContext,
-          agentInfo,
-          model,
-        ),
-      ),
-    )
-
-    for (const [i, tool] of deferredBuiltinTools.entries()) {
-      const tokens = Math.max(
-        0,
-        (tokensByTool[i] || 0) - TOOL_TOKEN_COUNT_OVERHEAD,
-      )
-      const isLoaded = loadedToolNames.has(tool.name)
-      deferredBuiltinDetails.push({
-        name: tool.name,
-        tokens,
-        isLoaded,
-      })
-      totalDeferredTokens += tokens
-      if (isLoaded) {
-        loadedDeferredTokens += tokens
-      }
-    }
-  } else if (deferredBuiltinTools.length > 0) {
-    // Tool search not enabled - count deferred tools as regular
-    const deferredTokens = await countToolDefinitionTokens(
-      deferredBuiltinTools,
-      getToolPermissionContext,
-      agentInfo,
-      model,
-    )
-    return {
-      builtInToolTokens: alwaysLoadedTokens + deferredTokens,
-      deferredBuiltinDetails: [],
-      deferredBuiltinTokens: 0,
-      systemToolDetails,
-    }
-  }
-
   return {
-    // When deferred, only count always-loaded tools + any loaded deferred tools
-    builtInToolTokens: alwaysLoadedTokens + loadedDeferredTokens,
-    deferredBuiltinDetails,
-    deferredBuiltinTokens: totalDeferredTokens - loadedDeferredTokens,
-    systemToolDetails,
+    builtInToolTokens,
+    systemToolDetails: [],
   }
 }
 
@@ -572,12 +458,9 @@ export async function countMcpToolTokens(
   getToolPermissionContext: () => Promise<ToolPermissionContext>,
   agentInfo: AgentDefinitionsResult | null,
   model: string,
-  messages?: Message[],
 ): Promise<{
   mcpToolTokens: number
   mcpToolDetails: McpTool[]
-  deferredToolTokens: number
-  loadedMcpToolNames: Set<string>
 }> {
   const mcpTools = tools.filter(tool => tool.isMcp)
   const mcpToolDetails: McpTool[] = []
@@ -618,65 +501,17 @@ export async function countMcpToolTokens(
     Math.round((e / estimateTotal) * totalTokens),
   )
 
-  // Check if tool search is enabled - if so, MCP tools are deferred
-  // isToolSearchEnabled handles threshold calculation internally for TstAuto mode
-  const isDeferred = await isToolSearchEnabled(
-    model,
-    tools,
-    getToolPermissionContext,
-    agentInfo?.activeAgents ?? [],
-    'analyzeMcp',
-  )
-
-  // Find MCP tools that have been used in messages (loaded via ToolSearchTool)
-  const loadedMcpToolNames = new Set<string>()
-  if (isDeferred && messages) {
-    const mcpToolNameSet = new Set(mcpTools.map(t => t.name))
-    for (const msg of messages) {
-      if (msg.type === 'assistant') {
-        for (const block of msg.message.content) {
-          if (
-            'type' in block &&
-            block.type === 'tool_use' &&
-            'name' in block &&
-            typeof block.name === 'string' &&
-            mcpToolNameSet.has(block.name)
-          ) {
-            loadedMcpToolNames.add(block.name)
-          }
-        }
-      }
-    }
-  }
-
-  // Build tool details with isLoaded flag
   for (const [i, tool] of mcpTools.entries()) {
     mcpToolDetails.push({
       name: tool.name,
       serverName: tool.name.split('__')[1] || 'unknown',
       tokens: mcpToolTokensByTool[i]!,
-      isLoaded: loadedMcpToolNames.has(tool.name) || !isDeferredTool(tool),
     })
   }
 
-  // Calculate loaded vs deferred tokens
-  let loadedTokens = 0
-  let deferredTokens = 0
-  for (const detail of mcpToolDetails) {
-    if (detail.isLoaded) {
-      loadedTokens += detail.tokens
-    } else if (isDeferred) {
-      deferredTokens += detail.tokens
-    }
-  }
-
   return {
-    // When deferred but some tools are loaded, count loaded tokens
-    mcpToolTokens: isDeferred ? loadedTokens : totalTokens,
+    mcpToolTokens: totalTokens,
     mcpToolDetails,
-    // Track deferred tokens separately for display
-    deferredToolTokens: deferredTokens,
-    loadedMcpToolNames,
   }
 }
 
@@ -901,13 +736,8 @@ export async function analyzeContextUsage(
   const [
     { systemPromptTokens, systemPromptSections },
     { claudeMdTokens, memoryFileDetails },
-    {
-      builtInToolTokens,
-      deferredBuiltinDetails,
-      deferredBuiltinTokens,
-      systemToolDetails,
-    },
-    { mcpToolTokens, mcpToolDetails, deferredToolTokens },
+    { builtInToolTokens, systemToolDetails },
+    { mcpToolTokens, mcpToolDetails },
     { agentTokens, agentDetails },
     { slashCommandTokens, commandInfo },
     messageBreakdown,
@@ -919,14 +749,12 @@ export async function analyzeContextUsage(
       getToolPermissionContext,
       agentDefinitions,
       runtimeModel,
-      messages,
     ),
     countMcpToolTokens(
       tools,
       getToolPermissionContext,
       agentDefinitions,
       runtimeModel,
-      messages,
     ),
     countCustomAgentTokens(agentDefinitions),
     countSlashCommandTokens(tools, getToolPermissionContext, agentDefinitions),
@@ -987,27 +815,6 @@ export async function analyzeContextUsage(
     })
   }
 
-  // Show deferred MCP tools (when tool search is enabled)
-  // These don't count toward context usage but we show them for visibility
-  if (deferredToolTokens > 0) {
-    cats.push({
-      name: 'MCP tools (deferred)',
-      tokens: deferredToolTokens,
-      color: 'inactive',
-      isDeferred: true,
-    })
-  }
-
-  // Show deferred builtin tools (when tool search is enabled)
-  if (deferredBuiltinTokens > 0) {
-    cats.push({
-      name: 'System tools (deferred)',
-      tokens: deferredBuiltinTokens,
-      color: 'inactive',
-      isDeferred: true,
-    })
-  }
-
   // Custom agents after MCP tools
   if (agentTokens > 0) {
     cats.push({
@@ -1044,11 +851,7 @@ export async function analyzeContextUsage(
   }
 
   // Calculate actual content usage (before adding reserved buffers)
-  // Exclude deferred categories from the usage calculation
-  const actualUsage = cats.reduce(
-    (sum, cat) => sum + (cat.isDeferred ? 0 : cat.tokens),
-    0,
-  )
+  const actualUsage = cats.reduce((sum, cat) => sum + cat.tokens, 0)
 
   // Reserved space after messages (not counted in actualUsage shown to user).
   let reservedTokens = 0
@@ -1112,12 +915,8 @@ export async function analyzeContextUsage(
   const GRID_HEIGHT = contextWindow >= 1000000 ? 10 : isNarrowScreen ? 5 : 10
   const TOTAL_SQUARES = GRID_WIDTH * GRID_HEIGHT
 
-  // Filter out deferred categories - they don't take up actual context space
-  // (e.g., MCP tools when tool search is enabled)
-  const nonDeferredCats = cats.filter(cat => !cat.isDeferred)
-
   // Calculate squares per category (use rawEffectiveMax for visualization to show full context)
-  const categorySquares = nonDeferredCats.map(cat => ({
+  const categorySquares = cats.map(cat => ({
     ...cat,
     squares:
       cat.name === 'Free space'
@@ -1274,7 +1073,6 @@ export async function analyzeContextUsage(
     model: runtimeModel,
     memoryFiles: memoryFileDetails,
     mcpTools: mcpToolDetails,
-    deferredBuiltinTools: undefined,
     systemTools: undefined,
     systemPromptSections: undefined,
     agents: agentDetails,

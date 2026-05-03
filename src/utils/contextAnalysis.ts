@@ -180,7 +180,6 @@ function processBlock(
     case 'web_fetch_tool_result':
     case 'bash_code_execution_tool_result':
     case 'text_editor_code_execution_tool_result':
-    case 'tool_search_tool_result':
     case 'compaction':
       // Don't care about these for now..
       stats['other'] += tokens

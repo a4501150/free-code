@@ -88,7 +88,6 @@ export type FileWriteToolInput = InputSchema
 
 export const FileWriteTool = buildTool({
   name: FILE_WRITE_TOOL_NAME,
-  searchHint: 'create or overwrite files',
   maxResultSizeChars: 100_000,
   async description() {
     return 'Write a file to the local filesystem.'

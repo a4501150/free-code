@@ -16,7 +16,6 @@ import { getSessionMemoryPath } from '../../utils/permissions/filesystem.js'
 import { processSessionStartHooks } from '../../utils/sessionStart.js'
 import { getTranscriptPath } from '../../utils/sessionStorage.js'
 import { tokenCountFromLastAPIResponse } from '../../utils/tokens.js'
-import { extractDiscoveredToolNames } from '../../utils/toolSearch.js'
 import {
   isSessionMemoryEmpty,
   truncateSessionMemoryForCompact,
@@ -416,13 +415,6 @@ function createCompactionResultFromSessionMemory(
     preCompactTokenCount ?? 0,
     messages[messages.length - 1]?.uuid,
   )
-  const preCompactDiscovered = extractDiscoveredToolNames(messages)
-  if (preCompactDiscovered.size > 0) {
-    boundaryMarker.compactMetadata.preCompactDiscoveredTools = [
-      ...preCompactDiscovered,
-    ].sort()
-  }
-
   // Truncate oversized sections to prevent session memory from consuming
   // the entire post-compact token budget
   const { truncatedContent, wasTruncated } =

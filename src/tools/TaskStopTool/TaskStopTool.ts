@@ -38,7 +38,6 @@ export type Output = z.infer<OutputSchema>
 
 export const TaskStopTool = buildTool({
   name: TASK_STOP_TOOL_NAME,
-  searchHint: 'kill a running background task',
   // Deprecated aliases kept for backward compatibility with existing
   // transcripts and SDK users.
   aliases: ['TaskStop', 'KillShell'],
@@ -50,7 +49,6 @@ export const TaskStopTool = buildTool({
   get outputSchema(): OutputSchema {
     return outputSchema()
   },
-  shouldDefer: true,
   isConcurrencySafe() {
     return true
   },

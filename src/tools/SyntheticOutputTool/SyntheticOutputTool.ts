@@ -42,7 +42,6 @@ export const SyntheticOutputTool = buildTool({
     return false
   },
   name: SYNTHETIC_OUTPUT_TOOL_NAME,
-  searchHint: 'return the final response as structured JSON',
   maxResultSizeChars: 100_000,
   async description(): Promise<string> {
     return 'Return structured output in the requested format'

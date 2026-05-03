@@ -42,7 +42,6 @@ const ALL_FALSE_CAPABILITIES: Required<ProviderCapabilities> = {
   webSearch: false,
   customSyspromptPrefix: true,
   // Granular decomposition defaults (false when firstPartyFeatures is false)
-  supportsToolSearch: false,
   supportsFastMode: false,
   showModelPricing: false,
   supportsOAuthProfile: false,
@@ -74,7 +73,6 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     webSearch: true,
     customSyspromptPrefix: true,
     // All first-party features enabled on native Anthropic.
-    supportsToolSearch: true,
     supportsFastMode: true,
     showModelPricing: true,
     supportsOAuthProfile: true,
@@ -429,7 +427,6 @@ export class ProviderRegistry {
   resolveFirstPartyCapability(
     model: string | undefined,
     cap:
-      | 'supportsToolSearch'
       | 'supportsFastMode'
       | 'showModelPricing'
       | 'supportsOAuthProfile'

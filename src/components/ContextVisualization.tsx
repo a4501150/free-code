@@ -98,7 +98,6 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
     model,
     memoryFiles,
     mcpTools,
-    deferredBuiltinTools = [],
     systemTools,
     systemPromptSections,
     agents,
@@ -106,20 +105,13 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
     messageBreakdown,
   } = data
 
-  // Filter out categories with 0 tokens for the legend, and exclude Free space, Autocompact buffer, and deferred
+  // Filter out categories with 0 tokens for the legend, and exclude Free space and Autocompact buffer
   const visibleCategories = categories.filter(
     cat =>
       cat.tokens > 0 &&
       cat.name !== 'Free space' &&
-      cat.name !== RESERVED_CATEGORY_NAME &&
-      !cat.isDeferred,
+      cat.name !== RESERVED_CATEGORY_NAME,
   )
-  // Check if MCP tools are deferred (loaded on-demand via tool search)
-  const hasDeferredMcpTools = categories.some(
-    cat => cat.isDeferred && cat.name.includes('MCP'),
-  )
-  // Check if builtin tools are deferred
-  const hasDeferredBuiltinTools = deferredBuiltinTools.length > 0
   const autocompactCategory = categories.find(
     cat => cat.name === RESERVED_CATEGORY_NAME,
   )
@@ -169,14 +161,10 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
           </Text>
           {visibleCategories.map((cat, index) => {
             const tokenDisplay = formatTokens(cat.tokens)
-            // Show "N/A" for deferred categories since they don't count toward context
-            const percentDisplay = cat.isDeferred
-              ? 'N/A'
-              : `${((cat.tokens / rawMaxTokens) * 100).toFixed(1)}%`
+            const percentDisplay = `${((cat.tokens / rawMaxTokens) * 100).toFixed(1)}%`
             const isReserved = cat.name === RESERVED_CATEGORY_NAME
             const displayName = cat.name
-            // Deferred categories don't appear in grid, so show blank instead of symbol
-            const symbol = cat.isDeferred ? ' ' : isReserved ? '⛝' : '⛁'
+            const symbol = isReserved ? '⛝' : '⛁'
 
             return (
               <Box key={index}>
@@ -226,108 +214,36 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
           <Box flexDirection="column" marginTop={1}>
             <Box>
               <Text bold>MCP tools</Text>
-              <Text dimColor>
-                {' '}
-                · /mcp{hasDeferredMcpTools ? ' (loaded on-demand)' : ''}
-              </Text>
+              <Text dimColor> · /mcp</Text>
             </Box>
-            {!hasDeferredMcpTools &&
-              Array.from(groupByServer(mcpTools).entries()).map(
-                ([serverName, serverTools]) => {
-                  const serverTotal = serverTools.reduce(
-                    (s, t) => s + t.tokens,
-                    0,
-                  )
-                  return (
-                    <Box key={serverName} flexDirection="column" marginTop={1}>
-                      <Box>
-                        <Text dimColor>mcp__{serverName}</Text>
-                        <Text dimColor>
-                          {' '}
-                          ({serverTools.length}{' '}
-                          {plural(serverTools.length, 'tool')},{' '}
-                          {formatTokens(serverTotal)} tokens)
-                        </Text>
-                      </Box>
-                      {serverTools.map((tool, i) => (
-                        <Box key={i}>
-                          <Text>
-                            └ {stripToolPrefix(tool.name, serverName)}:{' '}
-                          </Text>
-                          <Text dimColor>
-                            {formatTokens(tool.tokens)} tokens
-                          </Text>
-                        </Box>
-                      ))}
-                    </Box>
-                  )
-                },
-              )}
-            {hasDeferredMcpTools && mcpTools.some(t => t.isLoaded) && (
-              <Box flexDirection="column">
-                <Box marginTop={1}>
-                  <Text dimColor>Loaded</Text>
-                </Box>
-                {Array.from(
-                  groupByServer(mcpTools.filter(t => t.isLoaded)).entries(),
-                ).map(([serverName, serverTools]) => {
-                  const serverTotal = serverTools.reduce(
-                    (s, t) => s + t.tokens,
-                    0,
-                  )
-                  return (
-                    <Box key={serverName} flexDirection="column" marginTop={1}>
-                      <Box>
-                        <Text dimColor>mcp__{serverName}</Text>
-                        <Text dimColor>
-                          {' '}
-                          ({serverTools.length}{' '}
-                          {plural(serverTools.length, 'tool')},{' '}
-                          {formatTokens(serverTotal)} tokens)
-                        </Text>
-                      </Box>
-                      {serverTools.map((tool, i) => (
-                        <Box key={i}>
-                          <Text>
-                            └ {stripToolPrefix(tool.name, serverName)}:{' '}
-                          </Text>
-                          <Text dimColor>
-                            {formatTokens(tool.tokens)} tokens
-                          </Text>
-                        </Box>
-                      ))}
-                    </Box>
-                  )
-                })}
-              </Box>
-            )}
-            {hasDeferredMcpTools && mcpTools.some(t => !t.isLoaded) && (
-              <Box flexDirection="column">
-                <Box marginTop={1}>
-                  <Text dimColor>Available</Text>
-                </Box>
-                {Array.from(
-                  groupByServer(mcpTools.filter(t => !t.isLoaded)).entries(),
-                ).map(([serverName, serverTools]) => (
+            {Array.from(groupByServer(mcpTools).entries()).map(
+              ([serverName, serverTools]) => {
+                const serverTotal = serverTools.reduce(
+                  (s, t) => s + t.tokens,
+                  0,
+                )
+                return (
                   <Box key={serverName} flexDirection="column" marginTop={1}>
                     <Box>
                       <Text dimColor>mcp__{serverName}</Text>
                       <Text dimColor>
                         {' '}
                         ({serverTools.length}{' '}
-                        {plural(serverTools.length, 'tool')})
+                        {plural(serverTools.length, 'tool')},{' '}
+                        {formatTokens(serverTotal)} tokens)
                       </Text>
                     </Box>
                     {serverTools.map((tool, i) => (
                       <Box key={i}>
-                        <Text dimColor>
-                          └ {stripToolPrefix(tool.name, serverName)}
+                        <Text>
+                          └ {stripToolPrefix(tool.name, serverName)}:{' '}
                         </Text>
+                        <Text dimColor>{formatTokens(tool.tokens)} tokens</Text>
                       </Box>
                     ))}
                   </Box>
-                ))}
-              </Box>
+                )
+              },
             )}
           </Box>
         )}

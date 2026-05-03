@@ -145,7 +145,6 @@ export type Output = z.infer<OutputSchema>
 
 export const ExitPlanModeTool: Tool<InputSchema, Output> = buildTool({
   name: EXIT_PLAN_MODE_TOOL_NAME,
-  searchHint: 'present plan for approval and start coding (plan mode only)',
   maxResultSizeChars: 100_000,
   async description() {
     return 'Prompts the user to exit plan mode and start coding'
@@ -162,7 +161,6 @@ export const ExitPlanModeTool: Tool<InputSchema, Output> = buildTool({
   userFacingName() {
     return ''
   },
-  shouldDefer: true,
   isEnabled() {
     // When --channels is active the user is likely on Telegram/Discord, not
     // watching the TUI. The plan-approval dialog would hang. Paired with the
@@ -197,8 +195,6 @@ export const ExitPlanModeTool: Tool<InputSchema, Output> = buildTool({
     if (isTeammate()) {
       return { result: true }
     }
-    // The deferred-tool list announces this tool regardless of mode, so the
-    // model can call it after plan approval (fresh delta on compact/clear).
     // Reject before checkPermissions to avoid showing the approval dialog.
     const mode = getAppState().toolPermissionContext.mode
     if (mode !== 'plan') {

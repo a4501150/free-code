@@ -13,7 +13,6 @@ type Output = z.infer<OutputSchema>
 
 export const SnipTool = buildTool({
   name: SNIP_TOOL_NAME,
-  searchHint: 'trim older conversation history',
   maxResultSizeChars: 10_000,
   async description() {
     return DESCRIPTION

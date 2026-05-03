@@ -29,10 +29,8 @@ import {
 import {
   getEmptyToolPermissionContext,
   type QueryChainTracking,
-  type Tool,
   type ToolPermissionContext,
   type Tools,
-  toolMatchesName,
 } from '../../Tool.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import {
@@ -73,8 +71,6 @@ import {
   normalizeContentFromAPI,
   normalizeMessagesForAPI,
   stripAdvisorBlocks,
-  stripCallerFieldFromAssistantMessage,
-  stripToolReferenceBlocksFromUserMessage,
   stripUnsignedThinkingBlocks,
 } from '../../utils/messages.js'
 import { getSmallFastModel } from '../../utils/model/model.js'
@@ -141,7 +137,6 @@ import {
 import { getAgentContext } from 'src/utils/agentContext.js'
 import { isClaudeAISubscriber } from 'src/utils/auth.js'
 import {
-  getToolSearchBetaHeader,
   modelSupportsStructuredOutputs,
   shouldIncludeFirstPartyOnlyBetas,
   shouldUseGlobalCacheScope,
@@ -165,19 +160,10 @@ import {
   modelSupportsThinking,
   type ThinkingConfig,
 } from 'src/utils/thinking.js'
-import {
-  extractDiscoveredToolNames,
-  isToolSearchEnabled,
-} from 'src/utils/toolSearch.js'
 import { API_MAX_MEDIA_PER_REQUEST } from '../../constants/apiLimits.js'
 import * as betaConstants from '../../constants/betas.js'
 import { ADVISOR_BETA_HEADER } from '../../constants/betas.js'
 import * as cachedMicrocompactMod from '../compact/cachedMicrocompact.js'
-import {
-  isDeferredTool,
-  TOOL_SEARCH_TOOL_NAME,
-} from '../../tools/ToolSearchTool/prompt.js'
-import { count } from '../../utils/array.js'
 import { insertBlockAfterToolResults } from '../../utils/contentArray.js'
 import { safeParseJSON } from '../../utils/json.js'
 import {
@@ -201,7 +187,6 @@ import {
   markToolsSentToAPIState,
   pinCacheEdits,
 } from '../compact/microCompact.js'
-import { getInitializationStatus } from '../lsp/manager.js'
 import { withStreamingVCR, withVCR } from '../vcr.js'
 import { CLIENT_REQUEST_ID_HEADER, getAnthropicClient } from './client.js'
 import {
@@ -736,19 +721,6 @@ export async function* queryModelWithStreaming({
 }
 
 /**
- * Determines if an LSP tool should be deferred (tool appears with defer_loading: true)
- * because LSP initialization is not yet complete.
- */
-function shouldDeferLspTool(tool: Tool): boolean {
-  if (!('isLsp' in tool) || !tool.isLsp) {
-    return false
-  }
-  const status = getInitializationStatus()
-  // Defer when pending or not started
-  return status.status === 'pending' || status.status === 'not-started'
-}
-
-/**
  * Per-attempt timeout for non-streaming fallback requests, in milliseconds.
  * Reads API_TIMEOUT_MS when set so slow backends and the streaming path
  * share the same ceiling.
@@ -1030,76 +1002,7 @@ async function* queryModel(
     }
   }
 
-  // Check if tool search is enabled (checks mode, model support, and threshold for auto mode)
-  // This is async because it may need to calculate MCP tool description sizes for TstAuto mode
-  let useToolSearch = await isToolSearchEnabled(
-    options.model,
-    tools,
-    options.getToolPermissionContext,
-    options.agents,
-    'query',
-  )
-
-  // Precompute once — isDeferredTool does 2 config lookups per call
-  const deferredToolNames = new Set<string>()
-  if (useToolSearch) {
-    for (const t of tools) {
-      if (isDeferredTool(t)) deferredToolNames.add(t.name)
-    }
-  }
-
-  // Even if tool search mode is enabled, skip if there are no deferred tools
-  // AND no MCP servers are still connecting. When servers are pending, keep
-  // ToolSearch available so the model can discover tools after they connect.
-  if (
-    useToolSearch &&
-    deferredToolNames.size === 0 &&
-    !options.hasPendingMcpServers
-  ) {
-    logForDebugging(
-      'Tool search disabled: no deferred tools available to search',
-    )
-    useToolSearch = false
-  }
-
-  // Filter out ToolSearchTool if tool search is not enabled for this model
-  // ToolSearchTool returns tool_reference blocks which unsupported models can't handle
-  let filteredTools: Tools
-
-  if (useToolSearch) {
-    // Dynamic tool loading: Only include deferred tools that have been discovered
-    // via tool_reference blocks in the message history. This eliminates the need
-    // to predeclare all deferred tools upfront and removes limits on tool quantity.
-    const discoveredToolNames = extractDiscoveredToolNames(messages)
-
-    filteredTools = tools.filter(tool => {
-      // Always include non-deferred tools
-      if (!deferredToolNames.has(tool.name)) return true
-      // Always include ToolSearchTool (so it can discover more tools)
-      if (toolMatchesName(tool, TOOL_SEARCH_TOOL_NAME)) return true
-      // Only include deferred tools that have been discovered
-      return discoveredToolNames.has(tool.name)
-    })
-  } else {
-    filteredTools = tools.filter(
-      t => !toolMatchesName(t, TOOL_SEARCH_TOOL_NAME),
-    )
-  }
-
-  // Add tool search beta header if enabled - required for defer_loading to be accepted
-  // Header differs by provider: 1P/Foundry use advanced-tool-use, Vertex/Bedrock use tool-search-tool
-  // For Bedrock, this header must go in extraBodyParams, not the betas array
-  const toolSearchHeader = useToolSearch
-    ? getToolSearchBetaHeader(options.model)
-    : null
-  if (
-    toolSearchHeader &&
-    !registry.getCapability(options.model, 'betasInBody')
-  ) {
-    if (!betas.includes(toolSearchHeader)) {
-      betas.push(toolSearchHeader)
-    }
-  }
+  const filteredTools: Tools = tools
 
   // Determine if cached microcompact is enabled for this model.
   // Computed once here (in async context) and captured by paramsFromContext.
@@ -1126,13 +1029,9 @@ async function* queryModel(
   }
 
   const useGlobalCacheFeature = shouldUseGlobalCacheScope()
-  const willDefer = (t: Tool) =>
-    useToolSearch && (deferredToolNames.has(t.name) || shouldDeferLspTool(t))
   // MCP tools are per-user → dynamic tool section → can't globally cache.
-  // Only gate when an MCP tool will actually render (not defer_loading).
   const needsToolBasedCacheMarker =
-    useGlobalCacheFeature &&
-    filteredTools.some(t => t.isMcp === true && !willDefer(t))
+    useGlobalCacheFeature && filteredTools.some(t => t.isMcp === true)
 
   // Ensure prompt_caching_scope beta header is present when global cache is enabled.
   if (
@@ -1149,31 +1048,17 @@ async function* queryModel(
       : 'system_prompt'
     : 'none'
 
-  // Build tool schemas, adding defer_loading for MCP tools when tool search is enabled
-  // Note: We pass the full `tools` list (not filteredTools) to toolToAPISchema so that
-  // ToolSearchTool's prompt can list ALL available MCP tools. The filtering only affects
-  // which tools are actually sent to the API, not what the model sees in tool descriptions.
   const toolSchemas = await Promise.all(
     filteredTools.map(tool =>
       toolToAPISchema(tool, {
         getToolPermissionContext: options.getToolPermissionContext,
-        tools,
+        tools: filteredTools,
         agents: options.agents,
         allowedAgentTypes: options.allowedAgentTypes,
         model: options.model,
-        deferLoading: willDefer(tool),
       }),
     ),
   )
-
-  if (useToolSearch) {
-    const includedDeferredTools = count(filteredTools, t =>
-      deferredToolNames.has(t.name),
-    )
-    logForDebugging(
-      `Dynamic tool loading: ${includedDeferredTools}/${deferredToolNames.size} deferred tools included`,
-    )
-  }
 
   queryCheckpoint('query_tool_schema_build_end')
 
@@ -1193,35 +1078,6 @@ async function* queryModel(
   // needed for Anthropic targets.
   if (registry.isAnthropicType(options.model)) {
     messagesForAPI = stripUnsignedThinkingBlocks(messagesForAPI)
-  }
-
-  // Model-specific post-processing: strip tool-search-specific fields if the
-  // selected model doesn't support tool search.
-  //
-  // Why is this needed in addition to normalizeMessagesForAPI?
-  // - normalizeMessagesForAPI uses isToolSearchEnabledNoModelCheck() because it's
-  //   called from ~20 places (analytics, feedback, sharing, etc.), many of which
-  //   don't have model context. Adding model to its signature would be a large refactor.
-  // - This post-processing uses the model-aware isToolSearchEnabled() check
-  // - This handles mid-conversation model switching (e.g., Sonnet → Haiku) where
-  //   stale tool-search fields from the previous model would cause 400 errors
-  //
-  // Note: For assistant messages, normalizeMessagesForAPI already normalized the
-  // tool inputs, so stripCallerFieldFromAssistantMessage only needs to remove the
-  // 'caller' field (not re-normalize inputs).
-  if (!useToolSearch) {
-    messagesForAPI = messagesForAPI.map(msg => {
-      switch (msg.type) {
-        case 'user':
-          // Strip tool_reference blocks from tool_result content
-          return stripToolReferenceBlocksFromUserMessage(msg)
-        case 'assistant':
-          // Strip 'caller' field from tool_use blocks
-          return stripCallerFieldFromAssistantMessage(msg)
-        default:
-          return msg
-      }
-    })
   }
 
   // Repair tool_use/tool_result pairing mismatches that can occur when resuming
@@ -1246,12 +1102,10 @@ async function* queryModel(
   // Instrumentation: Track message count after normalization
 
   // Compute fingerprint from first user message for attribution.
-  // Must run BEFORE injecting synthetic messages (e.g. deferred tool names)
-  // so the fingerprint reflects the actual user input.
+  // Must run before injecting synthetic messages so the fingerprint reflects
+  // the actual user input.
   const fingerprint = computeFingerprintFromMessages(messagesForAPI)
 
-  // Chrome tool-search instructions: when the delta attachment is enabled,
-  // filter(Boolean) works by converting each element to a boolean - empty strings become false and are filtered out.
   systemPrompt = asSystemPrompt(
     [
       registry.isAnthropicType(options.model)
@@ -1342,19 +1196,12 @@ async function* queryModel(
   const effort = resolveAppliedEffort(options.model, options.effortValue)
 
   if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
-    // Exclude defer_loading tools from the hash -- the API strips them from the
-    // prompt, so they never affect the actual cache key. Including them creates
-    // false-positive "tool schemas changed" breaks when tools are discovered or
-    // MCP servers reconnect.
-    const toolsForCacheDetection = allTools.filter(
-      t => !('defer_loading' in t && t.defer_loading),
-    )
     // Capture everything that could affect the server-side cache key.
     // Pass latched header values (not live state) so break detection
     // reflects what we actually send, not what the user toggled.
     recordPromptState({
       system,
-      toolSchemas: toolsForCacheDetection,
+      toolSchemas: allTools,
       querySource: options.querySource,
       model: options.model,
       agentId: options.agentId,
@@ -1422,15 +1269,11 @@ async function* queryModel(
   const paramsFromContext = (retryContext: RetryContext) => {
     const betasParams = [...betas]
 
-    // For providers with betasInBody, include both model-based betas and dynamically-added tool search header
     const bedrockBetas = registry.getCapability(
       retryContext.model,
       'betasInBody',
     )
-      ? [
-          ...getBodyBetas(retryContext.model),
-          ...(toolSearchHeader ? [toolSearchHeader] : []),
-        ]
+      ? getBodyBetas(retryContext.model)
       : []
     const extraBodyParams = getExtraBodyParams(bedrockBetas)
 

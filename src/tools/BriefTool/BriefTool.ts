@@ -90,8 +90,8 @@ export function isBriefEntitled(): boolean {
 
 /**
  * Unified activation gate for the Brief tool. Governs model-facing behavior
- * as a unit: tool availability, system prompt section (getBriefSection),
- * tool-deferral bypass (isDeferredTool), and todo-nag suppression.
+ * as a unit: tool availability, system prompt section (getBriefSection), and
+ * todo-nag suppression.
  *
  * Activation requires explicit opt-in (userMsgOptIn) set by one of:
  *   - `--brief` CLI flag (maybeActivateBrief in main.tsx)
@@ -125,8 +125,6 @@ export function isBriefEnabled(): boolean {
 export const BriefTool = buildTool({
   name: BRIEF_TOOL_NAME,
   aliases: [LEGACY_BRIEF_TOOL_NAME],
-  searchHint:
-    'send a message to the user — your primary visible output channel',
   maxResultSizeChars: 100_000,
   userFacingName() {
     return ''

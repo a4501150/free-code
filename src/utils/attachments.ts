@@ -55,7 +55,7 @@ import {
   getImagePasteIds,
   isValidImagePaste,
 } from 'src/types/textInputTypes.js'
-import { randomUUID, type UUID } from 'crypto'
+import { createHash, randomUUID, type UUID } from 'crypto'
 import { getSettings_DEPRECATED } from './settings/settings.js'
 import { getSnippetForTwoFileDiff } from 'src/tools/FileEditTool/utils.js'
 import type {
@@ -131,13 +131,6 @@ import {
   getKairosActive,
 } from '../bootstrap/state.js'
 import type { QuerySource } from '../constants/querySource.js'
-import {
-  getDeferredToolsDelta,
-  isToolSearchEnabledOptimistic,
-  isToolSearchToolAvailable,
-  modelSupportsToolReference,
-  type DeferredToolsDeltaScanContext,
-} from './toolSearch.js'
 import {
   getMcpInstructionsDelta,
   isMcpInstructionsDeltaEnabled,
@@ -652,6 +645,13 @@ export type Attachment =
       removedNames: string[]
     }
   | {
+      type: 'mcp_tools_delta'
+      addedNames: string[]
+      changedNames: string[]
+      removedNames: string[]
+      signatures: Array<{ name: string; signature: string }>
+    }
+  | {
       type: 'agent_listing_delta'
       addedTypes: string[]
       addedLines: string[]
@@ -771,20 +771,8 @@ export async function getAttachments(
     maybe('ultrathink_effort', () =>
       Promise.resolve(getUltrathinkEffortAttachment(input)),
     ),
-    maybe('deferred_tools_delta', () =>
-      Promise.resolve(
-        getDeferredToolsDeltaAttachment(
-          toolUseContext.options.tools,
-          toolUseContext.options.mainLoopModel,
-          messages,
-          {
-            callSite: isMainThread
-              ? 'attachments_main'
-              : 'attachments_subagent',
-            querySource,
-          },
-        ),
-      ),
+    maybe('mcp_tools_delta', () =>
+      getMcpToolsDeltaAttachment(toolUseContext, messages),
     ),
     maybe('agent_listing_delta', () =>
       Promise.resolve(getAgentListingDeltaAttachment(toolUseContext, messages)),
@@ -1373,26 +1361,100 @@ function getUltrathinkEffortAttachment(input: string | null): Attachment[] {
   return [{ type: 'ultrathink_effort', level: 'high' }]
 }
 
-// Exported for compact.ts — the gate must be identical at both call sites.
-export function getDeferredToolsDeltaAttachment(
-  tools: Tools,
-  model: string,
+function hashMcpToolSignature(value: unknown): string {
+  return createHash('sha256').update(jsonStringify(value)).digest('hex')
+}
+
+async function getMcpToolSignatures(
+  toolUseContext: ToolUseContext,
+): Promise<Array<{ name: string; signature: string }>> {
+  const tools = toolUseContext.options.tools.filter(
+    tool => tool.isMcp && tool.mcpInfo,
+  )
+  const signatures = await Promise.all(
+    tools.map(async tool => {
+      const description = await tool.prompt({
+        getToolPermissionContext: async () =>
+          toolUseContext.getAppState().toolPermissionContext,
+        tools: toolUseContext.options.tools,
+        agents: toolUseContext.options.agentDefinitions.activeAgents,
+        allowedAgentTypes:
+          toolUseContext.options.agentDefinitions.allowedAgentTypes,
+      })
+      return {
+        name: tool.name,
+        signature: hashMcpToolSignature({
+          name: tool.name,
+          serverName: tool.mcpInfo!.serverName,
+          toolName: tool.mcpInfo!.toolName,
+          description,
+          inputJSONSchema: tool.inputJSONSchema ?? null,
+        }),
+      }
+    }),
+  )
+  signatures.sort((a, b) => a.name.localeCompare(b.name))
+  return signatures
+}
+
+export async function getMcpToolsDeltaAttachment(
+  toolUseContext: ToolUseContext,
   messages: Message[] | undefined,
-  scanContext?: DeferredToolsDeltaScanContext,
-): Attachment[] {
-  // These three checks mirror the sync parts of isToolSearchEnabled —
-  // the attachment text says "available via ToolSearch", so ToolSearch
-  // has to actually be in the request. The async auto-threshold check
-  // is not replicated (would double-fire tengu_tool_search_mode_decision);
-  // in tst-auto below-threshold the attachment can fire while ToolSearch
-  // is filtered out, but that's a narrow case and the tools announced
-  // are directly callable anyway.
-  if (!isToolSearchEnabledOptimistic()) return []
-  if (!modelSupportsToolReference(model)) return []
-  if (!isToolSearchToolAvailable(tools)) return []
-  const delta = getDeferredToolsDelta(tools, messages ?? [], scanContext)
-  if (!delta) return []
-  return [{ type: 'deferred_tools_delta', ...delta }]
+): Promise<Attachment[]> {
+  const signatures = await getMcpToolSignatures(toolUseContext)
+
+  const announced = new Map<string, string>()
+  for (const msg of messages ?? []) {
+    if (msg.type !== 'attachment') continue
+    if (msg.attachment.type !== 'mcp_tools_delta') continue
+    announced.clear()
+    for (const { name, signature } of msg.attachment.signatures) {
+      announced.set(name, signature)
+    }
+  }
+
+  const current = new Map(
+    signatures.map(({ name, signature }) => [name, signature]),
+  )
+  const addedNames: string[] = []
+  const changedNames: string[] = []
+  const removedNames: string[] = []
+
+  for (const { name, signature } of signatures) {
+    const previous = announced.get(name)
+    if (previous === undefined) {
+      addedNames.push(name)
+    } else if (previous !== signature) {
+      changedNames.push(name)
+    }
+  }
+  for (const name of announced.keys()) {
+    if (!current.has(name)) {
+      removedNames.push(name)
+    }
+  }
+
+  addedNames.sort()
+  changedNames.sort()
+  removedNames.sort()
+
+  if (
+    addedNames.length === 0 &&
+    changedNames.length === 0 &&
+    removedNames.length === 0
+  ) {
+    return []
+  }
+
+  return [
+    {
+      type: 'mcp_tools_delta',
+      addedNames,
+      changedNames,
+      removedNames,
+      signatures,
+    },
+  ]
 }
 
 /**
@@ -1485,9 +1547,6 @@ export function getMcpInstructionsDeltaAttachment(
 ): Attachment[] {
   if (!isMcpInstructionsDeltaEnabled()) return []
 
-  // The chrome ToolSearch hint is client-authored and ToolSearch-conditional;
-  // actual server `instructions` are unconditional. Decide the chrome part
-  // here, pass it into the pure diff as a synthesized entry.
   const clientSide: ClientSideInstruction[] = []
   const delta = getMcpInstructionsDelta(mcpClients, messages ?? [], clientSide)
   if (!delta) return []

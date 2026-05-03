@@ -56,7 +56,6 @@ type Output = z.infer<OutputSchema>
 
 export const PushNotificationTool = buildTool({
   name: PUSH_NOTIFICATION_TOOL_NAME,
-  searchHint: 'push notification alert notify user',
   maxResultSizeChars: 500,
 
   async description() {

@@ -89,7 +89,6 @@ export type Output = z.infer<OutputSchema>
 
 export const TaskUpdateTool = buildTool({
   name: TASK_UPDATE_TOOL_NAME,
-  searchHint: 'update a task',
   maxResultSizeChars: 100_000,
   async description() {
     return DESCRIPTION
@@ -106,7 +105,6 @@ export const TaskUpdateTool = buildTool({
   userFacingName() {
     return 'TaskUpdate'
   },
-  shouldDefer: true,
   isEnabled() {
     return true
   },

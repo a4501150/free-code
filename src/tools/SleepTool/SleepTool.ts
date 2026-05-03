@@ -82,7 +82,6 @@ function interruptibleSleep(
 
 export const SleepTool = buildTool({
   name: SLEEP_TOOL_NAME,
-  searchHint: 'wait sleep rest pause idle proactive',
   maxResultSizeChars: 500,
 
   async description() {

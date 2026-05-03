@@ -58,7 +58,7 @@ function VerboseToolUse({
   theme: ThemeName
 }): React.ReactNode {
   const bg = useSelectedMessageBg()
-  // Same REPL-primitive fallback as getToolSearchOrReadInfo — REPL mode strips
+  // Same REPL-primitive fallback as getSearchOrReadInfo — REPL mode strips
   // these from the execution tools list, but virtual messages still need them
   // to render in verbose mode.
   const tool =

@@ -3,8 +3,7 @@
  *
  * Single source of truth for the `isCoordinatorMode()` check. Extracted from
  * coordinatorMode.ts so callers can depend on this tiny leaf without pulling
- * in the rest of coordinatorMode (which imports constants/tools and creates
- * cycles through ToolSearchTool/prompt and AgentTool).
+ * in the rest of coordinatorMode.
  */
 
 import { feature } from 'bun:bundle'

@@ -56,9 +56,7 @@ export const ReadMcpResourceTool = buildTool({
   toAutoClassifierInput(input) {
     return `${input.server} ${input.uri}`
   },
-  shouldDefer: true,
   name: 'ReadMcpResourceTool',
-  searchHint: 'read a specific MCP resource by URI',
   maxResultSizeChars: 100_000,
   async description() {
     return DESCRIPTION

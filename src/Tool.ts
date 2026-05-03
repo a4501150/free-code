@@ -364,13 +364,6 @@ export type Tool<
    * The tool can be looked up by any of these names in addition to its primary name.
    */
   aliases?: string[]
-  /**
-   * One-line capability phrase used by ToolSearch for keyword matching.
-   * Helps the model find this tool via keyword search when it's deferred.
-   * 3–10 words, no trailing period.
-   * Prefer terms not already in the tool name (e.g. 'spreadsheet' for Edit).
-   */
-  searchHint?: string
   call(
     args: z.infer<Input>,
     context: ToolUseContext,
@@ -429,18 +422,6 @@ export type Tool<
   requiresUserInteraction?(): boolean
   isMcp?: boolean
   isLsp?: boolean
-  /**
-   * When true, this tool is deferred (sent with defer_loading: true) and requires
-   * ToolSearch to be used before it can be called.
-   */
-  readonly shouldDefer?: boolean
-  /**
-   * When true, this tool is never deferred — its full schema appears in the
-   * initial prompt even when ToolSearch is enabled. For MCP tools, set via
-   * `_meta['anthropic/alwaysLoad']`. Use for tools the model must see on
-   * turn 1 without a ToolSearch round-trip.
-   */
-  readonly alwaysLoad?: boolean
   /**
    * For MCP tools: the server and tool names as received from the MCP server (unnormalized).
    * Present on all MCP tools regardless of whether `name` is prefixed (mcp__server__tool)
