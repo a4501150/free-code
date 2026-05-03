@@ -588,11 +588,26 @@ function extractWebSearchResults(
  * @param codexModel - The Codex model used for the request
  * @returns Transformed Response object with Anthropic-format stream
  */
+type CodexStreamControl = {
+  abortUpstream?: (reason?: unknown) => void
+  cleanup?: () => void
+}
+
 async function translateCodexStreamToAnthropic(
   codexResponse: Response,
   codexModel: string,
+  control: CodexStreamControl = {},
 ): Promise<Response> {
   const messageId = `msg_codex_${Date.now()}`
+  let upstreamReader: ReadableStreamDefaultReader<Uint8Array> | null = null
+  let downstreamCancelled = false
+  let cleanupCalled = false
+
+  const cleanup = (): void => {
+    if (cleanupCalled) return
+    cleanupCalled = true
+    control.cleanup?.()
+  }
 
   const readable = new ReadableStream({
     async start(controller) {
@@ -1059,6 +1074,7 @@ async function translateCodexStreamToAnthropic(
           usage: usagePayload,
         })
         streamFinished = true
+        cleanup()
         controller.close()
       }
 
@@ -1085,6 +1101,7 @@ async function translateCodexStreamToAnthropic(
           },
         })
         streamFinished = true
+        cleanup()
         controller.close()
       }
 
@@ -1097,6 +1114,7 @@ async function translateCodexStreamToAnthropic(
 
       try {
         const reader = codexResponse.body?.getReader()
+        upstreamReader = reader ?? null
         if (!reader) {
           streamTextDelta(
             upsertItem({}, { type: 'message' }, 'message'),
@@ -1326,6 +1344,10 @@ async function translateCodexStreamToAnthropic(
           if (done) break
         }
       } catch (err) {
+        if (downstreamCancelled) {
+          cleanup()
+          return
+        }
         logForDebugging(
           `[codex-adapter] stream loop threw: ${(err as Error)?.message ?? String(err)} stack=${(err as Error)?.stack?.split('\n').slice(0, 3).join(' | ') ?? 'none'}`,
           { level: 'error' },
@@ -1337,12 +1359,23 @@ async function translateCodexStreamToAnthropic(
         return
       }
 
+      if (downstreamCancelled) {
+        cleanup()
+        return
+      }
+
       if (!sawResponseCompleted && !streamFinished) {
         emitErrorAndClose('Codex stream ended before response.completed', {
           cause: new Error('Codex stream ended before response.completed'),
           stream_truncated: true,
         })
       }
+    },
+    cancel(reason) {
+      downstreamCancelled = true
+      control.abortUpstream?.(reason)
+      void upstreamReader?.cancel(reason).catch(() => {})
+      cleanup()
     },
   })
 
@@ -1451,19 +1484,49 @@ export function createCodexFetch(
       `[codex-adapter] POST ${codexBaseUrl} model=${codexModel} input_items=${reqInputCount} tools=${reqToolCount} reasoning=${reqReasoning} body_bytes=${reqBodyStr.length}`,
     )
 
+    const upstreamController = new AbortController()
+    const callerSignal =
+      init?.signal ?? (input instanceof Request ? input.signal : undefined)
+    let cleanupCallerAbort = (): void => {}
+    if (callerSignal) {
+      const abortUpstream = (): void => {
+        upstreamController.abort(callerSignal.reason)
+      }
+      if (callerSignal.aborted) {
+        upstreamController.abort(callerSignal.reason)
+      } else {
+        callerSignal.addEventListener('abort', abortUpstream, { once: true })
+        cleanupCallerAbort = () => {
+          callerSignal.removeEventListener('abort', abortUpstream)
+        }
+      }
+    }
+
     const fetchStart = Date.now()
-    const codexResponse = await globalThis.fetch(codexBaseUrl, {
-      method: 'POST',
-      headers,
-      body: reqBodyStr,
-    })
+    let codexResponse: Response
+    try {
+      codexResponse = await globalThis.fetch(codexBaseUrl, {
+        method: 'POST',
+        headers,
+        body: reqBodyStr,
+        signal: upstreamController.signal,
+      })
+    } catch (err) {
+      cleanupCallerAbort()
+      throw err
+    }
 
     logForDebugging(
       `[codex-adapter] response status=${codexResponse.status} content-type=${codexResponse.headers.get('content-type') ?? ''} ttfb_ms=${Date.now() - fetchStart}`,
     )
 
     if (!codexResponse.ok) {
-      const errorText = await codexResponse.text()
+      let errorText = ''
+      try {
+        errorText = await codexResponse.text()
+      } finally {
+        cleanupCallerAbort()
+      }
       const normalized = codexAdapter.normalizeError(
         {
           status: codexResponse.status,
@@ -1489,6 +1552,14 @@ export function createCodexFetch(
     }
 
     // Translate streaming response
-    return translateCodexStreamToAnthropic(codexResponse, codexModel)
+    try {
+      return await translateCodexStreamToAnthropic(codexResponse, codexModel, {
+        abortUpstream: reason => upstreamController.abort(reason),
+        cleanup: cleanupCallerAbort,
+      })
+    } catch (err) {
+      cleanupCallerAbort()
+      throw err
+    }
   }
 }
