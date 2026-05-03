@@ -216,7 +216,7 @@ export function deletePluginOptions(pluginId: string): void {
   // removal. Cast is deliberate (CLAUDE.md's 10% case): adding z.undefined()
   // to the schema instead (like enabledPlugins:466 does) leaks
   // `| {[k: string]: unknown}` into the public SDK type, which subsumes the
-  // real object arm and kills excess-property checks for SDK consumers. The
+  // real object arm and kills excess-property checks for structured consumers. The
   // mergeWith-deletion contract is internal plumbing — it shouldn't shape
   // the Zod schema. enabledPlugins gets away with it only because its other
   // arms (string[] | boolean) are non-objects that stay distinct.

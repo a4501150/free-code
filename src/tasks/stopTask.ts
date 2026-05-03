@@ -68,7 +68,7 @@ export async function stopTask(
   // Bash tasks: `taskImpl.kill` (killTask) now emits the killed
   // <task-notification> itself (via enqueueShellNotification). In --print
   // mode that XML is parsed and re-emitted as an SDK task_notification (see
-  // print.ts:1905+), so we don't need a direct emitTaskTerminatedSdk here —
+  // print.ts:1905+), so we don't need a direct emitTaskTerminatedStructured here —
   // emitting both would double-emit the SDK event. Agent tasks: the
   // AbortError catch in AgentTool.tsx sends a notification carrying
   // extractPartialResult(agentMessages); leave it alone.

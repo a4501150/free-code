@@ -31,9 +31,9 @@ export type Input = z.infer<ReturnType<typeof inputSchema>>
 // This schema is used to validate the MCP permission prompt tool
 // so we maintain it as a subset of the real PermissionDecision type
 
-// Matches PermissionDecisionClassificationSchema in entrypoints/sdk/coreSchemas.ts.
+// Matches PermissionDecisionClassificationSchema in structuredProtocol/coreSchemas.ts.
 // Malformed values fall through to undefined (same pattern as updatedPermissions
-// below) so a bad string from the SDK host doesn't reject the whole decision.
+// below) so a bad string from a structured host doesn't reject the whole decision.
 const decisionClassificationField = lazySchema(() =>
   z
     .enum(['user_temporary', 'user_permanent', 'user_reject'])
@@ -45,14 +45,14 @@ const PermissionAllowResultSchema = lazySchema(() =>
   z.object({
     behavior: z.literal('allow'),
     updatedInput: z.record(z.string(), z.unknown()),
-    // SDK hosts may send malformed entries; fall back to undefined rather
+    // Structured hosts may send malformed entries; fall back to undefined rather
     // than rejecting the entire allow decision (anthropics/claude-code#29440)
     updatedPermissions: z
       .array(permissionUpdateSchema())
       .optional()
       .catch(ctx => {
         logForDebugging(
-          `Malformed updatedPermissions from SDK host ignored: ${ctx.error.issues[0]?.message ?? 'unknown'}`,
+          `Malformed updatedPermissions from structured host ignored: ${ctx.error.issues[0]?.message ?? 'unknown'}`,
           { level: 'warn' },
         )
         return undefined

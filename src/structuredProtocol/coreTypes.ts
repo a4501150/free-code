@@ -1,4 +1,4 @@
-// SDK Core Types - Common serializable types used by both SDK consumers and SDK builders.
+// Structured Core Types - Common serializable types used by both structured consumers and structured builders.
 //
 // Types are generated from Zod schemas in coreSchemas.ts.
 // To modify types:
@@ -8,13 +8,13 @@
 // Schemas are available in coreSchemas.ts for runtime validation but are not
 // part of the public API.
 
-// Re-export sandbox types for SDK consumers
+// Re-export sandbox types for structured consumers
 export type {
   SandboxFilesystemConfig,
   SandboxIgnoreViolations,
   SandboxNetworkConfig,
   SandboxSettings,
-} from '../sandboxTypes.js'
+} from '../entrypoints/sandboxTypes.js'
 // Re-export all generated types
 export * from './coreTypes.generated.js'
 

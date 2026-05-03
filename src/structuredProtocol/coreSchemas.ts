@@ -8,7 +8,7 @@
  */
 
 import { z } from 'zod/v4'
-import { lazySchema } from '../../utils/lazySchema.js'
+import { lazySchema } from '../utils/lazySchema.js'
 
 // ============================================================================
 // Usage & Model Types
@@ -302,7 +302,7 @@ export const PermissionDecisionClassificationSchema = lazySchema(() =>
   z
     .enum(['user_temporary', 'user_permanent', 'user_reject'])
     .describe(
-      'Classification of this permission decision for telemetry. SDK hosts ' +
+      'Classification of this permission decision for telemetry. Structured hosts ' +
         'that prompt users (desktop apps, IDEs) should set this to reflect ' +
         'what actually happened: user_temporary for allow-once, user_permanent ' +
         'for always-allow (both the click and later cache hits), user_reject ' +

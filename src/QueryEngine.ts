@@ -13,7 +13,7 @@ import type {
   SDKPermissionDenial,
   SDKStatus,
   SDKUserMessageReplay,
-} from 'src/entrypoints/agentSdkTypes.js'
+} from 'src/structuredProtocol/index.js'
 import { accumulateUsage, updateUsage } from 'src/services/api/claude.js'
 import type { NonNullableUsage } from 'src/services/api/logging.js'
 import { EMPTY_USAGE } from 'src/services/api/logging.js'

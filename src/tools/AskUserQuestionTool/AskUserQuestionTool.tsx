@@ -194,7 +194,7 @@ export const AskUserQuestionTool: Tool<InputSchema, Output> = buildTool({
   async prompt() {
     const format = getQuestionPreviewFormat()
     if (format === undefined) {
-      // SDK consumer that hasn't opted into a preview format — omit preview
+      // structured consumer that hasn't opted into a preview format — omit preview
       // guidance (they may not render the field at all).
       return ASK_USER_QUESTION_TOOL_PROMPT
     }
@@ -316,7 +316,7 @@ function validateHtmlPreview(preview: string | undefined): string | null {
   if (/<\s*(html|body|!doctype)\b/i.test(preview)) {
     return 'preview must be an HTML fragment, not a full document (no <html>, <body>, or <!DOCTYPE>)'
   }
-  // SDK consumers typically set this via innerHTML — disallow executable/style
+  // structured consumers typically set this via innerHTML — disallow executable/style
   // tags so a preview can't run code or restyle the host page. Inline event
   // handlers (onclick etc.) are still possible; consumers should sanitize.
   if (/<\s*(script|style)\b/i.test(preview)) {

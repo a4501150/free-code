@@ -12,7 +12,7 @@ import type {
   SDKStatusMessage,
   SDKSystemMessage,
   SDKToolProgressMessage,
-} from '../entrypoints/agentSdkTypes.js'
+} from 'src/structuredProtocol/index.js'
 import type {
   AssistantMessage,
   Message,
@@ -249,7 +249,7 @@ export function convertSDKMessage(
       }
       // hook_response and other subtypes
       logForDebugging(
-        `[sdkMessageAdapter] Ignoring system message subtype: ${msg.subtype}`,
+        `[structuredMessageAdapter] Ignoring system message subtype: ${msg.subtype}`,
       )
       return { type: 'ignored' }
 
@@ -258,17 +258,17 @@ export function convertSDKMessage(
 
     case 'auth_status':
       // Auth status is handled separately, not converted to a display message
-      logForDebugging('[sdkMessageAdapter] Ignoring auth_status message')
+      logForDebugging('[structuredMessageAdapter] Ignoring auth_status message')
       return { type: 'ignored' }
 
     case 'tool_use_summary':
       // Tool use summaries are SDK-only events, not displayed in REPL
-      logForDebugging('[sdkMessageAdapter] Ignoring tool_use_summary message')
+      logForDebugging('[structuredMessageAdapter] Ignoring tool_use_summary message')
       return { type: 'ignored' }
 
     case 'rate_limit_event':
       // Rate limit events are SDK-only events, not displayed in REPL
-      logForDebugging('[sdkMessageAdapter] Ignoring rate_limit_event message')
+      logForDebugging('[structuredMessageAdapter] Ignoring rate_limit_event message')
       return { type: 'ignored' }
 
     default: {
@@ -276,7 +276,7 @@ export function convertSDKMessage(
       // types before the client is updated; logging helps with debugging
       // without crashing or losing the session.
       logForDebugging(
-        `[sdkMessageAdapter] Unknown message type: ${(msg as { type: string }).type}`,
+        `[structuredMessageAdapter] Unknown message type: ${(msg as { type: string }).type}`,
       )
       return { type: 'ignored' }
     }

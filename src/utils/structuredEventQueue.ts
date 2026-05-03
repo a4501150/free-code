@@ -28,11 +28,11 @@ type TaskProgressEvent = {
 }
 
 // Emitted when a foreground agent completes without being backgrounded.
-// Drained by drainSdkEvents() directly into the output stream — does NOT
+// Drained by drainStructuredEvents() directly into the output stream — does NOT
 // go through the print.ts XML task_notification parser and does NOT trigger
 // the LLM loop. Consumers (e.g. VS Code session.ts) use this to remove the
 // task from the subagent panel.
-type TaskNotificationSdkEvent = {
+type TaskNotificationStructuredEvent = {
   type: 'system'
   subtype: 'task_notification'
   task_id: string
@@ -48,28 +48,28 @@ type TaskNotificationSdkEvent = {
 }
 
 // Mirrors notifySessionStateChanged. The CCR bridge already receives this
-// via its own listener; SDK consumers (scmuxd, VS Code) need the same signal
-// to know when the main turn's generator is idle vs actively producing.
-// The 'idle' transition fires AFTER heldBackResult flushes and the bg-agent
-// do-while loop exits — so SDK consumers can trust it as the authoritative
-// "turn is over" signal even when result was withheld for background agents.
+// via its own listener; structured consumers need the same signal to know when
+// the main turn's generator is idle vs actively producing. The 'idle'
+// transition fires AFTER heldBackResult flushes and the bg-agent do-while loop
+// exits, so consumers can trust it as the authoritative "turn is over" signal
+// even when result was withheld for background agents.
 type SessionStateChangedEvent = {
   type: 'system'
   subtype: 'session_state_changed'
   state: 'idle' | 'running' | 'requires_action'
 }
 
-export type SdkEvent =
+export type StructuredEvent =
   | TaskStartedEvent
   | TaskProgressEvent
-  | TaskNotificationSdkEvent
+  | TaskNotificationStructuredEvent
   | SessionStateChangedEvent
 
 const MAX_QUEUE_SIZE = 1000
-const queue: SdkEvent[] = []
+const queue: StructuredEvent[] = []
 
-export function enqueueSdkEvent(event: SdkEvent): void {
-  // SDK events are only consumed (drained) in headless/streaming mode.
+export function enqueueStructuredEvent(event: StructuredEvent): void {
+  // Structured events are only consumed (drained) in headless/streaming mode.
   // In TUI mode they would accumulate up to the cap and never be read.
   if (!getIsNonInteractiveSession()) {
     return
@@ -80,8 +80,8 @@ export function enqueueSdkEvent(event: SdkEvent): void {
   queue.push(event)
 }
 
-export function drainSdkEvents(): Array<
-  SdkEvent & { uuid: UUID; session_id: string }
+export function drainStructuredEvents(): Array<
+  StructuredEvent & { uuid: UUID; session_id: string }
 > {
   if (queue.length === 0) {
     return []
@@ -95,17 +95,17 @@ export function drainSdkEvents(): Array<
 }
 
 /**
- * Emit a task_notification SDK event for a task reaching a terminal state.
+ * Emit a task_notification structured event for a task reaching a terminal state.
  *
  * registerTask() always emits task_started; this is the closing bookend.
  * Call this from any exit path that sets a task terminal WITHOUT going
  * through enqueuePendingNotification-with-<task-id> (print.ts parses that
- * XML into the same SDK event, so paths that do both would double-emit).
+ * XML into the same structured event, so paths that do both would double-emit).
  * Paths that suppress the XML notification (notified:true pre-set, kill
- * paths, abort branches) must call this directly so SDK consumers
+ * paths, abort branches) must call this directly so structured consumers
  * (Scuttle's bg-task dot, VS Code subagent panel) see the task close.
  */
-export function emitTaskTerminatedSdk(
+export function emitTaskTerminatedStructured(
   taskId: string,
   status: 'completed' | 'failed' | 'stopped',
   opts?: {
@@ -115,7 +115,7 @@ export function emitTaskTerminatedSdk(
     usage?: { total_tokens: number; tool_uses: number; duration_ms: number }
   },
 ): void {
-  enqueueSdkEvent({
+  enqueueStructuredEvent({
     type: 'system',
     subtype: 'task_notification',
     task_id: taskId,

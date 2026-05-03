@@ -76,7 +76,7 @@ import {
 } from '../permissions/PermissionUpdate.js'
 import type { PermissionUpdate } from '../permissions/PermissionUpdateSchema.js'
 import { hasPermissionsToUseTool } from '../permissions/permissions.js'
-import { emitTaskTerminatedSdk } from '../sdkEventQueue.js'
+import { emitTaskTerminatedStructured } from '../structuredEventQueue.js'
 import { sleep } from '../sleep.js'
 import { jsonStringify } from '../slowOperations.js'
 import { asSystemPrompt } from '../systemPromptType.js'
@@ -1452,7 +1452,7 @@ export async function runInProcessTeammate(
     // notified:true pre-set → no XML notification → print.ts won't emit
     // the SDK task_notification. Close the task_started bookend directly.
     if (!alreadyTerminal) {
-      emitTaskTerminatedSdk(taskId, 'completed', {
+      emitTaskTerminatedStructured(taskId, 'completed', {
         toolUseId,
         summary: identity.agentId,
       })
@@ -1504,7 +1504,7 @@ export async function runInProcessTeammate(
     evictTerminalTask(taskId, setAppState)
     // notified:true pre-set → no XML notification → close SDK bookend directly.
     if (!alreadyTerminal) {
-      emitTaskTerminatedSdk(taskId, 'failed', {
+      emitTaskTerminatedStructured(taskId, 'failed', {
         toolUseId,
         summary: identity.agentId,
       })

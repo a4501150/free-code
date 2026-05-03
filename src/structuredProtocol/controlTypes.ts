@@ -1,7 +1,7 @@
 /**
  * Runtime request/response types for the SDK control channel. Every
  * symbol here is `z.infer<>` of a matching schema in
- * src/entrypoints/sdk/controlSchemas.ts — this file is a thin TS-only
+ * src/structuredProtocol/controlSchemas.ts — this file is a thin TS-only
  * facade so consumers can `import type` without dragging Zod schemas into
  * their bundles.
  */

@@ -15,9 +15,9 @@ export const REPL_TOOL_NAME = 'REPL'
  * (opt out with CLAUDE_CODE_REPL=0). The legacy CLAUDE_REPL_MODE=1 also
  * forces it on.
  *
- * SDK entrypoints (sdk-ts, sdk-py, sdk-cli) are NOT defaulted on — SDK
- * consumers script direct tool calls (Bash, Read, etc.) and REPL mode
- * hides those tools.
+ * Structured headless entrypoints (sdk-ts, sdk-py, sdk-cli) are NOT
+ * defaulted on — those hosts script direct tool calls (Bash, Read, etc.) and
+ * REPL mode hides those tools.
  */
 export function isReplModeEnabled(): boolean {
   if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_REPL)) return false

@@ -84,7 +84,7 @@ export const init = memoize(async (): Promise<void> => {
 
     // Initialize the loading promise early so that other systems (like plugin hooks)
     // can await remote settings loading. The promise includes a timeout to prevent
-    // deadlocks if loadRemoteManagedSettings() is never called (e.g., Agent SDK tests).
+    // deadlocks if loadRemoteManagedSettings() is never called (e.g., non-CLI tests).
     if (isEligibleForRemoteManagedSettings()) {
       initializeRemoteManagedSettingsLoadingPromise()
     }

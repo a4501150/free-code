@@ -5,7 +5,7 @@
  * `permissions/filesystem.ts` → `commands.ts` transitively pulls in ~5300
  * modules (REPL, React, every slash command). `proxy.ts`/`mtls.ts` (and
  * therefore anything using HTTPS through our proxy agent — WebSocketTransport,
- * CCRClient, telemetry) must NOT depend on that graph, or the Agent SDK
+ * CCRClient, telemetry) must NOT depend on that graph, or the remote-control
  * bundle (`connectRemoteControl` path) bloats from ~0.4 MB to ~10.8 MB.
  *
  * `getCACertificates()` only reads `process.env.NODE_EXTRA_CA_CERTS`. This

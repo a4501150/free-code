@@ -6,13 +6,13 @@ import { getProviderRegistry } from '../utils/model/providerRegistry.js'
 import { getWorkload } from '../utils/workloadContext.js'
 
 const DEFAULT_PREFIX = `You are Claude Code, Anthropic's official CLI for Claude.`
-const AGENT_SDK_CLAUDE_CODE_PRESET_PREFIX = `You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.`
-const AGENT_SDK_PREFIX = `You are a Claude agent, built on Anthropic's Claude Agent SDK.`
+const HEADLESS_CLAUDE_CODE_PRESET_PREFIX = `You are Claude Code, Anthropic's official CLI for Claude, running in headless structured-output mode.`
+const HEADLESS_PREFIX = `You are a Claude CLI agent running in headless structured-output mode.`
 
 const CLI_SYSPROMPT_PREFIX_VALUES = [
   DEFAULT_PREFIX,
-  AGENT_SDK_CLAUDE_CODE_PRESET_PREFIX,
-  AGENT_SDK_PREFIX,
+  HEADLESS_CLAUDE_CODE_PRESET_PREFIX,
+  HEADLESS_PREFIX,
 ] as const
 
 export type CLISyspromptPrefix = (typeof CLI_SYSPROMPT_PREFIX_VALUES)[number]
@@ -35,9 +35,9 @@ export function getCLISyspromptPrefix(options?: {
 
   if (options?.isNonInteractive) {
     if (options.hasAppendSystemPrompt) {
-      return AGENT_SDK_CLAUDE_CODE_PRESET_PREFIX
+      return HEADLESS_CLAUDE_CODE_PRESET_PREFIX
     }
-    return AGENT_SDK_PREFIX
+    return HEADLESS_PREFIX
   }
   return DEFAULT_PREFIX
 }

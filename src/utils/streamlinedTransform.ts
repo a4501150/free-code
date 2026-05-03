@@ -8,8 +8,8 @@
  * - Strips tool list and model info from init messages
  */
 
-import type { SDKAssistantMessage } from 'src/entrypoints/agentSdkTypes.js'
-import type { StdoutMessage } from 'src/entrypoints/sdk/controlTypes.js'
+import type { SDKAssistantMessage } from 'src/structuredProtocol/index.js'
+import type { StdoutMessage } from 'src/structuredProtocol/controlTypes.js'
 import { FILE_EDIT_TOOL_NAME } from 'src/tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from 'src/tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from 'src/tools/FileWriteTool/prompt.js'

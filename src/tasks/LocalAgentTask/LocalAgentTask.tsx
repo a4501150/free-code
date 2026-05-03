@@ -39,7 +39,7 @@ import {
   registerTask,
   updateTaskState,
 } from '../../utils/task/framework.js'
-import { emitTaskProgress } from '../../utils/task/sdkProgress.js'
+import { emitTaskProgress } from '../../utils/task/structuredProgress.js'
 import type { TaskState } from '../types.js'
 
 export type ToolActivity = {
@@ -524,7 +524,7 @@ export function updateAgentSummary(
     }
   })
 
-  // Emit summary to SDK consumers (e.g. VS Code subagent panel). No-op in TUI.
+  // Emit summary to structured consumers (e.g. VS Code subagent panel). No-op in TUI.
   // Gate on the SDK option so coordinator-mode sessions without the flag don't
   // leak summary events to consumers who didn't opt in.
   if (captured && getSdkAgentProgressSummariesEnabled()) {

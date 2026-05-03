@@ -31,7 +31,7 @@ import {
   enqueuePendingNotification,
   hasCommandsInQueue,
 } from '../utils/messageQueueManager.js'
-import { emitTaskTerminatedSdk } from '../utils/sdkEventQueue.js'
+import { emitTaskTerminatedStructured } from '../utils/structuredEventQueue.js'
 
 /** Time window in ms during which a second press kills all background agents. */
 const KILL_AGENTS_CONFIRM_WINDOW_MS = 3000
@@ -175,7 +175,7 @@ export function CancelRequestHandler(props: CancelRequestHandlerProps): null {
     for (const [taskId, task] of running) {
       markAgentsNotified(taskId, setAppState)
       descriptions.push(task.description)
-      emitTaskTerminatedSdk(taskId, 'stopped', {
+      emitTaskTerminatedStructured(taskId, 'stopped', {
         toolUseId: task.toolUseId,
         summary: task.description,
       })

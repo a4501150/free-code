@@ -1,10 +1,8 @@
 /**
- * Standalone implementation of listSessions for the Agent SDK.
+ * Standalone implementation of listSessions for portable headless callers.
  *
  * Dependencies are kept minimal and portable — no bootstrap/state.ts,
- * no analytics, no bun:bundle, no module-scope mutable state. This module
- * can be imported safely from the SDK entrypoint without triggering CLI
- * initialization or pulling in expensive dependency chains.
+ * no analytics, no bun:bundle, no module-scope mutable state.
  */
 
 import type { Dirent } from 'fs'

@@ -85,7 +85,7 @@ type CronSchedulerOptions = {
    * Directory containing .claude/scheduled_tasks.json. When provided, the
    * scheduler never touches bootstrap state: getProjectRoot/getSessionId are
    * not read, and the getScheduledTasksEnabled() poll is skipped (enable()
-   * runs immediately on start). Required for Agent SDK daemon callers.
+   * runs immediately on start). Required for headless daemon callers.
    */
   dir?: string
   /**
@@ -99,10 +99,9 @@ type CronSchedulerOptions = {
    * check() cycle. REPL callers pass a config-backed implementation
    * (see cronJitterConfig.ts) for live tuning — ops can widen the jitter
    * window mid-session during a :00 load spike without restarting clients.
-   * Agent SDK daemon callers omit this and get DEFAULT_CRON_JITTER_CONFIG,
+   * Headless daemon callers omit this and get DEFAULT_CRON_JITTER_CONFIG,
    * which is safe since daemons restart on config change anyway, and the
-   * config.ts → commands.ts → REPL chain stays out of
-   * sdk.mjs.
+   * config.ts → commands.ts → REPL chain stays out of remote-control bundles.
    */
   getJitterConfig?: () => CronJitterConfig
   /**

@@ -62,7 +62,7 @@ let loadingCompletePromise: Promise<void> | null = null
 let loadingCompleteResolve: (() => void) | null = null
 
 // Timeout for the loading promise to prevent deadlocks if loadRemoteManagedSettings() is never called
-// (e.g., in Agent SDK tests that don't go through main.tsx)
+// (e.g., in non-CLI tests that don't go through main.tsx)
 const LOADING_PROMISE_TIMEOUT_MS = 30000 // 30 seconds
 
 /**
@@ -84,7 +84,7 @@ export function initializeRemoteManagedSettingsLoadingPromise(): void {
       loadingCompleteResolve = resolve
 
       // Set a timeout to resolve the promise even if loadRemoteManagedSettings() is never called
-      // This prevents deadlocks in Agent SDK tests and other non-CLI contexts
+      // This prevents deadlocks in non-CLI tests and other non-CLI contexts
       setTimeout(() => {
         if (loadingCompleteResolve) {
           logForDebugging(

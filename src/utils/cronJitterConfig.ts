@@ -1,12 +1,11 @@
 // Settings-backed cron jitter configuration.
 //
-// Separated from cronScheduler.ts so the scheduler can be bundled in the
-// Agent SDK public build without pulling in settings and its large
-// transitive dependency set.
+// Separated from cronScheduler.ts so headless scheduler callers can avoid
+// pulling in settings and its large transitive dependency set.
 //
 // Usage:
 //   REPL (useScheduledTasks.ts): pass `getJitterConfig: getCronJitterConfig`
-//   Daemon/SDK: omit getJitterConfig → DEFAULT_CRON_JITTER_CONFIG applies.
+//   Headless daemon: omit getJitterConfig → DEFAULT_CRON_JITTER_CONFIG applies.
 
 import {
   type CronJitterConfig,

@@ -1,4 +1,4 @@
-import type { NonNullableUsage } from '../../entrypoints/sdk/sdkUtilityTypes.js'
+import type { NonNullableUsage } from 'src/structuredProtocol/sdkUtilityTypes.js'
 
 /**
  * Zero-initialized usage object. Extracted from logging.ts to avoid

@@ -71,7 +71,7 @@ export function isRemoteManagedSettingsEligible(): boolean {
   const tokens = getClaudeAIOAuthTokens()
 
   // Externally-injected tokens (CCD via CLAUDE_CODE_OAUTH_TOKEN, CCR via
-  // CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR, Agent SDK, CI) carry no
+  // CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR, headless hosts, CI) carry no
   // subscriptionType metadata — getClaudeAIOAuthTokens() constructs them with
   // subscriptionType: null. The token itself is valid; let the API decide.
   // fetchRemoteManagedSettings handles 204/404 gracefully (returns {}), and

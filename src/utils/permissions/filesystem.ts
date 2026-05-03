@@ -1438,7 +1438,7 @@ export function generateSuggestions(
   // Only suggest setMode:acceptEdits when it would be an upgrade. In auto
   // mode the classifier already auto-approves edits; in bypassPermissions
   // everything is allowed; in acceptEdits it's a no-op. Suggesting it
-  // anyway and having the SDK host apply it on "Always allow" silently
+  // anyway and having the structured host apply it on "Always allow" silently
   // downgrades auto → acceptEdits, which then prompts for MCP/Bash.
   const shouldSuggestAcceptEdits =
     toolPermissionContext.mode === 'default' ||

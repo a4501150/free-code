@@ -6,7 +6,7 @@
  * confirmation.
  */
 import * as React from 'react'
-import type { HookEvent } from 'src/entrypoints/agentSdkTypes.js'
+import type { HookEvent } from 'src/structuredProtocol/index.js'
 import type { HookEventMetadata } from 'src/utils/hooks/hooksConfigManager.js'
 import { Box, Text } from '../../ink.js'
 import {

@@ -2,13 +2,13 @@
  * SDK Control Schemas - Zod schemas for the control protocol.
  *
  * These schemas define the control protocol between SDK implementations and the CLI.
- * Used by SDK builders (e.g., Python SDK) to communicate with the CLI process.
+ * Used by structured builders (e.g., Python SDK) to communicate with the CLI process.
  *
- * SDK consumers should use coreSchemas.ts instead.
+ * structured consumers should use coreSchemas.ts instead.
  */
 
 import { z } from 'zod/v4'
-import { lazySchema } from '../../utils/lazySchema.js'
+import { lazySchema } from '../utils/lazySchema.js'
 import {
   AccountInfoSchema,
   AgentDefinitionSchema,
@@ -523,7 +523,7 @@ export const SDKControlElicitationRequestSchema = lazySchema(() =>
       requested_schema: z.record(z.string(), z.unknown()).optional(),
     })
     .describe(
-      'Requests the SDK consumer to handle an MCP elicitation (user input request).',
+      'Requests the structured consumer to handle an MCP elicitation (user input request).',
     ),
 )
 
@@ -533,7 +533,7 @@ export const SDKControlElicitationResponseSchema = lazySchema(() =>
       action: z.enum(['accept', 'decline', 'cancel']),
       content: z.record(z.string(), z.unknown()).optional(),
     })
-    .describe('Response from the SDK consumer for an elicitation request.'),
+    .describe('Response from the structured consumer for an elicitation request.'),
 )
 
 export const SDKControlEndSessionRequestSchema = lazySchema(() =>

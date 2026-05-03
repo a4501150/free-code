@@ -2,7 +2,7 @@
  * Schema-derived SDK type aliases.
  *
  * Every symbol below is `z.infer<ReturnType<typeof XSchema>>` of a matching
- * schema in src/entrypoints/sdk/coreSchemas.ts — this file is a thin TS-only
+ * schema in src/structuredProtocol/coreSchemas.ts — this file is a thin TS-only
  * facade so consumers can `import type` without dragging Zod into their
  * bundles. Follows the same pattern as controlTypes.ts.
  */

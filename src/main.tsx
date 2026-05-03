@@ -738,7 +738,6 @@ function initializeEntrypoint(isNonInteractive: boolean): void {
   process.env.CLAUDE_CODE_ENTRYPOINT = isNonInteractive ? 'sdk-cli' : 'cli'
 }
 
-
 export async function main() {
   profileCheckpoint('main_function_start')
 
@@ -764,7 +763,6 @@ export async function main() {
   })
   profileCheckpoint('main_warning_handler_initialized')
 
-
   // Handle deep link URIs early — this is invoked by the OS protocol handler
   // and should bail out before full init since it only needs to parse the URI
   // and open a terminal.
@@ -777,7 +775,6 @@ export async function main() {
       process.exit(exitCode)
     }
   }
-
 
   // Check for -p/--print and --init-only flags early to set isInteractiveSession before init()
   // This is needed because telemetry initialization calls auth functions that need this flag
@@ -1401,9 +1398,9 @@ async function run(): Promise<CommanderCommand> {
         (options as { assistant?: boolean }).assistant &&
         assistantModule
       ) {
-        // --assistant (Agent SDK daemon mode): force the latch before
-        // isAssistantMode() runs below. The daemon has already checked
-        // entitlement — don't make the child re-check tengu_kairos.
+        // --assistant daemon mode: force the latch before isAssistantMode()
+        // runs below. The daemon has already checked entitlement — don't make
+        // the child re-check tengu_kairos.
         assistantModule.markAssistantForced()
       }
       if (
@@ -1819,8 +1816,8 @@ async function run(): Promise<CommanderCommand> {
         }
 
         if (Object.keys(allConfigs).length > 0) {
-          // SDK hosts (Nest/Desktop) own their server naming and may reuse
-          // built-in names — skip reserved-name checks for type:'sdk'.
+          // Structured hosts own their server naming and may reuse built-in
+          // names — skip reserved-name checks for type:'sdk'.
           const nonSdkConfigNames = Object.entries(allConfigs)
             .filter(([, config]) => config.type !== 'sdk')
             .map(([name]) => name)
@@ -2644,7 +2641,7 @@ async function run(): Promise<CommanderCommand> {
       // apiKeyHelper execution.
       // --bare / SIMPLE: skip — these are cache-warms for the REPL's
       // first-turn responsiveness (quota, passes, fastMode, bootstrap data). Fast
-      // mode doesn't apply to the Agent SDK anyway (see getFastModeUnavailableReason).
+      // mode doesn't apply to generic headless sessions anyway (see getFastModeUnavailableReason).
       const skipStartupPrefetches = isBareMode()
 
       if (!skipStartupPrefetches) {
@@ -3701,10 +3698,7 @@ async function run(): Promise<CommanderCommand> {
   }
   if (feature('KAIROS')) {
     program.addOption(
-      new Option(
-        '--assistant',
-        'Force assistant mode (Agent SDK daemon use)',
-      ).hideHelp(),
+      new Option('--assistant', 'Force assistant daemon mode').hideHelp(),
     )
   }
   if (feature('KAIROS') || feature('KAIROS_CHANNELS')) {

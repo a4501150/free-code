@@ -75,7 +75,7 @@ export type {
 
 import type { SpinnerMode } from './components/Spinner.js'
 import type { QuerySource } from './constants/querySource.js'
-import type { SDKStatus } from './entrypoints/agentSdkTypes.js'
+import type { SDKStatus } from 'src/structuredProtocol/index.js'
 import type { AppState } from './state/AppState.js'
 import type {
   HookProgress,
@@ -327,7 +327,7 @@ export type ToolResult<T> = {
   )[]
   // contextModifier is only honored for tools that aren't concurrency safe.
   contextModifier?: (context: ToolUseContext) => ToolUseContext
-  /** MCP protocol metadata (structuredContent, _meta) to pass through to SDK consumers */
+  /** MCP protocol metadata (structuredContent, _meta) to pass through to structured consumers */
   mcpMeta?: {
     _meta?: Record<string, unknown>
     structuredContent?: Record<string, unknown>

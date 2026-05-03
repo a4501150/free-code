@@ -102,7 +102,7 @@ import type {
   ExitReason,
   SyncHookJSONOutput,
   AsyncHookJSONOutput,
-} from 'src/entrypoints/agentSdkTypes.js'
+} from 'src/structuredProtocol/index.js'
 import type { StatusLineCommandInput } from '../types/statusLine.js'
 import type { ElicitResult } from '@modelcontextprotocol/sdk/types.js'
 import type { FileSuggestionCommandInput } from '../types/fileSuggestion.js'

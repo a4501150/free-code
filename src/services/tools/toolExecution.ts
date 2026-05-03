@@ -181,8 +181,8 @@ function ruleSourceToOTelSource(
  * non-interactive tool_decision path, staying within the documented
  * vocabulary (config, hook, user_permanent, user_temporary, user_reject).
  *
- * For permissionPromptTool, the SDK host may set decisionClassification on
- * the PermissionResult to tell us exactly what happened (once vs always vs
+ * For permissionPromptTool, the structured host may set decisionClassification
+ * on the PermissionResult to tell us exactly what happened (once vs always vs
  * cache hit — the host knows, we can't tell from {behavior:'allow'} alone).
  * Without it, we fall back conservatively: allow → user_temporary,
  * deny → user_reject.

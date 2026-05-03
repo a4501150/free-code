@@ -91,7 +91,7 @@ import type {
 import type {
   HookEvent,
   SDKAssistantErrorReason,
-} from 'src/entrypoints/agentSdkTypes.js'
+} from 'src/structuredProtocol/index.js'
 import { EXPLORE_AGENT } from 'src/tools/AgentTool/built-in/exploreAgent.js'
 import { PLAN_AGENT } from 'src/tools/AgentTool/built-in/planAgent.js'
 import { areExplorePlanAgentsEnabled } from 'src/tools/AgentTool/builtInAgents.js'
@@ -456,7 +456,7 @@ export function createUserMessage({
   isVirtual?: true
   isCompactSummary?: true
   toolUseResult?: unknown // Matches tool's `Output` type
-  /** MCP protocol metadata to pass through to SDK consumers (never sent to model) */
+  /** MCP protocol metadata to pass through to structured consumers (never sent to model) */
   mcpMeta?: {
     _meta?: Record<string, unknown>
     structuredContent?: Record<string, unknown>

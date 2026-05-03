@@ -4,7 +4,7 @@ import { getInitialSettings } from './settings/settings.js'
 import { getProviderRegistry } from './model/providerRegistry.js'
 
 import { isEnvTruthy } from './envUtils.js'
-import type { EffortLevel } from 'src/entrypoints/sdk/runtimeTypes.js'
+import type { EffortLevel } from 'src/structuredProtocol/runtimeTypes.js'
 
 export type { EffortLevel }
 

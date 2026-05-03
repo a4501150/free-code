@@ -11,14 +11,14 @@ import type {
   PermissionUpdate,
   SDKMessage,
   SDKUserMessage,
-} from 'src/entrypoints/agentSdkTypes.js'
-import { SDKControlElicitationResponseSchema } from 'src/entrypoints/sdk/controlSchemas.js'
+} from 'src/structuredProtocol/index.js'
+import { SDKControlElicitationResponseSchema } from 'src/structuredProtocol/controlSchemas.js'
 import type {
   SDKControlRequest,
   SDKControlResponse,
   StdinMessage,
   StdoutMessage,
-} from 'src/entrypoints/sdk/controlTypes.js'
+} from 'src/structuredProtocol/controlTypes.js'
 import type { CanUseToolFn } from 'src/hooks/useCanUseTool.js'
 import type { Tool, ToolUseContext } from 'src/Tool.js'
 import { type HookCallback, hookJSONOutputSchema } from 'src/types/hooks.js'
@@ -56,8 +56,8 @@ import { ndjsonSafeStringify } from './ndjsonSafeStringify.js'
 
 /**
  * Synthetic tool name used when forwarding sandbox network permission
- * requests via the can_use_tool control_request protocol. SDK hosts
- * see this as a normal tool permission prompt.
+ * requests via the can_use_tool control protocol. Structured hosts see this
+ * as a normal tool permission prompt.
  */
 export const SANDBOX_NETWORK_ACCESS_TOOL_NAME = 'SandboxNetworkAccess'
 
@@ -124,8 +124,8 @@ type PendingRequest<T> = {
 }
 
 /**
- * Provides a structured way to read and write SDK messages from stdio,
- * capturing the SDK protocol.
+ * Provides a structured way to read and write headless messages from stdio,
+ * capturing the structured control protocol.
  */
 // Maximum number of resolved tool_use IDs to track. Once exceeded, the oldest
 // entry is evicted. This bounds memory in very long sessions while keeping
@@ -277,7 +277,7 @@ export class StructuredIO {
    * Used by the bridge to feed permission responses from claude.ai into the
    * SDK permission flow.
    *
-   * Also sends a control_cancel_request to the SDK consumer so its canUseTool
+   * Also sends a control_cancel_request to the structured consumer so its canUseTool
    * callback is aborted via the signal — otherwise the callback hangs.
    */
   injectControlResponse(response: SDKControlResponse): void {
@@ -287,7 +287,7 @@ export class StructuredIO {
     if (!request) return
     this.trackResolvedToolUseId(request.request)
     this.pendingRequests.delete(requestId)
-    // Cancel the SDK consumer's canUseTool callback — the bridge won.
+    // Cancel the structured consumer's canUseTool callback — the bridge won.
     void this.write({
       type: 'control_cancel_request',
       request_id: requestId,
@@ -321,8 +321,8 @@ export class StructuredIO {
 
   /**
    * Register a callback invoked when a can_use_tool control_response arrives
-   * from the SDK consumer (via stdin). Used by the bridge to cancel the
-   * stale permission prompt on claude.ai when the SDK consumer wins the race.
+   * from the structured consumer (via stdin). Used by the bridge to cancel the
+   * stale permission prompt on claude.ai when the structured consumer wins the race.
    */
   setOnControlRequestResolved(
     callback: ((requestId: string) => void) | undefined,
@@ -399,7 +399,7 @@ export class StructuredIO {
         }
         this.trackResolvedToolUseId(request.request)
         this.pendingRequests.delete(message.response.request_id)
-        // Notify the bridge when the SDK consumer resolves a can_use_tool
+        // Notify the bridge when the structured consumer resolves a can_use_tool
         // request, so it can cancel the stale permission prompt on claude.ai.
         if (
           request.request.request.subtype === 'can_use_tool' &&
@@ -558,14 +558,14 @@ export class StructuredIO {
         return mainPermissionResult
       }
 
-      // Run PermissionRequest hooks in parallel with the SDK permission
-      // prompt.  In the terminal CLI, hooks race against the interactive
-      // prompt so that e.g. a hook with --delay 20 doesn't block the UI.
-      // We need the same behavior here: the SDK host (VS Code, etc.) shows
-      // its permission dialog immediately while hooks run in the background.
-      // Whichever resolves first wins; the loser is cancelled/ignored.
+      // Run PermissionRequest hooks in parallel with the structured permission
+      // prompt. In the terminal CLI, hooks race against the interactive prompt
+      // so that e.g. a hook with --delay 20 doesn't block the UI. We need the
+      // same behavior here: the structured host shows its permission dialog
+      // immediately while hooks run in the background. Whichever resolves first
+      // wins; the loser is cancelled/ignored.
 
-      // AbortController used to cancel the SDK request if a hook decides first
+      // AbortController used to cancel the structured request if a hook decides first
       const hookAbortController = new AbortController()
       const parentSignal = toolUseContext.abortController.signal
       // Forward parent abort to our local controller
@@ -574,7 +574,7 @@ export class StructuredIO {
 
       try {
         // Start the hook evaluation (runs in background)
-        const hookPromise = executePermissionRequestHooksForSDK(
+        const hookPromise = executePermissionRequestHooksForStructuredHost(
           tool.name,
           toolUseID,
           input,
@@ -582,7 +582,7 @@ export class StructuredIO {
           mainPermissionResult.suggestions,
         ).then(decision => ({ source: 'hook' as const, decision }))
 
-        // Start the SDK permission prompt immediately (don't wait for hooks)
+        // Start the structured permission prompt immediately (don't wait for hooks)
         const requestId = randomUUID()
         onPermissionPrompt?.(
           buildRequiresActionDetails(tool, input, toolUseID, requestId),
@@ -605,20 +605,20 @@ export class StructuredIO {
           requestId,
         ).then(result => ({ source: 'sdk' as const, result }))
 
-        // Race: hook completion vs SDK prompt response.
+        // Race: hook completion vs structured prompt response.
         // The hook promise always resolves (never rejects), returning
         // undefined if no hook made a decision.
         const winner = await Promise.race([hookPromise, sdkPromise])
 
         if (winner.source === 'hook') {
           if (winner.decision) {
-            // Hook decided — abort the pending SDK request.
+            // Hook decided — abort the pending structured request.
             // Suppress the expected AbortError rejection from sdkPromise.
             sdkPromise.catch(() => {})
             hookAbortController.abort()
             return winner.decision
           }
-          // Hook passed through (no decision) — wait for the SDK prompt
+          // Hook passed through (no decision) — wait for the structured prompt
           const sdkResult = await sdkPromise
           return permissionPromptToolResultToPermissionDecision(
             sdkResult.result,
@@ -628,8 +628,8 @@ export class StructuredIO {
           )
         }
 
-        // SDK prompt responded first — use its result (hook still running
-        // in background but its result will be ignored)
+        // Structured prompt responded first — use its result (hook still
+        // running in background but its result will be ignored)
         return permissionPromptToolResultToPermissionDecision(
           winner.result,
           tool,
@@ -689,7 +689,7 @@ export class StructuredIO {
   }
 
   /**
-   * Sends an elicitation request to the SDK consumer and returns the response.
+   * Sends an elicitation request to the structured host and returns the response.
    */
   async handleElicitation(
     serverName: string,
@@ -722,11 +722,11 @@ export class StructuredIO {
 
   /**
    * Creates a SandboxAskCallback that forwards sandbox network permission
-   * requests to the SDK host as can_use_tool control_requests.
+   * requests to the structured host as can_use_tool control_requests.
    *
    * This piggybacks on the existing can_use_tool protocol with a synthetic
-   * tool name so that SDK hosts (VS Code, CCR, etc.) can prompt the user
-   * for network access without requiring a new protocol subtype.
+   * tool name so structured hosts can prompt the user for network access
+   * without requiring a new protocol subtype.
    */
   createSandboxAskCallback(): (hostPattern: {
     host: string
@@ -753,7 +753,7 @@ export class StructuredIO {
   }
 
   /**
-   * Sends an MCP message to an SDK server and waits for the response
+   * Sends an MCP message to a structured host server and waits for the response
    */
   async sendMcpMessage(
     serverName: string,
@@ -784,7 +784,7 @@ function exitWithMessage(message: string): never {
  * Execute PermissionRequest hooks and return a decision if one is made.
  * Returns undefined if no hook made a decision.
  */
-async function executePermissionRequestHooksForSDK(
+async function executePermissionRequestHooksForStructuredHost(
   toolName: string,
   toolUseID: string,
   input: Record<string, unknown>,

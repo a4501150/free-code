@@ -445,7 +445,7 @@ export async function* runAgent({
 
     // Scope tool permissions: when allowedTools is provided, use them as session rules.
     // IMPORTANT: Preserve cliArg rules (from SDK's --allowedTools) since those are
-    // explicit permissions from the SDK consumer that should apply to all agents.
+    // explicit permissions from the structured consumer that should apply to all agents.
     // Only clear session-level rules from the parent to prevent unintended leakage.
     if (allowedTools !== undefined) {
       toolPermissionContext = {

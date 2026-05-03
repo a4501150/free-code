@@ -57,7 +57,7 @@ import {
   filterDeniedAgents,
   getDenyRuleForAgent,
 } from '../../utils/permissions/permissions.js'
-import { enqueueSdkEvent } from '../../utils/sdkEventQueue.js'
+import { enqueueStructuredEvent } from '../../utils/structuredEventQueue.js'
 import { writeAgentMetadata } from '../../utils/sessionStorage.js'
 import { sleep } from '../../utils/sleep.js'
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
@@ -1429,12 +1429,12 @@ export const AgentTool = buildTool({
             // Unregister foreground task if agent completed without being backgrounded
             if (foregroundTaskId) {
               unregisterAgentForeground(foregroundTaskId, rootSetAppState)
-              // Notify SDK consumers (e.g. VS Code subagent panel) that this
-              // foreground agent is done. Goes through drainSdkEvents() — does
+              // Notify structured consumers (e.g. VS Code subagent panel) that this
+              // foreground agent is done. Goes through drainStructuredEvents() — does
               // NOT trigger the print.ts XML task_notification parser or the LLM loop.
               if (!wasBackgrounded) {
                 const progress = getProgressUpdate(syncTracker)
-                enqueueSdkEvent({
+                enqueueStructuredEvent({
                   type: 'system',
                   subtype: 'task_notification',
                   task_id: foregroundTaskId,

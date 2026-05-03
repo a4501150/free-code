@@ -1,12 +1,12 @@
 /**
  * Internal REPL message union and its constituent variants. These types
- * are broader than — and distinct from — the SDK's wire-format messages:
+ * are broader than — and distinct from — the structured wire-format messages:
  * they carry UI-only state (progress events, tombstones, synthetic
  * attachments, collapsed groups) that never leaves the process.
  *
  * Shapes were reconstructed from every construction site in
  * src/utils/messages.ts, src/utils/attachments.ts, src/query.ts,
- * src/QueryEngine.ts, src/remote/sdkMessageAdapter.ts and their
+ * src/QueryEngine.ts, src/remote/structuredMessageAdapter.ts and their
  * consumers. Keep them in sync with those files.
  */
 
@@ -17,7 +17,7 @@ import type {
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
 import type { APIError } from '@anthropic-ai/sdk'
-import type { SDKAssistantErrorReason } from '../entrypoints/agentSdkTypes.js'
+import type { SDKAssistantErrorReason } from 'src/structuredProtocol/index.js'
 import type { Attachment } from '../utils/attachments.js'
 import type { ToolProgressData } from './tools.js'
 import type { PermissionMode } from './permissions.js'
@@ -336,7 +336,7 @@ export type TombstoneMessage = {
   message: AssistantMessage
 }
 
-/** Summary emitted to SDK consumers after a batch of tool uses completes. */
+/** Summary emitted to structured consumers after a batch of tool uses completes. */
 export type ToolUseSummaryMessage = {
   type: 'tool_use_summary'
   uuid: UUID

@@ -1,8 +1,5 @@
 /**
- * Sandbox types for the Claude Code Agent SDK
- *
- * This file is the single source of truth for sandbox configuration types.
- * Both the SDK and the settings validation import from here.
+ * Single source of truth for sandbox configuration types.
  */
 
 import { z } from 'zod/v4'

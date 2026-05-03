@@ -123,7 +123,7 @@ import {
 import { markClaudeAiMcpConnected } from './claudeai.js'
 import { getAllMcpConfigs, isMcpServerDisabled } from './config.js'
 import { getMcpServerHeaders } from './headersHelper.js'
-import { SdkControlClientTransport } from './SdkControlTransport.js'
+import { StructuredControlClientTransport } from './StructuredControlTransport.js'
 import type {
   ConnectedMCPServer,
   MCPServerConnection,
@@ -160,7 +160,7 @@ class McpSessionExpiredError extends Error {
 
 /**
  * Thrown when an MCP tool returns `isError: true`. Carries the result's `_meta`
- * so SDK consumers can still receive it — per the MCP spec, `_meta` is on the
+ * so structured consumers can still receive it — per the MCP spec, `_meta` is on the
  * base Result type and is valid on error results.
  */
 export class McpToolCallError_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS extends TelemetrySafeError_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS {
@@ -438,7 +438,6 @@ const MCP_STREAMABLE_HTTP_ACCEPT = 'application/json, text/event-stream'
  * present on POSTs. The MCP SDK sets this inside StreamableHTTPClientTransport.send(),
  * but it is attached to a Headers instance that passes through an object spread here,
  * and some runtimes/agents have been observed dropping it before it reaches the wire.
- * See https://github.com/anthropics/claude-agent-sdk-typescript/issues/202.
  * Normalizing here (the last wrapper before fetch()) guarantees it is sent.
  *
  * GET requests are excluded from the timeout since, for MCP transports, they are
@@ -2931,15 +2930,15 @@ async function callMCPTool({
           signal,
           timeout: timeoutMs,
           onprogress: onProgress
-            ? sdkProgress => {
+            ? progressUpdate => {
                 onProgress({
                   type: 'mcp_progress',
                   status: 'progress',
                   serverName: name,
                   toolName: tool,
-                  progress: sdkProgress.progress,
-                  total: sdkProgress.total,
-                  progressMessage: sdkProgress.message,
+                  progress: progressUpdate.progress,
+                  total: progressUpdate.total,
+                  progressMessage: progressUpdate.message,
                 })
               }
             : undefined,
@@ -3096,7 +3095,10 @@ export async function setupSdkMcpClients(
   // Connect to all servers in parallel
   const results = await Promise.allSettled(
     Object.entries(sdkMcpConfigs).map(async ([name, config]) => {
-      const transport = new SdkControlClientTransport(name, sendMcpMessage)
+      const transport = new StructuredControlClientTransport(
+        name,
+        sendMcpMessage,
+      )
 
       const client = new Client(
         {

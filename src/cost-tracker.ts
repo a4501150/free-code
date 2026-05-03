@@ -27,7 +27,7 @@ import {
   setCostStateForRestore,
   setHasUnknownModelCost,
 } from './bootstrap/state.js'
-import type { ModelUsage } from './entrypoints/agentSdkTypes.js'
+import type { ModelUsage } from 'src/structuredProtocol/index.js'
 import { getAdvisorUsage } from './utils/advisor.js'
 import {
   getCurrentProjectConfig,

@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import type { HookEvent } from 'src/entrypoints/agentSdkTypes.js'
+import type { HookEvent } from 'src/structuredProtocol/index.js'
 import { query } from '../../query.js'
 
 import type { ToolUseContext } from '../../Tool.js'

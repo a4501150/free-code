@@ -4,7 +4,7 @@
  *
  * Two usage patterns:
  * 1. Startup: startMdmRawRead() fires at main.tsx module evaluation, results consumed later via getMdmRawReadPromise()
- * 2. Poll/fallback: fireRawRead() creates a fresh read on demand (used by changeDetector and SDK entrypoint)
+ * 2. Poll/fallback: fireRawRead() creates a fresh read on demand (used by changeDetector and structured entrypoints)
  *
  * Raw stdout is consumed by mdmSettings.ts via consumeRawReadResult().
  */

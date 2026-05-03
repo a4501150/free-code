@@ -31,8 +31,8 @@ const schedulerLockSchema = lazySchema(() =>
 type SchedulerLock = z.infer<ReturnType<typeof schedulerLockSchema>>
 
 /**
- * Options for out-of-REPL callers (Agent SDK daemon) that don't have
- * bootstrap state. When omitted, falls back to getProjectRoot() +
+ * Options for out-of-REPL daemon callers that don't have bootstrap state.
+ * When omitted, falls back to getProjectRoot() +
  * getSessionId() as before. lockIdentity should be stable for the lifetime
  * of one daemon process (e.g. a randomUUID() captured at startup).
  */

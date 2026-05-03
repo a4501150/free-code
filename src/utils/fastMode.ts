@@ -73,9 +73,9 @@ export function getFastModeUnavailableReason(): string | null {
     return disabledReason
   }
 
-  // Not available in the SDK unless explicitly opted in via --settings.
-  // Assistant daemon mode is exempt — it's first-party orchestration, and
-  // kairosActive is set before this check runs (main.tsx:~1626 vs ~3249).
+  // Not available in generic headless sessions unless explicitly opted in via
+  // --settings. Assistant daemon mode is exempt — it's first-party
+  // orchestration, and kairosActive is set before this check runs.
   if (
     getIsNonInteractiveSession() &&
     preferThirdPartyAuthentication() &&
@@ -83,7 +83,7 @@ export function getFastModeUnavailableReason(): string | null {
   ) {
     const flagFastMode = getSettingsForSource('flagSettings')?.fastMode
     if (!flagFastMode) {
-      const reason = 'Fast mode is not available in the Agent SDK'
+      const reason = 'Fast mode is not available in generic headless sessions'
       logForDebugging(`Fast mode unavailable: ${reason}`)
       return reason
     }

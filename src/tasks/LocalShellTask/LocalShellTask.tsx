@@ -114,7 +114,7 @@ function startStallWatchdog(
             const summary = `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" appears to be waiting for interactive input`
             // No <status> tag — print.ts treats <status> as a terminal
             // signal and an unknown value falls through to 'completed',
-            // falsely closing the task for SDK consumers. Statusless
+            // falsely closing the task for structured consumers. Statusless
             // notifications are skipped by the SDK emitter (progress ping).
             const message = `<${TASK_NOTIFICATION_TAG}>
 <${TASK_ID_TAG}>${taskId}</${TASK_ID_TAG}>${toolUseIdLine}

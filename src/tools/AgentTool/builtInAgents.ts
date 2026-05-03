@@ -39,7 +39,7 @@ export function getBuiltInAgents(): AgentDefinition[] {
     agents.push(EXPLORE_AGENT, PLAN_AGENT)
   }
 
-  // Include Code Guide agent for non-SDK entrypoints
+  // Include Code Guide agent for regular CLI entrypoints
   const isNonSdkEntrypoint =
     process.env.CLAUDE_CODE_ENTRYPOINT !== 'sdk-ts' &&
     process.env.CLAUDE_CODE_ENTRYPOINT !== 'sdk-py' &&

@@ -10,7 +10,7 @@
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { z } from 'zod/v4'
-import { PermissionModeSchema } from '../entrypoints/sdk/coreSchemas.js'
+import { PermissionModeSchema } from 'src/structuredProtocol/coreSchemas.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../tools/SendMessageTool/constants.js'
 import type { Message } from '../types/message.js'
 import { generateRequestId } from './agentId.js'

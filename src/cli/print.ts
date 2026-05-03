@@ -106,7 +106,7 @@ import type {
   McpServerConfigForProcessTransport,
   McpServerStatus,
   RewindFilesResult,
-} from 'src/entrypoints/agentSdkTypes.js'
+} from 'src/structuredProtocol/index.js'
 import type {
   StdoutMessage,
   SDKControlInitializeRequest,
@@ -115,9 +115,11 @@ import type {
   SDKControlResponse,
   SDKControlMcpSetServersResponse,
   SDKControlReloadPluginsResponse,
-} from 'src/entrypoints/sdk/controlTypes.js'
-import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk'
-import type { PermissionMode as InternalPermissionMode } from 'src/types/permissions.js'
+} from 'src/structuredProtocol/controlTypes.js'
+import type {
+  ExternalPermissionMode as PermissionMode,
+  PermissionMode as InternalPermissionMode,
+} from 'src/types/permissions.js'
 import { cwd } from 'process'
 import { getCwd } from 'src/utils/cwd.js'
 import omit from 'lodash-es/omit.js'
@@ -171,7 +173,7 @@ import { getAccountInformation } from 'src/utils/auth.js'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import type { HookCallbackMatcher } from 'src/types/hooks.js'
 import { AwsAuthStatusManager } from 'src/utils/awsAuthStatusManager.js'
-import type { HookEvent } from 'src/entrypoints/agentSdkTypes.js'
+import type { HookEvent } from 'src/structuredProtocol/index.js'
 import {
   registerHookCallbacks,
   setInitJsonSchema,
@@ -320,7 +322,7 @@ import { unassignTeammateTasks } from '../utils/tasks.js'
 import { getRunningTasks } from '../utils/task/framework.js'
 import { isBackgroundTask } from '../tasks/types.js'
 import { stopTask } from '../tasks/stopTask.js'
-import { drainSdkEvents } from '../utils/sdkEventQueue.js'
+import { drainStructuredEvents } from '../utils/structuredEventQueue.js'
 import { errorMessage, toError } from '../utils/errors.js'
 import { sleep } from '../utils/sleep.js'
 import { isExtractModeActive } from '../memdir/paths.js'
@@ -562,7 +564,7 @@ export async function runHeadless(
     )
   } else if (SandboxManager.isSandboxingEnabled()) {
     // Initialize sandbox with a callback that forwards network permission
-    // requests to the SDK host via the can_use_tool control_request protocol.
+    // requests to the structured host via the can_use_tool control protocol.
     // This must happen after structuredIO is created so we can send requests.
     try {
       await SandboxManager.initialize(structuredIO.createSandboxAskCallback())
@@ -1187,7 +1189,7 @@ function runHeadlessStreaming(
   /**
    * Register elicitation request/completion handlers on connected MCP clients
    * that haven't been registered yet. SDK MCP servers are excluded because they
-   * route through SdkControlClientTransport. Hooks run first (matching REPL
+   * route through StructuredControlClientTransport. Hooks run first (matching REPL
    * behavior); if no hook responds, the request is forwarded to the SDK
    * consumer via the control protocol.
    */
@@ -1199,7 +1201,7 @@ function runHeadlessStreaming(
       ) {
         continue
       }
-      // Skip SDK MCP servers — elicitation flows through SdkControlClientTransport
+      // Skip SDK MCP servers — elicitation flows through StructuredControlClientTransport
       if (connection.config.type === 'sdk') {
         continue
       }
@@ -1232,7 +1234,7 @@ function runHeadlessStreaming(
               return hookResponse
             }
 
-            // Delegate to SDK consumer via control protocol
+            // Delegate to structured consumer via control protocol
             const url =
               'url' in request.params
                 ? (request.params.url as string)
@@ -1271,7 +1273,7 @@ function runHeadlessStreaming(
           },
         )
 
-        // Surface completion notifications to SDK consumers (URL mode)
+        // Surface completion notifications to structured consumers (URL mode)
         connection.client.setNotificationHandler(
           ElicitationCompleteNotificationSchema,
           notification => {
@@ -1880,7 +1882,7 @@ function runHeadlessStreaming(
           }
 
           // Task notifications arrive when background agents complete.
-          // Emit an SDK system event for SDK consumers, then fall through
+          // Emit an structured system event for structured consumers, then fall through
           // to ask() so the model sees the agent result and can act on it.
           // This matches TUI behavior where useQueueProcessor always feeds
           // notifications to the model regardless of coordinator mode.
@@ -1938,7 +1940,7 @@ function runHeadlessStreaming(
             // <status> (they're progress pings); emitting them here would
             // default to 'completed' and falsely close the task for SDK
             // consumers. Terminal bookends are now emitted directly via
-            // emitTaskTerminatedSdk, so skipping statusless events is safe.
+            // emitTaskTerminatedStructured, so skipping statusless events is safe.
             if (statusMatch) {
               output.enqueue({
                 type: 'system',
@@ -2072,7 +2074,7 @@ function runHeadlessStreaming(
             })) {
               if (message.type === 'result') {
                 // Flush pending SDK events so they appear before result on the stream.
-                for (const event of drainSdkEvents()) {
+                for (const event of drainStructuredEvents()) {
                   output.enqueue(event)
                 }
 
@@ -2080,9 +2082,7 @@ function runHeadlessStreaming(
                 const currentState = getAppState()
                 if (
                   getRunningTasks(currentState).some(
-                    t =>
-                      t.type === 'local_agent' &&
-                      isBackgroundTask(t),
+                    t => t.type === 'local_agent' && isBackgroundTask(t),
                   )
                 ) {
                   heldBackResult = message
@@ -2093,7 +2093,7 @@ function runHeadlessStreaming(
               } else {
                 // Flush SDK events (task_started, task_progress) so background
                 // agent progress is streamed in real-time, not batched until result.
-                for (const event of drainSdkEvents()) {
+                for (const event of drainStructuredEvents()) {
                   output.enqueue(event)
                 }
                 output.enqueue(message)
@@ -2105,7 +2105,7 @@ function runHeadlessStreaming(
             notifyCommandLifecycle(uuid, 'completed')
           }
 
-          // Generate and emit prompt suggestion for SDK consumers
+          // Generate and emit prompt suggestion for structured consumers
           if (
             options.promptSuggestions &&
             !isEnvDefinedFalsy(process.env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION)
@@ -2205,7 +2205,7 @@ function runHeadlessStreaming(
       do {
         // Drain SDK events (task_started, task_progress) before command queue
         // so progress events precede task_notification on the stream.
-        for (const event of drainSdkEvents()) {
+        for (const event of drainStructuredEvents()) {
           output.enqueue(event)
         }
 
@@ -2297,7 +2297,7 @@ function runHeadlessStreaming(
         // command. The do-while drain above only runs while
         // waitingForAgents; once we're here the next drain would be the
         // top of the next run(), which won't come if input is idle.
-        for (const event of drainSdkEvents()) {
+        for (const event of drainStructuredEvents()) {
           output.enqueue(event)
         }
       }
@@ -2692,9 +2692,9 @@ function runHeadlessStreaming(
             getAppState,
           )
 
-          // Enable prompt suggestions in AppState when SDK consumer opts in.
+          // Enable prompt suggestions in AppState when structured consumer opts in.
           // shouldEnablePromptSuggestion() returns false for non-interactive
-          // sessions, but the SDK consumer explicitly requested suggestions.
+          // sessions, but the structured consumer explicitly requested suggestions.
           if (message.request.promptSuggestions) {
             setAppState(prev => {
               if (prev.promptSuggestionEnabled) return prev
@@ -4702,7 +4702,7 @@ export async function handleOrphanedPermissionResponse({
       value: [],
       orphanedPermission: {
         permissionResult:
-          permissionResult as unknown as import('../entrypoints/sdk/coreTypes.generated.js').PermissionResult,
+          permissionResult as unknown as import('src/structuredProtocol/coreTypes.generated.js').PermissionResult,
         assistantMessage,
       },
     })
@@ -4758,7 +4758,7 @@ export type McpSetServersResult = {
  * Applies enterprise allowedMcpServers/deniedMcpServers policy — same filter as
  * --mcp-config (see filterMcpServersByPolicy call in main.tsx). Without this,
  * SDK V2 Query.setMcpServers() was a second policy bypass vector. Blocked servers
- * are reported in response.errors so the SDK consumer knows why they weren't added.
+ * are reported in response.errors so the structured consumer knows why they weren't added.
  */
 export async function handleMcpSetServers(
   servers: Record<string, McpServerConfigForProcessTransport>,

@@ -710,7 +710,7 @@ async function* queryLoop(
 
       // Surface the real error instead of a misleading "[Request interrupted
       // by user]" — this path is a model/runtime failure, not a user action.
-      // SDK consumers were seeing phantom interrupts on e.g. Node 18's missing
+      // structured consumers were seeing phantom interrupts on e.g. Node 18's missing
       // Array.prototype.with(), masking the actual cause.
       yield createAssistantAPIErrorMessage({
         content: errorMessage,

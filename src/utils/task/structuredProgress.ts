@@ -1,4 +1,4 @@
-import { enqueueSdkEvent } from '../sdkEventQueue.js'
+import { enqueueStructuredEvent } from '../structuredEventQueue.js'
 
 /**
  * Emit a `task_progress` SDK event for background agents.
@@ -13,7 +13,7 @@ export function emitTaskProgress(params: {
   lastToolName?: string
   summary?: string
 }): void {
-  enqueueSdkEvent({
+  enqueueStructuredEvent({
     type: 'system',
     subtype: 'task_progress',
     task_id: params.taskId,

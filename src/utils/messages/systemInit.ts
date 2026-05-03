@@ -3,7 +3,7 @@ import { getSdkBetas, getSessionId } from 'src/bootstrap/state.js'
 import type {
   PermissionMode,
   SDKMessage,
-} from 'src/entrypoints/agentSdkTypes.js'
+} from 'src/structuredProtocol/index.js'
 import type { ApiKeySource } from '../auth.js'
 import {
   AGENT_TOOL_NAME,
@@ -13,9 +13,9 @@ import { getAnthropicApiKeyWithSource } from '../auth.js'
 import { getCwd } from '../cwd.js'
 import { getFastModeState } from '../fastMode.js'
 
-// TODO(next-minor): remove this translation once SDK consumers have migrated
+// TODO(next-minor): remove this translation once structured consumers have migrated
 // to the 'Agent' tool name. The wire name was renamed Task → Agent in #19647,
-// but emitting the new name in init/result events broke SDK consumers on a
+// but emitting the new name in init/result events broke structured consumers on a
 // patch-level release. Keep emitting 'Task' until the next minor.
 export function sdkCompatToolName(name: string): string {
   return name === AGENT_TOOL_NAME ? LEGACY_AGENT_TOOL_NAME : name

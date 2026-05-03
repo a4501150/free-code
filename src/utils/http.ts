@@ -19,7 +19,7 @@ export function getUserAgent(): string {
   const agentSdkVersion = process.env.CLAUDE_AGENT_SDK_VERSION
     ? `, agent-sdk/${process.env.CLAUDE_AGENT_SDK_VERSION}`
     : ''
-  // SDK consumers can identify their app/library via CLAUDE_AGENT_SDK_CLIENT_APP
+  // structured consumers can identify their app/library via CLAUDE_AGENT_SDK_CLIENT_APP
   // e.g., "my-app/1.0.0" or "my-library/2.1"
   const clientApp = process.env.CLAUDE_AGENT_SDK_CLIENT_APP
     ? `, client-app/${process.env.CLAUDE_AGENT_SDK_CLIENT_APP}`
