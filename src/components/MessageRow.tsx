@@ -6,6 +6,7 @@ import type { Tools } from '../Tool.js'
 import type { RenderableMessage } from '../types/message.js'
 import {
   getDisplayMessageFromCollapsed,
+  getSearchOrReadInfo,
   getToolUseIdsFromCollapsedGroup,
   hasAnyToolInProgress,
 } from '../utils/collapseReadSearch.js'
@@ -26,6 +27,7 @@ export type Props = {
   message: RenderableMessage
   /** Whether the previous message in renderableMessages is also a user message. */
   isUserContinuation: boolean
+  hasContentAfter: boolean
   tools: Tools
   commands: Command[]
   verbose: boolean
@@ -41,9 +43,60 @@ export type Props = {
   lookups: ReturnType<typeof buildMessageLookups>
 }
 
+export function hasContentAfterIndex(
+  messages: RenderableMessage[],
+  index: number,
+  tools: Tools,
+  streamingToolUseIDs: Set<string>,
+): boolean {
+  for (let i = index + 1; i < messages.length; i++) {
+    const msg = messages[i]
+    if (msg?.type === 'assistant') {
+      const content = msg.message.content[0]
+      if (
+        content?.type === 'thinking' ||
+        content?.type === 'redacted_thinking'
+      ) {
+        continue
+      }
+      if (content?.type === 'tool_use') {
+        if (
+          getSearchOrReadInfo(content.name, content.input, tools).isCollapsible
+        ) {
+          continue
+        }
+        if (streamingToolUseIDs.has(content.id)) {
+          continue
+        }
+      }
+      return true
+    }
+    if (msg?.type === 'system' || msg?.type === 'attachment') {
+      continue
+    }
+    if (msg?.type === 'user') {
+      const content = msg.message.content[0]
+      if (content?.type === 'tool_result') {
+        continue
+      }
+    }
+    if (msg?.type === 'grouped_tool_use') {
+      const firstBlock = msg.messages[0]?.message.content[0]
+      const firstInput =
+        firstBlock && 'input' in firstBlock ? firstBlock.input : undefined
+      if (getSearchOrReadInfo(msg.toolName, firstInput, tools).isCollapsible) {
+        continue
+      }
+    }
+    return true
+  }
+  return false
+}
+
 function MessageRowImpl({
   message: msg,
   isUserContinuation,
+  hasContentAfter,
   tools,
   commands,
   verbose,
@@ -72,7 +125,8 @@ function MessageRowImpl({
   const isActiveCollapsedGroup =
     isCollapsed &&
     (hasAnyToolInProgress(msg, inProgressToolUseIDs) ||
-      hasUnresolvedCollapsedGroupTool)
+      hasUnresolvedCollapsedGroupTool ||
+      (isLoading && !hasContentAfter))
 
   const displayMsg = isGrouped
     ? msg.displayMessage
@@ -252,6 +306,8 @@ export function areMessageRowPropsEqual(prev: Props, next: Props): boolean {
 
   // Width change affects Box layout
   if (prev.columns !== next.columns) return false
+
+  if (prev.hasContentAfter !== next.hasContentAfter) return false
 
   // latestBashOutputUUID affects rendering (full vs truncated output)
   const prevIsLatestBash = prev.latestBashOutputUUID === prev.message.uuid
