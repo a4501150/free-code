@@ -969,6 +969,62 @@ describe('Codex adapter: reasoning round-trip', () => {
     }
   })
 
+  test('inbound — completed tool call before response.completed EOF finishes as tool_use', async () => {
+    const responsesSSE = [
+      'event: response.output_item.added',
+      'data: {"type":"response.output_item.added","item":{"type":"function_call","name":"bash","call_id":"fc_truncated","arguments":""}}',
+      '',
+      'event: response.function_call_arguments.delta',
+      'data: {"type":"response.function_call_arguments.delta","item_id":"fc_truncated","delta":"{\\"cmd\\":\\"pwd\\"}"}',
+      '',
+      'event: response.output_item.done',
+      'data: {"type":"response.output_item.done","item":{"type":"function_call","name":"bash","call_id":"fc_truncated","arguments":"{\\"cmd\\":\\"pwd\\"}"}}',
+      '',
+      '',
+    ].join('\n')
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(responsesSSE, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      })) as unknown as typeof globalThis.fetch
+
+    try {
+      const adapterFetch = createCodexFetch({
+        accessToken: 'unused',
+        baseUrl: 'http://localhost',
+        getSessionId: () => 'test-session',
+      })
+      const response = await adapterFetch('http://localhost/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-test',
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      })
+      const events = parseAnthropicSSE(await drainToString(response.body!))
+      expect(events.some(e => e.event === 'error')).toBe(false)
+      const toolStart = events.find(
+        e =>
+          e.event === 'content_block_start' &&
+          (e.data.content_block as Record<string, unknown>)?.type ===
+            'tool_use',
+      )
+      expect(toolStart).toBeDefined()
+      expect(
+        (toolStart!.data.content_block as Record<string, unknown>).id,
+      ).toBe('fc_truncated')
+      const stopReason = events.find(e => e.event === 'message_delta')?.data
+        .delta as Record<string, unknown>
+      expect(stopReason.stop_reason).toBe('tool_use')
+      expect(events.find(e => e.event === 'message_stop')).toBeDefined()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   test('inbound — truncated stream before response.completed emits transport error', async () => {
     const responsesSSE = [
       'event: response.output_text.delta',
