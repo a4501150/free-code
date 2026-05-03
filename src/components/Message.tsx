@@ -28,9 +28,6 @@ import type {
 import { type AdvisorBlock, isAdvisorBlock } from '../utils/advisor.js'
 import { isFullscreenEnvEnabled } from '../utils/fullscreen.js'
 import { logError } from '../utils/log.js'
-import * as snipProjectionNs from '../services/compact/snipProjection.js'
-import * as snipCompactNs from '../services/compact/snipCompact.js'
-import * as snipBoundaryMessageNs from './messages/SnipBoundaryMessage.js'
 import type { buildMessageLookups } from '../utils/messages.js'
 import { CompactSummary } from './CompactSummary.js'
 import { AdvisorMessage } from './messages/AdvisorMessage.js'
@@ -230,19 +227,6 @@ function MessageImpl({
       if (message.subtype === 'microcompact_boundary') {
         // Logged at creation time in createMicrocompactBoundaryMessage
         return null
-      }
-      if (feature('HISTORY_SNIP')) {
-        const { isSnipBoundaryMessage } = snipProjectionNs
-        const { isSnipMarkerMessage } = snipCompactNs
-        if (isSnipBoundaryMessage(message)) {
-          const { SnipBoundaryMessage } = snipBoundaryMessageNs
-          return <SnipBoundaryMessage message={message} />
-        }
-        if (isSnipMarkerMessage(message)) {
-          // Internal registration marker — not user-facing. The boundary
-          // message (above) is what shows when snips actually execute.
-          return null
-        }
       }
       if (message.subtype === 'local_command') {
         return (

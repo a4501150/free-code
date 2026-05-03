@@ -75,7 +75,6 @@ const defaultFeatures = [
   'UNATTENDED_RETRY',
   // Tier 2: Slash command / skill gated
   'BUDDY',
-  'HISTORY_SNIP',
   'KAIROS_DREAM',
   // Tier 3: Settings / env var / file gated
   'CACHED_MICROCOMPACT',

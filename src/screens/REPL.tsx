@@ -2926,9 +2926,7 @@ export function REPL({
             // boundary to keep n bounded across multi-day sessions.
             if (isFullscreenEnvEnabled()) {
               setMessages(old => [
-                ...getMessagesAfterCompactBoundary(old, {
-                  includeSnipped: true,
-                }),
+                ...getMessagesAfterCompactBoundary(old),
                 newMessage,
               ])
             } else {
@@ -5869,21 +5867,18 @@ export function REPL({
                       feedback?: string,
                       direction: PartialCompactDirection = 'from',
                     ) => {
-                      // Project snipped messages so the compact model
-                      // doesn't summarize content that was intentionally removed.
                       const compactMessages =
                         getMessagesAfterCompactBoundary(messages)
 
                       const messageIndex = compactMessages.indexOf(message)
                       if (messageIndex === -1) {
-                        // Selected a snipped or pre-compact message that the
-                        // selector still shows (REPL keeps full history for
-                        // scrollback). Surface why nothing happened instead
-                        // of silently no-oping.
+                        // Selected a pre-compact message that the selector still
+                        // shows for scrollback. Surface why nothing happened
+                        // instead of silently no-oping.
                         setMessages(prev => [
                           ...prev,
                           createSystemMessage(
-                            'That message is no longer in the active context (snipped or pre-compact). Choose a more recent message.',
+                            'That message is no longer in the active context (pre-compact). Choose a more recent message.',
                             'warning',
                           ),
                         ])
@@ -5948,8 +5943,8 @@ export function REPL({
                       // Fullscreen 'from' keeps scrollback; 'up_to' must not
                       // (old[0] unchanged + grown array means incremental
                       // useLogMessages path, so boundary never persisted).
-                      // Find by uuid since old is raw REPL history and snipped
-                      // entries can shift the projected messageIndex.
+                      // Find by uuid since old is raw REPL history and compact
+                      // boundaries can shift the active messageIndex.
                       if (isFullscreenEnvEnabled() && direction === 'from') {
                         setMessages(old => {
                           const rawIdx = old.findIndex(

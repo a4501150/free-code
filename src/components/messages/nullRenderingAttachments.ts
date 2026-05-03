@@ -28,7 +28,6 @@ const NULL_RENDERING_TYPES = [
   'plan_mode_reentry',
   'structured_output',
   'team_context',
-  'context_efficiency',
   'deferred_tools_delta',
   'mcp_tools_delta',
   'mcp_instructions_delta',

@@ -29,7 +29,6 @@ These are included in the default feature list.
 ### Slash-command and skill behavior
 
 - `BUDDY` — enables buddy command/UI surfaces that remain in this snapshot.
-- `HISTORY_SNIP` — enables history-snipping behavior.
 - `KAIROS_DREAM` — enables the dream skill and related consolidation behavior.
 
 ### Runtime/settings behavior

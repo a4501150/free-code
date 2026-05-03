@@ -30,12 +30,8 @@ import {
 } from './memoryFileDetection.js'
 
 import * as teamMemOpsNs from './teamMemoryOps.js'
-import * as snipToolPromptNs from '../tools/SnipTool/prompt.js'
 
 const teamMemOps = feature('TEAMMEM') ? teamMemOpsNs : null
-const SNIP_TOOL_NAME = feature('HISTORY_SNIP')
-  ? snipToolPromptNs.SNIP_TOOL_NAME
-  : null
 
 /**
  * Result of checking if a tool use is a search or read operation.
@@ -167,20 +163,6 @@ export function getSearchOrReadInfo(
       isREPL: false,
       isMemoryWrite: true,
       isAbsorbedSilently: false,
-    }
-  }
-
-  // Snip is absorbed silently: it should not break a collapse group or
-  // contribute to its count, but stays visible in verbose mode.
-  if (feature('HISTORY_SNIP') && toolName === SNIP_TOOL_NAME) {
-    return {
-      isCollapsible: true,
-      isSearch: false,
-      isRead: false,
-      isList: false,
-      isREPL: false,
-      isMemoryWrite: false,
-      isAbsorbedSilently: true,
     }
   }
 

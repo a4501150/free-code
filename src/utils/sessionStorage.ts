@@ -1604,84 +1604,6 @@ function applyPreservedSegmentRelinks(
 }
 
 /**
- * Delete messages that Snip executions removed from the in-memory array,
- * and relink parentUuid across the gaps.
- *
- * Unlike compact_boundary which truncates a prefix, snip removes
- * middle ranges. The JSONL is append-only, so removed messages stay on disk
- * and the surviving messages' parentUuid chains walk through them. Without
- * this filter, buildConversationChain reconstructs the full unsnipped history
- * and resume immediately PTLs (adamr-20260320-165831: 397K displayed → 1.65M
- * actual).
- *
- * Deleting alone is not enough: the surviving message AFTER a removed range
- * has parentUuid pointing INTO the gap. buildConversationChain would hit
- * messages.get(undefined) and stop, orphaning everything before the gap. So
- * after delete we relink: for each survivor with a dangling parentUuid, walk
- * backward through the removed region's own parent links to the first
- * non-removed ancestor.
- *
- * The boundary records removedUuids at execution time so we can replay the
- * exact removal on load. Older boundaries without removedUuids are skipped —
- * resume loads their pre-snip history (the pre-fix behavior).
- *
- * Mutates the Map in place.
- */
-function applySnipRemovals(messages: Map<UUID, TranscriptMessage>): void {
-  // Structural check — snipMetadata only exists on the boundary subtype.
-  // Avoids the subtype literal which is in excluded-strings.txt
-  // (HISTORY_SNIP is ant-only; the literal must not leak into external builds).
-  type WithSnipMeta = { snipMetadata?: { removedUuids?: UUID[] } }
-  const toDelete = new Set<UUID>()
-  for (const entry of messages.values()) {
-    const removedUuids = (entry as WithSnipMeta).snipMetadata?.removedUuids
-    if (!removedUuids) continue
-    for (const uuid of removedUuids) toDelete.add(uuid)
-  }
-  if (toDelete.size === 0) return
-
-  // Capture each to-delete entry's own parentUuid BEFORE deleting so we can
-  // walk backward through contiguous removed ranges. Entries not in the Map
-  // (already absent, e.g. from a prior compact_boundary prune) contribute no
-  // link; the relink walk will stop at the gap and pick up null (chain-root
-  // behavior — same as if compact truncated there, which it did).
-  const deletedParent = new Map<UUID, UUID | null>()
-  let removedCount = 0
-  for (const uuid of toDelete) {
-    const entry = messages.get(uuid)
-    if (!entry) continue
-    deletedParent.set(uuid, entry.parentUuid)
-    messages.delete(uuid)
-    removedCount++
-  }
-
-  // Relink survivors with dangling parentUuid. Walk backward through
-  // deletedParent until we hit a UUID not in toDelete (or null). Path
-  // compression: after resolving, seed the map with the resolved link so
-  // subsequent survivors sharing the same chain segment don't re-walk.
-  const resolve = (start: UUID): UUID | null => {
-    const path: UUID[] = []
-    let cur: UUID | null | undefined = start
-    while (cur && toDelete.has(cur)) {
-      path.push(cur)
-      cur = deletedParent.get(cur)
-      if (cur === undefined) {
-        cur = null
-        break
-      }
-    }
-    for (const p of path) deletedParent.set(p, cur)
-    return cur
-  }
-  let relinkedCount = 0
-  for (const [uuid, msg] of messages) {
-    if (!msg.parentUuid || !toDelete.has(msg.parentUuid)) continue
-    messages.set(uuid, { ...msg, parentUuid: resolve(msg.parentUuid) })
-    relinkedCount++
-  }
-}
-
-/**
  * O(n) single-pass: find the message with the latest timestamp matching a predicate.
  * Replaces the `[...values].filter(pred).sort((a,b) => Date(b)-Date(a))[0]` pattern
  * which is O(n log n) + 2n Date allocations.
@@ -1848,8 +1770,8 @@ function recoverOrphanedParallelToolResults(
  * Find the latest turn_duration checkpoint in the reconstructed chain and
  * compare its recorded messageCount against the chain's position at that
  * point. Emits tengu_resume_consistency_delta for BigQuery monitoring of
- * write→load round-trip drift — the class of bugs where snip/compact/
- * parallel-TR operations mutate in-memory but the parentUuid walk on disk
+ * write→load round-trip drift — the class of bugs where compact/parallel-TR
+ * operations mutate in-memory but the parentUuid walk on disk
  * reconstructs a different set (adamr-20260320-165831: 397K displayed →
  * 1.65M actual on resume).
  *
@@ -3244,7 +3166,6 @@ export async function loadTranscriptFile(
   }
 
   applyPreservedSegmentRelinks(messages)
-  applySnipRemovals(messages)
 
   // Compute leaf UUIDs once at load time
   // Only user/assistant messages should be considered as leaves for anchoring resume.

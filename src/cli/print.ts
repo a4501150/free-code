@@ -2814,9 +2814,9 @@ function runHeadlessStreaming(
             cancelled: removed.length > 0,
           })
         } else if (message.request.subtype === 'seed_read_state') {
-          // Client observed a Read that was later removed from context (e.g.
-          // by snip), so transcript-based seeding missed it. Queued into
-          // pendingSeeds; applied at the next clone-replace boundary.
+          // Client observed a Read that was later removed from active context,
+          // so transcript-based seeding missed it. Queued into pendingSeeds;
+          // applied at the next clone-replace boundary.
           try {
             // expandPath: all other readFileState writers normalize (~, relative,
             // session cwd vs process cwd). FileEditTool looks up by expandPath'd

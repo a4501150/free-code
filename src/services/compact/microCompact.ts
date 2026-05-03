@@ -398,8 +398,8 @@ async function cachedMicrocompactPath(
  * trigger fires, or null when it doesn't (disabled, wrong source, under
  * threshold, no prior assistant, unparseable timestamp).
  *
- * Extracted so other pre-request paths (e.g. snip force-apply) can consult
- * the same predicate without coupling to the tool-result clearing action.
+ * Extracted so other pre-request paths can consult the same predicate without
+ * coupling to the tool-result clearing action.
  */
 export function evaluateTimeBasedTrigger(
   messages: Message[],
