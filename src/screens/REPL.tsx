@@ -5,7 +5,6 @@ import {
   getCurrentTurnTokenBudget,
   getTurnOutputTokens,
   getBudgetContinuationCount,
-  getTotalInputTokens,
 } from '../bootstrap/state.js'
 import { parseTokenBudget } from '../utils/tokenBudget.js'
 import { count } from '../utils/array.js'
@@ -74,6 +73,7 @@ import { logForDebugging } from '../utils/debug.js'
 import { QueryGuard } from '../utils/QueryGuard.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
 import { formatTokens, truncateToWidth } from '../utils/format.js'
+import { getCurrentTotalInputTokens } from '../utils/tokens.js'
 import { consumeEarlyInput } from '../utils/earlyInput.js'
 
 import { setMemberActive } from '../utils/swarm/teamHelpers.js'
@@ -3842,7 +3842,7 @@ export function REPL({
           !speculationAccept &&
           !input.trim().startsWith('/') &&
           lastQueryCompletionTimeRef.current > 0 &&
-          getTotalInputTokens() >= tokenThreshold
+          getCurrentTotalInputTokens(messagesRef.current) >= tokenThreshold
         ) {
           const idleMs = Date.now() - lastQueryCompletionTimeRef.current
           const idleMinutes = idleMs / 60_000
@@ -4488,7 +4488,7 @@ export function REPL({
     const tokenThreshold = Number(
       process.env.CLAUDE_CODE_IDLE_TOKEN_THRESHOLD ?? 100_000,
     )
-    if (getTotalInputTokens() < tokenThreshold) return
+    if (getCurrentTotalInputTokens(messagesRef.current) < tokenThreshold) return
 
     const idleThresholdMs =
       Number(process.env.CLAUDE_CODE_IDLE_THRESHOLD_MINUTES ?? 75) * 60_000
@@ -4498,8 +4498,8 @@ export function REPL({
     const timer = setTimeout(
       (lqct, addNotif, msgsRef, mode, hintRef) => {
         if (msgsRef.current.length === 0) return
-        const totalTokens = getTotalInputTokens()
-        const formattedTokens = formatTokens(totalTokens)
+        const currentContextTokens = getCurrentTotalInputTokens(msgsRef.current)
+        const formattedTokens = formatTokens(currentContextTokens)
         const idleMinutes = (Date.now() - lqct) / 60_000
         addNotif({
           key: 'idle-return-hint',
@@ -5708,7 +5708,9 @@ export function REPL({
                 {focusedInputDialog === 'idle-return' && idleReturnPending && (
                   <IdleReturnDialog
                     idleMinutes={idleReturnPending.idleMinutes}
-                    totalInputTokens={getTotalInputTokens()}
+                    currentContextTokens={getCurrentTotalInputTokens(
+                      messagesRef.current,
+                    )}
                     onDone={async action => {
                       const pending = idleReturnPending
                       setIdleReturnPending(null)

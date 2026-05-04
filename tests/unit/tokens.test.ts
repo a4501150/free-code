@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import type { Message } from '../../src/types/message.js'
-import { getCurrentUsage } from '../../src/utils/tokens.js'
+import {
+  getCurrentTotalInputTokens,
+  getCurrentUsage,
+} from '../../src/utils/tokens.js'
 
 function assistantMessage(usage: {
   input_tokens: number
@@ -48,5 +51,26 @@ describe('getCurrentUsage', () => {
       cache_creation_input_tokens: 0,
       cache_read_input_tokens: 30,
     })
+  })
+})
+
+describe('getCurrentTotalInputTokens', () => {
+  test('uses latest context usage instead of cumulative session usage', () => {
+    const tokens = getCurrentTotalInputTokens([
+      assistantMessage({
+        input_tokens: 400_000,
+        output_tokens: 20,
+        cache_creation_input_tokens: 10,
+        cache_read_input_tokens: 20,
+      }),
+      assistantMessage({
+        input_tokens: 68_000,
+        output_tokens: 20,
+        cache_creation_input_tokens: 1_000,
+        cache_read_input_tokens: 2_000,
+      }),
+    ])
+
+    expect(tokens).toBe(71_000)
   })
 })
