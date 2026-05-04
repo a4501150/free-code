@@ -969,7 +969,7 @@ describe('Codex adapter: reasoning round-trip', () => {
     }
   })
 
-  test('inbound — completed tool call before response.completed EOF finishes as tool_use', async () => {
+  test('inbound — completed tool call before response.completed EOF still emits retryable transport error', async () => {
     const responsesSSE = [
       'event: response.output_item.added',
       'data: {"type":"response.output_item.added","item":{"type":"function_call","name":"bash","call_id":"fc_truncated","arguments":""}}',
@@ -1005,7 +1005,6 @@ describe('Codex adapter: reasoning round-trip', () => {
         }),
       })
       const events = parseAnthropicSSE(await drainToString(response.body!))
-      expect(events.some(e => e.event === 'error')).toBe(false)
       const toolStart = events.find(
         e =>
           e.event === 'content_block_start' &&
@@ -1016,10 +1015,19 @@ describe('Codex adapter: reasoning round-trip', () => {
       expect(
         (toolStart!.data.content_block as Record<string, unknown>).id,
       ).toBe('fc_truncated')
-      const stopReason = events.find(e => e.event === 'message_delta')?.data
-        .delta as Record<string, unknown>
-      expect(stopReason.stop_reason).toBe('tool_use')
-      expect(events.find(e => e.event === 'message_stop')).toBeDefined()
+      const error = events.find(e => e.event === 'error')
+      expect(error).toBeDefined()
+      expect(
+        (
+          (error!.data.error as Record<string, unknown>).normalized as Record<
+            string,
+            unknown
+          >
+        ).kind,
+      ).toBe('transport')
+      expect((error!.data.error as Record<string, unknown>).message).toContain(
+        'response.completed',
+      )
     } finally {
       globalThis.fetch = originalFetch
     }

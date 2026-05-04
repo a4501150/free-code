@@ -617,7 +617,6 @@ async function translateCodexStreamToAnthropic(
       let inputTokens = 0
       let cacheReadInputTokens = 0
       let hadToolCalls = false
-      let sawCompletedToolCallItem = false
       let webSearchCount = 0
       let streamFinished = false
 
@@ -949,7 +948,6 @@ async function translateCodexStreamToAnthropic(
         emitBlockStop(contentBlockIndex)
         contentBlockIndex++
         hadToolCalls = true
-        sawCompletedToolCallItem = true
         state.rendered = true
       }
 
@@ -1014,7 +1012,6 @@ async function translateCodexStreamToAnthropic(
         state.webSearchResultEmitted = true
         state.rendered = true
         hadToolCalls = true
-        sawCompletedToolCallItem = true
       }
 
       const handleItemDone = (
@@ -1368,18 +1365,10 @@ async function translateCodexStreamToAnthropic(
       }
 
       if (!sawResponseCompleted && !streamFinished) {
-        if (sawCompletedToolCallItem) {
-          logForDebugging(
-            `[codex-adapter] stream ended before response.completed after completed tool output item; finishing as tool_use model=${codexModel} duration_ms=${Date.now() - streamStart} chunks=${chunkCount} content_blocks=${contentBlockIndex} eventTypes=${JSON.stringify(eventTypeCounts)}`,
-            { level: 'warn' },
-          )
-          finishStream()
-        } else {
-          emitErrorAndClose('Codex stream ended before response.completed', {
-            cause: new Error('Codex stream ended before response.completed'),
-            stream_truncated: true,
-          })
-        }
+        emitErrorAndClose('Codex stream ended before response.completed', {
+          cause: new Error('Codex stream ended before response.completed'),
+          stream_truncated: true,
+        })
       }
     },
     cancel(reason) {
