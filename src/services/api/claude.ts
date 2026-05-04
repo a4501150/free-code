@@ -744,9 +744,7 @@ function getNonstreamingFallbackTimeoutMs(): number {
 
 const CODEX_STREAM_MAX_RETRIES = 1
 
-function isCodexResponseCompletedStreamError(
-  error: unknown,
-): error is APIError {
+function isRetryableCodexStreamError(error: unknown): error is APIError {
   if (!(error instanceof APIError)) return false
   const normalized = getNormalizedError(error)
   if (!normalized) {
@@ -756,13 +754,15 @@ function isCodexResponseCompletedStreamError(
     )
   }
   if (normalized.providerType !== 'openai-responses') return false
-  if (normalized.kind !== 'transport') return false
-  const raw = normalized.raw as { stream_truncated?: unknown } | undefined
-  return (
-    raw?.stream_truncated === true ||
-    normalized.message.includes('response.completed') ||
-    error.message.includes('response.completed')
-  )
+  switch (normalized.kind) {
+    case 'transport':
+    case 'server':
+    case 'overloaded':
+    case 'rate_limit':
+      return true
+    default:
+      return false
+  }
 }
 
 /**
@@ -2109,14 +2109,14 @@ async function* queryModel(
         }
 
         if (
-          isCodexResponseCompletedStreamError(streamingError) &&
+          isRetryableCodexStreamError(streamingError) &&
           codexStreamAttempt < CODEX_STREAM_MAX_RETRIES &&
           !signal.aborted
         ) {
           const retryAttempt = codexStreamAttempt + 1
           const delayMs = getRetryDelay(retryAttempt)
           logForDebugging(
-            `Codex stream ended before response.completed; retrying stream attempt ${retryAttempt}/${CODEX_STREAM_MAX_RETRIES}`,
+            `Retryable Codex stream error; retrying stream attempt ${retryAttempt}/${CODEX_STREAM_MAX_RETRIES}: ${errorMessage(streamingError)}`,
             { level: 'warn' },
           )
           options.onStreamingFallback?.()

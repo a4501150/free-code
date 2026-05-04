@@ -144,6 +144,9 @@ export const codexAdapter: ProviderAdapter = {
         return { ...base, kind: 'rate_limit' }
       }
       if (code === 'invalid_api_key') return { ...base, kind: 'auth' }
+      if (code === 'server_error' || apiErrorType === 'server_error') {
+        return { ...base, kind: 'server' }
+      }
       // Context-window overflow + any explicit invalid_request_error from
       // upstream become `invalid_request` so the UI surfaces a precise
       // error type and `withRetry` doesn't burn budget retrying it.

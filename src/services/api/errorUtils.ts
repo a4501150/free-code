@@ -16,9 +16,15 @@ import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 export function getNormalizedError(
   error: APIError,
 ): NormalizedApiError | undefined {
-  const embedded = (
-    error as APIError & { error?: { normalized?: NormalizedApiError } }
-  ).error?.normalized
+  const body = (
+    error as APIError & {
+      error?: {
+        normalized?: NormalizedApiError
+        error?: { normalized?: NormalizedApiError }
+      }
+    }
+  ).error
+  const embedded = body?.normalized ?? body?.error?.normalized
   if (embedded) return embedded
   if (typeof error.status === 'number') {
     const registry = getProviderRegistry()

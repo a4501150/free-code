@@ -43,6 +43,24 @@ describe('codexAdapter.normalizeError', () => {
     expect(e.message).toContain('response.completed')
   })
 
+  test('mid-stream server_error body → server', () => {
+    const e = codexAdapter.normalizeError(
+      {
+        mid_stream: true,
+        body: JSON.stringify({
+          error: {
+            type: 'server_error',
+            code: 'server_error',
+            message: 'An error occurred while processing your request.',
+          },
+        }),
+      },
+      'openai-responses',
+    )
+    expect(e.kind).toBe('server')
+    expect(e.message).toBe('An error occurred while processing your request.')
+  })
+
   test('HTTP 401 → auth', () => {
     const e = codexAdapter.normalizeError(
       { status: 401, body: '' },
