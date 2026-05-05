@@ -627,6 +627,88 @@ export const ProviderAuthSchema = lazySchema(() =>
   }),
 )
 
+export type AutoModeRuleSections = {
+  environment?: string[]
+  deny?: string[]
+  allow?: string[]
+}
+
+export type AutoModeSettings = AutoModeRuleSections & {
+  enabled?: boolean
+  classifierModel?: string
+}
+
+function getStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every(v => typeof v === 'string')
+    ? value
+    : undefined
+}
+
+export function normalizeAutoModeSetting(value: unknown): unknown {
+  if (typeof value === 'boolean') {
+    return { enabled: value }
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return value
+  }
+
+  const raw = value as Record<string, unknown>
+  const normalized: AutoModeSettings = {}
+  if (typeof raw.enabled === 'boolean') {
+    normalized.enabled = raw.enabled
+  }
+  if (typeof raw.classifierModel === 'string') {
+    normalized.classifierModel = raw.classifierModel
+  }
+
+  const environment = getStringArray(raw.environment)
+  if (environment !== undefined) normalized.environment = environment
+  const deny = getStringArray(raw.deny)
+  if (deny !== undefined) normalized.deny = deny
+  const allow = getStringArray(raw.allow)
+  if (allow !== undefined) normalized.allow = allow
+
+  return normalized
+}
+
+export const AutoModeSettingsSchema = lazySchema(() =>
+  z.preprocess(
+    normalizeAutoModeSetting,
+    z
+      .object({
+        enabled: z
+          .boolean()
+          .optional()
+          .describe('Enable auto mode. Defaults to true when omitted.'),
+        classifierModel: z
+          .string()
+          .optional()
+          .describe(
+            'Model to use for the auto mode safety classifier. Defaults to the main loop model when not set.',
+          ),
+        environment: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Rules that replace the auto mode classifier environment section.',
+          ),
+        deny: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Rules that replace the auto mode classifier BLOCK section.',
+          ),
+        allow: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Rules that replace the auto mode classifier ALLOW section.',
+          ),
+      })
+      .passthrough(),
+  ),
+)
+
 export const ProviderConfigSchema = lazySchema(() =>
   z.object({
     type: z
@@ -1194,7 +1276,7 @@ export const SettingsSchema = lazySchema(() =>
         .string()
         .optional()
         .describe(
-          'Model to use for auto mode safety classifier. ' +
+          'Deprecated: use autoMode.classifierModel. Model to use for auto mode safety classifier. ' +
             'Defaults to the main loop model when not set.',
         ),
       fastMode: z
@@ -1434,33 +1516,11 @@ export const SettingsSchema = lazySchema(() =>
               .describe(
                 'Whether plan mode uses auto mode semantics when auto mode is available (default: true)',
               ),
-            autoMode: z
-              .object({
-                allow: z
-                  .array(z.string())
-                  .optional()
-                  .describe('Rules for the auto mode classifier allow section'),
-                soft_deny: z
-                  .array(z.string())
-                  .optional()
-                  .describe('Rules for the auto mode classifier deny section'),
-                environment: z
-                  .array(z.string())
-                  .optional()
-                  .describe(
-                    'Entries for the auto mode classifier environment section',
-                  ),
-              })
-              .optional()
-              .describe('Auto mode classifier prompt customization'),
           }
         : {}),
-      autoMode: z
-        .boolean()
+      autoMode: AutoModeSettingsSchema()
         .optional()
-        .describe(
-          'Enable auto mode (AI-powered permission classifier). Default: true.',
-        ),
+        .describe('Auto mode configuration'),
       sshConfigs: z
         .array(
           z.object({

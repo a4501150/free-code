@@ -293,7 +293,6 @@ The default build enables the production-supported flags in `defaultFeatures`; `
 
 | Flag                           | Description                                      |
 | ------------------------------ | ------------------------------------------------ |
-| `BASH_CLASSIFIER`              | Classifier-assisted bash permission decisions    |
 | `TRANSCRIPT_CLASSIFIER`        | Transcript classifier and auto-mode permissions  |
 | `POWERSHELL_AUTO_MODE`         | PowerShell-specific auto-mode permission support |
 | `TREE_SITTER_BASH`             | Tree-sitter Bash parser backend                  |

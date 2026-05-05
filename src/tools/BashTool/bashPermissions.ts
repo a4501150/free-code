@@ -1,8 +1,6 @@
 import { feature } from 'bun:bundle'
-import { APIUserAbortError } from '@anthropic-ai/sdk'
 import type { z } from 'zod/v4'
 import type { ToolPermissionContext, ToolUseContext } from '../../Tool.js'
-import type { PendingClassifierCheck } from '../../types/permissions.js'
 import { count } from '../../utils/array.js'
 import {
   checkSemantics,
@@ -24,17 +22,6 @@ import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { AbortError } from '../../utils/errors.js'
-import type {
-  ClassifierBehavior,
-  ClassifierResult,
-} from '../../utils/permissions/bashClassifier.js'
-import {
-  classifyBashCommand,
-  getBashPromptAllowDescriptions,
-  getBashPromptAskDescriptions,
-  getBashPromptDenyDescriptions,
-  isClassifierPermissionsEnabled,
-} from '../../utils/permissions/bashClassifier.js'
 import type {
   PermissionDecisionReason,
   PermissionResult,
@@ -73,13 +60,6 @@ import { checkPathConstraints } from './pathValidation.js'
 import { checkSedConstraints } from './sedValidation.js'
 import { shouldUseSandbox } from './shouldUseSandbox.js'
 
-// DCE cliff: Bun's feature() evaluator has a per-function complexity budget.
-// bashToolHasPermission is right at the limit. `import { X as Y }` aliases
-// inside the import block count toward this budget; when they push it over
-// the threshold Bun can no longer prove feature('BASH_CLASSIFIER') is a
-// constant and silently evaluates the ternaries to `false`, dropping every
-// pendingClassifierCheck spread. Keep aliases as top-level const rebindings
-// instead. (See also the comment on checkSemanticsDeny below.)
 const bashCommandIsSafeAsync = bashCommandIsSafeAsync_DEPRECATED
 const splitCommand = splitCommand_DEPRECATED
 
@@ -103,18 +83,6 @@ export const MAX_SUBCOMMANDS_FOR_SECURITY_CHECK = 50
 // is more likely noise than intent. Users chaining this many write commands
 // in one && list are rare; they can always approve once and add rules manually.
 export const MAX_SUGGESTED_RULES_FOR_COMPOUND = 5
-
-/**
- * Log classifier evaluation results for analysis (no-op).
- * This helps us understand which classifier rules are being evaluated
- * and how the classifier is deciding on commands.
- */
-function logClassifierResultForAnts(
-  _command: string,
-  _behavior: ClassifierBehavior,
-  _descriptions: string[],
-  _result: ClassifierResult,
-): void {}
 
 /**
  * Extract a stable command prefix (command + subcommand) from a raw command string.
@@ -524,9 +492,7 @@ const TIMEOUT_FLAG_VALUE_RE = /^[A-Za-z0-9_.+-]+$/
  * --kill-after/--signal (value, both =fused and space-separated), -v (no
  * value), -k/-s (value, both fused and space-separated).
  *
- * Extracted from stripWrappersFromArgv to keep bashToolHasPermission under
- * Bun's feature() DCE complexity threshold — inlining this breaks
- * feature('BASH_CLASSIFIER') evaluation in classifier tests.
+ * Extracted from stripWrappersFromArgv to keep bashToolHasPermission compact.
  */
 function skipTimeoutFlags(a: readonly string[]): number {
   let i = 1
@@ -1258,9 +1224,7 @@ function checkSandboxAutoAllow(
 
 /**
  * Filter out `cd ${cwd}` prefix subcommands, keeping astCommands aligned.
- * Extracted to keep bashToolHasPermission under Bun's feature() DCE
- * complexity threshold — inlining this breaks pendingClassifierCheck
- * attachment in ~10 classifier tests.
+ * Extracted to keep bashToolHasPermission compact.
  */
 function filterCdCwdSubcommands(
   rawSubcommands: string[],
@@ -1322,9 +1286,7 @@ function checkEarlyExitDeny(
  * Each SimpleCommand span is a single command, so the guard doesn't fire.
  *
  * Separate helper (not folded into checkEarlyExitDeny or inlined at the call
- * site) because bashToolHasPermission is tight against Bun's feature() DCE
- * complexity threshold — adding even ~5 lines there breaks
- * feature('BASH_CLASSIFIER') evaluation and drops pendingClassifierCheck.
+ * site) to keep bashToolHasPermission easier to follow.
  */
 function checkSemanticsDeny(
   input: z.infer<typeof BashTool.inputSchema>,
@@ -1348,211 +1310,6 @@ function checkSemanticsDeny(
     }
   }
   return null
-}
-
-/**
- * Builds the pending classifier check metadata if classifier is enabled and has allow descriptions.
- * Returns undefined if classifier is disabled, in auto mode, or no allow descriptions exist.
- */
-function buildPendingClassifierCheck(
-  command: string,
-  toolPermissionContext: ToolPermissionContext,
-): { command: string; cwd: string; descriptions: string[] } | undefined {
-  if (!isClassifierPermissionsEnabled()) {
-    return undefined
-  }
-  // Skip in auto mode - auto mode classifier handles all permission decisions
-  if (feature('TRANSCRIPT_CLASSIFIER') && toolPermissionContext.mode === 'auto')
-    return undefined
-  if (toolPermissionContext.mode === 'bypassPermissions') return undefined
-
-  const allowDescriptions = getBashPromptAllowDescriptions(
-    toolPermissionContext,
-  )
-  if (allowDescriptions.length === 0) return undefined
-
-  return {
-    command,
-    cwd: getCwd(),
-    descriptions: allowDescriptions,
-  }
-}
-
-const speculativeChecks = new Map<string, Promise<ClassifierResult>>()
-
-/**
- * Start a speculative bash allow classifier check early, so it runs in
- * parallel with pre-tool hooks, deny/ask classifiers, and permission dialog setup.
- * The result can be consumed later by executeAsyncClassifierCheck via
- * consumeSpeculativeClassifierCheck.
- */
-export function peekSpeculativeClassifierCheck(
-  command: string,
-): Promise<ClassifierResult> | undefined {
-  return speculativeChecks.get(command)
-}
-
-export function startSpeculativeClassifierCheck(
-  command: string,
-  toolPermissionContext: ToolPermissionContext,
-  signal: AbortSignal,
-  isNonInteractiveSession: boolean,
-): boolean {
-  // Same guards as buildPendingClassifierCheck
-  if (!isClassifierPermissionsEnabled()) return false
-  if (feature('TRANSCRIPT_CLASSIFIER') && toolPermissionContext.mode === 'auto')
-    return false
-  if (toolPermissionContext.mode === 'bypassPermissions') return false
-  const allowDescriptions = getBashPromptAllowDescriptions(
-    toolPermissionContext,
-  )
-  if (allowDescriptions.length === 0) return false
-
-  const cwd = getCwd()
-  const promise = classifyBashCommand(
-    command,
-    cwd,
-    allowDescriptions,
-    'allow',
-    signal,
-    isNonInteractiveSession,
-  )
-  // Prevent unhandled rejection if the signal aborts before this promise is consumed.
-  // The original promise (which may reject) is still stored in the Map for consumers to await.
-  promise.catch(() => {})
-  speculativeChecks.set(command, promise)
-  return true
-}
-
-/**
- * Consume a speculative classifier check result for the given command.
- * Returns the promise if one exists (and removes it from the map), or undefined.
- */
-export function consumeSpeculativeClassifierCheck(
-  command: string,
-): Promise<ClassifierResult> | undefined {
-  const promise = speculativeChecks.get(command)
-  if (promise) {
-    speculativeChecks.delete(command)
-  }
-  return promise
-}
-
-export function clearSpeculativeChecks(): void {
-  speculativeChecks.clear()
-}
-
-/**
- * Await a pending classifier check and return a PermissionDecisionReason if
- * high-confidence allow, or undefined otherwise.
- *
- * Used by swarm agents (both tmux and in-process) to gate permission
- * forwarding: run the classifier first, and only escalate to the leader
- * if the classifier doesn't auto-approve.
- */
-export async function awaitClassifierAutoApproval(
-  pendingCheck: PendingClassifierCheck,
-  signal: AbortSignal,
-  isNonInteractiveSession: boolean,
-): Promise<PermissionDecisionReason | undefined> {
-  const { command, cwd, descriptions } = pendingCheck
-  const speculativeResult = consumeSpeculativeClassifierCheck(command)
-  const classifierResult = speculativeResult
-    ? await speculativeResult
-    : await classifyBashCommand(
-        command,
-        cwd,
-        descriptions,
-        'allow',
-        signal,
-        isNonInteractiveSession,
-      )
-
-  logClassifierResultForAnts(command, 'allow', descriptions, classifierResult)
-
-  if (
-    feature('BASH_CLASSIFIER') &&
-    classifierResult.matches &&
-    classifierResult.confidence === 'high'
-  ) {
-    return {
-      type: 'classifier',
-      classifier: 'bash_allow',
-      reason: `Allowed by prompt rule: "${classifierResult.matchedDescription}"`,
-    }
-  }
-  return undefined
-}
-
-type AsyncClassifierCheckCallbacks = {
-  shouldContinue: () => boolean
-  onAllow: (decisionReason: PermissionDecisionReason) => void
-  onComplete?: () => void
-}
-
-/**
- * Execute the bash allow classifier check asynchronously.
- * This runs in the background while the permission prompt is shown.
- * If the classifier allows with high confidence and the user hasn't interacted, auto-approves.
- *
- * @param pendingCheck - Classifier check metadata from bashToolHasPermission
- * @param signal - Abort signal
- * @param isNonInteractiveSession - Whether this is a non-interactive session
- * @param callbacks - Callbacks to check if we should continue and handle approval
- */
-export async function executeAsyncClassifierCheck(
-  pendingCheck: { command: string; cwd: string; descriptions: string[] },
-  signal: AbortSignal,
-  isNonInteractiveSession: boolean,
-  callbacks: AsyncClassifierCheckCallbacks,
-): Promise<void> {
-  const { command, cwd, descriptions } = pendingCheck
-  const speculativeResult = consumeSpeculativeClassifierCheck(command)
-
-  let classifierResult: ClassifierResult
-  try {
-    classifierResult = speculativeResult
-      ? await speculativeResult
-      : await classifyBashCommand(
-          command,
-          cwd,
-          descriptions,
-          'allow',
-          signal,
-          isNonInteractiveSession,
-        )
-  } catch (error: unknown) {
-    // When the coordinator session is cancelled, the abort signal fires and the
-    // classifier API call rejects with APIUserAbortError. This is expected and
-    // should not surface as an unhandled promise rejection.
-    if (error instanceof APIUserAbortError || error instanceof AbortError) {
-      callbacks.onComplete?.()
-      return
-    }
-    callbacks.onComplete?.()
-    throw error
-  }
-
-  logClassifierResultForAnts(command, 'allow', descriptions, classifierResult)
-
-  // Don't auto-approve if user already made a decision or has interacted
-  // with the permission dialog (e.g., arrow keys, tab, typing)
-  if (!callbacks.shouldContinue()) return
-
-  if (
-    feature('BASH_CLASSIFIER') &&
-    classifierResult.matches &&
-    classifierResult.confidence === 'high'
-  ) {
-    callbacks.onAllow({
-      type: 'classifier',
-      classifier: 'bash_allow',
-      reason: `Allowed by prompt rule: "${classifierResult.matchedDescription}"`,
-    })
-  } else {
-    // No match — notify so the checking indicator is cleared
-    callbacks.onComplete?.()
-  }
 }
 
 /**
@@ -1641,14 +1398,6 @@ export async function bashToolHasPermission(
       decisionReason,
       message: createPermissionRequestMessage(BashTool.name, decisionReason),
       suggestions: [],
-      ...(feature('BASH_CLASSIFIER')
-        ? {
-            pendingClassifierCheck: buildPendingClassifierCheck(
-              input.command,
-              appState.toolPermissionContext,
-            ),
-          }
-        : {}),
     }
   }
 
@@ -1737,123 +1486,6 @@ export async function bashToolHasPermission(
     return exactMatchResult
   }
 
-  // Check Bash prompt deny and ask rules in parallel (both use Haiku).
-  // Deny takes precedence over ask, and both take precedence over allow rules.
-  // Skip when in auto mode - auto mode classifier handles all permission decisions
-  if (
-    isClassifierPermissionsEnabled() &&
-    !(
-      feature('TRANSCRIPT_CLASSIFIER') &&
-      appState.toolPermissionContext.mode === 'auto'
-    )
-  ) {
-    const denyDescriptions = getBashPromptDenyDescriptions(
-      appState.toolPermissionContext,
-    )
-    const askDescriptions = getBashPromptAskDescriptions(
-      appState.toolPermissionContext,
-    )
-    const hasDeny = denyDescriptions.length > 0
-    const hasAsk = askDescriptions.length > 0
-
-    if (hasDeny || hasAsk) {
-      const [denyResult, askResult] = await Promise.all([
-        hasDeny
-          ? classifyBashCommand(
-              input.command,
-              getCwd(),
-              denyDescriptions,
-              'deny',
-              context.abortController.signal,
-              context.options.isNonInteractiveSession,
-            )
-          : null,
-        hasAsk
-          ? classifyBashCommand(
-              input.command,
-              getCwd(),
-              askDescriptions,
-              'ask',
-              context.abortController.signal,
-              context.options.isNonInteractiveSession,
-            )
-          : null,
-      ])
-
-      if (context.abortController.signal.aborted) {
-        throw new AbortError()
-      }
-
-      if (denyResult) {
-        logClassifierResultForAnts(
-          input.command,
-          'deny',
-          denyDescriptions,
-          denyResult,
-        )
-      }
-      if (askResult) {
-        logClassifierResultForAnts(
-          input.command,
-          'ask',
-          askDescriptions,
-          askResult,
-        )
-      }
-
-      // Deny takes precedence
-      if (denyResult?.matches && denyResult.confidence === 'high') {
-        return {
-          behavior: 'deny',
-          message: `Denied by Bash prompt rule: "${denyResult.matchedDescription}"`,
-          decisionReason: {
-            type: 'other',
-            reason: `Denied by Bash prompt rule: "${denyResult.matchedDescription}"`,
-          },
-        }
-      }
-
-      if (askResult?.matches && askResult.confidence === 'high') {
-        // Skip the Haiku call — the UI computes the prefix locally
-        // and lets the user edit it. Still call the injected function
-        // when tests override it.
-        let suggestions: PermissionUpdate[]
-        if (getCommandSubcommandPrefixFn === getCommandSubcommandPrefix) {
-          suggestions = suggestionForExactCommand(input.command)
-        } else {
-          const commandPrefixResult = await getCommandSubcommandPrefixFn(
-            input.command,
-            context.abortController.signal,
-            context.options.isNonInteractiveSession,
-          )
-          if (context.abortController.signal.aborted) {
-            throw new AbortError()
-          }
-          suggestions = commandPrefixResult?.commandPrefix
-            ? suggestionForPrefix(commandPrefixResult.commandPrefix)
-            : suggestionForExactCommand(input.command)
-        }
-        return {
-          behavior: 'ask',
-          message: createPermissionRequestMessage(BashTool.name),
-          decisionReason: {
-            type: 'other',
-            reason: `Required by Bash prompt rule: "${askResult.matchedDescription}"`,
-          },
-          suggestions,
-          ...(feature('BASH_CLASSIFIER')
-            ? {
-                pendingClassifierCheck: buildPendingClassifierCheck(
-                  input.command,
-                  appState.toolPermissionContext,
-                ),
-              }
-            : {}),
-        }
-      }
-    }
-  }
-
   // Check for non-subcommand Bash operators like `>`, `|`, etc.
   // This must happen before dangerous path checks so that piped commands
   // are handled by the operator logic (which generates "multiple operations" messages)
@@ -1892,7 +1524,6 @@ export async function bashToolHasPermission(
         safetyResult.behavior !== 'passthrough' &&
         safetyResult.behavior !== 'allow'
       ) {
-        // Attach pending classifier check - may auto-approve before user responds
         appState = context.getAppState()
         return {
           behavior: 'ask',
@@ -1908,14 +1539,6 @@ export async function bashToolHasPermission(
               safetyResult.message ??
               'Command contains patterns that require approval',
           },
-          ...(feature('BASH_CLASSIFIER')
-            ? {
-                pendingClassifierCheck: buildPendingClassifierCheck(
-                  input.command,
-                  appState.toolPermissionContext,
-                ),
-              }
-            : {}),
         }
       }
 
@@ -1936,23 +1559,6 @@ export async function bashToolHasPermission(
       )
       if (pathResult.behavior !== 'passthrough') {
         return pathResult
-      }
-    }
-
-    // When pipe segments return 'ask' (individual segments not allowed by rules),
-    // attach pending classifier check - may auto-approve before user responds.
-    if (commandOperatorResult.behavior === 'ask') {
-      appState = context.getAppState()
-      return {
-        ...commandOperatorResult,
-        ...(feature('BASH_CLASSIFIER')
-          ? {
-              pendingClassifierCheck: buildPendingClassifierCheck(
-                input.command,
-                appState.toolPermissionContext,
-              ),
-            }
-          : {}),
       }
     }
 
@@ -1999,7 +1605,6 @@ export async function bashToolHasPermission(
         if (exactMatchResult.behavior === 'allow') {
           return exactMatchResult
         }
-        // Attach pending classifier check - may auto-approve before user responds
         const decisionReason: PermissionDecisionReason = {
           type: 'other' as const,
           reason: originalCommandSafetyResult.message,
@@ -2012,14 +1617,6 @@ export async function bashToolHasPermission(
           ),
           decisionReason,
           suggestions: [], // Don't suggest saving a potentially dangerous command
-          ...(feature('BASH_CLASSIFIER')
-            ? {
-                pendingClassifierCheck: buildPendingClassifierCheck(
-                  input.command,
-                  appState.toolPermissionContext,
-                ),
-              }
-            : {}),
         }
       }
     }
@@ -2203,14 +1800,6 @@ export async function bashToolHasPermission(
   if (askSubresult !== undefined && nonAllowCount === 1) {
     return {
       ...askSubresult,
-      ...(feature('BASH_CLASSIFIER')
-        ? {
-            pendingClassifierCheck: buildPendingClassifierCheck(
-              input.command,
-              appState.toolPermissionContext,
-            ),
-          }
-        : {}),
     }
   }
 
@@ -2289,23 +1878,6 @@ export async function bashToolHasPermission(
       compoundCommandHasCd,
       astSubcommands !== null,
     )
-    // If command wasn't allowed, attach pending classifier check.
-    // At this point, 'ask' can only come from bashCommandIsSafe (security check inside
-    // checkCommandAndSuggestRules), NOT from explicit ask rules - those were already
-    // filtered out at step 13 (askSubresult check). The classifier can bypass security.
-    if (result.behavior === 'ask' || result.behavior === 'passthrough') {
-      return {
-        ...result,
-        ...(feature('BASH_CLASSIFIER')
-          ? {
-              pendingClassifierCheck: buildPendingClassifierCheck(
-                input.command,
-                appState.toolPermissionContext,
-              ),
-            }
-          : {}),
-      }
-    }
     return result
   }
 
@@ -2414,23 +1986,11 @@ export async function bashToolHasPermission(
         ]
       : undefined
 
-  // Attach pending classifier check - may auto-approve before user responds.
-  // Behavior is 'ask' if any subcommand was 'ask' (e.g., path constraint or ask
-  // rule) — before the GH#28784 fix, ask subresults always short-circuited above
-  // so this path only saw 'passthrough' subcommands and hardcoded that.
   return {
     behavior: askSubresult !== undefined ? 'ask' : 'passthrough',
     message: createPermissionRequestMessage(BashTool.name, decisionReason),
     decisionReason,
     suggestions: suggestedUpdates,
-    ...(feature('BASH_CLASSIFIER')
-      ? {
-          pendingClassifierCheck: buildPendingClassifierCheck(
-            input.command,
-            appState.toolPermissionContext,
-          ),
-        }
-      : {}),
   }
 }
 

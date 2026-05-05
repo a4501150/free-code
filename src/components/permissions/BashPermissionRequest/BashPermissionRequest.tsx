@@ -1,10 +1,7 @@
-import { feature } from 'bun:bundle'
-import figures from 'figures'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useTheme } from '../../../ink.js'
 import { useKeybinding } from '../../../keybindings/useKeybinding.js'
 import { getInitialSettings } from '../../../utils/settings/settings.js'
-import { useAppState } from '../../../state/AppState.js'
 import { BashTool } from '../../../tools/BashTool/BashTool.js'
 import {
   getFirstWordPrefix,
@@ -14,18 +11,10 @@ import { getDestructiveCommandWarning } from '../../../tools/BashTool/destructiv
 import { parseSedEditCommand } from '../../../tools/BashTool/sedEditParser.js'
 import { shouldUseSandbox } from '../../../tools/BashTool/shouldUseSandbox.js'
 import { getCompoundCommandPrefixesStatic } from '../../../utils/bash/prefix.js'
-import {
-  createPromptRuleContent,
-  generateGenericDescription,
-  getBashPromptAllowDescriptions,
-  isClassifierPermissionsEnabled,
-} from '../../../utils/permissions/bashClassifier.js'
 import { extractRules } from '../../../utils/permissions/PermissionUpdate.js'
 import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpdateSchema.js'
 import { SandboxManager } from '../../../utils/sandbox/sandbox-adapter.js'
 import { Select } from '../../CustomSelect/select.js'
-import { ShimmerChar } from '../../Spinner/ShimmerChar.js'
-import { useShimmerAnimation } from '../../Spinner/useShimmerAnimation.js'
 import { type UnaryEvent, usePermissionRequestLogging } from '../hooks.js'
 import { PermissionDecisionDebugInfo } from '../PermissionDecisionDebugInfo.js'
 import { PermissionDialog } from '../PermissionDialog.js'
@@ -39,38 +28,6 @@ import { SedEditPermissionRequest } from '../SedEditPermissionRequest/SedEditPer
 import { useShellPermissionFeedback } from '../useShellPermissionFeedback.js'
 import { logUnaryPermissionEvent } from '../utils.js'
 import { bashToolUseOptions } from './bashToolUseOptions.js'
-
-const CHECKING_TEXT = 'Attempting to auto-approve\u2026'
-
-// Isolates the 20fps shimmer clock from BashPermissionRequestInner. Before this
-// extraction, useShimmerAnimation lived inside the 535-line Inner body, so every
-// 50ms clock tick re-rendered the entire dialog (PermissionDialog + Select +
-// all children) for the ~1-3 seconds the classifier typically takes. Inner also
-// has a Compiler bailout (see below), so nothing was auto-memoized — the full
-// JSX tree was reconstructed 20-60 times per classifier check.
-function ClassifierCheckingSubtitle(): React.ReactNode {
-  const [ref, glimmerIndex] = useShimmerAnimation(
-    'requesting',
-    CHECKING_TEXT,
-    false,
-  )
-  return (
-    <Box ref={ref}>
-      <Text>
-        {[...CHECKING_TEXT].map((char, i) => (
-          <ShimmerChar
-            key={i}
-            char={char}
-            index={i}
-            glimmerIndex={glimmerIndex}
-            messageColor="inactive"
-            shimmerColor="subtle"
-          />
-        ))}
-      </Text>
-    </Box>
-  )
-}
 
 export function BashPermissionRequest(
   props: PermissionRequestProps,
@@ -136,7 +93,6 @@ function BashPermissionRequestInner({
   description?: string
 }): React.ReactNode {
   const [theme] = useTheme()
-  const toolPermissionContext = useAppState(s => s.toolPermissionContext)
   const explainerState = usePermissionExplainerUI({
     toolName: toolUseConfirm.tool.name,
     toolInput: toolUseConfirm.input,
@@ -163,32 +119,6 @@ function BashPermissionRequestInner({
     explainerVisible: explainerState.visible,
   })
   const [showPermissionDebug, setShowPermissionDebug] = useState(false)
-  const [classifierDescription, setClassifierDescription] = useState(
-    description || '',
-  )
-  // Track whether the initial description (from prop or async generation) was empty.
-  // Once we receive a non-empty description, this stays false.
-  const [
-    initialClassifierDescriptionEmpty,
-    setInitialClassifierDescriptionEmpty,
-  ] = useState(!description?.trim())
-
-  // Asynchronously generate a generic description for the classifier
-  useEffect(() => {
-    if (!isClassifierPermissionsEnabled()) return
-
-    const abortController = new AbortController()
-    generateGenericDescription(command, description, abortController.signal)
-      .then(generic => {
-        if (generic && !abortController.signal.aborted) {
-          setClassifierDescription(generic)
-          setInitialClassifierDescriptionEmpty(false)
-        }
-      })
-      .catch(() => {}) // Keep original on error
-    return () => abortController.abort()
-  }, [command, description])
-
   // GH#11380: For compound commands (cd src && git status && npm test), the
   // backend already computed correct per-subcommand suggestions via tree-sitter
   // split + per-subcommand permission checks. decisionReason.type ===
@@ -261,23 +191,9 @@ function BashPermissionRequestInner({
     }
   }, [command, isCompound])
 
-  // Track whether classifier check was ever in progress (persists after completion).
-  // classifierCheckInProgress is set once at queue-push time (interactiveHandler)
-  // and only ever transitions true→false, so capturing the mount-time value is
-  // sufficient — no latch/ref needed. The feature() ternary keeps the property
-  // read out of external builds (forbidden-string check).
-  const [classifierWasChecking] = useState(
-    feature('BASH_CLASSIFIER')
-      ? !!toolUseConfirm.classifierCheckInProgress
-      : false,
-  )
-
   // These derive solely from the tool input (fixed for the dialog lifetime).
-  // The shimmer clock used to live in this component and re-render it at 20fps
-  // while the classifier ran (see ClassifierCheckingSubtitle above for the
-  // extraction). React Compiler can't auto-memoize imported functions (can't
-  // prove side-effect freedom), so this useMemo still guards against any
-  // re-render source (e.g. Inner state updates). Same pattern as PR#20730.
+  // React Compiler can't auto-memoize imported functions (can't prove
+  // side-effect freedom), so this useMemo guards against re-render sources.
   const { destructiveWarning, sandboxingEnabled, isSandboxed } = useMemo(() => {
     const destructiveWarning =
       (getInitialSettings()?.destructiveCommandWarning ?? true)
@@ -298,11 +214,6 @@ function BashPermissionRequestInner({
 
   usePermissionRequestLogging(toolUseConfirm, unaryEvent)
 
-  const existingAllowDescriptions = useMemo(
-    () => getBashPromptAllowDescriptions(toolPermissionContext),
-    [toolPermissionContext],
-  )
-
   const options = useMemo(
     () =>
       bashToolUseOptions({
@@ -310,13 +221,8 @@ function BashPermissionRequestInner({
           toolUseConfirm.permissionResult.behavior === 'ask'
             ? toolUseConfirm.permissionResult.suggestions
             : undefined,
-        decisionReason: toolUseConfirm.permissionResult.decisionReason,
         onRejectFeedbackChange: setRejectFeedback,
         onAcceptFeedbackChange: setAcceptFeedback,
-        onClassifierDescriptionChange: setClassifierDescription,
-        classifierDescription,
-        initialClassifierDescriptionEmpty,
-        existingAllowDescriptions,
         yesInputMode,
         noInputMode,
         editablePrefix,
@@ -324,9 +230,6 @@ function BashPermissionRequestInner({
       }),
     [
       toolUseConfirm,
-      classifierDescription,
-      initialClassifierDescriptionEmpty,
-      existingAllowDescriptions,
       yesInputMode,
       noInputMode,
       editablePrefix,
@@ -342,35 +245,7 @@ function BashPermissionRequestInner({
     context: 'Confirmation',
   })
 
-  // Allow Esc to dismiss the checkmark after auto-approval
-  const handleDismissCheckmark = useCallback(() => {
-    toolUseConfirm.onDismissCheckmark?.()
-  }, [toolUseConfirm])
-  useKeybinding('confirm:no', handleDismissCheckmark, {
-    context: 'Confirmation',
-    isActive: feature('BASH_CLASSIFIER')
-      ? !!toolUseConfirm.classifierAutoApproved
-      : false,
-  })
-
   function onSelect(value: string) {
-    // Map options to numeric values for analytics (strings not allowed in logEvent)
-    let optionIndex: Record<string, number> = {
-      yes: 1,
-      'yes-apply-suggestions': 2,
-      'yes-prefix-edited': 2,
-      no: 3,
-    }
-    if (feature('BASH_CLASSIFIER')) {
-      optionIndex = {
-        yes: 1,
-        'yes-apply-suggestions': 2,
-        'yes-prefix-edited': 2,
-        'yes-classifier-reviewed': 3,
-        no: 4,
-      }
-    }
-
     if (value === 'yes-prefix-edited') {
       const trimmedPrefix = (editablePrefix ?? '').trim()
       logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept')
@@ -391,31 +266,6 @@ function BashPermissionRequestInner({
           },
         ]
         toolUseConfirm.onAllow(toolUseConfirm.input, prefixUpdates)
-      }
-      onDone()
-      return
-    }
-
-    if (feature('BASH_CLASSIFIER') && value === 'yes-classifier-reviewed') {
-      const trimmedDescription = classifierDescription.trim()
-      logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept')
-      if (!trimmedDescription) {
-        toolUseConfirm.onAllow(toolUseConfirm.input, [])
-      } else {
-        const permissionUpdates: PermissionUpdate[] = [
-          {
-            type: 'addRules',
-            rules: [
-              {
-                toolName: BashTool.name,
-                ruleContent: createPromptRuleContent(trimmedDescription),
-              },
-            ],
-            behavior: 'allow',
-            destination: 'session',
-          },
-        ]
-        toolUseConfirm.onAllow(toolUseConfirm.input, permissionUpdates)
       }
       onDone()
       return
@@ -457,25 +307,6 @@ function BashPermissionRequestInner({
     }
   }
 
-  const classifierSubtitle = feature('BASH_CLASSIFIER') ? (
-    toolUseConfirm.classifierAutoApproved ? (
-      <Text>
-        <Text color="success">{figures.tick} Auto-approved</Text>
-        {toolUseConfirm.classifierMatchedRule && (
-          <Text dimColor>
-            {' \u00b7 matched "'}
-            {toolUseConfirm.classifierMatchedRule}
-            {'"'}
-          </Text>
-        )}
-      </Text>
-    ) : toolUseConfirm.classifierCheckInProgress ? (
-      <ClassifierCheckingSubtitle />
-    ) : classifierWasChecking ? (
-      <Text dimColor>Requires manual approval</Text>
-    ) : undefined
-  ) : undefined
-
   return (
     <PermissionDialog
       workerBadge={workerBadge}
@@ -484,7 +315,6 @@ function BashPermissionRequestInner({
           ? 'Bash command (unsandboxed)'
           : 'Bash command'
       }
-      subtitle={classifierSubtitle}
     >
       <Box flexDirection="column" paddingX={2} paddingY={1}>
         <Text dimColor={explainerState.visible}>
@@ -522,40 +352,12 @@ function BashPermissionRequestInner({
             />
             {destructiveWarning && (
               <Box marginBottom={1}>
-                <Text
-                  color="warning"
-                  dimColor={
-                    feature('BASH_CLASSIFIER')
-                      ? toolUseConfirm.classifierAutoApproved
-                      : false
-                  }
-                >
-                  {destructiveWarning}
-                </Text>
+                <Text color="warning">{destructiveWarning}</Text>
               </Box>
             )}
-            <Text
-              dimColor={
-                feature('BASH_CLASSIFIER')
-                  ? toolUseConfirm.classifierAutoApproved
-                  : false
-              }
-            >
-              Do you want to proceed?
-            </Text>
+            <Text>Do you want to proceed?</Text>
             <Select
-              options={
-                feature('BASH_CLASSIFIER')
-                  ? toolUseConfirm.classifierAutoApproved
-                    ? options.map(o => ({ ...o, disabled: true }))
-                    : options
-                  : options
-              }
-              isDisabled={
-                feature('BASH_CLASSIFIER')
-                  ? toolUseConfirm.classifierAutoApproved
-                  : false
-              }
+              options={options}
               inlineDescriptions
               onChange={onSelect}
               onCancel={() => handleReject()}

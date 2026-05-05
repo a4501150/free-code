@@ -43,8 +43,6 @@ import {
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import type { CustomAgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import { runAgent } from '../../tools/AgentTool/runAgent.js'
-import { awaitClassifierAutoApproval } from '../../tools/BashTool/bashPermissions.js'
-import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../../tools/SendMessageTool/constants.js'
 import { TASK_CREATE_TOOL_NAME } from '../../tools/TaskCreateTool/constants.js'
 import { TASK_GET_TOOL_NAME } from '../../tools/TaskGetTool/constants.js'
@@ -147,28 +145,6 @@ function createInProcessCanUseTool(
     // Pass through allow/deny decisions directly
     if (result.behavior !== 'ask') {
       return result
-    }
-
-    // For bash commands, try classifier auto-approval before showing leader dialog.
-    // Agents await the classifier result (rather than racing it against user
-    // interaction like the main agent).
-    if (
-      feature('BASH_CLASSIFIER') &&
-      tool.name === BASH_TOOL_NAME &&
-      result.pendingClassifierCheck
-    ) {
-      const classifierDecision = await awaitClassifierAutoApproval(
-        result.pendingClassifierCheck,
-        abortController.signal,
-        toolUseContext.options.isNonInteractiveSession,
-      )
-      if (classifierDecision) {
-        return {
-          behavior: 'allow',
-          updatedInput: input as Record<string, unknown>,
-          decisionReason: classifierDecision,
-        }
-      }
     }
 
     // Check if aborted before showing UI

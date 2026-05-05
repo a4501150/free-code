@@ -56,7 +56,6 @@ These are in the dev-full list but not the default list.
 - `AGENT_MEMORY_SNAPSHOT` — stores extra custom-agent memory snapshot state in the app.
 - `AGENT_TRIGGERS` — enables local cron/trigger tools and trigger-related skills.
 - `AWAY_SUMMARY` — adds away-from-keyboard summary behavior in the REPL.
-- `BASH_CLASSIFIER` — enables classifier-assisted bash permission decisions.
 - `BUILTIN_EXPLORE_PLAN_AGENTS` — enables built-in explore/plan agent presets.
 - `COMPACTION_REMINDERS` — enables reminder copy around compaction and attachment flows.
 - `CONNECTOR_TEXT` — enables connector-text block handling in API/logging/UI paths.

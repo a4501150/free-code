@@ -184,16 +184,6 @@ export type PermissionAllowDecision<
 }
 
 /**
- * Metadata for a pending classifier check that will run asynchronously.
- * Used to enable non-blocking allow classifier evaluation.
- */
-export type PendingClassifierCheck = {
-  command: string
-  cwd: string
-  descriptions: string[]
-}
-
-/**
  * Result when user should be prompted
  */
 export type PermissionAskDecision<
@@ -213,11 +203,6 @@ export type PermissionAskDecision<
    * transforms the command. Not set for simple newline compound commands.
    */
   isBashSecurityCheckForMisparsing?: boolean
-  /**
-   * If set, an allow classifier check should be run asynchronously.
-   * The classifier may auto-approve the permission before the user responds.
-   */
-  pendingClassifierCheck?: PendingClassifierCheck
   /**
    * Optional content blocks (e.g., images) to include alongside the rejection
    * message in the tool result. Used when users paste images as feedback.
@@ -258,11 +243,6 @@ export type PermissionResult<
       decisionReason?: PermissionDecision<Input>['decisionReason']
       suggestions?: PermissionUpdate[]
       blockedPath?: string
-      /**
-       * If set, an allow classifier check should be run asynchronously.
-       * The classifier may auto-approve the permission before the user responds.
-       */
-      pendingClassifierCheck?: PendingClassifierCheck
     }
 
 /**
@@ -324,17 +304,8 @@ export type PermissionDecisionReason =
     }
 
 // ============================================================================
-// Bash Classifier Types
+// Auto Mode Classifier Types
 // ============================================================================
-
-export type ClassifierResult = {
-  matches: boolean
-  matchedDescription?: string
-  confidence: 'high' | 'medium' | 'low'
-  reason: string
-}
-
-export type ClassifierBehavior = 'deny' | 'ask' | 'allow'
 
 export type ClassifierUsage = {
   inputTokens: number

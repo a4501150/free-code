@@ -1,5 +1,4 @@
 import { feature } from 'bun:bundle'
-import figures from 'figures'
 import * as React from 'react'
 import { SentryErrorBoundary } from 'src/components/SentryErrorBoundary.js'
 import { Box, Text, useTheme } from '../../../ink.js'
@@ -15,7 +14,6 @@ import type {
 } from '../../../types/message.js'
 import {
   deleteClassifierApproval,
-  getClassifierApproval,
   getYoloClassifierApproval,
 } from '../../../utils/classifierApprovals.js'
 import type { buildMessageLookups } from '../../../utils/messages.js'
@@ -59,9 +57,6 @@ export function UserToolSuccessMessage({
 
   // Capture classifier approval once on mount, then delete from Map to prevent linear growth.
   // useState lazy initializer ensures the value persists across re-renders.
-  const [classifierRule] = React.useState(() =>
-    getClassifierApproval(toolUseID),
-  )
   const [yoloReason] = React.useState(() =>
     getYoloClassifierApproval(toolUseID),
   )
@@ -117,17 +112,6 @@ export function UserToolSuccessMessage({
         width={rendersAsAssistantText ? undefined : width}
       >
         {renderedMessage}
-        {feature('BASH_CLASSIFIER')
-          ? classifierRule && (
-              <MessageResponse height={1}>
-                <Text dimColor>
-                  <Text color="success">{figures.tick}</Text>
-                  {' Auto-approved \u00b7 matched '}
-                  {`"${classifierRule}"`}
-                </Text>
-              </MessageResponse>
-            )
-          : null}
         {feature('TRANSCRIPT_CLASSIFIER')
           ? yoloReason && (
               <MessageResponse height={1}>

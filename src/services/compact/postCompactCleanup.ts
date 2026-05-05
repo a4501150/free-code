@@ -1,7 +1,6 @@
 import type { QuerySource } from '../../constants/querySource.js'
 import { clearSystemPromptSections } from '../../constants/systemPromptSections.js'
 import { getUserContext } from '../../context.js'
-import { clearSpeculativeChecks } from '../../tools/BashTool/bashPermissions.js'
 import { clearClassifierApprovals } from '../../utils/classifierApprovals.js'
 import { resetGetMemoryFilesCache } from '../../utils/claudemd.js'
 import { clearSessionMessagesCache } from '../../utils/sessionStorage.js'
@@ -51,7 +50,6 @@ export function runPostCompactCleanup(querySource?: QuerySource): void {
   }
   clearSystemPromptSections()
   clearClassifierApprovals()
-  clearSpeculativeChecks()
   // Intentionally NOT calling resetSentSkillNames(): re-injecting the full
   // skill_listing (~4K tokens) post-compact is pure cache_creation. The
   // model still has SkillTool in schema, invoked_skills preserves used

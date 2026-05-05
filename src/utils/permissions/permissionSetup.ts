@@ -16,7 +16,6 @@ import { isEnvTruthy } from '../envUtils.js'
 import type { SettingSource } from '../settings/constants.js'
 import { SETTING_SOURCES } from '../settings/constants.js'
 import {
-  getInitialSettings,
   getSettings_DEPRECATED,
   getSettingsFilePathForSource,
   getUseAutoModeDuringPlan,
@@ -1124,18 +1123,29 @@ export async function shouldDisableBypassPermissions(): Promise<boolean> {
   return settings.permissions?.disableBypassPermissionsMode === 'disable'
 }
 
-function isAutoModeDisabledBySettings(): boolean {
-  // New: autoMode boolean in freecode.json (default: true = enabled)
-  const autoMode = getInitialSettings()?.autoMode
-  if (autoMode === false) return true
-  // Backward compat: old disableAutoMode: 'disable' in permissions or top-level
-  const settings = getSettings_DEPRECATED() || {}
+export function isAutoModeDisabledInSettings(settings: {
+  autoMode?: boolean | { enabled?: boolean }
+  disableAutoMode?: unknown
+  permissions?: { disableAutoMode?: unknown }
+}): boolean {
+  const autoMode = settings.autoMode
+  if (typeof autoMode === 'boolean' && autoMode === false) return true
+  if (
+    autoMode &&
+    typeof autoMode === 'object' &&
+    !Array.isArray(autoMode) &&
+    autoMode.enabled === false
+  ) {
+    return true
+  }
   return (
-    (settings as { disableAutoMode?: 'disable' }).disableAutoMode ===
-      'disable' ||
-    (settings.permissions as { disableAutoMode?: 'disable' } | undefined)
-      ?.disableAutoMode === 'disable'
+    settings.disableAutoMode === 'disable' ||
+    settings.permissions?.disableAutoMode === 'disable'
   )
+}
+
+function isAutoModeDisabledBySettings(): boolean {
+  return isAutoModeDisabledInSettings(getSettings_DEPRECATED() || {})
 }
 
 /**
@@ -1162,7 +1172,7 @@ export type AutoModeEnabledState = 'enabled' | 'disabled' | 'opt-in'
 
 /**
  * Returns the auto mode enabled state. Always 'enabled' — disabling is
- * controlled by the `autoMode` boolean in freecode.json.
+ * controlled by `autoMode.enabled` in freecode.json.
  */
 export function getAutoModeEnabledState(): AutoModeEnabledState {
   return 'enabled'

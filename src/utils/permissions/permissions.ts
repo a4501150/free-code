@@ -133,7 +133,7 @@ export function createPermissionRequestMessage(
   // Handle different decision reason types
   if (decisionReason) {
     if (
-      (feature('BASH_CLASSIFIER') || feature('TRANSCRIPT_CLASSIFIER')) &&
+      feature('TRANSCRIPT_CLASSIFIER') &&
       decisionReason.type === 'classifier'
     ) {
       return `Classifier '${decisionReason.classifier}' requires approval for this ${toolName} command: ${decisionReason.reason}`

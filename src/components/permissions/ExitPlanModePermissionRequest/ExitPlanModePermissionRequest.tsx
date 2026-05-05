@@ -27,7 +27,6 @@ import type { KeyboardEvent } from '../../../ink/events/keyboard-event.js'
 import { Box, Text } from '../../../ink.js'
 import type { AppState } from '../../../state/AppStateStore.js'
 import { AGENT_TOOL_NAME } from '../../../tools/AgentTool/constants.js'
-import type { AllowedPrompt } from '../../../tools/ExitPlanModeTool/ExitPlanModeTool.js'
 import { TEAM_CREATE_TOOL_NAME } from '../../../tools/TeamCreateTool/constants.js'
 import { isAgentSwarmsEnabled } from '../../../utils/agentSwarmsEnabled.js'
 import {
@@ -43,11 +42,6 @@ import {
   getMainLoopModel,
   getRuntimeMainLoopModel,
 } from '../../../utils/model/model.js'
-import {
-  createPromptRuleContent,
-  isClassifierPermissionsEnabled,
-  PROMPT_PREFIX,
-} from '../../../utils/permissions/bashClassifier.js'
 import {
   type PermissionMode,
   toExternalPermissionMode,
@@ -97,40 +91,14 @@ type ResponseValue =
   | 'yes-auto-clear-context'
   | 'no'
 
-/**
- * Build permission updates for plan approval, including prompt-based rules if provided.
- * Prompt-based rules are only added when classifier permissions are enabled (Ant-only).
- */
-export function buildPermissionUpdates(
-  mode: PermissionMode,
-  allowedPrompts?: AllowedPrompt[],
-): PermissionUpdate[] {
-  const updates: PermissionUpdate[] = [
+export function buildPermissionUpdates(mode: PermissionMode): PermissionUpdate[] {
+  return [
     {
       type: 'setMode',
       mode: toExternalPermissionMode(mode),
       destination: 'session',
     },
   ]
-
-  // Add prompt-based permission rules if provided (Ant-only feature)
-  if (
-    isClassifierPermissionsEnabled() &&
-    allowedPrompts &&
-    allowedPrompts.length > 0
-  ) {
-    updates.push({
-      type: 'addRules',
-      rules: allowedPrompts.map(p => ({
-        toolName: p.tool,
-        ruleContent: createPromptRuleContent(p.prompt),
-      })),
-      behavior: 'allow',
-      destination: 'session',
-    })
-  }
-
-  return updates
 }
 
 /**
@@ -259,11 +227,6 @@ export function ExitPlanModePermissionRequest({
   const hasImages = imageAttachments.length > 0
 
   const planFilePath = getPlanFilePath()
-
-  // Extract allowed prompts requested by the plan (Ant-only feature)
-  const allowedPrompts = toolUseConfirm.input.allowedPrompts as
-    | AllowedPrompt[]
-    | undefined
 
   // Get the raw plan to check if it's empty
   const rawPlan = getPlan()
@@ -421,7 +384,6 @@ export function ExitPlanModePermissionRequest({
           },
           clearContext: true,
           mode,
-          allowedPrompts,
         },
       }))
 
@@ -480,7 +442,7 @@ export function ExitPlanModePermissionRequest({
       onDone()
       toolUseConfirm.onAllow(
         updatedInput,
-        buildPermissionUpdates(keepContextMode, allowedPrompts),
+        buildPermissionUpdates(keepContextMode),
         acceptFeedback,
       )
       return
@@ -498,7 +460,7 @@ export function ExitPlanModePermissionRequest({
       onDone()
       toolUseConfirm.onAllow(
         updatedInput,
-        buildPermissionUpdates(standardMode, allowedPrompts),
+        buildPermissionUpdates(standardMode),
         acceptFeedback,
       )
       return
@@ -707,18 +669,6 @@ export function ExitPlanModePermissionRequest({
               permissionResult={toolUseConfirm.permissionResult}
               toolType="tool"
             />
-            {isClassifierPermissionsEnabled() &&
-              allowedPrompts &&
-              allowedPrompts.length > 0 && (
-                <Box flexDirection="column" marginBottom={1}>
-                  <Text bold>Requested permissions:</Text>
-                  {allowedPrompts.map((p, i) => (
-                    <Text key={i} dimColor>
-                      {'  '}· {p.tool}({PROMPT_PREFIX} {p.prompt})
-                    </Text>
-                  ))}
-                </Box>
-              )}
             {!useStickyFooter && (
               <>
                 <Text dimColor>

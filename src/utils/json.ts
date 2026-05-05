@@ -314,6 +314,7 @@ export const SETTINGS_DEEP_KEYS: ReadonlySet<string> = new Set([
   'providers',
   'mcpServers',
   'permissions',
+  'autoMode',
   'pluginConfigs',
   'env',
   'extraKnownMarketplaces',

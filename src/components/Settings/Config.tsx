@@ -569,13 +569,16 @@ export function Config({
           {
             id: 'autoMode',
             label: 'Auto mode',
-            value: settingsData?.autoMode ?? true,
+            value: settingsData?.autoMode?.enabled ?? true,
             type: 'boolean' as const,
             onChange(enabled: boolean) {
               updateSettingsForSource('userSettings', {
-                autoMode: enabled,
+                autoMode: { enabled },
               })
-              setSettingsData(prev => ({ ...prev, autoMode: enabled }))
+              setSettingsData(prev => ({
+                ...prev,
+                autoMode: { ...prev?.autoMode, enabled },
+              }))
             },
           },
         ]
@@ -1665,6 +1668,7 @@ export function Config({
       language: iu?.language,
       ...(feature('TRANSCRIPT_CLASSIFIER')
         ? {
+            autoMode: iu?.autoMode,
             useAutoModeDuringPlan: (
               iu as { useAutoModeDuringPlan?: boolean } | undefined
             )?.useAutoModeDuringPlan,

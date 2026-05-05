@@ -236,11 +236,7 @@ export function isClassifierDenial(content: string): boolean {
 export function buildYoloRejectionMessage(reason: string): string {
   const prefix = AUTO_MODE_REJECTION_PREFIX
 
-  const ruleHint = feature('BASH_CLASSIFIER')
-    ? `To allow this type of action in the future, the user can add a permission rule like ` +
-      `Bash(prompt: <description of allowed action>) to their settings. ` +
-      `At the end of your session, recommend what permission rules to add so you don't get blocked again.`
-    : `To allow this type of action in the future, the user can add a Bash permission rule to their settings.`
+  const ruleHint = `To allow this type of action in the future, the user can add a Bash permission rule to their settings.`
 
   return (
     `${prefix}${reason}. ` +

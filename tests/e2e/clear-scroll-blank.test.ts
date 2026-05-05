@@ -85,10 +85,17 @@ describe('Clear after scroll blank screen', () => {
 
     // Type /clear
     await session.sendLine('/clear')
-    await sleep(3000)
 
-    // After /clear, check screen shows the welcome logo (not blank)
-    const screen = await session.capturePane()
+    // After /clear, wait for the visible pane to show the welcome logo (not blank)
+    const screen = await session.waitForScreen(
+      screen => screen.includes('for shortcuts') && screen.includes('Claude Code'),
+      {
+        timeoutMs: 10_000,
+        intervalMs: 100,
+        description: 'cleared welcome screen',
+        currentPaneOnly: true,
+      },
+    )
 
     // Should show the prompt area
     expect(screen).toContain('for shortcuts')

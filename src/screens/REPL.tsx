@@ -210,7 +210,6 @@ import {
 } from '../utils/permissions/filesystem.js'
 import { WEB_FETCH_TOOL_NAME } from '../tools/WebFetchTool/prompt.js'
 import { SLEEP_TOOL_NAME } from '../tools/SleepTool/prompt.js'
-import { clearSpeculativeChecks } from '../tools/BashTool/bashPermissions.js'
 import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'
 import { hasConsoleBillingAccess } from '../utils/billing.js'
 import { getInitialSettings } from 'src/utils/settings/settings.js'
@@ -1777,10 +1776,6 @@ export function REPL({
     setSpinnerShimmerColor(null)
     pickNewSpinnerTip()
     endInteractionSpan()
-    // Speculative bash classifier checks are only valid for the current
-    // turn's commands — clear after each turn to avoid accumulating
-    // Promise chains for unconsumed checks (denied/aborted paths).
-    clearSpeculativeChecks()
   }, [pickNewSpinnerTip])
 
   // Session backgrounding — hook is below, after getToolUseContext
@@ -3518,18 +3513,14 @@ export function REPL({
         }
       }
 
-      // Atomically: clear initial message, set permission mode and rules, and
-      // (when VERIFY_PLAN is compiled in and the env gate is on) store the
-      // approved plan so the verifier can diff against it later.
+      // Atomically: clear initial message, set permission mode, and (when
+      // VERIFY_PLAN is compiled in and the env gate is on) store the approved
+      // plan so the verifier can diff against it later.
       setAppState(prev => {
-        // Build and apply permission updates (mode + allowedPrompts rules)
         let updatedToolPermissionContext = initialMsg.mode
           ? applyPermissionUpdates(
               prev.toolPermissionContext,
-              buildPermissionUpdates(
-                initialMsg.mode,
-                initialMsg.allowedPrompts,
-              ),
+              buildPermissionUpdates(initialMsg.mode),
             )
           : prev.toolPermissionContext
         // For auto, override the mode (buildPermissionUpdates maps

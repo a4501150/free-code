@@ -1,7 +1,6 @@
 import { feature } from 'bun:bundle'
 import mergeWith from 'lodash-es/mergeWith.js'
 import { dirname, join, resolve } from 'path'
-import { z } from 'zod/v4'
 import {
   getFlagSettingsInline,
   getFlagSettingsPath,
@@ -45,7 +44,12 @@ import {
   setCachedSettingsForSource,
   setSessionSettingsCache,
 } from './settingsCache.js'
-import { type SettingsJson, SettingsSchema } from './types.js'
+import {
+  type AutoModeRuleSections,
+  type AutoModeSettings,
+  type SettingsJson,
+  SettingsSchema,
+} from './types.js'
 import {
   filterInvalidPermissionRules,
   formatZodError,
@@ -618,7 +622,7 @@ export function getManagedSettingsKeysForLogging(
     string,
     unknown
   >
-  const keysToExpand = ['permissions', 'sandbox', 'hooks']
+  const keysToExpand = ['permissions', 'autoMode', 'sandbox', 'hooks']
   const allKeys: string[] = []
 
   // Define valid nested keys for each nested setting we expand
@@ -632,6 +636,7 @@ export function getManagedSettingsKeysForLogging(
       ...(feature('TRANSCRIPT_CLASSIFIER') ? ['disableAutoMode'] : []),
       'additionalDirectories',
     ]),
+    autoMode: new Set(['enabled', 'classifierModel', 'environment', 'deny', 'allow']),
     sandbox: new Set([
       'enabled',
       'failIfUnavailable',
@@ -994,55 +999,53 @@ export function getUseAutoModeDuringPlan(): boolean {
   return true
 }
 
+function getAutoModeSettingsObject(
+  settings: SettingsJson | null | undefined,
+): AutoModeSettings | undefined {
+  const autoMode = settings?.autoMode
+  return autoMode && typeof autoMode === 'object' && !Array.isArray(autoMode)
+    ? autoMode
+    : undefined
+}
+
 /**
- * Returns the merged autoMode config from trusted settings sources.
- * Only available when TRANSCRIPT_CLASSIFIER is active; returns undefined otherwise.
+ * Returns trusted autoMode section replacements, excluding project settings.
  * projectSettings is intentionally excluded — a malicious project could
  * otherwise inject classifier allow/deny rules (RCE risk).
  */
-export function getAutoModeConfig():
-  | { allow?: string[]; soft_deny?: string[]; environment?: string[] }
-  | undefined {
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
-    const schema = z.object({
-      allow: z.array(z.string()).optional(),
-      soft_deny: z.array(z.string()).optional(),
-      deny: z.array(z.string()).optional(),
-      environment: z.array(z.string()).optional(),
-    })
+export function getTrustedAutoModeRuleSections(): AutoModeRuleSections | undefined {
+  if (!feature('TRANSCRIPT_CLASSIFIER')) return undefined
 
-    const allow: string[] = []
-    const soft_deny: string[] = []
-    const environment: string[] = []
+  let sections: AutoModeRuleSections | undefined
+  for (const source of [
+    'userSettings',
+    'localSettings',
+    'flagSettings',
+    'policySettings',
+  ] as const) {
+    const autoMode = getAutoModeSettingsObject(getSettingsForSource(source))
+    if (!autoMode) continue
 
-    for (const source of [
-      'userSettings',
-      'localSettings',
-      'flagSettings',
-      'policySettings',
-    ] as const) {
-      const settings = getSettingsForSource(source)
-      if (!settings) continue
-      const result = schema.safeParse(
-        (settings as Record<string, unknown>).autoMode,
-      )
-      if (result.success) {
-        if (result.data.allow) allow.push(...result.data.allow)
-        if (result.data.soft_deny) soft_deny.push(...result.data.soft_deny)
-        if (result.data.environment)
-          environment.push(...result.data.environment)
-      }
-    }
-
-    if (allow.length > 0 || soft_deny.length > 0 || environment.length > 0) {
-      return {
-        ...(allow.length > 0 && { allow }),
-        ...(soft_deny.length > 0 && { soft_deny }),
-        ...(environment.length > 0 && { environment }),
+    for (const key of ['environment', 'deny', 'allow'] as const) {
+      const value = autoMode[key]
+      if (Array.isArray(value)) {
+        sections = { ...sections, [key]: value }
       }
     }
   }
-  return undefined
+  return sections
+}
+
+export function getAutoModeClassifierModelFromSettings(
+  settings: SettingsJson,
+): string | undefined {
+  const nested = getAutoModeSettingsObject(settings)?.classifierModel
+  return nested || settings.autoModeClassifierModel
+}
+
+export function getAutoModeClassifierModelSetting(): string | undefined {
+  const { settings } = getSettingsWithErrors()
+  return getAutoModeClassifierModelFromSettings(settings)
 }
 
 export function rawSettingsContainsKey(key: string): boolean {

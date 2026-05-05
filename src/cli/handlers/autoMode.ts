@@ -11,14 +11,14 @@ import {
 import {
   type AutoModeRules,
   buildDefaultExternalSystemPrompt,
+  buildExternalAutoModeRules,
   getDefaultExternalAutoModeRules,
 } from '../../utils/permissions/yoloClassifier.js'
-import { getAutoModeConfig } from '../../utils/settings/settings.js'
+import { getTrustedAutoModeRuleSections } from '../../utils/settings/settings.js'
 import { sideQuery } from '../../utils/sideQuery.js'
-import { jsonStringify } from '../../utils/slowOperations.js'
 
 function writeRules(rules: AutoModeRules): void {
-  process.stdout.write(jsonStringify(rules, null, 2) + '\n')
+  process.stdout.write(rules.endsWith('\n') ? rules : rules + '\n')
 }
 
 export function autoModeDefaultsHandler(): void {
@@ -26,24 +26,11 @@ export function autoModeDefaultsHandler(): void {
 }
 
 /**
- * Dump the effective auto mode config: user settings where provided, external
- * defaults otherwise. Per-section REPLACE semantics — matches how
- * buildYoloSystemPrompt resolves the external template (a non-empty user
- * section replaces that section's defaults entirely; an empty/absent section
- * falls through to defaults).
+ * Dump the effective auto mode permissions template: trusted settings where
+ * provided, external defaults otherwise.
  */
 export function autoModeConfigHandler(): void {
-  const config = getAutoModeConfig()
-  const defaults = getDefaultExternalAutoModeRules()
-  writeRules({
-    allow: config?.allow?.length ? config.allow : defaults.allow,
-    soft_deny: config?.soft_deny?.length
-      ? config.soft_deny
-      : defaults.soft_deny,
-    environment: config?.environment?.length
-      ? config.environment
-      : defaults.environment,
-  })
+  writeRules(buildExternalAutoModeRules(getTrustedAutoModeRuleSections()))
 }
 
 const CRITIQUE_SYSTEM_PROMPT =
@@ -51,11 +38,7 @@ const CRITIQUE_SYSTEM_PROMPT =
   '\n' +
   'Claude Code has an "auto mode" that uses an AI classifier to decide whether ' +
   'tool calls should be auto-approved or require user confirmation. Users can ' +
-  'write custom rules in three categories:\n' +
-  '\n' +
-  '- **allow**: Actions the classifier should auto-approve\n' +
-  '- **soft_deny**: Actions the classifier should block (require user confirmation)\n' +
-  "- **environment**: Context about the user's setup that helps the classifier make decisions\n" +
+  'replace the environment, deny, and allow sections in settings.autoMode.\n' +
   '\n' +
   "Your job is to critique the user's custom rules for clarity, completeness, " +
   'and potential issues. The classifier is an LLM that reads these rules as ' +
@@ -73,16 +56,12 @@ const CRITIQUE_SYSTEM_PROMPT =
 export async function autoModeCritiqueHandler(options: {
   model?: string
 }): Promise<void> {
-  const config = getAutoModeConfig()
-  const hasCustomRules =
-    (config?.allow?.length ?? 0) > 0 ||
-    (config?.soft_deny?.length ?? 0) > 0 ||
-    (config?.environment?.length ?? 0) > 0
+  const sections = getTrustedAutoModeRuleSections()
 
-  if (!hasCustomRules) {
+  if (!sections) {
     process.stdout.write(
-      'No custom auto mode rules found.\n\n' +
-        'Add rules to your settings file under autoMode.{allow, soft_deny, environment}.\n' +
+      'No custom auto mode rule sections found.\n\n' +
+        'Add rules to your settings file under autoMode.environment, autoMode.deny, or autoMode.allow.\n' +
         'Run `claude auto-mode defaults` to see the default rules for reference.\n',
     )
     return
@@ -92,21 +71,11 @@ export async function autoModeCritiqueHandler(options: {
     ? parseUserSpecifiedModel(options.model)
     : getMainLoopModel()
 
-  const defaults = getDefaultExternalAutoModeRules()
-  const classifierPrompt = buildDefaultExternalSystemPrompt()
-
-  const userRulesSummary =
-    formatRulesForCritique('allow', config?.allow ?? [], defaults.allow) +
-    formatRulesForCritique(
-      'soft_deny',
-      config?.soft_deny ?? [],
-      defaults.soft_deny,
-    ) +
-    formatRulesForCritique(
-      'environment',
-      config?.environment ?? [],
-      defaults.environment,
-    )
+  const rules = buildExternalAutoModeRules(sections)
+  const classifierPrompt = buildDefaultExternalSystemPrompt().replace(
+    getDefaultExternalAutoModeRules(),
+    rules,
+  )
 
   process.stdout.write('Analyzing your auto mode rules…\n\n')
 
@@ -126,9 +95,11 @@ export async function autoModeCritiqueHandler(options: {
             '<classifier_system_prompt>\n' +
             classifierPrompt +
             '\n</classifier_system_prompt>\n\n' +
-            "Here are the user's custom rules that REPLACE the corresponding default sections:\n\n" +
-            userRulesSummary +
-            '\nPlease critique these custom rules.',
+            "Here are the user's custom auto mode section replacements from settings.autoMode:\n\n" +
+            '<custom_auto_mode_sections>\n' +
+            JSON.stringify(sections, null, 2) +
+            '\n</custom_auto_mode_sections>\n\n' +
+            'Please critique these custom rules.',
         },
       ],
     })
@@ -146,25 +117,4 @@ export async function autoModeCritiqueHandler(options: {
   } else {
     process.stdout.write('No critique was generated. Please try again.\n')
   }
-}
-
-function formatRulesForCritique(
-  section: string,
-  userRules: string[],
-  defaultRules: string[],
-): string {
-  if (userRules.length === 0) return ''
-  const customLines = userRules.map(r => '- ' + r).join('\n')
-  const defaultLines = defaultRules.map(r => '- ' + r).join('\n')
-  return (
-    '## ' +
-    section +
-    ' (custom rules replacing defaults)\n' +
-    'Custom:\n' +
-    customLines +
-    '\n\n' +
-    'Defaults being replaced:\n' +
-    defaultLines +
-    '\n\n'
-  )
 }

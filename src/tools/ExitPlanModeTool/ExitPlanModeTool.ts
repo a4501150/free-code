@@ -56,36 +56,7 @@ const permissionSetupModule = feature('TRANSCRIPT_CLASSIFIER')
   ? permissionSetupNs
   : null
 
-/**
- * Schema for prompt-based permission requests.
- * Used by Claude to request semantic permissions when exiting plan mode.
- */
-const allowedPromptSchema = lazySchema(() =>
-  z.object({
-    tool: z.enum(['Bash']).describe('The tool this prompt applies to'),
-    prompt: z
-      .string()
-      .describe(
-        'Semantic description of the action, e.g. "run tests", "install dependencies"',
-      ),
-  }),
-)
-
-export type AllowedPrompt = z.infer<ReturnType<typeof allowedPromptSchema>>
-
-const inputSchema = lazySchema(() =>
-  z
-    .strictObject({
-      // Prompt-based permissions requested by the plan
-      allowedPrompts: z
-        .array(allowedPromptSchema())
-        .optional()
-        .describe(
-          'Prompt-based permissions needed to implement the plan. These describe categories of actions rather than specific commands.',
-        ),
-    })
-    .passthrough(),
-)
+const inputSchema = lazySchema(() => z.strictObject({}).passthrough())
 type InputSchema = ReturnType<typeof inputSchema>
 
 /**

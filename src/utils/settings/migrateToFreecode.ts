@@ -27,6 +27,7 @@ import {
 } from './freecodeSettings.js'
 import { synthesizeProvidersFromLegacy } from '../model/legacyProviderMigration.js'
 import { stripContextSuffix } from '../model/parseModelString.js'
+import { normalizeAutoModeSetting } from './types.js'
 
 /**
  * Env vars that become redundant once the migration has written a complete
@@ -163,6 +164,19 @@ export function runLegacyToFreecodeMigration(): void {
   } else {
     delete out.env
   }
+
+  const autoMode = normalizeAutoModeSetting(out.autoMode)
+  if (autoMode && typeof autoMode === 'object' && !Array.isArray(autoMode)) {
+    out.autoMode = {
+      ...autoMode,
+      ...(typeof out.autoModeClassifierModel === 'string'
+        ? { classifierModel: out.autoModeClassifierModel }
+        : {}),
+    }
+  } else if (typeof out.autoModeClassifierModel === 'string') {
+    out.autoMode = { classifierModel: out.autoModeClassifierModel }
+  }
+  delete out.autoModeClassifierModel
 
   // Pull mcpServers over from ~/.claude.json if missing.
   if (!out.mcpServers) {

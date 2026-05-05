@@ -23,11 +23,7 @@ import {
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { MockAnthropicServer } from '../helpers/mock-server'
-import {
-  toolUseResponse,
-  textResponse,
-  rawResponse,
-} from '../helpers/fixture-builders'
+import { toolUseResponse, textResponse } from '../helpers/fixture-builders'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
 import { TmuxSession, createLoggingTest } from './tmux-helpers'
 
@@ -95,11 +91,11 @@ describe('Auto Mode Classifier Deny E2E', () => {
       // never matches.
       readyText: 'shift+tab to cycle',
       // Mark this session as auto mode. defaultMode='auto' is only valid when
-      // TRANSCRIPT_CLASSIFIER is compiled in (cli-dev). It lives under
-      // `permissions.defaultMode` (PermissionsSchema), not at the top level.
-      // skipAutoPermissionPrompt suppresses the first-time opt-in dialog so
-      // the test can reach the classifier path immediately.
+      // TRANSCRIPT_CLASSIFIER is compiled in (cli-dev). skipAutoPermissionPrompt
+      // suppresses the first-time opt-in dialog so the test can reach the
+      // classifier path immediately.
       settings: {
+        autoMode: { enabled: true },
         permissions: {
           defaultMode: 'auto',
         },
@@ -125,45 +121,12 @@ describe('Auto Mode Classifier Deny E2E', () => {
     })
     const screen = await session.waitForText('Acknowledged.', 10_000)
 
-    // Diagnostic: dump the entire pane for inspection.
-    // biome-ignore lint/suspicious/noConsole: intentional diagnostic output
-    console.log(
-      '\n========== CAPTURED PANE ==========\n' +
-        screen +
-        '\n========== END PANE ==========\n',
-    )
-
-    // Diagnostic: dump the request log so we can see how many classifier calls
-    // hit the mock server and what bodies they had.
-    const log = server.getRequestLog()
-    // biome-ignore lint/suspicious/noConsole: intentional diagnostic output
-    console.log(`\n[mock] received ${log.length} requests:`)
-    for (let i = 0; i < log.length; i++) {
-      const body = log[i].body
-      const messages = (body.messages ?? []) as Array<{
-        role: string
-        content: unknown
-      }>
-      const sysFirst = Array.isArray(body.system)
-        ? (body.system[0] as { text?: string })?.text?.slice(0, 80)
-        : typeof body.system === 'string'
-          ? body.system.slice(0, 80)
-          : '<no system>'
-      // biome-ignore lint/suspicious/noConsole: intentional diagnostic output
-      console.log(
-        `  #${i}: model=${body.model} stop_seq=${JSON.stringify(body.stop_sequences)} max=${body.max_tokens} ` +
-          `messages=${messages.length} system[0]="${sysFirst}…"`,
-      )
-    }
-
     // Collapsed view (default): the bash got folded into "Ran 1 bash command"
     // and the deny detail is hidden — but the user can press ctrl+o (or use
     // --verbose) to expand and see it. The verbose-mode test below covers the
     // expanded path.
     const hasCount = screen.includes('Ran 1 bash command')
     const hasPill = screen.includes('Denied by auto mode classifier')
-    // biome-ignore lint/suspicious/noConsole: intentional diagnostic output
-    console.log(`\n[collapsed-result] hasCount=${hasCount} hasPill=${hasPill}`)
 
     expect(hasCount).toBe(true)
     // Pill is intentionally hidden in the collapsed view (it shows on expand).
@@ -189,6 +152,7 @@ describe('Auto Mode Classifier Deny E2E', () => {
       height: 50,
       readyText: 'shift+tab to cycle',
       settings: {
+        autoMode: { enabled: true },
         permissions: { defaultMode: 'auto' },
         skipAutoPermissionPrompt: true,
         verbose: true,
@@ -204,17 +168,8 @@ describe('Auto Mode Classifier Deny E2E', () => {
       description: 'auto-mode classifier verbose-view requests',
     })
     const screen = await session.waitForText('Acknowledged.', 10_000)
-    // biome-ignore lint/suspicious/noConsole: intentional diagnostic output
-    console.log(
-      '\n========== VERBOSE PANE ==========\n' +
-        screen +
-        '\n========== END PANE ==========\n',
-    )
 
     const hasPill = screen.includes('Denied by auto mode classifier')
-    const hasBowl = screen.includes('⎿')
-    // biome-ignore lint/suspicious/noConsole: intentional diagnostic output
-    console.log(`\n[verbose-result] hasPill=${hasPill} hasBowl=${hasBowl}`)
 
     // The pill should appear in verbose mode too. If this fails alongside
     // the non-verbose test, the bug is upstream of CollapsedReadSearchContent

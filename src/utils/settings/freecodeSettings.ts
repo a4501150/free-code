@@ -24,7 +24,7 @@ const BOTTOM_KEYS = [
   'defaultSmallFastModel',
   'defaultBalancedModel',
   'defaultMostPowerfulModel',
-  'autoModeClassifierModel',
+  'autoMode',
   'mcpServers',
   'providers',
 ]

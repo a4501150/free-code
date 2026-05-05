@@ -31,7 +31,7 @@ function stringsForDecisionReason(
     return null
   }
   if (
-    (feature('BASH_CLASSIFIER') || feature('TRANSCRIPT_CLASSIFIER')) &&
+    feature('TRANSCRIPT_CLASSIFIER') &&
     reason.type === 'classifier'
   ) {
     if (reason.classifier === 'auto-mode') {

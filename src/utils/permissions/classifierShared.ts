@@ -1,9 +1,7 @@
 /**
  * Shared infrastructure for classifier-based permission systems.
  *
- * This module provides common types, schemas, and utilities used by both:
- * - bashClassifier.ts (semantic Bash command matching)
- * - yoloClassifier.ts (YOLO mode security classification)
+ * This module provides common schemas and utilities for auto-mode classification.
  */
 
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages.js'

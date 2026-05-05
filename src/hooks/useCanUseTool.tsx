@@ -9,16 +9,10 @@ import type {
   Tool as ToolType,
   ToolUseContext,
 } from '../Tool.js'
-import {
-  consumeSpeculativeClassifierCheck,
-  peekSpeculativeClassifierCheck,
-} from '../tools/BashTool/bashPermissions.js'
-import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import type { AssistantMessage } from '../types/message.js'
 import { recordAutoModeDenial } from '../utils/autoModeDenials.js'
 import {
   clearClassifierChecking,
-  setClassifierApproval,
   setYoloClassifierApproval,
 } from '../utils/classifierApprovals.js'
 import { logForDebugging } from '../utils/debug.js'
@@ -177,12 +171,6 @@ function useCanUseTool(
                   const coordinatorDecision = await handleCoordinatorPermission(
                     {
                       ctx,
-                      ...(feature('BASH_CLASSIFIER')
-                        ? {
-                            pendingClassifierCheck:
-                              result.pendingClassifierCheck,
-                          }
-                        : {}),
                       updatedInput: result.updatedInput,
                       suggestions: result.suggestions,
                       permissionMode: appState.toolPermissionContext.mode,
@@ -200,88 +188,16 @@ function useCanUseTool(
                 // while we were waiting. Without this check, a stale dialog could appear.
                 if (ctx.resolveIfAborted(resolve)) return
 
-                // For swarm workers, try classifier auto-approval then
-                // forward permission requests to the leader via mailbox.
+                // For swarm workers, forward permission requests to the leader via mailbox.
                 const swarmDecision = await handleSwarmWorkerPermission({
                   ctx,
                   description,
-                  ...(feature('BASH_CLASSIFIER')
-                    ? {
-                        pendingClassifierCheck: result.pendingClassifierCheck,
-                      }
-                    : {}),
                   updatedInput: result.updatedInput,
                   suggestions: result.suggestions,
                 })
                 if (swarmDecision) {
                   resolve(swarmDecision)
                   return
-                }
-
-                // Grace period: wait up to 2s for speculative classifier
-                // to resolve before showing the dialog (main agent only)
-                if (
-                  feature('BASH_CLASSIFIER') &&
-                  result.pendingClassifierCheck &&
-                  tool.name === BASH_TOOL_NAME &&
-                  !appState.toolPermissionContext
-                    .awaitAutomatedChecksBeforeDialog
-                ) {
-                  const speculativePromise = peekSpeculativeClassifierCheck(
-                    (input as { command: string }).command,
-                  )
-                  if (speculativePromise) {
-                    const raceResult = await Promise.race([
-                      speculativePromise.then(r => ({
-                        type: 'result' as const,
-                        result: r,
-                      })),
-                      new Promise<{ type: 'timeout' }>(res =>
-                        // eslint-disable-next-line no-restricted-syntax -- resolves with a value, not void
-                        setTimeout(res, 2000, { type: 'timeout' as const }),
-                      ),
-                    ])
-
-                    if (ctx.resolveIfAborted(resolve)) return
-
-                    if (
-                      raceResult.type === 'result' &&
-                      raceResult.result.matches &&
-                      raceResult.result.confidence === 'high' &&
-                      feature('BASH_CLASSIFIER')
-                    ) {
-                      // Classifier approved within grace period — skip dialog
-                      void consumeSpeculativeClassifierCheck(
-                        (input as { command: string }).command,
-                      )
-
-                      const matchedRule =
-                        raceResult.result.matchedDescription ?? undefined
-                      if (matchedRule) {
-                        setClassifierApproval(toolUseID, matchedRule)
-                      }
-
-                      ctx.logDecision({
-                        decision: 'accept',
-                        source: { type: 'classifier' },
-                      })
-                      resolve(
-                        ctx.buildAllow(
-                          result.updatedInput ??
-                            (input as Record<string, unknown>),
-                          {
-                            decisionReason: {
-                              type: 'classifier' as const,
-                              classifier: 'bash_allow' as const,
-                              reason: `Allowed by prompt rule: "${raceResult.result.matchedDescription}"`,
-                            },
-                          },
-                        ),
-                      )
-                      return
-                    }
-                    // Timeout or no match — fall through to show dialog
-                  }
                 }
 
                 // Show dialog and start hooks/classifier in background

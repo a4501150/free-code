@@ -33,16 +33,13 @@ import { extractTextContent } from '../messages.js'
 import { getMainLoopModel } from '../model/model.js'
 import { getProviderRegistry } from '../model/providerRegistry.js'
 import {
-  getAutoModeConfig,
-  getSettingsWithErrors,
+  getAutoModeClassifierModelSetting,
+  getTrustedAutoModeRuleSections,
 } from '../settings/settings.js'
+import type { AutoModeRuleSections } from '../settings/types.js'
 import { sideQuery } from '../sideQuery.js'
 import { jsonStringify } from '../slowOperations.js'
 import { tokenCountWithEstimation } from '../tokens.js'
-import {
-  getBashPromptAllowDescriptions,
-  getBashPromptDenyDescriptions,
-} from './bashClassifier.js'
 import {
   extractToolUseBlock,
   parseClassifierResponse,
@@ -68,68 +65,55 @@ const EXTERNAL_PERMISSIONS_TEMPLATE: string = feature('TRANSCRIPT_CLASSIFIER')
 
 /* eslint-enable custom-rules/no-process-env-top-level */
 
-/**
- * Shape of the settings.autoMode config — the three classifier prompt
- * sections a user can customize. Required-field variant (empty arrays when
- * absent) for JSON output; settings.ts uses the optional-field variant.
- */
-export type AutoModeRules = {
-  allow: string[]
-  soft_deny: string[]
-  environment: string[]
+export type AutoModeRules = string
+
+function formatRuleSection(rules: string[]): string {
+  return rules.map(rule => `- ${rule}`).join('\n')
 }
 
-/**
- * Parses the external permissions template into the settings.autoMode schema
- * shape. The external template wraps each section's defaults in
- * <user_*_to_replace> tags (user settings REPLACE these defaults), so the
- * captured tag contents ARE the defaults. Bullet items are single-line in the
- * template; each line starting with `- ` becomes one array entry.
- * Used by `claude auto-mode defaults`. Always returns external defaults,
- * never the Anthropic-internal template.
- */
+function replaceTemplateSection(
+  template: string,
+  tag: string,
+  rules: string[] | undefined,
+): string {
+  return template.replace(
+    new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`),
+    (_m, defaults: string) => (rules === undefined ? defaults : formatRuleSection(rules)),
+  )
+}
+
+export function buildExternalAutoModeRules(
+  sections?: AutoModeRuleSections,
+): AutoModeRules {
+  return replaceTemplateSection(
+    replaceTemplateSection(
+      replaceTemplateSection(
+        EXTERNAL_PERMISSIONS_TEMPLATE,
+        'user_environment_to_replace',
+        sections?.environment,
+      ),
+      'user_deny_rules_to_replace',
+      sections?.deny,
+    ),
+    'user_allow_rules_to_replace',
+    sections?.allow,
+  )
+}
+
 export function getDefaultExternalAutoModeRules(): AutoModeRules {
-  return {
-    allow: extractTaggedBullets('user_allow_rules_to_replace'),
-    soft_deny: extractTaggedBullets('user_deny_rules_to_replace'),
-    environment: extractTaggedBullets('user_environment_to_replace'),
-  }
+  return buildExternalAutoModeRules()
 }
 
-function extractTaggedBullets(tagName: string): string[] {
-  const match = EXTERNAL_PERMISSIONS_TEMPLATE.match(
-    new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`),
+function buildSystemPromptWithRuleSections(
+  sections?: AutoModeRuleSections,
+): string {
+  return BASE_PROMPT.replace('<permissions_template>', () =>
+    buildExternalAutoModeRules(sections),
   )
-  if (!match) return []
-  return (match[1] ?? '')
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.startsWith('- '))
-    .map(line => line.slice(2))
 }
 
-/**
- * Returns the full external classifier system prompt with default rules (no user
- * overrides). Used by `claude auto-mode critique` to show the model how the
- * classifier sees its instructions.
- */
 export function buildDefaultExternalSystemPrompt(): string {
-  return BASE_PROMPT.replace(
-    '<permissions_template>',
-    () => EXTERNAL_PERMISSIONS_TEMPLATE,
-  )
-    .replace(
-      /<user_allow_rules_to_replace>([\s\S]*?)<\/user_allow_rules_to_replace>/,
-      (_m, defaults: string) => defaults,
-    )
-    .replace(
-      /<user_deny_rules_to_replace>([\s\S]*?)<\/user_deny_rules_to_replace>/,
-      (_m, defaults: string) => defaults,
-    )
-    .replace(
-      /<user_environment_to_replace>([\s\S]*?)<\/user_environment_to_replace>/,
-      (_m, defaults: string) => defaults,
-    )
+  return buildSystemPromptWithRuleSections()
 }
 
 /**
@@ -812,47 +796,12 @@ function buildBoundedClassifierInput({
 
 /**
  * Build the system prompt for the auto mode classifier.
- * Assembles the base prompt with the permissions template and substitutes
- * user allow/deny/environment values from settings.autoMode.
+ * Assembles the base prompt with trusted autoMode section replacements.
  */
 export async function buildYoloSystemPrompt(
-  context: ToolPermissionContext,
+  _context: ToolPermissionContext,
 ): Promise<string> {
-  const systemPrompt = BASE_PROMPT.replace(
-    '<permissions_template>',
-    () => EXTERNAL_PERMISSIONS_TEMPLATE,
-  )
-
-  const autoMode = getAutoModeConfig()
-  const allowDescriptions = [...(autoMode?.allow ?? [])]
-  const denyDescriptions = [...(autoMode?.soft_deny ?? [])]
-
-  // The external template wraps its defaults inside
-  // <foo_to_replace>...</foo_to_replace> tags, so user-provided values
-  // REPLACE the defaults entirely.
-  const userAllow = allowDescriptions.length
-    ? allowDescriptions.map(d => `- ${d}`).join('\n')
-    : undefined
-  const userDeny = denyDescriptions.length
-    ? denyDescriptions.map(d => `- ${d}`).join('\n')
-    : undefined
-  const userEnvironment = autoMode?.environment?.length
-    ? autoMode.environment.map(e => `- ${e}`).join('\n')
-    : undefined
-
-  return systemPrompt
-    .replace(
-      /<user_allow_rules_to_replace>([\s\S]*?)<\/user_allow_rules_to_replace>/,
-      (_m, defaults: string) => userAllow ?? defaults,
-    )
-    .replace(
-      /<user_deny_rules_to_replace>([\s\S]*?)<\/user_deny_rules_to_replace>/,
-      (_m, defaults: string) => userDeny ?? defaults,
-    )
-    .replace(
-      /<user_environment_to_replace>([\s\S]*?)<\/user_environment_to_replace>/,
-      (_m, defaults: string) => userEnvironment ?? defaults,
-    )
+  return buildSystemPromptWithRuleSections(getTrustedAutoModeRuleSections())
 }
 // ============================================================================
 // 2-Stage XML Classifier
@@ -1372,7 +1321,7 @@ async function classifyYoloActionXml(
  * @param messages - The conversation history
  * @param action - The action being evaluated (tool name + input)
  * @param tools - Tool registry for encoding tool inputs via toAutoClassifierInput
- * @param context - Tool permission context for extracting Bash(prompt:) rules
+ * @param context - Tool permission context
  * @param signal - Abort signal
  */
 export async function classifyYoloAction(
@@ -1663,14 +1612,10 @@ const DEFAULT_AUTO_MODE_CONFIG: AutoModeConfig = {
 
 /**
  * Get the model for the classifier.
- * Priority: settings autoModeClassifierModel > main loop model (inherit).
+ * Priority: settings autoMode.classifierModel > legacy autoModeClassifierModel > main loop model (inherit).
  */
 function getClassifierModel(): string {
-  const { settings } = getSettingsWithErrors()
-  if (settings.autoModeClassifierModel) {
-    return settings.autoModeClassifierModel
-  }
-  return DEFAULT_AUTO_MODE_CONFIG.model ?? getMainLoopModel()
+  return getAutoModeClassifierModelSetting() ?? DEFAULT_AUTO_MODE_CONFIG.model ?? getMainLoopModel()
 }
 
 /**
@@ -1803,6 +1748,8 @@ export function formatActionForClassifier(
 
 export const __test__ = {
   buildBoundedClassifierInput,
+  buildExternalAutoModeRules,
+  buildSystemPromptWithRuleSections,
   buildToolLookup,
   detectPromptTooLong,
 }
