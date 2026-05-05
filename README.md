@@ -77,7 +77,7 @@ This fork extracted the original source from inline base64 source maps embedded 
 
 ### Experimental features unlocked
 
-Claude Code ships with 66 feature flags gated behind `bun:bundle` compile-time switches. Most are disabled in the public npm release. The `build:dev:full` build enables all 30 flags in the `fullExperimentalFeatures` set. See [Experimental Features](#experimental-features) below, or refer to [FEATURES.md](FEATURES.md) for the full audit.
+Claude Code currently has 39 active feature flags gated behind `bun:bundle` compile-time switches. The default build enables the 16 production-supported flags in `defaultFeatures`, and `build:dev:full` adds all 20 flags in the `fullExperimentalFeatures` set. See [Experimental Features](#experimental-features) below, or refer to [FEATURES.md](FEATURES.md) for the full audit.
 
 ---
 
@@ -190,13 +190,13 @@ bun run build
 
 ### Build Variants
 
-| Command                  | Output               | Features                  | Description                     |
-| ------------------------ | -------------------- | ------------------------- | ------------------------------- |
-| `bun run build`          | `./cli`              | `VOICE_MODE` only         | Production-like binary          |
-| `bun run build:dev`      | `./cli-dev`          | `VOICE_MODE` only         | Dev version stamp               |
-| `bun run build:dev:full` | `./cli-dev`          | All 30 experimental flags | Full unlock build               |
-| `bun run compile`        | `./dist/cli`         | `VOICE_MODE` only         | Alternative output path         |
-| `bun run dev`            | _(runs from source)_ | `VOICE_MODE` only         | No compile step, slower startup |
+| Command                  | Output               | Features                    | Description                     |
+| ------------------------ | -------------------- | --------------------------- | ------------------------------- |
+| `bun run build`          | `./cli`              | 16 default flags            | Production-like binary          |
+| `bun run build:dev`      | `./cli-dev`          | 16 default flags            | Dev version stamp               |
+| `bun run build:dev:full` | `./cli-dev`          | Default + 20 dev-full flags | Full experimental build         |
+| `bun run compile`        | `./dist/cli`         | 16 default flags            | Alternative output path         |
+| `bun run dev`            | _(runs from source)_ | Runtime `feature()` checks  | No compile step, slower startup |
 
 ### React Compiler (Optional)
 
@@ -217,11 +217,11 @@ The source files in `src/` are always clean, human-readable React — the compil
 Enable specific flags without the full bundle:
 
 ```bash
-# Enable just ultraplan and ultrathink
-bun run ./scripts/build.ts --feature=ULTRAPLAN --feature=ULTRATHINK
+# Enable just worktree mode and dedicated search tools
+bun run ./scripts/build.ts --feature=WORKTREE_MODE --feature=DEDICATED_SEARCH_TOOLS
 
 # Add a flag on top of the dev build
-bun run ./scripts/build.ts --dev --feature=ULTRAPLAN
+bun run ./scripts/build.ts --dev --feature=VERIFY_PLAN
 ```
 
 ---
@@ -261,40 +261,48 @@ bun run dev
 
 ## Experimental Features
 
-The `bun run build:dev:full` build enables the flags in `fullExperimentalFeatures`. Highlights:
+The default build enables the production-supported flags in `defaultFeatures`; `bun run build:dev:full` adds the flags in `fullExperimentalFeatures`. Highlights:
 
 ### Interaction & UI
 
-| Flag              | Description                                                                   |
-| ----------------- | ----------------------------------------------------------------------------- |
-| `ULTRAPLAN`       | Multi-agent planning with Opus-class model (requires CCR, currently disabled) |
-| `ULTRATHINK`      | Deep thinking mode -- type "ultrathink" to boost reasoning effort             |
-| `VOICE_MODE`      | Push-to-talk voice input and dictation                                        |
-| `TOKEN_BUDGET`    | Token budget tracking and usage warnings                                      |
-| `HISTORY_PICKER`  | Interactive prompt history picker                                             |
-| `MESSAGE_ACTIONS` | Message action entrypoints in the UI                                          |
-| `QUICK_SEARCH`    | Prompt quick-search                                                           |
+| Flag              | Description                                                       |
+| ----------------- | ----------------------------------------------------------------- |
+| `ULTRATHINK`      | Deep thinking mode -- type "ultrathink" to boost reasoning effort |
+| `VOICE_MODE`      | Push-to-talk voice input and dictation                            |
+| `TOKEN_BUDGET`    | Token budget tracking and usage warnings                          |
+| `HISTORY_PICKER`  | Interactive prompt history picker                                 |
+| `MESSAGE_ACTIONS` | Message action entrypoints in the UI                              |
+| `QUICK_SEARCH`    | Prompt quick-search                                               |
+| `AWAY_SUMMARY`    | Away-from-keyboard summary behavior                               |
 
 ### Agents, Memory & Planning
 
 | Flag                          | Description                                        |
 | ----------------------------- | -------------------------------------------------- |
 | `BUILTIN_EXPLORE_PLAN_AGENTS` | Built-in explore/plan agent presets                |
-| `VERIFICATION_AGENT`          | Verification agent for task validation             |
 | `AGENT_TRIGGERS`              | Local cron/trigger tools for background automation |
 | `EXTRACT_MEMORIES`            | Post-query automatic memory extraction             |
 | `COMPACTION_REMINDERS`        | Smart reminders around context compaction          |
 | `CACHED_MICROCOMPACT`         | Cached microcompact state through query flows      |
 | `TEAMMEM`                     | Team-memory files and watcher hooks                |
+| `AGENT_MEMORY_SNAPSHOT`       | Custom-agent memory snapshot state                 |
+| `VERIFY_PLAN`                 | Manual-only plan verification tooling              |
+| `WORKTREE_MODE`               | Manual-only worktree-mode behavior                 |
 
 ### Tools & Infrastructure
 
-| Flag                           | Description                                    |
-| ------------------------------ | ---------------------------------------------- |
-| `BASH_CLASSIFIER`              | Classifier-assisted bash permission decisions  |
-| `PROMPT_CACHE_BREAK_DETECTION` | Cache-break detection in compaction/query flow |
+| Flag                           | Description                                      |
+| ------------------------------ | ------------------------------------------------ |
+| `BASH_CLASSIFIER`              | Classifier-assisted bash permission decisions    |
+| `TRANSCRIPT_CLASSIFIER`        | Transcript classifier and auto-mode permissions  |
+| `POWERSHELL_AUTO_MODE`         | PowerShell-specific auto-mode permission support |
+| `TREE_SITTER_BASH`             | Tree-sitter Bash parser backend                  |
+| `TREE_SITTER_BASH_SHADOW`      | Tree-sitter Bash parser shadow rollout path      |
+| `PROMPT_CACHE_BREAK_DETECTION` | Cache-break detection in compaction/query flow   |
+| `MCP_RICH_OUTPUT`              | Richer MCP tool result rendering                 |
+| `DEDICATED_SEARCH_TOOLS`       | Manual-only dedicated search tools               |
 
-See [FEATURES.md](FEATURES.md) for the complete audit of all 66 flags, including broken flags with reconstruction notes.
+See [FEATURES.md](FEATURES.md) for the complete audit of all 39 active flags.
 
 ---
 
@@ -359,7 +367,7 @@ If this repo gets taken down, the code lives on.
 
 ## Contributing
 
-Contributions are welcome. If you're working on restoring one of the broken feature flags, check the reconstruction notes in [FEATURES.md](FEATURES.md) first -- many are close to compiling and just need a small wrapper or missing asset.
+Contributions are welcome. If you're working on feature-gated behavior, check the current audit in [FEATURES.md](FEATURES.md) first so the flag is intentionally default, dev-full, or manual-only.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feat/my-feature`)

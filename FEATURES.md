@@ -1,11 +1,11 @@
 # Feature Flags Audit
 
-Audit date: 2026-05-03
+Audit date: 2026-05-04
 
-This repository currently references 42 compile-time flags through `feature(...)`.
-The default build enables the production-supported subset in `scripts/build.ts`;
-`--feature-set=dev-full` additionally enables the experimental list in the same
-file.
+This repository currently references 39 active compile-time flags through
+`feature(...)`. The default build enables the production-supported subset in
+`scripts/build.ts`; `--feature-set=dev-full` additionally enables the
+experimental list in the same file.
 
 ## Build variants
 
@@ -39,7 +39,6 @@ These are included in the default feature list.
 - `KAIROS_BRIEF` — enables brief-only transcript layout and BriefTool-oriented UX.
 - `KAIROS_CHANNELS` — enables channel notices and channel callback plumbing.
 - `KAIROS_PUSH_NOTIFICATION` — enables push notification tooling for proactive mode.
-- `LODESTONE` — enables protocol/deep-link registration flows and related settings wiring.
 - `NEW_INIT` — enables the newer `/init` decision path.
 
 ### Prompt behavior
