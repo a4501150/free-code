@@ -743,8 +743,10 @@ function getNonstreamingFallbackTimeoutMs(): number {
 }
 
 const CODEX_STREAM_MAX_RETRIES = 1
-const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 90_000
-const CODEX_STREAM_IDLE_TIMEOUT_MS = 300_000
+const STREAM_FIRST_EVENT_WARNING_MS = 60_000
+const STREAM_FIRST_EVENT_TIMEOUT_MS = 300_000
+const STREAM_BETWEEN_EVENTS_WARNING_MS = 15_000
+const STREAM_BETWEEN_EVENTS_TIMEOUT_MS = 30_000
 const STREAM_IDLE_TIMEOUT_ERROR = 'Stream idle timeout - no chunks received'
 
 function isStreamIdleTimeoutError(error: unknown): boolean {
@@ -763,12 +765,17 @@ function shouldEnableStreamWatchdog(
   )
 }
 
-function getStreamIdleTimeoutMs(isOpenAIResponsesProvider: boolean): number {
+function getStreamFirstEventTimeoutMs(): number {
   return (
     parseInt(process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS || '', 10) ||
-    (isOpenAIResponsesProvider
-      ? CODEX_STREAM_IDLE_TIMEOUT_MS
-      : DEFAULT_STREAM_IDLE_TIMEOUT_MS)
+    STREAM_FIRST_EVENT_TIMEOUT_MS
+  )
+}
+
+function getStreamBetweenEventsTimeoutMs(): number {
+  return (
+    parseInt(process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS || '', 10) ||
+    STREAM_BETWEEN_EVENTS_TIMEOUT_MS
   )
 }
 
@@ -1657,19 +1664,14 @@ async function* queryModel(
       stopReason = null
       isAdvisorInProgress = false
 
-      // Streaming idle timeout watchdog: abort the stream if no chunks arrive
-      // for STREAM_IDLE_TIMEOUT_MS. Unlike the stall detection below (which only
-      // fires when the *next* chunk arrives), this uses setTimeout to actively
-      // kill hung streams. Without this, a silently dropped connection can hang
-      // the session indefinitely since the SDK's request timeout only covers the
-      // initial fetch(), not the streaming body.
+      // Streaming idle timeout watchdog: use a conservative first-event guard,
+      // then a tighter post-first-event guard for stale streams.
       const streamWatchdogEnabled = shouldEnableStreamWatchdog(
         isOpenAIResponsesProvider,
       )
-      const STREAM_IDLE_TIMEOUT_MS = getStreamIdleTimeoutMs(
-        isOpenAIResponsesProvider,
-      )
-      const STREAM_IDLE_WARNING_MS = STREAM_IDLE_TIMEOUT_MS / 2
+      const streamFirstEventTimeoutMs = getStreamFirstEventTimeoutMs()
+      const streamBetweenEventsTimeoutMs = getStreamBetweenEventsTimeoutMs()
+      let hasReceivedStreamEvent = false
       let streamIdleAborted = false
       // performance.now() snapshot when watchdog fires, for measuring abort propagation delay
       let streamWatchdogFiredAt: number | null = null
@@ -1690,27 +1692,38 @@ async function* queryModel(
         if (!streamWatchdogEnabled) {
           return
         }
-        streamIdleWarningTimer = setTimeout(
-          warnMs => {
-            logForDebugging(
-              `Streaming idle warning: no chunks received for ${warnMs / 1000}s`,
-              { level: 'warn' },
-            )
-            logForDiagnosticsNoPII('warn', 'cli_streaming_idle_warning')
-          },
-          STREAM_IDLE_WARNING_MS,
-          STREAM_IDLE_WARNING_MS,
-        )
+        const warningMs = hasReceivedStreamEvent
+          ? STREAM_BETWEEN_EVENTS_WARNING_MS
+          : STREAM_FIRST_EVENT_WARNING_MS
+        const timeoutMs = hasReceivedStreamEvent
+          ? streamBetweenEventsTimeoutMs
+          : streamFirstEventTimeoutMs
+        const phase = hasReceivedStreamEvent
+          ? 'between stream events'
+          : 'before first stream event'
+        if (warningMs < timeoutMs) {
+          streamIdleWarningTimer = setTimeout(
+            warnMs => {
+              logForDebugging(
+                `Streaming idle warning: no chunks received for ${warnMs / 1000}s ${phase}`,
+                { level: 'warn' },
+              )
+              logForDiagnosticsNoPII('warn', 'cli_streaming_idle_warning')
+            },
+            warningMs,
+            warningMs,
+          )
+        }
         streamIdleTimer = setTimeout(() => {
           streamIdleAborted = true
           streamWatchdogFiredAt = performance.now()
           logForDebugging(
-            `Streaming idle timeout: no chunks received for ${STREAM_IDLE_TIMEOUT_MS / 1000}s, aborting stream`,
+            `Streaming idle timeout: no chunks received for ${timeoutMs / 1000}s ${phase}, aborting stream`,
             { level: 'error' },
           )
           logForDiagnosticsNoPII('error', 'cli_streaming_idle_timeout')
           releaseStreamResources()
-        }, STREAM_IDLE_TIMEOUT_MS)
+        }, timeoutMs)
       }
       resetStreamIdleTimer()
 
@@ -1723,7 +1736,8 @@ async function* queryModel(
         let stallCount = 0
 
         for await (const part of stream) {
-          resetStreamIdleTimer()
+          clearStreamIdleTimers()
+          hasReceivedStreamEvent = true
           const now = Date.now()
 
           // Detect and log streaming stalls (only after first event to avoid counting TTFB)
@@ -2016,6 +2030,7 @@ async function* queryModel(
               break
           }
 
+          resetStreamIdleTimer()
           yield {
             type: 'stream_event',
             event: part,

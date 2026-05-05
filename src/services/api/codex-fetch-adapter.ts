@@ -25,17 +25,28 @@ import { isEnvDefinedFalsy } from '../../utils/envUtils.js'
 // single source of truth for available models. The adapter just passes
 // through whatever model ID the registry resolved.
 
-const CODEX_STREAM_IDLE_TIMEOUT_MS = 300_000
+const CODEX_STREAM_FIRST_CHUNK_TIMEOUT_MS = 300_000
+const CODEX_STREAM_BETWEEN_CHUNKS_TIMEOUT_MS = 30_000
 const CODEX_UPSTREAM_IDLE_TIMEOUT_ERROR =
   'Codex stream idle timeout waiting for upstream SSE'
 
-function getCodexStreamIdleTimeoutMs(): number | null {
+function getCodexStreamFirstChunkTimeoutMs(): number | null {
   if (isEnvDefinedFalsy(process.env.CLAUDE_ENABLE_STREAM_WATCHDOG)) {
     return null
   }
   return (
     parseInt(process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS || '', 10) ||
-    CODEX_STREAM_IDLE_TIMEOUT_MS
+    CODEX_STREAM_FIRST_CHUNK_TIMEOUT_MS
+  )
+}
+
+function getCodexStreamBetweenChunksTimeoutMs(): number | null {
+  if (isEnvDefinedFalsy(process.env.CLAUDE_ENABLE_STREAM_WATCHDOG)) {
+    return null
+  }
+  return (
+    parseInt(process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS || '', 10) ||
+    CODEX_STREAM_BETWEEN_CHUNKS_TIMEOUT_MS
   )
 }
 
@@ -1142,10 +1153,15 @@ async function translateCodexStreamToAnthropic(
         const decoder = new TextDecoder()
         let buffer = ''
         let sseEventName = ''
-        const streamIdleTimeoutMs = getCodexStreamIdleTimeoutMs()
+        let hasReceivedUpstreamChunk = false
+        const firstChunkTimeoutMs = getCodexStreamFirstChunkTimeoutMs()
+        const betweenChunksTimeoutMs = getCodexStreamBetweenChunksTimeoutMs()
 
         type UpstreamReadResult = Awaited<ReturnType<typeof reader.read>>
         const readUpstream = async (): Promise<UpstreamReadResult> => {
+          const streamIdleTimeoutMs = hasReceivedUpstreamChunk
+            ? betweenChunksTimeoutMs
+            : firstChunkTimeoutMs
           if (streamIdleTimeoutMs === null) return reader.read()
           let timeoutId: ReturnType<typeof setTimeout> | undefined
           try {
@@ -1167,6 +1183,7 @@ async function translateCodexStreamToAnthropic(
 
         while (true) {
           const { done, value } = await readUpstream()
+          if (!done) hasReceivedUpstreamChunk = true
           if (done) {
             buffer += decoder.decode()
             if (buffer.trim()) buffer += '\n'
