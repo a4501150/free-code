@@ -69,9 +69,8 @@ export type Output = z.infer<OutputSchema>
  * here — this decides whether opt-in should be HONORED, not whether the user
  * has opted in.
  *
- * Build-time OR-gated on KAIROS || KAIROS_BRIEF (same pattern as
- * PROACTIVE || KAIROS): assistant mode depends on Brief, so KAIROS alone
- * must bundle it. KAIROS_BRIEF lets Brief ship independently.
+ * Build-time gated on KAIROS: assistant mode depends on Brief, so KAIROS
+ * bundles it.
  *
  * Use this to decide whether `--brief` / `defaultView: 'chat'` / `--tools`
  * listing should be honored. Use `isBriefEnabled()` to decide whether the
@@ -85,7 +84,7 @@ export type Output = z.infer<OutputSchema>
 export function isBriefEntitled(): boolean {
   // Positive ternary — see docs/feature-gating.md. Negative early-return
   // would not eliminate the GB gate string from external builds.
-  return feature('KAIROS') || feature('KAIROS_BRIEF') ? true : false
+  return feature('KAIROS') ? true : false
 }
 
 /**
@@ -117,7 +116,7 @@ export function isBriefEnabled(): boolean {
   // the ternary to `false` in external builds and then dead-code the BriefTool
   // object. Composing isBriefEntitled() alone (which has its own guard) is
   // semantically equivalent but defeats constant-folding across the boundary.
-  return feature('KAIROS') || feature('KAIROS_BRIEF')
+  return feature('KAIROS')
     ? (getKairosActive() || getUserMsgOptIn()) && isBriefEntitled()
     : false
 }

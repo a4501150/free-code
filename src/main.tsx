@@ -1850,7 +1850,7 @@ async function run(): Promise<CommanderCommand> {
       // devChannels is deferred: showSetupScreens shows a confirmation dialog
       // and only appends to allowedChannels on accept.
       let devChannels: ChannelEntry[] | undefined
-      if (feature('KAIROS') || feature('KAIROS_CHANNELS')) {
+      if (feature('KAIROS')) {
         // Parse plugin:name@marketplace / server:Y tags into typed entries.
         // Tag decides trust model downstream: plugin-kind hits marketplace
         // verification + allowlist, server-kind always fails
@@ -1942,10 +1942,7 @@ async function run(): Promise<CommanderCommand> {
       // the tool as enabled when computing the base-tools disallow filter.
       // Conditional require avoids leaking the tool-name string into
       // external builds.
-      if (
-        (feature('KAIROS') || feature('KAIROS_BRIEF')) &&
-        baseTools.length > 0
-      ) {
+      if (feature('KAIROS') && baseTools.length > 0) {
         /* eslint-disable @typescript-eslint/no-require-imports */
         const { BRIEF_TOOL_NAME, LEGACY_BRIEF_TOOL_NAME } =
           require('./tools/BriefTool/prompt.js') as typeof import('./tools/BriefTool/prompt.js')
@@ -2428,7 +2425,7 @@ async function run(): Promise<CommanderCommand> {
       // briefVisibility). A persisted 'chat' after a GB kill-switch falls
       // through (entitlement fails).
       if (
-        (feature('KAIROS') || feature('KAIROS_BRIEF')) &&
+        feature('KAIROS') &&
         !getIsNonInteractiveSession() &&
         !getUserMsgOptIn() &&
         getInitialSettings().defaultView === 'chat'
@@ -2451,14 +2448,13 @@ async function run(): Promise<CommanderCommand> {
         !coordinatorModeModule?.isCoordinatorMode()
       ) {
         /* eslint-disable @typescript-eslint/no-require-imports */
-        const briefVisibility =
-          feature('KAIROS') || feature('KAIROS_BRIEF')
-            ? (
-                require('./tools/BriefTool/BriefTool.js') as typeof import('./tools/BriefTool/BriefTool.js')
-              ).isBriefEnabled()
-              ? 'Call SendUserMessage at checkpoints to mark where things stand.'
-              : 'The user will see any text you output.'
+        const briefVisibility = feature('KAIROS')
+          ? (
+              require('./tools/BriefTool/BriefTool.js') as typeof import('./tools/BriefTool/BriefTool.js')
+            ).isBriefEnabled()
+            ? 'Call SendUserMessage at checkpoints to mark where things stand.'
             : 'The user will see any text you output.'
+          : 'The user will see any text you output.'
         /* eslint-enable @typescript-eslint/no-require-imports */
         const proactivePrompt = `\n# Proactive Mode\n\nYou are in proactive mode. Take initiative — explore, act, and make progress without waiting for instructions.\n\nStart by briefly greeting the user.\n\nYou will receive periodic <tick> prompts. These are check-ins. Do whatever seems most useful, or call Sleep if there's nothing to do. ${briefVisibility}`
         appendSystemPrompt = appendSystemPrompt
@@ -3196,8 +3192,7 @@ async function run(): Promise<CommanderCommand> {
       }
       // All startup opt-in paths (--tools, --brief, defaultView) have fired
       // above; initialIsBriefOnly just reads the resulting state.
-      const initialIsBriefOnly =
-        feature('KAIROS') || feature('KAIROS_BRIEF') ? getUserMsgOptIn() : false
+      const initialIsBriefOnly = feature('KAIROS') ? getUserMsgOptIn() : false
       const initialState: AppState = {
         settings: getInitialSettings(),
         tasks: {},
@@ -3614,7 +3609,7 @@ async function run(): Promise<CommanderCommand> {
     )
   }
 
-  if (feature('KAIROS') || feature('KAIROS_BRIEF')) {
+  if (feature('KAIROS')) {
     program.addOption(
       new Option(
         '--brief',
@@ -3627,7 +3622,7 @@ async function run(): Promise<CommanderCommand> {
       new Option('--assistant', 'Force assistant daemon mode').hideHelp(),
     )
   }
-  if (feature('KAIROS') || feature('KAIROS_CHANNELS')) {
+  if (feature('KAIROS')) {
     program.addOption(
       new Option(
         '--channels <servers...>',
@@ -4379,7 +4374,7 @@ function maybeActivateProactive(options: unknown): void {
 }
 
 function maybeActivateBrief(options: unknown): void {
-  if (!(feature('KAIROS') || feature('KAIROS_BRIEF'))) return
+  if (!feature('KAIROS')) return
   const briefFlag = (options as { brief?: boolean }).brief
   const briefEnv = isEnvTruthy(process.env.CLAUDE_CODE_BRIEF)
   if (!briefFlag && !briefEnv) return

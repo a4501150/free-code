@@ -1558,7 +1558,7 @@ function runHeadlessStreaming(
       // handler re-runs the full gate); just avoids dead buttons.
       let capabilities: { experimental?: Record<string, unknown> } | undefined
       if (
-        (feature('KAIROS') || feature('KAIROS_CHANNELS')) &&
+        feature('KAIROS') &&
         connection.type === 'connected' &&
         connection.capabilities.experimental
       ) {
@@ -4184,7 +4184,7 @@ function handleChannelEnable(
       response: { subtype: 'error', request_id: requestId, error },
     })
 
-  if (!(feature('KAIROS') || feature('KAIROS_CHANNELS'))) {
+  if (!feature('KAIROS')) {
     return respondError('channels feature not available in this build')
   }
 
@@ -4289,7 +4289,7 @@ function handleChannelEnable(
 function reregisterChannelHandlerAfterReconnect(
   connection: MCPServerConnection,
 ): void {
-  if (!(feature('KAIROS') || feature('KAIROS_CHANNELS'))) return
+  if (!feature('KAIROS')) return
   if (connection.type !== 'connected') return
 
   const gate = gateChannelServer(

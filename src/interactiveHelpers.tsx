@@ -331,7 +331,7 @@ export async function showSetupScreens(
   // dev channels to any --channels list already set in main.tsx. Org policy
   // is NOT bypassed — gateChannelServer() still runs; this flag only exists
   // to sidestep the --channels approved-server allowlist.
-  if (feature('KAIROS') || feature('KAIROS_CHANNELS')) {
+  if (feature('KAIROS')) {
     // gateChannelServer and ChannelsNotice read tengu_harbor after this
     // function returns. A cold disk cache (fresh install, or first run after
     // the flag was added server-side) defaults to false and silently drops

@@ -209,10 +209,9 @@ function useCanUseTool(
                     awaitAutomatedChecksBeforeDialog:
                       appState.toolPermissionContext
                         .awaitAutomatedChecksBeforeDialog,
-                    channelCallbacks:
-                      feature('KAIROS') || feature('KAIROS_CHANNELS')
-                        ? appState.channelPermissionCallbacks
-                        : undefined,
+                    channelCallbacks: feature('KAIROS')
+                      ? appState.channelPermissionCallbacks
+                      : undefined,
                   },
                   resolve,
                 )

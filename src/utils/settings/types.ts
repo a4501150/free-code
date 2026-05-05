@@ -1427,9 +1427,9 @@ export const SettingsSchema = lazySchema(() =>
       // inbound messages into the conversation; for managed orgs this only
       // works when explicitly enabled. Which servers can connect at all is
       // still governed by allowedMcpServers/deniedMcpServers. Not
-      // feature-spread: KAIROS_CHANNELS is external:true, and the spread
-      // wrecks type inference for allowedChannelPlugins (the .passthrough()
-      // catch-all gives {} instead of the array type).
+      // Not feature-spread: the spread wrecks type inference for
+      // allowedChannelPlugins (the .passthrough() catch-all gives {} instead of
+      // the array type).
       channelsEnabled: z
         .boolean()
         .optional()
@@ -1456,7 +1456,7 @@ export const SettingsSchema = lazySchema(() =>
             'plugins may push inbound messages. Undefined falls back to the default. ' +
             'Requires channelsEnabled: true.',
         ),
-      ...(feature('KAIROS') || feature('KAIROS_BRIEF')
+      ...(feature('KAIROS')
         ? {
             defaultView: z
               .enum(['chat', 'transcript'])

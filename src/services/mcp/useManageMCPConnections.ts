@@ -152,20 +152,17 @@ export function useManageMCPConnections(
   const channelPermCallbacksRef = useRef<ChannelPermissionCallbacks | null>(
     null,
   )
-  if (
-    (feature('KAIROS') || feature('KAIROS_CHANNELS')) &&
-    channelPermCallbacksRef.current === null
-  ) {
+  if (feature('KAIROS') && channelPermCallbacksRef.current === null) {
     channelPermCallbacksRef.current = createChannelPermissionCallbacks()
   }
   // Store callbacks in AppState so interactiveHandler.ts can reach them via
   // ctx.toolUseContext.getAppState(). One-time set — the ref is stable.
   useEffect(() => {
-    if (feature('KAIROS') || feature('KAIROS_CHANNELS')) {
+    if (feature('KAIROS')) {
       const callbacks = channelPermCallbacksRef.current
       if (!callbacks) return
-      // Runtime gate — separate from channels so channels can
-      // ship without this. Checked at mount; mid-session flips need restart.
+      // Runtime gate for the permission relay. Checked at mount; mid-session
+      // flips need restart.
       // If off, callbacks never go into AppState → interactiveHandler sees
       // undefined → never sends → intercept has nothing pending → "yes tbxkq"
       // flows to Claude as normal chat. One gate, full disable.
@@ -454,7 +451,7 @@ export function useManageMCPConnections(
           // Channel push: notifications/claude/channel → enqueue().
           // Gate decides whether to register the handler; connection stays
           // up either way (allowedMcpServers controls that).
-          if (feature('KAIROS') || feature('KAIROS_CHANNELS')) {
+          if (feature('KAIROS')) {
             const gate = gateChannelServer(
               client.name,
               client.capabilities,

@@ -80,13 +80,12 @@ export function GlobalKeybindingHandlers({
 
   // Toggle transcript mode (ctrl+o). Two-way prompt ↔ transcript.
   // Brief view has its own dedicated toggle on ctrl+shift+b.
-  const isBriefOnly =
-    feature('KAIROS') || feature('KAIROS_BRIEF')
-      ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-        useAppState(s => s.isBriefOnly)
-      : false
+  const isBriefOnly = feature('KAIROS')
+    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
+      useAppState(s => s.isBriefOnly)
+    : false
   const handleToggleTranscript = useCallback(() => {
-    if (feature('KAIROS') || feature('KAIROS_BRIEF')) {
+    if (feature('KAIROS')) {
       // Escape hatch: GB kill-switch while defaultView=chat was persisted
       // can leave isBriefOnly stuck on, showing a blank filterForBriefTool
       // view. Users will reach for ctrl+o — clear the stuck state first.
@@ -148,7 +147,7 @@ export function GlobalKeybindingHandlers({
   // transition always allowed so the same key that got you in gets you
   // out even if the GB kill-switch fires mid-session.
   const handleToggleBrief = useCallback(() => {
-    if (feature('KAIROS') || feature('KAIROS_BRIEF')) {
+    if (feature('KAIROS')) {
       const { isBriefEnabled } = briefToolNs
       if (!isBriefEnabled() && !isBriefOnly) return
       const next = !isBriefOnly
@@ -166,7 +165,7 @@ export function GlobalKeybindingHandlers({
   useKeybinding('app:toggleTranscript', handleToggleTranscript, {
     context: 'Global',
   })
-  if (feature('KAIROS') || feature('KAIROS_BRIEF')) {
+  if (feature('KAIROS')) {
     // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
     useKeybinding('app:toggleBrief', handleToggleBrief, {
       context: 'Global',

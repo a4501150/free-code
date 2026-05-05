@@ -42,10 +42,9 @@ const cronTools = feature('AGENT_TRIGGERS')
 const SendUserFileTool = feature('KAIROS')
   ? sendUserFileMod.SendUserFileTool
   : null
-const PushNotificationTool =
-  feature('KAIROS') || feature('KAIROS_PUSH_NOTIFICATION')
-    ? pushNotificationMod.PushNotificationTool
-    : null
+const PushNotificationTool = feature('KAIROS')
+  ? pushNotificationMod.PushNotificationTool
+  : null
 import { TaskOutputTool } from './tools/TaskOutputTool/TaskOutputTool.js'
 import { WebSearchTool } from './tools/WebSearchTool/WebSearchTool.js'
 import { ExitPlanModeTool } from './tools/ExitPlanModeTool/ExitPlanModeTool.js'

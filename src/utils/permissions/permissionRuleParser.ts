@@ -8,10 +8,9 @@ import type { PermissionRuleValue } from './PermissionRule.js'
 // their strings don't leak into external builds.
 import * as briefToolPromptNs from '../../tools/BriefTool/prompt.js'
 
-const BRIEF_TOOL_NAME: string | null =
-  feature('KAIROS') || feature('KAIROS_BRIEF')
-    ? briefToolPromptNs.BRIEF_TOOL_NAME
-    : null
+const BRIEF_TOOL_NAME: string | null = feature('KAIROS')
+  ? briefToolPromptNs.BRIEF_TOOL_NAME
+  : null
 
 // Maps legacy tool names to their current canonical names.
 // When a tool is renamed, add old → new here so permission rules,
@@ -23,9 +22,7 @@ const LEGACY_TOOL_NAME_ALIASES: Record<string, string> = {
   TaskOutput: TASK_OUTPUT_TOOL_NAME,
   AgentOutputTool: TASK_OUTPUT_TOOL_NAME,
   BashOutputTool: TASK_OUTPUT_TOOL_NAME,
-  ...((feature('KAIROS') || feature('KAIROS_BRIEF')) && BRIEF_TOOL_NAME
-    ? { Brief: BRIEF_TOOL_NAME }
-    : {}),
+  ...(feature('KAIROS') && BRIEF_TOOL_NAME ? { Brief: BRIEF_TOOL_NAME } : {}),
 }
 
 export function normalizeLegacyToolName(name: string): string {

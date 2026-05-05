@@ -74,14 +74,10 @@ const defaultFeatures = [
   'UNATTENDED_RETRY',
   // Tier 2: Slash command / skill gated
   'BUDDY',
-  'KAIROS_DREAM',
   // Tier 3: Settings / env var / file gated
   'CACHED_MICROCOMPACT',
   'COORDINATOR_MODE',
   'KAIROS',
-  'KAIROS_BRIEF',
-  'KAIROS_CHANNELS',
-  'KAIROS_PUSH_NOTIFICATION',
   'NEW_INIT',
   // Tier 4: Active but benign (user keyword / prompt nudge)
   'ULTRATHINK',

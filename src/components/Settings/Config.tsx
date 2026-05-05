@@ -211,12 +211,11 @@ export function Config({
   // opt-in. 'chat' written here is read at next startup by main.tsx which
   // sets userMsgOptIn if still entitled.
   /* eslint-disable @typescript-eslint/no-require-imports */
-  const showDefaultViewPicker =
-    feature('KAIROS') || feature('KAIROS_BRIEF')
-      ? (
-          require('../../tools/BriefTool/BriefTool.js') as typeof import('../../tools/BriefTool/BriefTool.js')
-        ).isBriefEntitled()
-      : false
+  const showDefaultViewPicker = feature('KAIROS')
+    ? (
+        require('../../tools/BriefTool/BriefTool.js') as typeof import('../../tools/BriefTool/BriefTool.js')
+      ).isBriefEntitled()
+    : false
   /* eslint-enable @typescript-eslint/no-require-imports */
   const setAppState = useSetAppState()
   const [changes, setChanges] = useState<{ [key: string]: unknown }>({})
@@ -1045,10 +1044,7 @@ export function Config({
     },
     {
       id: 'notifChannel',
-      label:
-        feature('KAIROS') || feature('KAIROS_PUSH_NOTIFICATION')
-          ? 'Local notifications'
-          : 'Notifications',
+      label: feature('KAIROS') ? 'Local notifications' : 'Notifications',
       value: globalConfig.preferredNotifChannel,
       options: [
         'auto',
@@ -1071,7 +1067,7 @@ export function Config({
         })
       },
     },
-    ...(feature('KAIROS') || feature('KAIROS_PUSH_NOTIFICATION')
+    ...(feature('KAIROS')
       ? [
           {
             id: 'taskCompleteNotifEnabled',

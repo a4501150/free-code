@@ -155,7 +155,7 @@ export function UserTextMessage({
   }
 
   // Inbound channel message (MCP server push).
-  if (feature('KAIROS') || feature('KAIROS_CHANNELS')) {
+  if (feature('KAIROS')) {
     if (param.text.startsWith('<channel source="')) {
       const { UserChannelMessage } = userChannelNs
       return <UserChannelMessage addMargin={addMargin} param={param} />

@@ -45,14 +45,13 @@ import { EmergencyTip } from './EmergencyTip.js'
 import { VoiceModeNotice } from './VoiceModeNotice.js'
 import { feature } from 'bun:bundle'
 
-// Conditional import so ChannelsNotice.tsx tree-shakes when both flags are
-// false. A module-scope helper component inside a feature() ternary does NOT
+// Conditional import so ChannelsNotice.tsx tree-shakes when KAIROS is false.
+// A module-scope helper component inside a feature() ternary does NOT
 // tree-shake (docs/feature-gating.md); the namespace import + DCE eliminates
 // the whole file. VoiceModeNotice uses the unsafe helper pattern but VOICE_MODE
 // is external: true so it's moot there.
 import * as channelsNoticeNs from './ChannelsNotice.js'
-const ChannelsNoticeModule =
-  feature('KAIROS') || feature('KAIROS_CHANNELS') ? channelsNoticeNs : null
+const ChannelsNoticeModule = feature('KAIROS') ? channelsNoticeNs : null
 import { SandboxManager } from 'src/utils/sandbox/sandbox-adapter.js'
 import {
   useShowGuestPassesUpsell,

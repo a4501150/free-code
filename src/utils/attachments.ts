@@ -161,10 +161,9 @@ import { feature } from 'bun:bundle'
 import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
 import * as sessionTranscriptNs from '../services/sessionTranscript/sessionTranscript.js'
 
-const BRIEF_TOOL_NAME: string | null =
-  feature('KAIROS') || feature('KAIROS_BRIEF')
-    ? briefToolPromptNs.BRIEF_TOOL_NAME
-    : null
+const BRIEF_TOOL_NAME: string | null = feature('KAIROS')
+  ? briefToolPromptNs.BRIEF_TOOL_NAME
+  : null
 const sessionTranscriptModule = feature('KAIROS') ? sessionTranscriptNs : null
 import { hasUltrathinkKeyword, isUltrathinkEnabled } from './thinking.js'
 import {

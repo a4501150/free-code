@@ -2,7 +2,7 @@
 
 Audit date: 2026-05-04
 
-This repository currently references 39 active compile-time flags through
+This repository currently references 34 active compile-time flags through
 `feature(...)`. The default build enables the production-supported subset in
 `scripts/build.ts`; `--feature-set=dev-full` additionally enables the
 experimental list in the same file.
@@ -29,16 +29,12 @@ These are included in the default feature list.
 ### Slash-command and skill behavior
 
 - `BUDDY` — enables buddy command/UI surfaces that remain in this snapshot.
-- `KAIROS_DREAM` — enables the dream skill and related consolidation behavior.
 
 ### Runtime/settings behavior
 
 - `CACHED_MICROCOMPACT` — enables cached microcompact state through query and API flows.
 - `COORDINATOR_MODE` — enables coordinator mode, coordinator tool filtering, task-list automation, and the built-in `worker` agent provider.
-- `KAIROS` — enables proactive assistant-mode behavior.
-- `KAIROS_BRIEF` — enables brief-only transcript layout and BriefTool-oriented UX.
-- `KAIROS_CHANNELS` — enables channel notices and channel callback plumbing.
-- `KAIROS_PUSH_NOTIFICATION` — enables push notification tooling for proactive mode.
+- `KAIROS` — enables proactive assistant-mode behavior, including brief UX, channel notices/callbacks, and push notification surfaces; runtime activation is controlled by assistant mode and related settings.
 - `NEW_INIT` — enables the newer `/init` decision path.
 
 ### Prompt behavior

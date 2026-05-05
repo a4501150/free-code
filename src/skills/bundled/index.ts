@@ -32,9 +32,7 @@ export function initBundledSkills(): void {
   if (feature('WORKTREE_MODE')) {
     registerBatchSkill()
   }
-  if (feature('KAIROS') || feature('KAIROS_DREAM')) {
-    dreamNs.registerDreamSkill()
-  }
+  dreamNs.registerDreamSkill()
   if (feature('AGENT_TRIGGERS')) {
     // /loop's isEnabled delegates to isKairosCronEnabled() — same lazy
     // per-invocation pattern as the cron tools. Registered unconditionally;

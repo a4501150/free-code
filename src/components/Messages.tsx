@@ -103,10 +103,9 @@ const proactiveModule = feature('KAIROS')
 /* eslint-enable @typescript-eslint/no-require-imports */
 import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
 import * as sendUserFileToolPromptNs from '../tools/SendUserFileTool/prompt.js'
-const BRIEF_TOOL_NAME: string | null =
-  feature('KAIROS') || feature('KAIROS_BRIEF')
-    ? briefToolPromptNs.BRIEF_TOOL_NAME
-    : null
+const BRIEF_TOOL_NAME: string | null = feature('KAIROS')
+  ? briefToolPromptNs.BRIEF_TOOL_NAME
+  : null
 const SEND_USER_FILE_TOOL_NAME: string | null = feature('KAIROS')
   ? sendUserFileToolPromptNs.SEND_USER_FILE_TOOL_NAME
   : null

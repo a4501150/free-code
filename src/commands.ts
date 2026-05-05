@@ -44,8 +44,7 @@ import * as voiceCmdMod from './commands/voice/index.js'
 import * as initVerifiersMod from './commands/init-verifiers.js'
 import * as buddyMod from './commands/buddy/index.js'
 const proactive = feature('KAIROS') ? proactiveMod.default : null
-const briefCommand =
-  feature('KAIROS') || feature('KAIROS_BRIEF') ? briefCmdMod.default : null
+const briefCommand = feature('KAIROS') ? briefCmdMod.default : null
 const voiceCommand = feature('VOICE_MODE') ? voiceCmdMod.default : null
 const initVerifiers = feature('VERIFY_PLAN') ? initVerifiersMod.default : null
 const buddy = feature('BUDDY') ? buddyMod.default : null

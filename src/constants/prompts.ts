@@ -66,12 +66,10 @@ const proactiveModule = feature('KAIROS')
   ? require('../proactive/index.js')
   : null
 /* eslint-enable @typescript-eslint/no-require-imports */
-const BRIEF_PROACTIVE_SECTION: string | null =
-  feature('KAIROS') || feature('KAIROS_BRIEF')
-    ? briefToolPromptNs.BRIEF_PROACTIVE_SECTION
-    : null
-const briefToolModule =
-  feature('KAIROS') || feature('KAIROS_BRIEF') ? briefToolModuleNs : null
+const BRIEF_PROACTIVE_SECTION: string | null = feature('KAIROS')
+  ? briefToolPromptNs.BRIEF_PROACTIVE_SECTION
+  : null
+const briefToolModule = feature('KAIROS') ? briefToolModuleNs : null
 import { CYBER_RISK_INSTRUCTION } from './cyberRiskInstruction.js'
 
 export const CLAUDE_CODE_DOCS_MAP_URL =
@@ -443,7 +441,7 @@ ${CYBER_RISK_INSTRUCTION}`,
           ),
         ]
       : []),
-    ...(feature('KAIROS') || feature('KAIROS_BRIEF')
+    ...(feature('KAIROS')
       ? [systemPromptSection('brief', () => getBriefSection())]
       : []),
   ]
@@ -656,7 +654,7 @@ Old tool results will be automatically cleared from context to free up space. Th
 const SUMMARIZE_TOOL_RESULTS_SECTION = `When working with tool results, write down any important information you might need later in your response, as the original tool result may be cleared later.`
 
 function getBriefSection(): string | null {
-  if (!(feature('KAIROS') || feature('KAIROS_BRIEF'))) return null
+  if (!feature('KAIROS')) return null
   if (!BRIEF_PROACTIVE_SECTION) return null
   // Whenever the tool is available, the model is told to use it. The
   // /brief toggle and --brief flag now only control the isBriefOnly

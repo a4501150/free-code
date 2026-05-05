@@ -47,29 +47,25 @@ export function UserPromptMessage({
   // bypasses React.memo). Runtime-gated like isBriefEnabled() but inlined
   // to avoid pulling BriefTool.ts → prompt.ts tool-name strings into
   // external builds.
-  const isBriefOnly =
-    feature('KAIROS') || feature('KAIROS_BRIEF')
-      ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-        useAppState(s => s.isBriefOnly)
-      : false
-  const viewingAgentTaskId =
-    feature('KAIROS') || feature('KAIROS_BRIEF')
-      ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-        useAppState(s => s.viewingAgentTaskId)
-      : null
+  const isBriefOnly = feature('KAIROS')
+    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
+      useAppState(s => s.isBriefOnly)
+    : false
+  const viewingAgentTaskId = feature('KAIROS')
+    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
+      useAppState(s => s.viewingAgentTaskId)
+    : null
   // Hoisted to mount-time — per-message component, re-renders on every scroll.
-  const briefEnvEnabled =
-    feature('KAIROS') || feature('KAIROS_BRIEF')
-      ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-        useMemo(() => isEnvTruthy(process.env.CLAUDE_CODE_BRIEF), [])
-      : false
-  const useBriefLayout =
-    feature('KAIROS') || feature('KAIROS_BRIEF')
-      ? (getKairosActive() || getUserMsgOptIn()) &&
-        isBriefOnly &&
-        !isTranscriptMode &&
-        !viewingAgentTaskId
-      : false
+  const briefEnvEnabled = feature('KAIROS')
+    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
+      useMemo(() => isEnvTruthy(process.env.CLAUDE_CODE_BRIEF), [])
+    : false
+  const useBriefLayout = feature('KAIROS')
+    ? (getKairosActive() || getUserMsgOptIn()) &&
+      isBriefOnly &&
+      !isTranscriptMode &&
+      !viewingAgentTaskId
+    : false
 
   // Truncate before the early return so the hook order is stable.
   const displayText = useMemo(() => {
