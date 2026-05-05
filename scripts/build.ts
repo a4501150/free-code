@@ -1,5 +1,7 @@
-import { chmodSync, existsSync, mkdirSync, cpSync, rmSync } from 'fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, rmSync } from 'fs'
 import { dirname, resolve } from 'path'
+
+import { ensureCurrentSearchTools } from './searchTools.js'
 
 const pkg = (await Bun.file(
   new URL('../package.json', import.meta.url),
@@ -247,12 +249,17 @@ if (existsSync(outfile)) {
   chmodSync(outfile, 0o755)
 }
 
-// Copy vendor/ripgrep next to the compiled binary
-const vendorSrc = resolve(process.cwd(), 'vendor', 'ripgrep')
-const vendorDst = resolve(dirname(outfile), 'vendor', 'ripgrep')
-if (existsSync(vendorSrc) && resolve(vendorSrc) !== resolve(vendorDst)) {
-  cpSync(vendorSrc, vendorDst, { recursive: true })
-  console.log(`Copied vendor/ripgrep to ${vendorDst}`)
+await ensureCurrentSearchTools()
+
+// Copy vendored native tools next to the compiled binary
+const vendorDirs = ['ripgrep', 'search-tools']
+for (const vendorDir of vendorDirs) {
+  const vendorSrc = resolve(process.cwd(), 'vendor', vendorDir)
+  const vendorDst = resolve(dirname(outfile), 'vendor', vendorDir)
+  if (existsSync(vendorSrc) && resolve(vendorSrc) !== resolve(vendorDst)) {
+    cpSync(vendorSrc, vendorDst, { recursive: true })
+    console.log(`Copied vendor/${vendorDir} to ${vendorDst}`)
+  }
 }
 
 console.log(`Built ${outfile}`)

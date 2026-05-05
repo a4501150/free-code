@@ -8,7 +8,7 @@ import { registerCleanup } from '../cleanupRegistry.js'
 import { getCwd } from '../cwd.js'
 import { logForDebugging } from '../debug.js'
 import {
-  embeddedSearchToolsBinaryPath,
+  bundledSearchToolPaths,
   hasEmbeddedSearchTools,
 } from '../embeddedTools.js'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
@@ -58,6 +58,19 @@ function createArgv0ShellFunction(
   ].join('\n')
 }
 
+function createDirectShellFunction(
+  funcName: string,
+  binaryPath: string,
+  prependArgs: string[] = [],
+): string {
+  const quotedPath = quote([binaryPath])
+  const argSuffix =
+    prependArgs.length > 0 ? `${prependArgs.join(' ')} "$@"` : '"$@"'
+  return [`function ${funcName} {`, `  ${quotedPath} ${argSuffix}`, '}'].join(
+    '\n',
+  )
+}
+
 /**
  * Creates ripgrep shell integration (alias or function)
  * @returns Object with type and the shell snippet to use
@@ -105,16 +118,16 @@ const VCS_DIRECTORIES_TO_EXCLUDE = [
 ] as const
 
 /**
- * Creates shell integration for `find` and `grep`, backed by bfs and ugrep
- * embedded in the bun binary (ant-native only). Unlike the rg integration,
- * this always shadows the system find/grep since bfs/ugrep are drop-in
- * replacements and we want consistent fast behavior.
+ * Creates shell integration for `find` and `grep`, backed by vendored bfs/ugrep
+ * binaries. Unlike the rg integration, this always shadows the system find/grep
+ * since bfs/ugrep are drop-in replacements and we want consistent fast behavior.
  *
  * These wrappers replace the GlobTool/GrepTool dedicated tools (which are
  * removed from the tool registry when embedded search tools are available),
  * so they're tuned to match those tools' semantics, not GNU find/grep.
  *
  * `find` ↔ GlobTool:
+ * - `-S dfs`: match Claude Code's embedded bfs traversal strategy.
  * - Inject `-regextype findutils-default`: bfs defaults to POSIX BRE for
  *   -regex, but GNU find defaults to emacs-flavor (which supports `\|`
  *   alternation). Without this, `find . -regex '.*\.\(js\|ts\)'` silently
@@ -148,33 +161,35 @@ const VCS_DIRECTORIES_TO_EXCLUDE = [
  * - Read deny rules / plugin cache exclusions: require toolPermissionContext
  *   which isn't available at shell-snapshot creation time.
  *
- * Returns null if embedded search tools are not available in this build.
+ * Returns null if search tools are not available in this build.
  */
 export function createFindGrepShellIntegration(): string | null {
   if (!hasEmbeddedSearchTools()) {
     return null
   }
-  const binaryPath = embeddedSearchToolsBinaryPath()
+  const bundledPaths = bundledSearchToolPaths()
+  if (bundledPaths === null) {
+    return null
+  }
+  const findArgs = ['-S', 'dfs', '-regextype', 'findutils-default']
+  const grepArgs = [
+    '-G',
+    '--ignore-files',
+    '--hidden',
+    '-I',
+    ...VCS_DIRECTORIES_TO_EXCLUDE.map(d => `--exclude-dir=${d}`),
+  ]
   return [
     // User shell configs may define aliases like `alias find=gfind` or
     // `alias grep=ggrep` (common on macOS with Homebrew GNU tools). The
     // snapshot sources user aliases before these function definitions, and
     // bash expands aliases before function lookup — so a renaming alias
-    // would silently bypass the embedded bfs/ugrep dispatch. Clear them first
+    // would silently bypass the bfs/ugrep dispatch. Clear them first
     // (same fix the rg integration uses).
     'unalias find 2>/dev/null || true',
     'unalias grep 2>/dev/null || true',
-    createArgv0ShellFunction('find', 'bfs', binaryPath, [
-      '-regextype',
-      'findutils-default',
-    ]),
-    createArgv0ShellFunction('grep', 'ugrep', binaryPath, [
-      '-G',
-      '--ignore-files',
-      '--hidden',
-      '-I',
-      ...VCS_DIRECTORIES_TO_EXCLUDE.map(d => `--exclude-dir=${d}`),
-    ]),
+    createDirectShellFunction('find', bundledPaths.bfsPath, findArgs),
+    createDirectShellFunction('grep', bundledPaths.ugrepPath, grepArgs),
   ].join('\n')
 }
 
@@ -314,10 +329,10 @@ RIPGREP_FUNC_END
       echo "fi" >> "$SNAPSHOT_FILE"
   `
 
-  // For ant-native builds, shadow find/grep with bfs/ugrep embedded in the bun
-  // binary. Unlike rg (which only activates if system rg is absent), we always
-  // shadow find/grep since bfs/ugrep are drop-in replacements and we want
-  // consistent fast behavior in Claude's shell.
+  // When bfs/ugrep are bundled or embedded, shadow find/grep in Claude's shell.
+  // Unlike rg (which only activates if system rg is absent), we always shadow
+  // find/grep since bfs/ugrep are drop-in replacements and we want consistent
+  // fast behavior in Claude's shell.
   const findGrepIntegration = createFindGrepShellIntegration()
   if (findGrepIntegration !== null) {
     content += `

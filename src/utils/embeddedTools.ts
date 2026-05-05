@@ -1,20 +1,48 @@
-import { feature } from 'bun:bundle'
-import { isEnvTruthy } from './envUtils.js'
+import { existsSync } from 'fs'
+import { dirname, resolve } from 'path'
+import { fileURLToPath } from 'url'
 
-/**
- * Whether this build has bfs/ugrep embedded in the bun binary (ant-native only).
- *
- * When true:
- * - `find` and `grep` in Claude's Bash shell are shadowed by shell functions
- *   that invoke the bun binary with argv0='bfs' / argv0='ugrep' (same trick
- *   as embedded ripgrep)
- * - The dedicated Glob/Grep tools are removed from the tool registry
- * - Prompt guidance steering Claude away from find/grep is omitted
- *
- * Set as a build-time define in scripts/build-with-plugins.ts for ant-native builds.
- */
-export function hasEmbeddedSearchTools(): boolean {
-  if (!isEnvTruthy(process.env.EMBEDDED_SEARCH_TOOLS)) return false
+import { feature } from 'bun:bundle'
+
+const __filename = fileURLToPath(import.meta.url)
+const sourceVendorSearchToolsRoot = resolve(
+  dirname(__filename),
+  '../../vendor/search-tools',
+)
+
+type BundledSearchToolPaths = {
+  bfsPath: string
+  ugrepPath: string
+}
+
+function getSearchToolsPlatformDir(): string {
+  return `${process.arch}-${process.platform}`
+}
+
+function getSearchToolBinaryName(name: 'bfs' | 'ugrep'): string {
+  return process.platform === 'win32' ? `${name}.exe` : name
+}
+
+export function bundledSearchToolPaths(): BundledSearchToolPaths | null {
+  const platformDir = getSearchToolsPlatformDir()
+  const candidateRoots = [
+    resolve(dirname(process.execPath), 'vendor/search-tools'),
+    sourceVendorSearchToolsRoot,
+  ]
+
+  for (const root of candidateRoots) {
+    const dir = resolve(root, platformDir)
+    const bfsPath = resolve(dir, getSearchToolBinaryName('bfs'))
+    const ugrepPath = resolve(dir, getSearchToolBinaryName('ugrep'))
+    if (existsSync(bfsPath) && existsSync(ugrepPath)) {
+      return { bfsPath, ugrepPath }
+    }
+  }
+
+  return null
+}
+
+function isSearchToolEntrypointEnabled(): boolean {
   const e = process.env.CLAUDE_CODE_ENTRYPOINT
   return (
     e !== 'sdk-ts' && e !== 'sdk-py' && e !== 'sdk-cli' && e !== 'local-agent'
@@ -22,10 +50,23 @@ export function hasEmbeddedSearchTools(): boolean {
 }
 
 /**
+ * Whether this build has vendored bfs/ugrep available for Bash search wrappers.
+ *
+ * When true:
+ * - `find` and `grep` in Claude's Bash shell are shadowed by shell functions
+ *   that invoke vendored bfs/ugrep binaries
+ * - The dedicated Glob/Grep tools are removed from the tool registry
+ * - Prompt guidance steering Claude away from find/grep is omitted
+ */
+export function hasEmbeddedSearchTools(): boolean {
+  return isSearchToolEntrypointEnabled() && bundledSearchToolPaths() !== null
+}
+
+/**
  * True when Glob/Grep should be omitted and the model should prefer
  * `find` / `grep` / `rg` via the Bash tool. Distinct from
  * hasEmbeddedSearchTools(), which specifically reports whether the
- * bun binary has the bfs/ugrep fallbacks baked in (a perf concern).
+ * runtime has bfs/ugrep available (a perf concern).
  *
  * Gated by the `DEDICATED_SEARCH_TOOLS` feature flag — default builds
  * strip Glob/Grep and use bash-first prompt variants. Opt in at build
@@ -34,12 +75,4 @@ export function hasEmbeddedSearchTools(): boolean {
 export function shouldPreferBashForSearch(): boolean {
   if (feature('DEDICATED_SEARCH_TOOLS')) return hasEmbeddedSearchTools()
   return true
-}
-
-/**
- * Path to the bun binary that contains the embedded search tools.
- * Only meaningful when hasEmbeddedSearchTools() is true.
- */
-export function embeddedSearchToolsBinaryPath(): string {
-  return process.execPath
 }

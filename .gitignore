@@ -5,3 +5,4 @@ dist/
 openclaw/
 .compiled-src/
 scratchpad/
+vendor/search-tools/
