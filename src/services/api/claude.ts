@@ -60,7 +60,7 @@ import {
 import { getOrCreateUserID } from '../../utils/config.js'
 import { getModelMaxOutputTokens } from '../../utils/context.js'
 import { resolveAppliedEffort } from '../../utils/effort.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import { isEnvDefinedFalsy, isEnvTruthy } from '../../utils/envUtils.js'
 import { errorMessage } from '../../utils/errors.js'
 import { computeFingerprintFromMessages } from '../../utils/fingerprint.js'
 import { sleep } from '../../utils/sleep.js'
@@ -743,6 +743,34 @@ function getNonstreamingFallbackTimeoutMs(): number {
 }
 
 const CODEX_STREAM_MAX_RETRIES = 1
+const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 90_000
+const CODEX_STREAM_IDLE_TIMEOUT_MS = 300_000
+const STREAM_IDLE_TIMEOUT_ERROR = 'Stream idle timeout - no chunks received'
+
+function isStreamIdleTimeoutError(error: unknown): boolean {
+  return error instanceof Error && error.message === STREAM_IDLE_TIMEOUT_ERROR
+}
+
+function shouldEnableStreamWatchdog(
+  isOpenAIResponsesProvider: boolean,
+): boolean {
+  if (isEnvDefinedFalsy(process.env.CLAUDE_ENABLE_STREAM_WATCHDOG)) {
+    return false
+  }
+  return (
+    isOpenAIResponsesProvider ||
+    isEnvTruthy(process.env.CLAUDE_ENABLE_STREAM_WATCHDOG)
+  )
+}
+
+function getStreamIdleTimeoutMs(isOpenAIResponsesProvider: boolean): number {
+  return (
+    parseInt(process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS || '', 10) ||
+    (isOpenAIResponsesProvider
+      ? CODEX_STREAM_IDLE_TIMEOUT_MS
+      : DEFAULT_STREAM_IDLE_TIMEOUT_MS)
+  )
+}
 
 function isRetryableCodexStreamError(error: unknown): error is APIError {
   if (!(error instanceof APIError)) return false
@@ -974,6 +1002,8 @@ async function* queryModel(
 
   const registry = getProviderRegistry()
   const resolvedModel = await registry.resolveModelId(options.model)
+  const isOpenAIResponsesProvider =
+    registry.getProviderType(options.model) === 'openai-responses'
 
   queryCheckpoint('query_tool_schema_build_start')
   const isAgenticQuery =
@@ -1633,11 +1663,12 @@ async function* queryModel(
       // kill hung streams. Without this, a silently dropped connection can hang
       // the session indefinitely since the SDK's request timeout only covers the
       // initial fetch(), not the streaming body.
-      const streamWatchdogEnabled = isEnvTruthy(
-        process.env.CLAUDE_ENABLE_STREAM_WATCHDOG,
+      const streamWatchdogEnabled = shouldEnableStreamWatchdog(
+        isOpenAIResponsesProvider,
       )
-      const STREAM_IDLE_TIMEOUT_MS =
-        parseInt(process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS || '', 10) || 90_000
+      const STREAM_IDLE_TIMEOUT_MS = getStreamIdleTimeoutMs(
+        isOpenAIResponsesProvider,
+      )
       const STREAM_IDLE_WARNING_MS = STREAM_IDLE_TIMEOUT_MS / 2
       let streamIdleAborted = false
       // performance.now() snapshot when watchdog fires, for measuring abort propagation delay
@@ -2011,7 +2042,7 @@ async function* queryModel(
           // Prevent double-emit: this throw lands in the catch block below,
           // whose exit_path='error' probe guards on streamWatchdogFiredAt.
           streamWatchdogFiredAt = null
-          throw new Error('Stream idle timeout - no chunks received')
+          throw new Error(STREAM_IDLE_TIMEOUT_ERROR)
         }
 
         // Detect when the stream completed without producing any assistant messages.
@@ -2108,13 +2139,25 @@ async function* queryModel(
           }
         }
 
+        const retryableCodexStreamError =
+          isRetryableCodexStreamError(streamingError)
+        const retryableCodexIdleTimeout =
+          isOpenAIResponsesProvider && isStreamIdleTimeoutError(streamingError)
         if (
-          isRetryableCodexStreamError(streamingError) &&
+          (retryableCodexStreamError || retryableCodexIdleTimeout) &&
           codexStreamAttempt < CODEX_STREAM_MAX_RETRIES &&
           !signal.aborted
         ) {
           const retryAttempt = codexStreamAttempt + 1
           const delayMs = getRetryDelay(retryAttempt)
+          const retryError = retryableCodexStreamError
+            ? streamingError
+            : new APIError(
+                undefined,
+                undefined,
+                errorMessage(streamingError),
+                undefined,
+              )
           logForDebugging(
             `Retryable Codex stream error; retrying stream attempt ${retryAttempt}/${CODEX_STREAM_MAX_RETRIES}: ${errorMessage(streamingError)}`,
             { level: 'warn' },
@@ -2122,7 +2165,7 @@ async function* queryModel(
           options.onStreamingFallback?.()
           releaseStreamResources()
           yield createSystemAPIErrorMessage(
-            streamingError,
+            retryError,
             delayMs,
             retryAttempt,
             CODEX_STREAM_MAX_RETRIES,

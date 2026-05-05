@@ -19,10 +19,25 @@ import { codexAdapter } from './adapters/codex-adapter-impl.js'
 import { toAnthropicErrorType } from '../../utils/normalizedError.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 import { logForDebugging } from '../../utils/debug.js'
+import { isEnvDefinedFalsy } from '../../utils/envUtils.js'
 
 // No hardcoded model list — the provider registry (freecode.json) is the
 // single source of truth for available models. The adapter just passes
 // through whatever model ID the registry resolved.
+
+const CODEX_STREAM_IDLE_TIMEOUT_MS = 300_000
+const CODEX_UPSTREAM_IDLE_TIMEOUT_ERROR =
+  'Codex stream idle timeout waiting for upstream SSE'
+
+function getCodexStreamIdleTimeoutMs(): number | null {
+  if (isEnvDefinedFalsy(process.env.CLAUDE_ENABLE_STREAM_WATCHDOG)) {
+    return null
+  }
+  return (
+    parseInt(process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS || '', 10) ||
+    CODEX_STREAM_IDLE_TIMEOUT_MS
+  )
+}
 
 // ── JWT helpers ─────────────────────────────────────────────────────
 
@@ -1127,9 +1142,31 @@ async function translateCodexStreamToAnthropic(
         const decoder = new TextDecoder()
         let buffer = ''
         let sseEventName = ''
+        const streamIdleTimeoutMs = getCodexStreamIdleTimeoutMs()
+
+        type UpstreamReadResult = Awaited<ReturnType<typeof reader.read>>
+        const readUpstream = async (): Promise<UpstreamReadResult> => {
+          if (streamIdleTimeoutMs === null) return reader.read()
+          let timeoutId: ReturnType<typeof setTimeout> | undefined
+          try {
+            return await Promise.race([
+              reader.read(),
+              new Promise<UpstreamReadResult>((_resolve, reject) => {
+                timeoutId = setTimeout(() => {
+                  const error = new Error(CODEX_UPSTREAM_IDLE_TIMEOUT_ERROR)
+                  control.abortUpstream?.(error)
+                  void reader.cancel(error).catch(() => {})
+                  reject(error)
+                }, streamIdleTimeoutMs)
+              }),
+            ])
+          } finally {
+            if (timeoutId !== undefined) clearTimeout(timeoutId)
+          }
+        }
 
         while (true) {
-          const { done, value } = await reader.read()
+          const { done, value } = await readUpstream()
           if (done) {
             buffer += decoder.decode()
             if (buffer.trim()) buffer += '\n'
@@ -1352,9 +1389,12 @@ async function translateCodexStreamToAnthropic(
           `[codex-adapter] stream loop threw: ${(err as Error)?.message ?? String(err)} stack=${(err as Error)?.stack?.split('\n').slice(0, 3).join(' | ') ?? 'none'}`,
           { level: 'error' },
         )
+        const message = (err as Error)?.message ?? 'Codex stream loop failed'
         emitErrorAndClose(
-          (err as Error)?.message ?? 'Codex stream loop failed',
-          { cause: err },
+          message,
+          message === CODEX_UPSTREAM_IDLE_TIMEOUT_ERROR
+            ? { cause: err, stream_truncated: true }
+            : { cause: err },
         )
         return
       }
