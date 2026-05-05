@@ -15,21 +15,15 @@ import {
 // Based on p99.99 of compact summary output being 17,387 tokens.
 const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000
 
+export function getConfiguredContextWindowSize(model: string): number {
+  return getContextWindowForModel(model, getSdkBetas())
+}
+
 /** Context window size minus the max output tokens for the model. */
 export function getEffectiveContextWindowSize(model: string): number {
   const reservedTokensForSummary = Math.min(
     getModelMaxOutputTokens(model),
     MAX_OUTPUT_TOKENS_FOR_SUMMARY,
   )
-  let contextWindow = getContextWindowForModel(model, getSdkBetas())
-
-  const autoCompactWindow = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
-  if (autoCompactWindow) {
-    const parsed = parseInt(autoCompactWindow, 10)
-    if (!isNaN(parsed) && parsed > 0) {
-      contextWindow = Math.min(contextWindow, parsed)
-    }
-  }
-
-  return contextWindow - reservedTokensForSummary
+  return getConfiguredContextWindowSize(model) - reservedTokensForSummary
 }

@@ -3,7 +3,6 @@ import { markPostCompaction } from 'src/bootstrap/state.js'
 import type { QuerySource } from '../../constants/querySource.js'
 import type { ToolUseContext } from '../../Tool.js'
 import type { Message } from '../../types/message.js'
-import { getGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { hasExactErrorMessage } from '../../utils/errors.js'
@@ -18,11 +17,27 @@ import {
   ERROR_MESSAGE_USER_ABORT,
   type RecompactionInfo,
 } from './compact.js'
-import { getEffectiveContextWindowSize } from './contextWindowSize.js'
+import {
+  getAutoCompactThresholdForContextWindow,
+  isAutoCompactEnabled,
+} from './autoCompactConfig.js'
+import {
+  getConfiguredContextWindowSize,
+  getEffectiveContextWindowSize,
+} from './contextWindowSize.js'
 import { runPostCompactCleanup } from './postCompactCleanup.js'
 import { trySessionMemoryCompaction } from './sessionMemoryCompact.js'
 
-export { getEffectiveContextWindowSize }
+export {
+  DEFAULT_AUTO_COMPACT_BUFFER,
+  DEFAULT_AUTO_COMPACT_PERCENTAGE,
+  getAutoCompactConfig,
+  isAutoCompactEnabled,
+  MAX_AUTO_COMPACT_PERCENTAGE,
+  MIN_AUTO_COMPACT_PERCENTAGE,
+  type AutoCompactConfig,
+} from './autoCompactConfig.js'
+export { getConfiguredContextWindowSize, getEffectiveContextWindowSize }
 
 export type AutoCompactTrackingState = {
   compacted: boolean
@@ -35,7 +50,6 @@ export type AutoCompactTrackingState = {
   consecutiveFailures?: number
 }
 
-export const AUTOCOMPACT_BUFFER_TOKENS = 13_000
 export const WARNING_THRESHOLD_BUFFER_TOKENS = 20_000
 export const ERROR_THRESHOLD_BUFFER_TOKENS = 20_000
 export const MANUAL_COMPACT_BUFFER_TOKENS = 3_000
@@ -46,24 +60,9 @@ export const MANUAL_COMPACT_BUFFER_TOKENS = 3_000
 const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3
 
 export function getAutoCompactThreshold(model: string): number {
-  const effectiveContextWindow = getEffectiveContextWindowSize(model)
-
-  const autocompactThreshold =
-    effectiveContextWindow - AUTOCOMPACT_BUFFER_TOKENS
-
-  // Override for easier testing of autocompact
-  const envPercent = process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
-  if (envPercent) {
-    const parsed = parseFloat(envPercent)
-    if (!isNaN(parsed) && parsed > 0 && parsed <= 100) {
-      const percentageThreshold = Math.floor(
-        effectiveContextWindow * (parsed / 100),
-      )
-      return Math.min(percentageThreshold, autocompactThreshold)
-    }
-  }
-
-  return autocompactThreshold
+  return getAutoCompactThresholdForContextWindow(
+    getConfiguredContextWindowSize(model),
+  )
 }
 
 export function calculateTokenWarningState(
@@ -76,14 +75,17 @@ export function calculateTokenWarningState(
   isAboveAutoCompactThreshold: boolean
   isAtBlockingLimit: boolean
 } {
+  const autoCompactEnabled = isAutoCompactEnabled()
   const autoCompactThreshold = getAutoCompactThreshold(model)
-  const threshold = isAutoCompactEnabled()
+  const threshold = autoCompactEnabled
     ? autoCompactThreshold
-    : getEffectiveContextWindowSize(model)
+    : getConfiguredContextWindowSize(model)
 
   const percentLeft = Math.max(
     0,
-    Math.round(((threshold - tokenUsage) / threshold) * 100),
+    threshold > 0
+      ? Math.round(((threshold - tokenUsage) / threshold) * 100)
+      : 0,
   )
 
   const warningThreshold = threshold - WARNING_THRESHOLD_BUFFER_TOKENS
@@ -93,9 +95,9 @@ export function calculateTokenWarningState(
   const isAboveErrorThreshold = tokenUsage >= errorThreshold
 
   const isAboveAutoCompactThreshold =
-    isAutoCompactEnabled() && tokenUsage >= autoCompactThreshold
+    autoCompactEnabled && tokenUsage >= autoCompactThreshold
 
-  const actualContextWindow = getEffectiveContextWindowSize(model)
+  const actualContextWindow = getConfiguredContextWindowSize(model)
   const defaultBlockingLimit =
     actualContextWindow - MANUAL_COMPACT_BUFFER_TOKENS
 
@@ -120,19 +122,6 @@ export function calculateTokenWarningState(
   }
 }
 
-export function isAutoCompactEnabled(): boolean {
-  if (isEnvTruthy(process.env.DISABLE_COMPACT)) {
-    return false
-  }
-  // Allow disabling just auto-compact (keeps manual /compact working)
-  if (isEnvTruthy(process.env.DISABLE_AUTO_COMPACT)) {
-    return false
-  }
-  // Check if user has disabled auto-compact in their settings
-  const userConfig = getGlobalConfig()
-  return userConfig.autoCompactEnabled
-}
-
 export async function shouldAutoCompact(
   messages: Message[],
   model: string,
@@ -149,10 +138,10 @@ export async function shouldAutoCompact(
 
   const tokenCount = tokenCountWithEstimation(messages)
   const threshold = getAutoCompactThreshold(model)
-  const effectiveWindow = getEffectiveContextWindowSize(model)
+  const contextWindow = getConfiguredContextWindowSize(model)
 
   logForDebugging(
-    `autocompact: tokens=${tokenCount} threshold=${threshold} effectiveWindow=${effectiveWindow}`,
+    `autocompact: tokens=${tokenCount} threshold=${threshold} contextWindow=${contextWindow}`,
   )
 
   const { isAboveAutoCompactThreshold } = calculateTokenWarningState(

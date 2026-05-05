@@ -4,12 +4,11 @@ import {
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
 } from 'src/constants/prompts.js'
 import { microcompactMessages } from 'src/services/compact/microCompact.js'
-import { getSdkBetas } from '../bootstrap/state.js'
 import { getCommandName } from '../commands.js'
 import { getSystemContext } from '../context.js'
 import {
-  AUTOCOMPACT_BUFFER_TOKENS,
-  getEffectiveContextWindowSize,
+  getAutoCompactThreshold,
+  getConfiguredContextWindowSize,
   isAutoCompactEnabled,
   MANUAL_COMPACT_BUFFER_TOKENS,
 } from '../services/compact/autoCompact.js'
@@ -45,7 +44,6 @@ import type {
 } from '../types/message.js'
 import { toolToAPISchema } from './api.js'
 import { filterInjectedMemoryFiles, getMemoryFiles } from './claudemd.js'
-import { getContextWindowForModel } from './context.js'
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
@@ -718,7 +716,7 @@ export async function analyzeContextUsage(
     mainLoopModel: model,
   })
   // Get context window size
-  const contextWindow = getContextWindowForModel(runtimeModel, getSdkBetas())
+  const contextWindow = getConfiguredContextWindowSize(runtimeModel)
 
   // Build the effective system prompt using the shared utility
   const defaultSystemPrompt = await getSystemPrompt(tools, runtimeModel)
@@ -780,7 +778,7 @@ export async function analyzeContextUsage(
   // Check if autocompact is enabled and calculate threshold
   const isAutoCompact = isAutoCompactEnabled()
   const autoCompactThreshold = isAutoCompact
-    ? getEffectiveContextWindowSize(model) - AUTOCOMPACT_BUFFER_TOKENS
+    ? getAutoCompactThreshold(runtimeModel)
     : undefined
 
   // Create categories
@@ -856,7 +854,6 @@ export async function analyzeContextUsage(
   // Reserved space after messages (not counted in actualUsage shown to user).
   let reservedTokens = 0
   if (isAutoCompact && autoCompactThreshold !== undefined) {
-    // Autocompact buffer (from effective context)
     reservedTokens = contextWindow - autoCompactThreshold
     cats.push({
       name: RESERVED_CATEGORY_NAME,

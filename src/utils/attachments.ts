@@ -172,7 +172,7 @@ import {
   tokenCountWithEstimation,
 } from './tokens.js'
 import {
-  getEffectiveContextWindowSize,
+  getConfiguredContextWindowSize,
   isAutoCompactEnabled,
 } from '../services/compact/autoCompact.js'
 import {
@@ -3533,7 +3533,7 @@ function getTokenUsageAttachment(
     return []
   }
 
-  const contextWindow = getEffectiveContextWindowSize(model)
+  const contextWindow = getConfiguredContextWindowSize(model)
   const usedTokens = tokenCountFromLastAPIResponse(messages)
 
   return [
@@ -3654,9 +3654,8 @@ export function getCompactionReminderAttachment(
     return []
   }
 
-  const effectiveWindow = getEffectiveContextWindowSize(model)
   const usedTokens = tokenCountWithEstimation(messages)
-  if (usedTokens < effectiveWindow * 0.25) {
+  if (usedTokens < contextWindow * 0.25) {
     return []
   }
 

@@ -742,6 +742,27 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Number of days to retain chat transcripts (default: 30). Setting to 0 disables session persistence entirely: no transcripts are written and existing transcripts are deleted at startup.',
         ),
+      autoCompactEnabled: z
+        .boolean()
+        .optional()
+        .describe('Whether automatic compaction is enabled. Defaults to true.'),
+      autoCompactPercentage: z
+        .number()
+        .int()
+        .min(10)
+        .max(100)
+        .optional()
+        .describe(
+          'Percentage of the configured model context window at which auto-compact may trigger. Defaults to 100. The effective trigger is the lower of this percentage and the configured context window minus autoCompactBuffer.',
+        ),
+      autoCompactBuffer: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe(
+          'Number of tokens to reserve below the configured model context window before auto-compact triggers. Defaults to 20000.',
+        ),
       env: EnvironmentVariablesSchema()
         .optional()
         .describe('Environment variables to set for Claude Code sessions'),

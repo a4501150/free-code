@@ -60,6 +60,7 @@ import {
 import { Dialog } from '../design-system/Dialog.js'
 import { Select } from '../CustomSelect/index.js'
 import { LanguagePicker } from '../LanguagePicker.js'
+import TextInput from '../TextInput.js'
 import {
   getExternalClaudeMdIncludes,
   getMemoryFiles,
@@ -103,6 +104,12 @@ import {
   isFastModeSupportedByModel,
 } from '../../utils/fastMode.js'
 import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js'
+import {
+  DEFAULT_AUTO_COMPACT_BUFFER,
+  DEFAULT_AUTO_COMPACT_PERCENTAGE,
+  MAX_AUTO_COMPACT_PERCENTAGE,
+  MIN_AUTO_COMPACT_PERCENTAGE,
+} from '../../services/compact/autoCompactConfig.js'
 
 type Props = {
   onClose: (
@@ -154,6 +161,8 @@ type SubMenu =
   | 'ChannelDowngrade'
   | 'Language'
   | 'EnableAutoUpdates'
+  | 'AutoCompactPercentage'
+  | 'AutoCompactBuffer'
 export function Config({
   onClose,
   context,
@@ -251,6 +260,14 @@ export function Config({
   const isDirty = React.useRef(false)
   const [showThinkingWarning, setShowThinkingWarning] = useState(false)
   const [showSubmenu, setShowSubmenu] = useState<SubMenu | null>(null)
+  const [numericInput, setNumericInput] = useState('')
+  const [numericInputCursorOffset, setNumericInputCursorOffset] = useState(0)
+  const [numericInputError, setNumericInputError] = useState<string | null>(
+    null,
+  )
+  const [numericInputWarning, setNumericInputWarning] = useState<string | null>(
+    null,
+  )
   const {
     query: searchQuery,
     setQuery: setSearchQuery,
@@ -285,6 +302,86 @@ export function Config({
     hasExternalClaudeMdIncludes(memoryFiles)
 
   const autoUpdaterDisabledReason = getAutoUpdaterDisabledReason()
+  const autoCompactEnabled =
+    settingsData?.autoCompactEnabled ?? globalConfig.autoCompactEnabled
+  const autoCompactPercentage =
+    settingsData?.autoCompactPercentage ?? DEFAULT_AUTO_COMPACT_PERCENTAGE
+  const autoCompactBuffer =
+    settingsData?.autoCompactBuffer ?? DEFAULT_AUTO_COMPACT_BUFFER
+
+  function formatTokenCount(value: number): string {
+    return value.toLocaleString()
+  }
+
+  function openAutoCompactNumberEditor(submenu: SubMenu, value: number): void {
+    setNumericInput(value.toString())
+    setNumericInputCursorOffset(0)
+    setNumericInputError(null)
+    setNumericInputWarning(null)
+    setShowSubmenu(submenu)
+    setTabsHidden(true)
+  }
+
+  function validateAutoCompactNumberInput(value: string): {
+    parsed?: number
+    warning?: string
+    error?: string
+  } {
+    if (!/^\d+$/.test(value.trim())) {
+      return { error: 'Enter a whole number.' }
+    }
+    const parsed = Number(value)
+    if (!Number.isSafeInteger(parsed)) {
+      return { error: 'Enter a smaller whole number.' }
+    }
+    if (showSubmenu === 'AutoCompactPercentage') {
+      if (parsed > MAX_AUTO_COMPACT_PERCENTAGE) {
+        return { error: `Enter ${MAX_AUTO_COMPACT_PERCENTAGE} or less.` }
+      }
+      if (parsed < MIN_AUTO_COMPACT_PERCENTAGE) {
+        return {
+          parsed: MIN_AUTO_COMPACT_PERCENTAGE,
+          warning: `Values below ${MIN_AUTO_COMPACT_PERCENTAGE}% are saved as ${MIN_AUTO_COMPACT_PERCENTAGE}%.`,
+        }
+      }
+    }
+    return { parsed }
+  }
+
+  function handleAutoCompactNumberChange(value: string): void {
+    setNumericInput(value)
+    const result = validateAutoCompactNumberInput(value)
+    setNumericInputError(result.error ?? null)
+    setNumericInputWarning(result.warning ?? null)
+  }
+
+  function handleAutoCompactNumberSubmit(value: string): void {
+    const result = validateAutoCompactNumberInput(value)
+    setNumericInputError(result.error ?? null)
+    setNumericInputWarning(result.warning ?? null)
+    if (result.error || result.parsed === undefined) {
+      return
+    }
+
+    isDirty.current = true
+    if (showSubmenu === 'AutoCompactPercentage') {
+      updateSettingsForSource('userSettings', {
+        autoCompactPercentage: result.parsed,
+      })
+      setSettingsData(prev => ({
+        ...prev,
+        autoCompactPercentage: result.parsed,
+      }))
+    } else if (showSubmenu === 'AutoCompactBuffer') {
+      updateSettingsForSource('userSettings', {
+        autoCompactBuffer: result.parsed,
+      })
+      setSettingsData(prev => ({ ...prev, autoCompactBuffer: result.parsed }))
+    }
+
+    setShowSubmenu(null)
+    setTabsHidden(false)
+  }
 
   function onChangeMainModelConfig(value: string | null): void {
     const previousModel = mainLoopModel
@@ -330,12 +427,26 @@ export function Config({
     {
       id: 'autoCompactEnabled',
       label: 'Auto-compact',
-      value: globalConfig.autoCompactEnabled,
+      value: autoCompactEnabled,
       type: 'boolean' as const,
       onChange(autoCompactEnabled: boolean) {
-        saveGlobalConfig(current => ({ ...current, autoCompactEnabled }))
-        setGlobalConfig({ ...getGlobalConfig(), autoCompactEnabled })
+        updateSettingsForSource('userSettings', { autoCompactEnabled })
+        setSettingsData(prev => ({ ...prev, autoCompactEnabled }))
       },
+    },
+    {
+      id: 'autoCompactPercentage',
+      label: 'Auto-compact percentage',
+      value: `${autoCompactPercentage}%`,
+      type: 'managedEnum' as const,
+      onChange() {},
+    },
+    {
+      id: 'autoCompactBuffer',
+      label: 'Auto-compact buffer',
+      value: `${formatTokenCount(autoCompactBuffer)} tokens`,
+      type: 'managedEnum' as const,
+      onChange() {},
     },
     {
       id: 'spinnerTipsEnabled',
@@ -1418,12 +1529,34 @@ export function Config({
         `${globalConfig.autoInstallIdeExtension ? 'Enabled' : 'Disabled'} auto-install IDE extension`,
       )
     }
-    if (
-      globalConfig.autoCompactEnabled !==
+    const initialAutoCompactEnabled =
+      initialSettingsData.current?.autoCompactEnabled ??
       initialConfig.current.autoCompactEnabled
-    ) {
+    const currentAutoCompactEnabled =
+      settingsData?.autoCompactEnabled ?? globalConfig.autoCompactEnabled
+    if (currentAutoCompactEnabled !== initialAutoCompactEnabled) {
       formattedChanges.push(
-        `${globalConfig.autoCompactEnabled ? 'Enabled' : 'Disabled'} auto-compact`,
+        `${currentAutoCompactEnabled ? 'Enabled' : 'Disabled'} auto-compact`,
+      )
+    }
+    const initialAutoCompactPercentage =
+      initialSettingsData.current?.autoCompactPercentage ??
+      DEFAULT_AUTO_COMPACT_PERCENTAGE
+    const currentAutoCompactPercentage =
+      settingsData?.autoCompactPercentage ?? DEFAULT_AUTO_COMPACT_PERCENTAGE
+    if (currentAutoCompactPercentage !== initialAutoCompactPercentage) {
+      formattedChanges.push(
+        `Set auto-compact percentage to ${chalk.bold(`${currentAutoCompactPercentage}%`)}`,
+      )
+    }
+    const initialAutoCompactBuffer =
+      initialSettingsData.current?.autoCompactBuffer ??
+      DEFAULT_AUTO_COMPACT_BUFFER
+    const currentAutoCompactBuffer =
+      settingsData?.autoCompactBuffer ?? DEFAULT_AUTO_COMPACT_BUFFER
+    if (currentAutoCompactBuffer !== initialAutoCompactBuffer) {
+      formattedChanges.push(
+        `Set auto-compact buffer to ${chalk.bold(`${formatTokenCount(currentAutoCompactBuffer)} tokens`)}`,
       )
     }
     if (
@@ -1487,6 +1620,9 @@ export function Config({
     globalConfig,
     mainLoopModel,
     currentLanguage,
+    settingsData?.autoCompactEnabled,
+    settingsData?.autoCompactPercentage,
+    settingsData?.autoCompactBuffer,
     settingsData?.autoUpdatesChannel,
     isFastModeEnabled()
       ? (settingsData as Record<string, unknown> | undefined)?.fastMode
@@ -1519,6 +1655,9 @@ export function Config({
     const iu = initialUserSettings
     updateSettingsForSource('userSettings', {
       alwaysThinkingEnabled: iu?.alwaysThinkingEnabled,
+      autoCompactEnabled: iu?.autoCompactEnabled,
+      autoCompactPercentage: iu?.autoCompactPercentage,
+      autoCompactBuffer: iu?.autoCompactBuffer,
       fastMode: iu?.fastMode,
       promptSuggestionEnabled: iu?.promptSuggestionEnabled,
       autoUpdatesChannel: iu?.autoUpdatesChannel,
@@ -1641,7 +1780,9 @@ export function Config({
       setting.id === 'model' ||
       setting.id === 'teammateDefaultModel' ||
       setting.id === 'showExternalIncludesDialog' ||
-      setting.id === 'language'
+      setting.id === 'language' ||
+      setting.id === 'autoCompactPercentage' ||
+      setting.id === 'autoCompactBuffer'
     ) {
       // managedEnum items open a submenu — isDirty is set by the submenu's
       // completion callback, not here (submenu may be cancelled).
@@ -1665,6 +1806,15 @@ export function Config({
         case 'language':
           setShowSubmenu('Language')
           setTabsHidden(true)
+          return
+        case 'autoCompactPercentage':
+          openAutoCompactNumberEditor(
+            'AutoCompactPercentage',
+            autoCompactPercentage,
+          )
+          return
+        case 'autoCompactBuffer':
+          openAutoCompactNumberEditor('AutoCompactBuffer', autoCompactBuffer)
           return
       }
     }
@@ -1709,6 +1859,8 @@ export function Config({
     filteredSettingsItems,
     selectedIndex,
     settingsData?.autoUpdatesChannel,
+    autoCompactPercentage,
+    autoCompactBuffer,
     setTabsHidden,
   ])
 
@@ -1986,6 +2138,63 @@ export function Config({
             </Byline>
           </Text>
         </>
+      ) : showSubmenu === 'AutoCompactPercentage' ||
+        showSubmenu === 'AutoCompactBuffer' ? (
+        <Dialog
+          title={
+            showSubmenu === 'AutoCompactPercentage'
+              ? 'Auto-compact Percentage'
+              : 'Auto-compact Buffer'
+          }
+          onCancel={() => {
+            setShowSubmenu(null)
+            setTabsHidden(false)
+          }}
+          hideBorder
+          hideInputGuide
+        >
+          <Box flexDirection="column">
+            <Text dimColor>
+              {showSubmenu === 'AutoCompactPercentage'
+                ? `Enter a percentage from ${MIN_AUTO_COMPACT_PERCENTAGE} to ${MAX_AUTO_COMPACT_PERCENTAGE}. Values below ${MIN_AUTO_COMPACT_PERCENTAGE} are saved as ${MIN_AUTO_COMPACT_PERCENTAGE}.`
+                : 'Enter the number of tokens to reserve before auto-compact.'}
+            </Text>
+            <Box flexDirection="row" gap={1} marginTop={1}>
+              <Text>&gt;</Text>
+              <TextInput
+                value={numericInput}
+                onChange={handleAutoCompactNumberChange}
+                onSubmit={handleAutoCompactNumberSubmit}
+                focus={true}
+                showCursor={true}
+                columns={24}
+                cursorOffset={numericInputCursorOffset}
+                onChangeCursorOffset={setNumericInputCursorOffset}
+                inputFilter={input => input.replace(/\D/g, '')}
+              />
+              <Text dimColor>
+                {showSubmenu === 'AutoCompactPercentage' ? '%' : 'tokens'}
+              </Text>
+            </Box>
+            {numericInputWarning && (
+              <Text color="warning">{numericInputWarning}</Text>
+            )}
+            {numericInputError && (
+              <Text color="error">{numericInputError}</Text>
+            )}
+            <Text dimColor>
+              <Byline>
+                <KeyboardShortcutHint shortcut="Enter" action="save" />
+                <ConfigurableShortcutHint
+                  action="confirm:no"
+                  context="Settings"
+                  fallback="Esc"
+                  description="cancel"
+                />
+              </Byline>
+            </Text>
+          </Box>
+        </Dialog>
       ) : showSubmenu === 'EnableAutoUpdates' ? (
         <Dialog
           title="Enable Auto-Updates"
