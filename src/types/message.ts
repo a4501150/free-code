@@ -217,6 +217,7 @@ export type SystemTurnDurationMessage = SystemBase & {
 export type SystemAwaySummaryMessage = SystemBase & {
   subtype: 'away_summary'
   content: string
+  thinking?: string
 }
 
 export type SystemMemorySavedMessage = SystemBase & {

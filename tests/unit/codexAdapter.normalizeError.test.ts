@@ -21,12 +21,12 @@ describe('codexAdapter.normalizeError', () => {
     expect(e.kind).toBe('content_filter')
   })
 
-  test('mid-stream transport error without refusal → unknown', () => {
+  test('mid-stream transport error without refusal → transport (retryable)', () => {
     const e = codexAdapter.normalizeError(
       { mid_stream: true, cause: new Error('abrupt close') },
       'openai-responses',
     )
-    expect(e.kind).toBe('unknown')
+    expect(e.kind).toBe('transport')
     expect(e.message).toContain('abrupt close')
   })
 

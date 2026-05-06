@@ -22,6 +22,29 @@ function buildAwaySummaryPrompt(memory: string | null): string {
   return `${memoryBlock}The user stepped away and is coming back. Write exactly 1-3 short sentences. Start by stating the high-level task — what they are building or debugging, not implementation details. Next: the concrete next step. Skip status reports and commit recaps.`
 }
 
+// Some models emit literal <thinking>...</thinking> blocks in plain text even
+// when reasoning is disabled. Split them out so the recap shows only the final
+// summary up top and routes the reasoning to a collapsed "∴ Thinking" block.
+export function splitThinkingFromSummary(text: string): {
+  thinking: string | undefined
+  content: string
+} {
+  const thinkingRegex = /<thinking>([\s\S]*?)<\/thinking>/gi
+  const parts: string[] = []
+  const content = text
+    .replace(thinkingRegex, (_, inner) => {
+      const trimmed = String(inner).trim()
+      if (trimmed) parts.push(trimmed)
+      return ''
+    })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  return {
+    thinking: parts.length > 0 ? parts.join('\n\n') : undefined,
+    content,
+  }
+}
+
 /**
  * Generates a short session recap for the "while you were away" card.
  * Returns null on abort, empty transcript, or error.
@@ -29,7 +52,7 @@ function buildAwaySummaryPrompt(memory: string | null): string {
 export async function generateAwaySummary(
   messages: readonly Message[],
   signal: AbortSignal,
-): Promise<string | null> {
+): Promise<{ content: string; thinking: string | undefined } | null> {
   if (messages.length === 0) {
     return null
   }
@@ -63,7 +86,10 @@ export async function generateAwaySummary(
       )
       return null
     }
-    return getAssistantMessageText(response)
+    const raw = getAssistantMessageText(response) ?? ''
+    const { thinking, content } = splitThinkingFromSummary(raw)
+    if (!content) return null
+    return { content, thinking }
   } catch (err) {
     if (err instanceof APIUserAbortError || signal.aborted) {
       return null

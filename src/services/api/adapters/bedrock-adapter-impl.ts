@@ -119,8 +119,10 @@ export const bedrockAdapter: ProviderAdapter = {
       r.cause instanceof Error
         ? r.cause.message
         : String(r.cause ?? 'stream error')
+    // Mid-stream / pre-stream connection errors with no HTTP status are
+    // classified `transport` so withRetry treats them as retryable.
     return {
-      kind: r.mid_stream ? 'unknown' : 'transport',
+      kind: 'transport',
       message: errMessage ?? causeMsg,
       providerType,
       raw,

@@ -175,14 +175,12 @@ export const codexAdapter: ProviderAdapter = {
       r.cause instanceof Error
         ? r.cause.message
         : String(r.cause ?? 'stream error')
+    // Mid-stream / pre-stream connection errors with no HTTP status are
+    // classified `transport` so withRetry treats them as retryable. The
+    // upstream may have actually finished — but a fresh request is the only
+    // way to recover, and double-billing risk is negligible vs. silent death.
     const base: NormalizedApiError = {
-      kind: r.refusal
-        ? 'content_filter'
-        : r.stream_truncated
-          ? 'transport'
-          : r.mid_stream
-            ? 'unknown'
-            : 'transport',
+      kind: r.refusal ? 'content_filter' : 'transport',
       message: errMessage ?? causeMsg,
       providerType,
       raw,

@@ -64,12 +64,15 @@ export function useAwaySummary(
       abortInFlight()
       const controller = new AbortController()
       abortRef.current = controller
-      const text = await generateAwaySummary(
+      const result = await generateAwaySummary(
         messagesRef.current,
         controller.signal,
       )
-      if (controller.signal.aborted || text === null) return
-      setMessages(prev => [...prev, createAwaySummaryMessage(text)])
+      if (controller.signal.aborted || result === null) return
+      setMessages(prev => [
+        ...prev,
+        createAwaySummaryMessage(result.content, result.thinking),
+      ])
     }
 
     function onBlurTimerFire(): void {

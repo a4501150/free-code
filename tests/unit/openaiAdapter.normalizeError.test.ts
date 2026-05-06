@@ -72,12 +72,12 @@ describe('openaiChatCompletionsAdapter.normalizeError', () => {
     expect(e.status).toBeUndefined()
   })
 
-  test('mid-stream without recognizable code → unknown', () => {
+  test('mid-stream without recognizable code → transport (retryable)', () => {
     const e = openaiChatCompletionsAdapter.normalizeError(
       { mid_stream: true, cause: new Error('socket closed') },
       'openai-chat-completions',
     )
-    expect(e.kind).toBe('unknown')
+    expect(e.kind).toBe('transport')
     expect(e.message).toContain('socket closed')
   })
 })

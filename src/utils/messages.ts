@@ -1211,6 +1211,22 @@ export function buildMessageLookups(
           if (content.is_error) {
             erroredToolUseIDs.add(content.tool_use_id)
           }
+          // A typed Output that reports `errorReason` (e.g. a subagent that
+          // died after retry exhaustion) should paint the tool dot red even
+          // when the wire `is_error` flag is unset. AgentTool keeps is_error
+          // off so its rich completion UI (Stopped: …) still routes through
+          // renderToolResultMessage instead of the generic error fallback.
+          const tr = msg.toolUseResult as
+            | { errorReason?: unknown }
+            | null
+            | undefined
+          if (
+            tr &&
+            typeof tr === 'object' &&
+            typeof (tr as { errorReason?: unknown }).errorReason === 'string'
+          ) {
+            erroredToolUseIDs.add(content.tool_use_id)
+          }
         }
       }
     }
@@ -4067,11 +4083,13 @@ export function createTurnDurationMessage(
 
 export function createAwaySummaryMessage(
   content: string,
+  thinking?: string,
 ): SystemAwaySummaryMessage {
   return {
     type: 'system',
     subtype: 'away_summary',
     content,
+    thinking,
     timestamp: new Date().toISOString(),
     uuid: randomUUID(),
     isMeta: false,

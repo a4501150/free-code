@@ -25,6 +25,7 @@ import type {
   SystemThinkingMessage,
   SystemMemorySavedMessage,
 } from '../../types/message.js'
+import { AssistantThinkingMessage } from './AssistantThinkingMessage.js'
 import { SystemAPIErrorMessage } from './SystemAPIErrorMessage.js'
 import { formatDuration, formatNumber } from '../../utils/format.js'
 import { getGlobalConfig } from '../../utils/config.js'
@@ -60,15 +61,25 @@ export function SystemTextMessage({
   if (message.subtype === 'away_summary') {
     return (
       <Box
-        flexDirection="row"
+        flexDirection="column"
         marginTop={addMargin ? 1 : 0}
         backgroundColor={bg}
         width="100%"
       >
-        <Box minWidth={2}>
-          <Text dimColor>{REFERENCE_MARK}</Text>
+        {message.thinking && (
+          <AssistantThinkingMessage
+            param={{ type: 'thinking', thinking: message.thinking }}
+            addMargin={false}
+            isTranscriptMode={isTranscriptMode ?? false}
+            verbose={verbose}
+          />
+        )}
+        <Box flexDirection="row" width="100%">
+          <Box minWidth={2}>
+            <Text dimColor>{REFERENCE_MARK}</Text>
+          </Box>
+          <Text dimColor>{message.content}</Text>
         </Box>
-        <Text dimColor>{message.content}</Text>
       </Box>
     )
   }
