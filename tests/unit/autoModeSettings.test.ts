@@ -2,22 +2,25 @@ import { describe, expect, test } from 'bun:test'
 
 import { __test__ } from '../../src/utils/permissions/yoloClassifier.js'
 import { isAutoModeDisabledInSettings } from '../../src/utils/permissions/permissionSetup.js'
+import { getAutoModeClassifierModelFromSettings } from '../../src/utils/settings/settings.js'
 import {
-  getAutoModeClassifierModelFromSettings,
-} from '../../src/utils/settings/settings.js'
-import { SettingsSchema, normalizeAutoModeSetting } from '../../src/utils/settings/types.js'
+  SettingsSchema,
+  normalizeAutoModeSetting,
+} from '../../src/utils/settings/types.js'
 
 describe('auto-mode settings shape', () => {
   test('accepts canonical autoMode object settings', () => {
-    const result = SettingsSchema().strict().safeParse({
-      autoMode: {
-        enabled: false,
-        classifierModel: 'anthropic:claude-sonnet-4-6',
-        environment: ['Runs in CI'],
-        deny: ['Network access'],
-        allow: ['Read-only inspection'],
-      },
-    })
+    const result = SettingsSchema()
+      .strict()
+      .safeParse({
+        autoMode: {
+          enabled: false,
+          classifierModel: 'anthropic:claude-sonnet-4-6',
+          environment: ['Runs in CI'],
+          deny: ['Network access'],
+          allow: ['Read-only inspection'],
+        },
+      })
 
     expect(result.success).toBe(true)
     if (!result.success) return
@@ -82,7 +85,9 @@ describe('auto-mode settings shape', () => {
       return
     }
     expect(rules).toContain('## Environment\n\n- Custom environment')
-    expect(rules).toContain('## BLOCK if the action does ANY of these\n\n- Custom deny')
+    expect(rules).toContain(
+      '## BLOCK if the action does ANY of these\n\n- Custom deny',
+    )
     expect(rules).toContain('## ALLOW (exceptions) if ANY of these apply')
     expect(rules).toContain('- Custom allow')
     expect(rules).not.toContain('<user_environment_to_replace>')

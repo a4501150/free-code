@@ -63,10 +63,7 @@ async function buildCodeEditToolAttributes(
 function sourceToString(
   source: PermissionApprovalSource | PermissionRejectionSource,
 ): string {
-  if (
-    feature('TRANSCRIPT_CLASSIFIER') &&
-    source.type === 'classifier'
-  ) {
+  if (feature('TRANSCRIPT_CLASSIFIER') && source.type === 'classifier') {
     return 'classifier'
   }
   switch (source.type) {
@@ -108,10 +105,7 @@ function logApprovalEvent(
     // Auto-approved by allowlist in settings -- no user wait time
     return
   }
-  if (
-    feature('TRANSCRIPT_CLASSIFIER') &&
-    source.type === 'classifier'
-  ) {
+  if (feature('TRANSCRIPT_CLASSIFIER') && source.type === 'classifier') {
     return
   }
   switch (source.type) {

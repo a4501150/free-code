@@ -10,10 +10,7 @@ import React, {
   useState,
 } from 'react'
 import { useNotifications } from 'src/context/notifications.js'
-import {
-  useAppState,
-  useSetAppState,
-} from 'src/state/AppState.js'
+import { useAppState, useSetAppState } from 'src/state/AppState.js'
 import {
   getSdkBetas,
   getSessionId,
@@ -91,7 +88,9 @@ type ResponseValue =
   | 'yes-auto-clear-context'
   | 'no'
 
-export function buildPermissionUpdates(mode: PermissionMode): PermissionUpdate[] {
+export function buildPermissionUpdates(
+  mode: PermissionMode,
+): PermissionUpdate[] {
   return [
     {
       type: 'setMode',

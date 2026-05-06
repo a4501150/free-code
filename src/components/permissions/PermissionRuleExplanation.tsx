@@ -30,10 +30,7 @@ function stringsForDecisionReason(
   if (!reason) {
     return null
   }
-  if (
-    feature('TRANSCRIPT_CLASSIFIER') &&
-    reason.type === 'classifier'
-  ) {
+  if (feature('TRANSCRIPT_CLASSIFIER') && reason.type === 'classifier') {
     if (reason.classifier === 'auto-mode') {
       return {
         reasonString: `Auto mode classifier requires confirmation for this ${toolType}.\n${reason.reason}`,

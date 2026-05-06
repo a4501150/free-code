@@ -78,7 +78,8 @@ function replaceTemplateSection(
 ): string {
   return template.replace(
     new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`),
-    (_m, defaults: string) => (rules === undefined ? defaults : formatRuleSection(rules)),
+    (_m, defaults: string) =>
+      rules === undefined ? defaults : formatRuleSection(rules),
   )
 }
 
@@ -1615,7 +1616,11 @@ const DEFAULT_AUTO_MODE_CONFIG: AutoModeConfig = {
  * Priority: settings autoMode.classifierModel > legacy autoModeClassifierModel > main loop model (inherit).
  */
 function getClassifierModel(): string {
-  return getAutoModeClassifierModelSetting() ?? DEFAULT_AUTO_MODE_CONFIG.model ?? getMainLoopModel()
+  return (
+    getAutoModeClassifierModelSetting() ??
+    DEFAULT_AUTO_MODE_CONFIG.model ??
+    getMainLoopModel()
+  )
 }
 
 /**

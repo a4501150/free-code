@@ -112,7 +112,6 @@ export const call: LocalCommandCall = async (args, context) => {
   }
 }
 
-
 function buildDisplayText(
   context: ToolUseContext,
   userDisplayMessage?: string,

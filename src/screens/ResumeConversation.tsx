@@ -308,7 +308,6 @@ export function ResumeConversation({
         }
       }
 
-
       setLogs([])
       setResumeData({
         messages: result.messages,

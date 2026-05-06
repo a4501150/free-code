@@ -68,10 +68,7 @@ function serializeDecisionReason(
     return undefined
   }
 
-  if (
-    feature('TRANSCRIPT_CLASSIFIER') &&
-    reason.type === 'classifier'
-  ) {
+  if (feature('TRANSCRIPT_CLASSIFIER') && reason.type === 'classifier') {
     return reason.reason
   }
   switch (reason.type) {

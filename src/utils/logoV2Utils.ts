@@ -253,7 +253,9 @@ export function getLogoDisplayData(): {
   agentName: string | undefined
 } {
   const version = process.env.DEMO_VERSION ?? MACRO.VERSION
-  const cwd = process.env.DEMO_VERSION ? '/code/claude' : getDisplayPath(getCwd())
+  const cwd = process.env.DEMO_VERSION
+    ? '/code/claude'
+    : getDisplayPath(getCwd())
   const billingType = isClaudeAISubscriber()
     ? getSubscriptionName()
     : isCodexSubscriber()

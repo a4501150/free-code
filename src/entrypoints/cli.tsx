@@ -72,7 +72,6 @@ async function main(): Promise<void> {
     return
   }
 
-
   // Fast-path for --worktree --tmux: exec into tmux before loading full CLI
   const hasTmuxFlag = args.includes('--tmux') || args.includes('--tmux=classic')
   if (

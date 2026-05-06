@@ -636,7 +636,13 @@ export function getManagedSettingsKeysForLogging(
       ...(feature('TRANSCRIPT_CLASSIFIER') ? ['disableAutoMode'] : []),
       'additionalDirectories',
     ]),
-    autoMode: new Set(['enabled', 'classifierModel', 'environment', 'deny', 'allow']),
+    autoMode: new Set([
+      'enabled',
+      'classifierModel',
+      'environment',
+      'deny',
+      'allow',
+    ]),
     sandbox: new Set([
       'enabled',
       'failIfUnavailable',
@@ -1013,7 +1019,9 @@ function getAutoModeSettingsObject(
  * projectSettings is intentionally excluded — a malicious project could
  * otherwise inject classifier allow/deny rules (RCE risk).
  */
-export function getTrustedAutoModeRuleSections(): AutoModeRuleSections | undefined {
+export function getTrustedAutoModeRuleSections():
+  | AutoModeRuleSections
+  | undefined {
   if (!feature('TRANSCRIPT_CLASSIFIER')) return undefined
 
   let sections: AutoModeRuleSections | undefined

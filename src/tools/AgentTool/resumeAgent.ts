@@ -117,7 +117,10 @@ export async function resumeAgentBackground({
     ...appState.toolPermissionContext,
     mode: selectedAgent.permissionMode ?? 'acceptEdits',
   }
-  const workerTools = assembleToolPool(workerPermissionContext, appState.mcp.tools)
+  const workerTools = assembleToolPool(
+    workerPermissionContext,
+    appState.mcp.tools,
+  )
 
   const runAgentParams: Parameters<typeof runAgent>[0] = {
     agentDefinition: selectedAgent,

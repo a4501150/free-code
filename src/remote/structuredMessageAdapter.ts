@@ -263,12 +263,16 @@ export function convertSDKMessage(
 
     case 'tool_use_summary':
       // Tool use summaries are SDK-only events, not displayed in REPL
-      logForDebugging('[structuredMessageAdapter] Ignoring tool_use_summary message')
+      logForDebugging(
+        '[structuredMessageAdapter] Ignoring tool_use_summary message',
+      )
       return { type: 'ignored' }
 
     case 'rate_limit_event':
       // Rate limit events are SDK-only events, not displayed in REPL
-      logForDebugging('[structuredMessageAdapter] Ignoring rate_limit_event message')
+      logForDebugging(
+        '[structuredMessageAdapter] Ignoring rate_limit_event message',
+      )
       return { type: 'ignored' }
 
     default: {

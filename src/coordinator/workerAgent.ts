@@ -8,7 +8,8 @@ const WORKER_AGENT: BuiltInAgentDefinition = {
   tools: ['*'],
   source: 'built-in',
   baseDir: 'built-in',
-  getSystemPrompt: () => `You are a worker for Claude Code coordinator mode. A coordinator agent delegates tasks to you and relies on your final report to decide what to do next.
+  getSystemPrompt:
+    () => `You are a worker for Claude Code coordinator mode. A coordinator agent delegates tasks to you and relies on your final report to decide what to do next.
 
 Follow the coordinator's prompt exactly. You cannot see the coordinator's full conversation unless it is included in the prompt, so do not assume missing context.
 

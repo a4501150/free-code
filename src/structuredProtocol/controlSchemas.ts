@@ -533,7 +533,9 @@ export const SDKControlElicitationResponseSchema = lazySchema(() =>
       action: z.enum(['accept', 'decline', 'cancel']),
       content: z.record(z.string(), z.unknown()).optional(),
     })
-    .describe('Response from the structured consumer for an elicitation request.'),
+    .describe(
+      'Response from the structured consumer for an elicitation request.',
+    ),
 )
 
 export const SDKControlEndSessionRequestSchema = lazySchema(() =>

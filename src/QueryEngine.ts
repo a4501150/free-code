@@ -110,7 +110,6 @@ const getCoordinatorUserContext: (
   : () => ({})
 /* eslint-enable @typescript-eslint/no-require-imports */
 
-
 export type QueryEngineConfig = {
   cwd: string
   tools: Tools

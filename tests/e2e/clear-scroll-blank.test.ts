@@ -88,7 +88,8 @@ describe('Clear after scroll blank screen', () => {
 
     // After /clear, wait for the visible pane to show the welcome logo (not blank)
     const screen = await session.waitForScreen(
-      screen => screen.includes('for shortcuts') && screen.includes('Claude Code'),
+      screen =>
+        screen.includes('for shortcuts') && screen.includes('Claude Code'),
       {
         timeoutMs: 10_000,
         intervalMs: 100,
