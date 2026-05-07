@@ -20,16 +20,6 @@ import { logError } from './log.js'
 
 type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
 
-// Error type constants for analytics (numeric to comply with logEvent restrictions)
-const ERROR_TYPE_MODULE_LOAD = 1
-const ERROR_TYPE_PROCESSING = 2
-const ERROR_TYPE_UNKNOWN = 3
-const ERROR_TYPE_PIXEL_LIMIT = 4
-const ERROR_TYPE_MEMORY = 5
-const ERROR_TYPE_TIMEOUT = 6
-const ERROR_TYPE_VIPS = 7
-const ERROR_TYPE_PERMISSION = 8
-
 /**
  * Error thrown when image resizing fails and the image exceeds the API limit.
  */
@@ -41,97 +31,97 @@ export class ImageResizeError extends Error {
 }
 
 /**
- * Classifies image processing errors for analytics.
- *
- * Uses error codes when available (Node.js module errors), falls back to
- * message matching for libraries like sharp that don't expose error codes.
+ * Parse dimensions from a WebP file's binary header.
+ * Handles VP8 (lossy), VP8L (lossless), and VP8X (extended) chunk formats.
+ * Returns null for truncated, malformed, or zero-dimension headers.
  */
-function classifyImageError(error: unknown): number {
-  // Check for Node.js error codes first (more reliable than string matching)
-  if (error instanceof Error) {
-    const errorWithCode = error as Error & { code?: string }
-    if (
-      errorWithCode.code === 'MODULE_NOT_FOUND' ||
-      errorWithCode.code === 'ERR_MODULE_NOT_FOUND' ||
-      errorWithCode.code === 'ERR_DLOPEN_FAILED'
-    ) {
-      return ERROR_TYPE_MODULE_LOAD
-    }
-    if (errorWithCode.code === 'EACCES' || errorWithCode.code === 'EPERM') {
-      return ERROR_TYPE_PERMISSION
-    }
-    if (errorWithCode.code === 'ENOMEM') {
-      return ERROR_TYPE_MEMORY
-    }
-  }
-
-  // Fall back to message matching for errors without codes
-  // Note: sharp doesn't expose error codes, so we must match on messages
-  const message = errorMessage(error)
-
-  // Module loading errors from our native wrapper
-  if (message.includes('Native image processor module not available')) {
-    return ERROR_TYPE_MODULE_LOAD
-  }
-
-  // Sharp/vips processing errors (format detection, corrupt data, etc.)
+export function parseWebPDimensions(
+  buffer: Buffer,
+): { width: number; height: number } | null {
+  if (buffer.length < 16) return null
   if (
-    message.includes('unsupported image format') ||
-    message.includes('Input buffer') ||
-    message.includes('Input file is missing') ||
-    message.includes('Input file has corrupt header') ||
-    message.includes('corrupt header') ||
-    message.includes('corrupt image') ||
-    message.includes('premature end') ||
-    message.includes('zlib: data error') ||
-    message.includes('zero width') ||
-    message.includes('zero height')
-  ) {
-    return ERROR_TYPE_PROCESSING
-  }
-
-  // Pixel/dimension limit errors from sharp/vips
+    buffer[0] !== 0x52 ||
+    buffer[1] !== 0x49 ||
+    buffer[2] !== 0x46 ||
+    buffer[3] !== 0x46
+  )
+    return null
   if (
-    message.includes('pixel limit') ||
-    message.includes('too many pixels') ||
-    message.includes('exceeds pixel') ||
-    message.includes('image dimensions')
-  ) {
-    return ERROR_TYPE_PIXEL_LIMIT
+    buffer[8] !== 0x57 ||
+    buffer[9] !== 0x45 ||
+    buffer[10] !== 0x42 ||
+    buffer[11] !== 0x50
+  )
+    return null
+
+  let offset = 12
+  while (offset + 8 <= buffer.length) {
+    const chunkType = buffer.subarray(offset, offset + 4).toString('ascii')
+    const chunkSize = buffer.readUInt32LE(offset + 4)
+    const payloadStart = offset + 8
+
+    if (chunkType === 'VP8 ') {
+      // Lossy: 3-byte frame tag, then start code 0x9D 0x01 0x2A, then 16-bit LE width & height
+      if (payloadStart + 10 > buffer.length) return null
+      if (
+        buffer[payloadStart + 3] !== 0x9d ||
+        buffer[payloadStart + 4] !== 0x01 ||
+        buffer[payloadStart + 5] !== 0x2a
+      )
+        return null
+      const width = buffer.readUInt16LE(payloadStart + 6) & 0x3fff
+      const height = buffer.readUInt16LE(payloadStart + 8) & 0x3fff
+      if (width === 0 || height === 0) return null
+      return { width, height }
+    }
+
+    if (chunkType === 'VP8L') {
+      // Lossless: signature byte 0x2F, then 32-bit LE packed width/height
+      if (payloadStart + 5 > buffer.length) return null
+      if (buffer[payloadStart] !== 0x2f) return null
+      const bits = buffer.readUInt32LE(payloadStart + 1)
+      const width = (bits & 0x3fff) + 1
+      const height = ((bits >> 14) & 0x3fff) + 1
+      if (width === 0 || height === 0) return null
+      return { width, height }
+    }
+
+    if (chunkType === 'VP8X') {
+      // Extended: 4 bytes flags, then 24-bit LE (width-1), 24-bit LE (height-1)
+      if (payloadStart + 10 > buffer.length) return null
+      const width =
+        (buffer[payloadStart + 4] |
+          (buffer[payloadStart + 5] << 8) |
+          (buffer[payloadStart + 6] << 16)) +
+        1
+      const height =
+        (buffer[payloadStart + 7] |
+          (buffer[payloadStart + 8] << 8) |
+          (buffer[payloadStart + 9] << 16)) +
+        1
+      if (width === 0 || height === 0) return null
+      return { width, height }
+    }
+
+    // Skip to next chunk (chunks are padded to even size)
+    offset = payloadStart + chunkSize + (chunkSize % 2)
   }
 
-  // Memory allocation failures
-  if (
-    message.includes('out of memory') ||
-    message.includes('Cannot allocate') ||
-    message.includes('memory allocation')
-  ) {
-    return ERROR_TYPE_MEMORY
-  }
-
-  // Timeout errors
-  if (message.includes('timeout') || message.includes('timed out')) {
-    return ERROR_TYPE_TIMEOUT
-  }
-
-  // Vips-specific errors (VipsJpeg, VipsPng, VipsWebp, etc.)
-  if (message.includes('Vips')) {
-    return ERROR_TYPE_VIPS
-  }
-
-  return ERROR_TYPE_UNKNOWN
+  return null
 }
 
-/**
- * Computes a simple numeric hash of a string for analytics grouping.
- * Uses djb2 algorithm, returning a 32-bit unsigned integer.
- */
-function hashString(str: string): number {
-  let hash = 5381
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0
-  }
-  return hash >>> 0
+function isWebP(buffer: Buffer): boolean {
+  return (
+    buffer.length >= 12 &&
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+  )
 }
 
 export type ImageDimensions = {
@@ -162,8 +152,9 @@ interface CompressedImageResult {
 }
 
 /**
- * Extracted from FileReadTool's readImage function
- * Resizes image buffer to meet size and dimension constraints
+ * Resizes image buffer to meet size and dimension constraints.
+ * Supports JPEG, PNG, GIF, BMP via jimp. WebP is pass-through only
+ * (validated against dimension/size limits but not decoded/resized).
  */
 export async function maybeResizeAndDownsampleImageBuffer(
   imageBuffer: Buffer,
@@ -171,12 +162,42 @@ export async function maybeResizeAndDownsampleImageBuffer(
   ext: string,
 ): Promise<ResizeResult> {
   if (imageBuffer.length === 0) {
-    // Empty buffer would fall through the catch block below (sharp throws
-    // "Unable to determine image format"), and the fallback's size check
-    // `0 ≤ 5MB` would pass it through, yielding an empty base64 string
-    // that the API rejects with `image cannot be empty`.
     throw new ImageResizeError('Image file is empty (0 bytes)')
   }
+
+  // WebP: jimp cannot decode it. Validate and pass through if within limits.
+  if (isWebP(imageBuffer)) {
+    const dims = parseWebPDimensions(imageBuffer)
+    if (!dims) {
+      throw new ImageResizeError(
+        'Unable to read WebP image dimensions. The file may be corrupt.',
+      )
+    }
+    if (dims.width > IMAGE_MAX_WIDTH || dims.height > IMAGE_MAX_HEIGHT) {
+      throw new ImageResizeError(
+        `WebP image is ${dims.width}x${dims.height}px, which exceeds the ${IMAGE_MAX_WIDTH}x${IMAGE_MAX_HEIGHT}px limit. ` +
+          `WebP images cannot be resized by the pure-JS image processor. Please resize or convert to PNG/JPEG.`,
+      )
+    }
+    const base64Size = Math.ceil((originalSize * 4) / 3)
+    if (base64Size > API_IMAGE_MAX_BASE64_SIZE) {
+      throw new ImageResizeError(
+        `WebP image is ${formatFileSize(originalSize)} (${formatFileSize(base64Size)} base64), which exceeds the 5MB API limit. ` +
+          `WebP images cannot be compressed by the pure-JS image processor. Please resize or convert to PNG/JPEG.`,
+      )
+    }
+    return {
+      buffer: imageBuffer,
+      mediaType: 'webp',
+      dimensions: {
+        originalWidth: dims.width,
+        originalHeight: dims.height,
+        displayWidth: dims.width,
+        displayHeight: dims.height,
+      },
+    }
+  }
+
   try {
     const sharp = await getImageProcessor()
     const image = sharp(imageBuffer)
@@ -376,43 +397,12 @@ export async function maybeResizeAndDownsampleImageBuffer(
       },
     }
   } catch (error) {
-    // Log the error and emit analytics event
+    // WebP is handled above; if we get here, jimp failed on a format it
+    // should support (JPEG/PNG/GIF/BMP). The image is likely corrupt.
     logError(error as Error)
-    const errorType = classifyImageError(error)
-    const errorMsg = errorMessage(error)
-
-    // Detect actual format from magic bytes instead of trusting extension
-    const detected = detectImageFormatFromBuffer(imageBuffer)
-    const normalizedExt = detected.slice(6) // Remove 'image/' prefix
-
-    // Calculate the base64 size (API limit is on base64-encoded length)
-    const base64Size = Math.ceil((originalSize * 4) / 3)
-
-    // Size-under-5MB does not imply dimensions-under-cap. Don't return the
-    // raw buffer if the PNG header says it's oversized — fall through to
-    // ImageResizeError instead. PNG sig is 8 bytes, IHDR dims at 16-24.
-    const overDim =
-      imageBuffer.length >= 24 &&
-      imageBuffer[0] === 0x89 &&
-      imageBuffer[1] === 0x50 &&
-      imageBuffer[2] === 0x4e &&
-      imageBuffer[3] === 0x47 &&
-      (imageBuffer.readUInt32BE(16) > IMAGE_MAX_WIDTH ||
-        imageBuffer.readUInt32BE(20) > IMAGE_MAX_HEIGHT)
-
-    // If original image's base64 encoding is within API limit, allow it through uncompressed
-    if (base64Size <= API_IMAGE_MAX_BASE64_SIZE && !overDim) {
-      return { buffer: imageBuffer, mediaType: normalizedExt }
-    }
-
-    // Image is too large and we failed to compress it - fail with user-friendly error
     throw new ImageResizeError(
-      overDim
-        ? `Unable to resize image — dimensions exceed the ${IMAGE_MAX_WIDTH}x${IMAGE_MAX_HEIGHT}px limit and image processing failed. ` +
-            `Please resize the image to reduce its pixel dimensions.`
-        : `Unable to resize image (${formatFileSize(originalSize)} raw, ${formatFileSize(base64Size)} base64). ` +
-            `The image exceeds the 5MB API limit and compression failed. ` +
-            `Please resize the image manually or use a smaller image.`,
+      `Unable to process image: ${errorMessage(error)}. ` +
+        `The file may be corrupt or in an unsupported format.`,
     )
   }
 }
@@ -473,12 +463,10 @@ export async function maybeResizeAndDownsampleImageBlock(
  * strategy is progressively more aggressive to handle edge cases where earlier
  * strategies produce files still exceeding the size limit.
  *
- * Strategy (from FileReadTool):
- * 1. Try to preserve original format (PNG, JPEG, WebP) with progressive resizing
+ * Strategy:
+ * 1. Try to preserve original format (PNG, JPEG) with progressive resizing
  * 2. For PNG: Use palette optimization and color reduction if needed
  * 3. Last resort: Convert to JPEG with aggressive compression
- *
- * This ensures images fit within context windows while maintaining format when possible.
  */
 export async function compressImageBuffer(
   imageBuffer: Buffer,
@@ -531,26 +519,10 @@ export async function compressImageBuffer(
     // Last resort: ultra-compressed JPEG
     return await createUltraCompressedJPEG(context, sharp)
   } catch (error) {
-    // Log the error and emit analytics event
     logError(error as Error)
-    const errorType = classifyImageError(error)
-    const errorMsg = errorMessage(error)
-
-    // If original image is within the requested limit, allow it through
-    if (imageBuffer.length <= maxBytes) {
-      // Detect actual format from magic bytes instead of trusting the provided media type
-      const detected = detectImageFormatFromBuffer(imageBuffer)
-      return {
-        base64: imageBuffer.toString('base64'),
-        mediaType: detected,
-        originalSize: imageBuffer.length,
-      }
-    }
-
-    // Image is too large and compression failed - throw error
     throw new ImageResizeError(
-      `Unable to compress image (${formatFileSize(imageBuffer.length)}) to fit within ${formatFileSize(maxBytes)}. ` +
-        `Please use a smaller image.`,
+      `Unable to compress image (${formatFileSize(imageBuffer.length)}): ${errorMessage(error)}. ` +
+        `The file may be corrupt or in an unsupported format.`,
     )
   }
 }
@@ -671,8 +643,6 @@ function applyFormatOptimizations(
     case 'jpeg':
     case 'jpg':
       return image.jpeg({ quality: 80 })
-    case 'webp':
-      return image.webp({ quality: 80 })
     default:
       return image
   }

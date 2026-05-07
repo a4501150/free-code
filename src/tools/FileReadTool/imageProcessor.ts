@@ -6,6 +6,7 @@
 
 import { createJimp } from '@jimp/core'
 import bmp from '@jimp/js-bmp'
+import gif from '@jimp/js-gif'
 import jpeg from '@jimp/js-jpeg'
 import png from '@jimp/js-png'
 import { methods as resizeMethods } from '@jimp/plugin-resize'
@@ -96,7 +97,9 @@ export async function getImageCreator(): Promise<SharpCreator> {
         return instance
       },
       webp() {
-        return instance
+        throw new Error(
+          'WebP output is not supported by the pure-JS image processor',
+        )
       },
       async toBuffer() {
         return Buffer.from(await image.getBuffer('image/png'))
@@ -116,7 +119,7 @@ export async function getImageCreator(): Promise<SharpCreator> {
  */
 async function createJimpSharpAdapter(): Promise<SharpFunction> {
   const Jimp = createJimp({
-    formats: [jpeg, png, bmp],
+    formats: [jpeg, png, bmp, gif],
     plugins: [resizeMethods],
   })
 
@@ -138,6 +141,7 @@ async function createJimpSharpAdapter(): Promise<SharpFunction> {
         let format = 'unknown'
         if (mime === 'image/png') format = 'png'
         else if (mime === 'image/jpeg') format = 'jpeg'
+        else if (mime === 'image/gif') format = 'gif'
         else if (mime === 'image/bmp' || mime === 'image/x-ms-bmp')
           format = 'bmp'
         return { width: image.width, height: image.height, format }
@@ -159,9 +163,9 @@ async function createJimpSharpAdapter(): Promise<SharpFunction> {
         return instance
       },
       webp() {
-        // jimp core doesn't support webp output; fall back to png
-        pendingFormat = { type: 'png' }
-        return instance
+        throw new Error(
+          'WebP output is not supported by the pure-JS image processor',
+        )
       },
       async toBuffer() {
         const image = await Jimp.read(input)

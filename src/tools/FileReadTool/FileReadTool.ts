@@ -21,7 +21,6 @@ import {
 } from '../../skills/loadSkillsDir.js'
 import type { ToolUseContext } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { getImageProcessor } from './imageProcessor.js'
 import { getCwd } from '../../utils/cwd.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from '../../utils/envUtils.js'
 import { getErrnoCode, isENOENT } from '../../utils/errors.js'
@@ -40,11 +39,9 @@ import {
   createImageMetadataText,
   detectImageFormatFromBuffer,
   type ImageDimensions,
-  ImageResizeError,
   maybeResizeAndDownsampleImageBuffer,
 } from '../../utils/imageResizer.js'
 import { lazySchema } from '../../utils/lazySchema.js'
-import { logError } from '../../utils/log.js'
 import { isAutoMemFile } from '../../utils/memoryFileDetection.js'
 import { createUserMessage } from '../../utils/messages.js'
 import { getMainLoopModel } from '../../utils/model/model.js'
@@ -1052,62 +1049,33 @@ export async function readImageWithTokenBudget(
   const detectedMediaType = detectImageFormatFromBuffer(imageBuffer)
   const detectedFormat = detectedMediaType.split('/')[1] || 'png'
 
-  // Try standard resize
-  let result: ImageResult
-  try {
-    const resized = await maybeResizeAndDownsampleImageBuffer(
-      imageBuffer,
-      originalSize,
-      detectedFormat,
-    )
-    result = createImageResponse(
-      resized.buffer,
-      resized.mediaType,
-      originalSize,
-      resized.dimensions,
-    )
-  } catch (e) {
-    if (e instanceof ImageResizeError) throw e
-    logError(e)
-    result = createImageResponse(imageBuffer, detectedFormat, originalSize)
-  }
+  const resized = await maybeResizeAndDownsampleImageBuffer(
+    imageBuffer,
+    originalSize,
+    detectedFormat,
+  )
+  const result = createImageResponse(
+    resized.buffer,
+    resized.mediaType,
+    originalSize,
+    resized.dimensions,
+  )
 
   // Check if it fits in token budget
   const estimatedTokens = Math.ceil(result.file.base64.length * 0.125)
   if (estimatedTokens > maxTokens) {
-    // Aggressive compression from the SAME buffer (no re-read)
-    try {
-      const compressed = await compressImageBufferWithTokenLimit(
-        imageBuffer,
-        maxTokens,
-        detectedMediaType,
-      )
-      return {
-        type: 'image',
-        file: {
-          base64: compressed.base64,
-          type: compressed.mediaType,
-          originalSize,
-        },
-      }
-    } catch (e) {
-      logError(e)
-      // Fallback: heavily compressed version from the SAME buffer
-      try {
-        const sharp = await getImageProcessor()
-        const fallbackBuffer = await sharp(imageBuffer)
-          .resize(400, 400, {
-            fit: 'inside',
-            withoutEnlargement: true,
-          })
-          .jpeg({ quality: 20 })
-          .toBuffer()
-
-        return createImageResponse(fallbackBuffer, 'jpeg', originalSize)
-      } catch (error) {
-        logError(error)
-        return createImageResponse(imageBuffer, detectedFormat, originalSize)
-      }
+    const compressed = await compressImageBufferWithTokenLimit(
+      imageBuffer,
+      maxTokens,
+      detectedMediaType,
+    )
+    return {
+      type: 'image',
+      file: {
+        base64: compressed.base64,
+        type: compressed.mediaType,
+        originalSize,
+      },
     }
   }
 
