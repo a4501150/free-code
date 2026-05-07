@@ -1377,6 +1377,65 @@ function GroupedAgentToolUseView({
   // Check if all resolved agents are async (background)
   const allAsync = agentStats.every(stat => stat.isAsync)
 
+  const isSingleAgent = toolUses.length === 1
+
+  const renderAgentRows = () =>
+    agentStats.map((stat, index) => {
+      const toolUse = toolUses[index]!
+      const firstData = toolUse.progressMessages[0]?.data
+      const rowPrompt =
+        firstData && hasProgressMessage(firstData)
+          ? firstData.prompt
+          : undefined
+      const rowContent =
+        toolUse.result?.output && toolUse.result.output.status === 'completed'
+          ? toolUse.result.output.content
+          : undefined
+      const progressLine = (
+        <AgentProgressLine
+          agentType={stat.agentType}
+          description={stat.description}
+          descriptionColor={stat.descriptionColor}
+          taskDescription={stat.taskDescription}
+          toolUseCount={stat.toolUseCount}
+          tokens={stat.tokens}
+          durationMs={stat.durationMs}
+          effectiveModel={stat.effectiveModel}
+          color={stat.color}
+          isLast={index === agentStats.length - 1}
+          isResolved={stat.isResolved}
+          isError={stat.isError}
+          isAsync={stat.isAsync}
+          shouldAnimate={shouldAnimate}
+          lastToolInfo={stat.lastToolInfo}
+          hideType={false}
+          name={stat.name}
+          showTree={!isSingleAgent}
+        />
+      )
+      return (
+        <AgentRowWithExpand
+          key={stat.id}
+          toolUseId={stat.id}
+          prompt={rowPrompt}
+          content={rowContent}
+          progressMessages={toolUse.progressMessages}
+          tools={tools}
+          isBackgrounded={stat.isAsync && stat.isResolved}
+        >
+          {progressLine}
+        </AgentRowWithExpand>
+      )
+    })
+
+  if (isSingleAgent) {
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        {renderAgentRows()}
+      </Box>
+    )
+  }
+
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box flexDirection="row">
@@ -1409,57 +1468,7 @@ function GroupedAgentToolUseView({
         </Text>
         {!allAsync && <CtrlOToExpand />}
       </Box>
-      {agentStats.map((stat, index) => {
-        const toolUse = toolUses[index]!
-        const firstData = toolUse.progressMessages[0]?.data
-        const rowPrompt =
-          firstData && hasProgressMessage(firstData)
-            ? firstData.prompt
-            : undefined
-        // Completed row's final response text blocks — only present once the
-        // agent has fully resolved. Grouped view reuses AgentResponseDisplay
-        // inside AgentRowWithExpand to mirror the single-agent expanded view.
-        const rowContent =
-          toolUse.result?.output && toolUse.result.output.status === 'completed'
-            ? toolUse.result.output.content
-            : undefined
-        const progressLine = (
-          <AgentProgressLine
-            agentType={stat.agentType}
-            description={stat.description}
-            descriptionColor={stat.descriptionColor}
-            taskDescription={stat.taskDescription}
-            toolUseCount={stat.toolUseCount}
-            tokens={stat.tokens}
-            durationMs={stat.durationMs}
-            effectiveModel={stat.effectiveModel}
-            color={stat.color}
-            isLast={index === agentStats.length - 1}
-            isResolved={stat.isResolved}
-            isError={stat.isError}
-            isAsync={stat.isAsync}
-            shouldAnimate={shouldAnimate}
-            lastToolInfo={stat.lastToolInfo}
-            // Always show full AgentType(description) format to match the
-            // single-agent header, even when all grouped agents share a type.
-            hideType={false}
-            name={stat.name}
-          />
-        )
-        return (
-          <AgentRowWithExpand
-            key={stat.id}
-            toolUseId={stat.id}
-            prompt={rowPrompt}
-            content={rowContent}
-            progressMessages={toolUse.progressMessages}
-            tools={tools}
-            isBackgrounded={stat.isAsync && stat.isResolved}
-          >
-            {progressLine}
-          </AgentRowWithExpand>
-        )
-      })}
+      {renderAgentRows()}
     </Box>
   )
 }

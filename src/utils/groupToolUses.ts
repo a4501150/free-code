@@ -47,7 +47,7 @@ function getToolUseInfo(
 
 /**
  * Groups tool uses by message.id (same API response) if the tool supports grouped rendering.
- * Only groups 2+ tools of the same type from the same message.
+ * Groups 1+ tools of the same type from the same message.
  * Also collects corresponding tool_results and attaches them to the grouped message.
  * When verbose is true, skips grouping so messages render at original positions.
  */
@@ -77,12 +77,12 @@ export function applyGrouping(
     }
   }
 
-  // Identify valid groups (2+ items) and collect their tool use IDs
+  // Identify valid groups and collect their tool use IDs
   const validGroups = new Map<string, NormalizedAssistantMessage[]>()
   const groupedToolUseIds = new Set<string>()
 
   for (const [key, group] of groups) {
-    if (group.length >= 2) {
+    if (group.length >= 1) {
       validGroups.set(key, group)
       for (const msg of group) {
         const info = getToolUseInfo(msg)

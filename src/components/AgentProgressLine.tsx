@@ -26,6 +26,7 @@ type Props = {
   shouldAnimate: boolean
   lastToolInfo?: string | null
   hideType?: boolean
+  showTree?: boolean
 }
 
 export function AgentProgressLine({
@@ -46,6 +47,7 @@ export function AgentProgressLine({
   shouldAnimate,
   lastToolInfo,
   hideType = false,
+  showTree = true,
 }: Props): React.ReactNode {
   const treeChar = isLast ? '└─' : '├─'
   const isBackgrounded = isAsync && isResolved
@@ -85,8 +87,8 @@ export function AgentProgressLine({
 
   return (
     <Box flexDirection="column">
-      <Box paddingLeft={3} flexDirection="row">
-        <Text dimColor>{treeChar} </Text>
+      <Box paddingLeft={showTree ? 3 : 0} flexDirection="row">
+        {showTree && <Text dimColor>{treeChar} </Text>}
         <ToolUseLoader
           shouldAnimate={shouldAnimate && !isResolved}
           isUnresolved={!isResolved}
@@ -127,8 +129,10 @@ export function AgentProgressLine({
         </Text>
       </Box>
       {!isBackgrounded && (
-        <Box paddingLeft={3} flexDirection="row">
-          <Text dimColor>{isLast ? '   ⎿  ' : '│  ⎿  '}</Text>
+        <Box paddingLeft={showTree ? 3 : 0} flexDirection="row">
+          <Text dimColor>
+            {showTree ? (isLast ? '   ⎿  ' : '│  ⎿  ') : '  ⎿  '}
+          </Text>
           <Text dimColor={!isResolved || isBackgrounded}>
             {getStatusText()}
           </Text>
