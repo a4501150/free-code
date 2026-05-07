@@ -192,6 +192,13 @@ async function createJimpSharpAdapter(): Promise<SharpFunction> {
             }),
           )
         }
+        if (pendingFormat?.type === 'png') {
+          return Buffer.from(await image.getBuffer('image/png'))
+        }
+        // No explicit format requested: preserve the input format (matches sharp behavior)
+        if (image.mime === 'image/jpeg') {
+          return Buffer.from(await image.getBuffer('image/jpeg'))
+        }
         return Buffer.from(await image.getBuffer('image/png'))
       },
     }
