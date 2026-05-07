@@ -20,6 +20,7 @@ import { CtrlOToExpand } from '../CtrlOToExpand.js'
 import { useSelectedMessageBg } from '../messageActions.js'
 import { PrBadge } from '../PrBadge.js'
 import { ToolUseLoader } from '../ToolUseLoader.js'
+import { ToolInputDisplay } from './ToolInputDisplay.js'
 import { UserToolErrorMessage } from './UserToolResultMessage/UserToolErrorMessage.js'
 
 import * as teamMemCollapsedNs from './teamMemCollapsed.js'
@@ -111,11 +112,15 @@ function VerboseToolUse({
           { tools, verbose: true },
         )}
       {isResolved && !isError && toolResult !== undefined && (
-        <Box>
+        <Box flexDirection="column">
+          <ToolInputDisplay
+            input={content.input as Record<string, unknown>}
+          />
           {tool.renderToolResultMessage?.(toolResult, [], {
             verbose: true,
             tools,
             theme,
+            input: content.input,
           })}
         </Box>
       )}
@@ -146,6 +151,7 @@ function VerboseToolUse({
               tools={tools}
               param={errorBlock}
               verbose={true}
+              input={content.input as Record<string, unknown>}
             />
           )
         })()}

@@ -80,6 +80,7 @@ export function UserToolResultMessage({
         param={param}
         verbose={verbose}
         isTranscriptMode={isTranscriptMode}
+        input={toolUse.toolUse.input as Record<string, unknown> | undefined}
       />
     )
   }
