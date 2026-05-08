@@ -2696,6 +2696,8 @@ export type StreamingThinking = {
   streamingEndedAt?: number
 }
 
+const SUBAGENT_TYPE_RE = /"subagent_type"\s*:\s*"([^"]+)"/
+
 /**
  * Handles messages from a stream, updating response length for deltas and appending completed messages
  */
@@ -2833,11 +2835,30 @@ export function handleMessageFromStream(
             if (!element) {
               return _
             }
+            const newUnparsed = element.unparsedToolInput + delta
+            let contentBlock = element.contentBlock
+            if (
+              element.contentBlock.type === 'tool_use' &&
+              !(element.contentBlock.input as Record<string, unknown>)
+                .subagent_type
+            ) {
+              const m = SUBAGENT_TYPE_RE.exec(newUnparsed)
+              if (m) {
+                contentBlock = {
+                  ...element.contentBlock,
+                  input: {
+                    ...(element.contentBlock.input as Record<string, unknown>),
+                    subagent_type: m[1],
+                  },
+                }
+              }
+            }
             return [
               ..._.filter(_ => _ !== element),
               {
                 ...element,
-                unparsedToolInput: element.unparsedToolInput + delta,
+                contentBlock,
+                unparsedToolInput: newUnparsed,
               },
             ]
           })

@@ -1260,8 +1260,23 @@ function GroupedAgentToolUseView({
   const activeAgents = useAppStateMaybeOutsideOfProvider(
     state => state.agentDefinitions.activeAgents,
   )
+
   const anyUnresolved = toolUses.some(t => !t.isResolved)
   const nowMs = useNow(anyUnresolved)
+
+  // During streaming, tool input starts as {} before fields arrive via
+  // input_json_delta. Suppress rendering until at least one input field is
+  // present so we never briefly flash "Agent" before the real type appears.
+  if (
+    toolUses.some(
+      t =>
+        t.param.input != null &&
+        typeof t.param.input === 'object' &&
+        Object.keys(t.param.input as object).length === 0,
+    )
+  ) {
+    return null
+  }
 
   // Calculate stats for each agent
   const agentStats = toolUses.map(
@@ -1299,15 +1314,14 @@ function GroupedAgentToolUseView({
           ? (getAgentColor(subagentType) as keyof Theme | undefined)
           : undefined
       } else {
-        agentType = parsedInput.success
-          ? userFacingName(parsedInput.data)
-          : 'Agent'
-        description = parsedInput.success
-          ? parsedInput.data.description
-          : undefined
-        color = parsedInput.success
-          ? userFacingNameBackgroundColor(parsedInput.data)
-          : undefined
+        const displayInput = parsedInput.success
+          ? parsedInput.data
+          : (param.input as
+              | Partial<{ subagent_type: string; description: string }>
+              | undefined)
+        agentType = userFacingName(displayInput)
+        description = displayInput?.description
+        color = userFacingNameBackgroundColor(displayInput)
         taskDescription = undefined
       }
 
