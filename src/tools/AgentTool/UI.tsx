@@ -1299,14 +1299,15 @@ function GroupedAgentToolUseView({
           ? (getAgentColor(subagentType) as keyof Theme | undefined)
           : undefined
       } else {
-        const inputForDisplay = parsedInput.success
-          ? parsedInput.data
-          : (param.input as
-              | Partial<{ subagent_type: string; description: string }>
-              | undefined)
-        agentType = userFacingName(inputForDisplay)
-        description = inputForDisplay?.description
-        color = userFacingNameBackgroundColor(inputForDisplay)
+        agentType = parsedInput.success
+          ? userFacingName(parsedInput.data)
+          : 'Agent'
+        description = parsedInput.success
+          ? parsedInput.data.description
+          : undefined
+        color = parsedInput.success
+          ? userFacingNameBackgroundColor(parsedInput.data)
+          : undefined
         taskDescription = undefined
       }
 

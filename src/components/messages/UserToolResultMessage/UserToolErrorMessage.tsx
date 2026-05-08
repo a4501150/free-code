@@ -83,14 +83,17 @@ export function UserToolErrorMessage({
     )
   }
 
-  const errorContent = tool?.renderToolUseErrorMessage?.(param.content, {
-    progressMessagesForMessage: filterToolProgressMessages(
-      progressMessagesForMessage,
-    ),
-    tools,
-    verbose,
-    isTranscriptMode,
-  }) ?? <FallbackToolUseErrorMessage result={param.content} verbose={verbose} />
+  const errorContent =
+    tool?.renderToolUseErrorMessage?.(param.content, {
+      progressMessagesForMessage: filterToolProgressMessages(
+        progressMessagesForMessage,
+      ),
+      tools,
+      verbose,
+      isTranscriptMode,
+    }) ?? (
+      <FallbackToolUseErrorMessage result={param.content} verbose={verbose} />
+    )
 
   if (verbose && input) {
     return (

@@ -26,10 +26,7 @@ function truncateValue(value: unknown): string {
   if (json.length <= MAX_VALUE_LENGTH) {
     return json
   }
-  return (
-    json.slice(0, MAX_VALUE_LENGTH) +
-    `  ...+${json.length - MAX_VALUE_LENGTH} chars`
-  )
+  return json.slice(0, MAX_VALUE_LENGTH) + `  ...+${json.length - MAX_VALUE_LENGTH} chars`
 }
 
 type Props = {
@@ -53,7 +50,9 @@ export function ToolInputDisplay({ input }: Props): React.ReactNode {
             {key}: {truncateValue(value)}
           </Text>
         ))}
-        {remaining > 0 && <Text dimColor>...+{remaining} more params</Text>}
+        {remaining > 0 && (
+          <Text dimColor>...+{remaining} more params</Text>
+        )}
       </Box>
     </MessageResponse>
   )

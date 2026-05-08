@@ -46,7 +46,6 @@ import {
   type StreamingToolUse,
   shouldShowUserMessage,
 } from '../utils/messages.js'
-import { safeParseJSON } from '../utils/json.js'
 import { plural } from '../utils/stringUtils.js'
 import { renderableSearchText } from '../utils/transcriptSearch.js'
 import { Divider } from './design-system/Divider.js'
@@ -66,29 +65,6 @@ import { OffscreenFreeze } from './OffscreenFreeze.js'
 import type { ToolUseConfirm } from './permissions/PermissionRequest.js'
 import { StatusNotices } from './StatusNotices.js'
 import type { JumpHandle } from './VirtualMessageList.js'
-
-const SUBAGENT_TYPE_RE = /"subagent_type"\s*:\s*"([^"]+)"/
-
-function streamingToolUseToContentBlock(
-  stu: StreamingToolUse,
-): StreamingToolUse['contentBlock'] {
-  if (!stu.unparsedToolInput) return stu.contentBlock
-  const parsed = safeParseJSON(stu.unparsedToolInput)
-  if (parsed != null) {
-    return { ...stu.contentBlock, input: parsed as Record<string, unknown> }
-  }
-  const match = SUBAGENT_TYPE_RE.exec(stu.unparsedToolInput)
-  if (match) {
-    return {
-      ...stu.contentBlock,
-      input: {
-        ...(stu.contentBlock.input as Record<string, unknown>),
-        subagent_type: match[1],
-      },
-    }
-  }
-  return stu.contentBlock
-}
 
 // Memoed logo header: this box is the FIRST sibling before all MessageRows
 // in main-screen mode. If it becomes dirty on every Messages re-render,
@@ -543,9 +519,8 @@ const MessagesImpl = ({
   const syntheticStreamingToolUseMessages = useMemo(
     () =>
       streamingToolUsesWithoutInProgress.flatMap(streamingToolUse => {
-        const contentBlock = streamingToolUseToContentBlock(streamingToolUse)
         const msg = createAssistantMessage({
-          content: [contentBlock],
+          content: [streamingToolUse.contentBlock],
         })
         // Override randomUUID with deterministic value derived from content
         // block ID to prevent React key changes on every memo recomputation.
