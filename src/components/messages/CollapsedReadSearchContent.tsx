@@ -113,9 +113,7 @@ function VerboseToolUse({
         )}
       {isResolved && !isError && toolResult !== undefined && (
         <Box flexDirection="column">
-          <ToolInputDisplay
-            input={content.input as Record<string, unknown>}
-          />
+          <ToolInputDisplay input={content.input as Record<string, unknown>} />
           {tool.renderToolResultMessage?.(toolResult, [], {
             verbose: true,
             tools,
