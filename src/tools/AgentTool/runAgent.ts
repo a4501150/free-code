@@ -66,6 +66,7 @@ import {
   isRestrictedToPluginOnly,
   isSourceAdminTrusted,
 } from '../../utils/settings/pluginOnlyPolicy.js'
+import { cleanupSubagentTaskList } from '../../utils/tasks.js'
 import {
   asSystemPrompt,
   type SystemPrompt,
@@ -810,6 +811,8 @@ export async function* runAgent({
     // `run_in_background` shell loop (e.g. test fixture fake-logs.sh) outlives
     // the agent as a PPID=1 zombie once the main session eventually exits.
     killShellTasksForAgent(agentId, toolUseContext.getAppState, rootSetAppState)
+    // Remove any task files the subagent may have created in its isolated list
+    await cleanupSubagentTaskList(agentId)
     /* eslint-enable @typescript-eslint/no-require-imports */
   }
 }

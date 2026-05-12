@@ -1,7 +1,8 @@
-import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises'
+import { mkdir, readdir, readFile, rmdir, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { z } from 'zod/v4'
 import { getSessionId } from '../bootstrap/state.js'
+import { getAgentContext, isSubagentContext } from './agentContext.js'
 import { uniq } from './array.js'
 import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir, getTeamsDir } from './envUtils.js'
@@ -180,8 +181,33 @@ export async function resetTaskList(taskListId: string): Promise<void> {
 }
 
 /**
+ * Removes all task files and the directory for a subagent's isolated task list.
+ * Called when a subagent finishes to prevent accumulation of ephemeral task data.
+ */
+export async function cleanupSubagentTaskList(
+  agentId: string,
+): Promise<void> {
+  const taskListId = `subagent-${agentId}`
+  const dir = getTasksDir(taskListId)
+  try {
+    const files = await readdir(dir)
+    for (const file of files) {
+      try {
+        await unlink(join(dir, file))
+      } catch {
+        // File may already be deleted
+      }
+    }
+    await rmdir(dir)
+  } catch {
+    // Directory doesn't exist or already cleaned up — nothing to do
+  }
+}
+
+/**
  * Gets the task list ID based on the current context.
  * Priority:
+ * 0. Subagent isolation: subagents get their own task list scoped by agentId
  * 1. CLAUDE_CODE_TASK_LIST_ID - explicit task list ID
  * 2. In-process teammate: leader's team name (so teammates share the leader's task list)
  * 3. CLAUDE_CODE_TEAM_NAME - set when running as a process-based teammate
@@ -189,6 +215,22 @@ export async function resetTaskList(taskListId: string): Promise<void> {
  * 5. Session ID - fallback for standalone sessions
  */
 export function getTaskListId(): string {
+  // Subagents get isolated task lists to prevent cross-context leakage.
+  // Teammates are NOT subagents — they continue to share via team name.
+  const agentCtx = getAgentContext()
+  if (isSubagentContext(agentCtx)) {
+    return `subagent-${agentCtx.agentId}`
+  }
+
+  return getMainTaskListId()
+}
+
+/**
+ * Returns the main loop's task list ID, bypassing subagent isolation.
+ * Useful when a subagent needs to explicitly read the parent's task list.
+ * Uses the same resolution as getTaskListId() minus the subagent check.
+ */
+export function getMainTaskListId(): string {
   if (process.env.CLAUDE_CODE_TASK_LIST_ID) {
     return process.env.CLAUDE_CODE_TASK_LIST_ID
   }
