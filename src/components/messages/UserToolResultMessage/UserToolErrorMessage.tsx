@@ -18,7 +18,6 @@ import {
 import { FallbackToolUseErrorMessage } from '../../FallbackToolUseErrorMessage.js'
 import { InterruptedByUser } from '../../InterruptedByUser.js'
 import { MessageResponse } from '../../MessageResponse.js'
-import { ToolInputDisplay } from '../ToolInputDisplay.js'
 import { RejectedPlanMessage } from './RejectedPlanMessage.js'
 import { RejectedToolUseMessage } from './RejectedToolUseMessage.js'
 
@@ -29,7 +28,6 @@ type Props = {
   param: ToolResultBlockParam
   verbose: boolean
   isTranscriptMode?: boolean
-  input?: Record<string, unknown>
 }
 
 export function UserToolErrorMessage({
@@ -39,7 +37,6 @@ export function UserToolErrorMessage({
   param,
   verbose,
   isTranscriptMode,
-  input,
 }: Props): React.ReactNode {
   if (
     typeof param.content === 'string' &&
@@ -83,23 +80,16 @@ export function UserToolErrorMessage({
     )
   }
 
-  const errorContent = tool?.renderToolUseErrorMessage?.(param.content, {
-    progressMessagesForMessage: filterToolProgressMessages(
-      progressMessagesForMessage,
-    ),
-    tools,
-    verbose,
-    isTranscriptMode,
-  }) ?? <FallbackToolUseErrorMessage result={param.content} verbose={verbose} />
-
-  if (verbose && input) {
-    return (
-      <>
-        <ToolInputDisplay input={input} />
-        {errorContent}
-      </>
+  return (
+    tool?.renderToolUseErrorMessage?.(param.content, {
+      progressMessagesForMessage: filterToolProgressMessages(
+        progressMessagesForMessage,
+      ),
+      tools,
+      verbose,
+      isTranscriptMode,
+    }) ?? (
+      <FallbackToolUseErrorMessage result={param.content} verbose={verbose} />
     )
-  }
-
-  return errorContent
+  )
 }

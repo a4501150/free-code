@@ -1,7 +1,6 @@
 import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { SentryErrorBoundary } from 'src/components/SentryErrorBoundary.js'
-import { ToolInputDisplay } from 'src/components/messages/ToolInputDisplay.js'
 import { Box, Text, useTheme } from '../../../ink.js'
 import { useAppState } from '../../../state/AppState.js'
 import {
@@ -105,17 +104,12 @@ export function UserToolSuccessMessage({
   // dot gutter) holds — otherwise tables wrap their box-drawing chars.
   const rendersAsAssistantText = tool.userFacingName(undefined) === ''
 
-  const toolInput = lookups.toolUseByToolUseID.get(toolUseID)?.input as
-    | Record<string, unknown>
-    | undefined
-
   return (
     <Box flexDirection="column">
       <Box
         flexDirection="column"
         width={rendersAsAssistantText ? undefined : width}
       >
-        {verbose && toolInput && <ToolInputDisplay input={toolInput} />}
         {renderedMessage}
         {feature('TRANSCRIPT_CLASSIFIER')
           ? yoloReason && (

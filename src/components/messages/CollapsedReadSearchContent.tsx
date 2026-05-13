@@ -3,6 +3,7 @@ import { basename } from 'path'
 import React, { useRef } from 'react'
 import { useMinDisplayTime } from '../../hooks/useMinDisplayTime.js'
 import { Ansi, Box, Text, useTheme } from '../../ink.js'
+import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js'
 import { findToolByName, type Tools } from '../../Tool.js'
 import { getReplPrimitiveTools } from '../../tools/REPLTool/primitiveTools.js'
 import type {
@@ -20,7 +21,7 @@ import { CtrlOToExpand } from '../CtrlOToExpand.js'
 import { useSelectedMessageBg } from '../messageActions.js'
 import { PrBadge } from '../PrBadge.js'
 import { ToolUseLoader } from '../ToolUseLoader.js'
-import { ToolInputDisplay } from './ToolInputDisplay.js'
+import { renderToolCallParams } from './ToolCallParams.js'
 import { UserToolErrorMessage } from './UserToolResultMessage/UserToolErrorMessage.js'
 
 import * as teamMemCollapsedNs from './teamMemCollapsed.js'
@@ -59,6 +60,9 @@ function VerboseToolUse({
   theme: ThemeName
 }): React.ReactNode {
   const bg = useSelectedMessageBg()
+  const toolCallDisplay = useAppStateMaybeOutsideOfProvider(
+    state => state.toolCallDisplay,
+  )
   // Same REPL-primitive fallback as getSearchOrReadInfo — REPL mode strips
   // these from the execution tools list, but virtual messages still need them
   // to render in verbose mode.
@@ -80,8 +84,14 @@ function VerboseToolUse({
   const parsedInput = tool.inputSchema.safeParse(content.input)
   const input = parsedInput.success ? parsedInput.data : undefined
   const userFacingName = tool.userFacingName(input)
-  const toolUseMessage = input
-    ? tool.renderToolUseMessage(input, { theme, verbose: true })
+  const rawInput =
+    content.input &&
+    typeof content.input === 'object' &&
+    !Array.isArray(content.input)
+      ? (content.input as Record<string, unknown>)
+      : null
+  const toolUseMessage = rawInput
+    ? renderToolCallParams(rawInput, toolCallDisplay)
     : null
 
   return (
@@ -112,8 +122,7 @@ function VerboseToolUse({
           { tools, verbose: true },
         )}
       {isResolved && !isError && toolResult !== undefined && (
-        <Box flexDirection="column">
-          <ToolInputDisplay input={content.input as Record<string, unknown>} />
+        <Box>
           {tool.renderToolResultMessage?.(toolResult, [], {
             verbose: true,
             tools,
@@ -149,7 +158,6 @@ function VerboseToolUse({
               tools={tools}
               param={errorBlock}
               verbose={true}
-              input={content.input as Record<string, unknown>}
             />
           )
         })()}

@@ -76,6 +76,7 @@ export type FooterItem = 'tasks' | 'tmux' | 'bagel' | 'teams' | 'companion'
 export type AppState = DeepImmutable<{
   settings: SettingsJson
   verbose: boolean
+  toolCallDisplay: 'compact' | 'full'
   mainLoopModel: ModelSetting
   mainLoopModelForSession: ModelSetting
   statusLineText: string | undefined
@@ -333,6 +334,7 @@ export function getDefaultAppState(): AppState {
     agentNameRegistry: new Map(),
     expandedAgentToolUseIds: new Set<string>(),
     verbose: false,
+    toolCallDisplay: getInitialSettings().toolCallDisplay ?? 'compact',
     mainLoopModel: null, // alias, full name (as with --model or env var), or null (default)
     mainLoopModelForSession: null,
     statusLineText: undefined,

@@ -1,11 +1,9 @@
 import type { ToolUseBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
 import React, { useMemo } from 'react'
 import { useTerminalSize } from 'src/hooks/useTerminalSize.js'
-import type { ThemeName } from 'src/utils/theme.js'
-import type { Command } from '../../commands.js'
 import { BLACK_CIRCLE } from '../../constants/figures.js'
 import { stringWidth } from '../../ink/stringWidth.js'
-import { Box, Text, useTheme } from '../../ink.js'
+import { Box, Text } from '../../ink.js'
 import { useToggleAgentToolUseExpansion } from '../../state/agentExpansion.js'
 import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js'
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
@@ -20,6 +18,7 @@ import type { ProgressMessage } from '../../types/message.js'
 import { logError } from '../../utils/log.js'
 import type { buildMessageLookups } from '../../utils/messages.js'
 import { MessageResponse } from '../MessageResponse.js'
+import { renderToolCallParams } from './ToolCallParams.js'
 import { useSelectedMessageBg } from '../messageActions.js'
 import { SentryErrorBoundary } from '../SentryErrorBoundary.js'
 import { ToolUseLoader } from '../ToolUseLoader.js'
@@ -29,7 +28,6 @@ type Props = {
   param: ToolUseBlockParam
   addMargin: boolean
   tools: Tools
-  commands: Command[]
   verbose: boolean
   inProgressToolUseIDs: Set<string>
   progressMessagesForMessage: ProgressMessage[]
@@ -44,7 +42,6 @@ export function AssistantToolUseMessage({
   param,
   addMargin,
   tools,
-  commands,
   verbose,
   inProgressToolUseIDs,
   progressMessagesForMessage,
@@ -55,13 +52,15 @@ export function AssistantToolUseMessage({
   isTranscriptMode,
 }: Props): React.ReactNode {
   const terminalSize = useTerminalSize()
-  const [theme] = useTheme()
   const bg = useSelectedMessageBg()
   const pendingWorkerRequest = useAppStateMaybeOutsideOfProvider(
     state => state.pendingWorkerRequest,
   )
   const permissionMode = useAppStateMaybeOutsideOfProvider(
     state => state.toolPermissionContext.mode,
+  )
+  const toolCallDisplay = useAppStateMaybeOutsideOfProvider(
+    state => state.toolCallDisplay,
   )
   // Toggle for AgentTool inline expansion. Wired to the header row below so
   // clicking the "Explore(…)" / "Agent(…)" line expands the prompt + tool
@@ -147,12 +146,15 @@ export function AssistantToolUseMessage({
     return null
   }
 
-  const renderedToolUseMessage = input.success
-    ? renderToolUseMessage(tool, input.data, { theme, verbose, commands })
-    : null
-  if (renderedToolUseMessage === null) {
-    return null
-  }
+  const rawInput =
+    param.input && typeof param.input === 'object' && !Array.isArray(param.input)
+      ? (param.input as Record<string, unknown>)
+      : null
+  if (!rawInput) return null
+  const renderedToolUseMessage = renderToolCallParams(
+    rawInput,
+    toolCallDisplay,
+  )
 
   return (
     <Box
@@ -232,29 +234,6 @@ export function AssistantToolUseMessage({
       </Box>
     </Box>
   )
-}
-
-function renderToolUseMessage(
-  tool: Tool,
-  input: unknown,
-  {
-    theme,
-    verbose,
-    commands,
-  }: { theme: ThemeName; verbose: boolean; commands: Command[] },
-): React.ReactNode {
-  try {
-    const parsed = tool.inputSchema.safeParse(input)
-    if (!parsed.success) {
-      return ''
-    }
-    return tool.renderToolUseMessage(parsed.data, { theme, verbose, commands })
-  } catch (error) {
-    logError(
-      new Error(`Error rendering tool use message for ${tool.name}: ${error}`),
-    )
-    return ''
-  }
 }
 
 function renderToolUseProgressMessage(

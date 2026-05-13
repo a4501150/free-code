@@ -1114,6 +1114,14 @@ export const SettingsSchema = lazySchema(() =>
             'Composes with strictKnownMarketplaces for end-to-end admin control — plugins gated by ' +
             'marketplace allowlist, everything else blocked here.',
         ),
+      toolCallDisplay: z
+        .enum(['compact', 'full'])
+        .optional()
+        .describe(
+          'How tool call parameters are displayed in the header row. ' +
+            '"compact" truncates values at 80 chars and limits to 6 params. ' +
+            '"full" shows all params with values truncated at 200 chars. Defaults to "compact".',
+        ),
       // Status line for custom status line display
       statusLine: z
         .object({

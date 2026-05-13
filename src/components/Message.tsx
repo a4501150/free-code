@@ -422,7 +422,6 @@ function AssistantMessageBlock({
           param={param}
           addMargin={addMargin}
           tools={tools}
-          commands={commands}
           verbose={verbose}
           inProgressToolUseIDs={inProgressToolUseIDs}
           progressMessagesForMessage={progressMessagesForMessage}
