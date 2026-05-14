@@ -716,7 +716,9 @@ function generateTokenChart(
   }
 
   // Color palette for different models - use theme colors
-  const theme = getTheme(resolveThemeSetting(getInitialSettings().theme ?? 'dark'))
+  const theme = getTheme(
+    resolveThemeSetting(getInitialSettings().theme ?? 'dark'),
+  )
   const colors = [
     themeColorToAnsi(theme.suggestion),
     themeColorToAnsi(theme.success),
@@ -873,7 +875,9 @@ function renderStatsToAnsi(
 
 function renderOverviewToAnsi(stats: ClaudeCodeStats): string[] {
   const lines: string[] = []
-  const theme = getTheme(resolveThemeSetting(getInitialSettings().theme ?? 'dark'))
+  const theme = getTheme(
+    resolveThemeSetting(getInitialSettings().theme ?? 'dark'),
+  )
   const h = (text: string) => applyColor(text, theme.claude as Color)
 
   // Two-column helper with fixed spacing

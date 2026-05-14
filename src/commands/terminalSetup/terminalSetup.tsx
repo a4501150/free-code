@@ -127,7 +127,6 @@ export async function setupTerminal(theme: ThemeName): Promise<string> {
       break
   }
 
-
   maybeMarkProjectOnboardingComplete()
 
   result += await setupShellCompletion(theme)

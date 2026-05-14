@@ -221,7 +221,8 @@ const jetbrainsPluginNotice: StatusNoticeDefinition = {
       return false
     }
     // Don't show if auto-install is disabled
-    const shouldAutoInstall = getInitialSettings().autoInstallIdeExtension ?? true
+    const shouldAutoInstall =
+      getInitialSettings().autoInstallIdeExtension ?? true
     if (!shouldAutoInstall) {
       return false
     }

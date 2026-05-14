@@ -864,7 +864,9 @@ export const SettingsSchema = lazySchema(() =>
       showTurnDuration: z
         .boolean()
         .optional()
-        .describe('Show turn duration (e.g. "Cooked for 1m 6s"). Defaults to true.'),
+        .describe(
+          'Show turn duration (e.g. "Cooked for 1m 6s"). Defaults to true.',
+        ),
       diffTool: z
         .enum(['auto', 'terminal', 'vscode'])
         .optional()
@@ -902,7 +904,9 @@ export const SettingsSchema = lazySchema(() =>
         .int()
         .nonnegative()
         .optional()
-        .describe('Idle time in ms before showing notification. Defaults to 60000.'),
+        .describe(
+          'Idle time in ms before showing notification. Defaults to 60000.',
+        ),
       taskCompleteNotifEnabled: z
         .boolean()
         .optional()

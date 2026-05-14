@@ -710,7 +710,6 @@ export const PowerShellTool = buildTool({
 
       let stdout = stripEmptyLines(stdoutAccumulator.toString())
 
-
       // preSpawnError means exec() succeeded but the inner shell failed before
       // the command ran (e.g. CWD deleted). createFailedCommand sets code=1,
       // which interpretCommandResult can mistake for grep-no-match / findstr

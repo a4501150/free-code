@@ -358,9 +358,10 @@ function SpinnerWithVerbInner({
   const tipsEnabled = settings.spinnerTipsEnabled !== false
   const showClearTip = tipsEnabled && elapsedSnapshot > 1_800_000
 
-  const effectiveTip = showClearTip && !nextTask
-    ? 'Use /clear to start fresh when switching topics and free up context'
-    : spinnerTip
+  const effectiveTip =
+    showClearTip && !nextTask
+      ? 'Use /clear to start fresh when switching topics and free up context'
+      : spinnerTip
 
   // Budget text (ant-only) — shown above the tip line
   let budgetText: string | null = null

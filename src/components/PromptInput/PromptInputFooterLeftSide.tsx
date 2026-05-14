@@ -4,12 +4,7 @@ import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import { Box, Text } from '../../ink.js'
 import * as React from 'react'
 import figures from 'figures'
-import {
-  useEffect,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { VimMode, PromptInputMode } from '../../types/textInputTypes.js'
 import type { ToolPermissionContext } from '../../Tool.js'
 import { isVimModeEnabled } from './utils.js'

@@ -5205,11 +5205,7 @@ export function REPL({
             </>
           }
           bottom={
-            <Box
-              flexDirection="row"
-              width="100%"
-              alignItems="flex-end"
-            >
+            <Box flexDirection="row" width="100%" alignItems="flex-end">
               <Box flexDirection="column" flexGrow={1}>
                 {permissionStickyFooter}
                 {/* Immediate local-jsx commands (/btw, /sandbox, /assistant,

@@ -1,6 +1,9 @@
 import chalk from 'chalk'
 import { fileHistoryEnabled } from 'src/utils/fileHistory.js'
-import { getInitialSettings, getSettings_DEPRECATED } from 'src/utils/settings/settings.js'
+import {
+  getInitialSettings,
+  getSettings_DEPRECATED,
+} from 'src/utils/settings/settings.js'
 import { shouldOfferTerminalSetup } from '../../commands/terminalSetup/terminalSetup.js'
 import { color } from '../../components/design-system/color.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'

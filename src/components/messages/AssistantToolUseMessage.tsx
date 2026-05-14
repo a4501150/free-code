@@ -194,7 +194,8 @@ export function AssistantToolUseMessage({
               }
             >
               {userFacingToolName}
-            </Text>{renderedToolUseMessage !== '' ? `(${renderedToolUseMessage})` : ''}
+            </Text>
+            {renderedToolUseMessage !== '' ? `(${renderedToolUseMessage})` : ''}
           </Text>
           {/* Render tool-specific tags (timeout, model, resume ID, etc.) */}
           {input.success &&

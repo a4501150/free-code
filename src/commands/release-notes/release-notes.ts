@@ -25,11 +25,12 @@ export async function call(): Promise<LocalCommandResult> {
   }
 
   const type = getWhatsNewType()
-  const header =
-    type === 'releases' ? 'Recent releases:' : 'Recent commits:'
+  const header = type === 'releases' ? 'Recent releases:' : 'Recent commits:'
 
   const lines = items
-    .map(item => (item.url ? `· ${item.title}\n  ${item.url}` : `· ${item.title}`))
+    .map(item =>
+      item.url ? `· ${item.title}\n  ${item.url}` : `· ${item.title}`,
+    )
     .join('\n')
 
   return { type: 'text', value: `${header}\n${lines}` }

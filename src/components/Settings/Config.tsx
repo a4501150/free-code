@@ -866,7 +866,8 @@ export function Config({
       id: 'showTurnDuration',
       label: 'Show turn duration',
       value:
-        settingsData?.showTurnDuration ?? DEFAULT_GLOBAL_CONFIG.showTurnDuration,
+        settingsData?.showTurnDuration ??
+        DEFAULT_GLOBAL_CONFIG.showTurnDuration,
       type: 'boolean' as const,
       onChange(showTurnDuration: boolean) {
         updateUserSettings({ showTurnDuration })
@@ -965,7 +966,8 @@ export function Config({
       id: 'respectGitignore',
       label: 'Respect .gitignore in file picker',
       value:
-        settingsData?.respectGitignore ?? DEFAULT_GLOBAL_CONFIG.respectGitignore,
+        settingsData?.respectGitignore ??
+        DEFAULT_GLOBAL_CONFIG.respectGitignore,
       type: 'boolean' as const,
       onChange(respectGitignore: boolean) {
         updateUserSettings({ respectGitignore })
@@ -1124,11 +1126,16 @@ export function Config({
     {
       id: 'editorMode',
       label: 'Editor mode',
-      value: settingsData?.editorMode ?? DEFAULT_GLOBAL_CONFIG.editorMode ?? 'normal',
+      value:
+        settingsData?.editorMode ??
+        DEFAULT_GLOBAL_CONFIG.editorMode ??
+        'normal',
       options: ['normal', 'vim'],
       type: 'enum',
       onChange(editorMode: string) {
-        updateUserSettings({ editorMode: editorMode as SettingsJson['editorMode'] })
+        updateUserSettings({
+          editorMode: editorMode as SettingsJson['editorMode'],
+        })
       },
     },
     {
@@ -1156,7 +1163,9 @@ export function Config({
             options: ['terminal', 'auto'],
             type: 'enum' as const,
             onChange(diffTool: string) {
-              updateUserSettings({ diffTool: diffTool as SettingsJson['diffTool'] })
+              updateUserSettings({
+                diffTool: diffTool as SettingsJson['diffTool'],
+              })
             },
           },
         ]
@@ -1360,7 +1369,8 @@ export function Config({
       initialSettingsData.current?.autoCompactEnabled ??
       DEFAULT_GLOBAL_CONFIG.autoCompactEnabled
     const currentAutoCompactEnabled =
-      settingsData?.autoCompactEnabled ?? DEFAULT_GLOBAL_CONFIG.autoCompactEnabled
+      settingsData?.autoCompactEnabled ??
+      DEFAULT_GLOBAL_CONFIG.autoCompactEnabled
     if (currentAutoCompactEnabled !== initialAutoCompactEnabled) {
       formattedChanges.push(
         `${currentAutoCompactEnabled ? 'Enabled' : 'Disabled'} auto-compact`,

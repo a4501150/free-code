@@ -1322,7 +1322,6 @@ export function handleAutoModeTransition(
   }
 }
 
-
 // SDK init event state
 export function setInitJsonSchema(schema: Record<string, unknown>): void {
   STATE.initJsonSchema = schema

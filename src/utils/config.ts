@@ -124,7 +124,6 @@ const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   hasClaudeMdExternalIncludesWarningShown: false,
 }
 
-
 export type GlobalConfig = {
   projects?: Record<string, ProjectConfig>
   userID?: string

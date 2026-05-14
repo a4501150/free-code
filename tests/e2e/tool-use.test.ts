@@ -380,10 +380,7 @@ describe('Tool Use E2E', () => {
         textResponse('hello'),
         textResponse('Agent finished'),
       ])
-      const screen = await session.submitAndApprove(
-        'Run an agent',
-        90_000,
-      )
+      const screen = await session.submitAndApprove('Run an agent', 90_000)
 
       // The resolved header should read "Agent(nospace header test)" with
       // no space before the paren — NOT "Agent (nospace header test)".

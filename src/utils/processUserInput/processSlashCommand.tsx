@@ -609,7 +609,6 @@ async function getMessagesForSlashCommand(
 ): Promise<SlashCommandResult> {
   const command = getCommand(commandName, context.options.commands)
 
-
   // Check if the command is user-invocable
   // Skills with userInvocable === false can only be invoked by the model via SkillTool
   if (command.userInvocable === false) {

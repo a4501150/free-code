@@ -3170,11 +3170,12 @@ async function run(): Promise<CommanderCommand> {
         mainLoopModel: initialMainLoopModel,
         mainLoopModelForSession: null,
         isBriefOnly: initialIsBriefOnly,
-        expandedView: (initialSettings.showSpinnerTree ?? false)
-          ? 'teammates'
-          : (initialSettings.showExpandedTodos ?? false)
-            ? 'tasks'
-            : 'none',
+        expandedView:
+          (initialSettings.showSpinnerTree ?? false)
+            ? 'teammates'
+            : (initialSettings.showExpandedTodos ?? false)
+              ? 'tasks'
+              : 'none',
         showTeammateMessagePreview: isAgentSwarmsEnabled() ? false : undefined,
         selectedIPAgentIndex: -1,
         coordinatorTaskIndex: -1,

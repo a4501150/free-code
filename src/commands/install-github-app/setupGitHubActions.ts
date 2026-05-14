@@ -230,7 +230,6 @@ export async function setupGitHubActions(
 
       await openBrowser(compareUrl)
     }
-
   } catch (error) {
     if (error instanceof Error) {
       logError(error)

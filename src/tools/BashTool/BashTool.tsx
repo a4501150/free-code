@@ -987,7 +987,6 @@ export const BashTool = buildTool({
 
     let strippedStdout = stripEmptyLines(stdout)
 
-
     let isImage = isImageOutput(strippedStdout)
 
     // Cap image dimensions + size if present (CC-304 — see

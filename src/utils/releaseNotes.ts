@@ -41,7 +41,11 @@ async function fetchGitHubReleases(
     `https://api.github.com/repos/${repo}/releases?per_page=${MAX_WHATS_NEW_ITEMS}`,
     { headers: { Accept: 'application/vnd.github.v3+json' } },
   )
-  if (response.status === 200 && Array.isArray(response.data) && response.data.length > 0) {
+  if (
+    response.status === 200 &&
+    Array.isArray(response.data) &&
+    response.data.length > 0
+  ) {
     return {
       type: 'releases',
       items: response.data.map(
@@ -55,9 +59,7 @@ async function fetchGitHubReleases(
   return null
 }
 
-async function fetchGitHubCommits(
-  repo: string,
-): Promise<WhatsNewCache | null> {
+async function fetchGitHubCommits(repo: string): Promise<WhatsNewCache | null> {
   const response = await axios.get(
     `https://api.github.com/repos/${repo}/commits?per_page=${MAX_WHATS_NEW_ITEMS}`,
     { headers: { Accept: 'application/vnd.github.v3+json' } },
@@ -121,10 +123,7 @@ function getWhatsNewFromMemory(): WhatsNewCache | null {
 function parseBuildTimeChangelog(): string[] {
   const changelog = MACRO.VERSION_CHANGELOG
   if (!changelog) return []
-  return changelog
-    .split('\n')
-    .filter(Boolean)
-    .slice(0, MAX_WHATS_NEW_ITEMS)
+  return changelog.split('\n').filter(Boolean).slice(0, MAX_WHATS_NEW_ITEMS)
 }
 
 export function getWhatsNewItems(maxItems: number): string[] {
@@ -141,9 +140,7 @@ export function getWhatsNewType(): 'releases' | 'commits' | 'build' {
   return 'build'
 }
 
-export function getWhatsNewItemsFull(
-  maxItems: number,
-): WhatsNewItem[] {
+export function getWhatsNewItemsFull(maxItems: number): WhatsNewItem[] {
   const cached = getWhatsNewFromMemory()
   if (cached && cached.items.length > 0) {
     return cached.items.slice(0, maxItems)
