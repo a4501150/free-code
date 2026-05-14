@@ -1,59 +1,36 @@
 import type { LocalCommandResult } from '../../types/command.js'
 import {
-  CHANGELOG_URL,
-  fetchAndStoreChangelog,
-  getAllReleaseNotes,
-  getRecentReleaseNoteGroups,
-  getStoredChangelog,
+  REPO_URL,
+  fetchAndStoreWhatsNew,
+  getStoredWhatsNew,
+  getWhatsNewItemsFull,
+  getWhatsNewType,
 } from '../../utils/releaseNotes.js'
 
-function formatReleaseNotes(notes: Array<[string, string[]]>): string {
-  return notes
-    .map(([version, notes]) => {
-      const header = `Version ${version}:`
-      const bulletPoints = notes.map(note => `· ${note}`).join('\n')
-      return `${header}\n${bulletPoints}`
-    })
-    .join('\n\n')
-}
-
 export async function call(): Promise<LocalCommandResult> {
-  // Try to fetch the latest changelog with a 3s timeout
-  let changelog = ''
-
   try {
     const timeoutPromise = new Promise<void>((_, reject) => {
       setTimeout(rej => rej(new Error('Timeout')), 3000, reject)
     })
-
-    await Promise.race([fetchAndStoreChangelog(), timeoutPromise])
-    changelog = await getStoredChangelog()
+    await Promise.race([fetchAndStoreWhatsNew(), timeoutPromise])
+    await getStoredWhatsNew()
   } catch {
-    // Either fetch failed or timed out - just use cached notes
+    // Fetch failed or timed out — use cached data
   }
 
-  if (!changelog) {
-    changelog = await getStoredChangelog()
+  const items = getWhatsNewItemsFull(10)
+  if (items.length === 0) {
+    const url = REPO_URL ? `${REPO_URL}/commits/main` : 'the repository'
+    return { type: 'text', value: `No cached updates. See ${url}` }
   }
 
-  const recentNotes = getRecentReleaseNoteGroups(
-    MACRO.VERSION,
-    undefined,
-    changelog,
-    3,
-  )
-  if (recentNotes.length > 0) {
-    return { type: 'text', value: formatReleaseNotes(recentNotes) }
-  }
+  const type = getWhatsNewType()
+  const header =
+    type === 'releases' ? 'Recent releases:' : 'Recent commits:'
 
-  const latestNotes = getAllReleaseNotes(changelog).slice(-3).reverse()
-  if (latestNotes.length > 0) {
-    return { type: 'text', value: formatReleaseNotes(latestNotes) }
-  }
+  const lines = items
+    .map(item => (item.url ? `· ${item.title}\n  ${item.url}` : `· ${item.title}`))
+    .join('\n')
 
-  // Nothing available, show link
-  return {
-    type: 'text',
-    value: `See the full changelog at: ${CHANGELOG_URL}`,
-  }
+  return { type: 'text', value: `${header}\n${lines}` }
 }

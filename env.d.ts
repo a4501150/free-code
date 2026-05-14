@@ -6,6 +6,7 @@ declare const MACRO: {
   FEEDBACK_CHANNEL?: string
   ISSUES_EXPLAINER?: string
   VERSION_CHANGELOG?: string
+  GITHUB_REPO?: string
 }
 
 declare module '*.node' {

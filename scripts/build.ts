@@ -67,6 +67,17 @@ function getVersionChangelog(): string {
   )
 }
 
+function getGitHubRepo(): string {
+  const remote = runCommand(['git', 'remote', 'get-url', 'origin'])
+  if (!remote) return ''
+  // git@github.com:owner/repo.git or https://github.com/owner/repo.git
+  const sshMatch = remote.match(/git@github\.com:(.+?)(?:\.git)?$/)
+  if (sshMatch?.[1]) return sshMatch[1]
+  const httpsMatch = remote.match(/github\.com\/(.+?)(?:\.git)?$/)
+  if (httpsMatch?.[1]) return httpsMatch[1]
+  return ''
+}
+
 const defaultFeatures = [
   // Tier 1: CLI flag / subcommand gated
   'DAEMON',
@@ -149,9 +160,8 @@ const defines = {
   'MACRO.ISSUES_EXPLAINER': JSON.stringify(
     'This reconstructed source snapshot does not include Anthropic internal issue routing.',
   ),
-  'MACRO.VERSION_CHANGELOG': JSON.stringify(
-    dev ? getVersionChangelog() : 'https://github.com/paoloanzn/claude-code',
-  ),
+  'MACRO.VERSION_CHANGELOG': JSON.stringify(getVersionChangelog()),
+  'MACRO.GITHUB_REPO': JSON.stringify(getGitHubRepo()),
 } as const
 
 // Optional React Compiler pre-build step: transforms .tsx files with

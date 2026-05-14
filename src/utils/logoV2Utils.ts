@@ -13,10 +13,7 @@ import {
   truncateToWidth,
   truncateToWidthNoEllipsis,
 } from './format.js'
-import {
-  getRecentReleaseNotes,
-  getStoredChangelogFromMemory,
-} from './releaseNotes.js'
+import { getWhatsNewItems } from './releaseNotes.js'
 import { gt } from './semver.js'
 import { loadMessageLogs } from './sessionStorage.js'
 import { getInitialSettings } from './settings/settings.js'
@@ -309,24 +306,6 @@ export function formatModelAndBilling(
   }
 }
 
-/**
- * Gets recent release notes for Logo v2 display
- * For ants, uses commits bundled at build time
- * For external users, uses public changelog
- */
-export function getRecentReleaseNotesSync(
-  maxItems: number,
-  currentVersion: string = MACRO.VERSION,
-  lastSeenVersion?: string | null,
-): string[] {
-  const changelog = getStoredChangelogFromMemory()
-  if (!changelog) {
-    return []
-  }
-
-  return getRecentReleaseNotes(
-    currentVersion,
-    lastSeenVersion,
-    changelog,
-  ).slice(0, maxItems)
+export function getRecentReleaseNotesSync(maxItems: number): string[] {
+  return getWhatsNewItems(maxItems)
 }

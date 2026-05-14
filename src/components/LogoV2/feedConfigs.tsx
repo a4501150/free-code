@@ -38,8 +38,8 @@ export function createWhatsNewFeed(releaseNotes: string[]): FeedConfig {
   return {
     title: "What's new",
     lines,
-    footer: lines.length > 0 ? '/release-notes for more' : undefined,
-    emptyMessage: 'Check the Claude Code changelog for updates',
+    footer: lines.length > 0 ? 'git log for more' : undefined,
+    emptyMessage: 'No recent updates',
   }
 }
 
