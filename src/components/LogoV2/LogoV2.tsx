@@ -261,8 +261,7 @@ export function LogoV2(): React.ReactNode {
   }
 
   const welcomeMessage = formatWelcomeMessage(username)
-  const modelLine =
-    `${modelDisplayName} · ${billingType}`
+  const modelLine = `${modelDisplayName} · ${billingType}`
   // Calculate cwd width accounting for agent name if present
   const cwdSeparator = ' · '
   const cwdAtPrefix = '@'
@@ -331,6 +330,7 @@ export function LogoV2(): React.ReactNode {
             {/* Vertical divider */}
             {layoutMode === 'horizontal' && (
               <Box
+                width={0}
                 alignSelf={'stretch' as 'auto'}
                 flexShrink={0}
                 borderStyle="single"

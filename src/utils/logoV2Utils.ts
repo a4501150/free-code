@@ -205,11 +205,15 @@ export async function getRecentActivity(): Promise<LogOption[]> {
           if (log.sessionId === currentSessionId) return false
           if (log.summary?.includes('I apologize')) return false
 
-          // Filter out sessions where both summary and firstPrompt are "No prompt" or missing
           const hasSummary = log.summary && log.summary !== 'No prompt'
           const hasFirstPrompt =
             log.firstPrompt && log.firstPrompt !== 'No prompt'
-          return hasSummary || hasFirstPrompt
+          return !!(
+            log.customTitle ||
+            log.agentName ||
+            hasSummary ||
+            hasFirstPrompt
+          )
         })
         .slice(0, 3)
       return cachedActivity

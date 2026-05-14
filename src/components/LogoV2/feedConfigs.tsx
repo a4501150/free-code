@@ -10,16 +10,16 @@ import {
 import type { LogOption } from '../../types/logs.js'
 import { getCwd } from '../../utils/cwd.js'
 import { formatRelativeTimeAgo } from '../../utils/format.js'
+import { getLogDisplayTitle } from '../../utils/log.js'
 import type { FeedConfig, FeedLine } from './Feed.js'
 
 export function createRecentActivityFeed(activities: LogOption[]): FeedConfig {
   const lines: FeedLine[] = activities.map(log => {
     const time = formatRelativeTimeAgo(log.modified)
-    const description =
-      log.summary && log.summary !== 'No prompt' ? log.summary : log.firstPrompt
+    const title = getLogDisplayTitle(log)
 
     return {
-      text: description || '',
+      text: title,
       timestamp: time,
     }
   })
