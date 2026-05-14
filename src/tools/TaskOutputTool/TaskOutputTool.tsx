@@ -390,6 +390,7 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
         <TaskOutputProgressDisplay
           taskId={progressData?.taskId}
           taskDescription={progressData?.taskDescription}
+          taskType={progressData?.taskType}
           verbose={verbose}
           toolUseId={toolUseId}
         />
@@ -434,14 +435,55 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
     },
   } satisfies ToolDef<InputSchema, TaskOutputToolOutput>)
 
+function parseAgentJsonlLines(raw: string): string[] {
+  const lines: string[] = []
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    try {
+      const entry = JSON.parse(line)
+      const msg = entry?.message
+      if (!msg?.content) continue
+      for (const block of msg.content) {
+        if (block.type === 'text' && block.text) {
+          lines.push(block.text)
+        } else if (block.type === 'tool_use') {
+          const desc =
+            block.input?.description || block.input?.command || block.name
+          if (desc) lines.push(`[${block.name}] ${desc}`)
+        } else if (block.type === 'tool_result') {
+          const txt =
+            typeof block.content === 'string'
+              ? block.content
+              : Array.isArray(block.content)
+                ? block.content
+                    .filter(
+                      (c: { type: string; text?: string }) =>
+                        c.type === 'text' && c.text,
+                    )
+                    .map((c: { text: string }) => c.text)
+                    .join('\n')
+                : ''
+          if (txt) lines.push(txt)
+        }
+      }
+    } catch {
+      // not JSON — show as-is
+      lines.push(line)
+    }
+  }
+  return lines
+}
+
 function TaskOutputProgressDisplay({
   taskId,
   taskDescription,
+  taskType,
   verbose,
   toolUseId: _toolUseId,
 }: {
   taskId?: string
   taskDescription?: string
+  taskType?: string
   verbose: boolean
   toolUseId?: string
 }): React.ReactNode {
@@ -455,7 +497,12 @@ function TaskOutputProgressDisplay({
 
   // Trim trailing newline so the last visible row isn't blank.
   const trimmed = content.replace(/\n+$/, '')
-  const lines = trimmed ? trimmed.split('\n') : []
+  const lines =
+    taskType === 'local_agent'
+      ? parseAgentJsonlLines(trimmed)
+      : trimmed
+        ? trimmed.split('\n')
+        : []
 
   if (verbose) {
     return (
