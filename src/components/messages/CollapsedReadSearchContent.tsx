@@ -216,16 +216,22 @@ export function CollapsedReadSearchContent({
     maxBashCountRef.current,
     message.bashCount ?? 0,
   )
-  const maxTaskCountRef = useRef(0)
-  maxTaskCountRef.current = Math.max(
-    maxTaskCountRef.current,
-    message.taskCount ?? 0,
+  const maxTaskCreateCountRef = useRef(0)
+  const maxTaskUpdateCountRef = useRef(0)
+  maxTaskCreateCountRef.current = Math.max(
+    maxTaskCreateCountRef.current,
+    message.taskCreateCount ?? 0,
+  )
+  maxTaskUpdateCountRef.current = Math.max(
+    maxTaskUpdateCountRef.current,
+    message.taskUpdateCount ?? 0,
   )
   const readCount = maxReadCountRef.current
   const searchCount = maxSearchCountRef.current
   const listCount = maxListCountRef.current
   const mcpCallCount = maxMcpCountRef.current
-  const taskCount = maxTaskCountRef.current
+  const taskCreateCount = maxTaskCreateCountRef.current
+  const taskUpdateCount = maxTaskUpdateCountRef.current
   // Subtract commands surfaced as "Committed …" / "Created PR …" so the
   // same command isn't counted twice. gitOpBashCount is read live (no max-ref
   // needed — it's 0 until results arrive, then only grows).
@@ -242,7 +248,8 @@ export function CollapsedReadSearchContent({
     mcpCallCount > 0 ||
     bashCount > 0 ||
     gitOpBashCount > 0 ||
-    taskCount > 0
+    taskCreateCount > 0 ||
+    taskUpdateCount > 0
 
   const readPaths = message.readFilePaths
   const searchArgs = message.searchArgs
@@ -571,7 +578,27 @@ export function CollapsedReadSearchContent({
     )
   }
 
-  if (taskCount > 0) {
+  if (taskCreateCount > 0) {
+    const isFirst = nonMemParts.length === 0
+    const verb = isActiveGroup
+      ? isFirst
+        ? 'Creating'
+        : 'creating'
+      : isFirst
+        ? 'Created'
+        : 'created'
+    if (!isFirst) {
+      nonMemParts.push(<Text key="comma-task-create">, </Text>)
+    }
+    nonMemParts.push(
+      <Text key="task-create">
+        {verb} <Text bold>{taskCreateCount}</Text>{' '}
+        {taskCreateCount === 1 ? 'task' : 'tasks'}
+      </Text>,
+    )
+  }
+
+  if (taskUpdateCount > 0) {
     const isFirst = nonMemParts.length === 0
     const verb = isActiveGroup
       ? isFirst
@@ -581,12 +608,12 @@ export function CollapsedReadSearchContent({
         ? 'Updated'
         : 'updated'
     if (!isFirst) {
-      nonMemParts.push(<Text key="comma-task">, </Text>)
+      nonMemParts.push(<Text key="comma-task-update">, </Text>)
     }
     nonMemParts.push(
-      <Text key="task">
-        {verb} <Text bold>{taskCount}</Text>{' '}
-        {taskCount === 1 ? 'task' : 'tasks'}
+      <Text key="task-update">
+        {verb} <Text bold>{taskUpdateCount}</Text>{' '}
+        {taskUpdateCount === 1 ? 'task' : 'tasks'}
       </Text>,
     )
   }

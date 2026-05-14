@@ -624,8 +624,9 @@ type GroupAccumulator = {
   // MCP tool calls (tracked separately so display says "Queried slack" not "Read N files")
   mcpCallCount?: number
   mcpServerNames?: Set<string>
-  // Task management tool calls (TaskCreate, TaskUpdate, etc.)
-  taskCount: number
+  // Task management tool calls — split by verb for the summary label
+  taskCreateCount: number
+  taskUpdateCount: number
   // Bash commands that aren't search/read (tracked separately for "Ran N bash commands")
   bashCount?: number
   // Bash tool_use_id → command string, so tool results can be scanned for
@@ -657,7 +658,8 @@ function createEmptyGroup(): GroupAccumulator {
     memorySearchCount: 0,
     memoryReadFilePaths: new Set(),
     memoryWriteCount: 0,
-    taskCount: 0,
+    taskCreateCount: 0,
+    taskUpdateCount: 0,
     nonMemSearchArgs: [],
     latestDisplayHint: undefined,
     hookTotalMs: 0,
@@ -752,8 +754,11 @@ function createCollapsedGroup(
     result.teamMemoryReadCount = teamMemReadCount
     result.teamMemoryWriteCount = teamMemWriteCount
   }
-  if (group.taskCount > 0) {
-    result.taskCount = group.taskCount
+  if (group.taskCreateCount > 0) {
+    result.taskCreateCount = group.taskCreateCount
+  }
+  if (group.taskUpdateCount > 0) {
+    result.taskUpdateCount = group.taskUpdateCount
   }
   if ((group.mcpCallCount ?? 0) > 0) {
     result.mcpCallCount = group.mcpCallCount
@@ -826,7 +831,12 @@ export function collapseReadSearchGroups(
           currentGroup.memoryWriteCount += count
         }
       } else if (toolInfo.isTaskManagement) {
-        currentGroup.taskCount += countToolUses(msg)
+        const count = countToolUses(msg)
+        if (toolInfo.name === TASK_CREATE_TOOL_NAME) {
+          currentGroup.taskCreateCount += count
+        } else {
+          currentGroup.taskUpdateCount += count
+        }
       } else if (toolInfo.isAbsorbedSilently) {
         // Snip is absorbed silently — no count, no summary text.
         // Hidden from the default view but still shown in verbose mode
