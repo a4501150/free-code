@@ -623,7 +623,6 @@ export function normalizeToolInput<T extends Tool>(
       // TS limitation with generics, not bypassable without major refactoring.
       return {
         command: normalizedCommand,
-        description,
         ...(timeout !== undefined && { timeout }),
         ...(description !== undefined && { description }),
         ...(run_in_background !== undefined && { run_in_background }),

@@ -19,7 +19,7 @@ export function renderToolCallParams(
 
   const visible = entries.slice(0, maxParams)
   const parts = visible.map(([key, value]) => {
-    let rendered = jsonStringify(value) ?? 'undefined'
+    let rendered = jsonStringify(value)
     if (rendered.length > maxValueChars) {
       rendered = rendered.slice(0, maxValueChars).trimEnd() + '…'
     }
