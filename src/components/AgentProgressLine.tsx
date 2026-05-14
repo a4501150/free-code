@@ -111,7 +111,7 @@ export function AgentProgressLine({
               </Text>
               {description && (
                 <>
-                  {' ('}
+                  {'('}
                   <Text
                     backgroundColor={descriptionColor}
                     color={descriptionColor ? 'inverseText' : undefined}

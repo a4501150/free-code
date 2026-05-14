@@ -359,4 +359,36 @@ describe('Tool Use E2E', () => {
       expect(log.length).toBeGreaterThanOrEqual(2)
     })
   })
+
+  describe('Tool Header Display', () => {
+    test('tool name and params have no space between them', async () => {
+      session = new TmuxSession({ serverUrl: server.url })
+      await session.start()
+
+      // Use Agent tool — its header is NOT collapsed and stays visible
+      // after resolution as "Agent(description: ...)".
+      server.reset([
+        toolUseResponse([
+          {
+            name: 'Agent',
+            input: {
+              description: 'nospace header test',
+              prompt: 'Return hello',
+            },
+          },
+        ]),
+        textResponse('hello'),
+        textResponse('Agent finished'),
+      ])
+      const screen = await session.submitAndApprove(
+        'Run an agent',
+        90_000,
+      )
+
+      // The resolved header should read "Agent(nospace header test)" with
+      // no space before the paren — NOT "Agent (nospace header test)".
+      expect(screen).toMatch(/Agent\(nospace header test\)/)
+      expect(screen).not.toMatch(/Agent \(nospace header test\)/)
+    })
+  })
 })
