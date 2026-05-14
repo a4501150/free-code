@@ -96,6 +96,7 @@ const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
 import { feature } from 'bun:bundle'
 import type { ClientOptions } from '@anthropic-ai/sdk'
 import {
+  APIConnectionError,
   APIConnectionTimeoutError,
   APIError,
   APIUserAbortError,
@@ -742,7 +743,7 @@ function getNonstreamingFallbackTimeoutMs(): number {
   return 300_000
 }
 
-const CODEX_STREAM_MAX_RETRIES = 5
+const MIDSTREAM_MAX_RETRIES = 5
 const STREAM_FIRST_EVENT_WARNING_MS = 60_000
 const STREAM_FIRST_EVENT_TIMEOUT_MS = 300_000
 const STREAM_BETWEEN_EVENTS_WARNING_MS = 15_000
@@ -794,6 +795,21 @@ function isRetryableCodexStreamError(error: unknown): error is APIError {
     case 'server':
     case 'overloaded':
     case 'rate_limit':
+      return true
+    default:
+      return false
+  }
+}
+
+function isRetryableMidStreamError(error: unknown): error is APIError {
+  if (error instanceof APIConnectionError) return true
+  if (!(error instanceof APIError)) return false
+  const normalized = getNormalizedError(error)
+  if (!normalized) return false
+  switch (normalized.kind) {
+    case 'transport':
+    case 'server':
+    case 'overloaded':
       return true
     default:
       return false
@@ -1571,7 +1587,7 @@ async function* queryModel(
 
   startSessionActivity('api_call')
   try {
-    for (let codexStreamAttempt = 0; ; codexStreamAttempt++) {
+    for (let midstreamRetryAttempt = 0; ; midstreamRetryAttempt++) {
       queryCheckpoint('query_client_creation_start')
       const generator = withRetry(
         () =>
@@ -2160,10 +2176,10 @@ async function* queryModel(
           isOpenAIResponsesProvider && isStreamIdleTimeoutError(streamingError)
         if (
           (retryableCodexStreamError || retryableCodexIdleTimeout) &&
-          codexStreamAttempt < CODEX_STREAM_MAX_RETRIES &&
+          midstreamRetryAttempt < MIDSTREAM_MAX_RETRIES &&
           !signal.aborted
         ) {
-          const retryAttempt = codexStreamAttempt + 1
+          const retryAttempt = midstreamRetryAttempt + 1
           const delayMs = getRetryDelay(retryAttempt)
           const retryError = retryableCodexStreamError
             ? streamingError
@@ -2174,7 +2190,7 @@ async function* queryModel(
                 undefined,
               )
           logForDebugging(
-            `Retryable Codex stream error; retrying stream attempt ${retryAttempt}/${CODEX_STREAM_MAX_RETRIES}: ${errorMessage(streamingError)}`,
+            `Retryable Codex stream error; retrying stream attempt ${retryAttempt}/${MIDSTREAM_MAX_RETRIES}: ${errorMessage(streamingError)}`,
             { level: 'warn' },
           )
           options.onStreamingFallback?.()
@@ -2183,7 +2199,7 @@ async function* queryModel(
             retryError,
             delayMs,
             retryAttempt,
-            CODEX_STREAM_MAX_RETRIES,
+            MIDSTREAM_MAX_RETRIES,
           )
           await sleep(delayMs, signal, {
             abortError: () => new APIUserAbortError(),
@@ -2191,13 +2207,33 @@ async function* queryModel(
           continue
         }
 
-        // Skip the non-streaming fallback and let the error propagate to
-        // withRetry. The mid-stream fallback causes double tool execution when
-        // streaming tool execution is active: the partial stream starts a tool,
-        // then the non-streaming retry produces the same tool_use and runs it
-        // again. See inc-4258.
+        if (
+          isRetryableMidStreamError(streamingError) &&
+          midstreamRetryAttempt < MIDSTREAM_MAX_RETRIES &&
+          !signal.aborted
+        ) {
+          const retryAttempt = midstreamRetryAttempt + 1
+          const delayMs = getRetryDelay(retryAttempt)
+          logForDebugging(
+            `Retryable mid-stream error; retrying stream attempt ${retryAttempt}/${MIDSTREAM_MAX_RETRIES}: ${errorMessage(streamingError)}`,
+            { level: 'warn' },
+          )
+          options.onStreamingFallback?.()
+          releaseStreamResources()
+          yield createSystemAPIErrorMessage(
+            streamingError,
+            delayMs,
+            retryAttempt,
+            MIDSTREAM_MAX_RETRIES,
+          )
+          await sleep(delayMs, signal, {
+            abortError: () => new APIUserAbortError(),
+          })
+          continue
+        }
+
         logForDebugging(
-          `Error streaming (non-streaming fallback disabled): ${errorMessage(streamingError)}`,
+          `Error streaming (non-retryable): ${errorMessage(streamingError)}`,
           { level: 'error' },
         )
         throw streamingError
