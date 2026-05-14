@@ -185,10 +185,9 @@ export function AssistantToolUseMessage({
                 isError={lookups.erroredToolUseIDs.has(param.id)}
               />
             ))}
-          <Box flexShrink={0}>
+          <Text wrap="truncate-end">
             <Text
               bold
-              wrap="truncate-end"
               backgroundColor={userFacingToolNameBackgroundColor}
               color={
                 userFacingToolNameBackgroundColor ? 'inverseText' : undefined
@@ -196,12 +195,10 @@ export function AssistantToolUseMessage({
             >
               {userFacingToolName}
             </Text>
-          </Box>
-          {renderedToolUseMessage !== '' && (
-            <Box flexWrap="nowrap">
-              <Text>({renderedToolUseMessage})</Text>
-            </Box>
-          )}
+            {renderedToolUseMessage !== '' && (
+              <>({renderedToolUseMessage})</>
+            )}
+          </Text>
           {/* Render tool-specific tags (timeout, model, resume ID, etc.) */}
           {input.success &&
             (param.name === AGENT_TOOL_NAME

@@ -216,10 +216,16 @@ export function CollapsedReadSearchContent({
     maxBashCountRef.current,
     message.bashCount ?? 0,
   )
+  const maxTaskCountRef = useRef(0)
+  maxTaskCountRef.current = Math.max(
+    maxTaskCountRef.current,
+    message.taskCount ?? 0,
+  )
   const readCount = maxReadCountRef.current
   const searchCount = maxSearchCountRef.current
   const listCount = maxListCountRef.current
   const mcpCallCount = maxMcpCountRef.current
+  const taskCount = maxTaskCountRef.current
   // Subtract commands surfaced as "Committed …" / "Created PR …" so the
   // same command isn't counted twice. gitOpBashCount is read live (no max-ref
   // needed — it's 0 until results arrive, then only grows).
@@ -235,7 +241,8 @@ export function CollapsedReadSearchContent({
     replCount > 0 ||
     mcpCallCount > 0 ||
     bashCount > 0 ||
-    gitOpBashCount > 0
+    gitOpBashCount > 0 ||
+    taskCount > 0
 
   const readPaths = message.readFilePaths
   const searchArgs = message.searchArgs
@@ -560,6 +567,26 @@ export function CollapsedReadSearchContent({
       <Text key="bash">
         {verb} <Text bold>{bashCount}</Text> bash{' '}
         {bashCount === 1 ? 'command' : 'commands'}
+      </Text>,
+    )
+  }
+
+  if (taskCount > 0) {
+    const isFirst = nonMemParts.length === 0
+    const verb = isActiveGroup
+      ? isFirst
+        ? 'Updating'
+        : 'updating'
+      : isFirst
+        ? 'Updated'
+        : 'updated'
+    if (!isFirst) {
+      nonMemParts.push(<Text key="comma-task">, </Text>)
+    }
+    nonMemParts.push(
+      <Text key="task">
+        {verb} <Text bold>{taskCount}</Text>{' '}
+        {taskCount === 1 ? 'task' : 'tasks'}
       </Text>,
     )
   }

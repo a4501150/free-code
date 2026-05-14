@@ -6,6 +6,10 @@ import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
 import { REPL_TOOL_NAME } from '../tools/REPLTool/constants.js'
+import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
+import { TASK_GET_TOOL_NAME } from '../tools/TaskGetTool/constants.js'
+import { TASK_LIST_TOOL_NAME } from '../tools/TaskListTool/constants.js'
+import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 import { getReplPrimitiveTools } from '../tools/REPLTool/primitiveTools.js'
 import {
   type BranchAction,
@@ -33,6 +37,13 @@ import * as teamMemOpsNs from './teamMemoryOps.js'
 
 const teamMemOps = feature('TEAMMEM') ? teamMemOpsNs : null
 
+const TASK_TOOL_NAMES: ReadonlySet<string> = new Set([
+  TASK_CREATE_TOOL_NAME,
+  TASK_UPDATE_TOOL_NAME,
+  TASK_LIST_TOOL_NAME,
+  TASK_GET_TOOL_NAME,
+])
+
 /**
  * Result of checking if a tool use is a search or read operation.
  */
@@ -52,6 +63,8 @@ export type SearchOrReadResult = {
   isAbsorbedSilently: boolean
   /** MCP server name when this is an MCP tool */
   mcpServerName?: string
+  /** True if this is a task management tool (TaskCreate, TaskUpdate, etc.) */
+  isTaskManagement: boolean
   /** Bash command that is NOT a search/read (under fullscreen mode) */
   isBash?: boolean
 }
@@ -149,6 +162,7 @@ export function getSearchOrReadInfo(
       isList: false,
       isREPL: true,
       isMemoryWrite: false,
+      isTaskManagement: false,
       isAbsorbedSilently: true,
     }
   }
@@ -162,6 +176,20 @@ export function getSearchOrReadInfo(
       isList: false,
       isREPL: false,
       isMemoryWrite: true,
+      isTaskManagement: false,
+      isAbsorbedSilently: false,
+    }
+  }
+
+  if (TASK_TOOL_NAMES.has(toolName)) {
+    return {
+      isCollapsible: true,
+      isSearch: false,
+      isRead: false,
+      isList: false,
+      isREPL: false,
+      isMemoryWrite: false,
+      isTaskManagement: true,
       isAbsorbedSilently: false,
     }
   }
@@ -181,6 +209,7 @@ export function getSearchOrReadInfo(
       isList: false,
       isREPL: false,
       isMemoryWrite: false,
+      isTaskManagement: false,
       isAbsorbedSilently: false,
     }
   }
@@ -203,6 +232,7 @@ export function getSearchOrReadInfo(
     isList,
     isREPL: false,
     isMemoryWrite: false,
+    isTaskManagement: false,
     isAbsorbedSilently: false,
     ...(tool.isMcp && { mcpServerName: tool.mcpInfo?.serverName }),
     isBash: isFullscreenEnvEnabled()
@@ -224,6 +254,7 @@ export function getSearchOrReadFromContent(
   isList: boolean
   isREPL: boolean
   isMemoryWrite: boolean
+  isTaskManagement: boolean
   isAbsorbedSilently: boolean
   mcpServerName?: string
   isBash?: boolean
@@ -237,6 +268,7 @@ export function getSearchOrReadFromContent(
         isList: info.isList,
         isREPL: info.isREPL,
         isMemoryWrite: info.isMemoryWrite,
+        isTaskManagement: info.isTaskManagement,
         isAbsorbedSilently: info.isAbsorbedSilently,
         mcpServerName: info.mcpServerName,
         isBash: info.isBash,
@@ -272,6 +304,7 @@ function getCollapsibleToolInfo(
   isList: boolean
   isREPL: boolean
   isMemoryWrite: boolean
+  isTaskManagement: boolean
   isAbsorbedSilently: boolean
   mcpServerName?: string
   isBash?: boolean
@@ -591,6 +624,8 @@ type GroupAccumulator = {
   // MCP tool calls (tracked separately so display says "Queried slack" not "Read N files")
   mcpCallCount?: number
   mcpServerNames?: Set<string>
+  // Task management tool calls (TaskCreate, TaskUpdate, etc.)
+  taskCount: number
   // Bash commands that aren't search/read (tracked separately for "Ran N bash commands")
   bashCount?: number
   // Bash tool_use_id → command string, so tool results can be scanned for
@@ -622,6 +657,7 @@ function createEmptyGroup(): GroupAccumulator {
     memorySearchCount: 0,
     memoryReadFilePaths: new Set(),
     memoryWriteCount: 0,
+    taskCount: 0,
     nonMemSearchArgs: [],
     latestDisplayHint: undefined,
     hookTotalMs: 0,
@@ -716,6 +752,9 @@ function createCollapsedGroup(
     result.teamMemoryReadCount = teamMemReadCount
     result.teamMemoryWriteCount = teamMemWriteCount
   }
+  if (group.taskCount > 0) {
+    result.taskCount = group.taskCount
+  }
   if ((group.mcpCallCount ?? 0) > 0) {
     result.mcpCallCount = group.mcpCallCount
     result.mcpServerNames = [...(group.mcpServerNames ?? [])]
@@ -786,6 +825,8 @@ export function collapseReadSearchGroups(
         } else {
           currentGroup.memoryWriteCount += count
         }
+      } else if (toolInfo.isTaskManagement) {
+        currentGroup.taskCount += countToolUses(msg)
       } else if (toolInfo.isAbsorbedSilently) {
         // Snip is absorbed silently — no count, no summary text.
         // Hidden from the default view but still shown in verbose mode
