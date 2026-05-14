@@ -88,6 +88,7 @@ export const FileEditTool = buildTool({
     return getEditToolDescription()
   },
   userFacingName,
+  compactParamKeys: ['file_path'],
   getToolUseSummary,
   getActivityDescription(input) {
     const summary = getToolUseSummary(input)

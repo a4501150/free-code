@@ -501,6 +501,11 @@ export type Tool<
    */
   isTransparentWrapper?(): boolean
   /**
+   * In compact display mode, show only these input keys (in this order).
+   * Keys whose values are null/undefined are skipped. Omit to show all params.
+   */
+  compactParamKeys?: readonly string[]
+  /**
    * Returns a short string summary of this tool use for display in compact views.
    * @param input The tool input
    * @returns A short string summary, or null to not display

@@ -93,6 +93,7 @@ export const FileWriteTool = buildTool({
     return 'Write a file to the local filesystem.'
   },
   userFacingName,
+  compactParamKeys: ['file_path'],
   getToolUseSummary,
   getActivityDescription(input) {
     const summary = getToolUseSummary(input)

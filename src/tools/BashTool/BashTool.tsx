@@ -683,6 +683,7 @@ export const BashTool = buildTool({
   get outputSchema(): OutputSchema {
     return outputSchema()
   },
+  compactParamKeys: ['description', 'command'],
   userFacingName(input) {
     if (!input) {
       return 'Bash'

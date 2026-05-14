@@ -449,6 +449,7 @@ export const PowerShellTool = buildTool({
     return outputSchema()
   },
 
+  compactParamKeys: ['description', 'command'],
   userFacingName(): string {
     return 'PowerShell'
   },

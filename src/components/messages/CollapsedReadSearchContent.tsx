@@ -91,7 +91,7 @@ function VerboseToolUse({
       ? (content.input as Record<string, unknown>)
       : null
   const toolUseMessage = rawInput
-    ? renderToolCallParams(rawInput, toolCallDisplay)
+    ? renderToolCallParams(rawInput, toolCallDisplay, tool.compactParamKeys)
     : null
 
   return (

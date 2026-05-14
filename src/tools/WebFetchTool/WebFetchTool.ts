@@ -79,6 +79,7 @@ export const WebFetchTool = buildTool({
   userFacingName() {
     return 'Fetch'
   },
+  compactParamKeys: ['url'],
   getToolUseSummary,
   getActivityDescription(input) {
     const summary = getToolUseSummary(input)

@@ -1557,6 +1557,7 @@ export const AgentTool = buildTool({
   },
   userFacingName,
   userFacingNameBackgroundColor,
+  compactParamKeys: ['description'],
   getActivityDescription(input) {
     return input?.description ?? 'Running task'
   },

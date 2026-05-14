@@ -347,6 +347,7 @@ export const FileReadTool = buildTool({
     return outputSchema()
   },
   userFacingName,
+  compactParamKeys: ['file_path', 'offset', 'limit', 'pages'],
   getToolUseSummary,
   getActivityDescription(input) {
     const summary = getToolUseSummary(input)

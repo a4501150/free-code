@@ -9,8 +9,21 @@ const FULL_MAX_VALUE_CHARS = 200
 export function renderToolCallParams(
   input: Record<string, unknown>,
   mode: ToolCallDisplayMode,
+  compactParamKeys?: readonly string[],
 ): string {
-  const entries = Object.entries(input)
+  let entries: [string, unknown][]
+
+  if (mode === 'compact' && compactParamKeys !== undefined) {
+    entries = []
+    for (const key of compactParamKeys) {
+      if (key in input && input[key] != null) {
+        entries.push([key, input[key]])
+      }
+    }
+  } else {
+    entries = Object.entries(input)
+  }
+
   if (entries.length === 0) return ''
 
   const maxValueChars =
