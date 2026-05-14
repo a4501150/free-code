@@ -154,6 +154,7 @@ export function AssistantToolUseMessage({
       : null
   if (!rawInput) return null
   const renderedToolUseMessage = renderToolCallParams(rawInput, toolCallDisplay)
+  const isStreamingInput = isQueued && renderedToolUseMessage === ''
 
   return (
     <Box
@@ -171,16 +172,16 @@ export function AssistantToolUseMessage({
           onClick={isAgentTool ? toggleAgentExpansion : undefined}
         >
           {shouldShowDot &&
-            (isQueued ? (
+            (isQueued && !isStreamingInput ? (
               <Box minWidth={2}>
-                <Text dimColor={isQueued}>{BLACK_CIRCLE}</Text>
+                <Text dimColor>{BLACK_CIRCLE}</Text>
               </Box>
             ) : (
               // WARNING: The code here and in ToolUseLoader is particularly
               // sensitive to what *should* just be trivial refactorings. See
               // the comment in ToolUseLoader for more details.
               <ToolUseLoader
-                shouldAnimate={shouldAnimate}
+                shouldAnimate={isStreamingInput || shouldAnimate}
                 isUnresolved={!isResolved}
                 isError={lookups.erroredToolUseIDs.has(param.id)}
               />
