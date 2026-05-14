@@ -1,17 +1,8 @@
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
+let _roundRobinIndex = 0
 
-export function recordTipShown(tipId: string): void {
-  const numStartups = getGlobalConfig().numStartups
-  saveGlobalConfig(c => {
-    const history = c.tipsHistory ?? {}
-    if (history[tipId] === numStartups) return c
-    return { ...c, tipsHistory: { ...history, [tipId]: numStartups } }
-  })
-}
-
-export function getSessionsSinceLastShown(tipId: string): number {
-  const config = getGlobalConfig()
-  const lastShown = config.tipsHistory?.[tipId]
-  if (!lastShown) return Infinity
-  return config.numStartups - lastShown
+export function getNextRoundRobinIndex(totalTips: number): number {
+  if (totalTips <= 0) return 0
+  const idx = _roundRobinIndex % totalTips
+  _roundRobinIndex = idx + 1
+  return idx
 }

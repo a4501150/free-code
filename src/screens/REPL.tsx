@@ -310,7 +310,10 @@ import {
   saveMode,
 } from '../utils/sessionStorage.js'
 import { deserializeMessages } from '../utils/conversationRecovery.js'
-import { extractReadFilesFromMessages } from '../utils/queryHelpers.js'
+import {
+  extractReadFilesFromMessages,
+  extractBashToolsFromMessages,
+} from '../utils/queryHelpers.js'
 import { resetMicrocompactState } from '../services/compact/microCompact.js'
 import { runPostCompactCleanup } from '../services/compact/postCompactCleanup.js'
 import {
@@ -400,6 +403,7 @@ import { MCPConnectionManager } from 'src/services/mcp/MCPConnectionManager.js'
 import { useAwaySummary } from 'src/hooks/useAwaySummary.js'
 import { useOfficialMarketplaceNotification } from 'src/hooks/useOfficialMarketplaceNotification.js'
 import type { Theme } from 'src/utils/theme.js'
+import { getTipToShowOnSpinner } from 'src/services/tips/tipScheduler.js'
 import {
   checkAndDisableBypassPermissionsIfNeeded,
   checkAndDisableAutoModeIfNeeded,
@@ -828,6 +832,7 @@ export function REPL({
   const fileHistory = useAppState(s => s.fileHistory)
   const initialMessage = useAppState(s => s.initialMessage)
   const queuedCommands = useCommandQueue()
+  const spinnerTip = useAppState(s => s.spinnerTip)
   const showExpandedTodos = useAppState(s => s.expandedView) === 'tasks'
   const pendingWorkerRequest = useAppState(s => s.pendingWorkerRequest)
   const pendingSandboxRequest = useAppState(s => s.pendingSandboxRequest)
@@ -1675,6 +1680,36 @@ export function REPL({
 
   const [theme] = useTheme()
 
+  // resetLoadingState runs twice per turn (onQueryImpl tail + onQuery finally).
+  // Without this guard, both calls advance the round-robin index.
+  const tipPickedThisTurnRef = React.useRef(false)
+  const pickNewSpinnerTip = useCallback(() => {
+    if (tipPickedThisTurnRef.current) return
+    tipPickedThisTurnRef.current = true
+    const newMessages = messagesRef.current.slice(bashToolsProcessedIdx.current)
+    for (const tool of extractBashToolsFromMessages(newMessages)) {
+      bashTools.current.add(tool)
+    }
+    bashToolsProcessedIdx.current = messagesRef.current.length
+    void getTipToShowOnSpinner({
+      readFileState: readFileState.current,
+      bashTools: bashTools.current,
+    }).then(async tip => {
+      if (tip) {
+        const content = await tip.content({ theme })
+        setAppState(prev => ({
+          ...prev,
+          spinnerTip: content,
+        }))
+      } else {
+        setAppState(prev => {
+          if (prev.spinnerTip === undefined) return prev
+          return { ...prev, spinnerTip: undefined }
+        })
+      }
+    })
+  }, [setAppState, theme])
+
   // Resets UI loading state. Does NOT call onTurnComplete - that should be
   // called explicitly only when a query turn actually completes.
   const resetLoadingState = useCallback(() => {
@@ -1690,8 +1725,9 @@ export function REPL({
     setSpinnerMessage(null)
     setSpinnerColor(null)
     setSpinnerShimmerColor(null)
+    pickNewSpinnerTip()
     endInteractionSpan()
-  }, [])
+  }, [pickNewSpinnerTip])
 
   // Session backgrounding — hook is below, after getToolUseContext
 
@@ -2058,6 +2094,8 @@ export function REPL({
     createFileStateCacheWithSizeLimit(READ_FILE_STATE_CACHE_SIZE),
   )
   const readFileState = useRef(initialReadFileState)
+  const bashTools = useRef(new Set<string>())
+  const bashToolsProcessedIdx = useRef(0)
   // Session-level dedup for nested_memory CLAUDE.md attachments.
   // readFileState is a 100-entry LRU; once it evicts a CLAUDE.md path,
   // the next discovery cycle re-injects it. Cleared in clearConversation.
@@ -2076,6 +2114,9 @@ export function REPL({
         readFileState.current,
         extracted,
       )
+      for (const tool of extractBashToolsFromMessages(messages)) {
+        bashTools.current.add(tool)
+      }
     },
     [],
   )
@@ -3365,6 +3406,8 @@ export function REPL({
         })
         haikuTitleAttemptedRef.current = false
         setHaikuTitle(undefined)
+        bashTools.current.clear()
+        bashToolsProcessedIdx.current = 0
 
         // Restore the plan slug for the new session so getPlan() finds the file
         if (oldPlanSlug) {
@@ -3722,6 +3765,7 @@ export function REPL({
         setIDESelection(undefined)
         setSubmitCount(_ => _ + 1)
         helpers.clearBuffer()
+        tipPickedThisTurnRef.current = false
 
         // Show the placeholder in the same React batch as setInputValue('').
         // Skip for slash/bash (they have their own echo) and speculation
@@ -5137,6 +5181,7 @@ export function REPL({
               {showSpinner && (
                 <SpinnerWithVerb
                   mode={streamMode}
+                  spinnerTip={spinnerTip}
                   responseLengthRef={responseLengthRef}
                   overrideMessage={spinnerMessage}
                   spinnerSuffix={stopHookSpinnerSuffix}

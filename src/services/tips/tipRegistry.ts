@@ -1,18 +1,12 @@
 import chalk from 'chalk'
-import { logForDebugging } from 'src/utils/debug.js'
 import { fileHistoryEnabled } from 'src/utils/fileHistory.js'
-import {
-  getInitialSettings,
-  getSettings_DEPRECATED,
-  getSettingsForSource,
-} from 'src/utils/settings/settings.js'
+import { getInitialSettings, getSettings_DEPRECATED } from 'src/utils/settings/settings.js'
 import { shouldOfferTerminalSetup } from '../../commands/terminalSetup/terminalSetup.js'
 import { color } from '../../components/design-system/color.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
 import { isKairosCronEnabled } from '../../tools/ScheduleCronTool/prompt.js'
 import { is1PApiCustomer } from '../../utils/auth.js'
 import { countConcurrentSessions } from '../../utils/concurrentSessions.js'
-import { getGlobalConfig } from '../../utils/config.js'
 import {
   getDisplayedEffortLevel,
   modelSupportsEffort,
@@ -38,7 +32,6 @@ import {
   getCurrentSessionAgentColor,
   isCustomTitleEnabled,
 } from '../../utils/sessionStorage.js'
-import { getSessionsSinceLastShown } from './tipHistory.js'
 import type { Tip, TipContext } from './types.js'
 
 let _isOfficialMarketplaceInstalledCache: boolean | undefined
@@ -82,58 +75,31 @@ const externalTips: Tip[] = [
     id: 'new-user-warmup',
     content: async () =>
       `Start with small features or bug fixes, tell Claude to propose a plan, and verify its suggested edits`,
-    cooldownSessions: 3,
-    async isRelevant() {
-      const config = getGlobalConfig()
-      return config.numStartups < 10
-    },
+    isRelevant: async () => true,
   },
   {
     id: 'plan-mode-for-complex-tasks',
     content: async () =>
       `Use Plan Mode to prepare for a complex request before making changes. Press ${getShortcutDisplay('chat:cycleMode', 'Chat', 'shift+tab')} twice to enable.`,
-    cooldownSessions: 5,
-    isRelevant: async () => {
-      const config = getGlobalConfig()
-      // Show to users who haven't used plan mode recently (7+ days)
-      const daysSinceLastUse = config.lastPlanModeUse
-        ? (Date.now() - config.lastPlanModeUse) / (1000 * 60 * 60 * 24)
-        : Infinity
-      return daysSinceLastUse > 7
-    },
+    isRelevant: async () => true,
   },
   {
     id: 'default-permission-mode-config',
     content: async () =>
       `Use /config to change your default permission mode (including Plan Mode)`,
-    cooldownSessions: 10,
     isRelevant: async () => {
-      try {
-        const config = getGlobalConfig()
-        const settings = getSettings_DEPRECATED()
-        // Show if they've used plan mode but haven't set a default
-        const hasUsedPlanMode = Boolean(config.lastPlanModeUse)
-        const hasDefaultMode = Boolean(settings?.permissions?.defaultMode)
-        return hasUsedPlanMode && !hasDefaultMode
-      } catch (error) {
-        logForDebugging(
-          `Failed to check default-permission-mode-config tip relevance: ${error}`,
-          { level: 'warn' },
-        )
-        return false
-      }
+      const settings = getSettings_DEPRECATED()
+      return !settings?.permissions?.defaultMode
     },
   },
   {
     id: 'git-worktrees',
     content: async () =>
       'Use git worktrees to run multiple Claude sessions in parallel.',
-    cooldownSessions: 10,
     isRelevant: async () => {
       try {
-        const config = getGlobalConfig()
         const worktreeCount = await getWorktreeCount()
-        return worktreeCount <= 1 && config.numStartups > 50
+        return worktreeCount <= 1
       } catch (_) {
         return false
       }
@@ -143,7 +109,6 @@ const externalTips: Tip[] = [
     id: 'color-when-multi-clauding',
     content: async () =>
       'Running multiple Claude sessions? Use /color and /rename to tell them apart at a glance.',
-    cooldownSessions: 10,
     isRelevant: async () => {
       if (getCurrentSessionAgentColor()) return false
       const count = await countConcurrentSessions()
@@ -156,14 +121,7 @@ const externalTips: Tip[] = [
       env.terminal === 'Apple_Terminal'
         ? 'Run /terminal-setup to enable convenient terminal integration like Option + Enter for new line and more'
         : 'Run /terminal-setup to enable convenient terminal integration like Shift + Enter for new line and more',
-    cooldownSessions: 10,
-    async isRelevant() {
-      const config = getGlobalConfig()
-      if (env.terminal === 'Apple_Terminal') {
-        return !config.optionAsMetaKeyInstalled
-      }
-      return !config.shiftEnterKeyBindingInstalled
-    },
+    isRelevant: async () => shouldOfferTerminalSetup(),
   },
   {
     id: 'shift-enter',
@@ -171,60 +129,23 @@ const externalTips: Tip[] = [
       env.terminal === 'Apple_Terminal'
         ? 'Press Option+Enter to send a multi-line message'
         : 'Press Shift+Enter to send a multi-line message',
-    cooldownSessions: 10,
-    async isRelevant() {
-      const config = getGlobalConfig()
-      return Boolean(
-        (env.terminal === 'Apple_Terminal'
-          ? config.optionAsMetaKeyInstalled
-          : config.shiftEnterKeyBindingInstalled) && config.numStartups > 3,
-      )
-    },
-  },
-  {
-    id: 'shift-enter-setup',
-    content: async () =>
-      env.terminal === 'Apple_Terminal'
-        ? 'Run /terminal-setup to enable Option+Enter for new lines'
-        : 'Run /terminal-setup to enable Shift+Enter for new lines',
-    cooldownSessions: 10,
-    async isRelevant() {
-      if (!shouldOfferTerminalSetup()) {
-        return false
-      }
-      const config = getGlobalConfig()
-      return !(env.terminal === 'Apple_Terminal'
-        ? config.optionAsMetaKeyInstalled
-        : config.shiftEnterKeyBindingInstalled)
-    },
-  },
-  {
-    id: 'memory-command',
-    content: async () => 'Use /memory to view and manage Claude memory',
-    cooldownSessions: 15,
-    async isRelevant() {
-      const config = getGlobalConfig()
-      return config.memoryUsageCount <= 0
-    },
+    isRelevant: async () => true,
   },
   {
     id: 'theme-command',
     content: async () => 'Use /theme to change the color theme',
-    cooldownSessions: 20,
     isRelevant: async () => true,
   },
   {
     id: 'colorterm-truecolor',
     content: async () =>
       'Try setting environment variable COLORTERM=truecolor for richer colors',
-    cooldownSessions: 30,
     isRelevant: async () => !process.env.COLORTERM && chalk.level < 3,
   },
   {
     id: 'powershell-tool-env',
     content: async () =>
       'Set CLAUDE_CODE_USE_POWERSHELL_TOOL=1 to enable the PowerShell tool (preview)',
-    cooldownSessions: 10,
     isRelevant: async () =>
       getPlatform() === 'windows' &&
       process.env.CLAUDE_CODE_USE_POWERSHELL_TOOL === undefined,
@@ -233,48 +154,37 @@ const externalTips: Tip[] = [
     id: 'status-line',
     content: async () =>
       'Use /statusline to set up a custom status line that will display beneath the input box',
-    cooldownSessions: 25,
     isRelevant: async () => getSettings_DEPRECATED().statusLine === undefined,
   },
   {
     id: 'prompt-queue',
     content: async () =>
       'Hit Enter to queue up additional messages while Claude is working.',
-    cooldownSessions: 5,
-    async isRelevant() {
-      const config = getGlobalConfig()
-      return config.promptQueueUseCount <= 3
-    },
+    isRelevant: async () => true,
   },
   {
     id: 'enter-to-steer-in-relatime',
     content: async () =>
       'Send messages to Claude while it works to steer Claude in real-time',
-    cooldownSessions: 20,
     isRelevant: async () => true,
   },
   {
     id: 'todo-list',
     content: async () =>
       'Ask Claude to create a todo list when working on complex tasks to track progress and remain on track',
-    cooldownSessions: 20,
     isRelevant: async () => true,
   },
   {
     id: 'vscode-command-install',
     content: async () =>
       `Open the Command Palette (Cmd+Shift+P) and run "Shell Command: Install '${env.terminal === 'vscode' ? 'code' : env.terminal}' command in PATH" to enable IDE integration`,
-    cooldownSessions: 0,
     async isRelevant() {
-      // Only show this tip if we're in a VS Code-style terminal
       if (!isSupportedVSCodeTerminal()) {
         return false
       }
       if (getPlatform() !== 'macos') {
         return false
       }
-
-      // Check if the relevant command is available
       switch (env.terminal) {
         case 'vscode':
           return !(await isVSCodeInstalled())
@@ -290,137 +200,94 @@ const externalTips: Tip[] = [
   {
     id: 'ide-upsell-external-terminal',
     content: async () => 'Connect Claude to your IDE · /ide',
-    cooldownSessions: 4,
     async isRelevant() {
       if (isSupportedTerminal()) {
         return false
       }
-
-      // Use lockfiles as a (quicker) signal for running IDEs
       const lockfiles = await getSortedIdeLockfiles()
       if (lockfiles.length !== 0) {
         return false
       }
-
       const runningIDEs = await detectRunningIDEsCached()
       return runningIDEs.length > 0
     },
   },
   {
-    id: 'install-github-app',
-    content: async () =>
-      'Run /install-github-app to tag @claude right from your Github issues and PRs',
-    cooldownSessions: 10,
-    isRelevant: async () => !getGlobalConfig().githubActionSetupCount,
-  },
-  {
-    id: 'install-slack-app',
-    content: async () => 'Run /install-slack-app to use Claude in Slack',
-    cooldownSessions: 10,
-    isRelevant: async () => !getGlobalConfig().slackAppInstallCount,
-  },
-  {
     id: 'permissions',
     content: async () =>
       'Use /permissions to pre-approve and pre-deny bash, edit, and MCP tools',
-    cooldownSessions: 10,
-    async isRelevant() {
-      const config = getGlobalConfig()
-      return config.numStartups > 10
-    },
+    isRelevant: async () => true,
   },
   {
     id: 'drag-and-drop-images',
     content: async () =>
       'Did you know you can drag and drop image files into your terminal?',
-    cooldownSessions: 10,
     isRelevant: async () => !env.isSSH(),
   },
   {
     id: 'paste-images-mac',
     content: async () =>
       'Paste images into Claude Code using control+v (not cmd+v!)',
-    cooldownSessions: 10,
     isRelevant: async () => getPlatform() === 'macos',
   },
   {
     id: 'double-esc',
     content: async () =>
       'Double-tap esc to rewind the conversation to a previous point in time',
-    cooldownSessions: 10,
     isRelevant: async () => !fileHistoryEnabled(),
   },
   {
     id: 'double-esc-code-restore',
     content: async () =>
       'Double-tap esc to rewind the code and/or conversation to a previous point in time',
-    cooldownSessions: 10,
     isRelevant: async () => fileHistoryEnabled(),
   },
   {
     id: 'continue',
     content: async () =>
       'Run claude --continue or claude --resume to resume a conversation',
-    cooldownSessions: 10,
     isRelevant: async () => true,
   },
   {
     id: 'rename-conversation',
     content: async () =>
       'Name your conversations with /rename to find them easily in /resume later',
-    cooldownSessions: 15,
-    isRelevant: async () =>
-      isCustomTitleEnabled() && getGlobalConfig().numStartups > 10,
+    isRelevant: async () => isCustomTitleEnabled(),
   },
   {
     id: 'custom-commands',
     content: async () =>
       'Create skills by adding .md files to .claude/skills/ in your project or ~/.claude/skills/ for skills that work in any project',
-    cooldownSessions: 15,
-    async isRelevant() {
-      const config = getGlobalConfig()
-      return config.numStartups > 10
-    },
+    isRelevant: async () => true,
   },
   {
     id: 'shift-tab',
     content: async () =>
       `Hit ${getShortcutDisplay('chat:cycleMode', 'Chat', 'shift+tab')} to cycle between default mode, auto-accept edit mode, and plan mode`,
-    cooldownSessions: 10,
     isRelevant: async () => true,
   },
   {
     id: 'image-paste',
     content: async () =>
       `Use ${getShortcutDisplay('chat:imagePaste', 'Chat', 'ctrl+v')} to paste images from your clipboard`,
-    cooldownSessions: 20,
     isRelevant: async () => true,
   },
   {
     id: 'custom-agents',
     content: async () =>
       'Use /agents to optimize specific tasks. Eg. Software Architect, Code Writer, Code Reviewer',
-    cooldownSessions: 15,
-    async isRelevant() {
-      const config = getGlobalConfig()
-      return config.numStartups > 5
-    },
+    isRelevant: async () => true,
   },
   {
     id: 'agent-flag',
     content: async () =>
       'Use --agent <agent_name> to directly start a conversation with a subagent',
-    cooldownSessions: 15,
-    async isRelevant() {
-      const config = getGlobalConfig()
-      return config.numStartups > 5
-    },
+    isRelevant: async () => true,
   },
   {
     id: 'desktop-app',
     content: async () =>
       'Run Claude Code locally or remotely using the Claude desktop app: clau.de/desktop',
-    cooldownSessions: 15,
     isRelevant: async () => getPlatform() !== 'linux',
   },
   {
@@ -429,21 +296,18 @@ const externalTips: Tip[] = [
       const blue = color('suggestion', ctx.theme)
       return `Continue your session in Claude Code Desktop with ${blue('/desktop')}`
     },
-    cooldownSessions: 15,
     isRelevant: async () => false,
   },
   {
     id: 'web-app',
     content: async () =>
       'Run tasks in the cloud while you keep coding locally · clau.de/web',
-    cooldownSessions: 15,
     isRelevant: async () => true,
   },
   {
     id: 'mobile-app',
     content: async () =>
       '/mobile to use Claude Code from the Claude app on your phone',
-    cooldownSessions: 15,
     isRelevant: async () => true,
   },
   {
@@ -452,7 +316,6 @@ const externalTips: Tip[] = [
       const blue = color('suggestion', ctx.theme)
       return `Working with HTML/CSS? Install the frontend-design plugin:\n${blue(`/plugin install frontend-design@${OFFICIAL_MARKETPLACE_NAME}`)}`
     },
-    cooldownSessions: 3,
     isRelevant: async context =>
       isMarketplacePluginRelevant('frontend-design', context, {
         filePath: /\.(html|css|htm)$/i,
@@ -464,7 +327,6 @@ const externalTips: Tip[] = [
       const blue = color('suggestion', ctx.theme)
       return `Working with Vercel? Install the vercel plugin:\n${blue(`/plugin install vercel@${OFFICIAL_MARKETPLACE_NAME}`)}`
     },
-    cooldownSessions: 3,
     isRelevant: async context =>
       isMarketplacePluginRelevant('vercel', context, {
         filePath: /(?:^|[/\\])vercel\.json$/i,
@@ -478,7 +340,6 @@ const externalTips: Tip[] = [
       const cmd = blue('/effort high')
       return `Working on something tricky? ${cmd} gives better first answers`
     },
-    cooldownSessions: 3,
     isRelevant: async () => {
       if (!is1PApiCustomer()) return false
       const model = getMainLoopModel()
@@ -500,11 +361,7 @@ const externalTips: Tip[] = [
       const blue = color('suggestion', ctx.theme)
       return `Say ${blue('"fan out subagents"')} and Claude sends a team. Each one digs deep so nothing gets missed.`
     },
-    cooldownSessions: 3,
-    isRelevant: async () => {
-      if (!is1PApiCustomer()) return false
-      return true
-    },
+    isRelevant: async () => is1PApiCustomer(),
   },
   {
     id: 'loop-command-nudge',
@@ -512,7 +369,6 @@ const externalTips: Tip[] = [
       const blue = color('suggestion', ctx.theme)
       return `${blue('/loop')} runs any prompt on a recurring schedule. Great for monitoring deploys, babysitting PRs, or polling status.`
     },
-    cooldownSessions: 3,
     isRelevant: async () => {
       if (!is1PApiCustomer()) return false
       if (!isKairosCronEnabled()) return false
@@ -530,7 +386,6 @@ function getCustomTips(): Tip[] {
   return override.tips.map((content, i) => ({
     id: `custom-tip-${i}`,
     content: async () => content,
-    cooldownSessions: 0,
     isRelevant: async () => true,
   }))
 }
@@ -540,17 +395,13 @@ export async function getRelevantTips(context?: TipContext): Promise<Tip[]> {
   const override = settings.spinnerTipsOverride
   const customTips = getCustomTips()
 
-  // If excludeDefault is true and there are custom tips, skip built-in tips entirely
   if (override?.excludeDefault && customTips.length > 0) {
     return customTips
   }
 
-  // Otherwise, filter built-in tips as before and combine with custom
   const tips = [...externalTips, ...internalOnlyTips]
   const isRelevant = await Promise.all(tips.map(_ => _.isRelevant(context)))
-  const filtered = tips
-    .filter((_, index) => isRelevant[index])
-    .filter(_ => getSessionsSinceLastShown(_.id) >= _.cooldownSessions)
+  const filtered = tips.filter((_, index) => isRelevant[index])
 
   return [...filtered, ...customTips]
 }
