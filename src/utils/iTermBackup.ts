@@ -1,24 +1,17 @@
 import { copyFile, stat } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
-import { getGlobalConfig, saveGlobalConfig } from './config.js'
 import { logError } from './log.js'
 
-export function markITerm2SetupComplete(): void {
-  saveGlobalConfig(current => ({
-    ...current,
-    iterm2SetupInProgress: false,
-  }))
-}
+export function markITerm2SetupComplete(): void {}
 
 function getIterm2RecoveryInfo(): {
   inProgress: boolean
   backupPath: string | null
 } {
-  const config = getGlobalConfig()
   return {
-    inProgress: config.iterm2SetupInProgress ?? false,
-    backupPath: config.iterm2BackupPath || null,
+    inProgress: false,
+    backupPath: null,
   }
 }
 

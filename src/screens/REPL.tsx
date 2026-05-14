@@ -30,8 +30,6 @@ import {
   useTabStatus,
 } from '../ink.js'
 import type { TabStatusKind } from '../ink/hooks/use-tab-status.js'
-import { CostThresholdDialog } from '../components/CostThresholdDialog.js'
-import { IdleReturnDialog } from '../components/IdleReturnDialog.js'
 import * as React from 'react'
 import {
   useEffect,
@@ -72,8 +70,7 @@ import { asSessionId, asAgentId } from '../types/ids.js'
 import { logForDebugging } from '../utils/debug.js'
 import { QueryGuard } from '../utils/QueryGuard.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
-import { formatTokens, truncateToWidth } from '../utils/format.js'
-import { getCurrentTotalInputTokens } from '../utils/tokens.js'
+import { truncateToWidth } from '../utils/format.js'
 import { consumeEarlyInput } from '../utils/earlyInput.js'
 
 import { setMemberActive } from '../utils/swarm/teamHelpers.js'
@@ -143,13 +140,11 @@ import { getSystemContext, getUserContext } from '../context.js'
 import { getMemoryFiles } from '../utils/claudemd.js'
 import { startBackgroundHousekeeping } from '../utils/backgroundHousekeeping.js'
 import {
-  getTotalCost,
   saveCurrentSessionCosts,
   resetCostState,
   getStoredSessionCosts,
 } from '../cost-tracker.js'
 import { useCostSummary } from '../costHook.js'
-import { useFpsMetrics } from '../context/fpsMetrics.js'
 import { useAfterFirstRender } from '../hooks/useAfterFirstRender.js'
 import { useDeferredHookMessages } from '../hooks/useDeferredHookMessages.js'
 import {
@@ -210,9 +205,7 @@ import {
 } from '../utils/permissions/filesystem.js'
 import { WEB_FETCH_TOOL_NAME } from '../tools/WebFetchTool/prompt.js'
 import { SLEEP_TOOL_NAME } from '../tools/SleepTool/prompt.js'
-import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'
-import { hasConsoleBillingAccess } from '../utils/billing.js'
-import { getInitialSettings } from 'src/utils/settings/settings.js'
+import { getInitialSettings } from '../utils/settings/settings.js'
 import {
   textForResubmit,
   handleMessageFromStream,
@@ -317,10 +310,7 @@ import {
   saveMode,
 } from '../utils/sessionStorage.js'
 import { deserializeMessages } from '../utils/conversationRecovery.js'
-import {
-  extractReadFilesFromMessages,
-  extractBashToolsFromMessages,
-} from '../utils/queryHelpers.js'
+import { extractReadFilesFromMessages } from '../utils/queryHelpers.js'
 import { resetMicrocompactState } from '../services/compact/microCompact.js'
 import { runPostCompactCleanup } from '../services/compact/postCompactCleanup.js'
 import {
@@ -409,10 +399,6 @@ import { createAbortController } from '../utils/abortController.js'
 import { MCPConnectionManager } from 'src/services/mcp/MCPConnectionManager.js'
 import { useAwaySummary } from 'src/hooks/useAwaySummary.js'
 import { useOfficialMarketplaceNotification } from 'src/hooks/useOfficialMarketplaceNotification.js'
-import {
-  getTipToShowOnSpinner,
-  recordShownTip,
-} from 'src/services/tips/tipScheduler.js'
 import type { Theme } from 'src/utils/theme.js'
 import {
   checkAndDisableBypassPermissionsIfNeeded,
@@ -448,12 +434,6 @@ import { useTeammateLifecycleNotification } from 'src/hooks/notifs/useTeammateSh
 import { useFastModeNotification } from 'src/hooks/notifs/useFastModeNotification.js'
 import type { HookProgress } from '../types/hooks.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
-import {
-  CompanionSprite,
-  CompanionFloatingBubble,
-  MIN_COLS_FOR_FULL_SPRITE,
-} from '../buddy/CompanionSprite.js'
-import { fireCompanionObserver } from '../buddy/observer.js'
 import {
   FullscreenLayout,
   useUnseenDivider,
@@ -848,10 +828,6 @@ export function REPL({
   const fileHistory = useAppState(s => s.fileHistory)
   const initialMessage = useAppState(s => s.initialMessage)
   const queuedCommands = useCommandQueue()
-  // feature() is a build-time constant — dead code elimination removes the hook
-  // call entirely in external builds, so this is safe despite looking conditional.
-  // These fields contain excluded strings that must not appear in external builds.
-  const spinnerTip = useAppState(s => s.spinnerTip)
   const showExpandedTodos = useAppState(s => s.expandedView) === 'tasks'
   const pendingWorkerRequest = useAppState(s => s.pendingWorkerRequest)
   const pendingSandboxRequest = useAppState(s => s.pendingSandboxRequest)
@@ -1397,7 +1373,7 @@ export function REPL({
         : 'idle'
 
   const showStatusInTerminalTab =
-    getGlobalConfig().showStatusInTerminalTab ?? false
+    getInitialSettings().showStatusInTerminalTab ?? false
   useTabStatus(titleDisabled || !showStatusInTerminalTab ? null : sessionStatus)
 
   // Register the leader's setToolUseConfirmQueue for in-process teammates
@@ -1410,11 +1386,6 @@ export function REPL({
     initialMessages ?? [],
   )
   const messagesRef = useRef(messages)
-  // Stores the willowMode variant that was shown (or false if no hint shown).
-  // Captured at hint_shown time so hint_converted telemetry reports the same
-  // variant — the value shouldn't change mid-session, but reading
-  // it once guarantees consistency between the paired events.
-  const idleHintShownRef = useRef<string | false>(false)
   // Wrap setMessages so messagesRef is always current the instant the
   // call returns — not when React later processes the batch.  Apply the
   // updater eagerly against the ref, then hand React the computed value
@@ -1526,19 +1497,9 @@ export function REPL({
       } else {
         onScrollAway(handle)
         if (feature('KAIROS')) maybeLoadOlder(handle)
-        // Dismiss the companion bubble on scroll — it's absolute-positioned
-        // at bottom-right and covers transcript content. Scrolling = user is
-        // trying to read something under it.
-        if (feature('BUDDY')) {
-          setAppState(prev =>
-            prev.companionReaction === undefined
-              ? prev
-              : { ...prev, companionReaction: undefined },
-          )
-        }
       }
     },
-    [onRepin, onScrollAway, maybeLoadOlder, setAppState],
+    [onRepin, onScrollAway, maybeLoadOlder],
   )
   // Deferred SessionStart hook messages — REPL renders immediately and
   // hook messages are injected when they resolve. awaitPendingHooks()
@@ -1681,17 +1642,7 @@ export function REPL({
   const [messageSelectorPreselect, setMessageSelectorPreselect] = useState<
     UserMessage | undefined
   >(undefined)
-  const [showCostDialog, setShowCostDialog] = useState(false)
   const [conversationId, setConversationId] = useState(randomUUID())
-
-  // Idle-return dialog: shown when user submits after a long idle gap
-  const [idleReturnPending, setIdleReturnPending] = useState<{
-    input: string
-    idleMinutes: number
-  } | null>(null)
-  const skipIdleCheckRef = useRef(false)
-  const lastQueryCompletionTimeRef = useRef(lastQueryCompletionTime)
-  lastQueryCompletionTimeRef.current = lastQueryCompletionTime
 
   // Aggregate tool result budget: per-conversation decision tracking.
   // When the feature flag is on, query.ts enforces the budget; when
@@ -1711,9 +1662,6 @@ export function REPL({
     ),
   }))
 
-  const [haveShownCostDialog, setHaveShownCostDialog] = useState(
-    getGlobalConfig().hasAcknowledgedCostThreshold,
-  )
   const [vimMode, setVimMode] = useState<VimMode>('INSERT')
   const [showBashesDialog, setShowBashesDialog] = useState<string | boolean>(
     false,
@@ -1726,38 +1674,6 @@ export function REPL({
   terminalFocusRef.current = isTerminalFocused
 
   const [theme] = useTheme()
-
-  // resetLoadingState runs twice per turn (onQueryImpl tail + onQuery finally).
-  // Without this guard, both calls pick a tip → two recordShownTip → two
-  // saveGlobalConfig writes back-to-back. Reset at submit in onSubmit.
-  const tipPickedThisTurnRef = React.useRef(false)
-  const pickNewSpinnerTip = useCallback(() => {
-    if (tipPickedThisTurnRef.current) return
-    tipPickedThisTurnRef.current = true
-    const newMessages = messagesRef.current.slice(bashToolsProcessedIdx.current)
-    for (const tool of extractBashToolsFromMessages(newMessages)) {
-      bashTools.current.add(tool)
-    }
-    bashToolsProcessedIdx.current = messagesRef.current.length
-    void getTipToShowOnSpinner({
-      readFileState: readFileState.current,
-      bashTools: bashTools.current,
-    }).then(async tip => {
-      if (tip) {
-        const content = await tip.content({ theme })
-        setAppState(prev => ({
-          ...prev,
-          spinnerTip: content,
-        }))
-        recordShownTip(tip)
-      } else {
-        setAppState(prev => {
-          if (prev.spinnerTip === undefined) return prev
-          return { ...prev, spinnerTip: undefined }
-        })
-      }
-    })
-  }, [setAppState, theme])
 
   // Resets UI loading state. Does NOT call onTurnComplete - that should be
   // called explicitly only when a query turn actually completes.
@@ -1774,9 +1690,8 @@ export function REPL({
     setSpinnerMessage(null)
     setSpinnerColor(null)
     setSpinnerShimmerColor(null)
-    pickNewSpinnerTip()
     endInteractionSpan()
-  }, [pickNewSpinnerTip])
+  }, [])
 
   // Session backgrounding — hook is below, after getToolUseContext
 
@@ -1808,32 +1723,17 @@ export function REPL({
     }
   }, [hasRunningTeammates, setMessages])
 
-  // Show auto permissions warning when entering auto mode
-  // (either via Shift+Tab toggle or on startup). Debounced to avoid
-  // flashing when the user is cycling through modes quickly.
-  // Only shown 3 times total across sessions.
+  // Show auto permissions warning once per session when entering auto mode.
   const safeYoloMessageShownRef = useRef(false)
   useEffect(() => {
     if (feature('TRANSCRIPT_CLASSIFIER')) {
       if (toolPermissionContext.mode !== 'auto') {
-        safeYoloMessageShownRef.current = false
         return
       }
       if (safeYoloMessageShownRef.current) return
-      const config = getGlobalConfig()
-      const count = config.autoPermissionsNotificationCount ?? 0
-      if (count >= 3) return
       const timer = setTimeout(
         (ref, setMessages) => {
           ref.current = true
-          saveGlobalConfig(prev => {
-            const prevCount = prev.autoPermissionsNotificationCount ?? 0
-            if (prevCount >= 3) return prev
-            return {
-              ...prev,
-              autoPermissionsNotificationCount: prevCount + 1,
-            }
-          })
           setMessages(prev => [
             ...prev,
             createSystemMessage(AUTO_MODE_DESCRIPTION, 'warning'),
@@ -2158,8 +2058,6 @@ export function REPL({
     createFileStateCacheWithSizeLimit(READ_FILE_STATE_CACHE_SIZE),
   )
   const readFileState = useRef(initialReadFileState)
-  const bashTools = useRef(new Set<string>())
-  const bashToolsProcessedIdx = useRef(0)
   // Session-level dedup for nested_memory CLAUDE.md attachments.
   // readFileState is a 100-entry LRU; once it evicts a CLAUDE.md path,
   // the next discovery cycle re-injects it. Cleared in clearConversation.
@@ -2178,9 +2076,6 @@ export function REPL({
         readFileState.current,
         extracted,
       )
-      for (const tool of extractBashToolsFromMessages(messages)) {
-        bashTools.current.add(tool)
-      }
     },
     [],
   )
@@ -2202,9 +2097,6 @@ export function REPL({
   const [exitFlow, setExitFlow] = useState<React.ReactNode>(null)
   const [isExiting, setIsExiting] = useState(false)
 
-  // Calculate if cost dialog should be shown
-  const showingCostDialog = !isLoading && showCostDialog
-
   // Determine which dialog should have focus (if any)
   // Permission and interactive dialogs can show even when toolJSX is set,
   // as long as shouldContinueAnimation is true. This prevents deadlocks when
@@ -2216,8 +2108,6 @@ export function REPL({
     | 'prompt'
     | 'worker-sandbox-permission'
     | 'elicitation'
-    | 'cost'
-    | 'idle-return'
     | 'init-onboarding'
     | 'ide-onboarding'
     | 'model-switch'
@@ -2252,9 +2142,6 @@ export function REPL({
     // These are informational/onboarding dialogs that can safely wait.
     if (isPromptInputActive) return undefined
 
-    if (allowDialogsWithAnimation && showingCostDialog) return 'cost'
-    if (allowDialogsWithAnimation && idleReturnPending) return 'idle-return'
-
     // Onboarding dialogs (special conditions)
     if (allowDialogsWithAnimation && showIdeOnboarding) return 'ide-onboarding'
 
@@ -2273,8 +2160,7 @@ export function REPL({
   // True when non-critical dialogs exist but are deferred because the user is typing.
   // Critical permission dialogs (tool-permission, sandbox, prompt, elicitation)
   // always show immediately regardless of typing state.
-  const hasSuppressedDialogs =
-    isPromptInputActive && (showingCostDialog || idleReturnPending)
+  const hasSuppressedDialogs = false
 
   // Keep ref in sync so timer callbacks can read the current value
   focusedInputDialogRef.current = focusedInputDialog
@@ -2387,7 +2273,6 @@ export function REPL({
     }
 
     queryGuard.forceEnd()
-    skipIdleCheckRef.current = false
 
     // Preserve partially-streamed text so the user can read what was
     // generated before pressing Esc. Pushed before resetLoadingState clears
@@ -2470,19 +2355,6 @@ export function REPL({
     inputValue,
     streamMode,
   }
-
-  useEffect(() => {
-    const totalCost = getTotalCost()
-    if (totalCost >= 5 /* $5 */ && !showCostDialog && !haveShownCostDialog) {
-      // Mark as shown even if the dialog won't render (no console billing
-      // access). Otherwise this effect re-fires on every message change for
-      // the rest of the session — 200k+ spurious events observed.
-      setHaveShownCostDialog(true)
-      if (hasConsoleBillingAccess()) {
-        setShowCostDialog(true)
-      }
-    }
-  }, [messages, showCostDialog, haveShownCostDialog])
 
   const sandboxAskCallback: SandboxAskCallback = useCallback(
     async (hostPattern: NetworkHostPattern) => {
@@ -3223,16 +3095,6 @@ export function REPL({
         onQueryEvent(event)
       }
 
-      if (feature('BUDDY')) {
-        void fireCompanionObserver(messagesRef.current, reaction =>
-          setAppState(prev =>
-            prev.companionReaction === reaction
-              ? prev
-              : { ...prev, companionReaction: reaction },
-          ),
-        )
-      }
-
       queryCheckpoint('query_end')
 
       resetLoadingState()
@@ -3357,7 +3219,6 @@ export function REPL({
         // (cancel+resubmit race where the stale finally fires as a microtask).
         if (queryGuard.end(thisGeneration)) {
           setLastQueryCompletionTime(Date.now())
-          skipIdleCheckRef.current = false
           // Always reset loading state in finally - this ensures cleanup even
           // if onQueryImpl throws. onTurnComplete is called separately in
           // onQueryImpl only on successful completion.
@@ -3504,8 +3365,6 @@ export function REPL({
         })
         haikuTitleAttemptedRef.current = false
         setHaikuTitle(undefined)
-        bashTools.current.clear()
-        bashToolsProcessedIdx.current = 0
 
         // Restore the plan slug for the new session so getPlan() finds the file
         if (oldPlanSlug) {
@@ -3687,10 +3546,6 @@ export function REPL({
               cmd.aliases?.includes(commandName) ||
               getCommandName(cmd) === commandName),
         )
-        if (matchingCommand?.name === 'clear' && idleHintShownRef.current) {
-          idleHintShownRef.current = false
-        }
-
         const shouldTreatAsImmediate =
           queryGuard.isActive &&
           (matchingCommand?.immediate || options?.fromKeybinding)
@@ -3816,37 +3671,6 @@ export function REPL({
         }
       }
 
-      // Idle-return: prompt returning users to start fresh when the
-      // conversation is large and the cache is cold.
-      {
-        const willowMode = getInitialSettings()?.idleReturnMode ?? 'hint_v2'
-        const idleThresholdMin = Number(
-          process.env.CLAUDE_CODE_IDLE_THRESHOLD_MINUTES ?? 75,
-        )
-        const tokenThreshold = Number(
-          process.env.CLAUDE_CODE_IDLE_TOKEN_THRESHOLD ?? 100_000,
-        )
-        if (
-          willowMode !== 'off' &&
-          !getGlobalConfig().idleReturnDismissed &&
-          !skipIdleCheckRef.current &&
-          !speculationAccept &&
-          !input.trim().startsWith('/') &&
-          lastQueryCompletionTimeRef.current > 0 &&
-          getCurrentTotalInputTokens(messagesRef.current) >= tokenThreshold
-        ) {
-          const idleMs = Date.now() - lastQueryCompletionTimeRef.current
-          const idleMinutes = idleMs / 60_000
-          if (idleMinutes >= idleThresholdMin && willowMode === 'dialog') {
-            setIdleReturnPending({ input, idleMinutes })
-            setInputValue('')
-            helpers.setCursorOffset(0)
-            helpers.clearBuffer()
-            return
-          }
-        }
-      }
-
       // Add to history for direct user submissions.
       // Queued command processing (executeQueuedInput) doesn't call onSubmit,
       // so notifications and already-queued user input won't be added to history here.
@@ -3898,7 +3722,6 @@ export function REPL({
         setIDESelection(undefined)
         setSubmitCount(_ => _ + 1)
         helpers.clearBuffer()
-        tipPickedThisTurnRef.current = false
 
         // Show the placeholder in the same React batch as setInputValue('').
         // Skip for slash/bash (they have their own echo) and speculation
@@ -4309,7 +4132,7 @@ export function REPL({
   }
 
   // Register cost summary tracker
-  useCostSummary(useFpsMetrics())
+  useCostSummary()
 
   // Record transcripts locally, for debugging and conversation recovery
   // Don't record conversation if we only have initial messages; optimizes
@@ -4318,26 +4141,6 @@ export function REPL({
   useLogMessages(messages, messages.length === initialMessages?.length)
 
   useAfterFirstRender()
-
-  // Track prompt queue usage for analytics. Fire once per transition from
-  // empty to non-empty, not on every length change -- otherwise a render loop
-  // (concurrent onQuery thrashing, etc.) spams saveGlobalConfig, which hits
-  // ELOCKED under concurrent sessions and falls back to unlocked writes.
-  // That write storm is the primary trigger for ~/.claude.json corruption
-  // (GH #3117).
-  const hasCountedQueueUseRef = useRef(false)
-  useEffect(() => {
-    if (queuedCommands.length < 1) {
-      hasCountedQueueUseRef.current = false
-      return
-    }
-    if (hasCountedQueueUseRef.current) return
-    hasCountedQueueUseRef.current = true
-    saveGlobalConfig(current => ({
-      ...current,
-      promptQueueUseCount: (current.promptQueueUseCount ?? 0) + 1,
-    }))
-  }, [queuedCommands.length])
 
   // Process queued commands when query completes and queue has items
 
@@ -4444,7 +4247,8 @@ export function REPL({
           !toolJSX &&
           // Use ref to get current dialog state, avoiding stale closure
           focusedInputDialogRef.current === undefined &&
-          idleTimeSinceResponse >= getGlobalConfig().messageIdleNotifThresholdMs
+          idleTimeSinceResponse >=
+            (getInitialSettings().messageIdleNotifThresholdMs ?? 60000)
         ) {
           void sendNotification(
             {
@@ -4455,7 +4259,7 @@ export function REPL({
           )
         }
       },
-      getGlobalConfig().messageIdleNotifThresholdMs,
+      getInitialSettings().messageIdleNotifThresholdMs ?? 60000,
       lastQueryCompletionTime,
       isLoading,
       toolJSX,
@@ -4465,70 +4269,6 @@ export function REPL({
 
     return () => clearTimeout(timer)
   }, [isLoading, toolJSX, submitCount, lastQueryCompletionTime, terminal])
-
-  // Idle-return hint: show notification when idle threshold is exceeded.
-  // Timer fires after the configured idle period; notification persists until
-  // dismissed or the user submits.
-  useEffect(() => {
-    if (lastQueryCompletionTime === 0) return
-    if (isLoading) return
-    const willowMode: string = getInitialSettings()?.idleReturnMode ?? 'hint_v2'
-    if (willowMode !== 'hint' && willowMode !== 'hint_v2') return
-    if (getGlobalConfig().idleReturnDismissed) return
-
-    const tokenThreshold = Number(
-      process.env.CLAUDE_CODE_IDLE_TOKEN_THRESHOLD ?? 100_000,
-    )
-    if (getCurrentTotalInputTokens(messagesRef.current) < tokenThreshold) return
-
-    const idleThresholdMs =
-      Number(process.env.CLAUDE_CODE_IDLE_THRESHOLD_MINUTES ?? 75) * 60_000
-    const elapsed = Date.now() - lastQueryCompletionTime
-    const remaining = idleThresholdMs - elapsed
-
-    const timer = setTimeout(
-      (lqct, addNotif, msgsRef, mode, hintRef) => {
-        if (msgsRef.current.length === 0) return
-        const currentContextTokens = getCurrentTotalInputTokens(msgsRef.current)
-        const formattedTokens = formatTokens(currentContextTokens)
-        const idleMinutes = (Date.now() - lqct) / 60_000
-        addNotif({
-          key: 'idle-return-hint',
-          jsx:
-            mode === 'hint_v2' ? (
-              <>
-                <Text dimColor>new task? </Text>
-                <Text color="suggestion">/clear</Text>
-                <Text dimColor> to save </Text>
-                <Text color="suggestion">{formattedTokens} tokens</Text>
-              </>
-            ) : (
-              <Text color="warning">
-                new task? /clear to save {formattedTokens} tokens
-              </Text>
-            ),
-          priority: 'medium',
-          // Persist until submit — the hint fires at T+75min idle, user may
-          // not return for hours. removeNotification in useEffect cleanup
-          // handles dismissal. 0x7FFFFFFF = setTimeout max (~24.8 days).
-          timeoutMs: 0x7fffffff,
-        })
-        hintRef.current = mode
-      },
-      Math.max(0, remaining),
-      lastQueryCompletionTime,
-      addNotification,
-      messagesRef,
-      willowMode,
-      idleHintShownRef,
-    )
-
-    return () => {
-      clearTimeout(timer)
-      removeNotification('idle-return-hint')
-      idleHintShownRef.current = false
-    }
-  }, [lastQueryCompletionTime, isLoading, addNotification, removeNotification])
 
   // Submits incoming prompts from teammate messages or tasks mode as new turns
   // Returns true if submission succeeded, false if a query is already running
@@ -5230,22 +4970,6 @@ export function REPL({
       />
     ) : null
 
-  // Narrow terminals: companion collapses to a one-liner that REPL stacks
-  // on its own row (above input in fullscreen, below in scrollback) instead
-  // of row-beside. Wide terminals keep the row layout with sprite on the right.
-  const companionNarrow = transcriptCols < MIN_COLS_FOR_FULL_SPRITE
-  // Hide the sprite while BackgroundTasksDialog is open. In non-fullscreen,
-  // PromptInput early-returns the dialog inline and the sprite would sit as
-  // a row sibling, shrinking the dialog's available width. In fullscreen,
-  // the dialog routes through FullscreenLayout's modal slot (centeredModal
-  // below) which paints over the bottom slot — the sprite would render
-  // beneath the modal but the row-sibling layout collapses without
-  // PromptInput, so just hide it. Don't check footerSelection: pill FOCUS
-  // (arrow-down to tasks pill) must keep the sprite visible so arrow-right
-  // can navigate to it.
-  const companionVisible =
-    !toolJSX?.shouldHidePromptInput && !focusedInputDialog && !showBashesDialog
-
   // In fullscreen, ALL local-jsx slash commands float in the modal slot —
   // FullscreenLayout wraps them in an absolute-positioned bottom-anchored
   // pane (▔ divider, ModalContext). Pane/Dialog inside detect the context
@@ -5345,11 +5069,6 @@ export function REPL({
         <FullscreenLayout
           scrollRef={scrollRef}
           overlay={toolPermissionOverlay}
-          bottomFloat={
-            feature('BUDDY') && companionVisible && !companionNarrow ? (
-              <CompanionFloatingBubble />
-            ) : undefined
-          }
           modal={centeredModal}
           modalScrollRef={modalScrollRef}
           dividerYRef={dividerYRef}
@@ -5418,7 +5137,6 @@ export function REPL({
               {showSpinner && (
                 <SpinnerWithVerb
                   mode={streamMode}
-                  spinnerTip={spinnerTip}
                   responseLengthRef={responseLengthRef}
                   overrideMessage={spinnerMessage}
                   spinnerSuffix={stopHookSpinnerSuffix}
@@ -5443,20 +5161,10 @@ export function REPL({
           }
           bottom={
             <Box
-              flexDirection={
-                feature('BUDDY') && companionNarrow ? 'column' : 'row'
-              }
+              flexDirection="row"
               width="100%"
-              alignItems={
-                feature('BUDDY') && companionNarrow ? undefined : 'flex-end'
-              }
+              alignItems="flex-end"
             >
-              {feature('BUDDY') &&
-              companionNarrow &&
-              isFullscreenEnvEnabled() &&
-              companionVisible ? (
-                <CompanionSprite />
-              ) : null}
               <Box flexDirection="column" flexGrow={1}>
                 {permissionStickyFooter}
                 {/* Immediate local-jsx commands (/btw, /sandbox, /assistant,
@@ -5681,63 +5389,6 @@ export function REPL({
                         },
                       }))
                       currentRequest?.onWaitingDismiss?.(action)
-                    }}
-                  />
-                )}
-                {focusedInputDialog === 'cost' && (
-                  <CostThresholdDialog
-                    onDone={() => {
-                      setShowCostDialog(false)
-                      setHaveShownCostDialog(true)
-                      saveGlobalConfig(current => ({
-                        ...current,
-                        hasAcknowledgedCostThreshold: true,
-                      }))
-                    }}
-                  />
-                )}
-                {focusedInputDialog === 'idle-return' && idleReturnPending && (
-                  <IdleReturnDialog
-                    idleMinutes={idleReturnPending.idleMinutes}
-                    currentContextTokens={getCurrentTotalInputTokens(
-                      messagesRef.current,
-                    )}
-                    onDone={async action => {
-                      const pending = idleReturnPending
-                      setIdleReturnPending(null)
-                      if (action === 'dismiss') {
-                        setInputValue(pending.input)
-                        return
-                      }
-                      if (action === 'never') {
-                        saveGlobalConfig(current => {
-                          if (current.idleReturnDismissed) return current
-                          return { ...current, idleReturnDismissed: true }
-                        })
-                      }
-                      if (action === 'clear') {
-                        await clearConversation({
-                          setMessages,
-                          readFileState: readFileState.current,
-                          loadedNestedMemoryPaths:
-                            loadedNestedMemoryPathsRef.current,
-                          getAppState: () => store.getState(),
-                          setAppState,
-                          setConversationId,
-                          scrollToBottom: () =>
-                            scrollRef.current?.scrollToBottom(),
-                        })
-                        haikuTitleAttemptedRef.current = false
-                        setHaikuTitle(undefined)
-                        bashTools.current.clear()
-                        bashToolsProcessedIdx.current = 0
-                      }
-                      skipIdleCheckRef.current = true
-                      void onSubmitRef.current(pending.input, {
-                        setCursorOffset: () => {},
-                        clearBuffer: () => {},
-                        resetHistory: () => {},
-                      })
                     }}
                   />
                 )}
@@ -5988,11 +5639,6 @@ export function REPL({
                   />
                 )}
               </Box>
-              {feature('BUDDY') &&
-              !(companionNarrow && isFullscreenEnvEnabled()) &&
-              companionVisible ? (
-                <CompanionSprite />
-              ) : null}
             </Box>
           }
         />

@@ -3,7 +3,6 @@ import memoize from 'lodash-es/memoize.js'
 import { ANTHROPIC_API_VERSION } from 'src/constants/api.js'
 import { getOauthConfig } from 'src/constants/oauth.js'
 import { getClaudeAIOAuthTokens } from 'src/utils/auth.js'
-import { getGlobalConfig, saveGlobalConfig } from 'src/utils/config.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { isEnvDefinedFalsy } from 'src/utils/envUtils.js'
 import { clearMcpAuthCache } from './client.js'
@@ -125,21 +124,13 @@ export function clearClaudeAIMcpConfigsCache(): void {
 }
 
 /**
- * Record that a claude.ai connector successfully connected. Idempotent.
- *
- * Gates the "N connectors unavailable/need auth" startup notifications: a
- * connector that was working yesterday and is now failed is a state change
- * worth surfacing; an org-configured connector that's been needs-auth since
- * it showed up is one the user has demonstrably ignored.
+ * Legacy tracking hook retained for callers. claude.ai MCP connection history is
+ * no longer persisted to GlobalConfig.
  */
-export function markClaudeAiMcpConnected(name: string): void {
-  saveGlobalConfig(current => {
-    const seen = current.claudeAiMcpEverConnected ?? []
-    if (seen.includes(name)) return current
-    return { ...current, claudeAiMcpEverConnected: [...seen, name] }
-  })
+export function markClaudeAiMcpConnected(_name: string): void {
+  return
 }
 
-export function hasClaudeAiMcpEverConnected(name: string): boolean {
-  return (getGlobalConfig().claudeAiMcpEverConnected ?? []).includes(name)
+export function hasClaudeAiMcpEverConnected(_name: string): boolean {
+  return false
 }

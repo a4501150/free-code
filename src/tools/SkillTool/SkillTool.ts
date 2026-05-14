@@ -42,7 +42,6 @@ import { lazySchema } from '../../utils/lazySchema.js'
 import { createUserMessage, normalizeMessages } from '../../utils/messages.js'
 import { parseUserSpecifiedModel } from '../../utils/model/model.js'
 import { processPromptSlashCommand } from '../../utils/processUserInput/processSlashCommand.js'
-import { recordSkillUsage } from '../../utils/suggestions/skillUsageTracking.js'
 import { createAgentId } from '../../utils/uuid.js'
 import { runAgent } from '../AgentTool/runAgent.js'
 import {
@@ -445,8 +444,6 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
     const commands = await getAllCommands(context)
     const command = findCommand(commandName, commands)
 
-    // Track skill usage for ranking
-    recordSkillUsage(commandName)
 
     // Check if skill should run as a forked sub-agent
     if (command?.type === 'prompt' && command.context === 'fork') {

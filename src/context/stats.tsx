@@ -5,7 +5,6 @@ import React, {
   useEffect,
   useMemo,
 } from 'react'
-import { saveCurrentProjectConfig } from '../utils/config.js'
 
 export type StatsStore = {
   increment(name: string, value?: number): void
@@ -120,19 +119,7 @@ export function StatsProvider({
   const store = externalStore ?? internalStore
 
   useEffect(() => {
-    const flush = () => {
-      const metrics = store.getAll()
-      if (Object.keys(metrics).length > 0) {
-        saveCurrentProjectConfig(current => ({
-          ...current,
-          lastSessionMetrics: metrics,
-        }))
-      }
-    }
-    process.on('exit', flush)
-    return () => {
-      process.off('exit', flush)
-    }
+    return () => {}
   }, [store])
 
   return <StatsContext.Provider value={store}>{children}</StatsContext.Provider>

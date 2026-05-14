@@ -85,7 +85,6 @@ import {
 
 import { TeammateSpinnerTree } from './Spinner/TeammateSpinnerTree.js'
 import { useAnimationFrame } from '../ink.js'
-import { getGlobalConfig } from '../utils/config.js'
 export type { SpinnerMode } from './Spinner/index.js'
 
 const DEFAULT_CHARACTERS = getDefaultCharacters()
@@ -284,9 +283,9 @@ function SpinnerWithVerbInner({
     }
   }
 
-  // Stale read of the refs for showBtwTip below — we're off the 50ms clock
+  // Stale read of the refs below — we're off the 50ms clock
   // so this only updates when props/app state change, which is sufficient for
-  // a coarse 30s threshold.
+  // coarse thresholds.
   const elapsedSnapshot =
     pauseStartTimeRef.current !== null
       ? pauseStartTimeRef.current -
@@ -356,19 +355,12 @@ function SpinnerWithVerbInner({
   // Time-based tip overrides: coarse thresholds so a stale ref read (we're
   // off the 50ms clock) is fine. Other triggers (mode change, setMessages)
   // cause re-renders that refresh this in practice.
-  let contextTipsActive = false
   const tipsEnabled = settings.spinnerTipsEnabled !== false
   const showClearTip = tipsEnabled && elapsedSnapshot > 1_800_000
-  const showBtwTip =
-    tipsEnabled && elapsedSnapshot > 30_000 && !getGlobalConfig().btwUseCount
 
-  const effectiveTip = contextTipsActive
-    ? undefined
-    : showClearTip && !nextTask
-      ? 'Use /clear to start fresh when switching topics and free up context'
-      : showBtwTip && !nextTask
-        ? "Use /btw to ask a quick side question without interrupting Claude's current work"
-        : spinnerTip
+  const effectiveTip = showClearTip && !nextTask
+    ? 'Use /clear to start fresh when switching topics and free up context'
+    : spinnerTip
 
   // Budget text (ant-only) — shown above the tip line
   let budgetText: string | null = null

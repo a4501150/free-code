@@ -1,59 +1,16 @@
 import * as React from 'react'
-import { useState } from 'react'
 import { Text } from '../../ink.js'
 
 import {
-  checkCachedPassesEligibility,
   formatCreditAmount,
   getCachedReferrerReward,
-  getCachedRemainingPasses,
 } from '../../services/api/referral.js'
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
-
-function resetIfPassesRefreshed(): void {
-  const remaining = getCachedRemainingPasses()
-  if (remaining == null || remaining <= 0) return
-  const config = getGlobalConfig()
-  const lastSeen = config.passesLastSeenRemaining ?? 0
-  if (remaining > lastSeen) {
-    saveGlobalConfig(prev => ({
-      ...prev,
-      passesUpsellSeenCount: 0,
-      hasVisitedPasses: false,
-      passesLastSeenRemaining: remaining,
-    }))
-  }
-}
-
-function shouldShowGuestPassesUpsell(): boolean {
-  const { eligible, hasCache } = checkCachedPassesEligibility()
-  // Only show if eligible and cache exists (don't block on fetch)
-  if (!eligible || !hasCache) return false
-  // Reset upsell counters if passes were refreshed (covers both campaign change and pass refresh)
-  resetIfPassesRefreshed()
-
-  const config = getGlobalConfig()
-  if ((config.passesUpsellSeenCount ?? 0) >= 3) return false
-  if (config.hasVisitedPasses) return false
-
-  return true
-}
 
 export function useShowGuestPassesUpsell(): boolean {
-  const [show] = useState(() => shouldShowGuestPassesUpsell())
-  return show
+  return false
 }
 
-export function incrementGuestPassesSeenCount(): void {
-  let newCount = 0
-  saveGlobalConfig(prev => {
-    newCount = (prev.passesUpsellSeenCount ?? 0) + 1
-    return {
-      ...prev,
-      passesUpsellSeenCount: newCount,
-    }
-  })
-}
+export function incrementGuestPassesSeenCount(): void {}
 
 // Condensed layout for mini welcome screen
 export function GuestPassesUpsell(): React.ReactNode {

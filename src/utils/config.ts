@@ -7,10 +7,6 @@ import { basename, dirname, join, resolve } from 'path'
 import { getOriginalCwd, getSessionTrustAccepted } from '../bootstrap/state.js'
 import { getAutoMemEntrypoint } from '../memdir/paths.js'
 import type { McpServerConfig } from '../services/mcp/types.js'
-import type {
-  BillingType,
-  ReferralEligibilityResponse,
-} from '../services/oauth/types.js'
 import { getCwd } from '../utils/cwd.js'
 import { registerCleanup } from './cleanupRegistry.js'
 import { logForDebugging } from './debug.js'
@@ -29,13 +25,11 @@ import type { MemoryType } from './memory/types.js'
 import { normalizePathForConfigKey } from './path.js'
 import { getEssentialTrafficOnlyReason } from './privacyLevel.js'
 import { getManagedFilePath } from './settings/managedPath.js'
-import type { ThemeSetting } from './theme.js'
 
 import * as teamMemPathsNs from '../memdir/teamMemPaths.js'
 
 const teamMemPaths = feature('TEAMMEM') ? teamMemPathsNs : null
 import type { ImageDimensions } from './imageResizer.js'
-import type { ModelOption } from './model/modelOptions.js'
 import { jsonParse, jsonStringify } from './slowOperations.js'
 
 // Re-entrancy guard: prevents getConfig → logEvent → getGlobalConfig → getConfig
@@ -77,13 +71,6 @@ export type ProjectConfig = {
   lastDuration?: number
   lastLinesAdded?: number
   lastLinesRemoved?: number
-  lastTotalInputTokens?: number
-  lastTotalOutputTokens?: number
-  lastTotalCacheCreationInputTokens?: number
-  lastTotalCacheReadInputTokens?: number
-  lastTotalWebSearchRequests?: number
-  lastFpsAverage?: number
-  lastFpsLow1Pct?: number
   lastSessionId?: string
   lastModelUsage?: Record<
     string,
@@ -96,7 +83,6 @@ export type ProjectConfig = {
       costUSD: number
     }
   >
-  lastSessionMetrics?: Record<string, number>
   exampleFiles?: string[]
   exampleFilesGeneratedAt?: number
 
@@ -138,367 +124,12 @@ const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   hasClaudeMdExternalIncludesWarningShown: false,
 }
 
-export type InstallMethod = 'local' | 'native' | 'global' | 'unknown'
-
-export { EDITOR_MODES, NOTIFICATION_CHANNELS } from './configConstants.js'
-
-import type { EDITOR_MODES, NOTIFICATION_CHANNELS } from './configConstants.js'
-
-export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number]
-
-export type AccountInfo = {
-  accountUuid: string
-  emailAddress: string
-  organizationUuid?: string
-  organizationName?: string | null // added 4/23/2025, not populated for existing users
-  organizationRole?: string | null
-  workspaceRole?: string | null
-  // Populated by /api/oauth/profile
-  displayName?: string
-  hasExtraUsageEnabled?: boolean
-  billingType?: BillingType | null
-  accountCreatedAt?: string
-  subscriptionCreatedAt?: string
-}
-
-// TODO: 'emacs' is kept for backward compatibility - remove after a few releases
-export type EditorMode = 'emacs' | (typeof EDITOR_MODES)[number]
-
-export type DiffTool = 'terminal' | 'auto'
 
 export type GlobalConfig = {
-  /**
-   * @deprecated Use settings.apiKeyHelper instead.
-   */
-  apiKeyHelper?: string
   projects?: Record<string, ProjectConfig>
-  numStartups: number
-  installMethod?: InstallMethod
-  autoUpdates?: boolean
-  // Flag to distinguish protection-based disabling from user preference
-  autoUpdatesProtectedForNative?: boolean
-  // Session count when Doctor was last shown
-  doctorShownAtSession?: number
   userID?: string
-  theme: ThemeSetting
-  hasCompletedOnboarding?: boolean
-  // Tracks the last version that reset onboarding, used with MIN_VERSION_REQUIRING_ONBOARDING_RESET
-  lastOnboardingVersion?: string
-  // Tracks the last version for which release notes were seen, used for managing release notes
-  lastReleaseNotesSeen?: string
-  // Timestamp when changelog was last fetched (content stored in ~/.claude/cache/changelog.md)
-  changelogLastFetched?: number
-  // @deprecated - Migrated to ~/.claude/cache/changelog.md. Keep for migration support.
-  cachedChangelog?: string
+  firstStartTime?: string
   mcpServers?: Record<string, McpServerConfig>
-  // claude.ai MCP connectors that have successfully connected at least once.
-  // Used to gate "connector unavailable" / "needs auth" startup notifications:
-  // a connector the user has actually used is worth flagging when it breaks,
-  // but an org-configured connector that's been needs-auth since day one is
-  // something the user has demonstrably ignored and shouldn't nag about.
-  claudeAiMcpEverConnected?: string[]
-  preferredNotifChannel: NotificationChannel
-  /**
-   * @deprecated. Use the Notification hook instead (docs/hooks.md).
-   */
-  customNotifyCommand?: string
-  verbose: boolean
-  customApiKeyResponses?: {
-    approved?: string[]
-    rejected?: string[]
-  }
-  primaryApiKey?: string // Primary API key for the user when no environment variable is set, set via oauth (TODO: rename)
-  hasAcknowledgedCostThreshold?: boolean
-  oauthAccount?: AccountInfo
-
-  /**
-   * OpenAI Codex OAuth tokens, stored separately from Anthropic credentials.
-   * These are acquired via the Codex OAuth flow (auth.openai.com) and are used
-   * as Bearer tokens against OpenAI's API — they are never sent to Anthropic servers.
-   */
-  codexOAuth?: {
-    accessToken: string
-    refreshToken: string
-    expiresAt: number
-    accountId: string
-  }
-  iterm2KeyBindingInstalled?: boolean // Legacy - keeping for backward compatibility
-  editorMode?: EditorMode
-  bypassPermissionsModeAccepted?: boolean
-  hasUsedBackslashReturn?: boolean
-  autoCompactEnabled: boolean // Controls whether auto-compact is enabled
-  showTurnDuration: boolean // Controls whether to show turn duration message (e.g., "Cooked for 1m 6s")
-  /**
-   * @deprecated Use settings.env instead.
-   */
-  env: { [key: string]: string } // Environment variables to set for the CLI
-  hasSeenTasksHint?: boolean // Whether the user has seen the tasks hint
-  hasUsedStash?: boolean // Whether the user has used the stash feature (Ctrl+S)
-  hasUsedBackgroundTask?: boolean // Whether the user has backgrounded a task (Ctrl+B)
-  queuedCommandUpHintCount?: number // Counter for how many times the user has seen the queued command up hint
-  diffTool?: DiffTool // Which tool to use for displaying diffs (terminal or vscode)
-
-  // Terminal setup state tracking
-  iterm2SetupInProgress?: boolean
-  iterm2BackupPath?: string // Path to the backup file for iTerm2 preferences
-  appleTerminalBackupPath?: string // Path to the backup file for Terminal.app preferences
-  appleTerminalSetupInProgress?: boolean // Whether Terminal.app setup is currently in progress
-
-  // Key binding setup tracking
-  shiftEnterKeyBindingInstalled?: boolean // Whether Shift+Enter key binding is installed (for iTerm2 or VSCode)
-  optionAsMetaKeyInstalled?: boolean // Whether Option as Meta key is installed (for Terminal.app)
-
-  // IDE configurations
-  autoConnectIde?: boolean // Whether to automatically connect to IDE on startup if exactly one valid IDE is available
-  autoInstallIdeExtension?: boolean // Whether to automatically install IDE extensions when running from within an IDE
-
-  // IDE dialogs
-  hasIdeOnboardingBeenShown?: Record<string, boolean> // Map of terminal name to whether IDE onboarding has been shown
-  ideHintShownCount?: number // Number of times the /ide command hint has been shown
-  hasIdeAutoConnectDialogBeenShown?: boolean // Whether the auto-connect IDE dialog has been shown
-
-  tipsHistory: {
-    [tipId: string]: number // Key is tipId, value is the numStartups when tip was last shown
-  }
-
-  // /buddy companion soul — bones regenerated from userId on read. See src/buddy/.
-  companion?: import('../buddy/types.js').StoredCompanion
-  companionMuted?: boolean
-
-  // Feedback survey tracking
-  feedbackSurveyState?: {
-    lastShownTime?: number
-  }
-
-  // Transcript share prompt tracking ("Don't ask again")
-  transcriptShareDismissed?: boolean
-
-  // Migration flag
-  hasResetAutoModeOptInForDefaultOffer?: boolean
-
-  // Memory usage tracking
-  memoryUsageCount: number // Number of times user has added to memory
-
-  // Sonnet-1M configs
-  hasShownS1MWelcomeV2?: Record<string, boolean> // Whether the Sonnet-1M v2 welcome message has been shown per org
-  // Cache of Sonnet-1M subscriber access per org - key is org ID
-  // hasAccess means "hasAccessAsDefault" but the old name is kept for backward
-  // compatibility.
-  s1mAccessCache?: Record<
-    string,
-    { hasAccess: boolean; hasAccessNotAsDefault?: boolean; timestamp: number }
-  >
-  // Cache of Sonnet-1M PayG access per org - key is org ID
-  // hasAccess means "hasAccessAsDefault" but the old name is kept for backward
-  // compatibility.
-  s1mNonSubscriberAccessCache?: Record<
-    string,
-    { hasAccess: boolean; hasAccessNotAsDefault?: boolean; timestamp: number }
-  >
-
-  // Guest passes eligibility cache per org - key is org ID
-  passesEligibilityCache?: Record<
-    string,
-    ReferralEligibilityResponse & { timestamp: number }
-  >
-
-  // Grove config cache per account - key is account UUID
-  groveConfigCache?: Record<
-    string,
-    { grove_enabled: boolean; timestamp: number }
-  >
-
-  // Guest passes upsell tracking
-  passesUpsellSeenCount?: number // Number of times the guest passes upsell has been shown
-  hasVisitedPasses?: boolean // Whether the user has visited /passes command
-  passesLastSeenRemaining?: number // Last seen remaining_passes count — reset upsell when it increases
-
-  // Overage credit grant upsell tracking (keyed by org UUID — multi-org users).
-  // Inlined shape (not import()) because config.ts is in the SDK build surface
-  // and the SDK bundler can't resolve CLI service modules.
-  overageCreditGrantCache?: Record<
-    string,
-    {
-      info: {
-        available: boolean
-        eligible: boolean
-        granted: boolean
-        amount_minor_units: number | null
-        currency: string | null
-      }
-      timestamp: number
-    }
-  >
-  overageCreditUpsellSeenCount?: number // Number of times the overage credit upsell has been shown
-  hasVisitedExtraUsage?: boolean // Whether the user has visited /extra-usage — hides credit upsells
-
-  // Voice mode notice tracking
-  voiceNoticeSeenCount?: number // Number of times the voice-mode-available notice has been shown
-  voiceLangHintShownCount?: number // Number of times the /voice dictation-language hint has been shown
-  voiceLangHintLastLanguage?: string // Resolved STT language code when the hint was last shown — reset count when it changes
-  voiceFooterHintSeenCount?: number // Number of sessions the "hold X to speak" footer hint has been shown
-
-  // Experiment enrollment notice tracking (keyed by experiment id)
-  experimentNoticesSeenCount?: Record<string, number>
-
-  // Queue usage tracking
-  promptQueueUseCount: number // Number of times use has used the prompt queue
-
-  // Btw usage tracking
-  btwUseCount: number // Number of times user has used /btw
-
-  // Plan mode usage tracking
-  lastPlanModeUse?: number // Timestamp of last plan mode usage
-
-  // Subscription notice tracking
-  subscriptionNoticeCount?: number // Number of times the subscription notice has been shown
-  hasAvailableSubscription?: boolean // Cached result of whether user has a subscription available
-  subscriptionUpsellShownCount?: number // Number of times the subscription upsell has been shown (deprecated)
-  recommendedSubscription?: string // Cached config value from Statsig (deprecated)
-
-  // Todo feature configuration
-  todoFeatureEnabled: boolean // Whether the todo feature is enabled
-  showExpandedTodos?: boolean // Whether to show todos expanded, even when empty
-  showSpinnerTree?: boolean // Whether to show the teammate spinner tree instead of pills
-
-  // First start time tracking
-  firstStartTime?: string // ISO timestamp when Claude Code was first started on this machine
-
-  messageIdleNotifThresholdMs: number // How long the user has to have been idle to get a notification that Claude is done generating
-
-  githubActionSetupCount?: number // Number of times the user has set up the GitHub Action
-  slackAppInstallCount?: number // Number of times the user has clicked to install the Slack app
-
-  // File checkpointing configuration
-  fileCheckpointingEnabled: boolean
-
-  // Terminal progress bar configuration (OSC 9;4)
-  terminalProgressBarEnabled: boolean
-
-  // Terminal tab status indicator (OSC 21337). When on, emits a colored
-  // dot + status text to the tab sidebar and drops the spinner prefix
-  // from the title (the dot makes it redundant).
-  showStatusInTerminalTab?: boolean
-
-  // Push-notification toggles (set via /config). Default off — explicit opt-in required.
-  taskCompleteNotifEnabled?: boolean
-  inputNeededNotifEnabled?: boolean
-  agentPushNotifEnabled?: boolean
-
-  // Claude Code usage tracking
-  claudeCodeFirstTokenDate?: string // ISO timestamp of the user's first Claude Code OAuth token
-
-  // Model switch callout tracking (ant-only)
-  modelSwitchCalloutDismissed?: boolean // Whether user chose "Don't show again"
-  modelSwitchCalloutLastShown?: number // Timestamp of last shown (don't show for 24h)
-  modelSwitchCalloutVersion?: string
-
-  // Desktop upsell startup dialog tracking
-  desktopUpsellSeenCount?: number // Total showings (max 3)
-  desktopUpsellDismissed?: boolean // "Don't ask again" picked
-
-  // Idle-return dialog tracking
-  idleReturnDismissed?: boolean // "Don't ask again" picked
-
-  // Emergency tip tracking - stores the last shown tip to prevent re-showing
-  lastShownEmergencyTip?: string
-
-  // File picker gitignore behavior
-  respectGitignore: boolean // Whether file picker should respect .gitignore files (default: true). Note: .ignore files are always respected
-
-  // Copy command behavior
-  copyFullResponse: boolean // Whether /copy always copies the full response instead of showing the picker
-
-  // Fullscreen in-app text selection behavior
-  copyOnSelect?: boolean // Auto-copy to clipboard on mouse-up (undefined → true; lets cmd+c "work" via no-op)
-
-  // iTerm2 it2 CLI setup
-  iterm2It2SetupComplete?: boolean // Whether it2 setup has been verified
-  preferTmuxOverIterm2?: boolean // User preference to always use tmux over iTerm2 split panes
-
-  // Skill usage tracking for autocomplete ranking
-  skillUsage?: Record<string, { usageCount: number; lastUsedAt: number }>
-  // Official marketplace auto-install tracking
-  officialMarketplaceAutoInstallAttempted?: boolean // Whether auto-install was attempted
-  officialMarketplaceAutoInstalled?: boolean // Whether auto-install succeeded
-  officialMarketplaceAutoInstallFailReason?:
-    | 'policy_blocked'
-    | 'git_unavailable'
-    | 'gcs_unavailable'
-    | 'unknown' // Reason for failure if applicable
-  officialMarketplaceAutoInstallRetryCount?: number // Number of retry attempts
-  officialMarketplaceAutoInstallLastAttemptTime?: number // Timestamp of last attempt
-  officialMarketplaceAutoInstallNextRetryTime?: number // Earliest time to retry again
-
-  // LSP plugin recommendation preferences
-  lspRecommendationDisabled?: boolean // Disable all LSP plugin recommendations
-  lspRecommendationNeverPlugins?: string[] // Plugin IDs to never suggest
-  lspRecommendationIgnoredCount?: number // Track ignored recommendations (stops after 5)
-
-  // Claude Code hint protocol state (<claude-code-hint /> tags from CLIs/SDKs).
-  // Nested by hint type so future types (docs, mcp, ...) slot in without new
-  // top-level keys.
-  claudeCodeHints?: {
-    // Plugin IDs the user has already been prompted for. Show-once semantics:
-    // recorded regardless of yes/no response, never re-prompted. Capped at
-    // 100 entries to bound config growth — past that, hints stop entirely.
-    plugin?: string[]
-    // User chose "don't show plugin installation hints again" from the dialog.
-    disabled?: boolean
-  }
-
-  // Permission explainer configuration
-  permissionExplainerEnabled?: boolean // Enable Haiku-generated explanations for permission requests (default: true)
-
-  // Teammate spawn mode: 'auto' | 'tmux' | 'in-process'
-  teammateMode?: 'auto' | 'tmux' | 'in-process' // How to spawn teammates (default: 'auto')
-  // Model for new teammates when the tool call doesn't pass one.
-  // undefined = configured default model; null = leader's model; string = full model ID.
-  teammateDefaultModel?: string | null
-
-  // PR status footer configuration
-  prStatusFooterEnabled?: boolean // Show PR review status in footer (default: true)
-
-  // Cached org-level fast mode status from the API.
-  // Used to detect cross-session changes and notify users.
-  penguinModeOrgEnabled?: boolean
-
-  // Cached extra usage disabled reason from the last API response
-  // undefined = no cache, null = extra usage enabled, string = disabled reason.
-  cachedExtraUsageDisabledReason?: string | null
-
-  // Auto permissions notification tracking (ant-only)
-  autoPermissionsNotificationCount?: number // Number of times the auto permissions notification has been shown
-
-  // Speculation configuration (ant-only)
-  speculationEnabled?: boolean // Whether speculation is enabled (default: true)
-
-  // Client data for server-side experiments (fetched during bootstrap).
-  clientDataCache?: Record<string, unknown> | null
-
-  // Additional model options for the model picker (fetched during bootstrap).
-  additionalModelOptionsCache?: ModelOption[]
-
-  // Disk cache for /api/claude_code/organizations/metrics_enabled.
-  // Org-level settings change rarely; persisting across processes avoids a
-  // cold API call on every `claude -p` invocation.
-  metricsStatusCache?: {
-    enabled: boolean
-    timestamp: number
-  }
-
-  // Version of the last-applied migration set. When equal to
-  // CURRENT_MIGRATION_VERSION, runMigrations() skips all sync migrations
-  // (avoiding 11× saveGlobalConfig lock+re-read on every startup).
-  migrationVersion?: number
-
-  // OpenAI OAuth tokens for Codex API access
-  openaiOauthTokens?: {
-    access_token: string
-    refresh_token?: string
-    scopes?: string[]
-    expires_at?: number
-  }
 }
 
 /**
@@ -507,86 +138,10 @@ export type GlobalConfig = {
  * a factory gives fresh refs at zero clone cost.
  */
 function createDefaultGlobalConfig(): GlobalConfig {
-  return {
-    numStartups: 0,
-    installMethod: undefined,
-    autoUpdates: undefined,
-    theme: 'dark',
-    preferredNotifChannel: 'auto',
-    verbose: false,
-    editorMode: 'normal',
-    autoCompactEnabled: true,
-    showTurnDuration: true,
-    hasSeenTasksHint: false,
-    hasUsedStash: false,
-    hasUsedBackgroundTask: false,
-    queuedCommandUpHintCount: 0,
-    diffTool: 'auto',
-    customApiKeyResponses: {
-      approved: [],
-      rejected: [],
-    },
-    env: {},
-    tipsHistory: {},
-    memoryUsageCount: 0,
-    promptQueueUseCount: 0,
-    btwUseCount: 0,
-    todoFeatureEnabled: true,
-    showExpandedTodos: false,
-    messageIdleNotifThresholdMs: 60000,
-    autoConnectIde: false,
-    autoInstallIdeExtension: true,
-    fileCheckpointingEnabled: true,
-    terminalProgressBarEnabled: true,
-    respectGitignore: true,
-    copyFullResponse: false,
-  }
+  return {}
 }
 
 export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = createDefaultGlobalConfig()
-
-export const GLOBAL_CONFIG_KEYS = [
-  'apiKeyHelper',
-  'installMethod',
-  'autoUpdates',
-  'autoUpdatesProtectedForNative',
-  'theme',
-  'verbose',
-  'preferredNotifChannel',
-  'shiftEnterKeyBindingInstalled',
-  'editorMode',
-  'hasUsedBackslashReturn',
-  'autoCompactEnabled',
-  'showTurnDuration',
-  'diffTool',
-  'env',
-  'tipsHistory',
-  'todoFeatureEnabled',
-  'showExpandedTodos',
-  'messageIdleNotifThresholdMs',
-  'autoConnectIde',
-  'autoInstallIdeExtension',
-  'fileCheckpointingEnabled',
-  'terminalProgressBarEnabled',
-  'showStatusInTerminalTab',
-  'taskCompleteNotifEnabled',
-  'inputNeededNotifEnabled',
-  'agentPushNotifEnabled',
-  'respectGitignore',
-  'lspRecommendationDisabled',
-  'lspRecommendationNeverPlugins',
-  'lspRecommendationIgnoredCount',
-  'copyFullResponse',
-  'copyOnSelect',
-  'permissionExplainerEnabled',
-  'prStatusFooterEnabled',
-] as const
-
-export type GlobalConfigKey = (typeof GLOBAL_CONFIG_KEYS)[number]
-
-export function isGlobalConfigKey(key: string): key is GlobalConfigKey {
-  return GLOBAL_CONFIG_KEYS.includes(key as GlobalConfigKey)
-}
 
 export const PROJECT_CONFIG_KEYS = [
   'allowedTools',
@@ -680,7 +235,6 @@ export function isPathTrusted(dir: string): boolean {
 // We have to put this test code here because Jest doesn't support mocking ES modules :O
 const TEST_GLOBAL_CONFIG_FOR_TESTING: GlobalConfig = {
   ...DEFAULT_GLOBAL_CONFIG,
-  autoUpdates: false,
 }
 const TEST_PROJECT_CONFIG_FOR_TESTING: ProjectConfig = {
   ...DEFAULT_PROJECT_CONFIG,
@@ -691,24 +245,11 @@ export function isProjectConfigKey(key: string): key is ProjectConfigKey {
 }
 
 /**
- * Detect whether writing `fresh` would lose auth/onboarding state that the
- * in-memory cache still has. This happens when `getConfig` hits a corrupted
- * or truncated file mid-write (from another process or a non-atomic fallback)
- * and returns DEFAULT_GLOBAL_CONFIG. Writing that back would permanently
- * wipe auth. See GH #3117.
+ * Legacy auth-state-loss guard retained as a no-op. Auth and onboarding state
+ * no longer live in GlobalConfig, so there is nothing left here to protect.
  */
-function wouldLoseAuthState(fresh: {
-  oauthAccount?: unknown
-  hasCompletedOnboarding?: boolean
-}): boolean {
-  const cached = globalConfigCache.config
-  if (!cached) return false
-  const lostOauth =
-    cached.oauthAccount !== undefined && fresh.oauthAccount === undefined
-  const lostOnboarding =
-    cached.hasCompletedOnboarding === true &&
-    fresh.hasCompletedOnboarding !== true
-  return lostOauth || lostOnboarding
+function wouldLoseAuthState(_fresh: GlobalConfig): boolean {
+  return false
 }
 
 export function saveGlobalConfig(
@@ -737,12 +278,12 @@ export function saveGlobalConfig(
         }
         written = {
           ...config,
-          projects: removeProjectHistory(current.projects),
+          projects: current.projects,
         }
         return written
       },
     )
-    // Only write-through if we actually wrote. If the auth-loss guard
+    // Only write-through if we actually wrote. If the state-loss guard
     // tripped (or the updater made no changes), the file is untouched and
     // the cache is still valid -- touching it would corrupt the guard.
     if (didWrite && written) {
@@ -762,7 +303,7 @@ export function saveGlobalConfig(
     )
     if (wouldLoseAuthState(currentConfig)) {
       logForDebugging(
-        'saveGlobalConfig fallback: re-read config is missing auth that cache has; refusing to write. See GH #3117.',
+        'saveGlobalConfig fallback: re-read config is missing onboarding state that cache has; refusing to write. See GH #3117.',
         { level: 'error' },
       )
       return
@@ -774,7 +315,7 @@ export function saveGlobalConfig(
     }
     written = {
       ...config,
-      projects: removeProjectHistory(currentConfig.projects),
+      projects: currentConfig.projects,
     }
     saveConfig(getGlobalClaudeFile(), written, DEFAULT_GLOBAL_CONFIG)
     writeThroughGlobalConfigCache(written)
@@ -814,89 +355,6 @@ registerCleanup(async () => {
   reportConfigCacheStats()
 })
 
-/**
- * Migrates old autoUpdaterStatus to new installMethod and autoUpdates fields
- * @internal
- */
-function migrateConfigFields(config: GlobalConfig): GlobalConfig {
-  // Already migrated
-  if (config.installMethod !== undefined) {
-    return config
-  }
-
-  // autoUpdaterStatus is removed from the type but may exist in old configs
-  const legacy = config as GlobalConfig & {
-    autoUpdaterStatus?:
-      | 'migrated'
-      | 'installed'
-      | 'disabled'
-      | 'enabled'
-      | 'no_permissions'
-      | 'not_configured'
-  }
-
-  // Determine install method and auto-update preference from old field
-  let installMethod: InstallMethod = 'unknown'
-  let autoUpdates = config.autoUpdates ?? true // Default to enabled unless explicitly disabled
-
-  switch (legacy.autoUpdaterStatus) {
-    case 'migrated':
-      installMethod = 'local'
-      break
-    case 'installed':
-      installMethod = 'native'
-      break
-    case 'disabled':
-      // When disabled, we don't know the install method
-      autoUpdates = false
-      break
-    case 'enabled':
-    case 'no_permissions':
-    case 'not_configured':
-      // These imply global installation
-      installMethod = 'global'
-      break
-    case undefined:
-      // No old status, keep defaults
-      break
-  }
-
-  return {
-    ...config,
-    installMethod,
-    autoUpdates,
-  }
-}
-
-/**
- * Removes history field from projects (migrated to history.jsonl)
- * @internal
- */
-function removeProjectHistory(
-  projects: Record<string, ProjectConfig> | undefined,
-): Record<string, ProjectConfig> | undefined {
-  if (!projects) {
-    return projects
-  }
-
-  const cleanedProjects: Record<string, ProjectConfig> = {}
-  let needsCleaning = false
-
-  for (const [path, projectConfig] of Object.entries(projects)) {
-    // history is removed from the type but may exist in old configs
-    const legacy = projectConfig as ProjectConfig & { history?: unknown }
-    if (legacy.history !== undefined) {
-      needsCleaning = true
-      const { history, ...cleanedConfig } = legacy
-      cleanedProjects[path] = cleanedConfig
-    } else {
-      cleanedProjects[path] = projectConfig
-    }
-  }
-
-  return needsCleaning ? cleanedProjects : projects
-}
-
 // fs.watchFile poll interval for detecting writes from other instances (ms)
 const CONFIG_FRESHNESS_POLL_MS = 1000
 let freshnessWatcherStarted = false
@@ -925,10 +383,10 @@ function startGlobalConfigFreshnessWatcher(): void {
           const parsed = safeParseJSON(stripBOM(content))
           if (parsed === null || typeof parsed !== 'object') return
           globalConfigCache = {
-            config: migrateConfigFields({
+            config: {
               ...createDefaultGlobalConfig(),
               ...(parsed as Partial<GlobalConfig>),
-            }),
+            },
             mtime: curr.mtimeMs,
           }
           lastReadFileStats = { mtime: curr.mtimeMs, size: curr.size }
@@ -974,9 +432,7 @@ export function getGlobalConfig(): GlobalConfig {
     } catch {
       // File doesn't exist
     }
-    const config = migrateConfigFields(
-      getConfig(getGlobalClaudeFile(), createDefaultGlobalConfig),
-    )
+    const config = getConfig(getGlobalClaudeFile(), createDefaultGlobalConfig)
     globalConfigCache = {
       config,
       mtime: stats?.mtimeMs ?? Date.now(),
@@ -988,23 +444,14 @@ export function getGlobalConfig(): GlobalConfig {
     return config
   } catch {
     // If anything goes wrong, fall back to uncached behavior
-    return migrateConfigFields(
-      getConfig(getGlobalClaudeFile(), createDefaultGlobalConfig),
-    )
+    return getConfig(getGlobalClaudeFile(), createDefaultGlobalConfig)
   }
 }
 
 export function getCustomApiKeyStatus(
-  truncatedApiKey: string,
+  _truncatedApiKey: string,
 ): 'approved' | 'rejected' | 'new' {
-  const config = getGlobalConfig()
-  if (config.customApiKeyResponses?.approved?.includes(truncatedApiKey)) {
-    return 'approved'
-  }
-  if (config.customApiKeyResponses?.rejected?.includes(truncatedApiKey)) {
-    return 'rejected'
-  }
-  return 'new'
+  return 'approved'
 }
 
 function saveConfig<A extends object>(
@@ -1040,9 +487,9 @@ function saveConfig<A extends object>(
 
 /**
  * Returns true if a write was performed; false if the write was skipped
- * (no changes, or auth-loss guard tripped). Callers use this to decide
+ * (no changes, or state-loss guard tripped). Callers use this to decide
  * whether to invalidate the cache -- invalidating after a skipped write
- * destroys the good cached state the auth-loss guard depends on.
+ * destroys the good cached state the state-loss guard depends on.
  */
 function saveConfigWithLock<A extends object>(
   file: string,
@@ -1096,7 +543,7 @@ function saveConfigWithLock<A extends object>(
     const currentConfig = getConfig(file, createDefault)
     if (file === getGlobalClaudeFile() && wouldLoseAuthState(currentConfig)) {
       logForDebugging(
-        'saveConfigWithLock: re-read config is missing auth that cache has; refusing to write to avoid wiping ~/.claude.json. See GH #3117.',
+        'saveConfigWithLock: re-read config is missing onboarding state that cache has; refusing to write to avoid wiping ~/.claude.json. See GH #3117.',
         { level: 'error' },
       )
       return false
@@ -1548,7 +995,7 @@ export function saveCurrentProjectConfig(
     const config = getConfig(getGlobalClaudeFile(), createDefaultGlobalConfig)
     if (wouldLoseAuthState(config)) {
       logForDebugging(
-        'saveCurrentProjectConfig fallback: re-read config is missing auth that cache has; refusing to write. See GH #3117.',
+        'saveCurrentProjectConfig fallback: re-read config is missing onboarding state that cache has; refusing to write. See GH #3117.',
         { level: 'error' },
       )
       return
@@ -1592,7 +1039,6 @@ export function shouldSkipPluginAutoupdate(): boolean {
 export type AutoUpdaterDisabledReason =
   | { type: 'development' }
   | { type: 'env'; envVar: string }
-  | { type: 'config' }
 
 export function formatAutoUpdaterDisabledReason(
   reason: AutoUpdaterDisabledReason,
@@ -1602,8 +1048,6 @@ export function formatAutoUpdaterDisabledReason(
       return 'development build'
     case 'env':
       return `${reason.envVar} set`
-    case 'config':
-      return 'config'
   }
 }
 
@@ -1617,14 +1061,6 @@ export function getAutoUpdaterDisabledReason(): AutoUpdaterDisabledReason | null
   const essentialTrafficEnvVar = getEssentialTrafficOnlyReason()
   if (essentialTrafficEnvVar) {
     return { type: 'env', envVar: essentialTrafficEnvVar }
-  }
-  const config = getGlobalConfig()
-  if (
-    config.autoUpdates === false &&
-    (config.installMethod !== 'native' ||
-      config.autoUpdatesProtectedForNative !== true)
-  ) {
-    return { type: 'config' }
   }
   return null
 }

@@ -1,4 +1,3 @@
-import { saveGlobalConfig } from 'src/utils/config.js'
 import {
   CODE_REVIEW_PLUGIN_WORKFLOW_CONTENT,
   PR_BODY,
@@ -232,10 +231,6 @@ export async function setupGitHubActions(
       await openBrowser(compareUrl)
     }
 
-    saveGlobalConfig(current => ({
-      ...current,
-      githubActionSetupCount: (current.githubActionSetupCount ?? 0) + 1,
-    }))
   } catch (error) {
     if (error instanceof Error) {
       logError(error)

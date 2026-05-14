@@ -7,7 +7,10 @@ import React, {
   useState,
 } from 'react'
 import useStdin from '../../ink/hooks/use-stdin.js'
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
+import {
+  getInitialSettings,
+  updateSettingsForSource,
+} from '../../utils/settings/settings.js'
 import {
   getSystemThemeName,
   type SystemTheme,
@@ -44,11 +47,11 @@ type Props = {
 }
 
 function defaultInitialTheme(): ThemeSetting {
-  return getGlobalConfig().theme
+  return getInitialSettings().theme ?? 'dark'
 }
 
 function defaultSaveTheme(setting: ThemeSetting): void {
-  saveGlobalConfig(current => ({ ...current, theme: setting }))
+  updateSettingsForSource('userSettings', { theme: setting })
 }
 
 export function ThemeProvider({

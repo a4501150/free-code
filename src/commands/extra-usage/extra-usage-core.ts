@@ -8,7 +8,6 @@ import { type ExtraUsage, fetchUtilization } from '../../services/api/usage.js'
 import { getSubscriptionType } from '../../utils/auth.js'
 import { hasClaudeAiBillingAccess } from '../../utils/billing.js'
 import { openBrowser } from '../../utils/browser.js'
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { logError } from '../../utils/log.js'
 
 type ExtraUsageResult =
@@ -16,12 +15,9 @@ type ExtraUsageResult =
   | { type: 'browser-opened'; url: string; opened: boolean }
 
 export async function runExtraUsage(): Promise<ExtraUsageResult> {
-  if (!getGlobalConfig().hasVisitedExtraUsage) {
-    saveGlobalConfig(prev => ({ ...prev, hasVisitedExtraUsage: true }))
-  }
   // Invalidate only the current org's entry so a follow-up read refetches
-  // the granted state. Separate from the visited flag since users may run
-  // /extra-usage more than once while iterating on the claim flow.
+  // the granted state when users run /extra-usage more than once while
+  // iterating on the claim flow.
   invalidateOverageCreditGrantCache()
 
   const subscriptionType = getSubscriptionType()

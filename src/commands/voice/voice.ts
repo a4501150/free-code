@@ -9,15 +9,12 @@ import {
 import { isVoiceStreamAvailable } from '../../services/voiceStreamSTT.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import { isAnthropicAuthEnabled } from '../../utils/auth.js'
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { settingsChangeDetector } from '../../utils/settings/changeDetector.js'
 import {
   getInitialSettings,
   updateSettingsForSource,
 } from '../../utils/settings/settings.js'
 import { isVoiceModeEnabled } from '../../voice/voiceModeEnabled.js'
-
-const LANG_HINT_MAX_SHOWS = 2
 
 export const call: LocalCommandCall = async () => {
   // Check auth and kill-switch before allowing voice mode
@@ -121,24 +118,11 @@ export const call: LocalCommandCall = async () => {
   settingsChangeDetector.notifyChange('userSettings')
   const key = getShortcutDisplay('voice:pushToTalk', 'Chat', 'Space')
   const stt = normalizeLanguageForSTT(currentSettings.language)
-  const cfg = getGlobalConfig()
-  // Reset the hint counter whenever the resolved STT language changes
-  // (including first-ever enable, where lastLanguage is undefined).
-  const langChanged = cfg.voiceLangHintLastLanguage !== stt.code
-  const priorCount = langChanged ? 0 : (cfg.voiceLangHintShownCount ?? 0)
-  const showHint = !stt.fellBackFrom && priorCount < LANG_HINT_MAX_SHOWS
   let langNote = ''
   if (stt.fellBackFrom) {
     langNote = ` Note: "${stt.fellBackFrom}" is not a supported dictation language; using English. Change it via /config.`
-  } else if (showHint) {
+  } else {
     langNote = ` Dictation language: ${stt.code} (/config to change).`
-  }
-  if (langChanged || showHint) {
-    saveGlobalConfig(prev => ({
-      ...prev,
-      voiceLangHintShownCount: priorCount + (showHint ? 1 : 0),
-      voiceLangHintLastLanguage: stt.code,
-    }))
   }
   return {
     type: 'text' as const,

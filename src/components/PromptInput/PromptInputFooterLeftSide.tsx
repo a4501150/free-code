@@ -7,7 +7,6 @@ import figures from 'figures'
 import {
   useEffect,
   useMemo,
-  useRef,
   useState,
   useSyncExternalStore,
 } from 'react'
@@ -44,7 +43,7 @@ import { useVoiceState } from '../../context/voice.js'
 import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js'
 import { isXtermJs } from '../../ink/terminal.js'
 import { useHasSelection, useSelection } from '../../ink/hooks/use-selection.js'
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import { getPlatform } from '../../utils/platform.js'
 import { PrBadge } from '../PrBadge.js'
 
@@ -56,8 +55,6 @@ const proactiveModule = feature('KAIROS')
 /* eslint-enable @typescript-eslint/no-require-imports */
 const NO_OP_SUBSCRIBE = (_cb: () => void) => () => {}
 const NULL = () => null
-const MAX_VOICE_HINT_SHOWS = 3
-
 type Props = {
   exitMessage: {
     show: boolean
@@ -266,33 +263,6 @@ function ModeIndicator({
     ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
       useShortcutDisplay('voice:pushToTalk', 'Chat', 'Space')
     : ''
-  // Captured at mount so the hint doesn't flicker mid-session if another
-  // CC instance increments the counter. Incremented once via useEffect the
-  // first time voice is enabled in this session — approximates "hint was
-  // shown" without tracking the exact render-time condition (which depends
-  // on parts/hintParts computed after the early-return hooks boundary).
-  const [voiceHintUnderCap] = feature('VOICE_MODE')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useState(
-        () =>
-          (getGlobalConfig().voiceFooterHintSeenCount ?? 0) <
-          MAX_VOICE_HINT_SHOWS,
-      )
-    : [false]
-  // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-  const voiceHintIncrementedRef = feature('VOICE_MODE') ? useRef(false) : null
-  useEffect(() => {
-    if (feature('VOICE_MODE')) {
-      if (!voiceEnabled || !voiceHintUnderCap) return
-      if (voiceHintIncrementedRef?.current) return
-      if (voiceHintIncrementedRef) voiceHintIncrementedRef.current = true
-      const newCount = (getGlobalConfig().voiceFooterHintSeenCount ?? 0) + 1
-      saveGlobalConfig(prev => {
-        if ((prev.voiceFooterHintSeenCount ?? 0) >= newCount) return prev
-        return { ...prev, voiceFooterHintSeenCount: newCount }
-      })
-    }
-  }, [voiceEnabled, voiceHintUnderCap])
   const isKillAgentsConfirmShowing = useAppState(
     s => s.notifications.current?.key === 'kill-agents-confirm',
   )
@@ -496,7 +466,7 @@ function ModeIndicator({
   // fall through instead of showing an empty Byline. "esc to clear" was removed
   // (looked like "esc to interrupt" when idle; esc-clears-selection is standard
   // UX) leaving only ctrl+c (copyOnSelect off) and the xterm.js native-select hint.
-  const copyOnSelect = getGlobalConfig().copyOnSelect ?? true
+  const copyOnSelect = getInitialSettings().copyOnSelect ?? true
   const selectionHintHasContent = hasSelection && (!copyOnSelect || isXtermJs())
 
   // Warmup hint takes priority — when the user is actively holding
@@ -540,8 +510,7 @@ function ModeIndicator({
     showHint &&
     voiceEnabled &&
     voiceState === 'idle' &&
-    hintParts.length === 0 &&
-    voiceHintUnderCap
+    hintParts.length === 0
   ) {
     parts.push(
       <Text dimColor key="voice-hint">
@@ -664,5 +633,5 @@ function getSpinnerHintParts(
 }
 
 function isPrStatusEnabled(): boolean {
-  return getGlobalConfig().prStatusFooterEnabled ?? true
+  return getInitialSettings().prStatusFooterEnabled ?? true
 }

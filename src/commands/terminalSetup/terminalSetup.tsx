@@ -20,7 +20,6 @@ import {
   markTerminalSetupComplete,
 } from '../../utils/appleTerminalBackup.js'
 import { setupShellCompletion } from '../../utils/completionCache.js'
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { env } from '../../utils/env.js'
 import { isFsInaccessible } from '../../utils/errors.js'
 import { execFileNoThrow } from '../../utils/execFileNoThrow.js'
@@ -128,20 +127,6 @@ export async function setupTerminal(theme: ThemeName): Promise<string> {
       break
   }
 
-  saveGlobalConfig(current => {
-    if (
-      ['vscode', 'cursor', 'windsurf', 'alacritty', 'zed'].includes(
-        env.terminal ?? '',
-      )
-    ) {
-      if (current.shiftEnterKeyBindingInstalled === true) return current
-      return { ...current, shiftEnterKeyBindingInstalled: true }
-    } else if (env.terminal === 'Apple_Terminal') {
-      if (current.optionAsMetaKeyInstalled === true) return current
-      return { ...current, optionAsMetaKeyInstalled: true }
-    }
-    return current
-  })
 
   maybeMarkProjectOnboardingComplete()
 
@@ -151,21 +136,7 @@ export async function setupTerminal(theme: ThemeName): Promise<string> {
 }
 
 export function isShiftEnterKeyBindingInstalled(): boolean {
-  return getGlobalConfig().shiftEnterKeyBindingInstalled === true
-}
-
-export function hasUsedBackslashReturn(): boolean {
-  return getGlobalConfig().hasUsedBackslashReturn === true
-}
-
-export function markBackslashReturnUsed(): void {
-  const config = getGlobalConfig()
-  if (!config.hasUsedBackslashReturn) {
-    saveGlobalConfig(current => ({
-      ...current,
-      hasUsedBackslashReturn: true,
-    }))
-  }
+  return false
 }
 
 export async function call(

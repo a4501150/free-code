@@ -23,7 +23,6 @@ import {
   createProjectOnboardingFeed,
   createGuestPassesFeed,
 } from './feedConfigs.js'
-import { getGlobalConfig, saveGlobalConfig } from 'src/utils/config.js'
 import { resolveThemeSetting } from 'src/utils/systemTheme.js'
 import { getInitialSettings } from 'src/utils/settings/settings.js'
 import {
@@ -72,7 +71,7 @@ const LEFT_PANEL_MAX_WIDTH = 50
 
 export function LogoV2(): React.ReactNode {
   const activities = getRecentActivitySync()
-  const username = getGlobalConfig().oauthAccount?.displayName ?? ''
+  const username = ''
 
   const { columns } = useTerminalSize()
   const showOnboarding = shouldShowProjectOnboarding()
@@ -81,8 +80,6 @@ export function LogoV2(): React.ReactNode {
   const showOverageCreditUpsell = useShowOverageCreditUpsell()
   const agent = useAppState(s => s.agent)
 
-  const config = getGlobalConfig()
-
   let changelog: string[]
   try {
     changelog = getRecentReleaseNotesSync(3)
@@ -90,33 +87,19 @@ export function LogoV2(): React.ReactNode {
     changelog = []
   }
 
-  // Get company announcements and select one:
-  // - First startup (numStartups === 1): show first announcement
-  // - All other startups: randomly select from announcements
+  // Get company announcements and randomly select one.
   const [announcement] = useState(() => {
     const announcements = getInitialSettings().companyAnnouncements
     if (!announcements || announcements.length === 0) return undefined
-    return config.numStartups === 1
-      ? announcements[0]
-      : announcements[Math.floor(Math.random() * announcements.length)]
+    return announcements[Math.floor(Math.random() * announcements.length)]
   })
-  const { hasReleaseNotes } = checkForReleaseNotesSync(
-    config.lastReleaseNotesSeen,
-  )
+  const { hasReleaseNotes } = checkForReleaseNotesSync(undefined)
 
   useEffect(() => {
-    const currentConfig = getGlobalConfig()
-    if (currentConfig.lastReleaseNotesSeen === MACRO.VERSION) {
-      return
-    }
-    saveGlobalConfig(current => {
-      if (current.lastReleaseNotesSeen === MACRO.VERSION) return current
-      return { ...current, lastReleaseNotesSeen: MACRO.VERSION }
-    })
     if (showOnboarding) {
       incrementProjectOnboardingSeenCount()
     }
-  }, [config, showOnboarding])
+  }, [showOnboarding])
 
   // In condensed mode (early-return below renders <CondensedLogo/>),
   // CondensedLogo's own useEffect handles the impression count. Skipping
@@ -199,11 +182,6 @@ export function LogoV2(): React.ReactNode {
         )}
         {announcement && (
           <Box paddingLeft={2} flexDirection="column">
-            {!process.env.IS_DEMO && config.oauthAccount?.organizationName && (
-              <Text dimColor>
-                Message from {config.oauthAccount.organizationName}:
-              </Text>
-            )}
             <Text>{announcement}</Text>
           </Box>
         )}
@@ -214,7 +192,7 @@ export function LogoV2(): React.ReactNode {
   // Calculate layout and display values
   const layoutMode = getLayoutMode(columns)
 
-  const userTheme = resolveThemeSetting(getGlobalConfig().theme)
+  const userTheme = resolveThemeSetting(getInitialSettings().theme ?? 'dark')
   const borderTitle = ` ${color('claude', userTheme)('Claude Code')} ${color('inactive', userTheme)(`v${version}`)} `
   const compactBorderTitle = color('claude', userTheme)(' Claude Code ')
 
@@ -284,9 +262,7 @@ export function LogoV2(): React.ReactNode {
 
   const welcomeMessage = formatWelcomeMessage(username)
   const modelLine =
-    !process.env.IS_DEMO && config.oauthAccount?.organizationName
-      ? `${modelDisplayName} · ${billingType} · ${config.oauthAccount.organizationName}`
-      : `${modelDisplayName} · ${billingType}`
+    `${modelDisplayName} · ${billingType}`
   // Calculate cwd width accounting for agent name if present
   const cwdSeparator = ' · '
   const cwdAtPrefix = '@'
@@ -422,11 +398,6 @@ export function LogoV2(): React.ReactNode {
       )}
       {announcement && (
         <Box paddingLeft={2} flexDirection="column">
-          {!process.env.IS_DEMO && config.oauthAccount?.organizationName && (
-            <Text dimColor>
-              Message from {config.oauthAccount.organizationName}:
-            </Text>
-          )}
           <Text>{announcement}</Text>
         </Box>
       )}

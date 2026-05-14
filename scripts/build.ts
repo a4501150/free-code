@@ -74,8 +74,6 @@ const defaultFeatures = [
   'HARD_FAIL',
   'STREAMLINED_OUTPUT',
   'UNATTENDED_RETRY',
-  // Tier 2: Slash command / skill gated
-  'BUDDY',
   // Tier 3: Settings / env var / file gated
   'CACHED_MICROCOMPACT',
   'COORDINATOR_MODE',

@@ -1,4 +1,3 @@
-import { getGlobalConfig } from '../../utils/config.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 
@@ -56,10 +55,5 @@ export function isAutoCompactEnabled(): boolean {
   }
 
   const settings = getInitialSettings()
-  if (settings.autoCompactEnabled !== undefined) {
-    return settings.autoCompactEnabled
-  }
-
-  const userConfig = getGlobalConfig()
-  return userConfig.autoCompactEnabled
+  return settings.autoCompactEnabled ?? true
 }

@@ -1,7 +1,10 @@
 import React, { useCallback } from 'react'
 import { Text } from '../ink.js'
-import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'
 import { isSupportedTerminal } from '../utils/ide.js'
+import {
+  getInitialSettings,
+  updateSettingsForSource,
+} from '../utils/settings/settings.js'
 import { Select } from './CustomSelect/index.js'
 import { Dialog } from './design-system/Dialog.js'
 
@@ -16,12 +19,8 @@ export function IdeAutoConnectDialog({
     async (value: string) => {
       const autoConnect = value === 'yes'
 
-      // Save the preference and mark dialog as shown
-      saveGlobalConfig(current => ({
-        ...current,
-        autoConnectIde: autoConnect,
-        hasIdeAutoConnectDialogBeenShown: true,
-      }))
+      // Save the preference.
+      updateSettingsForSource('userSettings', { autoConnectIde: autoConnect })
 
       onComplete()
     },
@@ -48,12 +47,7 @@ export function IdeAutoConnectDialog({
 }
 
 export function shouldShowAutoConnectDialog(): boolean {
-  const config = getGlobalConfig()
-  return (
-    !isSupportedTerminal() &&
-    config.autoConnectIde !== true &&
-    config.hasIdeAutoConnectDialogBeenShown !== true
-  )
+  return false
 }
 
 type IdeDisableAutoConnectDialogProps = {
@@ -68,10 +62,7 @@ export function IdeDisableAutoConnectDialog({
       const disableAutoConnect = value === 'yes'
 
       if (disableAutoConnect) {
-        saveGlobalConfig(current => ({
-          ...current,
-          autoConnectIde: false,
-        }))
+        updateSettingsForSource('userSettings', { autoConnectIde: false })
       }
 
       onComplete(disableAutoConnect)
@@ -101,6 +92,5 @@ export function IdeDisableAutoConnectDialog({
 }
 
 export function shouldShowDisableAutoConnectDialog(): boolean {
-  const config = getGlobalConfig()
-  return !isSupportedTerminal() && config.autoConnectIde === true
+  return !isSupportedTerminal() && getInitialSettings().autoConnectIde === true
 }

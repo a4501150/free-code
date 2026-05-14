@@ -10,7 +10,7 @@ import { z } from 'zod/v4'
 import { sendNotification } from '../../services/notifier.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { lazySchema } from '../../utils/lazySchema.js'
-import { getGlobalConfig } from '../../utils/config.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 
 const PUSH_NOTIFICATION_TOOL_NAME = 'PushNotification'
 const DESCRIPTION = 'Send a push notification to the user'
@@ -87,9 +87,8 @@ export const PushNotificationTool = buildTool({
   },
 
   isEnabled() {
-    const config = getGlobalConfig()
     // Check the agent push notification setting
-    return (config as Record<string, unknown>).agentPushNotifEnabled === true
+    return getInitialSettings().agentPushNotifEnabled === true
   },
 
   renderToolUseMessage(input, _output) {

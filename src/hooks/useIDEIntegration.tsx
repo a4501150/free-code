@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import type { ScopedMcpServerConfig } from '../services/mcp/types.js'
-import { getGlobalConfig } from '../utils/config.js'
+import { getInitialSettings } from '../utils/settings/settings.js'
 import { isEnvDefinedFalsy, isEnvTruthy } from '../utils/envUtils.js'
 import type { DetectedIDEInfo } from '../utils/ide.js'
 import {
@@ -36,9 +36,9 @@ export function useIDEIntegration({
       }
 
       // Check if auto-connect is enabled
-      const globalConfig = getGlobalConfig()
+      const settings = getInitialSettings()
       const autoConnectEnabled =
-        (globalConfig.autoConnectIde ||
+        ((settings.autoConnectIde ?? false) ||
           autoConnectIdeFlag ||
           isSupportedTerminal() ||
           // tmux/screen overwrite TERM_PROGRAM, breaking terminal detection, but the

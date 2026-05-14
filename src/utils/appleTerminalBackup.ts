@@ -1,32 +1,19 @@
 import { stat } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
-import { getGlobalConfig, saveGlobalConfig } from './config.js'
 import { execFileNoThrow } from './execFileNoThrow.js'
 import { logError } from './log.js'
-export function markTerminalSetupInProgress(backupPath: string): void {
-  saveGlobalConfig(current => ({
-    ...current,
-    appleTerminalSetupInProgress: true,
-    appleTerminalBackupPath: backupPath,
-  }))
-}
+export function markTerminalSetupInProgress(_backupPath: string): void {}
 
-export function markTerminalSetupComplete(): void {
-  saveGlobalConfig(current => ({
-    ...current,
-    appleTerminalSetupInProgress: false,
-  }))
-}
+export function markTerminalSetupComplete(): void {}
 
 function getTerminalRecoveryInfo(): {
   inProgress: boolean
   backupPath: string | null
 } {
-  const config = getGlobalConfig()
   return {
-    inProgress: config.appleTerminalSetupInProgress ?? false,
-    backupPath: config.appleTerminalBackupPath || null,
+    inProgress: false,
+    backupPath: null,
   }
 }
 

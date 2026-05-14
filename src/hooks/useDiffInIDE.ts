@@ -16,7 +16,7 @@ import {
   getEditsForPatch,
   getPatchForEdits,
 } from '../tools/FileEditTool/utils.js'
-import { getGlobalConfig } from '../utils/config.js'
+import { getInitialSettings } from '../utils/settings/settings.js'
 import { getPatchFromContents } from '../utils/diff.js'
 import { isENOENT } from '../utils/errors.js'
 import {
@@ -66,7 +66,7 @@ export function useDiffInIDE({
 
   const shouldShowDiffInIDE =
     hasAccessToIDEExtensionDiffFeature(toolUseContext.options.mcpClients) &&
-    getGlobalConfig().diffTool === 'auto' &&
+    (getInitialSettings().diffTool ?? 'auto') === 'auto' &&
     // Diffs should only be for file edits.
     // File writes may come through here but are not supported for diffs.
     !filePath.endsWith('.ipynb')

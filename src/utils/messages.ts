@@ -16,7 +16,6 @@ import { randomUUID, type UUID } from 'crypto'
 import isObject from 'lodash-es/isObject.js'
 import last from 'lodash-es/last.js'
 import type { AgentId } from 'src/types/ids.js'
-import { companionIntroText } from '../buddy/prompt.js'
 import { NO_CONTENT_MESSAGE } from '../constants/messages.js'
 import { isAutoMemoryEnabled } from '../memdir/paths.js'
 import { getInitialSettings } from './settings/settings.js'
@@ -3906,14 +3905,6 @@ You have exited auto mode. The user may now want to interact more directly. You 
       }
       return wrapMessagesInSystemReminder([
         createUserMessage({ content: parts.join('\n\n'), isMeta: true }),
-      ])
-    }
-    case 'companion_intro': {
-      return wrapMessagesInSystemReminder([
-        createUserMessage({
-          content: companionIntroText(attachment.name, attachment.species),
-          isMeta: true,
-        }),
       ])
     }
     case 'verify_plan_reminder': {

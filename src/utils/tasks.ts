@@ -184,9 +184,7 @@ export async function resetTaskList(taskListId: string): Promise<void> {
  * Removes all task files and the directory for a subagent's isolated task list.
  * Called when a subagent finishes to prevent accumulation of ephemeral task data.
  */
-export async function cleanupSubagentTaskList(
-  agentId: string,
-): Promise<void> {
+export async function cleanupSubagentTaskList(agentId: string): Promise<void> {
   const taskListId = `subagent-${agentId}`
   const dir = getTasksDir(taskListId)
   try {

@@ -25,8 +25,8 @@ type CachedParse = { ok: true; value: unknown } | { ok: false }
 // lodash memoize default resolver = first arg only).
 // Skip caching above this size — the LRU stores the full string as the key,
 // so a 200KB config file would pin ~10MB in #keyList across 50 slots. Large
-// inputs like ~/.claude.json also change between reads (numStartups bumps on
-// every CC startup), so the cache never hits anyway.
+// inputs like ~/.claude.json can also change between reads, so the cache may
+// never hit anyway.
 const PARSE_CACHE_MAX_KEY_BYTES = 8 * 1024
 
 function parseJSONUncached(json: string, shouldLogError: boolean): CachedParse {

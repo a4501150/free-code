@@ -6,7 +6,6 @@ import {
   getCommandName,
 } from '../../commands.js'
 import type { SuggestionItem } from '../../components/PromptInput/PromptInputFooterSuggestions.js'
-import { getSkillUsageScore } from './skillUsageTracking.js'
 
 // Treat these characters as word separators for command search
 const SEPARATORS = /[:_-]/g
@@ -309,26 +308,7 @@ export function generateCommandSuggestions(
   if (query === '') {
     const visibleCommands = commands.filter(cmd => !cmd.isHidden)
 
-    // Find recently used skills (only prompt commands have usage tracking)
-    const recentlyUsed: Command[] = []
-    const commandsWithScores = visibleCommands
-      .filter(cmd => cmd.type === 'prompt')
-      .map(cmd => ({
-        cmd,
-        score: getSkillUsageScore(getCommandName(cmd)),
-      }))
-      .filter(item => item.score > 0)
-      .sort((a, b) => b.score - a.score)
-
-    // Take top 5 recently used skills
-    for (const item of commandsWithScores.slice(0, 5)) {
-      recentlyUsed.push(item.cmd)
-    }
-
-    // Create a set of recently used command IDs to avoid duplicates
-    const recentlyUsedIds = new Set(recentlyUsed.map(cmd => getCommandId(cmd)))
-
-    // Categorize remaining commands (excluding recently used)
+    // Categorize commands
     const builtinCommands: Command[] = []
     const userCommands: Command[] = []
     const projectCommands: Command[] = []
@@ -336,11 +316,6 @@ export function generateCommandSuggestions(
     const otherCommands: Command[] = []
 
     visibleCommands.forEach(cmd => {
-      // Skip if already in recently used
-      if (recentlyUsedIds.has(getCommandId(cmd))) {
-        return
-      }
-
       if (cmd.type === 'local' || cmd.type === 'local-jsx') {
         builtinCommands.push(cmd)
       } else if (
@@ -367,10 +342,9 @@ export function generateCommandSuggestions(
     policyCommands.sort(sortAlphabetically)
     otherCommands.sort(sortAlphabetically)
 
-    // Combine with built-in commands prioritized after recently used,
+    // Combine with built-in commands prioritized first,
     // so they remain visible even when many skills are installed
     return [
-      ...recentlyUsed,
       ...builtinCommands,
       ...userCommands,
       ...projectCommands,
@@ -414,11 +388,7 @@ export function generateCommandSuggestions(
   const withMeta = searchResults.map(r => {
     const name = r.item.commandName.toLowerCase()
     const aliases = r.item.aliasKey?.map(alias => alias.toLowerCase()) ?? []
-    const usage =
-      r.item.command.type === 'prompt'
-        ? getSkillUsageScore(getCommandName(r.item.command))
-        : 0
-    return { r, name, aliases, usage }
+    return { r, name, aliases }
   })
 
   const sortedResults = withMeta.sort((a, b) => {
@@ -463,13 +433,8 @@ export function generateCommandSuggestions(
       return aPrefixAlias.length - bPrefixAlias.length
     }
 
-    // For similar match types, use Fuse score with usage as tiebreaker
-    const scoreDiff = (a.r.score ?? 0) - (b.r.score ?? 0)
-    if (Math.abs(scoreDiff) > 0.1) {
-      return scoreDiff
-    }
-    // For similar Fuse scores, prefer more frequently used skills
-    return b.usage - a.usage
+    // For similar match types, use Fuse score
+    return (a.r.score ?? 0) - (b.r.score ?? 0)
   })
 
   // Map search results to suggestion items

@@ -2,7 +2,6 @@ import React, { useEffect, useRef } from 'react'
 import { useNotifications } from 'src/context/notifications.js'
 import { Text } from 'src/ink.js'
 import type { MCPServerConnection } from 'src/services/mcp/types.js'
-import { getGlobalConfig, saveGlobalConfig } from 'src/utils/config.js'
 import {
   detectIDEs,
   type IDEExtensionInstallationStatus,
@@ -11,8 +10,6 @@ import {
 } from 'src/utils/ide.js'
 import { useIdeConnectionStatus } from '../useIdeConnectionStatus.js'
 import type { IDESelection } from '../useIdeSelection.js'
-
-const MAX_IDE_HINT_SHOW_COUNT = 5
 
 type Props = {
   ideInstallationStatus: IDEExtensionInstallationStatus | null
@@ -64,10 +61,7 @@ export function useIDEStatusIndicator({
       return
     }
     // Wait a bit to let auto-connect happen first, avoiding brief hint flash
-    if (
-      hasShownHintRef.current ||
-      (getGlobalConfig().ideHintShownCount ?? 0) >= MAX_IDE_HINT_SHOW_COUNT
-    ) {
+    if (hasShownHintRef.current) {
       return
     }
     const timeoutId = setTimeout(
@@ -76,10 +70,6 @@ export function useIDEStatusIndicator({
           const ideName = infos[0]?.name
           if (ideName && !hasShownHintRef.current) {
             hasShownHintRef.current = true
-            saveGlobalConfig(current => ({
-              ...current,
-              ideHintShownCount: (current.ideHintShownCount ?? 0) + 1,
-            }))
             addNotification({
               key: 'ide-status-hint',
               jsx: (

@@ -6,7 +6,7 @@ import {
   getRateLimitTier,
   getSubscriptionType,
 } from './auth.js'
-import { getGlobalConfig, getOrCreateUserID } from './config.js'
+import { getOrCreateUserID } from './config.js'
 import { getCwd } from './cwd.js'
 import { type env, getHostPlatformForAnalytics } from './env.js'
 import { isEnvTruthy } from './envUtils.js'
@@ -78,22 +78,12 @@ export function resetUserCache(): void {
 export const getCoreUserData = memoize(
   (includeAnalyticsMetadata?: boolean): CoreUserData => {
     const deviceId = getOrCreateUserID()
-    const config = getGlobalConfig()
 
     let subscriptionType: string | undefined
     let rateLimitTier: string | undefined
-    let firstTokenTime: number | undefined
     if (includeAnalyticsMetadata) {
       subscriptionType = getSubscriptionType() ?? undefined
       rateLimitTier = getRateLimitTier() ?? undefined
-      if (subscriptionType && config.claudeCodeFirstTokenDate) {
-        const configFirstTokenTime = new Date(
-          config.claudeCodeFirstTokenDate,
-        ).getTime()
-        if (!isNaN(configFirstTokenTime)) {
-          firstTokenTime = configFirstTokenTime
-        }
-      }
     }
 
     // Only include OAuth account data when actively using OAuth authentication
@@ -112,7 +102,6 @@ export const getCoreUserData = memoize(
       userType: process.env.USER_TYPE,
       subscriptionType,
       rateLimitTier,
-      firstTokenTime,
       ...(isEnvTruthy(process.env.GITHUB_ACTIONS) && {
         githubActionsMetadata: {
           actor: process.env.GITHUB_ACTOR,

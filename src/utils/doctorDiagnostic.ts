@@ -6,8 +6,6 @@ import { isInBundledMode } from './bundledMode.js'
 import {
   formatAutoUpdaterDisabledReason,
   getAutoUpdaterDisabledReason,
-  getGlobalConfig,
-  type InstallMethod,
 } from './config.js'
 import { getCwd } from './cwd.js'
 import { isEnvTruthy } from './envUtils.js'
@@ -44,7 +42,7 @@ export type DiagnosticInfo = {
   version: string
   installationPath: string
   invokedBinary: string
-  configInstallMethod: InstallMethod | 'not set'
+  configInstallMethod: string
   autoUpdates: string
   hasUpdatePermissions: boolean | null
   multipleInstallations: Array<{ type: string; path: string }>
@@ -270,9 +268,7 @@ async function detectMultipleInstallations(): Promise<
     // Not found
   }
 
-  // Also check if config indicates native installation
-  const config = getGlobalConfig()
-  if (config.installMethod === 'native') {
+  if (false) {
     const nativeDataPath = join(homedir(), '.local', 'share', 'claude')
     try {
       await fs.stat(nativeDataPath)
@@ -404,21 +400,7 @@ async function detectConfigurationIssues(
 
   // Check for configuration mismatches
   // Skip these checks if DISABLE_INSTALLATION_CHECKS is set (e.g., in HFI)
-  if (!isEnvTruthy(process.env.DISABLE_INSTALLATION_CHECKS)) {
-    if (type === 'npm-local' && config.installMethod !== 'local') {
-      warnings.push({
-        issue: `Running from local installation but config install method is '${config.installMethod}'`,
-        fix: 'Consider using native installation: claude install',
-      })
-    }
-
-    if (type === 'native' && config.installMethod !== 'native') {
-      warnings.push({
-        issue: `Running native installation but config install method is '${config.installMethod}'`,
-        fix: 'Run claude install to update configuration',
-      })
-    }
-  }
+  // installMethod tracking removed from GlobalConfig
 
   if (type === 'npm-global' && (await localInstallationExists())) {
     warnings.push({
@@ -538,10 +520,7 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
     }
   }
 
-  const config = getGlobalConfig()
-
-  // Get config values for display
-  const configInstallMethod = config.installMethod || 'not set'
+  const configInstallMethod = 'not set'
 
   let hasUpdatePermissions: boolean | null = null
 

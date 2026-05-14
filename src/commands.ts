@@ -42,12 +42,10 @@ import * as proactiveMod from './commands/proactive.js'
 import * as briefCmdMod from './commands/brief.js'
 import * as voiceCmdMod from './commands/voice/index.js'
 import * as initVerifiersMod from './commands/init-verifiers.js'
-import * as buddyMod from './commands/buddy/index.js'
 const proactive = feature('KAIROS') ? proactiveMod.default : null
 const briefCommand = feature('KAIROS') ? briefCmdMod.default : null
 const voiceCommand = feature('VOICE_MODE') ? voiceCmdMod.default : null
 const initVerifiers = feature('VERIFY_PLAN') ? initVerifiersMod.default : null
-const buddy = feature('BUDDY') ? buddyMod.default : null
 import thinkback from './commands/thinkback/index.js'
 import thinkbackPlay from './commands/thinkback-play/index.js'
 import permissions from './commands/permissions/index.js'
@@ -201,7 +199,6 @@ const COMMANDS = memoize((): Command[] => [
   usageReport,
   version,
   vim,
-  ...(buddy ? [buddy] : []),
   ...(proactive ? [proactive] : []),
   ...(briefCommand ? [briefCommand] : []),
   ...(voiceCommand ? [voiceCommand] : []),

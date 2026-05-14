@@ -26,18 +26,12 @@ import { isQualifiedForGrove } from './services/api/grove.js'
 import { handleMcpjsonServerApprovals } from './services/mcpServerApproval.js'
 import { AppStateProvider } from './state/AppState.js'
 import { onChangeAppState } from './state/onChangeAppState.js'
-import { normalizeApiKeyForConfig } from './utils/authPortable.js'
 import {
   getExternalClaudeMdIncludes,
   getMemoryFiles,
   shouldShowClaudeMdExternalIncludesWarning,
 } from './utils/claudemd.js'
-import {
-  checkHasTrustDialogAccepted,
-  getCustomApiKeyStatus,
-  getGlobalConfig,
-  saveGlobalConfig,
-} from './utils/config.js'
+import { checkHasTrustDialogAccepted } from './utils/config.js'
 import { isEnvTruthy } from './utils/envUtils.js'
 import { type FpsMetrics, FpsTracker } from './utils/fpsTracker.js'
 import { applyConfigEnvironmentVariables } from './utils/managedEnv.js'
@@ -45,6 +39,7 @@ import type { PermissionMode } from './utils/permissions/PermissionMode.js'
 import { getBaseRenderOptions } from './utils/renderOptions.js'
 import { getSettingsWithAllErrors } from './utils/settings/allErrors.js'
 import {
+  getInitialSettings,
   hasAutoModeOptIn,
   hasSkipDangerousModePermissionPrompt,
 } from './utils/settings/settings.js'
@@ -64,7 +59,6 @@ import { TrustDialog } from './components/TrustDialog/TrustDialog.js'
 import { ClaudeMdExternalIncludesDialog } from './components/ClaudeMdExternalIncludesDialog.js'
 import { MigrationPromptDialog } from './components/MigrationPromptDialog.js'
 import { GroveDialog } from './components/grove/Grove.js'
-import { ApproveApiKey } from './components/ApproveApiKey.js'
 import { BypassPermissionsModeDialog } from './components/BypassPermissionsModeDialog.js'
 import { AutoModeOptInDialog } from './components/AutoModeOptInDialog.js'
 import { DevChannelsDialog } from './components/DevChannelsDialog.js'
@@ -72,11 +66,9 @@ import { isChannelsEnabled } from './services/mcp/channelAllowlist.js'
 import { getClaudeAIOAuthTokens } from './utils/auth.js'
 
 export function completeOnboarding(): void {
-  saveGlobalConfig(current => ({
-    ...current,
-    hasCompletedOnboarding: true,
-    lastOnboardingVersion: MACRO.VERSION,
-  }))
+  if (!freecodeSettingsFileExists()) {
+    writeFreecodeSettingsFile({})
+  }
 }
 export function showDialog<T = void>(
   root: Root,
@@ -191,11 +183,12 @@ export async function showSetupScreens(
     resetProviderRegistry()
   }
 
-  const config = getGlobalConfig()
+  const settings = getInitialSettings()
+  const hasTheme = Boolean(settings.theme ?? 'dark')
   let onboardingShown = false
   if (
-    !config.theme ||
-    !config.hasCompletedOnboarding // always show onboarding at least once
+    !hasTheme ||
+    !freecodeSettingsFileExists() // always show onboarding at least once
   ) {
     onboardingShown = true
     await showSetupDialog(
@@ -278,26 +271,6 @@ export async function showSetupScreens(
     if (decision === 'escape') {
       gracefulShutdownSync(0)
       return false
-    }
-  }
-
-  // Check for custom API key
-  if (process.env.ANTHROPIC_API_KEY) {
-    const customApiKeyTruncated = normalizeApiKeyForConfig(
-      process.env.ANTHROPIC_API_KEY,
-    )
-    const keyStatus = getCustomApiKeyStatus(customApiKeyTruncated)
-    if (keyStatus === 'new') {
-      await showSetupDialog<boolean>(
-        root,
-        done => (
-          <ApproveApiKey
-            customApiKeyTruncated={customApiKeyTruncated}
-            onDone={done}
-          />
-        ),
-        { onChangeAppState },
-      )
     }
   }
 

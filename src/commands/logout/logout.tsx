@@ -9,7 +9,6 @@ import { clearRemoteManagedSettingsCache } from '../../services/remoteManagedSet
 import { flushTelemetry } from '../../utils/telemetry/instrumentation.js'
 import { getClaudeAIOAuthTokens, removeApiKey } from '../../utils/auth.js'
 import { clearBetasCaches } from '../../utils/betas.js'
-import { saveGlobalConfig } from '../../utils/config.js'
 import { gracefulShutdownSync } from '../../utils/gracefulShutdown.js'
 import { getSecureStorage } from '../../utils/secureStorage/index.js'
 import { clearToolSchemaCache } from '../../utils/toolSchemaCache.js'
@@ -28,22 +27,7 @@ export async function performLogout({
   secureStorage.delete()
 
   await clearAuthRelatedCaches()
-  saveGlobalConfig(current => {
-    const updated = { ...current }
-    if (clearOnboarding) {
-      updated.hasCompletedOnboarding = false
-      updated.subscriptionNoticeCount = 0
-      updated.hasAvailableSubscription = false
-      if (updated.customApiKeyResponses?.approved) {
-        updated.customApiKeyResponses = {
-          ...updated.customApiKeyResponses,
-          approved: [],
-        }
-      }
-    }
-    updated.oauthAccount = undefined
-    return updated
-  })
+  void clearOnboarding
 }
 
 // clearing anything memoized that must be invalidated when user/session/auth changes

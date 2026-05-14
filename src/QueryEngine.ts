@@ -42,8 +42,8 @@ import { SYNTHETIC_OUTPUT_TOOL_NAME } from './tools/SyntheticOutputTool/Syntheti
 import type { Message } from './types/message.js'
 import type { OrphanedPermission } from './types/textInputTypes.js'
 import { createAbortController } from './utils/abortController.js'
-import { getGlobalConfig } from './utils/config.js'
 import { getCwd } from './utils/cwd.js'
+import { getInitialSettings } from './utils/settings/settings.js'
 import { isBareMode, isEnvTruthy } from './utils/envUtils.js'
 import { getFastModeState } from './utils/fastMode.js'
 import {
@@ -319,7 +319,7 @@ export class QueryEngine {
         customSystemPrompt,
         appendSystemPrompt,
         agentDefinitions: { activeAgents: agents, allAgents: [] },
-        theme: resolveThemeSetting(getGlobalConfig().theme),
+        theme: resolveThemeSetting(getInitialSettings().theme ?? 'dark'),
         maxBudgetUsd,
       },
       getAppState,
@@ -456,7 +456,7 @@ export class QueryEngine {
         isNonInteractiveSession: true,
         customSystemPrompt,
         appendSystemPrompt,
-        theme: resolveThemeSetting(getGlobalConfig().theme),
+        theme: resolveThemeSetting(getInitialSettings().theme ?? 'dark'),
         agentDefinitions: { activeAgents: agents, allAgents: [] },
         maxBudgetUsd,
       },

@@ -39,7 +39,6 @@ import {
 } from './utils/context.js'
 import { isFastModeEnabled } from './utils/fastMode.js'
 import { formatDuration, formatNumber } from './utils/format.js'
-import type { FpsMetrics } from './utils/fpsTracker.js'
 import {
   getPublicModelDisplayName,
   renderModelName,
@@ -139,7 +138,7 @@ export function restoreCostStateForSession(sessionId: string): boolean {
  * Saves the current session's costs to project config.
  * Call this before switching sessions to avoid losing accumulated costs.
  */
-export function saveCurrentSessionCosts(fpsMetrics?: FpsMetrics): void {
+export function saveCurrentSessionCosts(): void {
   saveCurrentProjectConfig(current => ({
     ...current,
     lastCost: getTotalCostUSD(),
@@ -149,13 +148,6 @@ export function saveCurrentSessionCosts(fpsMetrics?: FpsMetrics): void {
     lastDuration: getTotalDuration(),
     lastLinesAdded: getTotalLinesAdded(),
     lastLinesRemoved: getTotalLinesRemoved(),
-    lastTotalInputTokens: getTotalInputTokens(),
-    lastTotalOutputTokens: getTotalOutputTokens(),
-    lastTotalCacheCreationInputTokens: getTotalCacheCreationInputTokens(),
-    lastTotalCacheReadInputTokens: getTotalCacheReadInputTokens(),
-    lastTotalWebSearchRequests: getTotalWebSearchRequests(),
-    lastFpsAverage: fpsMetrics?.averageFps,
-    lastFpsLow1Pct: fpsMetrics?.low1PctFps,
     lastModelUsage: Object.fromEntries(
       Object.entries(getModelUsage()).map(([model, usage]) => [
         model,

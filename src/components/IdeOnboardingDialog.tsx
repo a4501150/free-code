@@ -1,8 +1,6 @@
 import React from 'react'
-import { envDynamic } from 'src/utils/envDynamic.js'
 import { Box, Text } from '../ink.js'
 import { useKeybindings } from '../keybindings/useKeybinding.js'
-import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'
 import { env } from '../utils/env.js'
 import {
   getTerminalIdeType,
@@ -21,8 +19,6 @@ export function IdeOnboardingDialog({
   onDone,
   installationStatus,
 }: Props): React.ReactNode {
-  markDialogAsShown()
-
   // Handle Enter/Escape to dismiss
   useKeybindings(
     {
@@ -88,21 +84,5 @@ export function IdeOnboardingDialog({
 }
 
 export function hasIdeOnboardingDialogBeenShown(): boolean {
-  const config = getGlobalConfig()
-  const terminal = envDynamic.terminal || 'unknown'
-  return config.hasIdeOnboardingBeenShown?.[terminal] === true
-}
-
-function markDialogAsShown(): void {
-  if (hasIdeOnboardingDialogBeenShown()) {
-    return
-  }
-  const terminal = envDynamic.terminal || 'unknown'
-  saveGlobalConfig(current => ({
-    ...current,
-    hasIdeOnboardingBeenShown: {
-      ...current.hasIdeOnboardingBeenShown,
-      [terminal]: true,
-    },
-  }))
+  return true
 }

@@ -2,7 +2,7 @@ import chalk from 'chalk'
 import * as React from 'react'
 import { LIGHTNING_BOLT } from '../constants/figures.js'
 import { Text } from '../ink.js'
-import { getGlobalConfig } from '../utils/config.js'
+import { getInitialSettings } from '../utils/settings/settings.js'
 import { resolveThemeSetting } from '../utils/systemTheme.js'
 import { color } from './design-system/color.js'
 
@@ -25,7 +25,7 @@ export function getFastIconString(applyColor = true, cooldown = false): string {
   if (!applyColor) {
     return LIGHTNING_BOLT
   }
-  const themeName = resolveThemeSetting(getGlobalConfig().theme)
+  const themeName = resolveThemeSetting(getInitialSettings().theme ?? 'dark')
   if (cooldown) {
     return chalk.dim(color('promptBorder', themeName)(LIGHTNING_BOLT))
   }

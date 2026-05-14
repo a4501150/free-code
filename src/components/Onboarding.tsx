@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   setupTerminal,
   shouldOfferTerminalSetup,
@@ -7,12 +7,9 @@ import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeyb
 import { Box, Link, Newline, Text, useTheme } from '../ink.js'
 import { useKeybindings } from '../keybindings/useKeybinding.js'
 import { isAnthropicAuthEnabled } from '../utils/auth.js'
-import { normalizeApiKeyForConfig } from '../utils/authPortable.js'
-import { getCustomApiKeyStatus } from '../utils/config.js'
 import { env } from '../utils/env.js'
 import { PreflightStep } from '../utils/preflightChecks.js'
 import type { ThemeSetting } from '../utils/theme.js'
-import { ApproveApiKey } from './ApproveApiKey.js'
 import { ConsoleOAuthFlow } from './ConsoleOAuthFlow.js'
 import { Select } from './CustomSelect/select.js'
 import { WelcomeV2 } from './LogoV2/WelcomeV2.js'
@@ -24,7 +21,6 @@ type StepId =
   | 'preflight'
   | 'theme'
   | 'oauth'
-  | 'api-key'
   | 'security'
   | 'terminal-setup'
 
@@ -39,7 +35,6 @@ type Props = {
 
 export function Onboarding({ onDone }: Props): React.ReactNode {
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
-  const [skipOAuth, setSkipOAuth] = useState(false)
   const [oauthEnabled] = useState(() => isAnthropicAuthEnabled())
   const [theme, setTheme] = useTheme()
 
@@ -110,49 +105,17 @@ export function Onboarding({ onDone }: Props): React.ReactNode {
 
   const preflightStep = <PreflightStep onSuccess={goToNextStep} />
   // Create the steps array - determine which steps to include based on reAuth and oauthEnabled
-  const apiKeyNeedingApproval = useMemo(() => {
-    // Add API key step if needed
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return ''
-    }
-    const customApiKeyTruncated = normalizeApiKeyForConfig(
-      process.env.ANTHROPIC_API_KEY,
-    )
-    if (getCustomApiKeyStatus(customApiKeyTruncated) === 'new') {
-      return customApiKeyTruncated
-    }
-  }, [])
-
-  function handleApiKeyDone(approved: boolean) {
-    if (approved) {
-      setSkipOAuth(true)
-    }
-    goToNextStep()
-  }
-
   const steps: OnboardingStep[] = []
   if (oauthEnabled) {
     steps.push({ id: 'preflight', component: preflightStep })
   }
   steps.push({ id: 'theme', component: themeStep })
 
-  if (apiKeyNeedingApproval) {
-    steps.push({
-      id: 'api-key',
-      component: (
-        <ApproveApiKey
-          customApiKeyTruncated={apiKeyNeedingApproval}
-          onDone={handleApiKeyDone}
-        />
-      ),
-    })
-  }
-
   if (oauthEnabled) {
     steps.push({
       id: 'oauth',
       component: (
-        <SkippableStep skip={skipOAuth} onSkip={goToNextStep}>
+        <SkippableStep skip={false} onSkip={goToNextStep}>
           <ConsoleOAuthFlow onDone={goToNextStep} />
         </SkippableStep>
       ),

@@ -16,8 +16,11 @@ import { Box, Text } from '../../ink.js'
 
 import type { LocalJSXCommandCall } from '../../types/command.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { extractTextContent, stripPromptXMLTags } from '../../utils/messages.js'
+import {
+  getInitialSettings,
+  updateSettingsForSource,
+} from '../../utils/settings/settings.js'
 import { countCharInString } from '../../utils/stringUtils.js'
 
 const COPY_DIR = join(tmpdir(), 'claude')
@@ -180,8 +183,8 @@ function CopyPicker({
   async function handleSelect(selected: PickerSelection): Promise<void> {
     const content = getSelectionContent(selected)
     if (selected === 'always') {
-      if (!getGlobalConfig().copyFullResponse) {
-        saveGlobalConfig(c => ({ ...c, copyFullResponse: true }))
+      if (!(getInitialSettings().copyFullResponse ?? false)) {
+        updateSettingsForSource('userSettings', { copyFullResponse: true })
       }
       const result = await copyOrWriteToFile(content.text, content.filename)
       onDone(
@@ -273,9 +276,9 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
 
   const text = texts[age]!
   const codeBlocks = extractCodeBlocks(text)
-  const config = getGlobalConfig()
+  const settings = getInitialSettings()
 
-  if (codeBlocks.length === 0 || config.copyFullResponse) {
+  if (codeBlocks.length === 0 || (settings.copyFullResponse ?? false)) {
     const result = await copyOrWriteToFile(text, RESPONSE_FILENAME)
     onDone(result)
     return null

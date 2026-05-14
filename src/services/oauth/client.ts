@@ -13,8 +13,6 @@ import {
   isClaudeAISubscriber,
   saveApiKey,
 } from '../../utils/auth.js'
-import type { AccountInfo } from '../../utils/config.js'
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { getOauthProfileFromOauthToken } from './getOauthProfile.js'
 import type {
@@ -205,59 +203,25 @@ export async function refreshOAuthToken(
     const expiresAt = Date.now() + expiresIn * 1000
     const scopes = parseScopes(data.scope)
 
-    // Skip the extra /api/oauth/profile round-trip when we already have both
-    // the global-config profile fields AND the secure-storage subscription data.
-    // Routine refreshes satisfy both, so we cut ~7M req/day fleet-wide.
+    // Skip the extra /api/oauth/profile round-trip when secure storage already
+    // has the subscription data required by callers.
     //
-    // Checking secure storage (not just config) matters for the
-    // CLAUDE_CODE_OAUTH_REFRESH_TOKEN re-login path: installOAuthTokens runs
-    // performLogout() AFTER we return, wiping secure storage. If we returned
-    // null for subscriptionType here, saveOAuthTokensIfNeeded would persist
-    // null ?? (wiped) ?? null = null, and every future refresh would see the
-    // config guard fields satisfied and skip again, permanently losing the
-    // subscription type for paying users. By passing through existing values,
-    // the re-login path writes cached ?? wiped ?? null = cached; and if secure
-    // storage was already empty we fall through to the fetch.
-    const config = getGlobalConfig()
+    // Checking secure storage matters for the CLAUDE_CODE_OAUTH_REFRESH_TOKEN
+    // re-login path: installOAuthTokens runs performLogout() AFTER we return,
+    // wiping secure storage. If we returned null for subscriptionType here,
+    // saveOAuthTokensIfNeeded would persist null ?? (wiped) ?? null = null. By
+    // passing through existing values, the re-login path writes cached ?? wiped
+    // ?? null = cached; and if secure storage was already empty we fall through
+    // to the fetch.
     const existing = getClaudeAIOAuthTokens()
     const haveProfileAlready =
-      config.oauthAccount?.billingType !== undefined &&
-      config.oauthAccount?.accountCreatedAt !== undefined &&
-      config.oauthAccount?.subscriptionCreatedAt !== undefined &&
-      existing?.subscriptionType != null &&
-      existing?.rateLimitTier != null
+      existing?.subscriptionType != null && existing?.rateLimitTier != null
 
     const profileInfo = haveProfileAlready
       ? null
       : await fetchProfileInfo(accessToken)
 
-    // Update the stored properties if they have changed
-    if (profileInfo && config.oauthAccount) {
-      const updates: Partial<AccountInfo> = {}
-      if (profileInfo.displayName !== undefined) {
-        updates.displayName = profileInfo.displayName
-      }
-      if (typeof profileInfo.hasExtraUsageEnabled === 'boolean') {
-        updates.hasExtraUsageEnabled = profileInfo.hasExtraUsageEnabled
-      }
-      if (profileInfo.billingType !== null) {
-        updates.billingType = profileInfo.billingType
-      }
-      if (profileInfo.accountCreatedAt !== undefined) {
-        updates.accountCreatedAt = profileInfo.accountCreatedAt
-      }
-      if (profileInfo.subscriptionCreatedAt !== undefined) {
-        updates.subscriptionCreatedAt = profileInfo.subscriptionCreatedAt
-      }
-      if (Object.keys(updates).length > 0) {
-        saveGlobalConfig(current => ({
-          ...current,
-          oauthAccount: current.oauthAccount
-            ? { ...current.oauthAccount, ...updates }
-            : current.oauthAccount,
-        }))
-      }
-    }
+    // Auth is provider-managed via freecode.json — skip oauthAccount updates
 
     return {
       accessToken,
@@ -287,33 +251,9 @@ export async function refreshOAuthToken(
 }
 
 export async function fetchAndStoreUserRoles(
-  accessToken: string,
+  _accessToken: string,
 ): Promise<void> {
-  const response = await axios.get(getOauthConfig().ROLES_URL, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
-
-  if (response.status !== 200) {
-    throw new Error(`Failed to fetch user roles: ${response.statusText}`)
-  }
-  const data = response.data as UserRolesResponse
-  const config = getGlobalConfig()
-
-  if (!config.oauthAccount) {
-    throw new Error('OAuth account information not found in config')
-  }
-
-  saveGlobalConfig(current => ({
-    ...current,
-    oauthAccount: current.oauthAccount
-      ? {
-          ...current.oauthAccount,
-          organizationRole: data.organization_role,
-          workspaceRole: data.workspace_role,
-          organizationName: data.organization_name,
-        }
-      : current.oauthAccount,
-  }))
+  // No-op: auth is provider-managed via freecode.json
 }
 
 export async function createAndStoreApiKey(
@@ -416,14 +356,7 @@ export async function fetchProfileInfo(accessToken: string): Promise<{
  * @returns The organization UUID or null if not authenticated
  */
 export async function getOrganizationUUID(): Promise<string | null> {
-  // Check global config first to avoid unnecessary API call
-  const globalConfig = getGlobalConfig()
-  const orgUUID = globalConfig.oauthAccount?.organizationUuid
-  if (orgUUID) {
-    return orgUUID
-  }
-
-  // Fall back to fetching from profile (requires user:profile scope)
+  // Fetch from profile (requires user:profile scope)
   const accessToken = getClaudeAIOAuthTokens()?.accessToken
   if (accessToken === undefined || !hasProfileScope()) {
     return null
@@ -453,28 +386,18 @@ export async function populateOAuthAccountInfoIfNeeded(): Promise<boolean> {
     envAccountUuid && envUserEmail && envOrganizationUuid,
   )
   if (envAccountUuid && envUserEmail && envOrganizationUuid) {
-    if (!getGlobalConfig().oauthAccount) {
-      storeOAuthAccountInfo({
-        accountUuid: envAccountUuid,
-        emailAddress: envUserEmail,
-        organizationUuid: envOrganizationUuid,
-      })
-    }
+    storeOAuthAccountInfo({
+      accountUuid: envAccountUuid,
+      emailAddress: envUserEmail,
+      organizationUuid: envOrganizationUuid,
+    })
   }
 
   // Wait for any in-flight token refresh to complete first, since
   // refreshOAuthToken already fetches and stores profile info
   await checkAndRefreshOAuthTokenIfNeeded()
 
-  const config = getGlobalConfig()
-  if (
-    (config.oauthAccount &&
-      config.oauthAccount.billingType !== undefined &&
-      config.oauthAccount.accountCreatedAt !== undefined &&
-      config.oauthAccount.subscriptionCreatedAt !== undefined) ||
-    !isClaudeAISubscriber() ||
-    !hasProfileScope()
-  ) {
+  if (!isClaudeAISubscriber() || !hasProfileScope()) {
     return false
   }
 
@@ -506,16 +429,7 @@ export async function populateOAuthAccountInfoIfNeeded(): Promise<boolean> {
   return false
 }
 
-export function storeOAuthAccountInfo({
-  accountUuid,
-  emailAddress,
-  organizationUuid,
-  displayName,
-  hasExtraUsageEnabled,
-  billingType,
-  accountCreatedAt,
-  subscriptionCreatedAt,
-}: {
+export function storeOAuthAccountInfo(_info: {
   accountUuid: string
   emailAddress: string
   organizationUuid: string | undefined
@@ -525,34 +439,5 @@ export function storeOAuthAccountInfo({
   accountCreatedAt?: string
   subscriptionCreatedAt?: string
 }): void {
-  const accountInfo: AccountInfo = {
-    accountUuid,
-    emailAddress,
-    organizationUuid,
-    hasExtraUsageEnabled,
-    billingType,
-    accountCreatedAt,
-    subscriptionCreatedAt,
-  }
-  if (displayName) {
-    accountInfo.displayName = displayName
-  }
-  saveGlobalConfig(current => {
-    // For oauthAccount we need to compare content since it's an object
-    if (
-      current.oauthAccount?.accountUuid === accountInfo.accountUuid &&
-      current.oauthAccount?.emailAddress === accountInfo.emailAddress &&
-      current.oauthAccount?.organizationUuid === accountInfo.organizationUuid &&
-      current.oauthAccount?.displayName === accountInfo.displayName &&
-      current.oauthAccount?.hasExtraUsageEnabled ===
-        accountInfo.hasExtraUsageEnabled &&
-      current.oauthAccount?.billingType === accountInfo.billingType &&
-      current.oauthAccount?.accountCreatedAt === accountInfo.accountCreatedAt &&
-      current.oauthAccount?.subscriptionCreatedAt ===
-        accountInfo.subscriptionCreatedAt
-    ) {
-      return current
-    }
-    return { ...current, oauthAccount: accountInfo }
-  })
+  // No-op: auth is provider-managed via freecode.json
 }

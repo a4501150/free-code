@@ -27,15 +27,16 @@ import {
 } from '../services/oauth/client.js'
 import type { CodexTokens } from '../services/oauth/codex-client.js'
 import { getOauthProfileFromOauthToken } from '../services/oauth/getOauthProfile.js'
-import type { OAuthTokens, SubscriptionType } from '../services/oauth/types.js'
+import type {
+  BillingType,
+  OAuthTokens,
+  SubscriptionType,
+} from '../services/oauth/types.js'
 import {
   getApiKeyFromFileDescriptor,
   getOAuthTokenFromFileDescriptor,
 } from './authFileDescriptor.js'
-import {
-  maybeRemoveApiKeyFromMacOSKeychainThrows,
-  normalizeApiKeyForConfig,
-} from './authPortable.js'
+import { maybeRemoveApiKeyFromMacOSKeychainThrows } from './authPortable.js'
 import {
   checkStsCallerIdentity,
   clearAwsIniCache,
@@ -43,12 +44,7 @@ import {
 } from './aws.js'
 import { AwsAuthStatusManager } from './awsAuthStatusManager.js'
 import { clearBetasCaches } from './betas.js'
-import {
-  type AccountInfo,
-  checkHasTrustDialogAccepted,
-  getGlobalConfig,
-  saveGlobalConfig,
-} from './config.js'
+import { checkHasTrustDialogAccepted } from './config.js'
 import { logAntError, logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir, isBareMode, isEnvTruthy } from './envUtils.js'
 import { errorMessage } from './errors.js'
@@ -76,6 +72,20 @@ import {
 import { sleep } from './sleep.js'
 import { jsonParse } from './slowOperations.js'
 import { clearToolSchemaCache } from './toolSchemaCache.js'
+
+type AccountInfo = {
+  accountUuid: string
+  emailAddress: string
+  organizationUuid?: string
+  organizationName?: string | null
+  organizationRole?: string | null
+  workspaceRole?: string | null
+  displayName?: string
+  hasExtraUsageEnabled?: boolean
+  billingType?: BillingType | null
+  accountCreatedAt?: string
+  subscriptionCreatedAt?: string
+}
 
 /** Default TTL for API key helper cache in milliseconds (5 minutes) */
 const DEFAULT_API_KEY_HELPER_TTL = 5 * 60 * 1000
@@ -282,12 +292,7 @@ export function getAnthropicApiKeyWithSource(
     }
   }
   // Check for ANTHROPIC_API_KEY before checking the apiKeyHelper or /login-managed key
-  if (
-    apiKeyEnv &&
-    getGlobalConfig().customApiKeyResponses?.approved?.includes(
-      normalizeApiKeyForConfig(apiKeyEnv),
-    )
-  ) {
+  if (apiKeyEnv) {
     return {
       key: apiKeyEnv,
       source: 'ANTHROPIC_API_KEY',
@@ -1057,98 +1062,20 @@ export const getApiKeyFromConfigOrMacOSKeychain = memoize(
       }
     }
 
-    const config = getGlobalConfig()
-    if (!config.primaryApiKey) {
-      return null
-    }
-
-    return { key: config.primaryApiKey, source: '/login managed key' }
+    return null
   },
 )
 
-function isValidApiKey(apiKey: string): boolean {
-  // Only allow alphanumeric characters, dashes, and underscores
-  return /^[a-zA-Z0-9-_]+$/.test(apiKey)
+export async function saveApiKey(_apiKey: string): Promise<void> {
+  // No-op: auth is provider-managed via freecode.json
 }
 
-export async function saveApiKey(apiKey: string): Promise<void> {
-  if (!isValidApiKey(apiKey)) {
-    throw new Error(
-      'Invalid API key format. API key must contain only alphanumeric characters, dashes, and underscores.',
-    )
-  }
-
-  // Store as primary API key
-  await maybeRemoveApiKeyFromMacOSKeychain()
-  let savedToKeychain = false
-  if (process.platform === 'darwin') {
-    try {
-      // TODO: migrate to SecureStorage
-      const storageServiceName = getMacOsKeychainStorageServiceName()
-      const username = getUsername()
-
-      // Convert to hexadecimal to avoid any escaping issues
-      const hexValue = Buffer.from(apiKey, 'utf-8').toString('hex')
-
-      // Use security's interactive mode (-i) with -X (hexadecimal) option
-      // This ensures credentials never appear in process command-line arguments
-      // Process monitors only see "security -i", not the password
-      const command = `add-generic-password -U -a "${username}" -s "${storageServiceName}" -X "${hexValue}"\n`
-
-      await execa('security', ['-i'], {
-        input: command,
-        reject: false,
-      })
-
-      savedToKeychain = true
-    } catch (e) {
-      logError(e)
-    }
-  }
-
-  const normalizedKey = normalizeApiKeyForConfig(apiKey)
-
-  // Save config with all updates
-  saveGlobalConfig(current => {
-    const approved = current.customApiKeyResponses?.approved ?? []
-    return {
-      ...current,
-      // Only save to config if keychain save failed or not on darwin
-      primaryApiKey: savedToKeychain ? current.primaryApiKey : apiKey,
-      customApiKeyResponses: {
-        ...current.customApiKeyResponses,
-        approved: approved.includes(normalizedKey)
-          ? approved
-          : [...approved, normalizedKey],
-        rejected: current.customApiKeyResponses?.rejected ?? [],
-      },
-    }
-  })
-
-  // Clear memo cache
-  getApiKeyFromConfigOrMacOSKeychain.cache.clear?.()
-  clearLegacyApiKeyPrefetch()
-}
-
-export function isCustomApiKeyApproved(apiKey: string): boolean {
-  const config = getGlobalConfig()
-  const normalizedKey = normalizeApiKeyForConfig(apiKey)
-  return (
-    config.customApiKeyResponses?.approved?.includes(normalizedKey) ?? false
-  )
+export function isCustomApiKeyApproved(_apiKey: string): boolean {
+  return true
 }
 
 export async function removeApiKey(): Promise<void> {
   await maybeRemoveApiKeyFromMacOSKeychain()
-
-  // Also remove from config instead of returning early, for older clients
-  // that set keys before we supported keychain.
-  saveGlobalConfig(current => ({
-    ...current,
-    primaryApiKey: undefined,
-  }))
-
-  // Clear memo cache
   getApiKeyFromConfigOrMacOSKeychain.cache.clear?.()
   clearLegacyApiKeyPrefetch()
 }
@@ -1229,49 +1156,16 @@ export function clearOAuthTokenCache(): void {
  * Saves the OpenAI Codex OAuth tokens to GlobalConfig.
  * Does NOT overwrite or interfere with Anthropic's claudeAiOauth block.
  */
-export function saveCodexOAuthTokens(tokens: CodexTokens): void {
-  saveGlobalConfig(cfg => ({
-    ...cfg,
-    codexOAuth: {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      expiresAt: tokens.expiresAt,
-      accountId: tokens.accountId,
-    },
-  }))
+export function saveCodexOAuthTokens(_tokens: CodexTokens): void {
+  // No-op: auth is provider-managed via freecode.json
 }
 
-/**
- * Retrieves the stored Codex OAuth tokens from GlobalConfig.
- * Returns null if no Codex tokens are stored.
- */
 export function getCodexOAuthTokens(): CodexTokens | null {
-  const cfg = getGlobalConfig()
-  const stored = cfg.codexOAuth
-  if (
-    !stored?.accessToken ||
-    !stored.refreshToken ||
-    !stored.expiresAt ||
-    !stored.accountId
-  ) {
-    return null
-  }
-  return {
-    accessToken: stored.accessToken,
-    refreshToken: stored.refreshToken,
-    expiresAt: stored.expiresAt,
-    accountId: stored.accountId,
-  }
+  return null
 }
 
-/**
- * Removes Codex OAuth tokens from GlobalConfig (e.g., on logout).
- */
 export function clearCodexOAuthTokens(): void {
-  saveGlobalConfig(cfg => {
-    const { codexOAuth: _removed, ...rest } = cfg
-    return rest as typeof cfg
-  })
+  // No-op: auth is provider-managed via freecode.json
 }
 
 let lastCredentialsMtimeMs = 0
@@ -1601,7 +1495,7 @@ export function is1PApiCustomer(): boolean {
  * Returns undefined when using external API keys or third-party services.
  */
 export function getOauthAccountInfo(): AccountInfo | undefined {
-  return isAnthropicAuthEnabled() ? getGlobalConfig().oauthAccount : undefined
+  return undefined
 }
 
 /**

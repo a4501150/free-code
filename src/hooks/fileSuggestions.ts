@@ -13,7 +13,6 @@ import {
 } from '../native-ts/file-index/index.js'
 
 import type { FileSuggestionCommandInput } from '../types/fileSuggestion.js'
-import { getGlobalConfig } from '../utils/config.js'
 import { getCwd } from '../utils/cwd.js'
 import { logForDebugging } from '../utils/debug.js'
 import { errorMessage } from '../utils/errors.js'
@@ -513,11 +512,7 @@ export async function getPathsForSuggestions(): Promise<FileIndex> {
   const index = getFileIndex()
 
   try {
-    // Check project settings first, then fall back to global config
-    const projectSettings = getInitialSettings()
-    const globalConfig = getGlobalConfig()
-    const respectGitignore =
-      projectSettings.respectGitignore ?? globalConfig.respectGitignore ?? true
+    const respectGitignore = getInitialSettings().respectGitignore ?? true
 
     const cwd = getCwd()
     const [projectFiles, configFiles] = await Promise.all([

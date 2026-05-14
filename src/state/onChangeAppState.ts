@@ -4,8 +4,11 @@ import {
   clearAwsCredentialsCache,
   clearGcpCredentialsCache,
 } from '../utils/auth.js'
-import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'
 import { toError } from '../utils/errors.js'
+import {
+  getInitialSettings,
+  updateSettingsForSource,
+} from '../utils/settings/settings.js'
 import { logError } from '../utils/log.js'
 import { applyConfigEnvironmentVariables } from '../utils/managedEnv.js'
 import {
@@ -44,6 +47,8 @@ export function onChangeAppState({
   newState: AppState
   oldState: AppState
 }) {
+  const settings = getInitialSettings()
+
   // toolPermissionContext.mode — single choke point for CCR/SDK mode sync.
   //
   // Prior to this block, mode changes were relayed to CCR by only 2 of 8+
@@ -102,27 +107,23 @@ export function onChangeAppState({
     const showExpandedTodos = newState.expandedView === 'tasks'
     const showSpinnerTree = newState.expandedView === 'teammates'
     if (
-      getGlobalConfig().showExpandedTodos !== showExpandedTodos ||
-      getGlobalConfig().showSpinnerTree !== showSpinnerTree
+      (settings.showExpandedTodos ?? false) !== showExpandedTodos ||
+      (settings.showSpinnerTree ?? false) !== showSpinnerTree
     ) {
-      saveGlobalConfig(current => ({
-        ...current,
+      updateSettingsForSource('userSettings', {
         showExpandedTodos,
         showSpinnerTree,
-      }))
+      })
     }
   }
 
   // verbose
   if (
     newState.verbose !== oldState.verbose &&
-    getGlobalConfig().verbose !== newState.verbose
+    (settings.verbose ?? false) !== newState.verbose
   ) {
     const verbose = newState.verbose
-    saveGlobalConfig(current => ({
-      ...current,
-      verbose,
-    }))
+    updateSettingsForSource('userSettings', { verbose })
   }
 
   // settings: clear auth-related caches when settings change

@@ -27,8 +27,8 @@ import { collapseBackgroundBashNotifications } from '../utils/collapseBackground
 import { collapseHookSummaries } from '../utils/collapseHookSummaries.js'
 import { collapseReadSearchGroups } from '../utils/collapseReadSearch.js'
 import { collapseTeammateShutdowns } from '../utils/collapseTeammateShutdowns.js'
-import { getGlobalConfig } from '../utils/config.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
+import { getInitialSettings } from '../utils/settings/settings.js'
 import { isFullscreenEnvEnabled } from '../utils/fullscreen.js'
 import { applyGrouping } from '../utils/groupToolUses.js'
 import {
@@ -192,7 +192,7 @@ export function filterForBriefTool<
 }
 
 /**
- * Full-transcript companion to filterForBriefTool. When the Brief tool is
+ * Full-transcript counterpart to filterForBriefTool. When the Brief tool is
  * in use, the model's text output is redundant with the SendUserMessage
  * content it wrote right after — drop the text so only the SendUserMessage
  * block shows. Tool calls and their results stay visible.
@@ -774,7 +774,7 @@ const MessagesImpl = ({
   const { progress } = useTerminalNotification()
   const prevProgressState = useRef<string | null>(null)
   const progressEnabled =
-    getGlobalConfig().terminalProgressBarEnabled &&
+    (getInitialSettings().terminalProgressBarEnabled ?? true) &&
     !(proactiveModule?.isProactiveActive() ?? false)
   useEffect(() => {
     const state = progressEnabled

@@ -1,5 +1,4 @@
 import { homedir } from 'os'
-import { getGlobalConfig, saveGlobalConfig } from '../../../utils/config.js'
 import { logForDebugging } from '../../../utils/debug.js'
 import {
   execFileNoThrow,
@@ -211,35 +210,17 @@ export function getPythonApiInstructions(): string[] {
  * Marks that it2 setup has been completed successfully.
  * This prevents showing the setup prompt again.
  */
-export function markIt2SetupComplete(): void {
-  const config = getGlobalConfig()
-  if (config.iterm2It2SetupComplete !== true) {
-    saveGlobalConfig(current => ({
-      ...current,
-      iterm2It2SetupComplete: true,
-    }))
-    logForDebugging('[it2Setup] Marked it2 setup as complete')
-  }
-}
+export function markIt2SetupComplete(): void {}
 
 /**
  * Marks that the user prefers to use tmux over iTerm2 split panes.
  * This prevents showing the setup prompt when in iTerm2.
  */
-export function setPreferTmuxOverIterm2(prefer: boolean): void {
-  const config = getGlobalConfig()
-  if (config.preferTmuxOverIterm2 !== prefer) {
-    saveGlobalConfig(current => ({
-      ...current,
-      preferTmuxOverIterm2: prefer,
-    }))
-    logForDebugging(`[it2Setup] Set preferTmuxOverIterm2 = ${prefer}`)
-  }
-}
+export function setPreferTmuxOverIterm2(_prefer: boolean): void {}
 
 /**
  * Checks if the user prefers tmux over iTerm2 split panes.
  */
 export function getPreferTmuxOverIterm2(): boolean {
-  return getGlobalConfig().preferTmuxOverIterm2 === true
+  return false
 }

@@ -845,6 +845,109 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Number of tokens to reserve below the configured model context window before auto-compact triggers. Defaults to 20000.',
         ),
+      theme: z
+        .enum(['dark', 'light', 'light-high-contrast', 'auto'])
+        .optional()
+        .describe('Color theme. Defaults to dark.'),
+      verbose: z
+        .boolean()
+        .optional()
+        .describe('Enable verbose output. Defaults to false.'),
+      editorMode: z
+        .enum(['normal', 'vim'])
+        .optional()
+        .describe('Editor input mode. Defaults to normal.'),
+      preferredNotifChannel: z
+        .enum(['auto', 'iterm2', 'terminal_bell', 'disabled'])
+        .optional()
+        .describe('Preferred notification channel. Defaults to auto.'),
+      showTurnDuration: z
+        .boolean()
+        .optional()
+        .describe('Show turn duration (e.g. "Cooked for 1m 6s"). Defaults to true.'),
+      diffTool: z
+        .enum(['auto', 'terminal', 'vscode'])
+        .optional()
+        .describe('Tool for displaying diffs. Defaults to auto.'),
+      autoConnectIde: z
+        .boolean()
+        .optional()
+        .describe('Auto-connect to IDE on startup. Defaults to false.'),
+      autoInstallIdeExtension: z
+        .boolean()
+        .optional()
+        .describe('Auto-install IDE extensions. Defaults to true.'),
+      fileCheckpointingEnabled: z
+        .boolean()
+        .optional()
+        .describe('Enable file checkpointing. Defaults to true.'),
+      terminalProgressBarEnabled: z
+        .boolean()
+        .optional()
+        .describe('Enable OSC 9;4 terminal progress bar. Defaults to true.'),
+      showStatusInTerminalTab: z
+        .boolean()
+        .optional()
+        .describe('Show status in terminal tab sidebar.'),
+      copyFullResponse: z
+        .boolean()
+        .optional()
+        .describe('Always copy full response with /copy. Defaults to false.'),
+      copyOnSelect: z
+        .boolean()
+        .optional()
+        .describe('Auto-copy to clipboard on text selection.'),
+      messageIdleNotifThresholdMs: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe('Idle time in ms before showing notification. Defaults to 60000.'),
+      taskCompleteNotifEnabled: z
+        .boolean()
+        .optional()
+        .describe('Enable push notification on task completion.'),
+      inputNeededNotifEnabled: z
+        .boolean()
+        .optional()
+        .describe('Enable push notification when input is needed.'),
+      agentPushNotifEnabled: z
+        .boolean()
+        .optional()
+        .describe('Enable agent push notifications.'),
+      speculationEnabled: z
+        .boolean()
+        .optional()
+        .describe('Enable prompt speculation.'),
+      teammateMode: z
+        .enum(['auto', 'tmux', 'in-process'])
+        .optional()
+        .describe('How to spawn teammates. Defaults to auto.'),
+      teammateDefaultModel: z
+        .string()
+        .nullable()
+        .optional()
+        .describe('Default model for teammates. null = leader model.'),
+      prStatusFooterEnabled: z
+        .boolean()
+        .optional()
+        .describe('Show PR review status in footer.'),
+      permissionExplainerEnabled: z
+        .boolean()
+        .optional()
+        .describe('Enable AI-generated permission explanations.'),
+      todoFeatureEnabled: z
+        .boolean()
+        .optional()
+        .describe('Enable the todo feature. Defaults to true.'),
+      showExpandedTodos: z
+        .boolean()
+        .optional()
+        .describe('Show todos expanded even when empty.'),
+      showSpinnerTree: z
+        .boolean()
+        .optional()
+        .describe('Show teammate spinner tree instead of pills.'),
       env: EnvironmentVariablesSchema()
         .optional()
         .describe('Environment variables to set for Claude Code sessions'),
@@ -1245,15 +1348,6 @@ export const SettingsSchema = lazySchema(() =>
         .optional()
         .describe(
           'Customize spinner verbs. mode: "append" adds verbs to defaults, "replace" uses only your verbs.',
-        ),
-      spinnerTipsOverride: z
-        .object({
-          excludeDefault: z.boolean().optional(),
-          tips: z.array(z.string()),
-        })
-        .optional()
-        .describe(
-          'Override spinner tips. tips: array of tip strings. excludeDefault: if true, only show custom tips (default: false).',
         ),
       syntaxHighlightingDisabled: z
         .boolean()

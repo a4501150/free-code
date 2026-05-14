@@ -1,31 +1,12 @@
 import * as React from 'react'
-import { useEffect, useMemo } from 'react'
+import { useMemo } from 'react'
 import { Box, Text } from 'src/ink.js'
-import { getGlobalConfig, saveGlobalConfig } from 'src/utils/config.js'
 import { getInitialSettings } from 'src/utils/settings/settings.js'
 
 export function EmergencyTip(): React.ReactNode {
   const tip = useMemo(getTipOfFeed, [])
-  // Memoize to prevent re-reads after we save - we want the value at mount time
-  const lastShownTip = useMemo(
-    () => getGlobalConfig().lastShownEmergencyTip,
-    [],
-  )
 
-  // Only show if this is a new/different tip
-  const shouldShow = tip.tip && tip.tip !== lastShownTip
-
-  // Save the tip we're showing so we don't show it again
-  useEffect(() => {
-    if (shouldShow) {
-      saveGlobalConfig(current => {
-        if (current.lastShownEmergencyTip === tip.tip) return current
-        return { ...current, lastShownEmergencyTip: tip.tip }
-      })
-    }
-  }, [shouldShow, tip.tip])
-
-  if (!shouldShow) {
+  if (!tip.tip) {
     return null
   }
 

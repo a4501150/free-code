@@ -27,7 +27,6 @@ import {
   saveOAuthTokensIfNeeded,
   validateForceLoginOrg,
 } from '../../utils/auth.js'
-import { saveGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
 import { logError } from '../../utils/log.js'
@@ -35,7 +34,10 @@ import {
   getProviderRegistry,
   resetProviderRegistry,
 } from '../../utils/model/providerRegistry.js'
-import { writeFreecodeSettingsFile } from '../../utils/settings/freecodeSettings.js'
+import {
+  freecodeSettingsFileExists,
+  writeFreecodeSettingsFile,
+} from '../../utils/settings/freecodeSettings.js'
 import {
   DEFAULT_ANTHROPIC_MODELS,
   DEFAULT_CODEX_MODELS,
@@ -243,10 +245,9 @@ export async function authLogin({
 
       // Mark onboarding complete — interactive paths handle this via
       // the Onboarding component, but the env var path skips it.
-      saveGlobalConfig(current => {
-        if (current.hasCompletedOnboarding) return current
-        return { ...current, hasCompletedOnboarding: true }
-      })
+      if (!freecodeSettingsFileExists()) {
+        writeFreecodeSettingsFile({})
+      }
 
       process.stdout.write('Login successful.\n')
       process.exit(0)

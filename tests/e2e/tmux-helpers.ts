@@ -143,7 +143,7 @@ export class TmuxSession {
 
     this.logFile = join(this.configDir, 'tmux-output.log')
 
-    // Pre-seed global config to skip onboarding and trust dialogs.
+    // Pre-seed global config to skip trust dialogs.
     const resolvedCwd = await realpath(this._cwd)
     const trustEntry = { hasTrustDialogAccepted: true }
     const projects: Record<string, { hasTrustDialogAccepted: boolean }> = {
@@ -154,12 +154,6 @@ export class TmuxSession {
     }
 
     const config = {
-      numStartups: 10,
-      hasCompletedOnboarding: true,
-      theme: 'dark',
-      preferredNotifChannel: 'notifications_disabled',
-      verbose: false,
-      autoCompactEnabled: false,
       customApiKeyResponses: {
         approved: [TRUNCATED_KEY],
         rejected: [],

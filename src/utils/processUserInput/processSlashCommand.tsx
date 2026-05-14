@@ -78,7 +78,6 @@ import {
 } from '../settings/pluginOnlyPolicy.js'
 import { parseSlashCommand } from '../slashCommandParsing.js'
 import { sleep } from '../sleep.js'
-import { recordSkillUsage } from '../suggestions/skillUsageTracking.js'
 import { logOTelEvent, redactIfDisabled } from '../telemetry/events.js'
 import { buildPluginCommandTelemetryFields } from '../telemetry/pluginTelemetry.js'
 import { getAssistantMessageContentLength } from '../tokens.js'
@@ -610,10 +609,6 @@ async function getMessagesForSlashCommand(
 ): Promise<SlashCommandResult> {
   const command = getCommand(commandName, context.options.commands)
 
-  // Track skill usage for ranking (only for prompt commands that are user-invocable)
-  if (command.type === 'prompt' && command.userInvocable !== false) {
-    recordSkillUsage(commandName)
-  }
 
   // Check if the command is user-invocable
   // Skills with userInvocable === false can only be invoked by the model via SkillTool

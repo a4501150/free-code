@@ -147,14 +147,13 @@ export function AssistantToolUseMessage({
   }
 
   const rawInput =
-    param.input && typeof param.input === 'object' && !Array.isArray(param.input)
+    param.input &&
+    typeof param.input === 'object' &&
+    !Array.isArray(param.input)
       ? (param.input as Record<string, unknown>)
       : null
   if (!rawInput) return null
-  const renderedToolUseMessage = renderToolCallParams(
-    rawInput,
-    toolCallDisplay,
-  )
+  const renderedToolUseMessage = renderToolCallParams(rawInput, toolCallDisplay)
 
   return (
     <Box

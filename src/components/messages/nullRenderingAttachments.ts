@@ -31,7 +31,6 @@ const NULL_RENDERING_TYPES = [
   'deferred_tools_delta',
   'mcp_tools_delta',
   'mcp_instructions_delta',
-  'companion_intro',
   'token_usage',
   'ultrathink_effort',
   'max_turns_reached',

@@ -17,10 +17,10 @@ import {
 import figures from 'figures'
 import {
   type GlobalConfig,
+  DEFAULT_GLOBAL_CONFIG,
   saveGlobalConfig,
   getCurrentProjectConfig,
 } from '../../utils/config.js'
-import { normalizeApiKeyForConfig } from '../../utils/authPortable.js'
 import {
   getGlobalConfig,
   getAutoUpdaterDisabledReason,
@@ -81,6 +81,7 @@ import {
   getSettingsForSource,
   updateSettingsForSource,
 } from '../../utils/settings/settings.js'
+import type { SettingsJson } from '../../utils/settings/types.js'
 import { getUserMsgOptIn, setUserMsgOptIn } from '../../bootstrap/state.js'
 import { isEnvTruthy } from 'src/utils/envUtils.js'
 import type {
@@ -174,10 +175,10 @@ export function Config({
   const insideModal = useIsInsideModal()
   const [, setTheme] = useTheme()
   const themeSetting = useThemeSetting()
+  const [settingsData, setSettingsData] = useState(getInitialSettings)
+  const initialSettingsData = React.useRef(settingsData)
   const [globalConfig, setGlobalConfig] = useState(getGlobalConfig())
-  const initialConfig = React.useRef(getGlobalConfig())
-  const [settingsData, setSettingsData] = useState(getInitialSettings())
-  const initialSettingsData = React.useRef(getInitialSettings())
+  const initialConfig = React.useRef(globalConfig)
   const [currentLanguage, setCurrentLanguage] = useState<string | undefined>(
     settingsData?.language,
   )
@@ -382,6 +383,11 @@ export function Config({
     setTabsHidden(false)
   }
 
+  function updateUserSettings(settings: SettingsJson): void {
+    updateSettingsForSource('userSettings', settings)
+    setSettingsData(prev => ({ ...prev, ...settings }))
+  }
+
   function onChangeMainModelConfig(value: string | null): void {
     const previousModel = mainLoopModel
     setAppState(prev => ({
@@ -402,9 +408,7 @@ export function Config({
   }
 
   function onChangeVerbose(value: boolean): void {
-    // Update the global config to persist the setting
-    saveGlobalConfig(current => ({ ...current, verbose: value }))
-    setGlobalConfig({ ...getGlobalConfig(), verbose: value })
+    updateUserSettings({ verbose: value })
 
     // Update the app state for immediate UI feedback
     setAppState(prev => ({
@@ -810,20 +814,10 @@ export function Config({
     {
       id: 'speculationEnabled',
       label: 'Speculative execution',
-      value: globalConfig.speculationEnabled ?? false,
+      value: settingsData?.speculationEnabled ?? false,
       type: 'boolean' as const,
-      onChange(enabled: boolean) {
-        saveGlobalConfig(current => {
-          if (current.speculationEnabled === enabled) return current
-          return {
-            ...current,
-            speculationEnabled: enabled,
-          }
-        })
-        setGlobalConfig({
-          ...getGlobalConfig(),
-          speculationEnabled: enabled,
-        })
+      onChange(speculationEnabled: boolean) {
+        updateUserSettings({ speculationEnabled })
       },
     },
     ...(isFileCheckpointingAvailable
@@ -831,17 +825,12 @@ export function Config({
           {
             id: 'fileCheckpointingEnabled',
             label: 'Rewind code (checkpoints)',
-            value: globalConfig.fileCheckpointingEnabled,
+            value:
+              settingsData?.fileCheckpointingEnabled ??
+              DEFAULT_GLOBAL_CONFIG.fileCheckpointingEnabled,
             type: 'boolean' as const,
-            onChange(enabled: boolean) {
-              saveGlobalConfig(current => ({
-                ...current,
-                fileCheckpointingEnabled: enabled,
-              }))
-              setGlobalConfig({
-                ...getGlobalConfig(),
-                fileCheckpointingEnabled: enabled,
-              })
+            onChange(fileCheckpointingEnabled: boolean) {
+              updateUserSettings({ fileCheckpointingEnabled })
             },
           },
         ]
@@ -856,40 +845,31 @@ export function Config({
     {
       id: 'terminalProgressBarEnabled',
       label: 'Terminal progress bar',
-      value: globalConfig.terminalProgressBarEnabled,
+      value:
+        settingsData?.terminalProgressBarEnabled ??
+        DEFAULT_GLOBAL_CONFIG.terminalProgressBarEnabled,
       type: 'boolean' as const,
       onChange(terminalProgressBarEnabled: boolean) {
-        saveGlobalConfig(current => ({
-          ...current,
-          terminalProgressBarEnabled,
-        }))
-        setGlobalConfig({ ...getGlobalConfig(), terminalProgressBarEnabled })
+        updateUserSettings({ terminalProgressBarEnabled })
       },
     },
     {
       id: 'showStatusInTerminalTab',
       label: 'Show status in terminal tab',
-      value: globalConfig.showStatusInTerminalTab ?? false,
+      value: settingsData?.showStatusInTerminalTab ?? false,
       type: 'boolean' as const,
       onChange(showStatusInTerminalTab: boolean) {
-        saveGlobalConfig(current => ({
-          ...current,
-          showStatusInTerminalTab,
-        }))
-        setGlobalConfig({
-          ...getGlobalConfig(),
-          showStatusInTerminalTab,
-        })
+        updateUserSettings({ showStatusInTerminalTab })
       },
     },
     {
       id: 'showTurnDuration',
       label: 'Show turn duration',
-      value: globalConfig.showTurnDuration,
+      value:
+        settingsData?.showTurnDuration ?? DEFAULT_GLOBAL_CONFIG.showTurnDuration,
       type: 'boolean' as const,
       onChange(showTurnDuration: boolean) {
-        saveGlobalConfig(current => ({ ...current, showTurnDuration }))
-        setGlobalConfig({ ...getGlobalConfig(), showTurnDuration })
+        updateUserSettings({ showTurnDuration })
       },
     },
     {
@@ -984,21 +964,22 @@ export function Config({
     {
       id: 'respectGitignore',
       label: 'Respect .gitignore in file picker',
-      value: globalConfig.respectGitignore,
+      value:
+        settingsData?.respectGitignore ?? DEFAULT_GLOBAL_CONFIG.respectGitignore,
       type: 'boolean' as const,
       onChange(respectGitignore: boolean) {
-        saveGlobalConfig(current => ({ ...current, respectGitignore }))
-        setGlobalConfig({ ...getGlobalConfig(), respectGitignore })
+        updateUserSettings({ respectGitignore })
       },
     },
     {
       id: 'copyFullResponse',
       label: 'Always copy full response (skip /copy picker)',
-      value: globalConfig.copyFullResponse,
+      value:
+        settingsData?.copyFullResponse ??
+        DEFAULT_GLOBAL_CONFIG.copyFullResponse,
       type: 'boolean' as const,
       onChange(copyFullResponse: boolean) {
-        saveGlobalConfig(current => ({ ...current, copyFullResponse }))
-        setGlobalConfig({ ...getGlobalConfig(), copyFullResponse })
+        updateUserSettings({ copyFullResponse })
       },
     },
     // Copy-on-select is only meaningful with in-app selection (fullscreen
@@ -1008,11 +989,10 @@ export function Config({
           {
             id: 'copyOnSelect',
             label: 'Copy on select',
-            value: globalConfig.copyOnSelect ?? true,
+            value: settingsData?.copyOnSelect ?? true,
             type: 'boolean' as const,
             onChange(copyOnSelect: boolean) {
-              saveGlobalConfig(current => ({ ...current, copyOnSelect }))
-              setGlobalConfig({ ...getGlobalConfig(), copyOnSelect })
+              updateUserSettings({ copyOnSelect })
             },
           },
         ]
@@ -1045,7 +1025,7 @@ export function Config({
     {
       id: 'notifChannel',
       label: feature('KAIROS') ? 'Local notifications' : 'Notifications',
-      value: globalConfig.preferredNotifChannel,
+      value: settingsData?.preferredNotifChannel ?? 'auto',
       options: [
         'auto',
         'iterm2',
@@ -1057,10 +1037,10 @@ export function Config({
       ],
       type: 'enum',
       onChange(notifChannel: GlobalConfig['preferredNotifChannel']) {
-        saveGlobalConfig(current => ({
-          ...current,
-          preferredNotifChannel: notifChannel,
-        }))
+        updateUserSettings({
+          preferredNotifChannel:
+            notifChannel as SettingsJson['preferredNotifChannel'],
+        })
         setGlobalConfig({
           ...getGlobalConfig(),
           preferredNotifChannel: notifChannel,
@@ -1072,49 +1052,28 @@ export function Config({
           {
             id: 'taskCompleteNotifEnabled',
             label: 'Push when idle',
-            value: globalConfig.taskCompleteNotifEnabled ?? false,
+            value: settingsData?.taskCompleteNotifEnabled ?? false,
             type: 'boolean' as const,
             onChange(taskCompleteNotifEnabled: boolean) {
-              saveGlobalConfig(current => ({
-                ...current,
-                taskCompleteNotifEnabled,
-              }))
-              setGlobalConfig({
-                ...getGlobalConfig(),
-                taskCompleteNotifEnabled,
-              })
+              updateUserSettings({ taskCompleteNotifEnabled })
             },
           },
           {
             id: 'inputNeededNotifEnabled',
             label: 'Push when input needed',
-            value: globalConfig.inputNeededNotifEnabled ?? false,
+            value: settingsData?.inputNeededNotifEnabled ?? false,
             type: 'boolean' as const,
             onChange(inputNeededNotifEnabled: boolean) {
-              saveGlobalConfig(current => ({
-                ...current,
-                inputNeededNotifEnabled,
-              }))
-              setGlobalConfig({
-                ...getGlobalConfig(),
-                inputNeededNotifEnabled,
-              })
+              updateUserSettings({ inputNeededNotifEnabled })
             },
           },
           {
             id: 'agentPushNotifEnabled',
             label: 'Push when Claude decides',
-            value: globalConfig.agentPushNotifEnabled ?? false,
+            value: settingsData?.agentPushNotifEnabled ?? false,
             type: 'boolean' as const,
             onChange(agentPushNotifEnabled: boolean) {
-              saveGlobalConfig(current => ({
-                ...current,
-                agentPushNotifEnabled,
-              }))
-              setGlobalConfig({
-                ...getGlobalConfig(),
-                agentPushNotifEnabled,
-              })
+              updateUserSettings({ agentPushNotifEnabled })
             },
           },
         ]
@@ -1165,41 +1124,20 @@ export function Config({
     {
       id: 'editorMode',
       label: 'Editor mode',
-      // Convert 'emacs' to 'normal' for backward compatibility
-      value:
-        globalConfig.editorMode === 'emacs'
-          ? 'normal'
-          : globalConfig.editorMode || 'normal',
+      value: settingsData?.editorMode ?? DEFAULT_GLOBAL_CONFIG.editorMode ?? 'normal',
       options: ['normal', 'vim'],
       type: 'enum',
-      onChange(value: string) {
-        saveGlobalConfig(current => ({
-          ...current,
-          editorMode: value as GlobalConfig['editorMode'],
-        }))
-        setGlobalConfig({
-          ...getGlobalConfig(),
-          editorMode: value as GlobalConfig['editorMode'],
-        })
+      onChange(editorMode: string) {
+        updateUserSettings({ editorMode: editorMode as SettingsJson['editorMode'] })
       },
     },
     {
       id: 'prStatusFooterEnabled',
       label: 'Show PR status footer',
-      value: globalConfig.prStatusFooterEnabled ?? true,
+      value: settingsData?.prStatusFooterEnabled ?? true,
       type: 'boolean' as const,
-      onChange(enabled: boolean) {
-        saveGlobalConfig(current => {
-          if (current.prStatusFooterEnabled === enabled) return current
-          return {
-            ...current,
-            prStatusFooterEnabled: enabled,
-          }
-        })
-        setGlobalConfig({
-          ...getGlobalConfig(),
-          prStatusFooterEnabled: enabled,
-        })
+      onChange(prStatusFooterEnabled: boolean) {
+        updateUserSettings({ prStatusFooterEnabled })
       },
     },
     {
@@ -1214,18 +1152,11 @@ export function Config({
           {
             id: 'diffTool',
             label: 'Diff tool',
-            value: globalConfig.diffTool ?? 'auto',
+            value: settingsData?.diffTool ?? 'auto',
             options: ['terminal', 'auto'],
             type: 'enum' as const,
             onChange(diffTool: string) {
-              saveGlobalConfig(current => ({
-                ...current,
-                diffTool: diffTool as GlobalConfig['diffTool'],
-              }))
-              setGlobalConfig({
-                ...getGlobalConfig(),
-                diffTool: diffTool as GlobalConfig['diffTool'],
-              })
+              updateUserSettings({ diffTool: diffTool as SettingsJson['diffTool'] })
             },
           },
         ]
@@ -1235,11 +1166,10 @@ export function Config({
           {
             id: 'autoConnectIde',
             label: 'Auto-connect to IDE (external terminal)',
-            value: globalConfig.autoConnectIde ?? false,
+            value: settingsData?.autoConnectIde ?? false,
             type: 'boolean' as const,
             onChange(autoConnectIde: boolean) {
-              saveGlobalConfig(current => ({ ...current, autoConnectIde }))
-              setGlobalConfig({ ...getGlobalConfig(), autoConnectIde })
+              updateUserSettings({ autoConnectIde })
             },
           },
         ]
@@ -1249,17 +1179,10 @@ export function Config({
           {
             id: 'autoInstallIdeExtension',
             label: 'Auto-install IDE extension',
-            value: globalConfig.autoInstallIdeExtension ?? true,
+            value: settingsData?.autoInstallIdeExtension ?? true,
             type: 'boolean' as const,
             onChange(autoInstallIdeExtension: boolean) {
-              saveGlobalConfig(current => ({
-                ...current,
-                autoInstallIdeExtension,
-              }))
-              setGlobalConfig({
-                ...getGlobalConfig(),
-                autoInstallIdeExtension,
-              })
+              updateUserSettings({ autoInstallIdeExtension })
             },
           },
         ]
@@ -1275,7 +1198,7 @@ export function Config({
             {
               id: 'teammateMode',
               label,
-              value: globalConfig.teammateMode ?? 'auto',
+              value: settingsData?.teammateMode ?? 'auto',
               options: ['auto', 'tmux', 'in-process'],
               type: 'enum' as const,
               onChange(mode: string) {
@@ -1288,21 +1211,14 @@ export function Config({
                 }
                 // Clear CLI override and set new mode (pass mode to avoid race condition)
                 clearCliTeammateModeOverride(mode)
-                saveGlobalConfig(current => ({
-                  ...current,
-                  teammateMode: mode,
-                }))
-                setGlobalConfig({
-                  ...getGlobalConfig(),
-                  teammateMode: mode,
-                })
+                updateUserSettings({ teammateMode: mode })
               },
             },
             {
               id: 'teammateDefaultModel',
               label: 'Default teammate model',
               value: teammateModelDisplayString(
-                globalConfig.teammateDefaultModel,
+                settingsData?.teammateDefaultModel,
               ),
               type: 'managedEnum' as const,
               onChange() {},
@@ -1326,86 +1242,6 @@ export function Config({
             type: 'managedEnum' as const,
             onChange() {
               // Will be handled by toggleSetting function
-            },
-          },
-        ]
-      : []),
-    ...(process.env.ANTHROPIC_API_KEY
-      ? [
-          {
-            id: 'apiKey',
-            label: (
-              <Text>
-                Use custom API key:{' '}
-                <Text bold>
-                  {normalizeApiKeyForConfig(process.env.ANTHROPIC_API_KEY)}
-                </Text>
-              </Text>
-            ),
-            searchText: 'Use custom API key',
-            value: Boolean(
-              process.env.ANTHROPIC_API_KEY &&
-              globalConfig.customApiKeyResponses?.approved?.includes(
-                normalizeApiKeyForConfig(process.env.ANTHROPIC_API_KEY),
-              ),
-            ),
-            type: 'boolean' as const,
-            onChange(useCustomKey: boolean) {
-              saveGlobalConfig(current => {
-                const updated = { ...current }
-                if (!updated.customApiKeyResponses) {
-                  updated.customApiKeyResponses = {
-                    approved: [],
-                    rejected: [],
-                  }
-                }
-                if (!updated.customApiKeyResponses.approved) {
-                  updated.customApiKeyResponses = {
-                    ...updated.customApiKeyResponses,
-                    approved: [],
-                  }
-                }
-                if (!updated.customApiKeyResponses.rejected) {
-                  updated.customApiKeyResponses = {
-                    ...updated.customApiKeyResponses,
-                    rejected: [],
-                  }
-                }
-                if (process.env.ANTHROPIC_API_KEY) {
-                  const truncatedKey = normalizeApiKeyForConfig(
-                    process.env.ANTHROPIC_API_KEY,
-                  )
-                  if (useCustomKey) {
-                    updated.customApiKeyResponses = {
-                      ...updated.customApiKeyResponses,
-                      approved: [
-                        ...(
-                          updated.customApiKeyResponses.approved ?? []
-                        ).filter(k => k !== truncatedKey),
-                        truncatedKey,
-                      ],
-                      rejected: (
-                        updated.customApiKeyResponses.rejected ?? []
-                      ).filter(k => k !== truncatedKey),
-                    }
-                  } else {
-                    updated.customApiKeyResponses = {
-                      ...updated.customApiKeyResponses,
-                      approved: (
-                        updated.customApiKeyResponses.approved ?? []
-                      ).filter(k => k !== truncatedKey),
-                      rejected: [
-                        ...(
-                          updated.customApiKeyResponses.rejected ?? []
-                        ).filter(k => k !== truncatedKey),
-                        truncatedKey,
-                      ],
-                    }
-                  }
-                }
-                return updated
-              })
-              setGlobalConfig(getGlobalConfig())
             },
           },
         ]
@@ -1470,34 +1306,16 @@ export function Config({
         return `Set ${key} to ${chalk.bold(value)}`
       },
     )
-    // Check for API key changes
-    const effectiveApiKey = process.env.ANTHROPIC_API_KEY
-    const initialUsingCustomKey = Boolean(
-      effectiveApiKey &&
-      initialConfig.current.customApiKeyResponses?.approved?.includes(
-        normalizeApiKeyForConfig(effectiveApiKey),
-      ),
-    )
-    const currentUsingCustomKey = Boolean(
-      effectiveApiKey &&
-      globalConfig.customApiKeyResponses?.approved?.includes(
-        normalizeApiKeyForConfig(effectiveApiKey),
-      ),
-    )
-    if (initialUsingCustomKey !== currentUsingCustomKey) {
-      formattedChanges.push(
-        `${currentUsingCustomKey ? 'Enabled' : 'Disabled'} custom API key`,
-      )
+    if (themeSetting !== initialThemeSetting.current) {
+      formattedChanges.push(`Set theme to ${chalk.bold(themeSetting)}`)
     }
-    if (globalConfig.theme !== initialConfig.current.theme) {
-      formattedChanges.push(`Set theme to ${chalk.bold(globalConfig.theme)}`)
-    }
-    if (
-      globalConfig.preferredNotifChannel !==
-      initialConfig.current.preferredNotifChannel
-    ) {
+    const initialPreferredNotifChannel =
+      initialSettingsData.current?.preferredNotifChannel ?? 'auto'
+    const currentPreferredNotifChannel =
+      settingsData?.preferredNotifChannel ?? 'auto'
+    if (currentPreferredNotifChannel !== initialPreferredNotifChannel) {
       formattedChanges.push(
-        `Set notifications to ${chalk.bold(globalConfig.preferredNotifChannel)}`,
+        `Set notifications to ${chalk.bold(currentPreferredNotifChannel)}`,
       )
     }
     if (currentLanguage !== initialLanguage.current) {
@@ -1505,34 +1323,44 @@ export function Config({
         `Set response language to ${chalk.bold(currentLanguage ?? 'Default (English)')}`,
       )
     }
-    if (globalConfig.editorMode !== initialConfig.current.editorMode) {
+    const initialEditorMode =
+      initialSettingsData.current?.editorMode ??
+      DEFAULT_GLOBAL_CONFIG.editorMode ??
+      'normal'
+    const currentEditorMode =
+      settingsData?.editorMode ?? DEFAULT_GLOBAL_CONFIG.editorMode ?? 'normal'
+    if (currentEditorMode !== initialEditorMode) {
       formattedChanges.push(
-        `Set editor mode to ${chalk.bold(globalConfig.editorMode || 'emacs')}`,
+        `Set editor mode to ${chalk.bold(currentEditorMode)}`,
       )
     }
-    if (globalConfig.diffTool !== initialConfig.current.diffTool) {
+    const initialDiffTool = initialSettingsData.current?.diffTool ?? 'auto'
+    const currentDiffTool = settingsData?.diffTool ?? 'auto'
+    if (currentDiffTool !== initialDiffTool) {
+      formattedChanges.push(`Set diff tool to ${chalk.bold(currentDiffTool)}`)
+    }
+    const initialAutoConnectIde =
+      initialSettingsData.current?.autoConnectIde ?? false
+    const currentAutoConnectIde = settingsData?.autoConnectIde ?? false
+    if (currentAutoConnectIde !== initialAutoConnectIde) {
       formattedChanges.push(
-        `Set diff tool to ${chalk.bold(globalConfig.diffTool)}`,
+        `${currentAutoConnectIde ? 'Enabled' : 'Disabled'} auto-connect to IDE`,
       )
     }
-    if (globalConfig.autoConnectIde !== initialConfig.current.autoConnectIde) {
+    const initialAutoInstallIdeExtension =
+      initialSettingsData.current?.autoInstallIdeExtension ?? true
+    const currentAutoInstallIdeExtension =
+      settingsData?.autoInstallIdeExtension ?? true
+    if (currentAutoInstallIdeExtension !== initialAutoInstallIdeExtension) {
       formattedChanges.push(
-        `${globalConfig.autoConnectIde ? 'Enabled' : 'Disabled'} auto-connect to IDE`,
-      )
-    }
-    if (
-      globalConfig.autoInstallIdeExtension !==
-      initialConfig.current.autoInstallIdeExtension
-    ) {
-      formattedChanges.push(
-        `${globalConfig.autoInstallIdeExtension ? 'Enabled' : 'Disabled'} auto-install IDE extension`,
+        `${currentAutoInstallIdeExtension ? 'Enabled' : 'Disabled'} auto-install IDE extension`,
       )
     }
     const initialAutoCompactEnabled =
       initialSettingsData.current?.autoCompactEnabled ??
-      initialConfig.current.autoCompactEnabled
+      DEFAULT_GLOBAL_CONFIG.autoCompactEnabled
     const currentAutoCompactEnabled =
-      settingsData?.autoCompactEnabled ?? globalConfig.autoCompactEnabled
+      settingsData?.autoCompactEnabled ?? DEFAULT_GLOBAL_CONFIG.autoCompactEnabled
     if (currentAutoCompactEnabled !== initialAutoCompactEnabled) {
       formattedChanges.push(
         `${currentAutoCompactEnabled ? 'Enabled' : 'Disabled'} auto-compact`,
@@ -1633,9 +1461,8 @@ export function Config({
   // applied to disk/AppState immediately on toggle, so "cancel" means
   // actively writing the old values back.
   const revertChanges = useCallback(() => {
-    // Theme: restores ThemeProvider React state. Must run before the global
-    // config overwrite since setTheme internally calls saveGlobalConfig with
-    // a partial update — we want the full snapshot to be the last write.
+    // Theme: restores ThemeProvider React state and persists the setting via
+    // freecode.json before the remaining snapshots are restored.
     if (themeSetting !== initialThemeSetting.current) {
       setTheme(initialThemeSetting.current)
     }
@@ -1643,8 +1470,6 @@ export function Config({
     // the returned ref equals current (test mode checks ref; prod writes to
     // disk but content is identical).
     saveGlobalConfig(() => initialConfig.current)
-    // Settings files: restore each key Config may have touched. undefined
-    // deletes the key (updateSettingsForSource customizer at settings.ts:368).
     const il = initialLocalSettings
     updateSettingsForSource('localSettings', {
       spinnerTipsEnabled: il?.spinnerTipsEnabled,
@@ -1653,6 +1478,30 @@ export function Config({
     })
     const iu = initialUserSettings
     updateSettingsForSource('userSettings', {
+      verbose: iu?.verbose,
+      showTurnDuration: iu?.showTurnDuration,
+      respectGitignore: iu?.respectGitignore,
+      copyFullResponse: iu?.copyFullResponse,
+      copyOnSelect: iu?.copyOnSelect,
+      taskCompleteNotifEnabled: iu?.taskCompleteNotifEnabled,
+      inputNeededNotifEnabled: iu?.inputNeededNotifEnabled,
+      agentPushNotifEnabled: iu?.agentPushNotifEnabled,
+      editorMode: iu?.editorMode,
+      diffTool: iu?.diffTool,
+      autoConnectIde: iu?.autoConnectIde,
+      autoInstallIdeExtension: iu?.autoInstallIdeExtension,
+      teammateMode: iu?.teammateMode,
+      teammateDefaultModel: iu?.teammateDefaultModel,
+      fileCheckpointingEnabled: iu?.fileCheckpointingEnabled,
+      terminalProgressBarEnabled: iu?.terminalProgressBarEnabled,
+      showStatusInTerminalTab: iu?.showStatusInTerminalTab,
+      speculationEnabled: iu?.speculationEnabled,
+      permissionExplainerEnabled: iu?.permissionExplainerEnabled,
+      prStatusFooterEnabled: iu?.prStatusFooterEnabled,
+      todoFeatureEnabled: iu?.todoFeatureEnabled,
+      showExpandedTodos: iu?.showExpandedTodos,
+      messageIdleNotifThresholdMs: iu?.messageIdleNotifThresholdMs,
+      preferredNotifChannel: iu?.preferredNotifChannel,
       alwaysThinkingEnabled: iu?.alwaysThinkingEnabled,
       autoCompactEnabled: iu?.autoCompactEnabled,
       autoCompactPercentage: iu?.autoCompactPercentage,
@@ -2038,7 +1887,7 @@ export function Config({
       ) : showSubmenu === 'TeammateModel' ? (
         <>
           <ModelPicker
-            initial={globalConfig.teammateDefaultModel ?? null}
+            initial={settingsData?.teammateDefaultModel ?? null}
             skipSettingsWrite
             headerText="Default model for newly spawned teammates. The leader can override via the tool call's model parameter."
             onSelect={(model, _effort) => {
@@ -2048,21 +1897,13 @@ export function Config({
               // (initial=null) and confirming would write null, silently
               // switching Opus-fallback → follow-leader. Treat as no-op.
               if (
-                globalConfig.teammateDefaultModel === undefined &&
+                settingsData?.teammateDefaultModel === undefined &&
                 model === null
               ) {
                 return
               }
               isDirty.current = true
-              saveGlobalConfig(current =>
-                current.teammateDefaultModel === model
-                  ? current
-                  : { ...current, teammateDefaultModel: model },
-              )
-              setGlobalConfig({
-                ...getGlobalConfig(),
-                teammateDefaultModel: model,
-              })
+              updateUserSettings({ teammateDefaultModel: model })
               setChanges(prev => ({
                 ...prev,
                 teammateDefaultModel: teammateModelDisplayString(model),
@@ -2205,14 +2046,14 @@ export function Config({
           hideBorder
           hideInputGuide
         >
-          {autoUpdaterDisabledReason?.type !== 'config' ? (
+          {autoUpdaterDisabledReason ? (
             <>
               <Text>
-                {autoUpdaterDisabledReason?.type === 'env'
+                {autoUpdaterDisabledReason.type === 'env'
                   ? 'Auto-updates are controlled by an environment variable and cannot be changed here.'
                   : 'Auto-updates are disabled in development builds.'}
               </Text>
-              {autoUpdaterDisabledReason?.type === 'env' && (
+              {autoUpdaterDisabledReason.type === 'env' && (
                 <Text dimColor>
                   Unset {autoUpdaterDisabledReason.envVar} to re-enable
                   auto-updates.
@@ -2235,12 +2076,6 @@ export function Config({
                 isDirty.current = true
                 setShowSubmenu(null)
                 setTabsHidden(false)
-
-                saveGlobalConfig(current => ({
-                  ...current,
-                  autoUpdates: true,
-                }))
-                setGlobalConfig({ ...getGlobalConfig(), autoUpdates: true })
 
                 updateSettingsForSource('userSettings', {
                   autoUpdatesChannel: channel as 'latest' | 'stable',

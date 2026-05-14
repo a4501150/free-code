@@ -4,7 +4,7 @@
 
 import { access, chmod, writeFile } from 'fs/promises'
 import { join } from 'path'
-import { type ReleaseChannel, saveGlobalConfig } from './config.js'
+import { type ReleaseChannel } from './config.js'
 import { getClaudeConfigHomeDir } from './envUtils.js'
 import { getErrnoCode } from './errors.js'
 import { execFileNoThrowWithCwd } from './execFileNoThrow.js'
@@ -123,12 +123,6 @@ export async function installOrUpdateClaudePackage(
       logError(error)
       return result.code === 190 ? 'in_progress' : 'install_failed'
     }
-
-    // Set installMethod to 'local' to prevent npm permission warnings
-    saveGlobalConfig(current => ({
-      ...current,
-      installMethod: 'local',
-    }))
 
     return 'success'
   } catch (error) {

@@ -1,5 +1,4 @@
 import axios from 'axios'
-import isEqual from 'lodash-es/isEqual.js'
 import {
   getAnthropicApiKey,
   getClaudeAIOAuthTokens,
@@ -7,7 +6,6 @@ import {
 } from 'src/utils/auth.js'
 import { z } from 'zod'
 import { getOauthConfig, OAUTH_BETA_HEADER } from '../../constants/oauth.js'
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { withOAuth401Retry } from '../../utils/http.js'
 import { lazySchema } from '../../utils/lazySchema.js'
@@ -114,32 +112,15 @@ async function fetchBootstrapAPI(): Promise<BootstrapResponse | null> {
 }
 
 /**
- * Fetch bootstrap data from the API and persist to disk cache.
+ * Fetch bootstrap data from the API without persisting provider-specific cache
+ * fields to GlobalConfig.
  */
 export async function fetchBootstrapData(): Promise<void> {
   try {
     const response = await fetchBootstrapAPI()
     if (!response) return
 
-    const clientData = response.client_data ?? null
-    const additionalModelOptions = response.additional_model_options ?? []
-
-    // Only persist if data actually changed — avoids a config write on every startup.
-    const config = getGlobalConfig()
-    if (
-      isEqual(config.clientDataCache, clientData) &&
-      isEqual(config.additionalModelOptionsCache, additionalModelOptions)
-    ) {
-      logForDebugging('[Bootstrap] Cache unchanged, skipping write')
-      return
-    }
-
-    logForDebugging('[Bootstrap] Cache updated, persisting to disk')
-    saveGlobalConfig(current => ({
-      ...current,
-      clientDataCache: clientData,
-      additionalModelOptionsCache: additionalModelOptions,
-    }))
+    logForDebugging('[Bootstrap] Fetched data without disk persistence')
   } catch (error) {
     logError(error)
   }

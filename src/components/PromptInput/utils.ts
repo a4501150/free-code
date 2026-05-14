@@ -1,17 +1,13 @@
-import {
-  hasUsedBackslashReturn,
-  isShiftEnterKeyBindingInstalled,
-} from '../../commands/terminalSetup/terminalSetup.js'
+import { isShiftEnterKeyBindingInstalled } from '../../commands/terminalSetup/terminalSetup.js'
 import type { Key } from '../../ink.js'
-import { getGlobalConfig } from '../../utils/config.js'
 import { env } from '../../utils/env.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 /**
  * Helper function to check if vim mode is currently enabled
  * @returns boolean indicating if vim mode is active
  */
 export function isVimModeEnabled(): boolean {
-  const config = getGlobalConfig()
-  return config.editorMode === 'vim'
+  return (getInitialSettings().editorMode ?? 'normal') === 'vim'
 }
 
 export function getNewlineInstructions(): string {
@@ -26,9 +22,7 @@ export function getNewlineInstructions(): string {
   }
 
   // Otherwise show backslash+return instructions
-  return hasUsedBackslashReturn()
-    ? '\\⏎ for newline'
-    : 'backslash (\\) + return (⏎) for newline'
+  return 'backslash (\\) + return (⏎) for newline'
 }
 
 /**

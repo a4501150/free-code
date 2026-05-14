@@ -16,7 +16,6 @@ const defaultFeatures = [
   'HARD_FAIL',
   'STREAMLINED_OUTPUT',
   'UNATTENDED_RETRY',
-  'BUDDY',
   'CACHED_MICROCOMPACT',
   'COORDINATOR_MODE',
   'KAIROS',

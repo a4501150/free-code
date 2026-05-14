@@ -30,11 +30,6 @@ import {
   popAllEditable,
 } from 'src/utils/messageQueueManager.js'
 import stripAnsi from 'strip-ansi'
-import { companionReservedColumns } from '../../buddy/CompanionSprite.js'
-import {
-  findBuddyTriggerPositions,
-  useBuddyNotification,
-} from '../../buddy/useBuddyNotification.js'
 import { FastModePicker } from '../../commands/fast/fast.js'
 import { isUltrareviewEnabled } from '../../commands/review/ultrareviewEnabled.js'
 import { getNativeCSIuTerminalDisplayName } from '../../commands/terminalSetup/terminalSetup.js'
@@ -111,11 +106,7 @@ import type {
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { count } from '../../utils/array.js'
 import { Cursor } from '../../utils/Cursor.js'
-import {
-  getGlobalConfig,
-  type PastedContent,
-  saveGlobalConfig,
-} from '../../utils/config.js'
+import type { PastedContent } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
 import {
   parseDirectMemberMessage,
@@ -180,7 +171,6 @@ import {
 import { findTokenBudgetPositions } from '../../utils/tokenBudget.js'
 import { findUltrareviewTriggerPositions } from '../../utils/ultrareview/keyword.js'
 import { AutoModeOptInDialog } from '../AutoModeOptInDialog.js'
-import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js'
 import {
   getVisibleAgentTasks,
   useCoordinatorTaskCount,
@@ -198,10 +188,7 @@ import { shouldHideTasksFooter } from '../tasks/taskStatusUtils.js'
 import { TeamsDialog } from '../teams/TeamsDialog.js'
 import VimTextInput from '../VimTextInput.js'
 import { getModeFromInput, getValueFromInput } from './inputModes.js'
-import {
-  FOOTER_TEMPORARY_STATUS_TIMEOUT,
-  Notifications,
-} from './Notifications.js'
+import { Notifications } from './Notifications.js'
 import PromptInputFooter from './PromptInputFooter.js'
 import type { SuggestionItem } from './PromptInputFooterSuggestions.js'
 import { PromptInputModeIndicator } from './PromptInputModeIndicator.js'
@@ -416,10 +403,6 @@ function PromptInput({
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const viewSelectionMode = useAppState(s => s.viewSelectionMode)
   const showSpinnerTree = useAppState(s => s.expandedView) === 'teammates'
-  const { companion: _companion, companionMuted } = feature('BUDDY')
-    ? getGlobalConfig()
-    : { companion: undefined, companionMuted: undefined }
-  const companionFooterVisible = !!_companion && !companionMuted
   // Brief mode: BriefSpinner/BriefIdleStatus own the 2-row footprint above
   // the input. Dropping marginTop here lets the spinner sit flush against
   // the input bar. viewingAgentTaskId mirrors the gate on both (Spinner.tsx,
@@ -595,7 +578,7 @@ function PromptInput({
   // ─── Footer pill navigation ─────────────────────────────────────────────
   // Which pills render below the input box. Order here IS the nav order
   // (down/right = forward, up/left = back). Selection lives in AppState so
-  // pills rendered outside PromptInput (CompanionSprite) can read focus.
+  // pill components can read focus.
   const runningTaskCount = useMemo(
     () => count(Object.values(tasks), t => t.status === 'running'),
     [tasks],
@@ -615,14 +598,8 @@ function PromptInput({
         tasksFooterVisible && 'tasks',
         bagelFooterVisible && 'bagel',
         teamsFooterVisible && 'teams',
-        companionFooterVisible && 'companion',
       ].filter(Boolean) as FooterItem[],
-    [
-      tasksFooterVisible,
-      bagelFooterVisible,
-      teamsFooterVisible,
-      companionFooterVisible,
-    ],
+    [tasksFooterVisible, bagelFooterVisible, teamsFooterVisible],
   )
 
   // Effective selection: null if the selected pill stopped rendering (e.g.
@@ -714,11 +691,6 @@ function PromptInput({
 
   const btwTriggers = useMemo(
     () => findBtwTriggerPositions(displayedValue),
-    [displayedValue],
-  )
-
-  const buddyTriggers = useMemo(
-    () => findBuddyTriggerPositions(displayedValue),
     [displayedValue],
   )
 
@@ -936,19 +908,6 @@ function PromptInput({
       }
     }
 
-    // Rainbow for /buddy
-    for (const trigger of buddyTriggers) {
-      for (let i = trigger.start; i < trigger.end; i++) {
-        highlights.push({
-          start: i,
-          end: i + 1,
-          color: getRainbowColor(i - trigger.start),
-          shimmerColor: getRainbowColor(i - trigger.start, true),
-          priority: 10,
-        })
-      }
-    }
-
     return highlights
   }, [
     isSearchingHistory,
@@ -966,7 +925,6 @@ function PromptInput({
     voiceInterimRange,
     thinkTriggers,
     ultrareviewTriggers,
-    buddyTriggers,
   ])
 
   const { addNotification, removeNotification } = useNotifications()
@@ -996,62 +954,10 @@ function PromptInput({
     }
   }, [addNotification, ultrareviewTriggers.length])
 
-  // Track input length for stash hint
-  const prevInputLengthRef = useRef(input.length)
-  const peakInputLengthRef = useRef(input.length)
-
   // Dismiss stash hint when user makes any input change
   const dismissStashHint = useCallback(() => {
     removeNotification('stash-hint')
   }, [removeNotification])
-
-  // Show stash hint when user gradually clears substantial input
-  useEffect(() => {
-    const prevLength = prevInputLengthRef.current
-    const peakLength = peakInputLengthRef.current
-    const currentLength = input.length
-    prevInputLengthRef.current = currentLength
-
-    // Update peak when input grows
-    if (currentLength > peakLength) {
-      peakInputLengthRef.current = currentLength
-      return
-    }
-
-    // Reset state when input is empty
-    if (currentLength === 0) {
-      peakInputLengthRef.current = 0
-      return
-    }
-
-    // Detect gradual clear: peak was high, current is low, but this wasn't a single big jump
-    // (rapid clears like esc-esc go from 20+ to 0 in one step)
-    const clearedSubstantialInput = peakLength >= 20 && currentLength <= 5
-    const wasRapidClear = prevLength >= 20 && currentLength <= 5
-
-    if (clearedSubstantialInput && !wasRapidClear) {
-      const config = getGlobalConfig()
-      if (!config.hasUsedStash) {
-        addNotification({
-          key: 'stash-hint',
-          jsx: (
-            <Text dimColor>
-              Tip:{' '}
-              <ConfigurableShortcutHint
-                action="chat:stash"
-                context="Chat"
-                fallback="ctrl+s"
-                description="stash"
-              />
-            </Text>
-          ),
-          priority: 'immediate',
-          timeoutMs: FOOTER_TEMPORARY_STATUS_TIMEOUT,
-        })
-      }
-      peakInputLengthRef.current = currentLength
-    }
-  }, [input.length, addNotification])
 
   // Initialize input buffer for undo functionality
   const { pushToBuffer, undo, canUndo, clearBuffer } = useInputBuffer({
@@ -1210,11 +1116,6 @@ function PromptInput({
     if (onHistoryDown() && footerItems.length > 0) {
       const first = footerItems[0]!
       selectFooterItem(first)
-      if (first === 'tasks' && !getGlobalConfig().hasSeenTasksHint) {
-        saveGlobalConfig(c =>
-          c.hasSeenTasksHint ? c : { ...c, hasSeenTasksHint: true },
-        )
-      }
     }
   }
 
@@ -1724,11 +1625,6 @@ function PromptInput({
       trackAndSetInput('')
       setCursorOffset(0)
       setPastedContents({})
-      // Track usage for /discover and stop showing hint
-      saveGlobalConfig(c => {
-        if (c.hasUsedStash) return c
-        return { ...c, hasUsedStash: true }
-      })
     }
   }, [
     input,
@@ -1886,14 +1782,6 @@ function PromptInput({
       toolPermissionContext,
       teamContext,
     )
-
-    // Track when user enters plan mode
-    if (nextMode === 'plan') {
-      saveGlobalConfig(current => ({
-        ...current,
-        lastPlanModeUse: Date.now(),
-      }))
-    }
 
     // Set the mode via setAppState directly because setToolPermissionContext
     // intentionally preserves the existing mode (to prevent coordinator mode
@@ -2220,12 +2108,6 @@ function PromptInput({
           return
         }
         switch (footerItemSelected) {
-          case 'companion':
-            if (feature('BUDDY')) {
-              selectFooterItem(null)
-              void onSubmit('/buddy')
-            }
-            break
           case 'tasks':
             if (isTeammateMode) {
               // Enter switches to the selected agent's view
@@ -2438,15 +2320,8 @@ function PromptInput({
     })
   }, [effortNotificationText, addNotification, removeNotification])
 
-  useBuddyNotification()
-
-  const companionSpeaking = feature('BUDDY')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useAppState(s => s.companionReaction !== undefined)
-    : false
   const { columns, rows } = useTerminalSize()
-  const textInputColumns =
-    columns - 3 - companionReservedColumns(columns, companionSpeaking)
+  const textInputColumns = columns - 3
 
   // POC: click-to-position-cursor. Mouse tracking is only enabled inside
   // <AlternateScreen>, so this is dormant in the normal main-screen REPL.

@@ -80,9 +80,7 @@ import {
 import {
   checkHasTrustDialogAccepted,
   enableConfigs,
-  getGlobalConfig,
   isAutoUpdaterDisabled,
-  saveGlobalConfig,
 } from './utils/config.js'
 import { seedEarlyInput, stopCapturingEarlyInput } from './utils/earlyInput.js'
 import {
@@ -263,7 +261,6 @@ import {
   excludeResourcesByServer,
 } from 'src/services/mcp/utils.js'
 import { isXaaEnabled } from 'src/services/mcp/xaaIdpLogin.js'
-import { getRelevantTips } from 'src/services/tips/tipRegistry.js'
 import { registerCleanup } from 'src/utils/cleanupRegistry.js'
 import { eagerParseCliFlag } from 'src/utils/cliArgs.js'
 import {
@@ -324,10 +321,6 @@ const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
   ? (require('./utils/permissions/autoModeState.js') as typeof import('./utils/permissions/autoModeState.js'))
   : null
 
-import { migrateAutoUpdatesToSettings } from './migrations/migrateAutoUpdatesToSettings.js'
-import { migrateBypassPermissionsAcceptedToSettings } from './migrations/migrateBypassPermissionsAcceptedToSettings.js'
-import { migrateEnableAllProjectMcpServersToSettings } from './migrations/migrateEnableAllProjectMcpServersToSettings.js'
-import { resetAutoModeOptInForDefaultOffer } from './migrations/resetAutoModeOptInForDefaultOffer.js'
 /* eslint-enable @typescript-eslint/no-require-imports */
 import { initializeLspServerManager } from './services/lsp/manager.js'
 import { shouldEnablePromptSuggestion } from './services/PromptSuggestion/promptSuggestion.js'
@@ -345,7 +338,6 @@ import {
   clearPluginCache,
   loadAllPluginsCacheOnly,
 } from './utils/plugins/pluginLoader.js'
-import { migrateChangelogFromConfig } from './utils/releaseNotes.js'
 import { SandboxManager } from './utils/sandbox/sandbox-adapter.js'
 import {
   shouldEnableThinkingByDefault,
@@ -499,29 +491,6 @@ function getCertEnvVarTelemetry(): Record<string, boolean> {
   return result
 }
 
-// @[MODEL LAUNCH]: Consider any migrations you may need for model strings.
-// Bump this when adding a new sync migration so existing users re-run the set.
-const CURRENT_MIGRATION_VERSION = 12
-function runMigrations(): void {
-  if (getGlobalConfig().migrationVersion !== CURRENT_MIGRATION_VERSION) {
-    migrateAutoUpdatesToSettings()
-    migrateBypassPermissionsAcceptedToSettings()
-    migrateEnableAllProjectMcpServersToSettings()
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
-      resetAutoModeOptInForDefaultOffer()
-    }
-    saveGlobalConfig(prev =>
-      prev.migrationVersion === CURRENT_MIGRATION_VERSION
-        ? prev
-        : { ...prev, migrationVersion: CURRENT_MIGRATION_VERSION },
-    )
-  }
-  // Async migration - fire and forget since it's non-blocking
-  migrateChangelogFromConfig().catch(() => {
-    // Silently ignore migration errors - will retry on next startup
-  })
-}
-
 /**
  * Prefetch system context (including git status) only when it's safe to do so.
  * Git commands can execute arbitrary code via hooks and config (e.g., core.fsmonitor,
@@ -564,7 +533,7 @@ export function startDeferredPrefetches(): void {
   if (
     isEnvTruthy(process.env.CLAUDE_CODE_EXIT_AFTER_FIRST_RENDER) ||
     // --bare: skip ALL prefetches. These are cache-warms for the REPL's
-    // first-turn responsiveness (initUser, getUserContext, tips, countFiles,
+    // first-turn responsiveness (initUser, getUserContext, countFiles,
     // modelCapabilities, change detectors). Scripted -p calls don't have a
     // "user is typing" window to hide this work in — it's pure overhead on
     // the critical path.
@@ -577,7 +546,6 @@ export function startDeferredPrefetches(): void {
   void initUser()
   void getUserContext()
   prefetchSystemContextIfSafe()
-  void getRelevantTips()
   const registry = getProviderRegistry()
   const credRefresh = registry.getCapabilities().credentialRefresh
   if (
@@ -932,7 +900,6 @@ async function run(): Promise<CommanderCommand> {
       clearPluginCache('preAction: --plugin-dir inline plugins')
     }
 
-    runMigrations()
     profileCheckpoint('preAction_after_migrations')
 
     // Non-interactive users who still have only legacy ~/.claude/settings.json
@@ -1436,7 +1403,7 @@ async function run(): Promise<CommanderCommand> {
       // Extract these separately so they can be modified if needed
       let outputFormat = options.outputFormat
       let inputFormat = options.inputFormat
-      let verbose = options.verbose ?? getGlobalConfig().verbose
+      let verbose = options.verbose ?? getInitialSettings().verbose ?? false
       let print = options.print
       const init = options.init ?? false
       const initOnly = options.initOnly ?? false
@@ -3193,18 +3160,19 @@ async function run(): Promise<CommanderCommand> {
       // All startup opt-in paths (--tools, --brief, defaultView) have fired
       // above; initialIsBriefOnly just reads the resulting state.
       const initialIsBriefOnly = feature('KAIROS') ? getUserMsgOptIn() : false
+      const initialSettings = getInitialSettings()
       const initialState: AppState = {
-        settings: getInitialSettings(),
+        settings: initialSettings,
         tasks: {},
         agentNameRegistry: new Map(),
         expandedAgentToolUseIds: new Set<string>(),
-        verbose: verbose ?? getGlobalConfig().verbose ?? false,
+        verbose: verbose ?? initialSettings.verbose ?? false,
         mainLoopModel: initialMainLoopModel,
         mainLoopModelForSession: null,
         isBriefOnly: initialIsBriefOnly,
-        expandedView: getGlobalConfig().showSpinnerTree
+        expandedView: (initialSettings.showSpinnerTree ?? false)
           ? 'teammates'
-          : getGlobalConfig().showExpandedTodos
+          : (initialSettings.showExpandedTodos ?? false)
             ? 'tasks'
             : 'none',
         showTeammateMessagePreview: isAgentSwarmsEnabled() ? false : undefined,
@@ -3299,13 +3267,6 @@ async function run(): Promise<CommanderCommand> {
 
       const initialTools = mcpTools
 
-      // Increment numStartups synchronously — first-render readers (via
-      // useState initializers) need the updated value before setImmediate
-      // fires. Defer only telemetry.
-      saveGlobalConfig(current => ({
-        ...current,
-        numStartups: (current.numStartups ?? 0) + 1,
-      }))
       setImmediate(() => {
         logSessionTelemetry()
       })

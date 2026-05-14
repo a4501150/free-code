@@ -1,5 +1,4 @@
 import * as React from 'react'
-import { useState } from 'react'
 import { Text } from '../../ink.js'
 
 import {
@@ -7,11 +6,8 @@ import {
   getCachedOverageCreditGrant,
   refreshOverageCreditGrantCache,
 } from '../../services/api/overageCreditGrant.js'
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { truncate } from '../../utils/format.js'
 import type { FeedConfig } from './Feed.js'
-
-const MAX_IMPRESSIONS = 3
 
 /**
  * Whether to show the overage credit upsell on any surface.
@@ -24,9 +20,8 @@ const MAX_IMPRESSIONS = 3
  * isEligibleForOverageCreditGrant — just the backend eligibility. Use for
  *   persistent reference surfaces (/usage) where the info should show
  *   whenever eligible, no impression cap.
- * shouldShowOverageCreditUpsell — adds the 3-impression cap and
- *   hasVisitedExtraUsage dismiss. Use for promotional surfaces
- *   (welcome feed, tips).
+ * shouldShowOverageCreditUpsell — promotional surfaces are disabled now that
+ *   the persistent impression and dismissal fields have been removed.
  */
 export function isEligibleForOverageCreditGrant(): boolean {
   const info = getCachedOverageCreditGrant()
@@ -35,14 +30,7 @@ export function isEligibleForOverageCreditGrant(): boolean {
 }
 
 export function shouldShowOverageCreditUpsell(): boolean {
-  if (!isEligibleForOverageCreditGrant()) return false
-
-  const config = getGlobalConfig()
-  if (config.hasVisitedExtraUsage) return false
-  if ((config.overageCreditUpsellSeenCount ?? 0) >= MAX_IMPRESSIONS)
-    return false
-
-  return true
+  return false
 }
 
 /**
@@ -55,23 +43,10 @@ export function maybeRefreshOverageCreditCache(): void {
 }
 
 export function useShowOverageCreditUpsell(): boolean {
-  const [show] = useState(() => {
-    maybeRefreshOverageCreditCache()
-    return shouldShowOverageCreditUpsell()
-  })
-  return show
+  return false
 }
 
-export function incrementOverageCreditUpsellSeenCount(): void {
-  let newCount = 0
-  saveGlobalConfig(prev => {
-    newCount = (prev.overageCreditUpsellSeenCount ?? 0) + 1
-    return {
-      ...prev,
-      overageCreditUpsellSeenCount: newCount,
-    }
-  })
-}
+export function incrementOverageCreditUpsellSeenCount(): void {}
 
 // Copy from "OC & Bulk Overages copy" doc (#6 — CLI /usage)
 function getUsageText(amount: string): string {

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useTheme } from '../components/design-system/ThemeProvider.js'
 import type { useSelection } from '../ink/hooks/use-selection.js'
-import { getGlobalConfig } from '../utils/config.js'
+import { getInitialSettings } from '../utils/settings/settings.js'
 import { getTheme } from '../utils/theme.js'
 
 type Selection = ReturnType<typeof useSelection>
@@ -65,7 +65,7 @@ export function useCopyOnSelect(
       // finds no native selection (mouse tracking disabled it). Auto-copy
       // on mouse-up makes cmd+c a no-op that leaves the clipboard intact
       // with the right content, so paste works as expected.
-      const enabled = getGlobalConfig().copyOnSelect ?? true
+      const enabled = getInitialSettings().copyOnSelect ?? true
       if (!enabled) return
 
       const text = selection.copySelectionNoClear()

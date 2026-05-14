@@ -1,8 +1,8 @@
 import { z } from 'zod/v4'
 
 import type { AssistantMessage, Message } from '../../types/message.js'
-import { getGlobalConfig } from '../config.js'
 import { logForDebugging } from '../debug.js'
+import { getInitialSettings } from '../settings/settings.js'
 import { errorMessage } from '../errors.js'
 import { lazySchema } from '../lazySchema.js'
 import { logError } from '../log.js'
@@ -136,7 +136,7 @@ function extractConversationContext(
  * Enabled by default; users can opt out via config.
  */
 export function isPermissionExplainerEnabled(): boolean {
-  return getGlobalConfig().permissionExplainerEnabled !== false
+  return getInitialSettings().permissionExplainerEnabled !== false
 }
 
 /**

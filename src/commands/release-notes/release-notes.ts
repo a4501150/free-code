@@ -6,7 +6,6 @@ import {
   getRecentReleaseNoteGroups,
   getStoredChangelog,
 } from '../../utils/releaseNotes.js'
-import { getGlobalConfig } from '../../utils/config.js'
 
 function formatReleaseNotes(notes: Array<[string, string[]]>): string {
   return notes
@@ -39,7 +38,7 @@ export async function call(): Promise<LocalCommandResult> {
 
   const recentNotes = getRecentReleaseNoteGroups(
     MACRO.VERSION,
-    getGlobalConfig().lastReleaseNotesSeen,
+    undefined,
     changelog,
     3,
   )

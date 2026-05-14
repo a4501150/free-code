@@ -1,6 +1,6 @@
 import * as plist from 'plist'
 import type { TerminalNotification } from '../ink/useTerminalNotification.js'
-import { getGlobalConfig } from '../utils/config.js'
+import { getInitialSettings } from '../utils/settings/settings.js'
 import { env } from '../utils/env.js'
 import { execFileNoThrow } from '../utils/execFileNoThrow.js'
 import { executeNotificationHooks } from '../utils/hooks.js'
@@ -16,8 +16,7 @@ export async function sendNotification(
   notif: NotificationOptions,
   terminal: TerminalNotification,
 ): Promise<void> {
-  const config = getGlobalConfig()
-  const channel = config.preferredNotifChannel
+  const channel = getInitialSettings().preferredNotifChannel ?? 'auto'
 
   await executeNotificationHooks(notif)
 

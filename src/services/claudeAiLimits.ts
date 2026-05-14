@@ -4,7 +4,6 @@ import isEqual from 'lodash-es/isEqual.js'
 import { getIsNonInteractiveSession } from '../bootstrap/state.js'
 import { isClaudeAISubscriber } from '../utils/auth.js'
 import { getModelBetas } from '../utils/betas.js'
-import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'
 import { logError } from '../utils/log.js'
 import { getSmallFastModel } from '../utils/model/model.js'
 import { isEssentialTrafficOnly } from '../utils/privacyLevel.js'
@@ -428,19 +427,11 @@ function computeNewLimitsFromHeaders(
 }
 
 /**
- * Cache the extra usage disabled reason from API headers.
+ * Legacy cache hook retained for callers. Extra usage disabled reasons are no
+ * longer persisted to GlobalConfig.
  */
-function cacheExtraUsageDisabledReason(headers: globalThis.Headers): void {
-  // A null reason means extra usage is enabled (no disabled reason header)
-  const reason =
-    headers.get('anthropic-ratelimit-unified-overage-disabled-reason') ?? null
-  const cached = getGlobalConfig().cachedExtraUsageDisabledReason
-  if (cached !== reason) {
-    saveGlobalConfig(current => ({
-      ...current,
-      cachedExtraUsageDisabledReason: reason,
-    }))
-  }
+function cacheExtraUsageDisabledReason(_headers: globalThis.Headers): void {
+  return
 }
 
 export function extractQuotaStatusFromHeaders(
@@ -468,7 +459,6 @@ export function extractQuotaStatusFromHeaders(
   rawUtilization = extractRawUtilization(headersToUse)
   const newLimits = computeNewLimitsFromHeaders(headersToUse)
 
-  // Cache extra usage status (persists across sessions)
   cacheExtraUsageDisabledReason(headersToUse)
 
   if (!isEqual(currentLimits, newLimits)) {
@@ -492,7 +482,6 @@ export function extractQuotaStatusFromError(error: APIError): void {
       rawUtilization = extractRawUtilization(headersToUse)
       newLimits = computeNewLimitsFromHeaders(headersToUse)
 
-      // Cache extra usage status (persists across sessions)
       cacheExtraUsageDisabledReason(headersToUse)
     }
     // For errors, always set status to rejected even if headers are not present.

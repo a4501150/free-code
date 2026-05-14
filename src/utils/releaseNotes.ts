@@ -3,7 +3,6 @@ import { mkdir, readFile, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { coerce } from 'semver'
 import { getIsNonInteractiveSession } from '../bootstrap/state.js'
-import { getGlobalConfig, saveGlobalConfig } from './config.js'
 import { getClaudeConfigHomeDir } from './envUtils.js'
 import { toError } from './errors.js'
 import { logError } from './log.js'
@@ -48,34 +47,6 @@ export function _resetChangelogCacheForTesting(): void {
 }
 
 /**
- * Migrate changelog from old config-based storage to file-based storage.
- * This should be called once at startup to ensure the migration happens
- * before any other config saves that might re-add the deprecated field.
- */
-export async function migrateChangelogFromConfig(): Promise<void> {
-  const config = getGlobalConfig()
-  if (!config.cachedChangelog) {
-    return
-  }
-
-  const cachePath = getChangelogCachePath()
-
-  // If cache file doesn't exist, create it from old config
-  try {
-    await mkdir(dirname(cachePath), { recursive: true })
-    await writeFile(cachePath, config.cachedChangelog, {
-      encoding: 'utf-8',
-      flag: 'wx', // Write only if file doesn't exist
-    })
-  } catch {
-    // File already exists, which is fine - skip silently
-  }
-
-  // Remove the deprecated field from config
-  saveGlobalConfig(({ cachedChangelog: _, ...rest }) => rest)
-}
-
-/**
  * Fetch the changelog from GitHub and store it in cache file
  * This runs in the background and doesn't block the UI
  */
@@ -109,12 +80,6 @@ export async function fetchAndStoreChangelog(): Promise<void> {
     await writeFile(cachePath, changelogContent, { encoding: 'utf-8' })
     changelogMemoryCache = changelogContent
 
-    // Update timestamp in config
-    const changelogLastFetched = Date.now()
-    saveGlobalConfig(current => ({
-      ...current,
-      changelogLastFetched,
-    }))
   }
 }
 
@@ -306,9 +271,7 @@ export function getAllReleaseNotes(
 const CHANGELOG_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
 function isChangelogStale(): boolean {
-  const lastFetched = getGlobalConfig().changelogLastFetched
-  if (!lastFetched) return true
-  return Date.now() - lastFetched > CHANGELOG_TTL_MS
+  return true
 }
 
 /**

@@ -3,7 +3,6 @@ import { use } from 'react'
 import { Box } from '../ink.js'
 import type { AgentDefinitionsResult } from '../tools/AgentTool/loadAgentsDir.js'
 import { getMemoryFiles } from '../utils/claudemd.js'
-import { getGlobalConfig } from '../utils/config.js'
 import {
   getActiveNotices,
   type StatusNoticeContext,
@@ -22,7 +21,6 @@ export function StatusNotices({
   agentDefinitions,
 }: Props = {}): React.ReactNode {
   const context: StatusNoticeContext = {
-    config: getGlobalConfig(),
     agentDefinitions,
     memoryFiles: use(getMemoryFiles()),
   }

@@ -10,7 +10,6 @@ import {
   renderDefaultModelSetting,
   type ModelSetting,
 } from './model.js'
-import { getGlobalConfig } from '../config.js'
 import { isClaudeAISubscriber } from '../auth.js'
 import type { ProviderModelConfig } from '../settings/types.js'
 
@@ -209,14 +208,6 @@ export function getGroupedModelOptions(_fastMode = false): ModelOptionGroup[] {
         process.env.ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION ??
         `Custom model (${envCustomModel})`,
     })
-  }
-
-  // --- bootstrap cache models ---
-  for (const opt of getGlobalConfig().additionalModelOptionsCache ?? []) {
-    const allOpts = groups.flatMap(g => g.options)
-    if (!allOpts.some(existing => existing.value === opt.value)) {
-      firstGroup.options.push(opt)
-    }
   }
 
   // --- handle custom model (from --model or settings) ---

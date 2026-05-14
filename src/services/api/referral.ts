@@ -5,7 +5,6 @@ import {
   getSubscriptionType,
   isClaudeAISubscriber,
 } from '../../utils/auth.js'
-import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { logError } from '../../utils/log.js'
 import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
@@ -16,9 +15,6 @@ import type {
   ReferralRedemptionsResponse,
   ReferrerRewardInfo,
 } from '../oauth/types.js'
-
-// Cache expiration time: 24 hours (eligibility changes only on subscription/experiment changes)
-const CACHE_EXPIRATION_MS = 24 * 60 * 60 * 1000
 
 // Track in-flight fetch to prevent duplicate API calls
 let fetchInProgress: Promise<ReferralEligibilityResponse | null> | null = null
@@ -77,8 +73,8 @@ function shouldCheckForPasses(): boolean {
 }
 
 /**
- * Check cached passes eligibility from GlobalConfig
- * Returns current cached state and cache status
+ * Check legacy passes eligibility cache state.
+ * Disk caching has been removed, so this always reports no cache.
  */
 export function checkCachedPassesEligibility(): {
   eligible: boolean
@@ -102,26 +98,10 @@ export function checkCachedPassesEligibility(): {
     }
   }
 
-  const config = getGlobalConfig()
-  const cachedEntry = config.passesEligibilityCache?.[orgId]
-
-  if (!cachedEntry) {
-    // No cached entry, needs fetch
-    return {
-      eligible: false,
-      needsRefresh: true,
-      hasCache: false,
-    }
-  }
-
-  const { eligible, timestamp } = cachedEntry
-  const now = Date.now()
-  const needsRefresh = now - timestamp > CACHE_EXPIRATION_MS
-
   return {
-    eligible,
-    needsRefresh,
-    hasCache: true,
+    eligible: false,
+    needsRefresh: true,
+    hasCache: false,
   }
 }
 
@@ -144,32 +124,23 @@ export function formatCreditAmount(reward: ReferrerRewardInfo): string {
 }
 
 /**
- * Get cached referrer reward info from eligibility cache
- * Returns the reward info if the user is in a v1 campaign, null otherwise
+ * Legacy cache accessor retained for callers. Disk caching has been removed,
+ * so no cached reward is available.
  */
 export function getCachedReferrerReward(): ReferrerRewardInfo | null {
-  const orgId = getOauthAccountInfo()?.organizationUuid
-  if (!orgId) return null
-  const config = getGlobalConfig()
-  const cachedEntry = config.passesEligibilityCache?.[orgId]
-  return cachedEntry?.referrer_reward ?? null
+  return null
 }
 
 /**
- * Get the cached remaining passes count from eligibility cache
- * Returns the number of remaining passes, or null if not available
+ * Legacy cache accessor retained for callers. Disk caching has been removed,
+ * so no cached remaining pass count is available.
  */
 export function getCachedRemainingPasses(): number | null {
-  const orgId = getOauthAccountInfo()?.organizationUuid
-  if (!orgId) return null
-  const config = getGlobalConfig()
-  const cachedEntry = config.passesEligibilityCache?.[orgId]
-  return cachedEntry?.remaining_passes ?? null
+  return null
 }
-
 /**
- * Fetch passes eligibility and store in GlobalConfig
- * Returns the fetched response or null on error
+ * Fetch passes eligibility without persisting it to GlobalConfig.
+ * Returns the fetched response or null on error.
  */
 export async function fetchAndStorePassesEligibility(): Promise<ReferralEligibilityResponse | null> {
   // Return existing promise if fetch is already in progress
@@ -189,26 +160,13 @@ export async function fetchAndStorePassesEligibility(): Promise<ReferralEligibil
     try {
       const response = await fetchReferralEligibility()
 
-      const cacheEntry = {
-        ...response,
-        timestamp: Date.now(),
-      }
-
-      saveGlobalConfig(current => ({
-        ...current,
-        passesEligibilityCache: {
-          ...current.passesEligibilityCache,
-          [orgId]: cacheEntry,
-        },
-      }))
-
       logForDebugging(
-        `Passes eligibility cached for org ${orgId}: ${response.eligible}`,
+        `Passes eligibility fetched for org ${orgId}: ${response.eligible}`,
       )
 
       return response
     } catch (error) {
-      logForDebugging('Failed to fetch and cache passes eligibility')
+      logForDebugging('Failed to fetch passes eligibility')
       logError(error as Error)
       return null
     } finally {
@@ -221,51 +179,16 @@ export async function fetchAndStorePassesEligibility(): Promise<ReferralEligibil
 }
 
 /**
- * Get cached passes eligibility data or fetch if needed
- * Main entry point for all eligibility checks
- *
- * This function never blocks on network - it returns cached data immediately
- * and fetches in the background if needed. On cold start (no cache), it returns
- * null and the passes command won't be available until the next session.
+ * Fetch passes eligibility data without consulting GlobalConfig cache.
+ * Main entry point for all eligibility checks.
  */
 export async function getCachedOrFetchPassesEligibility(): Promise<ReferralEligibilityResponse | null> {
   if (!shouldCheckForPasses()) {
     return null
   }
 
-  const orgId = getOauthAccountInfo()?.organizationUuid
-  if (!orgId) {
-    return null
-  }
-
-  const config = getGlobalConfig()
-  const cachedEntry = config.passesEligibilityCache?.[orgId]
-  const now = Date.now()
-
-  // No cache - trigger background fetch and return null (non-blocking)
-  // The passes command won't be available this session, but will be next time
-  if (!cachedEntry) {
-    logForDebugging(
-      'Passes: No cache, fetching eligibility in background (command unavailable this session)',
-    )
-    void fetchAndStorePassesEligibility()
-    return null
-  }
-
-  // Cache exists but is stale - return stale cache and trigger background refresh
-  if (now - cachedEntry.timestamp > CACHE_EXPIRATION_MS) {
-    logForDebugging(
-      'Passes: Cache stale, returning cached data and refreshing in background',
-    )
-    void fetchAndStorePassesEligibility() // Background refresh
-    const { timestamp, ...response } = cachedEntry
-    return response as ReferralEligibilityResponse
-  }
-
-  // Cache is fresh - return it immediately
-  logForDebugging('Passes: Using fresh cached eligibility data')
-  const { timestamp, ...response } = cachedEntry
-  return response as ReferralEligibilityResponse
+  logForDebugging('Passes: Fetching eligibility without disk cache')
+  return fetchAndStorePassesEligibility()
 }
 
 /**

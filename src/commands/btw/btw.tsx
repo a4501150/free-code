@@ -17,7 +17,6 @@ import { Box, Text } from '../../ink.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
 import type { Message } from '../../types/message.js'
 import { createAbortController } from '../../utils/abortController.js'
-import { saveGlobalConfig } from '../../utils/config.js'
 import { errorMessage } from '../../utils/errors.js'
 import {
   type CacheSafeParams,
@@ -217,11 +216,6 @@ export async function call(
     onDone('Usage: /btw <your question>', { display: 'system' })
     return null
   }
-
-  saveGlobalConfig(current => ({
-    ...current,
-    btwUseCount: current.btwUseCount + 1,
-  }))
 
   return (
     <BtwSideQuestion question={question} context={context} onDone={onDone} />

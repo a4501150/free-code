@@ -2,7 +2,6 @@ import * as React from 'react'
 import { useEffect } from 'react'
 import { useNotifications } from 'src/context/notifications.js'
 import { Text } from '../../ink.js'
-import { hasClaudeAiMcpEverConnected } from '../../services/mcp/claudeai.js'
 import type { MCPServerConnection } from '../../services/mcp/types.js'
 
 type Props = {
@@ -25,15 +24,9 @@ export function useMcpConnectivityStatus({
     )
     // claude.ai failures get a separate notification: they almost always indicate
     // a toolbox-service outage (shared auth backend), not a local config issue.
-    // Only flag connectors that have previously connected successfully — an
-    // org-configured connector that's been needs-auth since it appeared is one
-    // the user has ignored and shouldn't nag about; one that was working
-    // yesterday and is now failed is a state change worth surfacing.
     const failedClaudeAiClients = mcpClients.filter(
       client =>
-        client.type === 'failed' &&
-        client.config.type === 'claudeai-proxy' &&
-        hasClaudeAiMcpEverConnected(client.name),
+        client.type === 'failed' && client.config.type === 'claudeai-proxy',
     )
     const needsAuthLocalServers = mcpClients.filter(
       client =>
@@ -41,9 +34,7 @@ export function useMcpConnectivityStatus({
     )
     const needsAuthClaudeAiServers = mcpClients.filter(
       client =>
-        client.type === 'needs-auth' &&
-        client.config.type === 'claudeai-proxy' &&
-        hasClaudeAiMcpEverConnected(client.name),
+        client.type === 'needs-auth' && client.config.type === 'claudeai-proxy',
     )
     if (
       failedLocalClients.length === 0 &&

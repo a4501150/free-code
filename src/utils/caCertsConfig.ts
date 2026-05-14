@@ -13,7 +13,6 @@
  * env var at CLI startup. Only `init.ts` imports this file.
  */
 
-import { getGlobalConfig } from './config.js'
 import { logForDebugging } from './debug.js'
 import { getSettingsForSource } from './settings/settings.js'
 
@@ -58,21 +57,14 @@ export function applyExtraCACertsFromConfig(): void {
  */
 function getExtraCertsPathFromConfig(): string | undefined {
   try {
-    const globalConfig = getGlobalConfig()
-    const globalEnv = globalConfig?.env
-    // Only read from user-controlled settings (~/.claude/freecode.json),
-    // not project-level settings, to prevent malicious projects from
-    // injecting CA certs before the trust dialog.
     const settings = getSettingsForSource('userSettings')
     const settingsEnv = settings?.env
 
     logForDebugging(
-      `CA certs: Config fallback - globalEnv keys: ${globalEnv ? Object.keys(globalEnv).join(',') : 'none'}, settingsEnv keys: ${settingsEnv ? Object.keys(settingsEnv).join(',') : 'none'}`,
+      `CA certs: Config fallback - settingsEnv keys: ${settingsEnv ? Object.keys(settingsEnv).join(',') : 'none'}`,
     )
 
-    // Settings override global config (same precedence as applyConfigEnvironmentVariables)
-    const path =
-      settingsEnv?.NODE_EXTRA_CA_CERTS || globalEnv?.NODE_EXTRA_CA_CERTS
+    const path = settingsEnv?.NODE_EXTRA_CA_CERTS
     if (path) {
       logForDebugging(
         `CA certs: Found NODE_EXTRA_CA_CERTS in config/settings: ${path}`,

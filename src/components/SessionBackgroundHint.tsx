@@ -13,7 +13,6 @@ import {
   backgroundAll,
   hasForegroundTasks,
 } from '../tasks/LocalShellTask/LocalShellTask.js'
-import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'
 import { env } from '../utils/env.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
 import { KeyboardShortcutHint } from './design-system/KeyboardShortcutHint.js'
@@ -56,11 +55,6 @@ export function SessionBackgroundHint({
     if (hasForegroundTasks(state)) {
       // Existing behavior - background running bash/agent tasks
       backgroundAll(() => appStateStore.getState(), setAppState)
-      if (!getGlobalConfig().hasUsedBackgroundTask) {
-        saveGlobalConfig(c =>
-          c.hasUsedBackgroundTask ? c : { ...c, hasUsedBackgroundTask: true },
-        )
-      }
     } else if (isEnvTruthy('false') && isLoading) {
       // New behavior - double-press to background session (gated)
       handleDoublePress()

@@ -1,6 +1,5 @@
 import { isRemoteManagedSettingsEligible } from '../services/remoteManagedSettings/syncCache.js'
 import { clearCACertsCache } from './caCerts.js'
-import { getGlobalConfig } from './config.js'
 import { isEnvTruthy } from './envUtils.js'
 import {
   isProviderManagedEnvVar,
@@ -133,7 +132,7 @@ export function applySafeConfigEnvironmentVariables(): void {
   // Global config (~/.claude.json) is user-controlled. In CCD mode,
   // filterSettingsEnv strips keys that were in the spawn env snapshot so
   // the desktop host's operational vars (OTEL, etc.) are not overridden.
-  Object.assign(process.env, filterSettingsEnv(getGlobalConfig().env))
+  // Legacy: getGlobalConfig().env was read here but has been removed
 
   // Apply ALL env vars from trusted setting sources, policySettings last.
   // Gate on isSettingSourceEnabled so SDK settingSources: [] (isolation mode)
@@ -185,7 +184,7 @@ export function applySafeConfigEnvironmentVariables(): void {
  * dangerous environment variables such as LD_PRELOAD, PATH, etc.
  */
 export function applyConfigEnvironmentVariables(): void {
-  Object.assign(process.env, filterSettingsEnv(getGlobalConfig().env))
+  // Legacy: getGlobalConfig().env was read here but has been removed
 
   Object.assign(process.env, filterSettingsEnv(getSettings_DEPRECATED()?.env))
 

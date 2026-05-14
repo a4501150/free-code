@@ -6,8 +6,8 @@
  * affect the teammate mode for the current session.
  */
 
-import { getGlobalConfig } from '../../../utils/config.js'
 import { logForDebugging } from '../../../utils/debug.js'
+import { getInitialSettings } from '../../../utils/settings/settings.js'
 import { logError } from '../../../utils/log.js'
 
 export type TeammateMode = 'auto' | 'tmux' | 'in-process'
@@ -60,8 +60,8 @@ export function captureTeammateModeSnapshot(): void {
       `[TeammateModeSnapshot] Captured from CLI override: ${initialTeammateMode}`,
     )
   } else {
-    const config = getGlobalConfig()
-    initialTeammateMode = config.teammateMode ?? 'auto'
+    const settings = getInitialSettings()
+    initialTeammateMode = settings.teammateMode ?? 'auto'
     logForDebugging(
       `[TeammateModeSnapshot] Captured from config: ${initialTeammateMode}`,
     )

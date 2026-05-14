@@ -28,7 +28,7 @@ import type {
 import { AssistantThinkingMessage } from './AssistantThinkingMessage.js'
 import { SystemAPIErrorMessage } from './SystemAPIErrorMessage.js'
 import { formatDuration, formatNumber } from '../../utils/format.js'
-import { getGlobalConfig } from '../../utils/config.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import { CtrlOToExpand } from '../CtrlOToExpand.js'
 import { useAppStateStore } from '../../state/AppState.js'
 import { isBackgroundTask, type TaskState } from '../../tasks/types.js'
@@ -320,7 +320,7 @@ function TurnDurationMessage({
     return running.length > 0 ? getPillLabel(running) : null
   })
 
-  const showTurnDuration = getGlobalConfig().showTurnDuration ?? true
+  const showTurnDuration = getInitialSettings().showTurnDuration ?? true
 
   const duration = formatDuration(message.durationMs)
   const hasBudget = message.budgetLimit !== undefined

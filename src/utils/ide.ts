@@ -13,8 +13,11 @@ import type {
   ConnectedMCPServer,
   MCPServerConnection,
 } from '../services/mcp/types.js'
-import { getGlobalConfig, saveGlobalConfig } from './config.js'
 import { env } from './env.js'
+import {
+  getInitialSettings,
+  updateSettingsForSource,
+} from './settings/settings.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import {
   execFileNoThrow,
@@ -593,9 +596,8 @@ export async function maybeInstallIDEExtension(
     // Only track successful installations
 
     // Set diff tool config to auto if it has not been set already
-    const globalConfig = getGlobalConfig()
-    if (!globalConfig.diffTool) {
-      saveGlobalConfig(current => ({ ...current, diffTool: 'auto' }))
+    if (!getInitialSettings().diffTool) {
+      updateSettingsForSource('userSettings', { diffTool: 'auto' })
     }
     return {
       installed: true,
@@ -1285,7 +1287,7 @@ export async function initializeIdeIntegration(
   // Don't await so we don't block startup, but return a promise that resolves with the status
   void findAvailableIDE().then(onIdeDetected)
 
-  const shouldAutoInstall = getGlobalConfig().autoInstallIdeExtension ?? true
+  const shouldAutoInstall = getInitialSettings().autoInstallIdeExtension ?? true
   if (
     !isEnvTruthy(process.env.CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL) &&
     shouldAutoInstall

@@ -10,7 +10,6 @@ import figures from 'figures'
 import { getCwd } from './cwd.js'
 import { relative } from 'path'
 import { formatNumber } from './format.js'
-import type { getGlobalConfig } from './config.js'
 import {
   getAnthropicApiKeyWithSource,
   getApiKeyFromConfigOrMacOSKeychain,
@@ -28,12 +27,12 @@ import {
   getTerminalIdeType,
 } from './ide.js'
 import { isJetBrainsPluginInstalledCachedSync } from './jetbrains.js'
+import { getInitialSettings } from './settings/settings.js'
 
 // Types
 export type StatusNoticeType = 'warning' | 'info'
 
 export type StatusNoticeContext = {
-  config: ReturnType<typeof getGlobalConfig>
   agentDefinitions?: AgentDefinitionsResult
   memoryFiles: MemoryFileInfo[]
 }
@@ -216,13 +215,13 @@ const largeAgentDescriptionsNotice: StatusNoticeDefinition = {
 const jetbrainsPluginNotice: StatusNoticeDefinition = {
   id: 'jetbrains-plugin-install',
   type: 'info',
-  isActive: context => {
+  isActive: () => {
     // Only show if running in JetBrains built-in terminal
     if (!isSupportedJetBrainsTerminal()) {
       return false
     }
     // Don't show if auto-install is disabled
-    const shouldAutoInstall = context.config.autoInstallIdeExtension ?? true
+    const shouldAutoInstall = getInitialSettings().autoInstallIdeExtension ?? true
     if (!shouldAutoInstall) {
       return false
     }

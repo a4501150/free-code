@@ -21,7 +21,7 @@ import { isAgentSwarmsEnabled } from './utils/agentSwarmsEnabled.js'
 import { checkAndRestoreTerminalBackup } from './utils/appleTerminalBackup.js'
 import { prefetchApiKeyFromApiKeyHelperIfSafe } from './utils/auth.js'
 import { clearMemoryFileCaches } from './utils/claudemd.js'
-import { getCurrentProjectConfig, getGlobalConfig } from './utils/config.js'
+import { getCurrentProjectConfig } from './utils/config.js'
 import { logForDiagnosticsNoPII } from './utils/diagLogs.js'
 import { env } from './utils/env.js'
 import { envDynamic } from './utils/envDynamic.js'
@@ -318,9 +318,7 @@ export async function setup(
   // --bare / SIMPLE: skip — release notes are interactive-UI display data,
   // and getRecentActivity() reads up to 10 session JSONL files.
   if (!isBareMode()) {
-    const { hasReleaseNotes } = await checkForReleaseNotes(
-      getGlobalConfig().lastReleaseNotesSeen,
-    )
+    const { hasReleaseNotes } = await checkForReleaseNotes(undefined)
     if (hasReleaseNotes) {
       await getRecentActivity()
     }
