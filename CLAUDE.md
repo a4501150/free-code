@@ -53,6 +53,16 @@ Read these files instead of duplicating their contents here:
 - Anthropic-platform-only body metadata and headers must stay gated to Anthropic-type providers. This prevents meaningless identifiers and per-session cache-key churn on other providers.
 - `defaultSubagentModel` is a hard override for subagent routing. If changing tiered agent model behavior, read [src/utils/model/agent.ts](src/utils/model/agent.ts) and the provider-config tests first.
 
+### Anthropic first-party request requirements
+
+Three mechanisms are required for 1P Anthropic API requests. All three must stay gated to Anthropic-type providers.
+
+1. **`x-anthropic-billing-header`** (system prompt block) — Attribution string embedded as the first system prompt `TextBlockParam` (not an HTTP header). Built by `getAttributionHeader()` in [src/constants/system.ts](src/constants/system.ts). Contains `cc_version=<version>.<fingerprint>`, `cc_entrypoint`, `cch=<integrity_hash>`, and optional `cc_workload`. The `cch` placeholder is replaced at fetch time in [src/services/api/client.ts](src/services/api/client.ts) with an xxHash64 over the serialized body; the server verifies this to gate features like fast mode. Always gets `cacheScope: null` to avoid polluting cache keys. Can be disabled via `CLAUDE_CODE_ATTRIBUTION_HEADER=false`.
+
+2. **`metadata.user_id`** (request body field) — JSON-stringified object containing `device_id`, `account_uuid`, `session_id`, and optional extra fields from `CLAUDE_CODE_EXTRA_METADATA`. Built by `getAPIMetadata()` in [src/services/api/claude.ts](src/services/api/claude.ts). Required for rate limiting and user identification; requests without it get 429s.
+
+3. **`CLISyspromptPrefix`** (system prompt identity) — The "You are Claude Code, Anthropic's official CLI" string placed immediately after the billing header. Built by `getCLISyspromptPrefix()` in [src/constants/system.ts](src/constants/system.ts). The 1P API requires this for non-Haiku models; requests without it are rejected. Has three variants (default, headless with preset, headless without preset) selected by the `customSyspromptPrefix` provider capability. Gets `cacheScope: 'org'` in `splitSysPromptPrefix`.
+
 ## Build and settings rules
 
 - Feature flags are compile-time `feature(...)` gates. Before adding or changing a flag, inspect [scripts/build.ts](scripts/build.ts) and existing source references so the flag is intentionally default, dev-full, or explicitly build-only.
