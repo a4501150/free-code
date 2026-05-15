@@ -2,6 +2,9 @@ import * as React from 'react'
 import { Box, Text } from '../ink.js'
 import { formatDuration, formatNumber } from '../utils/format.js'
 import type { Theme } from '../utils/theme.js'
+import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js'
+import { Byline } from './design-system/Byline.js'
+import { KeyboardShortcutHint } from './design-system/KeyboardShortcutHint.js'
 import { ToolUseLoader } from './ToolUseLoader.js'
 
 type Props = {
@@ -128,16 +131,31 @@ export function AgentProgressLine({
           )}
         </Text>
       </Box>
-      {!isBackgrounded && (
-        <Box paddingLeft={showTree ? 3 : 0} flexDirection="row">
-          <Text dimColor>
-            {showTree ? (isLast ? '   ⎿  ' : '│  ⎿  ') : '  ⎿  '}
+      <Box paddingLeft={showTree ? 3 : 0} flexDirection="row">
+        <Text dimColor>
+          {showTree ? (isLast ? '   ⎿  ' : '│  ⎿  ') : '  ⎿  '}
+        </Text>
+        {isBackgrounded ? (
+          <Text>
+            Backgrounded agent
+            <Text dimColor>
+              {' ('}
+              <Byline>
+                <KeyboardShortcutHint shortcut="↓" action="manage" />
+                <ConfigurableShortcutHint
+                  action="app:toggleTranscript"
+                  context="Global"
+                  fallback="ctrl+o"
+                  description="expand"
+                />
+              </Byline>
+              {')'}
+            </Text>
           </Text>
-          <Text dimColor={!isResolved || isBackgrounded}>
-            {getStatusText()}
-          </Text>
-        </Box>
-      )}
+        ) : (
+          <Text dimColor={!isResolved}>{getStatusText()}</Text>
+        )}
+      </Box>
     </Box>
   )
 }
