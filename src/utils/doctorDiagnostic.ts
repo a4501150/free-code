@@ -332,8 +332,6 @@ async function detectConfigurationIssues(
     // Parse errors are surfaced by the settings loader itself.
   }
 
-  const config = getGlobalConfig()
-
   // Skip most warnings for development mode
   if (type === 'development') {
     return warnings

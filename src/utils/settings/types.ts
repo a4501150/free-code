@@ -8,6 +8,7 @@ import {
   PERMISSION_MODES,
 } from '../permissions/PermissionMode.js'
 import { MarketplaceSourceSchema } from '../plugins/schemas.js'
+import { THEME_SETTINGS } from '../theme.js'
 import { CLAUDE_CODE_SETTINGS_SCHEMA_URL } from './constants.js'
 import { PermissionRuleSchema } from './permissionValidation.js'
 
@@ -846,7 +847,7 @@ export const SettingsSchema = lazySchema(() =>
           'Number of tokens to reserve below the configured model context window before auto-compact triggers. Defaults to 20000.',
         ),
       theme: z
-        .enum(['dark', 'light', 'light-high-contrast', 'auto'])
+        .enum(THEME_SETTINGS)
         .optional()
         .describe('Color theme. Defaults to dark.'),
       verbose: z
@@ -1344,6 +1345,13 @@ export const SettingsSchema = lazySchema(() =>
         .boolean()
         .optional()
         .describe('Whether to show tips in the spinner'),
+      spinnerTipsOverride: z
+        .object({
+          tips: z.array(z.string()),
+          excludeDefault: z.boolean().optional(),
+        })
+        .optional()
+        .describe('Override spinner tips with custom content.'),
       spinnerVerbs: z
         .object({
           mode: z.enum(['append', 'replace']),

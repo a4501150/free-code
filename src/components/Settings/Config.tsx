@@ -16,12 +16,8 @@ import {
 } from '../../keybindings/useKeybinding.js'
 import figures from 'figures'
 import {
-  type GlobalConfig,
-  DEFAULT_GLOBAL_CONFIG,
   saveGlobalConfig,
   getCurrentProjectConfig,
-} from '../../utils/config.js'
-import {
   getGlobalConfig,
   getAutoUpdaterDisabledReason,
   formatAutoUpdaterDisabledReason,
@@ -177,8 +173,7 @@ export function Config({
   const themeSetting = useThemeSetting()
   const [settingsData, setSettingsData] = useState(getInitialSettings)
   const initialSettingsData = React.useRef(settingsData)
-  const [globalConfig, setGlobalConfig] = useState(getGlobalConfig())
-  const initialConfig = React.useRef(globalConfig)
+  const initialConfig = React.useRef(getGlobalConfig())
   const [currentLanguage, setCurrentLanguage] = useState<string | undefined>(
     settingsData?.language,
   )
@@ -302,8 +297,7 @@ export function Config({
     hasExternalClaudeMdIncludes(memoryFiles)
 
   const autoUpdaterDisabledReason = getAutoUpdaterDisabledReason()
-  const autoCompactEnabled =
-    settingsData?.autoCompactEnabled ?? globalConfig.autoCompactEnabled
+  const autoCompactEnabled = settingsData?.autoCompactEnabled ?? true
   const autoCompactPercentage =
     settingsData?.autoCompactPercentage ?? DEFAULT_AUTO_COMPACT_PERCENTAGE
   const autoCompactBuffer =
@@ -825,9 +819,7 @@ export function Config({
           {
             id: 'fileCheckpointingEnabled',
             label: 'Rewind code (checkpoints)',
-            value:
-              settingsData?.fileCheckpointingEnabled ??
-              DEFAULT_GLOBAL_CONFIG.fileCheckpointingEnabled,
+            value: settingsData?.fileCheckpointingEnabled ?? true,
             type: 'boolean' as const,
             onChange(fileCheckpointingEnabled: boolean) {
               updateUserSettings({ fileCheckpointingEnabled })
@@ -845,9 +837,7 @@ export function Config({
     {
       id: 'terminalProgressBarEnabled',
       label: 'Terminal progress bar',
-      value:
-        settingsData?.terminalProgressBarEnabled ??
-        DEFAULT_GLOBAL_CONFIG.terminalProgressBarEnabled,
+      value: settingsData?.terminalProgressBarEnabled ?? true,
       type: 'boolean' as const,
       onChange(terminalProgressBarEnabled: boolean) {
         updateUserSettings({ terminalProgressBarEnabled })
@@ -865,9 +855,7 @@ export function Config({
     {
       id: 'showTurnDuration',
       label: 'Show turn duration',
-      value:
-        settingsData?.showTurnDuration ??
-        DEFAULT_GLOBAL_CONFIG.showTurnDuration,
+      value: settingsData?.showTurnDuration ?? true,
       type: 'boolean' as const,
       onChange(showTurnDuration: boolean) {
         updateUserSettings({ showTurnDuration })
@@ -965,9 +953,7 @@ export function Config({
     {
       id: 'respectGitignore',
       label: 'Respect .gitignore in file picker',
-      value:
-        settingsData?.respectGitignore ??
-        DEFAULT_GLOBAL_CONFIG.respectGitignore,
+      value: settingsData?.respectGitignore ?? true,
       type: 'boolean' as const,
       onChange(respectGitignore: boolean) {
         updateUserSettings({ respectGitignore })
@@ -976,9 +962,7 @@ export function Config({
     {
       id: 'copyFullResponse',
       label: 'Always copy full response (skip /copy picker)',
-      value:
-        settingsData?.copyFullResponse ??
-        DEFAULT_GLOBAL_CONFIG.copyFullResponse,
+      value: settingsData?.copyFullResponse ?? false,
       type: 'boolean' as const,
       onChange(copyFullResponse: boolean) {
         updateUserSettings({ copyFullResponse })
@@ -1038,14 +1022,10 @@ export function Config({
         'notifications_disabled',
       ],
       type: 'enum',
-      onChange(notifChannel: GlobalConfig['preferredNotifChannel']) {
+      onChange(notifChannel: string) {
         updateUserSettings({
           preferredNotifChannel:
             notifChannel as SettingsJson['preferredNotifChannel'],
-        })
-        setGlobalConfig({
-          ...getGlobalConfig(),
-          preferredNotifChannel: notifChannel,
         })
       },
     },
@@ -1126,10 +1106,7 @@ export function Config({
     {
       id: 'editorMode',
       label: 'Editor mode',
-      value:
-        settingsData?.editorMode ??
-        DEFAULT_GLOBAL_CONFIG.editorMode ??
-        'normal',
+      value: settingsData?.editorMode ?? 'normal',
       options: ['normal', 'vim'],
       type: 'enum',
       onChange(editorMode: string) {
@@ -1333,11 +1310,8 @@ export function Config({
       )
     }
     const initialEditorMode =
-      initialSettingsData.current?.editorMode ??
-      DEFAULT_GLOBAL_CONFIG.editorMode ??
-      'normal'
-    const currentEditorMode =
-      settingsData?.editorMode ?? DEFAULT_GLOBAL_CONFIG.editorMode ?? 'normal'
+      initialSettingsData.current?.editorMode ?? 'normal'
+    const currentEditorMode = settingsData?.editorMode ?? 'normal'
     if (currentEditorMode !== initialEditorMode) {
       formattedChanges.push(
         `Set editor mode to ${chalk.bold(currentEditorMode)}`,
@@ -1366,11 +1340,8 @@ export function Config({
       )
     }
     const initialAutoCompactEnabled =
-      initialSettingsData.current?.autoCompactEnabled ??
-      DEFAULT_GLOBAL_CONFIG.autoCompactEnabled
-    const currentAutoCompactEnabled =
-      settingsData?.autoCompactEnabled ??
-      DEFAULT_GLOBAL_CONFIG.autoCompactEnabled
+      initialSettingsData.current?.autoCompactEnabled ?? true
+    const currentAutoCompactEnabled = settingsData?.autoCompactEnabled ?? true
     if (currentAutoCompactEnabled !== initialAutoCompactEnabled) {
       formattedChanges.push(
         `${currentAutoCompactEnabled ? 'Enabled' : 'Disabled'} auto-compact`,
@@ -1397,45 +1368,51 @@ export function Config({
       )
     }
     if (
-      globalConfig.respectGitignore !== initialConfig.current.respectGitignore
+      (settingsData?.respectGitignore ?? true) !==
+      (initialSettingsData.current?.respectGitignore ?? true)
     ) {
       formattedChanges.push(
-        `${globalConfig.respectGitignore ? 'Enabled' : 'Disabled'} respect .gitignore in file picker`,
+        `${(settingsData?.respectGitignore ?? true) ? 'Enabled' : 'Disabled'} respect .gitignore in file picker`,
       )
     }
     if (
-      globalConfig.copyFullResponse !== initialConfig.current.copyFullResponse
+      (settingsData?.copyFullResponse ?? false) !==
+      (initialSettingsData.current?.copyFullResponse ?? false)
     ) {
       formattedChanges.push(
-        `${globalConfig.copyFullResponse ? 'Enabled' : 'Disabled'} always copy full response`,
-      )
-    }
-    if (globalConfig.copyOnSelect !== initialConfig.current.copyOnSelect) {
-      formattedChanges.push(
-        `${globalConfig.copyOnSelect ? 'Enabled' : 'Disabled'} copy on select`,
+        `${(settingsData?.copyFullResponse ?? false) ? 'Enabled' : 'Disabled'} always copy full response`,
       )
     }
     if (
-      globalConfig.terminalProgressBarEnabled !==
-      initialConfig.current.terminalProgressBarEnabled
+      (settingsData?.copyOnSelect ?? true) !==
+      (initialSettingsData.current?.copyOnSelect ?? true)
     ) {
       formattedChanges.push(
-        `${globalConfig.terminalProgressBarEnabled ? 'Enabled' : 'Disabled'} terminal progress bar`,
+        `${(settingsData?.copyOnSelect ?? true) ? 'Enabled' : 'Disabled'} copy on select`,
       )
     }
     if (
-      globalConfig.showStatusInTerminalTab !==
-      initialConfig.current.showStatusInTerminalTab
+      (settingsData?.terminalProgressBarEnabled ?? true) !==
+      (initialSettingsData.current?.terminalProgressBarEnabled ?? true)
     ) {
       formattedChanges.push(
-        `${globalConfig.showStatusInTerminalTab ? 'Enabled' : 'Disabled'} terminal tab status`,
+        `${(settingsData?.terminalProgressBarEnabled ?? true) ? 'Enabled' : 'Disabled'} terminal progress bar`,
       )
     }
     if (
-      globalConfig.showTurnDuration !== initialConfig.current.showTurnDuration
+      (settingsData?.showStatusInTerminalTab ?? false) !==
+      (initialSettingsData.current?.showStatusInTerminalTab ?? false)
     ) {
       formattedChanges.push(
-        `${globalConfig.showTurnDuration ? 'Enabled' : 'Disabled'} turn duration`,
+        `${(settingsData?.showStatusInTerminalTab ?? false) ? 'Enabled' : 'Disabled'} terminal tab status`,
+      )
+    }
+    if (
+      (settingsData?.showTurnDuration ?? true) !==
+      (initialSettingsData.current?.showTurnDuration ?? true)
+    ) {
+      formattedChanges.push(
+        `${(settingsData?.showTurnDuration ?? true) ? 'Enabled' : 'Disabled'} turn duration`,
       )
     }
     if (
@@ -1454,13 +1431,18 @@ export function Config({
   }, [
     showSubmenu,
     changes,
-    globalConfig,
     mainLoopModel,
     currentLanguage,
     settingsData?.autoCompactEnabled,
     settingsData?.autoCompactPercentage,
     settingsData?.autoCompactBuffer,
     settingsData?.autoUpdatesChannel,
+    settingsData?.respectGitignore,
+    settingsData?.copyFullResponse,
+    settingsData?.copyOnSelect,
+    settingsData?.terminalProgressBarEnabled,
+    settingsData?.showStatusInTerminalTab,
+    settingsData?.showTurnDuration,
     isFastModeEnabled()
       ? (settingsData as Record<string, unknown> | undefined)?.fastMode
       : undefined,

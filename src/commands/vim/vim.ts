@@ -8,7 +8,7 @@ export const call: LocalCommandCall = async () => {
   let currentMode = getInitialSettings().editorMode ?? 'normal'
 
   // Handle backward compatibility - treat 'emacs' as 'normal'
-  if (currentMode === 'emacs') {
+  if ((currentMode as string) === 'emacs') {
     currentMode = 'normal'
   }
 

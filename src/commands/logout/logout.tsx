@@ -6,7 +6,6 @@ import {
 } from '../../services/api/grove.js'
 import { clearPolicyLimitsCache } from '../../services/policyLimits/index.js'
 import { clearRemoteManagedSettingsCache } from '../../services/remoteManagedSettings/index.js'
-import { flushTelemetry } from '../../utils/telemetry/instrumentation.js'
 import { getClaudeAIOAuthTokens, removeApiKey } from '../../utils/auth.js'
 import { clearBetasCaches } from '../../utils/betas.js'
 import { gracefulShutdownSync } from '../../utils/gracefulShutdown.js'
@@ -17,9 +16,6 @@ import { resetUserCache } from '../../utils/user.js'
 export async function performLogout({
   clearOnboarding = false,
 }): Promise<void> {
-  // Flush telemetry BEFORE clearing credentials to prevent org data leakage
-  await flushTelemetry()
-
   await removeApiKey()
 
   // Wipe all secure storage data on logout

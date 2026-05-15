@@ -173,10 +173,3 @@ export const init = memoize(async (): Promise<void> => {
     }
   }
 })
-
-/**
- * The OSS build does not initialize product telemetry after trust.
- */
-export function initializeTelemetryAfterTrust(): void {
-  return
-}

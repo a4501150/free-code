@@ -667,6 +667,11 @@ export type Attachment =
       warningCount: number
       sample: string
     }
+  | {
+      type: 'companion_intro'
+      name: string
+      species: string
+    }
 
 export type TeammateMailboxAttachment = {
   type: 'teammate_mailbox'

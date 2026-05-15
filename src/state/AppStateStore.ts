@@ -71,7 +71,7 @@ export type SpeculationState =
 
 export const IDLE_SPECULATION_STATE: SpeculationState = { status: 'idle' }
 
-export type FooterItem = 'tasks' | 'tmux' | 'bagel' | 'teams'
+export type FooterItem = 'tasks' | 'tmux' | 'bagel' | 'teams' | 'companion'
 
 export type AppState = DeepImmutable<{
   settings: SettingsJson
@@ -95,6 +95,8 @@ export type AppState = DeepImmutable<{
   footerSelection: FooterItem | null
   toolPermissionContext: ToolPermissionContext
   spinnerTip?: string
+  companionReaction?: string
+  companionPetAt?: number
   // Agent name from --agent CLI flag or settings (for logo display)
   agent: string | undefined
   // Assistant mode fully enabled (settings + gate check + trust).

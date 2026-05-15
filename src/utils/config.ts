@@ -129,6 +129,13 @@ export type GlobalConfig = {
   userID?: string
   firstStartTime?: string
   mcpServers?: Record<string, McpServerConfig>
+  oauthAccount?: { accountUuid?: string }
+  companion?: { name: string; personality: string; hatchedAt: number }
+  companionMuted?: boolean
+  customApiKeyResponses?: {
+    approved?: string[]
+    rejected?: string[]
+  }
 }
 
 /**
