@@ -155,7 +155,7 @@ export function AssistantToolUseMessage({
   if (!rawInput) return null
   const renderedToolUseMessage = renderToolCallParams(
     rawInput,
-    toolCallDisplay,
+    toolCallDisplay ?? 'compact',
     tool.compactParamKeys,
   )
   const isStreamingInput = isQueued && renderedToolUseMessage === ''

@@ -361,6 +361,41 @@ describe('Tool Use E2E', () => {
   })
 
   describe('Tool Header Display', () => {
+    test('Edit tool compact mode shows only file_path', async () => {
+      session = new TmuxSession({ serverUrl: server.url })
+      await session.start()
+
+      const editFile = join(session.cwd, 'compact-edit.txt')
+      await writeFile(editFile, 'alpha beta gamma')
+
+      // Read first (required before Edit), then Edit
+      server.reset([
+        toolUseResponse([
+          { name: 'Read', input: { file_path: editFile } },
+        ]),
+        toolUseResponse([
+          {
+            name: 'Edit',
+            input: {
+              file_path: editFile,
+              old_string: 'beta',
+              new_string: 'BETA',
+              replace_all: false,
+            },
+          },
+        ]),
+        textResponse('Edit applied'),
+      ])
+      const screen = await session.submitAndApprove('Edit the file', 60_000)
+
+      // In compact mode (default), the header should show only file_path,
+      // NOT replace_all or old_string.
+      expect(screen).not.toContain('replace_all')
+      expect(screen).not.toContain('old_string')
+      // The header should show "Update(file_path: ...)"
+      expect(screen).toMatch(/Update\(file_path:/)
+    })
+
     test('tool name and params have no space between them', async () => {
       session = new TmuxSession({ serverUrl: server.url })
       await session.start()
