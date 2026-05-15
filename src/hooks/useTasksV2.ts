@@ -4,7 +4,7 @@ import { useAppState, useSetAppState } from '../state/AppState.js'
 import { createSignal } from '../utils/signal.js'
 import type { Task } from '../utils/tasks.js'
 import {
-  getTaskListId,
+  getMainTaskListId,
   getTasksDir,
   listTasks,
   onTasksUpdated,
@@ -110,7 +110,7 @@ class TasksV2Store {
   }
 
   #fetch = async (): Promise<void> => {
-    const taskListId = getTaskListId()
+    const taskListId = getMainTaskListId()
     // Task list ID can change mid-session (TeamCreateTool sets
     // leaderTeamName) — point the watcher at the current dir.
     this.#rewatch(getTasksDir(taskListId))
@@ -154,7 +154,7 @@ class TasksV2Store {
     this.#hideTimer = null
     // Bail if the task list ID changed since scheduling (team created/deleted
     // during the 5s window) — don't reset the wrong list.
-    const currentId = getTaskListId()
+    const currentId = getMainTaskListId()
     if (currentId !== scheduledForTaskListId) return
     // Verify all tasks are still completed before clearing
     void listTasks(currentId).then(async tasksToCheck => {
