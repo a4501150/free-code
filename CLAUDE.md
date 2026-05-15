@@ -83,6 +83,10 @@ Anthropic attribution uses a fingerprint derived from the first API user message
 
 The codex `/v1/responses` adapter intentionally handles llama.cpp event-order differences for reasoning blocks, missing function-call argument done events, reasoning metadata side-channel deltas, and parallel tool-call item ordering. Do not simplify these state-machine branches without running the codex adapter unit tests and checking [src/services/api/codex-fetch-adapter.ts](src/services/api/codex-fetch-adapter.ts), [src/services/api/claude.ts](src/services/api/claude.ts), and [tests/unit/](tests/unit/).
 
+### UI task store must bypass AsyncLocalStorage agent context
+
+`TasksV2Store` in [src/hooks/useTasksV2.ts](src/hooks/useTasksV2.ts) must use `getMainTaskListId()`, not `getTaskListId()`. Signals like `notifyTasksUpdated()` fire inside the subagent's `AsyncLocalStorage` scope, and `setTimeout` inherits that context — causing the main UI to fetch from the wrong task list directory.
+
 ### ScrollBox children should not rely on percentage height
 
 Inside ScrollBox content, a Yoga node with percentage height can collapse after culling and re-entry. Prefer an explicit minimum height or stretch with no shrink for divider-like children. See [src/components/LogoV2/LogoV2.tsx](src/components/LogoV2/LogoV2.tsx) for the current pattern.
