@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { type ReactNode, useEffect } from 'react'
+import { type ReactNode } from 'react'
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { stringWidth } from '../../ink/stringWidth.js'
@@ -17,16 +17,6 @@ import { renderModelSetting } from '../../utils/model/model.js'
 import { OffscreenFreeze } from '../OffscreenFreeze.js'
 import { AnimatedClawd } from './AnimatedClawd.js'
 import { Clawd } from './Clawd.js'
-import {
-  GuestPassesUpsell,
-  incrementGuestPassesSeenCount,
-  useShowGuestPassesUpsell,
-} from './GuestPassesUpsell.js'
-import {
-  incrementOverageCreditUpsellSeenCount,
-  OverageCreditUpsell,
-  useShowOverageCreditUpsell,
-} from './OverageCreditUpsell.js'
 
 export function CondensedLogo(): ReactNode {
   const { columns } = useTerminalSize()
@@ -42,21 +32,6 @@ export function CondensedLogo(): ReactNode {
 
   // Prefer AppState.agent (set from --agent CLI flag) over settings
   const agentName = agent ?? agentNameFromSettings
-  const showGuestPassesUpsell = useShowGuestPassesUpsell()
-  const showOverageCreditUpsell = useShowOverageCreditUpsell()
-
-  useEffect(() => {
-    if (showGuestPassesUpsell) {
-      incrementGuestPassesSeenCount()
-    }
-  }, [showGuestPassesUpsell])
-
-  useEffect(() => {
-    if (showOverageCreditUpsell && !showGuestPassesUpsell) {
-      incrementOverageCreditUpsellSeenCount()
-    }
-  }, [showOverageCreditUpsell, showGuestPassesUpsell])
-
   // Calculate available width for text content
   // Account for: condensed clawd width (11 chars) + gap (2) + padding (2) = 15 chars
   const textWidth = Math.max(columns - 15, 20)
@@ -112,10 +87,6 @@ export function CondensedLogo(): ReactNode {
           <Text dimColor>
             {agentName ? `@${agentName} · ${truncatedCwd}` : truncatedCwd}
           </Text>
-          {showGuestPassesUpsell && <GuestPassesUpsell />}
-          {!showGuestPassesUpsell && showOverageCreditUpsell && (
-            <OverageCreditUpsell maxWidth={textWidth} twoLine />
-          )}
         </Box>
       </Box>
     </OffscreenFreeze>

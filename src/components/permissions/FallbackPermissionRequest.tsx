@@ -1,11 +1,12 @@
 import React, { useCallback, useMemo } from 'react'
 import { getOriginalCwd } from '../../bootstrap/state.js'
 import { Box, Text, useTheme } from '../../ink.js'
-import { env } from '../../utils/env.js'
 import { shouldShowAlwaysAllowOptions } from '../../utils/permissions/permissionsLoader.js'
 import { truncateToLines } from '../../utils/stringUtils.js'
-import { logUnaryEvent } from '../../utils/unaryLogging.js'
-import { type UnaryEvent, usePermissionRequestLogging } from './hooks.js'
+import {
+  type PermissionRequestEvent,
+  usePermissionRequestLogging,
+} from './hooks.js'
 import { PermissionDialog } from './PermissionDialog.js'
 import {
   PermissionPrompt,
@@ -33,7 +34,7 @@ export function FallbackPermissionRequest({
     ? originalUserFacingName.slice(0, -6)
     : originalUserFacingName
 
-  const unaryEvent = useMemo<UnaryEvent>(
+  const permissionEvent = useMemo<PermissionRequestEvent>(
     () => ({
       completion_type: 'tool_use_single',
       language_name: 'none',
@@ -41,35 +42,16 @@ export function FallbackPermissionRequest({
     [],
   )
 
-  usePermissionRequestLogging(toolUseConfirm, unaryEvent)
+  usePermissionRequestLogging(toolUseConfirm, permissionEvent)
 
   const handleSelect = useCallback(
     (value: FallbackOptionValue, feedback?: string) => {
       switch (value) {
         case 'yes':
-          void logUnaryEvent({
-            completion_type: 'tool_use_single',
-            event: 'accept',
-            metadata: {
-              language_name: 'none',
-              message_id: toolUseConfirm.assistantMessage.message.id,
-              platform: env.platform,
-            },
-          })
           toolUseConfirm.onAllow(toolUseConfirm.input, [], feedback)
           onDone()
           break
         case 'yes-dont-ask-again': {
-          void logUnaryEvent({
-            completion_type: 'tool_use_single',
-            event: 'accept',
-            metadata: {
-              language_name: 'none',
-              message_id: toolUseConfirm.assistantMessage.message.id,
-              platform: env.platform,
-            },
-          })
-
           toolUseConfirm.onAllow(toolUseConfirm.input, [
             {
               type: 'addRules',
@@ -86,15 +68,6 @@ export function FallbackPermissionRequest({
           break
         }
         case 'no':
-          void logUnaryEvent({
-            completion_type: 'tool_use_single',
-            event: 'reject',
-            metadata: {
-              language_name: 'none',
-              message_id: toolUseConfirm.assistantMessage.message.id,
-              platform: env.platform,
-            },
-          })
           toolUseConfirm.onReject(feedback)
           onReject()
           onDone()
@@ -105,15 +78,6 @@ export function FallbackPermissionRequest({
   )
 
   const handleCancel = useCallback(() => {
-    void logUnaryEvent({
-      completion_type: 'tool_use_single',
-      event: 'reject',
-      metadata: {
-        language_name: 'none',
-        message_id: toolUseConfirm.assistantMessage.message.id,
-        platform: env.platform,
-      },
-    })
     toolUseConfirm.onReject()
     onReject()
     onDone()

@@ -10,7 +10,6 @@ import {
   safeResolvePath,
 } from '../../../utils/fsOperations.js'
 import { expandPath } from '../../../utils/path.js'
-import type { CompletionType } from '../../../utils/unaryLogging.js'
 import { Select } from '../../CustomSelect/index.js'
 import { ShowInIDEPrompt } from '../../ShowInIDEPrompt.js'
 import { usePermissionRequestLogging } from '../hooks.js'
@@ -41,7 +40,7 @@ export type FilePermissionDialogProps<T extends ToolInput = ToolInput> = {
   content?: React.ReactNode // Can be general content or diff component
 
   // Logging
-  completionType?: CompletionType
+  completionType?: string
   languageName?: string // override — derived from path when omitted
 
   // File/directory operations
@@ -74,21 +73,20 @@ export function FilePermissionDialog<T extends ToolInput = ToolInput>({
   languageName: languageNameOverride,
 }: FilePermissionDialogProps<T>): React.ReactNode {
   // Derive from path unless caller provided an explicit override.
-  // getLanguageName is async; downstream UnaryEvent.language_name and
-  // logPermissionEvent already accept Promise<string>. useMemo keeps the
-  // promise stable across renders.
+  // getLanguageName is async; downstream permission handling accepts
+  // Promise<string>. useMemo keeps the promise stable across renders.
   const languageName = useMemo(
     () => languageNameOverride ?? (path ? getLanguageName(path) : 'none'),
     [languageNameOverride, path],
   )
-  const unaryEvent = useMemo(
+  const permissionEvent = useMemo(
     () => ({
       completion_type: completionType,
       language_name: languageName,
     }),
     [completionType, languageName],
   )
-  usePermissionRequestLogging(toolUseConfirm, unaryEvent)
+  usePermissionRequestLogging(toolUseConfirm, permissionEvent)
 
   const symlinkTarget = useMemo(() => {
     if (!path || operationType === 'read') {

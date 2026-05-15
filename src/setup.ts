@@ -18,7 +18,6 @@ import { getCommands } from './commands.js'
 import { initSessionMemory } from './services/SessionMemory/sessionMemory.js'
 import { asSessionId } from './types/ids.js'
 import { isAgentSwarmsEnabled } from './utils/agentSwarmsEnabled.js'
-import { checkAndRestoreTerminalBackup } from './utils/appleTerminalBackup.js'
 import { prefetchApiKeyFromApiKeyHelperIfSafe } from './utils/auth.js'
 import { clearMemoryFileCaches } from './utils/claudemd.js'
 import { getCurrentProjectConfig } from './utils/config.js'
@@ -34,7 +33,6 @@ import {
   updateHooksConfigSnapshot,
 } from './utils/hooks/hooksConfigSnapshot.js'
 import { hasWorktreeCreateHook } from './utils/hooks.js'
-import { checkAndRestoreITerm2Backup } from './utils/iTermBackup.js'
 import { logError } from './utils/log.js'
 import { getRecentActivity } from './utils/logoV2Utils.js'
 import type { PermissionMode } from './utils/permissions/PermissionMode.js'
@@ -81,54 +79,6 @@ export async function setup(
   // Teammate snapshot — SIMPLE-only gate (swarm not used in bare)
   if (!isBareMode() && isAgentSwarmsEnabled()) {
     captureTeammateModeSnapshot()
-  }
-
-  // Terminal backup restoration — interactive only. Print mode doesn't
-  // interact with terminal settings; the next interactive session will
-  // detect and restore any interrupted setup.
-  if (!getIsNonInteractiveSession()) {
-    // iTerm2 backup check only when swarms enabled
-    if (isAgentSwarmsEnabled()) {
-      const restoredIterm2Backup = await checkAndRestoreITerm2Backup()
-      if (restoredIterm2Backup.status === 'restored') {
-        // biome-ignore lint/suspicious/noConsole:: intentional console output
-        console.log(
-          chalk.yellow(
-            'Detected an interrupted iTerm2 setup. Your original settings have been restored. You may need to restart iTerm2 for the changes to take effect.',
-          ),
-        )
-      } else if (restoredIterm2Backup.status === 'failed') {
-        // biome-ignore lint/suspicious/noConsole:: intentional console output
-        console.error(
-          chalk.red(
-            `Failed to restore iTerm2 settings. Please manually restore your original settings with: defaults import com.googlecode.iterm2 ${restoredIterm2Backup.backupPath}.`,
-          ),
-        )
-      }
-    }
-
-    // Check and restore Terminal.app backup if setup was interrupted
-    try {
-      const restoredTerminalBackup = await checkAndRestoreTerminalBackup()
-      if (restoredTerminalBackup.status === 'restored') {
-        // biome-ignore lint/suspicious/noConsole:: intentional console output
-        console.log(
-          chalk.yellow(
-            'Detected an interrupted Terminal.app setup. Your original settings have been restored. You may need to restart Terminal.app for the changes to take effect.',
-          ),
-        )
-      } else if (restoredTerminalBackup.status === 'failed') {
-        // biome-ignore lint/suspicious/noConsole:: intentional console output
-        console.error(
-          chalk.red(
-            `Failed to restore Terminal.app settings. Please manually restore your original settings with: defaults import com.apple.Terminal ${restoredTerminalBackup.backupPath}.`,
-          ),
-        )
-      }
-    } catch (error) {
-      // Log but don't crash if Terminal.app backup restoration fails
-      logError(error)
-    }
   }
 
   // IMPORTANT: setCwd() must be called before any other code that depends on the cwd

@@ -4,10 +4,11 @@ import { getOriginalCwd } from '../../../bootstrap/state.js'
 import { Box, Text } from '../../../ink.js'
 import { SKILL_TOOL_NAME } from '../../../tools/SkillTool/constants.js'
 import { SkillTool } from '../../../tools/SkillTool/SkillTool.js'
-import { env } from '../../../utils/env.js'
 import { shouldShowAlwaysAllowOptions } from '../../../utils/permissions/permissionsLoader.js'
-import { logUnaryEvent } from '../../../utils/unaryLogging.js'
-import { type UnaryEvent, usePermissionRequestLogging } from '../hooks.js'
+import {
+  type PermissionRequestEvent,
+  usePermissionRequestLogging,
+} from '../hooks.js'
 import { PermissionDialog } from '../PermissionDialog.js'
 import {
   PermissionPrompt,
@@ -50,7 +51,7 @@ export function SkillPermissionRequest(
       ? toolUseConfirm.permissionResult.metadata.command
       : undefined
 
-  const unaryEvent = useMemo<UnaryEvent>(
+  const permissionEvent = useMemo<PermissionRequestEvent>(
     () => ({
       completion_type: 'tool_use_single',
       language_name: 'none',
@@ -58,7 +59,7 @@ export function SkillPermissionRequest(
     [],
   )
 
-  usePermissionRequestLogging(toolUseConfirm, unaryEvent)
+  usePermissionRequestLogging(toolUseConfirm, permissionEvent)
 
   const originalCwd = getOriginalCwd()
   const showAlwaysAllowOptions = shouldShowAlwaysAllowOptions()
@@ -123,29 +124,10 @@ export function SkillPermissionRequest(
     (value: SkillOptionValue, feedback?: string) => {
       switch (value) {
         case 'yes':
-          void logUnaryEvent({
-            completion_type: 'tool_use_single',
-            event: 'accept',
-            metadata: {
-              language_name: 'none',
-              message_id: toolUseConfirm.assistantMessage.message.id,
-              platform: env.platform,
-            },
-          })
           toolUseConfirm.onAllow(toolUseConfirm.input, [], feedback)
           onDone()
           break
         case 'yes-exact': {
-          void logUnaryEvent({
-            completion_type: 'tool_use_single',
-            event: 'accept',
-            metadata: {
-              language_name: 'none',
-              message_id: toolUseConfirm.assistantMessage.message.id,
-              platform: env.platform,
-            },
-          })
-
           toolUseConfirm.onAllow(toolUseConfirm.input, [
             {
               type: 'addRules',
@@ -163,16 +145,6 @@ export function SkillPermissionRequest(
           break
         }
         case 'yes-prefix': {
-          void logUnaryEvent({
-            completion_type: 'tool_use_single',
-            event: 'accept',
-            metadata: {
-              language_name: 'none',
-              message_id: toolUseConfirm.assistantMessage.message.id,
-              platform: env.platform,
-            },
-          })
-
           // Extract the skill prefix (everything before the first space)
           const spaceIndex = skill.indexOf(' ')
           const commandPrefix =
@@ -195,15 +167,6 @@ export function SkillPermissionRequest(
           break
         }
         case 'no':
-          void logUnaryEvent({
-            completion_type: 'tool_use_single',
-            event: 'reject',
-            metadata: {
-              language_name: 'none',
-              message_id: toolUseConfirm.assistantMessage.message.id,
-              platform: env.platform,
-            },
-          })
           toolUseConfirm.onReject(feedback)
           onReject()
           onDone()
@@ -214,15 +177,6 @@ export function SkillPermissionRequest(
   )
 
   const handleCancel = useCallback(() => {
-    void logUnaryEvent({
-      completion_type: 'tool_use_single',
-      event: 'reject',
-      metadata: {
-        language_name: 'none',
-        message_id: toolUseConfirm.assistantMessage.message.id,
-        platform: env.platform,
-      },
-    })
     toolUseConfirm.onReject()
     onReject()
     onDone()

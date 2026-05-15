@@ -13,9 +13,7 @@ import {
   detectPythonPackageManager,
   getPythonApiInstructions,
   installIt2,
-  markIt2SetupComplete,
   type PythonPackageManager,
-  setPreferTmuxOverIterm2,
   verifyIt2Setup,
 } from './backends/it2Setup.js'
 
@@ -66,7 +64,6 @@ export function It2SetupPrompt({
       setStep('verifying')
       void verifyIt2Setup().then(result => {
         if (result.success) {
-          markIt2SetupComplete()
           setStep('success')
           setTimeout(onDone, 1500, 'installed' as const)
         } else {
@@ -99,7 +96,6 @@ export function It2SetupPrompt({
 
   // Handle using tmux instead
   function handleUseTmux(): void {
-    setPreferTmuxOverIterm2(true)
     onDone('use-tmux')
   }
 
@@ -329,7 +325,6 @@ export function It2SetupPrompt({
                   setStep('verifying')
                   void verifyIt2Setup().then(result => {
                     if (result.success) {
-                      markIt2SetupComplete()
                       setStep('success')
                       setTimeout(onDone, 1500, 'installed' as const)
                     } else {

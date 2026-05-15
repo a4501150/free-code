@@ -370,9 +370,7 @@ describe('Tool Use E2E', () => {
 
       // Read first (required before Edit), then Edit
       server.reset([
-        toolUseResponse([
-          { name: 'Read', input: { file_path: editFile } },
-        ]),
+        toolUseResponse([{ name: 'Read', input: { file_path: editFile } }]),
         toolUseResponse([
           {
             name: 'Edit',

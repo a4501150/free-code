@@ -314,7 +314,6 @@ import {
   extractReadFilesFromMessages,
   extractBashToolsFromMessages,
 } from '../utils/queryHelpers.js'
-import { resetMicrocompactState } from '../services/compact/microCompact.js'
 import { runPostCompactCleanup } from '../services/compact/postCompactCleanup.js'
 import {
   provisionContentReplacementState,
@@ -401,7 +400,6 @@ import { activityManager } from '../utils/activityManager.js'
 import { createAbortController } from '../utils/abortController.js'
 import { MCPConnectionManager } from 'src/services/mcp/MCPConnectionManager.js'
 import { useAwaySummary } from 'src/hooks/useAwaySummary.js'
-import { useOfficialMarketplaceNotification } from 'src/hooks/useOfficialMarketplaceNotification.js'
 import type { Theme } from 'src/utils/theme.js'
 import { getTipToShowOnSpinner } from 'src/services/tips/tipScheduler.js'
 import {
@@ -420,10 +418,6 @@ import { useMcpConnectivityStatus } from 'src/hooks/notifs/useMcpConnectivitySta
 import { useAutoModeUnavailableNotification } from 'src/hooks/notifs/useAutoModeUnavailableNotification.js'
 import { AUTO_MODE_DESCRIPTION } from 'src/components/AutoModeOptInDialog.js'
 import { useLspInitializationNotification } from 'src/hooks/notifs/useLspInitializationNotification.js'
-import { useLspPluginRecommendation } from 'src/hooks/useLspPluginRecommendation.js'
-import { LspRecommendationMenu } from 'src/components/LspRecommendation/LspRecommendationMenu.js'
-import { useClaudeCodeHintRecommendation } from 'src/hooks/useClaudeCodeHintRecommendation.js'
-import { PluginHintMenu } from 'src/components/ClaudeCodeHint/PluginHintMenu.js'
 import { usePluginInstallationStatus } from 'src/hooks/notifs/usePluginInstallationStatus.js'
 import { usePluginAutoupdateNotification } from 'src/hooks/notifs/usePluginAutoupdateNotification.js'
 import { performStartupChecks } from 'src/utils/plugins/performStartupChecks.js'
@@ -433,7 +427,6 @@ import { useRateLimitWarningNotification } from 'src/hooks/notifs/useRateLimitWa
 import { useDeprecationWarningNotification } from 'src/hooks/notifs/useDeprecationWarningNotification.js'
 import { useNpmDeprecationNotification } from 'src/hooks/notifs/useNpmDeprecationNotification.js'
 import { useIDEStatusIndicator } from 'src/hooks/notifs/useIDEStatusIndicator.js'
-import { useCanSwitchToExistingSubscription } from 'src/hooks/notifs/useCanSwitchToExistingSubscription.js'
 import { useTeammateLifecycleNotification } from 'src/hooks/notifs/useTeammateShutdownNotification.js'
 import { useFastModeNotification } from 'src/hooks/notifs/useFastModeNotification.js'
 import type { HookProgress } from '../types/hooks.js'
@@ -964,7 +957,6 @@ export function REPL({
     useState<IDEExtensionInstallationStatus | null>(null)
   const [showIdeOnboarding, setShowIdeOnboarding] = useState(false)
   // notifications
-  useCanSwitchToExistingSubscription()
   useIDEStatusIndicator({ ideSelection, mcpClients, ideInstallationStatus })
   useMcpConnectivityStatus({ mcpClients })
   useAutoModeUnavailableNotification()
@@ -975,18 +967,8 @@ export function REPL({
   useFastModeNotification()
   useDeprecationWarningNotification(mainLoopModel)
   useNpmDeprecationNotification()
-  useOfficialMarketplaceNotification()
   useLspInitializationNotification()
   useTeammateLifecycleNotification()
-  const {
-    recommendation: lspRecommendation,
-    handleResponse: handleLspResponse,
-  } = useLspPluginRecommendation()
-  const {
-    recommendation: hintRecommendation,
-    handleResponse: handleHintResponse,
-  } = useClaudeCodeHintRecommendation()
-
   // Memoize the combined initial tools array to prevent reference changes
   const combinedInitialTools = useMemo(() => {
     return [...localTools, ...initialTools]
@@ -2185,13 +2167,6 @@ export function REPL({
 
     // Onboarding dialogs (special conditions)
     if (allowDialogsWithAnimation && showIdeOnboarding) return 'ide-onboarding'
-
-    // LSP plugin recommendation (lowest priority - non-blocking suggestion)
-    if (allowDialogsWithAnimation && lspRecommendation)
-      return 'lsp-recommendation'
-
-    // Plugin hint from CLI/SDK stderr (same priority band as LSP rec)
-    if (allowDialogsWithAnimation && hintRecommendation) return 'plugin-hint'
 
     return undefined
   }
@@ -4008,9 +3983,6 @@ export function REPL({
       setMessages(prev.slice(0, messageIndex))
       // Careful, this has to happen after setMessages
       setConversationId(randomUUID())
-      // Reset cached microcompact state so stale pinned cache edits
-      // don't reference tool_use_ids from truncated messages
-      resetMicrocompactState()
       // Restore state from the message we're rewinding to
       setAppState(prev => ({
         ...prev,
@@ -5440,26 +5412,6 @@ export function REPL({
                   />
                 )}
                 {exitFlow}
-
-                {focusedInputDialog === 'plugin-hint' && hintRecommendation && (
-                  <PluginHintMenu
-                    pluginName={hintRecommendation.pluginName}
-                    pluginDescription={hintRecommendation.pluginDescription}
-                    marketplaceName={hintRecommendation.marketplaceName}
-                    sourceCommand={hintRecommendation.sourceCommand}
-                    onResponse={handleHintResponse}
-                  />
-                )}
-
-                {focusedInputDialog === 'lsp-recommendation' &&
-                  lspRecommendation && (
-                    <LspRecommendationMenu
-                      pluginName={lspRecommendation.pluginName}
-                      pluginDescription={lspRecommendation.pluginDescription}
-                      fileExtension={lspRecommendation.fileExtension}
-                      onResponse={handleLspResponse}
-                    />
-                  )}
 
                 {mrRender()}
 

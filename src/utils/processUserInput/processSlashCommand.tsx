@@ -29,7 +29,6 @@ import { addInvokedSkill, getSessionId } from '../../bootstrap/state.js'
 import { COMMAND_MESSAGE_TAG, COMMAND_NAME_TAG } from '../../constants/xml.js'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import { buildPostCompactMessages } from '../../services/compact/compact.js'
-import { resetMicrocompactState } from '../../services/compact/microCompact.js'
 import type { Progress as AgentProgress } from '../../tools/AgentTool/AgentTool.js'
 import { runAgent } from '../../tools/AgentTool/runAgent.js'
 import { renderToolUseProgressMessage } from '../../tools/AgentTool/UI.js'
@@ -809,11 +808,8 @@ async function getMessagesForSlashCommand(
                 ...slashCommandMessages,
               ],
             }
-            // Reset microcompact state since full compact replaces all
-            // messages — old tool IDs are no longer relevant. Budget state
-            // (on toolUseContext) needs no reset: stale entries are inert
-            // (UUIDs never repeat, so they're never looked up).
-            resetMicrocompactState()
+            // Budget state (on toolUseContext) needs no reset: stale entries
+            // are inert (UUIDs never repeat, so they're never looked up).
             return {
               messages: buildPostCompactMessages(
                 compactionResultWithSlashMessages,

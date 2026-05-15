@@ -205,22 +205,3 @@ export function getPythonApiInstructions(): string[] {
     'After enabling, you may need to restart iTerm2.',
   ]
 }
-
-/**
- * Marks that it2 setup has been completed successfully.
- * This prevents showing the setup prompt again.
- */
-export function markIt2SetupComplete(): void {}
-
-/**
- * Marks that the user prefers to use tmux over iTerm2 split panes.
- * This prevents showing the setup prompt when in iTerm2.
- */
-export function setPreferTmuxOverIterm2(_prefer: boolean): void {}
-
-/**
- * Checks if the user prefers tmux over iTerm2 split panes.
- */
-export function getPreferTmuxOverIterm2(): boolean {
-  return false
-}

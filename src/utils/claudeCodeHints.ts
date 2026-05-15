@@ -140,9 +140,8 @@ function firstCommandToken(command: string): string {
 // every invocation would otherwise pile up). The dialog is shown at most
 // once per session; after that, setPendingHint becomes a no-op.
 //
-// Callers should gate before writing (installed? already shown? cap hit?) —
-// see maybeRecordPluginHint in hintRecommendation.ts for the plugin-type
-// gate. This module stays plugin-agnostic so future hint types can reuse
+// Callers should gate before writing (installed? already shown? cap hit?).
+// This module stays plugin-agnostic so future hint types can reuse
 // the same store.
 // ============================================================================
 

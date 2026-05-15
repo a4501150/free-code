@@ -209,10 +209,6 @@ type State = {
   // enabled, keep sending the header so cooldown enter/exit doesn't
   // double-bust the prompt cache. The `speed` body param stays dynamic.
   fastModeHeaderLatched: boolean | null
-  // Sticky-on latch for the cache-editing beta header. Once cached
-  // microcompact is first enabled, keep sending the header so mid-session
-  // settings toggles don't bust the prompt cache.
-  cacheEditingHeaderLatched: boolean | null
   // Current prompt ID (UUID) correlating a user prompt with subsequent OTel events
   promptId: string | null
   // Last API requestId for the main conversation chain (not subagents).
@@ -367,7 +363,6 @@ function getInitialState(): State {
     // Beta header latches (null = not yet triggered)
     afkModeHeaderLatched: null,
     fastModeHeaderLatched: null,
-    cacheEditingHeaderLatched: null,
     // Current prompt ID
     promptId: null,
     lastMainRequestId: undefined,
@@ -1545,14 +1540,6 @@ export function setFastModeHeaderLatched(v: boolean): void {
   STATE.fastModeHeaderLatched = v
 }
 
-export function getCacheEditingHeaderLatched(): boolean | null {
-  return STATE.cacheEditingHeaderLatched
-}
-
-export function setCacheEditingHeaderLatched(v: boolean): void {
-  STATE.cacheEditingHeaderLatched = v
-}
-
 /**
  * Reset beta header latches to null. Called on /clear and /compact so a
  * fresh conversation gets fresh header evaluation.
@@ -1560,7 +1547,6 @@ export function setCacheEditingHeaderLatched(v: boolean): void {
 export function clearBetaHeaderLatches(): void {
   STATE.afkModeHeaderLatched = null
   STATE.fastModeHeaderLatched = null
-  STATE.cacheEditingHeaderLatched = null
 }
 
 export function getPromptId(): string | null {

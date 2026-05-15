@@ -46,9 +46,6 @@ type PreviousState = {
   /** Overage state flip — should NOT break cache anymore (eligibility is
    *  latched session-stable in should1hCacheTTL). Tracked to verify the fix. */
   isUsingOverage: boolean
-  /** Cache-editing beta header presence — should NOT break cache anymore
-   *  (sticky-on latched in claude.ts). Tracked to verify the fix. */
-  cachedMCEnabled: boolean
   /** Resolved effort (env → options → model default). Goes into output_config
    *  or anthropic_internal.effort_override. */
   effortValue: string
@@ -74,7 +71,6 @@ type PendingChanges = {
   betasChanged: boolean
   autoModeChanged: boolean
   overageChanged: boolean
-  cachedMCChanged: boolean
   effortChanged: boolean
   extraBodyChanged: boolean
   addedToolCount: number
@@ -231,7 +227,6 @@ export type PromptStateSnapshot = {
   betas?: readonly string[]
   autoModeActive?: boolean
   isUsingOverage?: boolean
-  cachedMCEnabled?: boolean
   effortValue?: string | number
   extraBodyParams?: unknown
 }
@@ -253,7 +248,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
       betas = [],
       autoModeActive = false,
       isUsingOverage = false,
-      cachedMCEnabled = false,
       effortValue,
       extraBodyParams,
     } = snapshot
@@ -310,7 +304,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
         betas: sortedBetas,
         autoModeActive,
         isUsingOverage,
-        cachedMCEnabled,
         effortValue: effortStr,
         extraBodyHash,
         callCount: 1,
@@ -337,7 +330,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
       sortedBetas.some((b, i) => b !== prev.betas[i])
     const autoModeChanged = autoModeActive !== prev.autoModeActive
     const overageChanged = isUsingOverage !== prev.isUsingOverage
-    const cachedMCChanged = cachedMCEnabled !== prev.cachedMCEnabled
     const effortChanged = effortStr !== prev.effortValue
     const extraBodyChanged = extraBodyHash !== prev.extraBodyHash
 
@@ -351,7 +343,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
       betasChanged ||
       autoModeChanged ||
       overageChanged ||
-      cachedMCChanged ||
       effortChanged ||
       extraBodyChanged
     ) {
@@ -382,7 +373,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
         betasChanged,
         autoModeChanged,
         overageChanged,
-        cachedMCChanged,
         effortChanged,
         extraBodyChanged,
         addedToolCount: addedTools.length,
@@ -416,7 +406,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
     prev.betas = sortedBetas
     prev.autoModeActive = autoModeActive
     prev.isUsingOverage = isUsingOverage
-    prev.cachedMCEnabled = cachedMCEnabled
     prev.effortValue = effortStr
     prev.extraBodyHash = extraBodyHash
     prev.buildDiffableContent = lazyDiffableContent
@@ -544,9 +533,6 @@ export async function checkResponseForCacheBreak(
       }
       if (changes.overageChanged) {
         parts.push('overage state changed (TTL latched, no flip)')
-      }
-      if (changes.cachedMCChanged) {
-        parts.push('cached microcompact toggled')
       }
       if (changes.effortChanged) {
         parts.push(

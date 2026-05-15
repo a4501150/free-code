@@ -33,8 +33,7 @@ export function getCliHighlightPromise(): Promise<CliHighlight | null> {
 
 /**
  * eg. "foo/bar.ts" → "TypeScript". Reads highlight.js's language registry.
- * All callers are telemetry (OTel counter attributes, permission-dialog unary
- * events) — none block on this.
+ * All callers are telemetry or permission-dialog metadata — none block on this.
  */
 export async function getLanguageName(file_path: string): Promise<string> {
   const ext = extname(file_path).slice(1)

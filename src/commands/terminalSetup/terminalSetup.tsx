@@ -15,9 +15,7 @@ import type {
 } from '../../types/command.js'
 import {
   backupTerminalPreferences,
-  checkAndRestoreTerminalBackup,
   getTerminalPlistPath,
-  markTerminalSetupComplete,
 } from '../../utils/appleTerminalBackup.js'
 import { setupShellCompletion } from '../../utils/completionCache.js'
 import { env } from '../../utils/env.js'
@@ -434,8 +432,6 @@ async function enableOptionAsMetaForTerminal(
     // Flush the preferences cache
     await execFileNoThrow('killall', ['cfprefsd'])
 
-    markTerminalSetupComplete()
-
     return `${color(
       'success',
       theme,
@@ -445,23 +441,9 @@ async function enableOptionAsMetaForTerminal(
   } catch (error) {
     logError(error)
 
-    // Attempt to restore from backup
-    const restoreResult = await checkAndRestoreTerminalBackup()
-
-    const errorMessage = 'Failed to enable Option as Meta key for Terminal.app.'
-    if (restoreResult.status === 'restored') {
-      throw new Error(
-        `${errorMessage} Your settings have been restored from backup.`,
-      )
-    } else if (restoreResult.status === 'failed') {
-      throw new Error(
-        `${errorMessage} Restoring from backup failed, try manually with: defaults import com.apple.Terminal ${restoreResult.backupPath}`,
-      )
-    } else {
-      throw new Error(
-        `${errorMessage} No backup was available to restore from.`,
-      )
-    }
+    throw new Error(
+      'Failed to enable Option as Meta key for Terminal.app. No backup was available to restore from.',
+    )
   }
 }
 

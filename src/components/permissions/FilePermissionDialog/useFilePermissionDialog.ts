@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from 'react'
 import { useAppState } from 'src/state/AppState.js'
 import { useKeybindings } from '../../../keybindings/useKeybinding.js'
 import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpdateSchema.js'
-import type { CompletionType } from '../../../utils/unaryLogging.js'
 import type { ToolUseConfirm } from '../PermissionRequest.js'
 import {
   type FileOperationType,
@@ -21,7 +20,7 @@ export interface ToolInput {
 
 export type UseFilePermissionDialogProps<T extends ToolInput> = {
   filePath: string
-  completionType: CompletionType
+  completionType: string
   languageName: string | Promise<string>
   toolUseConfirm: ToolUseConfirm
   onDone: () => void
@@ -163,11 +162,6 @@ export function useFilePermissionDialog<T extends ToolInput>({
   // Handle Tab key toggling input mode for Yes/No options
   const handleInputModeToggle = useCallback(
     (value: string) => {
-      const analyticsProps = {
-        toolName: toolUseConfirm.tool.name,
-        isMcp: toolUseConfirm.tool.isMcp ?? false,
-      }
-
       if (value === 'yes') {
         if (yesInputMode) {
           setYesInputMode(false)
@@ -184,7 +178,7 @@ export function useFilePermissionDialog<T extends ToolInput>({
         }
       }
     },
-    [yesInputMode, noInputMode, toolUseConfirm],
+    [yesInputMode, noInputMode],
   )
 
   return {

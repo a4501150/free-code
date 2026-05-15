@@ -14,7 +14,6 @@ import { createInProcessBackend } from './InProcessBackend.js'
 // effect. They register their class via ./backendTypes at module init, so
 // subsequent calls to getTmuxBackendClass / getITermBackendClass resolve.
 import './ITermBackend.js'
-import { getPreferTmuxOverIterm2 } from './it2Setup.js'
 import { createPaneBackendExecutor } from './PaneBackendExecutor.js'
 import { getTeammateModeFromSnapshot } from './teammateModeSnapshot.js'
 import './TmuxBackend.js'
@@ -135,31 +134,23 @@ export async function detectAndGetBackend(): Promise<BackendDetectionResult> {
 
   // Priority 2: If in iTerm2, try to use native panes
   if (inITerm2) {
-    // Check if user previously chose to prefer tmux over iTerm2
-    const preferTmux = getPreferTmuxOverIterm2()
-    if (preferTmux) {
-      logForDebugging(
-        '[BackendRegistry] User prefers tmux over iTerm2, skipping iTerm2 detection',
-      )
-    } else {
-      const it2Available = await isIt2CliAvailable()
-      logForDebugging(
-        `[BackendRegistry] iTerm2 detected, it2 CLI available: ${it2Available}`,
-      )
+    const it2Available = await isIt2CliAvailable()
+    logForDebugging(
+      `[BackendRegistry] iTerm2 detected, it2 CLI available: ${it2Available}`,
+    )
 
-      if (it2Available) {
-        logForDebugging(
-          '[BackendRegistry] Selected: iterm2 (native iTerm2 with it2 CLI)',
-        )
-        const backend = createITermBackend()
-        cachedBackend = backend
-        cachedDetectionResult = {
-          backend,
-          isNative: true,
-          needsIt2Setup: false,
-        }
-        return cachedDetectionResult
+    if (it2Available) {
+      logForDebugging(
+        '[BackendRegistry] Selected: iterm2 (native iTerm2 with it2 CLI)',
+      )
+      const backend = createITermBackend()
+      cachedBackend = backend
+      cachedDetectionResult = {
+        backend,
+        isNative: true,
+        needsIt2Setup: false,
       }
+      return cachedDetectionResult
     }
 
     // In iTerm2 but it2 not available - check if tmux can be used as fallback
@@ -172,14 +163,12 @@ export async function detectAndGetBackend(): Promise<BackendDetectionResult> {
       logForDebugging(
         '[BackendRegistry] Selected: tmux (fallback in iTerm2, it2 setup recommended)',
       )
-      // Return tmux as fallback. Only signal it2 setup if the user hasn't already
-      // chosen to prefer tmux - otherwise they'd be re-prompted on every spawn.
       const backend = createTmuxBackend()
       cachedBackend = backend
       cachedDetectionResult = {
         backend,
         isNative: false,
-        needsIt2Setup: !preferTmux,
+        needsIt2Setup: true,
       }
       return cachedDetectionResult
     }

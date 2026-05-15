@@ -51,7 +51,6 @@ import type {
   SystemMemorySavedMessage,
   SystemMessage,
   SystemMessageLevel,
-  SystemMicrocompactBoundaryMessage,
   SystemPermissionRetryMessage,
   SystemScheduledTaskFireMessage,
   SystemStopHookSummaryMessage,
@@ -4202,34 +4201,6 @@ export function createCompactBoundaryMessage(
     ...(lastPreCompactMessageUuid && {
       logicalParentUuid: lastPreCompactMessageUuid,
     }),
-  }
-}
-
-export function createMicrocompactBoundaryMessage(
-  trigger: 'auto',
-  preTokens: number,
-  tokensSaved: number,
-  compactedToolIds: string[],
-  clearedAttachmentUUIDs: string[],
-): SystemMicrocompactBoundaryMessage {
-  logForDebugging(
-    `[microcompact] saved ~${formatTokens(tokensSaved)} tokens (cleared ${compactedToolIds.length} tool results)`,
-  )
-  return {
-    type: 'system',
-    subtype: 'microcompact_boundary',
-    content: 'Context microcompacted',
-    isMeta: false,
-    timestamp: new Date().toISOString(),
-    uuid: randomUUID(),
-    level: 'info',
-    microcompactMetadata: {
-      trigger,
-      preTokens,
-      tokensSaved,
-      compactedToolIds,
-      clearedAttachmentUUIDs,
-    },
   }
 }
 

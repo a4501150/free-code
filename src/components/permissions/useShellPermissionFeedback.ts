@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import type { ToolUseConfirm } from './PermissionRequest.js'
-import { logUnaryPermissionEvent } from './utils.js'
 
 /**
  * Shared feedback-mode state + handlers for shell permission dialogs (Bash,
@@ -44,11 +43,6 @@ export function useShellPermissionFeedback({
   function handleInputModeToggle(option: string) {
     // Notify that user is interacting with the dialog
     toolUseConfirm.onUserInteraction()
-    const analyticsProps = {
-      toolName: toolUseConfirm.tool.name,
-      isMcp: toolUseConfirm.tool.isMcp ?? false,
-    }
-
     if (option === 'yes') {
       if (yesInputMode) {
         setYesInputMode(false)
@@ -68,15 +62,6 @@ export function useShellPermissionFeedback({
 
   function handleReject(feedback?: string) {
     const trimmedFeedback = feedback?.trim()
-    const hasFeedback = !!trimmedFeedback
-
-    logUnaryPermissionEvent(
-      'tool_use_single',
-      toolUseConfirm,
-      'reject',
-      hasFeedback,
-    )
-
     if (trimmedFeedback) {
       toolUseConfirm.onReject(trimmedFeedback)
     } else {

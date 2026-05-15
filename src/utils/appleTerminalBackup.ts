@@ -3,19 +3,6 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { execFileNoThrow } from './execFileNoThrow.js'
 import { logError } from './log.js'
-export function markTerminalSetupInProgress(_backupPath: string): void {}
-
-export function markTerminalSetupComplete(): void {}
-
-function getTerminalRecoveryInfo(): {
-  inProgress: boolean
-  backupPath: string | null
-} {
-  return {
-    inProgress: false,
-    backupPath: null,
-  }
-}
 
 export function getTerminalPlistPath(): string {
   return join(homedir(), 'Library', 'Preferences', 'com.apple.Terminal.plist')
@@ -48,8 +35,6 @@ export async function backupTerminalPreferences(): Promise<string | null> {
       backupPath,
     ])
 
-    markTerminalSetupInProgress(backupPath)
-
     return backupPath
   } catch (error) {
     logError(error)
@@ -57,55 +42,10 @@ export async function backupTerminalPreferences(): Promise<string | null> {
   }
 }
 
-type RestoreResult =
-  | {
-      status: 'restored' | 'no_backup'
-    }
-  | {
-      status: 'failed'
-      backupPath: string
-    }
+type RestoreResult = {
+  status: 'no_backup'
+}
 
 export async function checkAndRestoreTerminalBackup(): Promise<RestoreResult> {
-  const { inProgress, backupPath } = getTerminalRecoveryInfo()
-  if (!inProgress) {
-    return { status: 'no_backup' }
-  }
-
-  if (!backupPath) {
-    markTerminalSetupComplete()
-    return { status: 'no_backup' }
-  }
-
-  try {
-    await stat(backupPath)
-  } catch {
-    markTerminalSetupComplete()
-    return { status: 'no_backup' }
-  }
-
-  try {
-    const { code } = await execFileNoThrow('defaults', [
-      'import',
-      'com.apple.Terminal',
-      backupPath,
-    ])
-
-    if (code !== 0) {
-      return { status: 'failed', backupPath }
-    }
-
-    await execFileNoThrow('killall', ['cfprefsd'])
-
-    markTerminalSetupComplete()
-    return { status: 'restored' }
-  } catch (restoreError) {
-    logError(
-      new Error(
-        `Failed to restore Terminal.app settings with: ${restoreError}`,
-      ),
-    )
-    markTerminalSetupComplete()
-    return { status: 'failed', backupPath }
-  }
+  return { status: 'no_backup' }
 }

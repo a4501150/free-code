@@ -86,7 +86,6 @@ const defaultFeatures = [
   'STREAMLINED_OUTPUT',
   'UNATTENDED_RETRY',
   // Tier 3: Settings / env var / file gated
-  'CACHED_MICROCOMPACT',
   'COORDINATOR_MODE',
   'KAIROS',
   'NEW_INIT',

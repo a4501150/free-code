@@ -7,12 +7,10 @@ import type {
 import { extractRules } from 'src/utils/permissions/PermissionUpdate.js'
 import { permissionRuleValueToString } from 'src/utils/permissions/permissionRuleParser.js'
 import type { ToolUseConfirm } from '../../components/permissions/PermissionRequest.js'
-import { env } from '../../utils/env.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
-import { type CompletionType, logUnaryEvent } from '../../utils/unaryLogging.js'
 
-export type UnaryEvent = {
-  completion_type: CompletionType
+export type PermissionRequestEvent = {
+  completion_type: string
   language_name: string | Promise<string>
 }
 
@@ -83,12 +81,11 @@ function decisionReasonToString(
 }
 
 /**
- * Logs permission request events using analytics and unary logging.
- * Handles both the analytics event and the unary event logging.
+ * Tracks permission request dialog lifetime state.
  */
 export function usePermissionRequestLogging(
   toolUseConfirm: ToolUseConfirm,
-  unaryEvent: UnaryEvent,
+  permissionEvent: PermissionRequestEvent,
 ): void {
   // Guard against effect re-firing if toolUseConfirm's object reference
   // changes during a single dialog's lifetime (e.g., parent re-renders with a
@@ -101,15 +98,5 @@ export function usePermissionRequestLogging(
       return
     }
     loggedToolUseID.current = toolUseConfirm.toolUseID
-
-    void logUnaryEvent({
-      completion_type: unaryEvent.completion_type,
-      event: 'response',
-      metadata: {
-        language_name: unaryEvent.language_name,
-        message_id: toolUseConfirm.assistantMessage.message.id,
-        platform: env.platform,
-      },
-    })
-  }, [toolUseConfirm, unaryEvent])
+  }, [toolUseConfirm, permissionEvent])
 }

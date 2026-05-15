@@ -15,7 +15,10 @@ import { extractRules } from '../../../utils/permissions/PermissionUpdate.js'
 import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpdateSchema.js'
 import { SandboxManager } from '../../../utils/sandbox/sandbox-adapter.js'
 import { Select } from '../../CustomSelect/select.js'
-import { type UnaryEvent, usePermissionRequestLogging } from '../hooks.js'
+import {
+  type PermissionRequestEvent,
+  usePermissionRequestLogging,
+} from '../hooks.js'
 import { PermissionDecisionDebugInfo } from '../PermissionDecisionDebugInfo.js'
 import { PermissionDialog } from '../PermissionDialog.js'
 import {
@@ -26,7 +29,6 @@ import type { PermissionRequestProps } from '../PermissionRequest.js'
 import { PermissionRuleExplanation } from '../PermissionRuleExplanation.js'
 import { SedEditPermissionRequest } from '../SedEditPermissionRequest/SedEditPermissionRequest.js'
 import { useShellPermissionFeedback } from '../useShellPermissionFeedback.js'
-import { logUnaryPermissionEvent } from '../utils.js'
 import { bashToolUseOptions } from './bashToolUseOptions.js'
 
 export function BashPermissionRequest(
@@ -207,12 +209,12 @@ function BashPermissionRequestInner({
     return { destructiveWarning, sandboxingEnabled, isSandboxed }
   }, [command, toolUseConfirm.input])
 
-  const unaryEvent = useMemo<UnaryEvent>(
+  const permissionEvent = useMemo<PermissionRequestEvent>(
     () => ({ completion_type: 'tool_use_single', language_name: 'none' }),
     [],
   )
 
-  usePermissionRequestLogging(toolUseConfirm, unaryEvent)
+  usePermissionRequestLogging(toolUseConfirm, permissionEvent)
 
   const options = useMemo(
     () =>
@@ -248,7 +250,6 @@ function BashPermissionRequestInner({
   function onSelect(value: string) {
     if (value === 'yes-prefix-edited') {
       const trimmedPrefix = (editablePrefix ?? '').trim()
-      logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept')
       if (!trimmedPrefix) {
         toolUseConfirm.onAllow(toolUseConfirm.input, [])
       } else {
@@ -274,8 +275,6 @@ function BashPermissionRequestInner({
     switch (value) {
       case 'yes': {
         const trimmedFeedback = acceptFeedback.trim()
-        logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept')
-        // Log accept submission with feedback context
         toolUseConfirm.onAllow(
           toolUseConfirm.input,
           [],
@@ -285,7 +284,6 @@ function BashPermissionRequestInner({
         break
       }
       case 'yes-apply-suggestions': {
-        logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept')
         // Extract suggestions if present (works for both 'ask' and 'passthrough' behaviors)
         const permissionUpdates =
           'suggestions' in toolUseConfirm.permissionResult
@@ -297,8 +295,6 @@ function BashPermissionRequestInner({
       }
       case 'no': {
         const trimmedFeedback = rejectFeedback.trim()
-
-        // Log reject submission with feedback context
 
         // Process rejection (with or without feedback)
         handleReject(trimmedFeedback || undefined)

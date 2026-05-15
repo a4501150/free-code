@@ -8,7 +8,10 @@ import { isAllowlistedCommand } from '../../../tools/PowerShellTool/readOnlyVali
 import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpdateSchema.js'
 import { getCompoundCommandPrefixesStatic } from '../../../utils/powershell/staticPrefix.js'
 import { Select } from '../../CustomSelect/select.js'
-import { type UnaryEvent, usePermissionRequestLogging } from '../hooks.js'
+import {
+  type PermissionRequestEvent,
+  usePermissionRequestLogging,
+} from '../hooks.js'
 import { PermissionDecisionDebugInfo } from '../PermissionDecisionDebugInfo.js'
 import { PermissionDialog } from '../PermissionDialog.js'
 import {
@@ -18,7 +21,6 @@ import {
 import type { PermissionRequestProps } from '../PermissionRequest.js'
 import { PermissionRuleExplanation } from '../PermissionRuleExplanation.js'
 import { useShellPermissionFeedback } from '../useShellPermissionFeedback.js'
-import { logUnaryPermissionEvent } from '../utils.js'
 import { powershellToolUseOptions } from './powershellToolUseOptions.js'
 
 export function PowerShellPermissionRequest(
@@ -104,12 +106,12 @@ export function PowerShellPermissionRequest(
     setEditablePrefix(value)
   }, [])
 
-  const unaryEvent = useMemo<UnaryEvent>(
+  const permissionEvent = useMemo<PermissionRequestEvent>(
     () => ({ completion_type: 'tool_use_single', language_name: 'none' }),
     [],
   )
 
-  usePermissionRequestLogging(toolUseConfirm, unaryEvent)
+  usePermissionRequestLogging(toolUseConfirm, permissionEvent)
 
   const options = useMemo(
     () =>
@@ -143,17 +145,8 @@ export function PowerShellPermissionRequest(
   })
 
   function onSelect(value: string) {
-    // Map options to numeric values for analytics (strings not allowed in logEvent)
-    const optionIndex: Record<string, number> = {
-      yes: 1,
-      'yes-apply-suggestions': 2,
-      'yes-prefix-edited': 2,
-      no: 3,
-    }
-
     if (value === 'yes-prefix-edited') {
       const trimmedPrefix = (editablePrefix ?? '').trim()
-      logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept')
       if (!trimmedPrefix) {
         toolUseConfirm.onAllow(toolUseConfirm.input, [])
       } else {
@@ -179,8 +172,6 @@ export function PowerShellPermissionRequest(
     switch (value) {
       case 'yes': {
         const trimmedFeedback = acceptFeedback.trim()
-        logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept')
-        // Log accept submission with feedback context
         toolUseConfirm.onAllow(
           toolUseConfirm.input,
           [],
@@ -190,7 +181,6 @@ export function PowerShellPermissionRequest(
         break
       }
       case 'yes-apply-suggestions': {
-        logUnaryPermissionEvent('tool_use_single', toolUseConfirm, 'accept')
         // Extract suggestions if present (works for both 'ask' and 'passthrough' behaviors)
         const permissionUpdates =
           'suggestions' in toolUseConfirm.permissionResult
@@ -202,8 +192,6 @@ export function PowerShellPermissionRequest(
       }
       case 'no': {
         const trimmedFeedback = rejectFeedback.trim()
-
-        // Log reject submission with feedback context
 
         // Process rejection (with or without feedback)
         handleReject(trimmedFeedback || undefined)

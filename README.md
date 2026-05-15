@@ -283,7 +283,6 @@ The default build enables the production-supported flags in `defaultFeatures`; `
 | `AGENT_TRIGGERS`              | Local cron/trigger tools for background automation |
 | `EXTRACT_MEMORIES`            | Post-query automatic memory extraction             |
 | `COMPACTION_REMINDERS`        | Smart reminders around context compaction          |
-| `CACHED_MICROCOMPACT`         | Cached microcompact state through query flows      |
 | `TEAMMEM`                     | Team-memory files and watcher hooks                |
 | `AGENT_MEMORY_SNAPSHOT`       | Custom-agent memory snapshot state                 |
 | `VERIFY_PLAN`                 | Manual-only plan verification tooling              |

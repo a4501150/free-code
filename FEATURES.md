@@ -32,7 +32,6 @@ These are included in the default feature list.
 
 ### Runtime/settings behavior
 
-- `CACHED_MICROCOMPACT` — enables cached microcompact state through query and API flows.
 - `COORDINATOR_MODE` — enables coordinator mode, coordinator tool filtering, task-list automation, and the built-in `worker` agent provider.
 - `KAIROS` — enables proactive assistant-mode behavior, including brief UX, channel notices/callbacks, and push notification surfaces; runtime activation is controlled by assistant mode and related settings.
 - `NEW_INIT` — enables the newer `/init` decision path.
