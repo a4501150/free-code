@@ -1,13 +1,23 @@
-import React, { type ReactNode, useEffect, useRef, useState } from 'react'
+import React, {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 // eslint-disable-next-line custom-rules/prefer-use-keybindings -- UP arrow exit not in Attachments bindings
 import { Box, Text, useInput } from '../../ink.js'
+import type { ClickEvent } from '../../ink/events/click-event.js'
+import { stringWidth } from '../../ink/stringWidth.js'
 import {
   useKeybinding,
   useKeybindings,
 } from '../../keybindings/useKeybinding.js'
 import type { PastedContent } from '../../utils/config.js'
+import { Cursor } from '../../utils/Cursor.js'
 import { getImageFromClipboard } from '../../utils/imagePaste.js'
 import type { ImageDimensions } from '../../utils/imageResizer.js'
+import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { ClickableImageRef } from '../ClickableImageRef.js'
 import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js'
 import { Byline } from '../design-system/Byline.js'
@@ -242,6 +252,55 @@ export function SelectInputOption<T>({
     }
   }, [isFocused, imagesSelected, onImagesSelectedChange])
 
+  // Dynamic columns: use terminal width minus known chrome instead of
+  // hardcoded 80. Chrome = ListItem indicator+gap (2) + index prefix
+  // (maxIndexWidth+2). For showLabel branches, also subtract the label
+  // and separator widths.
+  const { columns: terminalColumns } = useTerminalSize()
+  const chromeWidth = maxIndexWidth + 4 // 2 (indicator+gap) + maxIndexWidth + 2 (index pad)
+  const labelChrome =
+    showLabel && isFocused
+      ? stringWidth(
+          typeof option.label === 'string' ? option.label : '',
+        ) + stringWidth(option.labelValueSeparator ?? ', ')
+      : 0
+  const textInputColumns = Math.max(20, terminalColumns - chromeWidth - labelChrome)
+
+  const handleInputClick = useCallback(
+    (e: ClickEvent) => {
+      if (!isFocused || imagesSelected) return
+      const c = Cursor.fromText(inputValue, textInputColumns, cursorOffset)
+      const offset = c.measuredText.getOffsetFromPosition({
+        line: e.localRow,
+        column: e.localCol,
+      })
+      setCursorOffset(offset)
+    },
+    [isFocused, imagesSelected, inputValue, textInputColumns, cursorOffset],
+  )
+
+  const handleChange = useCallback(
+    (value: string) => {
+      isUserEditing.current = true
+      onInputChange(value)
+      option.onChange(value)
+    },
+    [onInputChange, option],
+  )
+
+  const handlePaste = useCallback(
+    (pastedText: string) => {
+      isUserEditing.current = true
+      const before = inputValue.slice(0, cursorOffset)
+      const after = inputValue.slice(cursorOffset)
+      const newValue = before + pastedText + after
+      onInputChange(newValue)
+      option.onChange(newValue)
+      setCursorOffset(before.length + pastedText.length)
+    },
+    [inputValue, cursorOffset, onInputChange, option],
+  )
+
   const descriptionPaddingLeft =
     layout === 'expanded' ? maxIndexWidth + 3 : maxIndexWidth + 4
 
@@ -270,33 +329,27 @@ export function SelectInputOption<T>({
                   <Text color="suggestion">
                     {option.labelValueSeparator ?? ', '}
                   </Text>
-                  <TextInput
-                    value={inputValue}
-                    onChange={value => {
-                      isUserEditing.current = true
-                      onInputChange(value)
-                      option.onChange(value)
-                    }}
-                    onSubmit={onSubmit}
-                    onExit={onExit}
-                    placeholder={option.placeholder}
-                    focus={!imagesSelected}
-                    showCursor={true}
-                    multiline={true}
-                    cursorOffset={cursorOffset}
-                    onChangeCursorOffset={setCursorOffset}
-                    columns={80}
-                    onImagePaste={onImagePaste}
-                    onPaste={(pastedText: string) => {
-                      isUserEditing.current = true
-                      const before = inputValue.slice(0, cursorOffset)
-                      const after = inputValue.slice(cursorOffset)
-                      const newValue = before + pastedText + after
-                      onInputChange(newValue)
-                      option.onChange(newValue)
-                      setCursorOffset(before.length + pastedText.length)
-                    }}
-                  />
+                  <Box
+                    flexGrow={1}
+                    flexShrink={1}
+                    onClick={handleInputClick}
+                  >
+                    <TextInput
+                      value={inputValue}
+                      onChange={handleChange}
+                      onSubmit={onSubmit}
+                      onExit={onExit}
+                      placeholder={option.placeholder}
+                      focus={!imagesSelected}
+                      showCursor={true}
+                      multiline={true}
+                      cursorOffset={cursorOffset}
+                      onChangeCursorOffset={setCursorOffset}
+                      columns={textInputColumns}
+                      onImagePaste={onImagePaste}
+                      onPaste={handlePaste}
+                    />
+                  </Box>
                 </>
               ) : (
                 inputValue && (
@@ -308,36 +361,26 @@ export function SelectInputOption<T>({
               )}
             </>
           ) : isFocused ? (
-            <TextInput
-              value={inputValue}
-              onChange={value => {
-                isUserEditing.current = true
-                onInputChange(value)
-                option.onChange(value)
-              }}
-              onSubmit={onSubmit}
-              onExit={onExit}
-              placeholder={
-                option.placeholder ||
-                (typeof option.label === 'string' ? option.label : undefined)
-              }
-              focus={!imagesSelected}
-              showCursor={true}
-              multiline={true}
-              cursorOffset={cursorOffset}
-              onChangeCursorOffset={setCursorOffset}
-              columns={80}
-              onImagePaste={onImagePaste}
-              onPaste={(pastedText: string) => {
-                isUserEditing.current = true
-                const before = inputValue.slice(0, cursorOffset)
-                const after = inputValue.slice(cursorOffset)
-                const newValue = before + pastedText + after
-                onInputChange(newValue)
-                option.onChange(newValue)
-                setCursorOffset(before.length + pastedText.length)
-              }}
-            />
+            <Box flexGrow={1} flexShrink={1} onClick={handleInputClick}>
+              <TextInput
+                value={inputValue}
+                onChange={handleChange}
+                onSubmit={onSubmit}
+                onExit={onExit}
+                placeholder={
+                  option.placeholder ||
+                  (typeof option.label === 'string' ? option.label : undefined)
+                }
+                focus={!imagesSelected}
+                showCursor={true}
+                multiline={true}
+                cursorOffset={cursorOffset}
+                onChangeCursorOffset={setCursorOffset}
+                columns={textInputColumns}
+                onImagePaste={onImagePaste}
+                onPaste={handlePaste}
+              />
+            </Box>
           ) : (
             <Text color={inputValue ? undefined : 'inactive'}>
               {inputValue || option.placeholder || option.label}
