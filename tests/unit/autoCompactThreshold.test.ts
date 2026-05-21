@@ -87,10 +87,10 @@ describe('auto-compact enabled resolution', () => {
     expect(isAutoCompactEnabled()).toBe(true)
   })
 
-  test('falls back to legacy global config when settings are absent', () => {
+  test('defaults to true when settings are absent', () => {
     globalConfig = { autoCompactEnabled: false }
 
-    expect(isAutoCompactEnabled()).toBe(false)
+    expect(isAutoCompactEnabled()).toBe(true)
   })
 
   test('disable env vars still turn auto-compact off', () => {
