@@ -10,11 +10,6 @@ import {
   getDefaultBashTimeoutMs,
   getMaxBashTimeoutMs,
 } from '../../utils/timeouts.js'
-import { FILE_EDIT_TOOL_NAME } from '../FileEditTool/constants.js'
-import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
-import { FILE_WRITE_TOOL_NAME } from '../FileWriteTool/prompt.js'
-import { GLOB_TOOL_NAME } from '../GlobTool/prompt.js'
-import { GREP_TOOL_NAME } from '../GrepTool/prompt.js'
 
 export function getDefaultTimeoutMs(): number {
   return getDefaultBashTimeoutMs()
@@ -167,19 +162,6 @@ export function getSimplePrompt(): string {
   // find/grep in Bash.
   const embedded = shouldPreferBashForSearch()
 
-  const toolPreferenceItems = [
-    ...(embedded
-      ? []
-      : [
-          `File search: Use ${GLOB_TOOL_NAME} (NOT find or ls)`,
-          `Content search: Use ${GREP_TOOL_NAME} (NOT grep or rg)`,
-        ]),
-    `Read files: Use ${FILE_READ_TOOL_NAME} (NOT cat/head/tail)`,
-    `Edit files: Use ${FILE_EDIT_TOOL_NAME} (NOT sed/awk)`,
-    `Write files: Use ${FILE_WRITE_TOOL_NAME} (NOT echo >/cat <<EOF)`,
-    'Communication: Output text directly (NOT echo/printf)',
-  ]
-
   const backgroundNote = getBackgroundUsageNote()
 
   const instructionItems: Array<string | string[]> = [
@@ -200,9 +182,6 @@ export function getSimplePrompt(): string {
 
   return [
     'Executes a given bash command and returns its output. The working directory persists between commands, but shell state does not.',
-    '',
-    'Prefer dedicated tools over bash equivalents:',
-    ...prependBullets(toolPreferenceItems),
     '',
     '# Instructions',
     ...prependBullets(instructionItems),
