@@ -53,12 +53,11 @@ export function isModifierPressed(modifier: ModifierKey): boolean {
     const keyCodes = MODIFIER_KEY_CODES[modifier]
     const cg = loadLibrary()
     if (!cg) return false
-    return keyCodes.some(
-      code =>
-        cg.symbols.CGEventSourceKeyState(
-          KCG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE,
-          code,
-        ),
+    return keyCodes.some(code =>
+      cg.symbols.CGEventSourceKeyState(
+        KCG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE,
+        code,
+      ),
     )
   } catch {
     return false
