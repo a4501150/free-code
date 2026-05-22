@@ -1,4 +1,5 @@
 import React from 'react'
+import { useModalOrTerminalSize } from '../../context/modalContext.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { stringWidth } from '../../ink/stringWidth.js'
 import { Ansi, Text } from '../../ink.js'
@@ -70,8 +71,9 @@ export function Divider({
   padding = 0,
   title,
 }: DividerProps): React.ReactNode {
-  const { columns: terminalWidth } = useTerminalSize()
-  const effectiveWidth = Math.max(0, (width ?? terminalWidth) - padding)
+  const termSize = useTerminalSize()
+  const { columns: availableWidth } = useModalOrTerminalSize(termSize)
+  const effectiveWidth = Math.max(0, (width ?? availableWidth) - padding)
 
   if (title) {
     const titleWidth = stringWidth(title) + 2 // +2 for spaces around title
