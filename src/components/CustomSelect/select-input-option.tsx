@@ -260,11 +260,13 @@ export function SelectInputOption<T>({
   const chromeWidth = maxIndexWidth + 4 // 2 (indicator+gap) + maxIndexWidth + 2 (index pad)
   const labelChrome =
     showLabel && isFocused
-      ? stringWidth(
-          typeof option.label === 'string' ? option.label : '',
-        ) + stringWidth(option.labelValueSeparator ?? ', ')
+      ? stringWidth(typeof option.label === 'string' ? option.label : '') +
+        stringWidth(option.labelValueSeparator ?? ', ')
       : 0
-  const textInputColumns = Math.max(20, terminalColumns - chromeWidth - labelChrome)
+  const textInputColumns = Math.max(
+    20,
+    terminalColumns - chromeWidth - labelChrome,
+  )
 
   const handleInputClick = useCallback(
     (e: ClickEvent) => {
@@ -313,14 +315,14 @@ export function SelectInputOption<T>({
         shouldShowUpArrow={shouldShowUpArrow}
         declareCursor={false}
       >
-        <Box
-          flexDirection="row"
-          flexShrink={layout === 'compact' ? 0 : undefined}
-        >
-          <Text dimColor>{`${index}.`.padEnd(maxIndexWidth + 2)}</Text>
+        <>
+          <Text dimColor>{`${index}.`.padEnd(maxIndexWidth + 1)}</Text>
           {children}
           {showLabel ? (
-            <>
+            <Box
+              flexDirection="row"
+              flexShrink={layout === 'compact' ? 0 : undefined}
+            >
               <Text color={isFocused ? 'suggestion' : undefined}>
                 {option.label}
               </Text>
@@ -329,11 +331,7 @@ export function SelectInputOption<T>({
                   <Text color="suggestion">
                     {option.labelValueSeparator ?? ', '}
                   </Text>
-                  <Box
-                    flexGrow={1}
-                    flexShrink={1}
-                    onClick={handleInputClick}
-                  >
+                  <Box flexGrow={1} flexShrink={1} onClick={handleInputClick}>
                     <TextInput
                       value={inputValue}
                       onChange={handleChange}
@@ -359,7 +357,7 @@ export function SelectInputOption<T>({
                   </Text>
                 )
               )}
-            </>
+            </Box>
           ) : isFocused ? (
             <Box flexGrow={1} flexShrink={1} onClick={handleInputClick}>
               <TextInput
@@ -386,7 +384,7 @@ export function SelectInputOption<T>({
               {inputValue || option.placeholder || option.label}
             </Text>
           )}
-        </Box>
+        </>
       </SelectOption>
       {option.description && (
         <Box paddingLeft={descriptionPaddingLeft}>
