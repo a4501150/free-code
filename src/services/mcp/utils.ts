@@ -7,6 +7,7 @@ import type { Tool } from '../../Tool.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import { getCwd } from '../../utils/cwd.js'
 import { getGlobalClaudeFile } from '../../utils/env.js'
+import { getFreecodeSettingsFilePath } from '../../utils/settings/freecodeSettings.js'
 import { isSettingSourceEnabled } from '../../utils/settings/constants.js'
 import {
   getSettings_DEPRECATED,
@@ -263,7 +264,7 @@ export function isMcpCommand(command: Command): boolean {
 export function describeMcpConfigFilePath(scope: ConfigScope): string {
   switch (scope) {
     case 'user':
-      return getGlobalClaudeFile()
+      return getFreecodeSettingsFilePath()
     case 'project':
       return join(getCwd(), '.mcp.json')
     case 'local':

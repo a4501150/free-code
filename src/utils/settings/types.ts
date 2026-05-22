@@ -1069,8 +1069,7 @@ export const SettingsSchema = lazySchema(() =>
         .record(z.string(), z.any())
         .optional()
         .describe(
-          'User-global MCP server configurations. Each key is a server name, value is the server config. ' +
-            'Migrated from ~/.claude.json mcpServers field.',
+          'User-global MCP server configurations stored in ~/.claude/freecode.json. Each key is a server name, value is the server config.',
         ),
       // Whether to automatically approve all MCP servers in the project
       enableAllProjectMcpServers: z

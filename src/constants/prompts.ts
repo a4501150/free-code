@@ -39,6 +39,7 @@ import {
   getScratchpadDir,
 } from '../utils/permissions/filesystem.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
+import { getFreecodeSettingsFilePath } from '../utils/settings/freecodeSettings.js'
 import { isReplModeEnabled } from '../tools/REPLTool/constants.js'
 import { feature } from 'bun:bundle'
 import { shouldUseGlobalCacheScope } from '../utils/betas.js'
@@ -542,6 +543,7 @@ export async function computeSimpleEnvInfo(
     getShellInfoLine(),
     `OS Version: ${unameSR}`,
     modelDescription,
+    `Settings file: ${getFreecodeSettingsFilePath()}`,
     `Claude Code is available as a CLI in the terminal, desktop app (Mac/Windows), web app (claude.ai/code), and IDE extensions (VS Code, JetBrains).`,
     `Fast mode for Claude Code uses the same model with faster output. It does NOT switch to a different model. It can be toggled with /fast.`,
   ].filter(item => item !== null)
