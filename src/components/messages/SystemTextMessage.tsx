@@ -24,12 +24,13 @@ import type {
   SystemTurnDurationMessage,
   SystemThinkingMessage,
   SystemMemorySavedMessage,
+  SystemAwaySummaryMessage,
 } from '../../types/message.js'
-import { AssistantThinkingMessage } from './AssistantThinkingMessage.js'
 import { SystemAPIErrorMessage } from './SystemAPIErrorMessage.js'
 import { formatDuration, formatNumber } from '../../utils/format.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { CtrlOToExpand } from '../CtrlOToExpand.js'
+import { Markdown } from '../Markdown.js'
 import { useAppStateStore } from '../../state/AppState.js'
 import { isBackgroundTask, type TaskState } from '../../tasks/types.js'
 import { getPillLabel } from '../../tasks/pillLabel.js'
@@ -60,27 +61,13 @@ export function SystemTextMessage({
 
   if (message.subtype === 'away_summary') {
     return (
-      <Box
-        flexDirection="column"
-        marginTop={addMargin ? 1 : 0}
-        backgroundColor={bg}
-        width="100%"
-      >
-        {message.thinking && (
-          <AssistantThinkingMessage
-            param={{ type: 'thinking', thinking: message.thinking }}
-            addMargin={false}
-            isTranscriptMode={isTranscriptMode ?? false}
-            verbose={verbose}
-          />
-        )}
-        <Box flexDirection="row" width="100%">
-          <Box minWidth={2}>
-            <Text dimColor>{REFERENCE_MARK}</Text>
-          </Box>
-          <Text dimColor>{message.content}</Text>
-        </Box>
-      </Box>
+      <AwaySummaryMessage
+        message={message}
+        addMargin={addMargin}
+        isTranscriptMode={isTranscriptMode}
+        verbose={verbose}
+        bg={bg}
+      />
     )
   }
 
@@ -417,6 +404,61 @@ function MemoryFileRow({ path }: { path: string }): React.ReactNode {
         </Text>
       </Box>
     </MessageResponse>
+  )
+}
+
+function AwaySummaryMessage({
+  message,
+  addMargin,
+  isTranscriptMode,
+  verbose,
+  bg,
+}: {
+  message: SystemAwaySummaryMessage
+  addMargin: boolean
+  isTranscriptMode?: boolean
+  verbose: boolean
+  bg: string | undefined
+}): React.ReactNode {
+  const showThinkingFull =
+    message.thinking && (isTranscriptMode || verbose)
+  return (
+    <Box
+      flexDirection="column"
+      marginTop={addMargin ? 1 : 0}
+      backgroundColor={bg}
+      width="100%"
+    >
+      <Box flexDirection="row" width="100%">
+        <Box minWidth={2}>
+          <Text dimColor>{REFERENCE_MARK}</Text>
+        </Box>
+        <Text dimColor>
+          Recap:{' '}
+          {message.thinking ? (
+            <Text italic>
+              ∴ Thinking{showThinkingFull ? '…' : ''}{' '}
+              {!showThinkingFull && <CtrlOToExpand />}
+            </Text>
+          ) : (
+            message.content
+          )}
+        </Text>
+      </Box>
+      {showThinkingFull && (
+        <Box paddingLeft={4}>
+          <Markdown dimColor>{message.thinking!}</Markdown>
+        </Box>
+      )}
+      {message.thinking && (
+        <Box flexDirection="row" width="100%">
+          <Box minWidth={2}>
+            <Text> </Text>
+          </Box>
+          <Text dimColor>{message.content}</Text>
+        </Box>
+      )}
+    </Box>
   )
 }
 
