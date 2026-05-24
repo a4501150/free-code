@@ -766,7 +766,7 @@ export async function getAttachments(
       Promise.resolve(getUltrathinkEffortAttachment(input)),
     ),
     maybe('mcp_tools_delta', () =>
-      getMcpToolsDeltaAttachment(toolUseContext, messages),
+      getMcpToolsDeltaAttachment(toolUseContext),
     ),
     maybe('agent_listing_delta', () =>
       Promise.resolve(getAgentListingDeltaAttachment(toolUseContext, messages)),
@@ -1377,38 +1377,44 @@ async function getMcpToolSignatures(
   return signatures
 }
 
+// Module-scoped baseline of announced MCP tool signatures. On the first
+// call the current tool set is recorded without emitting an attachment
+// (tool names are already in the API tools[] array). Subsequent calls
+// diff against this baseline and only emit when something actually changed.
+let announcedMcpToolSignatures: Map<string, string> | null = null
+
+export function resetAnnouncedMcpToolSignatures(): void {
+  announcedMcpToolSignatures = null
+}
+
 export async function getMcpToolsDeltaAttachment(
   toolUseContext: ToolUseContext,
-  messages: Message[] | undefined,
 ): Promise<Attachment[]> {
   const signatures = await getMcpToolSignatures(toolUseContext)
-
-  const announced = new Map<string, string>()
-  for (const msg of messages ?? []) {
-    if (msg.type !== 'attachment') continue
-    if (msg.attachment.type !== 'mcp_tools_delta') continue
-    announced.clear()
-    for (const { name, signature } of msg.attachment.signatures) {
-      announced.set(name, signature)
-    }
-  }
-
   const current = new Map(
     signatures.map(({ name, signature }) => [name, signature]),
   )
+
+  // First call: record baseline without emitting. The model already has
+  // every MCP tool in the tools[] API parameter.
+  if (announcedMcpToolSignatures === null) {
+    announcedMcpToolSignatures = current
+    return []
+  }
+
   const addedNames: string[] = []
   const changedNames: string[] = []
   const removedNames: string[] = []
 
-  for (const { name, signature } of signatures) {
-    const previous = announced.get(name)
+  for (const [name, signature] of current) {
+    const previous = announcedMcpToolSignatures.get(name)
     if (previous === undefined) {
       addedNames.push(name)
     } else if (previous !== signature) {
       changedNames.push(name)
     }
   }
-  for (const name of announced.keys()) {
+  for (const name of announcedMcpToolSignatures.keys()) {
     if (!current.has(name)) {
       removedNames.push(name)
     }
@@ -1425,6 +1431,9 @@ export async function getMcpToolsDeltaAttachment(
   ) {
     return []
   }
+
+  // Update baseline to current state.
+  announcedMcpToolSignatures = current
 
   return [
     {

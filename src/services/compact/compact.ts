@@ -31,7 +31,6 @@ import {
   generateFileAttachment,
   getAgentListingDeltaAttachment,
   getMcpInstructionsDeltaAttachment,
-  getMcpToolsDeltaAttachment,
 } from '../../utils/attachments.js'
 import { snapshotPlanModeRenderContext } from '../../utils/planMode.js'
 import { getMemoryPath } from '../../utils/config.js'
@@ -495,9 +494,8 @@ export async function compactConversation(
     // state so the model has tool/instruction context on the first
     // post-compact turn. Empty message history → diff against nothing →
     // announces the full set.
-    for (const att of await getMcpToolsDeltaAttachment(context, [])) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
+    // mcp_tools_delta is not re-announced: tool names are already in the
+    // API tools[] array, and the module-scoped baseline tracks changes.
     for (const att of getAgentListingDeltaAttachment(context, [])) {
       postCompactFileAttachments.push(createAttachmentMessage(att))
     }
@@ -800,12 +798,8 @@ export async function partialCompactConversation(
 
     // Re-announce only what was in the summarized portion — messagesToKeep
     // is scanned, so anything already announced there is skipped.
-    for (const att of await getMcpToolsDeltaAttachment(
-      context,
-      messagesToKeep,
-    )) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
+    // mcp_tools_delta is not re-announced: tool names are already in the
+    // API tools[] array, and the module-scoped baseline tracks changes.
     for (const att of getAgentListingDeltaAttachment(context, messagesToKeep)) {
       postCompactFileAttachments.push(createAttachmentMessage(att))
     }
