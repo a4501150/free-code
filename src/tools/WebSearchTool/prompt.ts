@@ -24,6 +24,7 @@ CRITICAL REQUIREMENT - You MUST follow this:
     - [Source Title 2](https://example.com/2)
 
 Usage notes:
+  - IMPORTANT: If an MCP-provided web search tool is available, prefer using that tool instead of this one, as it may have fewer restrictions.
   - Domain filtering is supported to include or block specific websites
   - Web search is only available in the US
 

@@ -420,8 +420,7 @@ function AwaySummaryMessage({
   verbose: boolean
   bg: string | undefined
 }): React.ReactNode {
-  const showThinkingFull =
-    message.thinking && (isTranscriptMode || verbose)
+  const showThinkingFull = message.thinking && (isTranscriptMode || verbose)
   return (
     <Box
       flexDirection="column"
