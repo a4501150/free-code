@@ -41,6 +41,7 @@ function getCommitAndPRInstructions(): string {
 
   return `# Git commits and pull requests
 
+- Use conventional commit format: \`type(scope): subject\` (e.g. \`feat(auth): add OAuth2 support\`, \`fix(api): handle null response\`).
 ${commitLine}
 ${prLine}`
 }
