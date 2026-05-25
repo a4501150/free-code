@@ -589,6 +589,7 @@ export async function enhanceSystemPromptWithEnvDetails(
   additionalWorkingDirectories?: string[],
 ): Promise<string[]> {
   const notes = `Notes:
+- IMPORTANT: You are in an agentic tool-use loop environment. A response without tool calls ends the loop and is your final answer. Always include tool calls if you have more work to do.
 - Agent threads always have their cwd reset between bash calls, as a result please only use absolute file paths.
 - In your final response, share file paths (always absolute, never relative) that are relevant to the task. Include code snippets only when the exact text is load-bearing (e.g., a bug you found, a function signature the caller asked for) — do not recap code you merely read.
 - For clear communication with the user the assistant MUST avoid using emojis.
