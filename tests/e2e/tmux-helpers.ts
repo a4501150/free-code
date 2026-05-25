@@ -45,8 +45,8 @@ export interface TmuxSessionOptions {
   settings?: Record<string, unknown>
   /**
    * Pre-existing config dir to reuse (skips mkdtemp and does NOT rewrite
-   * .claude.json / settings.json). Used by resume/continue tests that need
-   * transcript files on disk to persist across a session restart.
+   * freecode.json). Used by resume/continue tests that need transcript
+   * files on disk to persist across a session restart.
    */
   reuseConfigDir?: string
   /** Pre-existing HOME dir to reuse. Pairs with `reuseConfigDir`. */
@@ -153,25 +153,22 @@ export class TmuxSession {
       projects[resolvedCwd] = trustEntry
     }
 
-    const config = {
+    const state = {
       customApiKeyResponses: {
         approved: [TRUNCATED_KEY],
         rejected: [],
       },
       projects,
     }
-    await writeFile(
-      join(this.configDir, '.claude.json'),
-      JSON.stringify(config, null, 2),
-    )
 
-    // freecode.json — defaults to empty to prevent MCP server loading from project config.
+    // freecode.json — holds both user settings and runtime state.
+    // State (trust, projects, API key approvals) lives under the `state` key.
     // Tests can pass custom settings via the `settings` option.
-    // Write freecode.json (not settings.json) so the migration prompt dialog
-    // does not fire at startup; the state-machine key is "freecode.json exists".
+    // Write freecode.json so the migration prompt dialog does not fire at
+    // startup; the state-machine key is "freecode.json exists".
     await writeFile(
       join(this.configDir, 'freecode.json'),
-      JSON.stringify(this._settings, null, 2),
+      JSON.stringify({ ...this._settings, state }, null, 2),
     )
 
     // Build environment string.

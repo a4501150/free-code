@@ -48,8 +48,10 @@ import {
   writeFreecodeSettingsFile,
 } from './utils/settings/freecodeSettings.js'
 import {
+  migrateGlobalConfigToState,
   migrateToFreecodeDir,
   needsConfigDirMigration,
+  needsGlobalConfigMigration,
 } from './utils/settings/migrateConfigDir.js'
 import {
   legacySettingsFileExists,
@@ -180,6 +182,11 @@ export async function showSetupScreens(
     }
     resetSettingsCache()
     resetProviderRegistry()
+  }
+
+  // Migrate ~/.claude.json state into freecode.json.state (silent, no prompt)
+  if (needsGlobalConfigMigration()) {
+    migrateGlobalConfigToState()
   }
 
   // Legacy settings migration prompt. Runs before Onboarding so that when the

@@ -129,10 +129,10 @@ export function applySafeConfigEnvironmentVariables(): void {
         : null
   }
 
-  // Global config (~/.claude.json) is user-controlled. In CCD mode,
-  // filterSettingsEnv strips keys that were in the spawn env snapshot so
-  // the desktop host's operational vars (OTEL, etc.) are not overridden.
-  // Legacy: getGlobalConfig().env was read here but has been removed
+  // Global state lives in ~/.freecode/freecode.json (state key).
+  // In CCD mode, filterSettingsEnv strips keys that were in the spawn env
+  // snapshot so the desktop host's operational vars (OTEL, etc.) are not
+  // overridden.
 
   // Apply ALL env vars from trusted setting sources, policySettings last.
   // Gate on isSettingSourceEnabled so SDK settingSources: [] (isolation mode)

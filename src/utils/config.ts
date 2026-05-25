@@ -17,7 +17,8 @@ import { ConfigParseError, getErrnoCode } from './errors.js'
 import { writeFileSyncAndFlush_DEPRECATED } from './file.js'
 import { getFsImplementation } from './fsOperations.js'
 import { findCanonicalGitRoot } from './git.js'
-import { safeParseJSON } from './json.js'
+import { safeParseJSON, safeParseJSONC } from './json.js'
+import { writeFreecodeSettingsFile } from './settings/freecodeSettings.js'
 import { stripBOM } from './jsonRead.js'
 import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
@@ -272,50 +273,25 @@ export function saveGlobalConfig(
   }
 
   let written: GlobalConfig | null = null
+  const file = getGlobalClaudeFile()
+  let release: (() => void) | undefined
+
   try {
-    const didWrite = saveConfigWithLock(
-      getGlobalClaudeFile(),
-      createDefaultGlobalConfig,
-      current => {
-        const config = updater(current)
-        // Skip if no changes (same reference returned)
-        if (config === current) {
-          return current
-        }
-        written = {
-          ...config,
-          projects: current.projects,
-        }
-        return written
-      },
-    )
-    // Only write-through if we actually wrote. If the state-loss guard
-    // tripped (or the updater made no changes), the file is untouched and
-    // the cache is still valid -- touching it would corrupt the guard.
-    if (didWrite && written) {
-      writeThroughGlobalConfigCache(written)
+    try {
+      release = lockfile.lockSync(file, {
+        lockfilePath: `${file}.lock`,
+        onCompromised: err => {
+          logForDebugging(`Config lock compromised: ${err}`, { level: 'error' })
+        },
+      })
+    } catch (lockErr) {
+      logForDebugging(`Failed to acquire config lock: ${lockErr}`, {
+        level: 'error',
+      })
     }
-  } catch (error) {
-    logForDebugging(`Failed to save config with lock: ${error}`, {
-      level: 'error',
-    })
-    // Fall back to non-locked version on error. This fallback is a race
-    // window: if another process is mid-write (or the file got truncated),
-    // getConfig returns defaults. Refuse to write those over a good cached
-    // config to avoid wiping auth. See GH #3117.
-    const currentConfig = getConfig(
-      getGlobalClaudeFile(),
-      createDefaultGlobalConfig,
-    )
-    if (wouldLoseAuthState(currentConfig)) {
-      logForDebugging(
-        'saveGlobalConfig fallback: re-read config is missing onboarding state that cache has; refusing to write. See GH #3117.',
-        { level: 'error' },
-      )
-      return
-    }
+
+    const currentConfig = readStateFromDisk()
     const config = updater(currentConfig)
-    // Skip if no changes (same reference returned)
     if (config === currentConfig) {
       return
     }
@@ -323,9 +299,72 @@ export function saveGlobalConfig(
       ...config,
       projects: currentConfig.projects,
     }
-    saveConfig(getGlobalClaudeFile(), written, DEFAULT_GLOBAL_CONFIG)
+
+    createConfigBackup(file)
+    writeStateToDisk(written)
     writeThroughGlobalConfigCache(written)
+  } catch (error) {
+    logForDebugging(`Failed to save global config: ${error}`, {
+      level: 'error',
+    })
+    // Fallback: try without lock
+    try {
+      const currentConfig = readStateFromDisk()
+      const config = updater(currentConfig)
+      if (config === currentConfig) return
+      written = { ...config, projects: currentConfig.projects }
+      writeStateToDisk(written)
+      writeThroughGlobalConfigCache(written)
+    } catch {
+      // Give up
+    }
+  } finally {
+    release?.()
   }
+}
+
+/**
+ * Read the `state` key from freecode.json on disk and return it as GlobalConfig.
+ * Uses JSONC parsing since freecode.json may contain comments.
+ */
+function readStateFromDisk(): GlobalConfig {
+  const fs = getFsImplementation()
+  const file = getGlobalClaudeFile()
+  try {
+    const content = fs.readFileSync(file, { encoding: 'utf-8' })
+    const parsed = safeParseJSONC(stripBOM(content))
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return createDefaultGlobalConfig()
+    }
+    const stateObj = (parsed as Record<string, unknown>).state
+    if (!stateObj || typeof stateObj !== 'object' || Array.isArray(stateObj)) {
+      return createDefaultGlobalConfig()
+    }
+    return {
+      ...createDefaultGlobalConfig(),
+      ...(stateObj as Partial<GlobalConfig>),
+    }
+  } catch (error) {
+    if (getErrnoCode(error) === 'ENOENT') {
+      return createDefaultGlobalConfig()
+    }
+    throw error
+  }
+}
+
+/**
+ * Write the GlobalConfig as the `state` key in freecode.json.
+ * Uses writeFreecodeSettingsFile for JSONC-preserving writes.
+ */
+function writeStateToDisk(config: GlobalConfig): void {
+  const defaultConfig = createDefaultGlobalConfig()
+  const filteredConfig = pickBy(
+    config,
+    (value, key) =>
+      jsonStringify(value) !== jsonStringify(defaultConfig[key as keyof GlobalConfig]),
+  )
+  writeFreecodeSettingsFile({ state: filteredConfig })
+  globalConfigWriteCount++
 }
 
 // Cache for global config
@@ -338,9 +377,8 @@ let globalConfigCache: { config: GlobalConfig | null; mtime: number } = {
 let lastReadFileStats: { mtime: number; size: number } | null = null
 let configCacheHits = 0
 let configCacheMisses = 0
-// Session-total count of actual disk writes to the global config file.
-// Exposed for ant-only dev diagnostics (see inc-4552) so anomalous write
-// rates surface in the UI before they corrupt ~/.claude.json.
+// Session-total count of actual disk writes to the global state in freecode.json.
+// Exposed for dev diagnostics so anomalous write rates surface in the UI.
 let globalConfigWriteCount = 0
 
 export function getGlobalConfigWriteCount(): number {
@@ -386,14 +424,22 @@ function startGlobalConfigFreshnessWatcher(): void {
           // A write-through may have advanced the cache while we were reading;
           // don't regress to the stale snapshot watchFile stat'd.
           if (curr.mtimeMs <= globalConfigCache.mtime) return
-          const parsed = safeParseJSON(stripBOM(content))
+          const parsed = safeParseJSONC(stripBOM(content))
           if (parsed === null || typeof parsed !== 'object') return
-          globalConfigCache = {
-            config: {
-              ...createDefaultGlobalConfig(),
-              ...(parsed as Partial<GlobalConfig>),
-            },
-            mtime: curr.mtimeMs,
+          const stateObj = (parsed as Record<string, unknown>).state
+          if (!stateObj || typeof stateObj !== 'object' || Array.isArray(stateObj)) {
+            globalConfigCache = {
+              config: createDefaultGlobalConfig(),
+              mtime: curr.mtimeMs,
+            }
+          } else {
+            globalConfigCache = {
+              config: {
+                ...createDefaultGlobalConfig(),
+                ...(stateObj as Partial<GlobalConfig>),
+              },
+              mtime: curr.mtimeMs,
+            }
           }
           lastReadFileStats = { mtime: curr.mtimeMs, size: curr.size }
         })
@@ -427,9 +473,7 @@ export function getGlobalConfig(): GlobalConfig {
     return globalConfigCache.config
   }
 
-  // Slow path: startup load. Sync I/O here is acceptable because it runs
-  // exactly once, before any UI is rendered. Stat before read so any race
-  // self-corrects (old mtime + new content → watcher re-reads next tick).
+  // Slow path: startup load. Reads `state` from freecode.json.
   configCacheMisses++
   try {
     let stats: { mtimeMs: number; size: number } | null = null
@@ -438,7 +482,7 @@ export function getGlobalConfig(): GlobalConfig {
     } catch {
       // File doesn't exist
     }
-    const config = getConfig(getGlobalClaudeFile(), createDefaultGlobalConfig)
+    const config = readStateFromDisk()
     globalConfigCache = {
       config,
       mtime: stats?.mtimeMs ?? Date.now(),
@@ -449,8 +493,7 @@ export function getGlobalConfig(): GlobalConfig {
     startGlobalConfigFreshnessWatcher()
     return config
   } catch {
-    // If anything goes wrong, fall back to uncached behavior
-    return getConfig(getGlobalClaudeFile(), createDefaultGlobalConfig)
+    return createDefaultGlobalConfig()
   }
 }
 
@@ -549,7 +592,7 @@ function saveConfigWithLock<A extends object>(
     const currentConfig = getConfig(file, createDefault)
     if (file === getGlobalClaudeFile() && wouldLoseAuthState(currentConfig)) {
       logForDebugging(
-        'saveConfigWithLock: re-read config is missing onboarding state that cache has; refusing to write to avoid wiping ~/.claude.json. See GH #3117.',
+        'saveConfigWithLock: re-read config is missing onboarding state that cache has; refusing to write. See GH #3117.',
         { level: 'error' },
       )
       return false
@@ -675,12 +718,8 @@ export function enableConfigs(): void {
   // Any reads to configuration before this flag is set show an console warning
   // to prevent us from adding config reading during module initialization
   configReadingAllowed = true
-  // We only check the global config because currently all the configs share a file
-  getConfig(
-    getGlobalClaudeFile(),
-    createDefaultGlobalConfig,
-    true /* throw on invalid */,
-  )
+  // Validate that freecode.json is parseable (reads state from disk)
+  readStateFromDisk()
 
   logForDiagnosticsNoPII('info', 'enable_configs_completed', {
     duration_ms: Date.now() - startTime,
@@ -693,6 +732,61 @@ export function enableConfigs(): void {
  */
 function getConfigBackupDir(): string {
   return join(getClaudeConfigHomeDir(), 'backups')
+}
+
+function createConfigBackup(file: string): void {
+  const fs = getFsImplementation()
+  try {
+    const fileBase = basename(file)
+    const backupDir = getConfigBackupDir()
+
+    try {
+      fs.mkdirSync(backupDir)
+    } catch (mkdirErr) {
+      if (getErrnoCode(mkdirErr) !== 'EEXIST') throw mkdirErr
+    }
+
+    const MIN_BACKUP_INTERVAL_MS = 60_000
+    const existingBackups = fs
+      .readdirStringSync(backupDir)
+      .filter(f => f.startsWith(`${fileBase}.backup.`))
+      .sort()
+      .reverse()
+
+    const mostRecentBackup = existingBackups[0]
+    const mostRecentTimestamp = mostRecentBackup
+      ? Number(mostRecentBackup.split('.backup.').pop())
+      : 0
+    const shouldCreateBackup =
+      Number.isNaN(mostRecentTimestamp) ||
+      Date.now() - mostRecentTimestamp >= MIN_BACKUP_INTERVAL_MS
+
+    if (shouldCreateBackup) {
+      const backupPath = join(backupDir, `${fileBase}.backup.${Date.now()}`)
+      fs.copyFileSync(file, backupPath)
+    }
+
+    const MAX_BACKUPS = 5
+    const backupsForCleanup = shouldCreateBackup
+      ? fs
+          .readdirStringSync(backupDir)
+          .filter(f => f.startsWith(`${fileBase}.backup.`))
+          .sort()
+          .reverse()
+      : existingBackups
+
+    for (const oldBackup of backupsForCleanup.slice(MAX_BACKUPS)) {
+      try {
+        fs.unlinkSync(join(backupDir, oldBackup))
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  } catch (e) {
+    if (getErrnoCode(e) !== 'ENOENT') {
+      logForDebugging(`Failed to backup config: ${e}`, { level: 'error' })
+    }
+  }
 }
 
 /**
@@ -964,64 +1058,61 @@ export function saveCurrentProjectConfig(
     return
   }
   const absolutePath = getProjectPathForConfig()
+  const file = getGlobalClaudeFile()
+  let release: (() => void) | undefined
 
-  let written: GlobalConfig | null = null
   try {
-    const didWrite = saveConfigWithLock(
-      getGlobalClaudeFile(),
-      createDefaultGlobalConfig,
-      current => {
-        const currentProjectConfig =
-          current.projects?.[absolutePath] ?? DEFAULT_PROJECT_CONFIG
-        const newProjectConfig = updater(currentProjectConfig)
-        // Skip if no changes (same reference returned)
-        if (newProjectConfig === currentProjectConfig) {
-          return current
-        }
-        written = {
-          ...current,
-          projects: {
-            ...current.projects,
-            [absolutePath]: newProjectConfig,
-          },
-        }
-        return written
-      },
-    )
-    if (didWrite && written) {
-      writeThroughGlobalConfigCache(written)
+    try {
+      release = lockfile.lockSync(file, {
+        lockfilePath: `${file}.lock`,
+        onCompromised: err => {
+          logForDebugging(`Config lock compromised: ${err}`, { level: 'error' })
+        },
+      })
+    } catch (lockErr) {
+      logForDebugging(`Failed to acquire config lock: ${lockErr}`, {
+        level: 'error',
+      })
     }
-  } catch (error) {
-    logForDebugging(`Failed to save config with lock: ${error}`, {
-      level: 'error',
-    })
 
-    // Same race window as saveGlobalConfig's fallback -- refuse to write
-    // defaults over good cached config. See GH #3117.
-    const config = getConfig(getGlobalClaudeFile(), createDefaultGlobalConfig)
-    if (wouldLoseAuthState(config)) {
-      logForDebugging(
-        'saveCurrentProjectConfig fallback: re-read config is missing onboarding state that cache has; refusing to write. See GH #3117.',
-        { level: 'error' },
-      )
-      return
-    }
+    const current = readStateFromDisk()
     const currentProjectConfig =
-      config.projects?.[absolutePath] ?? DEFAULT_PROJECT_CONFIG
+      current.projects?.[absolutePath] ?? DEFAULT_PROJECT_CONFIG
     const newProjectConfig = updater(currentProjectConfig)
-    // Skip if no changes (same reference returned)
-    if (newProjectConfig === currentProjectConfig) {
-      return
-    }
-    written = {
-      ...config,
+    if (newProjectConfig === currentProjectConfig) return
+
+    const written: GlobalConfig = {
+      ...current,
       projects: {
-        ...config.projects,
+        ...current.projects,
         [absolutePath]: newProjectConfig,
       },
     }
-    saveConfig(getGlobalClaudeFile(), written, DEFAULT_GLOBAL_CONFIG)
+    createConfigBackup(file)
+    writeStateToDisk(written)
     writeThroughGlobalConfigCache(written)
+  } catch (error) {
+    logForDebugging(`Failed to save project config: ${error}`, {
+      level: 'error',
+    })
+    // Fallback: try without lock
+    try {
+      const current = readStateFromDisk()
+      const currentProjectConfig =
+        current.projects?.[absolutePath] ?? DEFAULT_PROJECT_CONFIG
+      const newProjectConfig = updater(currentProjectConfig)
+      if (newProjectConfig === currentProjectConfig) return
+      const written: GlobalConfig = {
+        ...current,
+        projects: { ...current.projects, [absolutePath]: newProjectConfig },
+      }
+      writeStateToDisk(written)
+      writeThroughGlobalConfigCache(written)
+    } catch {
+      // Give up
+    }
+  } finally {
+    release?.()
   }
 }
 

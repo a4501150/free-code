@@ -224,8 +224,10 @@ import {
   copyConfigDir,
   getFreecodeConfigDir,
   getLegacyClaudeConfigDir,
+  migrateGlobalConfigToState,
   migrateToFreecodeDir,
   needsConfigDirMigration,
+  needsGlobalConfigMigration,
 } from './utils/settings/migrateConfigDir.js'
 import { legacySettingsFileExists } from './utils/settings/migrateToFreecode.js'
 import {
@@ -916,6 +918,11 @@ async function run(): Promise<CommanderCommand> {
       process.stderr.write(
         'Note: migrated config from ~/.claude/ to ~/.freecode/.\n',
       )
+    }
+
+    // Migrate ~/.claude.json state fields into freecode.json.state
+    if (needsGlobalConfigMigration()) {
+      migrateGlobalConfigToState()
     }
 
     // Non-interactive users who still have only legacy ~/.freecode/settings.json

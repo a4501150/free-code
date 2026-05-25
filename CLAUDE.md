@@ -89,7 +89,7 @@ The codex `/v1/responses` adapter intentionally handles llama.cpp event-order di
 
 ### Global config directory is `~/.freecode/`, env var is `FREECODE_CONFIG_DIR`
 
-The global config directory is `~/.freecode/` (was `~/.claude/`). The env var override is `FREECODE_CONFIG_DIR` with `CLAUDE_CONFIG_DIR` as a backwards-compat fallback. Per-project `.claude/` directories are unchanged. On first interactive launch, users with an existing `~/.claude/` are prompted to migrate. Files named `~/.claude.json` (the legacy global config file) are a separate thing from the `~/.claude/` directory.
+The global config directory is `~/.freecode/` (was `~/.claude/`). The env var override is `FREECODE_CONFIG_DIR` with `CLAUDE_CONFIG_DIR` as a backwards-compat fallback. Per-project `.claude/` directories are unchanged. On first interactive launch, users with an existing `~/.claude/` are prompted to migrate; to run the migration manually use `claude migrate-config`. Runtime state (projects, trust, userID, companion) now lives under the `state` key in `~/.freecode/freecode.json`. On startup, if `~/.claude.json` exists and `freecode.json` has no `state` key, the state fields are auto-migrated.
 
 ### ScrollBox children should not rely on percentage height
 

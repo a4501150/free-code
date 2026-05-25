@@ -1,7 +1,6 @@
 import { release } from 'os'
 import type { Command, LocalCommandCall } from '../../types/command.js'
 import { getAuthTokenSource } from '../../utils/auth.js'
-import { getGlobalClaudeFile } from '../../utils/env.js'
 import { getFreecodeSettingsFilePath } from '../../utils/settings/freecodeSettings.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { getAgentModel } from '../../utils/model/agent.js'
@@ -89,7 +88,6 @@ export const call: LocalCommandCall = async () => {
     'Paths',
     `  Config dir:   ${getClaudeConfigHomeDir()}`,
     `  Settings:     ${getFreecodeSettingsFilePath()}`,
-    `  Global file:  ${getGlobalClaudeFile()}`,
     `  Projects dir: ${getProjectsDir()}`,
   )
 

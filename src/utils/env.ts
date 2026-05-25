@@ -1,8 +1,6 @@
 import axios from 'axios'
 import memoize from 'lodash-es/memoize.js'
-import { homedir } from 'os'
 import { join } from 'path'
-import { fileSuffixForOauthConfig } from '../constants/oauth.js'
 import { isRunningWithBun } from './bundledMode.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import { findExecutable } from './findExecutable.js'
@@ -11,24 +9,10 @@ import { which } from './which.js'
 
 type Platform = 'win32' | 'darwin' | 'linux'
 
-// Config and data paths
+// Config and data paths — now points to ~/.freecode/freecode.json.
+// GlobalConfig state lives under the `state` key within this file.
 export const getGlobalClaudeFile = memoize((): string => {
-  // Legacy fallback for backwards compatibility
-  if (
-    getFsImplementation().existsSync(
-      join(getClaudeConfigHomeDir(), '.config.json'),
-    )
-  ) {
-    return join(getClaudeConfigHomeDir(), '.config.json')
-  }
-
-  const filename = `.claude${fileSuffixForOauthConfig()}.json`
-  return join(
-    process.env.FREECODE_CONFIG_DIR ||
-      process.env.CLAUDE_CONFIG_DIR ||
-      homedir(),
-    filename,
-  )
+  return join(getClaudeConfigHomeDir(), 'freecode.json')
 })
 
 const hasInternetAccess = memoize(async (): Promise<boolean> => {
