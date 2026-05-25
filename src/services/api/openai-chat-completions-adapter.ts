@@ -370,6 +370,7 @@ async function translateStreamToAnthropic(
       let currentTextBlockStarted = false
       let inReasoningBlock = false
       let hadToolCalls = false
+      let lastFinishReason: string | null = null
       // Track tool call indices from OpenAI → our content block indices
       const toolCallIndexMap = new Map<number, number>()
 
@@ -676,6 +677,7 @@ async function translateStreamToAnthropic(
 
             // ── Finish reason → close blocks and emit message_delta ──
             if (finishReason) {
+              lastFinishReason = finishReason
               // Close open blocks
               if (inReasoningBlock) {
                 controller.enqueue(
@@ -793,6 +795,7 @@ async function translateStreamToAnthropic(
         inputTokens,
         cacheReadInputTokens,
         hadToolCalls,
+        lastFinishReason,
       )
     },
   })
@@ -855,8 +858,14 @@ function finishStream(
   inputTokens: number,
   cacheReadInputTokens: number,
   hadToolCalls: boolean,
+  openaiFinishReason?: string | null,
 ): void {
-  const stopReason = hadToolCalls ? 'tool_use' : 'end_turn'
+  const stopReason =
+    openaiFinishReason === 'length'
+      ? 'max_tokens'
+      : hadToolCalls
+        ? 'tool_use'
+        : 'end_turn'
 
   // OpenAI Chat Completions does NOT report cache write cost — prefix
   // caching is automatic on OpenAI's side. Surface that explicitly as `null`
