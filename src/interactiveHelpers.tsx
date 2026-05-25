@@ -48,6 +48,10 @@ import {
   writeFreecodeSettingsFile,
 } from './utils/settings/freecodeSettings.js'
 import {
+  migrateToFreecodeDir,
+  needsConfigDirMigration,
+} from './utils/settings/migrateConfigDir.js'
+import {
   legacySettingsFileExists,
   runLegacyToFreecodeMigration,
 } from './utils/settings/migrateToFreecode.js'
@@ -56,6 +60,7 @@ import { Text } from './ink.js'
 import { Onboarding } from './components/Onboarding.js'
 import { TrustDialog } from './components/TrustDialog/TrustDialog.js'
 import { ClaudeMdExternalIncludesDialog } from './components/ClaudeMdExternalIncludesDialog.js'
+import { ConfigDirMigrationDialog } from './components/ConfigDirMigrationDialog.js'
 import { MigrationPromptDialog } from './components/MigrationPromptDialog.js'
 import { GroveDialog } from './components/grove/Grove.js'
 import { BypassPermissionsModeDialog } from './components/BypassPermissionsModeDialog.js'
@@ -162,6 +167,19 @@ export async function showSetupScreens(
     process.env.IS_DEMO // Skip onboarding in demo mode
   ) {
     return false
+  }
+
+  // Config directory migration: ~/.claude/ → ~/.freecode/
+  // Runs before everything else so all subsequent checks see the new location.
+  if (needsConfigDirMigration()) {
+    const decision = await showSetupDialog<'yes' | 'no'>(root, done => (
+      <ConfigDirMigrationDialog onDone={done} />
+    ))
+    if (decision === 'yes') {
+      migrateToFreecodeDir()
+    }
+    resetSettingsCache()
+    resetProviderRegistry()
   }
 
   // Legacy settings migration prompt. Runs before Onboarding so that when the

@@ -239,7 +239,7 @@ export function getDebugLogPath(): string {
 
 /**
  * Updates the latest debug log symlink to point to the current debug log file.
- * Creates or updates a symlink at ~/.claude/debug/latest
+ * Creates or updates a symlink at ~/.freecode/debug/latest
  */
 const updateLatestDebugLogSymlink = memoize(async (): Promise<void> => {
   try {

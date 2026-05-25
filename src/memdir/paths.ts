@@ -69,7 +69,7 @@ export function isExtractModeActive(): boolean {
 }
 
 /**
- * Returns the base directory for persistent memory storage (~/.claude).
+ * Returns the base directory for persistent memory storage (~/.freecode).
  */
 export function getMemoryBaseDir(): string {
   return getClaudeConfigHomeDir()

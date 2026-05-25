@@ -1,5 +1,5 @@
 /**
- * Freecode Settings — ~/.claude/freecode.json
+ * Freecode Settings — ~/.freecode/freecode.json
  *
  * Single unified config file for freecode. Combines what was previously
  * split between settings.json and providers.json (both now legacy).

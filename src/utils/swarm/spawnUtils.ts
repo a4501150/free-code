@@ -93,6 +93,7 @@ const TEAMMATE_ENV_VARS = [
   // Custom API endpoint
   'ANTHROPIC_BASE_URL',
   // Config directory override
+  'FREECODE_CONFIG_DIR',
   'CLAUDE_CONFIG_DIR',
   // Upstream proxy — the parent's MITM relay is reachable from teammates
   // (same container network). Forward the proxy vars so teammates route

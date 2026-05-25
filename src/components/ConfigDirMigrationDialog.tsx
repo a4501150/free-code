@@ -8,7 +8,7 @@ type Props = {
   onDone(decision: 'yes' | 'no'): void
 }
 
-export function MigrationPromptDialog({ onDone }: Props): React.ReactNode {
+export function ConfigDirMigrationDialog({ onDone }: Props): React.ReactNode {
   const handleSelection = useCallback(
     (value: 'yes' | 'no') => {
       onDone(value)
@@ -21,14 +21,14 @@ export function MigrationPromptDialog({ onDone }: Props): React.ReactNode {
   }, [handleSelection])
 
   return (
-    <Dialog title="Migrate legacy settings?" onCancel={handleEscape}>
+    <Dialog title="Migrate config directory?" onCancel={handleEscape}>
       <Text>
-        Found legacy <Text bold>~/.freecode/settings.json</Text> but no{' '}
-        <Text bold>~/.freecode/freecode.json</Text>. Migrate now?
+        Found existing config in <Text bold>~/.claude/</Text>. The config
+        directory has moved to <Text bold>~/.freecode/</Text>. Migrate now?
       </Text>
       <Text dimColor>
-        Your settings.json is not modified. A new freecode.json will be written
-        alongside it.
+        Your ~/.claude/ directory will be copied to ~/.freecode/. The original
+        is not modified.
       </Text>
       <Select
         defaultValue="yes"

@@ -32,7 +32,7 @@ export function MemoryStep(): ReactNode {
   const memoryOptions: MemoryOption[] = isUserScope
     ? [
         {
-          label: 'User scope (~/.claude/agent-memory/) (Recommended)',
+          label: 'User scope (~/.freecode/agent-memory/) (Recommended)',
           value: 'user',
         },
         { label: 'None (no persistent memory)', value: 'none' },
@@ -45,7 +45,7 @@ export function MemoryStep(): ReactNode {
           value: 'project',
         },
         { label: 'None (no persistent memory)', value: 'none' },
-        { label: 'User scope (~/.claude/agent-memory/)', value: 'user' },
+        { label: 'User scope (~/.freecode/agent-memory/)', value: 'user' },
         { label: 'Local scope (.claude/agent-memory-local/)', value: 'local' },
       ]
 

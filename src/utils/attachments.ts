@@ -765,9 +765,7 @@ export async function getAttachments(
     maybe('ultrathink_effort', () =>
       Promise.resolve(getUltrathinkEffortAttachment(input)),
     ),
-    maybe('mcp_tools_delta', () =>
-      getMcpToolsDeltaAttachment(toolUseContext),
-    ),
+    maybe('mcp_tools_delta', () => getMcpToolsDeltaAttachment(toolUseContext)),
     maybe('agent_listing_delta', () =>
       Promise.resolve(getAgentListingDeltaAttachment(toolUseContext, messages)),
     ),

@@ -47,7 +47,7 @@ export function optionForPermissionSaveDestination(
     case 'userSettings':
       return {
         label: 'User settings',
-        description: `Saved in ~/.claude/freecode.json`,
+        description: `Saved in ~/.freecode/freecode.json`,
         value: saveDestination,
       }
   }

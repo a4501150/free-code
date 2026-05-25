@@ -18,7 +18,7 @@ export function LocationStep(): ReactNode {
       value: 'projectSettings' as SettingSource,
     },
     {
-      label: 'Personal (~/.claude/agents/)',
+      label: 'Personal (~/.freecode/agents/)',
       value: 'userSettings' as SettingSource,
     },
   ]

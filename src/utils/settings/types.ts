@@ -1069,7 +1069,7 @@ export const SettingsSchema = lazySchema(() =>
         .record(z.string(), z.any())
         .optional()
         .describe(
-          'User-global MCP server configurations stored in ~/.claude/freecode.json. Each key is a server name, value is the server config.',
+          'User-global MCP server configurations stored in ~/.freecode/freecode.json. Each key is a server name, value is the server config.',
         ),
       // Whether to automatically approve all MCP servers in the project
       enableAllProjectMcpServers: z
@@ -1216,7 +1216,7 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'When set in managed settings, blocks non-plugin customization sources for the listed surfaces. ' +
             'Array form locks specific surfaces (e.g. ["skills", "hooks"]); `true` locks all four; `false` is an explicit no-op. ' +
-            'Blocked: ~/.claude/{surface}/, .claude/{surface}/ (project), freecode.json hooks, .mcp.json. ' +
+            'Blocked: ~/.freecode/{surface}/, .claude/{surface}/ (project), freecode.json hooks, .mcp.json. ' +
             'NOT blocked: managed (policySettings) sources, plugin-provided customizations. ' +
             'Composes with strictKnownMarketplaces for end-to-end admin control — plugins gated by ' +
             'marketplace allowlist, everything else blocked here.',
@@ -1486,7 +1486,7 @@ export const SettingsSchema = lazySchema(() =>
         .optional()
         .describe(
           'Custom directory for plan files, relative to project root. ' +
-            'If not set, defaults to ~/.claude/plans/',
+            'If not set, defaults to ~/.freecode/plans/',
         ),
       ...(feature('KAIROS')
         ? {
@@ -1595,7 +1595,7 @@ export const SettingsSchema = lazySchema(() =>
         .string()
         .optional()
         .describe(
-          'Custom directory path for auto-memory storage. Supports ~/ prefix for home directory expansion. Ignored if set in projectSettings (checked-in .claude/freecode.json) for security. When unset, defaults to ~/.claude/projects/<sanitized-cwd>/memory/.',
+          'Custom directory path for auto-memory storage. Supports ~/ prefix for home directory expansion. Ignored if set in projectSettings (checked-in .claude/freecode.json) for security. When unset, defaults to ~/.freecode/projects/<sanitized-cwd>/memory/.',
         ),
       autoDreamEnabled: z
         .boolean()

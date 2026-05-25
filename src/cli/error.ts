@@ -11,7 +11,7 @@ import { getErrorLogByIndex, loadErrorLogs, logError } from '../utils/log.js'
  *
  * Error-log persistence is controlled by the `errorLogSink` setting in
  * freecode.json (default: false). When enabled, errors are written to
- * `~/.claude/errors/`.
+ * `~/.freecode/errors/`.
  */
 export async function errorHandler(n: number | undefined): Promise<void> {
   if (n === undefined) {

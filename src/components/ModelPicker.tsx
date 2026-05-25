@@ -56,7 +56,7 @@ export type Props = {
    * When true, skip writing per-model selectedEffort to provider config on
    * selection. Used by the assistant installer wizard where the model choice
    * is project-scoped (written to the assistant's .claude/freecode.json via
-   * install.ts) and should not leak to the user's global ~/.claude/freecode.json.
+   * install.ts) and should not leak to the user's global ~/.freecode/freecode.json.
    */
   skipSettingsWrite?: boolean
 }

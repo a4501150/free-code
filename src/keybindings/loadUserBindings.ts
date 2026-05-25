@@ -1,7 +1,7 @@
 /**
  * User keybinding configuration loader with hot-reload support.
  *
- * Loads keybindings from ~/.claude/keybindings.json and watches
+ * Loads keybindings from ~/.freecode/keybindings.json and watches
  * for changes to reload them automatically.
  */
 

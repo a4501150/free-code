@@ -30,7 +30,7 @@ import {
   Option,
 } from '@commander-js/extra-typings'
 import chalk from 'chalk'
-import { readFileSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import mapValues from 'lodash-es/mapValues.js'
 import pickBy from 'lodash-es/pickBy.js'
 import uniqBy from 'lodash-es/uniqBy.js'
@@ -220,6 +220,13 @@ import {
 } from './utils/sessionStorage.js'
 import { ensureMdmSettingsLoaded } from './utils/settings/mdm/settings.js'
 import { freecodeSettingsFileExists } from './utils/settings/freecodeSettings.js'
+import {
+  copyConfigDir,
+  getFreecodeConfigDir,
+  getLegacyClaudeConfigDir,
+  migrateToFreecodeDir,
+  needsConfigDirMigration,
+} from './utils/settings/migrateConfigDir.js'
 import { legacySettingsFileExists } from './utils/settings/migrateToFreecode.js'
 import {
   getInitialSettings,
@@ -902,7 +909,16 @@ async function run(): Promise<CommanderCommand> {
 
     profileCheckpoint('preAction_after_migrations')
 
-    // Non-interactive users who still have only legacy ~/.claude/settings.json
+    // Non-interactive: auto-migrate ~/.claude/ → ~/.freecode/ so headless
+    // invocations work without requiring an interactive session first.
+    if (!process.stdout.isTTY && needsConfigDirMigration()) {
+      migrateToFreecodeDir()
+      process.stderr.write(
+        'Note: migrated config from ~/.claude/ to ~/.freecode/.\n',
+      )
+    }
+
+    // Non-interactive users who still have only legacy ~/.freecode/settings.json
     // get a one-line stderr nudge. The provider registry's in-memory legacy
     // env-var synthesis keeps this invocation working; migration itself
     // happens only through the interactive setup-screen dialog.
@@ -912,7 +928,7 @@ async function run(): Promise<CommanderCommand> {
       legacySettingsFileExists()
     ) {
       process.stderr.write(
-        'Note: legacy ~/.claude/settings.json detected but no ~/.claude/freecode.json. ' +
+        'Note: legacy ~/.freecode/settings.json detected but no ~/.freecode/freecode.json. ' +
           'Using env vars directly for this non-interactive run. ' +
           "Run 'claude' interactively once to migrate.\n",
       )
@@ -2747,7 +2763,7 @@ async function run(): Promise<CommanderCommand> {
 
       logManagedSettings()
 
-      // Register PID file for concurrent-session detection (~/.claude/sessions/)
+      // Register PID file for concurrent-session detection (~/.freecode/sessions/)
       // and fire multi-clauding telemetry. Lives here (not init.ts) so only the
       // REPL path registers — not subcommands like `claude doctor`. Chained:
       // count must run after register's write completes or it misses our own file.
@@ -3950,7 +3966,7 @@ async function run(): Promise<CommanderCommand> {
     )
     .option(
       '--keep-data',
-      "Preserve the plugin's persistent data directory (~/.claude/plugins/data/{id}/)",
+      "Preserve the plugin's persistent data directory (~/.freecode/plugins/data/{id}/)",
     )
     .addOption(coworkOption())
     .action(
@@ -4084,6 +4100,56 @@ async function run(): Promise<CommanderCommand> {
     .action(async () => {
       const root = await createRoot(getBaseRenderOptions(false))
       await doctorHandler(root)
+    })
+
+  // Migrate config directory between ~/.claude and ~/.freecode
+  program
+    .command('migrate-config')
+    .description(
+      'Copy config directory between ~/.claude and ~/.freecode for plug-and-play compatibility.',
+    )
+    .option(
+      '--to-claude',
+      'Copy ~/.freecode/ to ~/.claude/ (restore original Claude Code layout)',
+    )
+    .option(
+      '--to-freecode',
+      'Copy ~/.claude/ to ~/.freecode/ (migrate to Free Code layout)',
+    )
+    .action(async (options: { toClaude?: boolean; toFreecode?: boolean }) => {
+      if (options.toClaude && options.toFreecode) {
+        process.stderr.write(
+          'Error: cannot specify both --to-claude and --to-freecode.\n',
+        )
+        process.exit(1)
+      }
+
+      if (!options.toClaude && !options.toFreecode) {
+        process.stderr.write('Error: specify --to-claude or --to-freecode.\n')
+        process.exit(1)
+      }
+
+      const src = options.toClaude
+        ? getFreecodeConfigDir()
+        : getLegacyClaudeConfigDir()
+      const dst = options.toClaude
+        ? getLegacyClaudeConfigDir()
+        : getFreecodeConfigDir()
+
+      if (!existsSync(src)) {
+        process.stderr.write(`Error: source directory ${src} does not exist.\n`)
+        process.exit(1)
+      }
+
+      if (existsSync(dst)) {
+        process.stderr.write(
+          `Warning: destination ${dst} already exists. Overwriting.\n`,
+        )
+      }
+
+      copyConfigDir(src, dst)
+      process.stdout.write(`Copied ${src} → ${dst}\n`)
+      process.exit(0)
     })
 
   // claude update

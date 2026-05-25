@@ -45,7 +45,7 @@ export function SelectEventMode({
             </Text>
             <Text dimColor>
               Only hooks from managed settings can run. User-defined hooks from
-              ~/.claude/freecode.json, .claude/freecode.json, and
+              ~/.freecode/freecode.json, .claude/freecode.json, and
               .claude/freecode.local.json are blocked.
             </Text>
           </Box>

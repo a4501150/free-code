@@ -36,8 +36,9 @@ export function registerDreamSkill(): void {
 
       // Transcript directory: either session-specific or general
       const configDir =
+        process.env.FREECODE_CONFIG_DIR ??
         process.env.CLAUDE_CONFIG_DIR ??
-        join(process.env.HOME ?? '~', '.claude')
+        join(process.env.HOME ?? '~', '.freecode')
       const transcriptDir = join(configDir, 'sessions')
 
       // Check for daily logs directory (assistant-mode layout)

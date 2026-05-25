@@ -35,7 +35,7 @@ export function isInClaudeFolder(filePath: string): boolean {
 }
 
 /**
- * Check if a path is within the global ~/.claude/ folder.
+ * Check if a path is within the global ~/.freecode/ folder.
  * This is used to determine whether to show the special ".claude folder" permission option
  * for files in the user's home directory.
  */

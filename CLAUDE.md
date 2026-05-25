@@ -87,6 +87,10 @@ The codex `/v1/responses` adapter intentionally handles llama.cpp event-order di
 
 `TasksV2Store` in [src/hooks/useTasksV2.ts](src/hooks/useTasksV2.ts) must use `getMainTaskListId()`, not `getTaskListId()`. Signals like `notifyTasksUpdated()` fire inside the subagent's `AsyncLocalStorage` scope, and `setTimeout` inherits that context — causing the main UI to fetch from the wrong task list directory.
 
+### Global config directory is `~/.freecode/`, env var is `FREECODE_CONFIG_DIR`
+
+The global config directory is `~/.freecode/` (was `~/.claude/`). The env var override is `FREECODE_CONFIG_DIR` with `CLAUDE_CONFIG_DIR` as a backwards-compat fallback. Per-project `.claude/` directories are unchanged. On first interactive launch, users with an existing `~/.claude/` are prompted to migrate. Files named `~/.claude.json` (the legacy global config file) are a separate thing from the `~/.claude/` directory.
+
 ### ScrollBox children should not rely on percentage height
 
 Inside ScrollBox content, a Yoga node with percentage height can collapse after culling and re-entry. Prefer an explicit minimum height or stretch with no shrink for divider-like children. See [src/components/LogoV2/LogoV2.tsx](src/components/LogoV2/LogoV2.tsx) for the current pattern.

@@ -8,7 +8,7 @@
  * The CLI runs WITHOUT --bare mode so all tools are registered naturally.
  * No special permission flags — uses the real default permission mode.
  * Test isolation is achieved through env variables:
- * - Temp CLAUDE_CONFIG_DIR and HOME (no real user config)
+ * - Temp FREECODE_CONFIG_DIR/CLAUDE_CONFIG_DIR and HOME (no real user config)
  * - CLAUDE_CODE_DISABLE_* flags (no background tasks, memory, etc.)
  *
  * Tmux pane output is piped to a log file and dumped on timeout for debugging.
@@ -185,6 +185,7 @@ export class TmuxSession {
       ANTHROPIC_API_KEY: API_KEY,
       ANTHROPIC_AUTH_TOKEN: '', // unset to avoid auth conflict
       ANTHROPIC_BASE_URL: this._serverUrl,
+      FREECODE_CONFIG_DIR: this.configDir,
       CLAUDE_CONFIG_DIR: this.configDir,
       HOME: this.homeDir,
       CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',

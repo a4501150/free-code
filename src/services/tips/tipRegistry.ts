@@ -260,7 +260,7 @@ const externalTips: Tip[] = [
   {
     id: 'custom-commands',
     content: async () =>
-      'Create skills by adding .md files to .claude/skills/ in your project or ~/.claude/skills/ for skills that work in any project',
+      'Create skills by adding .md files to .claude/skills/ in your project or ~/.freecode/skills/ for skills that work in any project',
     isRelevant: async () => true,
   },
   {

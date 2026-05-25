@@ -1,6 +1,6 @@
 /**
- * One-shot migration from legacy `~/.claude/settings.json` →
- * `~/.claude/freecode.json`.
+ * One-shot migration from legacy `~/.freecode/settings.json` →
+ * `~/.freecode/freecode.json`.
  *
  * Called only by the user-consented migration dialog in `showSetupScreens`.
  * Writes a complete `freecode.json` in a single pass:
@@ -66,7 +66,7 @@ function legacySettingsPath(): string {
 }
 
 /**
- * Does `~/.claude/settings.json` exist on disk?
+ * Does `~/.freecode/settings.json` exist on disk?
  * Direct existence check — does not go through the settings cache.
  */
 export function legacySettingsFileExists(): boolean {
@@ -92,7 +92,9 @@ function readLegacySettings(): Record<string, unknown> | null {
  */
 function readGlobalClaudeJson(): Record<string, unknown> | null {
   const configPath = join(
-    process.env.CLAUDE_CONFIG_DIR || homedir(),
+    process.env.FREECODE_CONFIG_DIR ||
+      process.env.CLAUDE_CONFIG_DIR ||
+      homedir(),
     '.claude.json',
   )
   if (!existsSync(configPath)) return null
@@ -108,8 +110,8 @@ function readGlobalClaudeJson(): Record<string, unknown> | null {
 }
 
 /**
- * User-consented, one-shot migration of `~/.claude/settings.json` →
- * `~/.claude/freecode.json`. Writes a complete `freecode.json` in a single
+ * User-consented, one-shot migration of `~/.freecode/settings.json` →
+ * `~/.freecode/freecode.json`. Writes a complete `freecode.json` in a single
  * pass. Safe to call even if `settings.json` is missing (becomes a no-op
  * write of `{}`).
  *

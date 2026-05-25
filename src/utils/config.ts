@@ -572,7 +572,7 @@ function saveConfigWithLock<A extends object>(
 
     // Create timestamped backup of existing config before writing
     // We keep multiple backups to prevent data loss if a reset/corrupted config
-    // overwrites a good backup. Backups are stored in ~/.claude/backups/ to
+    // overwrites a good backup. Backups are stored in ~/.freecode/backups/ to
     // keep the home directory clean.
     try {
       const fileBase = basename(file)
@@ -689,7 +689,7 @@ export function enableConfigs(): void {
 
 /**
  * Returns the directory where config backup files are stored.
- * Uses ~/.claude/backups/ to keep the home directory clean.
+ * Uses ~/.freecode/backups/ to keep the home directory clean.
  */
 function getConfigBackupDir(): string {
   return join(getClaudeConfigHomeDir(), 'backups')
@@ -697,7 +697,7 @@ function getConfigBackupDir(): string {
 
 /**
  * Find the most recent backup file for a given config file.
- * Checks ~/.claude/backups/ first, then falls back to the legacy location
+ * Checks ~/.freecode/backups/ first, then falls back to the legacy location
  * (next to the config file) for backwards compatibility.
  * Returns the full path to the most recent backup, or null if none exist.
  */
