@@ -361,7 +361,8 @@ function writeStateToDisk(config: GlobalConfig): void {
   const filteredConfig = pickBy(
     config,
     (value, key) =>
-      jsonStringify(value) !== jsonStringify(defaultConfig[key as keyof GlobalConfig]),
+      jsonStringify(value) !==
+      jsonStringify(defaultConfig[key as keyof GlobalConfig]),
   )
   writeFreecodeSettingsFile({ state: filteredConfig })
   globalConfigWriteCount++
@@ -427,7 +428,11 @@ function startGlobalConfigFreshnessWatcher(): void {
           const parsed = safeParseJSONC(stripBOM(content))
           if (parsed === null || typeof parsed !== 'object') return
           const stateObj = (parsed as Record<string, unknown>).state
-          if (!stateObj || typeof stateObj !== 'object' || Array.isArray(stateObj)) {
+          if (
+            !stateObj ||
+            typeof stateObj !== 'object' ||
+            Array.isArray(stateObj)
+          ) {
             globalConfigCache = {
               config: createDefaultGlobalConfig(),
               mtime: curr.mtimeMs,

@@ -18,6 +18,13 @@ import type {
   BetaMessageParam as MessageParam,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type {
+  DomainAssistantContent,
+  DomainContentBlock,
+  DomainReasoningBlock,
+  DomainUsage,
+} from '../../types/domain.js'
+import { domainBlockToAnthropic } from '../../types/domainConversion.js'
 import type { Stream } from '@anthropic-ai/sdk/streaming.mjs'
 import { randomUUID } from 'crypto'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
@@ -73,7 +80,7 @@ import {
   normalizeContentFromAPI,
   normalizeMessagesForAPI,
   stripAdvisorBlocks,
-  stripUnsignedThinkingBlocks,
+  stripForeignReasoningBlocks,
 } from '../../utils/messages.js'
 import { getSmallFastModel } from '../../utils/model/model.js'
 import {
@@ -566,6 +573,17 @@ export function userMessageToMessageParam(
   }
 }
 
+function convertDomainBlock(block: unknown): BetaContentBlock | null {
+  const b = block as DomainContentBlock
+  if (
+    (b.type === 'reasoning' || b.type === 'redacted_reasoning') &&
+    !b.providerState?.anthropic
+  ) {
+    return block as unknown as BetaContentBlock
+  }
+  return domainBlockToAnthropic(b)
+}
+
 export function assistantMessageToMessageParam(
   message: AssistantMessage,
   addCache = false,
@@ -587,25 +605,33 @@ export function assistantMessageToMessageParam(
         ],
       }
     } else {
+      const converted = message.message.content
+        .map(convertDomainBlock)
+        .filter((b): b is BetaContentBlock => b !== null)
       return {
         role: 'assistant',
-        content: message.message.content.map((_, i) => ({
+        content: converted.map((_, i) => ({
           ..._,
-          ...(i === message.message.content.length - 1 &&
+          ...(i === converted.length - 1 &&
           _.type !== 'thinking' &&
           _.type !== 'redacted_thinking' &&
+          _.type !== 'reasoning' &&
+          _.type !== 'redacted_reasoning' &&
           (feature('CONNECTOR_TEXT') ? !isConnectorTextBlock(_) : true)
             ? enablePromptCaching
               ? { cache_control: getCacheControl({ querySource }) }
               : {}
             : {}),
-        })),
+        })) as unknown as BetaContentBlockParam[],
       }
     }
   }
+  const converted = message.message.content
+    .map(convertDomainBlock)
+    .filter((b): b is BetaContentBlock => b !== null)
   return {
     role: 'assistant',
-    content: message.message.content,
+    content: converted as unknown as BetaContentBlockParam[],
   }
 }
 
@@ -918,16 +944,23 @@ function getPreviousRequestIdFromMessages(
   return undefined
 }
 
-function isMedia(
-  block: BetaContentBlockParam,
-): block is BetaImageBlockParam | BetaRequestDocumentBlock {
-  return block.type === 'image' || block.type === 'document'
+function isMedia(block: unknown): boolean {
+  return (
+    !!block &&
+    typeof block === 'object' &&
+    ((block as { type?: string }).type === 'image' ||
+      (block as { type?: string }).type === 'document')
+  )
 }
 
 function isToolResult(
-  block: BetaContentBlockParam,
-): block is BetaToolResultBlockParam {
-  return block.type === 'tool_result'
+  block: unknown,
+): block is { type: 'tool_result'; content?: unknown[] } {
+  return (
+    !!block &&
+    typeof block === 'object' &&
+    (block as { type?: string }).type === 'tool_result'
+  )
 }
 
 /**
@@ -1114,16 +1147,15 @@ async function* queryModel(
   let messagesForAPI = normalizeMessagesForAPI(messages, filteredTools)
   queryCheckpoint('query_message_normalization_end')
 
-  // Strip thinking blocks with missing/empty signatures when the target is an
-  // Anthropic-type provider. The Anthropic API requires a valid server-generated
-  // signature on every thinking block in conversation history. Thinking blocks
-  // from non-Anthropic providers (OpenAI, Bedrock, etc.) never have signatures,
-  // so sending them to an Anthropic target causes a 400 error. Other providers'
-  // adapters silently drop thinking blocks during translation, so this is only
-  // needed for Anthropic targets.
-  if (registry.isAnthropicType(options.model)) {
-    messagesForAPI = stripUnsignedThinkingBlocks(messagesForAPI)
-  }
+  // Strip reasoning blocks that don't belong to the target provider.
+  // Each provider only accepts its own opaque continuation data:
+  // Anthropic needs signed thinking blocks, OpenAI Responses needs
+  // encrypted reasoning with a reasoningId, and other providers don't
+  // accept reasoning blocks at all.
+  messagesForAPI = stripForeignReasoningBlocks(
+    messagesForAPI,
+    registry.getProviderType(options.model),
+  )
 
   // Repair tool_use/tool_result pairing mismatches that can occur when resuming
   // remote/teleport sessions. Inserts synthetic error tool_results for orphaned
@@ -1496,7 +1528,11 @@ async function* queryModel(
   const newMessages: AssistantMessage[] = []
   let ttftMs = 0
   let partialMessage: BetaMessage | undefined = undefined
-  const contentBlocks: (BetaContentBlock | ConnectorTextBlock)[] = []
+  const contentBlocks: (
+    | BetaContentBlock
+    | ConnectorTextBlock
+    | DomainContentBlock
+  )[] = []
   let usage: NonNullableUsage = EMPTY_USAGE
   let costUSD = 0
   let stopReason: BetaStopReason | null = null
@@ -1751,28 +1787,38 @@ async function* queryModel(
                     text: '',
                   }
                   break
-                case 'thinking':
+                case 'thinking': {
+                  const providerType = getProviderRegistry().getProviderType(
+                    options.model,
+                  )
                   contentBlocks[part.index] = {
-                    ...part.content_block,
-                    // also awkward
-                    thinking: '',
-                    // initialize signature to ensure field exists even if signature_delta never arrives
-                    signature: '',
-                    // In-memory provenance tag so outbound adapters can drop
-                    // foreign-provider thinking blocks. Not serialized to disk.
-                    sourceProvider:
-                      getProviderRegistry().getProviderType(options.model) ??
-                      undefined,
+                    type: 'reasoning',
+                    text: '',
+                    providerState:
+                      providerType === 'anthropic'
+                        ? {
+                            anthropic: {
+                              signature: '',
+                              blockKind: 'thinking' as const,
+                            },
+                          }
+                        : {},
                   } as (typeof contentBlocks)[number]
                   break
-                case 'redacted_thinking':
+                }
+                case 'redacted_thinking': {
                   contentBlocks[part.index] = {
-                    ...part.content_block,
-                    sourceProvider:
-                      getProviderRegistry().getProviderType(options.model) ??
-                      undefined,
+                    type: 'redacted_reasoning',
+                    providerState: {
+                      anthropic: {
+                        redactedData:
+                          (part.content_block as { data?: string }).data ?? '',
+                        blockKind: 'redacted_thinking' as const,
+                      },
+                    },
                   } as (typeof contentBlocks)[number]
                   break
+                }
                 default:
                   // even more awkwardly, the sdk mutates the contents of text blocks
                   // as it works. we want the blocks to be immutable, so that we can
@@ -1805,35 +1851,24 @@ async function* queryModel(
                 }
                 contentBlock.connector_text += delta.connector_text
               } else if (
-                // Codex / OpenAI Responses side-channel update for thinking
-                // blocks. Used by codex-fetch-adapter to deliver
-                // `codexEncryptedContent` (only available on output_item.done)
-                // to a thinking block whose content_block_start was emitted
-                // earlier (eagerly, on output_item.added) so reasoning could
-                // stream live to the UI. Without this update, real OpenAI's
-                // stateful encrypted blob would be lost and cross-turn
-                // reasoning round-trip would break for OpenAI providers.
-                // No-op for non-thinking blocks.
                 (delta.type as string) === 'codex_reasoning_meta_delta'
               ) {
-                if (contentBlock.type === 'thinking') {
+                if (contentBlock.type === 'reasoning') {
                   const d = delta as unknown as {
                     codexReasoningId?: string
                     codexEncryptedContent?: string
                   }
+                  const reasoning = contentBlock as DomainReasoningBlock
+                  if (!reasoning.providerState) reasoning.providerState = {}
+                  if (!reasoning.providerState.openaiResponses)
+                    reasoning.providerState.openaiResponses = {}
                   if (typeof d.codexReasoningId === 'string') {
-                    ;(
-                      contentBlock as unknown as {
-                        codexReasoningId?: string
-                      }
-                    ).codexReasoningId = d.codexReasoningId
+                    reasoning.providerState.openaiResponses.reasoningId =
+                      d.codexReasoningId
                   }
                   if (typeof d.codexEncryptedContent === 'string') {
-                    ;(
-                      contentBlock as unknown as {
-                        codexEncryptedContent?: string
-                      }
-                    ).codexEncryptedContent = d.codexEncryptedContent
+                    reasoning.providerState.openaiResponses.encryptedContent =
+                      d.codexEncryptedContent
                   }
                 }
               } else {
@@ -1869,16 +1904,23 @@ async function* queryModel(
                       ).signature = delta.signature
                       break
                     }
-                    if (contentBlock.type !== 'thinking') {
-                      throw new Error('Content block is not a thinking block')
+                    if (contentBlock.type !== 'reasoning') {
+                      throw new Error('Content block is not a reasoning block')
                     }
-                    contentBlock.signature = delta.signature
+                    {
+                      const rb = contentBlock as DomainReasoningBlock
+                      if (!rb.providerState) rb.providerState = {}
+                      if (!rb.providerState.anthropic)
+                        rb.providerState.anthropic = {}
+                      rb.providerState.anthropic.signature = delta.signature
+                    }
                     break
                   case 'thinking_delta':
-                    if (contentBlock.type !== 'thinking') {
-                      throw new Error('Content block is not a thinking block')
+                    if (contentBlock.type !== 'reasoning') {
+                      throw new Error('Content block is not a reasoning block')
                     }
-                    contentBlock.thinking += delta.thinking
+                    ;(contentBlock as DomainReasoningBlock).text +=
+                      delta.thinking
                     break
                 }
               }
@@ -1896,7 +1938,7 @@ async function* queryModel(
                 message: {
                   ...partialMessage,
                   content: normalizeContentFromAPI(
-                    [contentBlock] as BetaContentBlock[],
+                    [contentBlock] as unknown as DomainContentBlock[],
                     tools,
                     options.agentId,
                   ),
@@ -1931,7 +1973,7 @@ async function* queryModel(
 
               const lastMsg = newMessages.at(-1)
               if (lastMsg) {
-                lastMsg.message.usage = usage as unknown as BetaUsage
+                lastMsg.message.usage = usage as DomainUsage
                 lastMsg.message.stop_reason = stopReason
               }
 
@@ -2211,15 +2253,16 @@ async function* queryModel(
           failedRequestId,
         )
 
+        const domainContent = normalizeContentFromAPI(
+          result.content as unknown as DomainContentBlock[],
+          tools,
+          options.agentId,
+        )
         const m: AssistantMessage = {
           message: {
-            ...result,
-            content: normalizeContentFromAPI(
-              result.content,
-              tools,
-              options.agentId,
-            ),
-          },
+            ...(result as unknown as DomainAssistantContent),
+            content: domainContent,
+          } as DomainAssistantContent,
           requestId: streamRequestId ?? undefined,
           type: 'assistant',
           uuid: randomUUID(),
@@ -2357,13 +2400,17 @@ async function* queryModel(
     // message_delta handler before any yield. Fallback pushes to newMessages
     // then yields, so tracking must be here to survive .return() at the yield.
     if (fallbackMessage) {
-      const fallbackUsage = fallbackMessage.message.usage
+      const fallbackUsage = fallbackMessage.message
+        .usage as unknown as BetaMessageDeltaUsage
       usage = updateUsage(EMPTY_USAGE, fallbackUsage)
       stopReason = fallbackMessage.message.stop_reason
-      const fallbackCost = calculateUSDCost(resolvedModel, fallbackUsage)
+      const fallbackCost = calculateUSDCost(
+        resolvedModel,
+        fallbackUsage as unknown as BetaUsage,
+      )
       costUSD += addToTotalSessionCost(
         fallbackCost,
-        fallbackUsage,
+        fallbackUsage as unknown as BetaUsage,
         options.model,
       )
     }

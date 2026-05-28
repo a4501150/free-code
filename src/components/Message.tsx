@@ -1,5 +1,6 @@
 import { feature } from 'bun:bundle'
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+import type { DomainContentBlock } from '../types/domain.js'
 import type {
   ImageBlockParam,
   TextBlockParam,
@@ -375,6 +376,7 @@ function AssistantMessageBlock({
 }: {
   param:
     | BetaContentBlock
+    | DomainContentBlock
     | ConnectorTextBlock
     | AdvisorBlock
     | TextBlockParam
@@ -435,7 +437,7 @@ function AssistantMessageBlock({
     case 'text':
       return (
         <AssistantTextMessage
-          param={param}
+          param={param as { type: 'text'; text: string }}
           addMargin={addMargin}
           shouldShowDot={shouldShowDot}
           verbose={verbose}
@@ -443,12 +445,12 @@ function AssistantMessageBlock({
           onOpenRateLimitOptions={onOpenRateLimitOptions}
         />
       )
-    case 'redacted_thinking':
+    case 'redacted_reasoning':
       if (!isTranscriptMode && !verbose) {
         return null
       }
       return <AssistantRedactedThinkingMessage addMargin={addMargin} />
-    case 'thinking': {
+    case 'reasoning': {
       if (!isTranscriptMode && !verbose) {
         return null
       }
@@ -494,7 +496,7 @@ export function hasThinkingContent(m: {
 }): boolean {
   if (m.type !== 'assistant' || !m.message) return false
   return m.message.content.some(
-    b => b.type === 'thinking' || b.type === 'redacted_thinking',
+    b => b.type === 'reasoning' || b.type === 'redacted_reasoning',
   )
 }
 

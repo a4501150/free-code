@@ -1,3 +1,4 @@
+import type { DomainAssistantContent } from '../types/domain.js'
 import type { UUID } from 'crypto'
 import type {
   BetaMessage,
@@ -36,7 +37,7 @@ import { createUserMessage } from '../utils/messages.js'
 function convertAssistantMessage(msg: SDKAssistantMessage): AssistantMessage {
   return {
     type: 'assistant',
-    message: msg.message as BetaMessage,
+    message: msg.message as unknown as DomainAssistantContent,
     uuid: msg.uuid as UUID,
     requestId: undefined,
     timestamp: new Date().toISOString(),

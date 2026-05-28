@@ -81,6 +81,10 @@ import {
   SKIP_PRECOMPACT_THRESHOLD,
 } from './sessionStoragePortable.js'
 import { getSettings_DEPRECATED } from './settings/settings.js'
+import {
+  migrateLegacyContent,
+  needsLegacyMigration,
+} from '../types/domainConversion.js'
 import { jsonParse, jsonStringify } from './slowOperations.js'
 import type { ContentReplacementRecord } from './toolResultStorage.js'
 import { validateUuid } from './uuid.js'
@@ -3123,6 +3127,16 @@ export async function loadTranscriptFile(
       if (isTranscriptMessage(entry)) {
         if (entry.parentUuid && progressBridge.has(entry.parentUuid)) {
           entry.parentUuid = progressBridge.get(entry.parentUuid) ?? null
+        }
+        // Migrate legacy thinking/redacted_thinking blocks to domain reasoning format
+        if (
+          entry.type === 'assistant' &&
+          Array.isArray(entry.message?.content) &&
+          needsLegacyMigration(entry.message.content)
+        ) {
+          entry.message.content = migrateLegacyContent(
+            entry.message.content,
+          ) as any
         }
         messages.set(entry.uuid, entry)
       } else if (entry.type === 'summary' && entry.leafUuid) {

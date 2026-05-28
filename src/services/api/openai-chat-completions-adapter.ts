@@ -227,7 +227,7 @@ function translateMessages(
             },
           })
         }
-        // thinking / redacted_thinking: dropped.
+        // reasoning / redacted_reasoning / thinking / redacted_thinking: dropped.
       }
 
       const assistantMsg: ChatCompletionsMessage = {

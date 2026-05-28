@@ -27,9 +27,9 @@ export function getTokenUsage(message: Message): Usage | undefined {
       SYNTHETIC_MESSAGES.has(message.message.content[0].text)
     ) &&
     message.message.model !== SYNTHETIC_MODEL &&
-    !isPlaceholderUsage(message.message.usage)
+    !isPlaceholderUsage(message.message.usage as Usage)
   ) {
-    return message.message.usage
+    return message.message.usage as Usage
   }
   return undefined
 }
@@ -241,10 +241,11 @@ export function getAssistantMessageContentLength(
   for (const block of message.message.content) {
     if (block.type === 'text') {
       contentLength += block.text.length
-    } else if (block.type === 'thinking') {
-      contentLength += block.thinking.length
-    } else if (block.type === 'redacted_thinking') {
-      contentLength += block.data.length
+    } else if (block.type === 'reasoning') {
+      contentLength += block.text.length
+    } else if (block.type === 'redacted_reasoning') {
+      contentLength += (block.providerState?.anthropic?.redactedData ?? '')
+        .length
     } else if (block.type === 'tool_use') {
       contentLength += jsonStringify(block.input).length
     }

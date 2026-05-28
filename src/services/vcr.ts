@@ -1,4 +1,8 @@
-import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+import type {
+  BetaContentBlock,
+  BetaUsage,
+} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+import type { DomainContentBlock } from '../types/domain.js'
 import { createHash, randomUUID, type UUID } from 'crypto'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import isPlainObject from 'lodash-es/isPlainObject.js'
@@ -160,8 +164,8 @@ function addCachedCostToTotalSessionCost(
   }
   const model = message.message.model
   const usage = message.message.usage
-  const costUSD = calculateUSDCost(model, usage)
-  addToTotalSessionCost(costUSD, usage, model)
+  const costUSD = calculateUSDCost(model, usage as unknown as BetaUsage)
+  addToTotalSessionCost(costUSD, usage as unknown as BetaUsage, model)
 }
 
 function mapMessages(
@@ -261,7 +265,7 @@ function mapAssistantMessage(
               return _ // Handle other block types unchanged
           }
         })
-        .filter(Boolean) as BetaContentBlock[],
+        .filter(Boolean) as unknown as DomainContentBlock[],
     },
     type: 'assistant',
   }

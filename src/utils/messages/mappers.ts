@@ -266,7 +266,7 @@ function normalizeAssistantMessageForSDK(
     return message.message
   }
 
-  const normalizedContent = content.map((block): BetaContentBlock => {
+  const normalizedContent = content.map((block): typeof block => {
     if (block.type !== 'tool_use') {
       return block
     }

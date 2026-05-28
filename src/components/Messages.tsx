@@ -457,7 +457,7 @@ const MessagesImpl = ({
         const content = msg.message.content
         // Find the last thinking block in this message
         for (let j = content.length - 1; j >= 0; j--) {
-          if (content[j]?.type === 'thinking') {
+          if (content[j]?.type === 'reasoning') {
             return `${msg.uuid}:${j}`
           }
         }
@@ -993,8 +993,8 @@ const MessagesImpl = ({
         <Box marginTop={1}>
           <AssistantThinkingMessage
             param={{
-              type: 'thinking',
-              thinking: streamingThinking.thinking,
+              type: 'reasoning' as const,
+              text: streamingThinking.thinking,
             }}
             addMargin={false}
             isTranscriptMode={true}

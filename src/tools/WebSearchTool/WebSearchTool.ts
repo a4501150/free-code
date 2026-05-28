@@ -2,6 +2,7 @@ import type {
   BetaContentBlock,
   BetaWebSearchTool20250305,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+import type { DomainContentBlock } from '../../types/domain.js'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import type { PermissionResult } from 'src/utils/permissions/PermissionResult.js'
 import { z } from 'zod/v4'
@@ -95,7 +96,7 @@ function makeToolSchema(input: Input): BetaWebSearchTool20250305 {
 }
 
 function makeOutputFromSearchResponse(
-  result: BetaContentBlock[],
+  result: (BetaContentBlock | DomainContentBlock)[],
   query: string,
   durationSeconds: number,
 ): Output {
@@ -273,7 +274,7 @@ export const WebSearchTool = buildTool({
       },
     })
 
-    const allContentBlocks: BetaContentBlock[] = []
+    const allContentBlocks: (BetaContentBlock | DomainContentBlock)[] = []
     let currentToolUseId = null
     let currentToolUseJson = ''
     let progressCounter = 0

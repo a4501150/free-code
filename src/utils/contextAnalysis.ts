@@ -1,4 +1,5 @@
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+import type { DomainContentBlock } from '../types/domain.js'
 import type {
   ContentBlock,
   ContentBlockParam,
@@ -97,7 +98,11 @@ export function analyzeContext(messages: Message[]): TokenStats {
 }
 
 function processBlock(
-  block: ContentBlockParam | ContentBlock | BetaContentBlock,
+  block:
+    | ContentBlockParam
+    | ContentBlock
+    | BetaContentBlock
+    | DomainContentBlock,
   message: UserMessage | AssistantMessage,
   stats: TokenStats,
   toolIds: Map<string, string>,

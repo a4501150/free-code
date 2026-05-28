@@ -1,4 +1,8 @@
 import type { Anthropic } from '@anthropic-ai/sdk'
+import type {
+  BetaContentBlockParam,
+  BetaMessageParam,
+} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import {
   getSystemPrompt,
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
@@ -685,13 +689,12 @@ async function approximateMessageTokens(
     normalizeMessagesForAPI(microcompactResult.messages).map(_ => {
       if (_.type === 'assistant') {
         return {
-          // Important: strip out fields like id, etc. -- the counting API errors if they're present
-          role: 'assistant',
-          content: _.message.content,
+          role: 'assistant' as const,
+          content: _.message.content as unknown as BetaContentBlockParam[],
         }
       }
       return _.message
-    }),
+    }) as BetaMessageParam[],
     [],
   )
 

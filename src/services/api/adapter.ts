@@ -22,8 +22,8 @@
  *    correctness guarantee is enforced on OUTBOUND — each adapter's
  *    outbound translate-messages pass drops thinking blocks on the way
  *    back to its provider (they never reach the wire as input), and
- *    `stripUnsignedThinkingBlocks` performs the same role for the
- *    Anthropic target. This lets users see reasoning live without
+ *    `stripForeignReasoningBlocks` performs the same role for all
+ *    targets. This lets users see reasoning live without
  *    triggering the "strip-on-next-turn" bug.
  *
  * 3. Adapters MAY attach provider-native, opaque side-channel payloads to

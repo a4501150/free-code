@@ -10,12 +10,9 @@
  * consumers. Keep them in sync with those files.
  */
 
-import type {
-  BetaContentBlock,
-  BetaMessage,
-  BetaRawMessageStreamEvent,
-} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+import type { BetaRawMessageStreamEvent } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
+import type { DomainAssistantContent, DomainContentBlock } from './domain.js'
 import type { APIError } from '@anthropic-ai/sdk'
 import type { SDKAssistantErrorReason } from 'src/structuredProtocol/index.js'
 import type { Attachment } from '../utils/attachments.js'
@@ -84,15 +81,15 @@ export type StopHookInfo = {
 // Core message variants
 
 /**
- * An assistant turn wrapping the SDK's `BetaMessage`. API-error assistant
- * messages reuse the same shape with `isApiErrorMessage: true` and the
- * synthetic-model marker.
+ * An assistant turn wrapping a provider-neutral `DomainAssistantContent`.
+ * API-error assistant messages reuse the same shape with
+ * `isApiErrorMessage: true` and the synthetic-model marker.
  */
 export type AssistantMessage = {
   type: 'assistant'
   uuid: UUID
   timestamp: string
-  message: BetaMessage
+  message: DomainAssistantContent
   requestId?: string | undefined
   isMeta?: boolean
   isVirtual?: true
@@ -389,7 +386,7 @@ export type Message =
 // unchanged (see normalizeMessages in src/utils/messages.ts).
 
 export type NormalizedAssistantMessage = AssistantMessage & {
-  message: BetaMessage & { content: [BetaContentBlock] }
+  message: DomainAssistantContent & { content: [DomainContentBlock] }
 }
 
 export type NormalizedUserMessage = UserMessage & {

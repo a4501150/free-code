@@ -423,15 +423,16 @@ export function logAPISuccessAndDuration({
           textLen += block.text.length
         } else if (feature('CONNECTOR_TEXT') && isConnectorTextBlock(block)) {
           connectorCount++
-        } else if (block.type === 'thinking') {
-          thinkingLen += block.thinking.length
+        } else if (block.type === 'reasoning') {
+          thinkingLen += block.text.length
         } else if (
           block.type === 'tool_use' ||
           block.type === 'server_tool_use' ||
-          block.type === 'mcp_tool_use'
+          (block as { type: string }).type === 'mcp_tool_use'
         ) {
-          const inputLen = jsonStringify(block.input).length
-          toolLengths[block.name] = (toolLengths[block.name] ?? 0) + inputLen
+          const b = block as { input: unknown; name: string }
+          const inputLen = jsonStringify(b.input).length
+          toolLengths[b.name] = (toolLengths[b.name] ?? 0) + inputLen
           hasToolUse = true
         }
       }

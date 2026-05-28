@@ -8,11 +8,11 @@ import { CtrlOToExpand } from '../CtrlOToExpand.js'
 import { Markdown } from '../Markdown.js'
 
 type Props = {
-  // Accept either full ThinkingBlock/ThinkingBlockParam or a minimal shape with just type and thinking
   param:
     | ThinkingBlock
     | ThinkingBlockParam
     | { type: 'thinking'; thinking: string }
+    | { type: 'reasoning'; text: string }
   addMargin: boolean
   isTranscriptMode: boolean
   verbose: boolean
@@ -21,12 +21,14 @@ type Props = {
 }
 
 export function AssistantThinkingMessage({
-  param: { thinking },
+  param,
   addMargin = false,
   isTranscriptMode,
   verbose,
   hideInTranscript = false,
 }: Props): React.ReactNode {
+  const thinking =
+    'thinking' in param ? param.thinking : (param as { text: string }).text
   if (!thinking) {
     return null
   }

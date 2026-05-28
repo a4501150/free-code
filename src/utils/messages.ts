@@ -87,6 +87,12 @@ import type {
   BetaToolUseBlock,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type {
+  DomainAssistantContent,
+  DomainContentBlock,
+  DomainUsage,
+} from '../types/domain.js'
+import type { ProviderType } from './settings/types.js'
+import type {
   HookEvent,
   SDKAssistantErrorReason,
 } from 'src/structuredProtocol/index.js'
@@ -338,7 +344,7 @@ function baseCreateAssistantMessage({
     speed: null,
   },
 }: {
-  content: BetaContentBlock[]
+  content: DomainContentBlock[]
   isApiErrorMessage?: boolean
   apiError?: AssistantMessage['apiError']
   error?: SDKAssistantErrorReason
@@ -352,15 +358,13 @@ function baseCreateAssistantMessage({
     timestamp: new Date().toISOString(),
     message: {
       id: randomUUID(),
-      container: null,
       model: SYNTHETIC_MODEL,
       role: 'assistant',
       stop_reason: 'stop_sequence',
       stop_sequence: '',
       type: 'message',
-      usage,
+      usage: usage as DomainUsage,
       content,
-      context_management: null,
     },
     requestId: undefined,
     apiError,
@@ -376,7 +380,7 @@ export function createAssistantMessage({
   usage,
   isVirtual,
 }: {
-  content: string | BetaContentBlock[]
+  content: string | DomainContentBlock[]
   usage?: Usage
   isVirtual?: true
 }): AssistantMessage {
@@ -387,7 +391,7 @@ export function createAssistantMessage({
             {
               type: 'text' as const,
               text: content === '' ? NO_CONTENT_MESSAGE : content,
-            } as BetaContentBlock, // NOTE: citations field is not supported in Bedrock API
+            } as DomainContentBlock,
           ]
         : content,
     usage,
@@ -411,7 +415,7 @@ export function createAssistantAPIErrorMessage({
       {
         type: 'text' as const,
         text: content === '' ? NO_CONTENT_MESSAGE : content,
-      } as BetaContentBlock, // NOTE: citations field is not supported in Bedrock API
+      } as DomainContentBlock,
     ],
     isApiErrorMessage: true,
     apiError,
@@ -1298,7 +1302,7 @@ export function buildMessageLookups(
     for (const content of msg.message.content) {
       if (
         (content.type === 'server_tool_use' ||
-          content.type === 'mcp_tool_use') &&
+          (content as { type: string }).type === 'mcp_tool_use') &&
         !resolvedToolUseIDs.has((content as { id: string }).id)
       ) {
         const id = (content as { id: string }).id
@@ -2417,14 +2421,14 @@ export function mergeUserContentBlocks(
 // Sometimes the API returns empty messages (eg. "\n\n"). We need to filter these out,
 // otherwise they will give an API error when we send them to the API next time we call query().
 export function normalizeContentFromAPI(
-  contentBlocks: BetaMessage['content'],
+  contentBlocks: DomainContentBlock[],
   tools: Tools,
   agentId?: AgentId,
-): BetaMessage['content'] {
+): DomainContentBlock[] {
   if (!contentBlocks) {
     return []
   }
-  return contentBlocks.map(contentBlock => {
+  return contentBlocks.map((contentBlock: any) => {
     switch (contentBlock.type) {
       case 'tool_use': {
         if (
@@ -2735,11 +2739,11 @@ export function handleMessageFromStream(
     // Capture complete thinking blocks for real-time display in transcript mode
     if (message.type === 'assistant') {
       const thinkingBlock = message.message.content.find(
-        block => block.type === 'thinking',
+        block => block.type === 'reasoning',
       )
-      if (thinkingBlock && thinkingBlock.type === 'thinking') {
+      if (thinkingBlock && thinkingBlock.type === 'reasoning') {
         onStreamingThinking?.(() => ({
-          thinking: thinkingBlock.thinking,
+          thinking: thinkingBlock.text,
           isStreaming: false,
           streamingEndedAt: Date.now(),
         }))
@@ -4283,7 +4287,7 @@ export function isThinkingMessage(message: Message): boolean {
   if (message.type !== 'assistant') return false
   if (!Array.isArray(message.message.content)) return false
   return message.message.content.every(
-    block => block.type === 'thinking' || block.type === 'redacted_thinking',
+    block => block.type === 'reasoning' || block.type === 'redacted_reasoning',
   )
 }
 
@@ -4363,18 +4367,19 @@ export function hasSuccessfulToolCall(
   return false
 }
 
-type ThinkingBlockType =
-  | ThinkingBlock
-  | RedactedThinkingBlock
-  | ThinkingBlockParam
-  | RedactedThinkingBlockParam
-  | BetaThinkingBlock
-  | BetaRedactedThinkingBlock
-
 function isThinkingBlock(
-  block: ContentBlockParam | ContentBlock | BetaContentBlock,
-): block is ThinkingBlockType {
-  return block.type === 'thinking' || block.type === 'redacted_thinking'
+  block:
+    | ContentBlockParam
+    | ContentBlock
+    | BetaContentBlock
+    | DomainContentBlock,
+): boolean {
+  return (
+    block.type === 'reasoning' ||
+    block.type === 'redacted_reasoning' ||
+    block.type === 'thinking' ||
+    block.type === 'redacted_thinking'
+  )
 }
 
 /**
@@ -4594,7 +4599,8 @@ export function filterOrphanedThinkingOnlyMessages(
     if (!Array.isArray(content)) continue
 
     const hasNonThinking = content.some(
-      block => block.type !== 'thinking' && block.type !== 'redacted_thinking',
+      block =>
+        block.type !== 'reasoning' && block.type !== 'redacted_reasoning',
     )
     if (hasNonThinking && msg.message.id) {
       messageIdsWithNonThinkingContent.add(msg.message.id)
@@ -4614,7 +4620,8 @@ export function filterOrphanedThinkingOnlyMessages(
 
     // Check if ALL content blocks are thinking blocks
     const allThinking = content.every(
-      block => block.type === 'thinking' || block.type === 'redacted_thinking',
+      block =>
+        block.type === 'reasoning' || block.type === 'redacted_reasoning',
     )
 
     if (!allThinking) {
@@ -4679,18 +4686,15 @@ export function stripSignatureBlocks(messages: Message[]): Message[] {
 }
 
 /**
- * Strip thinking/redacted_thinking blocks that lack a valid signature.
- * The Anthropic API requires a server-generated signature on every thinking
- * block in conversation history. Blocks originating from non-Anthropic
- * providers (OpenAI, Bedrock, etc.) never carry signatures, so they must
- * be removed before sending to an Anthropic-type provider.
+ * Strip reasoning blocks that don't belong to the target provider.
  *
- * Unlike stripSignatureBlocks (which strips ALL thinking blocks), this only
- * removes blocks with missing or empty signatures — valid Anthropic thinking
- * blocks are preserved.
+ * Anthropic: keep blocks with a valid signature or redactedData.
+ * OpenAI Responses: keep blocks with a reasoningId (encrypted/opaque).
+ * All others: strip all reasoning blocks.
  */
-export function stripUnsignedThinkingBlocks(
+export function stripForeignReasoningBlocks(
   messages: (UserMessage | AssistantMessage)[],
+  targetProviderType: ProviderType | null,
 ): (UserMessage | AssistantMessage)[] {
   let changed = false
   const result = messages.map(msg => {
@@ -4706,20 +4710,29 @@ export function stripUnsignedThinkingBlocks(
         filtered.push(block)
         continue
       }
-      // Drop thinking blocks without a valid signature (foreign-provider or partial).
-      const sig = (block as any).signature
-      if (typeof sig !== 'string' || sig.length === 0) {
-        blockChanged = true
-        continue
+
+      const ps = (block as DomainContentBlock).providerState
+      let keep = false
+
+      if (targetProviderType === 'anthropic') {
+        const anthro = ps?.anthropic
+        keep =
+          (block.type === 'reasoning' &&
+            typeof anthro?.signature === 'string' &&
+            anthro.signature.length > 0) ||
+          (block.type === 'redacted_reasoning' &&
+            typeof anthro?.redactedData === 'string' &&
+            anthro.redactedData.length > 0)
+      } else if (targetProviderType === 'openai-responses') {
+        const oai = ps?.openaiResponses
+        keep =
+          typeof oai?.reasoningId === 'string' && oai.reasoningId.length > 0
       }
-      // Strip the in-memory `sourceProvider` provenance tag before sending to
-      // Anthropic — the API rejects extra fields on thinking blocks.
-      if ('sourceProvider' in (block as any)) {
-        const { sourceProvider: _drop, ...rest } = block as any
-        filtered.push(rest)
-        blockChanged = true
-      } else {
+
+      if (keep) {
         filtered.push(block)
+      } else {
+        blockChanged = true
       }
     }
     if (!blockChanged) return msg
@@ -4869,7 +4882,8 @@ export function ensureToolResultPairing(
         seenToolUseIds.add(block.id)
       }
       if (
-        (block.type === 'server_tool_use' || block.type === 'mcp_tool_use') &&
+        (block.type === 'server_tool_use' ||
+          (block as { type: string }).type === 'mcp_tool_use') &&
         !serverResultIds.has((block as { id: string }).id)
       ) {
         repaired = true
@@ -5044,7 +5058,9 @@ export function ensureToolResultPairing(
           .map(b => (b as ToolUseBlock | ToolUseBlockParam).id)
         const serverToolUses = m.message.content
           .filter(
-            b => b.type === 'server_tool_use' || b.type === 'mcp_tool_use',
+            b =>
+              b.type === 'server_tool_use' ||
+              (b as { type: string }).type === 'mcp_tool_use',
           )
           .map(b => (b as { id: string }).id)
         const parts = [
@@ -5106,8 +5122,8 @@ export function stripAdvisorBlocks(
       filtered.length === 0 ||
       filtered.every(
         b =>
-          b.type === 'thinking' ||
-          b.type === 'redacted_thinking' ||
+          b.type === 'reasoning' ||
+          b.type === 'redacted_reasoning' ||
           (b.type === 'text' && (!b.text || !b.text.trim())),
       )
     ) {

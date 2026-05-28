@@ -54,8 +54,8 @@ export function hasContentAfterIndex(
     if (msg?.type === 'assistant') {
       const content = msg.message.content[0]
       if (
-        content?.type === 'thinking' ||
-        content?.type === 'redacted_thinking'
+        content?.type === 'reasoning' ||
+        content?.type === 'redacted_reasoning'
       ) {
         continue
       }

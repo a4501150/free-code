@@ -62,8 +62,8 @@ export function isResultSuccessful(
     const lastContent = last(message.message.content)
     return (
       lastContent?.type === 'text' ||
-      lastContent?.type === 'thinking' ||
-      lastContent?.type === 'redacted_thinking'
+      lastContent?.type === 'reasoning' ||
+      lastContent?.type === 'redacted_reasoning'
     )
   }
 

@@ -396,7 +396,10 @@ function shouldSkipMessage(msg: RenderableMessage): boolean {
   if (msg.type === 'assistant') {
     const content = msg.message.content[0]
     // Skip thinking blocks and other non-text, non-tool content
-    if (content?.type === 'thinking' || content?.type === 'redacted_thinking') {
+    if (
+      content?.type === 'reasoning' ||
+      content?.type === 'redacted_reasoning'
+    ) {
       return true
     }
   }

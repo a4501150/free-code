@@ -365,7 +365,7 @@ export function finalizeAgentTool(
     totalTokens,
     totalToolUseCount,
     errorReason,
-    usage: usageSource.message.usage,
+    usage: usageSource.message.usage as any,
   }
 }
 
