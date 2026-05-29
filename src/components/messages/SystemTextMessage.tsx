@@ -418,7 +418,7 @@ function AwaySummaryMessage({
   addMargin: boolean
   isTranscriptMode?: boolean
   verbose: boolean
-  bg: string | undefined
+  bg: 'messageActionsBackground' | undefined
 }): React.ReactNode {
   const showThinkingFull = message.thinking && (isTranscriptMode || verbose)
   return (

@@ -89,6 +89,7 @@ import type {
 import type {
   DomainAssistantContent,
   DomainContentBlock,
+  DomainReasoningBlock,
   DomainUsage,
 } from '../types/domain.js'
 import type { ProviderType } from './settings/types.js'
@@ -4711,7 +4712,7 @@ export function stripForeignReasoningBlocks(
         continue
       }
 
-      const ps = (block as DomainContentBlock).providerState
+      const ps = (block as DomainReasoningBlock).providerState
       let keep = false
 
       if (targetProviderType === 'anthropic') {

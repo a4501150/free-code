@@ -615,8 +615,6 @@ export function assistantMessageToMessageParam(
           ...(i === converted.length - 1 &&
           _.type !== 'thinking' &&
           _.type !== 'redacted_thinking' &&
-          _.type !== 'reasoning' &&
-          _.type !== 'redacted_reasoning' &&
           (feature('CONNECTOR_TEXT') ? !isConnectorTextBlock(_) : true)
             ? enablePromptCaching
               ? { cache_control: getCacheControl({ querySource }) }
