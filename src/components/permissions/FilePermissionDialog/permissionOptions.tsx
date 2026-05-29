@@ -1,10 +1,10 @@
-import { homedir } from 'os'
-import { basename, join, sep } from 'path'
+import { basename, sep } from 'path'
 import React, { type ReactNode } from 'react'
 import { getOriginalCwd } from '../../../bootstrap/state.js'
 import { Text } from '../../../ink.js'
 import { getShortcutDisplay } from '../../../keybindings/shortcutFormat.js'
 import type { ToolPermissionContext } from '../../../Tool.js'
+import { getClaudeConfigHomeDir } from '../../../utils/envUtils.js'
 import { expandPath, getDirectoryForPath } from '../../../utils/path.js'
 import {
   normalizeCaseForComparison,
@@ -41,7 +41,7 @@ export function isInClaudeFolder(filePath: string): boolean {
  */
 export function isInGlobalClaudeFolder(filePath: string): boolean {
   const absolutePath = expandPath(filePath)
-  const globalClaudeFolderPath = join(homedir(), '.claude')
+  const globalClaudeFolderPath = getClaudeConfigHomeDir()
 
   const normalizedAbsolutePath = normalizeCaseForComparison(absolutePath)
   const normalizedGlobalClaudeFolderPath = normalizeCaseForComparison(

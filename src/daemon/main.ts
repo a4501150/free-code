@@ -3,7 +3,14 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
 
-const PID_FILE = join(homedir(), '.claude', 'daemon.pid')
+const PID_FILE = join(
+  (
+    process.env.FREECODE_CONFIG_DIR ??
+    process.env.CLAUDE_CONFIG_DIR ??
+    join(homedir(), '.freecode')
+  ),
+  'daemon.pid',
+)
 
 function readPid(): number | null {
   try {
