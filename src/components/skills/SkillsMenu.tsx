@@ -9,6 +9,7 @@ import {
   type PromptCommand,
 } from '../../commands.js'
 import { Box, Text } from '../../ink.js'
+import { globalConfigDir } from '../../utils/envUtils.js'
 import {
   estimateSkillFrontmatterTokens,
   getSkillsPath,
@@ -125,7 +126,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
         hideInputGuide
       >
         <Text dimColor>
-          Create skills in .claude/skills/ or ~/.freecode/skills/
+          Create skills in .claude/skills/ or {globalConfigDir()}/skills/
         </Text>
         <Text dimColor italic>
           <ConfigurableShortcutHint

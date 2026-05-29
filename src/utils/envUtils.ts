@@ -21,6 +21,28 @@ export function getTeamsDir(): string {
 }
 
 /**
+ * User-friendly display path for the global config directory.
+ * Returns `~/.freecode` when the default is used, or the raw
+ * FREECODE_CONFIG_DIR / CLAUDE_CONFIG_DIR value when overridden.
+ * Use this in prompt text, UI labels, and schema descriptions so the
+ * displayed path stays correct under env-var overrides.
+ */
+export function globalConfigDir(): string {
+  const raw = getClaudeConfigHomeDir()
+  const home = homedir().normalize('NFC')
+  return raw.startsWith(home)
+    ? '~' + raw.slice(home.length)
+    : raw
+}
+
+/**
+ * Display path for the global freecode.json config file.
+ */
+export function globalConfigFile(): string {
+  return `${globalConfigDir()}/freecode.json`
+}
+
+/**
  * Check if NODE_OPTIONS contains a specific flag.
  * Splits on whitespace and checks for exact match to avoid false positives.
  */

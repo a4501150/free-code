@@ -12,6 +12,7 @@ import * as React from 'react'
 import type { HookEvent } from 'src/structuredProtocol/index.js'
 import type { HookEventMetadata } from 'src/utils/hooks/hooksConfigManager.js'
 import { Box, Link, Text } from '../../ink.js'
+import { globalConfigFile } from '../../utils/envUtils.js'
 import { plural } from '../../utils/stringUtils.js'
 import { Select } from '../CustomSelect/select.js'
 import { Dialog } from '../design-system/Dialog.js'
@@ -45,7 +46,7 @@ export function SelectEventMode({
             </Text>
             <Text dimColor>
               Only hooks from managed settings can run. User-defined hooks from
-              ~/.freecode/freecode.json, .claude/freecode.json, and
+              {globalConfigFile()}, .claude/freecode.json, and
               .claude/freecode.local.json are blocked.
             </Text>
           </Box>

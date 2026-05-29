@@ -3,6 +3,7 @@ import { useCallback } from 'react'
 import { Select } from '../../../components/CustomSelect/select.js'
 import { Box, Text } from '../../../ink.js'
 import type { ToolPermissionContext } from '../../../Tool.js'
+import { globalConfigFile } from '../../../utils/envUtils.js'
 import type {
   PermissionBehavior,
   PermissionRule,
@@ -47,7 +48,7 @@ export function optionForPermissionSaveDestination(
     case 'userSettings':
       return {
         label: 'User settings',
-        description: `Saved in ~/.freecode/freecode.json`,
+        description: `Saved in ${globalConfigFile()}`,
         value: saveDestination,
       }
   }

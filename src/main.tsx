@@ -167,7 +167,12 @@ import type { LogOption } from './types/logs.js'
 import type { Message as MessageType } from './types/message.js'
 import { getContextWindowForModel } from './utils/context.js'
 import { loadConversationForResume } from './utils/conversationRecovery.js'
-import { hasNodeOption, isBareMode, isEnvTruthy } from './utils/envUtils.js'
+import {
+  globalConfigDir,
+  hasNodeOption,
+  isBareMode,
+  isEnvTruthy,
+} from './utils/envUtils.js'
 import { refreshExampleCommands } from './utils/exampleCommands.js'
 import type { FpsMetrics } from './utils/fpsTracker.js'
 import { getWorktreePaths } from './utils/getWorktreePaths.js'
@@ -3973,7 +3978,7 @@ async function run(): Promise<CommanderCommand> {
     )
     .option(
       '--keep-data',
-      "Preserve the plugin's persistent data directory (~/.freecode/plugins/data/{id}/)",
+      `Preserve the plugin's persistent data directory (${globalConfigDir()}/plugins/data/{id}/)`,
     )
     .addOption(coworkOption())
     .action(

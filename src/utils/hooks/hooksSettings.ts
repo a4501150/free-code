@@ -1,6 +1,7 @@
 import { resolve } from 'path'
 import type { HookEvent } from 'src/structuredProtocol/index.js'
 import { getSessionId } from '../../bootstrap/state.js'
+import { globalConfigDir, globalConfigFile } from '../envUtils.js'
 import type { AppState } from '../../state/AppState.js'
 import type { EditableSettingSource } from '../settings/constants.js'
 import { SOURCES } from '../settings/constants.js'
@@ -170,7 +171,7 @@ export function getHooksForEvent(
 export function hookSourceDescriptionDisplayString(source: HookSource): string {
   switch (source) {
     case 'userSettings':
-      return 'User settings (~/.freecode/freecode.json)'
+      return `User settings (${globalConfigFile()})`
     case 'projectSettings':
       return 'Project settings (.claude/freecode.json)'
     case 'localSettings':
@@ -179,7 +180,7 @@ export function hookSourceDescriptionDisplayString(source: HookSource): string {
       // TODO: Get the actual plugin hook file paths instead of using glob pattern
       // We should capture the specific plugin paths during hook registration and display them here
       // e.g., "Plugin hooks (~/.freecode/plugins/repos/source/example-plugin/example-plugin/hooks/hooks.json)"
-      return 'Plugin hooks (~/.freecode/plugins/*/hooks/hooks.json)'
+      return `Plugin hooks (${globalConfigDir()}/plugins/*/hooks/hooks.json)`
     case 'sessionHook':
       return 'Session hooks (in-memory, temporary)'
     case 'builtinHook':

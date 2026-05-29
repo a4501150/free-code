@@ -16,7 +16,7 @@ import { useAppState } from '../../state/AppState.js'
 import { getAgentMemoryDir } from '../../tools/AgentTool/agentMemory.js'
 import { openPath } from '../../utils/browser.js'
 import { getMemoryFiles, type MemoryFileInfo } from '../../utils/claudemd.js'
-import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import { getClaudeConfigHomeDir, globalConfigDir } from '../../utils/envUtils.js'
 import { getDisplayPath } from '../../utils/file.js'
 import { formatRelativeTimeAgo } from '../../utils/format.js'
 import { projectIsInGitRepo } from '../../utils/memory/versions.js'
@@ -134,7 +134,7 @@ export function MemoryFileSelector({
     const isGit = projectIsInGitRepo(getOriginalCwd())
 
     if (file.type === 'User' && !file.isNested) {
-      description = 'Saved in ~/.freecode/CLAUDE.md'
+      description = `Saved in ${globalConfigDir()}/CLAUDE.md`
     } else if (
       file.type === 'Project' &&
       !file.isNested &&

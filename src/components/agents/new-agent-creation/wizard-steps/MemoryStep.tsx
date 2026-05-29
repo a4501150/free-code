@@ -1,4 +1,5 @@
 import React, { type ReactNode } from 'react'
+import { globalConfigDir } from '../../../../utils/envUtils.js'
 import { Box } from '../../../../ink.js'
 import { useKeybinding } from '../../../../keybindings/useKeybinding.js'
 import { isAutoMemoryEnabled } from '../../../../memdir/paths.js'
@@ -32,7 +33,7 @@ export function MemoryStep(): ReactNode {
   const memoryOptions: MemoryOption[] = isUserScope
     ? [
         {
-          label: 'User scope (~/.freecode/agent-memory/) (Recommended)',
+          label: 'User scope (${globalConfigDir()}/agent-memory/) (Recommended)',
           value: 'user',
         },
         { label: 'None (no persistent memory)', value: 'none' },
@@ -45,7 +46,7 @@ export function MemoryStep(): ReactNode {
           value: 'project',
         },
         { label: 'None (no persistent memory)', value: 'none' },
-        { label: 'User scope (~/.freecode/agent-memory/)', value: 'user' },
+        { label: 'User scope (${globalConfigDir()}/agent-memory/)', value: 'user' },
         { label: 'Local scope (.claude/agent-memory-local/)', value: 'local' },
       ]
 

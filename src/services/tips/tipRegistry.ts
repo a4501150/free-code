@@ -1,5 +1,6 @@
 import chalk from 'chalk'
 import { fileHistoryEnabled } from 'src/utils/fileHistory.js'
+import { globalConfigDir } from 'src/utils/envUtils.js'
 import {
   getInitialSettings,
   getSettings_DEPRECATED,
@@ -260,7 +261,7 @@ const externalTips: Tip[] = [
   {
     id: 'custom-commands',
     content: async () =>
-      'Create skills by adding .md files to .claude/skills/ in your project or ~/.freecode/skills/ for skills that work in any project',
+      `Create skills by adding .md files to .claude/skills/ in your project or ${globalConfigDir()}/skills/ for skills that work in any project`,
     isRelevant: async () => true,
   },
   {

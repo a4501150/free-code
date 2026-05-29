@@ -1,5 +1,6 @@
 import React, { type ReactNode } from 'react'
 import { Box } from '../../../../ink.js'
+import { globalConfigDir } from '../../../../utils/envUtils.js'
 import type { SettingSource } from '../../../../utils/settings/constants.js'
 import { ConfigurableShortcutHint } from '../../../ConfigurableShortcutHint.js'
 import { Select } from '../../../CustomSelect/select.js'
@@ -18,7 +19,7 @@ export function LocationStep(): ReactNode {
       value: 'projectSettings' as SettingSource,
     },
     {
-      label: 'Personal (~/.freecode/agents/)',
+      label: `Personal (${globalConfigDir()}/agents/)`,
       value: 'userSettings' as SettingSource,
     },
   ]
