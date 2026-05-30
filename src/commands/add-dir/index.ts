@@ -5,7 +5,10 @@ const addDir = {
   name: 'add-dir',
   description: 'Add a new working directory',
   argumentHint: '<path>',
-  load: () => import('./add-dir.js'),
+  call: (...args) =>
+    import('./add-dir.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 } satisfies Command
 
 export default addDir

@@ -7,7 +7,8 @@ const rewind = {
   argumentHint: '',
   type: 'local',
   supportsNonInteractive: false,
-  load: () => import('./rewind.js'),
+  call: (...args) =>
+    import('./rewind.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default rewind

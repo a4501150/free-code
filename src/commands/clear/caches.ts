@@ -7,6 +7,9 @@ import {
   setLastEmittedDate,
 } from '../../bootstrap/state.js'
 import { clearCommandsCache } from '../../commands.js'
+import { clearAgentDefinitionsCache } from '../../tools/AgentTool/loadAgentsDir.js'
+import { clearPromptCache } from '../../tools/SkillTool/prompt.js'
+import { clearWebFetchCache } from '../../tools/WebFetchTool/utils.js'
 import { getSessionStartDate } from '../../constants/common.js'
 import {
   getGitStatus,
@@ -101,16 +104,7 @@ export function clearSessionCaches(
   clearTrackedMagicDocs()
   // Clear session environment variables
   clearSessionEnvVars()
-  // Clear WebFetch URL cache (up to 50MB of cached page content)
-  void import('../../tools/WebFetchTool/utils.js').then(
-    ({ clearWebFetchCache }) => clearWebFetchCache(),
-  )
-  // Clear agent definitions cache (accumulates per-cwd via EnterWorktreeTool)
-  void import('../../tools/AgentTool/loadAgentsDir.js').then(
-    ({ clearAgentDefinitionsCache }) => clearAgentDefinitionsCache(),
-  )
-  // Clear SkillTool prompt cache (accumulates per project root)
-  void import('../../tools/SkillTool/prompt.js').then(({ clearPromptCache }) =>
-    clearPromptCache(),
-  )
+  clearWebFetchCache()
+  clearAgentDefinitionsCache()
+  clearPromptCache()
 }

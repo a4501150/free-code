@@ -6,5 +6,6 @@ export default {
   name: 'logout',
   description: 'Sign out from your account',
   isEnabled: () => !isEnvTruthy(process.env.DISABLE_LOGOUT_COMMAND),
-  load: () => import('./logout.js'),
+  call: (...args) =>
+    import('./logout.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command

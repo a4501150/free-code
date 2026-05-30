@@ -5,7 +5,8 @@ const plan = {
   name: 'plan',
   description: 'Enable plan mode or view the current session plan',
   argumentHint: '[open|<description>]',
-  load: () => import('./plan.js'),
+  call: (...args) =>
+    import('./plan.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default plan

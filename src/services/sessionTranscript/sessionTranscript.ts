@@ -14,13 +14,10 @@ import { join } from 'path'
 import { getSessionId } from '../../bootstrap/state.js'
 import { getKairosActive } from '../../bootstrap/state.js'
 import { logError } from '../../utils/log.js'
+import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 
 function getTranscriptDir(): string {
-  const configDir =
-    process.env.FREECODE_CONFIG_DIR ??
-    process.env.CLAUDE_CONFIG_DIR ??
-    join(process.env.HOME ?? '~', '.freecode')
-  return join(configDir, 'sessions', getSessionId(), 'transcript')
+  return join(getClaudeConfigHomeDir(), 'sessions', getSessionId(), 'transcript')
 }
 
 function ensureDir(dir: string): void {

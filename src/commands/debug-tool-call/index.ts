@@ -117,7 +117,7 @@ const debugToolCall = {
   description: 'Inspect a tool call (input + result) from the current session',
   argumentHint: '[tool_use_id]',
   isEnabled: () => true,
-  load: () => Promise.resolve({ call }),
+  call,
 } satisfies Command
 
 export default debugToolCall

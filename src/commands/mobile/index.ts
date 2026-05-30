@@ -5,7 +5,8 @@ const mobile = {
   name: 'mobile',
   aliases: ['ios', 'android'],
   description: 'Show QR code to download the Claude mobile app',
-  load: () => import('./mobile.js'),
+  call: (...args) =>
+    import('./mobile.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default mobile

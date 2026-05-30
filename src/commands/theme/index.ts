@@ -4,7 +4,8 @@ const theme = {
   type: 'local-jsx',
   name: 'theme',
   description: 'Change the theme',
-  load: () => import('./theme.js'),
+  call: (...args) =>
+    import('./theme.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default theme

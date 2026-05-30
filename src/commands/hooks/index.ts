@@ -5,7 +5,8 @@ const hooks = {
   name: 'hooks',
   description: 'View hook configurations for tool events',
   immediate: true,
-  load: () => import('./hooks.js'),
+  call: (...args) =>
+    import('./hooks.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default hooks

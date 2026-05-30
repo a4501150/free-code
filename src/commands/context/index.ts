@@ -6,7 +6,10 @@ export const context: Command = {
   description: 'Visualize current context usage as a colored grid',
   isEnabled: () => !getIsNonInteractiveSession(),
   type: 'local-jsx',
-  load: () => import('./context.js'),
+  call: (...args) =>
+    import('./context.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 }
 
 export const contextNonInteractive: Command = {
@@ -20,5 +23,8 @@ export const contextNonInteractive: Command = {
   isEnabled() {
     return getIsNonInteractiveSession()
   },
-  load: () => import('./context-noninteractive.js'),
+  call: (...args) =>
+    import('./context-noninteractive.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 }

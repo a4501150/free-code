@@ -5,7 +5,8 @@ const ide = {
   name: 'ide',
   description: 'Manage IDE integrations and show status',
   argumentHint: '[open]',
-  load: () => import('./ide.js'),
+  call: (...args) =>
+    import('./ide.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default ide

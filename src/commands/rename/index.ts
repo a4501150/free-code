@@ -6,7 +6,8 @@ const rename = {
   description: 'Rename the current conversation',
   immediate: true,
   argumentHint: '[name]',
-  load: () => import('./rename.js'),
+  call: (...args) =>
+    import('./rename.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default rename

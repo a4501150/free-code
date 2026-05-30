@@ -5,7 +5,10 @@ const thinkback = {
   name: 'think-back',
   description: 'Your 2025 Claude Code Year in Review',
   isEnabled: () => true,
-  load: () => import('./thinkback.js'),
+  call: (...args) =>
+    import('./thinkback.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 } satisfies Command
 
 export default thinkback

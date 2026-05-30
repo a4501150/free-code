@@ -6,7 +6,8 @@ const mcp = {
   description: 'Manage MCP servers',
   immediate: true,
   argumentHint: '[enable|disable [server-name]]',
-  load: () => import('./mcp.js'),
+  call: (...args) =>
+    import('./mcp.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default mcp

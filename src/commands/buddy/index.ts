@@ -7,7 +7,8 @@ const buddy = {
   isEnabled: () => true,
   supportsNonInteractive: false,
   argumentHint: '[info|pet|mute|unmute]',
-  load: () => import('./buddy.js'),
+  call: (...args) =>
+    import('./buddy.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default buddy

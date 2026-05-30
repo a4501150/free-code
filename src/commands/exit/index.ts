@@ -1,4 +1,5 @@
 import type { Command } from '../../commands.js'
+import type { LocalJSXCommandOnDone } from '../../types/command.js'
 
 const exit = {
   type: 'local-jsx',
@@ -6,7 +7,8 @@ const exit = {
   aliases: ['quit'],
   description: 'Exit the REPL',
   immediate: true,
-  load: () => import('./exit.js'),
+  call: (onDone: LocalJSXCommandOnDone) =>
+    import('./exit.js').then(mod => mod.call(onDone)),
 } satisfies Command
 
 export default exit

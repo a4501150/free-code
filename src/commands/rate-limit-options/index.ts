@@ -13,7 +13,10 @@ const rateLimitOptions = {
     return true
   },
   isHidden: true, // Hidden from help - only used internally
-  load: () => import('./rate-limit-options.js'),
+  call: (...args) =>
+    import('./rate-limit-options.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 } satisfies Command
 
 export default rateLimitOptions

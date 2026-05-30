@@ -15,7 +15,10 @@ export const extraUsage = {
   name: 'extra-usage',
   description: 'Configure extra usage to keep working when limits are hit',
   isEnabled: () => isExtraUsageAllowed() && !getIsNonInteractiveSession(),
-  load: () => import('./extra-usage.js'),
+  call: (...args) =>
+    import('./extra-usage.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 } satisfies Command
 
 export const extraUsageNonInteractive = {
@@ -27,5 +30,8 @@ export const extraUsageNonInteractive = {
   get isHidden() {
     return !getIsNonInteractiveSession()
   },
-  load: () => import('./extra-usage-noninteractive.js'),
+  call: (...args) =>
+    import('./extra-usage-noninteractive.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 } satisfies Command

@@ -1,6 +1,7 @@
 import { profileCheckpoint } from '../utils/startupProfiler.js'
 import '../bootstrap/state.js'
 import '../utils/config.js'
+import { showInvalidConfigDialog } from '../components/InvalidConfigDialog.js'
 import memoize from 'lodash-es/memoize.js'
 import { getIsNonInteractiveSession } from 'src/bootstrap/state.js'
 import { shutdownLspServerManager } from '../services/lsp/manager.js'
@@ -162,10 +163,7 @@ export const init = memoize(async (): Promise<void> => {
         return
       }
 
-      // Show the invalid config dialog with the error object and wait for it to complete
-      return import('../components/InvalidConfigDialog.js').then(m =>
-        m.showInvalidConfigDialog({ error }),
-      )
+      return showInvalidConfigDialog({ error })
       // Dialog itself handles process.exit, so we don't need additional cleanup here
     } else {
       // For non-config errors, rethrow them

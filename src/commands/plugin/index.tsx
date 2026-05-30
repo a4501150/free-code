@@ -6,7 +6,8 @@ const plugin = {
   aliases: ['plugins', 'marketplace'],
   description: 'Manage Claude Code plugins',
   immediate: true,
-  load: () => import('./plugin.js'),
+  call: (...args) =>
+    import('./plugin.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default plugin

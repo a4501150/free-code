@@ -10,7 +10,8 @@ const color = {
   description: 'Set the prompt bar color for this session',
   immediate: true,
   argumentHint: '<color|default>',
-  load: () => import('./color.js'),
+  call: (...args) =>
+    import('./color.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default color

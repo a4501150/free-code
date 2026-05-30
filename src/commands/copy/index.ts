@@ -9,7 +9,8 @@ const copy = {
   name: 'copy',
   description:
     "Copy Claude's last response to clipboard (or /copy N for the Nth-latest)",
-  load: () => import('./copy.js'),
+  call: (...args) =>
+    import('./copy.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default copy

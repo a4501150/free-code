@@ -10,7 +10,10 @@ const upgrade = {
   isEnabled: () =>
     !isEnvTruthy(process.env.DISABLE_UPGRADE_COMMAND) &&
     getSubscriptionType() !== 'enterprise',
-  load: () => import('./upgrade.js'),
+  call: (...args) =>
+    import('./upgrade.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 } satisfies Command
 
 export default upgrade

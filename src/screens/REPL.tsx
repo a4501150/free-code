@@ -3669,8 +3669,7 @@ export function REPL({
               mainLoopModel,
             )
 
-            const mod = await matchingCommand.load()
-            const jsx = await mod.call(onDone, context, commandArgs)
+            const jsx = await matchingCommand.call(onDone, context, commandArgs)
 
             // Skip if onDone already fired — prevents stuck isLocalJSXCommand
             // (see processSlashCommand.tsx local-jsx case for full mechanism).
@@ -3954,8 +3953,7 @@ export function REPL({
       )
       return
     }
-    const exitMod = await exit.load()
-    const exitFlowResult = await exitMod.call(() => {})
+    const exitFlowResult = await exit.call(() => {})
     setExitFlow(exitFlowResult)
     // If call() returned without killing the process (bg session detach),
     // clear isExiting so the UI is usable on reattach. No-op on the normal

@@ -53,7 +53,7 @@ const oauthRefresh = {
   description: 'Force a refresh of the current claude.ai OAuth token',
   isEnabled: () => true,
   supportsNonInteractive: true,
-  load: () => Promise.resolve({ call }),
+  call,
 } satisfies Command
 
 export default oauthRefresh

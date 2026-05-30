@@ -6,7 +6,10 @@ const installSlackApp = {
   description: 'Install the Claude Slack app',
   availability: ['claude-ai'],
   supportsNonInteractive: false,
-  load: () => import('./install-slack-app.js'),
+  call: (...args) =>
+    import('./install-slack-app.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 } satisfies Command
 
 export default installSlackApp

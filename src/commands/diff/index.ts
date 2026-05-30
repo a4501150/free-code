@@ -4,5 +4,6 @@ export default {
   type: 'local-jsx',
   name: 'diff',
   description: 'View uncommitted changes and per-turn diffs',
-  load: () => import('./diff.js'),
+  call: (...args) =>
+    import('./diff.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command

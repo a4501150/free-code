@@ -6,7 +6,8 @@ const resume: Command = {
   description: 'Resume a previous conversation',
   aliases: ['continue'],
   argumentHint: '[conversation id or search term]',
-  load: () => import('./resume.js'),
+  call: (...args) =>
+    import('./resume.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 }
 
 export default resume

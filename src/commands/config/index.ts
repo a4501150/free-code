@@ -5,7 +5,8 @@ const config = {
   type: 'local-jsx',
   name: 'config',
   description: 'Open config panel',
-  load: () => import('./config.js'),
+  call: (...args) =>
+    import('./config.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default config

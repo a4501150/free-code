@@ -13,6 +13,7 @@ import { Box, Text } from '../../ink.js'
 import { KeybindingSetup } from '../../keybindings/KeybindingProviderSetup.js'
 
 import { MCPConnectionManager } from '../../services/mcp/MCPConnectionManager.js'
+import { Doctor } from '../../screens/Doctor.js'
 import { AppStateProvider } from '../../state/AppState.js'
 import { onChangeAppState } from '../../state/onChangeAppState.js'
 import { isAnthropicAuthEnabled } from '../../utils/auth.js'
@@ -54,22 +55,13 @@ export async function setupTokenHandler(root: Root): Promise<void> {
   process.exit(0)
 }
 
-// DoctorWithPlugins wrapper + doctor handler
-const DoctorLazy = React.lazy(() =>
-  import('../../screens/Doctor.js').then(m => ({ default: m.Doctor })),
-)
-
 function DoctorWithPlugins({
   onDone,
 }: {
   onDone: () => void
 }): React.ReactNode {
   useManagePlugins()
-  return (
-    <React.Suspense fallback={null}>
-      <DoctorLazy onDone={onDone} />
-    </React.Suspense>
-  )
+  return <Doctor onDone={onDone} />
 }
 
 export async function doctorHandler(root: Root): Promise<void> {

@@ -8,7 +8,10 @@ const privacySettings = {
   isEnabled: () => {
     return isConsumerSubscriber()
   },
-  load: () => import('./privacy-settings.js'),
+  call: (...args) =>
+    import('./privacy-settings.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 } satisfies Command
 
 export default privacySettings

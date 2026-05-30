@@ -12,5 +12,6 @@ export default {
   get immediate() {
     return shouldInferenceConfigCommandBeImmediate()
   },
-  load: () => import('./model.js'),
+  call: (...args) =>
+    import('./model.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command

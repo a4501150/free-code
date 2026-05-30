@@ -10,5 +10,8 @@ export default () =>
       ? 'Switch accounts or configure provider auth'
       : 'Sign in with your account',
     isEnabled: () => !isEnvTruthy(process.env.DISABLE_LOGIN_COMMAND),
-    load: () => import('./login.js'),
+    call: (...args) =>
+      import('./login.js').then(mod =>
+        Reflect.apply(mod.call, undefined, args),
+      ),
   }) satisfies Command

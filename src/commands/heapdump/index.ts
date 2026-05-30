@@ -6,7 +6,10 @@ const heapDump = {
   description: 'Dump the JS heap to ~/Desktop',
   isHidden: true,
   supportsNonInteractive: true,
-  load: () => import('./heapdump.js'),
+  call: (...args) =>
+    import('./heapdump.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 } satisfies Command
 
 export default heapDump

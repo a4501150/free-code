@@ -114,7 +114,7 @@ const env = {
   description: 'Print runtime, provider, model, and environment diagnostics',
   isEnabled: () => true,
   supportsNonInteractive: true,
-  load: () => Promise.resolve({ call }),
+  call,
 } satisfies Command
 
 export default env

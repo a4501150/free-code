@@ -18,5 +18,6 @@ export default {
     const { eligible, hasCache } = checkCachedPassesEligibility()
     return !eligible || !hasCache
   },
-  load: () => import('./passes.js'),
+  call: (...args) =>
+    import('./passes.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command

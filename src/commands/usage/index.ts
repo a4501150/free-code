@@ -5,5 +5,6 @@ export default {
   name: 'usage',
   description: 'Show plan usage limits',
   availability: ['claude-ai'],
-  load: () => import('./usage.js'),
+  call: (...args) =>
+    import('./usage.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command

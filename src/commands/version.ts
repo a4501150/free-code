@@ -16,7 +16,7 @@ const version = {
     'Print the version this session is running (not what autoupdate downloaded)',
   isEnabled: () => true,
   supportsNonInteractive: true,
-  load: () => Promise.resolve({ call }),
+  call,
 } satisfies Command
 
 export default version

@@ -713,9 +713,9 @@ async function getMessagesForSlashCommand(
             })
           }
 
-          void command
-            .load()
-            .then(mod => mod.call(onDone, { ...context, canUseTool }, args))
+          void Promise.resolve(
+            command.call(onDone, { ...context, canUseTool }, args),
+          )
             .then(jsx => {
               if (jsx == null) return
               if (context.options.isNonInteractiveSession) {
@@ -726,7 +726,7 @@ async function getMessagesForSlashCommand(
                 })
                 return
               }
-              // Guard: if onDone fired during mod.call() (early-exit path
+              // Guard: if onDone fired during command.call() (early-exit path
               // that calls onDone then returns JSX), skip setToolJSX. This
               // chain is fire-and-forget — the outer Promise resolves when
               // onDone is called, so executeUserInput may have already run
@@ -743,7 +743,7 @@ async function getMessagesForSlashCommand(
               })
             })
             .catch(e => {
-              // If load()/call() throws and onDone never fired, the outer
+              // If call() throws and onDone never fired, the outer
               // Promise hangs forever, leaving queryGuard stuck in
               // 'dispatching' and deadlocking the queue processor.
               logError(e)
@@ -769,8 +769,7 @@ async function getMessagesForSlashCommand(
 
         try {
           const syntheticCaveatMessage = createSyntheticUserCaveatMessage()
-          const mod = await command.load()
-          const result = await mod.call(args, context)
+          const result = await command.call(args, context)
 
           if (result.type === 'skip') {
             return {

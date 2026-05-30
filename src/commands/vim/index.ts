@@ -5,7 +5,8 @@ const command = {
   description: 'Toggle between Vim and Normal editing modes',
   supportsNonInteractive: false,
   type: 'local',
-  load: () => import('./vim.js'),
+  call: (...args) =>
+    import('./vim.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default command

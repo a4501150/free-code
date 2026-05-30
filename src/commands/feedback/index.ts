@@ -18,7 +18,10 @@ const feedback = {
       isEssentialTrafficOnly() ||
       !isPolicyAllowed('allow_product_feedback')
     ),
-  load: () => import('./feedback.js'),
+  call: (...args) =>
+    import('./feedback.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 } satisfies Command
 
 export default feedback

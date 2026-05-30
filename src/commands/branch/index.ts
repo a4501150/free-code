@@ -6,7 +6,8 @@ const branch = {
   aliases: ['fork'],
   description: 'Create a branch of the current conversation at this point',
   argumentHint: '[name]',
-  load: () => import('./branch.js'),
+  call: (...args) =>
+    import('./branch.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
 
 export default branch

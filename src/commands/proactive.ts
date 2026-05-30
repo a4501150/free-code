@@ -24,33 +24,30 @@ const proactive = {
   description: 'Toggle proactive mode',
   isEnabled: () => true,
   immediate: true,
-  load: () =>
-    Promise.resolve({
-      async call(
-        onDone: LocalJSXCommandOnDone,
-        _context: ToolUseContext & LocalJSXCommandContext,
-      ): Promise<React.ReactNode> {
-        const wasActive = isProactiveActive()
+  async call(
+    onDone: LocalJSXCommandOnDone,
+    _context: ToolUseContext & LocalJSXCommandContext,
+  ): Promise<React.ReactNode> {
+    const wasActive = isProactiveActive()
 
-        if (wasActive) {
-          deactivateProactive()
-          onDone('Proactive mode disabled', { display: 'system' })
-        } else {
-          activateProactive('command')
-          onDone(
-            'Proactive mode enabled — you will receive periodic tick prompts',
-            {
-              display: 'system',
-              metaMessages: [
-                '<system-reminder>\nProactive mode is now enabled. Take initiative — explore, act, and make progress without waiting for instructions. You will receive periodic <tick> prompts as check-ins. Use the Sleep tool when there is nothing to do.\n</system-reminder>',
-              ],
-            },
-          )
-        }
+    if (wasActive) {
+      deactivateProactive()
+      onDone('Proactive mode disabled', { display: 'system' })
+    } else {
+      activateProactive('command')
+      onDone(
+        'Proactive mode enabled — you will receive periodic tick prompts',
+        {
+          display: 'system',
+          metaMessages: [
+            '<system-reminder>\nProactive mode is now enabled. Take initiative — explore, act, and make progress without waiting for instructions. You will receive periodic <tick> prompts as check-ins. Use the Sleep tool when there is nothing to do.\n</system-reminder>',
+          ],
+        },
+      )
+    }
 
-        return null
-      },
-    }),
+    return null
+  },
 } satisfies Command
 
 export default proactive

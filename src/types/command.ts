@@ -64,17 +64,10 @@ export type LocalCommandCall = (
   context: LocalJSXCommandContext,
 ) => Promise<LocalCommandResult>
 
-/**
- * Module shape returned by load() for lazy-loaded local commands.
- */
-export type LocalCommandModule = {
-  call: LocalCommandCall
-}
-
 type LocalCommand = {
   type: 'local'
   supportsNonInteractive: boolean
-  load: () => Promise<LocalCommandModule>
+  call: LocalCommandCall
 }
 
 export type LocalJSXCommandContext = ToolUseContext & {
@@ -134,21 +127,9 @@ export type LocalJSXCommandCall = (
   args: string,
 ) => Promise<React.ReactNode>
 
-/**
- * Module shape returned by load() for lazy-loaded commands.
- */
-export type LocalJSXCommandModule = {
-  call: LocalJSXCommandCall
-}
-
 type LocalJSXCommand = {
   type: 'local-jsx'
-  /**
-   * Lazy-load the command implementation.
-   * Returns a module with a call() function.
-   * This defers loading heavy dependencies until the command is invoked.
-   */
-  load: () => Promise<LocalJSXCommandModule>
+  call: LocalJSXCommandCall
 }
 
 /**

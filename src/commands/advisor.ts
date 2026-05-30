@@ -103,7 +103,7 @@ const advisor = {
     return !canUserConfigureAdvisor()
   },
   supportsNonInteractive: true,
-  load: () => Promise.resolve({ call }),
+  call,
 } satisfies Command
 
 export default advisor

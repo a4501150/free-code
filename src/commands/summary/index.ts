@@ -111,7 +111,7 @@ const summary = {
   argumentHint: '[optional focus area]',
   isEnabled: () => true,
   supportsNonInteractive: true,
-  load: () => Promise.resolve({ call }),
+  call,
 } satisfies Command
 
 export default summary

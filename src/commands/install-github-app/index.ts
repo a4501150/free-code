@@ -7,7 +7,10 @@ const installGitHubApp = {
   description: 'Set up Claude GitHub Actions for a repository',
   availability: ['claude-ai', 'console'],
   isEnabled: () => !isEnvTruthy(process.env.DISABLE_INSTALL_GITHUB_APP_COMMAND),
-  load: () => import('./install-github-app.js'),
+  call: (...args) =>
+    import('./install-github-app.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 } satisfies Command
 
 export default installGitHubApp

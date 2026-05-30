@@ -11,6 +11,7 @@ import { join } from 'path'
 import { registerBundledSkill } from '../bundledSkills.js'
 import { buildConsolidationPrompt } from '../../services/autoDream/consolidationPrompt.js'
 import { getAutoMemPath } from '../../memdir/paths.js'
+import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 
 export function registerDreamSkill(): void {
   registerBundledSkill({
@@ -35,11 +36,7 @@ export function registerDreamSkill(): void {
       const memRoot = getAutoMemPath()
 
       // Transcript directory: either session-specific or general
-      const configDir =
-        process.env.FREECODE_CONFIG_DIR ??
-        process.env.CLAUDE_CONFIG_DIR ??
-        join(process.env.HOME ?? '~', '.freecode')
-      const transcriptDir = join(configDir, 'sessions')
+      const transcriptDir = join(getClaudeConfigHomeDir(), 'sessions')
 
       // Check for daily logs directory (assistant-mode layout)
       const logsDir = join(memRoot, 'logs')

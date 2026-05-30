@@ -26,6 +26,12 @@ import { env } from './utils/env.js'
 import { envDynamic } from './utils/envDynamic.js'
 import { isBareMode, isEnvTruthy } from './utils/envUtils.js'
 import { errorMessage } from './utils/errors.js'
+import {
+  loadPluginHooks,
+  setupPluginHookHotReload,
+} from './utils/plugins/loadPluginHooks.js'
+import { registerSessionFileAccessHooks } from './utils/sessionFileAccessHooks.js'
+import { startTeamMemoryWatcher } from './services/teamMemorySync/watcher.js'
 import { findCanonicalGitRoot, findGitRoot, getIsGit } from './utils/git.js'
 import { initializeFileChangedWatcher } from './utils/hooks/fileChangedWatcher.js'
 import {
@@ -233,24 +239,14 @@ export async function setup(
   if (!skipPluginPrefetch) {
     void getCommands(getProjectRoot())
   }
-  void import('./utils/plugins/loadPluginHooks.js').then(m => {
-    if (!skipPluginPrefetch) {
-      void m.loadPluginHooks() // Pre-load plugin hooks (consumed by processSessionStartHooks before render)
-      m.setupPluginHookHotReload() // Set up hot reload for plugin hooks when settings change
-    }
-  })
-  // --bare: skip session-file-access analytics + team memory watcher. These
-  // are background bookkeeping for usage metrics and pure overhead in scripted
-  // calls. NOT an early-return: the --dangerously-skip-permissions safety gate,
-  // tengu_started beacon, and apiKeyHelper prefetch below must still run.
+  if (!skipPluginPrefetch) {
+    void loadPluginHooks()
+    setupPluginHookHotReload()
+  }
   if (!isBareMode()) {
-    void import('./utils/sessionFileAccessHooks.js').then(m =>
-      m.registerSessionFileAccessHooks(),
-    ) // Register session file access analytics hooks
+    registerSessionFileAccessHooks()
     if (feature('TEAMMEM')) {
-      void import('./services/teamMemorySync/watcher.js').then(m =>
-        m.startTeamMemoryWatcher(),
-      ) // Start team memory sync watcher
+      startTeamMemoryWatcher()
     }
   }
   initSinks() // Attach error log + analytics sinks and drain queued events

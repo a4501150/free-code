@@ -5,7 +5,10 @@ const releaseNotes: Command = {
   name: 'release-notes',
   type: 'local',
   supportsNonInteractive: true,
-  load: () => import('./release-notes.js'),
+  call: (...args) =>
+    import('./release-notes.js').then(mod =>
+      Reflect.apply(mod.call, undefined, args),
+    ),
 }
 
 export default releaseNotes
