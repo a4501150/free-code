@@ -6,7 +6,6 @@ import type { AgentMcpServerInfo } from '../../components/mcp/types.js'
 import type { Tool } from '../../Tool.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import { getCwd } from '../../utils/cwd.js'
-import { getGlobalClaudeFile } from '../../utils/env.js'
 import { getFreecodeSettingsFilePath } from '../../utils/settings/freecodeSettings.js'
 import { isSettingSourceEnabled } from '../../utils/settings/constants.js'
 import {
@@ -268,7 +267,7 @@ export function describeMcpConfigFilePath(scope: ConfigScope): string {
     case 'project':
       return join(getCwd(), '.mcp.json')
     case 'local':
-      return `${getGlobalClaudeFile()} [project: ${getCwd()}]`
+      return `${getFreecodeSettingsFilePath()} [project: ${getCwd()}]`
     case 'dynamic':
       return 'Dynamically configured'
     case 'enterprise':

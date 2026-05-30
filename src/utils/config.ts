@@ -11,14 +11,15 @@ import { getCwd } from '../utils/cwd.js'
 import { registerCleanup } from './cleanupRegistry.js'
 import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
-import { getGlobalClaudeFile } from './env.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import { ConfigParseError, getErrnoCode } from './errors.js'
-import { writeFileSyncAndFlush_DEPRECATED } from './file.js'
 import { getFsImplementation } from './fsOperations.js'
 import { findCanonicalGitRoot } from './git.js'
 import { safeParseJSON, safeParseJSONC } from './json.js'
-import { writeFreecodeSettingsFile } from './settings/freecodeSettings.js'
+import {
+  getFreecodeSettingsFilePath,
+  writeFreecodeSettingsFile,
+} from './settings/freecodeSettings.js'
 import { stripBOM } from './jsonRead.js'
 import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
@@ -273,7 +274,7 @@ export function saveGlobalConfig(
   }
 
   let written: GlobalConfig | null = null
-  const file = getGlobalClaudeFile()
+  const file = getFreecodeSettingsFilePath()
   let release: (() => void) | undefined
 
   try {
@@ -329,7 +330,7 @@ export function saveGlobalConfig(
  */
 function readStateFromDisk(): GlobalConfig {
   const fs = getFsImplementation()
-  const file = getGlobalClaudeFile()
+  const file = getFreecodeSettingsFilePath()
   try {
     const content = fs.readFileSync(file, { encoding: 'utf-8' })
     const parsed = safeParseJSONC(stripBOM(content))
@@ -409,7 +410,7 @@ let freshnessWatcherStarted = false
 function startGlobalConfigFreshnessWatcher(): void {
   if (freshnessWatcherStarted || process.env.NODE_ENV === 'test') return
   freshnessWatcherStarted = true
-  const file = getGlobalClaudeFile()
+  const file = getFreecodeSettingsFilePath()
   watchFile(
     file,
     { interval: CONFIG_FRESHNESS_POLL_MS, persistent: false },
@@ -483,7 +484,7 @@ export function getGlobalConfig(): GlobalConfig {
   try {
     let stats: { mtimeMs: number; size: number } | null = null
     try {
-      stats = getFsImplementation().statSync(getGlobalClaudeFile())
+      stats = getFsImplementation().statSync(getFreecodeSettingsFilePath())
     } catch {
       // File doesn't exist
     }
@@ -506,206 +507,6 @@ export function getCustomApiKeyStatus(
   _truncatedApiKey: string,
 ): 'approved' | 'rejected' | 'new' {
   return 'approved'
-}
-
-function saveConfig<A extends object>(
-  file: string,
-  config: A,
-  defaultConfig: A,
-): void {
-  // Ensure the directory exists before writing the config file
-  const dir = dirname(file)
-  const fs = getFsImplementation()
-  // mkdirSync is already recursive in FsOperations implementation
-  fs.mkdirSync(dir)
-
-  // Filter out any values that match the defaults
-  const filteredConfig = pickBy(
-    config,
-    (value, key) =>
-      jsonStringify(value) !== jsonStringify(defaultConfig[key as keyof A]),
-  )
-  // Write config file with secure permissions - mode only applies to new files
-  writeFileSyncAndFlush_DEPRECATED(
-    file,
-    jsonStringify(filteredConfig, null, 2),
-    {
-      encoding: 'utf-8',
-      mode: 0o600,
-    },
-  )
-  if (file === getGlobalClaudeFile()) {
-    globalConfigWriteCount++
-  }
-}
-
-/**
- * Returns true if a write was performed; false if the write was skipped
- * (no changes, or state-loss guard tripped). Callers use this to decide
- * whether to invalidate the cache -- invalidating after a skipped write
- * destroys the good cached state the state-loss guard depends on.
- */
-function saveConfigWithLock<A extends object>(
-  file: string,
-  createDefault: () => A,
-  mergeFn: (current: A) => A,
-): boolean {
-  const defaultConfig = createDefault()
-  const dir = dirname(file)
-  const fs = getFsImplementation()
-
-  // Ensure directory exists (mkdirSync is already recursive in FsOperations)
-  fs.mkdirSync(dir)
-
-  let release
-  try {
-    const lockFilePath = `${file}.lock`
-    const startTime = Date.now()
-    release = lockfile.lockSync(file, {
-      lockfilePath: lockFilePath,
-      onCompromised: err => {
-        // Default onCompromised throws from a setTimeout callback, which
-        // becomes an unhandled exception. Log instead -- the lock being
-        // stolen (e.g. after a 10s event-loop stall) is recoverable.
-        logForDebugging(`Config lock compromised: ${err}`, { level: 'error' })
-      },
-    })
-    const lockTime = Date.now() - startTime
-    if (lockTime > 100) {
-      logForDebugging(
-        'Lock acquisition took longer than expected - another Claude instance may be running',
-      )
-    }
-
-    // Check for stale write - file changed since we last read it
-    // Only check for global config file since lastReadFileStats tracks that specific file
-    if (lastReadFileStats && file === getGlobalClaudeFile()) {
-      try {
-        const currentStats = fs.statSync(file)
-      } catch (e) {
-        const code = getErrnoCode(e)
-        if (code !== 'ENOENT') {
-          throw e
-        }
-        // File doesn't exist yet, no stale check needed
-      }
-    }
-
-    // Re-read the current config to get latest state. If the file is
-    // momentarily corrupted (concurrent writes, kill-during-write), this
-    // returns defaults -- we must not write those back over good config.
-    const currentConfig = getConfig(file, createDefault)
-    if (file === getGlobalClaudeFile() && wouldLoseAuthState(currentConfig)) {
-      logForDebugging(
-        'saveConfigWithLock: re-read config is missing onboarding state that cache has; refusing to write. See GH #3117.',
-        { level: 'error' },
-      )
-      return false
-    }
-
-    // Apply the merge function to get the updated config
-    const mergedConfig = mergeFn(currentConfig)
-
-    // Skip write if no changes (same reference returned)
-    if (mergedConfig === currentConfig) {
-      return false
-    }
-
-    // Filter out any values that match the defaults
-    const filteredConfig = pickBy(
-      mergedConfig,
-      (value, key) =>
-        jsonStringify(value) !== jsonStringify(defaultConfig[key as keyof A]),
-    )
-
-    // Create timestamped backup of existing config before writing
-    // We keep multiple backups to prevent data loss if a reset/corrupted config
-    // overwrites a good backup. Backups are stored in ~/.freecode/backups/ to
-    // keep the home directory clean.
-    try {
-      const fileBase = basename(file)
-      const backupDir = getConfigBackupDir()
-
-      // Ensure backup directory exists
-      try {
-        fs.mkdirSync(backupDir)
-      } catch (mkdirErr) {
-        const mkdirCode = getErrnoCode(mkdirErr)
-        if (mkdirCode !== 'EEXIST') {
-          throw mkdirErr
-        }
-      }
-
-      // Check existing backups first -- skip creating a new one if a recent
-      // backup already exists. During startup, many saveGlobalConfig calls fire
-      // within milliseconds of each other; without this check, each call
-      // creates a new backup file that accumulates on disk.
-      const MIN_BACKUP_INTERVAL_MS = 60_000
-      const existingBackups = fs
-        .readdirStringSync(backupDir)
-        .filter(f => f.startsWith(`${fileBase}.backup.`))
-        .sort()
-        .reverse() // Most recent first (timestamps sort lexicographically)
-
-      const mostRecentBackup = existingBackups[0]
-      const mostRecentTimestamp = mostRecentBackup
-        ? Number(mostRecentBackup.split('.backup.').pop())
-        : 0
-      const shouldCreateBackup =
-        Number.isNaN(mostRecentTimestamp) ||
-        Date.now() - mostRecentTimestamp >= MIN_BACKUP_INTERVAL_MS
-
-      if (shouldCreateBackup) {
-        const backupPath = join(backupDir, `${fileBase}.backup.${Date.now()}`)
-        fs.copyFileSync(file, backupPath)
-      }
-
-      // Clean up old backups, keeping only the 5 most recent
-      const MAX_BACKUPS = 5
-      // Re-read if we just created one; otherwise reuse the list
-      const backupsForCleanup = shouldCreateBackup
-        ? fs
-            .readdirStringSync(backupDir)
-            .filter(f => f.startsWith(`${fileBase}.backup.`))
-            .sort()
-            .reverse()
-        : existingBackups
-
-      for (const oldBackup of backupsForCleanup.slice(MAX_BACKUPS)) {
-        try {
-          fs.unlinkSync(join(backupDir, oldBackup))
-        } catch {
-          // Ignore cleanup errors
-        }
-      }
-    } catch (e) {
-      const code = getErrnoCode(e)
-      if (code !== 'ENOENT') {
-        logForDebugging(`Failed to backup config: ${e}`, {
-          level: 'error',
-        })
-      }
-      // No file to backup or backup failed, continue with write
-    }
-
-    // Write config file with secure permissions - mode only applies to new files
-    writeFileSyncAndFlush_DEPRECATED(
-      file,
-      jsonStringify(filteredConfig, null, 2),
-      {
-        encoding: 'utf-8',
-        mode: 0o600,
-      },
-    )
-    if (file === getGlobalClaudeFile()) {
-      globalConfigWriteCount++
-    }
-    return true
-  } finally {
-    if (release) {
-      release()
-    }
-  }
 }
 
 // Flag to track if config reading is allowed
@@ -1063,7 +864,7 @@ export function saveCurrentProjectConfig(
     return
   }
   const absolutePath = getProjectPathForConfig()
-  const file = getGlobalClaudeFile()
+  const file = getFreecodeSettingsFilePath()
   let release: (() => void) | undefined
 
   try {

@@ -1,16 +1,9 @@
 import { spawn } from 'child_process'
-import { homedir } from 'os'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
+import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
 
-const PID_FILE = join(
-  (
-    process.env.FREECODE_CONFIG_DIR ??
-    process.env.CLAUDE_CONFIG_DIR ??
-    join(homedir(), '.freecode')
-  ),
-  'daemon.pid',
-)
+const PID_FILE = join(getClaudeConfigHomeDir(), 'daemon.pid')
 
 function readPid(): number | null {
   try {
