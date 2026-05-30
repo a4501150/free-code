@@ -20,6 +20,7 @@ import {
 } from '../utils/model/model.js'
 import { jsonStringify } from '../utils/slowOperations.js'
 import { getAnthropicClient } from './api/client.js'
+import { getAdapterForModel } from './api/adapters/index.js'
 import { withTokenCountVCR } from './vcr.js'
 
 // Minimal values for token counting with thinking enabled
@@ -92,7 +93,6 @@ export async function countMessagesTokensWithAPI(
     async () => {
       try {
         const model = options?.model ?? getMainLoopModel()
-        const { getAdapterForModel } = await import('./api/adapters/index.js')
         const adapter = getAdapterForModel(model)
         const betas = getModelBetas(model)
         const breakdown = await adapter.countTokens(messages, tools, model, {

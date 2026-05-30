@@ -353,7 +353,10 @@ export class TmuxSession {
         options.currentPaneOnly
           ? this.capturePane()
           : this.capturePaneWithHistory(options.historyLines),
-      predicate,
+      (screen) => {
+        detectCrash(screen)
+        return predicate(screen)
+      },
       {
         ...options,
         onTimeout: async () => {
@@ -494,6 +497,26 @@ function getPermissionOrIdleState(
   }
 
   return null
+}
+
+// --- Crash detection ---
+
+const CRASH_PATTERNS = [
+  /^(ReferenceError|TypeError|SyntaxError|RangeError|URIError|EvalError): .+/m,
+  /\bpanic: .+/m,
+  /\bSegmentation fault\b/m,
+  /\bAborted \(core dumped\)\b/m,
+] as const
+
+function detectCrash(screen: string): void {
+  for (const pattern of CRASH_PATTERNS) {
+    const match = screen.match(pattern)
+    if (match) {
+      throw new Error(
+        `CLI crashed during test:\n  ${match[0]}\n\nFull screen:\n${screen}`,
+      )
+    }
+  }
 }
 
 // --- Utilities ---

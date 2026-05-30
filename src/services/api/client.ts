@@ -26,24 +26,12 @@ import {
 } from '../../bootstrap/state.js'
 import { isDebugToStdErr, logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
-import type { ProviderAdapter } from './adapter.js'
 import type { ProviderType } from '../../utils/settings/types.js'
 import {
   getProviderRegistry,
   type ResolvedProvider,
 } from '../../utils/model/providerRegistry.js'
-
-/**
- * Lazy-load the adapter registry. Direct static import would create a
- * cycle: client.ts → adapters/index.ts → bedrock-adapter-impl.ts →
- * tokenEstimation.ts → client.ts.
- */
-// biome-ignore lint/performance/noRequireImports: lazy-load to break top-level cycle
-function getAdapterForProviderTypeSync(type: ProviderType): ProviderAdapter {
-  return require('./adapters/index.js').getAdapterForProviderType(
-    type,
-  ) as ProviderAdapter
-}
+import { getAdapterForProviderType } from './adapters/index.js'
 
 function createStderrLogger(): ClientOptions['logger'] {
   return {
@@ -353,7 +341,7 @@ async function createClientForProvider(
     // ── OpenAI Chat Completions ─────────────────────────────────
     case 'openai-chat-completions': {
       const authHeaders = resolveAuthHeaders(provider)
-      const fetch = getAdapterForProviderTypeSync(config.type).createFetch(
+      const fetch = getAdapterForProviderType(config.type).createFetch(
         config,
         authHeaders,
       )
@@ -393,7 +381,7 @@ async function createClientForProvider(
           getSessionId,
         }
       }
-      const codexFetch = getAdapterForProviderTypeSync(config.type).createFetch(
+      const codexFetch = getAdapterForProviderType(config.type).createFetch(
         config,
         codexOpts,
       )
@@ -425,7 +413,7 @@ async function createClientForProvider(
         }
         return null
       }
-      const fetch = getAdapterForProviderTypeSync(config.type).createFetch(
+      const fetch = getAdapterForProviderType(config.type).createFetch(
         config,
         getCredentials,
       )
@@ -481,7 +469,7 @@ async function createClientForProvider(
           undefined
         return { token, projectId: projectId ?? undefined }
       }
-      const fetch = getAdapterForProviderTypeSync(config.type).createFetch(
+      const fetch = getAdapterForProviderType(config.type).createFetch(
         config,
         getAccessToken,
       )
@@ -511,7 +499,7 @@ async function createClientForProvider(
         )
         return tokenProvider()
       }
-      const fetch = getAdapterForProviderTypeSync(config.type).createFetch(
+      const fetch = getAdapterForProviderType(config.type).createFetch(
         config,
         getToken,
       )
@@ -557,7 +545,7 @@ async function createClientForProvider(
           undefined
         return { token, projectId: projectId ?? undefined }
       }
-      const fetch = getAdapterForProviderTypeSync(config.type).createFetch(
+      const fetch = getAdapterForProviderType(config.type).createFetch(
         config,
         getAccessToken,
       )

@@ -2,8 +2,14 @@
  * Adapter registry.
  *
  * Maps `ProviderType` to its `ProviderAdapter` implementation. The registry
- * is consulted by token-counting call sites in `tokenEstimation.ts` and (in
- * Step 3) by the streaming loop's `updateUsage`/`accumulateUsage` paths.
+ * is consulted by token-counting call sites in `tokenEstimation.ts` and by
+ * the streaming loop's `updateUsage`/`accumulateUsage` paths.
+ *
+ * Adapter lookups use a switch statement inside function bodies rather than
+ * a top-level `const` map. This ensures imported adapter values are only
+ * read at call time (after all modules have initialized), avoiding TDZ
+ * errors when the Bun bundler flattens the circular module graph
+ * (client.ts → adapters → tokenEstimation.ts → client.ts).
  */
 import type { ProviderAdapter } from '../adapter.js'
 import type { ProviderType } from '../../../utils/settings/types.js'
@@ -16,18 +22,23 @@ import { openaiChatCompletionsAdapter } from './openai-chat-completions-adapter-
 import { codexAdapter } from './codex-adapter-impl.js'
 import { geminiAdapter } from './gemini-adapter-impl.js'
 
-const ADAPTERS: Record<ProviderType, ProviderAdapter> = {
-  anthropic: anthropicAdapter,
-  vertex: vertexAnthropicAdapter,
-  foundry: foundryAdapter,
-  'bedrock-converse': bedrockAdapter,
-  'openai-chat-completions': openaiChatCompletionsAdapter,
-  'openai-responses': codexAdapter,
-  gemini: geminiAdapter,
-}
-
 export function getAdapterForProviderType(type: ProviderType): ProviderAdapter {
-  return ADAPTERS[type]
+  switch (type) {
+    case 'anthropic':
+      return anthropicAdapter
+    case 'vertex':
+      return vertexAnthropicAdapter
+    case 'foundry':
+      return foundryAdapter
+    case 'bedrock-converse':
+      return bedrockAdapter
+    case 'openai-chat-completions':
+      return openaiChatCompletionsAdapter
+    case 'openai-responses':
+      return codexAdapter
+    case 'gemini':
+      return geminiAdapter
+  }
 }
 
 /**
@@ -38,7 +49,7 @@ export function getAdapterForProviderType(type: ProviderType): ProviderAdapter {
 export function getAdapterForModel(model: string): ProviderAdapter {
   const resolved = getProviderRegistry().getProviderForModel(model)
   if (resolved) {
-    return ADAPTERS[resolved.config.type] ?? anthropicAdapter
+    return getAdapterForProviderType(resolved.config.type) ?? anthropicAdapter
   }
   return anthropicAdapter
 }

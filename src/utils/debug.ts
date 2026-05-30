@@ -208,6 +208,12 @@ export function logForDebugging(
     level: 'debug',
   },
 ): void {
+  // Guard: the bundler may evaluate modules in an order where
+  // logForDebugging is called before LEVEL_ORDER is initialized
+  // (e.g. settings loading triggers error handling during init).
+  if (!LEVEL_ORDER) {
+    return
+  }
   if (LEVEL_ORDER[level] < LEVEL_ORDER[getMinDebugLogLevel()]) {
     return
   }
