@@ -21,10 +21,7 @@ import {
   getAutoCompactThresholdForContextWindow,
   isAutoCompactEnabled,
 } from './autoCompactConfig.js'
-import {
-  getConfiguredContextWindowSize,
-  getEffectiveContextWindowSize,
-} from './contextWindowSize.js'
+import { getConfiguredContextWindowSize } from './contextWindowSize.js'
 import { runPostCompactCleanup } from './postCompactCleanup.js'
 import { trySessionMemoryCompaction } from './sessionMemoryCompact.js'
 
@@ -37,7 +34,7 @@ export {
   MIN_AUTO_COMPACT_PERCENTAGE,
   type AutoCompactConfig,
 } from './autoCompactConfig.js'
-export { getConfiguredContextWindowSize, getEffectiveContextWindowSize }
+export { getConfiguredContextWindowSize }
 
 export type AutoCompactTrackingState = {
   compacted: boolean
@@ -61,7 +58,7 @@ const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3
 
 export function getAutoCompactThreshold(model: string): number {
   return getAutoCompactThresholdForContextWindow(
-    getEffectiveContextWindowSize(model),
+    getConfiguredContextWindowSize(model),
   )
 }
 
@@ -98,8 +95,6 @@ export function calculateTokenWarningState(
     autoCompactEnabled && tokenUsage >= autoCompactThreshold
 
   const actualContextWindow = getConfiguredContextWindowSize(model)
-  const defaultBlockingLimit =
-    actualContextWindow - MANUAL_COMPACT_BUFFER_TOKENS
 
   // Allow override for testing
   const blockingLimitOverride = process.env.CLAUDE_CODE_BLOCKING_LIMIT_OVERRIDE
@@ -109,7 +104,7 @@ export function calculateTokenWarningState(
   const blockingLimit =
     !isNaN(parsedOverride) && parsedOverride > 0
       ? parsedOverride
-      : defaultBlockingLimit
+      : actualContextWindow
 
   const isAtBlockingLimit = tokenUsage >= blockingLimit
 
@@ -126,7 +121,6 @@ export async function shouldAutoCompact(
   messages: Message[],
   model: string,
   querySource?: QuerySource,
-  tokenCountOverride?: number,
 ): Promise<boolean> {
   // Recursion guards. session_memory and compact are forked agents that
   // would deadlock.
@@ -137,13 +131,12 @@ export async function shouldAutoCompact(
     return false
   }
 
-  const tokenCount = tokenCountOverride ?? tokenCountWithEstimation(messages)
+  const tokenCount = tokenCountWithEstimation(messages)
   const threshold = getAutoCompactThreshold(model)
   const contextWindow = getConfiguredContextWindowSize(model)
-  const effectiveContextWindow = getEffectiveContextWindowSize(model)
 
   logForDebugging(
-    `autocompact: tokens=${tokenCount} threshold=${threshold} contextWindow=${contextWindow} effectiveContextWindow=${effectiveContextWindow}`,
+    `autocompact: tokens=${tokenCount} threshold=${threshold} contextWindow=${contextWindow}`,
   )
 
   const { isAboveAutoCompactThreshold } = calculateTokenWarningState(
@@ -160,9 +153,6 @@ export async function autoCompactIfNeeded(
   cacheSafeParams: CacheSafeParams,
   querySource?: QuerySource,
   tracking?: AutoCompactTrackingState,
-  options?: {
-    tokenCount?: number
-  },
 ): Promise<{
   wasCompacted: boolean
   compactionResult?: CompactionResult
@@ -183,12 +173,7 @@ export async function autoCompactIfNeeded(
   }
 
   const model = toolUseContext.options.mainLoopModel
-  const shouldCompact = await shouldAutoCompact(
-    messages,
-    model,
-    querySource,
-    options?.tokenCount,
-  )
+  const shouldCompact = await shouldAutoCompact(messages, model, querySource)
 
   if (!shouldCompact) {
     return { wasCompacted: false }
@@ -260,7 +245,7 @@ export async function autoCompactIfNeeded(
     const nextFailures = prevFailures + 1
     if (nextFailures >= MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES) {
       logForDebugging(
-        `autocompact: circuit breaker tripped after ${nextFailures} consecutive failures — skipping future attempts in this query chain`,
+        `autocompact: circuit breaker tripped after ${nextFailures} consecutive failures — skipping future attempts this session`,
         { level: 'warn' },
       )
     }
