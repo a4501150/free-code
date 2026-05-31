@@ -166,9 +166,28 @@ export class TmuxSession {
     // Tests can pass custom settings via the `settings` option.
     // Write freecode.json so the migration prompt dialog does not fire at
     // startup; the state-machine key is "freecode.json exists".
+    //
+    // If the test didn't provide explicit providers, auto-generate one from
+    // the mock server URL so the CLI has a working provider config (legacy
+    // env-var synthesis was removed).
+    const effectiveSettings = { ...this._settings }
+    if (!effectiveSettings.providers) {
+      effectiveSettings.providers = {
+        'test-anthropic': {
+          type: 'anthropic',
+          baseUrl: this._serverUrl,
+          auth: { active: 'apiKey', apiKey: { key: API_KEY } },
+          models: [{ id: 'claude-sonnet-4-20250514' }],
+        },
+      }
+      if (!effectiveSettings.defaultModel) {
+        effectiveSettings.defaultModel =
+          'test-anthropic:claude-sonnet-4-20250514'
+      }
+    }
     await writeFile(
       join(this.configDir, 'freecode.json'),
-      JSON.stringify({ ...this._settings, state }, null, 2),
+      JSON.stringify({ ...effectiveSettings, state }, null, 2),
     )
 
     // Build environment string.

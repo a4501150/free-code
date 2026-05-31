@@ -1,10 +1,8 @@
 import { z } from 'zod/v4'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
 
 // The input schema with optional replace_all
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     file_path: z.string().describe('The absolute path to the file to modify'),
     old_string: z.string().describe('The text to replace'),
     new_string: z
@@ -15,9 +13,8 @@ const inputSchema = lazySchema(() =>
     replace_all: semanticBoolean(
       z.boolean().default(false).optional(),
     ).describe('Replace all occurrences of old_string (default false)'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
 // Parsed output — what call() receives. z.output not z.input: with
 // semanticBoolean the input side is unknown (preprocess accepts anything).
@@ -33,18 +30,15 @@ export type FileEdit = {
   replace_all: boolean
 }
 
-export const hunkSchema = lazySchema(() =>
-  z.object({
+export const hunkSchema = z.object({
     oldStart: z.number(),
     oldLines: z.number(),
     newStart: z.number(),
     newLines: z.number(),
     lines: z.array(z.string()),
-  }),
-)
+  })
 
-export const gitDiffSchema = lazySchema(() =>
-  z.object({
+export const gitDiffSchema = z.object({
     filename: z.string(),
     status: z.enum(['modified', 'added']),
     additions: z.number(),
@@ -56,12 +50,10 @@ export const gitDiffSchema = lazySchema(() =>
       .nullable()
       .optional()
       .describe('GitHub owner/repo when available'),
-  }),
-)
+  })
 
 // Output schema for FileEditTool
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     filePath: z.string().describe('The file path that was edited'),
     oldString: z.string().describe('The original string that was replaced'),
     newString: z.string().describe('The new string that replaced it'),
@@ -69,16 +61,15 @@ const outputSchema = lazySchema(() =>
       .string()
       .describe('The original file contents before editing'),
     structuredPatch: z
-      .array(hunkSchema())
+      .array(hunkSchema)
       .describe('Diff patch showing the changes'),
     userModified: z
       .boolean()
       .describe('Whether the user modified the proposed changes'),
     replaceAll: z.boolean().describe('Whether all occurrences were replaced'),
-    gitDiff: gitDiffSchema().optional(),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+    gitDiff: gitDiffSchema.optional(),
+  })
+type OutputSchema = typeof outputSchema
 
 export type FileEditOutput = z.infer<OutputSchema>
 

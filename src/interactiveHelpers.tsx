@@ -42,22 +42,20 @@ import {
   hasAutoModeOptIn,
   hasSkipDangerousModePermissionPrompt,
 } from './utils/settings/settings.js'
-import { resetSettingsCache } from './utils/settings/settingsCache.js'
 import {
   freecodeSettingsFileExists,
   writeFreecodeSettingsFile,
 } from './utils/settings/freecodeSettings.js'
 import {
+  legacySettingsFileExists,
   migrateGlobalConfigToState,
   migrateToFreecodeDir,
   needsConfigDirMigration,
   needsGlobalConfigMigration,
-} from './utils/settings/migrateConfigDir.js'
-import {
-  legacySettingsFileExists,
   runLegacyToFreecodeMigration,
-} from './utils/settings/migrateToFreecode.js'
+} from './utils/settings/claudeMigration.js'
 import { resetProviderRegistry } from './utils/model/providerRegistry.js'
+import { resetSettingsCache } from './utils/settings/settingsCache.js'
 import { Text } from './ink.js'
 import { Onboarding } from './components/Onboarding.js'
 import { TrustDialog } from './components/TrustDialog/TrustDialog.js'

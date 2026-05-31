@@ -11,7 +11,6 @@ import { z } from 'zod/v4'
 import { Box, Text } from '../../ink.js'
 import type { Tool } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import {
   ASK_USER_QUESTION_TOOL_CHIP_WIDTH,
   ASK_USER_QUESTION_TOOL_NAME,
@@ -20,8 +19,7 @@ import {
   PREVIEW_FEATURE_PROMPT,
 } from './prompt.js'
 
-const questionOptionSchema = lazySchema(() =>
-  z.object({
+const questionOptionSchema = z.object({
     label: z
       .string()
       .describe(
@@ -38,11 +36,9 @@ const questionOptionSchema = lazySchema(() =>
       .describe(
         'Optional preview content rendered when this option is focused. Use for mockups, code snippets, or visual comparisons that help users compare options. See the tool description for the expected content format.',
       ),
-  }),
-)
+  })
 
-const questionSchema = lazySchema(() =>
-  z.object({
+const questionSchema = z.object({
     question: z
       .string()
       .describe(
@@ -54,7 +50,7 @@ const questionSchema = lazySchema(() =>
         `Very short label displayed as a chip/tag (max ${ASK_USER_QUESTION_TOOL_CHIP_WIDTH} chars). Examples: "Auth method", "Library", "Approach".`,
       ),
     options: z
-      .array(questionOptionSchema())
+      .array(questionOptionSchema)
       .min(2)
       .max(4)
       .describe(
@@ -66,10 +62,9 @@ const questionSchema = lazySchema(() =>
       .describe(
         'Set to true to allow the user to select multiple options instead of just one. Use when choices are not mutually exclusive.',
       ),
-  }),
-)
+  })
 
-const annotationsSchema = lazySchema(() => {
+const annotationsSchema = (() => {
   const annotationSchema = z.object({
     preview: z
       .string()
@@ -89,7 +84,7 @@ const annotationsSchema = lazySchema(() => {
     .describe(
       'Optional per-question annotations from the user (e.g., notes on preview selections). Keyed by question text.',
     )
-})
+})()
 
 const UNIQUENESS_REFINE = {
   check: (data: {
@@ -111,52 +106,48 @@ const UNIQUENESS_REFINE = {
     'Question texts must be unique, option labels must be unique within each question',
 } as const
 
-const commonFields = lazySchema(() => ({
+const commonFields = ({
   answers: z
     .record(z.string(), z.string())
     .optional()
     .describe('User answers collected by the permission component'),
-  annotations: annotationsSchema(),
-}))
+  annotations: annotationsSchema,
+})
 
-const inputSchema = lazySchema(() =>
-  z
+const inputSchema = z
     .strictObject({
       questions: z
-        .array(questionSchema())
+        .array(questionSchema)
         .min(1)
         .max(4)
         .describe('Questions to ask the user (1-4 questions)'),
-      ...commonFields(),
+      ...commonFields,
     })
     .refine(UNIQUENESS_REFINE.check, {
       message: UNIQUENESS_REFINE.message,
-    }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+    })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     questions: z
-      .array(questionSchema())
+      .array(questionSchema)
       .describe('The questions that were asked'),
     answers: z
       .record(z.string(), z.string())
       .describe(
         'The answers provided by the user (question text -> answer string; multi-select answers are comma-separated)',
       ),
-    annotations: annotationsSchema(),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+    annotations: annotationsSchema,
+  })
+type OutputSchema = typeof outputSchema
 
 // SDK schemas are identical to internal schemas now that `preview` and
 // `annotations` are public (configurable via `toolConfig.askUserQuestion`).
 export const _sdkInputSchema = inputSchema
 export const _sdkOutputSchema = outputSchema
 
-export type Question = z.infer<ReturnType<typeof questionSchema>>
-export type QuestionOption = z.infer<ReturnType<typeof questionOptionSchema>>
+export type Question = z.infer<typeof questionSchema>
+export type QuestionOption = z.infer<typeof questionOptionSchema>
 export type Output = z.infer<OutputSchema>
 
 function AskUserQuestionResultMessage({
@@ -199,10 +190,10 @@ export const AskUserQuestionTool: Tool<InputSchema, Output> = buildTool({
     return ASK_USER_QUESTION_TOOL_PROMPT + PREVIEW_FEATURE_PROMPT[format]
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   userFacingName() {
     return ''

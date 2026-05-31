@@ -4,14 +4,12 @@ import {
   executeTaskCreatedHooks,
   getTaskCreatedHookMessage,
 } from '../../utils/hooks.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { createTask, deleteTask, getTaskListId } from '../../utils/tasks.js'
 import { getAgentName, getTeamName } from '../../utils/teammate.js'
 import { TASK_CREATE_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, getPrompt } from './prompt.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     subject: z.string().describe('A brief title for the task'),
     description: z.string().describe('What needs to be done'),
     activeForm: z
@@ -24,19 +22,16 @@ const inputSchema = lazySchema(() =>
       .record(z.string(), z.unknown())
       .optional()
       .describe('Arbitrary metadata to attach to the task'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     task: z.object({
       id: z.string(),
       subject: z.string(),
     }),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
@@ -50,10 +45,10 @@ export const TaskCreateTool = buildTool({
     return getPrompt()
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   userFacingName() {
     return 'TaskCreate'

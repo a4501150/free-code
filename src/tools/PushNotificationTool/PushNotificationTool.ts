@@ -9,7 +9,6 @@
 import { z } from 'zod/v4'
 import { sendNotification } from '../../services/notifier.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 
 const PUSH_NOTIFICATION_TOOL_NAME = 'PushNotification'
@@ -25,8 +24,7 @@ The notification will be delivered via the user's configured notification channe
 
 Each notification interrupts the user — only use it when an interruption is warranted (e.g., a task they care about has finished, or input is needed and you cannot continue without it).`
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     title: z
       .string()
       .max(100)
@@ -40,17 +38,14 @@ const inputSchema = lazySchema(() =>
       .optional()
       .default('normal')
       .describe('Notification priority level.'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     sent: z.boolean(),
     error: z.string().optional(),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 type Output = z.infer<OutputSchema>
 
@@ -67,11 +62,11 @@ export const PushNotificationTool = buildTool({
   },
 
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
 
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
 
   userFacingName() {

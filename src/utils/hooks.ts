@@ -264,7 +264,7 @@ function executeInBackground({
  * Checks if a hook should be skipped due to lack of workspace trust.
  *
  * ALL hooks require workspace trust because they execute arbitrary commands from
- * .claude/freecode.json. This is a defense-in-depth security measure.
+ * .freecode/freecode.json. This is a defense-in-depth security measure.
  *
  * Context: Hooks are captured via captureHooksConfigSnapshot() before the trust
  * dialog is shown. While most hooks won't execute until after trust is established
@@ -379,7 +379,7 @@ function validateHookJson(
   jsonString: string,
 ): { json: HookJSONOutput } | { validationError: string } {
   const parsed = jsonParse(jsonString)
-  const validation = hookJSONOutputSchema().safeParse(parsed)
+  const validation = hookJSONOutputSchema.safeParse(parsed)
   if (validation.success) {
     logForDebugging('Successfully parsed and validated hook JSON output')
     return { json: validation.data }
@@ -453,7 +453,7 @@ function parseHttpHookOutput(body: string): {
   const trimmed = body.trim()
 
   if (trimmed === '') {
-    const validation = hookJSONOutputSchema().safeParse({})
+    const validation = hookJSONOutputSchema.safeParse({})
     if (validation.success) {
       logForDebugging(
         'HTTP hook returned empty body, treating as empty JSON object',
@@ -1077,7 +1077,7 @@ async function execCommandHook(
 
         try {
           const parsed = jsonParse(trimmed)
-          const validation = promptRequestSchema().safeParse(parsed)
+          const validation = promptRequestSchema.safeParse(parsed)
           if (validation.success) {
             processedPromptLines.add(trimmed)
             logForDebugging(
@@ -4268,7 +4268,7 @@ export function hasInstructionsLoadedHook(): boolean {
 
 /**
  * Execute InstructionsLoaded hooks when an instruction file (CLAUDE.md or
- * .claude/rules/*.md) is loaded into context. Fire-and-forget — this hook is
+ * .freecode/rules/*.md) is loaded into context. Fire-and-forget — this hook is
  * for observability/audit only and does not support blocking.
  *
  * Dispatch sites:
@@ -4360,7 +4360,7 @@ function parseElicitationHookOutput(
   }
 
   try {
-    const parsed = hookJSONOutputSchema().parse(JSON.parse(trimmed))
+    const parsed = hookJSONOutputSchema.parse(JSON.parse(trimmed))
     if (isAsyncHookJSONOutput(parsed)) {
       return {}
     }

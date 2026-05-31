@@ -100,8 +100,7 @@ export async function processSessionStartHooks(
         errorMessage.includes('EACCES') ||
         errorMessage.includes('EPERM')
       ) {
-        userGuidance =
-          `This appears to be a permissions issue. Check file permissions on ${globalConfigDir()}/plugins/`
+        userGuidance = `This appears to be a permissions issue. Check file permissions on ${globalConfigDir()}/plugins/`
       } else if (
         errorMessage.includes('Invalid') ||
         errorMessage.includes('parse') ||
@@ -109,7 +108,7 @@ export async function processSessionStartHooks(
         errorMessage.includes('schema')
       ) {
         userGuidance =
-          'This appears to be a configuration issue. Check your plugin settings in .claude/freecode.json'
+          'This appears to be a configuration issue. Check your plugin settings in .freecode/freecode.json'
       } else {
         userGuidance =
           'Please fix the plugin configuration or remove problematic plugins from your settings.'
@@ -122,7 +121,7 @@ export async function processSessionStartHooks(
       )
 
       // Continue execution - plugin hooks won't be available, but project-level hooks
-      // from .claude/freecode.json (loaded via captureHooksConfigSnapshot) will still work
+      // from .freecode/freecode.json (loaded via captureHooksConfigSnapshot) will still work
     }
   }
 

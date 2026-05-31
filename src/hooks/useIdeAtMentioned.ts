@@ -6,7 +6,6 @@ import type {
   MCPServerConnection,
 } from '../services/mcp/types.js'
 import { getConnectedIdeClient } from '../utils/ide.js'
-import { lazySchema } from '../utils/lazySchema.js'
 export type IDEAtMentioned = {
   filePath: string
   lineStart?: number
@@ -15,16 +14,14 @@ export type IDEAtMentioned = {
 
 const NOTIFICATION_METHOD = 'at_mentioned'
 
-const AtMentionedSchema = lazySchema(() =>
-  z.object({
+const AtMentionedSchema = z.object({
     method: z.literal(NOTIFICATION_METHOD),
     params: z.object({
       filePath: z.string(),
       lineStart: z.number().optional(),
       lineEnd: z.number().optional(),
     }),
-  }),
-)
+  })
 
 /**
  * A hook that tracks IDE at-mention notifications by directly registering
@@ -47,7 +44,7 @@ export function useIdeAtMentioned(
     // If we found a connected IDE client, register our handler
     if (ideClient) {
       ideClient.client.setNotificationHandler(
-        AtMentionedSchema(),
+        AtMentionedSchema,
         notification => {
           if (ideClientRef.current !== ideClient) {
             return

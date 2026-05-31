@@ -1,6 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { z } from 'zod/v4'
-import { lazySchema } from '../utils/lazySchema.js'
 import {
   type HookEvent,
   HOOK_EVENTS,
@@ -24,8 +23,7 @@ export function isHookEvent(value: string): value is HookEvent {
 
 // Prompt elicitation protocol types. The `prompt` key acts as discriminator
 // (mirroring the {async:true} pattern), with the id as its value.
-export const promptRequestSchema = lazySchema(() =>
-  z.object({
+export const promptRequestSchema = z.object({
     prompt: z.string(), // request id
     message: z.string(),
     options: z.array(
@@ -35,10 +33,9 @@ export const promptRequestSchema = lazySchema(() =>
         description: z.string().optional(),
       }),
     ),
-  }),
-)
+  })
 
-export type PromptRequest = z.infer<ReturnType<typeof promptRequestSchema>>
+export type PromptRequest = z.infer<typeof promptRequestSchema>
 
 export type PromptResponse = {
   prompt_response: string // request id
@@ -46,8 +43,7 @@ export type PromptResponse = {
 }
 
 // Sync hook response schema
-export const syncHookResponseSchema = lazySchema(() =>
-  z.object({
+export const syncHookResponseSchema = z.object({
     continue: z
       .boolean()
       .describe('Whether Claude should continue after hook (default: true)')
@@ -70,7 +66,7 @@ export const syncHookResponseSchema = lazySchema(() =>
       .union([
         z.object({
           hookEventName: z.literal('PreToolUse'),
-          permissionDecision: permissionBehaviorSchema().optional(),
+          permissionDecision: permissionBehaviorSchema.optional(),
           permissionDecisionReason: z.string().optional(),
           updatedInput: z.record(z.string(), z.unknown()).optional(),
           additionalContext: z.string().optional(),
@@ -122,7 +118,7 @@ export const syncHookResponseSchema = lazySchema(() =>
             z.object({
               behavior: z.literal('allow'),
               updatedInput: z.record(z.string(), z.unknown()).optional(),
-              updatedPermissions: z.array(permissionUpdateSchema()).optional(),
+              updatedPermissions: z.array(permissionUpdateSchema).optional(),
             }),
             z.object({
               behavior: z.literal('deny'),
@@ -161,21 +157,20 @@ export const syncHookResponseSchema = lazySchema(() =>
         }),
       ])
       .optional(),
-  }),
-)
+  })
 
 // Zod schema for hook JSON output validation
-export const hookJSONOutputSchema = lazySchema(() => {
+export const hookJSONOutputSchema = (() => {
   // Async hook response schema
   const asyncHookResponseSchema = z.object({
     async: z.literal(true),
     asyncTimeout: z.number().optional(),
   })
-  return z.union([asyncHookResponseSchema, syncHookResponseSchema()])
-})
+  return z.union([asyncHookResponseSchema, syncHookResponseSchema])
+})()
 
 // Infer the TypeScript type from the schema
-type SchemaHookJSONOutput = z.infer<ReturnType<typeof hookJSONOutputSchema>>
+type SchemaHookJSONOutput = z.infer<typeof hookJSONOutputSchema>
 
 // Type guard function to check if response is sync
 export function isSyncHookJSONOutput(

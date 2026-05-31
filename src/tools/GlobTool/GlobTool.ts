@@ -9,7 +9,6 @@ import {
 } from '../../utils/file.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
 import { glob } from '../../utils/glob.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { expandPath, toRelativePath } from '../../utils/path.js'
 import { checkReadPermissionForTool } from '../../utils/permissions/filesystem.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
@@ -23,8 +22,7 @@ import {
   userFacingName,
 } from './UI.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     pattern: z.string().describe('The glob pattern to match files against'),
     path: z
       .string()
@@ -32,12 +30,10 @@ const inputSchema = lazySchema(() =>
       .describe(
         'The directory to search in. If not specified, the current working directory will be used. IMPORTANT: Omit this field to use the default directory. DO NOT enter "undefined" or "null" - simply omit it for the default behavior. Must be a valid directory path if provided.',
       ),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     durationMs: z
       .number()
       .describe('Time taken to execute the search in milliseconds'),
@@ -48,9 +44,8 @@ const outputSchema = lazySchema(() =>
     truncated: z
       .boolean()
       .describe('Whether results were truncated (limited to 100 files)'),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
@@ -67,10 +62,10 @@ export const GlobTool = buildTool({
     return summary ? `Finding ${summary}` : 'Finding files'
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   isConcurrencySafe() {
     return true

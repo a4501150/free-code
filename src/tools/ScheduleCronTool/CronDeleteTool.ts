@@ -6,7 +6,6 @@ import {
   listAllCronTasks,
   removeCronTasks,
 } from '../../utils/cronTasks.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { getTeammateContext } from '../../utils/teammateContext.js'
 import {
   buildCronDeletePrompt,
@@ -17,29 +16,25 @@ import {
 } from './prompt.js'
 import { renderDeleteResultMessage, renderDeleteToolUseMessage } from './UI.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     id: z.string().describe('Job ID returned by CronCreate.'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     id: z.string(),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 export type DeleteOutput = z.infer<OutputSchema>
 
 export const CronDeleteTool = buildTool({
   name: CRON_DELETE_TOOL_NAME,
   maxResultSizeChars: 100_000,
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   isEnabled() {
     return isKairosCronEnabled()

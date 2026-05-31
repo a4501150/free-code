@@ -46,7 +46,7 @@ function getFilePathFromInput(
       return parsed.success ? parsed.data.file_path : null
     }
     case FILE_EDIT_TOOL_NAME: {
-      const parsed = editInputSchema().safeParse(toolInput)
+      const parsed = editInputSchema.safeParse(toolInput)
       return parsed.success ? parsed.data.file_path : null
     }
     case FILE_WRITE_TOOL_NAME: {

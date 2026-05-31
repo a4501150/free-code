@@ -8,7 +8,6 @@ import {
   suggestPathUnderCwd,
 } from '../../utils/file.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { expandPath, toRelativePath } from '../../utils/path.js'
 import {
   checkReadPermissionForTool,
@@ -30,8 +29,7 @@ import {
   renderToolUseMessage,
 } from './UI.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     pattern: z
       .string()
       .describe(
@@ -89,9 +87,8 @@ const inputSchema = lazySchema(() =>
     no_ignore: semanticBoolean(z.boolean().optional()).describe(
       'Search files even if they are ignored by .gitignore, .ignore, or other ignore files (rg --no-ignore). Useful for searching in node_modules, build output, vendored files, etc. Default: false.',
     ),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
 // Version control system directories to exclude from searches
 // These are excluded automatically because they create noise in search results
@@ -144,8 +141,7 @@ function formatLimitInfo(
   return parts.join(', ')
 }
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     mode: z.enum(['content', 'files_with_matches', 'count']).optional(),
     numFiles: z.number(),
     filenames: z.array(z.string()),
@@ -154,9 +150,8 @@ const outputSchema = lazySchema(() =>
     numMatches: z.number().optional(), // For count mode
     appliedLimit: z.number().optional(), // The limit that was applied (if any)
     appliedOffset: z.number().optional(), // The offset that was applied
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 type Output = z.infer<OutputSchema>
 
@@ -176,10 +171,10 @@ export const GrepTool = buildTool({
     return summary ? `Searching for ${summary}` : 'Searching'
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   isConcurrencySafe() {
     return true

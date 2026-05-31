@@ -1,8 +1,9 @@
+import { PREFERRED_PROJECT_CONFIG_DIR } from 'src/utils/projectConfigPaths.js'
 import type { SettingSource } from 'src/utils/settings/constants.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 
 export const AGENT_PATHS = {
-  FOLDER_NAME: '.claude',
+  FOLDER_NAME: PREFERRED_PROJECT_CONFIG_DIR,
   AGENTS_DIR: 'agents',
 } as const
 

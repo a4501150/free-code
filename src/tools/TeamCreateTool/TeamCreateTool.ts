@@ -6,7 +6,6 @@ import { buildTool, type ToolDef } from '../../Tool.js'
 import { formatAgentId } from '../../utils/agentId.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { getCwd } from '../../utils/cwd.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import {
   getDefaultMainLoopModel,
   parseUserSpecifiedModel,
@@ -33,8 +32,7 @@ import { TEAM_CREATE_TOOL_NAME } from './constants.js'
 import { getPrompt } from './prompt.js'
 import { renderToolUseMessage } from './UI.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     team_name: z.string().describe('Name for the new team to create.'),
     description: z.string().optional().describe('Team description/purpose.'),
     agent_type: z
@@ -44,9 +42,8 @@ const inputSchema = lazySchema(() =>
         'Type/role of the team lead (e.g., "researcher", "test-runner"). ' +
           'Used for team file and inter-agent coordination.',
       ),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
 export type Output = {
   team_name: string
@@ -79,7 +76,7 @@ export const TeamCreateTool: Tool<InputSchema, Output> = buildTool({
   },
 
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
 
   isEnabled() {

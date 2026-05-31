@@ -269,7 +269,7 @@ export async function loadKnownMarketplacesConfig(): Promise<KnownMarketplacesCo
     })
     const data = jsonParse(content)
     // Validate against schema
-    const parsed = KnownMarketplacesFileSchema().safeParse(data)
+    const parsed = KnownMarketplacesFileSchema.safeParse(data)
     if (!parsed.success) {
       const errorMsg = `Marketplace configuration file is corrupted: ${parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`
       logForDebugging(errorMsg, {
@@ -326,7 +326,7 @@ export async function saveKnownMarketplacesConfig(
   config: KnownMarketplacesConfig,
 ): Promise<void> {
   // Validate before saving
-  const parsed = KnownMarketplacesFileSchema().safeParse(config)
+  const parsed = KnownMarketplacesFileSchema.safeParse(config)
   const configFile = getKnownMarketplacesFile()
 
   if (!parsed.success) {
@@ -439,7 +439,7 @@ async function readSeedKnownMarketplaces(
     const content = await getFsImplementation().readFile(seedJsonPath, {
       encoding: 'utf-8',
     })
-    const parsed = KnownMarketplacesFileSchema().safeParse(jsonParse(content))
+    const parsed = KnownMarketplacesFileSchema.safeParse(jsonParse(content))
     if (!parsed.success) {
       logForDebugging(
         `Seed known_marketplaces.json invalid at ${seedDir}: ${parsed.error.message}`,
@@ -1313,7 +1313,7 @@ async function cacheMarketplaceFromUrl(
 
   safeCallProgress(onProgress, 'Validating marketplace data')
   // Validate the response is a valid marketplace
-  const result = PluginMarketplaceSchema().safeParse(response.data)
+  const result = PluginMarketplaceSchema.safeParse(response.data)
   if (!result.success) {
     logPluginFetch(
       'marketplace_url',
@@ -1665,7 +1665,7 @@ async function loadAndCacheMarketplace(
         await fs.mkdir(dirname(marketplacePath))
         // No `satisfies PluginMarketplace` here: source.plugins is the narrow
         // SettingsMarketplacePlugin type (no strict/.default(), no manifest
-        // fields). The parseFileWithSchema(PluginMarketplaceSchema()) call
+        // fields). The parseFileWithSchema(PluginMarketplaceSchema) call
         // below widens and validates — that's the real check.
         await writeFile(
           marketplacePath,
@@ -1692,7 +1692,7 @@ async function loadAndCacheMarketplace(
     try {
       marketplace = await parseFileWithSchema(
         marketplacePath,
-        PluginMarketplaceSchema(),
+        PluginMarketplaceSchema,
       )
     } catch (e) {
       if (isENOENT(e)) {
@@ -2062,13 +2062,13 @@ async function readCachedMarketplace(
   // (ENOTDIR) or the nested file is simply missing (ENOENT).
   const nestedPath = join(installLocation, '.claude-plugin', 'marketplace.json')
   try {
-    return await parseFileWithSchema(nestedPath, PluginMarketplaceSchema())
+    return await parseFileWithSchema(nestedPath, PluginMarketplaceSchema)
   } catch (e) {
     if (e instanceof ConfigParseError) throw e
     const code = getErrnoCode(e)
     if (code !== 'ENOENT' && code !== 'ENOTDIR') throw e
   }
-  return await parseFileWithSchema(installLocation, PluginMarketplaceSchema())
+  return await parseFileWithSchema(installLocation, PluginMarketplaceSchema)
 }
 
 /**

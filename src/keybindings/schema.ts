@@ -4,8 +4,6 @@
  */
 
 import { z } from 'zod/v4'
-import { lazySchema } from '../utils/lazySchema.js'
-
 /**
  * Valid context names where keybindings can be applied.
  */
@@ -177,8 +175,7 @@ export const KEYBINDING_ACTIONS = [
 /**
  * Schema for a single keybinding block.
  */
-export const KeybindingBlockSchema = lazySchema(() =>
-  z
+export const KeybindingBlockSchema = z
     .object({
       context: z
         .enum(KEYBINDING_CONTEXTS)
@@ -207,15 +204,13 @@ export const KeybindingBlockSchema = lazySchema(() =>
         )
         .describe('Map of keystroke patterns to actions'),
     })
-    .describe('A block of keybindings for a specific context'),
-)
+    .describe('A block of keybindings for a specific context')
 
 /**
  * Schema for the entire keybindings.json file.
  * Uses object wrapper format with optional $schema and $docs metadata.
  */
-export const KeybindingsSchema = lazySchema(() =>
-  z
+export const KeybindingsSchema = z
     .object({
       $schema: z
         .string()
@@ -223,17 +218,16 @@ export const KeybindingsSchema = lazySchema(() =>
         .describe('JSON Schema URL for editor validation'),
       $docs: z.string().optional().describe('Documentation URL'),
       bindings: z
-        .array(KeybindingBlockSchema())
+        .array(KeybindingBlockSchema)
         .describe('Array of keybinding blocks by context'),
     })
     .describe(
       'Claude Code keybindings configuration. Customize keyboard shortcuts by context.',
-    ),
-)
+    )
 
 /**
  * TypeScript types derived from the schema.
  */
 export type KeybindingsSchemaType = z.infer<
-  ReturnType<typeof KeybindingsSchema>
+  typeof KeybindingsSchema
 >

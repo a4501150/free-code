@@ -137,7 +137,7 @@ export async function readClaudeDesktopMcpServers(): Promise<
         continue
       }
 
-      const result = McpStdioServerConfigSchema().safeParse(serverConfig)
+      const result = McpStdioServerConfigSchema.safeParse(serverConfig)
 
       if (result.success) {
         servers[name] = result.data

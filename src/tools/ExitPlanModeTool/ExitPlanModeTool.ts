@@ -24,7 +24,6 @@ import {
   findInProcessTeammateTaskId,
   setAwaitingPlanApproval,
 } from '../../utils/inProcessTeammateHelpers.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import {
   getPlan,
@@ -56,16 +55,15 @@ const permissionSetupModule = feature('TRANSCRIPT_CLASSIFIER')
   ? permissionSetupNs
   : null
 
-const inputSchema = lazySchema(() => z.strictObject({}).passthrough())
-type InputSchema = ReturnType<typeof inputSchema>
+const inputSchema = z.strictObject({}).passthrough()
+type InputSchema = typeof inputSchema
 
 /**
  * SDK-facing input schema - includes fields injected by normalizeToolInput.
  * The internal inputSchema doesn't have these fields because plan is read from disk,
  * but the SDK/hooks see the normalized version with plan and file path included.
  */
-export const _sdkInputSchema = lazySchema(() =>
-  inputSchema().extend({
+export const _sdkInputSchema = inputSchema.extend({
     plan: z
       .string()
       .optional()
@@ -74,11 +72,9 @@ export const _sdkInputSchema = lazySchema(() =>
       .string()
       .optional()
       .describe('The plan file path (injected by normalizeToolInput)'),
-  }),
-)
+  })
 
-export const outputSchema = lazySchema(() =>
-  z.object({
+export const outputSchema = z.object({
     plan: z
       .string()
       .nullable()
@@ -108,9 +104,8 @@ export const outputSchema = lazySchema(() =>
       .string()
       .optional()
       .describe('Unique identifier for the plan approval request'),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
@@ -124,10 +119,10 @@ export const ExitPlanModeTool: Tool<InputSchema, Output> = buildTool({
     return EXIT_PLAN_MODE_TOOL_PROMPT
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   userFacingName() {
     return ''

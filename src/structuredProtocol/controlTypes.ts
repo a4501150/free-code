@@ -25,54 +25,54 @@ import type {
 } from './controlSchemas.js'
 
 export type SDKControlRequest = z.infer<
-  ReturnType<typeof SDKControlRequestSchema>
+  typeof SDKControlRequestSchema
 >
 export type SDKControlResponse = z.infer<
-  ReturnType<typeof SDKControlResponseSchema>
+  typeof SDKControlResponseSchema
 >
 export type SDKControlCancelRequest = z.infer<
-  ReturnType<typeof SDKControlCancelRequestSchema>
+  typeof SDKControlCancelRequestSchema
 >
 export type ControlSuccessResponse = z.infer<
-  ReturnType<typeof ControlResponseSchema>
+  typeof ControlResponseSchema
 >
 export type ControlErrorResponse = z.infer<
-  ReturnType<typeof ControlErrorResponseSchema>
+  typeof ControlErrorResponseSchema
 >
 
 export type SDKControlPermissionRequest = z.infer<
-  ReturnType<typeof SDKControlPermissionRequestSchema>
+  typeof SDKControlPermissionRequestSchema
 >
 
 export type SDKControlInitializeRequest = z.infer<
-  ReturnType<typeof SDKControlInitializeRequestSchema>
+  typeof SDKControlInitializeRequestSchema
 >
 export type SDKControlInitializeResponse = z.infer<
-  ReturnType<typeof SDKControlInitializeResponseSchema>
+  typeof SDKControlInitializeResponseSchema
 >
 
 export type SDKControlMcpSetServersResponse = z.infer<
-  ReturnType<typeof SDKControlMcpSetServersResponseSchema>
+  typeof SDKControlMcpSetServersResponseSchema
 >
 
 export type SDKControlReloadPluginsResponse = z.infer<
-  ReturnType<typeof SDKControlReloadPluginsResponseSchema>
+  typeof SDKControlReloadPluginsResponseSchema
 >
 
 export type SDKKeepAliveMessage = z.infer<
-  ReturnType<typeof SDKKeepAliveMessageSchema>
+  typeof SDKKeepAliveMessageSchema
 >
 
 export type SDKUpdateEnvironmentVariablesMessage = z.infer<
-  ReturnType<typeof SDKUpdateEnvironmentVariablesMessageSchema>
+  typeof SDKUpdateEnvironmentVariablesMessageSchema
 >
 
 /**
  * Union of every message the CLI may emit to stdout on the SDK channel.
  */
-export type StdoutMessage = z.infer<ReturnType<typeof StdoutMessageSchema>>
+export type StdoutMessage = z.infer<typeof StdoutMessageSchema>
 
 /**
  * Union of every message the CLI accepts on stdin from the SDK channel.
  */
-export type StdinMessage = z.infer<ReturnType<typeof StdinMessageSchema>>
+export type StdinMessage = z.infer<typeof StdinMessageSchema>

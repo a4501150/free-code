@@ -38,7 +38,7 @@ import {
 export async function readZipCacheKnownMarketplaces(): Promise<KnownMarketplacesFile> {
   try {
     const content = await readFile(getZipCacheKnownMarketplacesPath(), 'utf-8')
-    const parsed = KnownMarketplacesFileSchema().safeParse(jsonParse(content))
+    const parsed = KnownMarketplacesFileSchema.safeParse(jsonParse(content))
     if (!parsed.success) {
       logForDebugging(
         `Invalid known_marketplaces.json in zip cache: ${parsed.error.message}`,
@@ -81,7 +81,7 @@ export async function readMarketplaceJson(
   try {
     const content = await readFile(fullPath, 'utf-8')
     const parsed = jsonParse(content)
-    const result = PluginMarketplaceSchema().safeParse(parsed)
+    const result = PluginMarketplaceSchema.safeParse(parsed)
     if (result.success) {
       return result.data
     }

@@ -126,7 +126,7 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
         hideInputGuide
       >
         <Text dimColor>
-          Create skills in .claude/skills/ or {globalConfigDir()}/skills/
+          Create skills in .freecode/skills/ or {globalConfigDir()}/skills/
         </Text>
         <Text dimColor italic>
           <ConfigurableShortcutHint

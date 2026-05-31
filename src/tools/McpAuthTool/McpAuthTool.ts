@@ -16,12 +16,11 @@ import type {
 } from '../../services/mcp/types.js'
 import type { Tool } from '../../Tool.js'
 import { errorMessage } from '../../utils/errors.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { logMCPDebug, logMCPError } from '../../utils/log.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 
-const inputSchema = lazySchema(() => z.object({}))
-type InputSchema = ReturnType<typeof inputSchema>
+const inputSchema = z.object({})
+type InputSchema = typeof inputSchema
 
 export type McpAuthOutput = {
   status: 'auth_url' | 'unsupported' | 'error'
@@ -77,7 +76,7 @@ export function createMcpAuthTool(
       return description
     },
     get inputSchema(): InputSchema {
-      return inputSchema()
+      return inputSchema
     },
     async checkPermissions(input): Promise<PermissionDecision> {
       return { behavior: 'allow', updatedInput: input }

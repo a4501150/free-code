@@ -1,7 +1,5 @@
 import { logForDebugging } from 'src/utils/debug.js'
 import { z } from 'zod/v4'
-import { lazySchema } from '../../utils/lazySchema.js'
-
 import type { ConnectedMCPServer, MCPServerConnection } from './types.js'
 
 type AutoModeEnabledState = 'enabled' | 'disabled' | 'opt-in'
@@ -9,15 +7,13 @@ function readAutoModeEnabledState(): AutoModeEnabledState {
   return 'enabled'
 }
 
-export const LogEventNotificationSchema = lazySchema(() =>
-  z.object({
+export const LogEventNotificationSchema = z.object({
     method: z.literal('log_event'),
     params: z.object({
       eventName: z.string(),
       eventData: z.object({}).passthrough(),
     }),
-  }),
-)
+  })
 
 // Store the VSCode MCP client reference for sending notifications
 let vscodeMcpClient: ConnectedMCPServer | null = null
@@ -59,7 +55,7 @@ export function setupVscodeSdkMcp(sdkClients: MCPServerConnection[]): void {
     vscodeMcpClient = client
 
     client.client.setNotificationHandler(
-      LogEventNotificationSchema(),
+      LogEventNotificationSchema,
       async notification => {
         const { eventName, eventData } = notification.params
       },

@@ -6,7 +6,7 @@
  * - Which plugins are installed globally
  * - Installation metadata (version, timestamps, paths)
  *
- * The enabled/disabled state remains in .claude/freecode.json for per-repo control.
+ * The enabled/disabled state remains in .freecode/freecode.json for per-repo control.
  *
  * Rationale: Installation is global (a plugin is either on disk or not), while
  * enabled/disabled state is per-repository (different projects may want different
@@ -153,7 +153,7 @@ export function migrateToSinglePluginFile(): void {
 
     if (version === 1) {
       // Convert V1 to V2 format in-place
-      const v1Data = InstalledPluginsFileSchemaV1().parse(mainData)
+      const v1Data = InstalledPluginsFileSchemaV1.parse(mainData)
       const v2Data = migrateV1ToV2(v1Data)
 
       writeFileSync_DEPRECATED(mainFilePath, jsonStringify(v2Data, null, 2), {
@@ -326,7 +326,7 @@ export function loadInstalledPluginsV2(): InstalledPluginsFileV2 {
     if (rawData) {
       if (rawData.version === 2) {
         // V2 format - validate and return
-        const validated = InstalledPluginsFileSchemaV2().parse(rawData.data)
+        const validated = InstalledPluginsFileSchemaV2.parse(rawData.data)
         installedPluginsCacheV2 = validated
         logForDebugging(
           `Loaded ${Object.keys(validated.plugins).length} installed plugins from ${filePath}`,
@@ -335,7 +335,7 @@ export function loadInstalledPluginsV2(): InstalledPluginsFileV2 {
       }
 
       // V1 format - convert to V2
-      const v1Validated = InstalledPluginsFileSchemaV1().parse(rawData.data)
+      const v1Validated = InstalledPluginsFileSchemaV1.parse(rawData.data)
       const v2Data = migrateV1ToV2(v1Validated)
       installedPluginsCacheV2 = v2Data
       logForDebugging(
@@ -506,10 +506,10 @@ export function loadInstalledPluginsFromDisk(): InstalledPluginsFileV2 {
 
     if (rawData) {
       if (rawData.version === 2) {
-        return InstalledPluginsFileSchemaV2().parse(rawData.data)
+        return InstalledPluginsFileSchemaV2.parse(rawData.data)
       }
       // V1 format - convert to V2
-      const v1Data = InstalledPluginsFileSchemaV1().parse(rawData.data)
+      const v1Data = InstalledPluginsFileSchemaV1.parse(rawData.data)
       return migrateV1ToV2(v1Data)
     }
 
@@ -1064,7 +1064,7 @@ export async function migrateFromEnabledPlugins(): Promise<void> {
   if (isV2Format && rawFileData) {
     // Check if all plugins from settings already exist
     // (The expensive getPluginById/getGitCommitSha only runs for missing plugins)
-    const existingData = InstalledPluginsFileSchemaV2().safeParse(
+    const existingData = InstalledPluginsFileSchemaV2.safeParse(
       rawFileData.data,
     )
 

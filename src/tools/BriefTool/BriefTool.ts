@@ -5,7 +5,6 @@ import { getKairosActive, getUserMsgOptIn } from '../../bootstrap/state.js'
 import type { ValidationResult } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { plural } from '../../utils/stringUtils.js'
 import { resolveAttachments, validateAttachmentPaths } from './attachments.js'
 import {
@@ -16,8 +15,7 @@ import {
 } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     message: z
       .string()
       .describe('The message for the user. Supports markdown formatting.'),
@@ -32,14 +30,12 @@ const inputSchema = lazySchema(() =>
       .describe(
         "Use 'proactive' when you're surfacing something the user hasn't asked for and needs to see now — task completion while they're away, a blocker you hit, an unsolicited status update. Use 'normal' when replying to something the user just said.",
       ),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
 // attachments MUST remain optional — resumed sessions replay pre-attachment
 // outputs verbatim and a required field would crash the UI renderer on resume.
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     message: z.string().describe('The message'),
     attachments: z
       .array(
@@ -58,9 +54,8 @@ const outputSchema = lazySchema(() =>
       .describe(
         'ISO timestamp captured at tool execution on the emitting process. Optional — resumed sessions replay pre-sentAt outputs verbatim.',
       ),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 export type Output = z.infer<OutputSchema>
 
 /**
@@ -129,10 +124,10 @@ export const BriefTool = buildTool({
     return ''
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   isEnabled() {
     return isBriefEnabled()

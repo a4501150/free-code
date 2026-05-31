@@ -10,7 +10,6 @@ import { existsSync, statSync } from 'fs'
 import { resolve } from 'path'
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { isBriefEnabled } from '../BriefTool/BriefTool.js'
 import {
   SEND_USER_FILE_TOOL_NAME,
@@ -18,8 +17,7 @@ import {
   SEND_USER_FILE_TOOL_PROMPT,
 } from './prompt.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     path: z
       .string()
       .describe('Path to the file to send (absolute or relative to cwd).'),
@@ -27,19 +25,16 @@ const inputSchema = lazySchema(() =>
       .string()
       .optional()
       .describe('Optional description of the file and why it is being sent.'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     sent: z.boolean(),
     path: z.string(),
     size: z.number().optional(),
     error: z.string().optional(),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 type Output = z.infer<OutputSchema>
 
@@ -56,11 +51,11 @@ export const SendUserFileTool = buildTool({
   },
 
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
 
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
 
   userFacingName() {

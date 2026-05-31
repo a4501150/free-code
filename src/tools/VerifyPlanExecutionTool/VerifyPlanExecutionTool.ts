@@ -1,22 +1,19 @@
 import { z } from 'zod/v4'
 import { feature } from 'bun:bundle'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { VERIFY_PLAN_EXECUTION_TOOL_NAME } from './constants.js'
 import { spawnPlanVerifier } from './spawnPlanVerifier.js'
 
-const inputSchema = lazySchema(() => z.strictObject({}))
-type InputSchema = ReturnType<typeof inputSchema>
+const inputSchema = z.strictObject({})
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     verified: z.boolean(),
     message: z.string(),
     verdict: z.enum(['PASS', 'FAIL', 'PARTIAL']).optional(),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 type Output = z.infer<OutputSchema>
 
@@ -28,10 +25,10 @@ export const VerifyPlanExecutionTool = buildTool({
   name: VERIFY_PLAN_EXECUTION_TOOL_NAME,
   maxResultSizeChars: 16_384,
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   isEnabled() {
     if (!feature('VERIFY_PLAN')) return false

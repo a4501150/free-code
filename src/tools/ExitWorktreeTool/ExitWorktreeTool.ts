@@ -13,7 +13,6 @@ import { count } from '../../utils/array.js'
 import { clearMemoryFileCaches } from '../../utils/claudemd.js'
 import { execFileNoThrow } from '../../utils/execFileNoThrow.js'
 import { updateHooksConfigSnapshot } from '../../utils/hooks/hooksConfigSnapshot.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { getPlansDirectory } from '../../utils/plans.js'
 import { setCwd } from '../../utils/Shell.js'
 import { saveWorktreeState } from '../../utils/sessionStorage.js'
@@ -27,8 +26,7 @@ import { EXIT_WORKTREE_TOOL_NAME } from './constants.js'
 import { getExitWorktreeToolPrompt } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     action: z
       .enum(['keep', 'remove'])
       .describe(
@@ -40,12 +38,10 @@ const inputSchema = lazySchema(() =>
       .describe(
         'Required true when action is "remove" and the worktree has uncommitted files or unmerged commits. The tool will refuse and list them otherwise.',
       ),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     action: z.enum(['keep', 'remove']),
     originalCwd: z.string(),
     worktreePath: z.string(),
@@ -54,9 +50,8 @@ const outputSchema = lazySchema(() =>
     discardedFiles: z.number().optional(),
     discardedCommits: z.number().optional(),
     message: z.string(),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 export type Output = z.infer<OutputSchema>
 
 type ChangeSummary = {
@@ -155,10 +150,10 @@ export const ExitWorktreeTool: Tool<InputSchema, Output> = buildTool({
     return getExitWorktreeToolPrompt()
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   userFacingName() {
     return 'Exiting worktree'

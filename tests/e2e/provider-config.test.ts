@@ -142,35 +142,6 @@ describe('Provider Config E2E', () => {
     })
   })
 
-  // ─── Legacy Env Var Migration ──────────────────────────────
-
-  describe('Legacy Env Var Migration', () => {
-    let session: TmuxSession
-
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
-    test('default Anthropic provider works without explicit providers config', async () => {
-      // No providers in settings — should auto-migrate from ANTHROPIC_API_KEY + ANTHROPIC_BASE_URL
-      anthropicServer.reset([textResponse('Legacy migration works!')])
-
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
-        // No providers config — legacy migration kicks in
-      })
-      await session.start()
-
-      await session.sendLine('Test legacy')
-      const screen = await session.waitForText('Legacy migration works', 15_000)
-      expect(screen).toContain('Legacy migration works')
-
-      // Verify the request went to the Anthropic mock server
-      const requests = anthropicServer.getRequestLog()
-      expect(requests.length).toBeGreaterThanOrEqual(1)
-    })
-  })
-
   // ─── Provider-Qualified Model Syntax ────────────────────────
 
   describe('Provider-Qualified Model Syntax', () => {
@@ -572,10 +543,7 @@ describe('Provider Config E2E', () => {
             },
           },
         },
-        // Force settings to come only from the test-owned project settings.json
-        // so host-level or user-level settings cannot pollute the tier-routing
-        // resolution.
-        additionalArgs: ['--setting-sources', 'project'],
+        // TmuxSession's env -i isolation already prevents host settings pollution.
       })
       await session.start()
 
@@ -629,7 +597,6 @@ describe('Provider Config E2E', () => {
             },
           },
         },
-        additionalArgs: ['--setting-sources', 'project'],
       })
       await session.start()
 
@@ -675,7 +642,6 @@ describe('Provider Config E2E', () => {
             },
           },
         },
-        additionalArgs: ['--setting-sources', 'project'],
       })
       await session.start()
 

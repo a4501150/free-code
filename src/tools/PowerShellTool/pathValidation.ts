@@ -883,7 +883,7 @@ function isPathAllowed(
   }
 
   // 2. For write/create operations, check internal editable paths (plan files, scratchpad, agent memory, job dirs)
-  // This MUST come before checkPathSafetyForAutoEdit since .claude is a dangerous directory
+  // This MUST come before checkPathSafetyForAutoEdit since project config dirs are dangerous directories
   // and internal editable paths live under ~/.freecode/ — matching the ordering in
   // checkWritePermissionForTool (filesystem.ts step 1.5)
   if (operationType !== 'read') {
@@ -1582,13 +1582,14 @@ function checkPathConstraintsForStatement(
   // CHANGED cwd at runtime, but this validator resolves them against the
   // STALE getCwd() snapshot. Example attack (finding #3):
   //   Set-Location ./.claude; Set-Content ./freecode.json '...'
+  //   (or the .freecode equivalent)
   // Validator sees ./freecode.json → /project/freecode.json (not a config file).
-  // Runtime writes /project/.claude/freecode.json (Claude's permission config).
+  // Runtime writes a project config freecode.json (Claude's permission config).
   //
   // ALTERNATIVE APPROACH (rejected): simulate cwd through the statement chain
-  // — after `Set-Location ./.claude`, validate subsequent statements with
-  // cwd='./.claude'. This would be more permissive but requires careful
-  // handling of:
+  // — after `Set-Location ./.claude` or `Set-Location ./.freecode`, validate
+  // subsequent statements with that cwd. This would be more permissive but
+  // requires careful handling of:
   //   - Push-Location/Pop-Location stack semantics
   //   - Set-Location with no args (→ home on some platforms)
   //   - New-PSDrive root mapping (arbitrary filesystem root)

@@ -6,7 +6,6 @@
  * with a unified config-driven lookup.
  */
 
-import { getClaudeAIOAuthTokens } from '../oauthTokenReader.js'
 import { getInitialSettings } from '../settings/settings.js'
 import type {
   ProviderAuthConfig,
@@ -22,7 +21,6 @@ import {
   applyBedrockRegionPrefix,
   getBedrockRegionPrefix,
 } from './bedrockInferenceProfiles.js'
-import { synthesizeProvidersFromLegacy } from './legacyProviderMigration.js'
 import { parseModelString, stripContextSuffix } from './parseModelString.js'
 
 // ── Capability defaults by provider type ──────────────────────────────
@@ -567,14 +565,8 @@ export class ProviderRegistry {
  *
  * Resolution order (registry is read-only with respect to disk):
  *   1. If `settings.providers` is present (from `freecode.json`), use it.
- *   2. Otherwise, synthesize an in-memory providers block from legacy env
- *      vars. No disk write — persisting to `freecode.json` is the job of
- *      the user-consented `runLegacyToFreecodeMigration()` at setup time.
- *
- * The in-memory fallback lets env-var-only users (e.g. `ANTHROPIC_API_KEY`
- * exported in their shell) keep working during the window before
- * `showSetupScreens` prompts them to migrate, and for non-interactive
- * invocations like `claude -p 'hi'`.
+ *   2. If no providers are configured, the registry is empty. Users must
+ *      configure providers in freecode.json (via migration or manually).
  */
 export function getProviderRegistry(): ProviderRegistry {
   if (!_instance) {
@@ -592,38 +584,17 @@ export function getProviderRegistry(): ProviderRegistry {
       ? (settingsObj.availableSubagentModels as string[])
       : undefined
 
-    if (settings.providers) {
-      _instance = new ProviderRegistry(
-        settings.providers as Record<string, ProviderConfig>,
-        {
-          defaultModel: readStr('defaultModel'),
-          defaultSubagentModel: readStr('defaultSubagentModel'),
-          defaultSmallFastModel: readStr('defaultSmallFastModel'),
-          availableSubagentModels,
-          defaultBalancedModel: readStr('defaultBalancedModel'),
-          defaultMostPowerfulModel: readStr('defaultMostPowerfulModel'),
-        },
-      )
-    } else {
-      // In-memory fallback only — never writes to disk. The authoritative
-      // migration is runLegacyToFreecodeMigration() in the setup flow.
-      const oauthTokens = getClaudeAIOAuthTokens()
-      const migrated = synthesizeProvidersFromLegacy({
-        env: process.env,
-        oauthTokens,
-      })
-
-      _instance = new ProviderRegistry(migrated.providers, {
-        defaultModel: readStr('defaultModel') ?? migrated.defaultModel,
-        defaultSubagentModel:
-          readStr('defaultSubagentModel') ?? migrated.defaultSubagentModel,
-        defaultSmallFastModel:
-          readStr('defaultSmallFastModel') ?? migrated.defaultSmallFastModel,
+    _instance = new ProviderRegistry(
+      (settings.providers ?? {}) as Record<string, ProviderConfig>,
+      {
+        defaultModel: readStr('defaultModel'),
+        defaultSubagentModel: readStr('defaultSubagentModel'),
+        defaultSmallFastModel: readStr('defaultSmallFastModel'),
         availableSubagentModels,
         defaultBalancedModel: readStr('defaultBalancedModel'),
         defaultMostPowerfulModel: readStr('defaultMostPowerfulModel'),
-      })
-    }
+      },
+    )
   }
   return _instance
 }

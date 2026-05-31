@@ -1,6 +1,6 @@
 import { feature } from 'bun:bundle'
 import * as fs from 'fs/promises'
-import { join } from 'path'
+import { dirname } from 'path'
 import { getInvokedSkillsForAgent } from '../../bootstrap/state.js'
 import { getInitialSettings } from '../settings/settings.js'
 import { queryModelWithoutStreaming } from '../../services/api/claude.js'
@@ -16,6 +16,10 @@ import {
   extractTag,
   extractTextContent,
 } from '../messages.js'
+import {
+  getPreferredProjectConfigPath,
+  getProjectConfigPaths,
+} from '../projectConfigPaths.js'
 import { getSmallFastModel } from '../model/model.js'
 import { jsonParse } from '../slowOperations.js'
 import { asSystemPrompt } from '../systemPromptType.js'
@@ -176,15 +180,35 @@ export async function applySkillImprovement(
 ): Promise<void> {
   if (!skillName) return
 
-  // Skills live at .claude/skills/<name>/SKILL.md relative to CWD
-  const filePath = join(getCwd(), '.claude', 'skills', skillName, 'SKILL.md')
+  const cwd = getCwd()
+  const readPaths = getProjectConfigPaths(
+    cwd,
+    'skills',
+    skillName,
+    'SKILL.md',
+  ).reverse()
+  const filePath = getPreferredProjectConfigPath(
+    cwd,
+    'skills',
+    skillName,
+    'SKILL.md',
+  )
 
-  let currentContent: string
-  try {
-    currentContent = await fs.readFile(filePath, 'utf-8')
-  } catch {
+  let currentContent: string | undefined
+  for (const readPath of readPaths) {
+    try {
+      currentContent = await fs.readFile(readPath, 'utf-8')
+      break
+    } catch {
+      // Path doesn't exist or can't be read; try the next project config dir.
+    }
+  }
+
+  if (currentContent === undefined) {
     logError(
-      new Error(`Failed to read skill file for improvement: ${filePath}`),
+      new Error(
+        `Failed to read skill file for improvement: ${readPaths.join(', ')}`,
+      ),
     )
     return
   }
@@ -242,6 +266,7 @@ Rules:
   }
 
   try {
+    await fs.mkdir(dirname(filePath), { recursive: true })
     await fs.writeFile(filePath, updatedContent, 'utf-8')
   } catch (e) {
     logError(toError(e))

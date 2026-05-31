@@ -41,7 +41,6 @@ import { logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { AbortError, errorMessage, toError } from '../../utils/errors.js'
 import type { CacheSafeParams } from '../../utils/forkedAgent.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import {
   createUserMessage,
   extractTextContent,
@@ -136,58 +135,33 @@ function getAutoBackgroundMs(): number {
 
 // Multi-agent type constants are defined inline inside gated blocks to enable dead code elimination
 
-// Base input schema without multi-agent parameters
-const baseInputSchema = lazySchema(() =>
-  z.object({
-    description: z
-      .string()
-      .describe('A short (3-5 word) description of the task'),
-    prompt: z.string().describe('The task for the agent to perform'),
-    subagent_type: z
-      .string()
-      .optional()
-      .describe('The type of specialized agent to use for this task'),
-    model: (() => {
-      const registry = getProviderRegistry()
-      const available = registry.getAvailableSubagentModels()
-      if (available.length > 0) {
-        // Build description with model labels and descriptions
-        const lines = available.map(id => {
-          const entry = registry.getProviderForModel(id)
-          const label = entry?.model.label ?? id
-          const desc = entry?.model.description
-          return `- ${id}: ${label}${desc ? ` — ${desc}` : ''}`
-        })
-        const description =
-          "Optional model override for this agent. Takes precedence over the agent definition's model frontmatter. " +
-          "If omitted, uses the agent definition's model, or inherits from the parent.\n" +
-          `Available models:\n${lines.join('\n')}`
-        return z
-          .enum(available as [string, ...string[]])
-          .optional()
-          .describe(description)
-      }
-      return z
-        .string()
-        .optional()
-        .describe(
-          "Optional model override for this agent. Use a provider-qualified model ID (e.g. 'anthropic:claude-sonnet-4-6'). " +
-            "Takes precedence over the agent definition's model frontmatter. " +
-            "If omitted, uses the agent definition's model, or inherits from the parent.",
-        )
-    })(),
-    run_in_background: z
-      .boolean()
-      .optional()
-      .describe(
-        "Run this agent asynchronously. Control returns to you immediately with the agent's ID; when the agent finishes, its final report is delivered as a system notification in a later turn. The notification arrives when the agent finishes — sleeping or repeatedly checking on the agent does not change when it arrives. Use this whenever you would otherwise reach for `sleep` or repeatedly check on the agent's progress. NOT a parallelism mechanism — to run agents in parallel whose results you need together, send multiple Agent tool uses in a single message; they run concurrently in the foreground and all results return together.",
-      ),
-  }),
-)
+const baseInputSchema = z.object({
+  description: z
+    .string()
+    .describe('A short (3-5 word) description of the task'),
+  prompt: z.string().describe('The task for the agent to perform'),
+  subagent_type: z
+    .string()
+    .optional()
+    .describe('The type of specialized agent to use for this task'),
+  model: z
+    .string()
+    .optional()
+    .describe(
+      "Optional model override for this agent. Use a provider-qualified model ID (e.g. 'anthropic:claude-sonnet-4-6'). " +
+        "Takes precedence over the agent definition's model frontmatter. " +
+        "If omitted, uses the agent definition's model, or inherits from the parent.",
+    ),
+  run_in_background: z
+    .boolean()
+    .optional()
+    .describe(
+      "Run this agent asynchronously. Control returns to you immediately with the agent's ID; when the agent finishes, its final report is delivered as a system notification in a later turn. The notification arrives when the agent finishes — sleeping or repeatedly checking on the agent does not change when it arrives. Use this whenever you would otherwise reach for `sleep` or repeatedly check on the agent's progress. NOT a parallelism mechanism — to run agents in parallel whose results you need together, send multiple Agent tool uses in a single message; they run concurrently in the foreground and all results return together.",
+    ),
+})
 
 // Full schema combining base + multi-agent params + isolation
-const fullInputSchema = lazySchema(() => {
-  // Multi-agent parameters
+const fullInputSchema = (() => {
   const multiAgentInputSchema = z.object({
     name: z
       .string()
@@ -201,14 +175,14 @@ const fullInputSchema = lazySchema(() => {
       .describe(
         'Team name for spawning. Uses current team context if omitted.',
       ),
-    mode: permissionModeSchema()
+    mode: permissionModeSchema
       .optional()
       .describe(
         'Permission mode for spawned teammate (e.g., "plan" to require plan approval).',
       ),
   })
 
-  return baseInputSchema()
+  return baseInputSchema
     .merge(multiAgentInputSchema)
     .extend({
       isolation: z
@@ -226,7 +200,7 @@ const fullInputSchema = lazySchema(() => {
             : 'Absolute path to run the agent in. Overrides the working directory for all filesystem and shell operations within this agent.',
         ),
     })
-})
+})()
 
 // Strip optional fields from the schema when the backing feature is off so
 // the model never sees them. Done via .omit() rather than conditional spread
@@ -234,16 +208,15 @@ const fullInputSchema = lazySchema(() => {
 // (field type collapses to `unknown`). The ternary return produces a union
 // type, but call() destructures via the explicit AgentToolInput type below
 // which always includes all optional fields.
-export const inputSchema = lazySchema(() => {
+export const inputSchema = (() => {
   // feature() is compile-time DCE: exactly one branch survives per build, so
   // the resulting schema is fixed for the lifetime of the binary. Stripping
   // optional fields the build doesn't support keeps them out of the JSON
   // schema the model sees. Use ternaries (const) instead of `let` reassignment
   // so the union return type is preserved through each step.
-  const fullSchema = fullInputSchema()
   const afterKairosGate = !feature('KAIROS')
-    ? fullSchema.omit({ cwd: true })
-    : fullSchema
+    ? fullInputSchema.omit({ cwd: true })
+    : fullInputSchema
   const afterWorktreeGate = !feature('WORKTREE_MODE')
     ? afterKairosGate.omit({ isolation: true })
     : afterKairosGate
@@ -258,23 +231,23 @@ export const inputSchema = lazySchema(() => {
   return isBackgroundTasksDisabled
     ? swarmsSchema.omit({ run_in_background: true })
     : swarmsSchema
-})
-type InputSchema = ReturnType<typeof inputSchema>
+})()
+type InputSchema = typeof inputSchema
 
 // Explicit type widens the schema inference to always include all optional
 // fields even when .omit() strips them for gating (cwd, run_in_background).
 // subagent_type is optional; call() defaults it to general-purpose.
-type AgentToolInput = z.infer<ReturnType<typeof baseInputSchema>> & {
+type AgentToolInput = z.infer<typeof baseInputSchema> & {
   name?: string
   team_name?: string
-  mode?: z.infer<ReturnType<typeof permissionModeSchema>>
+  mode?: z.infer<typeof permissionModeSchema>
   isolation?: 'worktree' | 'remote'
   cwd?: string
 }
 
 // Output schema - multi-agent spawned schema added dynamically at runtime when enabled
-export const outputSchema = lazySchema(() => {
-  const syncOutputSchema = agentToolResultSchema().extend({
+export const outputSchema = (() => {
+  const syncOutputSchema = agentToolResultSchema.extend({
     status: z.literal('completed'),
     prompt: z.string(),
   })
@@ -296,8 +269,8 @@ export const outputSchema = lazySchema(() => {
   })
 
   return z.union([syncOutputSchema, asyncOutputSchema])
-})
-type OutputSchema = ReturnType<typeof outputSchema>
+})()
+type OutputSchema = typeof outputSchema
 type Output = z.input<OutputSchema>
 
 // Private type for teammate spawn results - excluded from exported schema for dead code elimination
@@ -365,10 +338,10 @@ export const AgentTool = buildTool({
     return 'Launch a new agent'
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   async call(
     {

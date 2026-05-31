@@ -6,6 +6,7 @@ import { McpParsingWarnings } from 'src/components/mcp/McpParsingWarnings.js'
 import { getModelMaxOutputTokens } from 'src/utils/context.js'
 import { getWireModelId } from 'src/utils/model/modelIds.js'
 import { getClaudeConfigHomeDir } from 'src/utils/envUtils.js'
+import { getProjectConfigPaths } from 'src/utils/projectConfigPaths.js'
 import type { SettingSource } from 'src/utils/settings/constants.js'
 import { getOriginalCwd } from '../bootstrap/state.js'
 import type { CommandResultDisplay } from '../commands.js'
@@ -115,14 +116,19 @@ export function Doctor({ onDone }: Props): React.ReactNode {
 
     void (async () => {
       const userAgentsDir = join(getClaudeConfigHomeDir(), 'agents')
-      const projectAgentsDir = join(getOriginalCwd(), '.claude', 'agents')
+      const projectAgentsDirs = getProjectConfigPaths(
+        getOriginalCwd(),
+        'agents',
+      )
+      const projectAgentsDir = projectAgentsDirs[projectAgentsDirs.length - 1]!
 
       const { activeAgents, allAgents, failedFiles } = agentDefinitions
 
-      const [userDirExists, projectDirExists] = await Promise.all([
+      const [userDirExists, projectDirExistsList] = await Promise.all([
         pathExists(userAgentsDir),
-        pathExists(projectAgentsDir),
+        Promise.all(projectAgentsDirs.map(pathExists)),
       ])
+      const projectDirExists = projectDirExistsList.some(Boolean)
 
       const agentInfoData = {
         activeAgents: activeAgents.map(a => ({

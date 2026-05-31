@@ -51,6 +51,11 @@ import {
   parseSlashCommandToolsFromFrontmatter,
 } from '../utils/markdownConfigLoader.js'
 import { parseUserSpecifiedModel } from '../utils/model/model.js'
+import {
+  getPreferredProjectConfigRelativePath,
+  getProjectConfigPaths,
+  PREFERRED_PROJECT_CONFIG_DIR,
+} from '../utils/projectConfigPaths.js'
 import { executeShellCommandsInPrompt } from '../utils/promptShellExecution.js'
 import type { SettingSource } from '../utils/settings/constants.js'
 import { isSettingSourceEnabled } from '../utils/settings/constants.js'
@@ -80,7 +85,7 @@ export function getSkillsPath(
     case 'userSettings':
       return join(getClaudeConfigHomeDir(), dir)
     case 'projectSettings':
-      return `.claude/${dir}`
+      return getPreferredProjectConfigRelativePath(dir)
     case 'plugin':
       return 'plugin'
     default:
@@ -136,7 +141,7 @@ function parseHooksFromFrontmatter(
     return undefined
   }
 
-  const result = HooksSchema().safeParse(frontmatter.hooks)
+  const result = HooksSchema.safeParse(frontmatter.hooks)
   if (!result.success) {
     logForDebugging(
       `Invalid hooks in skill '${skillName}': ${result.error.message}`,
@@ -657,12 +662,12 @@ export const getSkillDirCommands = memoize(
         )
         return []
       }
+      const additionalSkillDirs = additionalDirs.flatMap(dir =>
+        getProjectConfigPaths(dir, 'skills'),
+      )
       const additionalSkillsNested = await Promise.all(
-        additionalDirs.map(dir =>
-          loadSkillsFromSkillsDir(
-            join(dir, '.claude', 'skills'),
-            'projectSettings',
-          ),
+        additionalSkillDirs.map(dir =>
+          loadSkillsFromSkillsDir(dir, 'projectSettings'),
         ),
       )
       // No dedup needed — explicit dirs, user controls uniqueness.
@@ -693,12 +698,9 @@ export const getSkillDirCommands = memoize(
         : Promise.resolve([]),
       projectSettingsEnabled
         ? Promise.all(
-            additionalDirs.map(dir =>
-              loadSkillsFromSkillsDir(
-                join(dir, '.claude', 'skills'),
-                'projectSettings',
-              ),
-            ),
+            additionalDirs
+              .flatMap(dir => getProjectConfigPaths(dir, 'skills'))
+              .map(dir => loadSkillsFromSkillsDir(dir, 'projectSettings')),
           )
         : Promise.resolve([]),
       // Legacy commands-as-skills goes through markdownConfigLoader with
@@ -868,30 +870,31 @@ export async function discoverSkillDirsForPaths(
     // CWD-level skills are already loaded at startup, so we only discover nested ones
     // Use prefix+separator check to avoid matching /project-backup when cwd is /project
     while (currentDir.startsWith(resolvedCwd + pathSep)) {
-      const skillDir = join(currentDir, '.claude', 'skills')
-
-      // Skip if we've already checked this path (hit or miss) — avoids
-      // repeating the same failed stat on every Read/Write/Edit call when
-      // the directory doesn't exist (the common case).
-      if (!dynamicSkillDirs.has(skillDir)) {
-        dynamicSkillDirs.add(skillDir)
-        try {
-          await fs.stat(skillDir)
-          // Skills dir exists. Before loading, check if the containing dir
-          // is gitignored — blocks e.g. node_modules/pkg/.claude/skills from
-          // loading silently. `git check-ignore` handles nested .gitignore,
-          // .git/info/exclude, and global gitignore. Fails open outside a
-          // git repo (exit 128 → false); the invocation-time trust dialog
-          // is the actual security boundary.
-          if (await isPathGitignored(currentDir, resolvedCwd)) {
-            logForDebugging(
-              `[skills] Skipped gitignored skills dir: ${skillDir}`,
-            )
-            continue
+      for (const skillDir of getProjectConfigPaths(currentDir, 'skills')) {
+        // Skip if we've already checked this path (hit or miss) — avoids
+        // repeating the same failed stat on every Read/Write/Edit call when
+        // the directory doesn't exist (the common case).
+        if (!dynamicSkillDirs.has(skillDir)) {
+          dynamicSkillDirs.add(skillDir)
+          try {
+            await fs.stat(skillDir)
+            // Skills dir exists. Before loading, check if the containing dir
+            // is gitignored — blocks nested project config skills dirs (for
+            // example, under node_modules/pkg/) from loading silently.
+            // `git check-ignore` handles nested .gitignore,
+            // .git/info/exclude, and global gitignore. Fails open outside a
+            // git repo (exit 128 → false); the invocation-time trust dialog
+            // is the actual security boundary.
+            if (await isPathGitignored(currentDir, resolvedCwd)) {
+              logForDebugging(
+                `[skills] Skipped gitignored skills dir: ${skillDir}`,
+              )
+              continue
+            }
+            newDirs.push(skillDir)
+          } catch {
+            // Directory doesn't exist — already recorded above, continue
           }
-          newDirs.push(skillDir)
-        } catch {
-          // Directory doesn't exist — already recorded above, continue
         }
       }
 
@@ -902,10 +905,18 @@ export async function discoverSkillDirsForPaths(
     }
   }
 
-  // Sort by path depth (deepest first) so skills closer to the file take precedence
-  return newDirs.sort(
-    (a, b) => b.split(pathSep).length - a.split(pathSep).length,
-  )
+  // Sort by path depth (deepest first) so skills closer to the file take precedence.
+  // For directories at the same depth, put .freecode first so addSkillDirectories'
+  // reverse processing lets preferred project config override legacy .claude.
+  return newDirs.sort((a, b) => {
+    const depthDiff = b.split(pathSep).length - a.split(pathSep).length
+    if (depthDiff !== 0) return depthDiff
+
+    const aPreferred = a.split(pathSep).includes(PREFERRED_PROJECT_CONFIG_DIR)
+    const bPreferred = b.split(pathSep).includes(PREFERRED_PROJECT_CONFIG_DIR)
+    if (aPreferred === bPreferred) return 0
+    return aPreferred ? -1 : 1
+  })
 }
 
 /**

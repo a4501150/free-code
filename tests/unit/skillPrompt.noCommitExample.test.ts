@@ -41,7 +41,8 @@ describe('skill prompts avoid unlisted commit skill examples', () => {
     const source = readSource('src/commands/insights.ts')
 
     expect(source).not.toContain('.claude/skills/commit/SKILL.md')
+    expect(source).not.toContain('.freecode/skills/commit/SKILL.md')
     expect(source).not.toContain('type \\`/commit\\`')
-    expect(source).toContain('.claude/skills/release-checklist/SKILL.md')
+    expect(source).toContain('.freecode/skills/release-checklist/SKILL.md')
   })
 })

@@ -4,28 +4,32 @@
  * Manages the "always-on assistant" mode where Claude Code operates as a
  * persistent assistant with team context, proactive behavior, and daily logs.
  *
- * Activation: .claude/agents/assistant.md must exist in the project root,
- * or --assistant CLI flag must be passed (daemon mode).
+ * Activation: .freecode/agents/assistant.md or .claude/agents/assistant.md
+ * must exist in the project root, or --assistant CLI flag must be passed
+ * (daemon mode).
  */
 
 import { existsSync, readFileSync } from 'fs'
-import { join } from 'path'
 import { getProjectRoot } from '../bootstrap/state.js'
 import { logError } from '../utils/log.js'
+import { getExistingOrPreferredProjectConfigPath } from '../utils/projectConfigPaths.js'
 import { setCliTeammateModeOverride } from '../utils/swarm/backends/teammateModeSnapshot.js'
 
 let forced = false
 
 const ASSISTANT_MD = 'assistant.md'
-const AGENTS_DIR = '.claude/agents'
 
 function getAssistantMdPath(): string {
-  return join(getProjectRoot(), AGENTS_DIR, ASSISTANT_MD)
+  return getExistingOrPreferredProjectConfigPath(
+    getProjectRoot(),
+    'agents',
+    ASSISTANT_MD,
+  )
 }
 
 /**
  * Check if assistant mode should be activated.
- * True if .claude/agents/assistant.md exists OR --assistant was passed.
+ * True if .freecode/agents/assistant.md or .claude/agents/assistant.md exists OR --assistant was passed.
  */
 export function isAssistantMode(): boolean {
   if (forced) return true
@@ -54,7 +58,7 @@ export function markAssistantForced(): void {
 /**
  * Initialize the assistant team context.
  *
- * Reads .claude/agents/assistant.md for team configuration, sets teammate
+ * Reads the preferred/existing project agents assistant.md for team configuration, sets teammate
  * mode to in-process so Agent(name: "foo") spawns teammates without
  * TeamCreate.
  *
@@ -95,7 +99,7 @@ export async function initializeAssistantTeam(): Promise<
 
 /**
  * Get the system prompt addendum for assistant mode.
- * Returns the contents of .claude/agents/assistant.md wrapped as an
+ * Returns the contents of the preferred/existing project assistant.md wrapped as an
  * assistant-mode section.
  */
 export function getAssistantSystemPromptAddendum(): string {

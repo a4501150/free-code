@@ -1,32 +1,27 @@
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { getTask, getTaskListId, TaskStatusSchema } from '../../utils/tasks.js'
 import { TASK_GET_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, PROMPT } from './prompt.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     taskId: z.string().describe('The ID of the task to retrieve'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     task: z
       .object({
         id: z.string(),
         subject: z.string(),
         description: z.string(),
-        status: TaskStatusSchema(),
+        status: TaskStatusSchema,
         blocks: z.array(z.string()),
         blockedBy: z.array(z.string()),
       })
       .nullable(),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
@@ -40,10 +35,10 @@ export const TaskGetTool = buildTool({
     return PROMPT
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   userFacingName() {
     return 'TaskGet'

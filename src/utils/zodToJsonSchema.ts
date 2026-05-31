@@ -7,8 +7,8 @@ import { toJSONSchema, type ZodTypeAny } from 'zod/v4'
 export type JsonSchema7Type = Record<string, unknown>
 
 // toolToAPISchema() runs this for every tool on every API request (~60-250
-// times/turn). Tool schemas are wrapped with lazySchema() which guarantees the
-// same ZodTypeAny reference per session, so we can cache by identity.
+// times/turn). Tool schemas are module-level constants so each ZodTypeAny
+// reference is stable per session, enabling identity-based caching.
 const cache = new WeakMap<ZodTypeAny, JsonSchema7Type>()
 
 /**

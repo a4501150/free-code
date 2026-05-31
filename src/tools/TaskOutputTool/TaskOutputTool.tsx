@@ -18,7 +18,6 @@ import type { LocalAgentTaskState } from '../../tasks/LocalAgentTask/LocalAgentT
 import type { LocalShellTaskState } from '../../tasks/LocalShellTask/guards.js'
 import type { TaskState } from '../../tasks/types.js'
 import { AbortError } from '../../utils/errors.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { extractTextContent } from '../../utils/messages.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
 import { sleep } from '../../utils/sleep.js'
@@ -36,8 +35,7 @@ import { TASK_OUTPUT_TOOL_NAME } from './constants.js'
 const PROGRESS_COMPACT_TAIL_LINES = 4
 const PROGRESS_EXPANDED_HEIGHT = 20
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     task_id: z.string().describe('The task ID to get output from'),
     block: semanticBoolean(z.boolean().default(true)).describe(
       'Whether to wait for completion',
@@ -48,9 +46,8 @@ const inputSchema = lazySchema(() =>
       .max(600000)
       .default(30000)
       .describe('Max wait time in ms (0-600000).'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
 type TaskOutputToolInput = z.infer<InputSchema>
 
@@ -179,7 +176,7 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
     },
 
     get inputSchema(): InputSchema {
-      return inputSchema()
+      return inputSchema
     },
 
     async description() {

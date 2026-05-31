@@ -11,7 +11,6 @@ import type {
   PermissionUpdate,
   PermissionUpdateDestination,
 } from '../../types/permissions.js'
-import { lazySchema } from '../lazySchema.js'
 import { externalPermissionModeSchema } from './PermissionMode.js'
 import {
   permissionBehaviorSchema,
@@ -24,8 +23,7 @@ export type { PermissionUpdate, PermissionUpdateDestination }
 /**
  * PermissionUpdateDestination is where a new permission rule should be saved to.
  */
-export const permissionUpdateDestinationSchema = lazySchema(() =>
-  z.enum([
+export const permissionUpdateDestinationSchema = z.enum([
     // User settings (global)
     'userSettings',
     // Project settings (shared per-directory)
@@ -36,43 +34,40 @@ export const permissionUpdateDestinationSchema = lazySchema(() =>
     'session',
     // From the command line arguments
     'cliArg',
-  ]),
-)
+  ])
 
-export const permissionUpdateSchema = lazySchema(() =>
-  z.discriminatedUnion('type', [
+export const permissionUpdateSchema = z.discriminatedUnion('type', [
     z.object({
       type: z.literal('addRules'),
-      rules: z.array(permissionRuleValueSchema()),
-      behavior: permissionBehaviorSchema(),
-      destination: permissionUpdateDestinationSchema(),
+      rules: z.array(permissionRuleValueSchema),
+      behavior: permissionBehaviorSchema,
+      destination: permissionUpdateDestinationSchema,
     }),
     z.object({
       type: z.literal('replaceRules'),
-      rules: z.array(permissionRuleValueSchema()),
-      behavior: permissionBehaviorSchema(),
-      destination: permissionUpdateDestinationSchema(),
+      rules: z.array(permissionRuleValueSchema),
+      behavior: permissionBehaviorSchema,
+      destination: permissionUpdateDestinationSchema,
     }),
     z.object({
       type: z.literal('removeRules'),
-      rules: z.array(permissionRuleValueSchema()),
-      behavior: permissionBehaviorSchema(),
-      destination: permissionUpdateDestinationSchema(),
+      rules: z.array(permissionRuleValueSchema),
+      behavior: permissionBehaviorSchema,
+      destination: permissionUpdateDestinationSchema,
     }),
     z.object({
       type: z.literal('setMode'),
-      mode: externalPermissionModeSchema(),
-      destination: permissionUpdateDestinationSchema(),
+      mode: externalPermissionModeSchema,
+      destination: permissionUpdateDestinationSchema,
     }),
     z.object({
       type: z.literal('addDirectories'),
       directories: z.array(z.string()),
-      destination: permissionUpdateDestinationSchema(),
+      destination: permissionUpdateDestinationSchema,
     }),
     z.object({
       type: z.literal('removeDirectories'),
       directories: z.array(z.string()),
-      destination: permissionUpdateDestinationSchema(),
+      destination: permissionUpdateDestinationSchema,
     }),
-  ]),
-)
+  ])

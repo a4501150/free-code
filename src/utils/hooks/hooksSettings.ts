@@ -173,9 +173,9 @@ export function hookSourceDescriptionDisplayString(source: HookSource): string {
     case 'userSettings':
       return `User settings (${globalConfigFile()})`
     case 'projectSettings':
-      return 'Project settings (.claude/freecode.json)'
+      return 'Project settings (.freecode/freecode.json)'
     case 'localSettings':
-      return 'Local settings (.claude/freecode.local.json)'
+      return 'Local settings (.freecode/freecode.local.json)'
     case 'pluginHook':
       // TODO: Get the actual plugin hook file paths instead of using glob pattern
       // We should capture the specific plugin paths during hook registration and display them here

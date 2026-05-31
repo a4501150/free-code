@@ -26,7 +26,6 @@ import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
 import { readFileSyncWithMetadata } from '../../utils/fileRead.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
 import { type ToolUseDiff } from '../../utils/gitDiff.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
 import {
@@ -48,20 +47,17 @@ import {
   userFacingName,
 } from './UI.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     file_path: z
       .string()
       .describe(
         'The absolute path to the file to write (must be absolute, not relative)',
       ),
     content: z.string().describe('The content to write to the file'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     type: z
       .enum(['create', 'update'])
       .describe(
@@ -70,7 +66,7 @@ const outputSchema = lazySchema(() =>
     filePath: z.string().describe('The path to the file that was written'),
     content: z.string().describe('The content that was written to the file'),
     structuredPatch: z
-      .array(hunkSchema())
+      .array(hunkSchema)
       .describe('Diff patch showing the changes'),
     originalFile: z
       .string()
@@ -78,10 +74,9 @@ const outputSchema = lazySchema(() =>
       .describe(
         'The original file content before the write (null for new files)',
       ),
-    gitDiff: gitDiffSchema().optional(),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+    gitDiff: gitDiffSchema.optional(),
+  })
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 export type FileWriteToolInput = InputSchema
@@ -105,10 +100,10 @@ export const FileWriteTool = buildTool({
   renderToolUseMessage,
   isResultTruncated,
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   toAutoClassifierInput(input) {
     return `${input.file_path}: ${input.content}`

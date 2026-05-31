@@ -71,7 +71,6 @@ import { execFileNoThrow, execFileNoThrowWithCwd } from '../execFileNoThrow.js'
 import { pathExists } from '../file.js'
 import { getFsImplementation } from '../fsOperations.js'
 import { gitExe } from '../git.js'
-import { lazySchema } from '../lazySchema.js'
 import { logError } from '../log.js'
 import { getSettings_DEPRECATED } from '../settings/settings.js'
 import {
@@ -978,7 +977,7 @@ export async function cachePlugin(
     try {
       const content = await readFile(manifestPath, { encoding: 'utf-8' })
       const parsed = jsonParse(content)
-      const result = PluginManifestSchema().safeParse(parsed)
+      const result = PluginManifestSchema.safeParse(parsed)
 
       if (result.success) {
         manifest = result.data
@@ -1024,7 +1023,7 @@ export async function cachePlugin(
         encoding: 'utf-8',
       })
       const parsed = jsonParse(content)
-      const result = PluginManifestSchema().safeParse(parsed)
+      const result = PluginManifestSchema.safeParse(parsed)
 
       if (result.success) {
         manifest = result.data
@@ -1159,7 +1158,7 @@ export async function loadPluginManifest(
     const parsedJson = jsonParse(content)
 
     // Validate against the PluginManifest schema
-    const result = PluginManifestSchema().safeParse(parsedJson)
+    const result = PluginManifestSchema.safeParse(parsedJson)
 
     if (result.success) {
       // Valid manifest - return the validated data
@@ -1230,7 +1229,7 @@ async function loadPluginHooks(
 
   // The hooks.json file has a wrapper structure with description and hooks
   // Use PluginHooksSchema to validate and extract the hooks property
-  const validatedPluginHooks = PluginHooksSchema().parse(rawHooksConfig)
+  const validatedPluginHooks = PluginHooksSchema.parse(rawHooksConfig)
 
   return validatedPluginHooks.hooks as HooksSettings
 }
@@ -1732,13 +1731,9 @@ export async function createPluginFromPath(
  * Schema derived from SettingsSchema that only keeps keys plugins are allowed to set.
  * Uses .strip() so unknown keys are silently removed during parsing.
  */
-const PluginSettingsSchema = lazySchema(() =>
-  SettingsSchema()
-    .pick({
-      agent: true,
-    })
-    .strip(),
-)
+function PluginSettingsSchema() {
+  return SettingsSchema().pick({ agent: true }).strip()
+}
 
 /**
  * Parse raw settings through PluginSettingsSchema, returning only allowlisted keys.
@@ -1865,7 +1860,7 @@ async function loadPluginsFromMarketplaces({
   const marketplacePluginEntries = Object.entries(enabledPlugins).filter(
     ([key, value]) => {
       // Check if it's in plugin@marketplace format (includes both enabled and disabled)
-      const isValidFormat = PluginIdSchema().safeParse(key).success
+      const isValidFormat = PluginIdSchema.safeParse(key).success
       if (!isValidFormat || value === undefined) return false
       // Skip built-in plugins — handled separately by getBuiltinPlugins()
       const { marketplace } = parsePluginIdentifier(key)

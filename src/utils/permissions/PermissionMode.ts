@@ -8,8 +8,6 @@ import {
   PERMISSION_MODES,
   type PermissionMode,
 } from '../../types/permissions.js'
-import { lazySchema } from '../lazySchema.js'
-
 // Re-export for backwards compatibility
 export {
   EXTERNAL_PERMISSION_MODES,
@@ -18,10 +16,8 @@ export {
   type PermissionMode,
 }
 
-export const permissionModeSchema = lazySchema(() => z.enum(PERMISSION_MODES))
-export const externalPermissionModeSchema = lazySchema(() =>
-  z.enum(EXTERNAL_PERMISSION_MODES),
-)
+export const permissionModeSchema = z.enum(PERMISSION_MODES)
+export const externalPermissionModeSchema = z.enum(EXTERNAL_PERMISSION_MODES)
 
 type ModeColorKey =
   | 'text'

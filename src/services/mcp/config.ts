@@ -612,7 +612,7 @@ export async function addMcpConfig(
   }
 
   // Validate config first (needed for command-based policy checks)
-  const result = McpServerConfigSchema().safeParse(config)
+  const result = McpServerConfigSchema.safeParse(config)
   if (!result.success) {
     const formattedErrors = result.error.issues
       .map(err => `${err.path.join('.')}: ${err.message}`)
@@ -1262,7 +1262,7 @@ export function parseMcpConfig(params: {
   errors: ValidationError[]
 } {
   const { configObject, expandVars, scope, filePath } = params
-  const schemaResult = McpJsonConfigSchema().safeParse(configObject)
+  const schemaResult = McpJsonConfigSchema.safeParse(configObject)
   if (!schemaResult.success) {
     return {
       config: null,

@@ -13,7 +13,6 @@ import type { PermissionResult } from 'src/utils/permissions/PermissionResult.js
 import { z } from 'zod/v4'
 import { queryModelWithStreaming } from '../../services/api/claude.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import { createUserMessage } from '../../utils/messages.js'
 import { getMainLoopModel, getSmallFastModel } from '../../utils/model/model.js'
@@ -27,8 +26,7 @@ import {
   renderToolUseProgressMessage,
 } from './UI.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     query: z
       .string()
       .min(2)
@@ -41,13 +39,12 @@ const inputSchema = lazySchema(() =>
       .array(z.string())
       .optional()
       .describe('Never include search results from these domains'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
 type Input = z.infer<InputSchema>
 
-const searchResultSchema = lazySchema(() => {
+const searchResultSchema = (() => {
   const searchHitSchema = z.object({
     title: z.string().describe('The title of the search result'),
     url: z.string().describe('The URL of the search result'),
@@ -57,22 +54,20 @@ const searchResultSchema = lazySchema(() => {
     tool_use_id: z.string().describe('ID of the tool use'),
     content: z.array(searchHitSchema).describe('Array of search hits'),
   })
-})
+})()
 
-export type SearchResult = z.infer<ReturnType<typeof searchResultSchema>>
+export type SearchResult = z.infer<typeof searchResultSchema>
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     query: z.string().describe('The search query that was executed'),
     results: z
-      .array(z.union([searchResultSchema(), z.string()]))
+      .array(z.union([searchResultSchema, z.string()]))
       .describe('Search results and/or text commentary from the model'),
     durationSeconds: z
       .number()
       .describe('Time taken to complete the search operation'),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
@@ -188,10 +183,10 @@ export const WebSearchTool = buildTool({
     return registry.getCapability(model, 'webSearch')
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   isConcurrencySafe() {
     return true

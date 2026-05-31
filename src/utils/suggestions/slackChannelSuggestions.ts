@@ -2,7 +2,6 @@ import { z } from 'zod'
 import type { SuggestionItem } from '../../components/PromptInput/PromptInputFooterSuggestions.js'
 import type { MCPServerConnection } from '../../services/mcp/types.js'
 import { logForDebugging } from '../debug.js'
-import { lazySchema } from '../lazySchema.js'
 import { createSignal } from '../signal.js'
 import { jsonParse } from '../slowOperations.js'
 
@@ -66,15 +65,13 @@ async function fetchChannels(
 
 // The Slack MCP server wraps its markdown in a JSON envelope:
 // {"results":"# Search Results...\nName: #chan\n..."}
-const resultsEnvelopeSchema = lazySchema(() =>
-  z.object({ results: z.string() }),
-)
+const resultsEnvelopeSchema = z.object({ results: z.string() })
 
 function unwrapResults(text: string): string {
   const trimmed = text.trim()
   if (!trimmed.startsWith('{')) return text
   try {
-    const parsed = resultsEnvelopeSchema().safeParse(jsonParse(trimmed))
+    const parsed = resultsEnvelopeSchema.safeParse(jsonParse(trimmed))
     if (parsed.success) return parsed.data.results
   } catch {
     // jsonParse threw — fall through

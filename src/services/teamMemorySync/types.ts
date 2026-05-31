@@ -6,36 +6,30 @@
  */
 
 import { z } from 'zod/v4'
-import { lazySchema } from '../../utils/lazySchema.js'
-
 /**
  * Content portion of team memory data - flat key-value storage.
  * Keys are file paths relative to the team memory directory (e.g. "MEMORY.md", "patterns.md").
  * Values are UTF-8 string content (typically Markdown).
  */
-export const TeamMemoryContentSchema = lazySchema(() =>
-  z.object({
+export const TeamMemoryContentSchema = z.object({
     entries: z.record(z.string(), z.string()),
     // Per-key SHA-256 of entry content (`sha256:<hex>`). Added in
     // anthropic/anthropic#283027. Optional for forward-compat with older
     // server deployments; empty map when entries is empty.
     entryChecksums: z.record(z.string(), z.string()).optional(),
-  }),
-)
+  })
 
 /**
  * Full response from GET /api/claude_code/team_memory
  */
-export const TeamMemoryDataSchema = lazySchema(() =>
-  z.object({
+export const TeamMemoryDataSchema = z.object({
     organizationId: z.string(),
     repo: z.string(),
     version: z.number(),
     lastModified: z.string(), // ISO 8601 timestamp
     checksum: z.string(), // SHA256 with 'sha256:' prefix
-    content: TeamMemoryContentSchema(),
-  }),
-)
+    content: TeamMemoryContentSchema,
+  })
 
 /**
  * Structured 413 error body from the server (anthropic/anthropic#293258).
@@ -44,8 +38,7 @@ export const TeamMemoryDataSchema = lazySchema(() =>
  * too-many-entries case; entry-too-large is handled via MAX_FILE_SIZE_BYTES
  * pre-check on the client side and would need a separate schema.
  */
-export const TeamMemoryTooManyEntriesSchema = lazySchema(() =>
-  z.object({
+export const TeamMemoryTooManyEntriesSchema = z.object({
     error: z.object({
       details: z.object({
         error_code: z.literal('team_memory_too_many_entries'),
@@ -53,10 +46,9 @@ export const TeamMemoryTooManyEntriesSchema = lazySchema(() =>
         received_entries: z.number().int().positive(),
       }),
     }),
-  }),
-)
+  })
 
-export type TeamMemoryData = z.infer<ReturnType<typeof TeamMemoryDataSchema>>
+export type TeamMemoryData = z.infer<typeof TeamMemoryDataSchema>
 
 /**
  * A file skipped during push because it contains a detected secret.

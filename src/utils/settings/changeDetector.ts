@@ -20,7 +20,10 @@ import {
   refreshMdmSettings,
   setMdmSettingsCache,
 } from './mdm/settings.js'
-import { getSettingsFilePathForSource } from './settings.js'
+import {
+  getSettingsFilePathForSource,
+  getSettingsFilePathsForSource,
+} from './settings.js'
 import { resetSettingsCache } from './settingsCache.js'
 
 /**
@@ -192,27 +195,23 @@ async function getWatchTargets(): Promise<{
     if (source === 'flagSettings') {
       continue
     }
-    const path = getSettingsFilePathForSource(source)
-    if (!path) {
-      continue
-    }
+    const paths = getSettingsFilePathsForSource(source)
+    for (const path of paths) {
+      const dir = platformPath.dirname(path)
 
-    const dir = platformPath.dirname(path)
-
-    // Track all potential settings files in each directory
-    if (!dirToSettingsFiles.has(dir)) {
-      dirToSettingsFiles.set(dir, new Set())
-    }
-    dirToSettingsFiles.get(dir)!.add(path)
-
-    // Check if file exists - only watch directories that have at least one existing file
-    try {
-      const stats = await stat(path)
-      if (stats.isFile()) {
-        dirsWithExistingFiles.add(dir)
+      if (!dirToSettingsFiles.has(dir)) {
+        dirToSettingsFiles.set(dir, new Set())
       }
-    } catch {
-      // File doesn't exist, that's fine
+      dirToSettingsFiles.get(dir)!.add(path)
+
+      try {
+        const stats = await stat(path)
+        if (stats.isFile()) {
+          dirsWithExistingFiles.add(dir)
+        }
+      } catch {
+        // File doesn't exist, that's fine
+      }
     }
   }
 
@@ -367,8 +366,8 @@ function getSourceForPath(path: string): SettingSource | undefined {
     return 'policySettings'
   }
 
-  return SETTING_SOURCES.find(
-    source => getSettingsFilePathForSource(source) === normalizedPath,
+  return SETTING_SOURCES.find(source =>
+    getSettingsFilePathsForSource(source).includes(normalizedPath),
   )
 }
 

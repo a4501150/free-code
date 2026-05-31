@@ -1,7 +1,7 @@
 /**
  * Schema-derived SDK type aliases.
  *
- * Every symbol below is `z.infer<ReturnType<typeof XSchema>>` of a matching
+ * Every symbol below is `z.infer<typeof XSchema>` of a matching
  * schema in src/structuredProtocol/coreSchemas.ts — this file is a thin TS-only
  * facade so consumers can `import type` without dragging Zod into their
  * bundles. Follows the same pattern as controlTypes.ts.
@@ -70,16 +70,16 @@ import type {
 // Primitive enums / shared scalars
 // ---------------------------------------------------------------------------
 
-export type PermissionMode = z.infer<ReturnType<typeof PermissionModeSchema>>
+export type PermissionMode = z.infer<typeof PermissionModeSchema>
 
-export type ExitReason = z.infer<ReturnType<typeof ExitReasonSchema>>
+export type ExitReason = z.infer<typeof ExitReasonSchema>
 
-export type HookEvent = z.infer<ReturnType<typeof HookEventSchema>>
+export type HookEvent = z.infer<typeof HookEventSchema>
 
-export type ModelUsage = z.infer<ReturnType<typeof ModelUsageSchema>>
+export type ModelUsage = z.infer<typeof ModelUsageSchema>
 
 export type PermissionUpdate = z.infer<
-  ReturnType<typeof PermissionUpdateSchema>
+  typeof PermissionUpdateSchema
 >
 
 // SDKAssistantMessageError is the *reason* enum on the wire; it has always
@@ -87,7 +87,7 @@ export type PermissionUpdate = z.infer<
 // modelling it as an envelope. Alias kept for callers that still import
 // the old name.
 export type SDKAssistantErrorReason = z.infer<
-  ReturnType<typeof SDKAssistantMessageErrorSchema>
+  typeof SDKAssistantMessageErrorSchema
 >
 export type SDKAssistantMessageError = SDKAssistantErrorReason
 
@@ -95,148 +95,148 @@ export type SDKAssistantMessageError = SDKAssistantErrorReason
 // SDK message variants
 // ---------------------------------------------------------------------------
 
-export type SDKStatus = z.infer<ReturnType<typeof SDKStatusSchema>>
+export type SDKStatus = z.infer<typeof SDKStatusSchema>
 
 export type SDKRateLimitInfo = z.infer<
-  ReturnType<typeof SDKRateLimitInfoSchema>
+  typeof SDKRateLimitInfoSchema
 >
 
 export type SDKAssistantMessage = z.infer<
-  ReturnType<typeof SDKAssistantMessageSchema>
+  typeof SDKAssistantMessageSchema
 >
 
 export type SDKPartialAssistantMessage = z.infer<
-  ReturnType<typeof SDKPartialAssistantMessageSchema>
+  typeof SDKPartialAssistantMessageSchema
 >
 
-export type SDKUserMessage = z.infer<ReturnType<typeof SDKUserMessageSchema>>
+export type SDKUserMessage = z.infer<typeof SDKUserMessageSchema>
 
 export type SDKUserMessageReplay = z.infer<
-  ReturnType<typeof SDKUserMessageReplaySchema>
+  typeof SDKUserMessageReplaySchema
 >
 
 export type SDKResultMessage = z.infer<
-  ReturnType<typeof SDKResultMessageSchema>
+  typeof SDKResultMessageSchema
 >
 
 export type SDKSystemMessage = z.infer<
-  ReturnType<typeof SDKSystemMessageSchema>
+  typeof SDKSystemMessageSchema
 >
 
 export type SDKCompactBoundaryMessage = z.infer<
-  ReturnType<typeof SDKCompactBoundaryMessageSchema>
+  typeof SDKCompactBoundaryMessageSchema
 >
 
 export type SDKStatusMessage = z.infer<
-  ReturnType<typeof SDKStatusMessageSchema>
+  typeof SDKStatusMessageSchema
 >
 
 export type SDKToolProgressMessage = z.infer<
-  ReturnType<typeof SDKToolProgressMessageSchema>
+  typeof SDKToolProgressMessageSchema
 >
 
 export type SDKPermissionDenial = z.infer<
-  ReturnType<typeof SDKPermissionDenialSchema>
+  typeof SDKPermissionDenialSchema
 >
 
-export type SDKSessionInfo = z.infer<ReturnType<typeof SDKSessionInfoSchema>>
+export type SDKSessionInfo = z.infer<typeof SDKSessionInfoSchema>
 
-export type SDKMessage = z.infer<ReturnType<typeof SDKMessageSchema>>
+export type SDKMessage = z.infer<typeof SDKMessageSchema>
 
 // ---------------------------------------------------------------------------
 // Hook input variants
 // ---------------------------------------------------------------------------
 
 export type PreToolUseHookInput = z.infer<
-  ReturnType<typeof PreToolUseHookInputSchema>
+  typeof PreToolUseHookInputSchema
 >
 export type PostToolUseHookInput = z.infer<
-  ReturnType<typeof PostToolUseHookInputSchema>
+  typeof PostToolUseHookInputSchema
 >
 export type PostToolUseFailureHookInput = z.infer<
-  ReturnType<typeof PostToolUseFailureHookInputSchema>
+  typeof PostToolUseFailureHookInputSchema
 >
 export type PermissionDeniedHookInput = z.infer<
-  ReturnType<typeof PermissionDeniedHookInputSchema>
+  typeof PermissionDeniedHookInputSchema
 >
 export type PermissionRequestHookInput = z.infer<
-  ReturnType<typeof PermissionRequestHookInputSchema>
+  typeof PermissionRequestHookInputSchema
 >
 export type NotificationHookInput = z.infer<
-  ReturnType<typeof NotificationHookInputSchema>
+  typeof NotificationHookInputSchema
 >
 export type UserPromptSubmitHookInput = z.infer<
-  ReturnType<typeof UserPromptSubmitHookInputSchema>
+  typeof UserPromptSubmitHookInputSchema
 >
 export type SessionStartHookInput = z.infer<
-  ReturnType<typeof SessionStartHookInputSchema>
+  typeof SessionStartHookInputSchema
 >
 export type SessionEndHookInput = z.infer<
-  ReturnType<typeof SessionEndHookInputSchema>
+  typeof SessionEndHookInputSchema
 >
-export type SetupHookInput = z.infer<ReturnType<typeof SetupHookInputSchema>>
-export type StopHookInput = z.infer<ReturnType<typeof StopHookInputSchema>>
+export type SetupHookInput = z.infer<typeof SetupHookInputSchema>
+export type StopHookInput = z.infer<typeof StopHookInputSchema>
 export type StopFailureHookInput = z.infer<
-  ReturnType<typeof StopFailureHookInputSchema>
+  typeof StopFailureHookInputSchema
 >
 export type SubagentStartHookInput = z.infer<
-  ReturnType<typeof SubagentStartHookInputSchema>
+  typeof SubagentStartHookInputSchema
 >
 export type SubagentStopHookInput = z.infer<
-  ReturnType<typeof SubagentStopHookInputSchema>
+  typeof SubagentStopHookInputSchema
 >
 export type PreCompactHookInput = z.infer<
-  ReturnType<typeof PreCompactHookInputSchema>
+  typeof PreCompactHookInputSchema
 >
 export type PostCompactHookInput = z.infer<
-  ReturnType<typeof PostCompactHookInputSchema>
+  typeof PostCompactHookInputSchema
 >
 export type TeammateIdleHookInput = z.infer<
-  ReturnType<typeof TeammateIdleHookInputSchema>
+  typeof TeammateIdleHookInputSchema
 >
 export type TaskCreatedHookInput = z.infer<
-  ReturnType<typeof TaskCreatedHookInputSchema>
+  typeof TaskCreatedHookInputSchema
 >
 export type TaskCompletedHookInput = z.infer<
-  ReturnType<typeof TaskCompletedHookInputSchema>
+  typeof TaskCompletedHookInputSchema
 >
 export type ElicitationHookInput = z.infer<
-  ReturnType<typeof ElicitationHookInputSchema>
+  typeof ElicitationHookInputSchema
 >
 export type ElicitationResultHookInput = z.infer<
-  ReturnType<typeof ElicitationResultHookInputSchema>
+  typeof ElicitationResultHookInputSchema
 >
 export type ConfigChangeHookInput = z.infer<
-  ReturnType<typeof ConfigChangeHookInputSchema>
+  typeof ConfigChangeHookInputSchema
 >
 export type InstructionsLoadedHookInput = z.infer<
-  ReturnType<typeof InstructionsLoadedHookInputSchema>
+  typeof InstructionsLoadedHookInputSchema
 >
 export type WorktreeCreateHookInput = z.infer<
-  ReturnType<typeof WorktreeCreateHookInputSchema>
+  typeof WorktreeCreateHookInputSchema
 >
 export type WorktreeRemoveHookInput = z.infer<
-  ReturnType<typeof WorktreeRemoveHookInputSchema>
+  typeof WorktreeRemoveHookInputSchema
 >
 export type CwdChangedHookInput = z.infer<
-  ReturnType<typeof CwdChangedHookInputSchema>
+  typeof CwdChangedHookInputSchema
 >
 export type FileChangedHookInput = z.infer<
-  ReturnType<typeof FileChangedHookInputSchema>
+  typeof FileChangedHookInputSchema
 >
 
-export type HookInput = z.infer<ReturnType<typeof HookInputSchema>>
+export type HookInput = z.infer<typeof HookInputSchema>
 
 // ---------------------------------------------------------------------------
 // Hook output
 // ---------------------------------------------------------------------------
 
-export type HookJSONOutput = z.infer<ReturnType<typeof HookJSONOutputSchema>>
+export type HookJSONOutput = z.infer<typeof HookJSONOutputSchema>
 export type SyncHookJSONOutput = z.infer<
-  ReturnType<typeof SyncHookJSONOutputSchema>
+  typeof SyncHookJSONOutputSchema
 >
 export type AsyncHookJSONOutput = z.infer<
-  ReturnType<typeof AsyncHookJSONOutputSchema>
+  typeof AsyncHookJSONOutputSchema
 >
 
 // ---------------------------------------------------------------------------
@@ -252,13 +252,13 @@ export type PermissionResult =
       message?: string
     }
 
-export type ModelInfo = z.infer<ReturnType<typeof ModelInfoSchema>>
+export type ModelInfo = z.infer<typeof ModelInfoSchema>
 export type McpServerConfigForProcessTransport = z.infer<
-  ReturnType<typeof McpServerConfigForProcessTransportSchema>
+  typeof McpServerConfigForProcessTransportSchema
 >
-export type McpServerStatus = z.infer<ReturnType<typeof McpServerStatusSchema>>
+export type McpServerStatus = z.infer<typeof McpServerStatusSchema>
 export type RewindFilesResult = z.infer<
-  ReturnType<typeof RewindFilesResultSchema>
+  typeof RewindFilesResultSchema
 >
 
 // ---------------------------------------------------------------------------

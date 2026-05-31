@@ -21,13 +21,17 @@ import { patchJsoncFile, safeParseJSONC, SETTINGS_DEEP_KEYS } from '../json.js'
 import { logError } from '../log.js'
 import { getPlatform } from '../platform.js'
 import { clone, jsonStringify } from '../slowOperations.js'
+import {
+  getExistingOrPreferredProjectConfigPath,
+  getPreferredProjectConfigRelativePath,
+  getProjectConfigRelativePaths,
+} from '../projectConfigPaths.js'
 import { profileCheckpoint } from '../startupProfiler.js'
 import {
   type EditableSettingSource,
   getEnabledSettingSources,
   type SettingSource,
 } from './constants.js'
-import { migrateProjectSettingsToFreecode } from './migrateToFreecode.js'
 import { markInternalWrite } from './internalWrites.js'
 import {
   getManagedFilePath,
@@ -237,7 +241,7 @@ function parseSettingsFileUncached(path: string): {
 
 /**
  * Get the absolute path to the associated file root for a given settings source
- * (e.g. for $PROJ_DIR/.claude/freecode.json, returns $PROJ_DIR)
+ * (e.g. for $PROJ_DIR/.freecode/freecode.json, returns $PROJ_DIR)
  * @param source The source of the settings
  * @returns The root path of the settings file
  */
@@ -308,9 +312,58 @@ export function getRelativeSettingsFilePathForSource(
 ): string {
   switch (source) {
     case 'projectSettings':
-      return join('.claude', 'freecode.json')
+      return getPreferredProjectConfigRelativePath('freecode.json')
     case 'localSettings':
-      return join('.claude', 'freecode.local.json')
+      return getPreferredProjectConfigRelativePath('freecode.local.json')
+  }
+}
+
+/**
+ * Returns all candidate file paths for a source, in precedence order (last wins).
+ * For project/local settings, returns both .claude/ and .freecode/ paths.
+ * For other sources, returns a single-element array.
+ */
+export function getSettingsFilePathsForSource(source: SettingSource): string[] {
+  switch (source) {
+    case 'projectSettings': {
+      const root = getSettingsRootPathForSource(source)
+      return getProjectConfigRelativePaths('freecode.json').map(rel =>
+        join(root, rel),
+      )
+    }
+    case 'localSettings': {
+      const root = getSettingsRootPathForSource(source)
+      return getProjectConfigRelativePaths('freecode.local.json').map(rel =>
+        join(root, rel),
+      )
+    }
+    default: {
+      const single = getSettingsFilePathForSource(source)
+      return single ? [single] : []
+    }
+  }
+}
+
+/**
+ * Returns the write path for a source. For project/local settings, uses the
+ * existing .freecode/ path if present, else existing .claude/ path, else .freecode/.
+ */
+function getSettingsWritePathForSource(
+  source: EditableSettingSource,
+): string | undefined {
+  switch (source) {
+    case 'projectSettings':
+      return getExistingOrPreferredProjectConfigPath(
+        getOriginalCwd(),
+        'freecode.json',
+      )
+    case 'localSettings':
+      return getExistingOrPreferredProjectConfigPath(
+        getOriginalCwd(),
+        'freecode.local.json',
+      )
+    default:
+      return getSettingsFilePathForSource(source)
   }
 }
 
@@ -352,10 +405,17 @@ function getSettingsForSourceUncached(
     return null
   }
 
-  const settingsFilePath = getSettingsFilePathForSource(source)
-  const { settings: fileSettings } = settingsFilePath
-    ? parseSettingsFile(settingsFilePath)
-    : { settings: null }
+  // Merge all candidate files for this source (handles .claude/ + .freecode/)
+  const filePaths = getSettingsFilePathsForSource(source)
+  let merged: SettingsJson | null = null
+  for (const filePath of filePaths) {
+    const { settings } = parseSettingsFile(filePath)
+    if (settings) {
+      merged = merged
+        ? (mergeWith(merged, settings, settingsMergeCustomizer) as SettingsJson)
+        : settings
+    }
+  }
 
   // For flagSettings, merge in any inline settings set via the SDK
   if (source === 'flagSettings') {
@@ -364,7 +424,7 @@ function getSettingsForSourceUncached(
       const parsed = SettingsSchema().safeParse(inlineSettings)
       if (parsed.success) {
         return mergeWith(
-          fileSettings || {},
+          merged || {},
           parsed.data,
           settingsMergeCustomizer,
         ) as SettingsJson
@@ -372,7 +432,7 @@ function getSettingsForSourceUncached(
     }
   }
 
-  return fileSettings
+  return merged
 }
 
 /**
@@ -433,7 +493,7 @@ export function updateSettingsForSource(
   }
 
   // Create the folder if needed
-  const filePath = getSettingsFilePathForSource(source)
+  const filePath = getSettingsWritePathForSource(source)
   if (!filePath) {
     return { error: null }
   }
@@ -720,18 +780,6 @@ function loadSettingsFromDisk(): SettingsWithErrors {
 
   isLoadingSettings = true
   try {
-    // NOTE: user-global settings.json → freecode.json migration is NOT
-    // auto-run here. It is a user-consented, one-shot operation driven by
-    // showSetupScreens → MigrationPromptDialog →
-    // runLegacyToFreecodeMigration(). Settings load is read-only.
-
-    // Migrate project-level .claude/settings.json → .claude/freecode.json
-    try {
-      migrateProjectSettingsToFreecode(getOriginalCwd())
-    } catch {
-      // Non-fatal: migration is best-effort
-    }
-
     // Start with plugin settings as the lowest priority base.
     // All file-based sources (user, project, local, flag, policy) override these.
     // Plugin settings only contain allowlisted keys (e.g., agent) that are valid SettingsJson fields.
@@ -749,7 +797,8 @@ function loadSettingsFromDisk(): SettingsWithErrors {
     const seenFiles = new Set<string>()
 
     // Merge settings from each source in priority order with deep merging
-    for (const source of getEnabledSettingSources()) {
+    const enabledSrc = getEnabledSettingSources()
+    for (const source of enabledSrc) {
       // policySettings: "first source wins" — use the highest-priority source
       // that has content. Priority: remote > HKLM/plist > managed-settings.json > HKCU
       if (source === 'policySettings') {
@@ -816,32 +865,30 @@ function loadSettingsFromDisk(): SettingsWithErrors {
         continue
       }
 
-      const filePath = getSettingsFilePathForSource(source)
-      if (filePath) {
+      const filePaths = getSettingsFilePathsForSource(source)
+      for (const filePath of filePaths) {
         const resolvedPath = resolve(filePath)
 
         // Skip if we've already loaded this file from another source
-        if (!seenFiles.has(resolvedPath)) {
-          seenFiles.add(resolvedPath)
+        if (seenFiles.has(resolvedPath)) continue
+        seenFiles.add(resolvedPath)
 
-          const { settings, errors } = parseSettingsFile(filePath)
+        const { settings, errors } = parseSettingsFile(filePath)
 
-          // Add unique errors (deduplication)
-          for (const error of errors) {
-            const errorKey = `${error.file}:${error.path}:${error.message}`
-            if (!seenErrors.has(errorKey)) {
-              seenErrors.add(errorKey)
-              allErrors.push(error)
-            }
+        for (const error of errors) {
+          const errorKey = `${error.file}:${error.path}:${error.message}`
+          if (!seenErrors.has(errorKey)) {
+            seenErrors.add(errorKey)
+            allErrors.push(error)
           }
+        }
 
-          if (settings) {
-            mergedSettings = mergeWith(
-              mergedSettings,
-              settings,
-              settingsMergeCustomizer,
-            )
-          }
+        if (settings) {
+          mergedSettings = mergeWith(
+            mergedSettings,
+            settings,
+            settingsMergeCustomizer,
+          )
         }
       }
 
@@ -932,13 +979,11 @@ export function getSettingsWithSources(): SettingsWithSources {
  * @returns Merged settings and all validation errors encountered
  */
 export function getSettingsWithErrors(): SettingsWithErrors {
-  // Use cached result if available
   const cached = getSessionSettingsCache()
   if (cached !== null) {
     return cached
   }
 
-  // Load from disk and cache the result
   const result = loadSettingsFromDisk()
   profileCheckpoint('loadSettingsFromDisk_end')
   setSessionSettingsCache(result)

@@ -17,7 +17,6 @@ import { z } from 'zod/v4'
 
 import { getOauthConfig } from '../../constants/oauth.js'
 import { logForDebugging } from '../../utils/debug.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 
 // Matches the private_api backend limit
@@ -61,9 +60,7 @@ function getUploadBaseUrl(): string {
 
 // /api/oauth/file_upload returns one of ChatMessage{Image,Blob,Document}FileSchema.
 // All share file_uuid; that's the only field we need.
-const uploadResponseSchema = lazySchema(() =>
-  z.object({ file_uuid: z.string() }),
-)
+const uploadResponseSchema = z.object({ file_uuid: z.string() })
 
 export type BriefUploadContext = {
   signal?: AbortSignal
@@ -134,7 +131,7 @@ export async function uploadBriefAttachment(
       return undefined
     }
 
-    const parsed = uploadResponseSchema().safeParse(response.data)
+    const parsed = uploadResponseSchema.safeParse(response.data)
     if (!parsed.success) {
       debug(
         `unexpected response shape for ${fullPath}: ${parsed.error.message}`,

@@ -9,7 +9,7 @@ import { jsonStringify } from '../../utils/slowOperations.js'
 import type { inputSchema, Output } from './ReadMcpResourceTool.js'
 
 export function renderToolUseMessage(
-  input: Partial<z.infer<ReturnType<typeof inputSchema>>>,
+  input: Partial<z.infer<typeof inputSchema>>,
 ): React.ReactNode {
   if (!input.uri || !input.server) {
     return null

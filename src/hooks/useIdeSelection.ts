@@ -7,13 +7,10 @@ import type {
 } from '../services/mcp/types.js'
 import type { IDESelection, SelectionData } from '../types/ide.js'
 import { getConnectedIdeClient } from '../utils/ide.js'
-import { lazySchema } from '../utils/lazySchema.js'
-
 export type { IDESelection, SelectionData }
 
 // Define the selection changed notification schema
-const SelectionChangedSchema = lazySchema(() =>
-  z.object({
+const SelectionChangedSchema = z.object({
     method: z.literal('selection_changed'),
     params: z.object({
       selection: z
@@ -32,8 +29,7 @@ const SelectionChangedSchema = lazySchema(() =>
       text: z.string().optional(),
       filePath: z.string().optional(),
     }),
-  }),
-)
+  })
 
 /**
  * A hook that tracks IDE text selection information by directly registering
@@ -93,7 +89,7 @@ export function useIdeSelection(
 
     // Register notification handler for selection_changed events
     ideClient.client.setNotificationHandler(
-      SelectionChangedSchema(),
+      SelectionChangedSchema,
       notification => {
         if (currentIDERef.current !== ideClient) {
           return

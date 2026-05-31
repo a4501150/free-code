@@ -1,6 +1,5 @@
 import { z } from 'zod/v4'
 import { mcpInfoFromString } from '../../services/mcp/mcpStringUtils.js'
-import { lazySchema } from '../lazySchema.js'
 import { permissionRuleValueFromString } from '../permissions/permissionRuleParser.js'
 import { capitalize } from '../stringUtils.js'
 import {
@@ -241,8 +240,7 @@ export function validatePermissionRule(rule: string): {
 /**
  * Custom Zod schema for permission rule arrays
  */
-export const PermissionRuleSchema = lazySchema(() =>
-  z.string().superRefine((val, ctx) => {
+export const PermissionRuleSchema = z.string().superRefine((val, ctx) => {
     const result = validatePermissionRule(val)
     if (!result.valid) {
       let message = result.error!
@@ -258,5 +256,4 @@ export const PermissionRuleSchema = lazySchema(() =>
         params: { received: val },
       })
     }
-  }),
-)
+  })

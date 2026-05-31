@@ -23,7 +23,6 @@ import { join } from 'path'
 import { z } from 'zod/v4'
 import { logForDebugging } from '../debug.js'
 import { getErrnoCode } from '../errors.js'
-import { lazySchema } from '../lazySchema.js'
 import * as lockfile from '../lockfile.js'
 import { logError } from '../log.js'
 import type { PermissionUpdate } from '../permissions/PermissionUpdateSchema.js'
@@ -46,8 +45,7 @@ import { getTeamDir, readTeamFileAsync } from './teamHelpers.js'
 /**
  * Full request schema for a permission request from a worker to the leader
  */
-export const SwarmPermissionRequestSchema = lazySchema(() =>
-  z.object({
+export const SwarmPermissionRequestSchema = z.object({
     /** Unique identifier for this request */
     id: z.string(),
     /** Worker's CLAUDE_CODE_AGENT_ID */
@@ -82,11 +80,10 @@ export const SwarmPermissionRequestSchema = lazySchema(() =>
     permissionUpdates: z.array(z.unknown()).optional(),
     /** Timestamp when request was created */
     createdAt: z.number(),
-  }),
-)
+  })
 
 export type SwarmPermissionRequest = z.infer<
-  ReturnType<typeof SwarmPermissionRequestSchema>
+  typeof SwarmPermissionRequestSchema
 >
 
 /**
@@ -284,7 +281,7 @@ export async function readPendingPermissions(
       const filePath = join(pendingDir, file)
       try {
         const content = await readFile(filePath, 'utf-8')
-        const parsed = SwarmPermissionRequestSchema().safeParse(
+        const parsed = SwarmPermissionRequestSchema.safeParse(
           jsonParse(content),
         )
         if (parsed.success) {
@@ -330,7 +327,7 @@ export async function readResolvedPermission(
 
   try {
     const content = await readFile(resolvedPath, 'utf-8')
-    const parsed = SwarmPermissionRequestSchema().safeParse(jsonParse(content))
+    const parsed = SwarmPermissionRequestSchema.safeParse(jsonParse(content))
     if (parsed.success) {
       return parsed.data
     }
@@ -395,7 +392,7 @@ export async function resolvePermission(
       throw e
     }
 
-    const parsed = SwarmPermissionRequestSchema().safeParse(jsonParse(content))
+    const parsed = SwarmPermissionRequestSchema.safeParse(jsonParse(content))
     if (!parsed.success) {
       logForDebugging(
         `[PermissionSync] Invalid pending request ${requestId}: ${parsed.error.message}`,

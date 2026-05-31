@@ -4,11 +4,8 @@ import type {
   ServerCapabilities,
 } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod/v4'
-import { lazySchema } from '../../utils/lazySchema.js'
-
 // Configuration schemas and types
-export const ConfigScopeSchema = lazySchema(() =>
-  z.enum([
+export const ConfigScopeSchema = z.enum([
     'local',
     'user',
     'project',
@@ -16,34 +13,28 @@ export const ConfigScopeSchema = lazySchema(() =>
     'enterprise',
     'claudeai',
     'managed',
-  ]),
-)
-export type ConfigScope = z.infer<ReturnType<typeof ConfigScopeSchema>>
+  ])
+export type ConfigScope = z.infer<typeof ConfigScopeSchema>
 
-export const TransportSchema = lazySchema(() =>
-  z.enum(['stdio', 'sse', 'sse-ide', 'http', 'ws', 'sdk']),
-)
-export type Transport = z.infer<ReturnType<typeof TransportSchema>>
+export const TransportSchema = z.enum(['stdio', 'sse', 'sse-ide', 'http', 'ws', 'sdk'])
+export type Transport = z.infer<typeof TransportSchema>
 
-export const McpStdioServerConfigSchema = lazySchema(() =>
-  z.object({
+export const McpStdioServerConfigSchema = z.object({
     type: z.literal('stdio').optional(), // Optional for backwards compatibility
     command: z.string().min(1, 'Command cannot be empty'),
     args: z.array(z.string()).default([]),
     env: z.record(z.string(), z.string()).optional(),
     includeTools: z.array(z.string()).optional(),
     excludeTools: z.array(z.string()).optional(),
-  }),
-)
+  })
 
 // Cross-App Access (XAA / SEP-990): just a per-server flag. IdP connection
 // details (issuer, clientId, callbackPort) come from settings.xaaIdp — configured
 // once, shared across all XAA-enabled servers. clientId/clientSecret (parent
 // oauth config + keychain slot) are for the MCP server's AS.
-const McpXaaConfigSchema = lazySchema(() => z.boolean())
+const McpXaaConfigSchema = z.boolean()
 
-const McpOAuthConfigSchema = lazySchema(() =>
-  z.object({
+const McpOAuthConfigSchema = z.object({
     clientId: z.string().optional(),
     callbackPort: z.number().int().positive().optional(),
     authServerMetadataUrl: z
@@ -53,37 +44,31 @@ const McpOAuthConfigSchema = lazySchema(() =>
         message: 'authServerMetadataUrl must use https://',
       })
       .optional(),
-    xaa: McpXaaConfigSchema().optional(),
-  }),
-)
+    xaa: McpXaaConfigSchema.optional(),
+  })
 
-export const McpSSEServerConfigSchema = lazySchema(() =>
-  z.object({
+export const McpSSEServerConfigSchema = z.object({
     type: z.literal('sse'),
     url: z.string(),
     headers: z.record(z.string(), z.string()).optional(),
     headersHelper: z.string().optional(),
-    oauth: McpOAuthConfigSchema().optional(),
+    oauth: McpOAuthConfigSchema.optional(),
     includeTools: z.array(z.string()).optional(),
     excludeTools: z.array(z.string()).optional(),
-  }),
-)
+  })
 
 // Internal-only server type for IDE extensions
-export const McpSSEIDEServerConfigSchema = lazySchema(() =>
-  z.object({
+export const McpSSEIDEServerConfigSchema = z.object({
     type: z.literal('sse-ide'),
     url: z.string(),
     ideName: z.string(),
     ideRunningInWindows: z.boolean().optional(),
     includeTools: z.array(z.string()).optional(),
     excludeTools: z.array(z.string()).optional(),
-  }),
-)
+  })
 
 // Internal-only server type for IDE extensions
-export const McpWebSocketIDEServerConfigSchema = lazySchema(() =>
-  z.object({
+export const McpWebSocketIDEServerConfigSchema = z.object({
     type: z.literal('ws-ide'),
     url: z.string(),
     ideName: z.string(),
@@ -91,90 +76,79 @@ export const McpWebSocketIDEServerConfigSchema = lazySchema(() =>
     ideRunningInWindows: z.boolean().optional(),
     includeTools: z.array(z.string()).optional(),
     excludeTools: z.array(z.string()).optional(),
-  }),
-)
+  })
 
-export const McpHTTPServerConfigSchema = lazySchema(() =>
-  z.object({
+export const McpHTTPServerConfigSchema = z.object({
     type: z.literal('http'),
     url: z.string(),
     headers: z.record(z.string(), z.string()).optional(),
     headersHelper: z.string().optional(),
-    oauth: McpOAuthConfigSchema().optional(),
+    oauth: McpOAuthConfigSchema.optional(),
     includeTools: z.array(z.string()).optional(),
     excludeTools: z.array(z.string()).optional(),
-  }),
-)
+  })
 
-export const McpWebSocketServerConfigSchema = lazySchema(() =>
-  z.object({
+export const McpWebSocketServerConfigSchema = z.object({
     type: z.literal('ws'),
     url: z.string(),
     headers: z.record(z.string(), z.string()).optional(),
     headersHelper: z.string().optional(),
     includeTools: z.array(z.string()).optional(),
     excludeTools: z.array(z.string()).optional(),
-  }),
-)
+  })
 
-export const McpSdkServerConfigSchema = lazySchema(() =>
-  z.object({
+export const McpSdkServerConfigSchema = z.object({
     type: z.literal('sdk'),
     name: z.string(),
     includeTools: z.array(z.string()).optional(),
     excludeTools: z.array(z.string()).optional(),
-  }),
-)
+  })
 
 // Config type for Claude.ai proxy servers
-export const McpClaudeAIProxyServerConfigSchema = lazySchema(() =>
-  z.object({
+export const McpClaudeAIProxyServerConfigSchema = z.object({
     type: z.literal('claudeai-proxy'),
     url: z.string(),
     id: z.string(),
     includeTools: z.array(z.string()).optional(),
     excludeTools: z.array(z.string()).optional(),
-  }),
-)
+  })
 
-export const McpServerConfigSchema = lazySchema(() =>
-  z.union([
-    McpStdioServerConfigSchema(),
-    McpSSEServerConfigSchema(),
-    McpSSEIDEServerConfigSchema(),
-    McpWebSocketIDEServerConfigSchema(),
-    McpHTTPServerConfigSchema(),
-    McpWebSocketServerConfigSchema(),
-    McpSdkServerConfigSchema(),
-    McpClaudeAIProxyServerConfigSchema(),
-  ]),
-)
+export const McpServerConfigSchema = z.union([
+    McpStdioServerConfigSchema,
+    McpSSEServerConfigSchema,
+    McpSSEIDEServerConfigSchema,
+    McpWebSocketIDEServerConfigSchema,
+    McpHTTPServerConfigSchema,
+    McpWebSocketServerConfigSchema,
+    McpSdkServerConfigSchema,
+    McpClaudeAIProxyServerConfigSchema,
+  ])
 
 export type McpStdioServerConfig = z.infer<
-  ReturnType<typeof McpStdioServerConfigSchema>
+  typeof McpStdioServerConfigSchema
 >
 export type McpSSEServerConfig = z.infer<
-  ReturnType<typeof McpSSEServerConfigSchema>
+  typeof McpSSEServerConfigSchema
 >
 export type McpSSEIDEServerConfig = z.infer<
-  ReturnType<typeof McpSSEIDEServerConfigSchema>
+  typeof McpSSEIDEServerConfigSchema
 >
 export type McpWebSocketIDEServerConfig = z.infer<
-  ReturnType<typeof McpWebSocketIDEServerConfigSchema>
+  typeof McpWebSocketIDEServerConfigSchema
 >
 export type McpHTTPServerConfig = z.infer<
-  ReturnType<typeof McpHTTPServerConfigSchema>
+  typeof McpHTTPServerConfigSchema
 >
 export type McpWebSocketServerConfig = z.infer<
-  ReturnType<typeof McpWebSocketServerConfigSchema>
+  typeof McpWebSocketServerConfigSchema
 >
 export type McpSdkServerConfig = z.infer<
-  ReturnType<typeof McpSdkServerConfigSchema>
+  typeof McpSdkServerConfigSchema
 >
 export type McpClaudeAIProxyServerConfig = z.infer<
-  ReturnType<typeof McpClaudeAIProxyServerConfigSchema>
+  typeof McpClaudeAIProxyServerConfigSchema
 >
-export type McpServerConfig = z.infer<ReturnType<typeof McpServerConfigSchema>>
+export type McpServerConfig = z.infer<typeof McpServerConfigSchema>
 
 export type ScopedMcpServerConfig = McpServerConfig & {
   scope: ConfigScope
@@ -184,13 +158,11 @@ export type ScopedMcpServerConfig = McpServerConfig & {
   pluginSource?: string
 }
 
-export const McpJsonConfigSchema = lazySchema(() =>
-  z.object({
-    mcpServers: z.record(z.string(), McpServerConfigSchema()),
-  }),
-)
+export const McpJsonConfigSchema = z.object({
+    mcpServers: z.record(z.string(), McpServerConfigSchema),
+  })
 
-export type McpJsonConfig = z.infer<ReturnType<typeof McpJsonConfigSchema>>
+export type McpJsonConfig = z.infer<typeof McpJsonConfigSchema>
 
 // Server connection types
 export type ConnectedMCPServer = {

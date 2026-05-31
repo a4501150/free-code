@@ -245,7 +245,7 @@ async function loadMcpServersFromFile(
     // Validate each server config
     const validatedServers: Record<string, McpServerConfig> = {}
     for (const [name, config] of Object.entries(mcpServers)) {
-      const result = McpServerConfigSchema().safeParse(config)
+      const result = McpServerConfigSchema.safeParse(config)
       if (result.success) {
         validatedServers[name] = result.data
       } else {

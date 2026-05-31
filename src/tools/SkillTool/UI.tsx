@@ -15,7 +15,7 @@ import { buildSubagentLookups, EMPTY_LOOKUPS } from '../../utils/messages.js'
 import { plural } from '../../utils/stringUtils.js'
 import type { inputSchema, Output, Progress } from './SkillTool.js'
 
-type Input = z.infer<ReturnType<typeof inputSchema>>
+type Input = z.infer<typeof inputSchema>
 
 const MAX_PROGRESS_MESSAGES_TO_SHOW = 3
 const INITIALIZING_TEXT = 'Initializing…'

@@ -15,7 +15,7 @@ export function LocationStep(): ReactNode {
 
   const locationOptions = [
     {
-      label: 'Project (.claude/agents/)',
+      label: 'Project (.freecode/agents/)',
       value: 'projectSettings' as SettingSource,
     },
     {

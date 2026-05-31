@@ -3,18 +3,15 @@ import { z } from 'zod/v4'
 import type { Tool, ToolInputJSONSchema } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { TelemetrySafeError_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../../utils/errors.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 
 // Allow any input object since the schema is provided dynamically
-const inputSchema = lazySchema(() => z.object({}).passthrough())
-type InputSchema = ReturnType<typeof inputSchema>
+const inputSchema = z.object({}).passthrough()
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.string().describe('Structured output tool result'),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+const outputSchema = z.string().describe('Structured output tool result')
+type OutputSchema = typeof outputSchema
 export type Output = z.infer<OutputSchema>
 
 export const SYNTHETIC_OUTPUT_TOOL_NAME = 'StructuredOutput'
@@ -50,10 +47,10 @@ export const SyntheticOutputTool = buildTool({
     return `Use this tool to return your final response in the requested structured format. You MUST call this tool exactly once at the end of your response to provide the structured output.`
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   async call(input) {
     // The tool just validates and returns the input as the structured output

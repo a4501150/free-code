@@ -22,7 +22,6 @@ import {
 } from '@modelcontextprotocol/sdk/client/auth.js'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { z } from 'zod/v4'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { logMCPDebug } from '../../utils/log.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 
@@ -98,19 +97,16 @@ function redactTokens(raw: unknown): string {
 
 // ─── Zod Schemas ────────────────────────────────────────────────────────────
 
-const TokenExchangeResponseSchema = lazySchema(() =>
-  z.object({
+const TokenExchangeResponseSchema = z.object({
     access_token: z.string().optional(),
     issued_token_type: z.string().optional(),
     // z.coerce tolerates IdPs that send expires_in as a string (common in
     // PHP-backed IdPs) — technically non-conformant JSON but widespread.
     expires_in: z.coerce.number().optional(),
     scope: z.string().optional(),
-  }),
-)
+  })
 
-const JwtBearerResponseSchema = lazySchema(() =>
-  z.object({
+const JwtBearerResponseSchema = z.object({
     access_token: z.string().min(1),
     // Many ASes omit token_type since Bearer is the only value anyone uses
     // (RFC 6750). Don't reject a valid access_token over a missing label.
@@ -118,8 +114,7 @@ const JwtBearerResponseSchema = lazySchema(() =>
     expires_in: z.coerce.number().optional(),
     scope: z.string().optional(),
     refresh_token: z.string().optional(),
-  }),
-)
+  })
 
 // ─── Layer 2: Discovery ─────────────────────────────────────────────────────
 
@@ -282,7 +277,7 @@ export async function requestJwtAuthorizationGrant(opts: {
       false,
     )
   }
-  const exchangeParsed = TokenExchangeResponseSchema().safeParse(rawExchange)
+  const exchangeParsed = TokenExchangeResponseSchema.safeParse(rawExchange)
   if (!exchangeParsed.success) {
     throw new XaaTokenExchangeError(
       `XAA: token exchange response did not match expected shape: ${redactTokens(rawExchange)}`,
@@ -384,7 +379,7 @@ export async function exchangeJwtAuthGrant(opts: {
       `XAA: jwt-bearer grant returned non-JSON (captive portal?) at ${opts.tokenEndpoint}`,
     )
   }
-  const tokensParsed = JwtBearerResponseSchema().safeParse(rawTokens)
+  const tokensParsed = JwtBearerResponseSchema.safeParse(rawTokens)
   if (!tokensParsed.success) {
     throw new Error(
       `XAA: jwt-bearer response did not match expected shape: ${redactTokens(rawTokens)}`,

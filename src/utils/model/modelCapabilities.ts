@@ -10,29 +10,24 @@ import { isClaudeAISubscriber } from '../auth.js'
 import { logForDebugging } from '../debug.js'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
 import { safeParseJSON } from '../json.js'
-import { lazySchema } from '../lazySchema.js'
 import { isEssentialTrafficOnly } from '../privacyLevel.js'
 import { jsonStringify } from '../slowOperations.js'
 
 // .strip() — don't persist internal-only fields (mycro_deployments etc.) to disk
-const ModelCapabilitySchema = lazySchema(() =>
-  z
+const ModelCapabilitySchema = z
     .object({
       id: z.string(),
       max_input_tokens: z.number().optional(),
       max_tokens: z.number().optional(),
     })
-    .strip(),
-)
+    .strip()
 
-const CacheFileSchema = lazySchema(() =>
-  z.object({
-    models: z.array(ModelCapabilitySchema()),
+const CacheFileSchema = z.object({
+    models: z.array(ModelCapabilitySchema),
     timestamp: z.number(),
-  }),
-)
+  })
 
-export type ModelCapability = z.infer<ReturnType<typeof ModelCapabilitySchema>>
+export type ModelCapability = z.infer<typeof ModelCapabilitySchema>
 
 function getCacheDir(): string {
   return join(getClaudeConfigHomeDir(), 'cache')
@@ -59,7 +54,7 @@ const loadCache = memoize(
     try {
       // eslint-disable-next-line custom-rules/no-sync-fs -- memoized; called from sync getContextWindowForModel
       const raw = readFileSync(path, 'utf-8')
-      const parsed = CacheFileSchema().safeParse(safeParseJSON(raw, false))
+      const parsed = CacheFileSchema.safeParse(safeParseJSON(raw, false))
       return parsed.success ? parsed.data.models : null
     } catch {
       return null
@@ -87,7 +82,7 @@ export async function refreshModelCapabilities(): Promise<void> {
     const betas = isClaudeAISubscriber() ? [OAUTH_BETA_HEADER] : undefined
     const parsed: ModelCapability[] = []
     for await (const entry of anthropic.models.list({ betas })) {
-      const result = ModelCapabilitySchema().safeParse(entry)
+      const result = ModelCapabilitySchema.safeParse(entry)
       if (result.success) parsed.push(result.data)
     }
     if (parsed.length === 0) return

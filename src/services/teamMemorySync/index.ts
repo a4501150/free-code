@@ -233,7 +233,7 @@ async function fetchTeamMemoryOnce(
       return { success: true, isEmpty: true }
     }
 
-    const parsed = TeamMemoryDataSchema().safeParse(response.data)
+    const parsed = TeamMemoryDataSchema.safeParse(response.data)
     if (!parsed.success) {
       logForDebugging('team-memory-sync: invalid response format', {
         level: 'warn',
@@ -533,7 +533,7 @@ async function uploadTeamMemory(
     // the effective max_entries (may be GB-tuned per-org). Cache it so
     // the next push trims to the right value.
     if (httpStatus === 413 && axios.isAxiosError(error)) {
-      const parsed = TeamMemoryTooManyEntriesSchema().safeParse(
+      const parsed = TeamMemoryTooManyEntriesSchema.safeParse(
         error.response?.data,
       )
       if (parsed.success) {

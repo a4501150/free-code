@@ -33,7 +33,6 @@ import type {
 } from '../../types/permissions.js'
 import { isDebugMode, logForDebugging } from '../debug.js'
 import { errorMessage } from '../errors.js'
-import { lazySchema } from '../lazySchema.js'
 import { extractTextContent } from '../messages.js'
 import { getMainLoopModel } from '../model/model.js'
 import { getProviderRegistry } from '../model/providerRegistry.js'
@@ -212,13 +211,11 @@ async function dumpErrorPrompts(
   }
 }
 
-const yoloClassifierResponseSchema = lazySchema(() =>
-  z.object({
+const yoloClassifierResponseSchema = z.object({
     thinking: z.string(),
     shouldBlock: z.boolean(),
     reason: z.string(),
-  }),
-)
+  })
 
 export const YOLO_CLASSIFIER_TOOL_NAME = 'classify_result'
 
@@ -1521,7 +1518,7 @@ export async function classifyYoloAction(
     // Parse response using shared utility
     const parsed = parseClassifierResponse(
       toolUseBlock,
-      yoloClassifierResponseSchema(),
+      yoloClassifierResponseSchema,
     )
     if (!parsed) {
       logForDebugging('Auto mode classifier: Invalid response schema', {

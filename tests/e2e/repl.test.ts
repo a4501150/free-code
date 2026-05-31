@@ -49,9 +49,8 @@ describe('REPL E2E', () => {
       const screen = await session.capturePane()
 
       expect(screen).toContain('Claude Code')
-      expect(screen).toContain('Opus')
+      expect(screen).toContain('claude-sonnet')
       expect(screen).toContain('for shortcuts')
-      expect(screen).toContain('Opus 4.7')
       expect(screen).toContain('API Usage Billing')
     })
   })

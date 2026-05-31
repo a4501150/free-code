@@ -6,7 +6,6 @@ import { join, normalize, posix, sep } from 'path'
 import { hasAutoMemPathOverride, isAutoMemPath } from 'src/memdir/paths.js'
 import { isAgentMemoryPath } from 'src/tools/AgentTool/agentMemory.js'
 import {
-  CLAUDE_FOLDER_PERMISSION_PATTERN,
   FILE_EDIT_TOOL_NAME,
   GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN,
 } from 'src/tools/FileEditTool/constants.js'
@@ -27,6 +26,11 @@ import {
   sanitizePath,
 } from '../path.js'
 import { getPlanSlug, getPlansDirectory } from '../plans.js'
+import {
+  LEGACY_PROJECT_CONFIG_DIR,
+  PROJECT_CONFIG_DIRS,
+  getProjectConfigPaths,
+} from '../projectConfigPaths.js'
 import { getPlatform } from '../platform.js'
 import { getProjectDir } from '../sessionStorage.js'
 import { SETTING_SOURCES } from '../settings/constants.js'
@@ -73,7 +77,7 @@ export const DANGEROUS_DIRECTORIES = [
   '.git',
   '.vscode',
   '.idea',
-  '.claude',
+  ...PROJECT_CONFIG_DIRS,
 ] as const
 
 /**
@@ -90,11 +94,12 @@ export function normalizeCaseForComparison(path: string): string {
 }
 
 /**
- * If filePath is inside a .claude/skills/{name}/ directory (project or global),
+ * If filePath is inside a project config skills/{name}/ directory (project or global),
  * return the skill name and a session-allow pattern scoped to just that skill.
  * Used to offer a narrower "allow edits to this skill only" option in the
  * permission dialog and SDK suggestions, so iterating on one skill doesn't
- * require granting session access to all of .claude/ (freecode.json, hooks/, etc.).
+ * require granting session access to all of the project config dir (freecode.json,
+ * hooks/, etc.).
  */
 export function getClaudeSkillScope(
   filePath: string,
@@ -103,10 +108,10 @@ export function getClaudeSkillScope(
   const absolutePathLower = normalizeCaseForComparison(absolutePath)
 
   const bases = [
-    {
-      dir: expandPath(join(getOriginalCwd(), '.claude', 'skills')),
-      prefix: '/.claude/skills/',
-    },
+    ...PROJECT_CONFIG_DIRS.map(dir => ({
+      dir: expandPath(join(getOriginalCwd(), dir, 'skills')),
+      prefix: `/${dir}/skills/`,
+    })),
     {
       dir: expandPath(join(getClaudeConfigHomeDir(), 'skills')),
       prefix: '~/.freecode/skills/',
@@ -143,7 +148,7 @@ export function getClaudeSkillScope(
         // Reject glob metacharacters. skillName is interpolated into a
         // gitignore pattern consumed by ignore().add() in matchingRuleForInput
         // at step 1.6. A directory literally named '*' (valid on POSIX) would
-        // produce '/.claude/skills/*/**' which matches ALL skills. Return null
+        // produce '/.claude/skills/*/**' or '/.freecode/skills/*/**', which matches ALL skills. Return null
         // to fall through to generateSuggestions() instead.
         if (/[*?[\]]/.test(skillName)) return null
         return { skillName, pattern: prefix + skillName + '/**' }
@@ -195,6 +200,13 @@ function getSettingsPaths(): string[] {
   ).filter(path => path !== undefined)
 }
 
+const PROJECT_SETTINGS_FILE_NAMES = [
+  'settings.json',
+  'settings.local.json',
+  'freecode.json',
+  'freecode.local.json',
+] as const
+
 export function isClaudeSettingsPath(filePath: string): boolean {
   // SECURITY: Normalize path structure first to prevent bypass via redundant ./
   // sequences like `./.claude/./settings.json` which would evade the endsWith() check
@@ -206,12 +218,13 @@ export function isClaudeSettingsPath(filePath: string): boolean {
 
   // Use platform separator so endsWith checks work on both Unix (/) and Windows (\)
   if (
-    normalizedPath.endsWith(`${sep}.claude${sep}settings.json`) ||
-    normalizedPath.endsWith(`${sep}.claude${sep}settings.local.json`) ||
-    normalizedPath.endsWith(`${sep}.claude${sep}freecode.json`) ||
-    normalizedPath.endsWith(`${sep}.claude${sep}freecode.local.json`)
+    PROJECT_CONFIG_DIRS.some(projectConfigDir =>
+      PROJECT_SETTINGS_FILE_NAMES.some(fileName =>
+        normalizedPath.endsWith(`${sep}${projectConfigDir}${sep}${fileName}`),
+      ),
+    )
   ) {
-    // Include .claude/settings.json and .claude/freecode.json even for other projects
+    // Include project settings/freecode files even for other projects
     return true
   }
   // Check for current project's settings files (including managed settings and CLI args)
@@ -227,17 +240,14 @@ function isClaudeConfigFilePath(filePath: string): boolean {
     return true
   }
 
-  // Check if file is within .claude/commands or .claude/agents directories
+  // Check if file is within project commands, agents, or skills directories
   // using proper path segment validation (not string matching with includes())
   // pathInWorkingPath now handles case-insensitive comparison to prevent bypasses
-  const commandsDir = join(getOriginalCwd(), '.claude', 'commands')
-  const agentsDir = join(getOriginalCwd(), '.claude', 'agents')
-  const skillsDir = join(getOriginalCwd(), '.claude', 'skills')
-
-  return (
-    pathInWorkingPath(filePath, commandsDir) ||
-    pathInWorkingPath(filePath, agentsDir) ||
-    pathInWorkingPath(filePath, skillsDir)
+  const protectedProjectConfigDirs = ['commands', 'agents', 'skills'] as const
+  return protectedProjectConfigDirs.some(subdir =>
+    getProjectConfigPaths(getOriginalCwd(), subdir).some(configDir =>
+      pathInWorkingPath(filePath, configDir),
+    ),
   )
 }
 
@@ -452,11 +462,11 @@ function isDangerousFilePathToAutoEdit(path: string): boolean {
         continue
       }
 
-      // Special case: .claude/worktrees/ is a structural path (where Claude stores
+      // Special case: .freecode/worktrees/ is a structural path (where Claude stores
       // git worktrees), not a user-created dangerous directory. Skip the .claude
       // segment when it's followed by 'worktrees'. Any nested .claude directories
       // within the worktree (not followed by 'worktrees') are still blocked.
-      if (dir === '.claude') {
+      if (dir === LEGACY_PROJECT_CONFIG_DIR) {
         const nextSegment = pathSegments[i + 1]
         if (
           nextSegment &&
@@ -606,7 +616,7 @@ function hasSuspiciousWindowsPathPattern(path: string): boolean {
  *
  * This function performs comprehensive safety checks including:
  * - Suspicious Windows path patterns (NTFS streams, 8.3 names, long path prefixes, etc.)
- * - Claude config files (.claude/freecode.json, .claude/commands/, .claude/agents/)
+ * - Claude config files (.claude/.freecode settings and freecode files, commands/, agents/, skills/)
  * - MCP CLI state files (managed internally by Claude Code)
  * - Dangerous files (.bashrc, .gitconfig, .git/, .vscode/, .idea/, etc.)
  *
@@ -896,7 +906,7 @@ function patternWithRoot(
       root: homedir().normalize('NFC'),
     }
   } else if (pattern.startsWith(DIR_SEP)) {
-    // Patterns starting with / resolve relative to the directory where settings are stored (without .claude/)
+    // Patterns starting with / resolve relative to the directory where settings are stored (without the project config dir)
     return {
       relativePattern: pattern,
       root: rootPathForSource(source),
@@ -1238,7 +1248,7 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
   }
 
   // 1.5. Allow writes to internal editable paths (plan files, scratchpad)
-  // This MUST come before isDangerousFilePathToAutoEdit check since .claude is a dangerous directory
+  // This MUST come before isDangerousFilePathToAutoEdit check since project config dirs are dangerous directories
   const absolutePathForEdit = expandPath(path)
   const internalEditResult = checkEditableInternalPath(
     absolutePathForEdit,
@@ -1248,13 +1258,13 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
     return internalEditResult
   }
 
-  // 1.6. Check for .claude/** allow rules BEFORE safety checks
-  // This allows session-level permissions to bypass the safety blocks for .claude/
-  // We only allow this for session-level rules to prevent users from accidentally
-  // permanently granting broad access to their .claude/ folder.
+  // 1.6. Check for project config dir allow rules BEFORE safety checks
+  // This allows session-level permissions to bypass the safety blocks for project
+  // config dirs. We only allow this for session-level rules to prevent users from
+  // accidentally permanently granting broad access to these folders.
   //
   // matchingRuleForInput returns the first match across all sources. If the user
-  // also has a broader Edit(.claude) rule in userSettings (e.g. from sandbox
+  // also has a broader Edit(.claude/.freecode) rule in userSettings (e.g. from sandbox
   // write-allow conversion), that rule would be found first and its source check
   // below would fail. Scope the search to session-only rules so the dialog's
   // "allow Claude to edit its own settings for this session" option actually works.
@@ -1270,17 +1280,19 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
     'allow',
   )
   if (claudeFolderAllowRule) {
-    // Check if this rule is scoped under .claude/ (project or global).
-    // Accepts both the broad patterns ('/.claude/**', '~/.freecode/**') and
-    // narrowed ones like '/.claude/skills/my-skill/**' so users can grant
+    // Check if this rule is scoped under a project config dir or global config.
+    // Accepts broad patterns ('/.claude/**', '/.freecode/**', '~/.freecode/**')
+    // and narrowed ones like '/.freecode/skills/my-skill/**' so users can grant
     // session access to a single skill without also exposing freecode.json
     // or hooks/. The rule already matched the path via matchingRuleForInput;
     // this is an additional scope check. Reject '..' to prevent a rule like
-    // '/.claude/../**' from leaking this bypass outside .claude/.
+    // '/.claude/../**' from leaking this bypass outside the config dir.
     const ruleContent = claudeFolderAllowRule.ruleValue.ruleContent
     if (
       ruleContent &&
-      (ruleContent.startsWith(CLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2)) ||
+      (PROJECT_CONFIG_DIRS.some(projectConfigDir =>
+        ruleContent.startsWith(`/${projectConfigDir}/`),
+      ) ||
         ruleContent.startsWith(
           GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2),
         )) &&
@@ -1303,9 +1315,9 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
   // permission to edit protected files
   const safetyCheck = checkPathSafetyForAutoEdit(path, pathsToCheck)
   if (!safetyCheck.safe) {
-    // SDK suggestion: if under .claude/skills/{name}/, emit the narrowed
+    // SDK suggestion: if under a project config skills/{name}/, emit the narrowed
     // session-scoped addRules that step 1.6 will honor on the next call.
-    // Everything else (.claude/freecode.json, .git/, .vscode/, .idea/) falls
+    // Everything else (config freecode.json/settings.json, .git/, .vscode/, .idea/) falls
     // back to generateSuggestions — its setMode suggestion doesn't bypass
     // this check, but preserving it avoids a surprising empty array.
     const skillScope = getClaudeSkillScope(path)

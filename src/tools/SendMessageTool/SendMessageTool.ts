@@ -13,7 +13,6 @@ import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
 import { gracefulShutdown } from '../../utils/gracefulShutdown.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import type { BackendType } from '../../utils/swarm/backends/types.js'
@@ -38,8 +37,7 @@ import { SEND_MESSAGE_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, getPrompt } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
-const StructuredMessage = lazySchema(() =>
-  z.discriminatedUnion('type', [
+const StructuredMessage = z.discriminatedUnion('type', [
     z.object({
       type: z.literal('shutdown_request'),
       reason: z.string().optional(),
@@ -56,11 +54,9 @@ const StructuredMessage = lazySchema(() =>
       approve: semanticBoolean(),
       feedback: z.string().optional(),
     }),
-  ]),
-)
+  ])
 
-const inputSchema = lazySchema(() =>
-  z.object({
+const inputSchema = z.object({
     to: z
       .string()
       .describe(
@@ -74,11 +70,10 @@ const inputSchema = lazySchema(() =>
       ),
     message: z.union([
       z.string().describe('Plain text message content'),
-      StructuredMessage(),
+      StructuredMessage,
     ]),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
 export type Input = z.infer<InputSchema>
 
@@ -520,7 +515,7 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
     },
 
     get inputSchema(): InputSchema {
-      return inputSchema()
+      return inputSchema
     },
 
     isEnabled() {

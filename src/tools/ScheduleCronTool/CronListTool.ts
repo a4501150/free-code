@@ -3,7 +3,6 @@ import { buildTool, type ToolDef } from '../../Tool.js'
 import { cronToHuman } from '../../utils/cron.js'
 import { listAllCronTasks } from '../../utils/cronTasks.js'
 import { truncate } from '../../utils/format.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { getTeammateContext } from '../../utils/teammateContext.js'
 import {
   buildCronListPrompt,
@@ -14,11 +13,10 @@ import {
 } from './prompt.js'
 import { renderListResultMessage, renderListToolUseMessage } from './UI.js'
 
-const inputSchema = lazySchema(() => z.strictObject({}))
-type InputSchema = ReturnType<typeof inputSchema>
+const inputSchema = z.strictObject({})
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     jobs: z.array(
       z.object({
         id: z.string(),
@@ -29,19 +27,18 @@ const outputSchema = lazySchema(() =>
         durable: z.boolean().optional(),
       }),
     ),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 export type ListOutput = z.infer<OutputSchema>
 
 export const CronListTool = buildTool({
   name: CRON_LIST_TOOL_NAME,
   maxResultSizeChars: 100_000,
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   isEnabled() {
     return isKairosCronEnabled()

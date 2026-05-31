@@ -17,7 +17,6 @@ import {
 } from '../../utils/effort.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { parsePositiveIntFromFrontmatter } from '../../utils/frontmatterParser.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import {
   loadMarkdownFilesForSubdir,
@@ -57,18 +56,15 @@ export type AgentMcpServerSpec =
   | { [name: string]: McpServerConfig } // Inline definition as { name: config }
 
 // Zod schema for agent MCP server specs
-const AgentMcpServerSpecSchema = lazySchema(() =>
-  z.union([
+const AgentMcpServerSpecSchema = z.union([
     z.string(), // Reference by name
-    z.record(z.string(), McpServerConfigSchema()), // Inline as { name: config }
-  ]),
-)
+    z.record(z.string(), McpServerConfigSchema), // Inline as { name: config }
+  ])
 
 // Zod schemas for JSON agent validation
 // Note: HooksSchema is lazy so the circular chain AppState -> loadAgentsDir -> settings/types
 // is broken at module load time
-const AgentJsonSchema = lazySchema(() =>
-  z.object({
+const AgentJsonSchema = z.object({
     description: z.string().min(1, 'Description cannot be empty'),
     tools: z.array(z.string()).optional(),
     disallowedTools: z.array(z.string()).optional(),
@@ -81,20 +77,17 @@ const AgentJsonSchema = lazySchema(() =>
       .optional(),
     effort: z.union([z.enum(EFFORT_LEVELS), z.number().int()]).optional(),
     permissionMode: z.enum(PERMISSION_MODES).optional(),
-    mcpServers: z.array(AgentMcpServerSpecSchema()).optional(),
-    hooks: HooksSchema().optional(),
+    mcpServers: z.array(AgentMcpServerSpecSchema).optional(),
+    hooks: HooksSchema.optional(),
     maxTurns: z.number().int().positive().optional(),
     skills: z.array(z.string()).optional(),
     initialPrompt: z.string().optional(),
     memory: z.enum(['user', 'project', 'local']).optional(),
     background: z.boolean().optional(),
     isolation: z.enum(['worktree']).optional(),
-  }),
-)
+  })
 
-const AgentsJsonSchema = lazySchema(() =>
-  z.record(z.string(), AgentJsonSchema()),
-)
+const AgentsJsonSchema = z.record(z.string(), AgentJsonSchema)
 
 // Base type with common fields for all agents
 export type BaseAgentDefinition = {
@@ -417,7 +410,7 @@ function parseHooksFromFrontmatter(
     return undefined
   }
 
-  const result = HooksSchema().safeParse(frontmatter.hooks)
+  const result = HooksSchema.safeParse(frontmatter.hooks)
   if (!result.success) {
     logForDebugging(
       `Invalid hooks in agent '${agentType}': ${result.error.message}`,
@@ -436,7 +429,7 @@ export function parseAgentFromJson(
   source: SettingSource = 'flagSettings',
 ): CustomAgentDefinition | null {
   try {
-    const parsed = AgentJsonSchema().parse(definition)
+    const parsed = AgentJsonSchema.parse(definition)
 
     // Strip frontmatter fields whose backing feature is disabled at runtime.
     // Each emits one warn-level log so the user can see why their declaration
@@ -542,7 +535,7 @@ export function parseAgentsFromJson(
   source: SettingSource = 'flagSettings',
 ): AgentDefinition[] {
   try {
-    const parsed = AgentsJsonSchema().parse(agentsJson)
+    const parsed = AgentsJsonSchema.parse(agentsJson)
     return Object.entries(parsed)
       .map(([name, def]) => parseAgentFromJson(name, def, source))
       .filter((agent): agent is CustomAgentDefinition => agent !== null)
@@ -736,7 +729,7 @@ export function parseAgentFromMarkdown(
     if (Array.isArray(mcpServersRaw)) {
       mcpServers = mcpServersRaw
         .map(item => {
-          const result = AgentMcpServerSpecSchema().safeParse(item)
+          const result = AgentMcpServerSpecSchema.safeParse(item)
           if (result.success) {
             return result.data
           }

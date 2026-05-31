@@ -45,7 +45,7 @@ const MAX_JSON_PARSE_CHARS = 200_000
 const UNWRAP_MIN_STRING_LEN = 200
 
 export function renderToolUseMessage(
-  input: z.infer<ReturnType<typeof inputSchema>>,
+  input: z.infer<typeof inputSchema>,
   { verbose }: { verbose: boolean },
 ): React.ReactNode {
   if (Object.keys(input).length === 0) {

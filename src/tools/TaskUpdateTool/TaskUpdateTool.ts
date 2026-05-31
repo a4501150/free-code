@@ -7,7 +7,6 @@ import {
   executeTaskCompletedHooks,
   getTaskCompletedHookMessage,
 } from '../../utils/hooks.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import {
   blockTask,
   deleteTask,
@@ -29,7 +28,7 @@ import { VERIFICATION_AGENT_TYPE } from '../AgentTool/constants.js'
 import { TASK_UPDATE_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, PROMPT } from './prompt.js'
 
-const inputSchema = lazySchema(() => {
+const inputSchema = (() => {
   // 'deleted' is a write-only action verb on the update path — TaskSchema
   // (persisted shape) and TaskList/TaskGet only ever expose the three real
   // statuses, so it stays out of TASK_STATUSES. A single flat enum here keeps
@@ -65,11 +64,10 @@ const inputSchema = lazySchema(() => {
         'Metadata keys to merge into the task. Set a key to null to delete it.',
       ),
   })
-})
-type InputSchema = ReturnType<typeof inputSchema>
+})()
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     success: z.boolean(),
     taskId: z.string(),
     updatedFields: z.array(z.string()),
@@ -81,9 +79,8 @@ const outputSchema = lazySchema(() =>
       })
       .optional(),
     verificationNudgeNeeded: z.boolean().optional(),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
@@ -97,10 +94,10 @@ export const TaskUpdateTool = buildTool({
     return PROMPT
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   userFacingName() {
     return 'TaskUpdate'

@@ -244,7 +244,7 @@ export async function validatePluginManifest(
   // We call .strict() locally here even though the base schema is lenient —
   // the runtime load path silently strips unknown keys for resilience, but
   // this is a developer tool and authors running it want typo feedback.
-  const result = PluginManifestSchema().strict().safeParse(toValidate)
+  const result = PluginManifestSchema.strict().safeParse(toValidate)
 
   if (!result.success) {
     errors.push(...formatZodErrors(result.error))
@@ -400,9 +400,9 @@ export async function validateMarketplaceManifest(
   // schema with .strict() here. Note .strict() on the outer object does NOT
   // propagate into z.array() elements, so we also override the plugins array
   // with strict entries to catch typos inside individual plugin entries too.
-  const strictMarketplaceSchema = PluginMarketplaceSchema()
+  const strictMarketplaceSchema = PluginMarketplaceSchema
     .extend({
-      plugins: z.array(PluginMarketplaceEntrySchema().strict()),
+      plugins: z.array(PluginMarketplaceEntrySchema.strict()),
     })
     .strict()
   const result = strictMarketplaceSchema.safeParse(parsed)
@@ -690,7 +690,7 @@ async function validateHooksJson(filePath: string): Promise<ValidationResult> {
     }
   }
 
-  const result = PluginHooksSchema().safeParse(parsed)
+  const result = PluginHooksSchema.safeParse(parsed)
   if (!result.success) {
     return {
       success: false,

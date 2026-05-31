@@ -15,7 +15,8 @@ Guidance for agents working in this repository. Keep this file short: prefer lin
 Read these files instead of duplicating their contents here:
 
 - Settings/freecode schema and defaults: [src/utils/settings/types.ts](src/utils/settings/types.ts).
-- Settings migration: [src/utils/settings/migrateToFreecode.ts](src/utils/settings/migrateToFreecode.ts).
+- Settings migration: [src/utils/settings/claudeMigration.ts](src/utils/settings/claudeMigration.ts).
+- Project config path helpers: [src/utils/projectConfigPaths.ts](src/utils/projectConfigPaths.ts).
 - Provider registry and model lookup: [src/utils/model/providerRegistry.ts](src/utils/model/providerRegistry.ts).
 - Legacy provider migration: [src/utils/model/legacyProviderMigration.ts](src/utils/model/legacyProviderMigration.ts).
 - Agent model resolution and sentinels: [src/utils/model/agent.ts](src/utils/model/agent.ts).
@@ -45,7 +46,7 @@ Read these files instead of duplicating their contents here:
 
 ## Provider system rules
 
-- Provider configuration is driven by `freecode.json`; when providers are absent, legacy env/config migration synthesizes them. Read the source-of-truth files above for exact schemas and resolution order.
+- Provider configuration is driven by `freecode.json`. Read the source-of-truth files above for exact schemas and resolution order.
 - Keep adapters pure: no direct env reads and no auth imports inside provider adapters. Auth/config enters through `ProviderConfig` and injected callbacks; [src/services/api/client.ts](src/services/api/client.ts) owns the impure boundary.
 - Query capabilities through the registry instead of branching on provider identity. Special cases for Anthropic proxies, first-party features, and cache behavior belong in the provider/model layer.
 - Auth is independent of wire format. Do not assume a provider type implies a specific auth method.
@@ -87,9 +88,9 @@ The codex `/v1/responses` adapter intentionally handles llama.cpp event-order di
 
 `TasksV2Store` in [src/hooks/useTasksV2.ts](src/hooks/useTasksV2.ts) must use `getMainTaskListId()`, not `getTaskListId()`. Signals like `notifyTasksUpdated()` fire inside the subagent's `AsyncLocalStorage` scope, and `setTimeout` inherits that context — causing the main UI to fetch from the wrong task list directory.
 
-### Global config directory is `~/.freecode/`, env var is `FREECODE_CONFIG_DIR`
+### Project config uses both `.claude/` and `.freecode/` directories
 
-The global config directory is `~/.freecode/` (was `~/.claude/`). The env var override is `FREECODE_CONFIG_DIR` with `CLAUDE_CONFIG_DIR` as a backwards-compat fallback. Per-project `.claude/` directories are unchanged. On first interactive launch, users with an existing `~/.claude/` are prompted to migrate; to run the migration manually use `claude migrate-config`. Runtime state (projects, trust, userID, companion) now lives under the `state` key in `~/.freecode/freecode.json`. On startup, if `~/.claude.json` exists and `freecode.json` has no `state` key, the state fields are auto-migrated.
+Per-project config supports both `.claude/` (legacy) and `.freecode/` (preferred). When both exist, `.freecode/` takes precedence. Use helpers from [src/utils/projectConfigPaths.ts](src/utils/projectConfigPaths.ts) instead of hardcoding either directory name.
 
 ### ScrollBox children should not rely on percentage height
 

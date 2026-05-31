@@ -35,7 +35,6 @@ import {
   ShellError,
 } from '../../utils/errors.js'
 import { truncate } from '../../utils/format.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import { getPlatform } from '../../utils/platform.js'
@@ -269,8 +268,7 @@ const isBackgroundTasksDisabled =
   // eslint-disable-next-line custom-rules/no-process-env-top-level -- Intentional: schema must be defined at module load
   isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
 
-const fullInputSchema = lazySchema(() =>
-  z.strictObject({
+const fullInputSchema = z.strictObject({
     command: z.string().describe('The PowerShell command to execute'),
     timeout: semanticNumber(z.number().optional()).describe(
       `Optional timeout in milliseconds (max ${getMaxTimeoutMs()})`,
@@ -287,23 +285,19 @@ const fullInputSchema = lazySchema(() =>
     dangerouslyDisableSandbox: semanticBoolean(z.boolean().optional()).describe(
       'Set this to true to dangerously override sandbox mode and run commands without sandboxing.',
     ),
-  }),
-)
+  })
 
 // Conditionally remove run_in_background from schema when background tasks are disabled
-const inputSchema = lazySchema(() =>
-  isBackgroundTasksDisabled
-    ? fullInputSchema().omit({ run_in_background: true })
-    : fullInputSchema(),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+const inputSchema = isBackgroundTasksDisabled
+    ? fullInputSchema.omit({ run_in_background: true })
+    : fullInputSchema
+type InputSchema = typeof inputSchema
 
 // Use fullInputSchema for the type to always include run_in_background
 // (even when it's omitted from the schema, the code needs to handle it)
-export type PowerShellToolInput = z.infer<ReturnType<typeof fullInputSchema>>
+export type PowerShellToolInput = z.infer<typeof fullInputSchema>
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     stdout: z.string().describe('The standard output of the command'),
     stderr: z.string().describe('The standard error output of the command'),
     interrupted: z.boolean().describe('Whether the command was interrupted'),
@@ -343,9 +337,8 @@ const outputSchema = lazySchema(() =>
       .describe(
         'True if the command was auto-backgrounded by the assistant-mode blocking budget',
       ),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 export type Out = z.infer<OutputSchema>
 
 import type { PowerShellProgress } from '../../types/tools.js'
@@ -442,11 +435,11 @@ export const PowerShellTool = buildTool({
   },
 
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
 
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
 
   compactParamKeys: ['description', 'command'],

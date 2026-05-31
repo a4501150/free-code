@@ -1,6 +1,5 @@
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import {
   getTaskListId,
   listTasks,
@@ -9,23 +8,21 @@ import {
 import { TASK_LIST_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, getPrompt } from './prompt.js'
 
-const inputSchema = lazySchema(() => z.strictObject({}))
-type InputSchema = ReturnType<typeof inputSchema>
+const inputSchema = z.strictObject({})
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     tasks: z.array(
       z.object({
         id: z.string(),
         subject: z.string(),
-        status: TaskStatusSchema(),
+        status: TaskStatusSchema,
         owner: z.string().optional(),
         blockedBy: z.array(z.string()),
       }),
     ),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
@@ -39,10 +36,10 @@ export const TaskListTool = buildTool({
     return getPrompt()
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   userFacingName() {
     return 'TaskList'

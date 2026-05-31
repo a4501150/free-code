@@ -35,8 +35,8 @@ import type { ProcessUserInputContext } from './processUserInput/processUserInpu
 import { recordTranscript } from './sessionStorage.js'
 
 export type PermissionPromptTool = Tool<
-  ReturnType<typeof permissionToolInputSchema>,
-  ReturnType<typeof permissionToolOutputSchema>
+  typeof permissionToolInputSchema,
+  typeof permissionToolOutputSchema
 >
 
 // Small cache size for ask operations which typically access few files

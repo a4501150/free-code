@@ -50,7 +50,6 @@ import {
 } from '../../utils/fileHistory.js'
 import { truncate } from '../../utils/format.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { expandPath } from '../../utils/path.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import { exec } from '../../utils/Shell.js'
@@ -329,8 +328,7 @@ const isBackgroundTasksDisabled =
   // eslint-disable-next-line custom-rules/no-process-env-top-level -- Intentional: schema must be defined at module load
   isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
 
-const fullInputSchema = lazySchema(() =>
-  z.strictObject({
+const fullInputSchema = z.strictObject({
     command: z.string().describe('The command to execute'),
     timeout: semanticNumber(z.number().optional()).describe(
       `Optional timeout in milliseconds (max ${getMaxTimeoutMs()})`,
@@ -360,27 +358,24 @@ For commands that are harder to parse at a glance (piped commands, obscure flags
       })
       .optional()
       .describe('Internal: pre-computed sed edit result from preview'),
-  }),
-)
+  })
 
 // Always omit _simulatedSedEdit from the model-facing schema. It is an internal-only
 // field set by SedEditPermissionRequest after the user approves a sed edit preview.
 // Exposing it in the schema would let the model bypass permission checks and the
 // sandbox by pairing an innocuous command with an arbitrary file write.
 // Also conditionally remove run_in_background when background tasks are disabled.
-const inputSchema = lazySchema(() =>
-  isBackgroundTasksDisabled
-    ? fullInputSchema().omit({
+const inputSchema = isBackgroundTasksDisabled
+    ? fullInputSchema.omit({
         run_in_background: true,
         _simulatedSedEdit: true,
       })
-    : fullInputSchema().omit({ _simulatedSedEdit: true }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+    : fullInputSchema.omit({ _simulatedSedEdit: true })
+type InputSchema = typeof inputSchema
 
 // Use fullInputSchema for the type to always include run_in_background
 // (even when it's omitted from the schema, the code needs to handle it)
-export type BashToolInput = z.infer<ReturnType<typeof fullInputSchema>>
+export type BashToolInput = z.infer<typeof fullInputSchema>
 
 const COMMON_BACKGROUND_COMMANDS = [
   'npm',
@@ -428,8 +423,7 @@ function getCommandTypeForLogging(
   return 'other'
 }
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     stdout: z.string().describe('The standard output of the command'),
     stderr: z.string().describe('The standard error output of the command'),
     rawOutputPath: z
@@ -491,10 +485,9 @@ const outputSchema = lazySchema(() =>
       .describe(
         'Total size of the output in bytes (set when output is too large for inline)',
       ),
-  }),
-)
+  })
 
-type OutputSchema = ReturnType<typeof outputSchema>
+type OutputSchema = typeof outputSchema
 export type Out = z.infer<OutputSchema>
 
 // Re-export BashProgress from centralized types to break import cycles
@@ -672,16 +665,16 @@ export const BashTool = buildTool({
     }
   },
   isSearchOrReadCommand(input) {
-    const parsed = inputSchema().safeParse(input)
+    const parsed = inputSchema.safeParse(input)
     if (!parsed.success)
       return { isSearch: false, isRead: false, isList: false }
     return isSearchOrReadBashCommand(parsed.data.command)
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   compactParamKeys: ['description', 'command'],
   userFacingName(input) {

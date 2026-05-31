@@ -346,7 +346,7 @@ async function fetchPolicyLimits(
       }
     }
 
-    const parsed = PolicyLimitsResponseSchema().safeParse(response.data)
+    const parsed = PolicyLimitsResponseSchema.safeParse(response.data)
     if (!parsed.success) {
       logForDebugging(
         `Policy limits: Invalid response format - ${parsed.error.message}`,
@@ -390,7 +390,7 @@ function loadCachedRestrictions(): PolicyLimitsResponse['restrictions'] | null {
   try {
     const content = fsReadFileSync(getCachePath(), 'utf-8')
     const data = safeParseJSON(content, false)
-    const parsed = PolicyLimitsResponseSchema().safeParse(data)
+    const parsed = PolicyLimitsResponseSchema.safeParse(data)
     if (!parsed.success) {
       return null
     }

@@ -229,12 +229,12 @@ import {
   copyConfigDir,
   getFreecodeConfigDir,
   getLegacyClaudeConfigDir,
+  legacySettingsFileExists,
   migrateGlobalConfigToState,
   migrateToFreecodeDir,
   needsConfigDirMigration,
   needsGlobalConfigMigration,
-} from './utils/settings/migrateConfigDir.js'
-import { legacySettingsFileExists } from './utils/settings/migrateToFreecode.js'
+} from './utils/settings/claudeMigration.js'
 import {
   getInitialSettings,
   getManagedSettingsKeysForLogging,
@@ -931,9 +931,8 @@ async function run(): Promise<CommanderCommand> {
     }
 
     // Non-interactive users who still have only legacy ~/.freecode/settings.json
-    // get a one-line stderr nudge. The provider registry's in-memory legacy
-    // env-var synthesis keeps this invocation working; migration itself
-    // happens only through the interactive setup-screen dialog.
+    // get a one-line stderr nudge. Provider config is no longer synthesized
+    // from env vars — users must migrate or configure freecode.json.
     if (
       !process.stdout.isTTY &&
       !freecodeSettingsFileExists() &&
@@ -941,7 +940,7 @@ async function run(): Promise<CommanderCommand> {
     ) {
       process.stderr.write(
         'Note: legacy ~/.freecode/settings.json detected but no ~/.freecode/freecode.json. ' +
-          'Using env vars directly for this non-interactive run. ' +
+          'Provider config is not available until migration. ' +
           "Run 'claude' interactively once to migrate.\n",
       )
     }
@@ -1326,7 +1325,7 @@ async function run(): Promise<CommanderCommand> {
 
       // Log event for any single-word prompt
 
-      // Assistant mode: when .claude/freecode.json has assistant: true AND
+      // Assistant mode: when .freecode/freecode.json has assistant: true AND
       // the assistant gate is on, force brief on. Permission
       // mode is left to the user — settings defaultMode or --permission-mode
       // apply as normal. REPL-typed messages already default to 'next'
@@ -1336,10 +1335,10 @@ async function run(): Promise<CommanderCommand> {
       // kairosEnabled is computed once here and reused at the
       // getAssistantSystemPromptAddendum() call site further down.
       //
-      // Trust gate: .claude/freecode.json is attacker-controllable in an
+      // Trust gate: .freecode/freecode.json is attacker-controllable in an
       // untrusted clone. We run ~1000 lines before showSetupScreens() shows
       // the trust dialog, and by then we've already appended
-      // .claude/agents/assistant.md to the system prompt. Refuse to activate
+      // .freecode/agents/assistant.md to the system prompt. Refuse to activate
       // until the directory has been explicitly trusted.
       let kairosEnabled = false
       let assistantTeamContext:
@@ -2164,7 +2163,7 @@ async function run(): Promise<CommanderCommand> {
 
       if (getIsNonInteractiveSession()) {
         // Apply full merged settings env now (including project-scoped
-        // .claude/freecode.json PATH/GIT_DIR/GIT_WORK_TREE) so gitExe() and
+        // .freecode/freecode.json PATH/GIT_DIR/GIT_WORK_TREE) so gitExe() and
         // the git spawn below see it. Trust is implicit in -p mode; the
         // docstring at managedEnv.ts:96-97 says this applies "potentially
         // dangerous environment variables such as LD_PRELOAD, PATH" from all

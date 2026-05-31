@@ -130,7 +130,7 @@ Your response must be a JSON object matching one of the following schemas:
         }
       }
 
-      const parsed = hookResponseSchema().safeParse(json)
+      const parsed = hookResponseSchema.safeParse(json)
       if (!parsed.success) {
         logForDebugging(
           `Hooks: model response does not conform to expected schema: ${parsed.error.message}`,

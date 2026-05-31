@@ -596,7 +596,7 @@ export class StructuredIO {
             tool_use_id: toolUseID,
             agent_id: toolUseContext.agentId,
           },
-          permissionToolOutputSchema(),
+          permissionToolOutputSchema,
           hookAbortController.signal,
           requestId,
         ).then(result => ({ source: 'sdk' as const, result }))
@@ -671,7 +671,7 @@ export class StructuredIO {
               input,
               tool_use_id: toolUseID || undefined,
             },
-            hookJSONOutputSchema(),
+            hookJSONOutputSchema,
             abort,
           )
           return result
@@ -707,7 +707,7 @@ export class StructuredIO {
           elicitation_id: elicitationId,
           requested_schema: requestedSchema,
         },
-        SDKControlElicitationResponseSchema(),
+        SDKControlElicitationResponseSchema,
         signal,
       )
       return result
@@ -738,7 +738,7 @@ export class StructuredIO {
             tool_use_id: randomUUID(),
             description: `Allow network connection to ${hostPattern.host}?`,
           },
-          permissionToolOutputSchema(),
+          permissionToolOutputSchema,
         )
         return result.behavior === 'allow'
       } catch {

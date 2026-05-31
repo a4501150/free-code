@@ -1,11 +1,9 @@
 import { z } from 'zod/v4'
-import { lazySchema } from '../../utils/lazySchema.js'
-
 /**
  * Discriminated union of all LSP operations
  * Uses 'operation' as the discriminator field
  */
-export const lspToolInputSchema = lazySchema(() => {
+export const lspToolInputSchema = (() => {
   /**
    * Go to Definition operation
    * Finds the definition location of a symbol at the given position
@@ -188,12 +186,12 @@ export const lspToolInputSchema = lazySchema(() => {
     incomingCallsSchema,
     outgoingCallsSchema,
   ])
-})
+})()
 
 /**
  * TypeScript type for LSPTool input
  */
-export type LSPToolInput = z.infer<ReturnType<typeof lspToolInputSchema>>
+export type LSPToolInput = z.infer<typeof lspToolInputSchema>
 
 /**
  * Type guard to check if an operation is a valid LSP operation

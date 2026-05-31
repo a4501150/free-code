@@ -5,7 +5,6 @@ import {
 import { z } from 'zod/v4'
 import { ensureConnectedClient } from '../../services/mcp/client.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import {
   getBinaryBlobSavedMessage,
   persistBinaryContent,
@@ -19,16 +18,13 @@ import {
   userFacingName,
 } from './UI.js'
 
-export const inputSchema = lazySchema(() =>
-  z.object({
+export const inputSchema = z.object({
     server: z.string().describe('The MCP server name'),
     uri: z.string().describe('The resource URI to read'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-export const outputSchema = lazySchema(() =>
-  z.object({
+export const outputSchema = z.object({
     contents: z.array(
       z.object({
         uri: z.string().describe('Resource URI'),
@@ -40,9 +36,8 @@ export const outputSchema = lazySchema(() =>
           .describe('Path where binary blob content was saved'),
       }),
     ),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
@@ -65,10 +60,10 @@ export const ReadMcpResourceTool = buildTool({
     return PROMPT
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   async call(input, { options: { mcpClients } }) {
     const { server: serverName, uri } = input

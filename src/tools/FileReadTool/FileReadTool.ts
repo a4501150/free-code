@@ -41,7 +41,6 @@ import {
   type ImageDimensions,
   maybeResizeAndDownsampleImageBuffer,
 } from '../../utils/imageResizer.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { isAutoMemFile } from '../../utils/memoryFileDetection.js'
 import { createUserMessage } from '../../utils/messages.js'
 import { getMainLoopModel } from '../../utils/model/model.js'
@@ -215,8 +214,7 @@ function detectSessionFileType(
   return null
 }
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     file_path: z.string().describe('The absolute path to the file to read'),
     offset: semanticNumber(z.number().int().nonnegative().optional()).describe(
       'The line number to start reading from. Only provide if the file is too large to read at once',
@@ -230,13 +228,12 @@ const inputSchema = lazySchema(() =>
       .describe(
         `Page range for PDF files (e.g., "1-5", "3", "10-20"). Only applicable to PDF files. Maximum ${PDF_MAX_PAGES_PER_READ} pages per request.`,
       ),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
 export type Input = z.infer<InputSchema>
 
-const outputSchema = lazySchema(() => {
+const outputSchema = (() => {
   // Define the media types supported for images
   const imageMediaTypes = z.enum([
     'image/jpeg',
@@ -320,8 +317,8 @@ const outputSchema = lazySchema(() => {
       }),
     }),
   ])
-})
-type OutputSchema = ReturnType<typeof outputSchema>
+})()
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
@@ -341,10 +338,10 @@ export const FileReadTool = buildTool({
     return renderPromptTemplate(pickLineFormatInstruction(), maxSizeInstruction)
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   userFacingName,
   compactParamKeys: ['file_path', 'offset', 'limit', 'pages'],

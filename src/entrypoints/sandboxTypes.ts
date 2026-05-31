@@ -3,13 +3,10 @@
  */
 
 import { z } from 'zod/v4'
-import { lazySchema } from '../utils/lazySchema.js'
-
 /**
  * Network configuration schema for sandbox.
  */
-export const SandboxNetworkConfigSchema = lazySchema(() =>
-  z
+export const SandboxNetworkConfigSchema = z
     .object({
       allowedDomains: z.array(z.string()).optional(),
       allowManagedDomainsOnly: z
@@ -35,14 +32,12 @@ export const SandboxNetworkConfigSchema = lazySchema(() =>
       httpProxyPort: z.number().optional(),
       socksProxyPort: z.number().optional(),
     })
-    .optional(),
-)
+    .optional()
 
 /**
  * Filesystem configuration schema for sandbox.
  */
-export const SandboxFilesystemConfigSchema = lazySchema(() =>
-  z
+export const SandboxFilesystemConfigSchema = z
     .object({
       allowWrite: z
         .array(z.string())
@@ -79,14 +74,12 @@ export const SandboxFilesystemConfigSchema = lazySchema(() =>
           'When true (set in managed settings), only allowRead paths from policySettings are used.',
         ),
     })
-    .optional(),
-)
+    .optional()
 
 /**
  * Sandbox settings schema.
  */
-export const SandboxSettingsSchema = lazySchema(() =>
-  z
+export const SandboxSettingsSchema = z
     .object({
       enabled: z.boolean().optional(),
       failIfUnavailable: z
@@ -115,8 +108,8 @@ export const SandboxSettingsSchema = lazySchema(() =>
             'When false, the dangerouslyDisableSandbox parameter is completely ignored and all commands must run sandboxed. ' +
             'Default: true.',
         ),
-      network: SandboxNetworkConfigSchema(),
-      filesystem: SandboxFilesystemConfigSchema(),
+      network: SandboxNetworkConfigSchema,
+      filesystem: SandboxFilesystemConfigSchema,
       ignoreViolations: z.record(z.string(), z.array(z.string())).optional(),
       enableWeakerNestedSandbox: z.boolean().optional(),
       enableWeakerNetworkIsolation: z
@@ -137,16 +130,15 @@ export const SandboxSettingsSchema = lazySchema(() =>
         .optional()
         .describe('Custom ripgrep configuration for bundled ripgrep support'),
     })
-    .passthrough(),
-)
+    .passthrough()
 
 // Inferred types from schemas
-export type SandboxSettings = z.infer<ReturnType<typeof SandboxSettingsSchema>>
+export type SandboxSettings = z.infer<typeof SandboxSettingsSchema>
 export type SandboxNetworkConfig = NonNullable<
-  z.infer<ReturnType<typeof SandboxNetworkConfigSchema>>
+  z.infer<typeof SandboxNetworkConfigSchema>
 >
 export type SandboxFilesystemConfig = NonNullable<
-  z.infer<ReturnType<typeof SandboxFilesystemConfigSchema>>
+  z.infer<typeof SandboxFilesystemConfigSchema>
 >
 export type SandboxIgnoreViolations = NonNullable<
   SandboxSettings['ignoreViolations']

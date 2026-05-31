@@ -16,7 +16,6 @@ import { queryHaiku } from '../services/api/claude.js'
 import type { Message } from '../types/message.js'
 import { logForDebugging } from './debug.js'
 import { safeParseJSON } from './json.js'
-import { lazySchema } from './lazySchema.js'
 import { extractTextContent } from './messages.js'
 import { asSystemPrompt } from './systemPromptType.js'
 
@@ -69,7 +68,7 @@ Bad (too vague): {"title": "Code changes"}
 Bad (too long): {"title": "Investigate and fix the issue where the login button does not respond on mobile devices"}
 Bad (wrong case): {"title": "Fix Login Button On Mobile"}`
 
-const titleSchema = lazySchema(() => z.object({ title: z.string() }))
+const titleSchema = z.object({ title: z.string() })
 
 /**
  * Generate a sentence-case session title from a description or first message.
@@ -112,7 +111,7 @@ export async function generateSessionTitle(
 
     const text = extractTextContent(result.message.content)
 
-    const parsed = titleSchema().safeParse(safeParseJSON(text))
+    const parsed = titleSchema.safeParse(safeParseJSON(text))
     const title = parsed.success ? parsed.data.title.trim() || null : null
 
     return title

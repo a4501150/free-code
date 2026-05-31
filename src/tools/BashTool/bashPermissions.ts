@@ -1546,9 +1546,10 @@ export async function bashToolHasPermission(
       // SECURITY: Compute compoundCommandHasCd from the full command, NOT
       // hardcode false. The pipe-handling path previously passed `false` here,
       // disabling the cd+redirect check at pathValidation.ts:821. Appending
-      // `| echo done` to `cd .claude && echo x > freecode.json` routed through
-      // this path with compoundCommandHasCd=false, letting the redirect write
-      // to .claude/freecode.json without the cd+redirect block firing.
+      // `| echo done` to `cd .claude && echo x > freecode.json` (or the
+      // .freecode equivalent) routed through this path with
+      // compoundCommandHasCd=false, letting the redirect write to a project
+      // config freecode.json without the cd+redirect block firing.
       const pathResult = checkPathConstraints(
         input,
         getCwd(),
@@ -1677,7 +1678,7 @@ export async function bashToolHasPermission(
   }
 
   // Track if compound command contains cd for security validation
-  // This prevents bypassing path checks via: cd .claude/ && mv test.txt freecode.json
+  // This prevents bypassing path checks via: cd .claude/ (or .freecode/) && mv test.txt freecode.json
   const compoundCommandHasCd = cdCommands.length > 0
 
   // SECURITY: Block compound commands that have both cd AND git

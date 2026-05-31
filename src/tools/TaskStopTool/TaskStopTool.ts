@@ -2,25 +2,21 @@ import { z } from 'zod/v4'
 import type { TaskStateBase } from '../../Task.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { stopTask } from '../../tasks/stopTask.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { DESCRIPTION, TASK_STOP_TOOL_NAME } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     task_id: z
       .string()
       .optional()
       .describe('The ID of the background task to stop'),
     // shell_id is accepted for backward compatibility with the deprecated KillShell tool
     shell_id: z.string().optional().describe('Deprecated: use task_id instead'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     message: z.string().describe('Status message about the operation'),
     task_id: z.string().describe('The ID of the task that was stopped'),
     task_type: z.string().describe('The type of the task that was stopped'),
@@ -30,9 +26,8 @@ const outputSchema = lazySchema(() =>
       .string()
       .optional()
       .describe('The command or description of the stopped task'),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
@@ -44,10 +39,10 @@ export const TaskStopTool = buildTool({
   maxResultSizeChars: 100_000,
   userFacingName: () => 'Stop Background Task',
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   isConcurrencySafe() {
     return true

@@ -37,11 +37,13 @@ import {
   hasWorktreeCreateHook,
 } from './hooks.js'
 import { containsPathTraversal } from './path.js'
-import { getPlatform } from './platform.js'
 import {
-  getInitialSettings,
-  getRelativeSettingsFilePathForSource,
-} from './settings/settings.js'
+  getExistingOrPreferredProjectConfigPath,
+  getPreferredProjectConfigPath,
+  getProjectConfigPaths,
+} from './projectConfigPaths.js'
+import { getPlatform } from './platform.js'
+import { getInitialSettings } from './settings/settings.js'
 import { sleep } from './sleep.js'
 import { isInITerm2 } from './swarm/backends/detection.js'
 
@@ -51,7 +53,7 @@ const MAX_WORKTREE_SLUG_LENGTH = 64
 /**
  * Validates a worktree slug to prevent path traversal and directory escape.
  *
- * The slug is joined into `.claude/worktrees/<slug>` via path.join, which
+ * The slug is joined into `.freecode/worktrees/<slug>` via path.join, which
  * normalizes `..` segments — so `../../../target` would escape the worktrees
  * directory. Similarly, an absolute path (leading `/` or `C:\`) would discard
  * the prefix entirely.
@@ -202,14 +204,18 @@ const GIT_NO_PROMPT_ENV = {
 }
 
 function worktreesDir(repoRoot: string): string {
-  return join(repoRoot, '.claude', 'worktrees')
+  return getExistingOrPreferredProjectConfigPath(repoRoot, 'worktrees')
+}
+
+function worktreePathCandidates(repoRoot: string, slug: string): string[] {
+  return getProjectConfigPaths(repoRoot, 'worktrees', flattenSlug(slug))
 }
 
 // Flatten nested slugs (`user/feature` → `user+feature`) for both the branch
 // name and the directory path. Nesting in either location is unsafe:
 //   - git refs: `worktree-user` (file) vs `worktree-user/feature` (needs dir)
 //     is a D/F conflict that git rejects.
-//   - directory: `.claude/worktrees/user/feature/` lives inside the `user`
+//   - directory: `.freecode/worktrees/user/feature/` lives inside the `user`
 //     worktree; `git worktree remove` on the parent deletes children with
 //     uncommitted work.
 // `+` is valid in git branch names and filesystem paths but NOT in the
@@ -237,22 +243,29 @@ async function getOrCreateWorktree(
   slug: string,
   options?: { prNumber?: number },
 ): Promise<WorktreeCreateResult> {
-  const worktreePath = worktreePathFor(repoRoot, slug)
   const worktreeBranch = worktreeBranchName(slug)
 
-  // Fast resume path: if the worktree already exists skip fetch and creation.
-  // Read the .git pointer file directly (no subprocess, no upward walk) — a
-  // subprocess `rev-parse HEAD` burns ~15ms on spawn overhead even for a 2ms
-  // task, and the await yield lets background spawnSyncs pile on (seen at 55ms).
-  const existingHead = await readWorktreeHeadSha(worktreePath)
-  if (existingHead) {
-    return {
-      worktreePath,
-      worktreeBranch,
-      headCommit: existingHead,
-      existed: true,
+  // Fast resume path: if the worktree already exists in either project config
+  // directory, skip fetch and creation. Read the .git pointer file directly (no
+  // subprocess, no upward walk) — a subprocess `rev-parse HEAD` burns ~15ms on
+  // spawn overhead even for a 2ms task, and the await yield lets background
+  // spawnSyncs pile on (seen at 55ms).
+  for (const candidatePath of worktreePathCandidates(
+    repoRoot,
+    slug,
+  ).reverse()) {
+    const existingHead = await readWorktreeHeadSha(candidatePath)
+    if (existingHead) {
+      return {
+        worktreePath: candidatePath,
+        worktreeBranch,
+        headCommit: existingHead,
+        existed: true,
+      }
     }
   }
+
+  const worktreePath = worktreePathFor(repoRoot, slug)
 
   // New worktree: fetch base branch then add
   await mkdir(worktreesDir(repoRoot), { recursive: true })
@@ -511,18 +524,34 @@ async function performPostCreationSetup(
   repoRoot: string,
   worktreePath: string,
 ): Promise<void> {
-  // Copy settings.local.json to the worktree's .claude directory
+  // Copy freecode.local.json to the worktree's .freecode directory
   // This propagates local settings (which may contain secrets) to the worktree
-  const localSettingsRelativePath =
-    getRelativeSettingsFilePathForSource('localSettings')
-  const sourceSettingsLocal = join(repoRoot, localSettingsRelativePath)
+  const sourceSettingsCandidates = getProjectConfigPaths(
+    repoRoot,
+    'freecode.local.json',
+  ).reverse()
   try {
-    const destSettingsLocal = join(worktreePath, localSettingsRelativePath)
-    await mkdirRecursive(dirname(destSettingsLocal))
-    await copyFile(sourceSettingsLocal, destSettingsLocal)
-    logForDebugging(
-      `Copied settings.local.json to worktree: ${destSettingsLocal}`,
-    )
+    let sourceSettingsLocal: string | undefined
+    for (const candidatePath of sourceSettingsCandidates) {
+      try {
+        await stat(candidatePath)
+        sourceSettingsLocal = candidatePath
+        break
+      } catch {
+        // Try the next project config directory.
+      }
+    }
+    if (sourceSettingsLocal) {
+      const destSettingsLocal = getPreferredProjectConfigPath(
+        worktreePath,
+        'freecode.local.json',
+      )
+      await mkdirRecursive(dirname(destSettingsLocal))
+      await copyFile(sourceSettingsLocal, destSettingsLocal)
+      logForDebugging(
+        `Copied settings.local.json to worktree: ${destSettingsLocal}`,
+      )
+    }
   } catch (e: unknown) {
     const code = getErrnoCode(e)
     if (code !== 'ENOENT') {
@@ -885,8 +914,8 @@ export async function createAgentWorktree(slug: string): Promise<{
 
   // Fall back to git worktree
   // findCanonicalGitRoot (not findGitRoot) so agent worktrees always land in
-  // the main repo's .claude/worktrees/ even when spawned from inside a session
-  // worktree — otherwise they nest at <worktree>/.claude/worktrees/ and the
+  // the main repo's .freecode/worktrees/ even when spawned from inside a session
+  // worktree — otherwise they nest at <worktree>/.freecode/worktrees/ and the
   // periodic cleanup (which scans the canonical root) never finds them.
   const gitRoot = findCanonicalGitRoot(getCwd())
   if (!gitRoot) {
@@ -1024,64 +1053,70 @@ export async function cleanupStaleAgentWorktrees(
     return 0
   }
 
-  const dir = worktreesDir(gitRoot)
-  let entries: string[]
-  try {
-    entries = await readdir(dir)
-  } catch {
-    return 0
-  }
-
+  const dirs = getProjectConfigPaths(gitRoot, 'worktrees')
   const cutoffMs = cutoffDate.getTime()
   const currentPath = currentWorktreeSession?.worktreePath
   let removed = 0
 
-  for (const slug of entries) {
-    if (!EPHEMERAL_WORKTREE_PATTERNS.some(p => p.test(slug))) {
-      continue
-    }
-
-    const worktreePath = join(dir, slug)
-    if (currentPath === worktreePath) {
-      continue
-    }
-
-    let mtimeMs: number
+  for (const dir of dirs) {
+    let entries: string[]
     try {
-      mtimeMs = (await stat(worktreePath)).mtimeMs
+      entries = await readdir(dir)
     } catch {
       continue
     }
-    if (mtimeMs >= cutoffMs) {
-      continue
-    }
 
-    // Both checks must succeed with empty output. Non-zero exit (corrupted
-    // worktree, git not recognizing it, etc.) means skip — we don't know
-    // what's in there.
-    const [status, unpushed] = await Promise.all([
-      execFileNoThrowWithCwd(
-        gitExe(),
-        ['--no-optional-locks', 'status', '--porcelain', '-uno'],
-        { cwd: worktreePath },
-      ),
-      execFileNoThrowWithCwd(
-        gitExe(),
-        ['rev-list', '--max-count=1', 'HEAD', '--not', '--remotes'],
-        { cwd: worktreePath },
-      ),
-    ])
-    if (status.code !== 0 || status.stdout.trim().length > 0) {
-      continue
-    }
-    if (unpushed.code !== 0 || unpushed.stdout.trim().length > 0) {
-      continue
-    }
+    for (const slug of entries) {
+      if (!EPHEMERAL_WORKTREE_PATTERNS.some(p => p.test(slug))) {
+        continue
+      }
 
-    if (
-      await removeAgentWorktree(worktreePath, worktreeBranchName(slug), gitRoot)
-    ) {
-      removed++
+      const worktreePath = join(dir, slug)
+      if (currentPath === worktreePath) {
+        continue
+      }
+
+      let mtimeMs: number
+      try {
+        mtimeMs = (await stat(worktreePath)).mtimeMs
+      } catch {
+        continue
+      }
+      if (mtimeMs >= cutoffMs) {
+        continue
+      }
+
+      // Both checks must succeed with empty output. Non-zero exit (corrupted
+      // worktree, git not recognizing it, etc.) means skip — we don't know
+      // what's in there.
+      const [status, unpushed] = await Promise.all([
+        execFileNoThrowWithCwd(
+          gitExe(),
+          ['--no-optional-locks', 'status', '--porcelain', '-uno'],
+          { cwd: worktreePath },
+        ),
+        execFileNoThrowWithCwd(
+          gitExe(),
+          ['rev-list', '--max-count=1', 'HEAD', '--not', '--remotes'],
+          { cwd: worktreePath },
+        ),
+      ])
+      if (status.code !== 0 || status.stdout.trim().length > 0) {
+        continue
+      }
+      if (unpushed.code !== 0 || unpushed.stdout.trim().length > 0) {
+        continue
+      }
+
+      if (
+        await removeAgentWorktree(
+          worktreePath,
+          worktreeBranchName(slug),
+          gitRoot,
+        )
+      ) {
+        removed++
+      }
     }
   }
 
@@ -1251,6 +1286,7 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
         worktreeName,
         prNumber !== null ? { prNumber } : undefined,
       )
+      worktreeDir = result.worktreePath
       if (!result.existed) {
         // biome-ignore lint/suspicious/noConsole: intentional console output
         console.log(

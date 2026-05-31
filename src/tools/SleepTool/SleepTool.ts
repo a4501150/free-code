@@ -8,13 +8,11 @@
 
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { isProactiveActive } from '../../proactive/index.js'
 import { hasCommandsInQueue } from '../../utils/messageQueueManager.js'
 import { SLEEP_TOOL_NAME, DESCRIPTION, SLEEP_TOOL_PROMPT } from './prompt.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     duration_seconds: z
       .number()
       .min(1)
@@ -24,18 +22,15 @@ const inputSchema = lazySchema(() =>
       .describe(
         'How long to sleep in seconds (1-3600). Defaults to 60 seconds.',
       ),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     slept: z.boolean(),
     duration: z.number(),
     interrupted: z.boolean(),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 type Output = z.infer<OutputSchema>
 
@@ -93,11 +88,11 @@ export const SleepTool = buildTool({
   },
 
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
 
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
 
   userFacingName() {

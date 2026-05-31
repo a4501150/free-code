@@ -5,25 +5,21 @@ import {
 } from '../../services/mcp/client.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { errorMessage } from '../../utils/errors.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { logMCPError } from '../../utils/log.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { isOutputLineTruncated } from '../../utils/terminal.js'
 import { DESCRIPTION, LIST_MCP_RESOURCES_TOOL_NAME, PROMPT } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
-const inputSchema = lazySchema(() =>
-  z.object({
+const inputSchema = z.object({
     server: z
       .string()
       .optional()
       .describe('Optional server name to filter resources by'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.array(
+const outputSchema = z.array(
     z.object({
       uri: z.string().describe('Resource URI'),
       name: z.string().describe('Resource name'),
@@ -31,9 +27,8 @@ const outputSchema = lazySchema(() =>
       description: z.string().optional().describe('Resource description'),
       server: z.string().describe('Server that provides this resource'),
     }),
-  ),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  )
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
@@ -56,10 +51,10 @@ export const ListMcpResourcesTool = buildTool({
     return PROMPT
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   async call(input, { options: { mcpClients } }) {
     const { server: targetServer } = input

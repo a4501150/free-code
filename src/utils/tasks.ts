@@ -1,13 +1,11 @@
 import { mkdir, readdir, readFile, rmdir, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
-import { z } from 'zod/v4'
 import { getSessionId } from '../bootstrap/state.js'
 import { getAgentContext, isSubagentContext } from './agentContext.js'
 import { uniq } from './array.js'
 import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir, getTeamsDir } from './envUtils.js'
 import { errorMessage, getErrnoCode } from './errors.js'
-import { lazySchema } from './lazySchema.js'
 import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
 import { createSignal } from './signal.js'
@@ -67,27 +65,14 @@ export function notifyTasksUpdated(): void {
   }
 }
 
-export const TASK_STATUSES = ['pending', 'in_progress', 'completed'] as const
-
-export const TaskStatusSchema = lazySchema(() =>
-  z.enum(['pending', 'in_progress', 'completed']),
-)
-export type TaskStatus = z.infer<ReturnType<typeof TaskStatusSchema>>
-
-export const TaskSchema = lazySchema(() =>
-  z.object({
-    id: z.string(),
-    subject: z.string(),
-    description: z.string(),
-    activeForm: z.string().optional(), // present continuous form for spinner (e.g., "Running tests")
-    owner: z.string().optional(), // agent ID
-    status: TaskStatusSchema(),
-    blocks: z.array(z.string()), // task IDs this task blocks
-    blockedBy: z.array(z.string()), // task IDs that block this task
-    metadata: z.record(z.string(), z.unknown()).optional(), // arbitrary metadata
-  }),
-)
-export type Task = z.infer<ReturnType<typeof TaskSchema>>
+import { TaskSchema, type Task } from './taskSchemas.js'
+export {
+  TASK_STATUSES,
+  TaskStatusSchema,
+  type TaskStatus,
+  TaskSchema,
+  type Task,
+} from './taskSchemas.js'
 
 // High water mark file name - stores the maximum task ID ever assigned
 const HIGH_WATER_MARK_FILE = '.highwatermark'
@@ -348,7 +333,7 @@ export async function getTask(
     const content = await readFile(path, 'utf-8')
     const data = jsonParse(content) as { status?: string }
 
-    const parsed = TaskSchema().safeParse(data)
+    const parsed = TaskSchema.safeParse(data)
     if (!parsed.success) {
       logForDebugging(
         `[Tasks] Task ${taskId} failed schema validation: ${parsed.error.message}`,

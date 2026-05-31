@@ -21,7 +21,7 @@ that the next agent can act on it without rerunning.
 
 1. Look for project-root verifier skills first:
    \`\`\`
-   ls .claude/skills | grep -i verifier || true
+   ls .freecode/skills .claude/skills 2>/dev/null | grep -i verifier || true
    find . -maxdepth 3 -type d -name 'verifier-*' 2>/dev/null
    \`\`\`
    Each matching directory's \`SKILL.md\` is the authoritative recipe for that
@@ -114,7 +114,7 @@ Always, even on failure:
 If verification fails because the verifier skill itself is outdated (wrong dev
 server command, changed port, different ready signal, moved entry point) — not
 because the feature under test is broken — offer to edit the matching
-\`.claude/skills/verifier-*/SKILL.md\` file with a minimal, targeted fix.
+\`.freecode/skills/verifier-*/SKILL.md\` file with a minimal, targeted fix.
 Confirm with the user before writing.
 `
 

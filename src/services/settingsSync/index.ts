@@ -180,7 +180,7 @@ async function fetchUserSettingsOnce(): Promise<SettingsSyncFetchResult> {
       }
     }
 
-    const parsed = UserSyncDataSchema().safeParse(response.data)
+    const parsed = UserSyncDataSchema.safeParse(response.data)
     if (!parsed.success) {
       logForDiagnosticsNoPII('warn', 'settings_sync_fetch_invalid_format')
       return {

@@ -7,7 +7,6 @@ import { buildTool, type ToolDef } from '../../Tool.js'
 import { clearMemoryFileCaches } from '../../utils/claudemd.js'
 import { getCwd } from '../../utils/cwd.js'
 import { findCanonicalGitRoot } from '../../utils/git.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { getPlanSlug, getPlansDirectory } from '../../utils/plans.js'
 import { setCwd } from '../../utils/Shell.js'
 import { saveWorktreeState } from '../../utils/sessionStorage.js'
@@ -20,8 +19,7 @@ import { ENTER_WORKTREE_TOOL_NAME } from './constants.js'
 import { getEnterWorktreeToolPrompt } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     name: z
       .string()
       .superRefine((s, ctx) => {
@@ -35,18 +33,15 @@ const inputSchema = lazySchema(() =>
       .describe(
         'Optional name for the worktree. Each "/"-separated segment may contain only letters, digits, dots, underscores, and dashes; max 64 chars total. A random name is generated if not provided.',
       ),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     worktreePath: z.string(),
     worktreeBranch: z.string().optional(),
     message: z.string(),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 export type Output = z.infer<OutputSchema>
 
 export const EnterWorktreeTool: Tool<InputSchema, Output> = buildTool({
@@ -59,10 +54,10 @@ export const EnterWorktreeTool: Tool<InputSchema, Output> = buildTool({
     return getEnterWorktreeToolPrompt()
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   userFacingName() {
     return 'Creating worktree'

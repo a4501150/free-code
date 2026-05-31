@@ -1,7 +1,6 @@
 import type { Tool, ToolUseContext } from 'src/Tool.js'
 import z from 'zod/v4'
 import { logForDebugging } from '../debug.js'
-import { lazySchema } from '../lazySchema.js'
 import type {
   PermissionDecision,
   PermissionDecisionReason,
@@ -12,8 +11,7 @@ import {
 } from './PermissionUpdate.js'
 import { permissionUpdateSchema } from './PermissionUpdateSchema.js'
 
-export const inputSchema = lazySchema(() =>
-  z.object({
+export const inputSchema = z.object({
     tool_name: z
       .string()
       .describe('The name of the tool requesting permission'),
@@ -22,10 +20,9 @@ export const inputSchema = lazySchema(() =>
       .string()
       .optional()
       .describe('The unique tool use request ID'),
-  }),
-)
+  })
 
-export type Input = z.infer<ReturnType<typeof inputSchema>>
+export type Input = z.infer<typeof inputSchema>
 
 // Zod schema for permission results
 // This schema is used to validate the MCP permission prompt tool
@@ -34,21 +31,18 @@ export type Input = z.infer<ReturnType<typeof inputSchema>>
 // Matches PermissionDecisionClassificationSchema in structuredProtocol/coreSchemas.ts.
 // Malformed values fall through to undefined (same pattern as updatedPermissions
 // below) so a bad string from a structured host doesn't reject the whole decision.
-const decisionClassificationField = lazySchema(() =>
-  z
+const decisionClassificationField = z
     .enum(['user_temporary', 'user_permanent', 'user_reject'])
     .optional()
-    .catch(undefined),
-)
+    .catch(undefined)
 
-const PermissionAllowResultSchema = lazySchema(() =>
-  z.object({
+const PermissionAllowResultSchema = z.object({
     behavior: z.literal('allow'),
     updatedInput: z.record(z.string(), z.unknown()),
     // Structured hosts may send malformed entries; fall back to undefined rather
     // than rejecting the entire allow decision (anthropics/claude-code#29440)
     updatedPermissions: z
-      .array(permissionUpdateSchema())
+      .array(permissionUpdateSchema)
       .optional()
       .catch(ctx => {
         logForDebugging(
@@ -58,25 +52,20 @@ const PermissionAllowResultSchema = lazySchema(() =>
         return undefined
       }),
     toolUseID: z.string().optional(),
-    decisionClassification: decisionClassificationField(),
-  }),
-)
+    decisionClassification: decisionClassificationField,
+  })
 
-const PermissionDenyResultSchema = lazySchema(() =>
-  z.object({
+const PermissionDenyResultSchema = z.object({
     behavior: z.literal('deny'),
     message: z.string(),
     interrupt: z.boolean().optional(),
     toolUseID: z.string().optional(),
-    decisionClassification: decisionClassificationField(),
-  }),
-)
+    decisionClassification: decisionClassificationField,
+  })
 
-export const outputSchema = lazySchema(() =>
-  z.union([PermissionAllowResultSchema(), PermissionDenyResultSchema()]),
-)
+export const outputSchema = z.union([PermissionAllowResultSchema, PermissionDenyResultSchema])
 
-export type Output = z.infer<ReturnType<typeof outputSchema>>
+export type Output = z.infer<typeof outputSchema>
 
 /**
  * Normalizes the result of a permission prompt tool to a PermissionDecision.

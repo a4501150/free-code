@@ -6,7 +6,6 @@ import {
 } from '../../bootstrap/state.js'
 import type { Tool } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { applyPermissionUpdate } from '../../utils/permissions/PermissionUpdate.js'
 import { prepareContextForPlanMode } from '../../utils/permissions/permissionSetup.js'
 import { isPlanModeInterviewPhaseEnabled } from '../../utils/planMode.js'
@@ -18,19 +17,15 @@ import {
   renderToolUseRejectedMessage,
 } from './UI.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     // No parameters needed
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     message: z.string().describe('Confirmation that plan mode was entered'),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 export type Output = z.infer<OutputSchema>
 
 export const EnterPlanModeTool: Tool<InputSchema, Output> = buildTool({
@@ -43,10 +38,10 @@ export const EnterPlanModeTool: Tool<InputSchema, Output> = buildTool({
     return getEnterPlanModeToolPrompt()
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   userFacingName() {
     return ''

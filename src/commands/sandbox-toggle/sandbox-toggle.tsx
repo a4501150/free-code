@@ -100,7 +100,7 @@ export async function call(
       const localSettingsPath = getSettingsFilePathForSource('localSettings')
       const relativePath = localSettingsPath
         ? relative(getCwdState(), localSettingsPath)
-        : '.claude/freecode.local.json'
+        : '.freecode/freecode.local.json'
 
       const message = color(
         'success',

@@ -4,7 +4,6 @@ import type { AssistantMessage, Message } from '../../types/message.js'
 import { logForDebugging } from '../debug.js'
 import { getInitialSettings } from '../settings/settings.js'
 import { errorMessage } from '../errors.js'
-import { lazySchema } from '../lazySchema.js'
 import { logError } from '../log.js'
 import { getMainLoopModel } from '../model/model.js'
 import { sideQuery } from '../sideQuery.js'
@@ -73,14 +72,12 @@ const EXPLAIN_COMMAND_TOOL = {
 }
 
 // Zod schema for parsing and validating the response
-const RiskAssessmentSchema = lazySchema(() =>
-  z.object({
+const RiskAssessmentSchema = z.object({
     riskLevel: z.enum(['LOW', 'MEDIUM', 'HIGH']),
     explanation: z.string(),
     reasoning: z.string(),
     risk: z.string(),
-  }),
-)
+  })
 
 function formatToolInput(input: unknown): string {
   if (typeof input === 'string') {
@@ -195,7 +192,7 @@ Explain this command in context.`
       logForDebugging(
         `Permission explainer: tool input: ${jsonStringify(toolUseBlock.input).slice(0, 500)}`,
       )
-      const result = RiskAssessmentSchema().safeParse(toolUseBlock.input)
+      const result = RiskAssessmentSchema.safeParse(toolUseBlock.input)
 
       if (result.success) {
         const explanation: PermissionExplanation = {

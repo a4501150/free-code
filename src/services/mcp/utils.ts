@@ -301,9 +301,9 @@ export function getScopeLabel(scope: ConfigScope): string {
 export function ensureConfigScope(scope?: string): ConfigScope {
   if (!scope) return 'local'
 
-  if (!ConfigScopeSchema().options.includes(scope as ConfigScope)) {
+  if (!ConfigScopeSchema.options.includes(scope as ConfigScope)) {
     throw new Error(
-      `Invalid scope: ${scope}. Must be one of: ${ConfigScopeSchema().options.join(', ')}`,
+      `Invalid scope: ${scope}. Must be one of: ${ConfigScopeSchema.options.join(', ')}`,
     )
   }
 
@@ -378,7 +378,7 @@ export function getProjectMcpServerStatus(
   // the user has explicitly chosen to bypass all permission checks.
   // SECURITY: We intentionally only check skipDangerousModePermissionPrompt via
   // hasSkipDangerousModePermissionPrompt(), which reads from userSettings/localSettings/
-  // flagSettings/policySettings but NOT projectSettings (repo-level .claude/freecode.json).
+  // flagSettings/policySettings but NOT projectSettings (repo-level .freecode/freecode.json).
   // This is intentional: a repo should not be able to accept the bypass dialog on behalf of
   // users. We also do NOT check getSessionBypassPermissionsMode() here because
   // sessionBypassPermissionsMode can be set from project settings before the dialog is shown,

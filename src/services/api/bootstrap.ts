@@ -8,14 +8,12 @@ import { z } from 'zod'
 import { getOauthConfig, OAUTH_BETA_HEADER } from '../../constants/oauth.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { withOAuth401Retry } from '../../utils/http.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
 import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
 
-const bootstrapResponseSchema = lazySchema(() =>
-  z.object({
+const bootstrapResponseSchema = z.object({
     client_data: z.record(z.string(), z.unknown()).nullish(),
     additional_model_options: z
       .array(
@@ -32,10 +30,9 @@ const bootstrapResponseSchema = lazySchema(() =>
           })),
       )
       .nullish(),
-  }),
-)
+  })
 
-type BootstrapResponse = z.infer<ReturnType<typeof bootstrapResponseSchema>>
+type BootstrapResponse = z.infer<typeof bootstrapResponseSchema>
 
 async function fetchBootstrapAPI(): Promise<BootstrapResponse | null> {
   if (isEssentialTrafficOnly()) {
@@ -93,7 +90,7 @@ async function fetchBootstrapAPI(): Promise<BootstrapResponse | null> {
         },
         timeout: 5000,
       })
-      const parsed = bootstrapResponseSchema().safeParse(response.data)
+      const parsed = bootstrapResponseSchema.safeParse(response.data)
       if (!parsed.success) {
         logForDebugging(
           `[Bootstrap] Response failed validation: ${parsed.error.message}`,

@@ -32,6 +32,7 @@ import {
 import { logForDebugging } from '../debug.js'
 import { expandPath } from '../path.js'
 import { getPlatform, type Platform } from '../platform.js'
+import { PROJECT_CONFIG_DIRS } from '../projectConfigPaths.js'
 import { settingsChangeDetector } from '../settings/changeDetector.js'
 import { SETTING_SOURCES, type SettingSource } from '../settings/constants.js'
 import { getManagedSettingsDropInDir } from '../settings/managedPath.js'
@@ -227,33 +228,50 @@ export function convertToSandboxRuntimeConfig(
   const denyRead: string[] = []
   const allowRead: string[] = []
 
-  // Always deny writes to freecode.json files to prevent sandbox escape
-  // This blocks settings in the original working directory (where Claude Code started)
+  // Always deny writes to settings files to prevent sandbox escape.
+  const cwd = getCwdState()
+  const originalCwd = getOriginalCwd()
+  const activeProjectDirs =
+    cwd === originalCwd ? [originalCwd] : [originalCwd, cwd]
   const settingsPaths = SETTING_SOURCES.map(source =>
     getSettingsFilePathForSource(source),
   ).filter((p): p is string => p !== undefined)
   denyWrite.push(...settingsPaths)
   denyWrite.push(getManagedSettingsDropInDir())
 
-  // Also block settings files in the current working directory if it differs from original
-  // This handles the case where the user has cd'd to a different directory
-  const cwd = getCwdState()
-  const originalCwd = getOriginalCwd()
-  if (cwd !== originalCwd) {
-    denyWrite.push(resolve(cwd, '.claude', 'settings.json'))
-    denyWrite.push(resolve(cwd, '.claude', 'settings.local.json'))
-    denyWrite.push(resolve(cwd, '.claude', 'freecode.json'))
-    denyWrite.push(resolve(cwd, '.claude', 'freecode.local.json'))
+  // Also block project settings files in the original and current working
+  // directories. This covers legacy and preferred project config dirs, and the
+  // case where the user has cd'd to a different directory.
+  const projectSettingsFileNames = [
+    'settings.json',
+    'settings.local.json',
+    'freecode.json',
+    'freecode.local.json',
+  ] as const
+  for (const projectDir of activeProjectDirs) {
+    for (const projectConfigDir of PROJECT_CONFIG_DIRS) {
+      for (const fileName of projectSettingsFileNames) {
+        denyWrite.push(resolve(projectDir, projectConfigDir, fileName))
+      }
+    }
   }
 
-  // Block writes to .claude/skills in both original and current working directories.
-  // The sandbox-runtime's getDangerousDirectories() protects .claude/commands and
-  // .claude/agents but not .claude/skills. Skills have the same privilege level
-  // (auto-discovered, auto-loaded, full Claude capabilities) so they need the
-  // same OS-level sandbox protection.
-  denyWrite.push(resolve(originalCwd, '.claude', 'skills'))
-  if (cwd !== originalCwd) {
-    denyWrite.push(resolve(cwd, '.claude', 'skills'))
+  // Block writes to project config directories that can define executable behavior
+  // in both original and current working directories. These files are
+  // auto-discovered, auto-loaded, or otherwise trusted by Claude, so they need
+  // OS-level sandbox protection alongside the app-level permission checks.
+  const privilegedProjectConfigSubdirs = [
+    'commands',
+    'agents',
+    'skills',
+  ] as const
+  for (const projectConfigDir of PROJECT_CONFIG_DIRS) {
+    for (const subdir of privilegedProjectConfigSubdirs) {
+      denyWrite.push(resolve(originalCwd, projectConfigDir, subdir))
+      if (cwd !== originalCwd) {
+        denyWrite.push(resolve(cwd, projectConfigDir, subdir))
+      }
+    }
   }
 
   // SECURITY: Git's is_git_directory() treats cwd as a bare repo if it has
@@ -268,7 +286,7 @@ export function convertToSandboxRuntimeConfig(
   // unsandboxed git runs; inside the command, git is itself sandboxed.
   bareGitRepoScrubPaths.length = 0
   const bareGitRepoFiles = ['HEAD', 'objects', 'refs', 'hooks', 'config']
-  for (const dir of cwd === originalCwd ? [originalCwd] : [originalCwd, cwd]) {
+  for (const dir of activeProjectDirs) {
     for (const gitFile of bareGitRepoFiles) {
       const p = resolve(dir, gitFile)
       try {

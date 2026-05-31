@@ -18,7 +18,7 @@ import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { createLoggingTest } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -52,6 +52,24 @@ async function runHeadless(options: HeadlessOptions): Promise<HeadlessResult> {
   const tempCwd = await mkdtemp(join(tmpdir(), 'claude-headless-cwd-'))
 
   try {
+    // Write freecode.json with explicit provider config (legacy env-var
+    // synthesis was removed — providers must be configured in settings).
+    const apiKey = 'test-key-headless-12345'
+    await writeFile(
+      join(tempConfig, 'freecode.json'),
+      JSON.stringify({
+        providers: {
+          'test-anthropic': {
+            type: 'anthropic',
+            baseUrl: options.serverUrl,
+            auth: { active: 'apiKey', apiKey: { key: apiKey } },
+            models: [{ id: 'claude-sonnet-4-20250514' }],
+          },
+        },
+        defaultModel: 'test-anthropic:claude-sonnet-4-20250514',
+      }),
+    )
+
     // Headless --print mode needs --bare to avoid interactive init flows
     // that cause early exit. --bare + --dangerously-skip-permissions for
     // headless output format testing (no interactive terminal to approve).
@@ -75,8 +93,9 @@ async function runHeadless(options: HeadlessOptions): Promise<HeadlessResult> {
 
     const env: Record<string, string> = {
       PATH: process.env.PATH ?? '/usr/bin:/bin:/usr/local/bin',
-      ANTHROPIC_API_KEY: 'test-key-headless-12345',
+      ANTHROPIC_API_KEY: apiKey,
       ANTHROPIC_BASE_URL: options.serverUrl,
+      FREECODE_CONFIG_DIR: tempConfig,
       CLAUDE_CONFIG_DIR: tempConfig,
       HOME: tempHome,
       CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',

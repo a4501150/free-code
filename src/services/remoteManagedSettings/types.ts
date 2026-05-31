@@ -1,5 +1,4 @@
 import { z } from 'zod/v4'
-import { lazySchema } from '../../utils/lazySchema.js'
 import type { SettingsJson } from '../../utils/settings/types.js'
 
 /**
@@ -7,16 +6,14 @@ import type { SettingsJson } from '../../utils/settings/types.js'
  * Note: Uses permissive z.record() instead of SettingsSchema to avoid circular dependency.
  * Full validation is performed in index.ts after parsing using SettingsSchema.safeParse().
  */
-export const RemoteManagedSettingsResponseSchema = lazySchema(() =>
-  z.object({
+export const RemoteManagedSettingsResponseSchema = z.object({
     uuid: z.string(), // Settings UUID
     checksum: z.string(),
     settings: z.record(z.string(), z.unknown()) as z.ZodType<SettingsJson>,
-  }),
-)
+  })
 
 export type RemoteManagedSettingsResponse = z.infer<
-  ReturnType<typeof RemoteManagedSettingsResponseSchema>
+  typeof RemoteManagedSettingsResponseSchema
 >
 
 /**

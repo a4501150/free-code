@@ -95,10 +95,10 @@ export const FileEditTool = buildTool({
     return summary ? `Editing ${summary}` : 'Editing file'
   },
   get inputSchema() {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema() {
-    return outputSchema()
+    return outputSchema
   },
   toAutoClassifierInput(input) {
     return `${input.file_path}: ${input.new_string}`
@@ -555,7 +555,7 @@ export const FileEditTool = buildTool({
       content: `The file ${filePath} has been updated successfully${modifiedNote}.`,
     }
   },
-} satisfies ToolDef<ReturnType<typeof inputSchema>, FileEditOutput>)
+} satisfies ToolDef<typeof inputSchema, FileEditOutput>)
 
 // --
 

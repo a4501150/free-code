@@ -15,6 +15,10 @@ import { registerCleanup } from '../cleanupRegistry.js'
 import { logForDebugging } from '../debug.js'
 import { getFsImplementation } from '../fsOperations.js'
 import { executeConfigChangeHooks, hasBlockingResult } from '../hooks.js'
+import {
+  getProjectConfigPaths,
+  getProjectConfigRelativePaths,
+} from '../projectConfigPaths.js'
 import { createSignal } from '../signal.js'
 
 /**
@@ -190,9 +194,8 @@ async function getWatchablePaths(): Promise<string[]> {
     }
   }
 
-  // Project skills directory (.claude/skills)
-  const projectSkillsPath = getSkillsPath('projectSettings', 'skills')
-  if (projectSkillsPath) {
+  // Project skills directories (.claude/skills and .freecode/skills)
+  for (const projectSkillsPath of getProjectConfigRelativePaths('skills')) {
     try {
       // For project settings, resolve to absolute path
       const absolutePath = platformPath.resolve(projectSkillsPath)
@@ -203,9 +206,8 @@ async function getWatchablePaths(): Promise<string[]> {
     }
   }
 
-  // Project commands directory (.claude/commands)
-  const projectCommandsPath = getSkillsPath('projectSettings', 'commands')
-  if (projectCommandsPath) {
+  // Project commands directories (.claude/commands and .freecode/commands)
+  for (const projectCommandsPath of getProjectConfigRelativePaths('commands')) {
     try {
       // For project settings, resolve to absolute path
       const absolutePath = platformPath.resolve(projectCommandsPath)
@@ -218,12 +220,13 @@ async function getWatchablePaths(): Promise<string[]> {
 
   // Additional directories (--add-dir) skills
   for (const dir of getAdditionalDirectoriesForClaudeMd()) {
-    const additionalSkillsPath = platformPath.join(dir, '.claude', 'skills')
-    try {
-      await fs.stat(additionalSkillsPath)
-      paths.push(additionalSkillsPath)
-    } catch {
-      // Path doesn't exist, skip it
+    for (const additionalSkillsPath of getProjectConfigPaths(dir, 'skills')) {
+      try {
+        await fs.stat(additionalSkillsPath)
+        paths.push(additionalSkillsPath)
+      } catch {
+        // Path doesn't exist, skip it
+      }
     }
   }
 

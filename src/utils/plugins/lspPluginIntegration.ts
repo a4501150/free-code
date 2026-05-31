@@ -66,7 +66,7 @@ export async function loadPluginLspServers(
     const content = await readFile(lspJsonPath, 'utf-8')
     const parsed = jsonParse(content)
     const result = z
-      .record(z.string(), LspServerConfigSchema())
+      .record(z.string(), LspServerConfigSchema)
       .safeParse(parsed)
 
     if (result.success) {
@@ -162,7 +162,7 @@ async function loadLspServersFromManifest(
         const content = await readFile(validatedPath, 'utf-8')
         const parsed = jsonParse(content)
         const result = z
-          .record(z.string(), LspServerConfigSchema())
+          .record(z.string(), LspServerConfigSchema)
           .safeParse(parsed)
 
         if (result.success) {
@@ -200,7 +200,7 @@ async function loadLspServersFromManifest(
     } else {
       // Inline configs
       for (const [serverName, config] of Object.entries(decl)) {
-        const result = LspServerConfigSchema().safeParse(config)
+        const result = LspServerConfigSchema.safeParse(config)
         if (result.success) {
           servers[serverName] = result.data
         } else {

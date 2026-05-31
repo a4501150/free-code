@@ -1,4 +1,4 @@
-// Scheduled prompts, stored in <project>/.claude/scheduled_tasks.json.
+// Scheduled prompts, stored in <project>/.freecode/scheduled_tasks.json.
 //
 // Tasks come in two flavors:
 //   - One-shot (recurring: false/undefined) — fire once, then auto-delete.
@@ -12,7 +12,7 @@
 import { randomUUID } from 'crypto'
 import { readFileSync } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { dirname } from 'path'
 import {
   addSessionCronTask,
   getProjectRoot,
@@ -25,6 +25,10 @@ import { isFsInaccessible } from './errors.js'
 import { getFsImplementation } from './fsOperations.js'
 import { safeParseJSON } from './json.js'
 import { logError } from './log.js'
+import {
+  getPreferredProjectConfigPath,
+  getProjectConfigPaths,
+} from './projectConfigPaths.js'
 import { jsonStringify } from './slowOperations.js'
 
 export type CronTask = {
@@ -71,7 +75,7 @@ export type CronTask = {
 
 type CronFile = { tasks: CronTask[] }
 
-const CRON_FILE_REL = join('.claude', 'scheduled_tasks.json')
+const CRON_FILE = 'scheduled_tasks.json'
 
 /**
  * Path to the cron file. `dir` defaults to getProjectRoot() — pass it
@@ -79,26 +83,14 @@ const CRON_FILE_REL = join('.claude', 'scheduled_tasks.json')
  * SDK daemon, which has no bootstrap state).
  */
 export function getCronFilePath(dir?: string): string {
-  return join(dir ?? getProjectRoot(), CRON_FILE_REL)
+  return getPreferredProjectConfigPath(dir ?? getProjectRoot(), CRON_FILE)
 }
 
-/**
- * Read and parse .claude/scheduled_tasks.json. Returns an empty task list if the file
- * is missing, empty, or malformed. Tasks with invalid cron strings are
- * silently dropped (logged at debug level) so a single bad entry never
- * blocks the whole file.
- */
-export async function readCronTasks(dir?: string): Promise<CronTask[]> {
-  const fs = getFsImplementation()
-  let raw: string
-  try {
-    raw = await fs.readFile(getCronFilePath(dir), { encoding: 'utf-8' })
-  } catch (e: unknown) {
-    if (isFsInaccessible(e)) return []
-    logError(e)
-    return []
-  }
+function getCronFileReadPaths(dir?: string): string[] {
+  return getProjectConfigPaths(dir ?? getProjectRoot(), CRON_FILE)
+}
 
+function parseCronTasks(raw: string): CronTask[] {
   const parsed = safeParseJSON(raw, false)
   if (!parsed || typeof parsed !== 'object') return []
   const file = parsed as Partial<CronFile>
@@ -140,25 +132,77 @@ export async function readCronTasks(dir?: string): Promise<CronTask[]> {
 }
 
 /**
+ * Read and parse scheduled_tasks.json from project config dirs. Returns an empty task list if the files
+ * are missing, empty, or malformed. Tasks with invalid cron strings are
+ * silently dropped (logged at debug level) so a single bad entry never
+ * blocks the whole file.
+ */
+export async function readCronTasks(dir?: string): Promise<CronTask[]> {
+  const fs = getFsImplementation()
+  const preferredPath = getCronFilePath(dir)
+
+  try {
+    const raw = await fs.readFile(preferredPath, { encoding: 'utf-8' })
+    return parseCronTasks(raw)
+  } catch (e: unknown) {
+    if (!isFsInaccessible(e)) logError(e)
+  }
+
+  const tasksById = new Map<string, CronTask>()
+  for (const filePath of getCronFileReadPaths(dir)) {
+    if (filePath === preferredPath) continue
+    let raw: string
+    try {
+      raw = await fs.readFile(filePath, { encoding: 'utf-8' })
+    } catch (e: unknown) {
+      if (isFsInaccessible(e)) continue
+      logError(e)
+      continue
+    }
+
+    for (const task of parseCronTasks(raw)) {
+      tasksById.set(task.id, task)
+    }
+  }
+  return [...tasksById.values()]
+}
+
+/**
  * Sync check for whether the cron file has any valid tasks. Used by
  * cronScheduler.start() to decide whether to auto-enable. One file read.
  */
-export function hasCronTasksSync(dir?: string): boolean {
-  let raw: string
-  try {
-    // eslint-disable-next-line custom-rules/no-sync-fs -- called once from cronScheduler.start()
-    raw = readFileSync(getCronFilePath(dir), 'utf-8')
-  } catch {
-    return false
-  }
+function hasCronTasksInRaw(raw: string): boolean {
   const parsed = safeParseJSON(raw, false)
   if (!parsed || typeof parsed !== 'object') return false
   const tasks = (parsed as Partial<CronFile>).tasks
   return Array.isArray(tasks) && tasks.length > 0
 }
 
+export function hasCronTasksSync(dir?: string): boolean {
+  const preferredPath = getCronFilePath(dir)
+  try {
+    // eslint-disable-next-line custom-rules/no-sync-fs -- called once from cronScheduler.start()
+    return hasCronTasksInRaw(readFileSync(preferredPath, 'utf-8'))
+  } catch {
+    // Fall back to legacy project config paths below.
+  }
+
+  for (const filePath of getCronFileReadPaths(dir)) {
+    if (filePath === preferredPath) continue
+    let raw: string
+    try {
+      // eslint-disable-next-line custom-rules/no-sync-fs -- called once from cronScheduler.start()
+      raw = readFileSync(filePath, 'utf-8')
+    } catch {
+      continue
+    }
+    if (hasCronTasksInRaw(raw)) return true
+  }
+  return false
+}
+
 /**
- * Overwrite .claude/scheduled_tasks.json with the given tasks. Creates .claude/ if
+ * Overwrite .freecode/scheduled_tasks.json with the given tasks. Creates .freecode/ if
  * missing. Empty task list writes an empty file (rather than deleting) so
  * the file watcher sees a change event on last-task-removed.
  */
@@ -167,18 +211,15 @@ export async function writeCronTasks(
   dir?: string,
 ): Promise<void> {
   const root = dir ?? getProjectRoot()
-  await mkdir(join(root, '.claude'), { recursive: true })
+  const cronFilePath = getCronFilePath(root)
+  await mkdir(dirname(cronFilePath), { recursive: true })
   // Strip the runtime-only `durable` flag — everything on disk is durable
   // by definition, and keeping the flag out means readCronTasks() naturally
   // yields durable: undefined without having to set it explicitly.
   const body: CronFile = {
     tasks: tasks.map(({ durable: _durable, ...rest }) => rest),
   }
-  await writeFile(
-    getCronFilePath(root),
-    jsonStringify(body, null, 2) + '\n',
-    'utf-8',
-  )
+  await writeFile(cronFilePath, jsonStringify(body, null, 2) + '\n', 'utf-8')
 }
 
 /**
@@ -187,7 +228,7 @@ export async function writeCronTasks(
  *
  * When `durable` is false the task is held in process memory only
  * (bootstrap/state.ts) — it fires on schedule this session but is never
- * written to .claude/scheduled_tasks.json and dies with the process. The
+ * written to .freecode/scheduled_tasks.json and dies with the process. The
  * scheduler merges session tasks into its tick loop directly, so no file
  * change event is needed.
  */

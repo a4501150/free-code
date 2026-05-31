@@ -305,7 +305,7 @@ async function fetchRemoteManagedSettings(
       }
     }
 
-    const parsed = RemoteManagedSettingsResponseSchema().safeParse(
+    const parsed = RemoteManagedSettingsResponseSchema.safeParse(
       response.data,
     )
     if (!parsed.success) {

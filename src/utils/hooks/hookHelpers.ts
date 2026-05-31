@@ -5,7 +5,6 @@ import {
   SyntheticOutputTool,
 } from '../../tools/SyntheticOutputTool/SyntheticOutputTool.js'
 import { substituteArguments } from '../argumentSubstitution.js'
-import { lazySchema } from '../lazySchema.js'
 import type { SetAppState } from '../messageQueueManager.js'
 import { hasSuccessfulToolCall } from '../messages.js'
 import { addFunctionHook } from './sessionHooks.js'
@@ -13,15 +12,13 @@ import { addFunctionHook } from './sessionHooks.js'
 /**
  * Schema for hook responses (shared by prompt and agent hooks)
  */
-export const hookResponseSchema = lazySchema(() =>
-  z.object({
+export const hookResponseSchema = z.object({
     ok: z.boolean().describe('Whether the condition was met'),
     reason: z
       .string()
       .describe('Reason, if the condition was not met')
       .optional(),
-  }),
-)
+  })
 
 /**
  * Add hook input JSON to prompt, either replacing $ARGUMENTS placeholder or appending.
@@ -41,7 +38,7 @@ export function addArgumentsToPrompt(
 export function createStructuredOutputTool(): Tool {
   return {
     ...SyntheticOutputTool,
-    inputSchema: hookResponseSchema(),
+    inputSchema: hookResponseSchema,
     inputJSONSchema: {
       type: 'object',
       properties: {

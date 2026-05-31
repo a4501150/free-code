@@ -8,7 +8,6 @@ import { getTeamsDir } from '../envUtils.js'
 import { errorMessage, getErrnoCode } from '../errors.js'
 import { execFileNoThrowWithCwd } from '../execFileNoThrow.js'
 import { gitExe } from '../git.js'
-import { lazySchema } from '../lazySchema.js'
 import type { PermissionMode } from '../permissions/PermissionMode.js'
 import { jsonParse, jsonStringify } from '../slowOperations.js'
 import { getTasksDir, notifyTasksUpdated } from '../tasks.js'
@@ -16,8 +15,7 @@ import { getAgentName, getTeamName, isTeammate } from '../teammate.js'
 import { type BackendType, isPaneBackend } from './backends/types.js'
 import { TEAM_LEAD_NAME } from './constants.js'
 
-export const inputSchema = lazySchema(() =>
-  z.strictObject({
+export const inputSchema = z.strictObject({
     operation: z
       .enum(['spawnTeam', 'cleanup'])
       .describe(
@@ -38,8 +36,7 @@ export const inputSchema = lazySchema(() =>
       .string()
       .optional()
       .describe('Team description/purpose (only used with spawnTeam).'),
-  }),
-)
+  })
 
 // Output types for different operations
 export type SpawnTeamOutput = {
@@ -89,7 +86,7 @@ export type TeamFile = {
   }>
 }
 
-export type Input = z.infer<ReturnType<typeof inputSchema>>
+export type Input = z.infer<typeof inputSchema>
 // Export SpawnTeamOutput as Output for backward compatibility
 export type Output = SpawnTeamOutput
 

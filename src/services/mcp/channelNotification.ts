@@ -24,7 +24,6 @@ import {
   getClaudeAIOAuthTokens,
   getSubscriptionType,
 } from '../../utils/auth.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { parsePluginIdentifier } from '../../utils/plugins/pluginIdentifier.js'
 import { getSettingsForSource } from '../../utils/settings/settings.js'
 import { escapeXmlAttr } from '../../utils/xml.js'
@@ -34,8 +33,7 @@ import {
   isChannelsEnabled,
 } from './channelAllowlist.js'
 
-export const ChannelMessageNotificationSchema = lazySchema(() =>
-  z.object({
+export const ChannelMessageNotificationSchema = z.object({
     method: z.literal('notifications/claude/channel'),
     params: z.object({
       content: z.string(),
@@ -43,8 +41,7 @@ export const ChannelMessageNotificationSchema = lazySchema(() =>
       // model to see. Rendered as attributes on the <channel> tag.
       meta: z.record(z.string(), z.string()).optional(),
     }),
-  }),
-)
+  })
 
 /**
  * Structured permission reply from a channel server. Servers that support
@@ -61,15 +58,13 @@ export const ChannelMessageNotificationSchema = lazySchema(() =>
  */
 export const CHANNEL_PERMISSION_METHOD =
   'notifications/claude/channel/permission'
-export const ChannelPermissionNotificationSchema = lazySchema(() =>
-  z.object({
+export const ChannelPermissionNotificationSchema = z.object({
     method: z.literal(CHANNEL_PERMISSION_METHOD),
     params: z.object({
       request_id: z.string(),
       behavior: z.enum(['allow', 'deny']),
     }),
-  }),
-)
+  })
 
 /**
  * Outbound: CC → server. Fired from interactiveHandler.ts when a

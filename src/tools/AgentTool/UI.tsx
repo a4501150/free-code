@@ -166,7 +166,7 @@ function processProgressMessages(
 const ESTIMATED_LINES_PER_TOOL = 9
 const TERMINAL_BUFFER_LINES = 7
 
-type Output = z.input<ReturnType<typeof outputSchema>>
+type Output = z.input<typeof outputSchema>
 
 export function AgentPromptDisplay({
   prompt,
@@ -1283,7 +1283,7 @@ function GroupedAgentToolUseView({
     ({ param, isResolved, isError, progressMessages, result }) => {
       const stats = calculateAgentStats(progressMessages, result?.output, nowMs)
       const lastToolInfo = extractLastToolInfo(progressMessages, tools)
-      const parsedInput = inputSchema().safeParse(param.input)
+      const parsedInput = inputSchema.safeParse(param.input)
 
       // teammate_spawned is not part of the exported Output type (cast through unknown
       // for dead code elimination), so check via string comparison on the raw value

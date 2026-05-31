@@ -2,7 +2,6 @@ import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import type { PermissionUpdate } from '../../types/permissions.js'
 import { formatFileSize } from '../../utils/format.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { getRuleByContentsForTool } from '../../utils/permissions/permissions.js'
 import { isPreapprovedHost } from './preapproved.js'
@@ -21,16 +20,13 @@ import {
   MAX_MARKDOWN_LENGTH,
 } from './utils.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     url: z.string().url().describe('The URL to fetch content from'),
     prompt: z.string().describe('The prompt to run on the fetched content'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     bytes: z.number().describe('Size of the fetched content in bytes'),
     code: z.number().describe('HTTP response code'),
     codeText: z.string().describe('HTTP response code text'),
@@ -41,9 +37,8 @@ const outputSchema = lazySchema(() =>
       .number()
       .describe('Time taken to fetch and process the content'),
     url: z.string().describe('The URL that was fetched'),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
@@ -86,10 +81,10 @@ export const WebFetchTool = buildTool({
     return summary ? `Fetching ${summary}` : 'Fetching web page'
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   isConcurrencySafe() {
     return true

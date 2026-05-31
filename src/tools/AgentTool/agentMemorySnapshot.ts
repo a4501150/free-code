@@ -2,8 +2,8 @@ import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { z } from 'zod/v4'
 import { getCwd } from '../../utils/cwd.js'
+import { getExistingOrPreferredProjectConfigPath } from '../../utils/projectConfigPaths.js'
 import { logForDebugging } from '../../utils/debug.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
 import { type AgentMemoryScope, getAgentMemoryDir } from './agentMemory.js'
 
@@ -11,25 +11,25 @@ const SNAPSHOT_BASE = 'agent-memory-snapshots'
 const SNAPSHOT_JSON = 'snapshot.json'
 const SYNCED_JSON = '.snapshot-synced.json'
 
-const snapshotMetaSchema = lazySchema(() =>
-  z.object({
-    updatedAt: z.string().min(1),
-  }),
-)
+const snapshotMetaSchema = z.object({
+  updatedAt: z.string().min(1),
+})
 
-const syncedMetaSchema = lazySchema(() =>
-  z.object({
-    syncedFrom: z.string().min(1),
-  }),
-)
-type SyncedMeta = z.infer<ReturnType<typeof syncedMetaSchema>>
+const syncedMetaSchema = z.object({
+  syncedFrom: z.string().min(1),
+})
+type SyncedMeta = z.infer<typeof syncedMetaSchema>
 
 /**
  * Returns the path to the snapshot directory for an agent in the current project.
- * e.g., <cwd>/.claude/agent-memory-snapshots/<agentType>/
+ * e.g., <cwd>/.freecode/agent-memory-snapshots/<agentType>/ for new snapshots.
  */
 export function getSnapshotDirForAgent(agentType: string): string {
-  return join(getCwd(), '.claude', SNAPSHOT_BASE, agentType)
+  return getExistingOrPreferredProjectConfigPath(
+    getCwd(),
+    SNAPSHOT_BASE,
+    agentType,
+  )
 }
 
 function getSnapshotJsonPath(agentType: string): string {
@@ -104,7 +104,7 @@ export async function checkAgentMemorySnapshot(
 }> {
   const snapshotMeta = await readJsonFile(
     getSnapshotJsonPath(agentType),
-    snapshotMetaSchema(),
+    snapshotMetaSchema,
   )
 
   if (!snapshotMeta) {
@@ -127,7 +127,7 @@ export async function checkAgentMemorySnapshot(
 
   const syncedMeta = await readJsonFile(
     getSyncedJsonPath(agentType, scope),
-    syncedMetaSchema(),
+    syncedMetaSchema,
   )
 
   if (

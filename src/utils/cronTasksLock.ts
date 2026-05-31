@@ -1,4 +1,4 @@
-// Scheduler lease lock for .claude/scheduled_tasks.json.
+// Scheduler lease lock for .freecode/scheduled_tasks.json.
 //
 // When multiple Claude sessions run in the same project directory, only one
 // should drive the cron scheduler. The first session to acquire this lock
@@ -8,7 +8,7 @@
 // O_EXCL atomic create, PID liveness probe, stale-lock recovery, cleanup-on-exit.
 
 import { mkdir, readFile, unlink, writeFile } from 'fs/promises'
-import { dirname, join } from 'path'
+import { dirname } from 'path'
 import { z } from 'zod/v4'
 import { getProjectRoot, getSessionId } from '../bootstrap/state.js'
 import { registerCleanup } from './cleanupRegistry.js'
@@ -16,19 +16,17 @@ import { logForDebugging } from './debug.js'
 import { getErrnoCode } from './errors.js'
 import { isProcessRunning } from './genericProcessUtils.js'
 import { safeParseJSON } from './json.js'
-import { lazySchema } from './lazySchema.js'
+import { getPreferredProjectConfigPath } from './projectConfigPaths.js'
 import { jsonStringify } from './slowOperations.js'
 
-const LOCK_FILE_REL = join('.claude', 'scheduled_tasks.lock')
+const LOCK_FILE = 'scheduled_tasks.lock'
 
-const schedulerLockSchema = lazySchema(() =>
-  z.object({
-    sessionId: z.string(),
-    pid: z.number(),
-    acquiredAt: z.number(),
-  }),
-)
-type SchedulerLock = z.infer<ReturnType<typeof schedulerLockSchema>>
+const schedulerLockSchema = z.object({
+  sessionId: z.string(),
+  pid: z.number(),
+  acquiredAt: z.number(),
+})
+type SchedulerLock = z.infer<typeof schedulerLockSchema>
 
 /**
  * Options for out-of-REPL daemon callers that don't have bootstrap state.
@@ -46,7 +44,7 @@ let unregisterCleanup: (() => void) | undefined
 let lastBlockedBy: string | undefined
 
 function getLockPath(dir?: string): string {
-  return join(dir ?? getProjectRoot(), LOCK_FILE_REL)
+  return getPreferredProjectConfigPath(dir ?? getProjectRoot(), LOCK_FILE)
 }
 
 async function readLock(dir?: string): Promise<SchedulerLock | undefined> {
@@ -56,7 +54,7 @@ async function readLock(dir?: string): Promise<SchedulerLock | undefined> {
   } catch {
     return undefined
   }
-  const result = schedulerLockSchema().safeParse(safeParseJSON(raw, false))
+  const result = schedulerLockSchema.safeParse(safeParseJSON(raw, false))
   return result.success ? result.data : undefined
 }
 
@@ -73,7 +71,7 @@ async function tryCreateExclusive(
     const code = getErrnoCode(e)
     if (code === 'EEXIST') return false
     if (code === 'ENOENT') {
-      // .claude/ doesn't exist yet — create it and retry once. In steady
+      // .freecode/ doesn't exist yet — create it and retry once. In steady
       // state the dir already exists (scheduled_tasks.json lives there),
       // so this path is hit at most once.
       await mkdir(dirname(path), { recursive: true })

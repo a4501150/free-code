@@ -18,7 +18,6 @@ import { count } from './array.js'
 import { logForDebugging } from './debug.js'
 import { getTeamsDir } from './envUtils.js'
 import { getErrnoCode } from './errors.js'
-import { lazySchema } from './lazySchema.js'
 import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
 import { jsonParse, jsonStringify } from './slowOperations.js'
@@ -661,89 +660,79 @@ export function isSandboxPermissionResponse(
 /**
  * Message sent when a teammate requests plan approval from the team leader
  */
-export const PlanApprovalRequestMessageSchema = lazySchema(() =>
-  z.object({
+export const PlanApprovalRequestMessageSchema = z.object({
     type: z.literal('plan_approval_request'),
     from: z.string(),
     timestamp: z.string(),
     planFilePath: z.string(),
     planContent: z.string(),
     requestId: z.string(),
-  }),
-)
+  })
 
 export type PlanApprovalRequestMessage = z.infer<
-  ReturnType<typeof PlanApprovalRequestMessageSchema>
+  typeof PlanApprovalRequestMessageSchema
 >
 
 /**
  * Message sent by the team leader in response to a plan approval request
  */
-export const PlanApprovalResponseMessageSchema = lazySchema(() =>
-  z.object({
+export const PlanApprovalResponseMessageSchema = z.object({
     type: z.literal('plan_approval_response'),
     requestId: z.string(),
     approved: z.boolean(),
     feedback: z.string().optional(),
     timestamp: z.string(),
-    permissionMode: PermissionModeSchema().optional(),
-  }),
-)
+    permissionMode: PermissionModeSchema.optional(),
+  })
 
 export type PlanApprovalResponseMessage = z.infer<
-  ReturnType<typeof PlanApprovalResponseMessageSchema>
+  typeof PlanApprovalResponseMessageSchema
 >
 
 /**
  * Shutdown request message sent from leader to teammate via mailbox
  */
-export const ShutdownRequestMessageSchema = lazySchema(() =>
-  z.object({
+export const ShutdownRequestMessageSchema = z.object({
     type: z.literal('shutdown_request'),
     requestId: z.string(),
     from: z.string(),
     reason: z.string().optional(),
     timestamp: z.string(),
-  }),
-)
+  })
 
 export type ShutdownRequestMessage = z.infer<
-  ReturnType<typeof ShutdownRequestMessageSchema>
+  typeof ShutdownRequestMessageSchema
 >
 
 /**
  * Shutdown approved message sent from teammate to leader via mailbox
  */
-export const ShutdownApprovedMessageSchema = lazySchema(() =>
-  z.object({
+export const ShutdownApprovedMessageSchema = z.object({
     type: z.literal('shutdown_approved'),
     requestId: z.string(),
     from: z.string(),
     timestamp: z.string(),
     paneId: z.string().optional(),
     backendType: z.string().optional(),
-  }),
-)
+  })
 
 export type ShutdownApprovedMessage = z.infer<
-  ReturnType<typeof ShutdownApprovedMessageSchema>
+  typeof ShutdownApprovedMessageSchema
 >
 
 /**
  * Shutdown rejected message sent from teammate to leader via mailbox
  */
-export const ShutdownRejectedMessageSchema = lazySchema(() =>
-  z.object({
+export const ShutdownRejectedMessageSchema = z.object({
     type: z.literal('shutdown_rejected'),
     requestId: z.string(),
     from: z.string(),
     reason: z.string(),
     timestamp: z.string(),
-  }),
-)
+  })
 
 export type ShutdownRejectedMessage = z.infer<
-  ReturnType<typeof ShutdownRejectedMessageSchema>
+  typeof ShutdownRejectedMessageSchema
 >
 
 /**
@@ -849,7 +838,7 @@ export function isShutdownRequest(
   messageText: string,
 ): ShutdownRequestMessage | null {
   try {
-    const result = ShutdownRequestMessageSchema().safeParse(
+    const result = ShutdownRequestMessageSchema.safeParse(
       jsonParse(messageText),
     )
     if (result.success) return result.data
@@ -866,7 +855,7 @@ export function isPlanApprovalRequest(
   messageText: string,
 ): PlanApprovalRequestMessage | null {
   try {
-    const result = PlanApprovalRequestMessageSchema().safeParse(
+    const result = PlanApprovalRequestMessageSchema.safeParse(
       jsonParse(messageText),
     )
     if (result.success) return result.data
@@ -883,7 +872,7 @@ export function isShutdownApproved(
   messageText: string,
 ): ShutdownApprovedMessage | null {
   try {
-    const result = ShutdownApprovedMessageSchema().safeParse(
+    const result = ShutdownApprovedMessageSchema.safeParse(
       jsonParse(messageText),
     )
     if (result.success) return result.data
@@ -900,7 +889,7 @@ export function isShutdownRejected(
   messageText: string,
 ): ShutdownRejectedMessage | null {
   try {
-    const result = ShutdownRejectedMessageSchema().safeParse(
+    const result = ShutdownRejectedMessageSchema.safeParse(
       jsonParse(messageText),
     )
     if (result.success) return result.data
@@ -917,7 +906,7 @@ export function isPlanApprovalResponse(
   messageText: string,
 ): PlanApprovalResponseMessage | null {
   try {
-    const result = PlanApprovalResponseMessageSchema().safeParse(
+    const result = PlanApprovalResponseMessageSchema.safeParse(
       jsonParse(messageText),
     )
     if (result.success) return result.data
@@ -996,16 +985,14 @@ export function isTeamPermissionUpdate(
  * Mode set request message sent from leader to teammate via mailbox
  * Uses SDK PermissionModeSchema for validated mode values
  */
-export const ModeSetRequestMessageSchema = lazySchema(() =>
-  z.object({
+export const ModeSetRequestMessageSchema = z.object({
     type: z.literal('mode_set_request'),
-    mode: PermissionModeSchema(),
+    mode: PermissionModeSchema,
     from: z.string(),
-  }),
-)
+  })
 
 export type ModeSetRequestMessage = z.infer<
-  ReturnType<typeof ModeSetRequestMessageSchema>
+  typeof ModeSetRequestMessageSchema
 >
 
 /**
@@ -1029,7 +1016,7 @@ export function isModeSetRequest(
   messageText: string,
 ): ModeSetRequestMessage | null {
   try {
-    const parsed = ModeSetRequestMessageSchema().safeParse(
+    const parsed = ModeSetRequestMessageSchema.safeParse(
       jsonParse(messageText),
     )
     if (parsed.success) {

@@ -36,7 +36,7 @@ function parsePermissionUpdates(raw: unknown): PermissionUpdate[] {
   if (!Array.isArray(raw)) {
     return []
   }
-  const schema = permissionUpdateSchema()
+  const schema = permissionUpdateSchema
   const valid: PermissionUpdate[] = []
   for (const entry of raw) {
     const result = schema.safeParse(entry)

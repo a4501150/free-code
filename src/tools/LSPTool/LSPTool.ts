@@ -26,7 +26,6 @@ import { logForDebugging } from '../../utils/debug.js'
 import { isENOENT, toError } from '../../utils/errors.js'
 import { execFileNoThrowWithCwd } from '../../utils/execFileNoThrow.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
 import { checkReadPermissionForTool } from '../../utils/permissions/filesystem.js'
@@ -56,8 +55,7 @@ const MAX_LSP_FILE_SIZE_BYTES = 10_000_000
  * Tool-compatible input schema (regular ZodObject instead of discriminated union)
  * We validate against the discriminated union in validateInput for better error messages
  */
-const inputSchema = lazySchema(() =>
-  z.strictObject({
+const inputSchema = z.strictObject({
     operation: z
       .enum([
         'goToDefinition',
@@ -82,12 +80,10 @@ const inputSchema = lazySchema(() =>
       .int()
       .positive()
       .describe('The character offset (1-based, as shown in editors)'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-const outputSchema = lazySchema(() =>
-  z.object({
+const outputSchema = z.object({
     operation: z
       .enum([
         'goToDefinition',
@@ -117,9 +113,8 @@ const outputSchema = lazySchema(() =>
       .nonnegative()
       .optional()
       .describe('Number of files containing results'),
-  }),
-)
-type OutputSchema = ReturnType<typeof outputSchema>
+  })
+type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 export type Input = z.infer<InputSchema>
@@ -136,10 +131,10 @@ export const LSPTool = buildTool({
     return isLspConnected()
   },
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
   isConcurrencySafe() {
     return true
@@ -152,7 +147,7 @@ export const LSPTool = buildTool({
   },
   async validateInput(input: Input): Promise<ValidationResult> {
     // First validate against the discriminated union for better type safety
-    const parseResult = lspToolInputSchema().safeParse(input)
+    const parseResult = lspToolInputSchema.safeParse(input)
     if (!parseResult.success) {
       return {
         result: false,

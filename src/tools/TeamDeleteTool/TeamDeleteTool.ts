@@ -3,7 +3,6 @@ import { z } from 'zod/v4'
 import type { Tool } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { TEAM_LEAD_NAME } from '../../utils/swarm/constants.js'
 import {
@@ -17,8 +16,8 @@ import { TEAM_DELETE_TOOL_NAME } from './constants.js'
 import { getPrompt } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
-const inputSchema = lazySchema(() => z.strictObject({}))
-type InputSchema = ReturnType<typeof inputSchema>
+const inputSchema = z.strictObject({})
+type InputSchema = typeof inputSchema
 
 export type Output = {
   success: boolean
@@ -37,7 +36,7 @@ export const TeamDeleteTool: Tool<InputSchema, Output> = buildTool({
   },
 
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
 
   isEnabled() {

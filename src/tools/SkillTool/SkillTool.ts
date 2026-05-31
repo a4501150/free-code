@@ -38,7 +38,6 @@ import {
   extractResultText,
   prepareForkedCommandContext,
 } from '../../utils/forkedAgent.js'
-import { lazySchema } from '../../utils/lazySchema.js'
 import { createUserMessage, normalizeMessages } from '../../utils/messages.js'
 import { parseUserSpecifiedModel } from '../../utils/model/model.js'
 import { processPromptSlashCommand } from '../../utils/processUserInput/processSlashCommand.js'
@@ -178,17 +177,15 @@ async function executeForkedSkill(
   }
 }
 
-export const inputSchema = lazySchema(() =>
-  z.object({
+export const inputSchema = z.object({
     skill: z
       .string()
       .describe('The skill name. E.g., "commit", "review-pr", or "pdf"'),
     args: z.string().optional().describe('Optional arguments for the skill'),
-  }),
-)
-type InputSchema = ReturnType<typeof inputSchema>
+  })
+type InputSchema = typeof inputSchema
 
-export const outputSchema = lazySchema(() => {
+export const outputSchema = (() => {
   // Output schema for inline skills (default)
   const inlineOutputSchema = z.object({
     success: z.boolean().describe('Whether the skill is valid'),
@@ -213,8 +210,8 @@ export const outputSchema = lazySchema(() => {
   })
 
   return z.union([inlineOutputSchema, forkedOutputSchema])
-})
-type OutputSchema = ReturnType<typeof outputSchema>
+})()
+type OutputSchema = typeof outputSchema
 
 export type Output = z.input<OutputSchema>
 
@@ -222,10 +219,10 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
   name: SKILL_TOOL_NAME,
   maxResultSizeChars: 100_000,
   get inputSchema(): InputSchema {
-    return inputSchema()
+    return inputSchema
   },
   get outputSchema(): OutputSchema {
-    return outputSchema()
+    return outputSchema
   },
 
   description: async ({ skill }) => `Execute skill: ${skill}`,
