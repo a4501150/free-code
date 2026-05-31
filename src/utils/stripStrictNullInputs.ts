@@ -28,10 +28,14 @@ type ZodLikeDef = {
   out?: ZodLike
   shape?: Record<string, ZodLike>
   element?: ZodLike
+  options?: ZodLike[]
+  discriminator?: string
+  values?: unknown[]
 }
 type ZodLike = {
   _def?: ZodLikeDef
   shape?: Record<string, ZodLike>
+  safeParse?(value: unknown): { success: boolean }
 }
 
 /** Get the next schema down through a transparent wrapper. */
@@ -42,9 +46,9 @@ function getInner(def: ZodLikeDef | undefined): ZodLike | undefined {
 }
 
 /**
- * Drill through transparent wrappers (optional, default, readonly, pipe) to
- * the underlying schema. Stops at `nullable` so callers can check whether
- * null is permitted.
+ * Drill through transparent wrappers to the underlying traversal schema.
+ * Placeholder classification separately inspects nullable wrappers before
+ * unwrapping them.
  */
 function unwrap(node: ZodLike | undefined): ZodLike | undefined {
   let cur = node
@@ -52,6 +56,7 @@ function unwrap(node: ZodLike | undefined): ZodLike | undefined {
     const t = cur._def?.type
     if (
       t === 'optional' ||
+      t === 'nullable' ||
       t === 'default' ||
       t === 'readonly' ||
       t === 'pipe'
@@ -114,7 +119,65 @@ function getArrayElement(node: ZodLike | undefined): ZodLike | undefined {
   return def.element
 }
 
+type UnionSchema = {
+  options: ZodLike[]
+  discriminator?: string
+}
+
+function getUnion(node: ZodLike | undefined): UnionSchema | undefined {
+  const target = unwrap(node)
+  const def = target?._def
+  if (def?.type !== 'union' || !Array.isArray(def.options)) return undefined
+  return { options: def.options, discriminator: def.discriminator }
+}
+
+function literalAccepts(node: ZodLike | undefined, value: unknown): boolean {
+  const target = unwrap(node)
+  return (
+    target?._def?.type === 'literal' &&
+    Array.isArray(target._def.values) &&
+    target._def.values.includes(value)
+  )
+}
+
+function orderedUnionOptions(union: UnionSchema, value: unknown): ZodLike[] {
+  if (
+    !union.discriminator ||
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return union.options
+  }
+
+  const discriminatorValue = (value as Record<string, unknown>)[
+    union.discriminator
+  ]
+  const matching: ZodLike[] = []
+  const remaining: ZodLike[] = []
+  for (const option of union.options) {
+    const discriminatorSchema = getShape(option)?.[union.discriminator]
+    if (literalAccepts(discriminatorSchema, discriminatorValue)) {
+      matching.push(option)
+    } else {
+      remaining.push(option)
+    }
+  }
+  return [...matching, ...remaining]
+}
+
+function stripUnion(union: UnionSchema, value: unknown): unknown {
+  for (const option of orderedUnionOptions(union, value)) {
+    const stripped = strip(option, value)
+    if (option.safeParse?.(stripped).success) return stripped
+  }
+  return value
+}
+
 function strip(node: ZodLike | undefined, value: unknown): unknown {
+  const union = getUnion(node)
+  if (union) return stripUnion(union, value)
+
   if (Array.isArray(value)) {
     const elemSchema = getArrayElement(node)
     if (!elemSchema) return value
@@ -144,10 +207,7 @@ function strip(node: ZodLike | undefined, value: unknown): unknown {
     if (!fieldSchema) continue
     const v = obj[key]
     const placeholderHandling = getPlaceholderHandling(fieldSchema)
-    if (
-      (v === null || v === '') &&
-      placeholderHandling === 'delete'
-    ) {
+    if ((v === null || v === '') && placeholderHandling === 'delete') {
       if (!cloned) cloned = { ...obj }
       delete cloned[key]
       continue

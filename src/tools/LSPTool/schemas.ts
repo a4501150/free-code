@@ -68,16 +68,6 @@ export const lspToolInputSchema = (() => {
   const documentSymbolSchema = z.strictObject({
     operation: z.literal('documentSymbol'),
     filePath: z.string().describe('The absolute or relative path to the file'),
-    line: z
-      .number()
-      .int()
-      .positive()
-      .describe('The line number (1-based, as shown in editors)'),
-    character: z
-      .number()
-      .int()
-      .positive()
-      .describe('The character offset (1-based, as shown in editors)'),
   })
 
   /**
@@ -86,17 +76,11 @@ export const lspToolInputSchema = (() => {
    */
   const workspaceSymbolSchema = z.strictObject({
     operation: z.literal('workspaceSymbol'),
-    filePath: z.string().describe('The absolute or relative path to the file'),
-    line: z
-      .number()
-      .int()
-      .positive()
-      .describe('The line number (1-based, as shown in editors)'),
-    character: z
-      .number()
-      .int()
-      .positive()
-      .describe('The character offset (1-based, as shown in editors)'),
+    filePath: z.string().describe('The file path used to select an LSP server'),
+    query: z
+      .string()
+      .optional()
+      .describe('Optional symbol search query. Omit to request all symbols.'),
   })
 
   /**

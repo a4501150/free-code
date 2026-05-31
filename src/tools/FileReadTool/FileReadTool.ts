@@ -219,18 +219,18 @@ const inputSchema = z.strictObject({
   offset: semanticNumber(
     z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   ).describe(
-    'Optional starting line number for a partial text-file read. Omit to start at the beginning; use without limit to read from that line through the end, subject to output limits. Must be a safe integer.',
+    'Optional starting line number for a partial text-file read. For a full read, omit this field or send null. Use without limit to read from that line through the end, subject to output limits. Must be a safe integer; do not invent a value.',
   ),
   limit: semanticNumber(
     z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
   ).describe(
-    'Optional maximum number of lines to return for a partial text-file read. Omit to read through the end, subject to output limits; never pass a very large sentinel value to request the rest of the file. Must be a safe integer.',
+    'Optional maximum number of lines to return for a partial text-file read. Omit this field or send null to read through the end, subject to output limits. Must be a safe integer; never invent a value or pass a very large sentinel to request the rest of the file.',
   ),
   pages: z
     .string()
     .optional()
     .describe(
-      `Optional page range for PDF files (e.g., "1-5", "3", "10-20"). Valid only for PDF files; do not combine with offset or limit. Maximum ${PDF_MAX_PAGES_PER_READ} pages per request.`,
+      `Optional page range for PDF files (e.g., "1-5", "3", "10-20"). Valid only for PDF files; for non-PDF files, omit this field or send null. Do not infer or invent a page range. Do not combine with offset or limit. Maximum ${PDF_MAX_PAGES_PER_READ} pages per request.`,
     ),
 })
 type InputSchema = typeof inputSchema

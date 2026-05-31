@@ -7,10 +7,27 @@
  * keeps one schema shape across all providers.
  */
 import { describe, expect, test } from 'bun:test'
+import { z } from 'zod/v4'
 import { AskUserQuestionTool } from '../../src/tools/AskUserQuestionTool/AskUserQuestionTool.js'
+import { GlobTool } from '../../src/tools/GlobTool/GlobTool.js'
+import { GrepTool } from '../../src/tools/GrepTool/GrepTool.js'
 import { toolToAPISchema } from '../../src/utils/api.js'
+import { makeJsonSchemaStrict } from '../../src/utils/jsonSchemaStrict.js'
+import { zodToJsonSchema } from '../../src/utils/zodToJsonSchema.js'
 
-function findStrictDisallowed(value: unknown, path = '$'): string[] {
+const SCHEMA_MAP_KEYS = new Set([
+  'properties',
+  '$defs',
+  'definitions',
+  'patternProperties',
+  'dependentSchemas',
+])
+
+function findStrictDisallowed(
+  value: unknown,
+  path = '$',
+  isSchemaMap = false,
+): string[] {
   if (typeof value !== 'object' || value === null) {
     return []
   }
@@ -25,25 +42,33 @@ function findStrictDisallowed(value: unknown, path = '$'): string[] {
   // Scope to keywords disallowed inside strict mode (both OpenAI structured
   // outputs and Anthropic structured-outputs reject these — see
   // STRICT_DISALLOWED_KEYWORDS in src/utils/api.ts).
-  for (const k of [
-    'minimum',
-    'maximum',
-    'exclusiveMinimum',
-    'exclusiveMaximum',
-    'multipleOf',
-    'minLength',
-    'maxLength',
-    'pattern',
-    'format',
-    'minItems',
-    'maxItems',
-    'uniqueItems',
-  ]) {
-    if (k in node) hits.push(`${path}.${k}`)
+  if (!isSchemaMap) {
+    for (const k of [
+      'minimum',
+      'maximum',
+      'exclusiveMinimum',
+      'exclusiveMaximum',
+      'multipleOf',
+      'minLength',
+      'maxLength',
+      'pattern',
+      'format',
+      'minItems',
+      'maxItems',
+      'uniqueItems',
+    ]) {
+      if (k in node) hits.push(`${path}.${k}`)
+    }
   }
 
   for (const [key, child] of Object.entries(node)) {
-    hits.push(...findStrictDisallowed(child, `${path}.${key}`))
+    hits.push(
+      ...findStrictDisallowed(
+        child,
+        `${path}.${key}`,
+        SCHEMA_MAP_KEYS.has(key),
+      ),
+    )
   }
   return hits
 }
@@ -63,5 +88,38 @@ describe('toolToAPISchema strict-disallowed keyword stripping', () => {
 
     const hits = findStrictDisallowed(schema)
     expect(hits).toEqual([])
+  })
+
+  test('preserves legitimate pattern properties for Grep and Glob', async () => {
+    for (const tool of [GrepTool, GlobTool]) {
+      const schema = await toolToAPISchema(tool, {
+        getToolPermissionContext: async () => ({}) as never,
+        tools: [tool],
+        agents: [],
+      })
+      const inputSchema = schema.input_schema as {
+        properties: Record<string, unknown>
+      }
+      expect(inputSchema.properties.pattern).toBeDefined()
+      expect(findStrictDisallowed(schema)).toEqual([])
+    }
+  })
+
+  test('preserves typed and unknown record value schemas', () => {
+    const schema = makeJsonSchemaStrict(
+      zodToJsonSchema(
+        z.strictObject({
+          typed: z.record(z.string(), z.string()),
+          unknown: z.record(z.string(), z.unknown()),
+        }),
+      ),
+    ) as {
+      properties: Record<string, { additionalProperties: unknown }>
+    }
+
+    expect(schema.properties.typed.additionalProperties).toMatchObject({
+      type: 'string',
+    })
+    expect(schema.properties.unknown.additionalProperties).toEqual({})
   })
 })

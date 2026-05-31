@@ -56,64 +56,74 @@ const MAX_LSP_FILE_SIZE_BYTES = 10_000_000
  * We validate against the discriminated union in validateInput for better error messages
  */
 const inputSchema = z.strictObject({
-    operation: z
-      .enum([
-        'goToDefinition',
-        'findReferences',
-        'hover',
-        'documentSymbol',
-        'workspaceSymbol',
-        'goToImplementation',
-        'prepareCallHierarchy',
-        'incomingCalls',
-        'outgoingCalls',
-      ])
-      .describe('The LSP operation to perform'),
-    filePath: z.string().describe('The absolute or relative path to the file'),
-    line: z
-      .number()
-      .int()
-      .positive()
-      .describe('The line number (1-based, as shown in editors)'),
-    character: z
-      .number()
-      .int()
-      .positive()
-      .describe('The character offset (1-based, as shown in editors)'),
-  })
+  operation: z
+    .enum([
+      'goToDefinition',
+      'findReferences',
+      'hover',
+      'documentSymbol',
+      'workspaceSymbol',
+      'goToImplementation',
+      'prepareCallHierarchy',
+      'incomingCalls',
+      'outgoingCalls',
+    ])
+    .describe('The LSP operation to perform'),
+  filePath: z.string().describe('The absolute or relative path to the file'),
+  line: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'The line number for position-based operations (1-based, as shown in editors)',
+    ),
+  character: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'The character offset for position-based operations (1-based, as shown in editors)',
+    ),
+  query: z
+    .string()
+    .optional()
+    .describe(
+      'Optional symbol search query for workspaceSymbol. Omit to request all symbols.',
+    ),
+})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    operation: z
-      .enum([
-        'goToDefinition',
-        'findReferences',
-        'hover',
-        'documentSymbol',
-        'workspaceSymbol',
-        'goToImplementation',
-        'prepareCallHierarchy',
-        'incomingCalls',
-        'outgoingCalls',
-      ])
-      .describe('The LSP operation that was performed'),
-    result: z.string().describe('The formatted result of the LSP operation'),
-    filePath: z
-      .string()
-      .describe('The file path the operation was performed on'),
-    resultCount: z
-      .number()
-      .int()
-      .nonnegative()
-      .optional()
-      .describe('Number of results (definitions, references, symbols)'),
-    fileCount: z
-      .number()
-      .int()
-      .nonnegative()
-      .optional()
-      .describe('Number of files containing results'),
-  })
+  operation: z
+    .enum([
+      'goToDefinition',
+      'findReferences',
+      'hover',
+      'documentSymbol',
+      'workspaceSymbol',
+      'goToImplementation',
+      'prepareCallHierarchy',
+      'incomingCalls',
+      'outgoingCalls',
+    ])
+    .describe('The LSP operation that was performed'),
+  result: z.string().describe('The formatted result of the LSP operation'),
+  filePath: z.string().describe('The file path the operation was performed on'),
+  resultCount: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe('Number of results (definitions, references, symbols)'),
+  fileCount: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe('Number of files containing results'),
+})
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
@@ -417,15 +427,20 @@ export const LSPTool = buildTool({
 /**
  * Maps LSPTool operation to LSP method and params
  */
-function getMethodAndParams(
+export function getMethodAndParams(
   input: Input,
   absolutePath: string,
 ): { method: string; params: unknown } {
   const uri = pathToFileURL(absolutePath).href
-  // Convert from 1-based (user-friendly) to 0-based (LSP protocol)
-  const position = {
-    line: input.line - 1,
-    character: input.character - 1,
+  const getPosition = () => {
+    if (input.line === undefined || input.character === undefined) {
+      throw new Error(`${input.operation} requires line and character`)
+    }
+    // Convert from 1-based (user-friendly) to 0-based (LSP protocol)
+    return {
+      line: input.line - 1,
+      character: input.character - 1,
+    }
   }
 
   switch (input.operation) {
@@ -434,7 +449,7 @@ function getMethodAndParams(
         method: 'textDocument/definition',
         params: {
           textDocument: { uri },
-          position,
+          position: getPosition(),
         },
       }
     case 'findReferences':
@@ -442,7 +457,7 @@ function getMethodAndParams(
         method: 'textDocument/references',
         params: {
           textDocument: { uri },
-          position,
+          position: getPosition(),
           context: { includeDeclaration: true },
         },
       }
@@ -451,7 +466,7 @@ function getMethodAndParams(
         method: 'textDocument/hover',
         params: {
           textDocument: { uri },
-          position,
+          position: getPosition(),
         },
       }
     case 'documentSymbol':
@@ -465,7 +480,7 @@ function getMethodAndParams(
       return {
         method: 'workspace/symbol',
         params: {
-          query: '', // Empty query returns all symbols
+          query: input.query ?? '',
         },
       }
     case 'goToImplementation':
@@ -473,7 +488,7 @@ function getMethodAndParams(
         method: 'textDocument/implementation',
         params: {
           textDocument: { uri },
-          position,
+          position: getPosition(),
         },
       }
     case 'prepareCallHierarchy':
@@ -481,7 +496,7 @@ function getMethodAndParams(
         method: 'textDocument/prepareCallHierarchy',
         params: {
           textDocument: { uri },
-          position,
+          position: getPosition(),
         },
       }
     case 'incomingCalls':
@@ -491,7 +506,7 @@ function getMethodAndParams(
         method: 'textDocument/prepareCallHierarchy',
         params: {
           textDocument: { uri },
-          position,
+          position: getPosition(),
         },
       }
     case 'outgoingCalls':
@@ -499,7 +514,7 @@ function getMethodAndParams(
         method: 'textDocument/prepareCallHierarchy',
         params: {
           textDocument: { uri },
-          position,
+          position: getPosition(),
         },
       }
   }

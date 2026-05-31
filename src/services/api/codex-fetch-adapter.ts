@@ -20,6 +20,7 @@ import { toAnthropicErrorType } from '../../utils/normalizedError.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isEnvDefinedFalsy } from '../../utils/envUtils.js'
+import { isStrictCompatibleSchema } from '../../utils/jsonSchemaStrict.js'
 
 // No hardcoded model list — the provider registry (freecode.json) is the
 // single source of truth for available models. The adapter just passes
@@ -127,27 +128,6 @@ type AnthropicToolChoice =
 // ── Tool translation: Anthropic → Codex ─────────────────────────────
 
 /**
- * Tool-owned schemas (MCP servers, StructuredOutput) and `.passthrough()`
- * opt-outs skip `makeJsonSchemaStrict` in toolToAPISchema (src/utils/api.ts),
- * so they reach the adapter without the strict-shape invariants OpenAI
- * requires (recursive `additionalProperties: false`, all properties in
- * `required`). Setting `strict: true` on them would 400 the entire request,
- * not just the offending tool — one rogue MCP tool kills every turn.
- *
- * Detect via the root-level `additionalProperties: false` marker that
- * `makeJsonSchemaStrict` always sets — present iff the tool went through
- * the universal strict transform.
- */
-function isStrictCompatibleSchema(schema: unknown): boolean {
-  return (
-    typeof schema === 'object' &&
-    schema !== null &&
-    (schema as { additionalProperties?: unknown }).additionalProperties ===
-      false
-  )
-}
-
-/**
  * Translates Anthropic tool definitions to Codex format.
  *
  * The `strict` field is set from the model's `structuredOutputs` capability
@@ -155,9 +135,9 @@ function isStrictCompatibleSchema(schema: unknown): boolean {
  *
  *   - undefined → field omitted (server default applies).
  *   - false → `strict: false` for every tool (explicit best-effort).
- *   - true → `strict: true` only for tools whose schema is strict-compatible
- *     (root `additionalProperties: false`). Tool-owned (MCP/StructuredOutput)
- *     and passthrough tools omit the field to avoid the entire request 400'ing
+ *   - true → `strict: true` only for recursively strict-compatible schemas.
+ *     Tool-owned (MCP/StructuredOutput), passthrough, and record-shaped tools
+ *     omit the field to avoid the entire request 400'ing
  *     on a single non-conforming schema.
  *
  * @param anthropicTools - Array of Anthropic tool definitions

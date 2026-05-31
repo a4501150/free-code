@@ -183,24 +183,22 @@ const fullInputSchema = (() => {
       ),
   })
 
-  return baseInputSchema
-    .merge(multiAgentInputSchema)
-    .extend({
-      isolation: z
-        .enum(['worktree'])
-        .optional()
-        .describe(
-          'Isolation mode. "worktree" creates a temporary git worktree so the agent works on an isolated copy of the repo.',
-        ),
-      cwd: z
-        .string()
-        .optional()
-        .describe(
-          feature('WORKTREE_MODE')
-            ? 'Absolute path to run the agent in. Overrides the working directory for all filesystem and shell operations within this agent. Mutually exclusive with isolation: "worktree".'
-            : 'Absolute path to run the agent in. Overrides the working directory for all filesystem and shell operations within this agent.',
-        ),
-    })
+  return baseInputSchema.merge(multiAgentInputSchema).extend({
+    isolation: z
+      .enum(['worktree'])
+      .optional()
+      .describe(
+        'Isolation mode. "worktree" creates a temporary git worktree so the agent works on an isolated copy of the repo.',
+      ),
+    cwd: z
+      .string()
+      .optional()
+      .describe(
+        feature('WORKTREE_MODE')
+          ? 'Absolute path to run the agent in. Overrides the working directory for all filesystem and shell operations within this agent. Mutually exclusive with isolation: "worktree".'
+          : 'Absolute path to run the agent in. Overrides the working directory for all filesystem and shell operations within this agent.',
+      ),
+  })
 })()
 
 // Strip optional fields from the schema when the backing feature is off so
@@ -593,6 +591,9 @@ export const AgentTool = buildTool({
 
     // Resolve effective isolation mode (explicit param overrides agent def)
     const effectiveIsolation = isolation ?? selectedAgent.isolation
+    if (cwd && effectiveIsolation === 'worktree') {
+      throw new Error('cwd cannot be used together with worktree isolation.')
+    }
 
     let enhancedSystemPrompt: string[] | undefined
     let promptMessages: MessageType[]

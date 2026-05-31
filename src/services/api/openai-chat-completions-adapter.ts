@@ -21,6 +21,7 @@ import type { ProviderConfig } from '../../utils/settings/types.js'
 import { openaiChatCompletionsAdapter } from './adapters/openai-chat-completions-adapter-impl.js'
 import { toAnthropicErrorType } from '../../utils/normalizedError.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
+import { isStrictCompatibleSchema } from '../../utils/jsonSchemaStrict.js'
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -75,29 +76,6 @@ interface ChatCompletionsTool {
 }
 
 // ── Tool translation ────────────────────────────────────────────────
-
-/**
- * Tool-owned schemas (MCP servers, StructuredOutput) and `.passthrough()`
- * opt-outs skip `makeJsonSchemaStrict` in toolToAPISchema (src/utils/api.ts),
- * so they reach the adapter without the strict-shape invariants OpenAI
- * requires (recursive `additionalProperties: false`, all properties in
- * `required`). Setting `strict: true` on them would 400 the entire request,
- * not just the offending tool — one rogue MCP tool kills every turn.
- *
- * Detect via the root-level `additionalProperties: false` marker that
- * `makeJsonSchemaStrict` always sets — present iff the tool went through
- * the universal strict transform. Keeps the gate adapter-local and
- * self-defending: if a future tool category bypasses the transform, this
- * still does the right thing.
- */
-function isStrictCompatibleSchema(schema: unknown): boolean {
-  return (
-    typeof schema === 'object' &&
-    schema !== null &&
-    (schema as { additionalProperties?: unknown }).additionalProperties ===
-      false
-  )
-}
 
 function translateTools(
   anthropicTools: AnthropicTool[],

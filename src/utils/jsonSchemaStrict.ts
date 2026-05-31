@@ -127,16 +127,27 @@ export function makeJsonSchemaStrict(schema: unknown): unknown {
     }
   }
 
-  // For object nodes, lock down strict invariants:
+  // For fixed object nodes, lock down strict invariants:
   //   - additionalProperties: false (unless caller marked passthrough with {})
   //   - required: every property name in `properties`
   //   - properties not in original `required` are widened with `null`
+  // Record schemas have no `properties` map and use `additionalProperties` as
+  // their value schema. Preserve that schema so best-effort tool calls retain
+  // their map semantics; wire-level strict gating rejects records separately.
   if (out.type === 'object' || out.properties) {
+    const hasProperties = Object.prototype.hasOwnProperty.call(
+      out,
+      'properties',
+    )
+    const isRecord =
+      out.type === 'object' &&
+      !hasProperties &&
+      Object.prototype.hasOwnProperty.call(out, 'additionalProperties') &&
+      out.additionalProperties !== false
     const props = (out.properties as JsonSchema | undefined) ?? {}
     const propKeys = Object.keys(props)
 
-    // additionalProperties: preserve `{}` (passthrough opt-out); otherwise force false.
-    if (!isPassthroughMarker(out.additionalProperties)) {
+    if (!isRecord && !isPassthroughMarker(out.additionalProperties)) {
       out.additionalProperties = false
     }
 
@@ -162,6 +173,101 @@ export function makeJsonSchemaStrict(schema: unknown): unknown {
   }
 
   return out
+}
+
+/**
+ * True when a JSON Schema can safely use wire-level strict tool decoding.
+ * Every object node must be closed and list all fixed properties as required.
+ * Record-shaped objects intentionally fail this check because strict decoding
+ * cannot preserve arbitrary keys while also requiring additionalProperties:false.
+ */
+export function isStrictCompatibleSchema(schema: unknown): boolean {
+  return isStrictCompatibleNode(schema, true)
+}
+
+function isStrictCompatibleNode(
+  schema: unknown,
+  requireRootObject = false,
+): boolean {
+  if (typeof schema === 'boolean') return true
+  if (typeof schema !== 'object' || schema === null) return true
+  if (Array.isArray(schema)) {
+    return schema.every(item => isStrictCompatibleNode(item))
+  }
+
+  const node = schema as JsonSchema
+  const isObjectNode =
+    node.type === 'object' ||
+    Object.prototype.hasOwnProperty.call(node, 'properties') ||
+    Object.prototype.hasOwnProperty.call(node, 'additionalProperties')
+
+  if (requireRootObject && node.type !== 'object') return false
+  if (isObjectNode) {
+    if (node.additionalProperties !== false) return false
+    if (node.properties !== undefined) {
+      if (
+        typeof node.properties !== 'object' ||
+        node.properties === null ||
+        Array.isArray(node.properties)
+      ) {
+        return false
+      }
+      const propKeys = Object.keys(node.properties as JsonSchema)
+      const required = Array.isArray(node.required)
+        ? new Set(node.required as unknown[])
+        : new Set<unknown>()
+      if (propKeys.some(key => !required.has(key))) return false
+    }
+  }
+
+  for (const key of [
+    'properties',
+    '$defs',
+    'definitions',
+    'dependentSchemas',
+  ]) {
+    const map = node[key]
+    if (map === undefined) continue
+    if (typeof map !== 'object' || map === null || Array.isArray(map)) {
+      return false
+    }
+    if (
+      !Object.values(map as JsonSchema).every(value =>
+        isStrictCompatibleNode(value),
+      )
+    ) {
+      return false
+    }
+  }
+
+  if (
+    node.patternProperties !== undefined &&
+    (typeof node.patternProperties !== 'object' ||
+      node.patternProperties === null ||
+      Array.isArray(node.patternProperties) ||
+      Object.keys(node.patternProperties as JsonSchema).length > 0)
+  ) {
+    return false
+  }
+
+  for (const key of ['items', 'contains', 'not', 'if', 'then', 'else']) {
+    if (node[key] !== undefined && !isStrictCompatibleNode(node[key])) {
+      return false
+    }
+  }
+
+  for (const key of ['anyOf', 'oneOf', 'allOf', 'prefixItems']) {
+    const variants = node[key]
+    if (variants === undefined) continue
+    if (
+      !Array.isArray(variants) ||
+      !variants.every(variant => isStrictCompatibleNode(variant))
+    ) {
+      return false
+    }
+  }
+
+  return true
 }
 
 /**

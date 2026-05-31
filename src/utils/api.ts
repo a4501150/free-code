@@ -124,7 +124,7 @@ function filterSwarmFieldsFromSchema(
 // stripping for the OpenAI path too is harmless (we already encode bounds in
 // `.describe()` for the small handful of tools that had them). We strip
 // recursively, including inside `anyOf`/`oneOf`/`allOf` branches and array
-// `items`, only on the path where `strict: true` is emitted to the wire.
+// `items`, on the universal Zod-derived strict-shape path.
 const STRICT_DISALLOWED_KEYWORDS = new Set([
   // Numeric
   'minimum',
@@ -146,6 +146,14 @@ const STRICT_DISALLOWED_KEYWORDS = new Set([
   'maxContains',
 ])
 
+const SCHEMA_MAP_KEYWORDS = new Set([
+  'properties',
+  '$defs',
+  'definitions',
+  'patternProperties',
+  'dependentSchemas',
+])
+
 function stripStrictDisallowedKeywords(schema: unknown): unknown {
   if (typeof schema !== 'object' || schema === null) return schema
   if (Array.isArray(schema)) {
@@ -157,6 +165,22 @@ function stripStrictDisallowedKeywords(schema: unknown): unknown {
     schema as Record<string, unknown>,
   )) {
     if (STRICT_DISALLOWED_KEYWORDS.has(key)) continue
+    if (
+      SCHEMA_MAP_KEYWORDS.has(key) &&
+      typeof value === 'object' &&
+      value !== null &&
+      !Array.isArray(value)
+    ) {
+      out[key] = Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(
+          ([mapKey, mapValue]) => [
+            mapKey,
+            stripStrictDisallowedKeywords(mapValue),
+          ],
+        ),
+      )
+      continue
+    }
     out[key] = stripStrictDisallowedKeywords(value)
   }
   return out
@@ -268,22 +292,21 @@ export async function toolToAPISchema(
   // The wire-strict bit is baked in: a mid-session provider switch must not
   // return a cached schema with the wrong strict flag / keyword shape.
   const wireStrict = shouldEmitWireStrictForAnthropic(tool.name, options.model)
+  const isToolOwnedSchema = 'inputJSONSchema' in tool && tool.inputJSONSchema
+  const modelInputSchema = isToolOwnedSchema
+    ? tool.inputJSONSchema!
+    : zodToJsonSchema(tool.modelInputSchema ?? tool.inputSchema)
   const baseKey =
-    'inputJSONSchema' in tool && tool.inputJSONSchema
-      ? `${tool.name}:${jsonStringify(tool.inputJSONSchema)}`
+    isToolOwnedSchema || tool.modelInputSchema
+      ? `${tool.name}:${jsonStringify(modelInputSchema)}`
       : tool.name
   const cacheKey = `${baseKey}|strict=${wireStrict ? 1 : 0}`
   const cache = getToolSchemaCache()
   let base = cache.get(cacheKey)
   if (!base) {
     // Tool-owned schema (MCP, StructuredOutput) — caller controls the shape;
-    // we never rewrite. Otherwise convert from Zod.
-    const isToolOwnedSchema = 'inputJSONSchema' in tool && tool.inputJSONSchema
-    let input_schema = (
-      isToolOwnedSchema
-        ? tool.inputJSONSchema!
-        : zodToJsonSchema(tool.inputSchema)
-    ) as APIToolInputSchema
+    // we never rewrite. Otherwise convert the model-facing Zod schema.
+    let input_schema = modelInputSchema as APIToolInputSchema
 
     // Filter out swarm-related fields when swarms are not enabled
     // This ensures external non-EAP users don't see swarm features in the schema
@@ -308,9 +331,7 @@ export async function toolToAPISchema(
     // universal schema bytes match what the OpenAI/Codex/Anthropic-strict
     // adapters expect — keeps one schema shape across all providers.
     if (!isToolOwnedSchema && !isPassthroughSchema(input_schema)) {
-      input_schema = makeJsonSchemaStrict(
-        input_schema,
-      ) as APIToolInputSchema
+      input_schema = makeJsonSchemaStrict(input_schema) as APIToolInputSchema
       input_schema = stripStrictDisallowedKeywords(
         input_schema,
       ) as APIToolInputSchema

@@ -7,7 +7,9 @@ type WebSearchToolSchema = {
   allowed_domains?: string[]
   blocked_domains?: string[]
 }
-type WebSearchContentBlock = DomainContentBlock | { type: string; [key: string]: any }
+type WebSearchContentBlock =
+  | DomainContentBlock
+  | { type: string; [key: string]: any }
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import type { PermissionResult } from 'src/utils/permissions/PermissionResult.js'
 import { z } from 'zod/v4'
@@ -27,19 +29,23 @@ import {
 } from './UI.js'
 
 const inputSchema = z.strictObject({
-    query: z
-      .string()
-      .min(2)
-      .describe('The search query to use (at least 2 characters).'),
-    allowed_domains: z
-      .array(z.string())
-      .optional()
-      .describe('Only include search results from these domains'),
-    blocked_domains: z
-      .array(z.string())
-      .optional()
-      .describe('Never include search results from these domains'),
-  })
+  query: z
+    .string()
+    .min(2)
+    .describe('The search query to use (at least 2 characters).'),
+  allowed_domains: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Only include search results from these domains. Mutually exclusive with blocked_domains; omit this field or send null when unused.',
+    ),
+  blocked_domains: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Never include search results from these domains. Mutually exclusive with allowed_domains; omit this field or send null when unused.',
+    ),
+})
 type InputSchema = typeof inputSchema
 
 type Input = z.infer<InputSchema>
@@ -59,14 +65,14 @@ const searchResultSchema = (() => {
 export type SearchResult = z.infer<typeof searchResultSchema>
 
 const outputSchema = z.object({
-    query: z.string().describe('The search query that was executed'),
-    results: z
-      .array(z.union([searchResultSchema, z.string()]))
-      .describe('Search results and/or text commentary from the model'),
-    durationSeconds: z
-      .number()
-      .describe('Time taken to complete the search operation'),
-  })
+  query: z.string().describe('The search query that was executed'),
+  results: z
+    .array(z.union([searchResultSchema, z.string()]))
+    .describe('Search results and/or text commentary from the model'),
+  durationSeconds: z
+    .number()
+    .describe('Time taken to complete the search operation'),
+})
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
@@ -96,7 +102,7 @@ function makeToolSchema(input: Input): WebSearchToolSchema {
 }
 
 function makeOutputFromSearchResponse(
-  result: (WebSearchContentBlock)[],
+  result: WebSearchContentBlock[],
   query: string,
   durationSeconds: number,
 ): Output {
@@ -274,7 +280,7 @@ export const WebSearchTool = buildTool({
       },
     })
 
-    const allContentBlocks: (WebSearchContentBlock)[] = []
+    const allContentBlocks: WebSearchContentBlock[] = []
     let currentToolUseId = null
     let currentToolUseJson = ''
     let progressCounter = 0

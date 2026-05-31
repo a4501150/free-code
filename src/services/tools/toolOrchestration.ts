@@ -1,8 +1,13 @@
 import type { DomainToolUseBlock } from '../../types/domain.js'
-import { findToolByName, type CanUseToolFn, type ToolUseContext } from '../../Tool.js'
+import {
+  findToolByName,
+  type CanUseToolFn,
+  type ToolUseContext,
+} from '../../Tool.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
 import { all } from '../../utils/generators.js'
 import { type MessageUpdateLazy, runToolUse } from './toolExecution.js'
+import { isConcurrencySafeToolInput } from './toolInput.js'
 
 function getMaxToolUseConcurrency(): number {
   return (
@@ -93,18 +98,7 @@ function partitionToolCalls(
 ): Batch[] {
   return toolUseMessages.reduce((acc: Batch[], toolUse) => {
     const tool = findToolByName(toolUseContext.options.tools, toolUse.name)
-    const parsedInput = tool?.inputSchema.safeParse(toolUse.input)
-    const isConcurrencySafe = parsedInput?.success
-      ? (() => {
-          try {
-            return Boolean(tool?.isConcurrencySafe(parsedInput.data))
-          } catch {
-            // If isConcurrencySafe throws (e.g., due to shell-quote parse failure),
-            // treat as not concurrency-safe to be conservative
-            return false
-          }
-        })()
-      : false
+    const isConcurrencySafe = isConcurrencySafeToolInput(tool, toolUse.input)
     if (isConcurrencySafe && acc[acc.length - 1]?.isConcurrencySafe) {
       acc[acc.length - 1]!.blocks.push(toolUse)
     } else {

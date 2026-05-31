@@ -7,26 +7,30 @@ import { DESCRIPTION, TASK_STOP_TOOL_NAME } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
 const inputSchema = z.strictObject({
-    task_id: z
-      .string()
-      .optional()
-      .describe('The ID of the background task to stop'),
-    // shell_id is accepted for backward compatibility with the deprecated KillShell tool
-    shell_id: z.string().optional().describe('Deprecated: use task_id instead'),
-  })
+  task_id: z
+    .string()
+    .optional()
+    .describe('The ID of the background task to stop'),
+  // shell_id is accepted for backward compatibility with the deprecated KillShell tool
+  shell_id: z.string().optional().describe('Deprecated: use task_id instead'),
+})
 type InputSchema = typeof inputSchema
 
+const modelInputSchema = z.strictObject({
+  task_id: z.string().describe('The ID of the background task to stop'),
+})
+
 const outputSchema = z.object({
-    message: z.string().describe('Status message about the operation'),
-    task_id: z.string().describe('The ID of the task that was stopped'),
-    task_type: z.string().describe('The type of the task that was stopped'),
-    // Optional: tool outputs are persisted to transcripts and replayed on --resume
-    // without re-validation, so sessions from before this field was added lack it.
-    command: z
-      .string()
-      .optional()
-      .describe('The command or description of the stopped task'),
-  })
+  message: z.string().describe('Status message about the operation'),
+  task_id: z.string().describe('The ID of the task that was stopped'),
+  task_type: z.string().describe('The type of the task that was stopped'),
+  // Optional: tool outputs are persisted to transcripts and replayed on --resume
+  // without re-validation, so sessions from before this field was added lack it.
+  command: z
+    .string()
+    .optional()
+    .describe('The command or description of the stopped task'),
+})
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
@@ -40,6 +44,9 @@ export const TaskStopTool = buildTool({
   userFacingName: () => 'Stop Background Task',
   get inputSchema(): InputSchema {
     return inputSchema
+  },
+  get modelInputSchema() {
+    return modelInputSchema
   },
   get outputSchema(): OutputSchema {
     return outputSchema

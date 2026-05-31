@@ -29,6 +29,33 @@ describe('tool prompt contracts', () => {
     expect(source).toContain(": 'Glob, Grep, and Read'")
   })
 
+  test('optional and destructive tool guidance matches runtime contracts', () => {
+    const read = readSource('src/tools/FileReadTool/prompt.ts')
+    const glob = readSource('src/tools/GlobTool/GlobTool.ts')
+    const search = readSource('src/tools/WebSearchTool/WebSearchTool.ts')
+    const exitWorktree = readSource('src/tools/ExitWorktreeTool/prompt.ts')
+
+    expect(read).toContain('omit unused optional fields or send \\`null\\`')
+    expect(read).toContain('For non-PDF files, omit `pages` or send `null`')
+    expect(glob).toContain('Omit this field or send null')
+    expect(search).toContain('Mutually exclusive with blocked_domains')
+    expect(search).toContain('Mutually exclusive with allowed_domains')
+    expect(exitWorktree).toContain(
+      'after the user explicitly confirms destructive removal',
+    )
+  })
+
+  test('Agent rejects cwd with effective worktree isolation before creation', () => {
+    const source = readSource('src/tools/AgentTool/AgentTool.tsx')
+    const guard = source.indexOf(
+      'cwd cannot be used together with worktree isolation',
+    )
+    const create = source.indexOf('await createAgentWorktree(slug)')
+
+    expect(guard).toBeGreaterThan(-1)
+    expect(create).toBeGreaterThan(guard)
+  })
+
   test('Edit requires reading the existing target and task wording is supported', () => {
     const edit = readSource('src/tools/FileEditTool/prompt.ts')
     const output = readSource('src/tools/TaskOutputTool/TaskOutputTool.tsx')

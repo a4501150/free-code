@@ -13,9 +13,18 @@ Supported operations:
 - incomingCalls: Find all functions/methods that call the function at a position
 - outgoingCalls: Find all functions/methods called by the function at a position
 
-All operations require:
-- filePath: The file to operate on
-- line: The line number (1-based, as shown in editors)
-- character: The character offset (1-based, as shown in editors)
+All operations require \`filePath\`. It selects the document or the workspace's LSP server.
+
+Position-based operations also require \`line\` and \`character\` (both 1-based):
+- goToDefinition
+- findReferences
+- hover
+- goToImplementation
+- prepareCallHierarchy
+- incomingCalls
+- outgoingCalls
+
+\`documentSymbol\` requires only \`filePath\`.
+\`workspaceSymbol\` accepts an optional \`query\`; omit it to request all symbols.
 
 Note: LSP servers must be configured for the file type. If no server is available, an error will be returned.`

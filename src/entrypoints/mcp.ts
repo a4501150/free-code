@@ -5,7 +5,7 @@ import {
   type CallToolResult,
   ListToolsRequestSchema,
   type ListToolsResult,
-  type Tool,
+  type Tool as MCPTool,
 } from '@modelcontextprotocol/sdk/types.js'
 import { getDefaultAppState } from 'src/state/AppStateStore.js'
 import review from '../commands/review.js'
@@ -13,6 +13,7 @@ import type { Command } from '../commands.js'
 import {
   findToolByName,
   getEmptyToolPermissionContext,
+  type Tool,
   type ToolUseContext,
 } from '../Tool.js'
 import { getTools } from '../tools.js'
@@ -24,11 +25,33 @@ import { getMainLoopModel } from '../utils/model/model.js'
 import { hasPermissionsToUseTool } from '../utils/permissions/permissions.js'
 import { setCwd } from '../utils/Shell.js'
 import { jsonStringify } from '../utils/slowOperations.js'
+import { stripStrictNullInputs } from '../utils/stripStrictNullInputs.js'
 import { getErrorParts } from '../utils/toolErrors.js'
 import { zodToJsonSchema } from '../utils/zodToJsonSchema.js'
 
-type ToolInput = Tool['inputSchema']
-type ToolOutput = Tool['outputSchema']
+type ToolInput = MCPTool['inputSchema']
+type ToolOutput = MCPTool['outputSchema']
+
+export function getMCPToolInputSchema(tool: Tool): ToolInput {
+  return 'inputJSONSchema' in tool && tool.inputJSONSchema
+    ? (tool.inputJSONSchema as ToolInput)
+    : (zodToJsonSchema(tool.modelInputSchema ?? tool.inputSchema) as ToolInput)
+}
+
+export function parseMCPToolInput(
+  tool: Tool,
+  args: unknown,
+): Record<string, unknown> {
+  const parsedInput = tool.inputSchema.safeParse(
+    stripStrictNullInputs(tool.inputSchema, args ?? {}),
+  )
+  if (!parsedInput.success) {
+    throw new Error(
+      `Tool ${tool.name} input is invalid: ${parsedInput.error.message}`,
+    )
+  }
+  return parsedInput.data
+}
 
 const MCP_COMMANDS: Command[] = [review]
 
@@ -87,7 +110,7 @@ export async function startMCPServer(
                 tools,
                 agents: [],
               }),
-              inputSchema: zodToJsonSchema(tool.inputSchema) as ToolInput,
+              inputSchema: getMCPToolInputSchema(tool),
               outputSchema,
             }
           }),
@@ -132,13 +155,13 @@ export async function startMCPServer(
         updateFileHistoryState: () => {},
       }
 
-      // TODO: validate input types with zod
       try {
         if (!tool.isEnabled()) {
           throw new Error(`Tool ${name} is not enabled`)
         }
+        const parsedInput = parseMCPToolInput(tool, args)
         const validationResult = await tool.validateInput?.(
-          (args as never) ?? {},
+          parsedInput,
           toolUseContext,
         )
         if (validationResult && !validationResult.result) {
@@ -147,7 +170,7 @@ export async function startMCPServer(
           )
         }
         const finalResult = await tool.call(
-          (args ?? {}) as never,
+          parsedInput,
           toolUseContext,
           hasPermissionsToUseTool,
           createAssistantMessage({

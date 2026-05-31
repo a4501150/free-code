@@ -20,49 +20,49 @@ import {
 } from './prompt.js'
 
 const questionOptionSchema = z.object({
-    label: z
-      .string()
-      .describe(
-        'The display text for this option that the user will see and select. Should be concise (1-5 words) and clearly describe the choice.',
-      ),
-    description: z
-      .string()
-      .describe(
-        'Explanation of what this option means or what will happen if chosen. Useful for providing context about trade-offs or implications.',
-      ),
-    preview: z
-      .string()
-      .optional()
-      .describe(
-        'Optional preview content rendered when this option is focused. Use for mockups, code snippets, or visual comparisons that help users compare options. See the tool description for the expected content format.',
-      ),
-  })
+  label: z
+    .string()
+    .describe(
+      'The display text for this option that the user will see and select. Should be concise (1-5 words) and clearly describe the choice.',
+    ),
+  description: z
+    .string()
+    .describe(
+      'Explanation of what this option means or what will happen if chosen. Useful for providing context about trade-offs or implications.',
+    ),
+  preview: z
+    .string()
+    .optional()
+    .describe(
+      'Optional preview content rendered when this option is focused. Use for mockups, code snippets, or visual comparisons that help users compare options. See the tool description for the expected content format.',
+    ),
+})
 
 const questionSchema = z.object({
-    question: z
-      .string()
-      .describe(
-        'The complete question to ask the user. Should be clear, specific, and end with a question mark. Example: "Which library should we use for date formatting?" If multiSelect is true, phrase it accordingly, e.g. "Which features do you want to enable?"',
-      ),
-    header: z
-      .string()
-      .describe(
-        `Very short label displayed as a chip/tag (max ${ASK_USER_QUESTION_TOOL_CHIP_WIDTH} chars). Examples: "Auth method", "Library", "Approach".`,
-      ),
-    options: z
-      .array(questionOptionSchema)
-      .min(2)
-      .max(4)
-      .describe(
-        `The available choices for this question. Must have 2-4 options. Each option should be a distinct, mutually exclusive choice (unless multiSelect is enabled). There should be no 'Other' option, that will be provided automatically.`,
-      ),
-    multiSelect: z
-      .boolean()
-      .default(false)
-      .describe(
-        'Set to true to allow the user to select multiple options instead of just one. Use when choices are not mutually exclusive.',
-      ),
-  })
+  question: z
+    .string()
+    .describe(
+      'The complete question to ask the user. Should be clear, specific, and end with a question mark. Example: "Which library should we use for date formatting?" If multiSelect is true, phrase it accordingly, e.g. "Which features do you want to enable?"',
+    ),
+  header: z
+    .string()
+    .describe(
+      `Very short label displayed as a chip/tag (max ${ASK_USER_QUESTION_TOOL_CHIP_WIDTH} chars). Examples: "Auth method", "Library", "Approach".`,
+    ),
+  options: z
+    .array(questionOptionSchema)
+    .min(2)
+    .max(4)
+    .describe(
+      `The available choices for this question. Must have 2-4 options. Each option should be a distinct, mutually exclusive choice (unless multiSelect is enabled). There should be no 'Other' option, that will be provided automatically.`,
+    ),
+  multiSelect: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Set to true to allow the user to select multiple options instead of just one. Use when choices are not mutually exclusive.',
+    ),
+})
 
 const annotationsSchema = (() => {
   const annotationSchema = z.object({
@@ -106,39 +106,45 @@ const UNIQUENESS_REFINE = {
     'Question texts must be unique, option labels must be unique within each question',
 } as const
 
-const commonFields = ({
+const commonFields = {
   answers: z
     .record(z.string(), z.string())
     .optional()
     .describe('User answers collected by the permission component'),
   annotations: annotationsSchema,
-})
+}
+
+const questionsSchema = z
+  .array(questionSchema)
+  .min(1)
+  .max(4)
+  .describe('Questions to ask the user (1-4 questions)')
+
+const modelInputSchema = z
+  .strictObject({ questions: questionsSchema })
+  .refine(UNIQUENESS_REFINE.check, {
+    message: UNIQUENESS_REFINE.message,
+  })
 
 const inputSchema = z
-    .strictObject({
-      questions: z
-        .array(questionSchema)
-        .min(1)
-        .max(4)
-        .describe('Questions to ask the user (1-4 questions)'),
-      ...commonFields,
-    })
-    .refine(UNIQUENESS_REFINE.check, {
-      message: UNIQUENESS_REFINE.message,
-    })
+  .strictObject({
+    questions: questionsSchema,
+    ...commonFields,
+  })
+  .refine(UNIQUENESS_REFINE.check, {
+    message: UNIQUENESS_REFINE.message,
+  })
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    questions: z
-      .array(questionSchema)
-      .describe('The questions that were asked'),
-    answers: z
-      .record(z.string(), z.string())
-      .describe(
-        'The answers provided by the user (question text -> answer string; multi-select answers are comma-separated)',
-      ),
-    annotations: annotationsSchema,
-  })
+  questions: z.array(questionSchema).describe('The questions that were asked'),
+  answers: z
+    .record(z.string(), z.string())
+    .describe(
+      'The answers provided by the user (question text -> answer string; multi-select answers are comma-separated)',
+    ),
+  annotations: annotationsSchema,
+})
 type OutputSchema = typeof outputSchema
 
 // SDK schemas are identical to internal schemas now that `preview` and
@@ -191,6 +197,9 @@ export const AskUserQuestionTool: Tool<InputSchema, Output> = buildTool({
   },
   get inputSchema(): InputSchema {
     return inputSchema
+  },
+  get modelInputSchema() {
+    return modelInputSchema
   },
   get outputSchema(): OutputSchema {
     return outputSchema

@@ -17,9 +17,12 @@ If called outside an EnterWorktree session, the tool is a **no-op**: it reports 
 
 ## Behavior
 
-- Restores the session's working directory to where it was before EnterWorktree
-- Clears CWD-dependent caches (system prompt sections, memory files, plans directory) so the session state reflects the original directory
-- If a tmux session was attached to the worktree: killed on \`remove\`, left running on \`keep\` (its name is returned so the user can reattach)
-- Once exited, EnterWorktree can be called again to create a fresh worktree
+- \`keep\` restores the original directory but leaves the worktree and branch on disk.
+- \`remove\` restores the original directory and deletes the worktree and branch.
+- If \`remove\` finds uncommitted files or unmerged commits, it refuses and lists them unless \`discard_changes: true\` is provided.
+- Only send \`discard_changes: true\` after the user explicitly confirms destructive removal of those changes.
+- Clears CWD-dependent caches (system prompt sections, memory files, plans directory) so the session state reflects the original directory.
+- If a tmux session was attached to the worktree: killed on \`remove\`, left running on \`keep\` (its name is returned so the user can reattach).
+- Once exited, EnterWorktree can be called again to create a fresh worktree.
 `
 }

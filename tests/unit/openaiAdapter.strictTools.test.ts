@@ -194,4 +194,43 @@ describe('OpenAI Chat Completions adapter: strict tool gating', () => {
     expect(byName['StrictTool']).toBe(true)
     expect(byName['mcp__server__tool']).toBeUndefined()
   })
+
+  test('nested open objects and records omit strict', async () => {
+    const captured = await runAdapterWithTools(true, [
+      {
+        name: 'NestedOpenTool',
+        input_schema: {
+          type: 'object',
+          properties: {
+            nested: {
+              type: 'object',
+              properties: { x: { type: 'string' } },
+              required: ['x'],
+            },
+          },
+          required: ['nested'],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'NestedRecordTool',
+        input_schema: {
+          type: 'object',
+          properties: {
+            metadata: {
+              type: 'object',
+              additionalProperties: { type: 'string' },
+            },
+          },
+          required: ['metadata'],
+          additionalProperties: false,
+        },
+      },
+    ])
+    const byName = Object.fromEntries(
+      (captured.tools ?? []).map(t => [t.function?.name, t.function?.strict]),
+    )
+    expect(byName['NestedOpenTool']).toBeUndefined()
+    expect(byName['NestedRecordTool']).toBeUndefined()
+  })
 })

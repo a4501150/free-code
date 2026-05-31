@@ -4,11 +4,17 @@ import {
   REJECT_MESSAGE,
   withMemoryCorrectionHint,
 } from 'src/utils/messages.js'
-import { findToolByName, type CanUseToolFn, type Tools, type ToolUseContext } from '../../Tool.js'
+import {
+  findToolByName,
+  type CanUseToolFn,
+  type Tools,
+  type ToolUseContext,
+} from '../../Tool.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
 import { createChildAbortController } from '../../utils/abortController.js'
 import { runToolUse } from './toolExecution.js'
+import { isConcurrencySafeToolInput } from './toolInput.js'
 
 type MessageUpdate = {
   message?: Message
@@ -100,16 +106,10 @@ export class StreamingToolExecutor {
       return
     }
 
-    const parsedInput = toolDefinition.inputSchema.safeParse(block.input)
-    const isConcurrencySafe = parsedInput?.success
-      ? (() => {
-          try {
-            return Boolean(toolDefinition.isConcurrencySafe(parsedInput.data))
-          } catch {
-            return false
-          }
-        })()
-      : false
+    const isConcurrencySafe = isConcurrencySafeToolInput(
+      toolDefinition,
+      block.input,
+    )
     this.tools.push({
       id: block.id,
       block,

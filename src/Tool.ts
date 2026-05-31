@@ -391,6 +391,8 @@ export type Tool<
     },
   ): Promise<string>
   readonly inputSchema: Input
+  /** Optional narrower schema for model-authored input. Runtime parsing still uses inputSchema. */
+  readonly modelInputSchema?: AnyObject
   // Type for MCP tools that can specify their input schema directly in JSON Schema format
   // rather than converting from Zod schema
   readonly inputJSONSchema?: ToolInputJSONSchema

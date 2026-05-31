@@ -23,28 +23,28 @@ import {
 } from './UI.js'
 
 const inputSchema = z.strictObject({
-    pattern: z.string().describe('The glob pattern to match files against'),
-    path: z
-      .string()
-      .optional()
-      .describe(
-        'The directory to search in. If not specified, the current working directory will be used. IMPORTANT: Omit this field to use the default directory. DO NOT enter "undefined" or "null" - simply omit it for the default behavior. Must be a valid directory path if provided.',
-      ),
-  })
+  pattern: z.string().describe('The glob pattern to match files against'),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      'The directory to search in. Omit this field or send null to use the current working directory. Do not invent a value or send the strings "undefined" or "null". Must be a valid directory path if provided.',
+    ),
+})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    durationMs: z
-      .number()
-      .describe('Time taken to execute the search in milliseconds'),
-    numFiles: z.number().describe('Total number of files found'),
-    filenames: z
-      .array(z.string())
-      .describe('Array of file paths that match the pattern'),
-    truncated: z
-      .boolean()
-      .describe('Whether results were truncated (limited to 100 files)'),
-  })
+  durationMs: z
+    .number()
+    .describe('Time taken to execute the search in milliseconds'),
+  numFiles: z.number().describe('Total number of files found'),
+  filenames: z
+    .array(z.string())
+    .describe('Array of file paths that match the pattern'),
+  truncated: z
+    .boolean()
+    .describe('Whether results were truncated (limited to 100 files)'),
+})
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>

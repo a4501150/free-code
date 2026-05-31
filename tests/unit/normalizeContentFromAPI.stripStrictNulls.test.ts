@@ -11,6 +11,7 @@ import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages
 import { z } from 'zod/v4'
 import { FileReadTool } from '../../src/tools/FileReadTool/FileReadTool.js'
 import { GrepTool } from '../../src/tools/GrepTool/GrepTool.js'
+import { SendMessageTool } from '../../src/tools/SendMessageTool/SendMessageTool.js'
 import { SkillTool } from '../../src/tools/SkillTool/SkillTool.js'
 import { normalizeContentFromAPI } from '../../src/utils/messages.js'
 import { semanticBoolean } from '../../src/utils/semanticBoolean.js'
@@ -135,6 +136,67 @@ describe('normalizeContentFromAPI strips strict-mode nulls', () => {
 
     const parsed = GrepTool.inputSchema.safeParse(normalized.input)
     expect(parsed.success).toBe(true)
+  })
+
+  test('SendMessage shutdown response strips nested discriminated-union null reason', () => {
+    const input = {
+      to: 'lead',
+      message: {
+        type: 'shutdown_response',
+        request_id: 'request-1',
+        approve: true,
+        reason: null,
+      },
+    }
+    const stripped = stripStrictNullInputs(SendMessageTool.inputSchema, input)
+
+    expect(stripped).toEqual({
+      to: 'lead',
+      message: {
+        type: 'shutdown_response',
+        request_id: 'request-1',
+        approve: true,
+      },
+    })
+    expect(SendMessageTool.inputSchema.safeParse(stripped).success).toBe(true)
+  })
+
+  test('SendMessage plan approval strips nested discriminated-union null feedback', () => {
+    const input = {
+      to: 'lead',
+      message: {
+        type: 'plan_approval_response',
+        request_id: 'request-2',
+        approve: false,
+        feedback: null,
+      },
+    }
+    const stripped = stripStrictNullInputs(SendMessageTool.inputSchema, input)
+
+    expect(stripped).toEqual({
+      to: 'lead',
+      message: {
+        type: 'plan_approval_response',
+        request_id: 'request-2',
+        approve: false,
+      },
+    })
+    expect(SendMessageTool.inputSchema.safeParse(stripped).success).toBe(true)
+  })
+
+  test('ordinary union strips nested optional placeholders from the matching branch', () => {
+    const schema = z.object({
+      message: z.union([
+        z.string(),
+        z.object({ value: z.string(), optional: z.string().optional() }),
+      ]),
+    })
+    const stripped = stripStrictNullInputs(schema, {
+      message: { value: 'ok', optional: null },
+    })
+
+    expect(stripped).toEqual({ message: { value: 'ok' } })
+    expect(schema.safeParse(stripped).success).toBe(true)
   })
 
   // Direct stripStrictNullInputs unit tests for the wrapper-shape matrix.

@@ -116,10 +116,38 @@ describe('toolToAPISchema: universal strict-shape + selective wire strict', () =
     // The widenWithNull function emits flat type arrays: type: ["number", "null"].
     // Check that the type includes null (as array element or standalone).
     expect(offset.type).toEqual(expect.arrayContaining(['null']))
+    expect(inputSchema.properties.pattern).toBeDefined()
+    expect(inputSchema.properties.pattern.minLength).toBeUndefined()
     // Strict-disallowed keywords stripped universally so the same schema
     // bytes work everywhere (Anthropic-strict allowlist + OpenAI strict).
     expect(JSON.stringify(inputSchema)).not.toContain('"minimum"')
     expect(JSON.stringify(inputSchema)).not.toContain('"minLength"')
+  })
+
+  test('modelInputSchema narrows model exposure without changing runtime parsing', async () => {
+    setupProvider('anthropic', 'anthropic', 'claude-test', false)
+    const runtimeSchema = z.object({
+      visible: z.string(),
+      internal: z.string().optional(),
+    })
+    const modelSchema = z.object({ visible: z.string() })
+    const tool = {
+      ...makeFakeTool('OverriddenTool'),
+      inputSchema: runtimeSchema,
+      modelInputSchema: modelSchema,
+    } as Tool
+    const schema = (await toolToAPISchema(tool, {
+      getToolPermissionContext: async () => ({}) as never,
+      tools: [tool],
+      agents: [],
+      model: 'claude-test',
+    })) as { input_schema: { properties: Record<string, unknown> } }
+
+    expect(Object.keys(schema.input_schema.properties)).toEqual(['visible'])
+    expect(
+      runtimeSchema.safeParse({ visible: 'shown', internal: 'accepted' })
+        .success,
+    ).toBe(true)
   })
 
   test('Anthropic non-allowlist tool: strict-shape but no wire strict flag', async () => {

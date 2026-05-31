@@ -49,8 +49,9 @@ describe('Read range contract', () => {
     })
 
     expect(prompt).toContain('provide only `file_path` to read the full file')
-    expect(prompt).toContain('omit `limit` to read from the starting point')
-    expect(prompt).toContain('Never use a very large `limit` value')
+    expect(prompt).toContain('Omit `limit` to read from the starting point')
+    expect(prompt).toContain('Never invent optional values')
+    expect(prompt).toContain('For non-PDF files, omit `pages` or send `null`')
   })
 
   test('rejects pages for non-PDF files', async () => {
