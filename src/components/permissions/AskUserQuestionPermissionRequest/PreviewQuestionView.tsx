@@ -296,6 +296,7 @@ export function PreviewQuestionView({
   const GAP = 4
   const { columns } = useTerminalSize()
   const previewMaxWidth = columns - LEFT_PANEL_WIDTH - GAP
+  const notesInputColumns = Math.max(20, previewMaxWidth - 'Notes:'.length)
 
   // Lines used within the content area that aren't preview content:
   // 1: marginTop on side-by-side box
@@ -396,7 +397,7 @@ export function PreviewQuestionView({
                     onExit={handleNotesExit}
                     focus={true}
                     showCursor={true}
-                    columns={60}
+                    columns={notesInputColumns}
                     cursorOffset={cursorOffset}
                     onChangeCursorOffset={setCursorOffset}
                   />

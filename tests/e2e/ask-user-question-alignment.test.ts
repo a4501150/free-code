@@ -190,4 +190,145 @@ describe('AskUserQuestion Alignment', () => {
     await session.sendSpecialKey('Escape')
     await sleep(500)
   })
+
+  test('tall question content keeps wrapped Other input aligned', async () => {
+    server.reset([
+      toolUseResponse([
+        {
+          name: 'AskUserQuestion',
+          input: {
+            questions: [
+              {
+                question: 'Choose the detailed implementation strategy.',
+                header: 'Strategy',
+                options: [
+                  { label: 'Approach A', description: 'Use the current flow.' },
+                  {
+                    label: 'Approach B',
+                    description: 'Replace the current flow.',
+                  },
+                  { label: 'Approach C', description: 'Combine both flows.' },
+                  { label: 'Approach D', description: 'Defer the decision.' },
+                ],
+                multiSelect: false,
+              },
+              {
+                question: 'Compare the rendered interface.',
+                header: 'Preview',
+                options: [
+                  {
+                    label: 'Dense preview',
+                    description: 'Shows a tall comparison.',
+                    preview: Array.from(
+                      { length: 24 },
+                      (_, i) => `Preview detail ${i + 1}`,
+                    ).join('\n'),
+                  },
+                  {
+                    label: 'Compact preview',
+                    description: 'Shows a compact comparison.',
+                    preview: 'Compact',
+                  },
+                ],
+                multiSelect: false,
+              },
+            ],
+          },
+        },
+      ]),
+    ])
+
+    session = new TmuxSession({
+      serverUrl: server.url,
+      height: 30,
+      width: 72,
+      additionalEnv: {
+        CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
+      },
+    })
+    await session.start()
+
+    await session.sendLine('Show the tall question dialog')
+    await session.waitForText('Chat about this', 30_000)
+
+    for (let i = 0; i < 4; i++) await session.sendSpecialKey('Down')
+    await session.sendText(`${'x'.repeat(140)}OTHER_END`)
+
+    const screen = await session.waitForText('OTHER_END', 10_000)
+    const lines = screen.split('\n')
+    const inputLine = lines.find(
+      line => line.includes('5.') && line.includes('x'),
+    )
+    const continuationLine = lines.find(line => /^\s+x{2,}/.test(line))
+
+    expect(inputLine).toBeDefined()
+    expect(continuationLine).toBeDefined()
+    expect(lines.filter(line => /^\s+x$/.test(line))).toEqual([])
+    expect(continuationLine!.indexOf('x')).toBe(inputLine!.indexOf('x'))
+  })
+
+  test('tall preview content keeps Notes input within the right panel', async () => {
+    server.reset([
+      toolUseResponse([
+        {
+          name: 'AskUserQuestion',
+          input: {
+            questions: [
+              {
+                question: 'Which interface layout should we use?',
+                header: 'Layout',
+                options: [
+                  {
+                    label: 'Editorial',
+                    description: 'High-density preview.',
+                    preview: Array.from(
+                      { length: 28 },
+                      (_, i) => `Detailed preview row ${i + 1}`,
+                    ).join('\n'),
+                  },
+                  {
+                    label: 'Minimal',
+                    description: 'Compact preview.',
+                    preview: 'Minimal preview',
+                  },
+                ],
+                multiSelect: false,
+              },
+            ],
+          },
+        },
+      ]),
+    ])
+
+    session = new TmuxSession({
+      serverUrl: server.url,
+      height: 30,
+      width: 72,
+      additionalEnv: {
+        CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
+      },
+    })
+    await session.start()
+
+    await session.sendLine('Show the tall preview dialog')
+    await session.waitForText('press n to add notes', 30_000)
+    await session.sendText('n')
+    await session.sendText('x'.repeat(44))
+    await sleep(300)
+
+    const screen = await session.capturePane()
+    const lines = screen.split('\n')
+    const notesLine = lines.find(line => line.includes('Notes:'))
+    const previewBorderLine = lines.find(line => line.includes('┌'))
+    const continuationLine = lines.find(line => /^\s+x{2,}/.test(line))
+
+    expect(notesLine).toBeDefined()
+    expect(previewBorderLine).toBeDefined()
+    expect(continuationLine).toBeDefined()
+    expect(notesLine!.indexOf('Notes:')).toBe(previewBorderLine!.indexOf('┌'))
+    expect(notesLine!.length - 1).toBeLessThanOrEqual(
+      previewBorderLine!.lastIndexOf('┐'),
+    )
+    expect(continuationLine!.indexOf('x')).toBe(notesLine!.indexOf('x'))
+  })
 })
