@@ -38,6 +38,7 @@ type Props<T> = {
   onSubmit: (value: string) => void
   onExit?: () => void
   layout: 'compact' | 'expanded'
+  inputColumnsOffset?: number
   children?: ReactNode
   /**
    * When true, shows the label before the input field.
@@ -109,6 +110,7 @@ export function SelectInputOption<T>({
   onSubmit,
   onExit,
   layout,
+  inputColumnsOffset = 0,
   children,
   showLabel: showLabelProp = false,
   onOpenEditor,
@@ -265,7 +267,7 @@ export function SelectInputOption<T>({
       : 0
   const textInputColumns = Math.max(
     20,
-    terminalColumns - chromeWidth - labelChrome,
+    terminalColumns - chromeWidth - labelChrome - inputColumnsOffset,
   )
 
   const handleInputClick = useCallback(

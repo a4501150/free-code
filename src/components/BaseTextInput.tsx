@@ -141,7 +141,10 @@ export function BaseTextInput({
 
   return (
     <Box ref={cursorRef}>
-      <Text wrap="truncate-end" dimColor={props.dimColor}>
+      <Text
+        wrap={props.multiline ? 'wrap' : 'truncate-end'}
+        dimColor={props.dimColor}
+      >
         {showPlaceholder && props.placeholderElement ? (
           props.placeholderElement
         ) : showPlaceholder && renderedPlaceholder ? (

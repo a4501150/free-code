@@ -537,6 +537,7 @@ export function ExitPlanModePermissionRequest({
         <Box marginTop={1}>
           <Select
             options={options}
+            inputColumnsOffset={2}
             onChange={v => void handleResponseRef.current(v)}
             onCancel={() => handleCancelRef.current?.()}
             onImagePaste={onImagePaste}
@@ -679,6 +680,7 @@ export function ExitPlanModePermissionRequest({
                 <Box marginTop={1}>
                   <Select
                     options={options}
+                    inputColumnsOffset={2}
                     onChange={handleResponse}
                     onCancel={() => handleCancelRef.current?.()}
                     onImagePaste={onImagePaste}

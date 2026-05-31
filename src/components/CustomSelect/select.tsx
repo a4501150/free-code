@@ -170,6 +170,12 @@ export type SelectProps<T> = {
   readonly onInputModeToggle?: (value: T) => void
 
   /**
+   * Additional columns to reserve when wrapping an editable option inside a
+   * padded container.
+   */
+  readonly inputColumnsOffset?: number
+
+  /**
    * Callback to open external editor for editing input option values.
    * When provided, ctrl+g will trigger this callback in input options
    * with the current value and a setter function to update the internal state.
@@ -218,6 +224,7 @@ export function Select<T>({
   onUpFromFirstItem,
   onDownFromLastItem,
   onInputModeToggle,
+  inputColumnsOffset = 0,
   onOpenEditor,
   onImagePaste,
   pastedContents,
@@ -365,6 +372,7 @@ export function Select<T>({
                 }}
                 onExit={onCancel}
                 layout="expanded"
+                inputColumnsOffset={inputColumnsOffset}
                 showLabel={inlineDescriptions}
                 onOpenEditor={onOpenEditor}
                 resetCursorOnUpdate={option.resetCursorOnUpdate}
@@ -503,6 +511,7 @@ export function Select<T>({
                 }}
                 onExit={onCancel}
                 layout="compact"
+                inputColumnsOffset={inputColumnsOffset}
                 showLabel={inlineDescriptions}
                 onOpenEditor={onOpenEditor}
                 resetCursorOnUpdate={option.resetCursorOnUpdate}
@@ -800,6 +809,7 @@ export function Select<T>({
               }}
               onExit={onCancel}
               layout="compact"
+              inputColumnsOffset={inputColumnsOffset}
               showLabel={inlineDescriptions}
               onOpenEditor={onOpenEditor}
               resetCursorOnUpdate={option.resetCursorOnUpdate}

@@ -322,5 +322,74 @@ describe('Plan Mode E2E', () => {
       expect(nonEmptyLines.length).toBeGreaterThan(3)
       expect(currentPane).toContain('CLEAR_CONTEXT_VISIBLE')
     })
+
+    test('focused plan feedback wraps within the dialog and aligns with its hint', async () => {
+      server.reset([
+        toolUseResponse([{ name: 'EnterPlanMode', input: {} }]),
+        textResponse('I will prepare the feedback display test plan.'),
+      ])
+
+      session = new TmuxSession({
+        serverUrl: server.url,
+        height: 30,
+        width: 72,
+        settings: { showClearContextOnPlanAccept: true },
+        additionalEnv: {
+          CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
+        },
+      })
+      await session.start()
+
+      await session.sendLine('Plan a feedback display test')
+      await session.waitForText('feedback display test plan', 30_000)
+
+      const requestLog = server.getRequestLog()
+      let planFilePath = ''
+      for (const entry of requestLog) {
+        const match = JSON.stringify(entry.body).match(
+          /plans\/[a-z]+-[a-z]+-[a-z]+\.md/,
+        )
+        if (match) {
+          const { join } = await import('node:path')
+          planFilePath = join(session.configDirPath!, match[0])
+          break
+        }
+      }
+
+      expect(planFilePath).not.toBe('')
+      const { writeFileSync, mkdirSync } = await import('node:fs')
+      const { dirname } = await import('node:path')
+      mkdirSync(dirname(planFilePath), { recursive: true })
+      writeFileSync(planFilePath, '# Plan\n\nImplement and verify the fix.')
+
+      server.reset([
+        toolUseResponse(
+          [{ name: 'ExitPlanMode', input: {} }],
+          'Here is the feedback display test plan.',
+        ),
+      ])
+      await session.sendLine('Present the plan')
+      await session.waitForText('Ready to code', 30_000)
+
+      await session.sendSpecialKey('Down')
+      await session.sendSpecialKey('Down')
+      await session.sendSpecialKey('Down')
+      await session.sendText(`${'x'.repeat(140)}FEEDBACK_END`)
+
+      const screen = await session.waitForText('FEEDBACK_END', 10_000)
+      const lines = screen.split('\n')
+      const firstInputLine = lines.find(
+        line => line.includes('4.') && line.includes('x'),
+      )
+      const continuationLine = lines.find(line => /^\s+x+$/.test(line))
+      const hintLine = lines.find(line => line.includes('shift+tab'))
+
+      expect(firstInputLine).toBeDefined()
+      expect(continuationLine).toBeDefined()
+      expect(hintLine).toBeDefined()
+      expect(lines.filter(line => /^\s+x$/.test(line))).toEqual([])
+      expect(continuationLine!.indexOf('x')).toBe(firstInputLine!.indexOf('x'))
+      expect(hintLine!.indexOf('s')).toBe(firstInputLine!.indexOf('x'))
+    })
   })
 })
