@@ -1,8 +1,16 @@
-import type {
-  BetaIterationsUsage,
-  BetaServerToolUsage,
-  BetaCacheCreation,
-} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+type NonNullableCacheCreation = {
+  ephemeral_1h_input_tokens: number
+  ephemeral_5m_input_tokens: number
+  [key: string]: unknown
+}
+
+type NonNullableServerToolUsage = {
+  web_search_requests: number
+  web_fetch_requests: number
+  [key: string]: unknown
+}
+
+type NonNullableIterationsUsage = unknown
 
 /**
  * Usage counters identical in shape to the SDK's `BetaUsage` but with every
@@ -17,10 +25,10 @@ export type NonNullableUsage = {
   output_tokens: number
   cache_creation_input_tokens: number
   cache_read_input_tokens: number
-  cache_creation: BetaCacheCreation
-  server_tool_use: BetaServerToolUsage
+  cache_creation: NonNullableCacheCreation
+  server_tool_use: NonNullableServerToolUsage
   service_tier: 'standard' | 'priority' | 'batch' | string
   speed: 'standard' | 'fast' | string
   inference_geo: string
-  iterations: BetaIterationsUsage | []
+  iterations: NonNullableIterationsUsage
 }

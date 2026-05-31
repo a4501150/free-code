@@ -1,4 +1,4 @@
-import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainUserTextBlock } from '../../types/domain.js'
 import figures from 'figures'
 import * as React from 'react'
 import { COMMAND_MESSAGE_TAG } from '../../constants/xml.js'
@@ -7,7 +7,7 @@ import { extractTag } from '../../utils/messages.js'
 
 type Props = {
   addMargin: boolean
-  param: TextBlockParam
+  param: DomainUserTextBlock
 }
 
 export function UserCommandMessage({

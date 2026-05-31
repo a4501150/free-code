@@ -1,9 +1,8 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import type {
-  ToolResultBlockParam,
-  ToolUseBlock,
-} from '@anthropic-ai/sdk/resources/index.mjs'
-import type { CanUseToolFn } from './hooks/useCanUseTool.js'
+  DomainToolResultBlockParam,
+  DomainToolUseBlock,
+} from './types/domain.js'
 import {
   calculateTokenWarningState,
   type AutoCompactTrackingState,
@@ -11,7 +10,7 @@ import {
 import { buildPostCompactMessages } from './services/compact/compact.js'
 import { ImageSizeError } from './utils/imageValidation.js'
 import { ImageResizeError } from './utils/imageResizer.js'
-import { findToolByName, type ToolUseContext } from './Tool.js'
+import { findToolByName, type CanUseToolFn, type ToolUseContext } from './Tool.js'
 import { asSystemPrompt, type SystemPrompt } from './utils/systemPromptType.js'
 import type {
   AssistantMessage,
@@ -87,7 +86,7 @@ function* yieldMissingToolResultBlocks(
     // Extract all tool use blocks from this assistant message
     const toolUseBlocks = assistantMessage.message.content.filter(
       content => content.type === 'tool_use',
-    ) as ToolUseBlock[]
+    ) as DomainToolUseBlock[]
 
     // Emit an interruption message for each tool use
     for (const toolUse of toolUseBlocks) {
@@ -400,7 +399,7 @@ async function* queryLoop(
     // Note: stop_reason === 'tool_use' is unreliable -- it's not always set correctly.
     // Set during streaming whenever a tool_use block arrives — the sole
     // loop-exit signal. If false after streaming, we're done (modulo stop-hook retry).
-    const toolUseBlocks: ToolUseBlock[] = []
+    const toolUseBlocks: DomainToolUseBlock[] = []
     let needsFollowUp = false
 
     queryCheckpoint('query_setup_start')
@@ -592,11 +591,11 @@ async function* queryLoop(
         if (message.type === 'assistant') {
           assistantMessages.push(message)
 
-          const msgToolUseBlocks = message.message.content.filter(
+          const msgDomainToolUseBlocks = message.message.content.filter(
             content => content.type === 'tool_use',
-          ) as ToolUseBlock[]
-          if (msgToolUseBlocks.length > 0) {
-            toolUseBlocks.push(...msgToolUseBlocks)
+          ) as DomainToolUseBlock[]
+          if (msgDomainToolUseBlocks.length > 0) {
+            toolUseBlocks.push(...msgDomainToolUseBlocks)
             needsFollowUp = true
           }
 
@@ -604,8 +603,11 @@ async function* queryLoop(
             streamingToolExecutor &&
             !toolUseContext.abortController.signal.aborted
           ) {
-            for (const toolBlock of msgToolUseBlocks) {
-              streamingToolExecutor.addTool(toolBlock, message)
+            for (const toolBlock of msgDomainToolUseBlocks) {
+              streamingToolExecutor.addTool(
+                toolBlock as DomainToolUseBlock,
+                message,
+              )
             }
           }
         }
@@ -808,7 +810,12 @@ async function* queryLoop(
 
     const toolUpdates = streamingToolExecutor
       ? streamingToolExecutor.getRemainingResults()
-      : runTools(toolUseBlocks, assistantMessages, canUseTool, toolUseContext)
+      : runTools(
+          toolUseBlocks as DomainToolUseBlock[],
+          assistantMessages,
+          canUseTool,
+          toolUseContext,
+        )
 
     for await (const update of toolUpdates) {
       if (update.message) {
@@ -880,7 +887,7 @@ async function* queryLoop(
           toolResult?.type === 'user' &&
           Array.isArray(toolResult.message.content)
             ? toolResult.message.content.find(
-                (c): c is ToolResultBlockParam =>
+                (c): c is DomainToolResultBlockParam =>
                   c.type === 'tool_result' && c.tool_use_id === block.id,
               )
             : undefined
@@ -961,7 +968,7 @@ async function* queryLoop(
     // addressed to it — main thread drains agentId===undefined, subagents
     // drain their own agentId. User prompts (mode:'prompt') still go to main
     // only; subagents never see the prompt stream.
-    // eslint-disable-next-line custom-rules/require-tool-match-name -- ToolUseBlock.name has no aliases
+    // eslint-disable-next-line custom-rules/require-tool-match-name -- DomainToolUseBlock.name has no aliases
     const sleepRan = toolUseBlocks.some(b => b.name === SLEEP_TOOL_NAME)
     const isMainThread =
       querySource.startsWith('repl_main_thread') || querySource === 'sdk'

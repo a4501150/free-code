@@ -1,8 +1,3 @@
-import type { Anthropic } from '@anthropic-ai/sdk'
-import type {
-  BetaContentBlockParam,
-  BetaMessageParam,
-} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import {
   getSystemPrompt,
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
@@ -19,6 +14,8 @@ import {
 import {
   countMessagesTokensWithAPI,
   roughTokenCountEstimation,
+  type TokenCountMessageParam,
+  type TokenCountTool,
 } from '../services/tokenEstimation.js'
 import { estimateSkillFrontmatterTokens } from '../skills/loadSkillsDir.js'
 import {
@@ -74,8 +71,8 @@ const MANUAL_COMPACT_BUFFER_NAME = 'Compact buffer'
 export const TOOL_TOKEN_COUNT_OVERHEAD = 500
 
 async function countTokensWithFallback(
-  messages: Anthropic.Beta.Messages.BetaMessageParam[],
-  tools: Anthropic.Beta.Messages.BetaToolUnion[],
+  messages: TokenCountMessageParam[],
+  tools: TokenCountTool[],
 ): Promise<number | null> {
   const result = await countMessagesTokensWithAPI(messages, tools)
   if (result !== null) return result
@@ -690,11 +687,11 @@ async function approximateMessageTokens(
       if (_.type === 'assistant') {
         return {
           role: 'assistant' as const,
-          content: _.message.content as unknown as BetaContentBlockParam[],
+          content: _.message.content as TokenCountMessageParam['content'],
         }
       }
       return _.message
-    }) as BetaMessageParam[],
+    }) as TokenCountMessageParam[],
     [],
   )
 

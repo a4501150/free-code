@@ -1,17 +1,4 @@
 import { feature } from 'bun:bundle'
-import type { BetaUsage as Usage } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import type {
-  ContentBlock,
-  ContentBlockParam,
-  RedactedThinkingBlock,
-  RedactedThinkingBlockParam,
-  TextBlockParam,
-  ThinkingBlock,
-  ThinkingBlockParam,
-  ToolResultBlockParam,
-  ToolUseBlock,
-  ToolUseBlockParam,
-} from '@anthropic-ai/sdk/resources/index.mjs'
 import { randomUUID, type UUID } from 'crypto'
 import isObject from 'lodash-es/isObject.js'
 import last from 'lodash-es/last.js'
@@ -78,19 +65,17 @@ type HookAttachmentWithName = Exclude<
   HookPermissionDecisionAttachment
 >
 
-import type { APIError } from '@anthropic-ai/sdk'
 import type {
-  BetaContentBlock,
-  BetaMessage,
-  BetaRedactedThinkingBlock,
-  BetaThinkingBlock,
-  BetaToolUseBlock,
-} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import type {
+  DomainApiError,
   DomainAssistantContent,
   DomainContentBlock,
   DomainReasoningBlock,
+  DomainToolResultBlockParam,
+  DomainToolResultContentItem,
+  DomainToolUseBlock,
   DomainUsage,
+  DomainUserContentBlock,
+  DomainUserTextBlock,
 } from '../types/domain.js'
 import type { ProviderType } from './settings/types.js'
 import type {
@@ -351,7 +336,7 @@ function baseCreateAssistantMessage({
   error?: SDKAssistantErrorReason
   errorDetails?: string
   isVirtual?: true
-  usage?: Usage
+  usage?: DomainUsage
 }): AssistantMessage {
   return {
     type: 'assistant',
@@ -382,7 +367,7 @@ export function createAssistantMessage({
   isVirtual,
 }: {
   content: string | DomainContentBlock[]
-  usage?: Usage
+  usage?: DomainUsage
   isVirtual?: true
 }): AssistantMessage {
   return baseCreateAssistantMessage({
@@ -441,7 +426,11 @@ export function createUserMessage({
   permissionMode,
   origin,
 }: {
-  content: string | ContentBlockParam[]
+  content:
+    | string
+    | DomainUserContentBlock[]
+    | DomainUserContentBlock[]
+    | Array<DomainUserContentBlock | DomainUserContentBlock>
   isMeta?: true
   isVisibleInTranscriptOnly?: true
   isVirtual?: true
@@ -467,11 +456,14 @@ export function createUserMessage({
   // Provenance of this message. undefined = human (keyboard).
   origin?: MessageOrigin
 }): UserMessage {
+  const normalizedContent = Array.isArray(content)
+    ? (content as unknown as DomainUserContentBlock[])
+    : content
   const m: UserMessage = {
     type: 'user',
     message: {
       role: 'user',
-      content: content || NO_CONTENT_MESSAGE, // Make sure we don't send empty messages
+      content: normalizedContent || NO_CONTENT_MESSAGE, // Make sure we don't send empty messages
     },
     isMeta,
     isVisibleInTranscriptOnly,
@@ -495,14 +487,14 @@ export function prepareUserContent({
   precedingInputBlocks,
 }: {
   inputString: string
-  precedingInputBlocks: ContentBlockParam[]
-}): string | ContentBlockParam[] {
+  precedingInputBlocks: Array<DomainUserContentBlock | DomainUserContentBlock>
+}): string | DomainUserContentBlock[] {
   if (precedingInputBlocks.length === 0) {
     return inputString
   }
 
   return [
-    ...precedingInputBlocks,
+    ...(precedingInputBlocks as unknown as DomainUserContentBlock[]),
     {
       text: inputString,
       type: 'text',
@@ -589,7 +581,7 @@ export function createProgressMessage<P extends Progress>({
 
 export function createToolResultStopMessage(
   toolUseID: string,
-): ToolResultBlockParam {
+): DomainToolResultBlockParam {
   return {
     type: 'tool_result',
     content: CANCEL_MESSAGE,
@@ -793,7 +785,7 @@ export function normalizeMessages(messages: Message[]): NormalizedMessage[] {
 }
 
 type ToolUseRequestMessage = NormalizedAssistantMessage & {
-  message: { content: [ToolUseBlock] }
+  message: { content: [DomainToolUseBlock] }
 }
 
 export function isToolUseRequestMessage(
@@ -807,7 +799,7 @@ export function isToolUseRequestMessage(
 }
 
 type ToolUseResultMessage = NormalizedUserMessage & {
-  message: { content: [ToolResultBlockParam] }
+  message: { content: [DomainToolResultBlockParam] }
 }
 
 export function isToolUseResultMessage(
@@ -1120,8 +1112,8 @@ export type MessageLookups = {
   resolvedHookCounts: Map<string, Map<HookEvent, number>>
   /** Maps tool_use_id to the user message containing its tool_result */
   toolResultByToolUseID: Map<string, NormalizedMessage>
-  /** Maps tool_use_id to the ToolUseBlockParam */
-  toolUseByToolUseID: Map<string, ToolUseBlockParam>
+  /** Maps tool_use_id to the tool_use block */
+  toolUseByToolUseID: Map<string, DomainToolUseBlock>
   /** Total count of normalized messages (for truncation indicator text) */
   normalizedMessageCount: number
   /** Set of tool use IDs that have a corresponding tool_result */
@@ -1144,7 +1136,7 @@ export function buildMessageLookups(
   // First pass: group assistant messages by ID and collect all tool use IDs per message
   const toolUseIDsByMessageID = new Map<string, Set<string>>()
   const toolUseIDToMessageID = new Map<string, string>()
-  const toolUseByToolUseID = new Map<string, ToolUseBlockParam>()
+  const toolUseByToolUseID = new Map<string, DomainToolUseBlock>()
   for (const msg of messages) {
     if (msg.type === 'assistant') {
       const id = msg.message.id
@@ -1360,7 +1352,7 @@ export const EMPTY_STRING_SET: ReadonlySet<string> = Object.freeze(
 export function buildSubagentLookups(
   messages: { message: NormalizedMessage }[],
 ): { lookups: MessageLookups; inProgressToolUseIDs: Set<string> } {
-  const toolUseByToolUseID = new Map<string, ToolUseBlockParam>()
+  const toolUseByToolUseID = new Map<string, DomainToolUseBlock>()
   const resolvedToolUseIDs = new Set<string>()
   const toolResultByToolUseID = new Map<
     string,
@@ -1371,7 +1363,7 @@ export function buildSubagentLookups(
     if (msg.type === 'assistant') {
       for (const content of msg.message.content) {
         if (content.type === 'tool_use') {
-          toolUseByToolUseID.set(content.id, content as ToolUseBlockParam)
+          toolUseByToolUseID.set(content.id, content)
         }
       }
     } else if (msg.type === 'user') {
@@ -1464,7 +1456,7 @@ export function getToolUseIDs(
           Array.isArray(_.message.content) &&
           _.message.content[0]?.type === 'tool_use',
       )
-      .map(_ => (_.message.content[0] as BetaToolUseBlock).id),
+      .map(_ => (_.message.content[0] as DomainToolUseBlock).id),
   )
 }
 
@@ -1680,7 +1672,7 @@ function stripLegacyToolSearchExchanges(
  * contains tool_reference (ToolSearch loaded tools)?
  */
 function contentHasToolReference(
-  content: ReadonlyArray<ContentBlockParam>,
+  content: ReadonlyArray<DomainUserContentBlock>,
 ): boolean {
   return content.some(
     block =>
@@ -1747,8 +1739,8 @@ function smooshSystemReminderSiblings(
     const hasToolResult = content.some(b => b.type === 'tool_result')
     if (!hasToolResult) return msg
 
-    const srText: TextBlockParam[] = []
-    const kept: ContentBlockParam[] = []
+    const srText: DomainUserTextBlock[] = []
+    const kept: DomainUserContentBlock[] = []
     for (const b of content) {
       if (b.type === 'text' && b.text.startsWith('<system-reminder>')) {
         srText.push(b)
@@ -1760,7 +1752,7 @@ function smooshSystemReminderSiblings(
 
     // Smoosh into the LAST tool_result (positionally adjacent in rendered prompt)
     const lastTrIdx = kept.findLastIndex(b => b.type === 'tool_result')
-    const lastTr = kept[lastTrIdx] as ToolResultBlockParam
+    const lastTr = kept[lastTrIdx] as DomainToolResultBlockParam
     const smooshed = smooshIntoToolResult(lastTr, srText)
     if (smooshed === null) return msg // tool_ref constraint — leave alone
 
@@ -1800,8 +1792,10 @@ function sanitizeErrorToolResultContent(
       if (!Array.isArray(trContent)) return b
       if (trContent.every(c => c.type === 'text')) return b
       changed = true
-      const texts = trContent.filter(c => c.type === 'text').map(c => c.text)
-      const textOnly: TextBlockParam[] =
+      const texts = trContent
+        .filter((c): c is DomainUserTextBlock => c.type === 'text')
+        .map(c => c.text)
+      const textOnly: DomainUserTextBlock[] =
         texts.length > 0 ? [{ type: 'text', text: texts.join('\n\n') }] : []
       return { ...b, content: textOnly }
     })
@@ -1880,7 +1874,7 @@ function relocateToolReferenceSiblings(
       message: {
         ...target.message,
         content: [
-          ...(target.message.content as ContentBlockParam[]),
+          ...(target.message.content as DomainUserContentBlock[]),
           ...textSiblings,
         ],
       },
@@ -2240,9 +2234,11 @@ function mergeAdjacentUserMessages(
  * In thecontent[] list on a UserMessage, tool_result blocks much come first
  * to avoid "tool result must follow tool use" API errors.
  */
-function hoistToolResults(content: ContentBlockParam[]): ContentBlockParam[] {
-  const toolResults: ContentBlockParam[] = []
-  const otherBlocks: ContentBlockParam[] = []
+function hoistToolResults(
+  content: DomainUserContentBlock[],
+): DomainUserContentBlock[] {
+  const toolResults: DomainUserContentBlock[] = []
+  const otherBlocks: DomainUserContentBlock[] = []
 
   for (const block of content) {
     if (block.type === 'tool_result') {
@@ -2256,8 +2252,8 @@ function hoistToolResults(content: ContentBlockParam[]): ContentBlockParam[] {
 }
 
 function normalizeUserTextContent(
-  a: string | ContentBlockParam[],
-): ContentBlockParam[] {
+  a: string | DomainUserContentBlock[],
+): DomainUserContentBlock[] {
   if (typeof a === 'string') {
     return [{ type: 'text', text: a }]
   }
@@ -2276,9 +2272,9 @@ function normalizeUserTextContent(
  * when b is an SR-wrapped attachment.
  */
 function joinTextAtSeam(
-  a: ContentBlockParam[],
-  b: ContentBlockParam[],
-): ContentBlockParam[] {
+  a: DomainUserContentBlock[],
+  b: DomainUserContentBlock[],
+): DomainUserContentBlock[] {
   const lastA = a.at(-1)
   const firstB = b[0]
   if (lastA?.type === 'text' && firstB?.type === 'text') {
@@ -2287,10 +2283,7 @@ function joinTextAtSeam(
   return [...a, ...b]
 }
 
-type ToolResultContentItem = Extract<
-  ToolResultBlockParam['content'],
-  readonly unknown[]
->[number]
+type ToolResultContentItem = DomainToolResultContentItem
 
 /**
  * Fold content blocks into a tool_result's content. Returns the updated
@@ -2305,9 +2298,9 @@ type ToolResultContentItem = Extract<
  * - otherwise → array, with adjacent text merged (notebook.ts idiom)
  */
 function smooshIntoToolResult(
-  tr: ToolResultBlockParam,
-  blocks: ContentBlockParam[],
-): ToolResultBlockParam | null {
+  tr: DomainToolResultBlockParam,
+  blocks: DomainUserContentBlock[],
+): DomainToolResultBlockParam | null {
   if (blocks.length === 0) return tr
 
   const existing = tr.content
@@ -2333,7 +2326,7 @@ function smooshIntoToolResult(
   if (allText && (existing === undefined || typeof existing === 'string')) {
     const joined = [
       (existing ?? '').trim(),
-      ...blocks.map(b => (b as TextBlockParam).text.trim()),
+      ...blocks.map(b => (b as DomainUserTextBlock).text.trim()),
     ]
       .filter(Boolean)
       .join('\n\n')
@@ -2353,10 +2346,11 @@ function smooshIntoToolResult(
   const merged: ToolResultContentItem[] = []
   for (const b of [...base, ...blocks]) {
     if (b.type === 'text') {
-      const t = b.text.trim()
+      const text = typeof b.text === 'string' ? b.text : ''
+      const t = text.trim()
       if (!t) continue
       const prev = merged.at(-1)
-      if (prev?.type === 'text') {
+      if (prev?.type === 'text' && typeof prev.text === 'string') {
         merged[merged.length - 1] = { ...prev, text: `${prev.text}\n\n${t}` } // lvalue
       } else {
         merged.push({ type: 'text', text: t })
@@ -2371,9 +2365,9 @@ function smooshIntoToolResult(
 }
 
 export function mergeUserContentBlocks(
-  a: ContentBlockParam[],
-  b: ContentBlockParam[],
-): ContentBlockParam[] {
+  a: DomainUserContentBlock[],
+  b: DomainUserContentBlock[],
+): DomainUserContentBlock[] {
   // See https://anthropic.slack.com/archives/C06FE2FP0Q2/p1747586370117479 and
   // https://anthropic.slack.com/archives/C0AHK9P0129/p1773159663856279:
   // any sibling after tool_result renders as </function_results>\n\nHuman:<...>
@@ -2662,7 +2656,7 @@ export function textForResubmit(
 
 /**
  * Extract text from an array of content blocks, joining text blocks with the
- * given separator. Works with ContentBlock, ContentBlockParam, BetaContentBlock,
+ * given separator. Works with DomainContentBlock, DomainUserContentBlock, DomainContentBlock,
  * and their readonly/DeepImmutable variants via structural typing.
  */
 export function extractTextContent(
@@ -2676,7 +2670,7 @@ export function extractTextContent(
 }
 
 export function getContentText(
-  content: string | DeepImmutable<Array<ContentBlockParam>>,
+  content: string | DeepImmutable<Array<{ type: string; text?: unknown }>>,
 ): string | null {
   if (typeof content === 'string') {
     return content
@@ -2689,7 +2683,7 @@ export function getContentText(
 
 export type StreamingToolUse = {
   index: number
-  contentBlock: BetaToolUseBlock
+  contentBlock: DomainToolUseBlock
   unparsedToolInput: string
 }
 
@@ -2786,8 +2780,8 @@ export function handleMessageFromStream(
         return
       }
       switch (message.event.content_block.type) {
-        case 'thinking':
-        case 'redacted_thinking':
+        case 'reasoning':
+        case 'redacted_reasoning':
           onSetStreamMode('thinking')
           return
         case 'text':
@@ -2795,7 +2789,7 @@ export function handleMessageFromStream(
           return
         case 'tool_use': {
           onSetStreamMode('tool-input')
-          const contentBlock = message.event.content_block
+          const contentBlock = message.event.content_block as DomainToolUseBlock
           const index = message.event.index
           onStreamingToolUses(_ => [
             ..._,
@@ -2824,13 +2818,19 @@ export function handleMessageFromStream(
     case 'content_block_delta':
       switch (message.event.delta.type) {
         case 'text_delta': {
-          const deltaText = message.event.delta.text
+          const deltaText =
+            typeof message.event.delta.text === 'string'
+              ? message.event.delta.text
+              : ''
           onUpdateLength(deltaText)
           onStreamingText?.(text => (text ?? '') + deltaText)
           return
         }
         case 'input_json_delta': {
-          const delta = message.event.delta.partial_json
+          const delta =
+            typeof message.event.delta.partial_json === 'string'
+              ? message.event.delta.partial_json
+              : ''
           const index = message.event.index
           onUpdateLength(delta)
           onStreamingToolUses(_ => {
@@ -2868,7 +2868,11 @@ export function handleMessageFromStream(
           return
         }
         case 'thinking_delta':
-          onUpdateLength(message.event.delta.thinking)
+          onUpdateLength(
+            typeof message.event.delta.thinking === 'string'
+              ? message.event.delta.thinking
+              : '',
+          )
           return
         case 'signature_delta':
           // Signatures are cryptographic authentication strings, not model
@@ -3458,16 +3462,16 @@ Read the team config to discover your teammates' names. Check the task list peri
 
       if (Array.isArray(attachment.prompt)) {
         // Handle content blocks (may include images)
-        const textContent = attachment.prompt
-          .filter((block): block is TextBlockParam => block.type === 'text')
+        const textContent = (attachment.prompt as DomainUserContentBlock[])
+          .filter((block): block is DomainUserTextBlock => block.type === 'text')
           .map(block => block.text)
           .join('\n')
 
-        const imageBlocks = attachment.prompt.filter(
+        const imageBlocks = (attachment.prompt as DomainUserContentBlock[]).filter(
           block => block.type === 'image',
         )
 
-        const content: ContentBlockParam[] = [
+        const content: DomainUserContentBlock[] = [
           {
             type: 'text',
             text: wrapCommandText(textContent, origin),
@@ -3573,7 +3577,7 @@ You have exited auto mode. The user may now want to interact more directly. You 
       }
 
       // Transform each content item using the MCP transform function
-      const transformedBlocks: ContentBlockParam[] = []
+      const transformedBlocks: DomainUserContentBlock[] = []
 
       // Handle the resource contents - only process text content
       for (const item of content.contents) {
@@ -3967,7 +3971,7 @@ function createToolResultMessage<Output>(
       result.content.some(block => block.type === 'image')
     ) {
       return createUserMessage({
-        content: result.content as ContentBlockParam[],
+        content: result.content as DomainUserContentBlock[],
         isMeta: true,
       })
     }
@@ -4209,8 +4213,28 @@ export function createCompactBoundaryMessage(
   }
 }
 
+type ApiErrorLike = Omit<DomainApiError, 'requestID' | 'headers'> & {
+  requestID?: string | null
+  headers?: Headers | Record<string, string>
+  cause?: unknown
+}
+
+function toDomainApiError(error: ApiErrorLike): DomainApiError {
+  const headers =
+    error.headers instanceof Headers
+      ? Object.fromEntries(error.headers.entries())
+      : error.headers
+  return {
+    status: error.status,
+    message: error.message,
+    ...(error.requestID && { requestID: error.requestID }),
+    ...(headers && { headers }),
+    raw: error.raw ?? error,
+  }
+}
+
 export function createSystemAPIErrorMessage(
-  error: APIError,
+  error: ApiErrorLike,
   retryInMs: number,
   retryAttempt: number,
   maxRetries: number,
@@ -4220,7 +4244,7 @@ export function createSystemAPIErrorMessage(
     subtype: 'api_error',
     level: 'error',
     cause: error.cause instanceof Error ? error.cause : undefined,
-    error,
+    error: toDomainApiError(error),
     retryInMs,
     retryAttempt,
     maxRetries,
@@ -4306,7 +4330,7 @@ export function countToolCalls(
     if (!msg) continue
     if (msg.type === 'assistant' && Array.isArray(msg.message.content)) {
       const hasToolUse = msg.message.content.some(
-        (block): block is ToolUseBlock =>
+        (block): block is DomainToolUseBlock =>
           block.type === 'tool_use' && block.name === toolName,
       )
       if (hasToolUse) {
@@ -4335,7 +4359,7 @@ export function hasSuccessfulToolCall(
     if (!msg) continue
     if (msg.type === 'assistant' && Array.isArray(msg.message.content)) {
       const toolUse = msg.message.content.find(
-        (block): block is ToolUseBlock =>
+        (block): block is DomainToolUseBlock =>
           block.type === 'tool_use' && block.name === toolName,
       )
       if (toolUse) {
@@ -4353,7 +4377,7 @@ export function hasSuccessfulToolCall(
     if (!msg) continue
     if (msg.type === 'user' && Array.isArray(msg.message.content)) {
       const toolResult = msg.message.content.find(
-        (block): block is ToolResultBlockParam =>
+        (block): block is DomainToolResultBlockParam =>
           block.type === 'tool_result' &&
           block.tool_use_id === mostRecentToolUseId,
       )
@@ -4370,10 +4394,9 @@ export function hasSuccessfulToolCall(
 
 function isThinkingBlock(
   block:
-    | ContentBlockParam
-    | ContentBlock
-    | BetaContentBlock
-    | DomainContentBlock,
+    | DomainUserContentBlock
+    | DomainContentBlock
+    | { type: string; [key: string]: unknown },
 ): boolean {
   return (
     block.type === 'reasoning' ||
@@ -4939,7 +4962,7 @@ export function ensureToolResultPairing(
             'type' in block &&
             block.type === 'tool_result'
           ) {
-            const trId = (block as ToolResultBlockParam).tool_use_id
+            const trId = (block as DomainToolResultBlockParam).tool_use_id
             if (existingToolResultIds.has(trId)) {
               hasDuplicateToolResults = true
             }
@@ -4969,7 +4992,7 @@ export function ensureToolResultPairing(
     repaired = true
 
     // Build synthetic error tool_result blocks for missing IDs
-    const syntheticBlocks: ToolResultBlockParam[] = missingIds.map(id => ({
+    const syntheticBlocks: DomainToolResultBlockParam[] = missingIds.map(id => ({
       type: 'tool_result' as const,
       tool_use_id: id,
       content: SYNTHETIC_TOOL_RESULT_PLACEHOLDER,
@@ -4978,7 +5001,7 @@ export function ensureToolResultPairing(
 
     if (nextMsg?.type === 'user') {
       // Next message is already a user message - patch it
-      let content: (ContentBlockParam | ContentBlock)[] = Array.isArray(
+      let content: DomainUserContentBlock[] = Array.isArray(
         nextMsg.message.content,
       )
         ? nextMsg.message.content
@@ -4994,7 +5017,7 @@ export function ensureToolResultPairing(
             'type' in block &&
             block.type === 'tool_result'
           ) {
-            const trId = (block as ToolResultBlockParam).tool_use_id
+            const trId = (block as DomainToolResultBlockParam).tool_use_id
             if (orphanedSet.has(trId)) return false
             if (seenTrIds.has(trId)) return false
             seenTrIds.add(trId)
@@ -5056,7 +5079,7 @@ export function ensureToolResultPairing(
       if (m.type === 'assistant') {
         const toolUses = m.message.content
           .filter(b => b.type === 'tool_use')
-          .map(b => (b as ToolUseBlock | ToolUseBlockParam).id)
+          .map(b => (b as DomainToolUseBlock).id)
         const serverToolUses = m.message.content
           .filter(
             b =>
@@ -5079,7 +5102,7 @@ export function ensureToolResultPairing(
             b =>
               typeof b === 'object' && 'type' in b && b.type === 'tool_result',
           )
-          .map(b => (b as ToolResultBlockParam).tool_use_id)
+          .map(b => (b as DomainToolResultBlockParam).tool_use_id)
         if (toolResults.length > 0) {
           return `[${idx}] user(tool_results=[${toolResults.join(',')}])`
         }

@@ -1,13 +1,12 @@
-import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainToolUseBlock } from '../types/domain.js'
 import last from 'lodash-es/last.js'
 import {
   getSessionId,
   isSessionPersistenceDisabled,
 } from 'src/bootstrap/state.js'
 import type { SDKMessage } from 'src/structuredProtocol/index.js'
-import type { CanUseToolFn } from '../hooks/useCanUseTool.js'
 import { runTools } from '../services/tools/toolOrchestration.js'
-import { findToolByName, type Tool, type Tools } from '../Tool.js'
+import { findToolByName, type CanUseToolFn, type Tool, type Tools } from '../Tool.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
 import type { Input as FileReadInput } from '../tools/FileReadTool/FileReadTool.js'
@@ -232,11 +231,11 @@ export async function* handleOrphanedPermission(
   }
 
   const content = assistantMessage.message.content
-  let toolUseBlock: ToolUseBlock | undefined
+  let toolUseBlock: DomainToolUseBlock | undefined
   if (Array.isArray(content)) {
     for (const block of content) {
       if (block.type === 'tool_use' && block.id === toolUseID) {
-        toolUseBlock = block as ToolUseBlock
+        toolUseBlock = block as DomainToolUseBlock
         break
       }
     }
@@ -254,7 +253,7 @@ export async function* handleOrphanedPermission(
     return
   }
 
-  // Create ToolUseBlock with the updated input if permission was allowed
+  // Create DomainToolUseBlock with the updated input if permission was allowed
   let finalInput = toolInput
   if (permissionResult.behavior === 'allow') {
     if (permissionResult.updatedInput !== undefined) {
@@ -266,7 +265,7 @@ export async function* handleOrphanedPermission(
       )
     }
   }
-  const finalToolUseBlock: ToolUseBlock = {
+  const finalDomainToolUseBlock: DomainToolUseBlock = {
     ...toolUseBlock,
     input: finalInput,
   }
@@ -317,7 +316,7 @@ export async function* handleOrphanedPermission(
 
   // Execute the tool - errors are handled internally by runToolUse
   for await (const update of runTools(
-    [finalToolUseBlock],
+    [finalDomainToolUseBlock],
     [assistantMessage],
     canUseTool,
     processUserInputContext,

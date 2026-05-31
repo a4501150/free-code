@@ -33,7 +33,7 @@ import {
 import { disableKeepAlive } from '../../utils/proxy.js'
 import { sleep } from '../../utils/sleep.js'
 import type { ThinkingConfig } from '../../utils/thinking.js'
-import { isMockRateLimitError } from '../rateLimitMocking.js'
+import { isMockRateLimitError } from '../rateLimits/mocking.js'
 import { REPEATED_529_ERROR_MESSAGE } from './errors.js'
 import {
   extractConnectionErrorDetails,

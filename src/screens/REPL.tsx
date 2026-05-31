@@ -284,10 +284,7 @@ import {
   useSetAppState,
   useAppStateStore,
 } from '../state/AppState.js'
-import type {
-  ContentBlockParam,
-  ImageBlockParam,
-} from '@anthropic-ai/sdk/resources/messages.mjs'
+import type { DomainUserImageBlock } from '../types/domain.js'
 import type { ProcessUserInputContext } from '../utils/processUserInput/processUserInput.js'
 import type { PastedContent } from '../utils/config.js'
 import {
@@ -4024,8 +4021,10 @@ export function REPL({
         Array.isArray(message.message.content) &&
         message.message.content.some(block => block.type === 'image')
       ) {
-        const imageBlocks: Array<ImageBlockParam> =
-          message.message.content.filter(block => block.type === 'image')
+        const imageBlocks: Array<DomainUserImageBlock> =
+          message.message.content.filter(
+            (block): block is DomainUserImageBlock => block.type === 'image',
+          )
         if (imageBlocks.length > 0) {
           const newPastedContents: Record<number, PastedContent> = {}
           imageBlocks.forEach((block, index) => {

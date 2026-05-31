@@ -1,5 +1,5 @@
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources'
 import { randomUUID } from 'crypto'
+import type { DomainUserContentBlock } from '../../types/domain.js'
 import { setPromptId } from 'src/bootstrap/state.js'
 import type {
   AttachmentMessage,
@@ -17,8 +17,12 @@ import {
 } from '../userPromptKeywords.js'
 
 export function processTextPrompt(
-  input: string | Array<ContentBlockParam>,
-  imageContentBlocks: ContentBlockParam[],
+  input:
+    | string
+    | Array<DomainUserContentBlock>
+    | Array<DomainUserContentBlock>
+    | Array<DomainUserContentBlock | DomainUserContentBlock>,
+  imageContentBlocks: DomainUserContentBlock[],
   imagePasteIds: number[],
   attachmentMessages: AttachmentMessage[],
   uuid?: string,
@@ -34,7 +38,9 @@ export function processTextPrompt(
   const userPromptText =
     typeof input === 'string'
       ? input
-      : input.find(block => block.type === 'text')?.text || ''
+      : ((input.find(
+          block => block.type === 'text' && 'text' in block,
+        ) as { text?: string } | undefined)?.text ?? '')
   startInteractionSpan(userPromptText)
 
   // Emit user_prompt OTEL event for both string (CLI) and array (SDK/VS Code)
@@ -47,7 +53,9 @@ export function processTextPrompt(
   const otelPromptText =
     typeof input === 'string'
       ? input
-      : input.findLast(block => block.type === 'text')?.text || ''
+      : ((input.findLast(
+          block => block.type === 'text' && 'text' in block,
+        ) as { text?: string } | undefined)?.text ?? '')
   if (otelPromptText) {
     void logOTelEvent('user_prompt', {
       prompt_length: String(otelPromptText.length),

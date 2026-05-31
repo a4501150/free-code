@@ -1,7 +1,7 @@
 import type {
-  Base64ImageSource,
-  ImageBlockParam,
-} from '@anthropic-ai/sdk/resources/messages.mjs'
+  DomainBase64Source,
+  DomainUserImageBlock,
+} from '../../../types/domain.js'
 import React, {
   Suspense,
   use,
@@ -522,21 +522,23 @@ Questions asked and answers provided:\n${questionsWithAnswers}`
 
 async function convertImagesToBlocks(
   images: PastedContent[],
-): Promise<ImageBlockParam[] | undefined> {
+): Promise<DomainUserImageBlock[] | undefined> {
   if (images.length === 0) return undefined
   return Promise.all(
     images.map(async img => {
-      const block: ImageBlockParam = {
+      const block: DomainUserImageBlock = {
         type: 'image',
         source: {
           type: 'base64',
           media_type: (img.mediaType ||
-            'image/png') as Base64ImageSource['media_type'],
+            'image/png') as DomainBase64Source['media_type'],
           data: img.content,
         },
       }
-      const resized = await maybeResizeAndDownsampleImageBlock(block)
-      return resized.block
+      const resized = await maybeResizeAndDownsampleImageBlock(
+        block as Parameters<typeof maybeResizeAndDownsampleImageBlock>[0],
+      )
+      return resized.block as DomainUserImageBlock
     }),
   )
 }

@@ -1,7 +1,7 @@
-import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainUserTextBlock } from '../../types/domain.js'
 import React, { useContext } from 'react'
 import { ERROR_MESSAGE_USER_ABORT } from 'src/services/compact/compact.js'
-import { isRateLimitErrorMessage } from 'src/services/rateLimitMessages.js'
+import { isRateLimitErrorMessage } from 'src/services/rateLimits/messages.js'
 import { BLACK_CIRCLE } from '../../constants/figures.js'
 import { Box, NoSelect, Text } from '../../ink.js'
 import {
@@ -36,7 +36,7 @@ import { RateLimitMessage } from './RateLimitMessage.js'
 const MAX_API_ERROR_CHARS = 1000
 
 type Props = {
-  param: TextBlockParam
+  param: DomainUserTextBlock
   addMargin: boolean
   shouldShowDot: boolean
   verbose: boolean

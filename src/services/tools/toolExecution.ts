@@ -1,9 +1,9 @@
 import { feature } from 'bun:bundle'
 import type {
-  ContentBlockParam,
-  ToolResultBlockParam,
-  ToolUseBlock,
-} from '@anthropic-ai/sdk/resources/index.mjs'
+  DomainToolResultBlockParam,
+  DomainToolUseBlock,
+  DomainUserContentBlock,
+} from '../../types/domain.js'
 import {
   addToToolDuration,
   getCodeEditToolDecisionCounter,
@@ -12,14 +12,14 @@ import {
 import {
   buildCodeEditToolAttributes,
   isCodeEditingTool,
-} from '../../hooks/toolPermission/permissionLogging.js'
-import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
+} from './permissionLogging.js'
 import {
   findToolByName,
   type Tool,
   type ToolProgress,
   type ToolProgressData,
   type ToolUseContext,
+  type CanUseToolFn,
 } from '../../Tool.js'
 import type { BashToolInput } from '../../tools/BashTool/BashTool.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
@@ -308,7 +308,7 @@ function getMcpServerBaseUrlFromToolName(
 }
 
 export async function* runToolUse(
-  toolUse: ToolUseBlock,
+  toolUse: DomainToolUseBlock,
   assistantMessage: AssistantMessage,
   canUseTool: CanUseToolFn,
   toolUseContext: ToolUseContext,
@@ -770,7 +770,7 @@ async function checkPermissionsAndCallTool(
     }
 
     // Build top-level content: tool_result (text-only for is_error compatibility) + images alongside
-    const messageContent: ContentBlockParam[] = [
+    const messageContent: DomainUserContentBlock[] = [
       {
         type: 'tool_result',
         content: errorMessage,
@@ -793,7 +793,7 @@ async function checkPermissionsAndCallTool(
     if (rejectContentBlocks?.length) {
       const imageCount = count(
         rejectContentBlocks,
-        (b: ContentBlockParam) => b.type === 'image',
+        (b: DomainUserContentBlock) => b.type === 'image',
       )
       if (imageCount > 0) {
         const startId = getNextImagePasteId(toolUseContext.messages)
@@ -1009,7 +1009,7 @@ async function checkPermissionsAndCallTool(
 
     async function addToolResult(
       toolUseResult: unknown,
-      preMappedBlock?: ToolResultBlockParam,
+      preMappedBlock?: DomainToolResultBlockParam,
     ) {
       // Use the pre-mapped block when available (non-MCP tools where hooks
       // don't modify the output), otherwise map from scratch.
@@ -1022,7 +1022,7 @@ async function checkPermissionsAndCallTool(
         : await processToolResultBlock(tool, toolUseResult, toolUseID)
 
       // Build content blocks - tool result first, then optional feedback
-      const contentBlocks: ContentBlockParam[] = [toolResultBlock]
+      const contentBlocks: DomainUserContentBlock[] = [toolResultBlock]
       // Add accept feedback if user provided feedback when approving
       // (acceptFeedback only exists on PermissionAllowDecision, which is guaranteed here)
       if (
@@ -1049,7 +1049,7 @@ async function checkPermissionsAndCallTool(
       if (allowContentBlocks?.length) {
         const imageCount = count(
           allowContentBlocks,
-          (b: ContentBlockParam) => b.type === 'image',
+          (b: DomainUserContentBlock) => b.type === 'image',
         )
         if (imageCount > 0) {
           const startId = getNextImagePasteId(toolUseContext.messages)

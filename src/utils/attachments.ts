@@ -17,7 +17,7 @@ import { countCharInString } from './stringUtils.js'
 import { count, uniq } from './array.js'
 import { getFsImplementation } from './fsOperations.js'
 import { readdir, stat } from 'fs/promises'
-import type { IDESelection } from '../hooks/useIdeSelection.js'
+import type { IDESelection } from '../types/ide.js'
 import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
 import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
@@ -46,6 +46,11 @@ import { isENOENT, toError } from './errors.js'
 import type { DiagnosticFile } from '../services/diagnosticTracking.js'
 import { diagnosticTracker } from '../services/diagnosticTracking.js'
 import type {
+  DomainBase64Source,
+  DomainUserContentBlock,
+  DomainUserImageBlock,
+} from 'src/types/domain.js'
+import type {
   AttachmentMessage,
   Message,
   MessageOrigin,
@@ -58,11 +63,6 @@ import {
 import { createHash, randomUUID, type UUID } from 'crypto'
 import { getSettings_DEPRECATED } from './settings/settings.js'
 import { getSnippetForTwoFileDiff } from 'src/tools/FileEditTool/utils.js'
-import type {
-  ContentBlockParam,
-  ImageBlockParam,
-  Base64ImageSource,
-} from '@anthropic-ai/sdk/resources/messages.mjs'
 import { maybeResizeAndDownsampleImageBlock } from './imageResizer.js'
 import type { PastedContent } from './config.js'
 import { getGlobalConfig } from './config.js'
@@ -491,7 +491,7 @@ export type Attachment =
     }
   | {
       type: 'queued_command'
-      prompt: string | Array<ContentBlockParam>
+      prompt: string | Array<DomainUserContentBlock> | Array<DomainUserContentBlock>
       source_uuid?: UUID
       imagePasteIds?: number[]
       /** Original queue mode — 'prompt' for user messages, 'task-notification' for system events */
@@ -946,7 +946,7 @@ export async function getQueuedCommandAttachments(
   return Promise.all(
     filtered.map(async _ => {
       const imageBlocks = await buildImageContentBlocks(_.pastedContents)
-      let prompt: string | Array<ContentBlockParam> = _.value
+      let prompt: string | Array<DomainUserContentBlock> | Array<DomainUserContentBlock> = _.value
       if (imageBlocks.length > 0) {
         // Build content block array with text + images so the model sees them
         const textValue =
@@ -988,7 +988,7 @@ export function getAgentPendingMessageAttachments(
 
 async function buildImageContentBlocks(
   pastedContents: Record<number, PastedContent> | undefined,
-): Promise<ImageBlockParam[]> {
+): Promise<DomainUserImageBlock[]> {
   if (!pastedContents) {
     return []
   }
@@ -998,12 +998,12 @@ async function buildImageContentBlocks(
   }
   const results = await Promise.all(
     imageContents.map(async img => {
-      const imageBlock: ImageBlockParam = {
+      const imageBlock: DomainUserImageBlock = {
         type: 'image',
         source: {
           type: 'base64',
           media_type: (img.mediaType ||
-            'image/png') as Base64ImageSource['media_type'],
+            'image/png') as DomainBase64Source['media_type'],
           data: img.content,
         },
       }

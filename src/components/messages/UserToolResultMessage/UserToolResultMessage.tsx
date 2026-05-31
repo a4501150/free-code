@@ -1,4 +1,4 @@
-import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainToolResultBlockParam } from '../../../types/domain.js'
 import * as React from 'react'
 import type { Tools } from '../../../Tool.js'
 import type {
@@ -18,7 +18,7 @@ import { UserToolSuccessMessage } from './UserToolSuccessMessage.js'
 import { useGetToolFromMessages } from './utils.js'
 
 type Props = {
-  param: ToolResultBlockParam
+  param: DomainToolResultBlockParam
   message: NormalizedUserMessage
   lookups: ReturnType<typeof buildMessageLookups>
   progressMessagesForMessage: ProgressMessage[]

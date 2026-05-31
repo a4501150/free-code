@@ -1,4 +1,4 @@
-import type { BetaUsage } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+import type { DomainUsage } from '../types/domain.js'
 import { shouldIncludeFirstPartyOnlyBetas } from './betas.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getInitialSettings } from './settings/settings.js'
@@ -97,8 +97,8 @@ export function getInitialAdvisorSetting(): string | undefined {
 }
 
 export function getAdvisorUsage(
-  usage: BetaUsage,
-): Array<BetaUsage & { model: string }> {
+  usage: DomainUsage,
+): Array<DomainUsage & { model: string }> {
   const iterations = usage.iterations as
     | Array<{ type: string }>
     | null
@@ -108,7 +108,7 @@ export function getAdvisorUsage(
   }
   return iterations.filter(
     it => it.type === 'advisor_message',
-  ) as unknown as Array<BetaUsage & { model: string }>
+  ) as unknown as Array<DomainUsage & { model: string }>
 }
 
 export const ADVISOR_TOOL_INSTRUCTIONS = `# Advisor Tool

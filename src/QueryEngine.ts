@@ -1,5 +1,5 @@
 import { feature } from 'bun:bundle'
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
+import type { DomainUserContentBlock } from './types/domain.js'
 import { randomUUID } from 'crypto'
 import last from 'lodash-es/last.js'
 import {
@@ -29,14 +29,13 @@ import {
   getTotalAPIDuration,
   getTotalCost,
 } from './cost-tracker.js'
-import type { CanUseToolFn } from './hooks/useCanUseTool.js'
 import { loadMemoryPrompt } from './memdir/memdir.js'
 import { hasAutoMemPathOverride } from './memdir/paths.js'
 import { query } from './query.js'
 import { categorizeRetryableAPIError } from './services/api/errors.js'
 import type { MCPServerConnection } from './services/mcp/types.js'
 import type { AppState } from './state/AppState.js'
-import { type Tools, type ToolUseContext, toolMatchesName } from './Tool.js'
+import { type CanUseToolFn, type Tools, type ToolUseContext, toolMatchesName } from './Tool.js'
 import type { AgentDefinition } from './tools/AgentTool/loadAgentsDir.js'
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from './tools/SyntheticOutputTool/SyntheticOutputTool.js'
 import type { Message } from './types/message.js'
@@ -168,7 +167,11 @@ export class QueryEngine {
   }
 
   async *submitMessage(
-    prompt: string | ContentBlockParam[],
+    prompt:
+      | string
+      | DomainUserContentBlock[]
+      | DomainUserContentBlock[]
+      | Array<DomainUserContentBlock | DomainUserContentBlock>,
     options?: { uuid?: string; isMeta?: boolean },
   ): AsyncGenerator<SDKMessage, void, unknown> {
     const {
@@ -1143,7 +1146,11 @@ export async function* ask({
   orphanedPermission,
 }: {
   commands: Command[]
-  prompt: string | Array<ContentBlockParam>
+  prompt:
+    | string
+    | Array<DomainUserContentBlock>
+    | Array<DomainUserContentBlock>
+    | Array<DomainUserContentBlock | DomainUserContentBlock>
   promptUuid?: string
   isMeta?: boolean
   cwd: string

@@ -28,7 +28,7 @@ import { PowerShellPermissionRequest } from './PowerShellPermissionRequest/Power
 import { SkillPermissionRequest } from './SkillPermissionRequest/SkillPermissionRequest.js'
 import { WebFetchPermissionRequest } from './WebFetchPermissionRequest/WebFetchPermissionRequest.js'
 
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
+import type { DomainUserContentBlock } from '../../types/domain.js'
 import type { z } from 'zod/v4'
 import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js'
 import type { WorkerBadgeProps } from './WorkerBadge.js'
@@ -102,9 +102,9 @@ export type ToolUseConfirm<Input extends AnyObject = AnyObject> = {
     updatedInput: z.infer<Input>,
     permissionUpdates: PermissionUpdate[],
     feedback?: string,
-    contentBlocks?: ContentBlockParam[],
+    contentBlocks?: DomainUserContentBlock[],
   ): void
-  onReject(feedback?: string, contentBlocks?: ContentBlockParam[]): void
+  onReject(feedback?: string, contentBlocks?: DomainUserContentBlock[]): void
   recheckPermission(): Promise<void>
 }
 

@@ -1,4 +1,4 @@
-import type { ToolUseBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainToolUseBlock } from '../../types/domain.js'
 import React, { useMemo } from 'react'
 import { useTerminalSize } from 'src/hooks/useTerminalSize.js'
 import { BLACK_CIRCLE } from '../../constants/figures.js'
@@ -25,7 +25,7 @@ import { ToolUseLoader } from '../ToolUseLoader.js'
 import { HookProgressMessage } from './HookProgressMessage.js'
 
 type Props = {
-  param: ToolUseBlockParam
+  param: DomainToolUseBlock
   addMargin: boolean
   tools: Tools
   verbose: boolean

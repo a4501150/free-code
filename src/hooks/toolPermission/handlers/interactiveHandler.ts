@@ -1,5 +1,5 @@
 import { feature } from 'bun:bundle'
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
+import type { DomainUserContentBlock } from '../../../types/domain.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { getAllowedChannels } from '../../../bootstrap/state.js'
 import {
@@ -87,7 +87,7 @@ function handleInteractivePermission(
       updatedInput,
       permissionUpdates: PermissionUpdate[],
       feedback?: string,
-      contentBlocks?: ContentBlockParam[],
+      contentBlocks?: DomainUserContentBlock[],
     ) {
       if (!claim()) return // atomic check-and-mark before await
 
@@ -104,7 +104,7 @@ function handleInteractivePermission(
         ),
       )
     },
-    onReject(feedback?: string, contentBlocks?: ContentBlockParam[]) {
+    onReject(feedback?: string, contentBlocks?: DomainUserContentBlock[]) {
       if (!claim()) return
 
       channelUnsubscribe?.()

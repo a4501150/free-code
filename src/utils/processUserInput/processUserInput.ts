@@ -1,16 +1,15 @@
 import type {
-  Base64ImageSource,
-  ContentBlockParam,
-  ImageBlockParam,
-} from '@anthropic-ai/sdk/resources/messages.mjs'
+  DomainBase64Source,
+  DomainUserContentBlock,
+  DomainUserImageBlock,
+} from '../../types/domain.js'
 import { randomUUID } from 'crypto'
 import type { QuerySource } from 'src/constants/querySource.js'
 
 import { getContentText } from 'src/utils/messages.js'
 import { type LocalJSXCommandContext } from '../../commands.js'
-import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
-import type { IDESelection } from '../../hooks/useIdeSelection.js'
-import type { SetToolJSXFn, ToolUseContext } from '../../Tool.js'
+import type { IDESelection } from '../../types/ide.js'
+import type { SetToolJSXFn, ToolUseContext , CanUseToolFn } from '../../Tool.js'
 import type {
   AssistantMessage,
   AttachmentMessage,
@@ -88,7 +87,11 @@ export async function processUserInput({
   isMeta,
   skipAttachments,
 }: {
-  input: string | Array<ContentBlockParam>
+  input:
+    | string
+    | Array<DomainUserContentBlock>
+    | Array<DomainUserContentBlock>
+    | Array<DomainUserContentBlock | DomainUserContentBlock>
   preExpansionInput?: string
   mode: PromptInputMode
   setToolJSX: SetToolJSXFn
@@ -255,7 +258,11 @@ function applyTruncation(content: string): string {
 }
 
 async function processUserInputBase(
-  input: string | Array<ContentBlockParam>,
+  input:
+    | string
+    | Array<DomainUserContentBlock>
+    | Array<DomainUserContentBlock>
+    | Array<DomainUserContentBlock | DomainUserContentBlock>,
   mode: PromptInputMode,
   setToolJSX: SetToolJSXFn,
   context: ProcessUserInputContext,
@@ -273,7 +280,7 @@ async function processUserInputBase(
   preExpansionInput?: string,
 ): Promise<ProcessUserInputBaseResult> {
   let inputString: string | null = null
-  let precedingInputBlocks: ContentBlockParam[] = []
+  let precedingInputBlocks: Array<DomainUserContentBlock | DomainUserContentBlock> = []
 
   // Collect image metadata texts for isMeta message
   const imageMetadataTexts: string[] = []
@@ -284,16 +291,22 @@ async function processUserInputBase(
   // blocks actually reach the API — otherwise the resize work above is
   // discarded for the regular prompt path. Also normalizes remote inputs
   // where iOS may send `mediaType` instead of `media_type` (mobile-apps#5825).
-  let normalizedInput: string | ContentBlockParam[] = input
+  let normalizedInput:
+    | string
+    | DomainUserContentBlock[]
+    | DomainUserContentBlock[]
+    | Array<DomainUserContentBlock | DomainUserContentBlock> = input
 
   if (typeof input === 'string') {
     inputString = input
   } else if (input.length > 0) {
     queryCheckpoint('query_image_processing_start')
-    const processedBlocks: ContentBlockParam[] = []
+    const processedBlocks: DomainUserContentBlock[] = []
     for (const block of input) {
       if (block.type === 'image') {
-        const resized = await maybeResizeAndDownsampleImageBlock(block)
+        const resized = await maybeResizeAndDownsampleImageBlock(
+          block as DomainUserImageBlock,
+        )
         // Collect image metadata for isMeta message
         if (resized.dimensions) {
           const metadataText = createImageMetadataText(resized.dimensions)
@@ -303,7 +316,7 @@ async function processUserInputBase(
         }
         processedBlocks.push(resized.block)
       } else {
-        processedBlocks.push(block)
+        processedBlocks.push(block as DomainUserContentBlock)
       }
     }
     normalizedInput = processedBlocks
@@ -340,12 +353,12 @@ async function processUserInputBase(
   queryCheckpoint('query_pasted_image_processing_start')
   const imageProcessingResults = await Promise.all(
     imageContents.map(async pastedImage => {
-      const imageBlock: ImageBlockParam = {
+      const imageBlock: DomainUserImageBlock = {
         type: 'image',
         source: {
           type: 'base64',
           media_type: (pastedImage.mediaType ||
-            'image/png') as Base64ImageSource['media_type'],
+            'image/png') as DomainBase64Source['media_type'],
           data: pastedImage.content,
         },
       }
@@ -359,7 +372,7 @@ async function processUserInputBase(
     }),
   )
   // Collect results preserving order
-  const imageContentBlocks: ContentBlockParam[] = []
+  const imageContentBlocks: DomainUserContentBlock[] = []
   for (const {
     resized,
     originalDimensions,

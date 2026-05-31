@@ -19,7 +19,7 @@ import {
 import {
   getMockSubscriptionType,
   shouldUseMockSubscription,
-} from '../services/mockRateLimits.js'
+} from '../services/rateLimits/mockScenarios.js'
 import {
   isOAuthTokenExpired,
   refreshOAuthToken,

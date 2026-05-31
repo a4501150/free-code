@@ -1,5 +1,4 @@
 import { APIError } from '@anthropic-ai/sdk'
-import type { MessageParam } from '@anthropic-ai/sdk/resources/index.mjs'
 import isEqual from 'lodash-es/isEqual.js'
 import { getIsNonInteractiveSession } from '../bootstrap/state.js'
 import { isClaudeAISubscriber } from '../utils/auth.js'
@@ -13,14 +12,14 @@ import { getAnthropicClient } from './api/client.js'
 import {
   processRateLimitHeaders,
   shouldProcessRateLimits,
-} from './rateLimitMocking.js'
+} from './rateLimits/mocking.js'
 
 // Re-export message functions from centralized location
 export {
   getRateLimitErrorMessage,
   getRateLimitWarning,
   getUsingOverageText,
-} from './rateLimitMessages.js'
+} from './rateLimits/messages.js'
 
 type QuotaStatus = 'allowed' | 'allowed_warning' | 'rejected'
 
@@ -194,7 +193,7 @@ async function makeTestQuery() {
     model,
     source: 'quota_check',
   })
-  const messages: MessageParam[] = [{ role: 'user', content: 'quota' }]
+  const messages = [{ role: 'user' as const, content: 'quota' }]
   const betas = getModelBetas(model)
   // biome-ignore lint/plugin: quota check needs raw response access via asResponse()
   return anthropic.beta.messages

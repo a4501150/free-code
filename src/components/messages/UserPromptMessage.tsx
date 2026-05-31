@@ -1,5 +1,5 @@
 import { feature } from 'bun:bundle'
-import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainUserTextBlock } from '../../types/domain.js'
 import React, { useContext, useMemo } from 'react'
 import { getKairosActive, getUserMsgOptIn } from '../../bootstrap/state.js'
 import { Box } from '../../ink.js'
@@ -12,7 +12,7 @@ import { HighlightedThinkingText } from './HighlightedThinkingText.js'
 
 type Props = {
   addMargin: boolean
-  param: TextBlockParam
+  param: DomainUserTextBlock
   isTranscriptMode?: boolean
   timestamp?: string
 }

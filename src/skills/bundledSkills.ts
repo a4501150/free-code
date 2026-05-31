@@ -1,4 +1,4 @@
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainUserContentBlock } from '../types/domain.js'
 import { constants as fsConstants } from 'fs'
 import { mkdir, open } from 'fs/promises'
 import { dirname, isAbsolute, join, normalize, sep as pathSep } from 'path'
@@ -37,7 +37,7 @@ export type BundledSkillDefinition = {
   getPromptForCommand: (
     args: string,
     context: ToolUseContext,
-  ) => Promise<ContentBlockParam[]>
+  ) => Promise<DomainUserContentBlock[]>
 }
 
 // Internal registry for bundled skills
@@ -206,9 +206,9 @@ function resolveSkillFilePath(baseDir: string, relPath: string): string {
 }
 
 function prependBaseDir(
-  blocks: ContentBlockParam[],
+  blocks: DomainUserContentBlock[],
   baseDir: string,
-): ContentBlockParam[] {
+): DomainUserContentBlock[] {
   const prefix = `Base directory for this skill: ${baseDir}\n\n`
   if (blocks.length > 0 && blocks[0]!.type === 'text') {
     return [

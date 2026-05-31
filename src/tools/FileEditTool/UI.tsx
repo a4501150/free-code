@@ -1,4 +1,4 @@
-import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainToolResultBlockParam } from '../../types/domain.js'
 import type { StructuredPatchHunk } from 'diff'
 import * as React from 'react'
 import { Suspense, use, useState } from 'react'
@@ -171,7 +171,7 @@ export function renderToolUseRejectedMessage(
 }
 
 export function renderToolUseErrorMessage(
-  result: ToolResultBlockParam['content'],
+  result: DomainToolResultBlockParam['content'],
   options: {
     progressMessagesForMessage: ProgressMessage[]
     tools: Tools

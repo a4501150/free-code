@@ -1,4 +1,4 @@
-import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/messages/messages.mjs'
+import type { DomainToolResultBlockParam } from '../types/domain.js'
 import * as React from 'react'
 import { stripUnderlineAnsi } from 'src/components/shell/OutputLine.js'
 import { extractTag } from 'src/utils/messages.js'
@@ -11,7 +11,7 @@ import { MessageResponse } from './MessageResponse.js'
 export const MAX_RENDERED_LINES = 10
 
 type Props = {
-  result: ToolResultBlockParam['content']
+  result: DomainToolResultBlockParam['content']
   verbose: boolean
 }
 

@@ -10,14 +10,26 @@
 import type {
   BetaContentBlock,
   BetaMessage,
+  BetaRawMessageStreamEvent,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type {
+  ContentBlockParam,
+  ToolResultBlockParam,
+} from '@anthropic-ai/sdk/resources/messages.mjs'
+import type { APIError } from '@anthropic-ai/sdk'
+import type {
+  DomainApiError,
   DomainAssistantContent,
   DomainContentBlock,
+  DomainContentDelta,
   DomainReasoningBlock,
   DomainRedactedReasoningBlock,
   DomainStopReason,
+  DomainStreamEvent,
+  DomainToolResultBlockParam,
+  DomainToolResultContentItem,
   DomainUsage,
+  DomainUserContentBlock,
   ProviderState,
 } from './domain.js'
 
@@ -289,4 +301,124 @@ export function needsLegacyMigration(content: unknown[]): boolean {
       ((b as { type?: string }).type === 'thinking' ||
         (b as { type?: string }).type === 'redacted_thinking'),
   )
+}
+
+// ── User Content: Anthropic SDK → Domain ──────────────────────────
+
+export function anthropicUserBlockToDomain(
+  block: ContentBlockParam,
+): DomainUserContentBlock {
+  // The SDK ContentBlockParam and domain user content have compatible shapes;
+  // cast through unknown to avoid structural mismatches on cache_control/citations.
+  return block as unknown as DomainUserContentBlock
+}
+
+export function anthropicToolResultToDomain(
+  block: ToolResultBlockParam,
+): DomainToolResultBlockParam {
+  return block as unknown as DomainToolResultBlockParam
+}
+
+// ── User Content: Domain → Anthropic SDK ──────────────────────────
+
+export function domainUserBlockToAnthropic(
+  block: DomainUserContentBlock,
+): ContentBlockParam {
+  return block as unknown as ContentBlockParam
+}
+
+export function domainToolResultToAnthropic(
+  block: DomainToolResultBlockParam,
+): ToolResultBlockParam {
+  return block as unknown as ToolResultBlockParam
+}
+
+// ── Stream Events: Anthropic SDK → Domain ─────────────────────────
+
+export function anthropicStreamEventToDomain(
+  event: BetaRawMessageStreamEvent,
+): DomainStreamEvent {
+  switch (event.type) {
+    case 'message_start':
+      return {
+        type: 'message_start',
+        message: anthropicMessageToDomain(event.message),
+      }
+    case 'content_block_start':
+      return {
+        type: 'content_block_start',
+        index: event.index,
+        content_block: anthropicBlockToDomain(
+          event.content_block as BetaContentBlock,
+        ),
+      }
+    case 'content_block_delta': {
+      const d = event.delta as unknown as Record<string, unknown>
+      let delta: DomainContentDelta | { type: string; [key: string]: unknown }
+      switch (d.type) {
+        case 'text_delta':
+          delta = { type: 'text_delta', text: d.text as string }
+          break
+        case 'input_json_delta':
+          delta = { type: 'input_json_delta', partial_json: d.partial_json as string }
+          break
+        case 'thinking_delta':
+          delta = { type: 'thinking_delta', thinking: d.thinking as string }
+          break
+        case 'signature_delta':
+          delta = { type: 'signature_delta', signature: d.signature as string }
+          break
+        case 'citations_delta':
+          delta = { type: 'citations_delta', citations: (d as { citation?: unknown }).citation }
+          break
+        default:
+          delta = d as { type: string; [key: string]: unknown }
+      }
+      return {
+        type: 'content_block_delta',
+        index: event.index,
+        delta,
+      }
+    }
+    case 'content_block_stop':
+      return {
+        type: 'content_block_stop',
+        index: event.index,
+      }
+    case 'message_delta':
+      return {
+        type: 'message_delta',
+        delta: {
+          stop_reason: (event.delta as unknown as { stop_reason?: string }).stop_reason as DomainStopReason | null | undefined,
+          stop_sequence: (event.delta as unknown as { stop_sequence?: string | null }).stop_sequence,
+        },
+        usage: event.usage as DomainUsage | undefined,
+      }
+    case 'message_stop':
+      return { type: 'message_stop' }
+    default:
+      return event as unknown as DomainStreamEvent
+  }
+}
+
+// ── Stream Events: Domain → Anthropic SDK ─────────────────────────
+
+export function domainStreamEventToAnthropic(
+  event: DomainStreamEvent,
+): BetaRawMessageStreamEvent {
+  return event as unknown as BetaRawMessageStreamEvent
+}
+
+// ── API Error: Anthropic SDK → Domain ─────────────────────────────
+
+export function apiErrorToDomain(error: APIError): DomainApiError {
+  return {
+    status: error.status,
+    message: error.message,
+    ...(error.requestID && { requestID: error.requestID }),
+    headers: error.headers
+      ? Object.fromEntries(error.headers.entries())
+      : undefined,
+    raw: error,
+  }
 }

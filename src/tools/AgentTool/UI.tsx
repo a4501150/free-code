@@ -1,7 +1,7 @@
 import type {
-  ToolResultBlockParam,
-  ToolUseBlockParam,
-} from '@anthropic-ai/sdk/resources/index.mjs'
+  DomainToolResultBlockParam,
+  DomainToolUseBlock,
+} from '../../types/domain.js'
 import * as React from 'react'
 import { ConfigurableShortcutHint } from 'src/components/ConfigurableShortcutHint.js'
 import {
@@ -106,7 +106,7 @@ function hasProgressMessage(data: Progress): data is AgentToolProgress {
 function getSearchOrReadInfo(
   progressMessage: ProgressMessage<Progress>,
   tools: Tools,
-  toolUseByID: Map<string, ToolUseBlockParam>,
+  toolUseByID: Map<string, DomainToolUseBlock>,
 ): { isSearch: boolean; isRead: boolean; isREPL: boolean } | null {
   if (!hasProgressMessage(progressMessage.data)) {
     return null
@@ -964,7 +964,7 @@ export function renderToolUseRejectedMessage(
 }
 
 export function renderToolUseErrorMessage(
-  result: ToolResultBlockParam['content'],
+  result: DomainToolResultBlockParam['content'],
   {
     progressMessagesForMessage,
     tools,
@@ -1120,7 +1120,7 @@ function SingleAgentLastLineWithStats({
     lastMsg.type === 'assistant' || lastMsg.type === 'user'
       ? lastMsg.message.content
       : []
-  let toolUse: ToolUseBlockParam | null = null
+  let toolUse: DomainToolUseBlock | null = null
   for (let i = (content as unknown[]).length - 1; i >= 0; i--) {
     const block = (content as unknown[])[i]
     if (
@@ -1129,7 +1129,7 @@ function SingleAgentLastLineWithStats({
       'type' in block &&
       (block as { type: string }).type === 'tool_use'
     ) {
-      toolUse = block as ToolUseBlockParam
+      toolUse = block as DomainToolUseBlock
       break
     }
   }
@@ -1236,13 +1236,13 @@ function PlusNMoreWithStats({
 }
 
 type GroupedAgentToolUse = {
-  param: ToolUseBlockParam
+  param: DomainToolUseBlock
   isResolved: boolean
   isError: boolean
   isInProgress: boolean
   progressMessages: ProgressMessage<Progress>[]
   result?: {
-    param: ToolResultBlockParam
+    param: DomainToolResultBlockParam
     output: Output
   }
 }
@@ -1654,7 +1654,7 @@ export function extractLastToolInfo(
   tools: Tools,
 ): string | null {
   // Build tool_use lookup from all progress messages (needed for reverse iteration)
-  const toolUseByID = new Map<string, ToolUseBlockParam>()
+  const toolUseByID = new Map<string, DomainToolUseBlock>()
   for (const pm of progressMessages) {
     if (!hasProgressMessage(pm.data)) {
       continue
@@ -1662,7 +1662,7 @@ export function extractLastToolInfo(
     if (pm.data.message.type === 'assistant') {
       for (const c of pm.data.message.message.content) {
         if (c.type === 'tool_use') {
-          toolUseByID.set(c.id, c as ToolUseBlockParam)
+          toolUseByID.set(c.id, c as DomainToolUseBlock)
         }
       }
     }

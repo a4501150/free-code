@@ -4,12 +4,7 @@ import * as React from 'react'
 import { useCallback } from 'react'
 import type { ToolUseConfirm } from '../components/permissions/PermissionRequest.js'
 import { Text } from '../ink.js'
-import type {
-  ToolPermissionContext,
-  Tool as ToolType,
-  ToolUseContext,
-} from '../Tool.js'
-import type { AssistantMessage } from '../types/message.js'
+import type { CanUseToolFn, ToolPermissionContext } from '../Tool.js'
 import { recordAutoModeDenial } from '../utils/autoModeDenials.js'
 import {
   clearClassifierChecking,
@@ -18,7 +13,6 @@ import {
 import { logForDebugging } from '../utils/debug.js'
 import { AbortError } from '../utils/errors.js'
 import { logError } from '../utils/log.js'
-import type { PermissionDecision } from '../utils/permissions/PermissionResult.js'
 import { hasPermissionsToUseTool } from '../utils/permissions/permissions.js'
 import { jsonStringify } from '../utils/slowOperations.js'
 import { handleCoordinatorPermission } from './toolPermission/handlers/coordinatorHandler.js'
@@ -29,17 +23,6 @@ import {
   createPermissionQueueOps,
 } from './toolPermission/PermissionContext.js'
 import { logPermissionDecision } from './toolPermission/permissionLogging.js'
-
-export type CanUseToolFn<
-  Input extends Record<string, unknown> = Record<string, unknown>,
-> = (
-  tool: ToolType,
-  input: Input,
-  toolUseContext: ToolUseContext,
-  assistantMessage: AssistantMessage,
-  toolUseID: string,
-  forceDecision?: PermissionDecision<Input>,
-) => Promise<PermissionDecision<Input>>
 
 function useCanUseTool(
   setToolUseConfirmQueue: React.Dispatch<

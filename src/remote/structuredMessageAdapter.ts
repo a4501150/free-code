@@ -1,9 +1,9 @@
-import type { DomainAssistantContent } from '../types/domain.js'
-import type { UUID } from 'crypto'
 import type {
-  BetaMessage,
-  BetaRawMessageStreamEvent,
-} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+  DomainAssistantContent,
+  DomainStreamEvent,
+} from '../types/domain.js'
+import type { UUID } from 'crypto'
+import { anthropicStreamEventToDomain } from '../types/domainConversion.js'
 import type {
   SDKAssistantMessage,
   SDKCompactBoundaryMessage,
@@ -51,7 +51,9 @@ function convertAssistantMessage(msg: SDKAssistantMessage): AssistantMessage {
 function convertStreamEvent(msg: SDKPartialAssistantMessage): StreamEvent {
   return {
     type: 'stream_event',
-    event: msg.event as BetaRawMessageStreamEvent,
+    event: anthropicStreamEventToDomain(
+      msg.event as Parameters<typeof anthropicStreamEventToDomain>[0],
+    ) as DomainStreamEvent,
   }
 }
 

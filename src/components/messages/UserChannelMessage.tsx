@@ -1,4 +1,4 @@
-import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainUserTextBlock } from '../../types/domain.js'
 import * as React from 'react'
 import { CHANNEL_ARROW } from '../../constants/figures.js'
 import { CHANNEL_TAG } from '../../constants/xml.js'
@@ -7,7 +7,7 @@ import { truncateToWidth } from '../../utils/format.js'
 
 type Props = {
   addMargin: boolean
-  param: TextBlockParam
+  param: DomainUserTextBlock
 }
 
 // <channel source="..." user="..." chat_id="...">content</channel>

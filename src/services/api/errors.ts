@@ -9,6 +9,7 @@ import type {
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import { AFK_MODE_BETA_HEADER } from 'src/constants/betas.js'
 import type { SDKAssistantErrorReason } from 'src/structuredProtocol/index.js'
+import type { DomainApiError } from 'src/types/domain.js'
 import type {
   AssistantMessage,
   Message,
@@ -38,7 +39,7 @@ import {
   getRateLimitErrorMessage,
   type OverageDisabledReason,
 } from '../claudeAiLimits.js'
-import { shouldProcessRateLimits } from '../rateLimitMocking.js' // Used for /mock-limits command
+import { shouldProcessRateLimits } from '../rateLimits/mocking.js' // Used for /mock-limits command
 import {
   extractConnectionErrorDetails,
   formatAPIError,
@@ -267,7 +268,7 @@ function logToolUseToolResultMismatch(
             normalizedSeq.push(`${role}:tool_result:${block.tool_use_id}`)
           } else if (block.type === 'text') {
             normalizedSeq.push(`${role}:text`)
-          } else if (block.type === 'thinking') {
+          } else if (block.type === 'reasoning') {
             normalizedSeq.push(`${role}:thinking`)
           } else if (block.type === 'image') {
             normalizedSeq.push(`${role}:image`)
@@ -305,7 +306,7 @@ function logToolUseToolResultMismatch(
                   )
                 } else if (block.type === 'text') {
                   preNormalizedSeq.push(`${role}:text`)
-                } else if (block.type === 'thinking') {
+                } else if (block.type === 'reasoning') {
                   preNormalizedSeq.push(`${role}:thinking`)
                 } else if (block.type === 'image') {
                   preNormalizedSeq.push(`${role}:image`)
@@ -1046,7 +1047,7 @@ export function classifyAPIError(error: unknown): string {
 }
 
 export function categorizeRetryableAPIError(
-  error: APIError,
+  error: Pick<APIError, 'status' | 'message'> | DomainApiError,
 ): SDKAssistantErrorReason {
   if (
     error.status === 529 ||

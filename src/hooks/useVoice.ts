@@ -9,13 +9,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSetVoiceState } from '../context/voice.js'
 import { useTerminalFocus } from '../ink/hooks/use-terminal-focus.js'
-import { getVoiceKeyterms } from '../services/voiceKeyterms.js'
+import { getVoiceKeyterms } from '../services/voice/keyterms.js'
 import {
   connectVoiceStream,
   type FinalizeSource,
   isVoiceStreamAvailable,
   type VoiceStreamConnection,
-} from '../services/voiceStreamSTT.js'
+} from '../services/voice/streamSTT.js'
 import { logForDebugging } from '../utils/debug.js'
 import { toError } from '../utils/errors.js'
 import { getSystemLocaleLanguage } from '../utils/intl.js'
@@ -131,7 +131,7 @@ export function normalizeLanguageForSTT(language: string | undefined): {
 
 // Lazy-loaded voice module. We defer importing voice.ts until voice input
 // is actually activated.
-type VoiceModule = typeof import('../services/voice.js')
+type VoiceModule = typeof import('../services/voice/recorder.js')
 let voiceModule: VoiceModule | null = null
 
 type VoiceState = 'idle' | 'recording' | 'processing'
@@ -506,7 +506,7 @@ export function useVoice({
   // et al. are ready when the user presses the voice key.
   useEffect(() => {
     if (enabled && !voiceModule) {
-      void import('../services/voice.js').then(mod => {
+      void import('../services/voice/recorder.js').then(mod => {
         voiceModule = mod
       })
     }
@@ -587,7 +587,7 @@ export function useVoice({
       } else {
         // Voice module is loading (async import resolves from cache as a
         // microtask). Wait for it before starting the recording session.
-        void import('../services/voice.js').then(mod => {
+        void import('../services/voice/recorder.js').then(mod => {
           voiceModule = mod
           beginFocusRecording()
         })

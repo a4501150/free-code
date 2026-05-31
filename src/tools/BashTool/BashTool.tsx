@@ -1,5 +1,5 @@
 import { feature } from 'bun:bundle'
-import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainToolResultBlockParam } from '../../types/domain.js'
 import {
   copyFile,
   stat as fsStat,
@@ -7,7 +7,6 @@ import {
   link,
 } from 'fs/promises'
 import * as React from 'react'
-import type { CanUseToolFn } from 'src/hooks/useCanUseTool.js'
 import type { AppState } from 'src/state/AppState.js'
 import { z } from 'zod/v4'
 import { getKairosActive } from '../../bootstrap/state.js'
@@ -15,6 +14,7 @@ import { TOOL_SUMMARY_MAX_LENGTH } from '../../constants/toolLimits.js'
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../../services/analytics/index.js'
 import { notifyVscodeFileUpdated } from '../../services/mcp/vscodeSdkMcp.js'
 import type {
+  CanUseToolFn,
   SetToolJSXFn,
   ToolCallProgress,
   ToolUseContext,
@@ -755,7 +755,7 @@ export const BashTool = buildTool({
       persistedOutputSize,
     },
     toolUseID,
-  ): ToolResultBlockParam {
+  ): DomainToolResultBlockParam {
     // Handle structured content
     if (structuredContent && structuredContent.length > 0) {
       return {

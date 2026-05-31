@@ -1,4 +1,4 @@
-import type { BetaUsage as Usage } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+import type { DomainUsage as Usage } from '../types/domain.js'
 
 import { setHasUnknownModelCost } from '../bootstrap/state.js'
 import { isFastModeEnabled } from './fastMode.js'
@@ -34,7 +34,8 @@ function tokensToUSDCost(modelCosts: ModelCosts, usage: Usage): number {
       modelCosts.promptCacheReadTokens +
     ((usage.cache_creation_input_tokens ?? 0) / 1_000_000) *
       modelCosts.promptCacheWriteTokens +
-    (usage.server_tool_use?.web_search_requests ?? 0) *
+    ((usage.server_tool_use as { web_search_requests?: number } | undefined)
+      ?.web_search_requests ?? 0) *
       modelCosts.webSearchRequests
   )
 }

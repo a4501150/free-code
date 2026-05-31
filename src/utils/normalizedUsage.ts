@@ -17,7 +17,7 @@
  * Anthropic-shape `BetaUsage` to {@link NormalizedUsage} happens via
  * {@link fromAnthropicUsage}.
  */
-import type { Anthropic } from '@anthropic-ai/sdk'
+import type { DomainUsage } from '../types/domain.js'
 import type { ProviderType } from './settings/types.js'
 
 export type NormalizedUsage = {
@@ -112,7 +112,7 @@ export function emptyNormalizedUsage(
  * as concrete numbers here rather than collapsing to undefined.
  */
 export function fromAnthropicUsage(
-  u: Anthropic.Beta.Messages.BetaUsage,
+  u: DomainUsage,
   sourceProvider: ProviderType = 'anthropic',
 ): NormalizedUsage {
   return {

@@ -1,4 +1,4 @@
-import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainToolResultBlockParam } from '../../types/domain.js'
 import * as React from 'react'
 import { SubAgentProvider } from 'src/components/CtrlOToExpand.js'
 import { FallbackToolUseErrorMessage } from 'src/components/FallbackToolUseErrorMessage.js'
@@ -158,7 +158,7 @@ export function renderToolUseRejectedMessage(
 }
 
 export function renderToolUseErrorMessage(
-  result: ToolResultBlockParam['content'],
+  result: DomainToolResultBlockParam['content'],
   {
     progressMessagesForMessage,
     tools,

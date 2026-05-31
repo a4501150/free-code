@@ -10,10 +10,13 @@
  * consumers. Keep them in sync with those files.
  */
 
-import type { BetaRawMessageStreamEvent } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
-import type { DomainAssistantContent, DomainContentBlock } from './domain.js'
-import type { APIError } from '@anthropic-ai/sdk'
+import type {
+  DomainApiError,
+  DomainAssistantContent,
+  DomainContentBlock,
+  DomainStreamEvent,
+  DomainUserContentBlock,
+} from './domain.js'
 import type { SDKAssistantErrorReason } from 'src/structuredProtocol/index.js'
 import type { Attachment } from '../utils/attachments.js'
 import type { ToolProgressData } from './tools.js'
@@ -115,7 +118,7 @@ export type UserMessage = {
   timestamp: string
   message: {
     role: 'user'
-    content: string | ContentBlockParam[]
+    content: string | DomainUserContentBlock[]
   }
   isMeta?: true | boolean
   isVisibleInTranscriptOnly?: true | boolean
@@ -272,7 +275,7 @@ export type SystemMicrocompactBoundaryMessage = SystemBase & {
 export type SystemAPIErrorMessage = SystemBase & {
   subtype: 'api_error'
   level: 'error'
-  error: APIError
+  error: DomainApiError
   cause?: Error
   retryInMs: number
   retryAttempt: number
@@ -358,7 +361,7 @@ export type HookResultMessage =
 
 export type StreamEvent = {
   type: 'stream_event'
-  event: BetaRawMessageStreamEvent
+  event: DomainStreamEvent
   /** Time-to-first-token (ms) populated on message_start events. */
   ttftMs?: number
 }
@@ -392,7 +395,7 @@ export type NormalizedAssistantMessage = AssistantMessage & {
 export type NormalizedUserMessage = UserMessage & {
   message: {
     role: 'user'
-    content: [ContentBlockParam]
+    content: [DomainUserContentBlock]
   }
 }
 

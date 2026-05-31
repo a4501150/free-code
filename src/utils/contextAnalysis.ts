@@ -1,9 +1,7 @@
-import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import type { DomainContentBlock } from '../types/domain.js'
 import type {
-  ContentBlock,
-  ContentBlockParam,
-} from '@anthropic-ai/sdk/resources/index.mjs'
+  DomainContentBlock,
+  DomainUserContentBlock,
+} from '../types/domain.js'
 import { roughTokenCountEstimation as countTokens } from '../services/tokenEstimation.js'
 import type {
   AssistantMessage,
@@ -99,10 +97,9 @@ export function analyzeContext(messages: Message[]): TokenStats {
 
 function processBlock(
   block:
-    | ContentBlockParam
-    | ContentBlock
-    | BetaContentBlock
-    | DomainContentBlock,
+    | DomainUserContentBlock
+    | DomainContentBlock
+    | { type: string; [key: string]: any },
   message: UserMessage | AssistantMessage,
   stats: TokenStats,
   toolIds: Map<string, string>,
@@ -176,8 +173,8 @@ function processBlock(
     case 'web_search_tool_result':
     case 'search_result':
     case 'document':
-    case 'thinking':
-    case 'redacted_thinking':
+    case 'reasoning':
+    case 'redacted_reasoning':
     case 'code_execution_tool_result':
     case 'mcp_tool_use':
     case 'mcp_tool_result':

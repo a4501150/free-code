@@ -1,8 +1,3 @@
-import type Anthropic from '@anthropic-ai/sdk'
-import type {
-  BetaTool,
-  BetaToolUnion,
-} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import { createHash } from 'crypto'
 import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from 'src/constants/prompts.js'
 import { getSystemContext, getUserContext } from 'src/context.js'
@@ -55,6 +50,22 @@ import { getToolSchemaCache } from './toolSchemaCache.js'
 import { windowsPathToPosixPath } from './windowsPaths.js'
 import { zodToJsonSchema } from './zodToJsonSchema.js'
 
+type APIToolInputSchema = any
+
+export type BetaTool = {
+  type?: string | null
+  name: string
+  description?: string | null
+  input_schema: APIToolInputSchema
+  cache_control?: {
+    type: 'ephemeral'
+    scope?: 'global' | 'org'
+    ttl?: '5m' | '1h'
+  }
+}
+
+export type BetaToolUnion = BetaTool | { type?: string | null; name: string }
+
 // Extended BetaTool type with strict mode and cache-control support
 type BetaToolWithExtras = BetaTool & {
   strict?: boolean
@@ -84,8 +95,8 @@ const SWARM_FIELDS_BY_TOOL: Record<string, string[]> = {
  */
 function filterSwarmFieldsFromSchema(
   toolName: string,
-  schema: Anthropic.Tool.InputSchema,
-): Anthropic.Tool.InputSchema {
+  schema: APIToolInputSchema,
+): APIToolInputSchema {
   const fieldsToRemove = SWARM_FIELDS_BY_TOOL[toolName]
   if (!fieldsToRemove || fieldsToRemove.length === 0) {
     return schema
@@ -272,7 +283,7 @@ export async function toolToAPISchema(
       isToolOwnedSchema
         ? tool.inputJSONSchema!
         : zodToJsonSchema(tool.inputSchema)
-    ) as Anthropic.Tool.InputSchema
+    ) as APIToolInputSchema
 
     // Filter out swarm-related fields when swarms are not enabled
     // This ensures external non-EAP users don't see swarm features in the schema
@@ -299,10 +310,10 @@ export async function toolToAPISchema(
     if (!isToolOwnedSchema && !isPassthroughSchema(input_schema)) {
       input_schema = makeJsonSchemaStrict(
         input_schema,
-      ) as Anthropic.Tool.InputSchema
+      ) as APIToolInputSchema
       input_schema = stripStrictDisallowedKeywords(
         input_schema,
-      ) as Anthropic.Tool.InputSchema
+      ) as APIToolInputSchema
     }
 
     base = {

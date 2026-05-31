@@ -1,5 +1,4 @@
-import type { BetaToolUseBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/messages/messages.mjs'
+import type { DomainToolResultBlockParam } from '../types/domain.js'
 import type { Tools } from '../Tool.js'
 import type {
   GroupedToolUseMessage,
@@ -157,7 +156,7 @@ export function applyGrouping(
     // Skip user messages whose tool_results are all grouped
     if (msg.type === 'user') {
       const toolResults = msg.message.content.filter(
-        (c): c is ToolResultBlockParam => c.type === 'tool_result',
+        (c): c is DomainToolResultBlockParam => c.type === 'tool_result',
       )
       if (toolResults.length > 0) {
         const allGrouped = toolResults.every(tr =>

@@ -1,7 +1,7 @@
 import type {
-  ToolResultBlockParam,
-  ToolUseBlockParam,
-} from '@anthropic-ai/sdk/resources/messages/messages.mjs'
+  DomainToolResultBlockParam,
+  DomainToolUseBlock,
+} from '../../types/domain.js'
 import * as React from 'react'
 import {
   filterToolProgressMessages,
@@ -34,7 +34,7 @@ export function GroupedToolUseContent({
   // Build a map from tool_use_id to result data
   const resultsByToolUseId = new Map<
     string,
-    { param: ToolResultBlockParam; output: unknown }
+    { param: DomainToolResultBlockParam; output: unknown }
   >()
   for (const resultMsg of message.results) {
     for (const content of resultMsg.message.content) {
@@ -56,7 +56,7 @@ export function GroupedToolUseContent({
     }
     const result = resultsByToolUseId.get(content.id)
     return {
-      param: content as ToolUseBlockParam,
+      param: content as DomainToolUseBlock,
       isResolved: lookups.resolvedToolUseIDs.has(content.id),
       isError: lookups.erroredToolUseIDs.has(content.id),
       isInProgress: inProgressToolUseIDs.has(content.id),
@@ -69,8 +69,11 @@ export function GroupedToolUseContent({
 
   const anyInProgress = toolUsesData.some(d => d.isInProgress)
 
-  return tool.renderGroupedToolUse(toolUsesData, {
-    shouldAnimate: shouldAnimate && anyInProgress,
-    tools,
-  })
+  return tool.renderGroupedToolUse(
+    toolUsesData as Parameters<NonNullable<typeof tool.renderGroupedToolUse>>[0],
+    {
+      shouldAnimate: shouldAnimate && anyInProgress,
+      tools,
+    },
+  )
 }

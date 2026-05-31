@@ -7,8 +7,7 @@ import { APIUserAbortError } from '@anthropic-ai/sdk'
 import { markPostCompaction } from 'src/bootstrap/state.js'
 import { getInvokedSkillsForAgent } from '../../bootstrap/state.js'
 import type { QuerySource } from '../../constants/querySource.js'
-import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
-import type { ToolUseContext } from '../../Tool.js'
+import type { ToolUseContext , CanUseToolFn } from '../../Tool.js'
 import type { LocalAgentTaskState } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { FileReadTool } from '../../tools/FileReadTool/FileReadTool.js'
 import {
@@ -1092,7 +1091,8 @@ async function streamCompactSummary({
         if (
           event.type === 'stream_event' &&
           event.event.type === 'content_block_delta' &&
-          event.event.delta.type === 'text_delta'
+          event.event.delta.type === 'text_delta' &&
+          typeof event.event.delta.text === 'string'
         ) {
           const charactersStreamed = event.event.delta.text.length
           context.setResponseLength?.(length => length + charactersStreamed)

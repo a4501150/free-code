@@ -1,4 +1,4 @@
-import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainToolResultBlockParam } from '../../types/domain.js'
 import { getProjectRoot } from 'src/bootstrap/state.js'
 import {
   builtInCommandNames,
@@ -11,6 +11,7 @@ import type {
   ToolCallProgress,
   ToolResult,
   ToolUseContext,
+  CanUseToolFn,
   ValidationResult,
 } from 'src/Tool.js'
 import { buildTool, type ToolDef } from 'src/Tool.js'
@@ -32,7 +33,6 @@ import {
 import { z } from 'zod/v4'
 import { clearInvokedSkillsForAgent } from '../../bootstrap/state.js'
 import { COMMAND_MESSAGE_TAG } from '../../constants/xml.js'
-import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import { errorMessage } from '../../utils/errors.js'
 import {
   extractResultText,
@@ -580,7 +580,7 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
   mapToolResultToToolResultBlockParam(
     result: Output,
     toolUseID: string,
-  ): ToolResultBlockParam {
+  ): DomainToolResultBlockParam {
     // Handle forked skill result
     if ('status' in result && result.status === 'forked') {
       return {

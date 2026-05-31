@@ -36,6 +36,13 @@ export type ProviderState = {
   gemini?: GeminiProviderState
 }
 
+// ── Cache Control ─────────────────────────────────────────────────
+
+export type DomainCacheControl = {
+  type: 'ephemeral'
+  [key: string]: unknown
+}
+
 // ── Content Blocks (assistant output) ──────────────────────────────
 
 export type DomainTextBlock = {
@@ -138,4 +145,112 @@ export type DomainAssistantContent = {
   usage: DomainUsage
   container?: unknown
   context_management?: unknown
+}
+
+// ── User Content Blocks ───────────────────────────────────────────
+
+export type DomainBase64Source = {
+  type: 'base64'
+  media_type: string
+  data: string
+}
+
+export type DomainUserTextBlock = {
+  type: 'text'
+  text: string
+  cache_control?: DomainCacheControl
+  citations?: unknown
+}
+
+export type DomainUserImageBlock = {
+  type: 'image'
+  source: DomainBase64Source
+  cache_control?: DomainCacheControl
+}
+
+export type DomainUserDocumentBlock = {
+  type: 'document'
+  source: DomainBase64Source
+  cache_control?: DomainCacheControl
+  title?: string
+  context?: string
+  citations?: unknown
+}
+
+// ── Tool Result Blocks ────────────────────────────────────────────
+
+export type DomainToolResultContentItem =
+  | DomainUserTextBlock
+  | DomainUserImageBlock
+  | DomainUserDocumentBlock
+  | { type: string; [key: string]: unknown }
+
+export type DomainToolResultBlockParam = {
+  type: 'tool_result'
+  tool_use_id: string
+  content?: string | DomainToolResultContentItem[]
+  is_error?: boolean
+  cache_control?: DomainCacheControl
+}
+
+export type DomainUserContentBlock =
+  | DomainUserTextBlock
+  | DomainUserImageBlock
+  | DomainUserDocumentBlock
+  | DomainToolResultBlockParam
+
+// ── Stream Events ─────────────────────────────────────────────────
+
+export type DomainContentDelta =
+  | { type: 'text_delta'; text: string }
+  | { type: 'input_json_delta'; partial_json: string }
+  | { type: 'thinking_delta'; thinking: string }
+  | { type: 'signature_delta'; signature: string }
+  | { type: 'citations_delta'; citations: unknown }
+
+export type DomainStreamEvent =
+  | {
+      type: 'message_start'
+      message: DomainAssistantContent
+    }
+  | {
+      type: 'content_block_start'
+      index: number
+      content_block: DomainContentBlock | { type: string; [key: string]: unknown }
+    }
+  | {
+      type: 'content_block_delta'
+      index: number
+      delta: DomainContentDelta | { type: string; [key: string]: unknown }
+    }
+  | {
+      type: 'content_block_stop'
+      index: number
+    }
+  | {
+      type: 'message_delta'
+      delta: {
+        stop_reason?: DomainStopReason | null
+        stop_sequence?: string | null
+      }
+      usage?: DomainUsage
+    }
+  | {
+      type: 'message_stop'
+    }
+  | {
+      type: 'error'
+      error: DomainApiError
+    }
+
+// ── API Error ─────────────────────────────────────────────────────
+
+export type DomainApiError = {
+  status?: number
+  message: string
+  requestID?: string
+  providerType?: string
+  retryAfterMs?: number
+  headers?: Record<string, string>
+  raw?: unknown
 }

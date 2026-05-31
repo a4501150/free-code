@@ -1,4 +1,4 @@
-import type { ContentBlock } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainContentBlock } from '../../types/domain.js'
 import { getUserContext } from 'src/context.js'
 import { queryModelWithoutStreaming } from 'src/services/api/claude.js'
 import { getEmptyToolPermissionContext } from 'src/Tool.js'
@@ -161,7 +161,8 @@ export async function generateAgent(
   })
 
   const textBlocks = response.message.content.filter(
-    (block): block is ContentBlock & { type: 'text' } => block.type === 'text',
+    (block): block is DomainContentBlock & { type: 'text' } =>
+      block.type === 'text',
   )
   const responseText = textBlocks.map(block => block.text).join('\n')
 

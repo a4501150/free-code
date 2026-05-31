@@ -1,11 +1,11 @@
-import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainUserTextBlock } from '../../types/domain.js'
 import * as React from 'react'
 import { Box, Text } from '../../ink.js'
 import { extractTag } from '../../utils/messages.js'
 
 type Props = {
   addMargin: boolean
-  param: TextBlockParam
+  param: DomainUserTextBlock
 }
 
 export function UserBashInputMessage({

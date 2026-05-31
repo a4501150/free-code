@@ -71,9 +71,9 @@ const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
   : null
 
 import type {
-  Base64ImageSource,
-  ImageBlockParam,
-} from '@anthropic-ai/sdk/resources/messages.mjs'
+  DomainBase64Source,
+  DomainUserImageBlock,
+} from '../../../types/domain.js'
 import type { PastedContent } from '../../../utils/config.js'
 import type { ImageDimensions } from '../../../utils/imageResizer.js'
 import { maybeResizeAndDownsampleImageBlock } from '../../../utils/imageResizer.js'
@@ -472,22 +472,24 @@ export function ExitPlanModePermissionRequest({
         return
       }
 
-      // Convert pasted images to ImageBlockParam[] with resizing
-      let imageBlocks: ImageBlockParam[] | undefined
+      // Convert pasted images to DomainUserImageBlock[] with resizing
+      let imageBlocks: DomainUserImageBlock[] | undefined
       if (hasImages) {
         imageBlocks = await Promise.all(
           imageAttachments.map(async img => {
-            const block: ImageBlockParam = {
+            const block: DomainUserImageBlock = {
               type: 'image',
               source: {
                 type: 'base64',
                 media_type: (img.mediaType ||
-                  'image/png') as Base64ImageSource['media_type'],
+                  'image/png') as DomainBase64Source['media_type'],
                 data: img.content,
               },
             }
-            const resized = await maybeResizeAndDownsampleImageBlock(block)
-            return resized.block
+            const resized = await maybeResizeAndDownsampleImageBlock(
+              block as Parameters<typeof maybeResizeAndDownsampleImageBlock>[0],
+            )
+            return resized.block as DomainUserImageBlock
           }),
         )
       }

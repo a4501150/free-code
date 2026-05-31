@@ -10,10 +10,9 @@
  */
 
 import { feature } from 'bun:bundle'
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
+import type { DomainUserContentBlock } from '../../types/domain.js'
 import { getSystemPrompt } from '../../constants/prompts.js'
 import { TEAMMATE_MESSAGE_TAG } from '../../constants/xml.js'
-import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import {
   processMailboxPermissionResponse,
   registerPermissionCallback,
@@ -26,7 +25,7 @@ import {
   ERROR_MESSAGE_USER_ABORT,
 } from '../../services/compact/compact.js'
 import type { AppState } from '../../state/AppState.js'
-import type { Tool, ToolUseContext } from '../../Tool.js'
+import type { Tool, ToolUseContext, CanUseToolFn } from '../../Tool.js'
 import { appendTeammateMessage } from '../../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
 import type {
   InProcessTeammateTaskState,
@@ -222,7 +221,7 @@ function createInProcessCanUseTool(
               updatedInput: Record<string, unknown>,
               permissionUpdates: PermissionUpdate[],
               feedback?: string,
-              contentBlocks?: ContentBlockParam[],
+              contentBlocks?: DomainUserContentBlock[],
             ) {
               if (decisionMade) return
               decisionMade = true
@@ -260,7 +259,10 @@ function createInProcessCanUseTool(
                   contentBlocks.length > 0 && { contentBlocks }),
               })
             },
-            onReject(feedback?: string, contentBlocks?: ContentBlockParam[]) {
+            onReject(
+              feedback?: string,
+              contentBlocks?: DomainUserContentBlock[],
+            ) {
               if (decisionMade) return
               decisionMade = true
               abortController.signal.removeEventListener(
@@ -326,7 +328,7 @@ function createInProcessCanUseTool(
           updatedInput: Record<string, unknown> | undefined,
           permissionUpdates: PermissionUpdate[],
           _feedback?: string,
-          contentBlocks?: ContentBlockParam[],
+          contentBlocks?: DomainUserContentBlock[],
         ) {
           cleanup()
           persistPermissionUpdates(permissionUpdates)
@@ -341,7 +343,7 @@ function createInProcessCanUseTool(
             ...(contentBlocks && contentBlocks.length > 0 && { contentBlocks }),
           })
         },
-        onReject(feedback?: string, contentBlocks?: ContentBlockParam[]) {
+        onReject(feedback?: string, contentBlocks?: DomainUserContentBlock[]) {
           cleanup()
           const message = feedback
             ? `${SUBAGENT_REJECT_MESSAGE_WITH_REASON_PREFIX}${feedback}`

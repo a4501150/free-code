@@ -1,4 +1,4 @@
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
+import type { DomainUserContentBlock } from './domain.js'
 import type { UUID } from 'crypto'
 import type React from 'react'
 import type { PermissionResult } from 'src/structuredProtocol/index.js'
@@ -297,7 +297,7 @@ export type QueuePriority = 'now' | 'next' | 'later'
  * Queued command type
  */
 export type QueuedCommand = {
-  value: string | Array<ContentBlockParam>
+  value: string | Array<DomainUserContentBlock> | Array<DomainUserContentBlock>
   mode: PromptInputMode
   /** Defaults to the priority implied by `mode` when enqueued. */
   priority?: QueuePriority

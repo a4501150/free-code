@@ -6,6 +6,7 @@ import { Ansi, Box, Text, useTheme } from '../../ink.js'
 import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js'
 import { findToolByName, type Tools } from '../../Tool.js'
 import { getReplPrimitiveTools } from '../../tools/REPLTool/primitiveTools.js'
+import type { DomainToolResultBlockParam } from '../../types/domain.js'
 import type {
   CollapsedReadSearchGroup,
   NormalizedAssistantMessage,
@@ -146,9 +147,7 @@ function VerboseToolUse({
           // the collapsed group.
           const errorBlock = Array.isArray(resultMsg.message.content)
             ? resultMsg.message.content.find(
-                (
-                  b,
-                ): b is import('@anthropic-ai/sdk/resources/index.mjs').ToolResultBlockParam =>
+                (b): b is DomainToolResultBlockParam =>
                   b.type === 'tool_result' && b.tool_use_id === content.id,
               )
             : undefined

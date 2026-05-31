@@ -1,4 +1,4 @@
-import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainUserTextBlock } from '../../types/domain.js'
 import * as React from 'react'
 import { BLACK_CIRCLE } from '../../constants/figures.js'
 import { Box, Text, type TextProps } from '../../ink.js'
@@ -6,7 +6,7 @@ import { extractTag } from '../../utils/messages.js'
 
 type Props = {
   addMargin: boolean
-  param: TextBlockParam
+  param: DomainUserTextBlock
 }
 
 function getStatusColor(status: string | null): TextProps['color'] {

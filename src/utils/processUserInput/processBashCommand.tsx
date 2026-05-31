@@ -1,5 +1,5 @@
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources'
 import { randomUUID } from 'crypto'
+import type { DomainUserContentBlock } from '../../types/domain.js'
 import * as React from 'react'
 import { BashModeProgress } from 'src/components/BashModeProgress.js'
 import type { SetToolJSXFn } from 'src/Tool.js'
@@ -27,7 +27,7 @@ import type { ProcessUserInputContext } from './processUserInput.js'
 
 export async function processBashCommand(
   inputString: string,
-  precedingInputBlocks: ContentBlockParam[],
+  precedingInputBlocks: Array<DomainUserContentBlock | DomainUserContentBlock>,
   attachmentMessages: AttachmentMessage[],
   context: ProcessUserInputContext,
   setToolJSX: SetToolJSXFn,

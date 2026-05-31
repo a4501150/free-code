@@ -35,7 +35,7 @@ export function extractToolResultText(
       parts.push(inner)
     } else if (Array.isArray(inner)) {
       for (const sub of inner) {
-        if (sub.type === 'text') {
+        if (sub.type === 'text' && typeof sub.text === 'string') {
           parts.push(sub.text)
         } else if (sub.type === 'image') {
           parts.push('[image]')

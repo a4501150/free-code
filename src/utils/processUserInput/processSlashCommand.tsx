@@ -1,10 +1,7 @@
 import { feature } from 'bun:bundle'
-import type {
-  ContentBlockParam,
-  TextBlockParam,
-} from '@anthropic-ai/sdk/resources'
 import { randomUUID } from 'crypto'
 import { setPromptId } from 'src/bootstrap/state.js'
+import type { DomainUserContentBlock, DomainUserTextBlock } from '../../types/domain.js'
 import {
   builtInCommandNames,
   type Command,
@@ -16,7 +13,7 @@ import {
   type PromptCommand,
 } from 'src/commands.js'
 import { NO_CONTENT_MESSAGE } from 'src/constants/messages.js'
-import type { SetToolJSXFn, ToolUseContext } from 'src/Tool.js'
+import type { SetToolJSXFn, ToolUseContext , CanUseToolFn } from 'src/Tool.js'
 import type {
   AssistantMessage,
   AttachmentMessage,
@@ -27,7 +24,6 @@ import type {
 } from 'src/types/message.js'
 import { addInvokedSkill, getSessionId } from '../../bootstrap/state.js'
 import { COMMAND_MESSAGE_TAG, COMMAND_NAME_TAG } from '../../constants/xml.js'
-import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import { buildPostCompactMessages } from '../../services/compact/compact.js'
 import type { Progress as AgentProgress } from '../../tools/AgentTool/AgentTool.js'
 import { runAgent } from '../../tools/AgentTool/runAgent.js'
@@ -104,7 +100,7 @@ async function executeForkedSlashCommand(
   command: CommandBase & PromptCommand,
   args: string,
   context: ProcessUserInputContext,
-  precedingInputBlocks: ContentBlockParam[],
+  precedingInputBlocks: Array<DomainUserContentBlock | DomainUserContentBlock>,
   setToolJSX: SetToolJSXFn,
   canUseTool: CanUseToolFn,
 ): Promise<SlashCommandResult> {
@@ -367,8 +363,8 @@ export function looksLikeCommand(commandName: string): boolean {
 
 export async function processSlashCommand(
   inputString: string,
-  precedingInputBlocks: ContentBlockParam[],
-  imageContentBlocks: ContentBlockParam[],
+  precedingInputBlocks: Array<DomainUserContentBlock | DomainUserContentBlock>,
+  imageContentBlocks: DomainUserContentBlock[],
   attachmentMessages: AttachmentMessage[],
   context: ProcessUserInputContext,
   setToolJSX: SetToolJSXFn,
@@ -600,8 +596,8 @@ async function getMessagesForSlashCommand(
   args: string,
   setToolJSX: SetToolJSXFn,
   context: ProcessUserInputContext,
-  precedingInputBlocks: ContentBlockParam[],
-  imageContentBlocks: ContentBlockParam[],
+  precedingInputBlocks: Array<DomainUserContentBlock | DomainUserContentBlock>,
+  imageContentBlocks: DomainUserContentBlock[],
   _isAlreadyProcessing?: boolean,
   canUseTool?: CanUseToolFn,
   uuid?: string,
@@ -988,7 +984,7 @@ export async function processPromptSlashCommand(
   args: string,
   commands: Command[],
   context: ToolUseContext,
-  imageContentBlocks: ContentBlockParam[] = [],
+  imageContentBlocks: DomainUserContentBlock[] = [],
 ): Promise<SlashCommandResult> {
   const command = findCommand(commandName, commands)
   if (!command) {
@@ -1012,8 +1008,8 @@ async function getMessagesForPromptSlashCommand(
   command: CommandBase & PromptCommand,
   args: string,
   context: ToolUseContext,
-  precedingInputBlocks: ContentBlockParam[] = [],
-  imageContentBlocks: ContentBlockParam[] = [],
+  precedingInputBlocks: Array<DomainUserContentBlock | DomainUserContentBlock> = [],
+  imageContentBlocks: DomainUserContentBlock[] = [],
   uuid?: string,
 ): Promise<SlashCommandResult> {
   // In coordinator mode (main thread only), skip loading the full skill content
@@ -1049,7 +1045,7 @@ async function getMessagesForPromptSlashCommand(
     parts.push(
       `\nInstruct a worker to use this skill by including "Use the /${command.name} skill" in your Agent prompt. The worker has access to the Skill tool and will receive the skill's content and permissions when it invokes it.`,
     )
-    const summaryContent: ContentBlockParam[] = [
+    const summaryContent: DomainUserContentBlock[] = [
       { type: 'text', text: parts.join('\n') },
     ]
     return {
@@ -1089,7 +1085,7 @@ async function getMessagesForPromptSlashCommand(
     ? `${command.source}:${command.name}`
     : command.name
   const skillContent = result
-    .filter((b): b is TextBlockParam => b.type === 'text')
+    .filter((b): b is DomainUserTextBlock => b.type === 'text')
     .map(b => b.text)
     .join('\n\n')
   addInvokedSkill(
@@ -1106,7 +1102,7 @@ async function getMessagesForPromptSlashCommand(
   )
 
   // Create content for the main message, including any pasted images
-  const mainMessageContent: ContentBlockParam[] =
+  const mainMessageContent: Array<DomainUserContentBlock | DomainUserContentBlock> =
     imageContentBlocks.length > 0 || precedingInputBlocks.length > 0
       ? [...imageContentBlocks, ...precedingInputBlocks, ...result]
       : result
@@ -1119,7 +1115,7 @@ async function getMessagesForPromptSlashCommand(
   const attachmentMessages = await toArray(
     getAttachmentMessages(
       result
-        .filter((block): block is TextBlockParam => block.type === 'text')
+        .filter((block): block is DomainUserTextBlock => block.type === 'text')
         .map(block => block.text)
         .join(' '),
       context,

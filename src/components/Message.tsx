@@ -1,13 +1,12 @@
 import { feature } from 'bun:bundle'
-import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import type { DomainContentBlock } from '../types/domain.js'
 import type {
-  ImageBlockParam,
-  TextBlockParam,
-  ThinkingBlockParam,
-  ToolResultBlockParam,
-  ToolUseBlockParam,
-} from '@anthropic-ai/sdk/resources/index.mjs'
+  DomainContentBlock,
+  DomainReasoningBlock,
+  DomainToolResultBlockParam,
+  DomainToolUseBlock,
+  DomainUserImageBlock,
+  DomainUserTextBlock,
+} from '../types/domain.js'
 import * as React from 'react'
 import type { Command } from '../commands.js'
 import { useTerminalSize } from '../hooks/useTerminalSize.js'
@@ -194,10 +193,10 @@ function MessageImpl({
               progressMessagesForMessage={progressMessagesForMessage}
               param={
                 param as
-                  | TextBlockParam
-                  | ImageBlockParam
-                  | ToolUseBlockParam
-                  | ToolResultBlockParam
+                  | DomainUserTextBlock
+                  | DomainUserImageBlock
+                  | DomainToolUseBlock
+                  | DomainToolResultBlockParam
               }
               style={style}
               verbose={verbose}
@@ -303,10 +302,10 @@ function UserMessage({
   tools: Tools
   progressMessagesForMessage: ProgressMessage[]
   param:
-    | TextBlockParam
-    | ImageBlockParam
-    | ToolUseBlockParam
-    | ToolResultBlockParam
+    | DomainUserTextBlock
+    | DomainUserImageBlock
+    | DomainToolUseBlock
+    | DomainToolResultBlockParam
   style?: 'condensed'
   verbose: boolean
   imageIndex?: number
@@ -375,15 +374,14 @@ function AssistantMessageBlock({
   advisorModel,
 }: {
   param:
-    | BetaContentBlock
     | DomainContentBlock
     | ConnectorTextBlock
     | AdvisorBlock
-    | TextBlockParam
-    | ImageBlockParam
-    | ThinkingBlockParam
-    | ToolUseBlockParam
-    | ToolResultBlockParam
+    | DomainUserTextBlock
+    | DomainUserImageBlock
+    | DomainReasoningBlock
+    | DomainToolUseBlock
+    | DomainToolResultBlockParam
   addMargin: boolean
   tools: Tools
   commands: Command[]

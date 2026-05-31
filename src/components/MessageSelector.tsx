@@ -1,7 +1,7 @@
 import type {
-  ContentBlockParam,
-  TextBlockParam,
-} from '@anthropic-ai/sdk/resources/index.mjs'
+  DomainUserContentBlock,
+  DomainUserTextBlock,
+} from '../types/domain.js'
 import { randomUUID, type UUID } from 'crypto'
 import figures from 'figures'
 import * as React from 'react'
@@ -33,7 +33,9 @@ import {
 import { type OptionWithDescription, Select } from './CustomSelect/select.js'
 import { Spinner } from './Spinner.js'
 
-function isTextBlock(block: ContentBlockParam): block is TextBlockParam {
+function isTextBlock(
+  block: DomainUserContentBlock,
+): block is DomainUserTextBlock {
   return block.type === 'text'
 }
 

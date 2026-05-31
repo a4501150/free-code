@@ -1,4 +1,4 @@
-import type { BetaUsage as Usage } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+import type { DomainUsage as Usage } from './types/domain.js'
 import chalk from 'chalk'
 import {
   addToTotalCostState,
@@ -261,7 +261,8 @@ function addToTotalModelUsage(
   modelUsage.cacheReadInputTokens += usage.cache_read_input_tokens ?? 0
   modelUsage.cacheCreationInputTokens += usage.cache_creation_input_tokens ?? 0
   modelUsage.webSearchRequests +=
-    usage.server_tool_use?.web_search_requests ?? 0
+    (usage.server_tool_use as { web_search_requests?: number } | undefined)
+      ?.web_search_requests ?? 0
   modelUsage.costUSD += cost
   modelUsage.contextWindow = getContextWindowForModel(model, getSdkBetas())
   modelUsage.maxOutputTokens = getModelMaxOutputTokens(model)

@@ -1,4 +1,4 @@
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
+import type { DomainUserContentBlock } from '../../types/domain.js'
 import type { ToolUseConfirm } from '../../components/permissions/PermissionRequest.js'
 import type {
   ToolPermissionContext,
@@ -31,16 +31,10 @@ import {
   logPermissionDecision,
   type PermissionDecisionArgs,
 } from './permissionLogging.js'
-
-type PermissionApprovalSource =
-  | { type: 'hook'; permanent?: boolean }
-  | { type: 'user'; permanent: boolean }
-  | { type: 'classifier' }
-
-type PermissionRejectionSource =
-  | { type: 'hook' }
-  | { type: 'user_abort' }
-  | { type: 'user_reject'; hasFeedback: boolean }
+import type {
+  PermissionApprovalSource,
+  PermissionRejectionSource,
+} from '../../types/toolPermissions.js'
 
 // Generic interface for permission queue operations, decoupled from React.
 // In the REPL, these are backed by React state.
@@ -138,7 +132,7 @@ function createPermissionContext(
     cancelAndAbort(
       feedback?: string,
       isAbort?: boolean,
-      contentBlocks?: ContentBlockParam[],
+      contentBlocks?: DomainUserContentBlock[],
     ): PermissionDecision {
       const sub = !!toolUseContext.agentId
       const baseMessage = feedback
@@ -209,7 +203,7 @@ function createPermissionContext(
         userModified?: boolean
         decisionReason?: PermissionDecisionReason
         acceptFeedback?: string
-        contentBlocks?: ContentBlockParam[]
+        contentBlocks?: DomainUserContentBlock[]
       },
     ): PermissionAllowDecision {
       return {
@@ -235,7 +229,7 @@ function createPermissionContext(
       permissionUpdates: PermissionUpdate[],
       feedback?: string,
       permissionPromptStartTimeMs?: number,
-      contentBlocks?: ContentBlockParam[],
+      contentBlocks?: DomainUserContentBlock[],
       decisionReason?: PermissionDecisionReason,
     ): Promise<PermissionAllowDecision> {
       const acceptedPermanentUpdates =

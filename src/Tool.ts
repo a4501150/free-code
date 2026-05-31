@@ -1,7 +1,7 @@
 import type {
-  ToolResultBlockParam,
-  ToolUseBlockParam,
-} from '@anthropic-ai/sdk/resources/index.mjs'
+  DomainToolResultBlockParam,
+  DomainToolUseBlock,
+} from './types/domain.js'
 import type {
   ElicitRequestURLParams,
   ElicitResult,
@@ -9,7 +9,6 @@ import type {
 import type { UUID } from 'crypto'
 import type { z } from 'zod/v4'
 import type { Command } from './commands.js'
-import type { CanUseToolFn } from './hooks/useCanUseTool.js'
 import type { ThinkingConfig } from './utils/thinking.js'
 
 export type ToolInputJSONSchema = {
@@ -59,6 +58,7 @@ import type {
 import type { EffortValue } from './utils/effort.js'
 import type { FileStateCache } from './utils/fileStateCache.js'
 import type { DenialTrackingState } from './utils/permissions/denialTracking.js'
+import type { PermissionDecision } from './utils/permissions/PermissionResult.js'
 import type { SystemPrompt } from './utils/systemPromptType.js'
 import type { ContentReplacementState } from './utils/toolResultStorage.js'
 
@@ -86,6 +86,17 @@ import type { AgentId } from './types/ids.js'
 import type { DeepImmutable } from './types/utils.js'
 import type { FileHistoryState } from './utils/fileHistory.js'
 import type { Theme, ThemeName } from './utils/theme.js'
+
+export type CanUseToolFn<
+  Input extends Record<string, unknown> = Record<string, unknown>,
+> = (
+  tool: Tool,
+  input: Input,
+  toolUseContext: ToolUseContext,
+  assistantMessage: AssistantMessage,
+  toolUseID: string,
+  forceDecision?: PermissionDecision<Input>,
+) => Promise<PermissionDecision<Input>>
 
 export type QueryChainTracking = {
   chainId: string
@@ -531,7 +542,7 @@ export type Tool<
   mapToolResultToToolResultBlockParam(
     content: Output,
     toolUseID: string,
-  ): ToolResultBlockParam
+  ): DomainToolResultBlockParam
   /**
    * Optional. When omitted, the tool result renders nothing (same as returning
    * null). Omit for tools whose results are surfaced elsewhere (e.g., TaskUpdate
@@ -645,7 +656,7 @@ export type Tool<
    * that show "File not found" instead of the raw error).
    */
   renderToolUseErrorMessage?(
-    result: ToolResultBlockParam['content'],
+    result: DomainToolResultBlockParam['content'],
     options: {
       progressMessagesForMessage: ProgressMessage<P>[]
       tools: Tools
@@ -665,13 +676,13 @@ export type Tool<
    */
   renderGroupedToolUse?(
     toolUses: Array<{
-      param: ToolUseBlockParam
+      param: DomainToolUseBlock
       isResolved: boolean
       isError: boolean
       isInProgress: boolean
       progressMessages: ProgressMessage<P>[]
       result?: {
-        param: ToolResultBlockParam
+        param: DomainToolResultBlockParam
         output: unknown
       }
     }>,
@@ -764,7 +775,7 @@ const TOOL_DEFAULTS = {
   mapToolResultToToolResultBlockParam: (
     content: unknown,
     toolUseID: string,
-  ): ToolResultBlockParam => ({
+  ): DomainToolResultBlockParam => ({
     tool_use_id: toolUseID,
     type: 'tool_result' as const,
     content:

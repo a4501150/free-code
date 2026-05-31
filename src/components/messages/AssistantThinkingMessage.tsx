@@ -1,18 +1,11 @@
-import type {
-  ThinkingBlock,
-  ThinkingBlockParam,
-} from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainReasoningBlock } from '../../types/domain.js'
 import React from 'react'
 import { Box, Text } from '../../ink.js'
 import { CtrlOToExpand } from '../CtrlOToExpand.js'
 import { Markdown } from '../Markdown.js'
 
 type Props = {
-  param:
-    | ThinkingBlock
-    | ThinkingBlockParam
-    | { type: 'thinking'; thinking: string }
-    | { type: 'reasoning'; text: string }
+  param: DomainReasoningBlock | { type: 'thinking'; thinking: string }
   addMargin: boolean
   isTranscriptMode: boolean
   verbose: boolean

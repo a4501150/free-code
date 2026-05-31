@@ -1,4 +1,8 @@
-import type { Anthropic } from '@anthropic-ai/sdk'
+import type {
+  DomainContentBlock,
+  DomainUserContentBlock,
+} from '../types/domain.js'
+import type { BetaToolUnion } from '../utils/api.js'
 // @aws-sdk/client-bedrock-runtime is imported dynamically in countTokensWithBedrock()
 // to defer ~279KB of AWS SDK code until a Bedrock call is actually made
 import {
@@ -28,11 +32,18 @@ import { withTokenCountVCR } from './vcr.js'
 const TOKEN_COUNT_THINKING_BUDGET = 1024
 const TOKEN_COUNT_MAX_TOKENS = 2048
 
+export type TokenCountMessageParam = {
+  role: 'user' | 'assistant'
+  content: string | Array<{ type: string; [key: string]: any }>
+}
+export type TokenCountTool = any
+
+
 /**
  * Check if messages contain thinking blocks
  */
 function hasThinkingBlocks(
-  messages: Anthropic.Beta.Messages.BetaMessageParam[],
+  messages: TokenCountMessageParam[],
 ): boolean {
   for (const message of messages) {
     if (message.role === 'assistant' && Array.isArray(message.content)) {
@@ -59,7 +70,7 @@ export async function countTokensWithAPI(
     return 0
   }
 
-  const message: Anthropic.Beta.Messages.BetaMessageParam = {
+  const message: TokenCountMessageParam = {
     role: 'user',
     content: content,
   }
@@ -80,8 +91,8 @@ export async function countTokensWithAPI(
  * estimation via {@link roughTokenCountEstimationForMessages}.
  */
 export async function countMessagesTokensWithAPI(
-  messages: Anthropic.Beta.Messages.BetaMessageParam[],
-  tools: Anthropic.Beta.Messages.BetaToolUnion[],
+  messages: TokenCountMessageParam[],
+  tools: TokenCountTool[],
   options?: {
     model?: string
     system?: string
@@ -95,10 +106,15 @@ export async function countMessagesTokensWithAPI(
         const model = options?.model ?? getMainLoopModel()
         const adapter = getAdapterForModel(model)
         const betas = getModelBetas(model)
-        const breakdown = await adapter.countTokens(messages, tools, model, {
+        const breakdown = await adapter.countTokens(
+          messages as Parameters<typeof adapter.countTokens>[0],
+          tools as Parameters<typeof adapter.countTokens>[1],
+          model,
+          {
           betas,
-          system: options?.system,
-        })
+            system: options?.system,
+          },
+        )
         if (!breakdown) return null
         return (
           breakdown.inputTokens +
@@ -129,8 +145,8 @@ export async function countTokensViaAnthropicEndpoint({
   filterBetas,
   system,
 }: {
-  messages: Anthropic.Beta.Messages.BetaMessageParam[]
-  tools: Anthropic.Beta.Messages.BetaToolUnion[]
+  messages: TokenCountMessageParam[]
+  tools: TokenCountTool[]
   model: string
   betas: string[]
   filterBetas?: (beta: string) => boolean
@@ -156,7 +172,7 @@ export async function countTokensViaAnthropicEndpoint({
         budget_tokens: TOKEN_COUNT_THINKING_BUDGET,
       },
     }),
-  })
+  } as Parameters<typeof anthropic.beta.messages.countTokens>[0])
   if (typeof response.input_tokens !== 'number') {
     // Vertex client throws
     // Bedrock client succeeds with { Output: { __type: 'com.amazon.coral.service#UnknownOperationException' }, Version: '1.0' }
@@ -171,8 +187,8 @@ export async function countTokensViaAnthropicEndpoint({
  */
 export async function countTokensViaBedrock(args: {
   model: string
-  messages: Anthropic.Beta.Messages.BetaMessageParam[]
-  tools: Anthropic.Beta.Messages.BetaToolUnion[]
+  messages: TokenCountMessageParam[]
+  tools: TokenCountTool[]
   betas: string[]
   containsThinking: boolean
   system?: string
@@ -252,8 +268,10 @@ export function roughTokenCountEstimationForMessage(message: {
     return roughTokenCountEstimationForContent(
       message.message?.content as
         | string
-        | Array<Anthropic.ContentBlock>
-        | Array<Anthropic.ContentBlockParam>
+        | Array<DomainContentBlock>
+        | Array<DomainUserContentBlock>
+        | Array<DomainUserContentBlock>
+        | Array<DomainContentBlock>
         | undefined,
     )
   }
@@ -286,8 +304,10 @@ export function roughTokenCountEstimationForMessage(message: {
 function roughTokenCountEstimationForContent(
   content:
     | string
-    | Array<Anthropic.ContentBlock>
-    | Array<Anthropic.ContentBlockParam>
+    | Array<DomainContentBlock>
+    | Array<DomainUserContentBlock>
+    | Array<DomainUserContentBlock>
+    | Array<DomainContentBlock>
     | undefined,
 ): number {
   if (!content) {
@@ -304,7 +324,13 @@ function roughTokenCountEstimationForContent(
 }
 
 function roughTokenCountEstimationForBlock(
-  block: string | Anthropic.ContentBlock | Anthropic.ContentBlockParam,
+  block:
+    | string
+    | DomainContentBlock
+    | DomainUserContentBlock
+    | DomainUserContentBlock
+    | DomainContentBlock
+    | { type: string; [key: string]: any },
 ): number {
   if (typeof block === 'string') {
     return roughTokenCountEstimation(block)
@@ -329,7 +355,8 @@ function roughTokenCountEstimationForBlock(
     return roughTokenCountEstimationForContent(
       block.content as
         | string
-        | import('@anthropic-ai/sdk/resources/messages.mjs').ContentBlockParam[]
+        | DomainUserContentBlock[]
+        | DomainUserContentBlock[]
         | undefined,
     )
   }
@@ -339,6 +366,14 @@ function roughTokenCountEstimationForBlock(
     // char count; the API re-serializes anyway so this is what it sees.
     return roughTokenCountEstimation(
       block.name + jsonStringify(block.input ?? {}),
+    )
+  }
+  if (block.type === 'reasoning') {
+    return roughTokenCountEstimation(block.text)
+  }
+  if (block.type === 'redacted_reasoning') {
+    return roughTokenCountEstimation(
+      block.providerState?.anthropic?.redactedData ?? '',
     )
   }
   if (block.type === 'thinking') {
@@ -363,8 +398,8 @@ async function countTokensWithBedrock({
   system,
 }: {
   model: string
-  messages: Anthropic.Beta.Messages.BetaMessageParam[]
-  tools: Anthropic.Beta.Messages.BetaToolUnion[]
+  messages: TokenCountMessageParam[]
+  tools: TokenCountTool[]
   betas: string[]
   containsThinking: boolean
   system?: string

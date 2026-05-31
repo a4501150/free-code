@@ -1,4 +1,4 @@
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.js'
+import type { DomainUserContentBlock } from '../types/domain.js'
 import type { Command } from '../commands.js'
 import type { ToolUseContext } from '../Tool.js'
 
@@ -16,7 +16,7 @@ type Options = {
   getPromptWhileMarketplaceIsPrivate: (
     args: string,
     context: ToolUseContext,
-  ) => Promise<ContentBlockParam[]>
+  ) => Promise<DomainUserContentBlock[]>
 }
 
 export function createMovedToPluginCommand({
@@ -40,7 +40,7 @@ export function createMovedToPluginCommand({
     async getPromptForCommand(
       args: string,
       context: ToolUseContext,
-    ): Promise<ContentBlockParam[]> {
+    ): Promise<DomainUserContentBlock[]> {
       return getPromptWhileMarketplaceIsPrivate(args, context)
     },
   }

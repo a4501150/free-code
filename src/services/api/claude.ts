@@ -23,8 +23,13 @@ import type {
   DomainContentBlock,
   DomainReasoningBlock,
   DomainUsage,
+  DomainUserContentBlock,
 } from '../../types/domain.js'
-import { domainBlockToAnthropic } from '../../types/domainConversion.js'
+import {
+  anthropicStreamEventToDomain,
+  domainBlockToAnthropic,
+  domainUserBlockToAnthropic,
+} from '../../types/domainConversion.js'
 import type { Stream } from '@anthropic-ai/sdk/streaming.mjs'
 import { randomUUID } from 'crypto'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
@@ -534,6 +539,9 @@ export function userMessageToMessageParam(
   enablePromptCaching: boolean,
   querySource?: QuerySource,
 ): MessageParam {
+  const toAnthropicBeta = (block: DomainUserContentBlock) =>
+    domainUserBlockToAnthropic(block) as unknown as BetaContentBlockParam
+
   if (addCache) {
     if (typeof message.message.content === 'string') {
       return {
@@ -551,14 +559,16 @@ export function userMessageToMessageParam(
     } else {
       return {
         role: 'user',
-        content: message.message.content.map((_, i) => ({
-          ..._,
-          ...(i === message.message.content.length - 1
-            ? enablePromptCaching
-              ? { cache_control: getCacheControl({ querySource }) }
-              : {}
-            : {}),
-        })),
+        content: message.message.content.map((block, i) =>
+          toAnthropicBeta({
+            ...block,
+            ...(i === message.message.content.length - 1
+              ? enablePromptCaching
+                ? { cache_control: getCacheControl({ querySource }) }
+                : {}
+              : {}),
+          }),
+        ),
       }
     }
   }
@@ -568,7 +578,7 @@ export function userMessageToMessageParam(
   return {
     role: 'user',
     content: Array.isArray(message.message.content)
-      ? [...message.message.content]
+      ? message.message.content.map(toAnthropicBeta)
       : message.message.content,
   }
 }
@@ -1220,7 +1230,10 @@ async function* queryModel(
       model: advisorModel,
     } as unknown as BetaToolUnion)
   }
-  const allTools = [...toolSchemas, ...extraToolSchemas]
+  const allTools: BetaToolUnion[] = [
+    ...(toolSchemas as unknown as BetaToolUnion[]),
+    ...extraToolSchemas,
+  ]
 
   const isFastMode =
     isFastModeEnabled() &&
@@ -1566,7 +1579,7 @@ async function* queryModel(
           queryCheckpoint('query_client_creation_end')
 
           const params = paramsFromContext(context)
-          captureAPIRequest(params, options.querySource) // Capture for bug reports
+          captureAPIRequest(params as unknown as Parameters<typeof captureAPIRequest>[0], options.querySource) // Capture for bug reports
 
           maxOutputTokens = params.max_tokens
 
@@ -1952,7 +1965,7 @@ async function* queryModel(
               break
             }
             case 'message_delta': {
-              usage = updateUsage(usage, part.usage)
+              usage = updateUsage(usage, part.usage as unknown as DomainUsage)
 
               // Write final usage and stop_reason back to the last yielded
               // message. Messages are created at content_block_stop from
@@ -2012,7 +2025,7 @@ async function* queryModel(
           resetStreamIdleTimer()
           yield {
             type: 'stream_event',
-            event: part,
+            event: anthropicStreamEventToDomain(part),
             ...(part.type === 'message_start' ? { ttftMs } : undefined),
           }
         }
@@ -2247,7 +2260,7 @@ async function* queryModel(
             attemptNumber = attempt
             maxOutputTokens = tokens
           },
-          params => captureAPIRequest(params, options.querySource),
+          params => captureAPIRequest(params as unknown as Parameters<typeof captureAPIRequest>[0], options.querySource),
           failedRequestId,
         )
 
@@ -2400,7 +2413,7 @@ async function* queryModel(
     if (fallbackMessage) {
       const fallbackUsage = fallbackMessage.message
         .usage as unknown as BetaMessageDeltaUsage
-      usage = updateUsage(EMPTY_USAGE, fallbackUsage)
+      usage = updateUsage(EMPTY_USAGE, fallbackUsage as unknown as DomainUsage)
       stopReason = fallbackMessage.message.stop_reason
       const fallbackCost = calculateUSDCost(
         resolvedModel,
@@ -2502,33 +2515,36 @@ export function cleanupStream(
  */
 export function updateUsage(
   usage: Readonly<NonNullableUsage>,
-  partUsage: BetaMessageDeltaUsage | undefined,
+  partUsage: DomainUsage | undefined,
 ): NonNullableUsage {
   if (!partUsage) {
     return { ...usage }
   }
+  const serverToolUse = partUsage.server_tool_use as
+    | { web_search_requests?: number; web_fetch_requests?: number }
+    | undefined
   return {
     input_tokens:
-      partUsage.input_tokens !== null && partUsage.input_tokens > 0
+      typeof partUsage.input_tokens === 'number' && partUsage.input_tokens > 0
         ? partUsage.input_tokens
         : usage.input_tokens,
     cache_creation_input_tokens:
-      partUsage.cache_creation_input_tokens !== null &&
+      typeof partUsage.cache_creation_input_tokens === 'number' &&
       partUsage.cache_creation_input_tokens > 0
         ? partUsage.cache_creation_input_tokens
         : usage.cache_creation_input_tokens,
     cache_read_input_tokens:
-      partUsage.cache_read_input_tokens !== null &&
+      typeof partUsage.cache_read_input_tokens === 'number' &&
       partUsage.cache_read_input_tokens > 0
         ? partUsage.cache_read_input_tokens
         : usage.cache_read_input_tokens,
     output_tokens: partUsage.output_tokens ?? usage.output_tokens,
     server_tool_use: {
       web_search_requests:
-        partUsage.server_tool_use?.web_search_requests ??
+        serverToolUse?.web_search_requests ??
         usage.server_tool_use.web_search_requests,
       web_fetch_requests:
-        partUsage.server_tool_use?.web_fetch_requests ??
+        serverToolUse?.web_fetch_requests ??
         usage.server_tool_use.web_fetch_requests,
     },
     service_tier: usage.service_tier,
@@ -2542,8 +2558,10 @@ export function updateUsage(
         usage.cache_creation.ephemeral_5m_input_tokens,
     },
     inference_geo: usage.inference_geo,
-    iterations: partUsage.iterations ?? usage.iterations,
-    speed: (partUsage as BetaUsage).speed ?? usage.speed,
+    iterations:
+      (partUsage.iterations as NonNullableUsage['iterations'] | undefined) ??
+      usage.iterations,
+    speed: (partUsage.speed as NonNullableUsage['speed'] | undefined) ?? usage.speed,
   }
 }
 

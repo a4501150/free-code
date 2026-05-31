@@ -1,8 +1,8 @@
 import type {
-  Base64ImageSource,
-  ContentBlockParam,
-  ToolResultBlockParam,
-} from '@anthropic-ai/sdk/resources/index.mjs'
+  DomainBase64Source,
+  DomainToolResultBlockParam,
+  DomainUserContentBlock,
+} from '../../types/domain.js'
 import { readFile, stat } from 'fs/promises'
 import { getOriginalCwd } from 'src/bootstrap/state.js'
 
@@ -71,7 +71,7 @@ export function parseDataUri(
 export function buildImageToolResult(
   stdout: string,
   toolUseID: string,
-): ToolResultBlockParam | null {
+): DomainToolResultBlockParam | null {
   const parsed = parseDataUri(stdout)
   if (!parsed) return null
   return {
@@ -82,7 +82,7 @@ export function buildImageToolResult(
         type: 'image',
         source: {
           type: 'base64',
-          media_type: parsed.mediaType as Base64ImageSource['media_type'],
+          media_type: parsed.mediaType as DomainBase64Source['media_type'],
           data: parsed.data,
         },
       },
@@ -194,7 +194,9 @@ export function resetCwdIfOutsideProject(
  * Creates a human-readable summary of structured content blocks.
  * Used to display MCP results with images and text in the UI.
  */
-export function createContentSummary(content: ContentBlockParam[]): string {
+export function createContentSummary(
+  content: DomainUserContentBlock[],
+): string {
   const parts: string[] = []
   let textCount = 0
   let imageCount = 0

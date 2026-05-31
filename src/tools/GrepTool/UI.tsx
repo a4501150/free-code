@@ -1,4 +1,4 @@
-import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainToolResultBlockParam } from '../../types/domain.js'
 import React from 'react'
 import { CtrlOToExpand } from '../../components/CtrlOToExpand.js'
 import { FallbackToolUseErrorMessage } from '../../components/FallbackToolUseErrorMessage.js'
@@ -98,7 +98,7 @@ export function renderToolUseMessage(
 }
 
 export function renderToolUseErrorMessage(
-  result: ToolResultBlockParam['content'],
+  result: DomainToolResultBlockParam['content'],
   { verbose }: { verbose: boolean },
 ): React.ReactNode {
   if (

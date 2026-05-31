@@ -1,4 +1,4 @@
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
+import type { DomainUserContentBlock } from '../../../types/domain.js'
 import { isAgentSwarmsEnabled } from '../../../utils/agentSwarmsEnabled.js'
 import { toError } from '../../../utils/errors.js'
 import { logError } from '../../../utils/log.js'
@@ -70,7 +70,7 @@ async function handleSwarmWorkerPermission(
           allowedInput: Record<string, unknown> | undefined,
           permissionUpdates: PermissionUpdate[],
           feedback?: string,
-          contentBlocks?: ContentBlockParam[],
+          contentBlocks?: DomainUserContentBlock[],
         ) {
           if (!claim()) return // atomic check-and-mark before await
           clearPendingRequest()
@@ -91,7 +91,7 @@ async function handleSwarmWorkerPermission(
             ),
           )
         },
-        onReject(feedback?: string, contentBlocks?: ContentBlockParam[]) {
+        onReject(feedback?: string, contentBlocks?: DomainUserContentBlock[]) {
           if (!claim()) return
           clearPendingRequest()
 

@@ -1,7 +1,12 @@
 import { feature } from 'bun:bundle'
-import type Anthropic from '@anthropic-ai/sdk'
-import type { APIError } from '@anthropic-ai/sdk'
-import type { BetaToolUnion } from '@anthropic-ai/sdk/resources/beta/messages.js'
+import type {
+  DomainApiError,
+  DomainAssistantContent,
+  DomainUserImageBlock,
+  DomainUserTextBlock,
+} from '../../types/domain.js'
+import type { BetaToolUnion } from '../api.js'
+import type { SideQueryOptions } from '../sideQuery.js'
 import { mkdir, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { z } from 'zod/v4'
@@ -66,6 +71,13 @@ const EXTERNAL_PERMISSIONS_TEMPLATE: string = feature('TRANSCRIPT_CLASSIFIER')
 /* eslint-enable custom-rules/no-process-env-top-level */
 
 export type AutoModeRules = string
+
+
+type ClassifierMessageParam = SideQueryOptions['messages'][number]
+type ClassifierTextBlock = DomainUserTextBlock
+type ClassifierImageBlock = DomainUserImageBlock
+type ClassifierResponse = DomainAssistantContent
+
 
 function formatRuleSection(rules: string[]): string {
   return rules.map(rule => `- ${rule}`).join('\n')
@@ -403,7 +415,7 @@ type SerializedClassifierBlock = {
 }
 
 type BoundedClaudeMdMessage = {
-  message: Anthropic.MessageParam | null
+  message: ClassifierMessageParam | null
   estimatedTokens: number
   charLength: number
   truncated: boolean
@@ -417,8 +429,8 @@ type BoundedTranscript = {
 }
 
 type BoundedClassifierInput = {
-  prefixMessages: Anthropic.MessageParam[]
-  userContentBlocks: Anthropic.TextBlockParam[]
+  prefixMessages: ClassifierMessageParam[]
+  userContentBlocks: ClassifierTextBlock[]
   userPrompt: string
   promptLengths: NonNullable<YoloClassifierResult['promptLengths']>
   inputTokenBudget: number
@@ -661,7 +673,7 @@ function buildBoundedClaudeMdMessage(
     'claude_md_budget',
   )
   const text = prefix + boundedBody.text + suffix
-  const message: Anthropic.MessageParam = {
+  const message: ClassifierMessageParam = {
     role: 'user',
     content: [
       {
@@ -746,7 +758,7 @@ function buildBoundedClassifierInput({
 
   let toolCallsLength = actionCompact.length
   let userPromptsLength = 0
-  const userContentBlocks: Anthropic.TextBlockParam[] = []
+  const userContentBlocks: ClassifierTextBlock[] = []
   for (const block of boundedTranscript.blocks) {
     if (block.role === 'user') {
       userPromptsLength += block.text.length
@@ -873,7 +885,7 @@ function parseXmlThinking(text: string): string | null {
  * Extract usage stats from an API response.
  */
 function extractUsage(
-  result: Anthropic.Beta.Messages.BetaMessage,
+  result: ClassifierResponse,
 ): ClassifierUsage {
   return {
     inputTokens: result.usage.input_tokens,
@@ -888,7 +900,7 @@ function extractUsage(
  * non-enumerable `_request_id` property on response objects.
  */
 function extractRequestId(
-  result: Anthropic.Beta.Messages.BetaMessage,
+  result: ClassifierResponse,
 ): string | undefined {
   return (result as { _request_id?: string | null })._request_id ?? undefined
 }
@@ -961,14 +973,14 @@ async function preflightClassifierInput({
 }: {
   model: string
   systemPrompt: string
-  messages: Anthropic.MessageParam[]
+  messages: ClassifierMessageParam[]
   tools: BetaToolUnion[]
   promptLengths: NonNullable<YoloClassifierResult['promptLengths']>
 }): Promise<YoloClassifierResult | null> {
   const inputTokenBudget =
     promptLengths.inputTokenBudget ?? getClassifierInputTokenBudget(model)
   const count = await countMessagesTokensWithAPI(
-    messages as Anthropic.Beta.Messages.BetaMessageParam[],
+    messages as Parameters<typeof countMessagesTokensWithAPI>[0],
     tools,
     { model, system: systemPrompt },
   )
@@ -1011,11 +1023,11 @@ async function preflightClassifierInput({
  * prompt caching (1h TTL) across calls.
  */
 async function classifyYoloActionXml(
-  prefixMessages: Anthropic.MessageParam[],
+  prefixMessages: ClassifierMessageParam[],
   systemPrompt: string,
   userPrompt: string,
   userContentBlocks: Array<
-    Anthropic.TextBlockParam | Anthropic.ImageBlockParam
+    ClassifierTextBlock | ClassifierImageBlock
   >,
   model: string,
   promptLengths: NonNullable<YoloClassifierResult['promptLengths']>,
@@ -1037,7 +1049,7 @@ async function classifyYoloActionXml(
         ? 'xml_fast'
         : 'xml_thinking'
   const xmlSystemPrompt = replaceOutputFormatWithXml(systemPrompt)
-  const systemBlocks: Anthropic.TextBlockParam[] = [
+  const systemBlocks: ClassifierTextBlock[] = [
     {
       type: 'text' as const,
       text: xmlSystemPrompt,
@@ -1056,7 +1068,7 @@ async function classifyYoloActionXml(
   // Wrap all content (transcript + action) in <transcript> tags.
   // The action is the final tool_use block in the transcript.
   const wrappedContent: Array<
-    Anthropic.TextBlockParam | Anthropic.ImageBlockParam
+    ClassifierTextBlock | ClassifierImageBlock
   > = [
     { type: 'text' as const, text: '<transcript>\n' },
     ...userContentBlocks,
@@ -1709,7 +1721,7 @@ function detectPromptTooLong(
   const message = error instanceof Error ? error.message : String(error ?? '')
   const normalized =
     typeof error === 'object' && error !== null
-      ? getNormalizedError(error as APIError)
+      ? getNormalizedError(error as Parameters<typeof getNormalizedError>[0])
       : undefined
   const rawText = normalized?.raw ? jsonStringify(normalized.raw) : ''
   const haystack = `${message}\n${normalized?.message ?? ''}\n${rawText}`

@@ -1,8 +1,8 @@
 import type {
-  ContentBlockParam,
-  ImageBlockParam,
-  TextBlockParam,
-} from '@anthropic-ai/sdk/resources/index.mjs'
+  DomainUserContentBlock,
+  DomainUserImageBlock,
+  DomainUserTextBlock,
+} from '../types/domain.js'
 import {
   countMessagesTokensWithAPI,
   roughTokenCountEstimation,
@@ -30,13 +30,13 @@ export function getMaxMcpOutputTokens(): number {
   return DEFAULT_MAX_MCP_OUTPUT_TOKENS
 }
 
-export type MCPToolResult = string | ContentBlockParam[] | undefined
+export type MCPToolResult = string | DomainUserContentBlock[] | undefined
 
-function isTextBlock(block: ContentBlockParam): block is TextBlockParam {
+function isTextBlock(block: DomainUserContentBlock): block is DomainUserTextBlock {
   return block.type === 'text'
 }
 
-function isImageBlock(block: ContentBlockParam): block is ImageBlockParam {
+function isImageBlock(block: DomainUserContentBlock): block is DomainUserImageBlock {
   return block.type === 'image'
 }
 
@@ -76,10 +76,10 @@ function truncateString(content: string, maxChars: number): string {
 }
 
 async function truncateContentBlocks(
-  blocks: ContentBlockParam[],
+  blocks: DomainUserContentBlock[],
   maxChars: number,
-): Promise<ContentBlockParam[]> {
-  const result: ContentBlockParam[] = []
+): Promise<DomainUserContentBlock[]> {
+  const result: DomainUserContentBlock[] = []
   let currentChars = 0
 
   for (const block of blocks) {
@@ -173,7 +173,7 @@ export async function truncateMcpContent(
     return truncateString(content, maxChars) + truncationMsg
   } else {
     const truncatedBlocks = await truncateContentBlocks(
-      content as ContentBlockParam[],
+      content as DomainUserContentBlock[],
       maxChars,
     )
     truncatedBlocks.push({ type: 'text', text: truncationMsg })

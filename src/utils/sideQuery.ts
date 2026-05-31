@@ -1,5 +1,10 @@
-import type Anthropic from '@anthropic-ai/sdk'
-import type { BetaToolUnion } from '@anthropic-ai/sdk/resources/beta/messages.js'
+import type {
+  DomainAssistantContent,
+  DomainContentBlock,
+  DomainUserContentBlock,
+  DomainUserTextBlock,
+} from '../types/domain.js'
+import type { BetaToolUnion } from './api.js'
 import {
   getLastApiCompletionTimestamp,
   setLastApiCompletionTimestamp,
@@ -18,13 +23,18 @@ import { computeFingerprint } from './fingerprint.js'
 import { normalizeModelStringForAPI } from './model/model.js'
 import { getProviderRegistry } from './model/providerRegistry.js'
 
-type MessageParam = Anthropic.MessageParam
-type TextBlockParam = Anthropic.TextBlockParam
-type Tool = Anthropic.Tool
-type ToolChoice = Anthropic.ToolChoice
-type BetaMessage = Anthropic.Beta.Messages.BetaMessage
-type BetaJSONOutputFormat = Anthropic.Beta.Messages.BetaJSONOutputFormat
-type BetaThinkingConfigParam = Anthropic.Beta.Messages.BetaThinkingConfigParam
+type MessageParam = {
+  role: 'user' | 'assistant'
+  content: string | DomainUserContentBlock[] | DomainContentBlock[]
+}
+type TextBlockParam = DomainUserTextBlock
+type Tool = BetaToolUnion
+type ToolChoice = { type: string; name?: string; [key: string]: unknown }
+type BetaMessage = DomainAssistantContent
+type BetaJSONOutputFormat = Record<string, unknown>
+type BetaThinkingConfigParam =
+  | { type: 'disabled' }
+  | { type: 'enabled'; budget_tokens: number }
 
 export type SideQueryOptions = {
   /** Model to use for the query */
@@ -195,7 +205,7 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
       ...(thinkingConfig && { thinking: thinkingConfig }),
       ...(betas.length > 0 && { betas }),
       metadata: getAPIMetadata(),
-    },
+    } as Parameters<typeof client.beta.messages.create>[0],
     { signal },
   )
 
@@ -205,5 +215,5 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
   const lastCompletion = getLastApiCompletionTimestamp()
   setLastApiCompletionTimestamp(now)
 
-  return response
+  return response as unknown as BetaMessage
 }

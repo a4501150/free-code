@@ -1,7 +1,4 @@
-import type {
-  Base64ImageSource,
-  ImageBlockParam,
-} from '@anthropic-ai/sdk/resources/messages.mjs'
+import type { DomainBase64Source, DomainUserImageBlock } from '../types/domain.js'
 import {
   API_IMAGE_MAX_BASE64_SIZE,
   IMAGE_MAX_HEIGHT,
@@ -147,7 +144,7 @@ interface ImageCompressionContext {
 
 interface CompressedImageResult {
   base64: string
-  mediaType: Base64ImageSource['media_type']
+  mediaType: ImageMediaType
   originalSize: number
 }
 
@@ -408,17 +405,17 @@ export async function maybeResizeAndDownsampleImageBuffer(
 }
 
 export interface ImageBlockWithDimensions {
-  block: ImageBlockParam
+  block: DomainUserImageBlock
   dimensions?: ImageDimensions
 }
 
 /**
  * Resizes an image content block if needed
- * Takes an image ImageBlockParam and returns a resized version if necessary
+ * Takes an image DomainUserImageBlock and returns a resized version if necessary
  * Also returns dimension information for coordinate mapping
  */
 export async function maybeResizeAndDownsampleImageBlock(
-  imageBlock: ImageBlockParam,
+  imageBlock: DomainUserImageBlock,
 ): Promise<ImageBlockWithDimensions> {
   // Only process base64 images
   if (imageBlock.source.type !== 'base64') {
@@ -447,7 +444,7 @@ export async function maybeResizeAndDownsampleImageBlock(
       source: {
         type: 'base64',
         media_type:
-          `image/${resized.mediaType}` as Base64ImageSource['media_type'],
+          `image/${resized.mediaType}` as DomainBase64Source['media_type'],
         data: resized.buffer.toString('base64'),
       },
     },
@@ -546,12 +543,12 @@ export async function compressImageBufferWithTokenLimit(
 
 /**
  * Compresses an image block to fit within a maximum byte size.
- * Wrapper around compressImageBuffer for ImageBlockParam.
+ * Wrapper around compressImageBuffer for DomainUserImageBlock.
  */
 export async function compressImageBlock(
-  imageBlock: ImageBlockParam,
+  imageBlock: DomainUserImageBlock,
   maxBytes: number = IMAGE_TARGET_RAW_SIZE,
-): Promise<ImageBlockParam> {
+): Promise<DomainUserImageBlock> {
   // Only process base64 images
   if (imageBlock.source.type !== 'base64') {
     return imageBlock
@@ -589,7 +586,7 @@ function createCompressedImageResult(
   return {
     base64: buffer.toString('base64'),
     mediaType:
-      `image/${normalizedMediaType}` as Base64ImageSource['media_type'],
+      `image/${normalizedMediaType}` as ImageMediaType,
     originalSize,
   }
 }

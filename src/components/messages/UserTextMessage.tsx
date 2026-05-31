@@ -1,5 +1,5 @@
 import { feature } from 'bun:bundle'
-import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainUserTextBlock } from '../../types/domain.js'
 import * as React from 'react'
 import { NO_CONTENT_MESSAGE } from '../../constants/messages.js'
 import {
@@ -32,7 +32,7 @@ import * as userChannelNs from './UserChannelMessage.js'
 
 type Props = {
   addMargin: boolean
-  param: TextBlockParam
+  param: DomainUserTextBlock
   verbose: boolean
   planContent?: string
   isTranscriptMode?: boolean

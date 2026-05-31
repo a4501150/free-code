@@ -1,8 +1,13 @@
-import type {
-  BetaContentBlock,
-  BetaWebSearchTool20250305,
-} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type { DomainContentBlock } from '../../types/domain.js'
+
+type WebSearchToolSchema = {
+  type: 'web_search_20250305'
+  name: 'web_search'
+  max_uses: number
+  allowed_domains?: string[]
+  blocked_domains?: string[]
+}
+type WebSearchContentBlock = DomainContentBlock | { type: string; [key: string]: any }
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import type { PermissionResult } from 'src/utils/permissions/PermissionResult.js'
 import { z } from 'zod/v4'
@@ -76,12 +81,12 @@ export type { WebSearchProgress } from '../../types/tools.js'
 
 import type { WebSearchProgress } from '../../types/tools.js'
 
-function makeToolSchema(input: Input): BetaWebSearchTool20250305 {
+function makeToolSchema(input: Input): WebSearchToolSchema {
   // Anthropic's web_search_20250305 rejects `allowed_domains: []` /
   // `blocked_domains: []` with "Empty list of domains is ambiguous." Drop
   // empty (and undefined) arrays so the tool spec carries domains only when
   // the model actually scoped the search.
-  const out: BetaWebSearchTool20250305 = {
+  const out: WebSearchToolSchema = {
     type: 'web_search_20250305',
     name: 'web_search',
     max_uses: 8, // Hardcoded to 8 searches maximum
@@ -96,7 +101,7 @@ function makeToolSchema(input: Input): BetaWebSearchTool20250305 {
 }
 
 function makeOutputFromSearchResponse(
-  result: (BetaContentBlock | DomainContentBlock)[],
+  result: (WebSearchContentBlock)[],
   query: string,
   durationSeconds: number,
 ): Output {
@@ -274,7 +279,7 @@ export const WebSearchTool = buildTool({
       },
     })
 
-    const allContentBlocks: (BetaContentBlock | DomainContentBlock)[] = []
+    const allContentBlocks: (WebSearchContentBlock)[] = []
     let currentToolUseId = null
     let currentToolUseJson = ''
     let progressCounter = 0
@@ -352,9 +357,15 @@ export const WebSearchTool = buildTool({
         const contentBlock = event.event.content_block
         if (contentBlock && contentBlock.type === 'web_search_tool_result') {
           // Get the actual query that was used for this search
-          const toolUseId = contentBlock.tool_use_id
-          const actualQuery = toolUseQueries.get(toolUseId) || query
-          const content = contentBlock.content
+          const webSearchResult = contentBlock as {
+            tool_use_id?: string
+            content?: unknown
+          }
+          const toolUseId = webSearchResult.tool_use_id
+          const actualQuery = toolUseId
+            ? toolUseQueries.get(toolUseId) || query
+            : query
+          const content = webSearchResult.content
 
           progressCounter++
           if (onProgress) {

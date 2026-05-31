@@ -5,28 +5,11 @@ import type {
   ConnectedMCPServer,
   MCPServerConnection,
 } from '../services/mcp/types.js'
+import type { IDESelection, SelectionData } from '../types/ide.js'
 import { getConnectedIdeClient } from '../utils/ide.js'
 import { lazySchema } from '../utils/lazySchema.js'
-export type SelectionPoint = {
-  line: number
-  character: number
-}
 
-export type SelectionData = {
-  selection: {
-    start: SelectionPoint
-    end: SelectionPoint
-  } | null
-  text?: string
-  filePath?: string
-}
-
-export type IDESelection = {
-  lineCount: number
-  lineStart?: number
-  text?: string
-  filePath?: string
-}
+export type { IDESelection, SelectionData }
 
 // Define the selection changed notification schema
 const SelectionChangedSchema = lazySchema(() =>

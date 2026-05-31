@@ -4,9 +4,9 @@
 // microphone capture.
 
 import { type ChildProcess, spawn, spawnSync } from 'child_process'
-import { logForDebugging } from '../utils/debug.js'
-import { logError } from '../utils/log.js'
-import { getPlatform } from '../utils/platform.js'
+import { logForDebugging } from '../../utils/debug.js'
+import { logError } from '../../utils/log.js'
+import { getPlatform } from '../../utils/platform.js'
 
 // ─── Constants ───────────────────────────────────────────────────────
 

@@ -5,7 +5,7 @@ import {
   extractDangerousSettings,
   hasDangerousSettings,
   hasDangerousSettingsChanged,
-} from '../../components/ManagedSettingsSecurityDialog/utils.js'
+} from './dangerousSettings.js'
 import { render } from '../../ink.js'
 import { KeybindingSetup } from '../../keybindings/KeybindingProviderSetup.js'
 import { AppStateProvider } from '../../state/AppState.js'

@@ -1,4 +1,4 @@
-import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainToolResultBlockParam } from '../../types/domain.js'
 import type { StructuredPatchHunk } from 'diff'
 import { isAbsolute, relative, resolve } from 'path'
 import * as React from 'react'
@@ -262,7 +262,7 @@ async function loadRejectionDiff(
 }
 
 export function renderToolUseErrorMessage(
-  result: ToolResultBlockParam['content'],
+  result: DomainToolResultBlockParam['content'],
   { verbose }: { verbose: boolean },
 ): React.ReactNode {
   if (

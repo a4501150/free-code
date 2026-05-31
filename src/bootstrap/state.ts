@@ -1,4 +1,3 @@
-import type { BetaMessageStreamParams } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type { Attributes, Meter, MetricOptions } from '@opentelemetry/api'
 import type { logs } from '@opentelemetry/api-logs'
 import type { LoggerProvider } from '@opentelemetry/sdk-logs'
@@ -25,6 +24,9 @@ import { createSignal } from 'src/utils/signal.js'
 
 // Union type for registered hooks - can be SDK callbacks or native plugin hooks
 type RegisteredHookMatcher = HookCallbackMatcher | PluginHookMatcher
+
+type CapturedAPIRequestParams = Record<string, unknown>
+type CapturedAPIRequestMessages = unknown[]
 
 import type { SessionId } from 'src/types/ids.js'
 
@@ -109,11 +111,11 @@ type State = {
   agentColorMap: Map<string, AgentColorName>
   agentColorIndex: number
   // Last API request for bug reports
-  lastAPIRequest: Omit<BetaMessageStreamParams, 'messages'> | null
+  lastAPIRequest: CapturedAPIRequestParams | null
   // Messages from the last API request (ant-only; reference, not clone).
   // Captures the exact post-compaction, CLAUDE.md-injected message set sent
   // to the API so /share's serialized_conversation.json reflects reality.
-  lastAPIRequestMessages: BetaMessageStreamParams['messages'] | null
+  lastAPIRequestMessages: CapturedAPIRequestMessages | null
   // Last auto-mode classifier request(s) for /share transcript
   lastClassifierRequests: unknown[] | null
   // CLAUDE.md content cached by context.ts for the auto-mode classifier.
@@ -1099,26 +1101,23 @@ export function setApiKeyFromFd(key: string | null): void {
 }
 
 export function setLastAPIRequest(
-  params: Omit<BetaMessageStreamParams, 'messages'> | null,
+  params: CapturedAPIRequestParams | null,
 ): void {
   STATE.lastAPIRequest = params
 }
 
-export function getLastAPIRequest(): Omit<
-  BetaMessageStreamParams,
-  'messages'
-> | null {
+export function getLastAPIRequest(): CapturedAPIRequestParams | null {
   return STATE.lastAPIRequest
 }
 
 export function setLastAPIRequestMessages(
-  messages: BetaMessageStreamParams['messages'] | null,
+  messages: CapturedAPIRequestMessages | null,
 ): void {
   STATE.lastAPIRequestMessages = messages
 }
 
 export function getLastAPIRequestMessages():
-  | BetaMessageStreamParams['messages']
+  | CapturedAPIRequestMessages
   | null {
   return STATE.lastAPIRequestMessages
 }

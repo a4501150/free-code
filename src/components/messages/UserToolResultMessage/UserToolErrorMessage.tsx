@@ -1,5 +1,5 @@
 import { feature } from 'bun:bundle'
-import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainToolResultBlockParam } from '../../../types/domain.js'
 import * as React from 'react'
 import { BULLET_OPERATOR } from '../../../constants/figures.js'
 import { Text } from '../../../ink.js'
@@ -25,7 +25,7 @@ type Props = {
   progressMessagesForMessage: ProgressMessage[]
   tool?: Tool // undefined when resuming an old conversation that uses an old tool
   tools: Tools
-  param: ToolResultBlockParam
+  param: DomainToolResultBlockParam
   verbose: boolean
   isTranscriptMode?: boolean
 }
@@ -80,16 +80,18 @@ export function UserToolErrorMessage({
     )
   }
 
+  const legacyContent = param.content as Parameters<
+    NonNullable<Tool['renderToolUseErrorMessage']>
+  >[0]
+
   return (
-    tool?.renderToolUseErrorMessage?.(param.content, {
+    tool?.renderToolUseErrorMessage?.(legacyContent, {
       progressMessagesForMessage: filterToolProgressMessages(
         progressMessagesForMessage,
       ),
       tools,
       verbose,
       isTranscriptMode,
-    }) ?? (
-      <FallbackToolUseErrorMessage result={param.content} verbose={verbose} />
-    )
+    }) ?? <FallbackToolUseErrorMessage result={legacyContent} verbose={verbose} />
   )
 }

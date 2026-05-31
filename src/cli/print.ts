@@ -11,7 +11,7 @@ import {
 } from 'src/commands.js'
 import { createStreamlinedTransformer } from 'src/utils/streamlinedTransform.js'
 import { installStreamJsonStdoutGuard } from 'src/utils/streamJsonStdoutGuard.js'
-import type { ToolPermissionContext } from 'src/Tool.js'
+import type { ToolPermissionContext , CanUseToolFn } from 'src/Tool.js'
 import type { ThinkingConfig } from 'src/utils/thinking.js'
 import { assembleToolPool, filterToolsByDenyRules } from 'src/tools.js'
 import uniqBy from 'lodash-es/uniqBy.js'
@@ -125,7 +125,6 @@ import { getCwd } from 'src/utils/cwd.js'
 import omit from 'lodash-es/omit.js'
 import reject from 'lodash-es/reject.js'
 import { isPolicyAllowed } from 'src/services/policyLimits/index.js'
-import type { CanUseToolFn } from 'src/hooks/useCanUseTool.js'
 import { hasPermissionsToUseTool } from 'src/utils/permissions/permissions.js'
 import { safeParseJSON } from 'src/utils/json.js'
 import {
@@ -272,7 +271,7 @@ import {
 import { runWithWorkload, WORKLOAD_CRON } from 'src/utils/workloadContext.js'
 import type { UUID } from 'crypto'
 import { randomUUID } from 'crypto'
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
+import type { DomainUserContentBlock } from 'src/types/domain.js'
 import type { AppState } from 'src/state/AppStateStore.js'
 import {
   fileHistoryRewind,
@@ -388,9 +387,15 @@ function trackReceivedMessageUuid(uuid: UUID): boolean {
   return true // new UUID
 }
 
-type PromptValue = string | ContentBlockParam[]
+type PromptValue =
+  | string
+  | DomainUserContentBlock[]
+  | DomainUserContentBlock[]
+  | Array<DomainUserContentBlock | DomainUserContentBlock>
 
-function toBlocks(v: PromptValue): ContentBlockParam[] {
+function toBlocks(
+  v: PromptValue,
+): Array<DomainUserContentBlock | DomainUserContentBlock> {
   return typeof v === 'string' ? [{ type: 'text', text: v }] : v
 }
 
@@ -1828,7 +1833,7 @@ function runHeadlessStreaming(
             if (batch.length > 1) {
               command = {
                 ...command,
-                value: joinPromptValues(batch.map(c => c.value)),
+                value: joinPromptValues(batch.map(c => c.value)) as QueuedCommand['value'],
                 uuid: batch.findLast(c => c.uuid)?.uuid ?? command.uuid,
               }
             }
@@ -1842,7 +1847,7 @@ function runHeadlessStreaming(
           // not just the one that survived the merge.
           if (options.replayUserMessages && batch.length > 1) {
             for (const c of batch) {
-              if (c.uuid && c.uuid !== command.uuid) {
+              if (c.uuid && c.uuid !== command!.uuid) {
                 output.enqueue({
                   type: 'user',
                   message: { role: 'user', content: c.value },
@@ -1886,9 +1891,9 @@ function runHeadlessStreaming(
           // to ask() so the model sees the agent result and can act on it.
           // This matches TUI behavior where useQueueProcessor always feeds
           // notifications to the model regardless of coordinator mode.
-          if (command.mode === 'task-notification') {
+          if (command!.mode === 'task-notification') {
             const notificationText =
-              typeof command.value === 'string' ? command.value : ''
+              typeof command!.value === 'string' ? command!.value : ''
             // Parse the XML-formatted notification
             const taskIdMatch = notificationText.match(
               /<task-id>([^<]+)<\/task-id>/,
@@ -1967,7 +1972,7 @@ function runHeadlessStreaming(
             // No continue -- fall through to ask() so the model processes the result
           }
 
-          const input = command.value
+          const input = command!.value
 
           // Abort any in-flight suggestion generation and track acceptance
           suggestionState.abortController?.abort()
@@ -1975,8 +1980,8 @@ function runHeadlessStreaming(
           suggestionState.pendingSuggestion = null
           suggestionState.pendingLastEmittedEntry = null
           if (suggestionState.lastEmitted) {
-            if (command.mode === 'prompt') {
-              // SDK user messages enqueue ContentBlockParam[], not a plain string
+            if (command!.mode === 'prompt') {
+              // SDK user messages enqueue DomainUserContentBlock[], not a plain string
               const inputText =
                 typeof input === 'string'
                   ? input
@@ -2007,7 +2012,7 @@ function runHeadlessStreaming(
           // stamps cmd.workload; the SDK --workload flag is options.workload.
           // const-capture: TS loses `while ((command = dequeue()))` narrowing
           // inside the closure.
-          const cmd = command
+          const cmd = command!
           await runWithWorkload(cmd.workload ?? options.workload, async () => {
             for await (const message of ask({
               commands: uniqBy(
@@ -3626,7 +3631,7 @@ function runHeadlessStreaming(
           message.message as {
             content:
               | string
-              | import('@anthropic-ai/sdk/resources/messages.mjs').ContentBlockParam[]
+              | DomainUserContentBlock[]
           }
         ).content,
         uuid: message.uuid as UUID | undefined,

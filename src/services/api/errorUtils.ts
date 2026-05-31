@@ -1,4 +1,5 @@
 import type { APIError } from '@anthropic-ai/sdk'
+import type { DomainApiError } from '../../types/domain.js'
 import {
   fromHttpStatus,
   type NormalizedApiError,
@@ -238,9 +239,11 @@ function extractNestedErrorMessage(error: APIError): string | null {
   return null
 }
 
-export function formatAPIError(error: APIError): string {
-  // Extract connection error details from the cause chain
-  const connectionDetails = extractConnectionErrorDetails(error)
+export function formatAPIError(error: APIError | DomainApiError): string {
+  // Extract connection error details from the cause chain. Domain errors carry
+  // provider-specific originals under raw when one exists.
+  const rawError = 'raw' in error && error.raw ? error.raw : error
+  const connectionDetails = extractConnectionErrorDetails(rawError)
 
   if (connectionDetails) {
     const { code, isSSLError } = connectionDetails
@@ -288,12 +291,12 @@ export function formatAPIError(error: APIError): string {
   // instead of undefined, which would crash callers that access `.length`.
   if (!error.message) {
     return (
-      extractNestedErrorMessage(error) ??
+      extractNestedErrorMessage(error as APIError) ??
       `API error (status ${error.status ?? 'unknown'})`
     )
   }
 
-  const sanitizedMessage = sanitizeAPIError(error)
+  const sanitizedMessage = sanitizeMessageHTML(error.message)
   // Use sanitized message if it's different from the original (i.e., HTML was sanitized)
   return sanitizedMessage !== error.message && sanitizedMessage.length > 0
     ? sanitizedMessage

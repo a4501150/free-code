@@ -1,5 +1,5 @@
 import { feature } from 'bun:bundle'
-import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainToolResultBlockParam } from '../../types/domain.js'
 import type { QuerySource } from '../../constants/querySource.js'
 import type { ToolUseContext } from '../../Tool.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
@@ -45,7 +45,7 @@ const COMPACTABLE_TOOLS = new Set<string>([
 ])
 
 // Helper to calculate tool result tokens
-function calculateToolResultTokens(block: ToolResultBlockParam): number {
+function calculateToolResultTokens(block: DomainToolResultBlockParam): number {
   if (!block.content) {
     return 0
   }
@@ -57,7 +57,9 @@ function calculateToolResultTokens(block: ToolResultBlockParam): number {
   // Array of TextBlockParam | ImageBlockParam | DocumentBlockParam
   return block.content.reduce((sum, item) => {
     if (item.type === 'text') {
-      return sum + roughTokenCountEstimation(item.text)
+      return sum + roughTokenCountEstimation(
+        typeof item.text === 'string' ? item.text : '',
+      )
     } else if (item.type === 'image' || item.type === 'document') {
       // Images/documents are approximately 2000 tokens regardless of format
       return sum + IMAGE_MAX_TOKEN_SIZE
@@ -90,13 +92,15 @@ export function estimateMessageTokens(messages: Message[]): number {
         totalTokens += calculateToolResultTokens(block)
       } else if (block.type === 'image' || block.type === 'document') {
         totalTokens += IMAGE_MAX_TOKEN_SIZE
-      } else if (block.type === 'thinking') {
-        // Match roughTokenCountEstimationForBlock: count only the thinking
+      } else if (block.type === 'reasoning') {
+        // Match roughTokenCountEstimationForBlock: count only the reasoning
         // text, not the JSON wrapper or signature (signature is metadata,
         // not model-tokenized content).
-        totalTokens += roughTokenCountEstimation(block.thinking)
-      } else if (block.type === 'redacted_thinking') {
-        totalTokens += roughTokenCountEstimation(block.data)
+        totalTokens += roughTokenCountEstimation(block.text)
+      } else if (block.type === 'redacted_reasoning') {
+        totalTokens += roughTokenCountEstimation(
+          block.providerState?.anthropic?.redactedData ?? '',
+        )
       } else if (block.type === 'tool_use') {
         // Match roughTokenCountEstimationForBlock: count name + input,
         // not the JSON wrapper or id field.

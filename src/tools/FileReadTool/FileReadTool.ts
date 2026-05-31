@@ -1,4 +1,4 @@
-import type { Base64ImageSource } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainBase64Source } from '../../types/domain.js'
 import { readdir, readFile as readFileAsync } from 'fs/promises'
 import * as path from 'path'
 import { posix, win32 } from 'path'
@@ -743,11 +743,13 @@ async function validateContentTokens(
   }
 }
 
+type ImageMediaType = Extract<Output, { type: 'image' }>['file']['type']
+
 type ImageResult = {
   type: 'image'
   file: {
     base64: string
-    type: Base64ImageSource['media_type']
+    type: ImageMediaType
     originalSize: number
     dimensions?: ImageDimensions
   }
@@ -763,7 +765,7 @@ function createImageResponse(
     type: 'image',
     file: {
       base64: buffer.toString('base64'),
-      type: `image/${mediaType}` as Base64ImageSource['media_type'],
+      type: `image/${mediaType}` as ImageMediaType,
       originalSize,
       dimensions,
     },
@@ -895,7 +897,7 @@ async function callInner(
             source: {
               type: 'base64' as const,
               media_type:
-                `image/${resized.mediaType}` as Base64ImageSource['media_type'],
+                `image/${resized.mediaType}` as DomainBase64Source['media_type'],
               data: resized.buffer.toString('base64'),
             },
           }

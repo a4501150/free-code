@@ -4,7 +4,7 @@
  */
 
 import { APIError } from '@anthropic-ai/sdk'
-import { stripProviderPrefix } from '../utils/model/parseModelStringWithRegistry.js'
+import { stripProviderPrefix } from '../../utils/model/parseModelStringWithRegistry.js'
 import {
   applyMockHeaders,
   checkMockFastModeRateLimit,
@@ -12,7 +12,7 @@ import {
   getMockHeaders,
   isMockFastModeRateLimitScenario,
   shouldProcessMockLimits,
-} from './mockRateLimits.js'
+} from './mockScenarios.js'
 
 /**
  * Process headers, applying mocks if /mock-limits command is active

@@ -19,8 +19,7 @@ import type {
   StdinMessage,
   StdoutMessage,
 } from 'src/structuredProtocol/controlTypes.js'
-import type { CanUseToolFn } from 'src/hooks/useCanUseTool.js'
-import type { Tool, ToolUseContext } from 'src/Tool.js'
+import type { Tool, ToolUseContext , CanUseToolFn } from 'src/Tool.js'
 import { type HookCallback, hookJSONOutputSchema } from 'src/types/hooks.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logForDiagnosticsNoPII } from 'src/utils/diagLogs.js'

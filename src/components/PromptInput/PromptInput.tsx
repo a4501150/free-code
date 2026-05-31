@@ -49,7 +49,7 @@ import {
 } from '../../hooks/useArrowKeyHistory.js'
 import { useDoublePress } from '../../hooks/useDoublePress.js'
 import { useHistorySearch } from '../../hooks/useHistorySearch.js'
-import type { IDESelection } from '../../hooks/useIdeSelection.js'
+import type { IDESelection } from '../../types/ide.js'
 import { useInputBuffer } from '../../hooks/useInputBuffer.js'
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js'
 import { usePromptSuggestion } from '../../hooks/usePromptSuggestion.js'

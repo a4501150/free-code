@@ -1,9 +1,8 @@
-import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { DomainUserContentBlock } from './domain.js'
 import type { UUID } from 'crypto'
-import type { CanUseToolFn } from '../hooks/useCanUseTool.js'
 import type { CompactionResult } from '../services/compact/compact.js'
 import type { ScopedMcpServerConfig } from '../services/mcp/types.js'
-import type { ToolUseContext } from '../Tool.js'
+import type { ToolUseContext , CanUseToolFn } from '../Tool.js'
 import type { EffortValue } from '../utils/effort.js'
 import type { IDEExtensionInstallationStatus, IdeType } from '../utils/ide.js'
 import type { SettingSource } from '../utils/settings/constants.js'
@@ -53,7 +52,7 @@ export type PromptCommand = {
   getPromptForCommand(
     args: string,
     context: ToolUseContext,
-  ): Promise<ContentBlockParam[]>
+  ): Promise<DomainUserContentBlock[]>
 }
 
 /**

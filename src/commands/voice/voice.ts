@@ -5,8 +5,8 @@ import {
   checkRecordingAvailability,
   checkVoiceDependencies,
   requestMicrophonePermission,
-} from '../../services/voice.js'
-import { isVoiceStreamAvailable } from '../../services/voiceStreamSTT.js'
+} from '../../services/voice/recorder.js'
+import { isVoiceStreamAvailable } from '../../services/voice/streamSTT.js'
 import type { LocalCommandCall } from '../../types/command.js'
 import { isAnthropicAuthEnabled } from '../../utils/auth.js'
 import { settingsChangeDetector } from '../../utils/settings/changeDetector.js'
