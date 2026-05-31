@@ -479,6 +479,13 @@ function ProviderTabContent({
 }): React.ReactNode {
   const { headerFocused, focusHeader } = useTabHeaderFocus()
 
+  // When the tab header is focused the Select is disabled, so its cancel
+  // keybinding won't fire. Handle Escape here so it still dismisses the panel.
+  useKeybindings(
+    { 'select:cancel': () => onCancel() },
+    { context: 'Select', isActive: headerFocused },
+  )
+
   const initialFocusValue = options.some(o => o.value === initialValue)
     ? initialValue
     : (options[0]?.value ?? undefined)
