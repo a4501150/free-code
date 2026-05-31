@@ -28,6 +28,7 @@ import { updateTaskState } from '../../utils/task/framework.js'
 import { subscribeTaskOutput } from '../../utils/task/livePoller.js'
 import { formatTaskOutput } from '../../utils/task/outputFormatting.js'
 import type { ThemeName } from '../../utils/theme.js'
+import { withAgentStoppedStatus } from '../AgentTool/agentToolResult.js'
 import { AgentPromptDisplay, AgentResponseDisplay } from '../AgentTool/UI.js'
 import BashToolResultMessage from '../BashTool/BashToolResultMessage.js'
 import { TASK_OUTPUT_TOOL_NAME } from './constants.js'
@@ -115,7 +116,7 @@ async function getTaskOutputData(task: TaskState): Promise<TaskOutput> {
     // subagent's answer. The in-memory result contains only the final
     // assistant text content blocks.
     const cleanResult = agentTask.result
-      ? extractTextContent(agentTask.result.content, '\n')
+      ? extractTextContent(withAgentStoppedStatus(agentTask.result), '\n')
       : undefined
     return {
       ...baseOutput,

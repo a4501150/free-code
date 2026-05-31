@@ -82,7 +82,7 @@ describe('normalizeContentFromAPI strips strict-mode nulls', () => {
   // `_def.type === 'pipe'`. Plain `_def.type === 'optional'` checks miss
   // those, so strict-mode `null` slipped through and broke gpt-5.5 calls
   // ("Read tool failed many times").
-  test('FileReadTool: semanticNumber-wrapped offset/limit nulls are stripped', () => {
+  test('FileReadTool: semanticNumber-wrapped nulls and empty-string pages are stripped', () => {
     const toolUseBlock = {
       type: 'tool_use' as const,
       id: 'toolu_read_1',
@@ -91,7 +91,7 @@ describe('normalizeContentFromAPI strips strict-mode nulls', () => {
         file_path: '/tmp/x.ts',
         offset: null,
         limit: null,
-        pages: null,
+        pages: '',
       },
     } as unknown as BetaContentBlock
 
@@ -160,19 +160,27 @@ describe('normalizeContentFromAPI strips strict-mode nulls', () => {
       expect(stripStrictNullInputs(schema, { b: null })).toEqual({})
     })
 
-    test('plain .optional() — outer optional — strips null (regression-guard)', () => {
+    test('plain .optional() — outer optional — strips null and empty string', () => {
       const schema = z.object({ s: z.string().optional() })
       expect(stripStrictNullInputs(schema, { s: null })).toEqual({})
+      expect(stripStrictNullInputs(schema, { s: '' })).toEqual({})
     })
 
-    test('plain .nullable() — does NOT strip null', () => {
+    test('required non-nullable string preserves empty string', () => {
+      const schema = z.object({ s: z.string() })
+      expect(stripStrictNullInputs(schema, { s: '' })).toEqual({ s: '' })
+    })
+
+    test('plain .nullable() — preserves null and normalizes empty string to null', () => {
       const schema = z.object({ s: z.string().nullable() })
       expect(stripStrictNullInputs(schema, { s: null })).toEqual({ s: null })
+      expect(stripStrictNullInputs(schema, { s: '' })).toEqual({ s: null })
     })
 
-    test('.optional().nullable() — does NOT strip null', () => {
+    test('.optional().nullable() — preserves null and normalizes empty string to null', () => {
       const schema = z.object({ s: z.string().optional().nullable() })
       expect(stripStrictNullInputs(schema, { s: null })).toEqual({ s: null })
+      expect(stripStrictNullInputs(schema, { s: '' })).toEqual({ s: null })
     })
 
     test('semanticNumber(nullable.optional) — pipe over nullable — does NOT strip null', () => {

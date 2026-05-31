@@ -482,8 +482,9 @@ async function checkPermissionsAndCallTool(
   // Strict-mode providers (OpenAI structured outputs) require every property
   // present in the JSON schema's `required` set, including those that the
   // Zod schema marks `.optional()`. makeJsonSchemaStrict widens those with
-  // `null`, and the model emits `null` for "omitted" — but `.optional()`
-  // (without `.nullable()`) rejects `null`. Strip those keys before parsing.
+  // `null`, and the model emits `null` or sometimes `""` for "omitted" — but
+  // `.optional()` (without `.nullable()`) rejects `null`. Normalize those
+  // placeholders before parsing.
   const coercedInput = stripStrictNullInputs(tool.inputSchema, input)
   // Validate input types with zod (surprisingly, the model is not great at generating valid input)
   const parsedInput = tool.inputSchema.safeParse(coercedInput)

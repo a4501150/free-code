@@ -60,6 +60,9 @@ describe('toAnthropicErrorType', () => {
     expect(toAnthropicErrorType('invalid_request')).toBe(
       'invalid_request_error',
     )
+    expect(toAnthropicErrorType('context_overflow')).toBe(
+      'invalid_request_error',
+    )
     expect(toAnthropicErrorType('content_filter')).toBe('refusal')
     expect(toAnthropicErrorType('transport')).toBe('api_error')
     expect(toAnthropicErrorType('server')).toBe('api_error')

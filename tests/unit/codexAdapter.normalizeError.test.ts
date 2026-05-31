@@ -69,7 +69,7 @@ describe('codexAdapter.normalizeError', () => {
     expect(e.kind).toBe('auth')
   })
 
-  test('HTTP 400 with context_length_exceeded code → invalid_request', () => {
+  test('HTTP 400 with context_length_exceeded code → context_overflow', () => {
     const e = codexAdapter.normalizeError(
       {
         status: 400,
@@ -82,7 +82,7 @@ describe('codexAdapter.normalizeError', () => {
       },
       'openai-responses',
     )
-    expect(e.kind).toBe('invalid_request')
+    expect(e.kind).toBe('context_overflow')
     expect(e.message).toBe('Maximum context length exceeded')
   })
 })

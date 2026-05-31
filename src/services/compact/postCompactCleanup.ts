@@ -41,8 +41,8 @@ export function runPostCompactCleanup(querySource?: QuerySource): void {
     // the next turn hits the getUserContext cache and never reaches
     // getMemoryFiles(), so the armed InstructionsLoaded hook never fires.
     // Manual /compact already clears this explicitly at its call sites;
-    // auto-compact and reactive-compact did not — this centralizes the
-    // clear so all compaction paths behave consistently.
+    // centralize the automatic-path clear here so all compaction paths behave
+    // consistently.
     getUserContext.cache.clear?.()
     resetGetMemoryFilesCache('compact')
   }

@@ -11,13 +11,12 @@ import type { Message } from '../../types/message.js'
  * ensureToolResultPairing repairs the split at API time.
  *
  * Replaces the prior human-turn grouping (boundaries only at real user
- * prompts) with finer-grained API-round grouping, allowing reactive
- * compact to operate on single-prompt agentic sessions (SDK/CCR/eval
+ * prompts) with finer-grained API-round grouping, allowing compaction
+ * retries to operate on single-prompt agentic sessions (SDK/CCR/eval
  * callers) where the entire workload is one human turn.
  *
- * Extracted to its own file to break the compact.ts ↔ compactMessages.ts
- * cycle (CC-1180) — the cycle shifted module-init order enough to surface
- * a latent ws CJS/ESM resolution race in CI shard-2.
+ * Kept in its own file so API-round grouping stays independent from the
+ * compaction implementation and does not introduce module-init cycles.
  */
 export function groupMessagesByApiRound(messages: Message[]): Message[][] {
   const groups: Message[][] = []

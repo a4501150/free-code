@@ -223,6 +223,7 @@ export function resolveAgentTools(
 }
 
 import type { AgentToolResult } from './agentToolSchemas.js'
+import { withAgentStoppedStatus } from './agentToolResult.js'
 export {
   agentToolResultSchema,
   type AgentToolResult,
@@ -584,7 +585,10 @@ export async function runAsyncAgentLifecycle({
     // not gate the status transition (gh-20236).
     completeAsyncAgent(agentResult, rootSetAppState)
 
-    let finalMessage = extractTextContent(agentResult.content, '\n')
+    let finalMessage = extractTextContent(
+      withAgentStoppedStatus(agentResult),
+      '\n',
+    )
 
     if (feature('TRANSCRIPT_CLASSIFIER')) {
       const handoffWarning = await classifyHandoffIfNeeded({

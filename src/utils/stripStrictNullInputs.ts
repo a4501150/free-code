@@ -1,20 +1,20 @@
 /**
- * Strip `null` values that the model returned for fields that the Zod schema
- * marks `.optional()` but NOT `.nullable()`.
+ * Normalize placeholder values emitted for strict tool-call schemas.
  *
  * When `makeJsonSchemaStrict` rewrites a Zod-derived JSON schema, it widens
  * each previously-optional field with `{anyOf: [original, {type:'null'}]}`
  * so OpenAI structured outputs / strict mode can satisfy the requirement
- * that every key be present and explicit. The model then emits `null` to
- * mean "field omitted." Zod's `.optional()` schemas don't accept `null`, so
- * we delete those keys from the input before `tool.inputSchema.safeParse`.
+ * that every key be present and explicit. The model should emit `null` to
+ * mean "field omitted," but some models emit an empty string instead.
  *
- * Schemas that opted in to nullable (`.nullable()` or `.optional().nullable()`)
- * are left alone — the model's `null` is meaningful and the schema accepts it.
+ * For optional non-nullable fields, delete both `null` and empty-string
+ * placeholders before `tool.inputSchema.safeParse`. For nullable fields,
+ * preserve `null` and normalize empty-string placeholders to `null`. Required
+ * non-nullable strings keep their empty values because those can be meaningful.
  *
  * Recurses into nested objects (matched against the Zod sub-schema) so deeply
- * nested optional-but-non-nullable fields also have their `null` values
- * stripped. Pure runtime introspection over `(schema as ZodObject).shape`.
+ * nested placeholder values are normalized too. Pure runtime introspection
+ * over `(schema as ZodObject).shape`.
  */
 
 import type { z } from 'zod/v4'
@@ -64,21 +64,15 @@ function unwrap(node: ZodLike | undefined): ZodLike | undefined {
   return cur
 }
 
-function isOptionalNonNullable(node: unknown): boolean {
-  if (typeof node !== 'object' || node === null) return false
-  // Walk through every transparent wrapper. The field is optional-non-nullable
-  // iff the chain contains `optional` somewhere AND `nullable` nowhere. We
-  // can't shortcut on "outer must be `optional`": `semanticNumber()` wraps the
-  // inner schema in `z.preprocess` (`type: 'pipe'`) so the outer for
-  // `semanticNumber(z.number().optional())` is `pipe`, not `optional`.
-  // Without unwrapping pipe here, FileReadTool's `offset`/`limit` fields
-  // (and any other semantic-number optional) would slip through unstripped,
-  // and the model's strict-mode `null` would fail Zod parse downstream.
+function getPlaceholderHandling(node: unknown): 'delete' | 'null' | 'keep' {
+  if (typeof node !== 'object' || node === null) return 'keep'
+  // Walk through every transparent wrapper. We can't shortcut on "outer must
+  // be optional": semantic helpers wrap their inner schemas in a pipe.
   let cur: ZodLike | undefined = node as ZodLike
   let foundOptional = false
   while (cur) {
     const t = cur._def?.type
-    if (t === 'nullable') return false
+    if (t === 'nullable') return 'null'
     if (t === 'optional') foundOptional = true
     if (
       t === 'optional' ||
@@ -91,7 +85,7 @@ function isOptionalNonNullable(node: unknown): boolean {
     }
     break
   }
-  return foundOptional
+  return foundOptional ? 'delete' : 'keep'
 }
 
 /**
@@ -149,9 +143,18 @@ function strip(node: ZodLike | undefined, value: unknown): unknown {
     const fieldSchema = shape[key]
     if (!fieldSchema) continue
     const v = obj[key]
-    if (v === null && isOptionalNonNullable(fieldSchema)) {
+    const placeholderHandling = getPlaceholderHandling(fieldSchema)
+    if (
+      (v === null || v === '') &&
+      placeholderHandling === 'delete'
+    ) {
       if (!cloned) cloned = { ...obj }
       delete cloned[key]
+      continue
+    }
+    if (v === '' && placeholderHandling === 'null') {
+      if (!cloned) cloned = { ...obj }
+      cloned[key] = null
       continue
     }
     if (typeof v === 'object' && v !== null) {

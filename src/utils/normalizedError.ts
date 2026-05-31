@@ -23,6 +23,8 @@ export type NormalizedApiErrorKind =
   | 'auth'
   /** 400 / 404, schema violations, unknown model, bad request shape. */
   | 'invalid_request'
+  /** Provider rejected the request because its context window is full. */
+  | 'context_overflow'
   /**
    * Provider refused to generate content. Gemini SAFETY/RECITATION,
    * OpenAI `content_filter`, Codex `refusal` output item.
@@ -64,6 +66,7 @@ export function toAnthropicErrorType(kind: NormalizedApiErrorKind): string {
     case 'auth':
       return 'authentication_error'
     case 'invalid_request':
+    case 'context_overflow':
       return 'invalid_request_error'
     case 'content_filter':
       return 'refusal'

@@ -201,10 +201,8 @@ const PTL_RETRY_MARKER = '[earlier conversation truncated for compaction retry]'
  *
  * This is the last-resort escape hatch for CC-1180 — when the compact request
  * itself hits prompt-too-long, the user is otherwise stuck. Dropping the
- * oldest context is lossy but unblocks them. The reactive-compact path
- * (compactMessages.ts) has the proper retry loop that peels from the tail;
- * this helper is the dumb-but-safe fallback for the proactive/manual path
- * that wasn't migrated in bfdb472f's unification.
+ * oldest context is lossy but unblocks them while keeping summary retries
+ * bounded.
  */
 export function truncateHeadForPTLRetry(
   messages: Message[],

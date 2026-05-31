@@ -10,8 +10,6 @@
  */
 
 export type Continue =
-  | { reason: 'collapse_drain_retry'; committed: number }
-  | { reason: 'reactive_compact_retry' }
   | { reason: 'stop_hook_blocking' }
   | { reason: 'token_budget_continuation' }
   | { reason: 'next_turn' }
@@ -21,7 +19,6 @@ export type Terminal =
   | { reason: 'image_error' }
   | { reason: 'model_error'; error: unknown }
   | { reason: 'aborted_streaming' }
-  | { reason: 'prompt_too_long' }
   | { reason: 'completed' }
   | { reason: 'stop_hook_prevented' }
   | { reason: 'aborted_tools' }

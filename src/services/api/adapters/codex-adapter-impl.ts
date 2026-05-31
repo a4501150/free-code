@@ -147,13 +147,10 @@ export const codexAdapter: ProviderAdapter = {
       if (code === 'server_error' || apiErrorType === 'server_error') {
         return { ...base, kind: 'server' }
       }
-      // Context-window overflow + any explicit invalid_request_error from
-      // upstream become `invalid_request` so the UI surfaces a precise
-      // error type and `withRetry` doesn't burn budget retrying it.
-      if (
-        code === 'context_length_exceeded' ||
-        apiErrorType === 'invalid_request_error'
-      ) {
+      if (code === 'context_length_exceeded') {
+        return { ...base, kind: 'context_overflow' }
+      }
+      if (apiErrorType === 'invalid_request_error') {
         return { ...base, kind: 'invalid_request' }
       }
       return base

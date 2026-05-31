@@ -2461,11 +2461,10 @@ export function normalizeContentFromAPI(
         if (typeof normalizedInput === 'object' && normalizedInput !== null) {
           const tool = findToolByName(tools, contentBlock.name)
           if (tool) {
-            // Strip `null` values that strict-mode providers (OpenAI structured
-            // outputs) emit for fields the Zod schema marks `.optional()` but
-            // not `.nullable()`. makeJsonSchemaStrict widens those fields with
-            // null in the outbound schema; strict-mode models emit `null` to
-            // mean "omitted." Without stripping, every UI-side
+            // Normalize `null` and `""` placeholders that strict-mode providers
+            // emit for omitted fields. makeJsonSchemaStrict widens optional
+            // fields with null in the outbound schema, but models do not always
+            // use the canonical null representation. Without normalization, every UI-side
             // `tool.inputSchema.safeParse(content.input)` (AssistantToolUseMessage,
             // permission requests, transcript renderers, etc.) fails — and tools
             // whose `renderToolUseMessage` returns null on missing fields render

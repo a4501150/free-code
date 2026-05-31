@@ -61,7 +61,7 @@ const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3
 
 export function getAutoCompactThreshold(model: string): number {
   return getAutoCompactThresholdForContextWindow(
-    getConfiguredContextWindowSize(model),
+    getEffectiveContextWindowSize(model),
   )
 }
 
@@ -126,6 +126,7 @@ export async function shouldAutoCompact(
   messages: Message[],
   model: string,
   querySource?: QuerySource,
+  tokenCountOverride?: number,
 ): Promise<boolean> {
   // Recursion guards. session_memory and compact are forked agents that
   // would deadlock.
@@ -136,12 +137,13 @@ export async function shouldAutoCompact(
     return false
   }
 
-  const tokenCount = tokenCountWithEstimation(messages)
+  const tokenCount = tokenCountOverride ?? tokenCountWithEstimation(messages)
   const threshold = getAutoCompactThreshold(model)
   const contextWindow = getConfiguredContextWindowSize(model)
+  const effectiveContextWindow = getEffectiveContextWindowSize(model)
 
   logForDebugging(
-    `autocompact: tokens=${tokenCount} threshold=${threshold} contextWindow=${contextWindow}`,
+    `autocompact: tokens=${tokenCount} threshold=${threshold} contextWindow=${contextWindow} effectiveContextWindow=${effectiveContextWindow}`,
   )
 
   const { isAboveAutoCompactThreshold } = calculateTokenWarningState(
@@ -158,6 +160,9 @@ export async function autoCompactIfNeeded(
   cacheSafeParams: CacheSafeParams,
   querySource?: QuerySource,
   tracking?: AutoCompactTrackingState,
+  options?: {
+    tokenCount?: number
+  },
 ): Promise<{
   wasCompacted: boolean
   compactionResult?: CompactionResult
@@ -178,7 +183,12 @@ export async function autoCompactIfNeeded(
   }
 
   const model = toolUseContext.options.mainLoopModel
-  const shouldCompact = await shouldAutoCompact(messages, model, querySource)
+  const shouldCompact = await shouldAutoCompact(
+    messages,
+    model,
+    querySource,
+    options?.tokenCount,
+  )
 
   if (!shouldCompact) {
     return { wasCompacted: false }
@@ -250,7 +260,7 @@ export async function autoCompactIfNeeded(
     const nextFailures = prevFailures + 1
     if (nextFailures >= MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES) {
       logForDebugging(
-        `autocompact: circuit breaker tripped after ${nextFailures} consecutive failures — skipping future attempts this session`,
+        `autocompact: circuit breaker tripped after ${nextFailures} consecutive failures — skipping future attempts in this query chain`,
         { level: 'warn' },
       )
     }

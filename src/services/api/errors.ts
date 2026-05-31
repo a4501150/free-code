@@ -93,8 +93,8 @@ export function parsePromptTooLongTokenCounts(rawMessage: string): {
 /**
  * Returns how many tokens over the limit a prompt-too-long error reports,
  * or undefined if the message isn't PTL or its errorDetails are unparseable.
- * Reactive compact uses this gap to jump past multiple groups in one retry
- * instead of peeling one-at-a-time.
+ * Compact-summary retries use this gap to jump past multiple groups in one
+ * retry instead of peeling one-at-a-time.
  */
 export function getPromptTooLongTokenGap(
   msg: AssistantMessage,
@@ -114,8 +114,8 @@ export function getPromptTooLongTokenGap(
 
 /**
  * Is this raw API error text a media-size rejection that stripImagesFromMessages
- * can fix? Reactive compact's summarize retry uses this to decide whether to
- * strip and retry (media error) or bail (anything else).
+ * can fix? Compact-summary retries use this to decide whether to strip and
+ * retry (media error) or bail (anything else).
  *
  * Patterns MUST stay in sync with the getAssistantMessageFromError branches
  * that populate errorDetails (~L523 PDF, ~L560 image, ~L573 many-image) and
@@ -531,15 +531,18 @@ export function getAssistantMessageFromError(
     })
   }
 
-  // Handle prompt too long errors (Vertex returns 413, direct API returns 400)
-  // Use case-insensitive check since Vertex returns "Prompt is too long" (capitalized)
+  // Handle prompt too long errors (Vertex returns 413, direct API returns 400).
+  // Codex preserves its context_length_exceeded code through normalization, so
+  // this does not depend on provider-specific wording.
   if (
-    error instanceof Error &&
-    error.message.toLowerCase().includes('prompt is too long')
+    (error instanceof APIError &&
+      getNormalizedError(error)?.kind === 'context_overflow') ||
+    (error instanceof Error &&
+      error.message.toLowerCase().includes('prompt is too long'))
   ) {
     // Content stays generic (UI matches on exact string). The raw error with
-    // token counts goes into errorDetails — reactive compact's retry loop
-    // parses the gap from there via getPromptTooLongTokenGap.
+    // token counts goes into errorDetails so compact-summary PTL retries can
+    // parse the gap via getPromptTooLongTokenGap.
     return createAssistantAPIErrorMessage({
       content: PROMPT_TOO_LONG_ERROR_MESSAGE,
       error: 'invalid_request',
@@ -895,10 +898,12 @@ export function classifyAPIError(error: unknown): string {
 
   // Prompt/content size errors
   if (
-    error instanceof Error &&
-    error.message
-      .toLowerCase()
-      .includes(PROMPT_TOO_LONG_ERROR_MESSAGE.toLowerCase())
+    (error instanceof APIError &&
+      getNormalizedError(error)?.kind === 'context_overflow') ||
+    (error instanceof Error &&
+      error.message
+        .toLowerCase()
+        .includes(PROMPT_TOO_LONG_ERROR_MESSAGE.toLowerCase()))
   ) {
     return 'prompt_too_long'
   }

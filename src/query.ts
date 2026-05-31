@@ -53,6 +53,7 @@ import { getRuntimeMainLoopModel } from './utils/model/model.js'
 import {
   doesMostRecentAssistantMessageExceed200k,
   finalContextTokensFromLastResponse,
+  getCurrentUsage,
   tokenCountWithEstimation,
 } from './utils/tokens.js'
 import { SLEEP_TOOL_NAME } from './tools/SleepTool/prompt.js'
@@ -321,30 +322,72 @@ async function* queryLoop(
     const fullSystemPrompt = asSystemPrompt(
       appendSystemContext(systemPrompt, systemContext),
     )
+    const appState = toolUseContext.getAppState()
+    const permissionMode = appState.toolPermissionContext.mode
+    const currentModel = getRuntimeMainLoopModel({
+      permissionMode,
+      mainLoopModel: toolUseContext.options.mainLoopModel,
+      exceeds200kTokens:
+        permissionMode === 'plan' &&
+        doesMostRecentAssistantMessageExceed200k(messagesForQuery),
+    })
+    const getToolPermissionContext = async () =>
+      toolUseContext.getAppState().toolPermissionContext
+    const countPromptTokens = () =>
+      deps.countPromptTokens({
+        messages: prependUserContext(messagesForQuery, userContext),
+        systemPrompt: fullSystemPrompt,
+        tools: toolUseContext.options.tools,
+        getToolPermissionContext,
+        agents: toolUseContext.options.agentDefinitions.activeAgents,
+        allowedAgentTypes:
+          toolUseContext.options.agentDefinitions.allowedAgentTypes,
+        model: currentModel,
+        isNonInteractiveSession:
+          toolUseContext.options.isNonInteractiveSession,
+        hasAppendSystemPrompt: !!toolUseContext.options.appendSystemPrompt,
+      })
+    let preflightTokenCount =
+      getCurrentUsage(messagesForQuery) === null
+        ? await countPromptTokens()
+        : null
+    let postCompactRecompactions = 0
+    let compactionResult: Awaited<
+      ReturnType<QueryDeps['autocompact']>
+    >['compactionResult']
 
-    queryCheckpoint('query_autocompact_start')
-    const { compactionResult, consecutiveFailures } = await deps.autocompact(
-      messagesForQuery,
-      toolUseContext,
-      {
-        systemPrompt,
-        userContext,
-        systemContext,
+    for (;;) {
+      queryCheckpoint('query_autocompact_start')
+      const compactResponse = await deps.autocompact(
+        messagesForQuery,
         toolUseContext,
-        forkContextMessages: messagesForQuery,
-      },
-      querySource,
-      tracking,
-    )
-    queryCheckpoint('query_autocompact_end')
+        {
+          systemPrompt,
+          userContext,
+          systemContext,
+          toolUseContext,
+          forkContextMessages: messagesForQuery,
+        },
+        querySource,
+        tracking,
+        preflightTokenCount === null
+          ? undefined
+          : { tokenCount: preflightTokenCount },
+      )
+      queryCheckpoint('query_autocompact_end')
+      compactionResult = compactResponse.compactionResult
 
-    if (compactionResult) {
-      const {
-        preCompactTokenCount,
-        postCompactTokenCount,
-        truePostCompactTokenCount,
-        compactionUsage,
-      } = compactionResult
+      if (!compactionResult) {
+        if (compactResponse.consecutiveFailures !== undefined) {
+          // Autocompact failed — propagate failure count so the circuit breaker
+          // can stop retrying on the next iteration.
+          tracking = {
+            ...(tracking ?? { compacted: false, turnId: '', turnCounter: 0 }),
+            consecutiveFailures: compactResponse.consecutiveFailures,
+          }
+        }
+        break
+      }
 
       // task_budget: capture pre-compact final context window before
       // messagesForQuery is replaced with postCompactMessages below.
@@ -371,20 +414,45 @@ async function* queryLoop(
       }
 
       const postCompactMessages = buildPostCompactMessages(compactionResult)
-
       for (const message of postCompactMessages) {
         yield message
       }
-
-      // Continue on with the current query call using the post compact messages
       messagesForQuery = postCompactMessages
-    } else if (consecutiveFailures !== undefined) {
-      // Autocompact failed — propagate failure count so the circuit breaker
-      // can stop retrying on the next iteration.
-      tracking = {
-        ...(tracking ?? { compacted: false, turnId: '', turnCounter: 0 }),
-        consecutiveFailures,
+
+      const exactPostCompactTokenCount = await countPromptTokens()
+      preflightTokenCount =
+        exactPostCompactTokenCount ?? tokenCountWithEstimation(messagesForQuery)
+      const { isAboveAutoCompactThreshold } = calculateTokenWarningState(
+        preflightTokenCount,
+        toolUseContext.options.mainLoopModel,
+      )
+      if (!isAboveAutoCompactThreshold || postCompactRecompactions >= 1) {
+        break
       }
+      postCompactRecompactions++
+      logForDebugging(
+        `autocompact: post-compact preflight still above threshold at ${preflightTokenCount} tokens — recompacting before dispatch`,
+        { level: 'warn' },
+      )
+    }
+
+    if (
+      postCompactRecompactions > 0 &&
+      preflightTokenCount !== null &&
+      calculateTokenWarningState(
+        preflightTokenCount,
+        toolUseContext.options.mainLoopModel,
+      ).isAboveAutoCompactThreshold
+    ) {
+      logForDebugging(
+        `autocompact: post-compact prompt remains above threshold at ${preflightTokenCount} tokens after bounded recompaction — blocking dispatch`,
+        { level: 'warn' },
+      )
+      yield createAssistantAPIErrorMessage({
+        content: PROMPT_TOO_LONG_ERROR_MESSAGE,
+        error: 'invalid_request',
+      })
+      return { reason: 'blocking_limit' }
     }
 
     //TODO: no need to set toolUseContext.messages during set-up since it is updated here
@@ -412,16 +480,6 @@ async function* queryLoop(
         )
       : null
 
-    const appState = toolUseContext.getAppState()
-    const permissionMode = appState.toolPermissionContext.mode
-    let currentModel = getRuntimeMainLoopModel({
-      permissionMode,
-      mainLoopModel: toolUseContext.options.mainLoopModel,
-      exceeds200kTokens:
-        permissionMode === 'plan' &&
-        doesMostRecentAssistantMessageExceed200k(messagesForQuery),
-    })
-
     queryCheckpoint('query_setup_end')
 
     // Create fetch wrapper once per query session to avoid memory retention.
@@ -434,21 +492,14 @@ async function* queryLoop(
       toolUseContext.agentId ?? config.sessionId,
     )
 
-    // Block if we've hit the hard blocking limit (only applies when auto-compact is OFF)
-    // This reserves space so users can still run /compact manually
-    // Skip this check if compaction just happened - the compaction result is already
-    // validated to be under the threshold, and tokenCountWithEstimation would use
-    // stale input_tokens from kept messages that reflect pre-compaction context size.
-    // Also skip for compact/session_memory queries — these are forked agents that
-    // inherit the full conversation and would deadlock if blocked here (the compact
-    // agent needs to run to REDUCE the token count).
-    if (
-      !compactionResult &&
-      querySource !== 'compact' &&
-      querySource !== 'session_memory'
-    ) {
+    // Block if we've hit the hard context limit. This reserves space so users
+    // can still run /compact manually when auto-compact is off, and prevents an
+    // oversized post-compact prompt from being dispatched when reinjected
+    // context remains too large. Skip compact/session_memory forked agents:
+    // they inherit the full conversation and need to run to reduce it.
+    if (querySource !== 'compact' && querySource !== 'session_memory') {
       const { isAtBlockingLimit } = calculateTokenWarningState(
-        tokenCountWithEstimation(messagesForQuery),
+        preflightTokenCount ?? tokenCountWithEstimation(messagesForQuery),
         toolUseContext.options.mainLoopModel,
       )
       if (isAtBlockingLimit) {
@@ -471,10 +522,7 @@ async function* queryLoop(
         tools: toolUseContext.options.tools,
         signal: toolUseContext.abortController.signal,
         options: {
-          async getToolPermissionContext() {
-            const appState = toolUseContext.getAppState()
-            return appState.toolPermissionContext
-          },
+          getToolPermissionContext,
           model: currentModel,
           ...(config.gates.fastModeEnabled && {
             fastMode: appState.fastMode,

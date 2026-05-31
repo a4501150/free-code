@@ -85,6 +85,7 @@ import {
   getLastToolUseName,
   runAsyncAgentLifecycle,
 } from './agentToolUtils.js'
+import { withAgentStoppedStatus } from './agentToolResult.js'
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
 import {
   AGENT_TOOL_NAME,
@@ -1117,7 +1118,7 @@ export const AgentTool = buildTool({
 
                       // Extract text from agent result content for the notification
                       let finalMessage = extractTextContent(
-                        agentResult.content,
+                        withAgentStoppedStatus(agentResult),
                         '\n',
                       )
 
@@ -1628,15 +1629,10 @@ The agent is now running and will receive instructions via mailbox.`,
       // prepend a <status> block so the parent model can see *why* the child
       // stopped and decide how to proceed. Without this the parent sees only
       // the partial text and thinks the subagent finished cleanly.
-      const contentOrMarker = data.errorReason
-        ? [
-            {
-              type: 'text' as const,
-              text: `<status>stopped: ${data.errorReason}</status>`,
-            },
-            ...baseContent,
-          ]
-        : baseContent
+      const contentOrMarker = withAgentStoppedStatus({
+        content: baseContent,
+        errorReason: data.errorReason,
+      })
       // One-shot built-ins (Explore, Plan) are never continued via SendMessage
       // — the agentId hint and <usage> block are dead weight (~135 chars ×
       // 34M Explore runs/week ≈ 1-2 Gtok/week). Telemetry doesn't parse this

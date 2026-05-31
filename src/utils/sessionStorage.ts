@@ -1502,7 +1502,7 @@ function applyPreservedSegmentRelinks(
   >
 
   // Find the absolute-last boundary and the last seg-boundary (can differ:
-  // manual /compact after reactive compact → seg is stale).
+  // manual /compact after a segment-preserving compact → seg is stale).
   let lastSeg: Seg | undefined
   let lastSegBoundaryIdx = -1
   let absoluteLastBoundaryIdx = -1
