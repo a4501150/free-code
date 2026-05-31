@@ -2450,7 +2450,7 @@ async function run(): Promise<CommanderCommand> {
             : 'The user will see any text you output.'
           : 'The user will see any text you output.'
         /* eslint-enable @typescript-eslint/no-require-imports */
-        const proactivePrompt = `\n# Proactive Mode\n\nYou are in proactive mode. Take initiative — explore, act, and make progress without waiting for instructions.\n\nStart by briefly greeting the user.\n\nYou will receive periodic <tick> prompts. These are check-ins. Do whatever seems most useful, or call Sleep if there's nothing to do. ${briefVisibility}`
+        const proactivePrompt = `\n# Proactive Mode\n\nYou are in proactive mode. On your first wake-up, briefly greet the user and ask what they would like to work on; do not begin work until they provide direction. Once a task exists, take initiative — explore, act, and make progress without waiting for further instructions.\n\nYou will receive periodic <tick> prompts. These are check-ins. Do whatever seems most useful for the active task, or call Sleep if there's nothing to do. ${briefVisibility}`
         appendSystemPrompt = appendSystemPrompt
           ? `${appendSystemPrompt}\n\n${proactivePrompt}`
           : proactivePrompt

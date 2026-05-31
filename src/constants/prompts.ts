@@ -15,6 +15,9 @@ import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
 import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
+import { TASK_LIST_TOOL_NAME } from '../tools/TaskListTool/constants.js'
+import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
+import { VERIFY_PLAN_EXECUTION_TOOL_NAME } from '../tools/VerifyPlanExecutionTool/constants.js'
 import type { Tools } from '../Tool.js'
 import type { Command } from '../types/command.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
@@ -153,7 +156,7 @@ function getSimpleDoingTasksSection(): string {
     `In general, do not propose changes to code you haven't read. If a user asks about or wants you to modify a file, read it first. Understand existing code before suggesting modifications.`,
     `Do not create files unless they're absolutely necessary for achieving your goal. Generally prefer editing an existing file to creating a new one, as this prevents file bloat and builds on existing work more effectively.`,
     `Avoid giving time estimates or predictions for how long tasks will take, whether for your own work or for users planning projects. Focus on what needs to be done, not how long it might take.`,
-    `If an approach fails, diagnose why before switching tactics—read the error, check your assumptions, try a focused fix. Don't retry the identical action blindly, but don't abandon a viable approach after a single failure either. Escalate to the user with ${ASK_USER_QUESTION_TOOL_NAME} only when you're genuinely stuck after investigation, not as a first response to friction.`,
+    `If an approach fails, diagnose why before switching tactics—read the error, check your assumptions, try a focused fix. Don't retry the identical action blindly, but don't abandon a viable approach after a single failure either. Ask the user for clarification only when you're genuinely stuck after investigation, not as a first response to friction.`,
     `Be careful not to introduce security vulnerabilities such as command injection, XSS, SQL injection, and other OWASP top 10 vulnerabilities. If you notice that you wrote insecure code, immediately fix it. Prioritize writing safe, secure, and correct code.`,
     `If the user asks for help or wants to give feedback inform them of the following:`,
     userHelpSubitems,
@@ -164,7 +167,7 @@ function getSimpleDoingTasksSection(): string {
 
 function getCodeStyleSection(): string {
   const items = [
-    `Don't add features, refactor code, or make "improvements" beyond what was asked. A bug fix doesn't need surrounding code cleaned up. A simple feature doesn't need extra configurability. Don't add docstrings, comments, or type annotations to code you didn't change. Only add comments where the logic isn't self-evident.`,
+    `Don't add features, refactor code, or make "improvements" beyond what was asked. A bug fix doesn't need surrounding code cleaned up. A simple feature doesn't need extra configurability. Don't add docstrings or type annotations to code you didn't change.`,
     `Don't add error handling, fallbacks, or validation for scenarios that can't happen. Trust internal code and framework guarantees. Only validate at system boundaries (user input, external APIs). Don't use feature flags or backwards-compatibility shims when you can just change the code.`,
     `Don't create helpers, utilities, or abstractions for one-time operations. Don't design for hypothetical future requirements. The right amount of complexity is what the task actually requires—no speculative abstractions, but no half-finished implementations either. Three similar lines of code is better than a premature abstraction.`,
     `Avoid backwards-compatibility hacks like renaming unused _vars, re-exporting types, adding // removed comments for removed code, etc. If you are certain that something is unused, you can delete it completely.`,
@@ -187,46 +190,49 @@ When you encounter an obstacle, do not use destructive actions as a shortcut to 
 }
 
 function getUsingYourToolsSection(enabledTools: Set<string>): string {
-  const taskToolName = enabledTools.has(TASK_CREATE_TOOL_NAME)
-    ? TASK_CREATE_TOOL_NAME
-    : undefined
+  const hasTaskWorkflow = [
+    TASK_CREATE_TOOL_NAME,
+    TASK_UPDATE_TOOL_NAME,
+    TASK_LIST_TOOL_NAME,
+  ].every(tool => enabledTools.has(tool))
+  const taskGuidance = hasTaskWorkflow
+    ? `For multi-step work, use ${TASK_CREATE_TOOL_NAME} to track concrete outcomes, ${TASK_UPDATE_TOOL_NAME} to keep their status current, and ${TASK_LIST_TOOL_NAME} to find follow-up work.`
+    : null
 
   // In REPL mode, Read/Write/Edit/Glob/Grep/Bash/Agent are hidden from direct
-  // use (REPL_ONLY_TOOLS). The "prefer dedicated tools over Bash" guidance is
-  // irrelevant — REPL's own prompt covers how to call them from scripts.
+  // use (REPL_ONLY_TOOLS). REPL's own prompt covers primitive operations.
   if (isReplModeEnabled()) {
-    const items = [
-      taskToolName
-        ? `Break down and manage your work with the ${taskToolName} tool. These tools are helpful for planning your work and helping the user track your progress. Mark each task as completed as soon as you are done with the task. Do not batch up multiple tasks before marking them as completed.`
-        : null,
-    ].filter(item => item !== null)
-    if (items.length === 0) return ''
-    return [`# Using your tools`, ...prependBullets(items)].join(`\n`)
+    if (!taskGuidance) return ''
+    return [`# Using your tools`, ...prependBullets([taskGuidance])].join(`\n`)
   }
 
-  // When Glob/Grep are stripped (ant-native embedded bfs/ugrep, or default
-  // builds without DEDICATED_SEARCH_TOOLS), skip guidance pointing at them.
-  const embedded = shouldPreferBashForSearch()
-
   const providedToolSubitems = [
-    `To read files use ${FILE_READ_TOOL_NAME} instead of cat, head, tail, or sed`,
-    `To edit files use ${FILE_EDIT_TOOL_NAME} instead of sed or awk`,
-    `To create files use ${FILE_WRITE_TOOL_NAME} instead of cat with heredoc or echo redirection`,
-    ...(embedded
-      ? []
-      : [
-          `To search for files use ${GLOB_TOOL_NAME} instead of find or ls`,
-          `To search the content of files, use ${GREP_TOOL_NAME} instead of grep or rg`,
-        ]),
-    `Reserve using the ${BASH_TOOL_NAME} exclusively for system commands and terminal operations that require shell execution. If you are unsure and there is a relevant dedicated tool, default to using the dedicated tool and only fallback on using the ${BASH_TOOL_NAME} tool for these if it is absolutely necessary.`,
-  ]
+    enabledTools.has(FILE_READ_TOOL_NAME)
+      ? `To read files use ${FILE_READ_TOOL_NAME} instead of shell file-display commands`
+      : null,
+    enabledTools.has(FILE_EDIT_TOOL_NAME)
+      ? `To edit files use ${FILE_EDIT_TOOL_NAME} instead of shell text-replacement commands`
+      : null,
+    enabledTools.has(FILE_WRITE_TOOL_NAME)
+      ? `To create files use ${FILE_WRITE_TOOL_NAME} instead of shell redirection`
+      : null,
+    enabledTools.has(GLOB_TOOL_NAME)
+      ? `To search for files use ${GLOB_TOOL_NAME} instead of shell file-discovery commands`
+      : null,
+    enabledTools.has(GREP_TOOL_NAME)
+      ? `To search file contents use ${GREP_TOOL_NAME} instead of shell text-search commands`
+      : null,
+  ].filter((item): item is string => item !== null)
 
   const items = [
-    `Do NOT use the ${BASH_TOOL_NAME} to run commands when a relevant dedicated tool is provided. Using dedicated tools allows the user to better understand and review your work. This is CRITICAL to assisting the user:`,
-    providedToolSubitems,
-    taskToolName
-      ? `Break down and manage your work with the ${taskToolName} tool. These tools are helpful for planning your work and helping the user track your progress. Mark each task as completed as soon as you are done with the task. Do not batch up multiple tasks before marking them as completed.`
+    providedToolSubitems.length > 0
+      ? `When a relevant dedicated tool is available, prefer it over shell commands because dedicated tools are easier for the user to review:`
       : null,
+    providedToolSubitems.length > 0 ? providedToolSubitems : null,
+    enabledTools.has(BASH_TOOL_NAME)
+      ? `Reserve ${BASH_TOOL_NAME} for system commands and terminal operations that require shell execution.`
+      : null,
+    taskGuidance,
     `You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between them, make all independent tool calls in parallel. Maximize use of parallel tool calls where possible to increase efficiency. However, if some tool calls depend on previous calls to inform dependent values, do NOT call these tools in parallel and instead call them sequentially. For instance, if one operation must complete before another starts, run these operations sequentially instead.`,
   ].filter(item => item !== null)
 
@@ -252,8 +258,25 @@ function getSessionSpecificGuidanceSection(
     skillToolCommands.length > 0 && enabledTools.has(SKILL_TOOL_NAME)
   const hasAgentTool = enabledTools.has(AGENT_TOOL_NAME)
   const searchTools = shouldPreferBashForSearch()
-    ? `\`find\` or \`grep\` via the ${BASH_TOOL_NAME} tool`
-    : `the ${GLOB_TOOL_NAME} or ${GREP_TOOL_NAME}`
+    ? enabledTools.has(BASH_TOOL_NAME)
+      ? `\`find\` or \`grep\` via the ${BASH_TOOL_NAME} tool`
+      : null
+    : [GLOB_TOOL_NAME, GREP_TOOL_NAME].filter(tool => enabledTools.has(tool))
+          .length > 0
+      ? [GLOB_TOOL_NAME, GREP_TOOL_NAME]
+          .filter(tool => enabledTools.has(tool))
+          .map(tool => `the ${tool} tool`)
+          .join(' or ')
+      : null
+  const hasPlanVerifier = enabledTools.has(VERIFY_PLAN_EXECUTION_TOOL_NAME)
+  const verificationGuidance = feature('VERIFY_PLAN')
+    ? (hasAgentTool || hasPlanVerifier) &&
+      (getInitialSettings()?.verificationNudge ?? true)
+      ? hasPlanVerifier
+        ? `For implementation from an approved plan, use ${VERIFY_PLAN_EXECUTION_TOOL_NAME} as the independent final verifier; it satisfies this verification requirement, so do not also spawn a separate verification agent for the same plan.${hasAgentTool ? ` For other non-trivial implementation on your turn, independent adversarial verification must happen before you report completion. Non-trivial means: 3+ file edits, backend/API changes, or infrastructure changes. Spawn the ${AGENT_TOOL_NAME} tool with subagent_type="${VERIFICATION_AGENT_TYPE}". On FAIL, fix and resume the verifier until it passes; on PASS, spot-check 2-3 commands from its report; on PARTIAL, report what was and was not verified.` : ''}`
+        : `When non-trivial implementation happens on your turn, independent adversarial verification must happen before you report completion. Non-trivial means: 3+ file edits, backend/API changes, or infrastructure changes. Spawn the ${AGENT_TOOL_NAME} tool with subagent_type="${VERIFICATION_AGENT_TYPE}". On FAIL, fix and resume the verifier until it passes; on PASS, spot-check 2-3 commands from its report; on PARTIAL, report what was and was not verified.`
+      : null
+    : null
 
   const items = [
     hasAskUserQuestionTool
@@ -263,7 +286,7 @@ function getSessionSpecificGuidanceSection(
       ? null
       : `If you need the user to run a shell command themselves (e.g., an interactive login like \`gcloud auth login\`), suggest they type \`! <command>\` in the prompt — the \`!\` prefix runs the command in this session so its output lands directly in the conversation.`,
     hasAgentTool ? getAgentToolSection() : null,
-    ...(hasAgentTool && areExplorePlanAgentsEnabled()
+    ...(hasAgentTool && areExplorePlanAgentsEnabled() && searchTools
       ? [
           `For simple, directed codebase searches (e.g. for a specific file/class/function) use ${searchTools} directly.`,
           `For broader codebase exploration and deep research, use the ${AGENT_TOOL_NAME} tool with subagent_type=${EXPLORE_AGENT.agentType}. This is slower than using ${searchTools} directly, so use this only when a simple, directed search proves to be insufficient or when your task will clearly require more than ${EXPLORE_AGENT_MIN_QUERIES} queries.`,
@@ -272,11 +295,7 @@ function getSessionSpecificGuidanceSection(
     hasSkills
       ? `/<skill-name> is shorthand for users to invoke a user-invocable skill. When executed, the skill gets expanded to a full prompt. Use the ${SKILL_TOOL_NAME} tool to execute it only when the name appears in the available skills listing. IMPORTANT: Only use ${SKILL_TOOL_NAME} for listed skills - do not infer skills from examples, common workflows, or built-in CLI commands.`
       : null,
-    hasAgentTool &&
-    feature('VERIFY_PLAN') &&
-    (getInitialSettings()?.verificationNudge ?? true)
-      ? `The contract: when non-trivial implementation happens on your turn, independent adversarial verification must happen before you report completion \u2014 regardless of who did the implementing (you directly or a subagent). You are the one reporting to the user; you own the gate. Non-trivial means: 3+ file edits, backend/API changes, or infrastructure changes. Spawn the ${AGENT_TOOL_NAME} tool with subagent_type="${VERIFICATION_AGENT_TYPE}". Your own checks and caveats do NOT substitute \u2014 only the verifier assigns a verdict; you cannot self-assign PARTIAL. Pass the original user request, all files changed (by anyone), the approach, and the plan file path if applicable. Flag concerns if you have them but do NOT share test results or claim things work. On FAIL: fix, resume the verifier with its findings plus your fix, repeat until PASS. On PASS: spot-check it \u2014 re-run 2-3 commands from its report, confirm every PASS has a Command run block with output that matches your re-run. If any PASS lacks a command block or diverges, resume the verifier with the specifics. On PARTIAL (from the verifier): report what passed and what could not be verified.`
-      : null,
+    verificationGuidance,
   ].filter(item => item !== null)
 
   if (items.length === 0) return null
@@ -355,7 +374,8 @@ export async function getSystemPrompt(
   if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
     return [
       `You are Claude Code, Anthropic's official CLI for Claude.\n\nCWD: ${getCwd()}\nDate: ${getSessionStartDate()}`,
-    ]
+      ...(mcpClients ? [getMcpInstructions(mcpClients, tools)] : []),
+    ].filter(s => s !== null)
   }
 
   const cwd = getCwd()
@@ -389,8 +409,10 @@ ${CYBER_RISK_INSTRUCTION}`,
   }
 
   const dynamicSections = [
-    systemPromptSection('session_guidance', () =>
-      getSessionSpecificGuidanceSection(enabledTools, skillToolCommands),
+    DANGEROUS_uncachedSystemPromptSection(
+      'session_guidance',
+      () => getSessionSpecificGuidanceSection(enabledTools, skillToolCommands),
+      'Tool availability can change between turns',
     ),
     systemPromptSection('memory', () => loadMemoryPrompt()),
     systemPromptSection('ant_model_override', () =>
@@ -459,9 +481,21 @@ ${CYBER_RISK_INSTRUCTION}`,
   ].filter(s => s !== null)
 }
 
-function getMcpInstructions(mcpClients: MCPServerConnection[]): string | null {
+function getMcpInstructions(
+  mcpClients: MCPServerConnection[],
+  exposedTools?: Tools,
+): string | null {
+  const exposedServers = exposedTools
+    ? new Set(
+        exposedTools.flatMap(tool =>
+          tool.mcpInfo ? [tool.mcpInfo.serverName] : [],
+        ),
+      )
+    : null
   const connectedClients = mcpClients.filter(
-    (client): client is ConnectedMCPServer => client.type === 'connected',
+    (client): client is ConnectedMCPServer =>
+      client.type === 'connected' &&
+      (exposedServers === null || exposedServers.has(client.name)),
   )
 
   const clientsWithInstructions = connectedClients.filter(
@@ -611,19 +645,12 @@ export function getScratchpadInstructions(): string | null {
 
   return `# Scratchpad Directory
 
-IMPORTANT: Always use this scratchpad directory for temporary files instead of \`/tmp\` or other system temp directories:
+Use this session-specific scratchpad directory for intermediate artifacts, working files, and data that should not belong in the user's project:
 \`${scratchpadDir}\`
 
-Use this directory for ALL temporary file needs:
-- Storing intermediate results or data during multi-step tasks
-- Writing temporary scripts or configuration files
-- Saving outputs that don't belong in the user's project
-- Creating working files during analysis or processing
-- Any file that would otherwise go to \`/tmp\`
+For ephemeral files created inside shell commands, follow any sandbox-specific temporary-file guidance supplied by the shell tool. Do not write directly to \`/tmp\` unless the user explicitly requests it.
 
-Only use \`/tmp\` if the user explicitly requests it.
-
-The scratchpad directory is session-specific, isolated from the user's project, and can be used freely without permission prompts.`
+The scratchpad directory is isolated from the user's project and can normally be used without permission prompts.`
 }
 
 const SUMMARIZE_TOOL_RESULTS_SECTION = `When working with tool results, write down any important information you might need later in your response, as the original tool result may be cleared later.`

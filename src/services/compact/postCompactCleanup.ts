@@ -48,11 +48,9 @@ export function runPostCompactCleanup(querySource?: QuerySource): void {
   }
   clearSystemPromptSections()
   clearClassifierApprovals()
-  // Intentionally NOT calling resetSentSkillNames(): re-injecting the full
-  // skill_listing (~4K tokens) post-compact is pure cache_creation. The
-  // model still has SkillTool in schema, invoked_skills preserves used
-  // skills, and dynamic additions are handled by skillChangeDetector /
-  // cacheUtils resets. See compactConversation() for full rationale.
+  // Do not reset sent skill descriptions: compaction explicitly restores a
+  // small names-only invocation allowlist, while invoked_skills preserves
+  // content for already-used skills and change detection handles additions.
   clearBetaTracingState()
   clearSessionMessagesCache()
 }

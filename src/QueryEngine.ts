@@ -35,7 +35,12 @@ import { query } from './query.js'
 import { categorizeRetryableAPIError } from './services/api/errors.js'
 import type { MCPServerConnection } from './services/mcp/types.js'
 import type { AppState } from './state/AppState.js'
-import { type CanUseToolFn, type Tools, type ToolUseContext, toolMatchesName } from './Tool.js'
+import {
+  type CanUseToolFn,
+  type Tools,
+  type ToolUseContext,
+  toolMatchesName,
+} from './Tool.js'
 import type { AgentDefinition } from './tools/AgentTool/loadAgentsDir.js'
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from './tools/SyntheticOutputTool/SyntheticOutputTool.js'
 import type { Message } from './types/message.js'
@@ -101,13 +106,22 @@ import {
 
 // Dead code elimination: conditional import for coordinator mode
 /* eslint-disable @typescript-eslint/no-require-imports */
-const getCoordinatorUserContext: (
+const coordinatorModeModule = feature('COORDINATOR_MODE')
+  ? (require('./coordinator/coordinatorMode.js') as typeof import('./coordinator/coordinatorMode.js'))
+  : null
+/* eslint-enable @typescript-eslint/no-require-imports */
+
+function getCoordinatorUserContext(
   mcpClients: ReadonlyArray<{ name: string }>,
   scratchpadDir?: string,
-) => { [k: string]: string } = feature('COORDINATOR_MODE')
-  ? require('./coordinator/coordinatorMode.js').getCoordinatorUserContext
-  : () => ({})
-/* eslint-enable @typescript-eslint/no-require-imports */
+): { [k: string]: string } {
+  return (
+    coordinatorModeModule?.getCoordinatorUserContext(
+      mcpClients,
+      scratchpadDir,
+    ) ?? {}
+  )
+}
 
 export type QueryEngineConfig = {
   cwd: string
@@ -280,8 +294,16 @@ export class QueryEngine {
         ? await loadMemoryPrompt()
         : null
 
+    const coordinatorPrompt =
+      customPrompt === undefined && coordinatorModeModule?.isCoordinatorMode()
+        ? coordinatorModeModule.getCoordinatorSystemPrompt()
+        : null
     const systemPrompt = asSystemPrompt([
-      ...(customPrompt !== undefined ? [customPrompt] : defaultSystemPrompt),
+      ...(customPrompt !== undefined
+        ? [customPrompt]
+        : coordinatorPrompt
+          ? [coordinatorPrompt]
+          : defaultSystemPrompt),
       ...(memoryMechanicsPrompt ? [memoryMechanicsPrompt] : []),
       ...(appendSystemPrompt ? [appendSystemPrompt] : []),
     ])

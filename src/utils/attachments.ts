@@ -70,7 +70,10 @@ import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js'
 import { getSkillToolCommands } from '../commands.js'
 import type { Command } from '../types/command.js'
 import { getProjectRoot } from '../bootstrap/state.js'
-import { formatCommandsWithinBudget } from '../tools/SkillTool/prompt.js'
+import {
+  formatCommandsWithinBudget,
+  formatSkillNamesOnly,
+} from '../tools/SkillTool/prompt.js'
 import { getContextWindowForModel } from './context.js'
 import * as autoModeStateNs from './permissions/autoModeState.js'
 
@@ -491,7 +494,10 @@ export type Attachment =
     }
   | {
       type: 'queued_command'
-      prompt: string | Array<DomainUserContentBlock> | Array<DomainUserContentBlock>
+      prompt:
+        | string
+        | Array<DomainUserContentBlock>
+        | Array<DomainUserContentBlock>
       source_uuid?: UUID
       imagePasteIds?: number[]
       /** Original queue mode — 'prompt' for user messages, 'task-notification' for system events */
@@ -946,7 +952,10 @@ export async function getQueuedCommandAttachments(
   return Promise.all(
     filtered.map(async _ => {
       const imageBlocks = await buildImageContentBlocks(_.pastedContents)
-      let prompt: string | Array<DomainUserContentBlock> | Array<DomainUserContentBlock> = _.value
+      let prompt:
+        | string
+        | Array<DomainUserContentBlock>
+        | Array<DomainUserContentBlock> = _.value
       if (imageBlocks.length > 0) {
         // Build content block array with text + images so the model sees them
         const textValue =
@@ -2510,8 +2519,8 @@ async function getDynamicSkillAttachments(
 const sentSkillNames = new Map<string, Set<string>>()
 
 // Called when the skill set genuinely changes (plugin reload, skill file
-// change on disk) so new skills get announced. NOT called on compact —
-// post-compact re-injection costs ~4K tokens/event for marginal benefit.
+// change on disk) so new skills get announced. NOT called on compact — compact
+// restores only a names-only allowlist rather than re-injecting descriptions.
 export function resetSentSkillNames(): void {
   sentSkillNames.clear()
   suppressNext = false
@@ -2538,6 +2547,32 @@ export function suppressNextSkillListing(): void {
 }
 let suppressNext = false
 
+function hasSkillTool(toolUseContext: ToolUseContext): boolean {
+  return toolUseContext.options.tools.some(t =>
+    toolMatchesName(t, SKILL_TOOL_NAME),
+  )
+}
+
+export async function getPostCompactSkillListingAttachment(
+  toolUseContext: ToolUseContext,
+): Promise<Attachment | null> {
+  if (!hasSkillTool(toolUseContext)) {
+    return null
+  }
+
+  const allCommands = await getSkillToolCommands(getProjectRoot())
+  if (allCommands.length === 0) {
+    return null
+  }
+
+  return {
+    type: 'skill_listing',
+    content: formatSkillNamesOnly(allCommands),
+    skillCount: allCommands.length,
+    isInitial: false,
+  }
+}
+
 async function getSkillListingAttachments(
   toolUseContext: ToolUseContext,
 ): Promise<Attachment[]> {
@@ -2546,9 +2581,7 @@ async function getSkillListingAttachments(
   }
 
   // Skip skill listing for agents that don't have the Skill tool — they can't use skills directly.
-  if (
-    !toolUseContext.options.tools.some(t => toolMatchesName(t, SKILL_TOOL_NAME))
-  ) {
+  if (!hasSkillTool(toolUseContext)) {
     return []
   }
 

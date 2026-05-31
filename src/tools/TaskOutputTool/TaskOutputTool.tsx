@@ -36,17 +36,17 @@ const PROGRESS_COMPACT_TAIL_LINES = 4
 const PROGRESS_EXPANDED_HEIGHT = 20
 
 const inputSchema = z.strictObject({
-    task_id: z.string().describe('The task ID to get output from'),
-    block: semanticBoolean(z.boolean().default(true)).describe(
-      'Whether to wait for completion',
-    ),
-    timeout: z
-      .number()
-      .min(0)
-      .max(600000)
-      .default(30000)
-      .describe('Max wait time in ms (0-600000).'),
-  })
+  task_id: z.string().describe('The task ID to get output from'),
+  block: semanticBoolean(z.boolean().default(true)).describe(
+    'Whether to wait for completion',
+  ),
+  timeout: z
+    .number()
+    .min(0)
+    .max(600000)
+    .default(30000)
+    .describe('Max wait time in ms (0-600000).'),
+})
 type InputSchema = typeof inputSchema
 
 type TaskOutputToolInput = z.infer<InputSchema>
@@ -180,7 +180,7 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
     },
 
     async description() {
-      return '[Deprecated] — prefer Read on the task output file path'
+      return 'Retrieve output from a running or completed background task'
     },
 
     isConcurrencySafe(_input) {

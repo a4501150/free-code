@@ -23,7 +23,7 @@ function getBackgroundUsageNote(): string | null {
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
     return null
   }
-  return "If you're about to use `sleep` or a polling loop, use `run_in_background: true` instead. The tool returns immediately with a task ID and a file path that streams the command's stdout/stderr (Read the file to see output as it accumulates). When the command exits, a <task-notification> system message arrives in a later turn with the task's id, status (completed/failed/killed), exit code, and summary. The notification only fires when the bash command exits — sleeping or polling on your end does not change when it arrives. For polling external state via bash, wrap the polling in a single backgrounded bash loop with a clear exit condition (e.g. `while ! check; do sleep 5; done`). If you need to background commands that never terminate (so the notification never fires) — for example, `tail -f`, dev servers, long-running watchers — Read the output file path to peek at progress, and stop the task via BackgroundTaskStop when it's no longer needed."
+  return "If you're about to use `sleep` or a polling loop, use `run_in_background: true` instead. The tool returns immediately with a task ID and a file path that streams the command's stdout/stderr (Read the file as it accumulates, or use BackgroundTaskOutput to retrieve task status and output). When the command exits, a <task-notification> system message arrives in a later turn with the task's id, status (completed/failed/killed), exit code, and summary. The notification only fires when the bash command exits — sleeping or polling on your end does not change when it arrives. For polling external state via bash, wrap the polling in a single backgrounded bash loop with a clear exit condition (e.g. `while ! check; do sleep 5; done`). If you need to background commands that never terminate (so the notification never fires) — for example, `tail -f`, dev servers, long-running watchers — inspect output as needed and stop the task via BackgroundTaskStop when it's no longer needed."
 }
 
 function getCommitAndPRInstructions(): string {
@@ -143,7 +143,7 @@ function getSimpleSandboxSection(): string {
 
   const items: Array<string | string[]> = [
     ...sandboxOverrideItems,
-    'For temporary files, always use the `$TMPDIR` environment variable. TMPDIR is automatically set to the correct sandbox-writable directory in sandbox mode. Do NOT use `/tmp` directly - use `$TMPDIR` instead.',
+    'For temporary files created by shell commands, use the scratchpad directory provided in the system prompt when one is available; otherwise use the `$TMPDIR` environment variable. TMPDIR is automatically set to a sandbox-writable directory. Do NOT use `/tmp` directly.',
   ]
 
   return [

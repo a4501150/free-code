@@ -4,11 +4,11 @@ export const PROMPT = `Use this tool to update a task in the task list.
 
 ## When to Use This Tool
 
-**Mark tasks as resolved:**
+**Mark tasks as completed:**
 - When you have completed the work described in a task
 - When a task is no longer needed or has been superseded
-- IMPORTANT: Always mark your assigned tasks as resolved when you finish them
-- After resolving, call TaskList to find your next task
+- IMPORTANT: Always mark your assigned tasks as completed when you finish them
+- After completing, call TaskList to find your next task
 
 - ONLY mark a task as completed when you have FULLY accomplished it
 - If you encounter errors, blockers, or cannot finish, keep the task as in_progress

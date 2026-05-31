@@ -40,7 +40,7 @@ const proactive = {
         {
           display: 'system',
           metaMessages: [
-            '<system-reminder>\nProactive mode is now enabled. Take initiative — explore, act, and make progress without waiting for instructions. You will receive periodic <tick> prompts as check-ins. Use the Sleep tool when there is nothing to do.\n</system-reminder>',
+            '<system-reminder>\nProactive mode is now enabled. On your first wake-up, briefly greet the user and ask what they would like to work on; do not begin work until they provide direction. Once a task exists, take initiative and make progress without waiting for further instructions. You will receive periodic <tick> prompts as check-ins. Use the Sleep tool when there is nothing to do.\n</system-reminder>',
           ],
         },
       )

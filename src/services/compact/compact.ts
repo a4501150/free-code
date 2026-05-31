@@ -30,6 +30,7 @@ import {
   generateFileAttachment,
   getAgentListingDeltaAttachment,
   getMcpInstructionsDeltaAttachment,
+  getPostCompactSkillListingAttachment,
 } from '../../utils/attachments.js'
 import { snapshotPlanModeRenderContext } from '../../utils/planMode.js'
 import { getMemoryPath } from '../../utils/config.js'
@@ -452,10 +453,8 @@ export async function compactConversation(
     context.readFileState.clear()
     context.loadedNestedMemoryPaths?.clear()
 
-    // Intentionally NOT resetting sentSkillNames: re-injecting the full
-    // skill_listing (~4K tokens) post-compact is pure cache_creation with
-    // marginal benefit. The model still has SkillTool in its schema and
-    // invoked_skills attachment (below) preserves used-skill content.
+    // Keep full skill descriptions suppressed after compact; restore only the
+    // names-only allowlist needed for valid Skill invocation below.
 
     // Run async attachment generation in parallel
     const [fileAttachments, asyncAgentAttachments] = await Promise.all([
@@ -487,6 +486,13 @@ export async function compactConversation(
     const skillAttachment = createSkillAttachmentIfNeeded(context.agentId)
     if (skillAttachment) {
       postCompactFileAttachments.push(skillAttachment)
+    }
+    const skillListingAttachment =
+      await getPostCompactSkillListingAttachment(context)
+    if (skillListingAttachment) {
+      postCompactFileAttachments.push(
+        createAttachmentMessage(skillListingAttachment),
+      )
     }
 
     // Compaction ate prior delta attachments. Re-announce from the current
@@ -762,8 +768,8 @@ export async function partialCompactConversation(
     const preCompactReadFileState = cacheToObject(context.readFileState)
     context.readFileState.clear()
     context.loadedNestedMemoryPaths?.clear()
-    // Intentionally NOT resetting sentSkillNames — see compactConversation()
-    // for rationale (~4K tokens saved per compact event).
+    // Keep full skill descriptions suppressed after compact; restore only the
+    // names-only allowlist needed for valid Skill invocation below.
 
     const [fileAttachments, asyncAgentAttachments] = await Promise.all([
       createPostCompactFileAttachments(
@@ -793,6 +799,13 @@ export async function partialCompactConversation(
     const skillAttachment = createSkillAttachmentIfNeeded(context.agentId)
     if (skillAttachment) {
       postCompactFileAttachments.push(skillAttachment)
+    }
+    const skillListingAttachment =
+      await getPostCompactSkillListingAttachment(context)
+    if (skillListingAttachment) {
+      postCompactFileAttachments.push(
+        createAttachmentMessage(skillListingAttachment),
+      )
     }
 
     // Re-announce only what was in the summarized portion — messagesToKeep

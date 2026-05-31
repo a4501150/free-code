@@ -63,6 +63,12 @@ function formatCommandDescription(cmd: Command): string {
 
 const MIN_DESC_LENGTH = 20
 
+export function formatSkillNamesOnly(
+  commands: ReadonlyArray<Pick<Command, 'name'>>,
+): string {
+  return commands.map(command => `- ${command.name}`).join('\n')
+}
+
 export function formatCommandsWithinBudget(
   commands: Command[],
   contextWindowTokens?: number,
@@ -156,7 +162,7 @@ How to invoke:
 
 Important:
 - Available skills are listed in system-reminder messages in the conversation
-- When a listed skill matches the user's request, this is a BLOCKING REQUIREMENT: invoke the relevant Skill tool BEFORE generating any other response about the task
+- When a listed skill matches the user's request, this is a BLOCKING REQUIREMENT: after any brief acknowledgment, invoke the relevant Skill tool BEFORE performing substantive work or giving a substantive response about the task
 - NEVER mention a skill without actually calling this tool
 - Do not invoke a skill that is already running
 - Do not infer skill names from examples, common workflows, or built-in CLI commands

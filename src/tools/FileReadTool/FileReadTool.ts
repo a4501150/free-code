@@ -215,20 +215,24 @@ function detectSessionFileType(
 }
 
 const inputSchema = z.strictObject({
-    file_path: z.string().describe('The absolute path to the file to read'),
-    offset: semanticNumber(z.number().int().nonnegative().optional()).describe(
-      'The line number to start reading from. Only provide if the file is too large to read at once',
+  file_path: z.string().describe('The absolute path to the file to read'),
+  offset: semanticNumber(
+    z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  ).describe(
+    'Optional starting line number for a partial text-file read. Omit to start at the beginning; use without limit to read from that line through the end, subject to output limits. Must be a safe integer.',
+  ),
+  limit: semanticNumber(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+  ).describe(
+    'Optional maximum number of lines to return for a partial text-file read. Omit to read through the end, subject to output limits; never pass a very large sentinel value to request the rest of the file. Must be a safe integer.',
+  ),
+  pages: z
+    .string()
+    .optional()
+    .describe(
+      `Optional page range for PDF files (e.g., "1-5", "3", "10-20"). Valid only for PDF files; do not combine with offset or limit. Maximum ${PDF_MAX_PAGES_PER_READ} pages per request.`,
     ),
-    limit: semanticNumber(z.number().int().positive().optional()).describe(
-      'The number of lines to read. Only provide if the file is too large to read at once.',
-    ),
-    pages: z
-      .string()
-      .optional()
-      .describe(
-        `Page range for PDF files (e.g., "1-5", "3", "10-20"). Only applicable to PDF files. Maximum ${PDF_MAX_PAGES_PER_READ} pages per request.`,
-      ),
-  })
+})
 type InputSchema = typeof inputSchema
 
 export type Input = z.infer<InputSchema>
@@ -395,9 +399,31 @@ export const FileReadTool = buildTool({
     return ''
   },
   renderToolUseErrorMessage,
-  async validateInput({ file_path, pages }, toolUseContext: ToolUseContext) {
+  async validateInput(
+    { file_path, offset, limit, pages },
+    toolUseContext: ToolUseContext,
+  ) {
+    const fullFilePath = expandPath(file_path)
+    const ext = path.extname(fullFilePath).toLowerCase()
+
     // Validate pages parameter (pure string parsing, no I/O)
     if (pages !== undefined) {
+      if (!isPDFExtension(ext)) {
+        return {
+          result: false,
+          message:
+            'The pages parameter is only valid when reading a PDF file. Omit pages for text files, source files, images, and notebooks.',
+          errorCode: 10,
+        }
+      }
+      if (offset !== undefined || limit !== undefined) {
+        return {
+          result: false,
+          message:
+            'PDF page reads use the pages parameter, not offset or limit. Omit offset and limit when pages is provided.',
+          errorCode: 11,
+        }
+      }
       const parsed = parsePDFPageRange(pages)
       if (!parsed) {
         return {
@@ -420,8 +446,6 @@ export const FileReadTool = buildTool({
     }
 
     // Path expansion + deny rule check (no I/O)
-    const fullFilePath = expandPath(file_path)
-
     const appState = toolUseContext.getAppState()
     const denyRule = matchingRuleForInput(
       fullFilePath,
@@ -448,7 +472,6 @@ export const FileReadTool = buildTool({
 
     // Binary extension check (string check on extension only, no I/O).
     // PDF, images, and SVG are excluded - this tool renders them natively.
-    const ext = path.extname(fullFilePath).toLowerCase()
     if (
       hasBinaryExtension(fullFilePath) &&
       !isPDFExtension(ext) &&
