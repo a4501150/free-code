@@ -355,13 +355,26 @@ async function translateStreamToAnthropic(
       try {
         const reader = openaiResponse.body?.getReader()
         if (!reader) {
-          emitTextBlock(
-            controller,
-            encoder,
-            contentBlockIndex,
-            'Error: No response body',
+          const normalized = openaiChatCompletionsAdapter.normalizeError(
+            {
+              mid_stream: true,
+              cause: new Error('No response body'),
+            },
+            'openai-chat-completions',
           )
-          finishStream(controller, encoder, outputTokens, inputTokens, 0, false)
+          controller.enqueue(
+            encoder.encode(
+              `event: error\ndata: ${JSON.stringify({
+                type: 'error',
+                error: {
+                  type: toAnthropicErrorType(normalized.kind),
+                  message: 'No response body from upstream',
+                  normalized,
+                },
+              })}\n\n`,
+            ),
+          )
+          controller.close()
           return
         }
 
@@ -423,7 +436,8 @@ async function translateStreamToAnthropic(
                   })}\n\n`,
                 ),
               )
-              continue
+              controller.close()
+              return
             }
 
             // Usage chunk (stream_options.include_usage)

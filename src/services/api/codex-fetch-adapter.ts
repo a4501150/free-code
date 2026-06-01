@@ -1093,11 +1093,10 @@ async function translateCodexStreamToAnthropic(
         const reader = codexResponse.body?.getReader()
         upstreamReader = reader ?? null
         if (!reader) {
-          streamTextDelta(
-            upsertItem({}, { type: 'message' }, 'message'),
-            'Error: No response body',
+          emitErrorAndClose(
+            'No response body from upstream',
+            { mid_stream: true, cause: new Error('No response body') },
           )
-          finishStream()
           return
         }
 

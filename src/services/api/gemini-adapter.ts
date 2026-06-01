@@ -329,47 +329,23 @@ async function translateGeminiStreamToAnthropicSSE(
       try {
         const reader = response.body?.getReader()
         if (!reader) {
-          emitMessageStart()
-          // Emit a minimal text block with the error
-          controller.enqueue(
-            encoder.encode(
-              formatSSE(
-                'content_block_start',
-                JSON.stringify({
-                  type: 'content_block_start',
-                  index: contentBlockIndex,
-                  content_block: { type: 'text', text: '' },
-                }),
-              ),
-            ),
+          const normalized = geminiAdapter.normalizeError(
+            { mid_stream: true, cause: new Error('No response body') },
+            'gemini',
           )
           controller.enqueue(
             encoder.encode(
-              formatSSE(
-                'content_block_delta',
-                JSON.stringify({
-                  type: 'content_block_delta',
-                  index: contentBlockIndex,
-                  delta: {
-                    type: 'text_delta',
-                    text: 'Error: No response body',
-                  },
-                }),
-              ),
+              `event: error\ndata: ${JSON.stringify({
+                type: 'error',
+                error: {
+                  type: toAnthropicErrorType(normalized.kind),
+                  message: 'No response body from upstream',
+                  normalized,
+                },
+              })}\n\n`,
             ),
           )
-          controller.enqueue(
-            encoder.encode(
-              formatSSE(
-                'content_block_stop',
-                JSON.stringify({
-                  type: 'content_block_stop',
-                  index: contentBlockIndex,
-                }),
-              ),
-            ),
-          )
-          finishGeminiStream(controller, encoder, 0, 0, 0, false)
+          controller.close()
           return
         }
 
@@ -586,6 +562,8 @@ async function translateGeminiStreamToAnthropicSSE(
                     })}\n\n`,
                   ),
                 )
+                controller.close()
+                return
               }
             }
           }
@@ -608,6 +586,8 @@ async function translateGeminiStreamToAnthropicSSE(
             })}\n\n`,
           ),
         )
+        controller.close()
+        return
       }
 
       // Close any remaining open text block

@@ -477,7 +477,8 @@ function converseEventStreamToSSE(
                   })}\n\n`,
                 ),
               )
-              continue
+              controller.close()
+              return
             }
 
             if (messageType !== 'event') continue
@@ -705,6 +706,8 @@ function converseEventStreamToSSE(
             })}\n\n`,
           ),
         )
+        controller.close()
+        return
       }
 
       // Emit message_delta with stop reason
