@@ -200,11 +200,10 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
         return { ...base, kind: 'rate_limit' }
       }
       if (code === 'invalid_api_key') return { ...base, kind: 'auth' }
-      // Context-window overflow + any explicit invalid_request_error from
-      // upstream become `invalid_request` so the UI surfaces a precise
-      // error type and `withRetry` doesn't burn budget retrying it.
+      if (code === 'context_length_exceeded') {
+        return { ...base, kind: 'context_overflow' }
+      }
       if (
-        code === 'context_length_exceeded' ||
         code === 'invalid_request_error' ||
         apiErrorType === 'invalid_request_error'
       ) {

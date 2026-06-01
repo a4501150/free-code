@@ -803,36 +803,28 @@ function getStreamBetweenEventsTimeoutMs(): number {
   )
 }
 
-function isRetryableCodexStreamError(error: unknown): error is APIError {
+/**
+ * Unified mid-stream retry predicate. Retries transport, server, overloaded,
+ * and rate_limit errors for ALL providers — not just Codex. Also retries
+ * stream idle timeout errors (watchdog fired) regardless of provider.
+ */
+function isRetryableMidStreamError(error: unknown): boolean {
+  if (isStreamIdleTimeoutError(error)) return true
+  if (error instanceof APIConnectionError) return true
   if (!(error instanceof APIError)) return false
   const normalized = getNormalizedError(error)
   if (!normalized) {
+    // Legacy Codex fallback: response.completed not received
     return (
       error.message.includes('response.completed') &&
       error.message.includes('openai-responses')
     )
   }
-  if (normalized.providerType !== 'openai-responses') return false
   switch (normalized.kind) {
     case 'transport':
     case 'server':
     case 'overloaded':
     case 'rate_limit':
-      return true
-    default:
-      return false
-  }
-}
-
-function isRetryableMidStreamError(error: unknown): error is APIError {
-  if (error instanceof APIConnectionError) return true
-  if (!(error instanceof APIError)) return false
-  const normalized = getNormalizedError(error)
-  if (!normalized) return false
-  switch (normalized.kind) {
-    case 'transport':
-    case 'server':
-    case 'overloaded':
       return true
     default:
       return false
@@ -2146,43 +2138,6 @@ async function* queryModel(
           }
         }
 
-        const retryableCodexStreamError =
-          isRetryableCodexStreamError(streamingError)
-        const retryableCodexIdleTimeout =
-          isOpenAIResponsesProvider && isStreamIdleTimeoutError(streamingError)
-        if (
-          (retryableCodexStreamError || retryableCodexIdleTimeout) &&
-          midstreamRetryAttempt < MIDSTREAM_MAX_RETRIES &&
-          !signal.aborted
-        ) {
-          const retryAttempt = midstreamRetryAttempt + 1
-          const delayMs = getRetryDelay(retryAttempt)
-          const retryError = retryableCodexStreamError
-            ? streamingError
-            : new APIError(
-                undefined,
-                undefined,
-                errorMessage(streamingError),
-                undefined,
-              )
-          logForDebugging(
-            `Retryable Codex stream error; retrying stream attempt ${retryAttempt}/${MIDSTREAM_MAX_RETRIES}: ${errorMessage(streamingError)}`,
-            { level: 'warn' },
-          )
-          options.onStreamingFallback?.()
-          releaseStreamResources()
-          yield createSystemAPIErrorMessage(
-            retryError,
-            delayMs,
-            retryAttempt,
-            MIDSTREAM_MAX_RETRIES,
-          )
-          await sleep(delayMs, signal, {
-            abortError: () => new APIUserAbortError(),
-          })
-          continue
-        }
-
         if (
           isRetryableMidStreamError(streamingError) &&
           midstreamRetryAttempt < MIDSTREAM_MAX_RETRIES &&
@@ -2190,6 +2145,15 @@ async function* queryModel(
         ) {
           const retryAttempt = midstreamRetryAttempt + 1
           const delayMs = getRetryDelay(retryAttempt)
+          const retryError =
+            streamingError instanceof APIError
+              ? streamingError
+              : new APIError(
+                  undefined,
+                  undefined,
+                  errorMessage(streamingError),
+                  undefined,
+                )
           logForDebugging(
             `Retryable mid-stream error; retrying stream attempt ${retryAttempt}/${MIDSTREAM_MAX_RETRIES}: ${errorMessage(streamingError)}`,
             { level: 'warn' },
@@ -2197,7 +2161,7 @@ async function* queryModel(
           options.onStreamingFallback?.()
           releaseStreamResources()
           yield createSystemAPIErrorMessage(
-            streamingError,
+            retryError,
             delayMs,
             retryAttempt,
             MIDSTREAM_MAX_RETRIES,

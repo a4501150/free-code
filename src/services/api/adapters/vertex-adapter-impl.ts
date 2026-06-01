@@ -12,10 +12,7 @@ import type {
   ProviderConfig,
   ProviderType,
 } from '../../../utils/settings/types.js'
-import {
-  fromHttpStatus,
-  type NormalizedApiError,
-} from '../../../utils/normalizedError.js'
+import type { NormalizedApiError } from '../../../utils/normalizedError.js'
 import { createVertexFetch } from '../vertex-adapter.js'
 import { anthropicAdapter } from './anthropic-adapter.js'
 import { countTokensViaAnthropicEndpoint } from '../../tokenEstimation.js'
@@ -73,24 +70,6 @@ export const vertexAnthropicAdapter: ProviderAdapter = {
   },
 
   normalizeError(raw: unknown, providerType: ProviderType): NormalizedApiError {
-    // Vertex-Anthropic returns Anthropic-shape error bodies; delegate to the
-    // Anthropic adapter's classifier and override providerType.
-    const base = anthropicAdapter.normalizeError(raw, providerType)
-    const r = (raw ?? {}) as {
-      status?: number
-      headers?: Headers | Record<string, string>
-    }
-    // Fallback: if the body wasn't parseable, Anthropic adapter already
-    // handled status. No-op here.
-    if (typeof r.status === 'number' && base.kind === 'unknown') {
-      return fromHttpStatus(
-        r.status,
-        base.message,
-        providerType,
-        r.headers,
-        raw,
-      )
-    }
-    return base
+    return anthropicAdapter.normalizeError(raw, providerType)
   },
 }
