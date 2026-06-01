@@ -39,6 +39,11 @@ import {
   extractConnectionErrorDetails,
   getNormalizedError,
 } from './errorUtils.js'
+import {
+  DomainTransportError,
+  DomainConnectionError,
+  DomainUserAbortError,
+} from './domain-errors.js'
 
 const abortError = () => new APIUserAbortError()
 
@@ -90,16 +95,22 @@ function isPersistentRetryEnabled(): boolean {
 }
 
 function isTransientCapacityError(error: unknown): boolean {
+  if (error instanceof DomainTransportError) {
+    const k = error.normalized.kind
+    return k === 'rate_limit' || k === 'overloaded'
+  }
   if (!(error instanceof APIError)) return false
   if (is529Error(error)) return true
   if (error.status === 429) return true
-  // Mid-stream SSE errors surface as APIError with status === undefined;
-  // fall through to the embedded NormalizedApiError for classification.
   const normalized = getNormalizedError(error)
   return normalized?.kind === 'rate_limit' || normalized?.kind === 'overloaded'
 }
 
 function isStaleConnectionError(error: unknown): boolean {
+  if (error instanceof DomainConnectionError) {
+    const details = extractConnectionErrorDetails(error)
+    return details?.code === 'ECONNRESET' || details?.code === 'EPIPE'
+  }
   if (!(error instanceof APIConnectionError)) {
     return false
   }
@@ -190,17 +201,25 @@ export async function* withRetry<T>(
         disableKeepAlive()
       }
 
+      const isDomainAuthError =
+        lastError instanceof DomainTransportError &&
+        lastError.normalized.kind === 'auth'
       if (
         client === null ||
         (lastError instanceof APIError && lastError.status === 401) ||
+        (lastError instanceof DomainTransportError &&
+          lastError.status === 401) ||
         isOAuthTokenRevokedError(lastError) ||
         isBedrockAuthError(lastError) ||
         isVertexAuthError(lastError) ||
+        isDomainAuthError ||
         isStaleConnection
       ) {
         // On 401 "token expired" or 403 "token revoked", force a token refresh
         if (
           (lastError instanceof APIError && lastError.status === 401) ||
+          (lastError instanceof DomainTransportError &&
+            lastError.status === 401) ||
           isOAuthTokenRevokedError(lastError)
         ) {
           const failedAccessToken = getClaudeAIOAuthTokens()?.accessToken
@@ -213,9 +232,12 @@ export async function* withRetry<T>(
 
       return await operation(client, attempt, retryContext)
     } catch (error) {
+      // Domain abort errors propagate immediately — never retry
+      if (error instanceof DomainUserAbortError) throw error
+
       lastError = error
       logForDebugging(
-        `API error (attempt ${attempt}/${maxRetries + 1}): ${error instanceof APIError ? `${error.status} ${error.message}` : errorMessage(error)}`,
+        `API error (attempt ${attempt}/${maxRetries + 1}): ${error instanceof DomainTransportError ? `${error.status ?? 'stream'} ${error.message}` : error instanceof APIError ? `${error.status} ${error.message}` : errorMessage(error)}`,
         { level: 'error' },
       )
 
@@ -228,20 +250,20 @@ export async function* withRetry<T>(
       if (
         wasFastModeActive &&
         !isPersistentRetryEnabled() &&
-        error instanceof APIError &&
-        (error.status === 429 ||
-          is529Error(error) ||
-          // Mid-stream capacity errors land here with status === undefined.
-          (() => {
-            const n = getNormalizedError(error)
-            return n?.kind === 'rate_limit' || n?.kind === 'overloaded'
-          })())
+        isTransientCapacityError(error)
       ) {
         // If the 429 is specifically because extra usage (overage) is not
         // available, permanently disable fast mode with a specific message.
-        const overageReason = error.headers?.get(
-          'anthropic-ratelimit-unified-overage-disabled-reason',
-        )
+        const overageReason =
+          error instanceof DomainTransportError
+            ? error.headers?.[
+                'anthropic-ratelimit-unified-overage-disabled-reason'
+              ]
+            : error instanceof APIError
+              ? error.headers?.get(
+                  'anthropic-ratelimit-unified-overage-disabled-reason',
+                )
+              : undefined
         if (overageReason !== null && overageReason !== undefined) {
           handleFastModeOverageRejection(overageReason)
           retryContext.fastMode = false
@@ -250,13 +272,9 @@ export async function* withRetry<T>(
 
         const retryAfterMs = getRetryAfterMs(error)
         if (retryAfterMs !== null && retryAfterMs < SHORT_RETRY_THRESHOLD_MS) {
-          // Short retry-after: wait and retry with fast mode still active
-          // to preserve prompt cache (same model name on retry).
           await sleep(retryAfterMs, options.signal, { abortError })
           continue
         }
-        // Long or unknown retry-after: enter cooldown (switches to standard
-        // speed model), with a minimum floor to avoid flip-flopping.
         const cooldownMs = Math.max(
           retryAfterMs ?? DEFAULT_FAST_MODE_FALLBACK_HOLD_MS,
           MIN_COOLDOWN_MS,
@@ -309,21 +327,25 @@ export async function* withRetry<T>(
       // AWS/GCP errors aren't always APIError, but can be retried
       const handledCloudAuthError =
         handleAwsCredentialError(error) || handleGcpCredentialError(error)
-      if (
-        !handledCloudAuthError &&
-        (!(error instanceof APIError) || !shouldRetry(error))
-      ) {
-        throw new CannotRetryError(error, retryContext)
+      if (!handledCloudAuthError) {
+        if (error instanceof DomainTransportError) {
+          if (!shouldRetryDomainError(error)) {
+            throw new CannotRetryError(error, retryContext)
+          }
+        } else if (!(error instanceof APIError) || !shouldRetry(error)) {
+          throw new CannotRetryError(error, retryContext)
+        }
       }
 
       // For other errors, proceed with normal retry logic
       // Get retry-after header if available
       const retryAfter = getRetryAfter(error)
       let delayMs: number
-      if (persistent && error instanceof APIError && error.status === 429) {
+      const is429 =
+        (error instanceof APIError && error.status === 429) ||
+        (error instanceof DomainTransportError && error.status === 429)
+      if (persistent && is429) {
         persistentAttempt++
-        // Window-based limits (e.g. 5hr Max/Pro) include a reset timestamp.
-        // Wait until reset rather than polling every 5 min uselessly.
         const resetDelay = getRateLimitResetDelayMs(error)
         delayMs =
           resetDelay ??
@@ -356,16 +378,27 @@ export async function* withRetry<T>(
       // use persistentAttempt for telemetry/yields so they show the true count.
       const reportedAttempt = persistent ? persistentAttempt : attempt
 
+      // Create a synthetic APIError for system message yield when the error
+      // is a domain error. createSystemAPIErrorMessage expects APIError shape.
+      const errorForMessage =
+        error instanceof APIError
+          ? error
+          : error instanceof DomainTransportError
+            ? new APIError(
+                error.status,
+                undefined,
+                error.message,
+                undefined,
+              )
+            : null
+
       if (persistent) {
-        // Chunk long sleeps so the host sees periodic stdout activity and
-        // does not mark the session idle. Each yield surfaces as
-        // {type:'system', subtype:'api_retry'} on stdout via QueryEngine.
         let remaining = delayMs
         while (remaining > 0) {
           if (options.signal?.aborted) throw new APIUserAbortError()
-          if (error instanceof APIError) {
+          if (errorForMessage) {
             yield createSystemAPIErrorMessage(
-              error,
+              errorForMessage,
               remaining,
               reportedAttempt,
               maxRetries,
@@ -375,12 +408,15 @@ export async function* withRetry<T>(
           await sleep(chunk, options.signal, { abortError })
           remaining -= chunk
         }
-        // Clamp so the for-loop never terminates. Backoff uses the separate
-        // persistentAttempt counter which keeps growing to the 5-min cap.
         if (attempt >= maxRetries) attempt = maxRetries
       } else {
-        if (error instanceof APIError) {
-          yield createSystemAPIErrorMessage(error, delayMs, attempt, maxRetries)
+        if (errorForMessage) {
+          yield createSystemAPIErrorMessage(
+            errorForMessage,
+            delayMs,
+            attempt,
+            maxRetries,
+          )
         }
         await sleep(delayMs, options.signal, { abortError })
       }
@@ -425,6 +461,12 @@ export function getRetryDelay(
 // header for fast-mode rejection (e.g., x-fast-mode-rejected). String-matching
 // the error message is fragile and will break if the API wording changes.
 function isFastModeNotEnabledError(error: unknown): boolean {
+  if (error instanceof DomainTransportError) {
+    return (
+      error.status === 400 &&
+      (error.message?.includes('Fast mode is not enabled') ?? false)
+    )
+  }
   if (!(error instanceof APIError)) {
     return false
   }
@@ -435,6 +477,9 @@ function isFastModeNotEnabledError(error: unknown): boolean {
 }
 
 export function is529Error(error: unknown): boolean {
+  if (error instanceof DomainTransportError) {
+    return error.normalized.kind === 'overloaded'
+  }
   if (!(error instanceof APIError)) {
     return false
   }
@@ -442,12 +487,17 @@ export function is529Error(error: unknown): boolean {
   if (normalized?.kind === 'overloaded') return true
   return (
     error.status === 529 ||
-    // See below: the SDK sometimes fails to properly pass the 529 status code during streaming
     (error.message?.includes('"type":"overloaded_error"') ?? false)
   )
 }
 
 function isOAuthTokenRevokedError(error: unknown): boolean {
+  if (error instanceof DomainTransportError) {
+    return (
+      error.status === 403 &&
+      (error.message?.includes('OAuth token has been revoked') ?? false)
+    )
+  }
   return (
     error instanceof APIError &&
     error.status === 403 &&
@@ -457,13 +507,11 @@ function isOAuthTokenRevokedError(error: unknown): boolean {
 
 function isBedrockAuthError(error: unknown): boolean {
   if (getProviderRegistry().getCapabilities().credentialRefresh === 'aws') {
-    // AWS libs reject without an API call if .aws holds a past Expiration value
-    // otherwise, API calls that receive expired tokens give generic 403
-    // "The security token included in the request is invalid"
-    if (
-      isAwsCredentialsProviderError(error) ||
-      (error instanceof APIError && error.status === 403)
-    ) {
+    if (isAwsCredentialsProviderError(error)) return true
+    if (error instanceof DomainTransportError && error.status === 403) {
+      return true
+    }
+    if (error instanceof APIError && error.status === 403) {
       return true
     }
   }
@@ -496,11 +544,12 @@ function isGoogleAuthLibraryCredentialError(error: unknown): boolean {
 
 function isVertexAuthError(error: unknown): boolean {
   if (getProviderRegistry().getCapabilities().credentialRefresh === 'gcp') {
-    // SDK-level: google-auth-library fails in prepareOptions() before the HTTP call
     if (isGoogleAuthLibraryCredentialError(error)) {
       return true
     }
-    // Server-side: Vertex returns 401 for expired/invalid tokens
+    if (error instanceof DomainTransportError && error.status === 401) {
+      return true
+    }
     if (error instanceof APIError && error.status === 401) {
       return true
     }
@@ -625,27 +674,63 @@ const DEFAULT_FAST_MODE_FALLBACK_HOLD_MS = 30 * 60 * 1000 // 30 minutes
 const SHORT_RETRY_THRESHOLD_MS = 20 * 1000 // 20 seconds
 const MIN_COOLDOWN_MS = 10 * 60 * 1000 // 10 minutes
 
-function getRetryAfterMs(error: APIError): number | null {
-  const retryAfter = getRetryAfter(error)
-  if (retryAfter) {
-    const seconds = parseInt(retryAfter, 10)
-    if (!isNaN(seconds)) {
-      return seconds * 1000
+function getRetryAfterMs(error: unknown): number | null {
+  if (error instanceof DomainTransportError) {
+    if (error.retryAfterMs !== undefined) return error.retryAfterMs
+    const retryAfter = error.headers?.['retry-after']
+    if (retryAfter) {
+      const seconds = parseInt(retryAfter, 10)
+      if (!isNaN(seconds)) return seconds * 1000
     }
+    return error.normalized.retryAfterMs ?? null
   }
-  const normalized = getNormalizedError(error)
-  if (normalized?.retryAfterMs !== undefined) {
-    return normalized.retryAfterMs
+  if (error instanceof APIError) {
+    const retryAfter = getRetryAfter(error)
+    if (retryAfter) {
+      const seconds = parseInt(retryAfter, 10)
+      if (!isNaN(seconds)) return seconds * 1000
+    }
+    const normalized = getNormalizedError(error)
+    if (normalized?.retryAfterMs !== undefined) return normalized.retryAfterMs
   }
   return null
 }
 
-function getRateLimitResetDelayMs(error: APIError): number | null {
-  const resetHeader = error.headers?.get?.('anthropic-ratelimit-unified-reset')
+function getRateLimitResetDelayMs(error: unknown): number | null {
+  let resetHeader: string | undefined | null
+  if (error instanceof DomainTransportError) {
+    resetHeader = error.headers?.['anthropic-ratelimit-unified-reset']
+  } else if (error instanceof APIError) {
+    resetHeader = error.headers?.get?.('anthropic-ratelimit-unified-reset')
+  }
   if (!resetHeader) return null
   const resetUnixSec = Number(resetHeader)
   if (!Number.isFinite(resetUnixSec)) return null
   const delayMs = resetUnixSec * 1000 - Date.now()
   if (delayMs <= 0) return null
   return Math.min(delayMs, PERSISTENT_RESET_CAP_MS)
+}
+
+function shouldRetryDomainError(error: DomainTransportError): boolean {
+  if (isMockRateLimitError(error as unknown as APIError)) return false
+  if (error instanceof DomainConnectionError) return true
+  switch (error.normalized.kind) {
+    case 'rate_limit':
+      return !isClaudeAISubscriber() || isEnterpriseSubscriber()
+    case 'overloaded':
+    case 'transport':
+    case 'server':
+      return true
+    case 'auth':
+      if (error.status === 401) {
+        clearApiKeyHelperCache()
+        return true
+      }
+      return false
+    case 'invalid_request':
+    case 'context_overflow':
+    case 'content_filter':
+    case 'unknown':
+      return false
+  }
 }
