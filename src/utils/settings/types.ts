@@ -925,6 +925,12 @@ const _settingsSchemaValue = z
       .boolean()
       .optional()
       .describe('Show teammate spinner tree instead of pills.'),
+    showAgentPanel: z
+      .boolean()
+      .optional()
+      .describe(
+        'Show the switchable agent transcript panel below the prompt when background agents are running.',
+      ),
     env: EnvironmentVariablesSchema.optional().describe(
       'Environment variables to set for Claude Code sessions',
     ),

@@ -644,7 +644,6 @@ async function translateCodexStreamToAnthropic(
 
       const items = new Map<string, StreamItemState>()
       let nextItemOrder = 0
-      let nextSyntheticItemId = 0
       let currentMessageKey: string | null = null
       let currentReasoningKey: string | null = null
       let openBlock: OpenCodexBlock | null = null
@@ -664,7 +663,11 @@ async function translateCodexStreamToAnthropic(
           readString(event.call_id)
         if (identity) return { key: `${type}:${identity}`, type }
         if (fallbackKey) return { key: fallbackKey, type }
-        return { key: `${type}:synthetic_${nextSyntheticItemId++}`, type }
+        logForDebugging(
+          `[codex-adapter] SSE event missing item identity, type=${type}`,
+          { level: 'warn' },
+        )
+        return { key: `${type}:unknown`, type }
       }
 
       const upsertItem = (
@@ -919,15 +922,7 @@ async function translateCodexStreamToAnthropic(
       }
 
       const getFunctionArguments = (state: StreamItemState): string => {
-        const finalArgs = readString(state.finalItem?.arguments)
-        const initialArgs = readString(state.item?.arguments)
-        return (
-          finalArgs ||
-          state.argumentsDone ||
-          state.argumentDeltas ||
-          initialArgs ||
-          ''
-        )
+        return state.argumentsDone || state.argumentDeltas || ''
       }
 
       const renderFunctionTool = (state: StreamItemState): void => {
@@ -1031,19 +1026,6 @@ async function translateCodexStreamToAnthropic(
         }
       }
 
-      const synthesizeUnrenderedOutputItems = (
-        response: Record<string, unknown>,
-      ): void => {
-        const output = response.output
-        if (!Array.isArray(output)) return
-        for (const item of output) {
-          if (!item || typeof item !== 'object') continue
-          const finalItem = item as CodexStreamItem
-          const state = upsertItem({}, finalItem)
-          if (!state.rendered) handleItemDone(state, finalItem)
-        }
-      }
-
       const finishStream = (): void => {
         if (streamFinished) return
         closeOpenBlock()
@@ -1066,12 +1048,6 @@ async function translateCodexStreamToAnthropic(
         })
         enqueue('message_stop', {
           type: 'message_stop',
-          'amazon-bedrock-invocationMetrics': {
-            inputTokenCount: inputTokens,
-            outputTokenCount: outputTokens,
-            invocationLatency: 0,
-            firstByteLatency: 0,
-          },
           usage: usagePayload,
         })
         streamFinished = true
@@ -1179,21 +1155,7 @@ async function translateCodexStreamToAnthropic(
             const dataStr = trimmed.slice(6)
             const framedEventName = sseEventName
             sseEventName = ''
-            if (dataStr === '[DONE]') {
-              if (!firstSseLogged) {
-                logForDebugging(
-                  `[codex-adapter] first SSE was [DONE] (empty stream) model=${codexModel}`,
-                  { level: 'warn' },
-                )
-                firstSseLogged = true
-              }
-              sawResponseCompleted = true
-              logForDebugging(
-                `[codex-adapter] stream end via [DONE] model=${codexModel} duration_ms=${Date.now() - streamStart} chunks=${chunkCount} content_blocks=${contentBlockIndex} input=${inputTokens} output=${outputTokens} cacheRead=${cacheReadInputTokens} hadToolCalls=${hadToolCalls} webSearch=${webSearchCount} response.completed=${sawResponseCompleted} response.failed=${sawResponseFailed} eventTypes=${JSON.stringify(eventTypeCounts)}`,
-              )
-              finishStream()
-              return
-            }
+            if (dataStr === '[DONE]') continue
 
             let event: Record<string, unknown>
             try {
@@ -1271,8 +1233,7 @@ async function translateCodexStreamToAnthropic(
               if (text) streamTextDelta(state, text)
             } else if (
               eventType === 'response.reasoning_text.delta' ||
-              eventType === 'response.reasoning_summary_text.delta' ||
-              eventType === 'response.reasoning.delta'
+              eventType === 'response.reasoning_summary_text.delta'
             ) {
               const state = upsertItem(
                 event,
@@ -1285,8 +1246,7 @@ async function translateCodexStreamToAnthropic(
               if (text) streamThinkingDelta(state, text)
             } else if (
               eventType === 'response.reasoning_text.done' ||
-              eventType === 'response.reasoning_summary_text.done' ||
-              eventType === 'response.reasoning.done'
+              eventType === 'response.reasoning_summary_text.done'
             ) {
               const state = upsertItem(
                 event,
@@ -1346,22 +1306,6 @@ async function translateCodexStreamToAnthropic(
                 cacheReadInputTokens = cached
                 inputTokens = totalInput - cached
                 outputTokens = totalOutput
-              }
-              synthesizeUnrenderedOutputItems(response ?? {})
-              for (const state of [...items.values()].sort(
-                (a, b) => a.order - b.order,
-              )) {
-                if (
-                  !state.rendered &&
-                  (state.type === 'function_call' ||
-                    state.type === 'web_search_call')
-                ) {
-                  logForDebugging(
-                    `[codex-adapter] synthesizing ${state.type} without output_item.done key=${state.key}`,
-                    { level: 'warn' },
-                  )
-                  handleItemDone(state, state.finalItem)
-                }
               }
               logForDebugging(
                 `[codex-adapter] stream end model=${codexModel} duration_ms=${Date.now() - streamStart} chunks=${chunkCount} content_blocks=${contentBlockIndex} input=${inputTokens} output=${outputTokens} cacheRead=${cacheReadInputTokens} hadToolCalls=${hadToolCalls} webSearch=${webSearchCount} response.completed=${sawResponseCompleted} response.failed=${sawResponseFailed} eventTypes=${JSON.stringify(eventTypeCounts)}`,

@@ -1382,10 +1382,10 @@ export const AgentTool = buildTool({
               throw error
             }
 
-            // Log the error for debugging
-            logForDebugging(`Sync agent error: ${errorMessage(error)}`, {
-              level: 'error',
-            })
+            logForDebugging(
+              `Sync agent error: ${errorMessage(error)} | agent=${selectedAgent.agentType} model=${resolvedAgentModel ?? 'default'} messages=${agentMessages.length} description=${description}`,
+              { level: 'error' },
+            )
 
             // Store the error to handle after cleanup
             syncAgentError = toError(error)

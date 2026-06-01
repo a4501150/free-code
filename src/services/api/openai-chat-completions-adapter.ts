@@ -11,7 +11,7 @@
  * - Text messages (user/assistant)
  * - Tool definitions (input_schema → function.parameters)
  * - Tool use (tool_use blocks → tool_calls, tool_result → tool role)
- * - Thinking blocks (thinking → reasoning_content)
+ * - Reasoning content (inbound reasoning_content → synthetic thinking blocks; outbound dropped)
  * - Streaming SSE translation (Chat Completions → Anthropic format)
  * - Image content blocks
  * - cache_control stripping
@@ -388,11 +388,8 @@ async function translateStreamToAnthropic(
             try {
               chunk = JSON.parse(dataStr)
             } catch {
-              // Malformed SSE data line. Continue past transient/incomplete
-              // chunks (split-mid-line, keepalives), but in practice a
-              // persistent parse failure here would mask an upstream
-              // protocol error — surface via `event: error` rather than
-              // dropping silently.
+              // Malformed SSE data line — silently skip transient/incomplete
+              // chunks (split-mid-line, keepalives).
               continue
             }
 
@@ -458,17 +455,6 @@ async function translateStreamToAnthropic(
             const finishReason = choice.finish_reason as string | null
 
             if (delta) {
-              // ── Reasoning content (thinking) ────────────────────
-              // OpenAI Chat Completions streams `reasoning_content` deltas
-              // for o-series / reasoning models. We emit these as unsigned
-              // synthetic `thinking` blocks so the user can see the model's
-              // reasoning live in the UI. Outbound translation (see
-              // `translateMessages` above) drops thinking blocks on the way
-              // back to OpenAI so they never reach the wire as input,
-              // avoiding the "strip-on-next-turn" bug. The reasoning token
-              // count is also captured via
-              // `completion_tokens_details.reasoning_tokens` and surfaces
-              // through NormalizedUsage.reasoningTokens.
               if (delta.reasoning_content) {
                 const reasoningText = delta.reasoning_content as string
                 if (reasoningText.length > 0) {

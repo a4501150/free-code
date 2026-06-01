@@ -705,6 +705,10 @@ export async function* runAgent({
   // Track the last recorded message UUID for parent chain continuity
   let lastRecordedUuid: UUID | null = initialMessages.at(-1)?.uuid ?? null
 
+  logForDebugging(
+    `[Agent: ${agentDefinition.agentType}] Starting query | model=${resolvedAgentModel ?? 'default'} initialMessages=${initialMessages.length} systemPromptChars=${agentSystemPrompt.length} tools=${allTools.length}`,
+  )
+
   try {
     for await (const message of query({
       messages: initialMessages,

@@ -211,7 +211,8 @@ function PromptInputFooter({
           )}
         </Box>
       </Box>
-      {feature('COORDINATOR_MODE') && isCoordinatorMode() ? (
+      {(feature('COORDINATOR_MODE') && isCoordinatorMode()) ||
+      settings.showAgentPanel ? (
         <CoordinatorTaskPanel />
       ) : null}
     </>

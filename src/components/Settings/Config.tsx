@@ -1492,6 +1492,7 @@ export function Config({
       prStatusFooterEnabled: iu?.prStatusFooterEnabled,
       todoFeatureEnabled: iu?.todoFeatureEnabled,
       showExpandedTodos: iu?.showExpandedTodos,
+      showAgentPanel: iu?.showAgentPanel,
       messageIdleNotifThresholdMs: iu?.messageIdleNotifThresholdMs,
       preferredNotifChannel: iu?.preferredNotifChannel,
       alwaysThinkingEnabled: iu?.alwaysThinkingEnabled,

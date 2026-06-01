@@ -80,10 +80,6 @@ Virtual scrolling caches item heights by message UUID and conversation ID. If yo
 
 Anthropic attribution uses a fingerprint derived from the first API user message. Do not add per-turn dynamic content ahead of it, reshape the stable user-context prepend, remove module-level memoization from user context, or clear user-context caches except at semantic invalidation boundaries such as prompt injection changes, compact, or clear. Read [src/utils/fingerprint.ts](src/utils/fingerprint.ts), [src/utils/api.ts](src/utils/api.ts), [src/context.ts](src/context.ts), [src/services/api/claude.ts](src/services/api/claude.ts), and the compact/clear cleanup code before touching this flow.
 
-### Codex Responses adapter must tolerate noncanonical llama.cpp SSE
-
-The codex `/v1/responses` adapter intentionally handles llama.cpp event-order differences for reasoning blocks, missing function-call argument done events, reasoning metadata side-channel deltas, and parallel tool-call item ordering. Do not simplify these state-machine branches without running the codex adapter unit tests and checking [src/services/api/codex-fetch-adapter.ts](src/services/api/codex-fetch-adapter.ts), [src/services/api/claude.ts](src/services/api/claude.ts), and [tests/unit/](tests/unit/).
-
 ### UI task store must bypass AsyncLocalStorage agent context
 
 `TasksV2Store` in [src/hooks/useTasksV2.ts](src/hooks/useTasksV2.ts) must use `getMainTaskListId()`, not `getTaskListId()`. Signals like `notifyTasksUpdated()` fire inside the subagent's `AsyncLocalStorage` scope, and `setTimeout` inherits that context — causing the main UI to fetch from the wrong task list directory.
