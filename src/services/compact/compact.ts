@@ -4,6 +4,7 @@ import * as sessionTranscriptNs from '../sessionTranscript/sessionTranscript.js'
 const sessionTranscriptModule = feature('KAIROS') ? sessionTranscriptNs : null
 
 import { APIUserAbortError } from '@anthropic-ai/sdk'
+import { DomainUserAbortError } from '../api/domain-errors.js'
 import { markPostCompaction } from 'src/bootstrap/state.js'
 import { getInvokedSkillsForAgent } from '../../bootstrap/state.js'
 import type { QuerySource } from '../../constants/querySource.js'

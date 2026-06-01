@@ -1,4 +1,5 @@
 import { APIUserAbortError } from '@anthropic-ai/sdk'
+import { DomainUserAbortError } from '../services/api/domain-errors.js'
 
 export class ClaudeError extends Error {
   constructor(message: string) {
@@ -28,6 +29,7 @@ export function isAbortError(e: unknown): boolean {
   return (
     e instanceof AbortError ||
     e instanceof APIUserAbortError ||
+    e instanceof DomainUserAbortError ||
     (e instanceof Error && e.name === 'AbortError')
   )
 }

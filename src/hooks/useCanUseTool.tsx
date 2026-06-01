@@ -1,5 +1,6 @@
 import { feature } from 'bun:bundle'
 import { APIUserAbortError } from '@anthropic-ai/sdk'
+import { DomainUserAbortError } from '../services/api/domain-errors.js'
 import * as React from 'react'
 import { useCallback } from 'react'
 import type { ToolUseConfirm } from '../components/permissions/PermissionRequest.js'
@@ -206,7 +207,8 @@ function useCanUseTool(
           .catch(error => {
             if (
               error instanceof AbortError ||
-              error instanceof APIUserAbortError
+              error instanceof APIUserAbortError ||
+              error instanceof DomainUserAbortError
             ) {
               logForDebugging(
                 `Permission check threw ${error.constructor.name} for tool=${tool.name}: ${error.message}`,

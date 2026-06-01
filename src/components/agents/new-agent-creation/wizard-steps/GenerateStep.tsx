@@ -1,4 +1,5 @@
 import { APIUserAbortError } from '@anthropic-ai/sdk'
+import { DomainUserAbortError } from '../../../../services/api/domain-errors.js'
 import React, { type ReactNode, useCallback, useRef, useState } from 'react'
 import { useMainLoopModel } from '../../../../hooks/useMainLoopModel.js'
 import { Box, Text } from '../../../../ink.js'
@@ -113,7 +114,7 @@ export function GenerateStep(): ReactNode {
       goToStep(6)
     } catch (err) {
       // Don't show error if it was cancelled (already set in escape handler)
-      if (err instanceof APIUserAbortError) {
+      if (err instanceof APIUserAbortError || err instanceof DomainUserAbortError) {
         // User cancelled - no error to show
       } else if (
         err instanceof Error &&
