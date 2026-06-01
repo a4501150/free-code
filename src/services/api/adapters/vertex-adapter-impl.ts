@@ -30,25 +30,21 @@ export const vertexAnthropicAdapter: ProviderAdapter = {
   capabilities: {} as ProviderCapabilities,
 
   async createStream(
-    _config: ProviderConfig,
-    _authArgs: unknown,
-    _request: DomainMessageRequest,
-    _signal: AbortSignal,
+    config: ProviderConfig,
+    authArgs: unknown,
+    request: DomainMessageRequest,
+    signal: AbortSignal,
   ): Promise<DomainStreamingResponse> {
-    throw new Error(
-      'vertexAnthropicAdapter.createStream: not yet implemented',
-    )
+    return anthropicAdapter.createStream(config, authArgs, request, signal)
   },
 
   async createMessage(
-    _config: ProviderConfig,
-    _authArgs: unknown,
-    _request: DomainMessageRequest,
-    _signal: AbortSignal,
+    config: ProviderConfig,
+    authArgs: unknown,
+    request: DomainMessageRequest,
+    signal: AbortSignal,
   ): Promise<DomainAssistantContent> {
-    throw new Error(
-      'vertexAnthropicAdapter.createMessage: not yet implemented',
-    )
+    return anthropicAdapter.createMessage(config, authArgs, request, signal)
   },
 
   createFetch(config: ProviderConfig, authArgs: unknown): FetchFn {

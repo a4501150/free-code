@@ -26,21 +26,21 @@ export const foundryAdapter: ProviderAdapter = {
   capabilities: {} as ProviderCapabilities,
 
   async createStream(
-    _config: ProviderConfig,
-    _authArgs: unknown,
-    _request: DomainMessageRequest,
-    _signal: AbortSignal,
+    config: ProviderConfig,
+    authArgs: unknown,
+    request: DomainMessageRequest,
+    signal: AbortSignal,
   ): Promise<DomainStreamingResponse> {
-    throw new Error('foundryAdapter.createStream: not yet implemented')
+    return anthropicAdapter.createStream(config, authArgs, request, signal)
   },
 
   async createMessage(
-    _config: ProviderConfig,
-    _authArgs: unknown,
-    _request: DomainMessageRequest,
-    _signal: AbortSignal,
+    config: ProviderConfig,
+    authArgs: unknown,
+    request: DomainMessageRequest,
+    signal: AbortSignal,
   ): Promise<DomainAssistantContent> {
-    throw new Error('foundryAdapter.createMessage: not yet implemented')
+    return anthropicAdapter.createMessage(config, authArgs, request, signal)
   },
 
   createFetch(config: ProviderConfig, authArgs: unknown): FetchFn {
