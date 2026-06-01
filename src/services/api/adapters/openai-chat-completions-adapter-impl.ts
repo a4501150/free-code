@@ -23,6 +23,9 @@ import {
 } from '../../../utils/normalizedError.js'
 import { createChatCompletionsFetch } from '../openai-chat-completions-adapter.js'
 import type { Anthropic } from '@anthropic-ai/sdk'
+import type { DomainMessageRequest } from '../domain-transport.js'
+import type { DomainStreamingResponse } from '../domain-transport.js'
+import type { DomainAssistantContent } from '../../../types/domain.js'
 
 type GptTokenizerModule = {
   encode: (text: string) => number[]
@@ -111,6 +114,28 @@ function serializeForTokenization(
 export const openaiChatCompletionsAdapter: ProviderAdapter = {
   providerType: 'openai-chat-completions',
   capabilities: {} as ProviderCapabilities,
+
+  async createStream(
+    _config: ProviderConfig,
+    _authArgs: unknown,
+    _request: DomainMessageRequest,
+    _signal: AbortSignal,
+  ): Promise<DomainStreamingResponse> {
+    throw new Error(
+      'openaiChatCompletionsAdapter.createStream: not yet implemented',
+    )
+  },
+
+  async createMessage(
+    _config: ProviderConfig,
+    _authArgs: unknown,
+    _request: DomainMessageRequest,
+    _signal: AbortSignal,
+  ): Promise<DomainAssistantContent> {
+    throw new Error(
+      'openaiChatCompletionsAdapter.createMessage: not yet implemented',
+    )
+  },
 
   createFetch(config: ProviderConfig, authArgs: unknown): FetchFn {
     return createChatCompletionsFetch(

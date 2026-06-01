@@ -16,10 +16,31 @@ import {
 } from '../../../utils/normalizedError.js'
 import { countTokensViaAnthropicEndpoint } from '../../tokenEstimation.js'
 import type { Anthropic } from '@anthropic-ai/sdk'
+import type { DomainMessageRequest } from '../domain-transport.js'
+import type { DomainStreamingResponse } from '../domain-transport.js'
+import type { DomainAssistantContent } from '../../../types/domain.js'
 
 export const anthropicAdapter: ProviderAdapter = {
   providerType: 'anthropic',
   capabilities: {} as ProviderCapabilities,
+
+  async createStream(
+    _config: ProviderConfig,
+    _authArgs: unknown,
+    _request: DomainMessageRequest,
+    _signal: AbortSignal,
+  ): Promise<DomainStreamingResponse> {
+    throw new Error('anthropicAdapter.createStream: not yet implemented')
+  },
+
+  async createMessage(
+    _config: ProviderConfig,
+    _authArgs: unknown,
+    _request: DomainMessageRequest,
+    _signal: AbortSignal,
+  ): Promise<DomainAssistantContent> {
+    throw new Error('anthropicAdapter.createMessage: not yet implemented')
+  },
 
   createFetch(
     _config: ProviderConfig,

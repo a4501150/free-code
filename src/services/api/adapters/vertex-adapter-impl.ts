@@ -21,10 +21,35 @@ import { anthropicAdapter } from './anthropic-adapter.js'
 import { countTokensViaAnthropicEndpoint } from '../../tokenEstimation.js'
 import { VERTEX_COUNT_TOKENS_ALLOWED_BETAS } from '../../../constants/betas.js'
 import type { Anthropic } from '@anthropic-ai/sdk'
+import type { DomainMessageRequest } from '../domain-transport.js'
+import type { DomainStreamingResponse } from '../domain-transport.js'
+import type { DomainAssistantContent } from '../../../types/domain.js'
 
 export const vertexAnthropicAdapter: ProviderAdapter = {
   providerType: 'vertex',
   capabilities: {} as ProviderCapabilities,
+
+  async createStream(
+    _config: ProviderConfig,
+    _authArgs: unknown,
+    _request: DomainMessageRequest,
+    _signal: AbortSignal,
+  ): Promise<DomainStreamingResponse> {
+    throw new Error(
+      'vertexAnthropicAdapter.createStream: not yet implemented',
+    )
+  },
+
+  async createMessage(
+    _config: ProviderConfig,
+    _authArgs: unknown,
+    _request: DomainMessageRequest,
+    _signal: AbortSignal,
+  ): Promise<DomainAssistantContent> {
+    throw new Error(
+      'vertexAnthropicAdapter.createMessage: not yet implemented',
+    )
+  },
 
   createFetch(config: ProviderConfig, authArgs: unknown): FetchFn {
     return createVertexFetch(

@@ -17,10 +17,31 @@ import { createFoundryFetch } from '../foundry-adapter.js'
 import { anthropicAdapter } from './anthropic-adapter.js'
 import { countTokensViaAnthropicEndpoint } from '../../tokenEstimation.js'
 import type { Anthropic } from '@anthropic-ai/sdk'
+import type { DomainMessageRequest } from '../domain-transport.js'
+import type { DomainStreamingResponse } from '../domain-transport.js'
+import type { DomainAssistantContent } from '../../../types/domain.js'
 
 export const foundryAdapter: ProviderAdapter = {
   providerType: 'foundry',
   capabilities: {} as ProviderCapabilities,
+
+  async createStream(
+    _config: ProviderConfig,
+    _authArgs: unknown,
+    _request: DomainMessageRequest,
+    _signal: AbortSignal,
+  ): Promise<DomainStreamingResponse> {
+    throw new Error('foundryAdapter.createStream: not yet implemented')
+  },
+
+  async createMessage(
+    _config: ProviderConfig,
+    _authArgs: unknown,
+    _request: DomainMessageRequest,
+    _signal: AbortSignal,
+  ): Promise<DomainAssistantContent> {
+    throw new Error('foundryAdapter.createMessage: not yet implemented')
+  },
 
   createFetch(config: ProviderConfig, authArgs: unknown): FetchFn {
     return createFoundryFetch(

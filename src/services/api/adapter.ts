@@ -1,39 +1,43 @@
 /**
  * Provider adapter interface.
  *
- * Formalizes the implicit contract every adapter under `src/services/api/`
- * already satisfies. The interface is declaration-only in this file — actual
- * implementations live under `src/services/api/adapters/` and are wired up
- * by later rollout steps.
+ * Each adapter owns its provider's wire format end-to-end: request
+ * construction, HTTP transport, SSE/EventStream parsing, and domain event
+ * emission. The main loop ({@link claude.ts}) consumes only
+ * {@link DomainStreamEvent} and {@link DomainTransportError}.
  *
- * Implicit invariants that the interface documents (enforced by convention,
- * not types):
+ * Adapters implement two transport methods:
  *
- * 1. `createFetch` MUST produce responses whose body is valid Anthropic SSE,
- *    including the `message_start` / `content_block_start` /
- *    `content_block_delta` / `message_delta` / `message_stop` sequence.
- *    Errors must be formatted as Anthropic-style JSON:
- *        { "type":"error", "error":{"type":"api_error","message":"..." } }
- *    The streaming loop at `claude.ts` relies on this contract and does not
- *    need to know which adapter produced the stream.
+ * - `createStream(...)` — streaming requests, returns a
+ *   {@link DomainStreamingResponse} whose `.stream` yields
+ *   {@link DomainStreamEvent}s following the lifecycle contract below.
  *
- * 2. Adapters MAY emit synthetic unsigned `thinking` blocks (signature="")
- *    for UI visibility when their provider streams reasoning text. The
- *    correctness guarantee is enforced on OUTBOUND — each adapter's
- *    outbound translate-messages pass drops thinking blocks on the way
- *    back to its provider (they never reach the wire as input), and
- *    `stripForeignReasoningBlocks` performs the same role for all
- *    targets. This lets users see reasoning live without
- *    triggering the "strip-on-next-turn" bug.
+ * - `createMessage(...)` — non-streaming requests, returns a
+ *   {@link DomainAssistantContent} directly.
  *
- * 3. Adapters MAY attach provider-native, opaque side-channel payloads to
- *    thinking blocks (for example the Codex adapter stores
- *    `codexReasoningId` / `codexEncryptedContent` on the in-memory block).
- *    These fields are only read/written by the emitting adapter; they
- *    ride along with the Anthropic-shape representation and are ignored
- *    by every other adapter. This pattern enables provider-specific
- *    reasoning round-trip without changing the shared source-of-truth
- *    shape.
+ * The legacy `createFetch(...)` method is retained for backwards
+ * compatibility during migration and will be removed once all call sites
+ * use the domain transport methods.
+ *
+ * Stream lifecycle contract:
+ *
+ * 1. Every successful stream starts with exactly one `message_start`.
+ * 2. Content blocks follow `content_block_start` → N × `content_block_delta`
+ *    → `content_block_stop`.
+ * 3. After all blocks: `message_delta` (usage + stop_reason) → `message_stop`.
+ * 4. An `error` event is terminal — no events may follow it.
+ * 5. Fatal errors before `message_start` throw `DomainTransportError`.
+ * 6. Fatal errors after streaming started yield `{ type: 'error' }` then return.
+ *
+ * Reasoning blocks:
+ *
+ * Adapters MAY emit synthetic unsigned `reasoning` blocks (empty signature)
+ * for UI visibility. Correctness is enforced on OUTBOUND:
+ * `stripForeignReasoningBlocks` removes non-round-trippable blocks before
+ * each API call.
+ *
+ * Provider-specific continuation data lives under `providerState` on
+ * domain blocks, never as top-level fields.
  */
 import type { Anthropic } from '@anthropic-ai/sdk'
 import type {
@@ -42,11 +46,19 @@ import type {
   ProviderType,
 } from '../../utils/settings/types.js'
 import type { NormalizedApiError } from '../../utils/normalizedError.js'
+import type {
+  DomainMessageRequest,
+  DomainStreamingResponse,
+} from './domain-transport.js'
+import type { DomainAssistantContent } from '../../types/domain.js'
 
 /**
  * Standard fetch signature. Adapters return a `FetchFn` from
  * `createFetch(...)` that the Anthropic SDK client uses as its `fetch`
  * override.
+ *
+ * @deprecated Use `createStream` / `createMessage` instead. Retained for
+ * backwards compatibility during migration.
  */
 export type FetchFn = (
   input: RequestInfo | URL,
@@ -70,18 +82,50 @@ export interface ProviderAdapter {
   readonly providerType: ProviderType
   readonly capabilities: Readonly<ProviderCapabilities>
 
+  // ── Domain transport methods (new) ──────────────────────────────
+
+  /**
+   * Create a streaming request that produces domain events directly.
+   *
+   * The returned {@link DomainStreamingResponse} owns all underlying
+   * resources (sockets, streams, timers). The caller MUST call `.release()`
+   * when done, even on error paths.
+   *
+   * Errors during stream creation throw {@link DomainTransportError}.
+   * Errors during streaming yield `{ type: 'error' }` then end the iterable.
+   */
+  createStream(
+    config: ProviderConfig,
+    authArgs: unknown,
+    request: DomainMessageRequest,
+    signal: AbortSignal,
+  ): Promise<DomainStreamingResponse>
+
+  /**
+   * Create a non-streaming request that returns the complete response.
+   *
+   * Errors throw {@link DomainTransportError}.
+   */
+  createMessage(
+    config: ProviderConfig,
+    authArgs: unknown,
+    request: DomainMessageRequest,
+    signal: AbortSignal,
+  ): Promise<DomainAssistantContent>
+
+  // ── Legacy transport (deprecated) ──────────────────────────────
+
   /**
    * Returns the fetch override to pass into the Anthropic SDK client, or
    * `undefined` to indicate "no override — use the SDK's native fetch"
    * (Anthropic-native).
    *
-   * `authArgs` is opaque to the interface — each adapter knows what its
-   * auth pipeline produces (AWS credentials, GCP tokens, API keys, etc.).
-   * The impure shell in `client.ts` constructs `authArgs` per provider
-   * type and passes it through; adapter-impls cast it to the shape their
-   * legacy fetch factory expects.
+   * @deprecated Use `createStream` / `createMessage` instead. Retained for
+   * backwards compatibility during migration.
    */
   createFetch(config: ProviderConfig, authArgs: unknown): FetchFn | undefined
+
+  // ── Token counting ─────────────────────────────────────────────
 
   /**
    * Pre-flight token count.
@@ -102,6 +146,8 @@ export interface ProviderAdapter {
     options?: { system?: string; betas?: string[] },
   ): Promise<TokenBreakdown | null>
 
+  // ── Error normalization ────────────────────────────────────────
+
   /**
    * Normalize a provider-native error into {@link NormalizedApiError}.
    *
@@ -109,16 +155,7 @@ export interface ProviderAdapter {
    * pipeline the error surfaced:
    *
    * - HTTP error: `{ status: number, body: string, headers?: Headers }`.
-   *   Adapters should forward to `fromHttpStatus` unless they need to
-   *   reclassify based on provider-specific error codes in the body
-   *   (e.g. OpenAI `error.code === 'content_filter'`, Google
-   *   `error.status === 'RESOURCE_EXHAUSTED'`).
-   *
-   * - Mid-stream error: `{ mid_stream: true, cause: unknown,
-   *   status?: number, ...providerContext }`. Status is usually undefined;
-   *   adapters classify from `cause` and any provider-specific context
-   *   (Bedrock's EventStream exception frame, OpenAI SSE `error` JSON,
-   *   Gemini finishReason).
+   * - Mid-stream error: `{ mid_stream: true, cause: unknown, ... }`.
    */
   normalizeError(raw: unknown, providerType: ProviderType): NormalizedApiError
 }

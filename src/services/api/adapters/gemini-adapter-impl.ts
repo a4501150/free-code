@@ -26,6 +26,9 @@ import {
 } from '../../../utils/model/providerRegistry.js'
 import { GoogleAuth } from 'google-auth-library'
 import type { Anthropic } from '@anthropic-ai/sdk'
+import type { DomainMessageRequest } from '../domain-transport.js'
+import type { DomainStreamingResponse } from '../domain-transport.js'
+import type { DomainAssistantContent } from '../../../types/domain.js'
 
 /**
  * Translate Anthropic messages into the Gemini `contents` array shape —
@@ -115,6 +118,24 @@ async function getGcpAccessToken(
 export const geminiAdapter: ProviderAdapter = {
   providerType: 'gemini',
   capabilities: {} as ProviderCapabilities,
+
+  async createStream(
+    _config: ProviderConfig,
+    _authArgs: unknown,
+    _request: DomainMessageRequest,
+    _signal: AbortSignal,
+  ): Promise<DomainStreamingResponse> {
+    throw new Error('geminiAdapter.createStream: not yet implemented')
+  },
+
+  async createMessage(
+    _config: ProviderConfig,
+    _authArgs: unknown,
+    _request: DomainMessageRequest,
+    _signal: AbortSignal,
+  ): Promise<DomainAssistantContent> {
+    throw new Error('geminiAdapter.createMessage: not yet implemented')
+  },
 
   createFetch(config: ProviderConfig, authArgs: unknown): FetchFn {
     return createGeminiFetch(

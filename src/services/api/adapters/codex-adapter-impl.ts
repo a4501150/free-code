@@ -17,6 +17,9 @@ import {
 } from '../../../utils/normalizedError.js'
 import { createCodexFetch } from '../codex-fetch-adapter.js'
 import type { Anthropic } from '@anthropic-ai/sdk'
+import type { DomainMessageRequest } from '../domain-transport.js'
+import type { DomainStreamingResponse } from '../domain-transport.js'
+import type { DomainAssistantContent } from '../../../types/domain.js'
 
 type GptTokenizerModule = {
   encode: (text: string) => number[]
@@ -77,6 +80,24 @@ function serializeForTokenization(
 export const codexAdapter: ProviderAdapter = {
   providerType: 'openai-responses',
   capabilities: {} as ProviderCapabilities,
+
+  async createStream(
+    _config: ProviderConfig,
+    _authArgs: unknown,
+    _request: DomainMessageRequest,
+    _signal: AbortSignal,
+  ): Promise<DomainStreamingResponse> {
+    throw new Error('codexAdapter.createStream: not yet implemented')
+  },
+
+  async createMessage(
+    _config: ProviderConfig,
+    _authArgs: unknown,
+    _request: DomainMessageRequest,
+    _signal: AbortSignal,
+  ): Promise<DomainAssistantContent> {
+    throw new Error('codexAdapter.createMessage: not yet implemented')
+  },
 
   createFetch(_config: ProviderConfig, authArgs: unknown): FetchFn {
     // Codex's factory is single-arg (CodexFetchOptions carries baseUrl);
