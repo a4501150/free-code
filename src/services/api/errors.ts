@@ -8,6 +8,11 @@ import type {
   BetaStopReason,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import { AFK_MODE_BETA_HEADER } from 'src/constants/betas.js'
+import {
+  DomainTransportError,
+  DomainConnectionError,
+  DomainConnectionTimeoutError,
+} from './domain-errors.js'
 import type { SDKAssistantErrorReason } from 'src/structuredProtocol/index.js'
 import type { DomainApiError } from 'src/types/domain.js'
 import type {
@@ -400,6 +405,44 @@ export function getAssistantMessageFromError(
     messagesForAPI?: (UserMessage | AssistantMessage)[]
   },
 ): AssistantMessage {
+  // Domain transport error: timeout
+  if (error instanceof DomainConnectionTimeoutError) {
+    return createAssistantAPIErrorMessage({
+      content: API_TIMEOUT_ERROR_MESSAGE,
+      error: 'unknown',
+    })
+  }
+
+  // Domain transport error: connection
+  if (
+    error instanceof DomainConnectionError &&
+    !(error instanceof DomainConnectionTimeoutError)
+  ) {
+    return createAssistantAPIErrorMessage({
+      content: `${API_ERROR_MESSAGE_PREFIX}: ${formatAPIError({
+        status: error.status,
+        message: error.message,
+        raw: error.raw,
+      })}`,
+      error: 'unknown',
+    })
+  }
+
+  // Domain transport error: classified HTTP errors
+  if (error instanceof DomainTransportError) {
+    const n = error.normalized
+    if (n.kind === 'context_overflow') {
+      return createAssistantAPIErrorMessage({
+        content: `${PROMPT_TOO_LONG_ERROR_MESSAGE}: ${n.message}`,
+        error: 'invalid_request',
+      })
+    }
+    return createAssistantAPIErrorMessage({
+      content: `${API_ERROR_MESSAGE_PREFIX}: ${n.message}`,
+      error: n.kind === 'rate_limit' ? 'rate_limit' : 'unknown',
+    })
+  }
+
   // Check for SDK timeout errors
   if (
     error instanceof APIConnectionTimeoutError ||
@@ -854,6 +897,37 @@ export function classifyAPIError(error: unknown): string {
   // Aborted requests
   if (error instanceof Error && error.message === 'Request was aborted.') {
     return 'aborted'
+  }
+
+  // Domain transport errors — classify from normalized kind
+  if (error instanceof DomainConnectionTimeoutError) {
+    return 'api_timeout'
+  }
+  if (error instanceof DomainTransportError) {
+    switch (error.normalized.kind) {
+      case 'rate_limit':
+        return 'rate_limit'
+      case 'overloaded':
+        return 'server_overload'
+      case 'context_overflow':
+        return 'prompt_too_long'
+      case 'content_filter':
+        return 'content_filter'
+      case 'auth':
+        return error.status === 401 || error.status === 403
+          ? 'auth_error'
+          : 'auth_error'
+      case 'server':
+        return 'server_error'
+      case 'transport':
+        return error instanceof DomainConnectionError
+          ? 'connection_error'
+          : 'connection_error'
+      case 'invalid_request':
+        return 'client_error'
+      case 'unknown':
+        return 'unknown'
+    }
   }
 
   // Timeout errors

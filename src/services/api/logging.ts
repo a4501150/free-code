@@ -1,5 +1,6 @@
 import { feature } from 'bun:bundle'
 import { APIError } from '@anthropic-ai/sdk'
+import { DomainTransportError } from './domain-errors.js'
 import type {
   BetaStopReason,
   BetaUsage as Usage,
@@ -224,12 +225,21 @@ export function logAPIError({
 }): void {
   const gateway = detectGateway({
     headers:
-      error instanceof APIError && error.headers ? error.headers : headers,
+      error instanceof DomainTransportError && error.headers
+        ? new Headers(error.headers)
+        : error instanceof APIError && error.headers
+          ? error.headers
+          : headers,
     baseUrl: process.env.ANTHROPIC_BASE_URL,
   })
 
   const errStr = getErrorMessage(error)
-  const status = error instanceof APIError ? String(error.status) : undefined
+  const status =
+    error instanceof DomainTransportError
+      ? (error.status !== undefined ? String(error.status) : undefined)
+      : error instanceof APIError
+        ? String(error.status)
+        : undefined
   const errorType = classifyAPIError(error)
 
   // Log detailed connection error info to debug logs (visible via --debug)

@@ -114,6 +114,11 @@ import {
   APIUserAbortError,
 } from '@anthropic-ai/sdk/error'
 import {
+  DomainTransportError,
+  DomainConnectionError,
+  DomainUserAbortError,
+} from './domain-errors.js'
+import {
   getAfkModeHeaderLatched,
   getFastModeHeaderLatched,
   getLastApiCompletionTimestamp,
@@ -810,11 +815,26 @@ function getStreamBetweenEventsTimeoutMs(): number {
  */
 function isRetryableMidStreamError(error: unknown): boolean {
   if (isStreamIdleTimeoutError(error)) return true
+
+  // Domain error path (new adapter interface)
+  if (error instanceof DomainConnectionError) return true
+  if (error instanceof DomainTransportError) {
+    switch (error.normalized.kind) {
+      case 'transport':
+      case 'server':
+      case 'overloaded':
+      case 'rate_limit':
+        return true
+      default:
+        return false
+    }
+  }
+
+  // SDK error path (legacy adapter interface)
   if (error instanceof APIConnectionError) return true
   if (!(error instanceof APIError)) return false
   const normalized = getNormalizedError(error)
   if (!normalized) {
-    // Legacy Codex fallback: response.completed not received
     return (
       error.message.includes('response.completed') &&
       error.message.includes('openai-responses')
@@ -2114,24 +2134,25 @@ async function* queryModel(
           )
         }
 
+        // Domain abort errors always propagate immediately
+        if (streamingError instanceof DomainUserAbortError) {
+          logForDebugging(
+            `Streaming aborted by user (domain): ${errorMessage(streamingError)}`,
+          )
+          throw streamingError
+        }
+
         if (streamingError instanceof APIUserAbortError) {
-          // Check if the abort signal was triggered by the user (ESC key)
-          // If the signal is aborted, it's a user-initiated abort
-          // If not, it's likely a timeout from the SDK
           if (signal.aborted) {
-            // This is a real user abort (ESC key was pressed)
             logForDebugging(
               `Streaming aborted by user: ${errorMessage(streamingError)}`,
             )
             throw streamingError
           } else {
-            // The SDK threw APIUserAbortError but our signal wasn't aborted
-            // This means it's a timeout from the SDK's internal timeout
             logForDebugging(
               `Streaming timeout (SDK abort): ${streamingError.message}`,
               { level: 'error' },
             )
-            // Throw a more specific error for timeout
             throw new APIConnectionTimeoutError({
               message: 'Request timed out',
             })
