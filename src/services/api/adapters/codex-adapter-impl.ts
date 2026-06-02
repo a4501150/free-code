@@ -5,7 +5,13 @@
  * encoding (`o200k_base`). `gpt-tokenizer` is dynamic-imported so bundles
  * without a Codex provider don't pay the cost.
  */
-import type { ProviderAdapter, FetchFn, TokenBreakdown } from '../adapter.js'
+import type {
+  ProviderAdapter,
+  FetchFn,
+  TokenBreakdown,
+  TokenCountMessageParam,
+  TokenCountToolParam,
+} from '../adapter.js'
 import type {
   ProviderCapabilities,
   ProviderConfig,
@@ -16,7 +22,6 @@ import {
   type NormalizedApiError,
 } from '../../../utils/normalizedError.js'
 import { createCodexFetch } from '../codex-fetch-adapter.js'
-import type { Anthropic } from '@anthropic-ai/sdk'
 import type { DomainMessageRequest } from '../domain-transport.js'
 import type { DomainStreamingResponse } from '../domain-transport.js'
 import type { DomainAssistantContent } from '../../../types/domain.js'
@@ -30,8 +35,8 @@ type GptTokenizerModule = {
 }
 
 function serializeForTokenization(
-  messages: Anthropic.Beta.Messages.BetaMessageParam[],
-  tools: Anthropic.Beta.Messages.BetaToolUnion[],
+  messages: TokenCountMessageParam[],
+  tools: TokenCountToolParam[],
   system?: string,
 ): string {
   const parts: string[] = []
@@ -52,29 +57,23 @@ function serializeForTokenization(
     if (!Array.isArray(m.content)) continue
     for (const block of m.content) {
       if (block.type === 'text')
-        parts.push((block as { text: string }).text ?? '')
+        parts.push(String(block.text ?? ''))
       else if (block.type === 'tool_use')
         parts.push(
-          `${(block as { name?: string }).name ?? ''}(${JSON.stringify(
-            (block as { input?: unknown }).input ?? {},
-          )})`,
+          `${String(block.name ?? '')}(${JSON.stringify(block.input ?? {})})`,
         )
       else if (block.type === 'tool_result') {
-        const content = (block as { content?: unknown }).content
+        const content = block.content
         if (typeof content === 'string') parts.push(content)
         else if (Array.isArray(content)) {
           for (const c of content) {
-            if (
-              c &&
-              typeof c === 'object' &&
-              'text' in (c as Record<string, unknown>)
-            ) {
-              parts.push(String((c as { text?: unknown }).text ?? ''))
+            if (c && typeof c === 'object' && 'text' in c) {
+              parts.push(String(c.text ?? ''))
             }
           }
         }
       } else if (block.type === 'thinking') {
-        parts.push((block as { thinking?: string }).thinking ?? '')
+        parts.push(String(block.thinking ?? ''))
       }
     }
   }
@@ -122,8 +121,8 @@ export const codexAdapter: ProviderAdapter = {
   },
 
   async countTokens(
-    messages: Anthropic.Beta.Messages.BetaMessageParam[],
-    tools: Anthropic.Beta.Messages.BetaToolUnion[],
+    messages: TokenCountMessageParam[],
+    tools: TokenCountToolParam[],
     _model: string,
     options?: { system?: string; betas?: string[] },
   ): Promise<TokenBreakdown | null> {

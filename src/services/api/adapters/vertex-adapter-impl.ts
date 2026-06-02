@@ -6,7 +6,13 @@
  * endpoint (`VERTEX_COUNT_TOKENS_ALLOWED_BETAS`). Wire format is Anthropic
  * so usage normalization mirrors the native adapter.
  */
-import type { ProviderAdapter, FetchFn, TokenBreakdown } from '../adapter.js'
+import type {
+  ProviderAdapter,
+  FetchFn,
+  TokenBreakdown,
+  TokenCountMessageParam,
+  TokenCountToolParam,
+} from '../adapter.js'
 import type {
   ProviderCapabilities,
   ProviderConfig,
@@ -17,7 +23,6 @@ import { createVertexFetch } from '../vertex-adapter.js'
 import { anthropicAdapter } from './anthropic-adapter.js'
 import { countTokensViaAnthropicEndpoint } from '../../tokenEstimation.js'
 import { VERTEX_COUNT_TOKENS_ALLOWED_BETAS } from '../../../constants/betas.js'
-import type { Anthropic } from '@anthropic-ai/sdk'
 import type { DomainMessageRequest } from '../domain-transport.js'
 import type { DomainStreamingResponse } from '../domain-transport.js'
 import type { DomainAssistantContent } from '../../../types/domain.js'
@@ -52,8 +57,8 @@ export const vertexAnthropicAdapter: ProviderAdapter = {
   },
 
   async countTokens(
-    messages: Anthropic.Beta.Messages.BetaMessageParam[],
-    tools: Anthropic.Beta.Messages.BetaToolUnion[],
+    messages: TokenCountMessageParam[],
+    tools: TokenCountToolParam[],
     model: string,
     options?: { system?: string; betas?: string[] },
   ): Promise<TokenBreakdown | null> {

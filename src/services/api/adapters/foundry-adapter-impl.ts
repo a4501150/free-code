@@ -6,7 +6,13 @@
  * difference with the native adapter is only at request-issue time (auth
  * via Azure tokens) — not relevant to the token-counting code path.
  */
-import type { ProviderAdapter, FetchFn, TokenBreakdown } from '../adapter.js'
+import type {
+  ProviderAdapter,
+  FetchFn,
+  TokenBreakdown,
+  TokenCountMessageParam,
+  TokenCountToolParam,
+} from '../adapter.js'
 import type {
   ProviderCapabilities,
   ProviderConfig,
@@ -16,7 +22,6 @@ import type { NormalizedApiError } from '../../../utils/normalizedError.js'
 import { createFoundryFetch } from '../foundry-adapter.js'
 import { anthropicAdapter } from './anthropic-adapter.js'
 import { countTokensViaAnthropicEndpoint } from '../../tokenEstimation.js'
-import type { Anthropic } from '@anthropic-ai/sdk'
 import type { DomainMessageRequest } from '../domain-transport.js'
 import type { DomainStreamingResponse } from '../domain-transport.js'
 import type { DomainAssistantContent } from '../../../types/domain.js'
@@ -51,8 +56,8 @@ export const foundryAdapter: ProviderAdapter = {
   },
 
   async countTokens(
-    messages: Anthropic.Beta.Messages.BetaMessageParam[],
-    tools: Anthropic.Beta.Messages.BetaToolUnion[],
+    messages: TokenCountMessageParam[],
+    tools: TokenCountToolParam[],
     model: string,
     options?: { system?: string; betas?: string[] },
   ): Promise<TokenBreakdown | null> {

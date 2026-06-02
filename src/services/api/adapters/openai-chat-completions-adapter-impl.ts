@@ -15,7 +15,13 @@
  * Dynamic import of `gpt-tokenizer` keeps the ~120KB gzipped encoding data
  * out of builds that do not configure an OpenAI provider.
  */
-import type { ProviderAdapter, FetchFn, TokenBreakdown } from '../adapter.js'
+import type {
+  ProviderAdapter,
+  FetchFn,
+  TokenBreakdown,
+  TokenCountMessageParam,
+  TokenCountToolParam,
+} from '../adapter.js'
 import type {
   ProviderCapabilities,
   ProviderConfig,
@@ -26,7 +32,6 @@ import {
   type NormalizedApiError,
 } from '../../../utils/normalizedError.js'
 import { createChatCompletionsFetch } from '../openai-chat-completions-adapter.js'
-import type { Anthropic } from '@anthropic-ai/sdk'
 import type {
   DomainMessageRequest,
   DomainStreamingResponse,
@@ -71,8 +76,8 @@ async function loadTokenizerForModel(
 }
 
 function serializeForTokenization(
-  messages: Anthropic.Beta.Messages.BetaMessageParam[],
-  tools: Anthropic.Beta.Messages.BetaToolUnion[],
+  messages: TokenCountMessageParam[],
+  tools: TokenCountToolParam[],
   system?: string,
 ): string {
   const parts: string[] = []
@@ -93,29 +98,23 @@ function serializeForTokenization(
     if (!Array.isArray(m.content)) continue
     for (const block of m.content) {
       if (block.type === 'text') {
-        parts.push((block as { text: string }).text ?? '')
+        parts.push(String(block.text ?? ''))
       } else if (block.type === 'tool_use') {
         parts.push(
-          `${(block as { name?: string }).name ?? ''}(${JSON.stringify(
-            (block as { input?: unknown }).input ?? {},
-          )})`,
+          `${String(block.name ?? '')}(${JSON.stringify(block.input ?? {})})`,
         )
       } else if (block.type === 'tool_result') {
-        const content = (block as { content?: unknown }).content
+        const content = block.content
         if (typeof content === 'string') parts.push(content)
         else if (Array.isArray(content)) {
           for (const c of content) {
-            if (
-              c &&
-              typeof c === 'object' &&
-              'text' in (c as Record<string, unknown>)
-            ) {
-              parts.push(String((c as { text?: unknown }).text ?? ''))
+            if (c && typeof c === 'object' && 'text' in c) {
+              parts.push(String(c.text ?? ''))
             }
           }
         }
       } else if (block.type === 'thinking') {
-        parts.push((block as { thinking?: string }).thinking ?? '')
+        parts.push(String(block.thinking ?? ''))
       }
     }
   }
@@ -826,8 +825,8 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
   },
 
   async countTokens(
-    messages: Anthropic.Beta.Messages.BetaMessageParam[],
-    tools: Anthropic.Beta.Messages.BetaToolUnion[],
+    messages: TokenCountMessageParam[],
+    tools: TokenCountToolParam[],
     model: string,
     options?: { system?: string; betas?: string[] },
   ): Promise<TokenBreakdown | null> {

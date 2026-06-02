@@ -8,7 +8,13 @@
  * If anything fails (auth, network, translation) we return null so the
  * rough estimator can take over.
  */
-import type { ProviderAdapter, FetchFn, TokenBreakdown } from '../adapter.js'
+import type {
+  ProviderAdapter,
+  FetchFn,
+  TokenBreakdown,
+  TokenCountMessageParam,
+  TokenCountToolParam,
+} from '../adapter.js'
 import type {
   ProviderCapabilities,
   ProviderConfig,
@@ -25,7 +31,6 @@ import {
   type ResolvedProvider,
 } from '../../../utils/model/providerRegistry.js'
 import { GoogleAuth } from 'google-auth-library'
-import type { Anthropic } from '@anthropic-ai/sdk'
 import type { DomainMessageRequest } from '../domain-transport.js'
 import type { DomainStreamingResponse } from '../domain-transport.js'
 import type { DomainAssistantContent } from '../../../types/domain.js'
@@ -40,7 +45,7 @@ import {
  * most part but does count the messages + system prompt).
  */
 function translateToGeminiContents(
-  messages: Anthropic.Beta.Messages.BetaMessageParam[],
+  messages: TokenCountMessageParam[],
 ): Array<{ role: string; parts: Array<{ text: string }> }> {
   const out: Array<{ role: string; parts: Array<{ text: string }> }> = []
   for (const m of messages) {
@@ -51,25 +56,19 @@ function translateToGeminiContents(
     } else if (Array.isArray(m.content)) {
       for (const block of m.content) {
         if (block.type === 'text') {
-          parts.push({ text: (block as { text: string }).text ?? '' })
+          parts.push({ text: String(block.text ?? '') })
         } else if (block.type === 'tool_use') {
           parts.push({
-            text: `${(block as { name?: string }).name ?? ''}(${JSON.stringify(
-              (block as { input?: unknown }).input ?? {},
-            )})`,
+            text: `${String(block.name ?? '')}(${JSON.stringify(block.input ?? {})})`,
           })
         } else if (block.type === 'tool_result') {
-          const content = (block as { content?: unknown }).content
+          const content = block.content
           if (typeof content === 'string') parts.push({ text: content })
           else if (Array.isArray(content)) {
             for (const c of content) {
-              if (
-                c &&
-                typeof c === 'object' &&
-                'text' in (c as Record<string, unknown>)
-              ) {
+              if (c && typeof c === 'object' && 'text' in c) {
                 parts.push({
-                  text: String((c as { text?: unknown }).text ?? ''),
+                  text: String(c.text ?? ''),
                 })
               }
             }
@@ -161,8 +160,8 @@ export const geminiAdapter: ProviderAdapter = {
   },
 
   async countTokens(
-    messages: Anthropic.Beta.Messages.BetaMessageParam[],
-    _tools: Anthropic.Beta.Messages.BetaToolUnion[],
+    messages: TokenCountMessageParam[],
+    _tools: TokenCountToolParam[],
     model: string,
     options?: { system?: string; betas?: string[] },
   ): Promise<TokenBreakdown | null> {

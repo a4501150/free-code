@@ -2,7 +2,10 @@ import type {
   DomainContentBlock,
   DomainUserContentBlock,
 } from '../types/domain.js'
-import type { BetaToolUnion } from '../utils/api.js'
+import type {
+  TokenCountMessageParam as AdapterTokenCountMessageParam,
+  TokenCountToolParam as AdapterTokenCountToolParam,
+} from './api/adapter.js'
 // @aws-sdk/client-bedrock-runtime is imported dynamically in countTokensWithBedrock()
 // to defer ~279KB of AWS SDK code until a Bedrock call is actually made
 import {
@@ -107,11 +110,11 @@ export async function countMessagesTokensWithAPI(
         const adapter = getAdapterForModel(model)
         const betas = getModelBetas(model)
         const breakdown = await adapter.countTokens(
-          messages as Parameters<typeof adapter.countTokens>[0],
-          tools as Parameters<typeof adapter.countTokens>[1],
+          messages as AdapterTokenCountMessageParam[],
+          tools as AdapterTokenCountToolParam[],
           model,
           {
-          betas,
+            betas,
             system: options?.system,
           },
         )

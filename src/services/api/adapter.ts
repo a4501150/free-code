@@ -39,7 +39,6 @@
  * Provider-specific continuation data lives under `providerState` on
  * domain blocks, never as top-level fields.
  */
-import type { Anthropic } from '@anthropic-ai/sdk'
 import type {
   ProviderCapabilities,
   ProviderConfig,
@@ -51,6 +50,27 @@ import type {
   DomainStreamingResponse,
 } from './domain-transport.js'
 import type { DomainAssistantContent } from '../../types/domain.js'
+
+/**
+ * Minimal message param type for token counting.
+ * Compatible with both Anthropic SDK types and domain types.
+ */
+export type TokenCountMessageParam = {
+  role: 'user' | 'assistant'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  content: string | Array<{ type: string; [key: string]: any }>
+}
+
+/**
+ * Minimal tool definition type for token counting.
+ * Compatible with both Anthropic SDK types and domain types.
+ */
+export type TokenCountToolParam = {
+  name?: string
+  description?: string
+  input_schema?: Record<string, unknown>
+  [key: string]: unknown
+}
 
 /**
  * Standard fetch signature. Adapters return a `FetchFn` from
@@ -140,8 +160,8 @@ export interface ProviderAdapter {
    * fall back to rough estimation.
    */
   countTokens(
-    messages: Anthropic.Beta.Messages.BetaMessageParam[],
-    tools: Anthropic.Beta.Messages.BetaToolUnion[],
+    messages: TokenCountMessageParam[],
+    tools: TokenCountToolParam[],
     model: string,
     options?: { system?: string; betas?: string[] },
   ): Promise<TokenBreakdown | null>
