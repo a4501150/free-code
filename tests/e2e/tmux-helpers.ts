@@ -20,7 +20,7 @@ import { join } from 'node:path'
 import { sleep, waitFor, type WaitForOptions } from '../helpers/wait-helpers'
 
 const PROJECT_ROOT = join(import.meta.dir, '..', '..')
-const CLI_BINARY = join(PROJECT_ROOT, 'cli')
+const CLI_BINARY = join(PROJECT_ROOT, 'cli-dev')
 
 // API key used in all E2E tests
 const API_KEY = 'test-key-e2e-integration-99'
@@ -36,9 +36,8 @@ export interface TmuxSessionOptions {
   /** Extra CLI args to append */
   additionalArgs?: string[]
   /**
-   * Override the CLI binary path. Defaults to ./cli (the standard build).
-   * Use ./cli-dev for tests that need full experimental features compiled in
-   * (e.g., TRANSCRIPT_CLASSIFIER for auto-mode classifier flows).
+   * Override the CLI binary path. Defaults to ./cli-dev (the dev-full build).
+   * Use ./cli for tests that need the production feature set.
    */
   cliBinary?: string
   /** Project-level settings to write to settings.json */

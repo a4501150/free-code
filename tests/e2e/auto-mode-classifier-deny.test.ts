@@ -6,9 +6,9 @@
  * stages of the 2-stage XML classifier to return <block>yes</block>, and
  * capture what the UI renders.
  *
- * Runs against ./cli-dev because TRANSCRIPT_CLASSIFIER (and thus the entire
- * auto-mode permission path + classifier UI) is in `fullExperimentalFeatures`
- * and stripped from the standard ./cli build at compile time.
+ * Requires TRANSCRIPT_CLASSIFIER (and thus the entire auto-mode permission
+ * path + classifier UI) which is in `fullExperimentalFeatures` — available
+ * in the default dev-full build (./cli-dev).
  */
 
 import {
@@ -32,7 +32,6 @@ setDefaultTimeout(120_000)
 const test = createLoggingTest(bunTest)
 
 const PROJECT_ROOT = join(import.meta.dir, '..', '..')
-const CLI_DEV_BINARY = join(PROJECT_ROOT, 'cli-dev')
 
 /**
  * Build a raw SSE response with a single text block. Used to mock the XML
@@ -48,9 +47,10 @@ describe('Auto Mode Classifier Deny E2E', () => {
   let session: TmuxSession
 
   beforeAll(async () => {
-    if (!existsSync(CLI_DEV_BINARY)) {
+    const cliDevBinary = join(PROJECT_ROOT, 'cli-dev')
+    if (!existsSync(cliDevBinary)) {
       throw new Error(
-        `cli-dev binary not found at ${CLI_DEV_BINARY}. Run 'bun run build:dev:full' first.`,
+        `cli-dev binary not found at ${cliDevBinary}. Run 'bun run build:dev:full' first.`,
       )
     }
     server = new MockAnthropicServer()
@@ -83,7 +83,8 @@ describe('Auto Mode Classifier Deny E2E', () => {
 
     session = new TmuxSession({
       serverUrl: server.url,
-      cliBinary: CLI_DEV_BINARY,
+
+
       width: 140,
       height: 50,
       // Auto mode replaces the standard "? for shortcuts" footer with the
@@ -147,7 +148,8 @@ describe('Auto Mode Classifier Deny E2E', () => {
 
     session = new TmuxSession({
       serverUrl: server.url,
-      cliBinary: CLI_DEV_BINARY,
+
+
       width: 140,
       height: 50,
       readyText: 'shift+tab to cycle',

@@ -50,14 +50,17 @@ describe('Internal-command survivors', () => {
     await session.sendLine('/version')
     const versionScreen = await session.waitForScreen(
       screen =>
-        screen.includes('❯ /version') && /\b\d+\.\d+\.\d+ \(built/.test(screen),
+        screen.includes('❯ /version') &&
+        /\b\d+\.\d+\.\d+[\w.-]* \(built/.test(screen),
       {
         timeoutMs: 30_000,
         description: '/version output',
         currentPaneOnly: true,
       },
     )
-    const version = versionScreen.match(/\b(\d+\.\d+\.\d+) \(built/)?.[1]
+    const version = versionScreen.match(
+      /\b(\d+\.\d+\.\d+[\w.-]*) \(built/,
+    )?.[1]
     expect(version).toMatch(/^\d+\.\d+\.\d+/)
 
     await session.sendLine('/oauth-refresh')

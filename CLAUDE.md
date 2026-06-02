@@ -5,7 +5,8 @@ Guidance for agents working in this repository. Keep this file short: prefer lin
 ## Start here
 
 - Use [package.json](package.json) for current build, run, format, typecheck, and test scripts.
-- The standard built CLI is `./cli`; the dev build is `./cli-dev`. E2E tests drive the built `./cli`, so rebuild after source edits before running them.
+- The standard dev build is `bun run build:dev:full` which outputs `./cli-dev` with all feature flags enabled. E2E tests drive `./cli-dev`, so rebuild after source edits before running them.
+- The production build is `bun run build` which outputs `./cli` with default feature flags.
 - Main entry points: [src/entrypoints/cli.tsx](src/entrypoints/cli.tsx), [src/screens/REPL.tsx](src/screens/REPL.tsx), and [src/QueryEngine.ts](src/QueryEngine.ts).
 - Registries: [src/commands.ts](src/commands.ts) and [src/tools.ts](src/tools.ts). Implementations live under [src/commands/](src/commands/) and [src/tools/](src/tools/).
 - Major subsystems live under [src/services/](src/services/), [src/state/](src/state/), [src/hooks/](src/hooks/), [src/components/](src/components/), [src/skills/](src/skills/), [src/plugins/](src/plugins/), [src/voice/](src/voice/), and [src/tasks/](src/tasks/).
@@ -31,7 +32,7 @@ Read these files instead of duplicating their contents here:
 
 - E2E tests launch the compiled CLI through tmux. Test harnesses and fixture builders live in [tests/helpers/](tests/helpers/) and [tests/e2e/tmux-helpers.ts](tests/e2e/tmux-helpers.ts).
 - Unit tests live in [tests/unit/](tests/unit/) and cover adapters, settings, token handling, schemas, and parsing utilities.
-- After source edits, run `bun run build` before E2E tests; otherwise tests may exercise a stale `./cli`.
+- After source edits, run `bun run build:dev:full` before E2E tests; otherwise tests may exercise a stale `./cli-dev`.
 - Run the suites that cover the changed subsystem. If no suite covers the behavior, add or update a focused test.
 - For new E2E files, copy timing/session patterns from existing [tests/e2e/](tests/e2e/) files rather than inventing new sleeps.
 
