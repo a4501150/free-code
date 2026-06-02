@@ -1,131 +1,305 @@
-/**
- * Azure Foundry adapter.
- *
- * Foundry exposes Anthropic-compatible endpoints, so token counting uses
- * the same `/count_tokens` path as the native Anthropic adapter. The
- * difference with the native adapter is only at request-issue time (auth
- * via Azure tokens) — not relevant to the token-counting code path.
- */
-import type {
-  ProviderAdapter,
-  TokenBreakdown,
-  TokenCountMessageParam,
-  TokenCountToolParam,
-} from '../adapter.js'
-import type {
-  ProviderCapabilities,
-  ProviderConfig,
-  ProviderType,
-} from '../../../utils/settings/types.js'
-import type { NormalizedApiError } from '../../../utils/normalizedError.js'
-import { anthropicAdapter } from './anthropic-adapter.js'
-import { countTokensViaAnthropicEndpoint } from '../../tokenEstimation.js'
-import { anthropicMessageToDomain } from '../../../types/domainConversion.js'
-import { getAnthropicClient } from '../client.js'
-import type {
-  DomainMessageRequest,
-  DomainMessageResponse,
-  DomainStreamingResponse,
-} from '../domain-transport.js'
 import {
-  domainRequestToAnthropicParams,
-  makeStreamingResponse,
-  wrapSdkError,
-} from './anthropic-wire-helpers.js'
+	DefaultAzureCredential as AzureCredential,
+	getBearerTokenProvider,
+} from "@azure/identity";
+import {
+	anthropicMessageToDomain,
+	type WireMessage,
+} from "../../../types/domainConversion.js";
+import { isEnvTruthy } from "../../../utils/envUtils.js";
+import { logError } from "../../../utils/log.js";
+import { normalizeModelStringForAPI } from "../../../utils/model/modelResolution.js";
+import {
+	getProviderRegistry,
+	type ResolvedProvider,
+} from "../../../utils/model/providerRegistry.js";
+import type { NormalizedApiError } from "../../../utils/normalizedError.js";
+import type {
+	ProviderCapabilities,
+	ProviderConfig,
+	ProviderType,
+} from "../../../utils/settings/types.js";
+import { hasThinkingBlocks } from "../../tokenEstimation.js";
+import type {
+	ProviderAdapter,
+	TokenBreakdown,
+	TokenCountMessageParam,
+	TokenCountToolParam,
+} from "../adapter.js";
+import {
+	DomainConnectionError,
+	DomainTransportError,
+	DomainUserAbortError,
+} from "../domain-errors.js";
+import type {
+	DomainMessageRequest,
+	DomainMessageResponse,
+	DomainStreamingResponse,
+} from "../domain-transport.js";
+import { anthropicAdapter } from "./anthropic-adapter.js";
+import { parseAnthropicSSEStream } from "./anthropic-sse-parser.js";
+import { buildAnthropicWireBody } from "./anthropic-wire-body.js";
+
+// ── Auth ─────────────────────────────────────────────────────────────
+
+async function getFoundryAuth(
+	config: ProviderConfig,
+): Promise<{ headerName: string; headerValue: string }> {
+	const auth = config.auth;
+	if (auth?.active === "apiKey") {
+		const key =
+			auth.apiKey?.key ||
+			(auth.apiKey?.keyEnv ? process.env[auth.apiKey.keyEnv] : undefined);
+		if (key) return { headerName: "x-api-key", headerValue: key };
+	}
+
+	if (isEnvTruthy(process.env.CLAUDE_CODE_SKIP_FOUNDRY_AUTH)) {
+		return { headerName: "x-api-key", headerValue: "" };
+	}
+
+	const tokenProvider = getBearerTokenProvider(
+		new AzureCredential(),
+		"https://cognitiveservices.azure.com/.default",
+	);
+	const token = await tokenProvider();
+	return { headerName: "Authorization", headerValue: `Bearer ${token}` };
+}
+
+// ── Adapter ──────────────────────────────────────────────────────────
+
+const TOKEN_COUNT_THINKING_BUDGET = 1024;
+const TOKEN_COUNT_MAX_TOKENS = 2048;
 
 export const foundryAdapter: ProviderAdapter = {
-  providerType: 'foundry',
-  capabilities: {} as ProviderCapabilities,
+	providerType: "foundry",
+	capabilities: {} as ProviderCapabilities,
 
-  async createStream(
-    _config: ProviderConfig,
-    request: DomainMessageRequest,
-    signal: AbortSignal,
-  ): Promise<DomainStreamingResponse> {
-    const client = await getAnthropicClient({
-      maxRetries: 0,
-      model: request.model,
-      source: 'adapter',
-    })
-    const params = domainRequestToAnthropicParams(request)
+	async createStream(
+		config: ProviderConfig,
+		request: DomainMessageRequest,
+		signal: AbortSignal,
+	): Promise<DomainStreamingResponse> {
+		const baseUrl = config.baseUrl || "";
+		const { headerName, headerValue } = await getFoundryAuth(config);
 
-    try {
-      const result = await client.beta.messages
-        .create(
-          { ...params, stream: true },
-          {
-            signal,
-            ...(request.clientRequestId && {
-              headers: { 'x-client-request-id': request.clientRequestId },
-            }),
-          },
-        )
-        .withResponse()
-      return makeStreamingResponse(
-        result.data,
-        result.response,
-        result.request_id,
-        'foundry',
-        this.normalizeError,
-      )
-    } catch (error) {
-      wrapSdkError(error, 'foundry', this.normalizeError)
-    }
-  },
+		const wireBody = buildAnthropicWireBody(request);
+		wireBody.stream = true;
 
-  async createMessage(
-    _config: ProviderConfig,
-    request: DomainMessageRequest,
-    signal: AbortSignal,
-  ): Promise<DomainMessageResponse> {
-    const client = await getAnthropicClient({
-      maxRetries: 0,
-      model: request.model,
-      source: 'adapter',
-    })
-    const params = domainRequestToAnthropicParams(request)
+		const url = `${baseUrl.replace(/\/$/, "")}/v1/messages`;
 
-    try {
-      const result = await client.beta.messages
-        .create(
-          { ...params, stream: false },
-          {
-            signal,
-            ...(request.clientRequestId && {
-              headers: { 'x-client-request-id': request.clientRequestId },
-            }),
-          },
-        )
-        .withResponse()
-      return {
-        message: anthropicMessageToDomain(result.data),
-        requestId: result.request_id ?? undefined,
-        responseHeaders: Object.fromEntries(result.response.headers.entries()),
-      }
-    } catch (error) {
-      wrapSdkError(error, 'foundry', this.normalizeError)
-    }
-  },
+		let response: Response;
+		try {
+			response = await globalThis.fetch(url, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"anthropic-version": "2023-06-01",
+					[headerName]: headerValue,
+					...(request.clientRequestId && {
+						"x-client-request-id": request.clientRequestId,
+					}),
+				},
+				body: JSON.stringify(wireBody),
+				signal,
+			});
+		} catch (error) {
+			if (
+				error instanceof Error &&
+				(error.name === "AbortError" || signal.aborted)
+			) {
+				throw new DomainUserAbortError();
+			}
+			const normalized = this.normalizeError(
+				{ cause: error, mid_stream: false },
+				"foundry",
+			);
+			throw new DomainConnectionError({
+				normalized: { ...normalized, kind: "transport" },
+				cause: error,
+				raw: error,
+			});
+		}
 
-  async countTokens(
-    messages: TokenCountMessageParam[],
-    tools: TokenCountToolParam[],
-    model: string,
-    options?: { system?: string; betas?: string[] },
-  ): Promise<TokenBreakdown | null> {
-    const inputTokens = await countTokensViaAnthropicEndpoint({
-      messages,
-      tools,
-      model,
-      betas: options?.betas ?? [],
-      system: options?.system,
-    })
-    if (inputTokens == null) return null
-    return { inputTokens, outputTokens: 0 }
-  },
+		if (!response.ok) {
+			const errorText = await response.text();
+			const normalized = this.normalizeError(
+				{ status: response.status, body: errorText, headers: response.headers },
+				"foundry",
+			);
+			throw new DomainTransportError({
+				normalized,
+				status: response.status,
+				headers: Object.fromEntries(response.headers.entries()),
+				raw: { status: response.status, body: errorText },
+			});
+		}
 
-  normalizeError(raw: unknown, providerType: ProviderType): NormalizedApiError {
-    // Foundry proxies Anthropic-shape errors; reuse the Anthropic classifier.
-    return anthropicAdapter.normalizeError(raw, providerType)
-  },
-}
+		if (!response.body) {
+			throw new DomainConnectionError({
+				normalized: {
+					kind: "transport",
+					message: "No response body",
+					providerType: "foundry",
+					raw: null,
+				},
+				cause: null,
+				raw: null,
+			});
+		}
+
+		const abortController = new AbortController();
+		const stream = parseAnthropicSSEStream(
+			response.body,
+			"foundry",
+			this.normalizeError,
+		);
+
+		return {
+			stream,
+			requestId: response.headers.get("request-id") ?? undefined,
+			responseHeaders: Object.fromEntries(response.headers.entries()),
+			abort() {
+				abortController.abort();
+			},
+			release() {
+				try {
+					abortController.abort();
+				} catch {
+					// ignore
+				}
+				if (response.body) {
+					response.body.cancel().catch(() => {});
+				}
+			},
+		};
+	},
+
+	async createMessage(
+		config: ProviderConfig,
+		request: DomainMessageRequest,
+		signal: AbortSignal,
+	): Promise<DomainMessageResponse> {
+		const baseUrl = config.baseUrl || "";
+		const { headerName, headerValue } = await getFoundryAuth(config);
+
+		const wireBody = buildAnthropicWireBody(request);
+		wireBody.stream = false;
+
+		const url = `${baseUrl.replace(/\/$/, "")}/v1/messages`;
+
+		let response: Response;
+		try {
+			response = await globalThis.fetch(url, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"anthropic-version": "2023-06-01",
+					[headerName]: headerValue,
+					...(request.clientRequestId && {
+						"x-client-request-id": request.clientRequestId,
+					}),
+				},
+				body: JSON.stringify(wireBody),
+				signal,
+			});
+		} catch (error) {
+			if (
+				error instanceof Error &&
+				(error.name === "AbortError" || signal.aborted)
+			) {
+				throw new DomainUserAbortError();
+			}
+			const normalized = this.normalizeError(
+				{ cause: error, mid_stream: false },
+				"foundry",
+			);
+			throw new DomainConnectionError({
+				normalized: { ...normalized, kind: "transport" },
+				cause: error,
+				raw: error,
+			});
+		}
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			const normalized = this.normalizeError(
+				{ status: response.status, body: errorText, headers: response.headers },
+				"foundry",
+			);
+			throw new DomainTransportError({
+				normalized,
+				status: response.status,
+				headers: Object.fromEntries(response.headers.entries()),
+				raw: { status: response.status, body: errorText },
+			});
+		}
+
+		const json = (await response.json()) as WireMessage;
+		return {
+			message: anthropicMessageToDomain(json),
+			requestId: response.headers.get("request-id") ?? undefined,
+			responseHeaders: Object.fromEntries(response.headers.entries()),
+		};
+	},
+
+	async countTokens(
+		messages: TokenCountMessageParam[],
+		tools: TokenCountToolParam[],
+		model: string,
+		options?: { system?: string; betas?: string[] },
+	): Promise<TokenBreakdown | null> {
+		try {
+			const resolved = getProviderRegistry().getProviderForModel(
+				model,
+			) as ResolvedProvider | null;
+			if (!resolved || resolved.config.type !== "foundry") return null;
+
+			const config = resolved.config;
+			const baseUrl = config.baseUrl || "";
+			const { headerName, headerValue } = await getFoundryAuth(config);
+
+			const betas = options?.betas ?? [];
+			const containsThinking = hasThinkingBlocks(messages);
+
+			const url = `${baseUrl.replace(/\/$/, "")}/v1/messages/count_tokens`;
+			const body: Record<string, unknown> = {
+				model: normalizeModelStringForAPI(model),
+				messages:
+					messages.length > 0 ? messages : [{ role: "user", content: "foo" }],
+				tools,
+				...(options?.system && { system: options.system }),
+				...(betas.length > 0 && { betas }),
+				...(containsThinking && {
+					thinking: {
+						type: "enabled",
+						budget_tokens: TOKEN_COUNT_THINKING_BUDGET,
+					},
+					max_tokens: TOKEN_COUNT_MAX_TOKENS,
+				}),
+			};
+
+			const response = await globalThis.fetch(url, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"anthropic-version": "2023-06-01",
+					[headerName]: headerValue,
+				},
+				body: JSON.stringify(body),
+			});
+
+			if (!response.ok) return null;
+
+			const json = (await response.json()) as Record<string, unknown>;
+			if (typeof json.input_tokens !== "number") return null;
+			return { inputTokens: json.input_tokens, outputTokens: 0 };
+		} catch (error) {
+			logError(error);
+			return null;
+		}
+	},
+
+	normalizeError(raw: unknown, providerType: ProviderType): NormalizedApiError {
+		return anthropicAdapter.normalizeError(raw, providerType);
+	},
+};

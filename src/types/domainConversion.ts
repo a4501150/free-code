@@ -1,222 +1,211 @@
 /**
  * Conversion functions between provider-neutral domain types and
- * Anthropic SDK types. These are used at the boundaries:
+ * Anthropic wire-format types. These are used at the boundaries:
  *
- * - Inbound:  SDK stream events → domain blocks (in claude.ts streaming loop)
- * - Outbound: domain blocks → Anthropic SDK params (before API calls)
+ * - Inbound:  Wire JSON → domain blocks (in adapters and streaming loop)
+ * - Outbound: domain blocks → wire JSON (before API calls)
  * - Persistence: legacy transcripts → domain blocks (on load)
+ *
+ * No SDK dependency — uses minimal structural types that match the
+ * Anthropic JSON wire shapes. The Anthropic adapter casts to SDK types
+ * at its own call sites.
  */
 
+// Minimal structural types matching Anthropic JSON wire shapes.
+export type WireContentBlock = { type: string; [key: string]: unknown };
+export type WireMessage = {
+	id: string;
+	type: string;
+	role: string;
+	model: string;
+	content: WireContentBlock[];
+	stop_reason: string | null;
+	stop_sequence: string | null;
+	usage: {
+		input_tokens: number;
+		output_tokens: number;
+		[key: string]: unknown;
+	};
+};
+export type WireStreamEvent = { type: string; [key: string]: unknown };
+
 import type {
-  BetaContentBlock,
-  BetaMessage,
-  BetaRawMessageStreamEvent,
-} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import type {
-  ContentBlockParam,
-  ToolResultBlockParam,
-} from '@anthropic-ai/sdk/resources/messages.mjs'
-import type { APIError } from '@anthropic-ai/sdk'
-import type {
-  DomainApiError,
-  DomainAssistantContent,
-  DomainContentBlock,
-  DomainContentDelta,
-  DomainReasoningBlock,
-  DomainRedactedReasoningBlock,
-  DomainStopReason,
-  DomainStreamEvent,
-  DomainToolResultBlockParam,
-  DomainToolResultContentItem,
-  DomainUsage,
-  DomainUserContentBlock,
-  ProviderState,
-} from './domain.js'
+	DomainAssistantContent,
+	DomainContentBlock,
+	DomainContentDelta,
+	DomainReasoningBlock,
+	DomainRedactedReasoningBlock,
+	DomainStopReason,
+	DomainStreamEvent,
+	DomainToolResultBlockParam,
+	DomainUsage,
+	DomainUserContentBlock,
+	ProviderState,
+} from "./domain.js";
 
 // ── Inbound: Anthropic SDK → Domain ────────────────────────────────
 
-/**
- * Convert a BetaContentBlock from the Anthropic SDK into a domain block.
- * Handles thinking → reasoning mapping and strips ad-hoc provider fields.
- */
 export function anthropicBlockToDomain(
-  block: BetaContentBlock,
+	block: WireContentBlock,
 ): DomainContentBlock {
-  switch (block.type) {
-    case 'thinking':
-      return {
-        type: 'reasoning',
-        text: block.thinking,
-        providerState: {
-          anthropic: {
-            signature: block.signature,
-            blockKind: 'thinking',
-          },
-        },
-      }
-    case 'redacted_thinking':
-      return {
-        type: 'redacted_reasoning',
-        providerState: {
-          anthropic: {
-            redactedData: (block as { data?: string }).data ?? '',
-            blockKind: 'redacted_thinking',
-          },
-        },
-      }
-    case 'text':
-      return {
-        type: 'text',
-        text: block.text,
-        ...(block.citations ? { citations: block.citations } : {}),
-      }
-    case 'tool_use':
-      return {
-        type: 'tool_use',
-        id: block.id,
-        name: block.name,
-        input: block.input,
-      }
-    case 'server_tool_use':
-      return {
-        type: 'server_tool_use',
-        id: block.id,
-        name: block.name,
-        input: block.input,
-      }
-    default:
-      // Passthrough for block types we don't explicitly model.
-      // Preserve the full structure as-is.
-      return block as unknown as DomainContentBlock
-  }
+	switch (block.type) {
+		case "thinking":
+			return {
+				type: "reasoning",
+				text: block.thinking as string,
+				providerState: {
+					anthropic: {
+						signature: block.signature as string,
+						blockKind: "thinking",
+					},
+				},
+			};
+		case "redacted_thinking":
+			return {
+				type: "redacted_reasoning",
+				providerState: {
+					anthropic: {
+						redactedData: (block.data as string) ?? "",
+						blockKind: "redacted_thinking",
+					},
+				},
+			};
+		case "text":
+			return {
+				type: "text",
+				text: block.text as string,
+				...(block.citations ? { citations: block.citations } : {}),
+			};
+		case "tool_use":
+			return {
+				type: "tool_use",
+				id: block.id as string,
+				name: block.name as string,
+				input: block.input,
+			};
+		case "server_tool_use":
+			return {
+				type: "server_tool_use",
+				id: block.id as string,
+				name: block.name as string,
+				input: block.input,
+			};
+		default:
+			// Passthrough for block types we don't explicitly model.
+			// Preserve the full structure as-is.
+			return block as unknown as DomainContentBlock;
+	}
 }
 
-/**
- * Convert a full BetaMessage from the Anthropic SDK into a DomainAssistantContent.
- */
 export function anthropicMessageToDomain(
-  msg: BetaMessage,
+	msg: WireMessage,
 ): DomainAssistantContent {
-  return {
-    id: msg.id,
-    type: 'message',
-    role: 'assistant',
-    content: msg.content.map(anthropicBlockToDomain),
-    model: msg.model,
-    stop_reason: msg.stop_reason as DomainStopReason | null,
-    stop_sequence: msg.stop_sequence,
-    usage: {
-      input_tokens: msg.usage.input_tokens,
-      output_tokens: msg.usage.output_tokens,
-      ...(msg.usage.cache_creation_input_tokens != null && {
-        cache_creation_input_tokens: msg.usage.cache_creation_input_tokens,
-      }),
-      ...(msg.usage.cache_read_input_tokens != null && {
-        cache_read_input_tokens: msg.usage.cache_read_input_tokens,
-      }),
-      ...((msg.usage as { server_tool_use?: unknown }).server_tool_use !=
-        null && {
-        server_tool_use: (msg.usage as { server_tool_use?: unknown })
-          .server_tool_use,
-      }),
-    },
-  }
+	return {
+		id: msg.id,
+		type: "message",
+		role: "assistant",
+		content: msg.content.map(anthropicBlockToDomain),
+		model: msg.model,
+		stop_reason: msg.stop_reason as DomainStopReason | null,
+		stop_sequence: msg.stop_sequence,
+		usage: {
+			input_tokens: msg.usage.input_tokens,
+			output_tokens: msg.usage.output_tokens,
+			...(msg.usage.cache_creation_input_tokens != null && {
+				cache_creation_input_tokens: msg.usage
+					.cache_creation_input_tokens as number,
+			}),
+			...(msg.usage.cache_read_input_tokens != null && {
+				cache_read_input_tokens: msg.usage.cache_read_input_tokens as number,
+			}),
+			...(msg.usage.server_tool_use != null && {
+				server_tool_use: msg.usage.server_tool_use,
+			}),
+		},
+	};
 }
 
 // ── Outbound: Domain → Anthropic SDK ───────────────────────────────
 
-/**
- * Convert a domain content block to an Anthropic SDK content block for
- * outbound API requests. Returns null for blocks that should be stripped
- * (e.g. reasoning blocks without valid Anthropic signatures).
- */
 export function domainBlockToAnthropic(
-  block: DomainContentBlock,
-): BetaContentBlock | null {
-  switch (block.type) {
-    case 'reasoning': {
-      const sig = block.providerState?.anthropic?.signature
-      if (!sig) return null
-      return {
-        type: 'thinking',
-        thinking: block.text,
-        signature: sig,
-      }
-    }
-    case 'redacted_reasoning': {
-      const data = block.providerState?.anthropic?.redactedData
-      if (!data) return null
-      return {
-        type: 'redacted_thinking',
-        data,
-      } as BetaContentBlock
-    }
-    case 'text':
-      return {
-        type: 'text',
-        text: block.text,
-        ...(block.citations ? { citations: block.citations } : {}),
-      } as BetaContentBlock
-    case 'tool_use':
-      return {
-        type: 'tool_use',
-        id: block.id,
-        name: block.name,
-        input: block.input,
-      } as BetaContentBlock
-    case 'server_tool_use':
-      return {
-        type: 'server_tool_use',
-        id: block.id,
-        name: block.name,
-        input: block.input,
-      } as BetaContentBlock
-    case 'server_tool_result':
-      return block as unknown as BetaContentBlock
-    default:
-      return block as unknown as BetaContentBlock
-  }
+	block: DomainContentBlock,
+): WireContentBlock | null {
+	switch (block.type) {
+		case "reasoning": {
+			const sig = block.providerState?.anthropic?.signature;
+			if (!sig) return null;
+			return {
+				type: "thinking",
+				thinking: block.text,
+				signature: sig,
+			};
+		}
+		case "redacted_reasoning": {
+			const data = block.providerState?.anthropic?.redactedData;
+			if (!data) return null;
+			return {
+				type: "redacted_thinking",
+				data,
+			} as WireContentBlock;
+		}
+		case "text":
+			return {
+				type: "text",
+				text: block.text,
+				...(block.citations ? { citations: block.citations } : {}),
+			} as WireContentBlock;
+		case "tool_use":
+			return {
+				type: "tool_use",
+				id: block.id,
+				name: block.name,
+				input: block.input,
+			} as WireContentBlock;
+		case "server_tool_use":
+			return {
+				type: "server_tool_use",
+				id: block.id,
+				name: block.name,
+				input: block.input,
+			} as WireContentBlock;
+		case "server_tool_result":
+			return block as unknown as WireContentBlock;
+		default:
+			return block as unknown as WireContentBlock;
+	}
 }
 
-/**
- * Convert domain usage to BetaUsage-compatible shape.
- */
 export function domainUsageToAnthropic(
-  usage: DomainUsage,
-): BetaMessage['usage'] {
-  return {
-    input_tokens: usage.input_tokens,
-    output_tokens: usage.output_tokens,
-    cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
-    cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
-    ...(usage.server_tool_use != null && {
-      server_tool_use: usage.server_tool_use,
-    }),
-  } as BetaMessage['usage']
+	usage: DomainUsage,
+): WireMessage["usage"] {
+	return {
+		input_tokens: usage.input_tokens,
+		output_tokens: usage.output_tokens,
+		cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
+		cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
+		...(usage.server_tool_use != null && {
+			server_tool_use: usage.server_tool_use,
+		}),
+	};
 }
 
-/**
- * Convert a DomainAssistantContent to a BetaMessage for the Anthropic SDK.
- * Used when the SDK needs a BetaMessage shape (e.g. for streaming API calls).
- */
 export function domainMessageToAnthropic(
-  msg: DomainAssistantContent,
-): BetaMessage {
-  const content = msg.content
-    .map(domainBlockToAnthropic)
-    .filter((b): b is BetaContentBlock => b !== null)
+	msg: DomainAssistantContent,
+): WireMessage {
+	const content = msg.content
+		.map(domainBlockToAnthropic)
+		.filter((b): b is WireContentBlock => b !== null);
 
-  return {
-    id: msg.id,
-    type: 'message',
-    role: 'assistant',
-    content,
-    model: msg.model,
-    stop_reason: msg.stop_reason,
-    stop_sequence: msg.stop_sequence,
-    usage: domainUsageToAnthropic(msg.usage),
-    container: null,
-  } as BetaMessage
+	return {
+		id: msg.id,
+		type: "message",
+		role: "assistant",
+		content,
+		model: msg.model,
+		stop_reason: msg.stop_reason,
+		stop_sequence: msg.stop_sequence,
+		usage: domainUsageToAnthropic(msg.usage),
+	};
 }
 
 // ── Persistence: Legacy Transcript → Domain ────────────────────────
@@ -230,54 +219,54 @@ export function domainMessageToAnthropic(
  * - all other blocks pass through unchanged
  */
 export function legacyBlockToDomain(block: unknown): DomainContentBlock {
-  if (!block || typeof block !== 'object') {
-    return block as DomainContentBlock
-  }
+	if (!block || typeof block !== "object") {
+		return block as DomainContentBlock;
+	}
 
-  const b = block as Record<string, unknown>
+	const b = block as Record<string, unknown>;
 
-  if (b.type === 'thinking') {
-    const text = typeof b.thinking === 'string' ? b.thinking : ''
-    const providerState: ProviderState = {}
+	if (b.type === "thinking") {
+		const text = typeof b.thinking === "string" ? b.thinking : "";
+		const providerState: ProviderState = {};
 
-    if (typeof b.codexReasoningId === 'string' && b.codexReasoningId) {
-      providerState.openaiResponses = {
-        reasoningId: b.codexReasoningId,
-        ...(typeof b.codexEncryptedContent === 'string' && {
-          encryptedContent: b.codexEncryptedContent,
-        }),
-      }
-    } else if (typeof b.signature === 'string' && b.signature) {
-      providerState.anthropic = {
-        signature: b.signature,
-        blockKind: 'thinking',
-      }
-    }
+		if (typeof b.codexReasoningId === "string" && b.codexReasoningId) {
+			providerState.openaiResponses = {
+				reasoningId: b.codexReasoningId,
+				...(typeof b.codexEncryptedContent === "string" && {
+					encryptedContent: b.codexEncryptedContent,
+				}),
+			};
+		} else if (typeof b.signature === "string" && b.signature) {
+			providerState.anthropic = {
+				signature: b.signature,
+				blockKind: "thinking",
+			};
+		}
 
-    return {
-      type: 'reasoning',
-      text,
-      ...(Object.keys(providerState).length > 0 && { providerState }),
-    } satisfies DomainReasoningBlock
-  }
+		return {
+			type: "reasoning",
+			text,
+			...(Object.keys(providerState).length > 0 && { providerState }),
+		} satisfies DomainReasoningBlock;
+	}
 
-  if (b.type === 'redacted_thinking') {
-    const providerState: ProviderState = {}
-    if (typeof b.data === 'string') {
-      providerState.anthropic = {
-        redactedData: b.data,
-        blockKind: 'redacted_thinking',
-      }
-    }
-    return {
-      type: 'redacted_reasoning',
-      ...(Object.keys(providerState).length > 0 && { providerState }),
-    } satisfies DomainRedactedReasoningBlock
-  }
+	if (b.type === "redacted_thinking") {
+		const providerState: ProviderState = {};
+		if (typeof b.data === "string") {
+			providerState.anthropic = {
+				redactedData: b.data,
+				blockKind: "redacted_thinking",
+			};
+		}
+		return {
+			type: "redacted_reasoning",
+			...(Object.keys(providerState).length > 0 && { providerState }),
+		} satisfies DomainRedactedReasoningBlock;
+	}
 
-  // Already a domain block (reasoning/redacted_reasoning) or a
-  // non-reasoning block (text/tool_use/etc.) — pass through.
-  return block as DomainContentBlock
+	// Already a domain block (reasoning/redacted_reasoning) or a
+	// non-reasoning block (text/tool_use/etc.) — pass through.
+	return block as DomainContentBlock;
 }
 
 /**
@@ -286,7 +275,7 @@ export function legacyBlockToDomain(block: unknown): DomainContentBlock {
  * other blocks pass through unchanged.
  */
 export function migrateLegacyContent(content: unknown[]): DomainContentBlock[] {
-  return content.map(legacyBlockToDomain)
+	return content.map(legacyBlockToDomain);
 }
 
 /**
@@ -294,131 +283,125 @@ export function migrateLegacyContent(content: unknown[]): DomainContentBlock[] {
  * Returns true if any block uses the old thinking/redacted_thinking types.
  */
 export function needsLegacyMigration(content: unknown[]): boolean {
-  return content.some(
-    b =>
-      b &&
-      typeof b === 'object' &&
-      ((b as { type?: string }).type === 'thinking' ||
-        (b as { type?: string }).type === 'redacted_thinking'),
-  )
+	return content.some(
+		(b) =>
+			b &&
+			typeof b === "object" &&
+			((b as { type?: string }).type === "thinking" ||
+				(b as { type?: string }).type === "redacted_thinking"),
+	);
 }
 
 // ── User Content: Anthropic SDK → Domain ──────────────────────────
 
 export function anthropicUserBlockToDomain(
-  block: ContentBlockParam,
+	block: WireContentBlock,
 ): DomainUserContentBlock {
-  // The SDK ContentBlockParam and domain user content have compatible shapes;
-  // cast through unknown to avoid structural mismatches on cache_control/citations.
-  return block as unknown as DomainUserContentBlock
+	return block as unknown as DomainUserContentBlock;
 }
 
 export function anthropicToolResultToDomain(
-  block: ToolResultBlockParam,
+	block: WireContentBlock,
 ): DomainToolResultBlockParam {
-  return block as unknown as DomainToolResultBlockParam
+	return block as unknown as DomainToolResultBlockParam;
 }
 
 // ── User Content: Domain → Anthropic SDK ──────────────────────────
 
 export function domainUserBlockToAnthropic(
-  block: DomainUserContentBlock,
-): ContentBlockParam {
-  return block as unknown as ContentBlockParam
+	block: DomainUserContentBlock,
+): WireContentBlock {
+	return block as unknown as WireContentBlock;
 }
 
 export function domainToolResultToAnthropic(
-  block: DomainToolResultBlockParam,
-): ToolResultBlockParam {
-  return block as unknown as ToolResultBlockParam
+	block: DomainToolResultBlockParam,
+): WireContentBlock {
+	return block as unknown as WireContentBlock;
 }
 
 // ── Stream Events: Anthropic SDK → Domain ─────────────────────────
 
 export function anthropicStreamEventToDomain(
-  event: BetaRawMessageStreamEvent,
+	event: WireStreamEvent,
 ): DomainStreamEvent {
-  switch (event.type) {
-    case 'message_start':
-      return {
-        type: 'message_start',
-        message: anthropicMessageToDomain(event.message),
-      }
-    case 'content_block_start':
-      return {
-        type: 'content_block_start',
-        index: event.index,
-        content_block: anthropicBlockToDomain(
-          event.content_block as BetaContentBlock,
-        ),
-      }
-    case 'content_block_delta': {
-      const d = event.delta as unknown as Record<string, unknown>
-      let delta: DomainContentDelta | { type: string; [key: string]: unknown }
-      switch (d.type) {
-        case 'text_delta':
-          delta = { type: 'text_delta', text: d.text as string }
-          break
-        case 'input_json_delta':
-          delta = { type: 'input_json_delta', partial_json: d.partial_json as string }
-          break
-        case 'thinking_delta':
-          delta = { type: 'thinking_delta', thinking: d.thinking as string }
-          break
-        case 'signature_delta':
-          delta = { type: 'signature_delta', signature: d.signature as string }
-          break
-        case 'citations_delta':
-          delta = { type: 'citations_delta', citations: (d as { citation?: unknown }).citation }
-          break
-        default:
-          delta = d as { type: string; [key: string]: unknown }
-      }
-      return {
-        type: 'content_block_delta',
-        index: event.index,
-        delta,
-      }
-    }
-    case 'content_block_stop':
-      return {
-        type: 'content_block_stop',
-        index: event.index,
-      }
-    case 'message_delta':
-      return {
-        type: 'message_delta',
-        delta: {
-          stop_reason: (event.delta as unknown as { stop_reason?: string }).stop_reason as DomainStopReason | null | undefined,
-          stop_sequence: (event.delta as unknown as { stop_sequence?: string | null }).stop_sequence,
-        },
-        usage: event.usage as DomainUsage | undefined,
-      }
-    case 'message_stop':
-      return { type: 'message_stop' }
-    default:
-      return event as unknown as DomainStreamEvent
-  }
+	switch (event.type) {
+		case "message_start":
+			return {
+				type: "message_start",
+				message: anthropicMessageToDomain(event.message as WireMessage),
+			};
+		case "content_block_start":
+			return {
+				type: "content_block_start",
+				index: event.index as number,
+				content_block: anthropicBlockToDomain(
+					event.content_block as WireContentBlock,
+				),
+			};
+		case "content_block_delta": {
+			const d = event.delta as Record<string, unknown>;
+			let delta: DomainContentDelta | { type: string; [key: string]: unknown };
+			switch (d.type) {
+				case "text_delta":
+					delta = { type: "text_delta", text: d.text as string };
+					break;
+				case "input_json_delta":
+					delta = {
+						type: "input_json_delta",
+						partial_json: d.partial_json as string,
+					};
+					break;
+				case "thinking_delta":
+					delta = { type: "thinking_delta", thinking: d.thinking as string };
+					break;
+				case "signature_delta":
+					delta = { type: "signature_delta", signature: d.signature as string };
+					break;
+				case "citations_delta":
+					delta = {
+						type: "citations_delta",
+						citations: (d as { citation?: unknown }).citation,
+					};
+					break;
+				default:
+					delta = d as { type: string; [key: string]: unknown };
+			}
+			return {
+				type: "content_block_delta",
+				index: event.index as number,
+				delta,
+			};
+		}
+		case "content_block_stop":
+			return {
+				type: "content_block_stop",
+				index: event.index as number,
+			};
+		case "message_delta":
+			return {
+				type: "message_delta",
+				delta: {
+					stop_reason: (event.delta as Record<string, unknown>)?.stop_reason as
+						| DomainStopReason
+						| null
+						| undefined,
+					stop_sequence: (event.delta as Record<string, unknown>)
+						?.stop_sequence as string | null | undefined,
+				},
+				usage: event.usage as DomainUsage | undefined,
+			};
+		case "message_stop":
+			return { type: "message_stop" };
+		default:
+			return event as unknown as DomainStreamEvent;
+	}
 }
 
 // ── Stream Events: Domain → Anthropic SDK ─────────────────────────
 
 export function domainStreamEventToAnthropic(
-  event: DomainStreamEvent,
-): BetaRawMessageStreamEvent {
-  return event as unknown as BetaRawMessageStreamEvent
-}
-
-// ── API Error: Anthropic SDK → Domain ─────────────────────────────
-
-export function apiErrorToDomain(error: APIError): DomainApiError {
-  return {
-    status: error.status,
-    message: error.message,
-    ...(error.requestID && { requestID: error.requestID }),
-    headers: error.headers
-      ? Object.fromEntries(error.headers.entries())
-      : undefined,
-    raw: error,
-  }
+	event: DomainStreamEvent,
+): WireStreamEvent {
+	return event as unknown as WireStreamEvent;
 }
