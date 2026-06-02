@@ -1,6 +1,5 @@
 import { feature } from 'bun:bundle'
-import { APIUserAbortError } from '@anthropic-ai/sdk'
-import { DomainUserAbortError } from '../../services/api/domain-errors.js'
+import { isAbortError } from '../errors.js'
 import {
   getToolNameForPermissionCheck,
   mcpInfoFromString,
@@ -624,7 +623,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
             }
           }
         } catch (e) {
-          if (e instanceof AbortError || e instanceof APIUserAbortError || e instanceof DomainUserAbortError) {
+          if (isAbortError(e)) {
             throw e
           }
           // If the acceptEdits check fails, fall through to the classifier
@@ -960,7 +959,7 @@ export async function checkRuleBasedPermissions(
     const parsedInput = tool.inputSchema.parse(input)
     toolPermissionResult = await tool.checkPermissions(parsedInput, context)
   } catch (e) {
-    if (e instanceof AbortError || e instanceof APIUserAbortError || e instanceof DomainUserAbortError) {
+    if (isAbortError(e)) {
       throw e
     }
     logError(e)
@@ -1057,7 +1056,7 @@ async function hasPermissionsToUseToolInner(
     toolPermissionResult = await tool.checkPermissions(parsedInput, context)
   } catch (e) {
     // Rethrow abort errors so they propagate properly
-    if (e instanceof AbortError || e instanceof APIUserAbortError || e instanceof DomainUserAbortError) {
+    if (isAbortError(e)) {
       throw e
     }
     logError(e)

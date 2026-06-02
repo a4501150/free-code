@@ -9,7 +9,6 @@ import type {
   BetaOutputConfig,
   BetaRawMessageStreamEvent,
   BetaRequestDocumentBlock,
-  BetaStopReason,
   BetaToolChoiceAuto,
   BetaToolChoiceTool,
   BetaToolResultBlockParam,
@@ -1979,7 +1978,7 @@ async function* queryModel(
               )
 
               const refusalMessage = getErrorMessageIfRefusal(
-                stopReason as BetaStopReason | null,
+                stopReason,
                 options.model,
               )
               if (refusalMessage) {

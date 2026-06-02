@@ -1,5 +1,6 @@
-import type { BetaToolUnion } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
+type SystemBlock = { text: string }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ToolSchema = Record<string, any>
 import { createPatch } from 'diff'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
@@ -187,7 +188,7 @@ function computePerToolHashes(
   return hashes
 }
 
-function getSystemCharCount(system: TextBlockParam[]): number {
+function getSystemCharCount(system: SystemBlock[]): number {
   let total = 0
   for (const block of system) {
     total += block.text.length
@@ -196,8 +197,8 @@ function getSystemCharCount(system: TextBlockParam[]): number {
 }
 
 function buildDiffableContent(
-  system: TextBlockParam[],
-  tools: BetaToolUnion[],
+  system: SystemBlock[],
+  tools: ToolSchema[],
   model: string,
 ): string {
   const systemText = system.map(b => b.text).join('\n\n')
@@ -217,8 +218,8 @@ function buildDiffableContent(
  *  cache key that we can observe from the client. All fields are optional so
  *  the call site can add incrementally; undefined fields compare as stable. */
 export type PromptStateSnapshot = {
-  system: TextBlockParam[]
-  toolSchemas: BetaToolUnion[]
+  system: SystemBlock[]
+  toolSchemas: ToolSchema[]
   querySource: QuerySource
   model: string
   agentId?: AgentId
@@ -269,7 +270,7 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
     const cacheControlHash = computeHash(
       system.map(b => ('cache_control' in b ? b.cache_control : null)),
     )
-    const toolNames = toolSchemas.map(t => ('name' in t ? t.name : 'unknown'))
+    const toolNames = toolSchemas.map(t => t.name ?? 'unknown')
     // Only compute per-tool hashes when the aggregate changed — common case
     // (tools unchanged) skips N extra jsonStringify calls.
     const computeToolHashes = () =>

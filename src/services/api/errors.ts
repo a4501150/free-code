@@ -4,9 +4,9 @@ import {
   APIError,
 } from '@anthropic-ai/sdk'
 import type {
-  BetaMessage,
-  BetaStopReason,
-} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
+  DomainAssistantContent,
+  DomainStopReason,
+} from '../../types/domain.js'
 import { AFK_MODE_BETA_HEADER } from 'src/constants/betas.js'
 import {
   DomainTransportError,
@@ -359,16 +359,16 @@ function logToolUseToolResultMismatch(
 /**
  * Type guard to check if a value is a valid Message response from the API
  */
-export function isValidAPIMessage(value: unknown): value is BetaMessage {
+export function isValidAPIMessage(value: unknown): value is DomainAssistantContent {
   return (
     typeof value === 'object' &&
     value !== null &&
     'content' in value &&
     'model' in value &&
     'usage' in value &&
-    Array.isArray((value as BetaMessage).content) &&
-    typeof (value as BetaMessage).model === 'string' &&
-    typeof (value as BetaMessage).usage === 'object'
+    Array.isArray((value as DomainAssistantContent).content) &&
+    typeof (value as DomainAssistantContent).model === 'string' &&
+    typeof (value as DomainAssistantContent).usage === 'object'
   )
 }
 
@@ -1147,7 +1147,7 @@ export function categorizeRetryableAPIError(
 }
 
 export function getErrorMessageIfRefusal(
-  stopReason: BetaStopReason | null,
+  stopReason: DomainStopReason | null,
   model: string,
 ): AssistantMessage | undefined {
   if (stopReason !== 'refusal') {

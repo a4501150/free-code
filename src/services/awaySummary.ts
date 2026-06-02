@@ -1,5 +1,4 @@
-import { APIUserAbortError } from '@anthropic-ai/sdk'
-import { DomainUserAbortError } from './api/domain-errors.js'
+import { isAbortError } from '../utils/errors.js'
 import { getEmptyToolPermissionContext } from '../Tool.js'
 import type { Message } from '../types/message.js'
 import { logForDebugging } from '../utils/debug.js'
@@ -92,7 +91,7 @@ export async function generateAwaySummary(
     if (!content) return null
     return { content, thinking }
   } catch (err) {
-    if (err instanceof APIUserAbortError || err instanceof DomainUserAbortError || signal.aborted) {
+    if (isAbortError(err) || signal.aborted) {
       return null
     }
     logForDebugging(`[awaySummary] generation failed: ${err}`)
