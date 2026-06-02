@@ -27,6 +27,10 @@ import type { Anthropic } from '@anthropic-ai/sdk'
 import type { DomainMessageRequest } from '../domain-transport.js'
 import type { DomainStreamingResponse } from '../domain-transport.js'
 import type { DomainAssistantContent } from '../../../types/domain.js'
+import {
+  sdkBridgeCreateStream,
+  sdkBridgeCreateMessage,
+} from './sdk-streaming-bridge.js'
 
 export const bedrockAdapter: ProviderAdapter = {
   providerType: 'bedrock-converse',
@@ -34,20 +38,32 @@ export const bedrockAdapter: ProviderAdapter = {
 
   async createStream(
     _config: ProviderConfig,
-    _authArgs: unknown,
-    _request: DomainMessageRequest,
-    _signal: AbortSignal,
+    authArgs: unknown,
+    request: DomainMessageRequest,
+    signal: AbortSignal,
   ): Promise<DomainStreamingResponse> {
-    throw new Error('bedrockAdapter.createStream: not yet implemented')
+    return sdkBridgeCreateStream(
+      authArgs,
+      request,
+      signal,
+      'bedrock-converse',
+      this.normalizeError,
+    )
   },
 
   async createMessage(
     _config: ProviderConfig,
-    _authArgs: unknown,
-    _request: DomainMessageRequest,
-    _signal: AbortSignal,
+    authArgs: unknown,
+    request: DomainMessageRequest,
+    signal: AbortSignal,
   ): Promise<DomainAssistantContent> {
-    throw new Error('bedrockAdapter.createMessage: not yet implemented')
+    return sdkBridgeCreateMessage(
+      authArgs,
+      request,
+      signal,
+      'bedrock-converse',
+      this.normalizeError,
+    )
   },
 
   createFetch(config: ProviderConfig, authArgs: unknown): FetchFn {

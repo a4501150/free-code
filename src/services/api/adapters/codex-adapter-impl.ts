@@ -20,6 +20,10 @@ import type { Anthropic } from '@anthropic-ai/sdk'
 import type { DomainMessageRequest } from '../domain-transport.js'
 import type { DomainStreamingResponse } from '../domain-transport.js'
 import type { DomainAssistantContent } from '../../../types/domain.js'
+import {
+  sdkBridgeCreateStream,
+  sdkBridgeCreateMessage,
+} from './sdk-streaming-bridge.js'
 
 type GptTokenizerModule = {
   encode: (text: string) => number[]
@@ -83,20 +87,32 @@ export const codexAdapter: ProviderAdapter = {
 
   async createStream(
     _config: ProviderConfig,
-    _authArgs: unknown,
-    _request: DomainMessageRequest,
-    _signal: AbortSignal,
+    authArgs: unknown,
+    request: DomainMessageRequest,
+    signal: AbortSignal,
   ): Promise<DomainStreamingResponse> {
-    throw new Error('codexAdapter.createStream: not yet implemented')
+    return sdkBridgeCreateStream(
+      authArgs,
+      request,
+      signal,
+      'openai-responses',
+      this.normalizeError,
+    )
   },
 
   async createMessage(
     _config: ProviderConfig,
-    _authArgs: unknown,
-    _request: DomainMessageRequest,
-    _signal: AbortSignal,
+    authArgs: unknown,
+    request: DomainMessageRequest,
+    signal: AbortSignal,
   ): Promise<DomainAssistantContent> {
-    throw new Error('codexAdapter.createMessage: not yet implemented')
+    return sdkBridgeCreateMessage(
+      authArgs,
+      request,
+      signal,
+      'openai-responses',
+      this.normalizeError,
+    )
   },
 
   createFetch(_config: ProviderConfig, authArgs: unknown): FetchFn {

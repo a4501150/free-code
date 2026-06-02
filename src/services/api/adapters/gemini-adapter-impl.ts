@@ -29,6 +29,10 @@ import type { Anthropic } from '@anthropic-ai/sdk'
 import type { DomainMessageRequest } from '../domain-transport.js'
 import type { DomainStreamingResponse } from '../domain-transport.js'
 import type { DomainAssistantContent } from '../../../types/domain.js'
+import {
+  sdkBridgeCreateStream,
+  sdkBridgeCreateMessage,
+} from './sdk-streaming-bridge.js'
 
 /**
  * Translate Anthropic messages into the Gemini `contents` array shape —
@@ -121,20 +125,32 @@ export const geminiAdapter: ProviderAdapter = {
 
   async createStream(
     _config: ProviderConfig,
-    _authArgs: unknown,
-    _request: DomainMessageRequest,
-    _signal: AbortSignal,
+    authArgs: unknown,
+    request: DomainMessageRequest,
+    signal: AbortSignal,
   ): Promise<DomainStreamingResponse> {
-    throw new Error('geminiAdapter.createStream: not yet implemented')
+    return sdkBridgeCreateStream(
+      authArgs,
+      request,
+      signal,
+      'gemini',
+      this.normalizeError,
+    )
   },
 
   async createMessage(
     _config: ProviderConfig,
-    _authArgs: unknown,
-    _request: DomainMessageRequest,
-    _signal: AbortSignal,
+    authArgs: unknown,
+    request: DomainMessageRequest,
+    signal: AbortSignal,
   ): Promise<DomainAssistantContent> {
-    throw new Error('geminiAdapter.createMessage: not yet implemented')
+    return sdkBridgeCreateMessage(
+      authArgs,
+      request,
+      signal,
+      'gemini',
+      this.normalizeError,
+    )
   },
 
   createFetch(config: ProviderConfig, authArgs: unknown): FetchFn {

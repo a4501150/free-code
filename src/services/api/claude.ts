@@ -22,6 +22,7 @@ import type {
   DomainAssistantContent,
   DomainContentBlock,
   DomainReasoningBlock,
+  DomainStreamEvent,
   DomainUsage,
   DomainUserContentBlock,
 } from '../../types/domain.js'
@@ -31,6 +32,9 @@ import {
   domainUserBlockToAnthropic,
 } from '../../types/domainConversion.js'
 import type { Stream } from '@anthropic-ai/sdk/streaming.mjs'
+import type { DomainStreamingResponse, DomainMessageRequest } from './domain-transport.js'
+import { getAdapterForModel } from './adapters/index.js'
+import { domainRequestToAnthropicParams } from './adapters/sdk-streaming-bridge.js'
 import { randomUUID } from 'crypto'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import { stripProviderPrefix } from 'src/utils/model/parseModelStringWithRegistry.js'
@@ -1323,17 +1327,19 @@ async function* queryModel(
   let start = Date.now()
   let attemptNumber = 0
   const attemptStartTimes: number[] = []
+  let domainStreamResponse: DomainStreamingResponse | undefined = undefined
+  // Legacy SDK stream — kept for cleanupStream compatibility during transition
   let stream: Stream<BetaRawMessageStreamEvent> | undefined = undefined
   let streamRequestId: string | null | undefined = undefined
   let clientRequestId: string | undefined = undefined
   // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins -- Response is available in Node 18+ and is used by the SDK
   let streamResponse: Response | undefined = undefined
 
-  // Release all stream resources to prevent native memory leaks.
-  // The Response object holds native TLS/socket buffers that live outside the
-  // V8 heap (observed on the Node.js/npm path; see GH #32920), so we must
-  // explicitly cancel and release it regardless of how the generator exits.
   function releaseStreamResources(): void {
+    if (domainStreamResponse) {
+      domainStreamResponse.release()
+      domainStreamResponse = undefined
+    }
     cleanupStream(stream)
     stream = undefined
     if (streamResponse) {
@@ -1346,7 +1352,7 @@ async function* queryModel(
   // were dynamically added, so we can log and send it to telemetry.
   let lastRequestBetas: string[] | undefined
 
-  const paramsFromContext = (retryContext: RetryContext) => {
+  const domainParamsFromContext = (retryContext: RetryContext): DomainMessageRequest => {
     const betasParams = [...betas]
 
     const bedrockBetas = registry.getCapability(
@@ -1375,11 +1381,8 @@ async function* queryModel(
       betasParams,
     )
 
-    // Merge outputFormat into extraBodyParams.output_config alongside effort
-    // Requires structured-outputs beta header per SDK (see parse() in messages.mjs)
     if (options.outputFormat && !('format' in outputConfig)) {
       outputConfig.format = options.outputFormat as BetaJSONOutputFormat
-      // Add beta header if not already present and provider supports it
       if (
         modelSupportsStructuredOutputs(options.model) &&
         !betasParams.includes(STRUCTURED_OUTPUTS_BETA_HEADER)
@@ -1394,7 +1397,7 @@ async function* queryModel(
     const hasThinking =
       thinkingConfig.type !== 'disabled' &&
       !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_THINKING)
-    let thinking: BetaMessageStreamParams['thinking'] | undefined = undefined
+    let thinking: DomainMessageRequest['thinking'] | undefined = undefined
 
     // IMPORTANT: Do not change the adaptive-vs-budget thinking selection below
     // without notifying the model launch DRI and research. This is a sensitive
@@ -1404,14 +1407,8 @@ async function* queryModel(
         !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING) &&
         modelSupportsAdaptiveThinking(options.model)
       ) {
-        // For models that support adaptive thinking, always use adaptive
-        // thinking without a budget.
-        thinking = {
-          type: 'adaptive',
-        } satisfies BetaMessageStreamParams['thinking']
+        thinking = { type: 'adaptive' }
       } else {
-        // For models that do not support adaptive thinking, use the default
-        // thinking budget unless explicitly specified.
         let thinkingBudget = getMaxThinkingTokensForModel(options.model)
         if (
           thinkingConfig.type === 'enabled' &&
@@ -1420,16 +1417,10 @@ async function* queryModel(
           thinkingBudget = thinkingConfig.budgetTokens
         }
         thinkingBudget = Math.min(maxOutputTokens - 1, thinkingBudget)
-        thinking = {
-          budget_tokens: thinkingBudget,
-          type: 'enabled',
-        } satisfies BetaMessageStreamParams['thinking']
+        thinking = { type: 'enabled', budgetTokens: thinkingBudget }
       }
     }
 
-    // Get API context management strategies if enabled. Always emits
-    // `keep: 'all'` — see apiMicrocompact.ts for the rationale (matches
-    // official CLI 2.1.119 shape).
     const contextManagement = getAPIContextManagement({
       hasThinking,
     })
@@ -1437,10 +1428,7 @@ async function* queryModel(
     const enablePromptCaching =
       options.enablePromptCaching ?? getPromptCachingEnabled(retryContext.model)
 
-    // Fast mode: header is latched session-stable (cache-safe), but
-    // `speed='fast'` stays dynamic so cooldown still suppresses the actual
-    // fast-mode request without changing the cache key.
-    let speed: BetaMessageStreamParams['speed']
+    let speed: string | undefined
     const isFastModeForRetry =
       isFastModeEnabled() &&
       isFastModeAvailable() &&
@@ -1454,11 +1442,6 @@ async function* queryModel(
       betasParams.push(FAST_MODE_BETA_HEADER)
     }
 
-    // AFK mode beta: latched once auto mode is first activated. Still gated
-    // by isAgenticQuery per-call so classifiers/compaction don't get it.
-    // Granular capability check: supportsAfkMode (with firstPartyFeatures
-    // fallback for back-compat). `shouldIncludeFirstPartyOnlyBetas()` is
-    // still consulted as a feature-wide kill switch (CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS).
     if (feature('TRANSCRIPT_CLASSIFIER')) {
       const registry = getProviderRegistry()
       const supportsAfk = registry.resolveFirstPartyCapability(
@@ -1476,46 +1459,57 @@ async function* queryModel(
       }
     }
 
-    // Only send temperature when thinking is disabled — the API requires
-    // temperature: 1 when thinking is enabled, which is already the default.
     const temperature = !hasThinking
       ? (options.temperatureOverride ?? 1)
       : undefined
 
     lastRequestBetas = betasParams
 
-    return {
+    // Build extra body params (excluding output_config which we handle separately)
+    const { output_config: _oc, ...restExtraBody } = extraBodyParams
+
+    const domainRequest: DomainMessageRequest = {
       model: normalizeModelStringForAPI(options.model),
       messages: addCacheBreakpoints(
         messagesForAPI,
         enablePromptCaching,
         options.querySource,
         options.skipCacheWrite,
-      ),
-      system,
-      tools: allTools,
-      tool_choice: options.toolChoice,
+      ) as unknown as DomainMessageRequest['messages'],
+      system: system as unknown as DomainMessageRequest['system'],
+      tools: allTools as unknown as DomainMessageRequest['tools'],
+      toolChoice: options.toolChoice as unknown as DomainMessageRequest['toolChoice'],
+      maxTokens: maxOutputTokens,
       ...(useBetas && { betas: betasParams }),
-      // metadata.user_id (device_id + account_uuid + session_id) is an
-      // Anthropic-platform identifier; don't leak it to Vertex/Foundry/etc.
-      // that translate or passthrough the Anthropic body.
       ...(registry.isAnthropicType(retryContext.model) && {
         metadata: getAPIMetadata(),
       }),
-      max_tokens: maxOutputTokens,
-      thinking,
+      ...(thinking && { thinking }),
       ...(temperature !== undefined && { temperature }),
       ...(contextManagement &&
         useBetas &&
         betasParams.includes(CONTEXT_MANAGEMENT_BETA_HEADER) && {
-          context_management: contextManagement,
+          contextManagement,
         }),
-      ...extraBodyParams,
+      ...(Object.keys(restExtraBody).length > 0 && {
+        extraBody: restExtraBody,
+      }),
       ...(Object.keys(outputConfig).length > 0 && {
-        output_config: outputConfig,
+        outputConfig: outputConfig as Record<string, unknown>,
       }),
       ...(speed !== undefined && { speed }),
+      ...(previousRequestId && { previousRequestId }),
+      ...(advisorModel && { advisorModel }),
     }
+
+    return domainRequest
+  }
+
+  // Bridge: convert DomainMessageRequest to BetaMessageStreamParams for
+  // legacy call sites (logging, captureAPIRequest, non-streaming fallback)
+  const paramsFromContext = (retryContext: RetryContext) => {
+    const domainRequest = domainParamsFromContext(retryContext)
+    return domainRequestToAnthropicParams(domainRequest)
   }
 
   // Compute log scalars synchronously so the fire-and-forget .then() closure
@@ -1550,7 +1544,7 @@ async function* queryModel(
 
   const newMessages: AssistantMessage[] = []
   let ttftMs = 0
-  let partialMessage: BetaMessage | undefined = undefined
+  let partialMessage: DomainAssistantContent | undefined = undefined
   const contentBlocks: (
     | BetaContentBlock
     | ConnectorTextBlock
@@ -1558,7 +1552,7 @@ async function* queryModel(
   )[] = []
   let usage: NonNullableUsage = EMPTY_USAGE
   let costUSD = 0
-  let stopReason: BetaStopReason | null = null
+  let stopReason: DomainAssistantContent['stop_reason'] = null
   let didFallBackToNonStreaming = false
   let fallbackMessage: AssistantMessage | undefined
   let maxOutputTokens = 0
@@ -1590,22 +1584,17 @@ async function* queryModel(
           // client_creation_start is meaningful on attempt 1.
           queryCheckpoint('query_client_creation_end')
 
-          const params = paramsFromContext(context)
+          const domainRequest = domainParamsFromContext(context)
+          const params = domainRequestToAnthropicParams(domainRequest)
           captureAPIRequest(params as unknown as Parameters<typeof captureAPIRequest>[0], options.querySource) // Capture for bug reports
 
-          maxOutputTokens = params.max_tokens
+          maxOutputTokens = domainRequest.maxTokens
 
-          // Fire immediately before the fetch is dispatched. .withResponse() below
-          // awaits until response headers arrive, so this MUST be before the await
-          // or the "Network TTFB" phase measurement is wrong.
           queryCheckpoint('query_api_request_sent')
           if (!options.agentId) {
             headlessProfilerCheckpoint('api_request_sent')
           }
 
-          // Generate and track client request ID so timeouts (which return no
-          // server request ID) can still be correlated with server logs.
-          // First-party only — 3P providers don't log it (inc-4029 class).
           clientRequestId = registry.getCapability(
             context.model,
             'clientRequestId',
@@ -1613,25 +1602,22 @@ async function* queryModel(
             ? randomUUID()
             : undefined
 
-          // Use raw stream instead of BetaMessageStream to avoid O(n²) partial JSON parsing
-          // BetaMessageStream calls partialParse() on every input_json_delta, which we don't need
-          // since we handle tool input accumulation ourselves
+          // Route through the provider adapter's createStream
+          const adapter = getAdapterForModel(options.model)
+          const providerConfig = registry.getProviderForModel(options.model)?.config
+            ?? registry.getDefaultProvider()?.config
+            ?? { type: 'anthropic' as const, models: [], auth: { active: 'apiKey' as const } }
           // biome-ignore lint/plugin: main conversation loop handles attribution separately
-          const result = await anthropic.beta.messages
-            .create(
-              { ...params, stream: true },
-              {
-                signal,
-                ...(clientRequestId && {
-                  headers: { [CLIENT_REQUEST_ID_HEADER]: clientRequestId },
-                }),
-              },
-            )
-            .withResponse()
+          const adapterResponse = await adapter.createStream(
+            providerConfig,
+            { client: anthropic, clientRequestId },
+            domainRequest,
+            signal,
+          )
           queryCheckpoint('query_response_headers_received')
-          streamRequestId = result.request_id
-          streamResponse = result.response
-          return result.data
+          domainStreamResponse = adapterResponse
+          streamRequestId = adapterResponse.requestId ?? null
+          return adapterResponse
         },
         {
           model: options.model,
@@ -1646,12 +1632,12 @@ async function* queryModel(
       do {
         e = await generator.next()
 
-        // yield API error messages (the stream has a 'controller' property, error messages don't)
-        if (!('controller' in e.value)) {
+        // yield API error messages (DomainStreamingResponse has 'stream' property, error messages don't)
+        if (!('stream' in e.value)) {
           yield e.value
         }
       } while (!e.done)
-      stream = e.value as Stream<BetaRawMessageStreamEvent>
+      const streamingResponse = e.value as DomainStreamingResponse
 
       // reset state
       newMessages.length = 0
@@ -1733,7 +1719,7 @@ async function* queryModel(
         let totalStallTime = 0
         let stallCount = 0
 
-        for await (const part of stream) {
+        for await (const part of streamingResponse.stream) {
           clearStreamIdleTimers()
           hasReceivedStreamEvent = true
           const now = Date.now()
@@ -1762,16 +1748,19 @@ async function* queryModel(
             isFirstChunk = false
           }
 
-          if ((part as { type: string }).type === 'error') {
-            const streamError = (part as { error?: unknown }).error
-            throw streamError instanceof APIError
-              ? streamError
-              : new APIError(
-                  undefined,
-                  streamError as object | undefined,
-                  errorMessage(streamError),
-                  undefined,
-                )
+          if (part.type === 'error') {
+            const domainError = (part as { error?: unknown }).error
+            throw new DomainTransportError({
+              normalized: {
+                kind: 'server',
+                message: typeof domainError === 'object' && domainError !== null
+                  ? (domainError as { message?: string }).message ?? 'Stream error'
+                  : String(domainError ?? 'Stream error'),
+                providerType: registry.getProviderType(options.model) ?? 'anthropic',
+                raw: domainError,
+              },
+              raw: domainError,
+            })
           }
 
           switch (part.type) {
@@ -1781,74 +1770,51 @@ async function* queryModel(
               usage = updateUsage(usage, part.message?.usage)
               break
             }
-            case 'content_block_start':
-              switch (part.content_block.type) {
+            case 'content_block_start': {
+              const cb = part.content_block as DomainContentBlock
+              switch (cb.type) {
                 case 'tool_use':
                   contentBlocks[part.index] = {
-                    ...part.content_block,
+                    ...cb,
                     input: '',
-                  }
+                  } as (typeof contentBlocks)[number]
                   break
                 case 'server_tool_use':
                   contentBlocks[part.index] = {
-                    ...part.content_block,
+                    ...cb,
                     input: '' as unknown as { [key: string]: unknown },
-                  }
-                  if ((part.content_block.name as string) === 'advisor') {
+                  } as (typeof contentBlocks)[number]
+                  if ((cb as { name?: string }).name === 'advisor') {
                     isAdvisorInProgress = true
                     logForDebugging(`[AdvisorTool] Advisor tool called`)
                   }
                   break
                 case 'text':
                   contentBlocks[part.index] = {
-                    ...part.content_block,
-                    // awkwardly, the sdk sometimes returns text as part of a
-                    // content_block_start message, then returns the same text
-                    // again in a content_block_delta message. we ignore it here
-                    // since there doesn't seem to be a way to detect when a
-                    // content_block_delta message duplicates the text.
+                    ...cb,
                     text: '',
-                  }
+                  } as (typeof contentBlocks)[number]
                   break
-                case 'thinking': {
-                  const providerType = getProviderRegistry().getProviderType(
-                    options.model,
-                  )
+                case 'reasoning': {
                   contentBlocks[part.index] = {
                     type: 'reasoning',
                     text: '',
-                    providerState:
-                      providerType === 'anthropic'
-                        ? {
-                            anthropic: {
-                              signature: '',
-                              blockKind: 'thinking' as const,
-                            },
-                          }
-                        : {},
+                    ...((cb as DomainReasoningBlock).providerState && {
+                      providerState: (cb as DomainReasoningBlock).providerState,
+                    }),
                   } as (typeof contentBlocks)[number]
                   break
                 }
-                case 'redacted_thinking': {
+                case 'redacted_reasoning': {
                   contentBlocks[part.index] = {
-                    type: 'redacted_reasoning',
-                    providerState: {
-                      anthropic: {
-                        redactedData:
-                          (part.content_block as { data?: string }).data ?? '',
-                        blockKind: 'redacted_thinking' as const,
-                      },
-                    },
+                    ...cb,
                   } as (typeof contentBlocks)[number]
                   break
                 }
                 default:
-                  // even more awkwardly, the sdk mutates the contents of text blocks
-                  // as it works. we want the blocks to be immutable, so that we can
-                  // accumulate state ourselves.
-                  contentBlocks[part.index] = { ...part.content_block }
+                  contentBlocks[part.index] = { ...cb } as (typeof contentBlocks)[number]
                   if (
-                    (part.content_block.type as string) ===
+                    (cb.type as string) ===
                     'advisor_tool_result'
                   ) {
                     isAdvisorInProgress = false
@@ -1859,9 +1825,10 @@ async function* queryModel(
                   break
               }
               break
+            }
             case 'content_block_delta': {
               const contentBlock = contentBlocks[part.index]
-              const delta = part.delta as typeof part.delta | ConnectorTextDelta
+              const delta = part.delta as Record<string, unknown> & { type: string }
               if (!contentBlock) {
                 throw new RangeError('Content block not found')
               }
@@ -1872,9 +1839,9 @@ async function* queryModel(
                 if (contentBlock.type !== 'connector_text') {
                   throw new Error('Content block is not a connector_text block')
                 }
-                contentBlock.connector_text += delta.connector_text
+                contentBlock.connector_text += delta.connector_text as string
               } else if (
-                (delta.type as string) === 'codex_reasoning_meta_delta'
+                delta.type === 'codex_reasoning_meta_delta'
               ) {
                 if (contentBlock.type === 'reasoning') {
                   const d = delta as unknown as {
@@ -1909,13 +1876,13 @@ async function* queryModel(
                     if (typeof contentBlock.input !== 'string') {
                       throw new Error('Content block input is not a string')
                     }
-                    contentBlock.input += delta.partial_json
+                    contentBlock.input += delta.partial_json as string
                     break
                   case 'text_delta':
                     if (contentBlock.type !== 'text') {
                       throw new Error('Content block is not a text block')
                     }
-                    contentBlock.text += delta.text
+                    contentBlock.text += delta.text as string
                     break
                   case 'signature_delta':
                     if (
@@ -1924,7 +1891,7 @@ async function* queryModel(
                     ) {
                       ;(
                         contentBlock as unknown as { signature: string }
-                      ).signature = delta.signature
+                      ).signature = delta.signature as string
                       break
                     }
                     if (contentBlock.type !== 'reasoning') {
@@ -1935,7 +1902,7 @@ async function* queryModel(
                       if (!rb.providerState) rb.providerState = {}
                       if (!rb.providerState.anthropic)
                         rb.providerState.anthropic = {}
-                      rb.providerState.anthropic.signature = delta.signature
+                      rb.providerState.anthropic.signature = delta.signature as string
                     }
                     break
                   case 'thinking_delta':
@@ -1943,7 +1910,7 @@ async function* queryModel(
                       throw new Error('Content block is not a reasoning block')
                     }
                     ;(contentBlock as DomainReasoningBlock).text +=
-                      delta.thinking
+                      delta.thinking as string
                     break
                 }
               }
@@ -1992,7 +1959,7 @@ async function* queryModel(
               // replacement ({ ...lastMsg.message, usage }) would disconnect
               // the queued reference; direct mutation ensures the transcript
               // captures the final values.
-              stopReason = part.delta.stop_reason
+              stopReason = part.delta.stop_reason ?? null
 
               const lastMsg = newMessages.at(-1)
               if (lastMsg) {
@@ -2012,7 +1979,7 @@ async function* queryModel(
               )
 
               const refusalMessage = getErrorMessageIfRefusal(
-                part.delta.stop_reason,
+                stopReason as BetaStopReason | null,
                 options.model,
               )
               if (refusalMessage) {
@@ -2037,7 +2004,7 @@ async function* queryModel(
           resetStreamIdleTimer()
           yield {
             type: 'stream_event',
-            event: anthropicStreamEventToDomain(part),
+            event: part,
             ...(part.type === 'message_start' ? { ttftMs } : undefined),
           }
         }
@@ -2107,15 +2074,12 @@ async function* queryModel(
           )
         }
 
-        // Process fallback percentage header and quota status if available
-        // streamResponse is set when the stream is created in the withRetry callback above
-        // TypeScript's control flow analysis can't track that streamResponse is set in the callback
-        // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
-        const resp = streamResponse as unknown as Response | undefined
-        if (resp) {
-          extractQuotaStatusFromHeaders(resp.headers)
-          // Store headers for gateway detection
-          responseHeaders = resp.headers
+        // Process headers from the domain streaming response
+        const dsr = domainStreamResponse as DomainStreamingResponse | undefined
+        if (dsr?.responseHeaders) {
+          const headersObj = new Headers(dsr.responseHeaders)
+          extractQuotaStatusFromHeaders(headersObj)
+          responseHeaders = headersObj
         }
       } catch (streamingError) {
         // Clear the idle timeout watchdog on error path too
