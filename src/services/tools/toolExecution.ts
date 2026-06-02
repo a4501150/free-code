@@ -479,14 +479,9 @@ async function checkPermissionsAndCallTool(
     progress: ToolProgress<ToolProgressData> | ProgressMessage<HookProgress>,
   ) => void,
 ): Promise<MessageUpdateLazy[]> {
-  // Strict-mode providers (OpenAI structured outputs) require every property
-  // present in the JSON schema's `required` set, including those that the
-  // Zod schema marks `.optional()`. makeJsonSchemaStrict widens those with
-  // `null`, and the model emits `null` or sometimes `""` for "omitted" — but
-  // `.optional()` (without `.nullable()`) rejects `null`. Normalize those
-  // placeholders before parsing.
+  // Strip `null` and `""` placeholders that models sometimes emit for
+  // optional fields before Zod validation.
   const coercedInput = stripStrictNullInputs(tool.inputSchema, input)
-  // Validate input types with zod (surprisingly, the model is not great at generating valid input)
   const parsedInput = tool.inputSchema.safeParse(coercedInput)
   if (!parsedInput.success) {
     let errorContent = formatZodValidationError(tool.name, parsedInput.error)

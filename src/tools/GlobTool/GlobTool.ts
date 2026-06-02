@@ -28,7 +28,7 @@ const inputSchema = z.strictObject({
     .string()
     .optional()
     .describe(
-      'The directory to search in. Omit this field or send null to use the current working directory. Do not invent a value or send the strings "undefined" or "null". Must be a valid directory path if provided.',
+      'The directory to search in. Defaults to the current working directory.',
     ),
 })
 type InputSchema = typeof inputSchema

@@ -135,14 +135,14 @@ async function signRequest(
 
 // ── Types ───────────────────────────────────────────────────────────
 
-interface AnthropicContentBlock {
+interface InternalContentBlock {
   type: string
   text?: string
   id?: string
   name?: string
   input?: Record<string, unknown>
   tool_use_id?: string
-  content?: string | AnthropicContentBlock[]
+  content?: string | InternalContentBlock[]
   source?: Record<string, unknown>
   thinking?: string
   signature?: string
@@ -150,12 +150,12 @@ interface AnthropicContentBlock {
   [key: string]: unknown
 }
 
-interface AnthropicMessage {
+interface InternalMessage {
   role: string
-  content: string | AnthropicContentBlock[]
+  content: string | InternalContentBlock[]
 }
 
-interface AnthropicTool {
+interface InternalTool {
   name: string
   description?: string
   input_schema?: Record<string, unknown>
@@ -165,7 +165,7 @@ interface AnthropicTool {
 // ── Body translation: Anthropic -> Bedrock Converse ─────────────────
 
 function translateContentBlock(
-  block: AnthropicContentBlock,
+  block: InternalContentBlock,
 ): Record<string, unknown> | null {
   switch (block.type) {
     case 'text':
@@ -237,11 +237,11 @@ function translateContentBlock(
 }
 
 function translateMessages(
-  anthropicMessages: AnthropicMessage[],
+  internalMessages: InternalMessage[],
 ): Array<Record<string, unknown>> {
   const messages: Array<Record<string, unknown>> = []
 
-  for (const msg of anthropicMessages) {
+  for (const msg of internalMessages) {
     if (typeof msg.content === 'string') {
       messages.push({
         role: msg.role,
@@ -269,11 +269,11 @@ function translateMessages(
 }
 
 function translateToolConfig(
-  anthropicTools: AnthropicTool[],
+  internalTools: InternalTool[],
   toolChoice?: Record<string, unknown>,
 ): Record<string, unknown> {
   const toolConfig: Record<string, unknown> = {
-    tools: anthropicTools.map(tool => ({
+    tools: internalTools.map(tool => ({
       toolSpec: {
         name: tool.name,
         ...(tool.description ? { description: tool.description } : {}),
@@ -299,15 +299,15 @@ function translateToolConfig(
 }
 
 function translateToConverseBody(
-  anthropicBody: Record<string, unknown>,
+  internalBody: Record<string, unknown>,
 ): Record<string, unknown> {
-  const anthropicMessages = (anthropicBody.messages || []) as AnthropicMessage[]
-  const systemPrompt = anthropicBody.system as
+  const internalMessages = (internalBody.messages || []) as InternalMessage[]
+  const systemPrompt = internalBody.system as
     | string
     | Array<{ type: string; text?: string; cache_control?: unknown }>
     | undefined
-  const anthropicTools = (anthropicBody.tools || []) as AnthropicTool[]
-  const toolChoice = anthropicBody.tool_choice as
+  const internalTools = (internalBody.tools || []) as InternalTool[]
+  const toolChoice = internalBody.tool_choice as
     | Record<string, unknown>
     | undefined
 
@@ -331,26 +331,26 @@ function translateToConverseBody(
   }
 
   // Messages
-  body.messages = translateMessages(anthropicMessages)
+  body.messages = translateMessages(internalMessages)
 
   // Tools
-  if (anthropicTools.length > 0) {
-    body.toolConfig = translateToolConfig(anthropicTools, toolChoice)
+  if (internalTools.length > 0) {
+    body.toolConfig = translateToolConfig(internalTools, toolChoice)
   }
 
   // Inference config
   const inferenceConfig: Record<string, unknown> = {}
-  if (anthropicBody.max_tokens !== undefined) {
-    inferenceConfig.maxTokens = anthropicBody.max_tokens
+  if (internalBody.max_tokens !== undefined) {
+    inferenceConfig.maxTokens = internalBody.max_tokens
   }
-  if (anthropicBody.temperature !== undefined) {
-    inferenceConfig.temperature = anthropicBody.temperature
+  if (internalBody.temperature !== undefined) {
+    inferenceConfig.temperature = internalBody.temperature
   }
-  if (anthropicBody.top_p !== undefined) {
-    inferenceConfig.topP = anthropicBody.top_p
+  if (internalBody.top_p !== undefined) {
+    inferenceConfig.topP = internalBody.top_p
   }
-  if (anthropicBody.stop_sequences !== undefined) {
-    inferenceConfig.stopSequences = anthropicBody.stop_sequences
+  if (internalBody.stop_sequences !== undefined) {
+    inferenceConfig.stopSequences = internalBody.stop_sequences
   }
   if (Object.keys(inferenceConfig).length > 0) {
     body.inferenceConfig = inferenceConfig
@@ -840,7 +840,7 @@ export function createBedrockConverseFetch(
     }
 
     // Parse the Anthropic request body
-    let anthropicBody: Record<string, unknown>
+    let internalBody: Record<string, unknown>
     try {
       const bodyText =
         init?.body instanceof ReadableStream
@@ -848,17 +848,17 @@ export function createBedrockConverseFetch(
           : typeof init?.body === 'string'
             ? init.body
             : '{}'
-      anthropicBody = JSON.parse(bodyText)
+      internalBody = JSON.parse(bodyText)
     } catch {
-      anthropicBody = {}
+      internalBody = {}
     }
 
     // Extract model and streaming flag
-    const model = anthropicBody.model as string
-    const isStreaming = anthropicBody.stream !== false
+    const model = internalBody.model as string
+    const isStreaming = internalBody.stream !== false
 
     // Translate to Converse body
-    const converseBody = translateToConverseBody(anthropicBody)
+    const converseBody = translateToConverseBody(internalBody)
 
     // Build Converse URL
     const encodedModel = encodeURIComponent(model)
@@ -935,8 +935,8 @@ export function createBedrockConverseFetch(
     if (!isStreaming || !response.body) {
       // Non-streaming: translate Converse response to Anthropic format
       const responseBody = await response.json()
-      const anthropicResponse = translateConverseResponse(responseBody, model)
-      return new Response(JSON.stringify(anthropicResponse), {
+      const internalResponse = translateConverseResponse(responseBody, model)
+      return new Response(JSON.stringify(internalResponse), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })

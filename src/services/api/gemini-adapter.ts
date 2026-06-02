@@ -20,25 +20,25 @@ import { toAnthropicErrorType } from '../../utils/normalizedError.js'
 
 // -- Types ------------------------------------------------------------------
 
-interface AnthropicContentBlock {
+interface InternalContentBlock {
   type: string
   text?: string
   id?: string
   name?: string
   input?: Record<string, unknown>
   tool_use_id?: string
-  content?: string | AnthropicContentBlock[]
+  content?: string | InternalContentBlock[]
   source?: Record<string, unknown>
   cache_control?: unknown
   [key: string]: unknown
 }
 
-interface AnthropicMessage {
+interface InternalMessage {
   role: string
-  content: string | AnthropicContentBlock[]
+  content: string | InternalContentBlock[]
 }
 
-interface AnthropicTool {
+interface InternalTool {
   name: string
   description?: string
   input_schema?: Record<string, unknown>
@@ -69,10 +69,10 @@ function formatSSE(event: string, data: string): string {
 // -- Tool translation -------------------------------------------------------
 
 function translateTools(
-  anthropicTools: AnthropicTool[],
+  internalTools: InternalTool[],
 ): Record<string, unknown> {
   return {
-    functionDeclarations: anthropicTools.map(tool => ({
+    functionDeclarations: internalTools.map(tool => ({
       name: tool.name,
       ...(tool.description ? { description: tool.description } : {}),
       parameters: tool.input_schema || { type: 'object', properties: {} },
@@ -101,15 +101,15 @@ function translateToolConfig(
 // -- Body translation: Anthropic -> Gemini ----------------------------------
 
 function translateToGeminiBody(
-  anthropicBody: Record<string, unknown>,
+  internalBody: Record<string, unknown>,
 ): Record<string, unknown> {
-  const anthropicMessages = (anthropicBody.messages || []) as AnthropicMessage[]
-  const systemPrompt = anthropicBody.system as
+  const internalMessages = (internalBody.messages || []) as InternalMessage[]
+  const systemPrompt = internalBody.system as
     | string
     | Array<{ type: string; text?: string; cache_control?: unknown }>
     | undefined
-  const anthropicTools = (anthropicBody.tools || []) as AnthropicTool[]
-  const toolChoice = anthropicBody.tool_choice as
+  const internalTools = (internalBody.tools || []) as InternalTool[]
+  const toolChoice = internalBody.tool_choice as
     | Record<string, unknown>
     | undefined
 
@@ -133,7 +133,7 @@ function translateToGeminiBody(
 
   // Build tool_use_id -> tool_name map by scanning assistant messages
   const toolIdToName = new Map<string, string>()
-  for (const msg of anthropicMessages) {
+  for (const msg of internalMessages) {
     if (msg.role === 'assistant' && Array.isArray(msg.content)) {
       for (const block of msg.content) {
         if (block.type === 'tool_use' && block.id && block.name) {
@@ -145,7 +145,7 @@ function translateToGeminiBody(
 
   // Translate messages
   const contents: GeminiContent[] = []
-  for (const msg of anthropicMessages) {
+  for (const msg of internalMessages) {
     const role = msg.role === 'assistant' ? 'model' : 'user'
     const parts: GeminiPart[] = []
 
@@ -212,8 +212,8 @@ function translateToGeminiBody(
   body.contents = contents
 
   // Tools
-  if (anthropicTools.length > 0) {
-    body.tools = [translateTools(anthropicTools)]
+  if (internalTools.length > 0) {
+    body.tools = [translateTools(internalTools)]
     const toolConfig = translateToolConfig(toolChoice)
     if (toolConfig) {
       body.toolConfig = toolConfig
@@ -222,20 +222,20 @@ function translateToGeminiBody(
 
   // Generation config
   const generationConfig: Record<string, unknown> = {}
-  if (anthropicBody.max_tokens !== undefined) {
-    generationConfig.maxOutputTokens = anthropicBody.max_tokens
+  if (internalBody.max_tokens !== undefined) {
+    generationConfig.maxOutputTokens = internalBody.max_tokens
   }
-  if (anthropicBody.temperature !== undefined) {
-    generationConfig.temperature = anthropicBody.temperature
+  if (internalBody.temperature !== undefined) {
+    generationConfig.temperature = internalBody.temperature
   }
-  if (anthropicBody.top_p !== undefined) {
-    generationConfig.topP = anthropicBody.top_p
+  if (internalBody.top_p !== undefined) {
+    generationConfig.topP = internalBody.top_p
   }
-  if (anthropicBody.top_k !== undefined) {
-    generationConfig.topK = anthropicBody.top_k
+  if (internalBody.top_k !== undefined) {
+    generationConfig.topK = internalBody.top_k
   }
-  if (anthropicBody.stop_sequences !== undefined) {
-    generationConfig.stopSequences = anthropicBody.stop_sequences
+  if (internalBody.stop_sequences !== undefined) {
+    generationConfig.stopSequences = internalBody.stop_sequences
   }
   if (Object.keys(generationConfig).length > 0) {
     body.generationConfig = generationConfig
@@ -781,7 +781,7 @@ export function createGeminiFetch(
     }
 
     // Parse the Anthropic request body
-    let anthropicBody: Record<string, unknown>
+    let internalBody: Record<string, unknown>
     try {
       const bodyText =
         init?.body instanceof ReadableStream
@@ -789,17 +789,17 @@ export function createGeminiFetch(
           : typeof init?.body === 'string'
             ? init.body
             : '{}'
-      anthropicBody = JSON.parse(bodyText)
+      internalBody = JSON.parse(bodyText)
     } catch {
-      anthropicBody = {}
+      internalBody = {}
     }
 
     // Extract model from the Anthropic body
-    const model = (anthropicBody.model as string) || 'gemini-2.0-flash'
-    const isStreaming = anthropicBody.stream !== false
+    const model = (internalBody.model as string) || 'gemini-2.0-flash'
+    const isStreaming = internalBody.stream !== false
 
     // Translate to Gemini format
-    const geminiBody = translateToGeminiBody(anthropicBody)
+    const geminiBody = translateToGeminiBody(internalBody)
 
     // Get GCP access token and project ID
     const authResult = await getAccessToken()
@@ -867,15 +867,15 @@ export function createGeminiFetch(
 
     // Non-streaming: parse full response and translate
     const geminiResponse = (await response.json()) as Record<string, unknown>
-    const anthropicResponse = translateGeminiResponseToAnthropic(
+    const internalResponse = translateGeminiResponseToAnthropic(
       geminiResponse,
       model,
     )
     // Content-filter rejection returns an Anthropic-shape error body with
     // type: 'error'; surface as non-200 so the SDK classifies it as a
     // proper error instead of a normal assistant response.
-    const isError = (anthropicResponse as { type?: string })?.type === 'error'
-    return new Response(JSON.stringify(anthropicResponse), {
+    const isError = (internalResponse as { type?: string })?.type === 'error'
+    return new Response(JSON.stringify(internalResponse), {
       status: isError ? 400 : 200,
       headers: {
         'Content-Type': 'application/json',

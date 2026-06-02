@@ -20,7 +20,6 @@ import { toAnthropicErrorType } from '../../utils/normalizedError.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isEnvDefinedFalsy } from '../../utils/envUtils.js'
-import { isStrictCompatibleSchema } from '../../utils/jsonSchemaStrict.js'
 
 // No hardcoded model list — the provider registry (freecode.json) is the
 // single source of truth for available models. The adapter just passes
@@ -76,14 +75,14 @@ function extractAccountId(token: string): string {
 
 // ── Types ───────────────────────────────────────────────────────────
 
-interface AnthropicContentBlock {
+interface InternalContentBlock {
   type: string
   text?: string
   id?: string
   name?: string
   input?: Record<string, unknown>
   tool_use_id?: string
-  content?: string | AnthropicContentBlock[]
+  content?: string | InternalContentBlock[]
   thinking?: string
   signature?: string
   providerState?: {
@@ -101,12 +100,12 @@ interface AnthropicContentBlock {
   [key: string]: unknown
 }
 
-interface AnthropicMessage {
+interface InternalMessage {
   role: string
-  content: string | AnthropicContentBlock[]
+  content: string | InternalContentBlock[]
 }
 
-interface AnthropicTool {
+interface InternalTool {
   name: string
   description?: string
   input_schema?: Record<string, unknown>
@@ -118,45 +117,34 @@ interface AnthropicTool {
   max_uses?: number
 }
 
-/** Anthropic tool_choice payload as sent on outbound bodies. */
-type AnthropicToolChoice =
+/** Internal tool_choice payload as sent on outbound bodies. */
+type InternalToolChoice =
   | { type: 'auto' }
   | { type: 'any' }
   | { type: 'tool'; name: string }
   | undefined
 
-// ── Tool translation: Anthropic → Codex ─────────────────────────────
+// ── Tool translation: Internal → Codex ──────────────────────────────
 
 /**
- * Translates Anthropic tool definitions to Codex format.
+ * Translates internal tool definitions to Codex format.
  *
- * The `strict` field is set from the model's `structuredOutputs` capability
- * flag (see `ProviderModelSchema` in `utils/settings/types.ts`):
- *
- *   - undefined → field omitted (server default applies).
- *   - false → `strict: false` for every tool (explicit best-effort).
- *   - true → `strict: true` only for recursively strict-compatible schemas.
- *     Tool-owned (MCP/StructuredOutput), passthrough, and record-shaped tools
- *     omit the field to avoid the entire request 400'ing
- *     on a single non-conforming schema.
- *
- * @param anthropicTools - Array of Anthropic tool definitions
+ * @param internalTools - Array of internal tool definitions
  * @param model - Model ID used to look up provider capabilities
  * @returns Array of Codex-compatible tool objects
  */
 function translateTools(
-  anthropicTools: AnthropicTool[],
+  internalTools: InternalTool[],
   model: string,
 ): {
   tools: Array<Record<string, unknown>>
   hasWebSearch: boolean
 } {
   const registry = getProviderRegistry()
-  const structuredOutputs = registry.getModelFlag(model, 'structuredOutputs')
   const supportsWebSearch = registry.getCapability(model, 'webSearch')
   const tools: Array<Record<string, unknown>> = []
   let hasWebSearch = false
-  for (const tool of anthropicTools) {
+  for (const tool of internalTools) {
     if (tool.type === 'web_search_20250305') {
       if (supportsWebSearch) {
         tools.push({ type: 'web_search_preview' })
@@ -164,39 +152,27 @@ function translateTools(
       }
       continue
     }
-    // Other server tools we don't handle yet — drop with a warning by
-    // omission; the function tool translation below covers regular tools.
     if (tool.type && tool.type !== 'function') {
       continue
     }
     const parameters = tool.input_schema || { type: 'object', properties: {} }
-    let strictField: { strict: boolean } | Record<string, never> = {}
-    if (structuredOutputs === true) {
-      if (isStrictCompatibleSchema(parameters)) {
-        strictField = { strict: true }
-      }
-      // else: omit — schema would 400 under strict; let server default apply.
-    } else if (structuredOutputs === false) {
-      strictField = { strict: false }
-    }
     tools.push({
       type: 'function',
       name: tool.name,
       description: tool.description || '',
       parameters,
-      ...strictField,
     })
   }
   return { tools, hasWebSearch }
 }
 
 /**
- * Translate an Anthropic tool_choice payload to the OpenAI Responses API
+ * Translate an internal tool_choice payload to the OpenAI Responses API
  * shape. Most cases pass through to `auto`; named-tool choice is honored
  * only when the named tool is the (translated) web_search server tool.
  */
 function translateToolChoice(
-  toolChoice: AnthropicToolChoice,
+  toolChoice: InternalToolChoice,
   hasWebSearch: boolean,
 ): Record<string, unknown> | string {
   if (!toolChoice) return 'auto'
@@ -210,23 +186,23 @@ function translateToolChoice(
   return 'auto'
 }
 
-// ── Message translation: Anthropic → Codex input ────────────────────
+// ── Message translation: Internal → Codex input ─────────────────────
 
 /**
- * Translates Anthropic message format to Codex input format.
+ * Translates internal message format to Codex input format.
  * Handles text content, tool results, and image attachments.
- * @param anthropicMessages - Array of messages in Anthropic format
+ * @param internalMessages - Array of messages in Anthropic format
  * @returns Array of Codex-compatible input objects
  */
 function translateMessages(
-  anthropicMessages: AnthropicMessage[],
+  internalMessages: InternalMessage[],
 ): Array<Record<string, unknown>> {
   const codexInput: Array<Record<string, unknown>> = []
   // Track tool_use IDs to generate call_ids for function_call_output
   // Anthropic uses tool_use_id, Codex uses call_id
   let toolCallCounter = 0
 
-  for (const msg of anthropicMessages) {
+  for (const msg of internalMessages) {
     if (typeof msg.content === 'string') {
       codexInput.push({ role: msg.role, content: msg.content })
       continue
@@ -365,23 +341,23 @@ function translateMessages(
 
 /**
  * Translates a complete Anthropic API request body to Codex format.
- * @param anthropicBody - The Anthropic request body to translate
+ * @param internalBody - The Anthropic request body to translate
  * @returns Object containing the translated Codex body and model
  */
 function translateToCodexBody(
-  anthropicBody: Record<string, unknown>,
+  internalBody: Record<string, unknown>,
   sessionId: string,
 ): {
   codexBody: Record<string, unknown>
   codexModel: string
 } {
-  const anthropicMessages = (anthropicBody.messages || []) as AnthropicMessage[]
-  const systemPrompt = anthropicBody.system as
+  const internalMessages = (internalBody.messages || []) as InternalMessage[]
+  const systemPrompt = internalBody.system as
     | string
     | Array<{ type: string; text?: string; cache_control?: unknown }>
     | undefined
-  const codexModel = (anthropicBody.model as string) || 'gpt-5.3-codex'
-  const anthropicTools = (anthropicBody.tools || []) as AnthropicTool[]
+  const codexModel = (internalBody.model as string) || 'gpt-5.3-codex'
+  const internalTools = (internalBody.tools || []) as InternalTool[]
 
   // Build system instructions
   let instructions = ''
@@ -398,7 +374,7 @@ function translateToCodexBody(
   }
 
   // Convert messages
-  const input = translateMessages(anthropicMessages)
+  const input = translateMessages(internalMessages)
 
   const codexBody: Record<string, unknown> = {
     model: codexModel,
@@ -420,8 +396,8 @@ function translateToCodexBody(
 
   // Add tools if present
   let hasWebSearch = false
-  if (anthropicTools.length > 0) {
-    const translated = translateTools(anthropicTools, codexModel)
+  if (internalTools.length > 0) {
+    const translated = translateTools(internalTools, codexModel)
     codexBody.tools = translated.tools
     hasWebSearch = translated.hasWebSearch
   }
@@ -431,12 +407,12 @@ function translateToCodexBody(
   // translation the adapter would drop it and the model might pick a
   // different (or no) tool, breaking the nested WebSearch query.
   codexBody.tool_choice = translateToolChoice(
-    anthropicBody.tool_choice as AnthropicToolChoice,
+    internalBody.tool_choice as InternalToolChoice,
     hasWebSearch,
   )
 
   // Effort → reasoning_effort (OpenAI Responses API)
-  const outputConfig = anthropicBody.output_config as
+  const outputConfig = internalBody.output_config as
     | { effort?: string }
     | undefined
   if (outputConfig?.effort) {
@@ -1404,7 +1380,7 @@ export function createCodexFetch(
     }
 
     // Parse the Anthropic request body
-    let anthropicBody: Record<string, unknown>
+    let internalBody: Record<string, unknown>
     try {
       const bodyText =
         init?.body instanceof ReadableStream
@@ -1412,9 +1388,9 @@ export function createCodexFetch(
           : typeof init?.body === 'string'
             ? init.body
             : '{}'
-      anthropicBody = JSON.parse(bodyText)
+      internalBody = JSON.parse(bodyText)
     } catch {
-      anthropicBody = {}
+      internalBody = {}
     }
 
     // Get current token (may have been refreshed via callback)
@@ -1422,7 +1398,7 @@ export function createCodexFetch(
 
     // Translate to Codex format
     const { codexBody, codexModel } = translateToCodexBody(
-      anthropicBody,
+      internalBody,
       opts.getSessionId(),
     )
 

@@ -20,19 +20,17 @@
 import type { ProviderConfig } from '../../utils/settings/types.js'
 import { openaiChatCompletionsAdapter } from './adapters/openai-chat-completions-adapter-impl.js'
 import { toAnthropicErrorType } from '../../utils/normalizedError.js'
-import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
-import { isStrictCompatibleSchema } from '../../utils/jsonSchemaStrict.js'
 
 // ── Types ───────────────────────────────────────────────────────────
 
-interface AnthropicContentBlock {
+interface InternalContentBlock {
   type: string
   text?: string
   id?: string
   name?: string
   input?: Record<string, unknown>
   tool_use_id?: string
-  content?: string | AnthropicContentBlock[]
+  content?: string | InternalContentBlock[]
   source?: Record<string, unknown>
   thinking?: string
   signature?: string
@@ -40,12 +38,12 @@ interface AnthropicContentBlock {
   [key: string]: unknown
 }
 
-interface AnthropicMessage {
+interface InternalMessage {
   role: string
-  content: string | AnthropicContentBlock[]
+  content: string | InternalContentBlock[]
 }
 
-interface AnthropicTool {
+interface InternalTool {
   name: string
   description?: string
   input_schema?: Record<string, unknown>
@@ -71,39 +69,35 @@ interface ChatCompletionsTool {
     name: string
     description?: string
     parameters?: Record<string, unknown>
-    strict?: boolean
   }
 }
 
 // ── Tool translation ────────────────────────────────────────────────
 
 function translateTools(
-  anthropicTools: AnthropicTool[],
-  options: { strict: boolean },
+  internalTools: InternalTool[],
 ): ChatCompletionsTool[] {
-  return anthropicTools.map(tool => {
+  return internalTools.map(tool => {
     const parameters = tool.input_schema || { type: 'object', properties: {} }
-    const wireStrict = options.strict && isStrictCompatibleSchema(parameters)
     return {
       type: 'function',
       function: {
         name: tool.name,
         ...(tool.description ? { description: tool.description } : {}),
         parameters,
-        ...(wireStrict ? { strict: true } : {}),
       },
     }
   })
 }
 
-// ── Message translation: Anthropic → Chat Completions ───────────────
+// ── Message translation: Internal → Chat Completions ────────────────
 
 function translateMessages(
-  anthropicMessages: AnthropicMessage[],
+  internalMessages: InternalMessage[],
 ): ChatCompletionsMessage[] {
   const messages: ChatCompletionsMessage[] = []
 
-  for (const msg of anthropicMessages) {
+  for (const msg of internalMessages) {
     if (typeof msg.content === 'string') {
       messages.push({ role: msg.role, content: msg.content })
       continue
@@ -225,16 +219,15 @@ function translateMessages(
 // ── Full request translation ────────────────────────────────────────
 
 function translateToOpenAIBody(
-  anthropicBody: Record<string, unknown>,
+  internalBody: Record<string, unknown>,
   targetModel: string,
-  options: { structuredOutputs: boolean },
 ): Record<string, unknown> {
-  const anthropicMessages = (anthropicBody.messages || []) as AnthropicMessage[]
-  const systemPrompt = anthropicBody.system as
+  const internalMessages = (internalBody.messages || []) as InternalMessage[]
+  const systemPrompt = internalBody.system as
     | string
     | Array<{ type: string; text?: string; cache_control?: unknown }>
     | undefined
-  const anthropicTools = (anthropicBody.tools || []) as AnthropicTool[]
+  const internalTools = (internalBody.tools || []) as InternalTool[]
 
   const messages: ChatCompletionsMessage[] = []
 
@@ -255,7 +248,7 @@ function translateToOpenAIBody(
   }
 
   // Translate messages
-  messages.push(...translateMessages(anthropicMessages))
+  messages.push(...translateMessages(internalMessages))
 
   const body: Record<string, unknown> = {
     model: targetModel,
@@ -265,28 +258,26 @@ function translateToOpenAIBody(
   }
 
   // Tools
-  if (anthropicTools.length > 0) {
-    body.tools = translateTools(anthropicTools, {
-      strict: options.structuredOutputs,
-    })
+  if (internalTools.length > 0) {
+    body.tools = translateTools(internalTools)
     body.tool_choice = 'auto'
   }
 
   // Max tokens
-  if (anthropicBody.max_tokens) {
-    body.max_tokens = anthropicBody.max_tokens
+  if (internalBody.max_tokens) {
+    body.max_tokens = internalBody.max_tokens
   }
 
   // Temperature
-  if (anthropicBody.temperature !== undefined) {
-    body.temperature = anthropicBody.temperature
+  if (internalBody.temperature !== undefined) {
+    body.temperature = internalBody.temperature
   }
 
   // Effort → reasoning_effort
   // Pass the effort level string directly from output_config.effort.
   // OpenAI models support: none, minimal, low, medium, high, xhigh
   // (exact set varies by model — validated server-side).
-  const outputConfig = anthropicBody.output_config as
+  const outputConfig = internalBody.output_config as
     | { effort?: string }
     | undefined
   if (outputConfig?.effort) {
@@ -908,7 +899,7 @@ export function createChatCompletionsFetch(
     }
 
     // Parse the Anthropic request body
-    let anthropicBody: Record<string, unknown>
+    let internalBody: Record<string, unknown>
     try {
       const bodyText =
         init?.body instanceof ReadableStream
@@ -916,25 +907,20 @@ export function createChatCompletionsFetch(
           : typeof init?.body === 'string'
             ? init.body
             : '{}'
-      anthropicBody = JSON.parse(bodyText)
+      internalBody = JSON.parse(bodyText)
     } catch {
-      anthropicBody = {}
+      internalBody = {}
     }
 
     // Resolve model: use the model from the request if it matches a
     // configured model, otherwise use the first configured model
-    const requestModel = anthropicBody.model as string | undefined
+    const requestModel = internalBody.model as string | undefined
     const resolvedModel = requestModel
       ? config.models.find(m => m.id === requestModel)?.id || targetModelId
       : targetModelId
 
     // Translate to Chat Completions format
-    const structuredOutputs =
-      getProviderRegistry().getModelFlag(resolvedModel, 'structuredOutputs') ===
-      true
-    const openaiBody = translateToOpenAIBody(anthropicBody, resolvedModel, {
-      structuredOutputs,
-    })
+    const openaiBody = translateToOpenAIBody(internalBody, resolvedModel)
 
     // Make the request
     const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`

@@ -2461,14 +2461,8 @@ export function normalizeContentFromAPI(
         if (typeof normalizedInput === 'object' && normalizedInput !== null) {
           const tool = findToolByName(tools, contentBlock.name)
           if (tool) {
-            // Normalize `null` and `""` placeholders that strict-mode providers
-            // emit for omitted fields. makeJsonSchemaStrict widens optional
-            // fields with null in the outbound schema, but models do not always
-            // use the canonical null representation. Without normalization, every UI-side
-            // `tool.inputSchema.safeParse(content.input)` (AssistantToolUseMessage,
-            // permission requests, transcript renderers, etc.) fails — and tools
-            // whose `renderToolUseMessage` returns null on missing fields render
-            // an empty header, hiding the entire tool-use line.
+            // Strip `null` and `""` placeholders that models sometimes emit
+            // for optional fields before UI-side parsing.
             normalizedInput = stripStrictNullInputs(
               tool.inputSchema,
               normalizedInput,

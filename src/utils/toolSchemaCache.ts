@@ -5,14 +5,11 @@ import type { BetaTool } from './api.js'
 // ~11K-token tool block AND everything downstream. Settings flips
 // (fineGrainedToolStreaming), MCP reconnects, or dynamic content in
 // tool.prompt() all cause this churn. Memoizing per-session locks the schema
-// bytes at first render. Cache key includes the wire-strict bit
-// (Anthropic-wire allowlist) so a mid-session provider switch returns the
-// correctly-shaped schema (see toolToAPISchema in api.ts).
+// bytes at first render.
 //
 // Lives in a leaf module so auth.ts can clear it without importing api.ts
 // (which would create a cycle via plans→settings→file→config→auth).
 type CachedSchema = BetaTool & {
-  strict?: boolean
   eager_input_streaming?: boolean
 }
 

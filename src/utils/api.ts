@@ -23,10 +23,6 @@ import { TASK_OUTPUT_TOOL_NAME } from '../tools/TaskOutputTool/constants.js'
 import type { Message } from '../types/message.js'
 import { isAgentSwarmsEnabled } from './agentSwarmsEnabled.js'
 import { shouldUseGlobalCacheScope } from './betas.js'
-import {
-  isPassthroughSchema,
-  makeJsonSchemaStrict,
-} from './jsonSchemaStrict.js'
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
@@ -66,9 +62,8 @@ export type BetaTool = {
 
 export type BetaToolUnion = BetaTool | { type?: string | null; name: string }
 
-// Extended BetaTool type with strict mode and cache-control support
+// Extended BetaTool type with cache-control and streaming support
 type BetaToolWithExtras = BetaTool & {
-  strict?: boolean
   cache_control?: {
     type: 'ephemeral'
     scope?: 'global' | 'org'
@@ -116,153 +111,6 @@ function filterSwarmFieldsFromSchema(
   return filtered
 }
 
-// JSON Schema validation keywords that Anthropic strict-mode tool schemas
-// reject. Anthropic strict tools 400 on numeric/string/array constraints; the
-// schema-shape (additionalProperties:false + all properties required +
-// nullable for optional) is enforced by Anthropic, but these keywords are
-// rejected outright. OpenAI strict mode supports them as of May 2025+, but
-// stripping for the OpenAI path too is harmless (we already encode bounds in
-// `.describe()` for the small handful of tools that had them). We strip
-// recursively, including inside `anyOf`/`oneOf`/`allOf` branches and array
-// `items`, on the universal Zod-derived strict-shape path.
-const STRICT_DISALLOWED_KEYWORDS = new Set([
-  // Numeric
-  'minimum',
-  'maximum',
-  'exclusiveMinimum',
-  'exclusiveMaximum',
-  'multipleOf',
-  // String
-  'minLength',
-  'maxLength',
-  'pattern',
-  'format',
-  // Array
-  'minItems',
-  'maxItems',
-  'uniqueItems',
-  'contains',
-  'minContains',
-  'maxContains',
-])
-
-const SCHEMA_MAP_KEYWORDS = new Set([
-  'properties',
-  '$defs',
-  'definitions',
-  'patternProperties',
-  'dependentSchemas',
-])
-
-function stripStrictDisallowedKeywords(schema: unknown): unknown {
-  if (typeof schema !== 'object' || schema === null) return schema
-  if (Array.isArray(schema)) {
-    return schema.map(item => stripStrictDisallowedKeywords(item))
-  }
-
-  const out: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(
-    schema as Record<string, unknown>,
-  )) {
-    if (STRICT_DISALLOWED_KEYWORDS.has(key)) continue
-    if (
-      SCHEMA_MAP_KEYWORDS.has(key) &&
-      typeof value === 'object' &&
-      value !== null &&
-      !Array.isArray(value)
-    ) {
-      out[key] = Object.fromEntries(
-        Object.entries(value as Record<string, unknown>).map(
-          ([mapKey, mapValue]) => [
-            mapKey,
-            stripStrictDisallowedKeywords(mapValue),
-          ],
-        ),
-      )
-      continue
-    }
-    out[key] = stripStrictDisallowedKeywords(value)
-  }
-  return out
-}
-
-/**
- * Tools that opt in to wire-level `strict: true` on Anthropic-wire providers.
- *
- * Design: every Zod-derived tool gets a strict-shaped JSON Schema (recursive
- * `additionalProperties: false` + all properties in `required` + nullable
- * union for optional). This shape is the strongest structural signal we can
- * give the model and is identical across all providers — model behavior stays
- * consistent regardless of which API we're routing through.
- *
- * Whether to emit `strict: true` on the wire is provider-specific:
- *
- *   - OpenAI Chat Completions / Responses: emit `strict: true` for ALL tools.
- *     OpenAI has no per-request budget worth worrying about (5000 props /
- *     10 levels). The adapters set this from the model's `structuredOutputs`
- *     flag, applied uniformly.
- *
- *   - Anthropic-wire (anthropic / foundry / vertex / bedrock-converse): emit
- *     `strict: true` only for tools in the allowlist below, AND only when the
- *     model declares `structuredOutputs: true`. The Anthropic structured-
- *     outputs beta caps are tight: 20 strict tools / 24 optional params total
- *     / 16 anyOf-or-type-array params total / numeric+string+array constraint
- *     keywords rejected. Confining strict to a small set of file-mutation
- *     tools (where input correctness is most safety-critical) leaves us with
- *     comfortable margin under all three caps.
- *
- *   - Gemini: never emit `strict: true` on tools (Gemini has no tool-level
- *     strict flag; behavior is controlled by `functionCallingConfig.mode`,
- *     which we leave at provider defaults).
- *
- * Adding to this set requires verifying the cumulative budget across the
- * whole list against Anthropic's caps:
- *   - Σ(nullable-union params) ≤ 16 (each Zod `.optional()` widens to anyOf).
- *   - Σ(tools) ≤ 20.
- *
- * Current set:
- *   - FileEdit (1 nullable-union param: replace_all)
- *   - FileWrite (0 nullable-union params)
- *   - FileRead (3 nullable-union params: offset, limit, pages)
- *   Total: 3 tools, 4 anyOf params. Far under both caps.
- *
- * These are file-mutation tools where a malformed input corrupts user code,
- * so the marginal benefit of server-side constrained decoding is highest.
- */
-const ANTHROPIC_STRICT_TOOL_NAMES = new Set<string>([
-  'FileEdit',
-  'FileWrite',
-  'FileRead',
-])
-
-function providerIsAnthropicWire(model: string | undefined): boolean {
-  if (!model) return false
-  const providerType = getProviderRegistry().getProviderType(model)
-  return (
-    providerType === 'anthropic' ||
-    providerType === 'foundry' ||
-    providerType === 'vertex' ||
-    providerType === 'bedrock-converse'
-  )
-}
-
-/**
- * True when this tool should ship with `strict: true` on the wire for the
- * resolved provider. Schema-shape transform is unconditional and runs
- * separately; this only controls the wire flag.
- */
-function shouldEmitWireStrictForAnthropic(
-  toolName: string,
-  model: string | undefined,
-): boolean {
-  if (!model) return false
-  if (!providerIsAnthropicWire(model)) return false
-  if (!ANTHROPIC_STRICT_TOOL_NAMES.has(toolName)) return false
-  // Only when the model itself declares structured-outputs support — Claude
-  // Sonnet/Opus 4.5+ etc. Older Claudes ignore the strict flag and may 400.
-  return getProviderRegistry().getModelFlag(model, 'structuredOutputs') === true
-}
-
 export async function toolToAPISchema(
   tool: Tool,
   options: {
@@ -278,63 +126,34 @@ export async function toolToAPISchema(
     }
   },
 ): Promise<BetaToolUnion> {
-  // Session-stable base schema: name, description, input_schema, strict,
-  // eager_input_streaming. These are computed once per session and cached to
-  // prevent mid-session tool.prompt() drift from churning the serialized tool
-  // array bytes. See toolSchemaCache.ts for rationale.
+  // Session-stable base schema: name, description, input_schema,
+  // eager_input_streaming. Computed once per session and cached to prevent
+  // mid-session tool.prompt() drift from churning the serialized tool array
+  // bytes. See toolSchemaCache.ts for rationale.
   //
   // Cache key includes inputJSONSchema when present. StructuredOutput instances
   // share the name 'StructuredOutput' but carry different schemas per workflow
   // call — name-only keying returned a stale schema (5.4% → 51% err rate, see
   // PR#25424). MCP tools also set inputJSONSchema but each has a stable schema,
   // so including it preserves their GB-flip cache stability.
-  //
-  // The wire-strict bit is baked in: a mid-session provider switch must not
-  // return a cached schema with the wrong strict flag / keyword shape.
-  const wireStrict = shouldEmitWireStrictForAnthropic(tool.name, options.model)
   const isToolOwnedSchema = 'inputJSONSchema' in tool && tool.inputJSONSchema
   const modelInputSchema = isToolOwnedSchema
     ? tool.inputJSONSchema!
     : zodToJsonSchema(tool.modelInputSchema ?? tool.inputSchema)
-  const baseKey =
+  const cacheKey =
     isToolOwnedSchema || tool.modelInputSchema
       ? `${tool.name}:${jsonStringify(modelInputSchema)}`
       : tool.name
-  const cacheKey = `${baseKey}|strict=${wireStrict ? 1 : 0}`
   const cache = getToolSchemaCache()
   let base = cache.get(cacheKey)
   if (!base) {
-    // Tool-owned schema (MCP, StructuredOutput) — caller controls the shape;
-    // we never rewrite. Otherwise convert the model-facing Zod schema.
+    // Tool-owned schema (MCP, StructuredOutput) — caller controls the shape.
+    // Zod-derived schemas are sent as natural JSON Schema — optional fields
+    // stay optional, validation keywords (minimum, maximum, etc.) are preserved.
     let input_schema = modelInputSchema as APIToolInputSchema
 
-    // Filter out swarm-related fields when swarms are not enabled
-    // This ensures external non-EAP users don't see swarm features in the schema
     if (!isAgentSwarmsEnabled()) {
       input_schema = filterSwarmFieldsFromSchema(tool.name, input_schema)
-    }
-
-    // Universal strict-shape: every Zod-derived tool schema is rewritten to
-    // `additionalProperties: false` on every object + every property in
-    // `required` + optional fields widened with null. This is the strongest
-    // structural signal to the model regardless of provider, and is the
-    // shape OpenAI / Anthropic / Gemini all accept. We skip:
-    //   - Tool-owned schemas (MCP / StructuredOutput) — caller controls shape.
-    //   - `.passthrough()` opt-outs (`additionalProperties: {}` marker).
-    //
-    // Strict-disallowed validation keywords (numeric mins/maxes, string
-    // min/maxLength, `format: "uri"`, array bounds, etc.) are stripped here
-    // as well: Anthropic strict-tools rejects them outright, OpenAI strict
-    // rejects `format: "uri"` and a few others, and the bounds the model
-    // actually needs are encoded in `.describe()` text on each affected
-    // tool's Zod schema. We strip even on the non-strict-wire path so the
-    // universal schema bytes match what the OpenAI/Codex/Anthropic-strict
-    // adapters expect — keeps one schema shape across all providers.
-    if (!isToolOwnedSchema && !isPassthroughSchema(input_schema)) {
-      input_schema = makeJsonSchemaStrict(input_schema) as APIToolInputSchema
-      input_schema = stripStrictDisallowedKeywords(
-        input_schema,
-      ) as APIToolInputSchema
     }
 
     base = {
@@ -348,18 +167,6 @@ export async function toolToAPISchema(
       input_schema,
     }
 
-    // Anthropic-wire `strict: true` opt-in. OpenAI Chat / Responses adapters
-    // set `strict: true` on translated tool definitions from the model's
-    // `structuredOutputs` flag separately; we do not duplicate that here.
-    if (wireStrict) {
-      base.strict = true
-    }
-
-    // Enable fine-grained tool streaming via per-tool API field.
-    // Without FGTS, the API buffers entire tool input parameters before sending
-    // input_json_delta events, causing multi-minute hangs on large tool inputs.
-    // Gated to direct api.anthropic.com: proxies (LiteLLM etc.) and Bedrock/Vertex
-    // with Claude 4.5 reject this field with 400. See GH#32742, PR #21729.
     if (
       (options.model
         ? getProviderRegistry().getCapability(
@@ -376,14 +183,10 @@ export async function toolToAPISchema(
     cache.set(cacheKey, base)
   }
 
-  // Per-request overlay: cache markers move between calls.
-  // Explicit field copy avoids mutating the cached base and sidesteps
-  // BetaTool.cache_control's `| null` clashing with our narrower type.
   const schema: BetaToolWithExtras = {
     name: base.name,
     description: base.description,
     input_schema: base.input_schema,
-    ...(base.strict && { strict: true }),
     ...(base.eager_input_streaming && { eager_input_streaming: true }),
   }
 

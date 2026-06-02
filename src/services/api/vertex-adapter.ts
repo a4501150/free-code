@@ -45,7 +45,7 @@ export function createVertexFetch(
     }
 
     // Parse the Anthropic request body
-    let anthropicBody: Record<string, unknown>
+    let internalBody: Record<string, unknown>
     try {
       const bodyText =
         init?.body instanceof ReadableStream
@@ -53,17 +53,17 @@ export function createVertexFetch(
           : typeof init?.body === 'string'
             ? init.body
             : '{}'
-      anthropicBody = JSON.parse(bodyText)
+      internalBody = JSON.parse(bodyText)
     } catch {
-      anthropicBody = {}
+      internalBody = {}
     }
 
     // Extract model and prepare Vertex body
-    const model = anthropicBody.model as string
-    const isStreaming = anthropicBody.stream !== false
+    const model = internalBody.model as string
+    const isStreaming = internalBody.stream !== false
 
     // Build Vertex-specific body: remove model, add anthropic_version
-    const vertexBody = { ...anthropicBody }
+    const vertexBody = { ...internalBody }
     delete vertexBody.model
     vertexBody.anthropic_version = 'vertex-2023-10-16'
 

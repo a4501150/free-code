@@ -188,14 +188,8 @@ export const getAllModelBetas = memoize((model: string): string[] => {
     betaHeaders.push(CONTEXT_MANAGEMENT_BETA_HEADER)
   }
   // The `structured-outputs-2025-12-15` beta on Anthropic-wire providers
-  // covers two use cases: response `output_format` (set in claude.ts only
-  // when the caller asks for it; that path adds the header on demand) and
-  // per-tool `strict: true`. We ship a small allowlist of file-mutation
-  // tools with `strict: true` to Anthropic-wire providers when the model
-  // declares structured-outputs support — see ANTHROPIC_STRICT_TOOL_NAMES
-  // in src/utils/api.ts. The header is required for those tools to be
-  // recognized as strict by Anthropic; on the GA path it is a no-op, but
-  // the docs still document legacy beta-header support during transition.
+  // enables structured response `output_format` (set in claude.ts only
+  // when the caller asks for it; that path adds the header on demand).
   if (includeFirstPartyOnlyBetas && modelSupportsStructuredOutputs(model)) {
     betaHeaders.push(STRUCTURED_OUTPUTS_BETA_HEADER)
   }

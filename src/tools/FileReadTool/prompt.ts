@@ -28,11 +28,11 @@ Assume this tool is able to read all files on the machine. If the User provides 
 Usage:
 - The file_path parameter must be an absolute path, not a relative path
 ${maxSizeInstruction ? `- ${maxSizeInstruction}` : ''}
-- For text and source files, provide only \`file_path\` to read the full file. To read a portion, provide \`offset\`, \`limit\`, or both; omit unused optional fields or send \`null\`. Omit \`limit\` to read from the starting point through the end. Never invent optional values or use a very large \`limit\` sentinel to request the full file or remainder.
+- For text and source files, provide only \`file_path\` to read the full file. To read a portion, provide \`offset\`, \`limit\`, or both.
 ${lineFormat}
 - This tool allows Claude Code to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as Claude Code is a multimodal LLM.${
     isPDFSupported()
-      ? '\n- This tool can read PDF files (.pdf); use the `pages` parameter for large PDFs. `pages` is valid only for PDF files and cannot be combined with `offset` or `limit`. For non-PDF files, omit `pages` or send `null`; never invent a page range.'
+      ? '\n- This tool can read PDF files (.pdf); use the `pages` parameter for large PDFs. `pages` is only valid for PDF files and cannot be combined with `offset` or `limit`.'
       : ''
   }
 - This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.

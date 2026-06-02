@@ -15,7 +15,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createChatCompletionsFetch } from '../../src/services/api/openai-chat-completions-adapter.js'
 
-type AnthropicRequestBody = {
+type InternalRequestBody = {
   model: string
   messages: Array<{
     role: string
@@ -67,7 +67,7 @@ describe('OpenAI Chat Completions adapter: thinking-block handling', () => {
       // Anthropic-shape request body carrying a thinking block that is
       // tagged as sourced from the Anthropic provider. The adapter should
       // strip it during translation.
-      const anthropicBody: AnthropicRequestBody = {
+      const internalBody: InternalRequestBody = {
         model: 'test',
         messages: [
           {
@@ -84,7 +84,7 @@ describe('OpenAI Chat Completions adapter: thinking-block handling', () => {
       const response = await adapterFetch('http://localhost/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(anthropicBody),
+        body: JSON.stringify(internalBody),
       })
 
       // Drain the stream so finishStream runs cleanly.

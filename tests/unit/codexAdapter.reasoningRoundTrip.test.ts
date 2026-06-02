@@ -203,7 +203,7 @@ describe('Codex adapter: reasoning round-trip', () => {
         getSessionId: () => 'test-session',
       })
 
-      const anthropicBody = {
+      const internalBody = {
         model: 'gpt-test',
         messages: [
           { role: 'user', content: 'first question' },
@@ -227,7 +227,7 @@ describe('Codex adapter: reasoning round-trip', () => {
       const response = await adapterFetch('http://localhost/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(anthropicBody),
+        body: JSON.stringify(internalBody),
       })
       // Drain response so the pipeline finishes cleanly.
       if (response.body) {
@@ -293,7 +293,7 @@ describe('Codex adapter: reasoning round-trip', () => {
         getSessionId: () => 'test-session',
       })
 
-      const anthropicBody = {
+      const internalBody = {
         model: 'gpt-test',
         messages: [
           {
@@ -313,7 +313,7 @@ describe('Codex adapter: reasoning round-trip', () => {
       const response = await adapterFetch('http://localhost/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(anthropicBody),
+        body: JSON.stringify(internalBody),
       })
       if (response.body) {
         const reader = response.body.getReader()
@@ -358,7 +358,7 @@ describe('Codex adapter: reasoning round-trip', () => {
         getSessionId: () => 'test-session',
       })
 
-      const anthropicBody = {
+      const internalBody = {
         model: 'gpt-test',
         messages: [
           {
@@ -381,7 +381,7 @@ describe('Codex adapter: reasoning round-trip', () => {
       const response = await adapterFetch('http://localhost/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(anthropicBody),
+        body: JSON.stringify(internalBody),
       })
       if (response.body) {
         const reader = response.body.getReader()
@@ -432,7 +432,7 @@ describe('Codex adapter: reasoning round-trip', () => {
         getSessionId: () => 'test-session',
       })
 
-      const anthropicBody = {
+      const internalBody = {
         model: 'gpt-test',
         messages: [
           {
@@ -454,7 +454,7 @@ describe('Codex adapter: reasoning round-trip', () => {
       const response = await adapterFetch('http://localhost/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(anthropicBody),
+        body: JSON.stringify(internalBody),
       })
       if (response.body) {
         const reader = response.body.getReader()

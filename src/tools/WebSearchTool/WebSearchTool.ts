@@ -37,13 +37,13 @@ const inputSchema = z.strictObject({
     .array(z.string())
     .optional()
     .describe(
-      'Only include search results from these domains. Mutually exclusive with blocked_domains; omit this field or send null when unused.',
+      'Only include search results from these domains. Mutually exclusive with blocked_domains.',
     ),
   blocked_domains: z
     .array(z.string())
     .optional()
     .describe(
-      'Never include search results from these domains. Mutually exclusive with allowed_domains; omit this field or send null when unused.',
+      'Never include search results from these domains. Mutually exclusive with allowed_domains.',
     ),
 })
 type InputSchema = typeof inputSchema
