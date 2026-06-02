@@ -14,8 +14,6 @@ import {
   checkAndRefreshOAuthTokenIfNeeded,
   getAnthropicApiKey,
   getApiKeyFromApiKeyHelper,
-  getCodexOAuthTokens,
-  refreshAndGetAwsCredentials,
   refreshGcpCredentialsIfNeeded,
 } from 'src/utils/auth.js'
 import { getUserAgent } from 'src/utils/http.js'
@@ -340,87 +338,32 @@ async function createClientForProvider(
 
     // ── OpenAI Chat Completions ─────────────────────────────────
     case 'openai-chat-completions': {
-      const authHeaders = resolveAuthHeaders(provider)
-      const fetch = getAdapterForProviderType(config.type).createFetch(
-        config,
-        authHeaders,
-      )
+      // Native-transport adapter — SDK client is a placeholder; streaming
+      // goes through adapter.createStream() which does its own HTTP calls.
       return new Anthropic({
         apiKey: 'provider-registry-placeholder',
         ...baseArgs,
-        ...(fetch && { fetch: fetch as unknown as typeof globalThis.fetch }),
       })
     }
 
     // ── OpenAI Responses API (Codex) ────────────────────────────
     case 'openai-responses': {
-      // Get Codex OAuth tokens at runtime (may have been refreshed)
-      const codexTokens = getCodexOAuthTokens()
-      const accessToken = codexTokens?.accessToken
-      let codexOpts: {
-        accessToken: string
-        getRefreshedToken?: () => string | null
-        baseUrl?: string
-        getSessionId: () => string
-      } | null = null
-      if (!accessToken) {
-        // Fall back to auth headers from config
-        const authHeaders = resolveAuthHeaders(provider)
-        if (!authHeaders['Authorization']) return null
-        const token = authHeaders['Authorization'].replace('Bearer ', '')
-        codexOpts = {
-          accessToken: token,
-          baseUrl: config.baseUrl,
-          getSessionId,
-        }
-      } else {
-        codexOpts = {
-          accessToken,
-          getRefreshedToken: () => getCodexOAuthTokens()?.accessToken ?? null,
-          baseUrl: config.baseUrl,
-          getSessionId,
-        }
-      }
-      const codexFetch = getAdapterForProviderType(config.type).createFetch(
-        config,
-        codexOpts,
-      )
+      // Native-transport adapter — SDK client is a placeholder; streaming
+      // goes through adapter.createStream() which resolves auth internally.
       return new Anthropic({
         apiKey: 'codex-placeholder',
         ...baseArgs,
-        ...(codexFetch && {
-          fetch: codexFetch as unknown as typeof globalThis.fetch,
-        }),
         ...(isDebugToStdErr() && { logger: createStderrLogger() }),
       })
     }
 
     // ── AWS Bedrock ─────────────────────────────────────────────
     case 'bedrock-converse': {
-      const getCredentials = async () => {
-        if (process.env.AWS_BEARER_TOKEN_BEDROCK) {
-          return null
-        }
-        if (!isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)) {
-          const creds = await refreshAndGetAwsCredentials()
-          if (creds) {
-            return {
-              accessKeyId: creds.accessKeyId,
-              secretAccessKey: creds.secretAccessKey,
-              sessionToken: creds.sessionToken,
-            }
-          }
-        }
-        return null
-      }
-      const fetch = getAdapterForProviderType(config.type).createFetch(
-        config,
-        getCredentials,
-      )
+      // Native-transport adapter — SDK client is a placeholder; streaming
+      // goes through adapter.createStream() which resolves AWS auth internally.
       return new Anthropic({
         apiKey: 'bedrock-placeholder',
         ...baseArgs,
-        ...(fetch && { fetch: fetch as unknown as typeof globalThis.fetch }),
         ...(isDebugToStdErr() && { logger: createStderrLogger() }),
       })
     }
@@ -469,7 +412,7 @@ async function createClientForProvider(
           undefined
         return { token, projectId: projectId ?? undefined }
       }
-      const fetch = getAdapterForProviderType(config.type).createFetch(
+      const fetch = getAdapterForProviderType(config.type).createFetch?.(
         config,
         getAccessToken,
       )
@@ -499,7 +442,7 @@ async function createClientForProvider(
         )
         return tokenProvider()
       }
-      const fetch = getAdapterForProviderType(config.type).createFetch(
+      const fetch = getAdapterForProviderType(config.type).createFetch?.(
         config,
         getToken,
       )
@@ -513,46 +456,11 @@ async function createClientForProvider(
 
     // ── Gemini (Vertex AI generateContent) ───────────────────────
     case 'gemini': {
-      const getAccessToken = async () => {
-        const hasProjectEnvVar =
-          process.env['GCLOUD_PROJECT'] ||
-          process.env['GOOGLE_CLOUD_PROJECT'] ||
-          process.env['gcloud_project'] ||
-          process.env['google_cloud_project']
-        const hasKeyFile =
-          process.env['GOOGLE_APPLICATION_CREDENTIALS'] ||
-          process.env['google_application_credentials']
-
-        const googleAuth = new GoogleAuth({
-          scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-          ...(hasProjectEnvVar || hasKeyFile
-            ? {}
-            : {
-                projectId: config.auth?.gcp?.projectId,
-              }),
-        })
-
-        const authClient = await googleAuth.getClient()
-        const headers =
-          (await authClient.getRequestHeaders()) as unknown as Record<
-            string,
-            string | undefined
-          >
-        const token = headers['Authorization']?.replace('Bearer ', '') || ''
-        const projectId =
-          headers['x-goog-user-project'] ||
-          (await googleAuth.getProjectId()) ||
-          undefined
-        return { token, projectId: projectId ?? undefined }
-      }
-      const fetch = getAdapterForProviderType(config.type).createFetch(
-        config,
-        getAccessToken,
-      )
+      // Native-transport adapter — SDK client is a placeholder; streaming
+      // goes through adapter.createStream() which resolves GCP auth internally.
       return new Anthropic({
         apiKey: 'gemini-placeholder',
         ...baseArgs,
-        ...(fetch && { fetch: fetch as unknown as typeof globalThis.fetch }),
         ...(isDebugToStdErr() && { logger: createStderrLogger() }),
       })
     }

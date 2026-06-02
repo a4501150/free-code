@@ -17,7 +17,6 @@
  */
 import type {
   ProviderAdapter,
-  FetchFn,
   TokenBreakdown,
   TokenCountMessageParam,
   TokenCountToolParam,
@@ -31,7 +30,6 @@ import {
   fromHttpStatus,
   type NormalizedApiError,
 } from '../../../utils/normalizedError.js'
-import { createChatCompletionsFetch } from '../openai-chat-completions-adapter.js'
 import type {
   DomainMessageRequest,
   DomainStreamingResponse,
@@ -815,13 +813,6 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
 
     const json = (await response.json()) as Record<string, unknown>
     return parseOpenAINonStreamingResponse(json, request.model)
-  },
-
-  createFetch(config: ProviderConfig, authArgs: unknown): FetchFn {
-    return createChatCompletionsFetch(
-      config,
-      authArgs as Parameters<typeof createChatCompletionsFetch>[1],
-    )
   },
 
   async countTokens(

@@ -13,7 +13,6 @@ import { Sha256 } from '@aws-crypto/sha256-js'
 import { SignatureV4 } from '@smithy/signature-v4'
 import type {
   ProviderAdapter,
-  FetchFn,
   TokenBreakdown,
   TokenCountMessageParam,
   TokenCountToolParam,
@@ -27,7 +26,6 @@ import {
   fromHttpStatus,
   type NormalizedApiError,
 } from '../../../utils/normalizedError.js'
-import { createBedrockConverseFetch } from '../bedrock-converse-adapter.js'
 import {
   countTokensViaBedrock,
   hasThinkingBlocks,
@@ -837,13 +835,6 @@ export const bedrockAdapter: ProviderAdapter = {
 
     const json = (await response.json()) as Record<string, unknown>
     return parseConverseNonStreamingResponse(json, request.model)
-  },
-
-  createFetch(config: ProviderConfig, authArgs: unknown): FetchFn {
-    return createBedrockConverseFetch(
-      config,
-      authArgs as Parameters<typeof createBedrockConverseFetch>[1],
-    )
   },
 
   async countTokens(

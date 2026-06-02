@@ -140,10 +140,14 @@ export interface ProviderAdapter {
    * `undefined` to indicate "no override — use the SDK's native fetch"
    * (Anthropic-native).
    *
-   * @deprecated Use `createStream` / `createMessage` instead. Retained for
-   * backwards compatibility during migration.
+   * Only implemented by adapters that still use the Anthropic SDK as their
+   * transport layer (anthropic, vertex, foundry). Native-transport adapters
+   * (openai-chat-completions, openai-responses, gemini, bedrock-converse)
+   * do not implement this.
+   *
+   * @deprecated Use `createStream` / `createMessage` instead.
    */
-  createFetch(config: ProviderConfig, authArgs: unknown): FetchFn | undefined
+  createFetch?(config: ProviderConfig, authArgs: unknown): FetchFn | undefined
 
   // ── Token counting ─────────────────────────────────────────────
 

@@ -13,7 +13,6 @@
  */
 import type {
   ProviderAdapter,
-  FetchFn,
   TokenBreakdown,
   TokenCountMessageParam,
   TokenCountToolParam,
@@ -27,7 +26,6 @@ import {
   fromHttpStatus,
   type NormalizedApiError,
 } from '../../../utils/normalizedError.js'
-import { createGeminiFetch } from '../gemini-adapter.js'
 import { logError } from '../../../utils/log.js'
 import {
   getProviderRegistry,
@@ -774,13 +772,6 @@ export const geminiAdapter: ProviderAdapter = {
 
     const json = (await response.json()) as Record<string, unknown>
     return parseGeminiNonStreamingResponse(json, request.model, this.normalizeError)
-  },
-
-  createFetch(config: ProviderConfig, authArgs: unknown): FetchFn {
-    return createGeminiFetch(
-      config,
-      authArgs as Parameters<typeof createGeminiFetch>[1],
-    )
   },
 
   async countTokens(

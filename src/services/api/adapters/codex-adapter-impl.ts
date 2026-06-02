@@ -11,7 +11,6 @@
  */
 import type {
   ProviderAdapter,
-  FetchFn,
   TokenBreakdown,
   TokenCountMessageParam,
   TokenCountToolParam,
@@ -25,7 +24,6 @@ import {
   fromHttpStatus,
   type NormalizedApiError,
 } from '../../../utils/normalizedError.js'
-import { createCodexFetch } from '../codex-fetch-adapter.js'
 import { getProviderRegistry } from '../../../utils/model/providerRegistry.js'
 import { getCodexOAuthTokens } from '../../../utils/auth.js'
 import { getSessionId } from '../../../bootstrap/state.js'
@@ -1388,10 +1386,6 @@ export const codexAdapter: ProviderAdapter = {
 
     const json = (await response.json()) as Record<string, unknown>
     return parseCodexNonStreamingResponse(json, request.model)
-  },
-
-  createFetch(_config: ProviderConfig, authArgs: unknown): FetchFn {
-    return createCodexFetch(authArgs as Parameters<typeof createCodexFetch>[0])
   },
 
   async countTokens(
