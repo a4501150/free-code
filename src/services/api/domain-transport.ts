@@ -26,6 +26,12 @@ export interface DomainStreamingResponse {
   release(): void
 }
 
+export interface DomainMessageResponse {
+  message: DomainAssistantContent
+  requestId?: string
+  responseHeaders?: Record<string, string>
+}
+
 // ── Request Types ───────────────────────────────────────────────────
 
 export type DomainMessageParam =
@@ -41,11 +47,12 @@ export type DomainSystemBlock = {
 
 export type DomainToolDefinition = {
   name: string
-  description?: string
-  input_schema: Record<string, unknown>
-  type?: string
+  description?: string | null
+  input_schema?: Record<string, unknown>
+  type?: string | null
   cacheControl?: DomainCacheControl
   cacheScope?: string | null
+  [key: string]: unknown
 }
 
 export type DomainThinkingConfig =
@@ -75,7 +82,9 @@ export type DomainMessageRequest = {
   outputConfig?: Record<string, unknown>
   advisorModel?: string
   previousRequestId?: string
+  clientRequestId?: string
   contextManagement?: Record<string, unknown>
+  stopSequences?: string[]
 }
 
 // Re-export domain types that adapters and the main loop both need

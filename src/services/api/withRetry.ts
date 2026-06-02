@@ -1,10 +1,4 @@
 import { feature } from 'bun:bundle'
-import type Anthropic from '@anthropic-ai/sdk'
-import {
-  APIConnectionError,
-  APIError,
-  APIUserAbortError,
-} from '@anthropic-ai/sdk'
 import type { QuerySource } from 'src/constants/querySource.js'
 import type { SystemAPIErrorMessage } from 'src/types/message.js'
 import { isAwsCredentialsProviderError } from 'src/utils/aws.js'
@@ -12,11 +6,6 @@ import { logForDebugging } from 'src/utils/debug.js'
 import { createSystemAPIErrorMessage } from 'src/utils/messages.js'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import {
-  clearApiKeyHelperCache,
-  clearAwsCredentialsCache,
-  clearGcpCredentialsCache,
-  getClaudeAIOAuthTokens,
-  handleOAuth401Error,
   isClaudeAISubscriber,
   isEnterpriseSubscriber,
 } from '../../utils/auth.js'
@@ -35,17 +24,14 @@ import { sleep } from '../../utils/sleep.js'
 import type { ThinkingConfig } from '../../utils/thinking.js'
 import { isMockRateLimitError } from '../rateLimits/mocking.js'
 import { REPEATED_529_ERROR_MESSAGE } from './errors.js'
-import {
-  extractConnectionErrorDetails,
-  getNormalizedError,
-} from './errorUtils.js'
+import { extractConnectionErrorDetails } from './errorUtils.js'
 import {
   DomainTransportError,
   DomainConnectionError,
   DomainUserAbortError,
 } from './domain-errors.js'
 
-const abortError = () => new APIUserAbortError()
+const abortError = () => new DomainUserAbortError()
 
 const DEFAULT_MAX_RETRIES = 10
 const MAX_529_RETRIES = 3
@@ -99,11 +85,7 @@ function isTransientCapacityError(error: unknown): boolean {
     const k = error.normalized.kind
     return k === 'rate_limit' || k === 'overloaded'
   }
-  if (!(error instanceof APIError)) return false
-  if (is529Error(error)) return true
-  if (error.status === 429) return true
-  const normalized = getNormalizedError(error)
-  return normalized?.kind === 'rate_limit' || normalized?.kind === 'overloaded'
+  return false
 }
 
 function isStaleConnectionError(error: unknown): boolean {
@@ -111,11 +93,7 @@ function isStaleConnectionError(error: unknown): boolean {
     const details = extractConnectionErrorDetails(error)
     return details?.code === 'ECONNRESET' || details?.code === 'EPIPE'
   }
-  if (!(error instanceof APIConnectionError)) {
-    return false
-  }
-  const details = extractConnectionErrorDetails(error)
-  return details?.code === 'ECONNRESET' || details?.code === 'EPIPE'
+  return false
 }
 
 export interface RetryContext {
@@ -131,6 +109,7 @@ interface RetryOptions {
   fastMode?: boolean
   signal?: AbortSignal
   querySource?: QuerySource
+  prepareRetry?: (error: unknown) => Promise<void> | void
   /**
    * Pre-seed the consecutive 529 counter. Used when this retry loop is a
    * non-streaming fallback after a streaming 529 — the streaming 529 should
@@ -157,12 +136,7 @@ export class CannotRetryError extends Error {
 }
 
 export async function* withRetry<T>(
-  getClient: () => Promise<Anthropic>,
-  operation: (
-    client: Anthropic,
-    attempt: number,
-    context: RetryContext,
-  ) => Promise<T>,
+  operation: (attempt: number, context: RetryContext) => Promise<T>,
   options: RetryOptions,
 ): AsyncGenerator<SystemAPIErrorMessage, T> {
   const maxRetries = getMaxRetries(options)
@@ -171,13 +145,12 @@ export async function* withRetry<T>(
     thinkingConfig: options.thinkingConfig,
     ...(isFastModeEnabled() && { fastMode: options.fastMode }),
   }
-  let client: Anthropic | null = null
   let consecutive529Errors = options.initialConsecutive529Errors ?? 0
   let lastError: unknown
   let persistentAttempt = 0
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
     if (options.signal?.aborted) {
-      throw new APIUserAbortError()
+      throw new DomainUserAbortError()
     }
 
     // Capture whether fast mode is active before this attempt
@@ -187,57 +160,25 @@ export async function* withRetry<T>(
       : false
 
     try {
-      // Get a fresh client instance on first attempt or after authentication errors
-      // - 401 for first-party API authentication failures
-      // - 403 "OAuth token has been revoked" (another process refreshed the token)
-      // - Bedrock-specific auth errors (403 or CredentialsProviderError)
-      // - Vertex-specific auth errors (credential refresh failures, 401)
-      // - ECONNRESET/EPIPE: stale keep-alive socket; disable pooling and reconnect
-      const isStaleConnection = isStaleConnectionError(lastError)
-      if (isStaleConnection) {
+      if (isStaleConnectionError(lastError)) {
         logForDebugging(
           'Stale connection (ECONNRESET/EPIPE) — disabling keep-alive for retry',
         )
         disableKeepAlive()
       }
 
-      const isDomainAuthError =
-        lastError instanceof DomainTransportError &&
-        lastError.normalized.kind === 'auth'
-      if (
-        client === null ||
-        (lastError instanceof APIError && lastError.status === 401) ||
-        (lastError instanceof DomainTransportError &&
-          lastError.status === 401) ||
-        isOAuthTokenRevokedError(lastError) ||
-        isBedrockAuthError(lastError) ||
-        isVertexAuthError(lastError) ||
-        isDomainAuthError ||
-        isStaleConnection
-      ) {
-        // On 401 "token expired" or 403 "token revoked", force a token refresh
-        if (
-          (lastError instanceof APIError && lastError.status === 401) ||
-          (lastError instanceof DomainTransportError &&
-            lastError.status === 401) ||
-          isOAuthTokenRevokedError(lastError)
-        ) {
-          const failedAccessToken = getClaudeAIOAuthTokens()?.accessToken
-          if (failedAccessToken) {
-            await handleOAuth401Error(failedAccessToken)
-          }
-        }
-        client = await getClient()
+      if (lastError && options.prepareRetry) {
+        await options.prepareRetry(lastError)
       }
 
-      return await operation(client, attempt, retryContext)
+      return await operation(attempt, retryContext)
     } catch (error) {
       // Domain abort errors propagate immediately — never retry
       if (error instanceof DomainUserAbortError) throw error
 
       lastError = error
       logForDebugging(
-        `API error (attempt ${attempt}/${maxRetries + 1}): ${error instanceof DomainTransportError ? `${error.status ?? 'stream'} ${error.message}` : error instanceof APIError ? `${error.status} ${error.message}` : errorMessage(error)}`,
+        `API error (attempt ${attempt}/${maxRetries + 1}): ${error instanceof DomainTransportError ? `${error.status ?? 'stream'} ${error.message}` : errorMessage(error)}`,
         { level: 'error' },
       )
 
@@ -259,11 +200,7 @@ export async function* withRetry<T>(
             ? error.headers?.[
                 'anthropic-ratelimit-unified-overage-disabled-reason'
               ]
-            : error instanceof APIError
-              ? error.headers?.get(
-                  'anthropic-ratelimit-unified-overage-disabled-reason',
-                )
-              : undefined
+            : undefined
         if (overageReason !== null && overageReason !== undefined) {
           handleFastModeOverageRejection(overageReason)
           retryContext.fastMode = false
@@ -324,15 +261,16 @@ export async function* withRetry<T>(
         throw new CannotRetryError(error, retryContext)
       }
 
-      // AWS/GCP errors aren't always APIError, but can be retried
-      const handledCloudAuthError =
-        handleAwsCredentialError(error) || handleGcpCredentialError(error)
-      if (!handledCloudAuthError) {
+      // AWS/GCP credential errors aren't always domain errors, but can be retried.
+      // The caller refreshes credentials through prepareRetry before the next attempt.
+      const isCloudAuthError =
+        isBedrockAuthError(error) || isVertexAuthError(error)
+      if (!isCloudAuthError) {
         if (error instanceof DomainTransportError) {
           if (!shouldRetryDomainError(error)) {
             throw new CannotRetryError(error, retryContext)
           }
-        } else if (!(error instanceof APIError) || !shouldRetry(error)) {
+        } else {
           throw new CannotRetryError(error, retryContext)
         }
       }
@@ -342,8 +280,7 @@ export async function* withRetry<T>(
       const retryAfter = getRetryAfter(error)
       let delayMs: number
       const is429 =
-        (error instanceof APIError && error.status === 429) ||
-        (error instanceof DomainTransportError && error.status === 429)
+        error instanceof DomainTransportError && error.status === 429
       if (persistent && is429) {
         persistentAttempt++
         const resetDelay = getRateLimitResetDelayMs(error)
@@ -378,24 +315,21 @@ export async function* withRetry<T>(
       // use persistentAttempt for telemetry/yields so they show the true count.
       const reportedAttempt = persistent ? persistentAttempt : attempt
 
-      // Create a synthetic APIError for system message yield when the error
-      // is a domain error. createSystemAPIErrorMessage expects APIError shape.
       const errorForMessage =
-        error instanceof APIError
-          ? error
-          : error instanceof DomainTransportError
-            ? new APIError(
-                error.status,
-                undefined,
-                error.message,
-                undefined,
-              )
-            : null
+        error instanceof DomainTransportError
+          ? {
+              status: error.status,
+              message: error.message,
+              requestID: error.requestID,
+              headers: error.headers,
+              cause: error.cause,
+            }
+          : null
 
       if (persistent) {
         let remaining = delayMs
         while (remaining > 0) {
-          if (options.signal?.aborted) throw new APIUserAbortError()
+          if (options.signal?.aborted) throw new DomainUserAbortError()
           if (errorForMessage) {
             yield createSystemAPIErrorMessage(
               errorForMessage,
@@ -427,14 +361,10 @@ export async function* withRetry<T>(
 }
 
 function getRetryAfter(error: unknown): string | null {
-  return (
-    ((error as { headers?: { 'retry-after'?: string } }).headers?.[
-      'retry-after'
-    ] ||
-      // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
-      ((error as APIError).headers as Headers)?.get?.('retry-after')) ??
-    null
-  )
+  if (error instanceof DomainTransportError) {
+    return error.headers?.['retry-after'] ?? null
+  }
+  return null
 }
 
 export function getRetryDelay(
@@ -467,28 +397,14 @@ function isFastModeNotEnabledError(error: unknown): boolean {
       (error.message?.includes('Fast mode is not enabled') ?? false)
     )
   }
-  if (!(error instanceof APIError)) {
-    return false
-  }
-  return (
-    error.status === 400 &&
-    (error.message?.includes('Fast mode is not enabled') ?? false)
-  )
+  return false
 }
 
 export function is529Error(error: unknown): boolean {
   if (error instanceof DomainTransportError) {
     return error.normalized.kind === 'overloaded'
   }
-  if (!(error instanceof APIError)) {
-    return false
-  }
-  const normalized = getNormalizedError(error)
-  if (normalized?.kind === 'overloaded') return true
-  return (
-    error.status === 529 ||
-    (error.message?.includes('"type":"overloaded_error"') ?? false)
-  )
+  return false
 }
 
 function isOAuthTokenRevokedError(error: unknown): boolean {
@@ -498,34 +414,14 @@ function isOAuthTokenRevokedError(error: unknown): boolean {
       (error.message?.includes('OAuth token has been revoked') ?? false)
     )
   }
-  return (
-    error instanceof APIError &&
-    error.status === 403 &&
-    (error.message?.includes('OAuth token has been revoked') ?? false)
-  )
+  return false
 }
 
 function isBedrockAuthError(error: unknown): boolean {
   if (getProviderRegistry().getCapabilities().credentialRefresh === 'aws') {
     if (isAwsCredentialsProviderError(error)) return true
-    if (error instanceof DomainTransportError && error.status === 403) {
+    if (error instanceof DomainTransportError && error.status === 403)
       return true
-    }
-    if (error instanceof APIError && error.status === 403) {
-      return true
-    }
-  }
-  return false
-}
-
-/**
- * Clear AWS auth caches if appropriate.
- * @returns true if action was taken.
- */
-function handleAwsCredentialError(error: unknown): boolean {
-  if (isBedrockAuthError(error)) {
-    clearAwsCredentialsCache()
-    return true
   }
   return false
 }
@@ -544,52 +440,25 @@ function isGoogleAuthLibraryCredentialError(error: unknown): boolean {
 
 function isVertexAuthError(error: unknown): boolean {
   if (getProviderRegistry().getCapabilities().credentialRefresh === 'gcp') {
-    if (isGoogleAuthLibraryCredentialError(error)) {
+    if (isGoogleAuthLibraryCredentialError(error)) return true
+    if (error instanceof DomainTransportError && error.status === 401)
       return true
-    }
-    if (error instanceof DomainTransportError && error.status === 401) {
-      return true
-    }
-    if (error instanceof APIError && error.status === 401) {
-      return true
-    }
   }
   return false
 }
 
-/**
- * Clear GCP auth caches if appropriate.
- * @returns true if action was taken.
- */
-function handleGcpCredentialError(error: unknown): boolean {
-  if (isVertexAuthError(error)) {
-    clearGcpCredentialsCache()
-    return true
-  }
-  return false
-}
-
-function shouldRetry(error: APIError): boolean {
+function shouldRetryDomainError(error: DomainTransportError): boolean {
   // Never retry mock errors - they're from /mock-limits command for testing
-  if (isMockRateLimitError(error)) {
-    return false
-  }
+  if (isMockRateLimitError(error)) return false
 
   // Persistent mode: 429/529 always retryable, bypass subscriber gates and
   // x-should-retry header.
-  if (isPersistentRetryEnabled() && isTransientCapacityError(error)) {
-    return true
-  }
+  if (isPersistentRetryEnabled() && isTransientCapacityError(error)) return true
 
-  // Check for overloaded errors first by examining the message content
-  // The SDK sometimes fails to properly pass the 529 status code during streaming,
-  // so we need to check the error message directly
-  if (error.message?.includes('"type":"overloaded_error"')) {
-    return true
-  }
+  if (error instanceof DomainConnectionError) return true
 
   // Note this is not a standard header.
-  const shouldRetryHeader = error.headers?.get('x-should-retry')
+  const shouldRetryHeader = error.headers?.['x-should-retry']
 
   // If the server explicitly says whether or not to retry, obey.
   // For Max and Pro users, should-retry is true, but in several hours, so we shouldn't.
@@ -600,64 +469,24 @@ function shouldRetry(error: APIError): boolean {
   ) {
     return true
   }
+  if (shouldRetryHeader === 'false') return false
 
-  if (shouldRetryHeader === 'false') {
-    return false
+  switch (error.normalized.kind) {
+    case 'rate_limit':
+      return !isClaudeAISubscriber() || isEnterpriseSubscriber()
+    case 'overloaded':
+    case 'transport':
+    case 'server':
+      return true
+    case 'auth':
+      if (error.status === 401) return true
+      return isOAuthTokenRevokedError(error)
+    case 'invalid_request':
+    case 'context_overflow':
+    case 'content_filter':
+    case 'unknown':
+      return false
   }
-
-  if (error instanceof APIConnectionError) {
-    return true
-  }
-
-  if (!error.status) {
-    // Mid-stream SSE errors come through with status === undefined. Use
-    // the embedded NormalizedApiError to drive the retry decision so a
-    // mid-stream 429 / 529 / transport error isn't silently dropped.
-    const normalized = getNormalizedError(error)
-    if (!normalized) return false
-    switch (normalized.kind) {
-      case 'rate_limit':
-        return !isClaudeAISubscriber() || isEnterpriseSubscriber()
-      case 'overloaded':
-      case 'transport':
-      case 'server':
-        return true
-      case 'auth':
-      case 'invalid_request':
-      case 'content_filter':
-      case 'unknown':
-        return false
-    }
-  }
-
-  // Retry on request timeouts.
-  if (error.status === 408) return true
-
-  // Retry on lock timeouts.
-  if (error.status === 409) return true
-
-  // Retry on rate limits, but not for ClaudeAI Subscription users
-  // Enterprise users can retry because they typically use PAYG instead of rate limits
-  if (error.status === 429) {
-    return !isClaudeAISubscriber() || isEnterpriseSubscriber()
-  }
-
-  // Clear API key cache on 401 and allow retry.
-  // OAuth token handling is done in the main retry loop via handleOAuth401Error.
-  if (error.status === 401) {
-    clearApiKeyHelperCache()
-    return true
-  }
-
-  // Retry on 403 "token revoked" (same refresh logic as 401, see above)
-  if (isOAuthTokenRevokedError(error)) {
-    return true
-  }
-
-  // Retry internal errors.
-  if (error.status && error.status >= 500) return true
-
-  return false
 }
 
 export function getDefaultMaxRetries(): number {
@@ -684,15 +513,6 @@ function getRetryAfterMs(error: unknown): number | null {
     }
     return error.normalized.retryAfterMs ?? null
   }
-  if (error instanceof APIError) {
-    const retryAfter = getRetryAfter(error)
-    if (retryAfter) {
-      const seconds = parseInt(retryAfter, 10)
-      if (!isNaN(seconds)) return seconds * 1000
-    }
-    const normalized = getNormalizedError(error)
-    if (normalized?.retryAfterMs !== undefined) return normalized.retryAfterMs
-  }
   return null
 }
 
@@ -700,8 +520,6 @@ function getRateLimitResetDelayMs(error: unknown): number | null {
   let resetHeader: string | undefined | null
   if (error instanceof DomainTransportError) {
     resetHeader = error.headers?.['anthropic-ratelimit-unified-reset']
-  } else if (error instanceof APIError) {
-    resetHeader = error.headers?.get?.('anthropic-ratelimit-unified-reset')
   }
   if (!resetHeader) return null
   const resetUnixSec = Number(resetHeader)
@@ -709,28 +527,4 @@ function getRateLimitResetDelayMs(error: unknown): number | null {
   const delayMs = resetUnixSec * 1000 - Date.now()
   if (delayMs <= 0) return null
   return Math.min(delayMs, PERSISTENT_RESET_CAP_MS)
-}
-
-function shouldRetryDomainError(error: DomainTransportError): boolean {
-  if (isMockRateLimitError(error as unknown as APIError)) return false
-  if (error instanceof DomainConnectionError) return true
-  switch (error.normalized.kind) {
-    case 'rate_limit':
-      return !isClaudeAISubscriber() || isEnterpriseSubscriber()
-    case 'overloaded':
-    case 'transport':
-    case 'server':
-      return true
-    case 'auth':
-      if (error.status === 401) {
-        clearApiKeyHelperCache()
-        return true
-      }
-      return false
-    case 'invalid_request':
-    case 'context_overflow':
-    case 'content_filter':
-    case 'unknown':
-      return false
-  }
 }

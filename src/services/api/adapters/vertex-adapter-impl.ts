@@ -8,7 +8,6 @@
  */
 import type {
   ProviderAdapter,
-  FetchFn,
   TokenBreakdown,
   TokenCountMessageParam,
   TokenCountToolParam,
@@ -19,41 +18,94 @@ import type {
   ProviderType,
 } from '../../../utils/settings/types.js'
 import type { NormalizedApiError } from '../../../utils/normalizedError.js'
-import { createVertexFetch } from '../vertex-adapter.js'
 import { anthropicAdapter } from './anthropic-adapter.js'
 import { countTokensViaAnthropicEndpoint } from '../../tokenEstimation.js'
 import { VERTEX_COUNT_TOKENS_ALLOWED_BETAS } from '../../../constants/betas.js'
-import type { DomainMessageRequest } from '../domain-transport.js'
-import type { DomainStreamingResponse } from '../domain-transport.js'
-import type { DomainAssistantContent } from '../../../types/domain.js'
+import { anthropicMessageToDomain } from '../../../types/domainConversion.js'
+import { getAnthropicClient } from '../client.js'
+import type {
+  DomainMessageRequest,
+  DomainMessageResponse,
+  DomainStreamingResponse,
+} from '../domain-transport.js'
+import {
+  domainRequestToAnthropicParams,
+  makeStreamingResponse,
+  wrapSdkError,
+} from './anthropic-wire-helpers.js'
 
 export const vertexAnthropicAdapter: ProviderAdapter = {
   providerType: 'vertex',
   capabilities: {} as ProviderCapabilities,
 
   async createStream(
-    config: ProviderConfig,
-    authArgs: unknown,
+    _config: ProviderConfig,
     request: DomainMessageRequest,
     signal: AbortSignal,
   ): Promise<DomainStreamingResponse> {
-    return anthropicAdapter.createStream(config, authArgs, request, signal)
+    const client = await getAnthropicClient({
+      maxRetries: 0,
+      model: request.model,
+      source: 'adapter',
+    })
+    const params = domainRequestToAnthropicParams(request)
+
+    try {
+      const result = await client.beta.messages
+        .create(
+          { ...params, stream: true },
+          {
+            signal,
+            ...(request.clientRequestId && {
+              headers: { 'x-client-request-id': request.clientRequestId },
+            }),
+          },
+        )
+        .withResponse()
+      return makeStreamingResponse(
+        result.data,
+        result.response,
+        result.request_id,
+        'vertex',
+        this.normalizeError,
+      )
+    } catch (error) {
+      wrapSdkError(error, 'vertex', this.normalizeError)
+    }
   },
 
   async createMessage(
-    config: ProviderConfig,
-    authArgs: unknown,
+    _config: ProviderConfig,
     request: DomainMessageRequest,
     signal: AbortSignal,
-  ): Promise<DomainAssistantContent> {
-    return anthropicAdapter.createMessage(config, authArgs, request, signal)
-  },
+  ): Promise<DomainMessageResponse> {
+    const client = await getAnthropicClient({
+      maxRetries: 0,
+      model: request.model,
+      source: 'adapter',
+    })
+    const params = domainRequestToAnthropicParams(request)
 
-  createFetch(config: ProviderConfig, authArgs: unknown): FetchFn {
-    return createVertexFetch(
-      config,
-      authArgs as Parameters<typeof createVertexFetch>[1],
-    )
+    try {
+      const result = await client.beta.messages
+        .create(
+          { ...params, stream: false },
+          {
+            signal,
+            ...(request.clientRequestId && {
+              headers: { 'x-client-request-id': request.clientRequestId },
+            }),
+          },
+        )
+        .withResponse()
+      return {
+        message: anthropicMessageToDomain(result.data),
+        requestId: result.request_id ?? undefined,
+        responseHeaders: Object.fromEntries(result.response.headers.entries()),
+      }
+    } catch (error) {
+      wrapSdkError(error, 'vertex', this.normalizeError)
+    }
   },
 
   async countTokens(

@@ -1,4 +1,3 @@
-import type { APIError } from '@anthropic-ai/sdk'
 import type { DomainApiError } from '../../types/domain.js'
 import {
   fromHttpStatus,
@@ -6,26 +5,28 @@ import {
 } from '../../utils/normalizedError.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 
+type TransportErrorLike = DomainApiError & {
+  normalized?: NormalizedApiError
+  error?: {
+    normalized?: NormalizedApiError
+    message?: string
+    error?: { normalized?: NormalizedApiError; message?: string }
+  }
+}
+
 /**
- * Resolve the {@link NormalizedApiError} associated with an APIError.
+ * Resolve the {@link NormalizedApiError} associated with a domain transport
+ * error or its deserialized structural equivalent.
  *
- * Non-Anthropic adapters embed `error.normalized` on the synthetic error
- * body via `toAnthropicErrorType`. For HTTP errors with a status code we
- * synthesize a fresh one from the status; for mid-stream SSE errors
- * (status === undefined) the embedded `normalized` is the only source.
+ * Domain errors carry `normalized` directly. Persisted legacy errors may embed
+ * it inside the serialized response body. For HTTP errors with only a status
+ * code, synthesize a fresh normalized value from that status.
  */
 export function getNormalizedError(
-  error: APIError,
+  error: TransportErrorLike,
 ): NormalizedApiError | undefined {
-  const body = (
-    error as APIError & {
-      error?: {
-        normalized?: NormalizedApiError
-        error?: { normalized?: NormalizedApiError }
-      }
-    }
-  ).error
-  const embedded = body?.normalized ?? body?.error?.normalized
+  const embedded =
+    error.normalized ?? error.error?.normalized ?? error.error?.error?.normalized
   if (embedded) return embedded
   if (typeof error.status === 'number') {
     const registry = getProviderRegistry()
@@ -35,7 +36,7 @@ export function getNormalizedError(
       error.status,
       error.message ?? '',
       providerType,
-      error.headers as Headers | undefined,
+      error.headers,
       error,
     )
   }
@@ -161,7 +162,7 @@ function sanitizeMessageHTML(message: string): string {
  * Detects if an error message contains HTML content (e.g., CloudFlare error pages)
  * and returns a user-friendly message instead
  */
-export function sanitizeAPIError(apiError: APIError): string {
+export function sanitizeAPIError(apiError: DomainApiError): string {
   const message = apiError.message
   if (!message) {
     // Sometimes message is undefined
@@ -208,7 +209,7 @@ function hasNestedError(value: unknown): value is NestedAPIError {
  * 1. `error.error.error.message` — standard Anthropic API shape
  * 2. `error.error.message` — Bedrock shape
  */
-function extractNestedErrorMessage(error: APIError): string | null {
+function extractNestedErrorMessage(error: unknown): string | null {
   if (!hasNestedError(error)) {
     return null
   }
@@ -239,7 +240,7 @@ function extractNestedErrorMessage(error: APIError): string | null {
   return null
 }
 
-export function formatAPIError(error: APIError | DomainApiError): string {
+export function formatAPIError(error: DomainApiError): string {
   // Extract connection error details from the cause chain. Domain errors carry
   // provider-specific originals under raw when one exists.
   const rawError = 'raw' in error && error.raw ? error.raw : error
@@ -291,7 +292,7 @@ export function formatAPIError(error: APIError | DomainApiError): string {
   // instead of undefined, which would crash callers that access `.length`.
   if (!error.message) {
     return (
-      extractNestedErrorMessage(error as APIError) ??
+      extractNestedErrorMessage(error) ??
       `API error (status ${error.status ?? 'unknown'})`
     )
   }

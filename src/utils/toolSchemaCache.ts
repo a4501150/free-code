@@ -1,4 +1,4 @@
-import type { BetaTool } from './api.js'
+import type { ToolSchema } from './api.js'
 
 // Session-scoped cache of rendered tool schemas. Tool schemas render at server
 // position 2 (before system prompt), so any byte-level change busts the entire
@@ -9,7 +9,7 @@ import type { BetaTool } from './api.js'
 //
 // Lives in a leaf module so auth.ts can clear it without importing api.ts
 // (which would create a cycle via plans→settings→file→config→auth).
-type CachedSchema = BetaTool & {
+type CachedSchema = ToolSchema & {
   eager_input_streaming?: boolean
 }
 

@@ -1,39 +1,23 @@
 import type {
-  BetaContentBlock,
-  BetaContentBlockParam,
-  BetaImageBlockParam,
-  BetaJSONOutputFormat,
-  BetaMessage,
-  BetaMessageDeltaUsage,
-  BetaMessageStreamParams,
-  BetaOutputConfig,
-  BetaRawMessageStreamEvent,
-  BetaRequestDocumentBlock,
-  BetaToolChoiceAuto,
-  BetaToolChoiceTool,
-  BetaToolResultBlockParam,
-  BetaToolUnion,
-  BetaUsage,
-  BetaMessageParam as MessageParam,
-} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
-import type {
   DomainAssistantContent,
   DomainContentBlock,
   DomainReasoningBlock,
   DomainStreamEvent,
   DomainUsage,
-  DomainUserContentBlock,
 } from '../../types/domain.js'
+import type {
+  DomainMessageParam,
+  DomainMessageRequest,
+  DomainMessageResponse,
+  DomainStreamingResponse,
+  DomainSystemBlock,
+  DomainToolChoice,
+  DomainToolDefinition,
+} from './domain-transport.js'
 import {
-  anthropicStreamEventToDomain,
-  domainBlockToAnthropic,
-  domainUserBlockToAnthropic,
-} from '../../types/domainConversion.js'
-import type { Stream } from '@anthropic-ai/sdk/streaming.mjs'
-import type { DomainStreamingResponse, DomainMessageRequest } from './domain-transport.js'
-import { getAdapterForModel } from './adapters/index.js'
-import { domainRequestToAnthropicParams } from './adapters/sdk-streaming-bridge.js'
+  getAdapterForModel,
+  getProviderConfigForModel,
+} from './adapters/index.js'
 import { randomUUID } from 'crypto'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import { stripProviderPrefix } from 'src/utils/model/parseModelStringWithRegistry.js'
@@ -66,7 +50,14 @@ import {
   splitSysPromptPrefix,
   toolToAPISchema,
 } from '../../utils/api.js'
-import { getOauthAccountInfo } from '../../utils/auth.js'
+import {
+  clearApiKeyHelperCache,
+  clearAwsCredentialsCache,
+  clearGcpCredentialsCache,
+  getClaudeAIOAuthTokens,
+  getOauthAccountInfo,
+  handleOAuth401Error,
+} from '../../utils/auth.js'
 import {
   getBodyBetas,
   getMergedBetas,
@@ -109,16 +100,10 @@ const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
   : null
 
 import { feature } from 'bun:bundle'
-import type { ClientOptions } from '@anthropic-ai/sdk'
-import {
-  APIConnectionError,
-  APIConnectionTimeoutError,
-  APIError,
-  APIUserAbortError,
-} from '@anthropic-ai/sdk/error'
 import {
   DomainTransportError,
   DomainConnectionError,
+  DomainConnectionTimeoutError,
   DomainUserAbortError,
 } from './domain-errors.js'
 import {
@@ -148,6 +133,7 @@ import type { Notification } from 'src/context/notifications.js'
 import { addToTotalSessionCost } from 'src/cost-tracker.js'
 import { getInitialSettings } from 'src/utils/settings/settings.js'
 import type { AgentId } from 'src/types/ids.js'
+import { isAwsCredentialsProviderError } from 'src/utils/aws.js'
 import {
   ADVISOR_TOOL_INSTRUCTIONS,
   getExperimentAdvisorModels,
@@ -165,7 +151,11 @@ import {
 import { getMaxThinkingTokensForModel } from 'src/utils/context.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logForDiagnosticsNoPII } from 'src/utils/diagLogs.js'
-import { type EffortValue, modelSupportsEffort } from 'src/utils/effort.js'
+import {
+  type EffortLevel,
+  type EffortValue,
+  modelSupportsEffort,
+} from 'src/utils/effort.js'
 import {
   isFastModeAvailable,
   isFastModeCooldown,
@@ -200,13 +190,12 @@ import {
 } from '../../utils/telemetry/sessionTracing.js'
 /* eslint-enable @typescript-eslint/no-require-imports */
 import { withStreamingVCR, withVCR } from '../vcr.js'
-import { CLIENT_REQUEST_ID_HEADER, getAnthropicClient } from './client.js'
+import { CLIENT_REQUEST_ID_HEADER } from './client.js'
 import {
   API_ERROR_MESSAGE_PREFIX,
   getAssistantMessageFromError,
   getErrorMessageIfRefusal,
 } from './errors.js'
-import { getNormalizedError } from './errorUtils.js'
 import {
   EMPTY_USAGE,
   type GlobalCacheStrategy,
@@ -231,6 +220,11 @@ import {
 type JsonValue = string | number | boolean | null | JsonObject | JsonArray
 type JsonObject = { [key: string]: JsonValue }
 type JsonArray = JsonValue[]
+
+type OutputConfig = Record<string, unknown> & {
+  effort?: string
+  format?: Record<string, unknown>
+}
 
 /**
  * Assemble the extra body parameters for the API request, based on the
@@ -402,7 +396,7 @@ function should1hCacheTTL(querySource?: QuerySource): boolean {
  */
 function configureEffortParams(
   effortValue: EffortValue | undefined,
-  outputConfig: BetaOutputConfig,
+  outputConfig: OutputConfig,
   extraBodyParams: Record<string, unknown>,
   betas: string[],
   model: string,
@@ -422,8 +416,8 @@ function configureEffortParams(
 }
 
 // output_config.task_budget — API-side token budget awareness for the model.
-// Stainless SDK types don't yet include task_budget on BetaOutputConfig, so we
-// define the wire shape locally and cast. The API validates on receipt; see
+// Define the wire shape locally because task_budget remains a beta API field.
+// The API validates on receipt; see
 // api/api/schemas/messages/request/output_config.py:12-39 in the monorepo.
 // Beta: task-budgets-2026-03-13 (EAP, claude-strudel-eap only as of Mar 2026).
 type TaskBudgetParam = {
@@ -434,7 +428,7 @@ type TaskBudgetParam = {
 
 export function configureTaskBudgetParams(
   taskBudget: Options['taskBudget'],
-  outputConfig: BetaOutputConfig & { task_budget?: TaskBudgetParam },
+  outputConfig: OutputConfig & { task_budget?: TaskBudgetParam },
   betas: string[],
 ): void {
   if (
@@ -483,6 +477,66 @@ export function getAPIMetadata() {
   }
 }
 
+function isOAuthTokenRevokedError(error: unknown): boolean {
+  return (
+    error instanceof DomainTransportError &&
+    error.status === 403 &&
+    error.message.includes('OAuth token has been revoked')
+  )
+}
+
+function isGoogleAuthLibraryCredentialError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return (
+    error.message.includes('Could not load the default credentials') ||
+    error.message.includes('Could not refresh access token') ||
+    error.message.includes('invalid_grant')
+  )
+}
+
+export async function prepareRetry(error: unknown): Promise<void> {
+  if (error instanceof DomainTransportError && error.status === 401) {
+    clearApiKeyHelperCache()
+  }
+
+  if (
+    error instanceof DomainTransportError &&
+    (error.status === 401 || isOAuthTokenRevokedError(error))
+  ) {
+    const failedAccessToken = getClaudeAIOAuthTokens()?.accessToken
+    if (failedAccessToken) {
+      await handleOAuth401Error(failedAccessToken)
+    }
+  }
+
+  const credentialRefresh =
+    getProviderRegistry().getCapabilities().credentialRefresh
+  if (
+    credentialRefresh === 'aws' &&
+    (isAwsCredentialsProviderError(error) ||
+      (error instanceof DomainTransportError && error.status === 403))
+  ) {
+    clearAwsCredentialsCache()
+  }
+  if (
+    credentialRefresh === 'gcp' &&
+    (isGoogleAuthLibraryCredentialError(error) ||
+      (error instanceof DomainTransportError && error.status === 401))
+  ) {
+    clearGcpCredentialsCache()
+  }
+}
+
+function extractQuotaStatusFromRetryError(error: unknown): void {
+  if (error instanceof DomainTransportError) {
+    extractQuotaStatusFromError(error)
+  }
+}
+
+function getRetryErrorRequestId(error: unknown): string | undefined {
+  return error instanceof DomainTransportError ? error.requestID : undefined
+}
+
 export async function verifyApiKey(
   apiKey: string,
   isNonInteractiveSession: boolean,
@@ -498,28 +552,46 @@ export async function verifyApiKey(
     const betas = getModelBetas(model)
     return await returnValue(
       withRetry(
-        () =>
-          getAnthropicClient({
-            apiKey,
-            maxRetries: 3,
+        async () => {
+          const adapter = getAdapterForModel(model)
+          const baseConfig = getProviderConfigForModel(model)
+          const verifyConfig = {
+            ...baseConfig,
+            auth: {
+              ...baseConfig.auth,
+              active: 'apiKey' as const,
+              apiKey: { key: apiKey },
+            },
+          }
+
+          const request: DomainMessageRequest = {
             model,
-            source: 'verify_api_key',
-          }),
-        async anthropic => {
-          const messages: MessageParam[] = [{ role: 'user', content: 'test' }]
-          // biome-ignore lint/plugin: API key verification is intentionally a minimal direct call
-          await anthropic.beta.messages.create({
-            model,
-            max_tokens: 1,
-            messages,
+            messages: [
+              {
+                role: 'user' as const,
+                content: [{ type: 'text' as const, text: 'test' }],
+              },
+            ],
+            maxTokens: 1,
             temperature: 1,
             ...(betas.length > 0 && { betas }),
             metadata: getAPIMetadata(),
             ...getExtraBodyParams(),
-          })
+          }
+
+          await adapter.createMessage(
+            verifyConfig,
+            request,
+            AbortSignal.timeout(30_000),
+          )
           return true
         },
-        { maxRetries: 2, model, thinkingConfig: { type: 'disabled' } }, // Use fewer retries for API key verification
+        {
+          maxRetries: 2,
+          model,
+          thinkingConfig: { type: 'disabled' },
+          prepareRetry,
+        },
       ),
     )
   } catch (errorFromRetry) {
@@ -530,10 +602,12 @@ export async function verifyApiKey(
     logError(error)
     // Check for authentication error
     if (
-      error instanceof Error &&
-      error.message.includes(
-        '{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}',
-      )
+      (error instanceof DomainTransportError &&
+        error.normalized.kind === 'auth') ||
+      (error instanceof Error &&
+        error.message.includes(
+          '{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}',
+        ))
     ) {
       return false
     }
@@ -546,10 +620,7 @@ export function userMessageToMessageParam(
   addCache = false,
   enablePromptCaching: boolean,
   querySource?: QuerySource,
-): MessageParam {
-  const toAnthropicBeta = (block: DomainUserContentBlock) =>
-    domainUserBlockToAnthropic(block) as unknown as BetaContentBlockParam
-
+): DomainMessageParam {
   if (addCache) {
     if (typeof message.message.content === 'string') {
       return {
@@ -567,16 +638,14 @@ export function userMessageToMessageParam(
     } else {
       return {
         role: 'user',
-        content: message.message.content.map((block, i) =>
-          toAnthropicBeta({
-            ...block,
-            ...(i === message.message.content.length - 1
-              ? enablePromptCaching
-                ? { cache_control: getCacheControl({ querySource }) }
-                : {}
-              : {}),
-          }),
-        ),
+        content: message.message.content.map((block, i) => ({
+          ...block,
+          ...(i === message.message.content.length - 1
+            ? enablePromptCaching
+              ? { cache_control: getCacheControl({ querySource }) }
+              : {}
+            : {}),
+        })),
       }
     }
   }
@@ -586,20 +655,9 @@ export function userMessageToMessageParam(
   return {
     role: 'user',
     content: Array.isArray(message.message.content)
-      ? message.message.content.map(toAnthropicBeta)
-      : message.message.content,
+      ? message.message.content.map(block => block)
+      : [{ type: 'text', text: message.message.content }],
   }
-}
-
-function convertDomainBlock(block: unknown): BetaContentBlock | null {
-  const b = block as DomainContentBlock
-  if (
-    (b.type === 'reasoning' || b.type === 'redacted_reasoning') &&
-    !b.providerState?.anthropic
-  ) {
-    return block as unknown as BetaContentBlock
-  }
-  return domainBlockToAnthropic(b)
 }
 
 export function assistantMessageToMessageParam(
@@ -607,7 +665,7 @@ export function assistantMessageToMessageParam(
   addCache = false,
   enablePromptCaching: boolean,
   querySource?: QuerySource,
-): MessageParam {
+): DomainMessageParam {
   if (addCache) {
     if (typeof message.message.content === 'string') {
       return {
@@ -623,47 +681,41 @@ export function assistantMessageToMessageParam(
         ],
       }
     } else {
-      const converted = message.message.content
-        .map(convertDomainBlock)
-        .filter((b): b is BetaContentBlock => b !== null)
       return {
         role: 'assistant',
-        content: converted.map((_, i) => ({
-          ..._,
-          ...(i === converted.length - 1 &&
-          _.type !== 'thinking' &&
-          _.type !== 'redacted_thinking' &&
-          (feature('CONNECTOR_TEXT') ? !isConnectorTextBlock(_) : true)
+        content: message.message.content.map((block, i) => ({
+          ...block,
+          ...(i === message.message.content.length - 1 &&
+          block.type !== 'reasoning' &&
+          block.type !== 'redacted_reasoning' &&
+          (feature('CONNECTOR_TEXT') ? !isConnectorTextBlock(block) : true)
             ? enablePromptCaching
               ? { cache_control: getCacheControl({ querySource }) }
               : {}
             : {}),
-        })) as unknown as BetaContentBlockParam[],
+        })),
       }
     }
   }
-  const converted = message.message.content
-    .map(convertDomainBlock)
-    .filter((b): b is BetaContentBlock => b !== null)
   return {
     role: 'assistant',
-    content: converted as unknown as BetaContentBlockParam[],
+    content: message.message.content.map(block => block),
   }
 }
 
 export type Options = {
   getToolPermissionContext: () => Promise<ToolPermissionContext>
   model: string
-  toolChoice?: BetaToolChoiceTool | BetaToolChoiceAuto | undefined
+  toolChoice?: DomainToolChoice
   isNonInteractiveSession: boolean
-  extraToolSchemas?: BetaToolUnion[]
+  extraToolSchemas?: DomainToolDefinition[]
   maxOutputTokensOverride?: number
   onStreamingFallback?: () => void
   querySource: QuerySource
   agents: AgentDefinition[]
   allowedAgentTypes?: string[]
   hasAppendSystemPrompt: boolean
-  fetchOverride?: ClientOptions['fetch']
+  fetchOverride?: typeof globalThis.fetch
   enablePromptCaching?: boolean
   skipCacheWrite?: boolean
   temperatureOverride?: number
@@ -672,7 +724,7 @@ export type Options = {
   hasPendingMcpServers?: boolean
   queryTracking?: QueryChainTracking
   agentId?: AgentId // Only set for subagents
-  outputFormat?: BetaJSONOutputFormat
+  outputFormat?: Record<string, unknown>
   fastMode?: boolean
   advisorModel?: string
   addNotification?: (notif: Notification) => void
@@ -716,10 +768,10 @@ export async function queryModelWithoutStreaming({
     }
   }
   if (!assistantMessage) {
-    // If the signal was aborted, throw APIUserAbortError instead of a generic error
-    // This allows callers to handle abort scenarios gracefully
+    // If the signal was aborted, throw the provider-neutral abort error instead
+    // of a generic error so callers can handle cancellation gracefully.
     if (signal.aborted) {
-      throw new APIUserAbortError()
+      throw new DomainUserAbortError()
     }
     throw new Error('No assistant message found')
   }
@@ -763,7 +815,7 @@ export async function* queryModelWithStreaming({
  *
  * Remote sessions default to 120s to stay under CCR's container idle-kill
  * (~5min) so a hung fallback to a wedged backend surfaces a clean
- * APIConnectionTimeoutError instead of stalling past SIGKILL.
+ * DomainConnectionTimeoutError instead of stalling past SIGKILL.
  *
  * Otherwise defaults to 300s — long enough for slow backends without
  * approaching the API's 10-minute non-streaming boundary.
@@ -819,31 +871,9 @@ function getStreamBetweenEventsTimeoutMs(): number {
 function isRetryableMidStreamError(error: unknown): boolean {
   if (isStreamIdleTimeoutError(error)) return true
 
-  // Domain error path (new adapter interface)
   if (error instanceof DomainConnectionError) return true
-  if (error instanceof DomainTransportError) {
-    switch (error.normalized.kind) {
-      case 'transport':
-      case 'server':
-      case 'overloaded':
-      case 'rate_limit':
-        return true
-      default:
-        return false
-    }
-  }
-
-  // SDK error path (legacy adapter interface)
-  if (error instanceof APIConnectionError) return true
-  if (!(error instanceof APIError)) return false
-  const normalized = getNormalizedError(error)
-  if (!normalized) {
-    return (
-      error.message.includes('response.completed') &&
-      error.message.includes('openai-responses')
-    )
-  }
-  switch (normalized.kind) {
+  if (!(error instanceof DomainTransportError)) return false
+  switch (error.normalized.kind) {
     case 'transport':
     case 'server':
     case 'overloaded':
@@ -857,14 +887,10 @@ function isRetryableMidStreamError(error: unknown): boolean {
 /**
  * Helper generator for non-streaming API requests.
  * Encapsulates the common pattern of creating a withRetry generator,
- * iterating to yield system messages, and returning the final BetaMessage.
+ * iterating to yield system messages, and returning the final domain response.
  */
 export async function* executeNonStreamingRequest(
-  clientOptions: {
-    model: string
-    fetchOverride?: Options['fetchOverride']
-    source: string
-  },
+  clientOptions: { model: string; source: string },
   retryOptions: {
     model: string
     thinkingConfig: ThinkingConfig
@@ -873,56 +899,79 @@ export async function* executeNonStreamingRequest(
     initialConsecutive529Errors?: number
     querySource?: QuerySource
   },
-  paramsFromContext: (context: RetryContext) => BetaMessageStreamParams,
+  paramsFromContext: (context: RetryContext) => DomainMessageRequest,
   onAttempt: (attempt: number, start: number, maxOutputTokens: number) => void,
-  captureRequest: (params: BetaMessageStreamParams) => void,
+  captureRequest: (request: DomainMessageRequest) => void,
   /**
    * Request ID of the failed streaming attempt this fallback is recovering
    * from. Emitted in tengu_nonstreaming_fallback_error for funnel correlation.
    */
   originatingRequestId?: string | null,
-): AsyncGenerator<SystemAPIErrorMessage, BetaMessage> {
+): AsyncGenerator<SystemAPIErrorMessage, DomainMessageResponse> {
   const fallbackTimeoutMs = getNonstreamingFallbackTimeoutMs()
   const generator = withRetry(
-    () =>
-      getAnthropicClient({
-        maxRetries: 0,
-        model: clientOptions.model,
-        fetchOverride: clientOptions.fetchOverride,
-        source: clientOptions.source,
-      }),
-    async (anthropic, attempt, context) => {
+    async (attempt, context) => {
       const start = Date.now()
-      const retryParams = paramsFromContext(context)
-      captureRequest(retryParams)
-      onAttempt(attempt, start, retryParams.max_tokens)
+      const domainRequest = paramsFromContext(context)
+      captureRequest(domainRequest)
+      onAttempt(attempt, start, domainRequest.maxTokens)
 
-      const adjustedParams = adjustParamsForNonStreaming(
-        retryParams,
+      const adjustedRequest = adjustDomainRequestForNonStreaming(
+        domainRequest,
         MAX_NON_STREAMING_TOKENS,
       )
+      const adapter = getAdapterForModel(clientOptions.model)
+      const providerConfig = getProviderConfigForModel(clientOptions.model)
+      const timeoutController = new AbortController()
+      const timeoutId = setTimeout(
+        () => timeoutController.abort(),
+        fallbackTimeoutMs,
+      )
+      const userAbortHandler = () => timeoutController.abort()
+      if (retryOptions.signal.aborted) {
+        timeoutController.abort()
+      } else {
+        retryOptions.signal.addEventListener('abort', userAbortHandler)
+      }
 
       try {
-        // biome-ignore lint/plugin: non-streaming API call
-        return await anthropic.beta.messages.create(
-          {
-            ...adjustedParams,
-            model: normalizeModelStringForAPI(adjustedParams.model),
-          },
-          {
-            signal: retryOptions.signal,
-            timeout: fallbackTimeoutMs,
-          },
+        return await adapter.createMessage(
+          providerConfig,
+          adjustedRequest,
+          timeoutController.signal,
         )
-      } catch (err) {
-        // User aborts are not errors — re-throw immediately without logging
-        if (err instanceof APIUserAbortError) throw err
+      } catch (error) {
+        // User aborts are not errors — re-throw immediately without logging.
+        if (
+          error instanceof DomainUserAbortError &&
+          retryOptions.signal.aborted
+        ) {
+          throw error
+        }
 
         // Instrumentation: record when the non-streaming request errors (including
         // timeouts). Lets us distinguish "fallback hung past container kill"
         // (no event) from "fallback hit the bounded timeout" (this event).
         logForDiagnosticsNoPII('error', 'cli_nonstreaming_fallback_error')
-        throw err
+        if (
+          error instanceof DomainUserAbortError &&
+          timeoutController.signal.aborted
+        ) {
+          throw new DomainConnectionTimeoutError({
+            normalized: {
+              kind: 'transport',
+              message: 'Request timed out',
+              providerType: adapter.providerType,
+              raw: error,
+            },
+            cause: error,
+            raw: error,
+          })
+        }
+        throw error
+      } finally {
+        clearTimeout(timeoutId)
+        retryOptions.signal.removeEventListener('abort', userAbortHandler)
       }
     },
     {
@@ -932,6 +981,7 @@ export async function* executeNonStreamingRequest(
       signal: retryOptions.signal,
       initialConsecutive529Errors: retryOptions.initialConsecutive529Errors,
       querySource: retryOptions.querySource,
+      prepareRetry,
     },
   )
 
@@ -943,7 +993,7 @@ export async function* executeNonStreamingRequest(
     }
   } while (!e.done)
 
-  return e.value as BetaMessage
+  return e.value as DomainMessageResponse
 }
 
 /**
@@ -1001,7 +1051,7 @@ export function stripExcessMediaItems(
       if (isMedia(block)) toRemove++
       if (isToolResult(block) && Array.isArray(block.content)) {
         for (const nested of block.content) {
-          if (isMedia(nested as BetaContentBlockParam)) toRemove++
+          if (isMedia(nested)) toRemove++
         }
       }
     }
@@ -1024,7 +1074,7 @@ export function stripExcessMediaItems(
         )
           return block
         const filtered = block.content.filter(n => {
-          if (toRemove > 0 && isMedia(n as BetaContentBlockParam)) {
+          if (toRemove > 0 && isMedia(n)) {
             toRemove--
             return false
           }
@@ -1243,12 +1293,9 @@ async function* queryModel(
       type: 'advisor_20260301',
       name: 'advisor',
       model: advisorModel,
-    } as unknown as BetaToolUnion)
+    })
   }
-  const allTools: BetaToolUnion[] = [
-    ...(toolSchemas as unknown as BetaToolUnion[]),
-    ...extraToolSchemas,
-  ]
+  const allTools: DomainToolDefinition[] = [...toolSchemas, ...extraToolSchemas]
 
   const isFastMode =
     isFastModeEnabled() &&
@@ -1327,23 +1374,13 @@ async function* queryModel(
   let attemptNumber = 0
   const attemptStartTimes: number[] = []
   let domainStreamResponse: DomainStreamingResponse | undefined = undefined
-  // Legacy SDK stream — kept for cleanupStream compatibility during transition
-  let stream: Stream<BetaRawMessageStreamEvent> | undefined = undefined
   let streamRequestId: string | null | undefined = undefined
   let clientRequestId: string | undefined = undefined
-  // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins -- Response is available in Node 18+ and is used by the SDK
-  let streamResponse: Response | undefined = undefined
 
   function releaseStreamResources(): void {
     if (domainStreamResponse) {
       domainStreamResponse.release()
       domainStreamResponse = undefined
-    }
-    cleanupStream(stream)
-    stream = undefined
-    if (streamResponse) {
-      streamResponse.body?.cancel().catch(() => {})
-      streamResponse = undefined
     }
   }
 
@@ -1351,7 +1388,9 @@ async function* queryModel(
   // were dynamically added, so we can log and send it to telemetry.
   let lastRequestBetas: string[] | undefined
 
-  const domainParamsFromContext = (retryContext: RetryContext): DomainMessageRequest => {
+  const domainParamsFromContext = (
+    retryContext: RetryContext,
+  ): DomainMessageRequest => {
     const betasParams = [...betas]
 
     const bedrockBetas = registry.getCapability(
@@ -1362,8 +1401,8 @@ async function* queryModel(
       : []
     const extraBodyParams = getExtraBodyParams(bedrockBetas)
 
-    const outputConfig: BetaOutputConfig = {
-      ...((extraBodyParams.output_config as BetaOutputConfig) ?? {}),
+    const outputConfig: OutputConfig = {
+      ...((extraBodyParams.output_config as OutputConfig) ?? {}),
     }
 
     configureEffortParams(
@@ -1376,12 +1415,12 @@ async function* queryModel(
 
     configureTaskBudgetParams(
       options.taskBudget,
-      outputConfig as BetaOutputConfig & { task_budget?: TaskBudgetParam },
+      outputConfig as OutputConfig & { task_budget?: TaskBudgetParam },
       betasParams,
     )
 
     if (options.outputFormat && !('format' in outputConfig)) {
-      outputConfig.format = options.outputFormat as BetaJSONOutputFormat
+      outputConfig.format = options.outputFormat as Record<string, unknown>
       if (
         modelSupportsStructuredOutputs(options.model) &&
         !betasParams.includes(STRUCTURED_OUTPUTS_BETA_HEADER)
@@ -1474,10 +1513,10 @@ async function* queryModel(
         enablePromptCaching,
         options.querySource,
         options.skipCacheWrite,
-      ) as unknown as DomainMessageRequest['messages'],
-      system: system as unknown as DomainMessageRequest['system'],
-      tools: allTools as unknown as DomainMessageRequest['tools'],
-      toolChoice: options.toolChoice as unknown as DomainMessageRequest['toolChoice'],
+      ),
+      system,
+      tools: allTools,
+      toolChoice: options.toolChoice,
       maxTokens: maxOutputTokens,
       ...(useBetas && { betas: betasParams }),
       ...(registry.isAnthropicType(retryContext.model) && {
@@ -1494,7 +1533,7 @@ async function* queryModel(
         extraBody: restExtraBody,
       }),
       ...(Object.keys(outputConfig).length > 0 && {
-        outputConfig: outputConfig as Record<string, unknown>,
+        outputConfig,
       }),
       ...(speed !== undefined && { speed }),
       ...(previousRequestId && { previousRequestId }),
@@ -1504,26 +1543,21 @@ async function* queryModel(
     return domainRequest
   }
 
-  // Bridge: convert DomainMessageRequest to BetaMessageStreamParams for
-  // legacy call sites (logging, captureAPIRequest, non-streaming fallback)
-  const paramsFromContext = (retryContext: RetryContext) => {
-    const domainRequest = domainParamsFromContext(retryContext)
-    return domainRequestToAnthropicParams(domainRequest)
-  }
-
   // Compute log scalars synchronously so the fire-and-forget .then() closure
-  // captures only primitives instead of paramsFromContext's full closure scope
-  // (messagesForAPI, system, allTools, betas — the entire request-building
+  // captures only primitives instead of domainParamsFromContext's full closure
+  // scope (messagesForAPI, system, allTools, betas — the entire request-building
   // context), which would otherwise be pinned until the promise resolves.
   {
-    const queryParams = paramsFromContext({
+    const queryParams = domainParamsFromContext({
       model: options.model,
       thinkingConfig,
     })
     const logMessagesLength = queryParams.messages.length
     const logBetas = useBetas ? (queryParams.betas ?? []) : []
     const logThinkingType = queryParams.thinking?.type ?? 'disabled'
-    const logEffortValue = queryParams.output_config?.effort
+    const logEffortValue = queryParams.outputConfig?.effort as
+      | EffortLevel
+      | undefined
     void options.getToolPermissionContext().then(permissionContext => {
       logAPIQuery({
         model: options.model,
@@ -1544,11 +1578,7 @@ async function* queryModel(
   const newMessages: AssistantMessage[] = []
   let ttftMs = 0
   let partialMessage: DomainAssistantContent | undefined = undefined
-  const contentBlocks: (
-    | BetaContentBlock
-    | ConnectorTextBlock
-    | DomainContentBlock
-  )[] = []
+  const contentBlocks: (ConnectorTextBlock | DomainContentBlock)[] = []
   let usage: NonNullableUsage = EMPTY_USAGE
   let costUSD = 0
   let stopReason: DomainAssistantContent['stop_reason'] = null
@@ -1563,36 +1593,12 @@ async function* queryModel(
   startSessionActivity('api_call')
   try {
     for (let midstreamRetryAttempt = 0; ; midstreamRetryAttempt++) {
-      queryCheckpoint('query_client_creation_start')
       const generator = withRetry(
-        () =>
-          getAnthropicClient({
-            maxRetries: 0, // Disabled auto-retry in favor of manual implementation
-            model: options.model,
-            fetchOverride: options.fetchOverride,
-            source: options.querySource,
-          }),
-        async (anthropic, attempt, context) => {
+        async (attempt, context) => {
           attemptNumber = attempt
           isFastModeRequest = context.fastMode ?? false
           start = Date.now()
           attemptStartTimes.push(start)
-          // Client has been created by withRetry's getClient() call. This fires
-          // once per attempt; on retries the client is usually cached (withRetry
-          // only calls getClient() again after auth errors), so the delta from
-          // client_creation_start is meaningful on attempt 1.
-          queryCheckpoint('query_client_creation_end')
-
-          const domainRequest = domainParamsFromContext(context)
-          const params = domainRequestToAnthropicParams(domainRequest)
-          captureAPIRequest(params as unknown as Parameters<typeof captureAPIRequest>[0], options.querySource) // Capture for bug reports
-
-          maxOutputTokens = domainRequest.maxTokens
-
-          queryCheckpoint('query_api_request_sent')
-          if (!options.agentId) {
-            headlessProfilerCheckpoint('api_request_sent')
-          }
 
           clientRequestId = registry.getCapability(
             context.model,
@@ -1601,15 +1607,25 @@ async function* queryModel(
             ? randomUUID()
             : undefined
 
+          const domainRequest = {
+            ...domainParamsFromContext(context),
+            ...(clientRequestId && { clientRequestId }),
+          }
+          captureAPIRequest(domainRequest, options.querySource) // Capture for bug reports
+
+          maxOutputTokens = domainRequest.maxTokens
+
+          queryCheckpoint('query_api_request_sent')
+          if (!options.agentId) {
+            headlessProfilerCheckpoint('api_request_sent')
+          }
+
           // Route through the provider adapter's createStream
           const adapter = getAdapterForModel(options.model)
-          const providerConfig = registry.getProviderForModel(options.model)?.config
-            ?? registry.getDefaultProvider()?.config
-            ?? { type: 'anthropic' as const, models: [], auth: { active: 'apiKey' as const } }
+          const providerConfig = getProviderConfigForModel(options.model)
           // biome-ignore lint/plugin: main conversation loop handles attribution separately
           const adapterResponse = await adapter.createStream(
             providerConfig,
-            { client: anthropic, clientRequestId },
             domainRequest,
             signal,
           )
@@ -1624,6 +1640,7 @@ async function* queryModel(
           ...(isFastModeEnabled() ? { fastMode: isFastMode } : false),
           signal,
           querySource: options.querySource,
+          prepareRetry,
         },
       )
 
@@ -1752,10 +1769,13 @@ async function* queryModel(
             throw new DomainTransportError({
               normalized: {
                 kind: 'server',
-                message: typeof domainError === 'object' && domainError !== null
-                  ? (domainError as { message?: string }).message ?? 'Stream error'
-                  : String(domainError ?? 'Stream error'),
-                providerType: registry.getProviderType(options.model) ?? 'anthropic',
+                message:
+                  typeof domainError === 'object' && domainError !== null
+                    ? ((domainError as { message?: string }).message ??
+                      'Stream error')
+                    : String(domainError ?? 'Stream error'),
+                providerType:
+                  registry.getProviderType(options.model) ?? 'anthropic',
                 raw: domainError,
               },
               raw: domainError,
@@ -1811,11 +1831,10 @@ async function* queryModel(
                   break
                 }
                 default:
-                  contentBlocks[part.index] = { ...cb } as (typeof contentBlocks)[number]
-                  if (
-                    (cb.type as string) ===
-                    'advisor_tool_result'
-                  ) {
+                  contentBlocks[part.index] = {
+                    ...cb,
+                  } as (typeof contentBlocks)[number]
+                  if ((cb.type as string) === 'advisor_tool_result') {
                     isAdvisorInProgress = false
                     logForDebugging(
                       `[AdvisorTool] Advisor tool result received`,
@@ -1827,7 +1846,9 @@ async function* queryModel(
             }
             case 'content_block_delta': {
               const contentBlock = contentBlocks[part.index]
-              const delta = part.delta as Record<string, unknown> & { type: string }
+              const delta = part.delta as Record<string, unknown> & {
+                type: string
+              }
               if (!contentBlock) {
                 throw new RangeError('Content block not found')
               }
@@ -1839,9 +1860,7 @@ async function* queryModel(
                   throw new Error('Content block is not a connector_text block')
                 }
                 contentBlock.connector_text += delta.connector_text as string
-              } else if (
-                delta.type === 'codex_reasoning_meta_delta'
-              ) {
+              } else if (delta.type === 'codex_reasoning_meta_delta') {
                 if (contentBlock.type === 'reasoning') {
                   const d = delta as unknown as {
                     codexReasoningId?: string
@@ -1901,7 +1920,8 @@ async function* queryModel(
                       if (!rb.providerState) rb.providerState = {}
                       if (!rb.providerState.anthropic)
                         rb.providerState.anthropic = {}
-                      rb.providerState.anthropic.signature = delta.signature as string
+                      rb.providerState.anthropic.signature =
+                        delta.signature as string
                     }
                     break
                   case 'thinking_delta':
@@ -1943,7 +1963,7 @@ async function* queryModel(
               break
             }
             case 'message_delta': {
-              usage = updateUsage(usage, part.usage as unknown as DomainUsage)
+              usage = updateUsage(usage, part.usage)
 
               // Write final usage and stop_reason back to the last yielded
               // message. Messages are created at content_block_stop from
@@ -1962,18 +1982,15 @@ async function* queryModel(
 
               const lastMsg = newMessages.at(-1)
               if (lastMsg) {
-                lastMsg.message.usage = usage as DomainUsage
+                lastMsg.message.usage = usage
                 lastMsg.message.stop_reason = stopReason
               }
 
               // Update cost
-              const costUSDForPart = calculateUSDCost(
-                resolvedModel,
-                usage as unknown as BetaUsage,
-              )
+              const costUSDForPart = calculateUSDCost(resolvedModel, usage)
               costUSD += addToTotalSessionCost(
                 costUSDForPart,
-                usage as unknown as BetaUsage,
+                usage,
                 options.model,
               )
 
@@ -2097,29 +2114,28 @@ async function* queryModel(
           )
         }
 
-        // Domain abort errors always propagate immediately
         if (streamingError instanceof DomainUserAbortError) {
-          logForDebugging(
-            `Streaming aborted by user (domain): ${errorMessage(streamingError)}`,
-          )
-          throw streamingError
-        }
-
-        if (streamingError instanceof APIUserAbortError) {
           if (signal.aborted) {
             logForDebugging(
               `Streaming aborted by user: ${errorMessage(streamingError)}`,
             )
             throw streamingError
-          } else {
-            logForDebugging(
-              `Streaming timeout (SDK abort): ${streamingError.message}`,
-              { level: 'error' },
-            )
-            throw new APIConnectionTimeoutError({
-              message: 'Request timed out',
-            })
           }
+
+          logForDebugging(`Streaming timeout: ${streamingError.message}`, {
+            level: 'error',
+          })
+          throw new DomainConnectionTimeoutError({
+            normalized: {
+              kind: 'transport',
+              message: 'Request timed out',
+              providerType:
+                registry.getProviderType(options.model) ?? 'anthropic',
+              raw: streamingError,
+            },
+            cause: streamingError,
+            raw: streamingError,
+          })
         }
 
         if (
@@ -2130,14 +2146,19 @@ async function* queryModel(
           const retryAttempt = midstreamRetryAttempt + 1
           const delayMs = getRetryDelay(retryAttempt)
           const retryError =
-            streamingError instanceof APIError
+            streamingError instanceof DomainTransportError
               ? streamingError
-              : new APIError(
-                  undefined,
-                  undefined,
-                  errorMessage(streamingError),
-                  undefined,
-                )
+              : new DomainTransportError({
+                  normalized: {
+                    kind: 'transport',
+                    message: errorMessage(streamingError),
+                    providerType:
+                      registry.getProviderType(options.model) ?? 'anthropic',
+                    raw: streamingError,
+                  },
+                  cause: streamingError,
+                  raw: streamingError,
+                })
           logForDebugging(
             `Retryable mid-stream error; retrying stream attempt ${retryAttempt}/${MIDSTREAM_MAX_RETRIES}: ${errorMessage(streamingError)}`,
             { level: 'warn' },
@@ -2151,7 +2172,7 @@ async function* queryModel(
             MIDSTREAM_MAX_RETRIES,
           )
           await sleep(delayMs, signal, {
-            abortError: () => new APIUserAbortError(),
+            abortError: () => new DomainUserAbortError(),
           })
           continue
         }
@@ -2175,7 +2196,7 @@ async function* queryModel(
     const is404StreamCreationError =
       !didFallBackToNonStreaming &&
       errorFromRetry instanceof CannotRetryError &&
-      errorFromRetry.originalError instanceof APIError &&
+      errorFromRetry.originalError instanceof DomainTransportError &&
       errorFromRetry.originalError.status === 404
 
     if (is404StreamCreationError) {
@@ -2183,7 +2204,7 @@ async function* queryModel(
       // and CannotRetryError means every retry failed — so grab the failed
       // request's ID from the error header instead.
       const failedRequestId =
-        (errorFromRetry.originalError as APIError).requestID ?? 'unknown'
+        errorFromRetry.originalError.requestID ?? 'unknown'
       logForDebugging(
         'Streaming endpoint returned 404, falling back to non-streaming mode',
         { level: 'warn' },
@@ -2203,25 +2224,31 @@ async function* queryModel(
             ...(isFastModeEnabled() && { fastMode: isFastMode }),
             signal,
           },
-          paramsFromContext,
+          domainParamsFromContext,
           (attempt, _startTime, tokens) => {
             attemptNumber = attempt
             maxOutputTokens = tokens
           },
-          params => captureAPIRequest(params as unknown as Parameters<typeof captureAPIRequest>[0], options.querySource),
+          request => captureAPIRequest(request, options.querySource),
           failedRequestId,
         )
 
+        if (result.responseHeaders) {
+          const headersObj = new Headers(result.responseHeaders)
+          extractQuotaStatusFromHeaders(headersObj)
+          responseHeaders = headersObj
+        }
+        streamRequestId = result.requestId ?? streamRequestId
         const domainContent = normalizeContentFromAPI(
-          result.content as unknown as DomainContentBlock[],
+          result.message.content,
           tools,
           options.agentId,
         )
         const m: AssistantMessage = {
           message: {
-            ...(result as unknown as DomainAssistantContent),
+            ...result.message,
             content: domainContent,
-          } as DomainAssistantContent,
+          },
           requestId: streamRequestId ?? undefined,
           type: 'assistant',
           uuid: randomUUID(),
@@ -2247,16 +2274,9 @@ async function* queryModel(
           errorModel = fallbackError.retryContext.model
         }
 
-        if (error instanceof APIError) {
-          extractQuotaStatusFromError(error)
-        }
+        extractQuotaStatusFromRetryError(error)
 
-        const requestId =
-          streamRequestId ||
-          (error instanceof APIError ? error.requestID : undefined) ||
-          (error instanceof APIError
-            ? (error.error as { request_id?: string })?.request_id
-            : undefined)
+        const requestId = streamRequestId || getRetryErrorRequestId(error)
 
         logAPIError({
           error,
@@ -2276,7 +2296,7 @@ async function* queryModel(
           previousRequestId,
         })
 
-        if (error instanceof APIUserAbortError) {
+        if (error instanceof DomainUserAbortError) {
           releaseStreamResources()
           return
         }
@@ -2302,17 +2322,10 @@ async function* queryModel(
       }
 
       // Extract quota status from error headers if it's a rate limit error
-      if (error instanceof APIError) {
-        extractQuotaStatusFromError(error)
-      }
+      extractQuotaStatusFromRetryError(error)
 
       // Extract requestId from stream, error header, or error body
-      const requestId =
-        streamRequestId ||
-        (error instanceof APIError ? error.requestID : undefined) ||
-        (error instanceof APIError
-          ? (error.error as { request_id?: string })?.request_id
-          : undefined)
+      const requestId = streamRequestId || getRetryErrorRequestId(error)
 
       logAPIError({
         error,
@@ -2334,7 +2347,7 @@ async function* queryModel(
 
       // Don't yield an assistant error message for user aborts
       // The interruption message is handled in query.ts
-      if (error instanceof APIUserAbortError) {
+      if (error instanceof DomainUserAbortError) {
         releaseStreamResources()
         return
       }
@@ -2359,17 +2372,13 @@ async function* queryModel(
     // message_delta handler before any yield. Fallback pushes to newMessages
     // then yields, so tracking must be here to survive .return() at the yield.
     if (fallbackMessage) {
-      const fallbackUsage = fallbackMessage.message
-        .usage as unknown as BetaMessageDeltaUsage
-      usage = updateUsage(EMPTY_USAGE, fallbackUsage as unknown as DomainUsage)
+      const fallbackUsage = fallbackMessage.message.usage
+      usage = updateUsage(EMPTY_USAGE, fallbackUsage)
       stopReason = fallbackMessage.message.stop_reason
-      const fallbackCost = calculateUSDCost(
-        resolvedModel,
-        fallbackUsage as unknown as BetaUsage,
-      )
+      const fallbackCost = calculateUSDCost(resolvedModel, fallbackUsage)
       costUSD += addToTotalSessionCost(
         fallbackCost,
-        fallbackUsage as unknown as BetaUsage,
+        fallbackUsage,
         options.model,
       )
     }
@@ -2432,26 +2441,6 @@ async function* queryModel(
 }
 
 /**
- * Cleans up stream resources to prevent memory leaks.
- * @internal Exported for testing
- */
-export function cleanupStream(
-  stream: Stream<BetaRawMessageStreamEvent> | undefined,
-): void {
-  if (!stream) {
-    return
-  }
-  try {
-    // Abort the stream via its controller if not already aborted
-    if (!stream.controller.signal.aborted) {
-      stream.controller.abort()
-    }
-  } catch {
-    // Ignore - stream may already be closed
-  }
-}
-
-/**
  * Updates usage statistics with new values from streaming API events.
  * Note: Anthropic's streaming API provides cumulative usage totals, not incremental deltas.
  * Each event contains the complete usage up to that point in the stream.
@@ -2470,6 +2459,12 @@ export function updateUsage(
   }
   const serverToolUse = partUsage.server_tool_use as
     | { web_search_requests?: number; web_fetch_requests?: number }
+    | undefined
+  const cacheCreation = partUsage.cache_creation as
+    | {
+        ephemeral_1h_input_tokens?: number
+        ephemeral_5m_input_tokens?: number
+      }
     | undefined
   return {
     input_tokens:
@@ -2497,19 +2492,19 @@ export function updateUsage(
     },
     service_tier: usage.service_tier,
     cache_creation: {
-      // SDK type BetaMessageDeltaUsage is missing cache_creation, but it's real!
       ephemeral_1h_input_tokens:
-        (partUsage as BetaUsage).cache_creation?.ephemeral_1h_input_tokens ??
+        cacheCreation?.ephemeral_1h_input_tokens ??
         usage.cache_creation.ephemeral_1h_input_tokens,
       ephemeral_5m_input_tokens:
-        (partUsage as BetaUsage).cache_creation?.ephemeral_5m_input_tokens ??
+        cacheCreation?.ephemeral_5m_input_tokens ??
         usage.cache_creation.ephemeral_5m_input_tokens,
     },
     inference_geo: usage.inference_geo,
     iterations:
       (partUsage.iterations as NonNullableUsage['iterations'] | undefined) ??
       usage.iterations,
-    speed: (partUsage.speed as NonNullableUsage['speed'] | undefined) ?? usage.speed,
+    speed:
+      (partUsage.speed as NonNullableUsage['speed'] | undefined) ?? usage.speed,
   }
 }
 
@@ -2558,7 +2553,7 @@ export function addCacheBreakpoints(
   enablePromptCaching: boolean,
   querySource?: QuerySource,
   skipCacheWrite = false,
-): MessageParam[] {
+): DomainMessageParam[] {
   // Exactly one message-level cache_control marker per request. Mycro's
   // turn-to-turn eviction (page_manager/index.rs: Index::insert) frees
   // local-attention KV pages at any cached prefix position NOT in
@@ -2599,7 +2594,7 @@ export function buildSystemPromptBlocks(
     skipGlobalCacheForSystemPrompt?: boolean
     querySource?: QuerySource
   },
-): TextBlockParam[] {
+): DomainSystemBlock[] {
   // IMPORTANT: Do not add any more blocks for caching or you will get a 400
   return splitSysPromptPrefix(systemPrompt, {
     skipGlobalCacheForSystemPrompt: options?.skipGlobalCacheForSystemPrompt,
@@ -2629,7 +2624,7 @@ export async function queryHaiku({
 }: {
   systemPrompt: SystemPrompt
   userPrompt: string
-  outputFormat?: BetaJSONOutputFormat
+  outputFormat?: Record<string, unknown>
   signal: AbortSignal
   options: HaikuOptions
 }): Promise<AssistantMessage> {
@@ -2688,7 +2683,7 @@ export async function queryWithModel({
 }: {
   systemPrompt: SystemPrompt
   userPrompt: string
-  outputFormat?: BetaJSONOutputFormat
+  outputFormat?: Record<string, unknown>
   signal: AbortSignal
   options: QueryWithModelOptions
 }): Promise<AssistantMessage> {
@@ -2743,32 +2738,27 @@ export const MAX_NON_STREAMING_TOKENS = 64_000
  * @param maxTokensCap - The maximum allowed tokens (MAX_NON_STREAMING_TOKENS)
  * @returns Adjusted parameters with thinking budget capped if needed
  */
-export function adjustParamsForNonStreaming<
-  T extends {
-    max_tokens: number
-    thinking?: BetaMessageStreamParams['thinking']
-  },
->(params: T, maxTokensCap: number): T {
-  const cappedMaxTokens = Math.min(params.max_tokens, maxTokensCap)
+export function adjustDomainRequestForNonStreaming(
+  request: DomainMessageRequest,
+  maxTokensCap: number,
+): DomainMessageRequest {
+  const cappedMaxTokens = Math.min(request.maxTokens, maxTokensCap)
 
-  // Adjust thinking budget if it would exceed capped max_tokens
-  // to maintain the constraint: max_tokens > thinking.budget_tokens
-  const adjustedParams = { ...params }
-  if (
-    adjustedParams.thinking?.type === 'enabled' &&
-    adjustedParams.thinking.budget_tokens
-  ) {
-    adjustedParams.thinking = {
-      ...adjustedParams.thinking,
-      budget_tokens: Math.min(
-        adjustedParams.thinking.budget_tokens,
-        cappedMaxTokens - 1, // Must be at least 1 less than max_tokens
+  // Adjust thinking budget if it would exceed capped maxTokens
+  // to maintain the constraint: maxTokens > thinking.budgetTokens.
+  const adjustedRequest = { ...request }
+  if (adjustedRequest.thinking?.type === 'enabled') {
+    adjustedRequest.thinking = {
+      ...adjustedRequest.thinking,
+      budgetTokens: Math.min(
+        adjustedRequest.thinking.budgetTokens,
+        cappedMaxTokens - 1, // Must be at least 1 less than maxTokens
       ),
     }
   }
 
   return {
-    ...adjustedParams,
-    max_tokens: cappedMaxTokens,
+    ...adjustedRequest,
+    maxTokens: cappedMaxTokens,
   }
 }

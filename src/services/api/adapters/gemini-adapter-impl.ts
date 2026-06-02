@@ -34,6 +34,7 @@ import {
 import { GoogleAuth } from 'google-auth-library'
 import type {
   DomainMessageRequest,
+  DomainMessageResponse,
   DomainStreamingResponse,
   DomainMessageParam,
   DomainToolDefinition,
@@ -174,9 +175,10 @@ function domainToolChoiceToGemini(
   return { functionCallingConfig: { mode } }
 }
 
-function domainMessagesToGemini(
-  messages: DomainMessageParam[],
-): { contents: GeminiContent[]; toolIdToName: Map<string, string> } {
+function domainMessagesToGemini(messages: DomainMessageParam[]): {
+  contents: GeminiContent[]
+  toolIdToName: Map<string, string>
+} {
   const toolIdToName = new Map<string, string>()
   for (const msg of messages) {
     if (msg.role === 'assistant') {
@@ -231,7 +233,11 @@ function domainMessagesToGemini(
           },
         })
       } else if (block.type === 'image') {
-        const src = (block as { source: { type: string; media_type: string; data: string } }).source
+        const src = (
+          block as {
+            source: { type: string; media_type: string; data: string }
+          }
+        ).source
         if (src?.type === 'base64') {
           parts.push({
             inlineData: {
@@ -281,6 +287,8 @@ function domainRequestToGeminiBody(
   if (request.maxTokens) generationConfig.maxOutputTokens = request.maxTokens
   if (request.temperature !== undefined)
     generationConfig.temperature = request.temperature
+  if (request.stopSequences)
+    generationConfig.stopSequences = request.stopSequences
   if (Object.keys(generationConfig).length > 0) {
     body.generationConfig = generationConfig
   }
@@ -524,9 +532,7 @@ function parseGeminiNonStreamingResponse(
   const candidates = body.candidates as
     | Array<Record<string, unknown>>
     | undefined
-  const usageMetadata = body.usageMetadata as
-    | Record<string, number>
-    | undefined
+  const usageMetadata = body.usageMetadata as Record<string, number> | undefined
 
   const content: DomainContentBlock[] = []
   let hadToolCalls = false
@@ -596,7 +602,6 @@ export const geminiAdapter: ProviderAdapter = {
 
   async createStream(
     config: ProviderConfig,
-    _authArgs: unknown,
     request: DomainMessageRequest,
     signal: AbortSignal,
   ): Promise<DomainStreamingResponse> {
@@ -616,8 +621,7 @@ export const geminiAdapter: ProviderAdapter = {
     const region = config.auth?.gcp?.region || 'us-central1'
     const projectId = config.auth?.gcp?.projectId || authResult.projectId || ''
     const baseUrl =
-      config.baseUrl ||
-      `https://${region}-aiplatform.googleapis.com/v1`
+      config.baseUrl || `https://${region}-aiplatform.googleapis.com/v1`
     const geminiUrl = `${baseUrl.replace(/\/$/, '')}/projects/${projectId}/locations/${region}/publishers/google/models/${request.model}:streamGenerateContent?alt=sse`
 
     const geminiBody = domainRequestToGeminiBody(request)
@@ -698,10 +702,9 @@ export const geminiAdapter: ProviderAdapter = {
 
   async createMessage(
     config: ProviderConfig,
-    _authArgs: unknown,
     request: DomainMessageRequest,
     signal: AbortSignal,
-  ): Promise<DomainAssistantContent> {
+  ): Promise<DomainMessageResponse> {
     const authResult = await getGcpAccessToken(config)
     if (!authResult) {
       throw new DomainConnectionError({
@@ -718,8 +721,7 @@ export const geminiAdapter: ProviderAdapter = {
     const region = config.auth?.gcp?.region || 'us-central1'
     const projectId = config.auth?.gcp?.projectId || authResult.projectId || ''
     const baseUrl =
-      config.baseUrl ||
-      `https://${region}-aiplatform.googleapis.com/v1`
+      config.baseUrl || `https://${region}-aiplatform.googleapis.com/v1`
     const geminiUrl = `${baseUrl.replace(/\/$/, '')}/projects/${projectId}/locations/${region}/publishers/google/models/${request.model}:generateContent`
 
     const geminiBody = domainRequestToGeminiBody(request)
@@ -771,7 +773,15 @@ export const geminiAdapter: ProviderAdapter = {
     }
 
     const json = (await response.json()) as Record<string, unknown>
-    return parseGeminiNonStreamingResponse(json, request.model, this.normalizeError)
+    return {
+      message: parseGeminiNonStreamingResponse(
+        json,
+        request.model,
+        this.normalizeError,
+      ),
+      requestId: response.headers.get('x-request-id') ?? undefined,
+      responseHeaders: Object.fromEntries(response.headers.entries()),
+    }
   },
 
   async countTokens(

@@ -1,5 +1,5 @@
-import { APIError } from '@anthropic-ai/sdk'
 import { describe, expect, test } from 'bun:test'
+import { DomainTransportError } from '../../src/services/api/domain-errors.js'
 import {
   classifyAPIError,
   getAssistantMessageFromError,
@@ -7,7 +7,7 @@ import {
 } from '../../src/services/api/errors.js'
 import type { NormalizedApiError } from '../../src/utils/normalizedError.js'
 
-function codedError(kind: NormalizedApiError['kind']): APIError {
+function codedError(kind: NormalizedApiError['kind']): DomainTransportError {
   const normalized: NormalizedApiError = {
     kind,
     message: 'Maximum context length exceeded',
@@ -15,7 +15,7 @@ function codedError(kind: NormalizedApiError['kind']): APIError {
     providerType: 'openai-responses',
     raw: null,
   }
-  return new APIError(400, { normalized }, undefined, new Headers())
+  return new DomainTransportError({ normalized, status: 400, headers: {} })
 }
 
 describe('coded context overflow mapping', () => {

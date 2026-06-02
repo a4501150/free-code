@@ -3,8 +3,8 @@
  * This isolates mock logic from production code
  */
 
-import { APIError } from '@anthropic-ai/sdk'
 import { stripProviderPrefix } from '../../utils/model/parseModelStringWithRegistry.js'
+import { DomainTransportError } from '../api/domain-errors.js'
 import {
   applyMockHeaders,
   checkMockFastModeRateLimit,
@@ -34,6 +34,25 @@ export function shouldProcessRateLimits(isSubscriber: boolean): boolean {
   return isSubscriber || shouldProcessMockLimits()
 }
 
+function createMockRateLimitError(
+  message: string,
+  headers?: Record<string, string>,
+): DomainTransportError {
+  const raw = { error: { type: 'rate_limit_error', message } }
+  return new DomainTransportError({
+    normalized: {
+      kind: 'rate_limit',
+      message,
+      status: 429,
+      providerType: 'anthropic',
+      raw,
+    },
+    status: 429,
+    headers,
+    raw,
+  })
+}
+
 /**
  * Check if mock rate limits should throw a 429 error
  * Returns the error to throw, or null if no error should be thrown
@@ -43,20 +62,14 @@ export function shouldProcessRateLimits(isSubscriber: boolean): boolean {
 export function checkMockRateLimitError(
   currentModel: string,
   isFastModeActive?: boolean,
-): APIError | null {
+): DomainTransportError | null {
   if (!shouldProcessMockLimits()) {
     return null
   }
 
   const headerlessMessage = getMockHeaderless429Message()
   if (headerlessMessage) {
-    return new APIError(
-      429,
-      { error: { type: 'rate_limit_error', message: headerlessMessage } },
-      headerlessMessage,
-      // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
-      new globalThis.Headers(),
-    )
+    return createMockRateLimitError(headerlessMessage)
   }
 
   const mockHeaders = getMockHeaders()
@@ -97,17 +110,11 @@ export function checkMockRateLimitError(
       return null
     }
     // Create a mock 429 error with the fast mode headers
-    const error = new APIError(
-      429,
-      { error: { type: 'rate_limit_error', message: 'Rate limit exceeded' } },
+    const error = createMockRateLimitError(
       'Rate limit exceeded',
-      // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
-      new globalThis.Headers(
-        Object.entries(fastModeHeaders).filter(([_, v]) => v !== undefined) as [
-          string,
-          string,
-        ][],
-      ),
+      Object.fromEntries(
+        Object.entries(fastModeHeaders).filter(([_, v]) => v !== undefined),
+      ) as Record<string, string>,
     )
     return error
   }
@@ -117,17 +124,11 @@ export function checkMockRateLimitError(
 
   if (shouldThrow429) {
     // Create a mock 429 error with the appropriate headers
-    const error = new APIError(
-      429,
-      { error: { type: 'rate_limit_error', message: 'Rate limit exceeded' } },
+    const error = createMockRateLimitError(
       'Rate limit exceeded',
-      // eslint-disable-next-line eslint-plugin-n/no-unsupported-features/node-builtins
-      new globalThis.Headers(
-        Object.entries(mockHeaders).filter(([_, v]) => v !== undefined) as [
-          string,
-          string,
-        ][],
-      ),
+      Object.fromEntries(
+        Object.entries(mockHeaders).filter(([_, v]) => v !== undefined),
+      ) as Record<string, string>,
     )
     return error
   }
@@ -138,7 +139,7 @@ export function checkMockRateLimitError(
 /**
  * Check if this is a mock 429 error that shouldn't be retried
  */
-export function isMockRateLimitError(error: APIError): boolean {
+export function isMockRateLimitError(error: { status?: number }): boolean {
   return shouldProcessMockLimits() && error.status === 429
 }
 

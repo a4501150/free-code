@@ -3,6 +3,7 @@ import { readdir, readFile, stat } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
 import type { QuerySource } from 'src/constants/querySource.js'
+import type { DomainMessageRequest } from 'src/services/api/domain-transport.js'
 import {
   setLastAPIRequest,
   setLastAPIRequestMessages,
@@ -19,11 +20,6 @@ import { isUsing3PServices } from './auth.js'
 import { toError } from './errors.js'
 import { isEssentialTrafficOnly } from './privacyLevel.js'
 import { jsonParse } from './slowOperations.js'
-
-type CapturedAPIRequest = {
-  messages?: unknown[]
-  [key: string]: unknown
-}
 
 /**
  * Gets the display title for a log/session with fallback logic.
@@ -331,7 +327,7 @@ export function logMCPDebug(serverName: string, message: string): void {
  * Captures the last API request for inclusion in bug reports.
  */
 export function captureAPIRequest(
-  params: CapturedAPIRequest,
+  params: DomainMessageRequest,
   querySource?: QuerySource,
 ): void {
   if (!querySource || !querySource.startsWith('repl_main_thread')) {

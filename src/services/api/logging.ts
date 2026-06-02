@@ -1,10 +1,6 @@
 import { feature } from 'bun:bundle'
-import { APIError } from '@anthropic-ai/sdk'
+import type { DomainStopReason, DomainUsage } from '../../types/domain.js'
 import { DomainTransportError } from './domain-errors.js'
-import type {
-  BetaStopReason,
-  BetaUsage as Usage,
-} from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import {
   addToTotalDurationState,
   consumePostCompaction,
@@ -39,10 +35,6 @@ export { EMPTY_USAGE }
 export type GlobalCacheStrategy = 'tool_based' | 'system_prompt' | 'none'
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof APIError) {
-    const body = error.error as { error?: { message?: string } } | undefined
-    if (body?.error?.message) return body.error.message
-  }
   return error instanceof Error ? error.message : String(error)
 }
 
@@ -227,19 +219,15 @@ export function logAPIError({
     headers:
       error instanceof DomainTransportError && error.headers
         ? new Headers(error.headers)
-        : error instanceof APIError && error.headers
-          ? error.headers
-          : headers,
+        : headers,
     baseUrl: process.env.ANTHROPIC_BASE_URL,
   })
 
   const errStr = getErrorMessage(error)
   const status =
-    error instanceof DomainTransportError
-      ? (error.status !== undefined ? String(error.status) : undefined)
-      : error instanceof APIError
-        ? String(error.status)
-        : undefined
+    error instanceof DomainTransportError && error.status !== undefined
+      ? String(error.status)
+      : undefined
   const errorType = classifyAPIError(error)
 
   // Log detailed connection error info to debug logs (visible via --debug)
@@ -313,13 +301,13 @@ function logAPISuccess({
   preNormalizedModel: string
   messageCount: number
   messageTokens: number
-  usage: Usage
+  usage: DomainUsage
   durationMs: number
   durationMsIncludingRetries: number
   attempt: number
   ttftMs: number | null
   requestId: string | null
-  stopReason: BetaStopReason | null
+  stopReason: DomainStopReason | null
   costUSD: number
   didFallBackToNonStreaming: boolean
   querySource: string
@@ -387,7 +375,7 @@ export function logAPISuccessAndDuration({
   messageCount: number
   messageTokens: number
   requestId: string | null
-  stopReason: BetaStopReason | null
+  stopReason: DomainStopReason | null
   didFallBackToNonStreaming: boolean
   querySource: string
   headers?: globalThis.Headers
@@ -463,7 +451,7 @@ export function logAPISuccessAndDuration({
     preNormalizedModel,
     messageCount,
     messageTokens,
-    usage: usage as Usage,
+    usage,
     durationMs,
     durationMsIncludingRetries,
     attempt,

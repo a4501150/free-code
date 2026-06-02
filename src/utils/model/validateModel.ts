@@ -2,11 +2,9 @@
 import { getProviderRegistry } from './providerRegistry.js'
 import { sideQuery } from '../sideQuery.js'
 import {
-  NotFoundError,
-  APIError,
-  APIConnectionError,
-  AuthenticationError,
-} from '@anthropic-ai/sdk'
+  DomainTransportError,
+  DomainConnectionError,
+} from '../../services/api/domain-errors.js'
 
 // Cache valid models to avoid repeated API calls
 const validModelCache = new Map<string, boolean>()
@@ -74,32 +72,33 @@ function handleValidationError(
   error: unknown,
   modelName: string,
 ): { valid: boolean; error: string } {
-  // NotFoundError (404) means the model doesn't exist
-  if (error instanceof NotFoundError) {
+  // A 404 means the model doesn't exist
+  if (error instanceof DomainTransportError && error.status === 404) {
     return {
       valid: false,
       error: `Model '${modelName}' not found`,
     }
   }
 
+  if (error instanceof DomainConnectionError) {
+    return {
+      valid: false,
+      error: 'Network error. Please check your internet connection.',
+    }
+  }
+
   // For other API errors, provide context-specific messages
-  if (error instanceof APIError) {
-    if (error instanceof AuthenticationError) {
+  if (error instanceof DomainTransportError) {
+    if (error.normalized.kind === 'auth') {
       return {
         valid: false,
         error: 'Authentication failed. Please check your API credentials.',
       }
     }
 
-    if (error instanceof APIConnectionError) {
-      return {
-        valid: false,
-        error: 'Network error. Please check your internet connection.',
-      }
-    }
-
     // Check error body for model-specific errors
-    const errorBody = error.error as unknown
+    const raw = error.raw as { body?: unknown; error?: unknown } | undefined
+    const errorBody = raw?.body ?? raw?.error
     if (
       errorBody &&
       typeof errorBody === 'object' &&

@@ -48,7 +48,7 @@ import { zodToJsonSchema } from './zodToJsonSchema.js'
 
 type APIToolInputSchema = any
 
-export type BetaTool = {
+export type ToolSchema = {
   type?: string | null
   name: string
   description?: string | null
@@ -60,10 +60,10 @@ export type BetaTool = {
   }
 }
 
-export type BetaToolUnion = BetaTool | { type?: string | null; name: string }
+export type ToolSchemaUnion = ToolSchema | { type?: string | null; name: string }
 
-// Extended BetaTool type with cache-control and streaming support
-type BetaToolWithExtras = BetaTool & {
+// Extended ToolSchema type with cache-control and streaming support
+type ToolSchemaWithExtras = ToolSchema & {
   cache_control?: {
     type: 'ephemeral'
     scope?: 'global' | 'org'
@@ -125,7 +125,7 @@ export async function toolToAPISchema(
       ttl?: '5m' | '1h'
     }
   },
-): Promise<BetaToolUnion> {
+): Promise<ToolSchemaUnion> {
   // Session-stable base schema: name, description, input_schema,
   // eager_input_streaming. Computed once per session and cached to prevent
   // mid-session tool.prompt() drift from churning the serialized tool array
@@ -183,7 +183,7 @@ export async function toolToAPISchema(
     cache.set(cacheKey, base)
   }
 
-  const schema: BetaToolWithExtras = {
+  const schema: ToolSchemaWithExtras = {
     name: base.name,
     description: base.description,
     input_schema: base.input_schema,
@@ -224,10 +224,9 @@ export async function toolToAPISchema(
     }
   }
 
-  // Note: We cast to BetaTool but the extra fields are still present at runtime
-  // and will be serialized in the API request, even though they're not in the SDK's
-  // BetaTool type definition. This is intentional for beta features.
-  return schema as BetaTool
+  // Extra fields are still present at runtime and will be serialized
+  // in the API request. This is intentional for beta features.
+  return schema as ToolSchema
 }
 
 let loggedStrip = false

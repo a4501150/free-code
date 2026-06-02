@@ -1,14 +1,21 @@
-import { APIError } from '@anthropic-ai/sdk'
 import isEqual from 'lodash-es/isEqual.js'
 import { getIsNonInteractiveSession } from '../bootstrap/state.js'
 import { isClaudeAISubscriber } from '../utils/auth.js'
 import { getModelBetas } from '../utils/betas.js'
 import { logError } from '../utils/log.js'
-import { getSmallFastModel } from '../utils/model/model.js'
+import {
+  getSmallFastModel,
+  normalizeModelStringForAPI,
+} from '../utils/model/model.js'
 import { isEssentialTrafficOnly } from '../utils/privacyLevel.js'
 
 import { getAPIMetadata } from './api/claude.js'
-import { getAnthropicClient } from './api/client.js'
+import {
+  getAdapterForModel,
+  getProviderConfigForModel,
+} from './api/adapters/index.js'
+import { DomainTransportError } from './api/domain-errors.js'
+import type { DomainMessageRequest } from './api/domain-transport.js'
 import {
   processRateLimitHeaders,
   shouldProcessRateLimits,
@@ -186,25 +193,24 @@ export function emitStatusChange(limits: ClaudeAILimits) {
   )
 }
 
-async function makeTestQuery() {
+async function makeTestQuery(): Promise<Headers> {
   const model = getSmallFastModel()
-  const anthropic = await getAnthropicClient({
-    maxRetries: 0,
-    model,
-    source: 'quota_check',
-  })
-  const messages = [{ role: 'user' as const, content: 'quota' }]
+  const adapter = getAdapterForModel(model)
+  const providerConfig = getProviderConfigForModel(model)
   const betas = getModelBetas(model)
-  // biome-ignore lint/plugin: quota check needs raw response access via asResponse()
-  return anthropic.beta.messages
-    .create({
-      model,
-      max_tokens: 1,
-      messages,
-      metadata: getAPIMetadata(),
-      ...(betas.length > 0 ? { betas } : {}),
-    })
-    .asResponse()
+  const request: DomainMessageRequest = {
+    model: normalizeModelStringForAPI(model),
+    maxTokens: 1,
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'quota' }] }],
+    metadata: getAPIMetadata(),
+    ...(betas.length > 0 ? { betas } : {}),
+  }
+  const response = await adapter.createMessage(
+    providerConfig,
+    request,
+    AbortSignal.timeout(30_000),
+  )
+  return new Headers(response.responseHeaders)
 }
 
 export async function checkQuotaStatus(): Promise<void> {
@@ -227,12 +233,12 @@ export async function checkQuotaStatus(): Promise<void> {
 
   try {
     // Make a minimal request to check quota
-    const raw = await makeTestQuery()
+    const headers = await makeTestQuery()
 
     // Update limits based on the response
-    extractQuotaStatusFromHeaders(raw.headers)
+    extractQuotaStatusFromHeaders(headers)
   } catch (error) {
-    if (error instanceof APIError) {
+    if (error instanceof DomainTransportError) {
       extractQuotaStatusFromError(error)
     }
   }
@@ -465,7 +471,7 @@ export function extractQuotaStatusFromHeaders(
   }
 }
 
-export function extractQuotaStatusFromError(error: APIError): void {
+export function extractQuotaStatusFromError(error: DomainTransportError): void {
   if (
     !shouldProcessRateLimits(isClaudeAISubscriber()) ||
     error.status !== 429
@@ -477,7 +483,7 @@ export function extractQuotaStatusFromError(error: APIError): void {
     let newLimits = { ...currentLimits }
     if (error.headers) {
       // Process headers (applies mocks from /mock-limits command if active)
-      const headersToUse = processRateLimitHeaders(error.headers)
+      const headersToUse = processRateLimitHeaders(new Headers(error.headers))
       rawUtilization = extractRawUtilization(headersToUse)
       newLimits = computeNewLimitsFromHeaders(headersToUse)
 

@@ -32,6 +32,7 @@ import {
 } from '../../../utils/normalizedError.js'
 import type {
   DomainMessageRequest,
+  DomainMessageResponse,
   DomainStreamingResponse,
   DomainMessageParam,
   DomainSystemBlock,
@@ -50,9 +51,27 @@ import {
   DomainUserAbortError,
 } from '../domain-errors.js'
 
-// ── Auth args type ──────────────────────────────────────────────────
+// ── Auth resolution ─────────────────────────────────────────────────
 
-export type OpenAIChatCompletionsAuthArgs = Record<string, string>
+function resolveOpenAIChatCompletionsAuthHeaders(
+  config: ProviderConfig,
+): Record<string, string> {
+  const auth = config.auth
+  let token: string | undefined
+  if (auth?.active === 'apiKey') {
+    token =
+      auth.apiKey?.key ||
+      (auth.apiKey?.keyEnv ? process.env[auth.apiKey.keyEnv] : undefined)
+  } else if (auth?.active === 'bearer') {
+    token =
+      auth.bearer?.token ||
+      (auth.bearer?.tokenEnv ? process.env[auth.bearer.tokenEnv] : undefined)
+  } else if (auth?.active === 'oauth') {
+    token = auth.oauth?.accessToken
+  }
+
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
 
 // ── Tokenizer ───────────────────────────────────────────────────────
 
@@ -174,7 +193,8 @@ function domainMessagesToOpenAI(
           } else if (Array.isArray(block.content)) {
             outputText = block.content
               .map(c => {
-                if (c.type === 'text') return (c as { text?: string }).text ?? ''
+                if (c.type === 'text')
+                  return (c as { text?: string }).text ?? ''
                 if (c.type === 'image') return '[Image data]'
                 return ''
               })
@@ -277,10 +297,9 @@ function domainRequestToOpenAIBody(
 
   if (request.maxTokens) body.max_tokens = request.maxTokens
   if (request.temperature !== undefined) body.temperature = request.temperature
+  if (request.stopSequences) body.stop = request.stopSequences
 
-  const outputConfig = request.outputConfig as
-    | { effort?: string }
-    | undefined
+  const outputConfig = request.outputConfig as { effort?: string } | undefined
   if (outputConfig?.effort) {
     body.reasoning_effort = outputConfig.effort
   }
@@ -666,11 +685,10 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
 
   async createStream(
     config: ProviderConfig,
-    authArgs: unknown,
     request: DomainMessageRequest,
     signal: AbortSignal,
   ): Promise<DomainStreamingResponse> {
-    const authHeaders = authArgs as OpenAIChatCompletionsAuthArgs
+    const authHeaders = resolveOpenAIChatCompletionsAuthHeaders(config)
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1'
     const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`
 
@@ -753,11 +771,10 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
 
   async createMessage(
     config: ProviderConfig,
-    authArgs: unknown,
     request: DomainMessageRequest,
     signal: AbortSignal,
-  ): Promise<DomainAssistantContent> {
-    const authHeaders = authArgs as OpenAIChatCompletionsAuthArgs
+  ): Promise<DomainMessageResponse> {
+    const authHeaders = resolveOpenAIChatCompletionsAuthHeaders(config)
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1'
     const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`
 
@@ -812,7 +829,11 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
     }
 
     const json = (await response.json()) as Record<string, unknown>
-    return parseOpenAINonStreamingResponse(json, request.model)
+    return {
+      message: parseOpenAINonStreamingResponse(json, request.model),
+      requestId: response.headers.get('x-request-id') ?? undefined,
+      responseHeaders: Object.fromEntries(response.headers.entries()),
+    }
   },
 
   async countTokens(

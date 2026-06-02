@@ -1,8 +1,3 @@
-import {
-  APIConnectionError,
-  APIConnectionTimeoutError,
-  APIError,
-} from '@anthropic-ai/sdk'
 import type {
   DomainAssistantContent,
   DomainStopReason,
@@ -428,32 +423,7 @@ export function getAssistantMessageFromError(
     })
   }
 
-  // Domain transport error: classified HTTP errors
-  if (error instanceof DomainTransportError) {
-    const n = error.normalized
-    if (n.kind === 'context_overflow') {
-      return createAssistantAPIErrorMessage({
-        content: `${PROMPT_TOO_LONG_ERROR_MESSAGE}: ${n.message}`,
-        error: 'invalid_request',
-      })
-    }
-    return createAssistantAPIErrorMessage({
-      content: `${API_ERROR_MESSAGE_PREFIX}: ${n.message}`,
-      error: n.kind === 'rate_limit' ? 'rate_limit' : 'unknown',
-    })
-  }
-
-  // Check for SDK timeout errors
-  if (
-    error instanceof APIConnectionTimeoutError ||
-    (error instanceof APIConnectionError &&
-      error.message.toLowerCase().includes('timeout'))
-  ) {
-    return createAssistantAPIErrorMessage({
-      content: API_TIMEOUT_ERROR_MESSAGE,
-      error: 'unknown',
-    })
-  }
+  // Preserve detailed domain transport error handling below.
 
   // Check for image size/resize errors (thrown before API call during validation)
   // Use getImageTooLargeErrorMessage() to show "esc esc" hint for CLI users
@@ -476,7 +446,7 @@ export function getAssistantMessageFromError(
   }
 
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 429 &&
     shouldProcessRateLimits(isClaudeAISubscriber()) &&
     // Rate-limit banner copy reads Anthropic-native `anthropic-ratelimit-*`
@@ -485,13 +455,13 @@ export function getAssistantMessageFromError(
     (getNormalizedError(error)?.providerType ?? 'anthropic') === 'anthropic'
   ) {
     // Check if this is the new API with multiple rate limit headers
-    const rateLimitType = error.headers?.get?.(
-      'anthropic-ratelimit-unified-representative-claim',
-    ) as 'five_hour' | 'seven_day' | 'seven_day_opus' | null
+    const rateLimitType = error.headers?.[
+      'anthropic-ratelimit-unified-representative-claim'
+    ] as 'five_hour' | 'seven_day' | 'seven_day_opus' | undefined
 
-    const overageStatus = error.headers?.get?.(
-      'anthropic-ratelimit-unified-overage-status',
-    ) as 'allowed' | 'allowed_warning' | 'rejected' | null
+    const overageStatus = error.headers?.[
+      'anthropic-ratelimit-unified-overage-status'
+    ] as 'allowed' | 'allowed_warning' | 'rejected' | undefined
 
     // If we have the new headers, use the new message generation
     if (rateLimitType || overageStatus) {
@@ -503,9 +473,8 @@ export function getAssistantMessageFromError(
       }
 
       // Extract rate limit information from headers
-      const resetHeader = error.headers?.get?.(
-        'anthropic-ratelimit-unified-reset',
-      )
+      const resetHeader =
+        error.headers?.['anthropic-ratelimit-unified-reset']
       if (resetHeader) {
         limits.resetsAt = Number(resetHeader)
       }
@@ -518,16 +487,15 @@ export function getAssistantMessageFromError(
         limits.overageStatus = overageStatus
       }
 
-      const overageResetHeader = error.headers?.get?.(
-        'anthropic-ratelimit-unified-overage-reset',
-      )
+      const overageResetHeader =
+        error.headers?.['anthropic-ratelimit-unified-overage-reset']
       if (overageResetHeader) {
         limits.overageResetsAt = Number(overageResetHeader)
       }
 
-      const overageDisabledReason = error.headers?.get?.(
-        'anthropic-ratelimit-unified-overage-disabled-reason',
-      ) as OverageDisabledReason | null
+      const overageDisabledReason = error.headers?.[
+        'anthropic-ratelimit-unified-overage-disabled-reason'
+      ] as OverageDisabledReason | undefined
       if (overageDisabledReason) {
         limits.overageDisabledReason = overageDisabledReason
       }
@@ -578,7 +546,7 @@ export function getAssistantMessageFromError(
   // Codex preserves its context_length_exceeded code through normalization, so
   // this does not depend on provider-specific wording.
   if (
-    (error instanceof APIError &&
+    (error instanceof DomainTransportError &&
       getNormalizedError(error)?.kind === 'context_overflow') ||
     (error instanceof Error &&
       error.message.toLowerCase().includes('prompt is too long'))
@@ -631,7 +599,7 @@ export function getAssistantMessageFromError(
 
   // Check for image size errors (e.g., "image exceeds 5 MB maximum: 5316852 bytes > 5242880 bytes")
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 400 &&
     error.message.includes('image exceeds') &&
     error.message.includes('maximum')
@@ -644,7 +612,7 @@ export function getAssistantMessageFromError(
 
   // Check for many-image dimension errors (API enforces stricter 2000px limit for many-image requests)
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 400 &&
     error.message.includes('image dimensions exceed') &&
     error.message.includes('many-image')
@@ -663,7 +631,7 @@ export function getAssistantMessageFromError(
   // so the truthy guard keeps this inert there.
   if (
     AFK_MODE_BETA_HEADER &&
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 400 &&
     error.message.includes(AFK_MODE_BETA_HEADER) &&
     error.message.includes('anthropic-beta')
@@ -676,7 +644,7 @@ export function getAssistantMessageFromError(
 
   // Check for request too large errors (413 status)
   // This typically happens when a large PDF + conversation context exceeds the 32MB API limit
-  if (error instanceof APIError && error.status === 413) {
+  if (error instanceof DomainTransportError && error.status === 413) {
     return createAssistantAPIErrorMessage({
       content: getRequestTooLargeErrorMessage(),
       error: 'invalid_request',
@@ -685,7 +653,7 @@ export function getAssistantMessageFromError(
 
   // Check for tool_use/tool_result concurrency error
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 400 &&
     error.message.includes(
       '`tool_use` ids were found without `tool_result` blocks immediately after',
@@ -718,7 +686,7 @@ export function getAssistantMessageFromError(
   // before send, so hitting this means a new corruption path slipped through.
   // Log for root-causing, and give users a recovery path instead of deadlock.
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 400 &&
     error.message.includes('`tool_use` ids must be unique')
   ) {
@@ -735,7 +703,7 @@ export function getAssistantMessageFromError(
   // Check for invalid model name error for subscription users trying to use Opus
   if (
     isClaudeAISubscriber() &&
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 400 &&
     error.message.toLowerCase().includes('invalid model name') &&
     stripProviderPrefix(model).toLowerCase().includes('opus')
@@ -761,7 +729,7 @@ export function getAssistantMessageFromError(
   // the env-var case; apiKeyHelper and /login-managed keys mean the active
   // auth's org is genuinely disabled with no dormant fallback to point at.
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 400 &&
     error.message.toLowerCase().includes('organization has been disabled')
   ) {
@@ -807,7 +775,7 @@ export function getAssistantMessageFromError(
 
   // Check for OAuth token revocation error
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 403 &&
     error.message.includes('OAuth token has been revoked')
   ) {
@@ -819,7 +787,7 @@ export function getAssistantMessageFromError(
 
   // Check for OAuth organization not allowed error
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     (error.status === 401 || error.status === 403) &&
     error.message.includes(
       'OAuth authentication is currently not allowed for this organization',
@@ -833,7 +801,7 @@ export function getAssistantMessageFromError(
 
   // Generic handler for other 401/403 authentication errors
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     (error.status === 401 || error.status === 403)
   ) {
     return createAssistantAPIErrorMessage({
@@ -861,7 +829,7 @@ export function getAssistantMessageFromError(
   // 404 Not Found — usually means the selected model doesn't exist or isn't
   // available. Guide the user to /model so they can pick a valid one.
   // For 3P users, suggest a specific fallback model they can try.
-  if (error instanceof APIError && error.status === 404) {
+  if (error instanceof DomainTransportError && error.status === 404) {
     const switchCmd = getIsNonInteractiveSession() ? '--model' : '/model'
     return createAssistantAPIErrorMessage({
       content: `There's an issue with the selected model (${model}). It may not exist or you may not have access to it. Run ${switchCmd} to pick a different model.`,
@@ -869,11 +837,10 @@ export function getAssistantMessageFromError(
     })
   }
 
-  // Connection errors (non-timeout) — use formatAPIError for detailed messages
-  if (error instanceof APIConnectionError) {
+  if (error instanceof DomainTransportError) {
     return createAssistantAPIErrorMessage({
-      content: `${API_ERROR_MESSAGE_PREFIX}: ${formatAPIError(error)}`,
-      error: 'unknown',
+      content: `${API_ERROR_MESSAGE_PREFIX}: ${error.message}`,
+      error: error.normalized.kind === 'rate_limit' ? 'rate_limit' : 'unknown',
     })
   }
 
@@ -899,41 +866,12 @@ export function classifyAPIError(error: unknown): string {
     return 'aborted'
   }
 
-  // Domain transport errors — classify from normalized kind
-  if (error instanceof DomainConnectionTimeoutError) {
-    return 'api_timeout'
-  }
-  if (error instanceof DomainTransportError) {
-    switch (error.normalized.kind) {
-      case 'rate_limit':
-        return 'rate_limit'
-      case 'overloaded':
-        return 'server_overload'
-      case 'context_overflow':
-        return 'prompt_too_long'
-      case 'content_filter':
-        return 'content_filter'
-      case 'auth':
-        return error.status === 401 || error.status === 403
-          ? 'auth_error'
-          : 'auth_error'
-      case 'server':
-        return 'server_error'
-      case 'transport':
-        return error instanceof DomainConnectionError
-          ? 'connection_error'
-          : 'connection_error'
-      case 'invalid_request':
-        return 'client_error'
-      case 'unknown':
-        return 'unknown'
-    }
-  }
+  // Preserve detailed domain transport classifications below.
 
   // Timeout errors
   if (
-    error instanceof APIConnectionTimeoutError ||
-    (error instanceof APIConnectionError &&
+    error instanceof DomainConnectionTimeoutError ||
+    (error instanceof DomainConnectionError &&
       error.message.toLowerCase().includes('timeout'))
   ) {
     return 'api_timeout'
@@ -956,7 +894,7 @@ export function classifyAPIError(error: unknown): string {
   }
 
   // Rate limiting (HTTP or mid-stream via normalized)
-  if (error instanceof APIError) {
+  if (error instanceof DomainTransportError) {
     const normalized = getNormalizedError(error)
     if (error.status === 429 || normalized?.kind === 'rate_limit') {
       return 'rate_limit'
@@ -972,7 +910,7 @@ export function classifyAPIError(error: unknown): string {
 
   // Prompt/content size errors
   if (
-    (error instanceof APIError &&
+    (error instanceof DomainTransportError &&
       getNormalizedError(error)?.kind === 'context_overflow') ||
     (error instanceof Error &&
       error.message
@@ -999,7 +937,7 @@ export function classifyAPIError(error: unknown): string {
 
   // Image size errors
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 400 &&
     error.message.includes('image exceeds') &&
     error.message.includes('maximum')
@@ -1009,7 +947,7 @@ export function classifyAPIError(error: unknown): string {
 
   // Many-image dimension errors
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 400 &&
     error.message.includes('image dimensions exceed') &&
     error.message.includes('many-image')
@@ -1019,7 +957,7 @@ export function classifyAPIError(error: unknown): string {
 
   // Tool use errors (400)
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 400 &&
     error.message.includes(
       '`tool_use` ids were found without `tool_result` blocks immediately after',
@@ -1029,7 +967,7 @@ export function classifyAPIError(error: unknown): string {
   }
 
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 400 &&
     error.message.includes('unexpected `tool_use_id` found in `tool_result`')
   ) {
@@ -1037,7 +975,7 @@ export function classifyAPIError(error: unknown): string {
   }
 
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 400 &&
     error.message.includes('`tool_use` ids must be unique')
   ) {
@@ -1046,7 +984,7 @@ export function classifyAPIError(error: unknown): string {
 
   // Invalid model errors (400)
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 400 &&
     error.message.toLowerCase().includes('invalid model name')
   ) {
@@ -1072,7 +1010,7 @@ export function classifyAPIError(error: unknown): string {
   }
 
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     error.status === 403 &&
     error.message.includes('OAuth token has been revoked')
   ) {
@@ -1080,7 +1018,7 @@ export function classifyAPIError(error: unknown): string {
   }
 
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     (error.status === 401 || error.status === 403) &&
     error.message.includes(
       'OAuth authentication is currently not allowed for this organization',
@@ -1091,7 +1029,7 @@ export function classifyAPIError(error: unknown): string {
 
   // Generic auth errors
   if (
-    error instanceof APIError &&
+    error instanceof DomainTransportError &&
     (error.status === 401 || error.status === 403)
   ) {
     return 'auth_error'
@@ -1106,15 +1044,8 @@ export function classifyAPIError(error: unknown): string {
     return 'bedrock_model_access'
   }
 
-  // Status code based fallbacks
-  if (error instanceof APIError) {
-    const status = error.status
-    if (status >= 500) return 'server_error'
-    if (status >= 400) return 'client_error'
-  }
-
   // Connection errors - check for SSL/TLS issues first
-  if (error instanceof APIConnectionError) {
+  if (error instanceof DomainConnectionError) {
     const connectionDetails = extractConnectionErrorDetails(error)
     if (connectionDetails?.isSSLError) {
       return 'ssl_cert_error'
@@ -1122,11 +1053,41 @@ export function classifyAPIError(error: unknown): string {
     return 'connection_error'
   }
 
+  // Domain transport fallback classification for errors without a more
+  // specific message-based category above.
+  if (error instanceof DomainTransportError) {
+    switch (error.normalized.kind) {
+      case 'rate_limit':
+        return 'rate_limit'
+      case 'overloaded':
+        return 'server_overload'
+      case 'context_overflow':
+        return 'prompt_too_long'
+      case 'content_filter':
+        return 'content_filter'
+      case 'auth':
+        return 'auth_error'
+      case 'server':
+        return 'server_error'
+      case 'transport':
+        return 'connection_error'
+      case 'invalid_request':
+        return 'client_error'
+      case 'unknown':
+        break
+    }
+
+    // Status code based fallbacks
+    const status = error.status
+    if (status !== undefined && status >= 500) return 'server_error'
+    if (status !== undefined && status >= 400) return 'client_error'
+  }
+
   return 'unknown'
 }
 
 export function categorizeRetryableAPIError(
-  error: Pick<APIError, 'status' | 'message'> | DomainApiError,
+  error: Pick<DomainTransportError, 'status' | 'message'> | DomainApiError,
 ): SDKAssistantErrorReason {
   if (
     error.status === 529 ||

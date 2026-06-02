@@ -17,14 +17,12 @@ const testConfig: ProviderConfig = {
   auth: { active: 'apiKey', apiKey: { key: 'test-key' } },
 }
 
-const authArgs = { Authorization: 'Bearer test-key' }
-
-function makeRequest(overrides?: Partial<DomainMessageRequest>): DomainMessageRequest {
+function makeRequest(
+  overrides?: Partial<DomainMessageRequest>,
+): DomainMessageRequest {
   return {
     model: 'gpt-4o',
-    messages: [
-      { role: 'user', content: [{ type: 'text', text: 'Hello' }] },
-    ],
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
     maxTokens: 1024,
     ...overrides,
   }
@@ -74,7 +72,6 @@ describe('OpenAI CC adapter: createStream', () => {
 
     const result = await openaiChatCompletionsAdapter.createStream(
       testConfig,
-      authArgs,
       makeRequest(),
       new AbortController().signal,
     )
@@ -118,7 +115,6 @@ describe('OpenAI CC adapter: createStream', () => {
 
     const result = await openaiChatCompletionsAdapter.createStream(
       testConfig,
-      authArgs,
       makeRequest(),
       new AbortController().signal,
     )
@@ -126,16 +122,21 @@ describe('OpenAI CC adapter: createStream', () => {
     result.release()
 
     const toolStart = events.find(
-      e => e.type === 'content_block_start' && e.content_block.type === 'tool_use',
+      e =>
+        e.type === 'content_block_start' && e.content_block.type === 'tool_use',
     )
     expect(toolStart).toBeDefined()
-    if (toolStart?.type === 'content_block_start' && toolStart.content_block.type === 'tool_use') {
+    if (
+      toolStart?.type === 'content_block_start' &&
+      toolStart.content_block.type === 'tool_use'
+    ) {
       expect(toolStart.content_block.id).toBe('call_abc')
       expect(toolStart.content_block.name).toBe('read_file')
     }
 
     const inputDeltas = events.filter(
-      e => e.type === 'content_block_delta' && e.delta.type === 'input_json_delta',
+      e =>
+        e.type === 'content_block_delta' && e.delta.type === 'input_json_delta',
     )
     expect(inputDeltas.length).toBe(2)
 
@@ -158,7 +159,6 @@ describe('OpenAI CC adapter: createStream', () => {
 
     const result = await openaiChatCompletionsAdapter.createStream(
       testConfig,
-      authArgs,
       makeRequest(),
       new AbortController().signal,
     )
@@ -166,12 +166,15 @@ describe('OpenAI CC adapter: createStream', () => {
     result.release()
 
     const reasoningStart = events.find(
-      e => e.type === 'content_block_start' && e.content_block.type === 'reasoning',
+      e =>
+        e.type === 'content_block_start' &&
+        e.content_block.type === 'reasoning',
     )
     expect(reasoningStart).toBeDefined()
 
     const thinkingDeltas = events.filter(
-      e => e.type === 'content_block_delta' && e.delta.type === 'thinking_delta',
+      e =>
+        e.type === 'content_block_delta' && e.delta.type === 'thinking_delta',
     )
     expect(thinkingDeltas.length).toBe(2)
 
@@ -192,7 +195,6 @@ describe('OpenAI CC adapter: createStream', () => {
 
     const result = await openaiChatCompletionsAdapter.createStream(
       testConfig,
-      authArgs,
       makeRequest(),
       new AbortController().signal,
     )
@@ -219,7 +221,6 @@ describe('OpenAI CC adapter: createStream', () => {
     await expect(
       openaiChatCompletionsAdapter.createStream(
         testConfig,
-        authArgs,
         makeRequest(),
         new AbortController().signal,
       ),
@@ -236,7 +237,6 @@ describe('OpenAI CC adapter: createStream', () => {
 
     const result = await openaiChatCompletionsAdapter.createStream(
       testConfig,
-      authArgs,
       makeRequest(),
       new AbortController().signal,
     )
@@ -248,7 +248,7 @@ describe('OpenAI CC adapter: createStream', () => {
 })
 
 describe('OpenAI CC adapter: createMessage', () => {
-  test('returns DomainAssistantContent for text response', async () => {
+  test('returns DomainMessageResponse for text response', async () => {
     globalThis.fetch = async () =>
       new Response(
         JSON.stringify({
@@ -266,21 +266,20 @@ describe('OpenAI CC adapter: createMessage', () => {
 
     const result = await openaiChatCompletionsAdapter.createMessage(
       testConfig,
-      authArgs,
       makeRequest(),
       new AbortController().signal,
     )
 
-    expect(result.id).toBe('chatcmpl-abc')
-    expect(result.role).toBe('assistant')
-    expect(result.content).toHaveLength(1)
-    expect(result.content[0].type).toBe('text')
-    if (result.content[0].type === 'text') {
-      expect(result.content[0].text).toBe('Hello world')
+    expect(result.message.id).toBe('chatcmpl-abc')
+    expect(result.message.role).toBe('assistant')
+    expect(result.message.content).toHaveLength(1)
+    expect(result.message.content[0].type).toBe('text')
+    if (result.message.content[0].type === 'text') {
+      expect(result.message.content[0].text).toBe('Hello world')
     }
-    expect(result.stop_reason).toBe('end_turn')
-    expect(result.usage.input_tokens).toBe(10)
-    expect(result.usage.output_tokens).toBe(5)
+    expect(result.message.stop_reason).toBe('end_turn')
+    expect(result.message.usage.input_tokens).toBe(10)
+    expect(result.message.usage.output_tokens).toBe(5)
   })
 
   test('returns tool_use blocks for tool calls', async () => {
@@ -314,18 +313,17 @@ describe('OpenAI CC adapter: createMessage', () => {
 
     const result = await openaiChatCompletionsAdapter.createMessage(
       testConfig,
-      authArgs,
       makeRequest(),
       new AbortController().signal,
     )
 
-    expect(result.stop_reason).toBe('tool_use')
-    expect(result.content).toHaveLength(1)
-    expect(result.content[0].type).toBe('tool_use')
-    if (result.content[0].type === 'tool_use') {
-      expect(result.content[0].id).toBe('call_123')
-      expect(result.content[0].name).toBe('read_file')
-      expect(result.content[0].input).toEqual({ path: 'test.txt' })
+    expect(result.message.stop_reason).toBe('tool_use')
+    expect(result.message.content).toHaveLength(1)
+    expect(result.message.content[0].type).toBe('tool_use')
+    if (result.message.content[0].type === 'tool_use') {
+      expect(result.message.content[0].id).toBe('call_123')
+      expect(result.message.content[0].name).toBe('read_file')
+      expect(result.message.content[0].input).toEqual({ path: 'test.txt' })
     }
   })
 })
@@ -340,9 +338,7 @@ describe('OpenAI CC adapter: request translation', () => {
       return new Response(
         JSON.stringify({
           id: 'test',
-          choices: [
-            { message: { content: 'ok' }, finish_reason: 'stop' },
-          ],
+          choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
           usage: { prompt_tokens: 1, completion_tokens: 1 },
         }),
         { status: 200 },
@@ -351,7 +347,6 @@ describe('OpenAI CC adapter: request translation', () => {
 
     await openaiChatCompletionsAdapter.createMessage(
       testConfig,
-      authArgs,
       makeRequest({
         system: [
           { type: 'text', text: 'You are a helpful assistant.' },
@@ -380,9 +375,7 @@ describe('OpenAI CC adapter: request translation', () => {
       return new Response(
         JSON.stringify({
           id: 'test',
-          choices: [
-            { message: { content: 'ok' }, finish_reason: 'stop' },
-          ],
+          choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
           usage: { prompt_tokens: 1, completion_tokens: 1 },
         }),
         { status: 200 },
@@ -391,7 +384,6 @@ describe('OpenAI CC adapter: request translation', () => {
 
     await openaiChatCompletionsAdapter.createMessage(
       testConfig,
-      authArgs,
       makeRequest({
         tools: [
           {
@@ -426,9 +418,7 @@ describe('OpenAI CC adapter: request translation', () => {
       return new Response(
         JSON.stringify({
           id: 'test',
-          choices: [
-            { message: { content: 'ok' }, finish_reason: 'stop' },
-          ],
+          choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
           usage: { prompt_tokens: 1, completion_tokens: 1 },
         }),
         { status: 200 },
@@ -437,7 +427,6 @@ describe('OpenAI CC adapter: request translation', () => {
 
     await openaiChatCompletionsAdapter.createMessage(
       testConfig,
-      authArgs,
       makeRequest({
         messages: [
           {
@@ -486,9 +475,7 @@ describe('OpenAI CC adapter: request translation', () => {
       return new Response(
         JSON.stringify({
           id: 'test',
-          choices: [
-            { message: { content: 'ok' }, finish_reason: 'stop' },
-          ],
+          choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
           usage: { prompt_tokens: 1, completion_tokens: 1 },
         }),
         { status: 200 },
@@ -497,7 +484,6 @@ describe('OpenAI CC adapter: request translation', () => {
 
     await openaiChatCompletionsAdapter.createMessage(
       testConfig,
-      authArgs,
       makeRequest({
         messages: [
           {
@@ -526,6 +512,31 @@ describe('OpenAI CC adapter: request translation', () => {
     expect(assistantMsg.content).toBe('visible response')
   })
 
+  test('passes stop sequences', async () => {
+    let capturedBody: Record<string, unknown> = {}
+    globalThis.fetch = async (_url: unknown, init?: RequestInit) => {
+      if (init?.body && typeof init.body === 'string') {
+        capturedBody = JSON.parse(init.body)
+      }
+      return new Response(
+        JSON.stringify({
+          id: 'test',
+          choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+        { status: 200 },
+      )
+    }
+
+    await openaiChatCompletionsAdapter.createMessage(
+      testConfig,
+      makeRequest({ stopSequences: ['done'] }),
+      new AbortController().signal,
+    )
+
+    expect(capturedBody.stop).toEqual(['done'])
+  })
+
   test('passes reasoning_effort from outputConfig', async () => {
     let capturedBody: Record<string, unknown> = {}
     globalThis.fetch = async (_url: unknown, init?: RequestInit) => {
@@ -541,7 +552,6 @@ describe('OpenAI CC adapter: request translation', () => {
 
     const result = await openaiChatCompletionsAdapter.createStream(
       testConfig,
-      authArgs,
       makeRequest({ outputConfig: { effort: 'high' } }),
       new AbortController().signal,
     )

@@ -1,6 +1,4 @@
 import { feature } from 'bun:bundle'
-import { APIUserAbortError } from '@anthropic-ai/sdk'
-import { DomainUserAbortError } from '../services/api/domain-errors.js'
 import * as React from 'react'
 import { useCallback } from 'react'
 import type { ToolUseConfirm } from '../components/permissions/PermissionRequest.js'
@@ -12,7 +10,7 @@ import {
   setYoloClassifierApproval,
 } from '../utils/classifierApprovals.js'
 import { logForDebugging } from '../utils/debug.js'
-import { AbortError } from '../utils/errors.js'
+import { isAbortError } from '../utils/errors.js'
 import { logError } from '../utils/log.js'
 import { hasPermissionsToUseTool } from '../utils/permissions/permissions.js'
 import { jsonStringify } from '../utils/slowOperations.js'
@@ -205,11 +203,7 @@ function useCanUseTool(
             }
           })
           .catch(error => {
-            if (
-              error instanceof AbortError ||
-              error instanceof APIUserAbortError ||
-              error instanceof DomainUserAbortError
-            ) {
+            if (isAbortError(error)) {
               logForDebugging(
                 `Permission check threw ${error.constructor.name} for tool=${tool.name}: ${error.message}`,
               )

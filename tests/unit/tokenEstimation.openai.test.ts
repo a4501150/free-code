@@ -13,12 +13,15 @@
  */
 
 import { describe, test, expect } from 'bun:test'
-import type { Anthropic } from '@anthropic-ai/sdk'
+import type {
+  TokenCountMessageParam,
+  TokenCountToolParam,
+} from '../../src/services/api/adapter.js'
 import { openaiChatCompletionsAdapter } from '../../src/services/api/adapters/openai-chat-completions-adapter-impl.js'
 
 describe('openai-chat-completions adapter countTokens', () => {
   test('returns a sane token count for a plain-text user message', async () => {
-    const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [
+    const messages: TokenCountMessageParam[] = [
       { role: 'user', content: 'Hello world, how are you today?' },
     ]
     const result = await openaiChatCompletionsAdapter.countTokens(
@@ -35,7 +38,7 @@ describe('openai-chat-completions adapter countTokens', () => {
   })
 
   test('selects cl100k_base for GPT-4-family model names', async () => {
-    const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [
+    const messages: TokenCountMessageParam[] = [
       { role: 'user', content: 'Test content for tokenization' },
     ]
     const result4 = await openaiChatCompletionsAdapter.countTokens(
@@ -57,10 +60,10 @@ describe('openai-chat-completions adapter countTokens', () => {
   })
 
   test('includes tool definitions in the count', async () => {
-    const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [
+    const messages: TokenCountMessageParam[] = [
       { role: 'user', content: 'hi' },
     ]
-    const tools: Anthropic.Beta.Messages.BetaToolUnion[] = [
+    const tools: TokenCountToolParam[] = [
       {
         name: 'Bash',
         description:
@@ -70,7 +73,7 @@ describe('openai-chat-completions adapter countTokens', () => {
           properties: { command: { type: 'string' } },
           required: ['command'],
         },
-      } as unknown as Anthropic.Beta.Messages.BetaToolUnion,
+      },
     ]
     const withoutTools = await openaiChatCompletionsAdapter.countTokens(
       messages,
@@ -86,7 +89,7 @@ describe('openai-chat-completions adapter countTokens', () => {
   })
 
   test('includes system prompt in the count', async () => {
-    const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [
+    const messages: TokenCountMessageParam[] = [
       { role: 'user', content: 'hi' },
     ]
     const withoutSystem = await openaiChatCompletionsAdapter.countTokens(

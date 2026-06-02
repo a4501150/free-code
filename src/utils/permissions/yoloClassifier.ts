@@ -5,7 +5,7 @@ import type {
   DomainUserImageBlock,
   DomainUserTextBlock,
 } from '../../types/domain.js'
-import type { BetaToolUnion } from '../api.js'
+import type { ToolSchemaUnion } from '../api.js'
 import type { SideQueryOptions } from '../sideQuery.js'
 import { mkdir, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
@@ -219,7 +219,7 @@ const yoloClassifierResponseSchema = z.object({
 
 export const YOLO_CLASSIFIER_TOOL_NAME = 'classify_result'
 
-const YOLO_CLASSIFIER_TOOL_SCHEMA: BetaToolUnion = {
+const YOLO_CLASSIFIER_TOOL_SCHEMA: ToolSchemaUnion = {
   type: 'custom',
   name: YOLO_CLASSIFIER_TOOL_NAME,
   description: 'Report the security classification result for the agent action',
@@ -971,7 +971,7 @@ async function preflightClassifierInput({
   model: string
   systemPrompt: string
   messages: ClassifierMessageParam[]
-  tools: BetaToolUnion[]
+  tools: ToolSchemaUnion[]
   promptLengths: NonNullable<YoloClassifierResult['promptLengths']>
 }): Promise<YoloClassifierResult | null> {
   const inputTokenBudget =

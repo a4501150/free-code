@@ -29,7 +29,8 @@ import {
   getProviderRegistry,
   type ResolvedProvider,
 } from '../../utils/model/providerRegistry.js'
-import { getAdapterForProviderType } from './adapters/index.js'
+import { createFoundryFetch } from './foundry-adapter.js'
+import { createVertexFetch } from './vertex-adapter.js'
 
 function createStderrLogger(): ClientOptions['logger'] {
   return {
@@ -412,10 +413,7 @@ async function createClientForProvider(
           undefined
         return { token, projectId: projectId ?? undefined }
       }
-      const fetch = getAdapterForProviderType(config.type).createFetch?.(
-        config,
-        getAccessToken,
-      )
+      const fetch = createVertexFetch(config, getAccessToken)
       return new Anthropic({
         apiKey: 'vertex-placeholder',
         ...baseArgs,
@@ -442,10 +440,7 @@ async function createClientForProvider(
         )
         return tokenProvider()
       }
-      const fetch = getAdapterForProviderType(config.type).createFetch?.(
-        config,
-        getToken,
-      )
+      const fetch = createFoundryFetch(config, getToken)
       return new Anthropic({
         apiKey: 'foundry-placeholder',
         ...baseArgs,

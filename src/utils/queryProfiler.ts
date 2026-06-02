@@ -17,7 +17,6 @@
  * - query_api_streaming_start: Start of streaming API call
  * - query_tool_schema_build_start/end: Building tool schemas
  * - query_message_normalization_start/end: Normalizing messages
- * - query_client_creation_start/end: Creating Anthropic client
  * - query_api_request_sent: HTTP request dispatched (before await, inside retry body)
  * - query_response_headers_received: .withResponse() resolved (headers arrived)
  * - query_first_chunk_received: First streaming chunk received (TTFT)
@@ -115,9 +114,6 @@ function getSlowWarning(deltaMs: number, name: string): string {
   }
   if (name.includes('tool_schema') && deltaMs > 50) {
     return ' ⚠️  tool schemas'
-  }
-  if (name.includes('client_creation') && deltaMs > 50) {
-    return ' ⚠️  client creation'
   }
 
   return ''
@@ -243,11 +239,6 @@ function getPhaseSummary(
       name: 'Message normalization',
       start: 'query_message_normalization_start',
       end: 'query_message_normalization_end',
-    },
-    {
-      name: 'Client creation',
-      start: 'query_client_creation_start',
-      end: 'query_client_creation_end',
     },
     {
       name: 'Network TTFB',

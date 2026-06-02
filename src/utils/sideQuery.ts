@@ -4,11 +4,8 @@ import type {
   DomainUserContentBlock,
   DomainUserTextBlock,
 } from '../types/domain.js'
-import type { BetaToolUnion } from './api.js'
-import {
-  getLastApiCompletionTimestamp,
-  setLastApiCompletionTimestamp,
-} from '../bootstrap/state.js'
+import type { ToolSchemaUnion } from './api.js'
+import { setLastApiCompletionTimestamp } from '../bootstrap/state.js'
 import { STRUCTURED_OUTPUTS_BETA_HEADER } from '../constants/betas.js'
 import type { QuerySource } from '../constants/querySource.js'
 import {
@@ -16,10 +13,16 @@ import {
   getCLISyspromptPrefix,
 } from '../constants/system.js'
 
-import { getAPIMetadata } from '../services/api/claude.js'
-import { getAnthropicClient } from '../services/api/client.js'
+import { getAPIMetadata, prepareRetry } from '../services/api/claude.js'
+import {
+  getAdapterForModel,
+  getProviderConfigForModel,
+} from '../services/api/adapters/index.js'
+import type { DomainMessageRequest } from '../services/api/domain-transport.js'
+import { withRetry } from '../services/api/withRetry.js'
 import { getModelBetas, modelSupportsStructuredOutputs } from './betas.js'
 import { computeFingerprint } from './fingerprint.js'
+import { returnValue } from './generators.js'
 import { normalizeModelStringForAPI } from './model/model.js'
 import { getProviderRegistry } from './model/providerRegistry.js'
 
@@ -28,13 +31,9 @@ type MessageParam = {
   content: string | DomainUserContentBlock[] | DomainContentBlock[]
 }
 type TextBlockParam = DomainUserTextBlock
-type Tool = BetaToolUnion
+type Tool = ToolSchemaUnion
 type ToolChoice = { type: string; name?: string; [key: string]: unknown }
-type BetaMessage = DomainAssistantContent
 type BetaJSONOutputFormat = Record<string, unknown>
-type BetaThinkingConfigParam =
-  | { type: 'disabled' }
-  | { type: 'enabled'; budget_tokens: number }
 
 export type SideQueryOptions = {
   /** Model to use for the query */
@@ -49,8 +48,8 @@ export type SideQueryOptions = {
   system?: string | TextBlockParam[]
   /** Messages to send (supports cache_control on content blocks) */
   messages: MessageParam[]
-  /** Optional tools (supports both standard Tool[] and BetaToolUnion[] for custom tool types) */
-  tools?: Tool[] | BetaToolUnion[]
+  /** Optional tools (supports both standard Tool[] and ToolSchemaUnion[] for custom tool types) */
+  tools?: Tool[] | ToolSchemaUnion[]
   /** Optional tool choice (use { type: 'tool', name: 'x' } for forced output) */
   tool_choice?: ToolChoice
   /** Optional JSON output format for structured responses */
@@ -114,7 +113,9 @@ function extractFirstUserMessageText(messages: MessageParam[]): string {
  * // Model validation
  * await sideQuery({ querySource: 'model_validation', model, max_tokens: 1, messages: [{ role: 'user', content: 'Hi' }] })
  */
-export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
+export async function sideQuery(
+  opts: SideQueryOptions,
+): Promise<DomainAssistantContent> {
   const {
     model,
     system,
@@ -131,11 +132,6 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
     stop_sequences,
   } = opts
 
-  const client = await getAnthropicClient({
-    maxRetries,
-    model,
-    source: 'side_query',
-  })
   const betas = [...getModelBetas(model)]
   // Add structured-outputs beta if using output_format and provider supports it
   if (
@@ -178,42 +174,50 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
         : []),
   ].filter((block): block is TextBlockParam => block !== null)
 
-  let thinkingConfig: BetaThinkingConfigParam | undefined
+  let thinkingConfig: DomainMessageRequest['thinking'] | undefined
   if (thinking === false) {
     thinkingConfig = { type: 'disabled' }
   } else if (thinking !== undefined) {
     thinkingConfig = {
       type: 'enabled',
-      budget_tokens: Math.min(thinking, max_tokens - 1),
+      budgetTokens: Math.min(thinking, max_tokens - 1),
     }
   }
 
-  const normalizedModel = normalizeModelStringForAPI(model)
-  const start = Date.now()
-  // biome-ignore lint/plugin: this IS the wrapper that handles OAuth attribution
-  const response = await client.beta.messages.create(
-    {
-      model: normalizedModel,
-      max_tokens,
-      system: systemBlocks,
-      messages,
-      ...(tools && { tools }),
-      ...(tool_choice && { tool_choice }),
-      ...(output_format && { output_config: { format: output_format } }),
-      ...(temperature !== undefined && { temperature }),
-      ...(stop_sequences && { stop_sequences }),
-      ...(thinkingConfig && { thinking: thinkingConfig }),
-      ...(betas.length > 0 && { betas }),
-      metadata: getAPIMetadata(),
-    } as Parameters<typeof client.beta.messages.create>[0],
-    { signal },
+  const adapter = getAdapterForModel(model)
+  const providerConfig = getProviderConfigForModel(model)
+  const request: DomainMessageRequest = {
+    model: normalizeModelStringForAPI(model),
+    maxTokens: max_tokens,
+    system: systemBlocks as unknown as DomainMessageRequest['system'],
+    messages: messages as unknown as DomainMessageRequest['messages'],
+    ...(tools && { tools: tools as DomainMessageRequest['tools'] }),
+    ...(tool_choice && {
+      toolChoice: tool_choice as DomainMessageRequest['toolChoice'],
+    }),
+    ...(output_format && { outputConfig: { format: output_format } }),
+    ...(temperature !== undefined && { temperature }),
+    ...(stop_sequences && { stopSequences: stop_sequences }),
+    ...(thinkingConfig && { thinking: thinkingConfig }),
+    ...(betas.length > 0 && { betas }),
+    metadata: getAPIMetadata(),
+  }
+  const requestSignal = signal ?? new AbortController().signal
+  const response = await returnValue(
+    withRetry(
+      () => adapter.createMessage(providerConfig, request, requestSignal),
+      {
+        maxRetries,
+        model,
+        thinkingConfig: thinkingConfig ?? { type: 'disabled' },
+        signal: requestSignal,
+        querySource: opts.querySource,
+        prepareRetry,
+      },
+    ),
   )
 
-  const requestId =
-    (response as { _request_id?: string | null })._request_id ?? undefined
-  const now = Date.now()
-  const lastCompletion = getLastApiCompletionTimestamp()
-  setLastApiCompletionTimestamp(now)
+  setLastApiCompletionTimestamp(Date.now())
 
-  return response as unknown as BetaMessage
+  return response.message
 }

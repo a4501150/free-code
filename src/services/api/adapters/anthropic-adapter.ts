@@ -1,9 +1,8 @@
 /**
  * Anthropic-native adapter.
  *
- * Uses the SDK streaming bridge to convert DomainMessageRequest to Anthropic
- * SDK params, create streams/messages via the SDK, and convert SDK events to
- * DomainStreamEvent.
+ * Creates its Anthropic SDK client internally and uses shared bridge helpers
+ * to convert requests, streams, errors, and messages to domain types.
  *
  * For streaming, uses raw `Stream<BetaRawMessageStreamEvent>` (not
  * `BetaMessageStream`) to avoid O(n²) partial JSON parsing in tool input
@@ -11,7 +10,6 @@
  */
 import type {
   ProviderAdapter,
-  FetchFn,
   TokenBreakdown,
   TokenCountMessageParam,
   TokenCountToolParam,
@@ -26,16 +24,18 @@ import {
   type NormalizedApiError,
 } from '../../../utils/normalizedError.js'
 import { countTokensViaAnthropicEndpoint } from '../../tokenEstimation.js'
-import type { DomainMessageRequest } from '../domain-transport.js'
-import type { DomainStreamingResponse } from '../domain-transport.js'
-import type { DomainAssistantContent } from '../../../types/domain.js'
+import { anthropicMessageToDomain } from '../../../types/domainConversion.js'
+import { getAnthropicClient } from '../client.js'
+import type {
+  DomainMessageRequest,
+  DomainMessageResponse,
+  DomainStreamingResponse,
+} from '../domain-transport.js'
 import {
-  sdkBridgeCreateStream,
-  sdkBridgeCreateMessage,
-  type SdkBridgeAuthArgs,
-} from './sdk-streaming-bridge.js'
-
-export type AnthropicAuthArgs = SdkBridgeAuthArgs
+  domainRequestToAnthropicParams,
+  makeStreamingResponse,
+  wrapSdkError,
+} from './anthropic-wire-helpers.js'
 
 export const anthropicAdapter: ProviderAdapter = {
   providerType: 'anthropic',
@@ -43,39 +43,74 @@ export const anthropicAdapter: ProviderAdapter = {
 
   async createStream(
     _config: ProviderConfig,
-    authArgs: unknown,
     request: DomainMessageRequest,
     signal: AbortSignal,
   ): Promise<DomainStreamingResponse> {
-    return sdkBridgeCreateStream(
-      authArgs,
-      request,
-      signal,
-      'anthropic',
-      this.normalizeError,
-    )
+    const client = await getAnthropicClient({
+      maxRetries: 0,
+      model: request.model,
+      source: 'adapter',
+    })
+    const params = domainRequestToAnthropicParams(request)
+
+    try {
+      const result = await client.beta.messages
+        .create(
+          { ...params, stream: true },
+          {
+            signal,
+            ...(request.clientRequestId && {
+              headers: { 'x-client-request-id': request.clientRequestId },
+            }),
+          },
+        )
+        .withResponse()
+      return makeStreamingResponse(
+        result.data,
+        result.response,
+        result.request_id,
+        'anthropic',
+        this.normalizeError,
+      )
+    } catch (error) {
+      wrapSdkError(error, 'anthropic', this.normalizeError)
+    }
   },
 
   async createMessage(
-    _config: ProviderConfig,
-    authArgs: unknown,
+    config: ProviderConfig,
     request: DomainMessageRequest,
     signal: AbortSignal,
-  ): Promise<DomainAssistantContent> {
-    return sdkBridgeCreateMessage(
-      authArgs,
-      request,
-      signal,
-      'anthropic',
-      this.normalizeError,
-    )
-  },
+  ): Promise<DomainMessageResponse> {
+    const configApiKey = config.auth?.apiKey?.key
+    const client = await getAnthropicClient({
+      maxRetries: 0,
+      model: request.model,
+      source: 'adapter',
+      ...(configApiKey && { apiKey: configApiKey }),
+    })
+    const params = domainRequestToAnthropicParams(request)
 
-  createFetch(
-    _config: ProviderConfig,
-    _authArgs: unknown,
-  ): FetchFn | undefined {
-    return undefined
+    try {
+      const result = await client.beta.messages
+        .create(
+          { ...params, stream: false },
+          {
+            signal,
+            ...(request.clientRequestId && {
+              headers: { 'x-client-request-id': request.clientRequestId },
+            }),
+          },
+        )
+        .withResponse()
+      return {
+        message: anthropicMessageToDomain(result.data),
+        requestId: result.request_id ?? undefined,
+        responseHeaders: Object.fromEntries(result.response.headers.entries()),
+      }
+    } catch (error) {
+      wrapSdkError(error, 'anthropic', this.normalizeError)
+    }
   },
 
   async countTokens(

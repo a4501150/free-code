@@ -31,6 +31,7 @@ import { logForDebugging } from '../../../utils/debug.js'
 import { isEnvDefinedFalsy } from '../../../utils/envUtils.js'
 import type {
   DomainMessageRequest,
+  DomainMessageResponse,
   DomainStreamingResponse,
   DomainMessageParam,
   DomainToolDefinition,
@@ -75,8 +76,7 @@ function serializeForTokenization(
     }
     if (!Array.isArray(m.content)) continue
     for (const block of m.content) {
-      if (block.type === 'text')
-        parts.push(String(block.text ?? ''))
+      if (block.type === 'text') parts.push(String(block.text ?? ''))
       else if (block.type === 'tool_use')
         parts.push(
           `${String(block.name ?? '')}(${JSON.stringify(block.input ?? {})})`,
@@ -275,9 +275,11 @@ function domainMessagesToCodexInput(
             text: (block as { text: string }).text,
           })
         } else if (block.type === 'image') {
-          const src = (block as unknown as {
-            source: { type: string; media_type: string; data: string }
-          }).source
+          const src = (
+            block as unknown as {
+              source: { type: string; media_type: string; data: string }
+            }
+          ).source
           if (src?.type === 'base64') {
             contentArr.push({
               type: 'input_image',
@@ -1004,8 +1006,9 @@ async function* parseCodexStream(
         ) {
           const errPayload =
             (event.error as Record<string, unknown> | undefined) ??
-            ((event.response as Record<string, unknown> | undefined)
-              ?.error as Record<string, unknown> | undefined)
+            ((event.response as Record<string, unknown> | undefined)?.error as
+              | Record<string, unknown>
+              | undefined)
           const fallbackMessage =
             readString(errPayload?.message) ?? `Codex ${eventType}`
           closeOpenBlock()
@@ -1018,7 +1021,10 @@ async function* parseCodexStream(
             },
             providerType,
           )
-          throw new DomainTransportError({ normalized, raw: errPayload ?? dataStr })
+          throw new DomainTransportError({
+            normalized,
+            raw: errPayload ?? dataStr,
+          })
         }
 
         if (eventType === 'response.output_item.added') {
@@ -1036,7 +1042,12 @@ async function* parseCodexStream(
             renderWebSearchStart(state)
           }
         } else if (eventType === 'response.output_text.delta') {
-          const state = upsertItem(event, undefined, 'message', currentMessageKey)
+          const state = upsertItem(
+            event,
+            undefined,
+            'message',
+            currentMessageKey,
+          )
           currentMessageKey = state.key
           const text = readString(event.delta)
           if (text) streamTextDelta(state, text)
@@ -1044,7 +1055,12 @@ async function* parseCodexStream(
           eventType === 'response.reasoning_text.delta' ||
           eventType === 'response.reasoning_summary_text.delta'
         ) {
-          const state = upsertItem(event, undefined, 'reasoning', currentReasoningKey)
+          const state = upsertItem(
+            event,
+            undefined,
+            'reasoning',
+            currentReasoningKey,
+          )
           currentReasoningKey = state.key
           const text = readString(event.delta)
           if (text) streamThinkingDelta(state, text)
@@ -1052,7 +1068,12 @@ async function* parseCodexStream(
           eventType === 'response.reasoning_text.done' ||
           eventType === 'response.reasoning_summary_text.done'
         ) {
-          const state = upsertItem(event, undefined, 'reasoning', currentReasoningKey)
+          const state = upsertItem(
+            event,
+            undefined,
+            'reasoning',
+            currentReasoningKey,
+          )
           currentReasoningKey = state.key
           const finalText = readString(event.text)
           if (
@@ -1060,7 +1081,10 @@ async function* parseCodexStream(
             finalText.length > state.reasoningText.length &&
             finalText.startsWith(state.reasoningText)
           ) {
-            streamThinkingDelta(state, finalText.slice(state.reasoningText.length))
+            streamThinkingDelta(
+              state,
+              finalText.slice(state.reasoningText.length),
+            )
           } else if (finalText && state.reasoningText.length === 0) {
             streamThinkingDelta(state, finalText)
           }
@@ -1189,7 +1213,6 @@ export const codexAdapter: ProviderAdapter = {
 
   async createStream(
     config: ProviderConfig,
-    _authArgs: unknown,
     request: DomainMessageRequest,
     signal: AbortSignal,
   ): Promise<DomainStreamingResponse> {
@@ -1302,10 +1325,9 @@ export const codexAdapter: ProviderAdapter = {
 
   async createMessage(
     config: ProviderConfig,
-    _authArgs: unknown,
     request: DomainMessageRequest,
     signal: AbortSignal,
-  ): Promise<DomainAssistantContent> {
+  ): Promise<DomainMessageResponse> {
     const auth = resolveCodexAuth(config)
     if (!auth) {
       throw new DomainConnectionError({
@@ -1385,7 +1407,11 @@ export const codexAdapter: ProviderAdapter = {
     }
 
     const json = (await response.json()) as Record<string, unknown>
-    return parseCodexNonStreamingResponse(json, request.model)
+    return {
+      message: parseCodexNonStreamingResponse(json, request.model),
+      requestId: response.headers.get('x-request-id') ?? undefined,
+      responseHeaders: Object.fromEntries(response.headers.entries()),
+    }
   },
 
   async countTokens(
@@ -1493,7 +1519,10 @@ function parseCodexNonStreamingResponse(
 ): DomainAssistantContent {
   const messageId = (body.id as string) || `msg_codex_${Date.now()}`
   const output = (body.output || []) as Array<Record<string, unknown>>
-  const usage = (body.usage || {}) as Record<string, number | Record<string, number>>
+  const usage = (body.usage || {}) as Record<
+    string,
+    number | Record<string, number>
+  >
 
   const content: DomainContentBlock[] = []
   let hadToolCalls = false
@@ -1515,7 +1544,10 @@ function parseCodexNonStreamingResponse(
       }
       content.push({
         type: 'tool_use',
-        id: (item.call_id as string) || (item.id as string) || `call_${Date.now()}`,
+        id:
+          (item.call_id as string) ||
+          (item.id as string) ||
+          `call_${Date.now()}`,
         name: (item.name as string) || '',
         input,
       })
@@ -1538,7 +1570,9 @@ function parseCodexNonStreamingResponse(
 
   const totalInput = (usage.input_tokens as number) || 0
   const totalOutput = (usage.output_tokens as number) || 0
-  const details = usage.input_tokens_details as Record<string, number> | undefined
+  const details = usage.input_tokens_details as
+    | Record<string, number>
+    | undefined
   const cached = details?.cached_tokens ?? 0
 
   return {

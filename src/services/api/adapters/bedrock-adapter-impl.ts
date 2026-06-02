@@ -33,6 +33,7 @@ import {
 import { normalizeModelStringForAPI } from '../../../utils/model/model.js'
 import type {
   DomainMessageRequest,
+  DomainMessageResponse,
   DomainStreamingResponse,
   DomainMessageParam,
   DomainToolDefinition,
@@ -195,7 +196,13 @@ function translateDomainContentBlock(
     case 'tool_result': {
       const tr = block as unknown as {
         tool_use_id: string
-        content?: string | Array<{ type: string; text?: string; source?: Record<string, string> }>
+        content?:
+          | string
+          | Array<{
+              type: string
+              text?: string
+              source?: Record<string, string>
+            }>
       }
       const resultContent: Array<Record<string, unknown>> = []
       if (typeof tr.content === 'string') {
@@ -232,7 +239,8 @@ function translateDomainContentBlock(
     }
 
     case 'image': {
-      const src = (block as unknown as { source: Record<string, string> }).source
+      const src = (block as unknown as { source: Record<string, string> })
+        .source
       if (src?.type === 'base64' && src.media_type && src.data) {
         const format = src.media_type.split('/')[1] || 'png'
         return {
@@ -331,6 +339,8 @@ function domainRequestToConverseBody(
   if (request.maxTokens) inferenceConfig.maxTokens = request.maxTokens
   if (request.temperature !== undefined)
     inferenceConfig.temperature = request.temperature
+  if (request.stopSequences)
+    inferenceConfig.stopSequences = request.stopSequences
   if (Object.keys(inferenceConfig).length > 0) {
     body.inferenceConfig = inferenceConfig
   }
@@ -419,7 +429,10 @@ async function* parseBedrockEventStream(
             { exceptionType, body: errorText, mid_stream: true },
             providerType,
           )
-          throw new DomainTransportError({ normalized, raw: { exceptionType, body: errorText } })
+          throw new DomainTransportError({
+            normalized,
+            raw: { exceptionType, body: errorText },
+          })
         }
 
         if (messageType !== 'event') continue
@@ -505,7 +518,10 @@ async function* parseBedrockEventStream(
                 },
               }
             } else if (delta?.reasoningContent) {
-              const reasoning = delta.reasoningContent as Record<string, unknown>
+              const reasoning = delta.reasoningContent as Record<
+                string,
+                unknown
+              >
               const reasoningText =
                 typeof reasoning.text === 'string' ? reasoning.text : ''
               if (reasoningText.length > 0) {
@@ -590,7 +606,9 @@ function parseConverseNonStreamingResponse(
 ): DomainAssistantContent {
   const output = body.output as Record<string, unknown> | undefined
   const outputMessage = output?.message as Record<string, unknown> | undefined
-  const rawContent = (outputMessage?.content || []) as Array<Record<string, unknown>>
+  const rawContent = (outputMessage?.content || []) as Array<
+    Record<string, unknown>
+  >
   const rawStopReason = (body.stopReason as string) || 'end_turn'
   const usage = body.usage as Record<string, number> | undefined
 
@@ -608,7 +626,9 @@ function parseConverseNonStreamingResponse(
       })
     } else if (block.reasoningContent) {
       const reasoning = block.reasoningContent as Record<string, unknown>
-      const reasoningText = reasoning.reasoningText as Record<string, unknown> | undefined
+      const reasoningText = reasoning.reasoningText as
+        | Record<string, unknown>
+        | undefined
       const text =
         typeof reasoningText?.text === 'string' ? reasoningText.text : ''
       content.push({ type: 'reasoning', text })
@@ -643,7 +663,6 @@ export const bedrockAdapter: ProviderAdapter = {
 
   async createStream(
     config: ProviderConfig,
-    _authArgs: unknown,
     request: DomainMessageRequest,
     signal: AbortSignal,
   ): Promise<DomainStreamingResponse> {
@@ -759,10 +778,9 @@ export const bedrockAdapter: ProviderAdapter = {
 
   async createMessage(
     config: ProviderConfig,
-    _authArgs: unknown,
     request: DomainMessageRequest,
     signal: AbortSignal,
-  ): Promise<DomainAssistantContent> {
+  ): Promise<DomainMessageResponse> {
     const region = config.auth?.aws?.region || 'us-east-1'
     const baseUrl =
       config.baseUrl || `https://bedrock-runtime.${region}.amazonaws.com`
@@ -834,7 +852,11 @@ export const bedrockAdapter: ProviderAdapter = {
     }
 
     const json = (await response.json()) as Record<string, unknown>
-    return parseConverseNonStreamingResponse(json, request.model)
+    return {
+      message: parseConverseNonStreamingResponse(json, request.model),
+      requestId: response.headers.get('x-amzn-requestid') ?? undefined,
+      responseHeaders: Object.fromEntries(response.headers.entries()),
+    }
   },
 
   async countTokens(

@@ -1,4 +1,3 @@
-import type { ClientOptions } from '@anthropic-ai/sdk'
 import { createHash } from 'crypto'
 import { promises as fs } from 'fs'
 import { dirname, join } from 'path'
@@ -143,10 +142,10 @@ function dumpRequest(
 
 export function createDumpPromptsFetch(
   agentIdOrSessionId: string,
-): ClientOptions['fetch'] {
+): typeof globalThis.fetch {
   const filePath = getDumpPromptsPath(agentIdOrSessionId)
 
-  return async (input: RequestInfo | URL, init?: RequestInit) => {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const state = dumpState.get(agentIdOrSessionId) ?? {
       initialized: false,
       messageCountSeen: 0,
@@ -220,5 +219,5 @@ export function createDumpPromptsFetch(
     }
 
     return response
-  }
+  }) as typeof globalThis.fetch
 }

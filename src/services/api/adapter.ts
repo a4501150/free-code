@@ -13,11 +13,7 @@
  *   {@link DomainStreamEvent}s following the lifecycle contract below.
  *
  * - `createMessage(...)` — non-streaming requests, returns a
- *   {@link DomainAssistantContent} directly.
- *
- * The legacy `createFetch(...)` method is retained for backwards
- * compatibility during migration and will be removed once all call sites
- * use the domain transport methods.
+ *   {@link DomainMessageResponse} directly.
  *
  * Stream lifecycle contract:
  *
@@ -47,9 +43,9 @@ import type {
 import type { NormalizedApiError } from '../../utils/normalizedError.js'
 import type {
   DomainMessageRequest,
+  DomainMessageResponse,
   DomainStreamingResponse,
 } from './domain-transport.js'
-import type { DomainAssistantContent } from '../../types/domain.js'
 
 /**
  * Minimal message param type for token counting.
@@ -71,19 +67,6 @@ export type TokenCountToolParam = {
   input_schema?: Record<string, unknown>
   [key: string]: unknown
 }
-
-/**
- * Standard fetch signature. Adapters return a `FetchFn` from
- * `createFetch(...)` that the Anthropic SDK client uses as its `fetch`
- * override.
- *
- * @deprecated Use `createStream` / `createMessage` instead. Retained for
- * backwards compatibility during migration.
- */
-export type FetchFn = (
-  input: RequestInfo | URL,
-  init?: RequestInit,
-) => Promise<Response>
 
 /**
  * Pre-flight token breakdown. `outputTokens` is 0 for pre-request estimates;
@@ -116,7 +99,6 @@ export interface ProviderAdapter {
    */
   createStream(
     config: ProviderConfig,
-    authArgs: unknown,
     request: DomainMessageRequest,
     signal: AbortSignal,
   ): Promise<DomainStreamingResponse>
@@ -128,26 +110,9 @@ export interface ProviderAdapter {
    */
   createMessage(
     config: ProviderConfig,
-    authArgs: unknown,
     request: DomainMessageRequest,
     signal: AbortSignal,
-  ): Promise<DomainAssistantContent>
-
-  // ── Legacy transport (deprecated) ──────────────────────────────
-
-  /**
-   * Returns the fetch override to pass into the Anthropic SDK client, or
-   * `undefined` to indicate "no override — use the SDK's native fetch"
-   * (Anthropic-native).
-   *
-   * Only implemented by adapters that still use the Anthropic SDK as their
-   * transport layer (anthropic, vertex, foundry). Native-transport adapters
-   * (openai-chat-completions, openai-responses, gemini, bedrock-converse)
-   * do not implement this.
-   *
-   * @deprecated Use `createStream` / `createMessage` instead.
-   */
-  createFetch?(config: ProviderConfig, authArgs: unknown): FetchFn | undefined
+  ): Promise<DomainMessageResponse>
 
   // ── Token counting ─────────────────────────────────────────────
 

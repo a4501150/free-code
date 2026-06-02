@@ -6,8 +6,8 @@ import {
   afterAll,
   afterEach,
 } from 'bun:test'
-import type { Anthropic } from '@anthropic-ai/sdk'
 import type { Tools } from '../../src/Tool.js'
+import type { DomainUserTextBlock } from '../../src/types/domain.js'
 import type { Message } from '../../src/types/message.js'
 import {
   __test__,
@@ -182,7 +182,7 @@ describe('bounded auto-mode classifier input', () => {
     if (result.type !== 'ok') return
     const claudeMd = result.input.prefixMessages[0]
     expect(claudeMd).toBeDefined()
-    const content = (claudeMd!.content as Anthropic.TextBlockParam[])[0]!.text
+    const content = (claudeMd!.content as DomainUserTextBlock[])[0]!.text
     expect(content).toContain('auto_classifier_omitted')
     expect(result.input.promptLengths.claudeMd).toBeLessThan(40_000)
   })
