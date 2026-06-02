@@ -43,6 +43,7 @@ import {
   createBaseHookInput,
   executeStatusLineCommand,
 } from '../utils/hooks.js'
+import { isLocalAgentTask } from '../tasks/LocalAgentTask/LocalAgentTask.js'
 import { getLastAssistantMessage } from '../utils/messages.js'
 import {
   getRuntimeMainLoopModel,
@@ -202,6 +203,26 @@ function StatusLineInner({
   // would leak into this session's statusline (anthropics/claude-code#37596).
   const mainLoopModel = useMainLoopModel()
 
+  // When viewing a coordinator worker, show the worker's context usage and model
+  // instead of the leader's. Selector returns only the messages array ref to
+  // avoid re-renders on unrelated task fields (progress, pendingMessages, etc.).
+  const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
+  const viewedWorkerMessages = useAppState(s => {
+    if (!s.viewingAgentTaskId) return undefined
+    const t = s.tasks[s.viewingAgentTaskId]
+    return isLocalAgentTask(t) ? t.messages : undefined
+  })
+  const viewedWorkerModel = (() => {
+    if (!viewedWorkerMessages) return undefined
+    for (let i = viewedWorkerMessages.length - 1; i >= 0; i--) {
+      const m = viewedWorkerMessages[i]
+      if (m?.type === 'assistant' && 'model' in m.message) {
+        return m.message.model as string
+      }
+    }
+    return undefined
+  })()
+
   // Keep latest values in refs for stable callback access
   const settingsRef = useRef(settings)
   settingsRef.current = settings
@@ -213,6 +234,10 @@ function StatusLineInner({
   addedDirsRef.current = additionalWorkingDirectories
   const mainLoopModelRef = useRef(mainLoopModel)
   mainLoopModelRef.current = mainLoopModel
+  const viewedWorkerMessagesRef = useRef(viewedWorkerMessages)
+  viewedWorkerMessagesRef.current = viewedWorkerMessages
+  const viewedWorkerModelRef = useRef(viewedWorkerModel)
+  viewedWorkerModelRef.current = viewedWorkerModel
 
   // Track previous state to detect changes and cache expensive calculations
   const previousStateRef = useRef<{
@@ -245,7 +270,10 @@ function StatusLineInner({
     const controller = new AbortController()
     abortControllerRef.current = controller
 
-    const msgs = messagesRef.current
+    const workerMsgs = viewedWorkerMessagesRef.current
+    const workerModel = viewedWorkerModelRef.current
+    const msgs = workerMsgs ?? messagesRef.current
+    const effectiveModel = workerModel ?? mainLoopModelRef.current
 
     const logResult = logNextResultRef.current
     logNextResultRef.current = false
@@ -267,7 +295,7 @@ function StatusLineInner({
         settingsRef.current,
         msgs,
         Array.from(addedDirsRef.current.keys()),
-        mainLoopModelRef.current,
+        effectiveModel,
         vimModeRef.current,
       )
 
@@ -304,7 +332,8 @@ function StatusLineInner({
     )
   }, [doUpdate])
 
-  // Only trigger update when assistant message, permission mode, vim mode, or model actually changes
+  // Only trigger update when assistant message, permission mode, vim mode, model,
+  // or viewed agent actually changes
   useEffect(() => {
     if (
       lastAssistantMessageId !== previousStateRef.current.messageId ||
@@ -326,6 +355,12 @@ function StatusLineInner({
     mainLoopModel,
     scheduleUpdate,
   ])
+
+  // Re-trigger when switching to/from a coordinator worker view so the
+  // statusline reflects the viewed worker's context usage and model.
+  useEffect(() => {
+    scheduleUpdate()
+  }, [viewingAgentTaskId, viewedWorkerModel, scheduleUpdate])
 
   // Refresh when token/cost counters change (e.g. during streaming)
   useEffect(() => {
