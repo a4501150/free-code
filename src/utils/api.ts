@@ -265,9 +265,9 @@ function logStripOnce(stripped: string[]): void {
  */
 export function splitSysPromptPrefix(
   systemPrompt: SystemPrompt,
-  options?: { skipGlobalCacheForSystemPrompt?: boolean },
+  options?: { skipGlobalCacheForSystemPrompt?: boolean; model?: string },
 ): SystemPromptBlock[] {
-  const useGlobalCacheFeature = shouldUseGlobalCacheScope()
+  const useGlobalCacheFeature = shouldUseGlobalCacheScope(options?.model)
   if (useGlobalCacheFeature && options?.skipGlobalCacheForSystemPrompt) {
     // Filter out boundary marker, return blocks without global scope
     let attributionHeader: string | undefined

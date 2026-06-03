@@ -256,8 +256,8 @@ export function getMergedBetas(
 ): string[] {
   const baseBetas = [...getModelBetas(model)]
 
-  // Agentic queries always need claude-code and cli-internal beta headers.
-  if (options?.isAgenticQuery) {
+  // Agentic queries need claude-code beta header when the model supports it.
+  if (options?.isAgenticQuery && modelSupportsISP(model)) {
     if (!baseBetas.includes(CLAUDE_CODE_20250219_BETA_HEADER)) {
       baseBetas.push(CLAUDE_CODE_20250219_BETA_HEADER)
     }

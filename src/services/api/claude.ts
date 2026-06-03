@@ -1179,7 +1179,7 @@ async function* queryModel(
 
   const filteredTools: Tools = tools
 
-  const useGlobalCacheFeature = shouldUseGlobalCacheScope()
+  const useGlobalCacheFeature = shouldUseGlobalCacheScope(options.model)
   // MCP tools are per-user → dynamic tool section → can't globally cache.
   const needsToolBasedCacheMarker =
     useGlobalCacheFeature && filteredTools.some(t => t.isMcp === true)
@@ -1264,6 +1264,7 @@ async function* queryModel(
       getCLISyspromptPrefix({
         isNonInteractive: options.isNonInteractiveSession,
         hasAppendSystemPrompt: options.hasAppendSystemPrompt,
+        model: options.model,
       }),
       ...systemPrompt,
       ...(advisorModel ? [ADVISOR_TOOL_INSTRUCTIONS] : []),
@@ -1275,6 +1276,7 @@ async function* queryModel(
   const system = buildSystemPromptBlocks(systemPrompt, enablePromptCaching, {
     skipGlobalCacheForSystemPrompt: needsToolBasedCacheMarker,
     querySource: options.querySource,
+    model: options.model,
   })
   const useBetas = betas.length > 0
 
@@ -2592,11 +2594,13 @@ export function buildSystemPromptBlocks(
   options?: {
     skipGlobalCacheForSystemPrompt?: boolean
     querySource?: QuerySource
+    model?: string
   },
 ): DomainSystemBlock[] {
   // IMPORTANT: Do not add any more blocks for caching or you will get a 400
   return splitSysPromptPrefix(systemPrompt, {
     skipGlobalCacheForSystemPrompt: options?.skipGlobalCacheForSystemPrompt,
+    model: options?.model,
   }).map(block => {
     return {
       type: 'text' as const,

@@ -164,6 +164,7 @@ export async function sideQuery(
             text: getCLISyspromptPrefix({
               isNonInteractive: false,
               hasAppendSystemPrompt: false,
+              model,
             }),
           },
         ]),
@@ -200,7 +201,9 @@ export async function sideQuery(
     ...(stop_sequences && { stopSequences: stop_sequences }),
     ...(thinkingConfig && { thinking: thinkingConfig }),
     ...(betas.length > 0 && { betas }),
-    metadata: getAPIMetadata(),
+    ...(getProviderRegistry().isAnthropicType(model) && {
+      metadata: getAPIMetadata(),
+    }),
   }
   const requestSignal = signal ?? new AbortController().signal
   const response = await returnValue(

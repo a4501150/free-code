@@ -28,8 +28,9 @@ export const CLI_SYSPROMPT_PREFIXES: ReadonlySet<string> = new Set(
 export function getCLISyspromptPrefix(options?: {
   isNonInteractive: boolean
   hasAppendSystemPrompt: boolean
+  model?: string
 }): CLISyspromptPrefix {
-  if (!getProviderRegistry().getCapabilities().customSyspromptPrefix) {
+  if (!getProviderRegistry().getCapabilities(options?.model).customSyspromptPrefix) {
     return DEFAULT_PREFIX
   }
 
