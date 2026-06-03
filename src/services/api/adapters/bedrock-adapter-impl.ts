@@ -732,7 +732,9 @@ export const bedrockAdapter: ProviderAdapter = {
     config: ProviderConfig,
     request: DomainMessageRequest,
     signal: AbortSignal,
+    fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
+    const fetch = fetchOverride ?? globalThis.fetch
     const region = config.auth?.aws?.region || 'us-east-1'
     const baseUrl =
       config.baseUrl || `https://bedrock-runtime.${region}.amazonaws.com`
@@ -762,7 +764,7 @@ export const bedrockAdapter: ProviderAdapter = {
 
     let response: Response
     try {
-      response = await globalThis.fetch(converseUrl, {
+      response = await fetch(converseUrl, {
         method: 'POST',
         headers: requestHeaders,
         body: bodyStr,
@@ -847,7 +849,9 @@ export const bedrockAdapter: ProviderAdapter = {
     config: ProviderConfig,
     request: DomainMessageRequest,
     signal: AbortSignal,
+    fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
+    const fetch = fetchOverride ?? globalThis.fetch
     const region = config.auth?.aws?.region || 'us-east-1'
     const baseUrl =
       config.baseUrl || `https://bedrock-runtime.${region}.amazonaws.com`
@@ -877,7 +881,7 @@ export const bedrockAdapter: ProviderAdapter = {
 
     let response: Response
     try {
-      response = await globalThis.fetch(converseUrl, {
+      response = await fetch(converseUrl, {
         method: 'POST',
         headers: requestHeaders,
         body: bodyStr,

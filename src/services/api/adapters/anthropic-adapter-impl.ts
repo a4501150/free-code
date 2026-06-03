@@ -523,11 +523,13 @@ export const anthropicAdapter: ProviderAdapter = {
 		_config: ProviderConfig,
 		request: DomainMessageRequest,
 		signal: AbortSignal,
+		fetchOverride?: typeof globalThis.fetch,
 	): Promise<DomainStreamingResponse> {
 		const client = await getAnthropicClient({
 			maxRetries: 0,
 			model: request.model,
 			source: "adapter",
+			fetchOverride,
 		});
 		const params = buildAnthropicWireBody(
 			request,
@@ -561,12 +563,14 @@ export const anthropicAdapter: ProviderAdapter = {
 		config: ProviderConfig,
 		request: DomainMessageRequest,
 		signal: AbortSignal,
+		fetchOverride?: typeof globalThis.fetch,
 	): Promise<DomainMessageResponse> {
 		const configApiKey = config.auth?.apiKey?.key;
 		const client = await getAnthropicClient({
 			maxRetries: 0,
 			model: request.model,
 			source: "adapter",
+			fetchOverride,
 			...(configApiKey && { apiKey: configApiKey }),
 		});
 		const params = buildAnthropicWireBody(

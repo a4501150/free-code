@@ -32,7 +32,7 @@ ${maxSizeInstruction ? `- ${maxSizeInstruction}` : ''}
 ${lineFormat}
 - This tool allows Claude Code to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as Claude Code is a multimodal LLM.${
     isPDFSupported()
-      ? '\n- This tool can read PDF files (.pdf); use the `pages` parameter for large PDFs. `pages` is only valid for PDF files and cannot be combined with `offset` or `limit`.'
+      ? '\n- This tool can read PDF files (.pdf); use the `pages` parameter for large PDFs. Do not pass `pages` when reading non-PDF files.'
       : ''
   }
 - This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.

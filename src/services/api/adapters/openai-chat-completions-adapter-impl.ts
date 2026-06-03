@@ -687,7 +687,9 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
     config: ProviderConfig,
     request: DomainMessageRequest,
     signal: AbortSignal,
+    fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
+    const fetch = fetchOverride ?? globalThis.fetch
     const authHeaders = resolveOpenAIChatCompletionsAuthHeaders(config)
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1'
     const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`
@@ -696,7 +698,7 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
 
     let response: Response
     try {
-      response = await globalThis.fetch(endpoint, {
+      response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -773,7 +775,9 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
     config: ProviderConfig,
     request: DomainMessageRequest,
     signal: AbortSignal,
+    fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
+    const fetch = fetchOverride ?? globalThis.fetch
     const authHeaders = resolveOpenAIChatCompletionsAuthHeaders(config)
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1'
     const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`
@@ -784,7 +788,7 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
 
     let response: Response
     try {
-      response = await globalThis.fetch(endpoint, {
+      response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -230,7 +230,7 @@ const inputSchema = z.strictObject({
     .string()
     .optional()
     .describe(
-      `Optional page range for PDF files (e.g., "1-5", "3", "10-20"). Maximum ${PDF_MAX_PAGES_PER_READ} pages per request.`,
+      `Page range for PDF files only (e.g., "1-5", "3", "10-20"). Do NOT provide this for non-PDF files. Maximum ${PDF_MAX_PAGES_PER_READ} pages per request.`,
     ),
 })
 type InputSchema = typeof inputSchema

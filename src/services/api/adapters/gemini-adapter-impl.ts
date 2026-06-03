@@ -604,7 +604,9 @@ export const geminiAdapter: ProviderAdapter = {
     config: ProviderConfig,
     request: DomainMessageRequest,
     signal: AbortSignal,
+    fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
+    const fetch = fetchOverride ?? globalThis.fetch
     const authResult = await getGcpAccessToken(config)
     if (!authResult) {
       throw new DomainConnectionError({
@@ -628,7 +630,7 @@ export const geminiAdapter: ProviderAdapter = {
 
     let response: Response
     try {
-      response = await globalThis.fetch(geminiUrl, {
+      response = await fetch(geminiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -704,7 +706,9 @@ export const geminiAdapter: ProviderAdapter = {
     config: ProviderConfig,
     request: DomainMessageRequest,
     signal: AbortSignal,
+    fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
+    const fetch = fetchOverride ?? globalThis.fetch
     const authResult = await getGcpAccessToken(config)
     if (!authResult) {
       throw new DomainConnectionError({
@@ -728,7 +732,7 @@ export const geminiAdapter: ProviderAdapter = {
 
     let response: Response
     try {
-      response = await globalThis.fetch(geminiUrl, {
+      response = await fetch(geminiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

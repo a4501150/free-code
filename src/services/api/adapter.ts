@@ -126,6 +126,7 @@ export interface ProviderAdapter {
     config: ProviderConfig,
     request: DomainMessageRequest,
     signal: AbortSignal,
+    fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse>
 
   /**
@@ -137,6 +138,7 @@ export interface ProviderAdapter {
     config: ProviderConfig,
     request: DomainMessageRequest,
     signal: AbortSignal,
+    fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse>
 
   // ── Token counting ─────────────────────────────────────────────

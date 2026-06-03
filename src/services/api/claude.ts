@@ -906,6 +906,7 @@ export async function* executeNonStreamingRequest(
    * from. Emitted in tengu_nonstreaming_fallback_error for funnel correlation.
    */
   originatingRequestId?: string | null,
+  fetchOverride?: typeof globalThis.fetch,
 ): AsyncGenerator<SystemAPIErrorMessage, DomainMessageResponse> {
   const fallbackTimeoutMs = getNonstreamingFallbackTimeoutMs()
   const generator = withRetry(
@@ -938,6 +939,7 @@ export async function* executeNonStreamingRequest(
           providerConfig,
           adjustedRequest,
           timeoutController.signal,
+          fetchOverride,
         )
       } catch (error) {
         // User aborts are not errors — re-throw immediately without logging.
@@ -1627,6 +1629,7 @@ async function* queryModel(
             providerConfig,
             domainRequest,
             signal,
+            options.fetchOverride,
           )
           queryCheckpoint('query_response_headers_received')
           domainStreamResponse = adapterResponse
@@ -2230,6 +2233,7 @@ async function* queryModel(
           },
           request => captureAPIRequest(request, options.querySource),
           failedRequestId,
+          options.fetchOverride,
         )
 
         if (result.responseHeaders) {

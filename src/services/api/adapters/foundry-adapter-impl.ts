@@ -77,7 +77,9 @@ export const foundryAdapter: ProviderAdapter = {
 		config: ProviderConfig,
 		request: DomainMessageRequest,
 		signal: AbortSignal,
+		fetchOverride?: typeof globalThis.fetch,
 	): Promise<DomainStreamingResponse> {
+		const fetch = fetchOverride ?? globalThis.fetch;
 		const baseUrl = config.baseUrl || "";
 		const { headerName, headerValue } = await getFoundryAuth(config);
 
@@ -88,7 +90,7 @@ export const foundryAdapter: ProviderAdapter = {
 
 		let response: Response;
 		try {
-			response = await globalThis.fetch(url, {
+			response = await fetch(url, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -177,7 +179,9 @@ export const foundryAdapter: ProviderAdapter = {
 		config: ProviderConfig,
 		request: DomainMessageRequest,
 		signal: AbortSignal,
+		fetchOverride?: typeof globalThis.fetch,
 	): Promise<DomainMessageResponse> {
+		const fetch = fetchOverride ?? globalThis.fetch;
 		const baseUrl = config.baseUrl || "";
 		const { headerName, headerValue } = await getFoundryAuth(config);
 
@@ -188,7 +192,7 @@ export const foundryAdapter: ProviderAdapter = {
 
 		let response: Response;
 		try {
-			response = await globalThis.fetch(url, {
+			response = await fetch(url, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",

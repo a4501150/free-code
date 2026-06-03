@@ -132,7 +132,9 @@ export const vertexAnthropicAdapter: ProviderAdapter = {
 		config: ProviderConfig,
 		request: DomainMessageRequest,
 		signal: AbortSignal,
+		fetchOverride?: typeof globalThis.fetch,
 	): Promise<DomainStreamingResponse> {
+		const fetch = fetchOverride ?? globalThis.fetch;
 		const region = config.auth?.gcp?.region || "us-east5";
 		const baseUrl = getVertexBaseUrl(config);
 		const authResult = await getVertexAccessToken(config);
@@ -152,7 +154,7 @@ export const vertexAnthropicAdapter: ProviderAdapter = {
 
 		let response: Response;
 		try {
-			response = await globalThis.fetch(url, {
+			response = await fetch(url, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -240,7 +242,9 @@ export const vertexAnthropicAdapter: ProviderAdapter = {
 		config: ProviderConfig,
 		request: DomainMessageRequest,
 		signal: AbortSignal,
+		fetchOverride?: typeof globalThis.fetch,
 	): Promise<DomainMessageResponse> {
+		const fetch = fetchOverride ?? globalThis.fetch;
 		const region = config.auth?.gcp?.region || "us-east5";
 		const baseUrl = getVertexBaseUrl(config);
 		const authResult = await getVertexAccessToken(config);
@@ -254,7 +258,7 @@ export const vertexAnthropicAdapter: ProviderAdapter = {
 
 		let response: Response;
 		try {
-			response = await globalThis.fetch(url, {
+			response = await fetch(url, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",

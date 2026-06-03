@@ -1215,7 +1215,9 @@ export const codexAdapter: ProviderAdapter = {
     config: ProviderConfig,
     request: DomainMessageRequest,
     signal: AbortSignal,
+    fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
+    const fetch = fetchOverride ?? globalThis.fetch
     const auth = resolveCodexAuth(config)
     if (!auth) {
       throw new DomainConnectionError({
@@ -1254,7 +1256,7 @@ export const codexAdapter: ProviderAdapter = {
 
     let codexResponse: Response
     try {
-      codexResponse = await globalThis.fetch(codexUrl, {
+      codexResponse = await fetch(codexUrl, {
         method: 'POST',
         headers,
         body: reqBodyStr,
@@ -1327,7 +1329,9 @@ export const codexAdapter: ProviderAdapter = {
     config: ProviderConfig,
     request: DomainMessageRequest,
     signal: AbortSignal,
+    fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
+    const fetch = fetchOverride ?? globalThis.fetch
     const auth = resolveCodexAuth(config)
     if (!auth) {
       throw new DomainConnectionError({
@@ -1365,7 +1369,7 @@ export const codexAdapter: ProviderAdapter = {
 
     let response: Response
     try {
-      response = await globalThis.fetch(codexUrl, {
+      response = await fetch(codexUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(codexBody),
