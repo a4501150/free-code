@@ -8,8 +8,7 @@
  * Adapter lookups use a switch statement inside function bodies rather than
  * a top-level `const` map. This ensures imported adapter values are only
  * read at call time (after all modules have initialized), avoiding TDZ
- * errors when the Bun bundler flattens the circular module graph
- * (client.ts → adapters → tokenEstimation.ts → client.ts).
+ * errors when the Bun bundler flattens adapter cross-imports.
  */
 import type { ProviderAdapter } from '../adapter.js'
 import type {
@@ -17,7 +16,7 @@ import type {
   ProviderType,
 } from '../../../utils/settings/types.js'
 import { getProviderRegistry } from '../../../utils/model/providerRegistry.js'
-import { anthropicAdapter } from './anthropic-adapter.js'
+import { anthropicAdapter } from './anthropic-adapter-impl.js'
 import { vertexAnthropicAdapter } from './vertex-adapter-impl.js'
 import { foundryAdapter } from './foundry-adapter-impl.js'
 import { bedrockAdapter } from './bedrock-adapter-impl.js'

@@ -10,8 +10,8 @@ import {
 import { compressImageBlock } from './imageResizer.js'
 import { logError } from './log.js'
 
-export const MCP_TOKEN_COUNT_THRESHOLD_FACTOR = 0.5
-export const IMAGE_TOKEN_ESTIMATE = 1600
+export const MCP_TOKEN_COUNT_THRESHOLD_FACTOR = 0.25
+export const IMAGE_TOKEN_ESTIMATE = 2000
 const DEFAULT_MAX_MCP_OUTPUT_TOKENS = 25000
 
 /**
@@ -147,17 +147,15 @@ export async function mcpContentNeedsTruncation(
   }
 
   try {
-    const messages =
-      typeof content === 'string'
-        ? [{ role: 'user' as const, content }]
-        : [{ role: 'user' as const, content }]
-
+    const messages = [{ role: 'user' as const, content }]
     const tokenCount = await countMessagesTokensWithAPI(messages, [])
-    return !!(tokenCount && tokenCount > getMaxMcpOutputTokens())
+    if (tokenCount !== null) {
+      return tokenCount > getMaxMcpOutputTokens()
+    }
+    return contentSizeEstimate > getMaxMcpOutputTokens()
   } catch (error) {
     logError(error)
-    // Assume no truncation needed on error
-    return false
+    return contentSizeEstimate > getMaxMcpOutputTokens()
   }
 }
 
@@ -181,12 +179,4 @@ export async function truncateMcpContent(
   }
 }
 
-export async function truncateMcpContentIfNeeded(
-  content: MCPToolResult,
-): Promise<MCPToolResult> {
-  if (!(await mcpContentNeedsTruncation(content))) {
-    return content
-  }
 
-  return await truncateMcpContent(content)
-}

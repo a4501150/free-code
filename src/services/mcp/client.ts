@@ -77,10 +77,9 @@ import {
   persistBinaryContent,
 } from '../../utils/mcpOutputStorage.js'
 import {
-  getContentSizeEstimate,
   type MCPToolResult,
   mcpContentNeedsTruncation,
-  truncateMcpContentIfNeeded,
+  truncateMcpContent,
 } from '../../utils/mcpValidation.js'
 import { WebSocketTransport } from '../../utils/mcpWebSocketTransport.js'
 import { memoizeWithLRU } from '../../utils/memoize.js'
@@ -2573,11 +2572,9 @@ export async function processMCPResult(
     return content
   }
 
-  const sizeEstimateTokens = getContentSizeEstimate(content)
-
-  // If large output files feature is disabled, fall back to old truncation behavior
+  // If large output files feature is disabled, fall back to truncation
   if (isEnvDefinedFalsy(process.env.ENABLE_MCP_LARGE_OUTPUT_FILES)) {
-    return await truncateMcpContentIfNeeded(content)
+    return await truncateMcpContent(content)
   }
 
   // Save large output to file and return instructions for reading it
@@ -2589,7 +2586,7 @@ export async function processMCPResult(
   // If content contains images, fall back to truncation - persisting images as JSON
   // defeats the image compression logic and makes them non-viewable
   if (contentContainsImages(content)) {
-    return await truncateMcpContentIfNeeded(content)
+    return await truncateMcpContent(content)
   }
 
   // Generate a unique ID for the persisted file (server__tool-timestamp)

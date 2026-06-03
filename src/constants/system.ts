@@ -60,7 +60,7 @@ function isAttributionHeaderEnabled(): boolean {
  *
  * Includes a `cch=00000` placeholder that is replaced with a computed
  * xxHash64-based integrity hash before the request is sent. The fetch
- * wrapper in client.ts handles the replacement. The server verifies
+ * wrapper in the Anthropic adapter handles the replacement. The server verifies
  * this token to gate features like fast mode.
  */
 export function getAttributionHeader(fingerprint: string): string {

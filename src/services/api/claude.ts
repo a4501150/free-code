@@ -190,7 +190,6 @@ import {
 } from '../../utils/telemetry/sessionTracing.js'
 /* eslint-enable @typescript-eslint/no-require-imports */
 import { withStreamingVCR, withVCR } from '../vcr.js'
-import { CLIENT_REQUEST_ID_HEADER } from './client.js'
 import {
   API_ERROR_MESSAGE_PREFIX,
   getAssistantMessageFromError,

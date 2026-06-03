@@ -6,30 +6,39 @@
  * AWS EventStream binary frames, and yields DomainStreamEvents — no Anthropic
  * SDK intermediary.
  *
- * Token counting uses `CountTokensCommand` via the existing
- * `countTokensViaBedrock` helper in `src/services/tokenEstimation.ts`.
+ * Token counting uses `CountTokensCommand` directly.
  */
 import { Sha256 } from '@aws-crypto/sha256-js'
+import {
+  CountTokensCommand,
+  type CountTokensCommandInput,
+} from '@aws-sdk/client-bedrock-runtime'
 import { SignatureV4 } from '@smithy/signature-v4'
-import type {
-  ProviderAdapter,
-  TokenBreakdown,
-  TokenCountMessageParam,
-  TokenCountToolParam,
+import {
+  hasThinkingBlocks,
+  TOKEN_COUNT_MAX_TOKENS,
+  TOKEN_COUNT_THINKING_BUDGET,
+  type ProviderAdapter,
+  type TokenBreakdown,
+  type TokenCountMessageParam,
+  type TokenCountToolParam,
 } from '../adapter.js'
 import type {
   ProviderCapabilities,
   ProviderConfig,
   ProviderType,
 } from '../../../utils/settings/types.js'
+import { logError } from '../../../utils/log.js'
+import {
+  createBedrockRuntimeClient,
+  getInferenceProfileBackingModel,
+  isFoundationModel,
+} from '../../../utils/model/bedrock.js'
 import {
   fromHttpStatus,
   type NormalizedApiError,
 } from '../../../utils/normalizedError.js'
-import {
-  countTokensViaBedrock,
-  hasThinkingBlocks,
-} from '../../tokenEstimation.js'
+import { jsonStringify } from '../../../utils/slowOperations.js'
 import { normalizeModelStringForAPI } from '../../../utils/model/model.js'
 import type {
   DomainMessageRequest,
@@ -652,6 +661,64 @@ function parseConverseNonStreamingResponse(
       cache_read_input_tokens: usage?.cacheReadInputTokens ?? 0,
       cache_creation_input_tokens: usage?.cacheWriteInputTokens ?? 0,
     },
+  }
+}
+
+// ── Token counting via Bedrock CountTokensCommand ─────────────────
+
+async function countTokensViaBedrock({
+  model,
+  messages,
+  tools,
+  betas,
+  containsThinking,
+  system,
+}: {
+  model: string
+  messages: TokenCountMessageParam[]
+  tools: TokenCountToolParam[]
+  betas: string[]
+  containsThinking: boolean
+  system?: string
+}): Promise<number | null> {
+  try {
+    const client = await createBedrockRuntimeClient()
+    const modelId = isFoundationModel(model)
+      ? model
+      : await getInferenceProfileBackingModel(model)
+    if (!modelId) {
+      return null
+    }
+
+    const requestBody = {
+      anthropic_version: 'bedrock-2023-05-31',
+      messages:
+        messages.length > 0 ? messages : [{ role: 'user', content: 'foo' }],
+      max_tokens: containsThinking ? TOKEN_COUNT_MAX_TOKENS : 1,
+      ...(system && { system }),
+      ...(tools.length > 0 && { tools }),
+      ...(betas.length > 0 && { anthropic_beta: betas }),
+      ...(containsThinking && {
+        thinking: {
+          type: 'enabled',
+          budget_tokens: TOKEN_COUNT_THINKING_BUDGET,
+        },
+      }),
+    }
+
+    const input: CountTokensCommandInput = {
+      modelId,
+      input: {
+        invokeModel: {
+          body: new TextEncoder().encode(jsonStringify(requestBody)),
+        },
+      },
+    }
+    const response = await client.send(new CountTokensCommand(input))
+    return response.inputTokens ?? null
+  } catch (error) {
+    logError(error)
+    return null
   }
 }
 

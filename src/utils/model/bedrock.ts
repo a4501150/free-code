@@ -15,7 +15,7 @@ import { getAWSClientProxyConfig } from '../proxy.js'
 // Region-prefix helpers were moved to ./bedrockInferenceProfiles.js so the
 // provider registry (which participates in a runtime cycle with auth.ts via
 // this file) can import them without pulling in the AWS SDK. Re-export them
-// here for the handful of callers (e.g. services/tokenEstimation.ts) that
+// here for the handful of callers (e.g. services/api/adapters/bedrock-adapter-impl.ts) that
 // still import everything Bedrock-related from this module.
 export {
   applyBedrockRegionPrefix,

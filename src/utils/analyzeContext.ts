@@ -11,11 +11,11 @@ import {
   isAutoCompactEnabled,
   MANUAL_COMPACT_BUFFER_TOKENS,
 } from '../services/compact/autoCompact.js'
+import type { TokenCountToolParam } from '../services/api/adapter.js'
 import {
   countMessagesTokensWithAPI,
   roughTokenCountEstimation,
   type TokenCountMessageParam,
-  type TokenCountTool,
 } from '../services/tokenEstimation.js'
 import { estimateSkillFrontmatterTokens } from '../skills/loadSkillsDir.js'
 import {
@@ -72,7 +72,7 @@ export const TOOL_TOKEN_COUNT_OVERHEAD = 500
 
 async function countTokensWithFallback(
   messages: TokenCountMessageParam[],
-  tools: TokenCountTool[],
+  tools: TokenCountToolParam[],
 ): Promise<number | null> {
   const result = await countMessagesTokensWithAPI(messages, tools)
   if (result !== null) return result

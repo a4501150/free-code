@@ -12,9 +12,11 @@ import { WEB_SEARCH_TOOL_NAME } from '../../tools/WebSearchTool/prompt.js'
 import type { Message } from '../../types/message.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { SHELL_TOOL_NAMES } from '../../utils/shell/shellToolUtils.js'
-import { jsonStringify } from '../../utils/slowOperations.js'
 import { notifyCacheDeletion } from '../api/promptCacheBreakDetection.js'
-import { roughTokenCountEstimation } from '../tokenEstimation.js'
+import {
+  roughTokenCountEstimation,
+  roughTokenCountEstimationForMessages,
+} from '../tokenEstimation.js'
 import {
   clearCompactWarningSuppression,
   suppressCompactWarning,
@@ -69,53 +71,12 @@ function calculateToolResultTokens(block: DomainToolResultBlockParam): number {
 }
 
 /**
- * Estimate token count for messages by extracting text content
- * Used for rough token estimation when we don't have accurate API counts
- * Pads estimate by 4/3 to be conservative since we're approximating
+ * Estimate token count for messages with a conservative 4/3 padding factor.
+ * Delegates to the central rough estimator which handles string-valued user
+ * content, attachments, system messages, and all block types.
  */
 export function estimateMessageTokens(messages: Message[]): number {
-  let totalTokens = 0
-
-  for (const message of messages) {
-    if (message.type !== 'user' && message.type !== 'assistant') {
-      continue
-    }
-
-    if (!Array.isArray(message.message.content)) {
-      continue
-    }
-
-    for (const block of message.message.content) {
-      if (block.type === 'text') {
-        totalTokens += roughTokenCountEstimation(block.text)
-      } else if (block.type === 'tool_result') {
-        totalTokens += calculateToolResultTokens(block)
-      } else if (block.type === 'image' || block.type === 'document') {
-        totalTokens += IMAGE_MAX_TOKEN_SIZE
-      } else if (block.type === 'reasoning') {
-        // Match roughTokenCountEstimationForBlock: count only the reasoning
-        // text, not the JSON wrapper or signature (signature is metadata,
-        // not model-tokenized content).
-        totalTokens += roughTokenCountEstimation(block.text)
-      } else if (block.type === 'redacted_reasoning') {
-        totalTokens += roughTokenCountEstimation(
-          block.providerState?.anthropic?.redactedData ?? '',
-        )
-      } else if (block.type === 'tool_use') {
-        // Match roughTokenCountEstimationForBlock: count name + input,
-        // not the JSON wrapper or id field.
-        totalTokens += roughTokenCountEstimation(
-          block.name + jsonStringify(block.input ?? {}),
-        )
-      } else {
-        // server_tool_use, web_search_tool_result, etc.
-        totalTokens += roughTokenCountEstimation(jsonStringify(block))
-      }
-    }
-  }
-
-  // Pad estimate by 4/3 to be conservative since we're approximating
-  return Math.ceil(totalTokens * (4 / 3))
+  return Math.ceil(roughTokenCountEstimationForMessages(messages) * (4 / 3))
 }
 
 export type MicrocompactResult = {

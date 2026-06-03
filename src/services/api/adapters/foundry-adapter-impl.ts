@@ -19,12 +19,14 @@ import type {
 	ProviderConfig,
 	ProviderType,
 } from "../../../utils/settings/types.js";
-import { hasThinkingBlocks } from "../../tokenEstimation.js";
-import type {
-	ProviderAdapter,
-	TokenBreakdown,
-	TokenCountMessageParam,
-	TokenCountToolParam,
+import {
+	hasThinkingBlocks,
+	TOKEN_COUNT_MAX_TOKENS,
+	TOKEN_COUNT_THINKING_BUDGET,
+	type ProviderAdapter,
+	type TokenBreakdown,
+	type TokenCountMessageParam,
+	type TokenCountToolParam,
 } from "../adapter.js";
 import {
 	DomainConnectionError,
@@ -36,7 +38,7 @@ import type {
 	DomainMessageResponse,
 	DomainStreamingResponse,
 } from "../domain-transport.js";
-import { anthropicAdapter } from "./anthropic-adapter.js";
+import { anthropicAdapter } from "./anthropic-adapter-impl.js";
 import { parseAnthropicSSEStream } from "./anthropic-sse-parser.js";
 import { buildAnthropicWireBody } from "./anthropic-wire-body.js";
 
@@ -66,9 +68,6 @@ async function getFoundryAuth(
 }
 
 // ── Adapter ──────────────────────────────────────────────────────────
-
-const TOKEN_COUNT_THINKING_BUDGET = 1024;
-const TOKEN_COUNT_MAX_TOKENS = 2048;
 
 export const foundryAdapter: ProviderAdapter = {
 	providerType: "foundry",

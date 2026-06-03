@@ -16,6 +16,9 @@ export const ANTHROPIC_API_VERSION = '2023-06-01'
  * 2. CLAUDE_CODE_API_BASE_URL (alternate override)
  * 3. https://api.anthropic.com (production default)
  */
+/** Header name for client-generated request IDs used by the Anthropic adapter. */
+export const CLIENT_REQUEST_ID_HEADER = 'x-client-request-id'
+
 export function getApiBaseUrl(): string {
   return (
     process.env.ANTHROPIC_BASE_URL ||

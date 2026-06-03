@@ -62,8 +62,8 @@ export type TokenCountMessageParam = {
  * Compatible with both Anthropic SDK types and domain types.
  */
 export type TokenCountToolParam = {
-  name?: string
-  description?: string
+  name?: string | null
+  description?: string | null
   input_schema?: Record<string, unknown>
   [key: string]: unknown
 }
@@ -79,6 +79,31 @@ export interface TokenBreakdown {
   reasoningTokens?: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
+}
+
+// Shared token-counting constants for Anthropic-shaped adapters.
+// API constraint: max_tokens must be greater than thinking.budget_tokens.
+export const TOKEN_COUNT_THINKING_BUDGET = 1024
+export const TOKEN_COUNT_MAX_TOKENS = 2048
+
+export function hasThinkingBlocks(
+  messages: readonly TokenCountMessageParam[],
+): boolean {
+  for (const message of messages) {
+    if (message.role === 'assistant' && Array.isArray(message.content)) {
+      for (const block of message.content) {
+        if (
+          typeof block === 'object' &&
+          block !== null &&
+          'type' in block &&
+          (block.type === 'thinking' || block.type === 'redacted_thinking')
+        ) {
+          return true
+        }
+      }
+    }
+  }
+  return false
 }
 
 export interface ProviderAdapter {

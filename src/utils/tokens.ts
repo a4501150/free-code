@@ -229,8 +229,8 @@ export function doesMostRecentAssistantMessageExceed200k(
  *
  * Counts the same content that handleMessageFromStream would count via deltas:
  * - text (text_delta)
- * - thinking (thinking_delta)
- * - redacted_thinking data
+ * - reasoning (thinking_delta)
+ * - redacted_reasoning data
  * - tool_use input (input_json_delta)
  * Note: signature_delta is excluded from streaming counts (not model output).
  */

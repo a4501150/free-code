@@ -320,7 +320,7 @@ export function getAnthropicApiKeyWithSource(
     // Cache may be cold (helper hasn't finished yet). Return null with
     // source='apiKeyHelper' rather than falling through to keychain —
     // apiKeyHelper must win. Callers needing a real key must await
-    // getApiKeyFromApiKeyHelper() first (client.ts, useApiKeyVerification do).
+    // getApiKeyFromApiKeyHelper() first (anthropic-adapter-impl.ts, useApiKeyVerification do).
     return {
       key: getApiKeyFromApiKeyHelperCached(),
       source: 'apiKeyHelper',

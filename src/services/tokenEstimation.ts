@@ -3,67 +3,20 @@ import type {
   DomainUserContentBlock,
 } from '../types/domain.js'
 import type {
-  TokenCountMessageParam as AdapterTokenCountMessageParam,
-  TokenCountToolParam as AdapterTokenCountToolParam,
+  TokenCountMessageParam,
+  TokenCountToolParam,
 } from './api/adapter.js'
-// @aws-sdk/client-bedrock-runtime is imported dynamically in countTokensWithBedrock()
-// to defer ~279KB of AWS SDK code until a Bedrock call is actually made
-import {
-  CountTokensCommand,
-  type CountTokensCommandInput,
-} from '@aws-sdk/client-bedrock-runtime'
+
+export type { TokenCountMessageParam }
+
 import type { Attachment } from '../utils/attachments.js'
 import { getModelBetas } from '../utils/betas.js'
 import { logError } from '../utils/log.js'
 import { normalizeAttachmentForAPI } from '../utils/messages.js'
-import {
-  createBedrockRuntimeClient,
-  getInferenceProfileBackingModel,
-  isFoundationModel,
-} from '../utils/model/bedrock.js'
-import {
-  getMainLoopModel,
-  normalizeModelStringForAPI,
-} from '../utils/model/model.js'
+import { getMainLoopModel } from '../utils/model/model.js'
 import { jsonStringify } from '../utils/slowOperations.js'
-import { getAnthropicClient } from './api/client.js'
 import { getAdapterForModel } from './api/adapters/index.js'
 import { withTokenCountVCR } from './vcr.js'
-
-// Minimal values for token counting with thinking enabled
-// API constraint: max_tokens must be greater than thinking.budget_tokens
-const TOKEN_COUNT_THINKING_BUDGET = 1024
-const TOKEN_COUNT_MAX_TOKENS = 2048
-
-export type TokenCountMessageParam = {
-  role: 'user' | 'assistant'
-  content: string | Array<{ type: string; [key: string]: any }>
-}
-export type TokenCountTool = any
-
-
-/**
- * Check if messages contain thinking blocks
- */
-function hasThinkingBlocks(
-  messages: TokenCountMessageParam[],
-): boolean {
-  for (const message of messages) {
-    if (message.role === 'assistant' && Array.isArray(message.content)) {
-      for (const block of message.content) {
-        if (
-          typeof block === 'object' &&
-          block !== null &&
-          'type' in block &&
-          (block.type === 'thinking' || block.type === 'redacted_thinking')
-        ) {
-          return true
-        }
-      }
-    }
-  }
-  return false
-}
 
 export async function countTokensWithAPI(
   content: string,
@@ -95,7 +48,7 @@ export async function countTokensWithAPI(
  */
 export async function countMessagesTokensWithAPI(
   messages: TokenCountMessageParam[],
-  tools: TokenCountTool[],
+  tools: TokenCountToolParam[],
   options?: {
     model?: string
     system?: string
@@ -110,8 +63,8 @@ export async function countMessagesTokensWithAPI(
         const adapter = getAdapterForModel(model)
         const betas = getModelBetas(model)
         const breakdown = await adapter.countTokens(
-          messages as AdapterTokenCountMessageParam[],
-          tools as AdapterTokenCountToolParam[],
+          messages,
+          tools,
           model,
           {
             betas,
@@ -133,75 +86,6 @@ export async function countMessagesTokensWithAPI(
   )
 }
 
-/**
- * Shared helper: count tokens against the Anthropic-shape `/count_tokens`
- * endpoint via the Anthropic SDK client. Used by adapters for providers
- * whose wire format is Anthropic-compatible (Anthropic native, Vertex
- * Anthropic, Foundry). The filtered-betas behavior for Vertex is passed
- * in explicitly.
- */
-export async function countTokensViaAnthropicEndpoint({
-  messages,
-  tools,
-  model,
-  betas,
-  filterBetas,
-  system,
-}: {
-  messages: TokenCountMessageParam[]
-  tools: TokenCountTool[]
-  model: string
-  betas: string[]
-  filterBetas?: (beta: string) => boolean
-  system?: string
-}): Promise<number | null> {
-  const containsThinking = hasThinkingBlocks(messages)
-  const anthropic = await getAnthropicClient({
-    maxRetries: 1,
-    model,
-    source: 'count_tokens',
-  })
-  const filteredBetas = filterBetas ? betas.filter(filterBetas) : betas
-  const response = await anthropic.beta.messages.countTokens({
-    model: normalizeModelStringForAPI(model),
-    messages:
-      messages.length > 0 ? messages : [{ role: 'user', content: 'foo' }],
-    tools,
-    ...(system && { system }),
-    ...(filteredBetas.length > 0 && { betas: filteredBetas }),
-    ...(containsThinking && {
-      thinking: {
-        type: 'enabled',
-        budget_tokens: TOKEN_COUNT_THINKING_BUDGET,
-      },
-    }),
-  } as Parameters<typeof anthropic.beta.messages.countTokens>[0])
-  if (typeof response.input_tokens !== 'number') {
-    // Vertex client throws
-    // Bedrock client succeeds with { Output: { __type: 'com.amazon.coral.service#UnknownOperationException' }, Version: '1.0' }
-    return null
-  }
-  return response.input_tokens
-}
-
-/**
- * Shared Bedrock CountTokensCommand wrapper. Exposed so the Bedrock adapter
- * can delegate.
- */
-export async function countTokensViaBedrock(args: {
-  model: string
-  messages: TokenCountMessageParam[]
-  tools: TokenCountTool[]
-  betas: string[]
-  containsThinking: boolean
-  system?: string
-}): Promise<number | null> {
-  return countTokensWithBedrock(args)
-}
-
-/** Re-export for adapter consumers — they need to detect thinking blocks for native count params. */
-export { hasThinkingBlocks }
-
 export function roughTokenCountEstimation(
   content: string,
   bytesPerToken: number = 4,
@@ -214,7 +98,7 @@ export function roughTokenCountEstimation(
  * Dense JSON has many single-character tokens (`{`, `}`, `:`, `,`, `"`)
  * which makes the real ratio closer to 2 rather than the default 4.
  */
-export function bytesPerTokenForFileType(fileExtension: string): number {
+function bytesPerTokenForFileType(fileExtension: string): number {
   switch (fileExtension) {
     case 'json':
     case 'jsonl':
@@ -257,7 +141,7 @@ export function roughTokenCountEstimationForMessages(
   return totalTokens
 }
 
-export function roughTokenCountEstimationForMessage(message: {
+function roughTokenCountEstimationForMessage(message: {
   type: string
   subtype?: string
   message?: { content?: unknown }
@@ -390,64 +274,4 @@ function roughTokenCountEstimationForBlock(
   // Stringify-length tracks the serialized form the API sees; the
   // key/bracket overhead is single-digit percent on real blocks.
   return roughTokenCountEstimation(jsonStringify(block))
-}
-
-async function countTokensWithBedrock({
-  model,
-  messages,
-  tools,
-  betas,
-  containsThinking,
-  system,
-}: {
-  model: string
-  messages: TokenCountMessageParam[]
-  tools: TokenCountTool[]
-  betas: string[]
-  containsThinking: boolean
-  system?: string
-}): Promise<number | null> {
-  try {
-    const client = await createBedrockRuntimeClient()
-    // Bedrock CountTokens requires a model ID, not an inference profile / ARN
-    const modelId = isFoundationModel(model)
-      ? model
-      : await getInferenceProfileBackingModel(model)
-    if (!modelId) {
-      return null
-    }
-
-    const requestBody = {
-      anthropic_version: 'bedrock-2023-05-31',
-      // When we pass tools and no messages, we need to pass a dummy message
-      // to get an accurate tool token count.
-      messages:
-        messages.length > 0 ? messages : [{ role: 'user', content: 'foo' }],
-      max_tokens: containsThinking ? TOKEN_COUNT_MAX_TOKENS : 1,
-      ...(system && { system }),
-      ...(tools.length > 0 && { tools }),
-      ...(betas.length > 0 && { anthropic_beta: betas }),
-      ...(containsThinking && {
-        thinking: {
-          type: 'enabled',
-          budget_tokens: TOKEN_COUNT_THINKING_BUDGET,
-        },
-      }),
-    }
-
-    const input: CountTokensCommandInput = {
-      modelId,
-      input: {
-        invokeModel: {
-          body: new TextEncoder().encode(jsonStringify(requestBody)),
-        },
-      },
-    }
-    const response = await client.send(new CountTokensCommand(input))
-    const tokenCount = response.inputTokens ?? null
-    return tokenCount
-  } catch (error) {
-    logError(error)
-    return null
-  }
 }

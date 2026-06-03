@@ -18,7 +18,7 @@ import {
 import { plural } from './stringUtils.js'
 
 // Thresholds (matching status notices and existing patterns)
-const MCP_TOOLS_THRESHOLD = 25_000 // 15k tokens
+const MCP_TOOLS_THRESHOLD = 25_000
 
 export type ContextWarning = {
   type:
@@ -184,10 +184,27 @@ async function checkMcpTools(
     }
   } catch (_error) {
     // If token counting fails, fall back to character-based estimation
-    const estimatedTokens = mcpTools.reduce((total, tool) => {
-      const chars = (tool.name?.length || 0) + tool.description.length
-      return total + roughTokenCountEstimation(chars.toString())
-    }, 0)
+    const estimates = await Promise.all(
+      mcpTools.map(async tool => {
+        try {
+          const desc = await tool.prompt({
+            getToolPermissionContext,
+            tools,
+            agents: agentInfo?.activeAgents ?? [],
+          })
+          return roughTokenCountEstimation(
+            JSON.stringify({
+              name: tool.name,
+              description: desc,
+              input_schema: tool.inputJSONSchema ?? {},
+            }),
+          )
+        } catch {
+          return roughTokenCountEstimation(tool.name ?? '')
+        }
+      }),
+    )
+    const estimatedTokens = estimates.reduce((sum, e) => sum + e, 0)
 
     if (estimatedTokens <= MCP_TOOLS_THRESHOLD) {
       return null
