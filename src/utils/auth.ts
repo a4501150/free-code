@@ -10,7 +10,6 @@ import {
 import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
 import { CLAUDE_AI_PROFILE_SCOPE } from 'src/constants/oauth.js'
-import { ensureWireModelIdsInitialized } from 'src/utils/model/modelIds.js'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import {
   getIsNonInteractiveSession,
@@ -1029,7 +1028,6 @@ export function prefetchAwsCredentialsAndBedRockInfoIfSafe(): void {
 
   // Safe to prefetch - either not from project settings or trust already established
   void refreshAndGetAwsCredentials()
-  void ensureWireModelIdsInitialized()
 }
 
 /** @private Use {@link getAnthropicApiKey} or {@link getAnthropicApiKeyWithSource} */

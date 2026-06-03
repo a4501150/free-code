@@ -254,7 +254,6 @@ import {
 } from 'src/utils/effort.js'
 import { modelSupportsAdaptiveThinking } from 'src/utils/thinking.js'
 import { modelSupportsAutoMode } from 'src/utils/betas.js'
-import { ensureWireModelIdsInitialized } from 'src/utils/model/modelIds.js'
 import {
   getSessionId,
   setMainLoopModelOverride,
@@ -775,9 +774,6 @@ export async function runHeadless(
 
   headlessProfilerCheckpoint('after_loadInitialMessages')
 
-  // Ensure model strings are initialized before generating model options.
-  // For Bedrock users, this waits for the profile fetch to get correct region strings.
-  await ensureWireModelIdsInitialized()
   headlessProfilerCheckpoint('after_modelStrings')
 
   // UDS inbox store registration is deferred until after `run` is defined

@@ -191,7 +191,6 @@ import {
   normalizeModelStringForAPI,
   parseUserSpecifiedModel,
 } from './utils/model/model.js'
-import { ensureWireModelIdsInitialized } from './utils/model/modelIds.js'
 import { getProviderRegistry } from './utils/model/providerRegistry.js'
 import { PERMISSION_MODES } from './utils/permissions/PermissionMode.js'
 import {
@@ -2189,12 +2188,6 @@ async function run(): Promise<CommanderCommand> {
         // Promise.all join in print.ts. The void getUserContext() in
         // startDeferredPrefetches becomes a memoize cache-hit.
         void getUserContext()
-        // Kick ensureWireModelIdsInitialized now — for Bedrock this triggers
-        // a 100-200ms profile fetch that was awaited serially at
-        // print.ts:739. updateBedrockModelStrings is sequential()-wrapped so
-        // the await joins the in-flight fetch. Non-Bedrock is a sync
-        // early-return (zero-cost).
-        void ensureWireModelIdsInitialized()
       }
 
       // Apply --name: cache-only so no orphan file is created before the

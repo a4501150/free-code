@@ -3,8 +3,7 @@ import { join } from 'path'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { KeybindingWarnings } from 'src/components/KeybindingWarnings.js'
 import { McpParsingWarnings } from 'src/components/mcp/McpParsingWarnings.js'
-import { getModelMaxOutputTokens } from 'src/utils/context.js'
-import { getWireModelId } from 'src/utils/model/modelIds.js'
+import { MAX_OUTPUT_TOKENS_DEFAULT } from 'src/utils/context.js'
 import { getClaudeConfigHomeDir } from 'src/utils/envUtils.js'
 import { getProjectConfigPaths } from 'src/utils/projectConfigPaths.js'
 import type { SettingSource } from 'src/utils/settings/constants.js'
@@ -93,7 +92,7 @@ export function Doctor({ onDone }: Props): React.ReactNode {
       },
       {
         name: 'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
-        default: getModelMaxOutputTokens(getWireModelId('claude-opus-4-6')),
+        default: MAX_OUTPUT_TOKENS_DEFAULT,
         upperLimit: Number.MAX_SAFE_INTEGER,
       },
     ]

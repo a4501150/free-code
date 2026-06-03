@@ -10,7 +10,7 @@ export const COMPACT_MAX_OUTPUT_TOKENS = 20_000
 
 // Default max output tokens — used as fallback inside
 // getModelMaxOutputTokens when the provider registry has no per-model info.
-const MAX_OUTPUT_TOKENS_DEFAULT = 32_000
+export const MAX_OUTPUT_TOKENS_DEFAULT = 32_000
 
 /**
  * Check if 1M context is disabled via environment variable.
