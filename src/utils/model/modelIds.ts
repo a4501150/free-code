@@ -68,27 +68,6 @@ function applyModelOverride(canonicalId: string, wireId: string): string {
   return overrides[canonicalId] ?? wireId
 }
 
-/**
- * Resolve an overridden model ID (e.g. a Bedrock ARN) back to its canonical
- * first-party model ID. If the input doesn't match any current override value,
- * it is returned unchanged. Safe to call during module init.
- */
-export function resolveOverriddenModel(modelId: string): string {
-  let overrides: Record<string, string> | undefined
-  try {
-    overrides = getInitialSettings().modelOverrides
-  } catch {
-    return modelId
-  }
-  if (!overrides) return modelId
-  for (const [canonicalId, override] of Object.entries(overrides)) {
-    if (override === modelId) {
-      return canonicalId
-    }
-  }
-  return modelId
-}
-
 // ── Bedrock initialization ──────────────────────────────────────────
 
 function isBedrock(): boolean {

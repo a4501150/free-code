@@ -123,21 +123,7 @@ export function formatCreditAmount(reward: ReferrerRewardInfo): string {
   return `${symbol}${formatted}`
 }
 
-/**
- * Legacy cache accessor retained for callers. Disk caching has been removed,
- * so no cached reward is available.
- */
-export function getCachedReferrerReward(): ReferrerRewardInfo | null {
-  return null
-}
 
-/**
- * Legacy cache accessor retained for callers. Disk caching has been removed,
- * so no cached remaining pass count is available.
- */
-export function getCachedRemainingPasses(): number | null {
-  return null
-}
 /**
  * Fetch passes eligibility without persisting it to GlobalConfig.
  * Returns the fetched response or null on error.

@@ -1307,14 +1307,6 @@ const _settingsSchemaValue = z
         'Skip the WebFetch blocklist check for enterprise environments with restrictive security policies',
       ),
     sandbox: SandboxSettingsSchema.optional(),
-    feedbackSurveyRate: z
-      .number()
-      .min(0)
-      .max(1)
-      .optional()
-      .describe(
-        'Probability (0–1) that the session quality survey appears when eligible. 0.05 is a reasonable starting point.',
-      ),
     spinnerTipsEnabled: z
       .boolean()
       .optional()
@@ -1609,46 +1601,6 @@ const _settingsSchemaValue = z
     autoMode: AutoModeSettingsSchema.optional().describe(
       'Auto mode configuration',
     ),
-    sshConfigs: z
-      .array(
-        z.object({
-          id: z
-            .string()
-            .describe(
-              'Unique identifier for this SSH config. Used to match configs across settings sources.',
-            ),
-          name: z.string().describe('Display name for the SSH connection'),
-          sshHost: z
-            .string()
-            .describe(
-              'SSH host in format "user@hostname" or "hostname", or a host alias from ~/.ssh/config',
-            ),
-          sshPort: z
-            .number()
-            .int()
-            .optional()
-            .describe('SSH port (default: 22)'),
-          sshIdentityFile: z
-            .string()
-            .optional()
-            .describe('Path to SSH identity file (private key)'),
-          startDirectory: z
-            .string()
-            .optional()
-            .describe(
-              'Default working directory on the remote host. ' +
-                'Supports tilde expansion (e.g. ~/projects). ' +
-                'If not specified, defaults to the remote user home directory. ' +
-                'Can be overridden by the [dir] positional argument in `claude ssh <config> [dir]`.',
-            ),
-        }),
-      )
-      .optional()
-      .describe(
-        'SSH connection configurations for remote environments. ' +
-          'Typically set in managed settings by enterprise administrators ' +
-          'to pre-configure SSH connections for team members.',
-      ),
     claudeMdExcludes: z
       .array(z.string())
       .optional()
@@ -1759,18 +1711,6 @@ const _settingsSchemaValue = z
       .optional()
       .describe(
         'Emergency tip/announcement displayed at the top of the REPL feed.',
-      ),
-    tokenEfficientJsonTools: z
-      .boolean()
-      .optional()
-      .describe(
-        'Enable token-efficient JSON tool_use format (FC v3) beta header. Only works with first-party API.',
-      ),
-    chromeAutoEnable: z
-      .boolean()
-      .optional()
-      .describe(
-        'Automatically enable Claude in Chrome integration when the extension is detected.',
       ),
     rateLimitBuyFirst: z
       .boolean()
@@ -1925,12 +1865,6 @@ const _settingsSchemaValue = z
       .optional()
       .describe(
         'Configuration for time-based microcompact that clears old tool results after idle gaps.',
-      ),
-    idleReturnMode: z
-      .enum(['dialog', 'hint', 'hint_v2', 'off'])
-      .optional()
-      .describe(
-        'Behavior when returning to a large conversation after idle. "dialog" shows blocking dialog, "hint"/"hint_v2" shows notification, "off" disables.',
       ),
     alwaysDebugLog: z
       .boolean()

@@ -1,6 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { isEnvTruthy } from './envUtils.js'
-import { getModelCapability } from './model/modelCapabilities.js'
 import { getProviderRegistry } from './model/providerRegistry.js'
 
 // Model context window size (200k tokens for all models right now)
@@ -47,17 +46,6 @@ export function getContextWindowForModel(
       return MODEL_CONTEXT_WINDOW_DEFAULT
     }
     return resolved.model.contextWindow
-  }
-
-  const cap = getModelCapability(model)
-  if (cap?.max_input_tokens && cap.max_input_tokens >= 100_000) {
-    if (
-      cap.max_input_tokens > MODEL_CONTEXT_WINDOW_DEFAULT &&
-      is1mContextDisabled()
-    ) {
-      return MODEL_CONTEXT_WINDOW_DEFAULT
-    }
-    return cap.max_input_tokens
   }
 
   return MODEL_CONTEXT_WINDOW_DEFAULT
@@ -112,10 +100,6 @@ export function getModelMaxOutputTokens(model: string): number {
   const resolved = getProviderRegistry().getProviderForModel(model)
   if (resolved?.model.maxOutputTokens && resolved.model.maxOutputTokens > 0) {
     return resolved.model.maxOutputTokens
-  }
-  const cap = getModelCapability(model)
-  if (cap?.max_tokens && cap.max_tokens >= 4_096) {
-    return Math.min(MAX_OUTPUT_TOKENS_DEFAULT, cap.max_tokens)
   }
   return MAX_OUTPUT_TOKENS_DEFAULT
 }

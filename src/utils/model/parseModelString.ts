@@ -58,13 +58,6 @@ export function parseModelString(
 }
 
 /**
- * Reassemble a parsed model string: "provider:modelId"
- */
-export function toQualifiedString(parsed: ParsedModelString): string {
-  return `${parsed.provider}:${parsed.modelId}`
-}
-
-/**
  * Build a qualified model string from parts.
  */
 export function qualifyModel(provider: string, modelId: string): string {

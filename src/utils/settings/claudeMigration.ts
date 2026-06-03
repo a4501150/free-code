@@ -5,7 +5,6 @@
  *   1. Config directory migration: ~/.claude/ → ~/.freecode/
  *   2. Global config state migration: ~/.claude.json → freecode.json state key
  *   3. User settings migration: ~/.freecode/settings.json → ~/.freecode/freecode.json
- *   4. Project settings migration: .claude/settings.json → .claude/freecode.json
  *
  * All migrations are user-consented or auto-detected during setup.
  * Settings loading is read-only and never triggers migration.
@@ -246,31 +245,3 @@ export function runLegacyToFreecodeMigration(): void {
   writeFreecodeSettingsFile(orderFreecodeKeys(out))
 }
 
-// ── Project settings migration ──────────────────────────────────────────
-
-export function migrateProjectSettingsToFreecode(projectRoot: string): void {
-  const pairs: Array<[string, string]> = [
-    ['settings.json', 'freecode.json'],
-    ['settings.local.json', 'freecode.local.json'],
-  ]
-
-  for (const [oldName, newName] of pairs) {
-    const oldPath = join(projectRoot, '.claude', oldName)
-    const newPath = join(projectRoot, '.claude', newName)
-
-    if (existsSync(newPath)) continue
-    if (!existsSync(oldPath)) continue
-
-    try {
-      const content = readFileSync(oldPath, 'utf8')
-      const parsed = safeParseJSON(content)
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        continue
-      }
-      mkdirSync(dirname(newPath), { recursive: true })
-      writeFileSync(newPath, JSON.stringify(parsed, null, 2) + '\n', 'utf8')
-    } catch {
-      // Non-fatal
-    }
-  }
-}

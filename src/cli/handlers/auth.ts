@@ -5,7 +5,6 @@ import {
   performLogout,
 } from '../../commands/logout/logout.js'
 import { getSSLErrorHint } from '../../services/api/errorUtils.js'
-import { fetchAndStoreClaudeCodeFirstTokenDate } from '../../services/api/firstTokenDate.js'
 import {
   createAndStoreApiKey,
   fetchAndStoreUserRoles,
@@ -103,9 +102,7 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
   )
 
   if (shouldUseClaudeAIAuth(tokens.scopes)) {
-    await fetchAndStoreClaudeCodeFirstTokenDate().catch(err =>
-      logForDebugging(String(err), { level: 'error' }),
-    )
+    // No additional post-login fetches needed for Claude AI auth
   } else if (hasAnyAnthropicScope(tokens.scopes)) {
     // API key creation is critical for Console users — let it throw.
     const apiKey = await createAndStoreApiKey(tokens.accessToken)

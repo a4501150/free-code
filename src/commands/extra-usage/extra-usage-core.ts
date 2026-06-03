@@ -3,7 +3,6 @@ import {
   createAdminRequest,
   getMyAdminRequests,
 } from '../../services/api/adminRequests.js'
-import { invalidateOverageCreditGrantCache } from '../../services/api/overageCreditGrant.js'
 import { type ExtraUsage, fetchUtilization } from '../../services/api/usage.js'
 import { getSubscriptionType } from '../../utils/auth.js'
 import { hasClaudeAiBillingAccess } from '../../utils/billing.js'
@@ -15,11 +14,6 @@ type ExtraUsageResult =
   | { type: 'browser-opened'; url: string; opened: boolean }
 
 export async function runExtraUsage(): Promise<ExtraUsageResult> {
-  // Invalidate only the current org's entry so a follow-up read refetches
-  // the granted state when users run /extra-usage more than once while
-  // iterating on the claim flow.
-  invalidateOverageCreditGrantCache()
-
   const subscriptionType = getSubscriptionType()
   const isTeamOrEnterprise =
     subscriptionType === 'team' || subscriptionType === 'enterprise'

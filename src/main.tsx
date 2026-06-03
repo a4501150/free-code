@@ -296,7 +296,6 @@ import {
   gracefulShutdownSync,
 } from 'src/utils/gracefulShutdown.js'
 import { setAllHookEventsEnabled } from 'src/utils/hooks/hookEvents.js'
-import { refreshModelCapabilities } from 'src/utils/model/modelCapabilities.js'
 import { peekForStdinData, writeToStderr } from 'src/utils/process.js'
 import { setCwd } from 'src/utils/Shell.js'
 import {
@@ -548,7 +547,7 @@ export function startDeferredPrefetches(): void {
     isEnvTruthy(process.env.CLAUDE_CODE_EXIT_AFTER_FIRST_RENDER) ||
     // --bare: skip ALL prefetches. These are cache-warms for the REPL's
     // first-turn responsiveness (initUser, getUserContext, countFiles,
-    // modelCapabilities, change detectors). Scripted -p calls don't have a
+    // change detectors). Scripted -p calls don't have a
     // "user is typing" window to hide this work in — it's pure overhead on
     // the critical path.
     isBareMode()
@@ -578,8 +577,6 @@ export function startDeferredPrefetches(): void {
 
   // Analytics and feature flag initialization
   void prefetchOfficialMcpUrls()
-
-  void refreshModelCapabilities()
 
   // File change detectors deferred from init() to unblock first render
   void settingsChangeDetector.initialize()

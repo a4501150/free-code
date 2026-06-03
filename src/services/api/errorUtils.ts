@@ -158,19 +158,6 @@ function sanitizeMessageHTML(message: string): string {
   return message
 }
 
-/**
- * Detects if an error message contains HTML content (e.g., CloudFlare error pages)
- * and returns a user-friendly message instead
- */
-export function sanitizeAPIError(apiError: DomainApiError): string {
-  const message = apiError.message
-  if (!message) {
-    // Sometimes message is undefined
-    // TODO: figure out why
-    return ''
-  }
-  return sanitizeMessageHTML(message)
-}
 
 /**
  * Shapes of deserialized API errors from session JSONL.

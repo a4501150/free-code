@@ -367,30 +367,8 @@ export function isValidAPIMessage(value: unknown): value is DomainAssistantConte
   )
 }
 
-/** Lower-level error that AWS can return. */
-type AmazonError = {
-  Output?: {
-    __type?: string
-  }
-  Version?: string
-}
 
-/**
- * Given a response that doesn't look quite right, see if it contains any known error types we can extract.
- */
-export function extractUnknownErrorFormat(value: unknown): string | undefined {
-  // Check if value is a valid object first
-  if (!value || typeof value !== 'object') {
-    return undefined
-  }
 
-  // Amazon Bedrock routing errors
-  if ((value as AmazonError).Output?.__type) {
-    return (value as AmazonError).Output!.__type
-  }
-
-  return undefined
-}
 
 export function getAssistantMessageFromError(
   error: unknown,

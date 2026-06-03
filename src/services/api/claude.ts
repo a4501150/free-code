@@ -46,7 +46,6 @@ import type {
 } from '../../types/message.js'
 import {
   type CacheScope,
-  logAPIPrefix,
   splitSysPromptPrefix,
   toolToAPISchema,
 } from '../../utils/api.js'
@@ -1270,9 +1269,6 @@ async function* queryModel(
       ...(advisorModel ? [ADVISOR_TOOL_INSTRUCTIONS] : []),
     ].filter(Boolean),
   )
-
-  // Prepend system prompt block for easy API identification
-  logAPIPrefix(systemPrompt)
 
   const enablePromptCaching =
     options.enablePromptCaching ?? getPromptCachingEnabled(options.model)
