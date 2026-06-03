@@ -617,6 +617,7 @@ export function registerAsyncAgent({
   setAppState,
   parentAbortController,
   toolUseId,
+  model,
 }: {
   agentId: string
   description: string
@@ -625,6 +626,7 @@ export function registerAsyncAgent({
   setAppState: SetAppState
   parentAbortController?: AbortController
   toolUseId?: string
+  model?: string
 }): LocalAgentTaskState {
   void initTaskOutputAsSymlink(
     agentId,
@@ -644,6 +646,7 @@ export function registerAsyncAgent({
     prompt,
     selectedAgent,
     agentType: selectedAgent.agentType ?? 'general-purpose',
+    model,
     abortController,
     retrieved: false,
     lastReportedToolCount: 0,

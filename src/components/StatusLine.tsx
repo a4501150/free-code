@@ -212,16 +212,12 @@ function StatusLineInner({
     const t = s.tasks[s.viewingAgentTaskId]
     return isLocalAgentTask(t) ? t.messages : undefined
   })
-  const viewedWorkerModel = (() => {
-    if (!viewedWorkerMessages) return undefined
-    for (let i = viewedWorkerMessages.length - 1; i >= 0; i--) {
-      const m = viewedWorkerMessages[i]
-      if (m?.type === 'assistant' && 'model' in m.message) {
-        return m.message.model as string
-      }
-    }
-    return undefined
-  })()
+  const viewedWorkerModel = useAppState(s => {
+    if (!s.viewingAgentTaskId) return undefined
+    const t = s.tasks[s.viewingAgentTaskId]
+    if (!isLocalAgentTask(t)) return undefined
+    return t.model
+  })
 
   // Keep latest values in refs for stable callback access
   const settingsRef = useRef(settings)

@@ -151,6 +151,7 @@ export async function resumeAgentBackground({
     selectedAgent,
     setAppState: rootSetAppState,
     toolUseId: toolUseContext.toolUseId,
+    model: resolvedAgentModel,
   })
 
   const metadata = {

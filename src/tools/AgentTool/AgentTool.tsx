@@ -759,6 +759,7 @@ export const AgentTool = buildTool({
         // survive when the user presses ESC to cancel the main thread.
         // They are killed explicitly via chat:killAgents.
         toolUseId: toolUseContext.toolUseId,
+        model: resolvedAgentModel,
       })
 
       // Register name → agentId for SendMessage routing. Post-registerAsyncAgent
