@@ -1,8 +1,4 @@
-import { createHash } from 'crypto'
 import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from 'src/constants/prompts.js'
-import { getSystemContext, getUserContext } from 'src/context.js'
-import { prefetchAllMcpResources } from 'src/services/mcp/client.js'
-import type { ScopedMcpServerConfig } from 'src/services/mcp/types.js'
 import { BashTool } from 'src/tools/BashTool/BashTool.js'
 import { FileEditTool } from 'src/tools/FileEditTool/FileEditTool.js'
 import {
@@ -10,7 +6,6 @@ import {
   stripTrailingWhitespace,
 } from 'src/tools/FileEditTool/utils.js'
 import { FileWriteTool } from 'src/tools/FileWriteTool/FileWriteTool.js'
-import { getTools } from 'src/tools.js'
 import type { AgentId } from 'src/types/ids.js'
 import type { z } from 'zod/v4'
 import { CLI_SYSPROMPT_PREFIXES } from '../constants/system.js'
@@ -29,16 +24,11 @@ import { getInitialSettings } from './settings/settings.js'
 import { createUserMessage } from './messages.js'
 import { getProviderRegistry } from './model/providerRegistry.js'
 import {
-  getFileReadIgnorePatterns,
-  normalizePatternsToPath,
-} from './permissions/filesystem.js'
-import {
   getPlan,
   getPlanFilePath,
   persistFileSnapshotIfRemote,
 } from './plans.js'
 import { getPlatform } from './platform.js'
-import { countFilesRoundedRg } from './ripgrep.js'
 import { jsonStringify } from './slowOperations.js'
 import type { SystemPrompt } from './systemPromptType.js'
 import { getToolSchemaCache } from './toolSchemaCache.js'
