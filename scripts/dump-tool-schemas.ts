@@ -12,7 +12,7 @@
 import { writeFileSync } from 'fs'
 import { enableConfigs } from '../src/utils/config.js'
 import { getAllBaseTools } from '../src/tools.js'
-import { toolToAPISchema } from '../src/utils/api.js'
+import { toolToAPISchema } from '../src/utils/toolSchemas.js'
 import type { ToolPermissionContext } from '../src/types/permissions.js'
 
 enableConfigs()

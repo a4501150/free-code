@@ -46,7 +46,7 @@ import type {
 } from '../../types/message.js'
 import {
   toolToAPISchema,
-} from '../../utils/api.js'
+} from '../../utils/toolSchemas.js'
 import {
   type CacheScope,
   splitSysPromptPrefix,

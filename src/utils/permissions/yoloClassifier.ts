@@ -5,7 +5,7 @@ import type {
   DomainUserImageBlock,
   DomainUserTextBlock,
 } from '../../types/domain.js'
-import type { ToolSchemaUnion } from '../api.js'
+import type { ToolSchemaUnion } from '../toolSchemas.js'
 import type { SideQueryOptions } from '../sideQuery.js'
 import { mkdir, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'

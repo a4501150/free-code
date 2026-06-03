@@ -4,7 +4,7 @@ import type {
   DomainUserContentBlock,
   DomainUserTextBlock,
 } from '../types/domain.js'
-import type { ToolSchemaUnion } from './api.js'
+import type { ToolSchemaUnion } from './toolSchemas.js'
 import { setLastApiCompletionTimestamp } from '../bootstrap/state.js'
 import { STRUCTURED_OUTPUTS_BETA_HEADER } from '../constants/betas.js'
 import type { QuerySource } from '../constants/querySource.js'
