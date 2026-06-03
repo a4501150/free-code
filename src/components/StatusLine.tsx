@@ -73,14 +73,20 @@ function buildStatusLineCommandInput(
   addedDirs: string[],
   mainLoopModel: ModelName,
   vimMode?: VimMode,
+  isViewedWorkerModel?: boolean,
 ): StatusLineCommandInput {
   const agentType = getMainThreadAgentType()
   const worktreeSession = getCurrentWorktreeSession()
-  const runtimeModel = getRuntimeMainLoopModel({
-    permissionMode,
-    mainLoopModel,
-    exceeds200kTokens,
-  })
+  // When displaying a viewed worker's model, skip runtime resolution —
+  // the subagent model is already fully resolved and should not be
+  // replaced by planModeModel or other main-loop overrides.
+  const runtimeModel = isViewedWorkerModel
+    ? mainLoopModel
+    : getRuntimeMainLoopModel({
+        permissionMode,
+        mainLoopModel,
+        exceeds200kTokens,
+      })
   const currentUsage = getCurrentUsage(messages)
   const contextWindowSize = getContextWindowForModel(
     runtimeModel,
@@ -293,6 +299,7 @@ function StatusLineInner({
         Array.from(addedDirsRef.current.keys()),
         effectiveModel,
         vimModeRef.current,
+        !!workerModel,
       )
 
       const text = await executeStatusLineCommand(

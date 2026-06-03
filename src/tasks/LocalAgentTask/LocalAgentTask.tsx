@@ -687,6 +687,7 @@ export function registerAgentForeground({
   setAppState,
   autoBackgroundMs,
   toolUseId,
+  model,
 }: {
   agentId: string
   description: string
@@ -695,6 +696,7 @@ export function registerAgentForeground({
   setAppState: SetAppState
   autoBackgroundMs?: number
   toolUseId?: string
+  model?: string
 }): {
   taskId: string
   backgroundSignal: Promise<void>
@@ -719,6 +721,7 @@ export function registerAgentForeground({
     prompt,
     selectedAgent,
     agentType: selectedAgent.agentType ?? 'general-purpose',
+    model,
     abortController,
     unregisterCleanup,
     retrieved: false,

@@ -63,7 +63,7 @@ import { activityManager } from '../utils/activityManager.js'
 import { getSpinnerVerbs } from '../constants/spinnerVerbs.js'
 import { MessageResponse } from './MessageResponse.js'
 import { TaskListV2 } from './TaskListV2.js'
-import { useTasksV2 } from '../hooks/useTasksV2.js'
+import { useSubagentTasksV2, useTasksV2 } from '../hooks/useTasksV2.js'
 import type { Task } from '../utils/tasks.js'
 import { useAppState } from '../state/AppState.js'
 import { useTerminalSize } from '../hooks/useTerminalSize.js'
@@ -180,7 +180,9 @@ function SpinnerWithVerbInner({
     ? getViewedTeammateTask({ viewingAgentTaskId, tasks })
     : undefined
   const { columns } = useTerminalSize()
-  const tasksV2 = useTasksV2()
+  const mainTasksV2 = useTasksV2()
+  const subagentTasksV2 = useSubagentTasksV2(viewingAgentTaskId)
+  const tasksV2 = subagentTasksV2 ?? mainTasksV2
 
   // Track thinking status: 'thinking' | number (duration in ms) | null
   // Shows each state for minimum 2s to avoid UI jank

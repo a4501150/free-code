@@ -1,5 +1,5 @@
 import { type FSWatcher, watch } from 'fs'
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useAppState, useSetAppState } from '../state/AppState.js'
 import { createSignal } from '../utils/signal.js'
 import type { Task } from '../utils/tasks.js'
@@ -244,6 +244,65 @@ export function useTasksV2WithCollapseEffect(): Task[] | undefined {
       return { ...prev, expandedView: 'none' as const }
     })
   }, [hidden, setAppState])
+
+  return tasks
+}
+
+const SUBAGENT_POLL_MS = 3000
+
+/**
+ * Hook to read a subagent's isolated task list when viewing its transcript.
+ * Returns the subagent's tasks, or undefined when not viewing a subagent or
+ * when the subagent has no tasks.
+ */
+export function useSubagentTasksV2(
+  agentId: string | undefined,
+): Task[] | undefined {
+  const [tasks, setTasks] = useState<Task[] | undefined>(undefined)
+
+  useEffect(() => {
+    if (!agentId) {
+      setTasks(undefined)
+      return
+    }
+
+    const taskListId = `subagent-${agentId}`
+    let cancelled = false
+
+    const fetchTasks = async (): Promise<void> => {
+      try {
+        const current = (await listTasks(taskListId)).filter(
+          t => !t.metadata?._internal,
+        )
+        if (!cancelled) {
+          setTasks(current.length > 0 ? current : undefined)
+        }
+      } catch {
+        // Task dir may not exist yet
+      }
+    }
+
+    void fetchTasks()
+
+    const unsub = onTasksUpdated(() => void fetchTasks())
+
+    let watcher: FSWatcher | null = null
+    try {
+      watcher = watch(getTasksDir(taskListId), () => void fetchTasks())
+      watcher.unref()
+    } catch {
+      // Directory may not exist yet
+    }
+
+    const poll = setInterval(() => void fetchTasks(), SUBAGENT_POLL_MS)
+
+    return () => {
+      cancelled = true
+      watcher?.close()
+      unsub()
+      clearInterval(poll)
+    }
+  }, [agentId])
 
   return tasks
 }

@@ -904,6 +904,7 @@ export const AgentTool = buildTool({
               setAppState: rootSetAppState,
               toolUseId: toolUseContext.toolUseId,
               autoBackgroundMs: getAutoBackgroundMs() || undefined,
+              model: resolvedAgentModel,
             })
             foregroundTaskId = registration.taskId
             backgroundPromise = registration.backgroundSignal.then(() => ({
