@@ -45,10 +45,12 @@ import type {
   UserMessage,
 } from '../../types/message.js'
 import {
-  type CacheScope,
-  splitSysPromptPrefix,
   toolToAPISchema,
 } from '../../utils/api.js'
+import {
+  type CacheScope,
+  splitSysPromptPrefix,
+} from './systemPromptBlocks.js'
 import {
   clearApiKeyHelperCache,
   clearAwsCredentialsCache,
