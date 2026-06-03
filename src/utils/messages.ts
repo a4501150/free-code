@@ -121,7 +121,10 @@ import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
 import { TASK_OUTPUT_TOOL_NAME } from '../tools/TaskOutputTool/constants.js'
 import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 import type { PermissionMode } from '../types/permissions.js'
-import { normalizeToolInput, normalizeToolInputForAPI } from './api.js'
+import {
+  normalizeToolInput,
+  normalizeToolInputForAPI,
+} from './toolInputNormalization.js'
 import { logAntError, logForDebugging } from './debug.js'
 import { stripIdeContextTags } from './displayTags.js'
 import { formatFileSize } from './format.js'
