@@ -223,7 +223,7 @@ export function getEffortValueDescription(value: EffortValue): string {
   return 'Balanced approach with standard implementation and testing'
 }
 
-// @[MODEL LAUNCH]: Set defaultEffort on the model entry in legacyProviderMigration.ts.
+// @[MODEL LAUNCH]: Set defaultEffort on the model entry in providerPresets.ts.
 export function getDefaultEffortForModel(
   model: string,
 ): EffortValue | undefined {

@@ -40,7 +40,7 @@ import {
 import {
   DEFAULT_ANTHROPIC_MODELS,
   DEFAULT_CODEX_MODELS,
-} from '../../utils/model/legacyProviderMigration.js'
+} from '../../utils/model/providerPresets.js'
 import type { ProviderConfig } from '../../utils/settings/types.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
