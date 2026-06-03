@@ -4,13 +4,15 @@ import type { Tool, ToolPermissionContext, Tools } from '../Tool.js'
 import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js'
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
 import { EXIT_PLAN_MODE_TOOL_NAME } from '../tools/ExitPlanModeTool/constants.js'
-import type { Message } from '../types/message.js'
+
+
 import { isAgentSwarmsEnabled } from './agentSwarmsEnabled.js'
 import { shouldUseGlobalCacheScope } from './betas.js'
 import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getInitialSettings } from './settings/settings.js'
-import { createUserMessage } from './messages.js'
+
+
 import { getProviderRegistry } from './model/providerRegistry.js'
 import { jsonStringify } from './slowOperations.js'
 import type { SystemPrompt } from './systemPromptType.js'
@@ -337,41 +339,4 @@ export function splitSysPromptPrefix(
   return result
 }
 
-export function appendSystemContext(
-  systemPrompt: SystemPrompt,
-  context: { [k: string]: string },
-): string[] {
-  return [
-    ...systemPrompt,
-    Object.entries(context)
-      .map(([key, value]) => `${key}: ${value}`)
-      .join('\n'),
-  ].filter(Boolean)
-}
 
-export function prependUserContext(
-  messages: Message[],
-  context: { [k: string]: string },
-): Message[] {
-  if (process.env.NODE_ENV === 'test') {
-    return messages
-  }
-
-  if (Object.entries(context).length === 0) {
-    return messages
-  }
-
-  return [
-    createUserMessage({
-      content: `<system-reminder>\nAs you answer the user's questions, you can use the following context:\n${Object.entries(
-        context,
-      )
-        .map(([key, value]) => `# ${key}\n${value}`)
-        .join('\n')}
-
-      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n`,
-      isMeta: true,
-    }),
-    ...messages,
-  ]
-}

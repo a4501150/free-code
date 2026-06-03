@@ -35,7 +35,7 @@ import {
   createToolUseSummaryMessage,
 } from './utils/messages.js'
 import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummaryGenerator.js'
-import { prependUserContext, appendSystemContext } from './utils/api.js'
+import { prependUserContext, appendSystemContext } from './utils/contextInjection.js'
 import {
   createAttachmentMessage,
   filterDuplicateMemoryAttachments,
