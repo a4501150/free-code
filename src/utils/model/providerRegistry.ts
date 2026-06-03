@@ -16,7 +16,6 @@ import type {
   ProviderModelConfig,
   ProviderType,
 } from '../settings/types.js'
-import { getInferenceProfileBackingModel } from './bedrock.js'
 import {
   applyBedrockRegionPrefix,
   getBedrockRegionPrefix,
@@ -523,21 +522,6 @@ export class ProviderRegistry {
    */
   getConfiguredDefaultMostPowerfulModel(): string | undefined {
     return this._defaultMostPowerfulModel
-  }
-
-  /**
-   * Resolve a model ID to its underlying foundation model.
-   * For Bedrock application inference profiles, resolves the ARN to the
-   * backing model ID. For all other providers, returns the model as-is.
-   */
-  async resolveModelId(model: string): Promise<string> {
-    if (
-      this.getProviderType(model) === 'bedrock-converse' &&
-      model.includes('application-inference-profile')
-    ) {
-      return (await getInferenceProfileBackingModel(model)) ?? model
-    }
-    return model
   }
 
   /**

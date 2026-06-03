@@ -179,6 +179,7 @@ import {
   normalizeModelStringForAPI,
   parseUserSpecifiedModel,
 } from '../../utils/model/model.js'
+import { getInferenceProfileBackingModel } from '../../utils/model/bedrock.js'
 import {
   startSessionActivity,
   stopSessionActivity,
@@ -1121,7 +1122,11 @@ async function* queryModel(
   const previousRequestId = getPreviousRequestIdFromMessages(messages)
 
   const registry = getProviderRegistry()
-  const resolvedModel = await registry.resolveModelId(options.model)
+  const resolvedModel =
+    registry.getProviderType(options.model) === 'bedrock-converse' &&
+    options.model.includes('application-inference-profile')
+      ? ((await getInferenceProfileBackingModel(options.model)) ?? options.model)
+      : options.model
   const isOpenAIResponsesProvider =
     registry.getProviderType(options.model) === 'openai-responses'
 
