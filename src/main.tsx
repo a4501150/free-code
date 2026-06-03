@@ -41,7 +41,6 @@ import { addToHistory } from './history.js'
 import { createRoot, type Root } from './ink.js'
 import { launchRepl } from './replLauncher.js'
 import { fetchBootstrapData } from './services/api/bootstrap.js'
-import { prefetchPassesEligibility } from './services/api/referral.js'
 import { prefetchOfficialMcpUrls } from './services/mcp/officialRegistry.js'
 import type {
   McpSdkServerConfig,
@@ -2584,11 +2583,11 @@ async function run(): Promise<CommanderCommand> {
         }
       }
 
-      // Check quota status, fast mode, passes eligibility, and bootstrap data
-      // after trust is established. These make API calls which could trigger
-      // apiKeyHelper execution.
+      // Check quota status, fast mode, and bootstrap data after trust is
+      // established. These make API calls which could trigger apiKeyHelper
+      // execution.
       // --bare / SIMPLE: skip — these are cache-warms for the REPL's
-      // first-turn responsiveness (quota, passes, fastMode, bootstrap data). Fast
+      // first-turn responsiveness (quota, fastMode, bootstrap data). Fast
       // mode doesn't apply to generic headless sessions anyway (see getFastModeUnavailableReason).
       const skipStartupPrefetches = isBareMode()
 
@@ -2600,8 +2599,6 @@ async function run(): Promise<CommanderCommand> {
         // Fetch bootstrap data from the server and update all cache values.
         void fetchBootstrapData()
 
-        // TODO: Consolidate other prefetches into a single bootstrap request.
-        void prefetchPassesEligibility()
         void prefetchFastModeStatus()
       } else {
         logForDebugging('Skipping startup prefetches (bare mode)')

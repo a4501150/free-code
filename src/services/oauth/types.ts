@@ -93,33 +93,3 @@ export type OAuthTokens = {
     organizationUuid?: string
   }
 }
-
-/** Guest-pass referral campaign identifier. */
-export type ReferralCampaign = 'claude_code_guest_pass' | string
-
-/** Cash-equivalent credit info for the referring user. */
-export type ReferrerRewardInfo = {
-  amount_minor_units: number
-  currency: string
-  reward_type?: string
-}
-
-/** Response from `/api/oauth/organizations/:org/referral/eligibility`. */
-export type ReferralEligibilityResponse = {
-  eligible: boolean
-  referrer_reward?: ReferrerRewardInfo | null
-  remaining_passes?: number
-  referral_code_details?: {
-    referral_link?: string
-    campaign?: ReferralCampaign
-  }
-}
-
-/** Response from `/api/oauth/organizations/:org/referral/redemptions`. */
-export type ReferralRedemptionsResponse = {
-  limit?: number
-  redemptions?: Array<{
-    redeemed_at?: string
-    email?: string
-  }>
-}
