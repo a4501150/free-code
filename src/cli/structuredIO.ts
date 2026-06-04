@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type {
   ElicitResult,
   JSONRPCMessage,
@@ -19,7 +18,7 @@ import type {
   StdinMessage,
   StdoutMessage,
 } from 'src/structuredProtocol/controlTypes.js'
-import type { Tool, ToolUseContext , CanUseToolFn } from 'src/Tool.js'
+import type { Tool, ToolUseContext, CanUseToolFn } from 'src/Tool.js'
 import { type HookCallback, hookJSONOutputSchema } from 'src/types/hooks.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logForDiagnosticsNoPII } from 'src/utils/diagLogs.js'
@@ -67,7 +66,7 @@ function serializeDecisionReason(
     return undefined
   }
 
-  if (feature('TRANSCRIPT_CLASSIFIER') && reason.type === 'classifier') {
+  if (reason.type === 'classifier') {
     return reason.reason
   }
   switch (reason.type) {

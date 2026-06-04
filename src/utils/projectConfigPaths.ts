@@ -27,9 +27,7 @@ export function getProjectConfigPaths(
  * e.g. getProjectConfigRelativePaths('freecode.json') =>
  *   ['.claude/freecode.json', '.freecode/freecode.json']
  */
-export function getProjectConfigRelativePaths(
-  ...segments: string[]
-): string[] {
+export function getProjectConfigRelativePaths(...segments: string[]): string[] {
   return PROJECT_CONFIG_DIRS.map(dir => join(dir, ...segments))
 }
 
@@ -61,11 +59,7 @@ export function getExistingOrPreferredProjectConfigPath(
   projectRoot: string,
   ...segments: string[]
 ): string {
-  const preferred = join(
-    projectRoot,
-    PREFERRED_PROJECT_CONFIG_DIR,
-    ...segments,
-  )
+  const preferred = join(projectRoot, PREFERRED_PROJECT_CONFIG_DIR, ...segments)
   if (existsSync(preferred)) return preferred
 
   const legacy = join(projectRoot, LEGACY_PROJECT_CONFIG_DIR, ...segments)

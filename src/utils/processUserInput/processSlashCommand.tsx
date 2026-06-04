@@ -1,7 +1,10 @@
 import { feature } from 'bun:bundle'
 import { randomUUID } from 'crypto'
 import { setPromptId } from 'src/bootstrap/state.js'
-import type { DomainUserContentBlock, DomainUserTextBlock } from '../../types/domain.js'
+import type {
+  DomainUserContentBlock,
+  DomainUserTextBlock,
+} from '../../types/domain.js'
 import {
   builtInCommandNames,
   type Command,
@@ -13,7 +16,7 @@ import {
   type PromptCommand,
 } from 'src/commands.js'
 import { NO_CONTENT_MESSAGE } from 'src/constants/messages.js'
-import type { SetToolJSXFn, ToolUseContext , CanUseToolFn } from 'src/Tool.js'
+import type { SetToolJSXFn, ToolUseContext, CanUseToolFn } from 'src/Tool.js'
 import type {
   AssistantMessage,
   AttachmentMessage,
@@ -1008,7 +1011,9 @@ async function getMessagesForPromptSlashCommand(
   command: CommandBase & PromptCommand,
   args: string,
   context: ToolUseContext,
-  precedingInputBlocks: Array<DomainUserContentBlock | DomainUserContentBlock> = [],
+  precedingInputBlocks: Array<
+    DomainUserContentBlock | DomainUserContentBlock
+  > = [],
   imageContentBlocks: DomainUserContentBlock[] = [],
   uuid?: string,
 ): Promise<SlashCommandResult> {
@@ -1102,7 +1107,9 @@ async function getMessagesForPromptSlashCommand(
   )
 
   // Create content for the main message, including any pasted images
-  const mainMessageContent: Array<DomainUserContentBlock | DomainUserContentBlock> =
+  const mainMessageContent: Array<
+    DomainUserContentBlock | DomainUserContentBlock
+  > =
     imageContentBlocks.length > 0 || precedingInputBlocks.length > 0
       ? [...imageContentBlocks, ...precedingInputBlocks, ...result]
       : result

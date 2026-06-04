@@ -17,7 +17,10 @@ import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
 import { logError } from '../../utils/log.js'
 import { sleep } from '../../utils/sleep.js'
-import { ANTHROPIC_API_VERSION, getAnthropicFilesApiUrl } from '../../constants/api.js'
+import {
+  ANTHROPIC_API_VERSION,
+  getAnthropicFilesApiUrl,
+} from '../../constants/api.js'
 
 // Files API is currently in beta. oauth-2025-04-20 enables Bearer OAuth
 // on public-api routes (auth.py: "oauth_auth" not in beta_versions → 404).

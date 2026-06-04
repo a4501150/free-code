@@ -11,7 +11,7 @@ import {
 } from 'src/commands.js'
 import { createStreamlinedTransformer } from 'src/utils/streamlinedTransform.js'
 import { installStreamJsonStdoutGuard } from 'src/utils/streamJsonStdoutGuard.js'
-import type { ToolPermissionContext , CanUseToolFn } from 'src/Tool.js'
+import type { ToolPermissionContext, CanUseToolFn } from 'src/Tool.js'
 import type { ThinkingConfig } from 'src/utils/thinking.js'
 import { assembleToolPool, filterToolsByDenyRules } from 'src/tools.js'
 import uniqBy from 'lodash-es/uniqBy.js'
@@ -253,7 +253,6 @@ import {
   resolveAppliedEffort,
 } from 'src/utils/effort.js'
 import { modelSupportsAdaptiveThinking } from 'src/utils/thinking.js'
-import { modelSupportsAutoMode } from 'src/utils/betas.js'
 import {
   getSessionId,
   setMainLoopModelOverride,
@@ -998,7 +997,7 @@ function runHeadlessStreaming(
       newMode === 'acceptEdits' ||
       newMode === 'bypassPermissions' ||
       newMode === 'plan' ||
-      newMode === (feature('TRANSCRIPT_CLASSIFIER') && 'auto') ||
+      newMode === 'auto' ||
       newMode === 'dontAsk'
     ) {
       output.enqueue({
@@ -1135,7 +1134,7 @@ function runHeadlessStreaming(
     const hasEffort = modelSupportsEffort(resolvedModel)
     const hasAdaptiveThinking = modelSupportsAdaptiveThinking(resolvedModel)
     const hasFastMode = isFastModeSupportedByModel(option.value)
-    const hasAutoMode = modelSupportsAutoMode(resolvedModel)
+    const hasAutoMode = true
     return {
       value: modelId,
       displayName: option.label,
@@ -1829,7 +1828,9 @@ function runHeadlessStreaming(
             if (batch.length > 1) {
               command = {
                 ...command,
-                value: joinPromptValues(batch.map(c => c.value)) as QueuedCommand['value'],
+                value: joinPromptValues(
+                  batch.map(c => c.value),
+                ) as QueuedCommand['value'],
                 uuid: batch.findLast(c => c.uuid)?.uuid ?? command.uuid,
               }
             }
@@ -3625,9 +3626,7 @@ function runHeadlessStreaming(
         mode: 'prompt' as const,
         value: (
           message.message as {
-            content:
-              | string
-              | DomainUserContentBlock[]
+            content: string | DomainUserContentBlock[]
           }
         ).content,
         uuid: message.uuid as UUID | undefined,
@@ -4114,11 +4113,7 @@ function handleSetPermissionMode(
   }
 
   // Check if trying to switch to auto mode without the classifier gate
-  if (
-    feature('TRANSCRIPT_CLASSIFIER') &&
-    request.mode === 'auto' &&
-    !isAutoModeGateEnabled()
-  ) {
+  if (request.mode === 'auto' && !isAutoModeGateEnabled()) {
     const reason = getAutoModeUnavailableReason()
     output.enqueue({
       type: 'control_response',

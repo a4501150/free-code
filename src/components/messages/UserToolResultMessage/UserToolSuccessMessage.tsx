@@ -111,13 +111,11 @@ export function UserToolSuccessMessage({
         width={rendersAsAssistantText ? undefined : width}
       >
         {renderedMessage}
-        {feature('TRANSCRIPT_CLASSIFIER')
-          ? yoloReason && (
-              <MessageResponse height={1}>
-                <Text dimColor>Allowed by auto mode classifier</Text>
-              </MessageResponse>
-            )
-          : null}
+        {yoloReason && (
+          <MessageResponse height={1}>
+            <Text dimColor>Allowed by auto mode classifier</Text>
+          </MessageResponse>
+        )}
       </Box>
       <SentryErrorBoundary>
         <HookProgressMessage

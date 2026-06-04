@@ -661,13 +661,13 @@ export function isSandboxPermissionResponse(
  * Message sent when a teammate requests plan approval from the team leader
  */
 export const PlanApprovalRequestMessageSchema = z.object({
-    type: z.literal('plan_approval_request'),
-    from: z.string(),
-    timestamp: z.string(),
-    planFilePath: z.string(),
-    planContent: z.string(),
-    requestId: z.string(),
-  })
+  type: z.literal('plan_approval_request'),
+  from: z.string(),
+  timestamp: z.string(),
+  planFilePath: z.string(),
+  planContent: z.string(),
+  requestId: z.string(),
+})
 
 export type PlanApprovalRequestMessage = z.infer<
   typeof PlanApprovalRequestMessageSchema
@@ -677,13 +677,13 @@ export type PlanApprovalRequestMessage = z.infer<
  * Message sent by the team leader in response to a plan approval request
  */
 export const PlanApprovalResponseMessageSchema = z.object({
-    type: z.literal('plan_approval_response'),
-    requestId: z.string(),
-    approved: z.boolean(),
-    feedback: z.string().optional(),
-    timestamp: z.string(),
-    permissionMode: PermissionModeSchema.optional(),
-  })
+  type: z.literal('plan_approval_response'),
+  requestId: z.string(),
+  approved: z.boolean(),
+  feedback: z.string().optional(),
+  timestamp: z.string(),
+  permissionMode: PermissionModeSchema.optional(),
+})
 
 export type PlanApprovalResponseMessage = z.infer<
   typeof PlanApprovalResponseMessageSchema
@@ -693,12 +693,12 @@ export type PlanApprovalResponseMessage = z.infer<
  * Shutdown request message sent from leader to teammate via mailbox
  */
 export const ShutdownRequestMessageSchema = z.object({
-    type: z.literal('shutdown_request'),
-    requestId: z.string(),
-    from: z.string(),
-    reason: z.string().optional(),
-    timestamp: z.string(),
-  })
+  type: z.literal('shutdown_request'),
+  requestId: z.string(),
+  from: z.string(),
+  reason: z.string().optional(),
+  timestamp: z.string(),
+})
 
 export type ShutdownRequestMessage = z.infer<
   typeof ShutdownRequestMessageSchema
@@ -708,13 +708,13 @@ export type ShutdownRequestMessage = z.infer<
  * Shutdown approved message sent from teammate to leader via mailbox
  */
 export const ShutdownApprovedMessageSchema = z.object({
-    type: z.literal('shutdown_approved'),
-    requestId: z.string(),
-    from: z.string(),
-    timestamp: z.string(),
-    paneId: z.string().optional(),
-    backendType: z.string().optional(),
-  })
+  type: z.literal('shutdown_approved'),
+  requestId: z.string(),
+  from: z.string(),
+  timestamp: z.string(),
+  paneId: z.string().optional(),
+  backendType: z.string().optional(),
+})
 
 export type ShutdownApprovedMessage = z.infer<
   typeof ShutdownApprovedMessageSchema
@@ -724,12 +724,12 @@ export type ShutdownApprovedMessage = z.infer<
  * Shutdown rejected message sent from teammate to leader via mailbox
  */
 export const ShutdownRejectedMessageSchema = z.object({
-    type: z.literal('shutdown_rejected'),
-    requestId: z.string(),
-    from: z.string(),
-    reason: z.string(),
-    timestamp: z.string(),
-  })
+  type: z.literal('shutdown_rejected'),
+  requestId: z.string(),
+  from: z.string(),
+  reason: z.string(),
+  timestamp: z.string(),
+})
 
 export type ShutdownRejectedMessage = z.infer<
   typeof ShutdownRejectedMessageSchema
@@ -986,14 +986,12 @@ export function isTeamPermissionUpdate(
  * Uses SDK PermissionModeSchema for validated mode values
  */
 export const ModeSetRequestMessageSchema = z.object({
-    type: z.literal('mode_set_request'),
-    mode: PermissionModeSchema,
-    from: z.string(),
-  })
+  type: z.literal('mode_set_request'),
+  mode: PermissionModeSchema,
+  from: z.string(),
+})
 
-export type ModeSetRequestMessage = z.infer<
-  typeof ModeSetRequestMessageSchema
->
+export type ModeSetRequestMessage = z.infer<typeof ModeSetRequestMessageSchema>
 
 /**
  * Creates a mode set request message to send to a teammate
@@ -1016,9 +1014,7 @@ export function isModeSetRequest(
   messageText: string,
 ): ModeSetRequestMessage | null {
   try {
-    const parsed = ModeSetRequestMessageSchema.safeParse(
-      jsonParse(messageText),
-    )
+    const parsed = ModeSetRequestMessageSchema.safeParse(jsonParse(messageText))
     if (parsed.success) {
       return parsed.data
     }

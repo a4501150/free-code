@@ -20,27 +20,27 @@ import { getEnterWorktreeToolPrompt } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
 const inputSchema = z.strictObject({
-    name: z
-      .string()
-      .superRefine((s, ctx) => {
-        try {
-          validateWorktreeSlug(s)
-        } catch (e) {
-          ctx.addIssue({ code: 'custom', message: (e as Error).message })
-        }
-      })
-      .optional()
-      .describe(
-        'Optional name for the worktree. Each "/"-separated segment may contain only letters, digits, dots, underscores, and dashes; max 64 chars total. A random name is generated if not provided.',
-      ),
-  })
+  name: z
+    .string()
+    .superRefine((s, ctx) => {
+      try {
+        validateWorktreeSlug(s)
+      } catch (e) {
+        ctx.addIssue({ code: 'custom', message: (e as Error).message })
+      }
+    })
+    .optional()
+    .describe(
+      'Optional name for the worktree. Each "/"-separated segment may contain only letters, digits, dots, underscores, and dashes; max 64 chars total. A random name is generated if not provided.',
+    ),
+})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    worktreePath: z.string(),
-    worktreeBranch: z.string().optional(),
-    message: z.string(),
-  })
+  worktreePath: z.string(),
+  worktreeBranch: z.string().optional(),
+  message: z.string(),
+})
 type OutputSchema = typeof outputSchema
 export type Output = z.infer<OutputSchema>
 

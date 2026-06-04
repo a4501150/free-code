@@ -18,22 +18,22 @@ import {
 } from './prompt.js'
 
 const inputSchema = z.strictObject({
-    path: z
-      .string()
-      .describe('Path to the file to send (absolute or relative to cwd).'),
-    description: z
-      .string()
-      .optional()
-      .describe('Optional description of the file and why it is being sent.'),
-  })
+  path: z
+    .string()
+    .describe('Path to the file to send (absolute or relative to cwd).'),
+  description: z
+    .string()
+    .optional()
+    .describe('Optional description of the file and why it is being sent.'),
+})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    sent: z.boolean(),
-    path: z.string(),
-    size: z.number().optional(),
-    error: z.string().optional(),
-  })
+  sent: z.boolean(),
+  path: z.string(),
+  size: z.number().optional(),
+  error: z.string().optional(),
+})
 type OutputSchema = typeof outputSchema
 
 type Output = z.infer<OutputSchema>

@@ -12,19 +12,19 @@ import { z } from 'zod/v4'
  * Values are UTF-8 string content (JSON, Markdown, etc).
  */
 export const UserSyncContentSchema = z.object({
-    entries: z.record(z.string(), z.string()),
-  })
+  entries: z.record(z.string(), z.string()),
+})
 
 /**
  * Full response from GET /api/claude_code/user_settings
  */
 export const UserSyncDataSchema = z.object({
-    userId: z.string(),
-    version: z.number(),
-    lastModified: z.string(), // ISO 8601 timestamp
-    checksum: z.string(), // MD5 hash
-    content: UserSyncContentSchema,
-  })
+  userId: z.string(),
+  version: z.number(),
+  lastModified: z.string(), // ISO 8601 timestamp
+  checksum: z.string(), // MD5 hash
+  content: UserSyncContentSchema,
+})
 
 export type UserSyncData = z.infer<typeof UserSyncDataSchema>
 

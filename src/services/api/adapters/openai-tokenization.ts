@@ -1,7 +1,4 @@
-import type {
-  TokenCountMessageParam,
-  TokenCountToolParam,
-} from '../adapter.js'
+import type { TokenCountMessageParam, TokenCountToolParam } from '../adapter.js'
 
 export type GptTokenizerModule = {
   encode: (text: string) => number[]

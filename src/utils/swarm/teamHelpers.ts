@@ -16,27 +16,27 @@ import { type BackendType, isPaneBackend } from './backends/types.js'
 import { TEAM_LEAD_NAME } from './constants.js'
 
 export const inputSchema = z.strictObject({
-    operation: z
-      .enum(['spawnTeam', 'cleanup'])
-      .describe(
-        'Operation: spawnTeam to create a team, cleanup to remove team and task directories.',
-      ),
-    agent_type: z
-      .string()
-      .optional()
-      .describe(
-        'Type/role of the team lead (e.g., "researcher", "test-runner"). ' +
-          'Used for team file and inter-agent coordination.',
-      ),
-    team_name: z
-      .string()
-      .optional()
-      .describe('Name for the new team to create (required for spawnTeam).'),
-    description: z
-      .string()
-      .optional()
-      .describe('Team description/purpose (only used with spawnTeam).'),
-  })
+  operation: z
+    .enum(['spawnTeam', 'cleanup'])
+    .describe(
+      'Operation: spawnTeam to create a team, cleanup to remove team and task directories.',
+    ),
+  agent_type: z
+    .string()
+    .optional()
+    .describe(
+      'Type/role of the team lead (e.g., "researcher", "test-runner"). ' +
+        'Used for team file and inter-agent coordination.',
+    ),
+  team_name: z
+    .string()
+    .optional()
+    .describe('Name for the new team to create (required for spawnTeam).'),
+  description: z
+    .string()
+    .optional()
+    .describe('Team description/purpose (only used with spawnTeam).'),
+})
 
 // Output types for different operations
 export type SpawnTeamOutput = {

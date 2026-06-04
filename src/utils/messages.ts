@@ -3454,13 +3454,15 @@ Read the team config to discover your teammates' names. Check the task list peri
       if (Array.isArray(attachment.prompt)) {
         // Handle content blocks (may include images)
         const textContent = (attachment.prompt as DomainUserContentBlock[])
-          .filter((block): block is DomainUserTextBlock => block.type === 'text')
+          .filter(
+            (block): block is DomainUserTextBlock => block.type === 'text',
+          )
           .map(block => block.text)
           .join('\n')
 
-        const imageBlocks = (attachment.prompt as DomainUserContentBlock[]).filter(
-          block => block.type === 'image',
-        )
+        const imageBlocks = (
+          attachment.prompt as DomainUserContentBlock[]
+        ).filter(block => block.type === 'image')
 
         const content: DomainUserContentBlock[] = [
           {
@@ -4983,12 +4985,14 @@ export function ensureToolResultPairing(
     repaired = true
 
     // Build synthetic error tool_result blocks for missing IDs
-    const syntheticBlocks: DomainToolResultBlockParam[] = missingIds.map(id => ({
-      type: 'tool_result' as const,
-      tool_use_id: id,
-      content: SYNTHETIC_TOOL_RESULT_PLACEHOLDER,
-      is_error: true,
-    }))
+    const syntheticBlocks: DomainToolResultBlockParam[] = missingIds.map(
+      id => ({
+        type: 'tool_result' as const,
+        tool_use_id: id,
+        content: SYNTHETIC_TOOL_RESULT_PLACEHOLDER,
+        is_error: true,
+      }),
+    )
 
     if (nextMsg?.type === 'user') {
       // Next message is already a user message - patch it

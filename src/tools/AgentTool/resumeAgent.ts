@@ -1,7 +1,7 @@
 import { promises as fsp } from 'fs'
 import { getSdkAgentProgressSummariesEnabled } from '../../bootstrap/state.js'
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
-import type { ToolUseContext , CanUseToolFn } from '../../Tool.js'
+import type { ToolUseContext, CanUseToolFn } from '../../Tool.js'
 import { registerAsyncAgent } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { assembleToolPool } from './assembleToolPool.js'
 import { asAgentId } from '../../types/ids.js'

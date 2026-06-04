@@ -78,9 +78,7 @@ export type HookEvent = z.infer<typeof HookEventSchema>
 
 export type ModelUsage = z.infer<typeof ModelUsageSchema>
 
-export type PermissionUpdate = z.infer<
-  typeof PermissionUpdateSchema
->
+export type PermissionUpdate = z.infer<typeof PermissionUpdateSchema>
 
 // SDKAssistantMessageError is the *reason* enum on the wire; it has always
 // been a string like 'rate_limit' or 'server_error' despite past types
@@ -97,13 +95,9 @@ export type SDKAssistantMessageError = SDKAssistantErrorReason
 
 export type SDKStatus = z.infer<typeof SDKStatusSchema>
 
-export type SDKRateLimitInfo = z.infer<
-  typeof SDKRateLimitInfoSchema
->
+export type SDKRateLimitInfo = z.infer<typeof SDKRateLimitInfoSchema>
 
-export type SDKAssistantMessage = z.infer<
-  typeof SDKAssistantMessageSchema
->
+export type SDKAssistantMessage = z.infer<typeof SDKAssistantMessageSchema>
 
 export type SDKPartialAssistantMessage = z.infer<
   typeof SDKPartialAssistantMessageSchema
@@ -111,33 +105,23 @@ export type SDKPartialAssistantMessage = z.infer<
 
 export type SDKUserMessage = z.infer<typeof SDKUserMessageSchema>
 
-export type SDKUserMessageReplay = z.infer<
-  typeof SDKUserMessageReplaySchema
->
+export type SDKUserMessageReplay = z.infer<typeof SDKUserMessageReplaySchema>
 
-export type SDKResultMessage = z.infer<
-  typeof SDKResultMessageSchema
->
+export type SDKResultMessage = z.infer<typeof SDKResultMessageSchema>
 
-export type SDKSystemMessage = z.infer<
-  typeof SDKSystemMessageSchema
->
+export type SDKSystemMessage = z.infer<typeof SDKSystemMessageSchema>
 
 export type SDKCompactBoundaryMessage = z.infer<
   typeof SDKCompactBoundaryMessageSchema
 >
 
-export type SDKStatusMessage = z.infer<
-  typeof SDKStatusMessageSchema
->
+export type SDKStatusMessage = z.infer<typeof SDKStatusMessageSchema>
 
 export type SDKToolProgressMessage = z.infer<
   typeof SDKToolProgressMessageSchema
 >
 
-export type SDKPermissionDenial = z.infer<
-  typeof SDKPermissionDenialSchema
->
+export type SDKPermissionDenial = z.infer<typeof SDKPermissionDenialSchema>
 
 export type SDKSessionInfo = z.infer<typeof SDKSessionInfoSchema>
 
@@ -147,12 +131,8 @@ export type SDKMessage = z.infer<typeof SDKMessageSchema>
 // Hook input variants
 // ---------------------------------------------------------------------------
 
-export type PreToolUseHookInput = z.infer<
-  typeof PreToolUseHookInputSchema
->
-export type PostToolUseHookInput = z.infer<
-  typeof PostToolUseHookInputSchema
->
+export type PreToolUseHookInput = z.infer<typeof PreToolUseHookInputSchema>
+export type PostToolUseHookInput = z.infer<typeof PostToolUseHookInputSchema>
 export type PostToolUseFailureHookInput = z.infer<
   typeof PostToolUseFailureHookInputSchema
 >
@@ -162,53 +142,31 @@ export type PermissionDeniedHookInput = z.infer<
 export type PermissionRequestHookInput = z.infer<
   typeof PermissionRequestHookInputSchema
 >
-export type NotificationHookInput = z.infer<
-  typeof NotificationHookInputSchema
->
+export type NotificationHookInput = z.infer<typeof NotificationHookInputSchema>
 export type UserPromptSubmitHookInput = z.infer<
   typeof UserPromptSubmitHookInputSchema
 >
-export type SessionStartHookInput = z.infer<
-  typeof SessionStartHookInputSchema
->
-export type SessionEndHookInput = z.infer<
-  typeof SessionEndHookInputSchema
->
+export type SessionStartHookInput = z.infer<typeof SessionStartHookInputSchema>
+export type SessionEndHookInput = z.infer<typeof SessionEndHookInputSchema>
 export type SetupHookInput = z.infer<typeof SetupHookInputSchema>
 export type StopHookInput = z.infer<typeof StopHookInputSchema>
-export type StopFailureHookInput = z.infer<
-  typeof StopFailureHookInputSchema
->
+export type StopFailureHookInput = z.infer<typeof StopFailureHookInputSchema>
 export type SubagentStartHookInput = z.infer<
   typeof SubagentStartHookInputSchema
 >
-export type SubagentStopHookInput = z.infer<
-  typeof SubagentStopHookInputSchema
->
-export type PreCompactHookInput = z.infer<
-  typeof PreCompactHookInputSchema
->
-export type PostCompactHookInput = z.infer<
-  typeof PostCompactHookInputSchema
->
-export type TeammateIdleHookInput = z.infer<
-  typeof TeammateIdleHookInputSchema
->
-export type TaskCreatedHookInput = z.infer<
-  typeof TaskCreatedHookInputSchema
->
+export type SubagentStopHookInput = z.infer<typeof SubagentStopHookInputSchema>
+export type PreCompactHookInput = z.infer<typeof PreCompactHookInputSchema>
+export type PostCompactHookInput = z.infer<typeof PostCompactHookInputSchema>
+export type TeammateIdleHookInput = z.infer<typeof TeammateIdleHookInputSchema>
+export type TaskCreatedHookInput = z.infer<typeof TaskCreatedHookInputSchema>
 export type TaskCompletedHookInput = z.infer<
   typeof TaskCompletedHookInputSchema
 >
-export type ElicitationHookInput = z.infer<
-  typeof ElicitationHookInputSchema
->
+export type ElicitationHookInput = z.infer<typeof ElicitationHookInputSchema>
 export type ElicitationResultHookInput = z.infer<
   typeof ElicitationResultHookInputSchema
 >
-export type ConfigChangeHookInput = z.infer<
-  typeof ConfigChangeHookInputSchema
->
+export type ConfigChangeHookInput = z.infer<typeof ConfigChangeHookInputSchema>
 export type InstructionsLoadedHookInput = z.infer<
   typeof InstructionsLoadedHookInputSchema
 >
@@ -218,12 +176,8 @@ export type WorktreeCreateHookInput = z.infer<
 export type WorktreeRemoveHookInput = z.infer<
   typeof WorktreeRemoveHookInputSchema
 >
-export type CwdChangedHookInput = z.infer<
-  typeof CwdChangedHookInputSchema
->
-export type FileChangedHookInput = z.infer<
-  typeof FileChangedHookInputSchema
->
+export type CwdChangedHookInput = z.infer<typeof CwdChangedHookInputSchema>
+export type FileChangedHookInput = z.infer<typeof FileChangedHookInputSchema>
 
 export type HookInput = z.infer<typeof HookInputSchema>
 
@@ -232,12 +186,8 @@ export type HookInput = z.infer<typeof HookInputSchema>
 // ---------------------------------------------------------------------------
 
 export type HookJSONOutput = z.infer<typeof HookJSONOutputSchema>
-export type SyncHookJSONOutput = z.infer<
-  typeof SyncHookJSONOutputSchema
->
-export type AsyncHookJSONOutput = z.infer<
-  typeof AsyncHookJSONOutputSchema
->
+export type SyncHookJSONOutput = z.infer<typeof SyncHookJSONOutputSchema>
+export type AsyncHookJSONOutput = z.infer<typeof AsyncHookJSONOutputSchema>
 
 // ---------------------------------------------------------------------------
 // Permission + MCP
@@ -257,9 +207,7 @@ export type McpServerConfigForProcessTransport = z.infer<
   typeof McpServerConfigForProcessTransportSchema
 >
 export type McpServerStatus = z.infer<typeof McpServerStatusSchema>
-export type RewindFilesResult = z.infer<
-  typeof RewindFilesResultSchema
->
+export type RewindFilesResult = z.infer<typeof RewindFilesResultSchema>
 
 // ---------------------------------------------------------------------------
 // Legacy shapes retained for type-only consumers that hit `[key: string]`

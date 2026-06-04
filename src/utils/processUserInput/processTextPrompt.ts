@@ -38,9 +38,11 @@ export function processTextPrompt(
   const userPromptText =
     typeof input === 'string'
       ? input
-      : ((input.find(
-          block => block.type === 'text' && 'text' in block,
-        ) as { text?: string } | undefined)?.text ?? '')
+      : ((
+          input.find(block => block.type === 'text' && 'text' in block) as
+            | { text?: string }
+            | undefined
+        )?.text ?? '')
   startInteractionSpan(userPromptText)
 
   // Emit user_prompt OTEL event for both string (CLI) and array (SDK/VS Code)
@@ -53,9 +55,11 @@ export function processTextPrompt(
   const otelPromptText =
     typeof input === 'string'
       ? input
-      : ((input.findLast(
-          block => block.type === 'text' && 'text' in block,
-        ) as { text?: string } | undefined)?.text ?? '')
+      : ((
+          input.findLast(block => block.type === 'text' && 'text' in block) as
+            | { text?: string }
+            | undefined
+        )?.text ?? '')
   if (otelPromptText) {
     void logOTelEvent('user_prompt', {
       prompt_length: String(otelPromptText.length),

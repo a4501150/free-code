@@ -12,24 +12,24 @@ import { z } from 'zod/v4'
  * Values are UTF-8 string content (typically Markdown).
  */
 export const TeamMemoryContentSchema = z.object({
-    entries: z.record(z.string(), z.string()),
-    // Per-key SHA-256 of entry content (`sha256:<hex>`). Added in
-    // anthropic/anthropic#283027. Optional for forward-compat with older
-    // server deployments; empty map when entries is empty.
-    entryChecksums: z.record(z.string(), z.string()).optional(),
-  })
+  entries: z.record(z.string(), z.string()),
+  // Per-key SHA-256 of entry content (`sha256:<hex>`). Added in
+  // anthropic/anthropic#283027. Optional for forward-compat with older
+  // server deployments; empty map when entries is empty.
+  entryChecksums: z.record(z.string(), z.string()).optional(),
+})
 
 /**
  * Full response from GET /api/claude_code/team_memory
  */
 export const TeamMemoryDataSchema = z.object({
-    organizationId: z.string(),
-    repo: z.string(),
-    version: z.number(),
-    lastModified: z.string(), // ISO 8601 timestamp
-    checksum: z.string(), // SHA256 with 'sha256:' prefix
-    content: TeamMemoryContentSchema,
-  })
+  organizationId: z.string(),
+  repo: z.string(),
+  version: z.number(),
+  lastModified: z.string(), // ISO 8601 timestamp
+  checksum: z.string(), // SHA256 with 'sha256:' prefix
+  content: TeamMemoryContentSchema,
+})
 
 /**
  * Structured 413 error body from the server (anthropic/anthropic#293258).
@@ -39,14 +39,14 @@ export const TeamMemoryDataSchema = z.object({
  * pre-check on the client side and would need a separate schema.
  */
 export const TeamMemoryTooManyEntriesSchema = z.object({
-    error: z.object({
-      details: z.object({
-        error_code: z.literal('team_memory_too_many_entries'),
-        max_entries: z.number().int().positive(),
-        received_entries: z.number().int().positive(),
-      }),
+  error: z.object({
+    details: z.object({
+      error_code: z.literal('team_memory_too_many_entries'),
+      max_entries: z.number().int().positive(),
+      received_entries: z.number().int().positive(),
     }),
-  })
+  }),
+})
 
 export type TeamMemoryData = z.infer<typeof TeamMemoryDataSchema>
 

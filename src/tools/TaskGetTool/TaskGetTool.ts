@@ -5,22 +5,22 @@ import { TASK_GET_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, PROMPT } from './prompt.js'
 
 const inputSchema = z.strictObject({
-    taskId: z.string().describe('The ID of the task to retrieve'),
-  })
+  taskId: z.string().describe('The ID of the task to retrieve'),
+})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    task: z
-      .object({
-        id: z.string(),
-        subject: z.string(),
-        description: z.string(),
-        status: TaskStatusSchema,
-        blocks: z.array(z.string()),
-        blockedBy: z.array(z.string()),
-      })
-      .nullable(),
-  })
+  task: z
+    .object({
+      id: z.string(),
+      subject: z.string(),
+      description: z.string(),
+      status: TaskStatusSchema,
+      blocks: z.array(z.string()),
+      blockedBy: z.array(z.string()),
+    })
+    .nullable(),
+})
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>

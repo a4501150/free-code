@@ -25,7 +25,7 @@ import {
   isAutoMemoryEnabled,
   isAutoMemPath,
 } from '../../memdir/paths.js'
-import type { Tool , CanUseToolFn } from '../../Tool.js'
+import type { Tool, CanUseToolFn } from '../../Tool.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'

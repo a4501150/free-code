@@ -49,7 +49,9 @@ describe('Read range contract', () => {
     })
 
     expect(prompt).toContain('provide only `file_path` to read the full file')
-    expect(prompt).toContain('To read a portion, provide `offset`, `limit`, or both')
+    expect(prompt).toContain(
+      'To read a portion, provide `offset`, `limit`, or both',
+    )
   })
 
   test('rejects pages for non-PDF files', async () => {

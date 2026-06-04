@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { useEffect, useRef } from 'react'
 import type {
   PermissionDecisionReason,
@@ -50,10 +49,7 @@ function decisionReasonToString(
   if (!decisionReason) {
     return 'No decision reason'
   }
-  if (
-    feature('TRANSCRIPT_CLASSIFIER') &&
-    decisionReason.type === 'classifier'
-  ) {
+  if (decisionReason.type === 'classifier') {
     return `Classifier: ${decisionReason.classifier}, Reason: ${decisionReason.reason}`
   }
   switch (decisionReason.type) {

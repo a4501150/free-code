@@ -16,12 +16,12 @@ import { SHELL_TYPES } from '../utils/shell/shellProvider.js'
 // Uses permission rule syntax (e.g., "Bash(git *)", "Read(*.ts)") to filter hooks
 // before spawning. Evaluated against the hook input's tool_name and tool_input.
 const IfConditionSchema = z
-    .string()
-    .optional()
-    .describe(
-      'Permission rule syntax to filter when this hook runs (e.g., "Bash(git *)"). ' +
-        'Only runs if the tool call matches the pattern. Avoids spawning hooks for non-matching commands.',
-    )
+  .string()
+  .optional()
+  .describe(
+    'Permission rule syntax to filter when this hook runs (e.g., "Bash(git *)"). ' +
+      'Only runs if the tool call matches the pattern. Avoids spawning hooks for non-matching commands.',
+  )
 
 // Internal factory for individual hook schemas (shared between exported
 // discriminated union members and the HookCommandSchema factory)
@@ -189,21 +189,24 @@ export const HookCommandSchema = (() => {
  * Schema for matcher configuration with multiple hooks
  */
 export const HookMatcherSchema = z.object({
-    matcher: z
-      .string()
-      .optional()
-      .describe('String pattern to match (e.g. tool names like "Write")'), // String (e.g. Write) to match values related to the hook event, e.g. tool names
-    hooks: z
-      .array(HookCommandSchema)
-      .describe('List of hooks to execute when the matcher matches'),
-  })
+  matcher: z
+    .string()
+    .optional()
+    .describe('String pattern to match (e.g. tool names like "Write")'), // String (e.g. Write) to match values related to the hook event, e.g. tool names
+  hooks: z
+    .array(HookCommandSchema)
+    .describe('List of hooks to execute when the matcher matches'),
+})
 
 /**
  * Schema for hooks configuration
  * The key is the hook event. The value is an array of matcher configurations.
  * Uses partialRecord since not all hook events need to be defined.
  */
-export const HooksSchema = z.partialRecord(z.enum(HOOK_EVENTS), z.array(HookMatcherSchema))
+export const HooksSchema = z.partialRecord(
+  z.enum(HOOK_EVENTS),
+  z.array(HookMatcherSchema),
+)
 
 // Inferred types from schemas
 export type HookCommand = z.infer<typeof HookCommandSchema>

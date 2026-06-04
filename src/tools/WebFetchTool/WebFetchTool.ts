@@ -21,23 +21,23 @@ import {
 } from './utils.js'
 
 const inputSchema = z.strictObject({
-    url: z.string().url().describe('The URL to fetch content from'),
-    prompt: z.string().describe('The prompt to run on the fetched content'),
-  })
+  url: z.string().url().describe('The URL to fetch content from'),
+  prompt: z.string().describe('The prompt to run on the fetched content'),
+})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    bytes: z.number().describe('Size of the fetched content in bytes'),
-    code: z.number().describe('HTTP response code'),
-    codeText: z.string().describe('HTTP response code text'),
-    result: z
-      .string()
-      .describe('Processed result from applying the prompt to the content'),
-    durationMs: z
-      .number()
-      .describe('Time taken to fetch and process the content'),
-    url: z.string().describe('The URL that was fetched'),
-  })
+  bytes: z.number().describe('Size of the fetched content in bytes'),
+  code: z.number().describe('HTTP response code'),
+  codeText: z.string().describe('HTTP response code text'),
+  result: z
+    .string()
+    .describe('Processed result from applying the prompt to the content'),
+  durationMs: z
+    .number()
+    .describe('Time taken to fetch and process the content'),
+  url: z.string().describe('The URL that was fetched'),
+})
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>

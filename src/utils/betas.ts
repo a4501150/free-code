@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import memoize from 'lodash-es/memoize.js'
 import { getIsNonInteractiveSession, getSdkBetas } from '../bootstrap/state.js'
 import {
@@ -102,15 +101,6 @@ export function modelSupportsStructuredOutputs(model: string): boolean {
     'structuredOutputs',
   )
   return configured ?? false
-}
-
-// Auto mode: the safety classifier runs as a separate model call, so any main
-// model can participate. The classifier model is configurable via settings.
-export function modelSupportsAutoMode(_model: string): boolean {
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
-    return true
-  }
-  return false
 }
 
 /**

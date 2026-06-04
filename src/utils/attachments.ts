@@ -76,10 +76,6 @@ import {
 } from '../tools/SkillTool/prompt.js'
 import { getContextWindowForModel } from './context.js'
 import * as autoModeStateNs from './permissions/autoModeState.js'
-
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? autoModeStateNs
-  : null
 import {
   MAX_LINES_TO_READ,
   FILE_READ_TOOL_NAME,
@@ -792,16 +788,8 @@ export async function getAttachments(
     maybe('skill_listing', () => getSkillListingAttachments(context)),
     maybe('plan_mode', () => getPlanModeAttachments(messages, toolUseContext)),
     maybe('plan_mode_exit', () => getPlanModeExitAttachment(toolUseContext)),
-    ...(feature('TRANSCRIPT_CLASSIFIER')
-      ? [
-          maybe('auto_mode', () =>
-            getAutoModeAttachments(messages, toolUseContext),
-          ),
-          maybe('auto_mode_exit', () =>
-            getAutoModeExitAttachment(toolUseContext),
-          ),
-        ]
-      : []),
+    maybe('auto_mode', () => getAutoModeAttachments(messages, toolUseContext)),
+    maybe('auto_mode_exit', () => getAutoModeExitAttachment(toolUseContext)),
     maybe('todo_reminders', () =>
       getTaskReminderAttachments(messages, toolUseContext),
     ),
@@ -1287,7 +1275,7 @@ async function getAutoModeExitAttachment(
   // plan-with-auto-active (where mode==='plan' but classifier runs).
   if (
     appState.toolPermissionContext.mode === 'auto' ||
-    (autoModeStateModule?.isAutoModeActive() ?? false)
+    autoModeStateNs.isAutoModeActive()
   ) {
     setNeedsAutoModeExitAttachment(false)
     return []

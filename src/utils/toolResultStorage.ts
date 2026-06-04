@@ -939,15 +939,12 @@ export function reconstructContentReplacementState(
 }
 
 /**
- * AgentTool-resume variant: encapsulates the feature-flag gate + parent
- * gap-fill so both AgentTool.call and resumeAgentBackground share one
- * implementation. Returns undefined when parentState is undefined (feature
- * off); otherwise reconstructs from sidechain records with parent's live
- * replacements filling gaps for fork-inherited mustReapply entries.
+ * AgentTool-resume variant: encapsulates parent gap-fill so both AgentTool.call
+ * and resumeAgentBackground share one implementation. Returns undefined when
+ * parentState is undefined; otherwise reconstructs from sidechain records with
+ * parent's live replacements filling gaps for fork-inherited mustReapply entries.
  *
- * Kept out of AgentTool.tsx — that file is at the feature() DCE complexity
- * cliff and cannot tolerate even +1 net source line without silently
- * breaking feature('TRANSCRIPT_CLASSIFIER') eval in tests.
+ * Kept out of AgentTool.tsx so both resume paths share the same logic.
  */
 export function reconstructForSubagentResume(
   parentState: ContentReplacementState | undefined,

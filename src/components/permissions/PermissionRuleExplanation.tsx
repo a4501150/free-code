@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import chalk from 'chalk'
 import React from 'react'
 import { Ansi, Box, Text } from '../../ink.js'
@@ -30,7 +29,7 @@ function stringsForDecisionReason(
   if (!reason) {
     return null
   }
-  if (feature('TRANSCRIPT_CLASSIFIER') && reason.type === 'classifier') {
+  if (reason.type === 'classifier') {
     if (reason.classifier === 'auto-mode') {
       return {
         reasonString: `Auto mode classifier requires confirmation for this ${toolType}.\n${reason.reason}`,

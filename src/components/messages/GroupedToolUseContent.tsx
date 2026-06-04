@@ -70,7 +70,9 @@ export function GroupedToolUseContent({
   const anyInProgress = toolUsesData.some(d => d.isInProgress)
 
   return tool.renderGroupedToolUse(
-    toolUsesData as Parameters<NonNullable<typeof tool.renderGroupedToolUse>>[0],
+    toolUsesData as Parameters<
+      NonNullable<typeof tool.renderGroupedToolUse>
+    >[0],
     {
       shouldAnimate: shouldAnimate && anyInProgress,
       tools,

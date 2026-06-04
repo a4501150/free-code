@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { resetCostState } from '../../bootstrap/state.js'
 import type { LocalJSXCommandContext } from '../../commands.js'
@@ -94,14 +93,12 @@ function handlePostLogin(
       appState.toolPermissionContext,
       context.setAppState,
     )
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
-      resetAutoModeGateCheck()
-      void checkAndDisableAutoModeIfNeeded(
-        appState.toolPermissionContext,
-        context.setAppState,
-        appState.fastMode,
-      )
-    }
+    resetAutoModeGateCheck()
+    void checkAndDisableAutoModeIfNeeded(
+      appState.toolPermissionContext,
+      context.setAppState,
+      appState.fastMode,
+    )
     context.setAppState(prev => ({
       ...prev,
       authVersion: prev.authVersion + 1,

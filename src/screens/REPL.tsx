@@ -413,7 +413,6 @@ import { SandboxViolationExpandedView } from 'src/components/SandboxViolationExp
 import { useSettingsErrors } from 'src/hooks/notifs/useSettingsErrors.js'
 import { useMcpConnectivityStatus } from 'src/hooks/notifs/useMcpConnectivityStatus.js'
 import { useAutoModeUnavailableNotification } from 'src/hooks/notifs/useAutoModeUnavailableNotification.js'
-import { AUTO_MODE_DESCRIPTION } from 'src/components/AutoModeOptInDialog.js'
 import { useLspInitializationNotification } from 'src/hooks/notifs/useLspInitializationNotification.js'
 import { usePluginInstallationStatus } from 'src/hooks/notifs/usePluginInstallationStatus.js'
 import { usePluginAutoupdateNotification } from 'src/hooks/notifs/usePluginAutoupdateNotification.js'
@@ -1741,25 +1740,26 @@ export function REPL({
   // Show auto permissions warning once per session when entering auto mode.
   const safeYoloMessageShownRef = useRef(false)
   useEffect(() => {
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
-      if (toolPermissionContext.mode !== 'auto') {
-        return
-      }
-      if (safeYoloMessageShownRef.current) return
-      const timer = setTimeout(
-        (ref, setMessages) => {
-          ref.current = true
-          setMessages(prev => [
-            ...prev,
-            createSystemMessage(AUTO_MODE_DESCRIPTION, 'warning'),
-          ])
-        },
-        800,
-        safeYoloMessageShownRef,
-        setMessages,
-      )
-      return () => clearTimeout(timer)
+    if (toolPermissionContext.mode !== 'auto') {
+      return
     }
+    if (safeYoloMessageShownRef.current) return
+    const timer = setTimeout(
+      (ref, setMessages) => {
+        ref.current = true
+        setMessages(prev => [
+          ...prev,
+          createSystemMessage(
+            "Auto mode lets Claude handle permission prompts automatically — Claude checks each tool call for risky actions and prompt injection before executing. Actions Claude identifies as safe are executed, while actions Claude identifies as risky are blocked and Claude may try a different approach. Ideal for long-running tasks. Sessions are slightly more expensive. Claude can make mistakes that allow harmful commands to run, it's recommended to only use in isolated environments. Shift+Tab to change mode.",
+            'warning',
+          ),
+        ])
+      },
+      800,
+      safeYoloMessageShownRef,
+      setMessages,
+    )
+    return () => clearTimeout(timer)
   }, [toolPermissionContext.mode, setMessages])
 
   // If worktree creation was slow and sparse-checkout isn't configured,
@@ -3046,14 +3046,11 @@ export function REPL({
             toolPermissionContext,
             setAppState,
           ),
-          // Gated on TRANSCRIPT_CLASSIFIER feature flag
-          feature('TRANSCRIPT_CLASSIFIER')
-            ? checkAndDisableAutoModeIfNeeded(
-                toolPermissionContext,
-                setAppState,
-                store.getState().fastMode,
-              )
-            : undefined,
+          checkAndDisableAutoModeIfNeeded(
+            toolPermissionContext,
+            setAppState,
+            store.getState().fastMode,
+          ),
           getSystemPrompt(
             freshTools,
             mainLoopModelParam,
@@ -3399,7 +3396,7 @@ export function REPL({
           : prev.toolPermissionContext
         // For auto, override the mode (buildPermissionUpdates maps
         // it to 'default' via toExternalPermissionMode) and strip dangerous rules
-        if (feature('TRANSCRIPT_CLASSIFIER') && initialMsg.mode === 'auto') {
+        if (initialMsg.mode === 'auto') {
           updatedToolPermissionContext = stripDangerousPermissionsForAutoMode({
             ...updatedToolPermissionContext,
             mode: 'auto',

@@ -17,13 +17,13 @@ import {
 import { renderDeleteResultMessage, renderDeleteToolUseMessage } from './UI.js'
 
 const inputSchema = z.strictObject({
-    id: z.string().describe('Job ID returned by CronCreate.'),
-  })
+  id: z.string().describe('Job ID returned by CronCreate.'),
+})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    id: z.string(),
-  })
+  id: z.string(),
+})
 type OutputSchema = typeof outputSchema
 export type DeleteOutput = z.infer<OutputSchema>
 

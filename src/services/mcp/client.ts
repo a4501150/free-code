@@ -1,4 +1,7 @@
-import type { DomainBase64Source, DomainUserContentBlock } from '../../types/domain.js'
+import type {
+  DomainBase64Source,
+  DomainUserContentBlock,
+} from '../../types/domain.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import {
   SSEClientTransport,

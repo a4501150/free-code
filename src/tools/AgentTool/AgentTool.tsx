@@ -1125,21 +1125,18 @@ export const AgentTool = buildTool({
                         '\n',
                       )
 
-                      if (feature('TRANSCRIPT_CLASSIFIER')) {
-                        const backgroundedAppState =
-                          toolUseContext.getAppState()
-                        const handoffWarning = await classifyHandoffIfNeeded({
-                          agentMessages,
-                          tools: toolUseContext.options.tools,
-                          toolPermissionContext:
-                            backgroundedAppState.toolPermissionContext,
-                          abortSignal: task.abortController!.signal,
-                          subagentType: selectedAgent.agentType,
-                          totalToolUseCount: agentResult.totalToolUseCount,
-                        })
-                        if (handoffWarning) {
-                          finalMessage = `${handoffWarning}\n\n${finalMessage}`
-                        }
+                      const backgroundedAppState = toolUseContext.getAppState()
+                      const handoffWarning = await classifyHandoffIfNeeded({
+                        agentMessages,
+                        tools: toolUseContext.options.tools,
+                        toolPermissionContext:
+                          backgroundedAppState.toolPermissionContext,
+                        abortSignal: task.abortController!.signal,
+                        subagentType: selectedAgent.agentType,
+                        totalToolUseCount: agentResult.totalToolUseCount,
+                      })
+                      if (handoffWarning) {
+                        finalMessage = `${handoffWarning}\n\n${finalMessage}`
                       }
 
                       // Clean up worktree before notification so we can include it
@@ -1487,22 +1484,20 @@ export const AgentTool = buildTool({
             syncTracker,
           )
 
-          if (feature('TRANSCRIPT_CLASSIFIER')) {
-            const currentAppState = toolUseContext.getAppState()
-            const handoffWarning = await classifyHandoffIfNeeded({
-              agentMessages,
-              tools: toolUseContext.options.tools,
-              toolPermissionContext: currentAppState.toolPermissionContext,
-              abortSignal: toolUseContext.abortController.signal,
-              subagentType: selectedAgent.agentType,
-              totalToolUseCount: agentResult.totalToolUseCount,
-            })
-            if (handoffWarning) {
-              agentResult.content = [
-                { type: 'text' as const, text: handoffWarning },
-                ...agentResult.content,
-              ]
-            }
+          const currentAppState = toolUseContext.getAppState()
+          const handoffWarning = await classifyHandoffIfNeeded({
+            agentMessages,
+            tools: toolUseContext.options.tools,
+            toolPermissionContext: currentAppState.toolPermissionContext,
+            abortSignal: toolUseContext.abortController.signal,
+            subagentType: selectedAgent.agentType,
+            totalToolUseCount: agentResult.totalToolUseCount,
+          })
+          if (handoffWarning) {
+            agentResult.content = [
+              { type: 'text' as const, text: handoffWarning },
+              ...agentResult.content,
+            ]
           }
 
           return {

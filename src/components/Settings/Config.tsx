@@ -28,14 +28,12 @@ import {
   permissionModeFromString,
   toExternalPermissionMode,
   isExternalPermissionMode,
-  EXTERNAL_PERMISSION_MODES,
   PERMISSION_MODES,
   type ExternalPermissionMode,
   type PermissionMode,
 } from '../../utils/permissions/PermissionMode.js'
 import {
-  getAutoModeEnabledState,
-  hasAutoModeOptInAnySource,
+  isAutoModeGateEnabled,
   transitionPlanAutoMode,
 } from '../../utils/permissions/permissionSetup.js'
 import { logError } from '../../utils/log.js'
@@ -196,12 +194,7 @@ export function Config({
     isFastModeEnabled() ? s.fastMode : false,
   )
   const promptSuggestionEnabled = useAppState(s => s.promptSuggestionEnabled)
-  // Show auto in the default-mode dropdown when the user has opted in OR the
-  // config is fully 'enabled' — even if currently circuit-broken ('disabled'),
-  // an opted-in user should still see it in settings (it's a temporary state).
-  const showAutoInDefaultModePicker = feature('TRANSCRIPT_CLASSIFIER')
-    ? hasAutoModeOptInAnySource() || getAutoModeEnabledState() === 'enabled'
-    : false
+  const showAutoInDefaultModePicker = isAutoModeGateEnabled()
   // Chat/Transcript view picker is visible to entitled users (pass the GB
   // gate) even if they haven't opted in this session — it IS the persistent
   // opt-in. 'chat' written here is read at next startup by main.tsx which
@@ -561,25 +554,21 @@ export function Config({
         }))
       },
     },
-    ...(feature('TRANSCRIPT_CLASSIFIER')
-      ? [
-          {
-            id: 'autoMode',
-            label: 'Auto mode',
-            value: settingsData?.autoMode?.enabled ?? true,
-            type: 'boolean' as const,
-            onChange(enabled: boolean) {
-              updateSettingsForSource('userSettings', {
-                autoMode: { enabled },
-              })
-              setSettingsData(prev => ({
-                ...prev,
-                autoMode: { ...prev?.autoMode, enabled },
-              }))
-            },
-          },
-        ]
-      : []),
+    {
+      id: 'autoMode',
+      label: 'Auto mode',
+      value: settingsData?.autoMode?.enabled ?? true,
+      type: 'boolean' as const,
+      onChange(enabled: boolean) {
+        updateSettingsForSource('userSettings', {
+          autoMode: { enabled },
+        })
+        setSettingsData(prev => ({
+          ...prev,
+          autoMode: { ...prev?.autoMode, enabled },
+        }))
+      },
+    },
     {
       id: 'streamingToolExecution',
       label: 'Streaming tool execution',
@@ -867,13 +856,9 @@ export function Config({
       value: settingsData?.permissions?.defaultMode || 'default',
       options: (() => {
         const priorityOrder: PermissionMode[] = ['default', 'plan']
-        const allModes: readonly PermissionMode[] = feature(
-          'TRANSCRIPT_CLASSIFIER',
-        )
-          ? PERMISSION_MODES
-          : EXTERNAL_PERMISSION_MODES
+        const allModes: readonly PermissionMode[] = PERMISSION_MODES
         const excluded: PermissionMode[] = ['bypassPermissions']
-        if (feature('TRANSCRIPT_CLASSIFIER') && !showAutoInDefaultModePicker) {
+        if (!showAutoInDefaultModePicker) {
           excluded.push('auto')
         }
         return [
@@ -917,39 +902,35 @@ export function Config({
         setChanges(prev => ({ ...prev, defaultPermissionMode: mode }))
       },
     },
-    ...(feature('TRANSCRIPT_CLASSIFIER') && showAutoInDefaultModePicker
-      ? [
-          {
-            id: 'useAutoModeDuringPlan',
-            label: 'Use auto mode during plan',
-            value:
-              (settingsData as { useAutoModeDuringPlan?: boolean } | undefined)
-                ?.useAutoModeDuringPlan ?? true,
-            type: 'boolean' as const,
-            onChange(useAutoModeDuringPlan: boolean) {
-              updateSettingsForSource('userSettings', {
-                useAutoModeDuringPlan,
-              })
-              setSettingsData(prev => ({
-                ...prev,
-                useAutoModeDuringPlan,
-              }))
-              // Internal writes suppress the file watcher, so
-              // applySettingsChange won't fire. Reconcile directly so
-              // mid-plan toggles take effect immediately.
-              setAppState(prev => {
-                const next = transitionPlanAutoMode(prev.toolPermissionContext)
-                if (next === prev.toolPermissionContext) return prev
-                return { ...prev, toolPermissionContext: next }
-              })
-              setChanges(prev => ({
-                ...prev,
-                'Use auto mode during plan': useAutoModeDuringPlan,
-              }))
-            },
-          },
-        ]
-      : []),
+    {
+      id: 'useAutoModeDuringPlan',
+      label: 'Use auto mode during plan',
+      value:
+        (settingsData as { useAutoModeDuringPlan?: boolean } | undefined)
+          ?.useAutoModeDuringPlan ?? true,
+      type: 'boolean' as const,
+      onChange(useAutoModeDuringPlan: boolean) {
+        updateSettingsForSource('userSettings', {
+          useAutoModeDuringPlan,
+        })
+        setSettingsData(prev => ({
+          ...prev,
+          useAutoModeDuringPlan,
+        }))
+        // Internal writes suppress the file watcher, so
+        // applySettingsChange won't fire. Reconcile directly so
+        // mid-plan toggles take effect immediately.
+        setAppState(prev => {
+          const next = transitionPlanAutoMode(prev.toolPermissionContext)
+          if (next === prev.toolPermissionContext) return prev
+          return { ...prev, toolPermissionContext: next }
+        })
+        setChanges(prev => ({
+          ...prev,
+          'Use auto mode during plan': useAutoModeDuringPlan,
+        }))
+      },
+    },
     {
       id: 'respectGitignore',
       label: 'Respect .gitignore in file picker',
@@ -1504,14 +1485,10 @@ export function Config({
       autoUpdatesChannel: iu?.autoUpdatesChannel,
       minimumVersion: iu?.minimumVersion,
       language: iu?.language,
-      ...(feature('TRANSCRIPT_CLASSIFIER')
-        ? {
-            autoMode: iu?.autoMode,
-            useAutoModeDuringPlan: (
-              iu as { useAutoModeDuringPlan?: boolean } | undefined
-            )?.useAutoModeDuringPlan,
-          }
-        : {}),
+      autoMode: iu?.autoMode,
+      useAutoModeDuringPlan: (
+        iu as { useAutoModeDuringPlan?: boolean } | undefined
+      )?.useAutoModeDuringPlan,
       // ThemePicker's Ctrl+T writes this key directly — include it so the
       // disk state reverts along with the in-memory AppState.settings restore.
       syntaxHighlightingDisabled: iu?.syntaxHighlightingDisabled,

@@ -60,9 +60,7 @@ describe('openai-chat-completions adapter countTokens', () => {
   })
 
   test('includes tool definitions in the count', async () => {
-    const messages: TokenCountMessageParam[] = [
-      { role: 'user', content: 'hi' },
-    ]
+    const messages: TokenCountMessageParam[] = [{ role: 'user', content: 'hi' }]
     const tools: TokenCountToolParam[] = [
       {
         name: 'Bash',
@@ -89,9 +87,7 @@ describe('openai-chat-completions adapter countTokens', () => {
   })
 
   test('includes system prompt in the count', async () => {
-    const messages: TokenCountMessageParam[] = [
-      { role: 'user', content: 'hi' },
-    ]
+    const messages: TokenCountMessageParam[] = [{ role: 'user', content: 'hi' }]
     const withoutSystem = await openaiChatCompletionsAdapter.countTokens(
       messages,
       [],

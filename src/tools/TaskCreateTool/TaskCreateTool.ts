@@ -10,27 +10,27 @@ import { TASK_CREATE_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, getPrompt } from './prompt.js'
 
 const inputSchema = z.strictObject({
-    subject: z.string().describe('A brief title for the task'),
-    description: z.string().describe('What needs to be done'),
-    activeForm: z
-      .string()
-      .optional()
-      .describe(
-        'Present continuous form shown in spinner when in_progress (e.g., "Running tests")',
-      ),
-    metadata: z
-      .record(z.string(), z.unknown())
-      .optional()
-      .describe('Arbitrary metadata to attach to the task'),
-  })
+  subject: z.string().describe('A brief title for the task'),
+  description: z.string().describe('What needs to be done'),
+  activeForm: z
+    .string()
+    .optional()
+    .describe(
+      'Present continuous form shown in spinner when in_progress (e.g., "Running tests")',
+    ),
+  metadata: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe('Arbitrary metadata to attach to the task'),
+})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    task: z.object({
-      id: z.string(),
-      subject: z.string(),
-    }),
-  })
+  task: z.object({
+    id: z.string(),
+    subject: z.string(),
+  }),
+})
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>

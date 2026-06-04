@@ -1,6 +1,3 @@
-// Auto mode state functions — lives in its own module so callers can
-// conditionally require() it on feature('TRANSCRIPT_CLASSIFIER').
-
 let autoModeActive = false
 let autoModeFlagCli = false
 

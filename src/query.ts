@@ -10,7 +10,11 @@ import {
 import { buildPostCompactMessages } from './services/compact/compact.js'
 import { ImageSizeError } from './utils/imageValidation.js'
 import { ImageResizeError } from './utils/imageResizer.js'
-import { findToolByName, type CanUseToolFn, type ToolUseContext } from './Tool.js'
+import {
+  findToolByName,
+  type CanUseToolFn,
+  type ToolUseContext,
+} from './Tool.js'
 import { asSystemPrompt, type SystemPrompt } from './utils/systemPromptType.js'
 import type {
   AssistantMessage,
@@ -35,7 +39,10 @@ import {
   createToolUseSummaryMessage,
 } from './utils/messages.js'
 import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummaryGenerator.js'
-import { prependUserContext, appendSystemContext } from './utils/contextInjection.js'
+import {
+  prependUserContext,
+  appendSystemContext,
+} from './utils/contextInjection.js'
 import {
   createAttachmentMessage,
   filterDuplicateMemoryAttachments,

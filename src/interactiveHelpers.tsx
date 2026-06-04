@@ -39,7 +39,6 @@ import { getBaseRenderOptions } from './utils/renderOptions.js'
 import { getSettingsWithAllErrors } from './utils/settings/allErrors.js'
 import {
   getInitialSettings,
-  hasAutoModeOptIn,
   hasSkipDangerousModePermissionPrompt,
   updateSettingsForSource,
 } from './utils/settings/settings.js'
@@ -60,7 +59,6 @@ import { ConfigDirMigrationDialog } from './components/ConfigDirMigrationDialog.
 import { MigrationPromptDialog } from './components/MigrationPromptDialog.js'
 import { GroveDialog } from './components/grove/Grove.js'
 import { BypassPermissionsModeDialog } from './components/BypassPermissionsModeDialog.js'
-import { AutoModeOptInDialog } from './components/AutoModeOptInDialog.js'
 import { DevChannelsDialog } from './components/DevChannelsDialog.js'
 import { isChannelsEnabled } from './services/mcp/channelAllowlist.js'
 import { getClaudeAIOAuthTokens } from './utils/auth.js'
@@ -289,22 +287,6 @@ export async function showSetupScreens(
     await showSetupDialog(root, done => (
       <BypassPermissionsModeDialog onAccept={done} />
     ))
-  }
-
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
-    // Only show the opt-in dialog if auto mode actually resolved — if the
-    // gate denied it (org not allowlisted, settings disabled), showing
-    // consent for an unavailable feature is pointless. The
-    // verifyAutoModeGateAccess notification will explain why instead.
-    if (permissionMode === 'auto' && !hasAutoModeOptIn()) {
-      await showSetupDialog(root, done => (
-        <AutoModeOptInDialog
-          onAccept={done}
-          onDecline={() => gracefulShutdownSync(1)}
-          declineExits
-        />
-      ))
-    }
   }
 
   // --dangerously-load-development-channels confirmation. On accept, append

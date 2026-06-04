@@ -58,9 +58,7 @@ describe('Internal-command survivors', () => {
         currentPaneOnly: true,
       },
     )
-    const version = versionScreen.match(
-      /\b(\d+\.\d+\.\d+[\w.-]*) \(built/,
-    )?.[1]
+    const version = versionScreen.match(/\b(\d+\.\d+\.\d+[\w.-]*) \(built/)?.[1]
     expect(version).toMatch(/^\d+\.\d+\.\d+/)
 
     await session.sendLine('/oauth-refresh')

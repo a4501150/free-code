@@ -23,7 +23,10 @@ import { logForDebugging } from '../../utils/debug.js'
 import { getUserAgent } from '../../utils/http.js'
 import { logError } from '../../utils/log.js'
 import { getWebSocketTLSOptions } from '../../utils/mtls.js'
-import { getWebSocketProxyAgent, getWebSocketProxyUrl } from '../../utils/proxy.js'
+import {
+  getWebSocketProxyAgent,
+  getWebSocketProxyUrl,
+} from '../../utils/proxy.js'
 import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
 
 const KEEPALIVE_MSG = '{"type":"KeepAlive"}'

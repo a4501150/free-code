@@ -25,7 +25,9 @@ export type ToolSchema = {
   }
 }
 
-export type ToolSchemaUnion = ToolSchema | { type?: string | null; name: string }
+export type ToolSchemaUnion =
+  | ToolSchema
+  | { type?: string | null; name: string }
 
 // Extended ToolSchema type with cache-control and streaming support
 type ToolSchemaWithExtras = ToolSchema & {
@@ -196,5 +198,3 @@ function logStripOnce(stripped: string[]): void {
     `[betas] Stripped from tool schemas: [${stripped.join(', ')}] (CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1)`,
   )
 }
-
-

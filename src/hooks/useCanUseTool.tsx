@@ -71,7 +71,6 @@ function useCanUseTool(
               if (ctx.resolveIfAborted(resolve)) return
               // Track auto mode classifier approvals for UI display
               if (
-                feature('TRANSCRIPT_CLASSIFIER') &&
                 result.decisionReason?.type === 'classifier' &&
                 result.decisionReason.classifier === 'auto-mode'
               ) {
@@ -115,7 +114,6 @@ function useCanUseTool(
                   { decision: 'reject', source: 'config' },
                 )
                 if (
-                  feature('TRANSCRIPT_CLASSIFIER') &&
                   result.decisionReason?.type === 'classifier' &&
                   result.decisionReason.classifier === 'auto-mode'
                 ) {

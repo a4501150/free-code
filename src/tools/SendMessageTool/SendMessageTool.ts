@@ -38,41 +38,41 @@ import { DESCRIPTION, getPrompt } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
 const StructuredMessage = z.discriminatedUnion('type', [
-    z.object({
-      type: z.literal('shutdown_request'),
-      reason: z.string().optional(),
-    }),
-    z.object({
-      type: z.literal('shutdown_response'),
-      request_id: z.string(),
-      approve: semanticBoolean(),
-      reason: z.string().optional(),
-    }),
-    z.object({
-      type: z.literal('plan_approval_response'),
-      request_id: z.string(),
-      approve: semanticBoolean(),
-      feedback: z.string().optional(),
-    }),
-  ])
+  z.object({
+    type: z.literal('shutdown_request'),
+    reason: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('shutdown_response'),
+    request_id: z.string(),
+    approve: semanticBoolean(),
+    reason: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('plan_approval_response'),
+    request_id: z.string(),
+    approve: semanticBoolean(),
+    feedback: z.string().optional(),
+  }),
+])
 
 const inputSchema = z.object({
-    to: z
-      .string()
-      .describe(
-        'Recipient: teammate name, or "*" for broadcast to all teammates',
-      ),
-    summary: z
-      .string()
-      .optional()
-      .describe(
-        'A 5-10 word summary shown as a preview in the UI (required when message is a string)',
-      ),
-    message: z.union([
-      z.string().describe('Plain text message content'),
-      StructuredMessage,
-    ]),
-  })
+  to: z
+    .string()
+    .describe(
+      'Recipient: teammate name, or "*" for broadcast to all teammates',
+    ),
+  summary: z
+    .string()
+    .optional()
+    .describe(
+      'A 5-10 word summary shown as a preview in the UI (required when message is a string)',
+    ),
+  message: z.union([
+    z.string().describe('Plain text message content'),
+    StructuredMessage,
+  ]),
+})
 type InputSchema = typeof inputSchema
 
 export type Input = z.infer<InputSchema>

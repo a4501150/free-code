@@ -10,11 +10,7 @@ const statusline = {
   aliases: [],
   name: 'statusline',
   progressMessage: 'setting up statusLine',
-  allowedTools: [
-    AGENT_TOOL_NAME,
-    'Read(~/**)',
-    `Edit(${globalConfigFile()})`,
-  ],
+  allowedTools: [AGENT_TOOL_NAME, 'Read(~/**)', `Edit(${globalConfigFile()})`],
   source: 'builtin',
   disableNonInteractive: true,
   async getPromptForCommand(args): Promise<DomainUserContentBlock[]> {

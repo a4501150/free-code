@@ -4,12 +4,12 @@ import { z } from 'zod/v4'
 import type { MCPServerConnection } from '../services/mcp/types.js'
 import { getConnectedIdeClient } from '../utils/ide.js'
 const LogEventSchema = z.object({
-    method: z.literal('log_event'),
-    params: z.object({
-      eventName: z.string(),
-      eventData: z.object({}).passthrough(),
-    }),
-  })
+  method: z.literal('log_event'),
+  params: z.object({
+    eventName: z.string(),
+    eventData: z.object({}).passthrough(),
+  }),
+})
 
 export function useIdeLogging(mcpClients: MCPServerConnection[]): void {
   useEffect(() => {
@@ -22,12 +22,9 @@ export function useIdeLogging(mcpClients: MCPServerConnection[]): void {
     const ideClient = getConnectedIdeClient(mcpClients)
     if (ideClient) {
       // Register the log event handler
-      ideClient.client.setNotificationHandler(
-        LogEventSchema,
-        notification => {
-          const { eventName, eventData } = notification.params
-        },
-      )
+      ideClient.client.setNotificationHandler(LogEventSchema, notification => {
+        const { eventName, eventData } = notification.params
+      })
     }
   }, [mcpClients])
 }

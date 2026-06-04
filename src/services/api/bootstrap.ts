@@ -14,23 +14,23 @@ import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
 import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
 
 const bootstrapResponseSchema = z.object({
-    client_data: z.record(z.string(), z.unknown()).nullish(),
-    additional_model_options: z
-      .array(
-        z
-          .object({
-            model: z.string(),
-            name: z.string(),
-            description: z.string(),
-          })
-          .transform(({ model, name, description }) => ({
-            value: model,
-            label: name,
-            description,
-          })),
-      )
-      .nullish(),
-  })
+  client_data: z.record(z.string(), z.unknown()).nullish(),
+  additional_model_options: z
+    .array(
+      z
+        .object({
+          model: z.string(),
+          name: z.string(),
+          description: z.string(),
+        })
+        .transform(({ model, name, description }) => ({
+          value: model,
+          label: name,
+          description,
+        })),
+    )
+    .nullish(),
+})
 
 type BootstrapResponse = z.infer<typeof bootstrapResponseSchema>
 

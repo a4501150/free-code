@@ -30,9 +30,7 @@ export function getTeamsDir(): string {
 export function globalConfigDir(): string {
   const raw = getClaudeConfigHomeDir()
   const home = homedir().normalize('NFC')
-  return raw.startsWith(home)
-    ? '~' + raw.slice(home.length)
-    : raw
+  return raw.startsWith(home) ? '~' + raw.slice(home.length) : raw
 }
 
 /**
@@ -136,4 +134,3 @@ export function getDefaultVertexRegion(): string {
 export function shouldMaintainProjectWorkingDir(): boolean {
   return isEnvTruthy(process.env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR)
 }
-

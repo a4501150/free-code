@@ -46,41 +46,41 @@ import { getTeamDir, readTeamFileAsync } from './teamHelpers.js'
  * Full request schema for a permission request from a worker to the leader
  */
 export const SwarmPermissionRequestSchema = z.object({
-    /** Unique identifier for this request */
-    id: z.string(),
-    /** Worker's CLAUDE_CODE_AGENT_ID */
-    workerId: z.string(),
-    /** Worker's CLAUDE_CODE_AGENT_NAME */
-    workerName: z.string(),
-    /** Worker's CLAUDE_CODE_AGENT_COLOR */
-    workerColor: z.string().optional(),
-    /** Team name for routing */
-    teamName: z.string(),
-    /** Tool name requiring permission (e.g., "Bash", "Edit") */
-    toolName: z.string(),
-    /** Original toolUseID from worker's context */
-    toolUseId: z.string(),
-    /** Human-readable description of the tool use */
-    description: z.string(),
-    /** Serialized tool input */
-    input: z.record(z.string(), z.unknown()),
-    /** Suggested permission rules from the permission result */
-    permissionSuggestions: z.array(z.unknown()),
-    /** Status of the request */
-    status: z.enum(['pending', 'approved', 'rejected']),
-    /** Who resolved the request */
-    resolvedBy: z.enum(['worker', 'leader']).optional(),
-    /** Timestamp when resolved */
-    resolvedAt: z.number().optional(),
-    /** Rejection feedback message */
-    feedback: z.string().optional(),
-    /** Modified input if changed by resolver */
-    updatedInput: z.record(z.string(), z.unknown()).optional(),
-    /** "Always allow" rules applied during resolution */
-    permissionUpdates: z.array(z.unknown()).optional(),
-    /** Timestamp when request was created */
-    createdAt: z.number(),
-  })
+  /** Unique identifier for this request */
+  id: z.string(),
+  /** Worker's CLAUDE_CODE_AGENT_ID */
+  workerId: z.string(),
+  /** Worker's CLAUDE_CODE_AGENT_NAME */
+  workerName: z.string(),
+  /** Worker's CLAUDE_CODE_AGENT_COLOR */
+  workerColor: z.string().optional(),
+  /** Team name for routing */
+  teamName: z.string(),
+  /** Tool name requiring permission (e.g., "Bash", "Edit") */
+  toolName: z.string(),
+  /** Original toolUseID from worker's context */
+  toolUseId: z.string(),
+  /** Human-readable description of the tool use */
+  description: z.string(),
+  /** Serialized tool input */
+  input: z.record(z.string(), z.unknown()),
+  /** Suggested permission rules from the permission result */
+  permissionSuggestions: z.array(z.unknown()),
+  /** Status of the request */
+  status: z.enum(['pending', 'approved', 'rejected']),
+  /** Who resolved the request */
+  resolvedBy: z.enum(['worker', 'leader']).optional(),
+  /** Timestamp when resolved */
+  resolvedAt: z.number().optional(),
+  /** Rejection feedback message */
+  feedback: z.string().optional(),
+  /** Modified input if changed by resolver */
+  updatedInput: z.record(z.string(), z.unknown()).optional(),
+  /** "Always allow" rules applied during resolution */
+  permissionUpdates: z.array(z.unknown()).optional(),
+  /** Timestamp when request was created */
+  createdAt: z.number(),
+})
 
 export type SwarmPermissionRequest = z.infer<
   typeof SwarmPermissionRequestSchema

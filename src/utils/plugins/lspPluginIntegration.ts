@@ -65,9 +65,7 @@ export async function loadPluginLspServers(
   try {
     const content = await readFile(lspJsonPath, 'utf-8')
     const parsed = jsonParse(content)
-    const result = z
-      .record(z.string(), LspServerConfigSchema)
-      .safeParse(parsed)
+    const result = z.record(z.string(), LspServerConfigSchema).safeParse(parsed)
 
     if (result.success) {
       Object.assign(servers, result.data)

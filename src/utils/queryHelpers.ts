@@ -6,7 +6,12 @@ import {
 } from 'src/bootstrap/state.js'
 import type { SDKMessage } from 'src/structuredProtocol/index.js'
 import { runTools } from '../services/tools/toolOrchestration.js'
-import { findToolByName, type CanUseToolFn, type Tool, type Tools } from '../Tool.js'
+import {
+  findToolByName,
+  type CanUseToolFn,
+  type Tool,
+  type Tools,
+} from '../Tool.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
 import type { Input as FileReadInput } from '../tools/FileReadTool/FileReadTool.js'

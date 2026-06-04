@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import chalk from 'chalk'
 import figures from 'figures'
 import React, { useMemo } from 'react'
@@ -27,10 +26,7 @@ function decisionReasonDisplayString(
     type: Exclude<PermissionDecisionReason['type'], 'subcommandResults'>
   },
 ): string {
-  if (
-    feature('TRANSCRIPT_CLASSIFIER') &&
-    decisionReason.type === 'classifier'
-  ) {
+  if (decisionReason.type === 'classifier') {
     return `${chalk.bold(decisionReason.classifier)} classifier: ${decisionReason.reason}`
   }
   switch (decisionReason.type) {

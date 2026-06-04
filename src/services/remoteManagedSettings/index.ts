@@ -305,9 +305,7 @@ async function fetchRemoteManagedSettings(
       }
     }
 
-    const parsed = RemoteManagedSettingsResponseSchema.safeParse(
-      response.data,
-    )
+    const parsed = RemoteManagedSettingsResponseSchema.safeParse(response.data)
     if (!parsed.success) {
       logForDebugging(
         `Remote settings: Invalid response format - ${parsed.error.message}`,

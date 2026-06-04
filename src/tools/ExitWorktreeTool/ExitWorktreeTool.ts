@@ -27,30 +27,30 @@ import { getExitWorktreeToolPrompt } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
 const inputSchema = z.strictObject({
-    action: z
-      .enum(['keep', 'remove'])
-      .describe(
-        '"keep" leaves the worktree and branch on disk; "remove" deletes both.',
-      ),
-    discard_changes: z
-      .boolean()
-      .optional()
-      .describe(
-        'Required true when action is "remove" and the worktree has uncommitted files or unmerged commits. The tool will refuse and list them otherwise.',
-      ),
-  })
+  action: z
+    .enum(['keep', 'remove'])
+    .describe(
+      '"keep" leaves the worktree and branch on disk; "remove" deletes both.',
+    ),
+  discard_changes: z
+    .boolean()
+    .optional()
+    .describe(
+      'Required true when action is "remove" and the worktree has uncommitted files or unmerged commits. The tool will refuse and list them otherwise.',
+    ),
+})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    action: z.enum(['keep', 'remove']),
-    originalCwd: z.string(),
-    worktreePath: z.string(),
-    worktreeBranch: z.string().optional(),
-    tmuxSessionName: z.string().optional(),
-    discardedFiles: z.number().optional(),
-    discardedCommits: z.number().optional(),
-    message: z.string(),
-  })
+  action: z.enum(['keep', 'remove']),
+  originalCwd: z.string(),
+  worktreePath: z.string(),
+  worktreeBranch: z.string().optional(),
+  tmuxSessionName: z.string().optional(),
+  discardedFiles: z.number().optional(),
+  discardedCommits: z.number().optional(),
+  message: z.string(),
+})
 type OutputSchema = typeof outputSchema
 export type Output = z.infer<OutputSchema>
 

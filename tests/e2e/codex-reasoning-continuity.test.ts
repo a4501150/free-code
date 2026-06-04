@@ -150,5 +150,4 @@ describe('Codex reasoning continuity E2E', () => {
       expect(reasoningIdx).toBeLessThan(turn1MsgIdx)
     }
   })
-
 })

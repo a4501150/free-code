@@ -1,4 +1,7 @@
-import type { DomainBase64Source, DomainUserImageBlock } from '../types/domain.js'
+import type {
+  DomainBase64Source,
+  DomainUserImageBlock,
+} from '../types/domain.js'
 import {
   API_IMAGE_MAX_BASE64_SIZE,
   IMAGE_MAX_HEIGHT,
@@ -585,8 +588,7 @@ function createCompressedImageResult(
   const normalizedMediaType = mediaType === 'jpg' ? 'jpeg' : mediaType
   return {
     base64: buffer.toString('base64'),
-    mediaType:
-      `image/${normalizedMediaType}` as ImageMediaType,
+    mediaType: `image/${normalizedMediaType}` as ImageMediaType,
     originalSize,
   }
 }

@@ -24,21 +24,13 @@ import type {
   StdoutMessageSchema,
 } from './controlSchemas.js'
 
-export type SDKControlRequest = z.infer<
-  typeof SDKControlRequestSchema
->
-export type SDKControlResponse = z.infer<
-  typeof SDKControlResponseSchema
->
+export type SDKControlRequest = z.infer<typeof SDKControlRequestSchema>
+export type SDKControlResponse = z.infer<typeof SDKControlResponseSchema>
 export type SDKControlCancelRequest = z.infer<
   typeof SDKControlCancelRequestSchema
 >
-export type ControlSuccessResponse = z.infer<
-  typeof ControlResponseSchema
->
-export type ControlErrorResponse = z.infer<
-  typeof ControlErrorResponseSchema
->
+export type ControlSuccessResponse = z.infer<typeof ControlResponseSchema>
+export type ControlErrorResponse = z.infer<typeof ControlErrorResponseSchema>
 
 export type SDKControlPermissionRequest = z.infer<
   typeof SDKControlPermissionRequestSchema
@@ -59,9 +51,7 @@ export type SDKControlReloadPluginsResponse = z.infer<
   typeof SDKControlReloadPluginsResponseSchema
 >
 
-export type SDKKeepAliveMessage = z.infer<
-  typeof SDKKeepAliveMessageSchema
->
+export type SDKKeepAliveMessage = z.infer<typeof SDKKeepAliveMessageSchema>
 
 export type SDKUpdateEnvironmentVariablesMessage = z.infer<
   typeof SDKUpdateEnvironmentVariablesMessageSchema

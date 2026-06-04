@@ -11,25 +11,25 @@ export type { IDESelection, SelectionData }
 
 // Define the selection changed notification schema
 const SelectionChangedSchema = z.object({
-    method: z.literal('selection_changed'),
-    params: z.object({
-      selection: z
-        .object({
-          start: z.object({
-            line: z.number(),
-            character: z.number(),
-          }),
-          end: z.object({
-            line: z.number(),
-            character: z.number(),
-          }),
-        })
-        .nullable()
-        .optional(),
-      text: z.string().optional(),
-      filePath: z.string().optional(),
-    }),
-  })
+  method: z.literal('selection_changed'),
+  params: z.object({
+    selection: z
+      .object({
+        start: z.object({
+          line: z.number(),
+          character: z.number(),
+        }),
+        end: z.object({
+          line: z.number(),
+          character: z.number(),
+        }),
+      })
+      .nullable()
+      .optional(),
+    text: z.string().optional(),
+    filePath: z.string().optional(),
+  }),
+})
 
 /**
  * A hook that tracks IDE text selection information by directly registering

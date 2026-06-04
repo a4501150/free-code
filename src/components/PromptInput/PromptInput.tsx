@@ -35,7 +35,6 @@ import { isUltrareviewEnabled } from '../../commands/review/ultrareviewEnabled.j
 import { getNativeCSIuTerminalDisplayName } from '../../commands/terminalSetup/terminalSetup.js'
 import { type Command, hasCommand } from '../../commands.js'
 import { useIsModalOverlayActive } from '../../context/overlayContext.js'
-import { useSetPromptOverlayDialog } from '../../context/promptOverlayContext.js'
 import {
   formatImageRef,
   formatPastedTextRef,
@@ -97,7 +96,6 @@ import {
 } from '../../tools/AgentTool/agentColorManager.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import type { Message } from '../../types/message.js'
-import type { PermissionMode } from '../../types/permissions.js'
 import type {
   BaseTextInputProps,
   PromptInputMode,
@@ -137,16 +135,13 @@ import {
 } from '../../utils/keyboardShortcuts.js'
 import { logError } from '../../utils/log.js'
 import { modelDisplayString } from '../../utils/model/model.js'
-import { setAutoModeActive } from '../../utils/permissions/autoModeState.js'
 import {
   cyclePermissionMode,
   getNextPermissionMode,
 } from '../../utils/permissions/getNextPermissionMode.js'
-import { transitionPermissionMode } from '../../utils/permissions/permissionSetup.js'
 import { getPlatform } from '../../utils/platform.js'
 import type { ProcessUserInputContext } from '../../utils/processUserInput/processUserInput.js'
 import { editPromptInEditor } from '../../utils/promptEditor.js'
-import { hasAutoModeOptIn } from '../../utils/settings/settings.js'
 import { findBtwTriggerPositions } from '../../utils/sideQuestion.js'
 import { findSlashCommandPositions } from '../../utils/suggestions/commandSuggestions.js'
 import {
@@ -170,7 +165,6 @@ import {
 } from '../../utils/thinking.js'
 import { findTokenBudgetPositions } from '../../utils/tokenBudget.js'
 import { findUltrareviewTriggerPositions } from '../../utils/ultrareview/keyword.js'
-import { AutoModeOptInDialog } from '../AutoModeOptInDialog.js'
 import {
   getVisibleAgentTasks,
   useCoordinatorTaskCount,
@@ -530,10 +524,6 @@ function PromptInput({
   const [showHistoryPicker, setShowHistoryPicker] = useState(false)
   const [showFastModePicker, setShowFastModePicker] = useState(false)
   const [showThinkingToggle, setShowThinkingToggle] = useState(false)
-  const [showAutoModeOptIn, setShowAutoModeOptIn] = useState(false)
-  const [previousModeBeforeAuto, setPreviousModeBeforeAuto] =
-    useState<PermissionMode | null>(null)
-  const autoModeOptInTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Check if cursor is on the first line of input
   const isCursorOnFirstLine = useMemo(() => {
@@ -1700,84 +1690,10 @@ function PromptInput({
 
     // Compute the next mode without triggering side effects first
     logForDebugging(
-      `[auto-mode] handleCycleMode: currentMode=${toolPermissionContext.mode} isAutoModeAvailable=${toolPermissionContext.isAutoModeAvailable} showAutoModeOptIn=${showAutoModeOptIn} timeoutPending=${!!autoModeOptInTimeoutRef.current}`,
+      `[auto-mode] handleCycleMode: currentMode=${toolPermissionContext.mode} isAutoModeAvailable=${toolPermissionContext.isAutoModeAvailable}`,
     )
     const nextMode = getNextPermissionMode(toolPermissionContext, teamContext)
 
-    // Check if user is entering auto mode for the first time. Gated on the
-    // persistent settings flag (hasAutoModeOptIn) rather than the broader
-    // hasAutoModeOptInAnySource so that --enable-auto-mode users still see
-    // the warning dialog once — the CLI flag should grant carousel access,
-    // not bypass the safety text.
-    let isEnteringAutoModeFirstTime = false
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
-      isEnteringAutoModeFirstTime =
-        nextMode === 'auto' &&
-        toolPermissionContext.mode !== 'auto' &&
-        !hasAutoModeOptIn() &&
-        !viewingAgentTaskId // Only show for primary agent, not subagents
-    }
-
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
-      if (isEnteringAutoModeFirstTime) {
-        // Store previous mode so we can revert if user declines
-        setPreviousModeBeforeAuto(toolPermissionContext.mode)
-
-        // Only update the UI mode label — do NOT call transitionPermissionMode
-        // or cyclePermissionMode yet; we haven't confirmed with the user.
-        setAppState(prev => ({
-          ...prev,
-          toolPermissionContext: {
-            ...prev.toolPermissionContext,
-            mode: 'auto',
-          },
-        }))
-        setToolPermissionContext({
-          ...toolPermissionContext,
-          mode: 'auto',
-        })
-
-        // Show opt-in dialog after 400ms debounce
-        if (autoModeOptInTimeoutRef.current) {
-          clearTimeout(autoModeOptInTimeoutRef.current)
-        }
-        autoModeOptInTimeoutRef.current = setTimeout(
-          (setShowAutoModeOptIn, autoModeOptInTimeoutRef) => {
-            setShowAutoModeOptIn(true)
-            autoModeOptInTimeoutRef.current = null
-          },
-          400,
-          setShowAutoModeOptIn,
-          autoModeOptInTimeoutRef,
-        )
-
-        if (helpOpen) {
-          setHelpOpen(false)
-        }
-        return
-      }
-    }
-
-    // Dismiss auto mode opt-in dialog if showing or pending (user is cycling away).
-    // Do NOT revert to previousModeBeforeAuto here — shift+tab means "advance the
-    // carousel", not "decline". Reverting causes a ping-pong loop: auto reverts to
-    // the prior mode, whose next mode is auto again, forever.
-    // The dialog's own decline button (handleAutoModeOptInDecline) handles revert.
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
-      if (showAutoModeOptIn || autoModeOptInTimeoutRef.current) {
-        setShowAutoModeOptIn(false)
-        if (autoModeOptInTimeoutRef.current) {
-          clearTimeout(autoModeOptInTimeoutRef.current)
-          autoModeOptInTimeoutRef.current = null
-        }
-        setPreviousModeBeforeAuto(null)
-        // Fall through — mode is 'auto', cyclePermissionMode below goes to 'default'.
-      }
-    }
-
-    // Now that we know this is NOT the first-time auto mode path,
-    // call cyclePermissionMode to apply side effects (e.g. strip
-    // dangerous permissions, activate classifier)
     const { context: preparedContext } = cyclePermissionMode(
       toolPermissionContext,
       teamContext,
@@ -1814,86 +1730,6 @@ function PromptInput({
     setAppState,
     setToolPermissionContext,
     helpOpen,
-    showAutoModeOptIn,
-  ])
-
-  // Handler for auto mode opt-in dialog acceptance
-  const handleAutoModeOptInAccept = useCallback(() => {
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
-      setShowAutoModeOptIn(false)
-      setPreviousModeBeforeAuto(null)
-
-      // Now that the user accepted, apply the full transition: activate the
-      // auto mode backend (classifier, beta headers) and strip dangerous
-      // permissions (e.g. Bash(*) always-allow rules).
-      const strippedContext = transitionPermissionMode(
-        previousModeBeforeAuto ?? toolPermissionContext.mode,
-        'auto',
-        toolPermissionContext,
-      )
-      setAppState(prev => ({
-        ...prev,
-        toolPermissionContext: {
-          ...strippedContext,
-          mode: 'auto',
-        },
-      }))
-      setToolPermissionContext({
-        ...strippedContext,
-        mode: 'auto',
-      })
-
-      // Close help tips if they're open when auto mode is enabled
-      if (helpOpen) {
-        setHelpOpen(false)
-      }
-    }
-  }, [
-    helpOpen,
-    setHelpOpen,
-    previousModeBeforeAuto,
-    toolPermissionContext,
-    setAppState,
-    setToolPermissionContext,
-  ])
-
-  // Handler for auto mode opt-in dialog decline
-  const handleAutoModeOptInDecline = useCallback(() => {
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
-      logForDebugging(
-        `[auto-mode] handleAutoModeOptInDecline: reverting to ${previousModeBeforeAuto}, setting isAutoModeAvailable=false`,
-      )
-      setShowAutoModeOptIn(false)
-      if (autoModeOptInTimeoutRef.current) {
-        clearTimeout(autoModeOptInTimeoutRef.current)
-        autoModeOptInTimeoutRef.current = null
-      }
-
-      // Revert to previous mode and remove auto from the carousel
-      // for the rest of this session
-      if (previousModeBeforeAuto) {
-        setAutoModeActive(false)
-        setAppState(prev => ({
-          ...prev,
-          toolPermissionContext: {
-            ...prev.toolPermissionContext,
-            mode: previousModeBeforeAuto,
-            isAutoModeAvailable: false,
-          },
-        }))
-        setToolPermissionContext({
-          ...toolPermissionContext,
-          mode: previousModeBeforeAuto,
-          isAutoModeAvailable: false,
-        })
-        setPreviousModeBeforeAuto(null)
-      }
-    }
-  }, [
-    previousModeBeforeAuto,
-    toolPermissionContext,
-    setAppState,
-    setToolPermissionContext,
   ])
 
   // Handler for chat:imagePaste - paste image from clipboard
@@ -2518,24 +2354,6 @@ function PromptInput({
     messages.length,
   ])
 
-  // Portal dialog to DialogOverlay in fullscreen so it escapes the bottom
-  // slot's overflowY:hidden clip (same pattern as SuggestionsOverlay).
-  // Must be called before early returns below to satisfy rules-of-hooks.
-  // Memoized so the portal useEffect doesn't churn on every PromptInput render.
-  const autoModeOptInDialog = useMemo(
-    () =>
-      feature('TRANSCRIPT_CLASSIFIER') && showAutoModeOptIn ? (
-        <AutoModeOptInDialog
-          onAccept={handleAutoModeOptInAccept}
-          onDecline={handleAutoModeOptInDecline}
-        />
-      ) : null,
-    [showAutoModeOptIn, handleAutoModeOptInAccept, handleAutoModeOptInDecline],
-  )
-  useSetPromptOverlayDialog(
-    isFullscreenEnvEnabled() ? autoModeOptInDialog : null,
-  )
-
   if (showBashesDialog) {
     // In fullscreen, REPL routes BackgroundTasksDialog through the modal
     // slot so it gets the full-terminal vertical budget instead of the
@@ -2834,7 +2652,6 @@ function PromptInput({
         }
         conversationId={conversationId}
       />
-      {isFullscreenEnvEnabled() ? null : autoModeOptInDialog}
       {isFullscreenEnvEnabled() ? (
         // position=absolute takes zero layout height so the spinner
         // doesn't shift when a notification appears/disappears. Yoga
@@ -2846,16 +2663,15 @@ function PromptInput({
         // BriefSpinner's own marginTop=1 blank row. height=1 +
         // overflow=hidden clips multi-line notifications to a single row.
         // flex-end anchors the bottom line so the visible row is always
-        // the most recent. Suppressed while the slash overlay or
-        // auto-mode opt-in dialog is up by height=0 (NOT unmount) — this
-        // Box renders later in tree order so it would paint over their
-        // bottom row. Keeping Notifications mounted prevents AutoUpdater's
-        // initial-check effect from re-firing on every slash-completion
-        // toggle (PR#22413).
+        // the most recent. Suppressed while the slash overlay is up by
+        // height=0 (NOT unmount) — this Box renders later in tree order so
+        // it would paint over the overlay's bottom row. Keeping Notifications
+        // mounted prevents AutoUpdater's initial-check effect from re-firing
+        // on every slash-completion toggle (PR#22413).
         <Box
           position="absolute"
           marginTop={briefOwnsGap ? -2 : -1}
-          height={suggestions.length === 0 && !showAutoModeOptIn ? 1 : 0}
+          height={suggestions.length === 0 ? 1 : 0}
           width="100%"
           paddingLeft={2}
           paddingRight={1}

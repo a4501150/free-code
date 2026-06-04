@@ -44,13 +44,8 @@ import type {
   SystemAPIErrorMessage,
   UserMessage,
 } from '../../types/message.js'
-import {
-  toolToAPISchema,
-} from '../../utils/toolSchemas.js'
-import {
-  type CacheScope,
-  splitSysPromptPrefix,
-} from './systemPromptBlocks.js'
+import { toolToAPISchema } from '../../utils/toolSchemas.js'
+import { type CacheScope, splitSysPromptPrefix } from './systemPromptBlocks.js'
 import {
   clearApiKeyHelperCache,
   clearAwsCredentialsCache,
@@ -94,11 +89,7 @@ import {
   extractQuotaStatusFromHeaders,
 } from '../claudeAiLimits.js'
 import { getAPIContextManagement } from '../compact/apiMicrocompact.js'
-
-/* eslint-disable @typescript-eslint/no-require-imports */
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? (require('../../utils/permissions/autoModeState.js') as typeof import('../../utils/permissions/autoModeState.js'))
-  : null
+import { isAutoModeActive } from '../../utils/permissions/autoModeState.js'
 
 import { feature } from 'bun:bundle'
 import {
@@ -185,7 +176,6 @@ import {
   type LLMRequestNewContext,
   startLLMRequestSpan,
 } from '../../utils/telemetry/sessionTracing.js'
-/* eslint-enable @typescript-eslint/no-require-imports */
 import { withStreamingVCR, withVCR } from '../vcr.js'
 import {
   API_ERROR_MESSAGE_PREFIX,
@@ -1045,7 +1035,8 @@ async function* queryModel(
   const resolvedModel =
     registry.getProviderType(options.model) === 'bedrock-converse' &&
     options.model.includes('application-inference-profile')
-      ? ((await getInferenceProfileBackingModel(options.model)) ?? options.model)
+      ? ((await getInferenceProfileBackingModel(options.model)) ??
+        options.model)
       : options.model
   const isOpenAIResponsesProvider =
     registry.getProviderType(options.model) === 'openai-responses'
@@ -1238,16 +1229,14 @@ async function* queryModel(
   // per-call so non-agentic queries keep their own stable header set.
 
   let afkHeaderLatched = getAfkModeHeaderLatched() === true
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
-    if (
-      !afkHeaderLatched &&
-      isAgenticQuery &&
-      shouldIncludeFirstPartyOnlyBetas() &&
-      (autoModeStateModule?.isAutoModeActive() ?? false)
-    ) {
-      afkHeaderLatched = true
-      setAfkModeHeaderLatched(true)
-    }
+  if (
+    !afkHeaderLatched &&
+    isAgenticQuery &&
+    shouldIncludeFirstPartyOnlyBetas() &&
+    isAutoModeActive()
+  ) {
+    afkHeaderLatched = true
+    setAfkModeHeaderLatched(true)
   }
 
   let fastModeHeaderLatched = getFastModeHeaderLatched() === true
@@ -1406,21 +1395,18 @@ async function* queryModel(
       betasParams.push(FAST_MODE_BETA_HEADER)
     }
 
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
-      const registry = getProviderRegistry()
-      const supportsAfk = registry.resolveFirstPartyCapability(
-        undefined,
-        'supportsAfkMode',
-      )
-      if (
-        afkHeaderLatched &&
-        supportsAfk &&
-        shouldIncludeFirstPartyOnlyBetas() &&
-        isAgenticQuery &&
-        !betasParams.includes(AFK_MODE_BETA_HEADER)
-      ) {
-        betasParams.push(AFK_MODE_BETA_HEADER)
-      }
+    const supportsAfk = registry.resolveFirstPartyCapability(
+      undefined,
+      'supportsAfkMode',
+    )
+    if (
+      afkHeaderLatched &&
+      supportsAfk &&
+      shouldIncludeFirstPartyOnlyBetas() &&
+      isAgenticQuery &&
+      !betasParams.includes(AFK_MODE_BETA_HEADER)
+    ) {
+      betasParams.push(AFK_MODE_BETA_HEADER)
     }
 
     const temperature = !hasThinking

@@ -1,73 +1,73 @@
-import type { DomainStreamEvent } from "../../../types/domain.js";
+import type { DomainStreamEvent } from '../../../types/domain.js'
 import {
-	createAnthropicStreamEventConverter,
-	type WireStreamEvent,
-} from "../../../types/domainConversion.js";
-import type { NormalizedApiError } from "../../../utils/normalizedError.js";
-import type { ProviderType } from "../../../utils/settings/types.js";
-import { DomainTransportError } from "../domain-errors.js";
+  createAnthropicStreamEventConverter,
+  type WireStreamEvent,
+} from '../../../types/domainConversion.js'
+import type { NormalizedApiError } from '../../../utils/normalizedError.js'
+import type { ProviderType } from '../../../utils/settings/types.js'
+import { DomainTransportError } from '../domain-errors.js'
 
 export async function* parseAnthropicSSEStream(
-	body: ReadableStream<Uint8Array>,
-	providerType: ProviderType,
-	normalizeError: (raw: unknown, pt: ProviderType) => NormalizedApiError,
+  body: ReadableStream<Uint8Array>,
+  providerType: ProviderType,
+  normalizeError: (raw: unknown, pt: ProviderType) => NormalizedApiError,
 ): AsyncGenerator<DomainStreamEvent> {
-	const reader = body.getReader();
-	const decoder = new TextDecoder();
-	const convertStreamEvent = createAnthropicStreamEventConverter();
-	let buffer = "";
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  const convertStreamEvent = createAnthropicStreamEventConverter()
+  let buffer = ''
 
-	try {
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) {
-				buffer += decoder.decode();
-				if (buffer.trim()) {
-					buffer += "\n";
-				}
-			} else {
-				buffer += decoder.decode(value, { stream: true });
-			}
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        buffer += decoder.decode()
+        if (buffer.trim()) {
+          buffer += '\n'
+        }
+      } else {
+        buffer += decoder.decode(value, { stream: true })
+      }
 
-			const lines = buffer.split("\n");
-			buffer = lines.pop() || "";
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
 
-			for (const line of lines) {
-				const trimmed = line.trim();
-				if (!trimmed) continue;
-				if (trimmed.startsWith("event:")) continue;
-				if (!trimmed.startsWith("data: ")) continue;
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        if (trimmed.startsWith('event:')) continue
+        if (!trimmed.startsWith('data: ')) continue
 
-				const dataStr = trimmed.slice(6);
-				if (dataStr === "[DONE]") continue;
+        const dataStr = trimmed.slice(6)
+        if (dataStr === '[DONE]') continue
 
-				let parsed: Record<string, unknown>;
-				try {
-					parsed = JSON.parse(dataStr);
-				} catch {
-					continue;
-				}
+        let parsed: Record<string, unknown>
+        try {
+          parsed = JSON.parse(dataStr)
+        } catch {
+          continue
+        }
 
-				if (parsed.type === "error") {
-					const normalized = normalizeError(
-						{ body: parsed, status: undefined },
-						providerType,
-					);
-					throw new DomainTransportError({
-						normalized,
-						raw: parsed,
-					});
-				}
+        if (parsed.type === 'error') {
+          const normalized = normalizeError(
+            { body: parsed, status: undefined },
+            providerType,
+          )
+          throw new DomainTransportError({
+            normalized,
+            raw: parsed,
+          })
+        }
 
-				if (parsed.type === "ping") continue;
+        if (parsed.type === 'ping') continue
 
-				const domainEvent = convertStreamEvent(parsed as WireStreamEvent);
-				if (domainEvent) yield domainEvent;
-			}
+        const domainEvent = convertStreamEvent(parsed as WireStreamEvent)
+        if (domainEvent) yield domainEvent
+      }
 
-			if (done) break;
-		}
-	} finally {
-		reader.releaseLock();
-	}
+      if (done) break
+    }
+  } finally {
+    reader.releaseLock()
+  }
 }

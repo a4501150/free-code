@@ -59,8 +59,11 @@ function calculateToolResultTokens(block: DomainToolResultBlockParam): number {
   // Array of TextBlockParam | ImageBlockParam | DocumentBlockParam
   return block.content.reduce((sum, item) => {
     if (item.type === 'text') {
-      return sum + roughTokenCountEstimation(
-        typeof item.text === 'string' ? item.text : '',
+      return (
+        sum +
+        roughTokenCountEstimation(
+          typeof item.text === 'string' ? item.text : '',
+        )
       )
     } else if (item.type === 'image' || item.type === 'document') {
       // Images/documents are approximately 2000 tokens regardless of format

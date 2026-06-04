@@ -18,13 +18,13 @@ import {
 } from './UI.js'
 
 const inputSchema = z.strictObject({
-    // No parameters needed
-  })
+  // No parameters needed
+})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    message: z.string().describe('Confirmation that plan mode was entered'),
-  })
+  message: z.string().describe('Confirmation that plan mode was entered'),
+})
 type OutputSchema = typeof outputSchema
 export type Output = z.infer<OutputSchema>
 

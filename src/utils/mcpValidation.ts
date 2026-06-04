@@ -32,11 +32,15 @@ export function getMaxMcpOutputTokens(): number {
 
 export type MCPToolResult = string | DomainUserContentBlock[] | undefined
 
-function isTextBlock(block: DomainUserContentBlock): block is DomainUserTextBlock {
+function isTextBlock(
+  block: DomainUserContentBlock,
+): block is DomainUserTextBlock {
   return block.type === 'text'
 }
 
-function isImageBlock(block: DomainUserContentBlock): block is DomainUserImageBlock {
+function isImageBlock(
+  block: DomainUserContentBlock,
+): block is DomainUserImageBlock {
   return block.type === 'image'
 }
 
@@ -178,5 +182,3 @@ export async function truncateMcpContent(
     return truncatedBlocks
   }
 }
-
-

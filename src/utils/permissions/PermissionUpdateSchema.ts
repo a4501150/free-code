@@ -24,50 +24,50 @@ export type { PermissionUpdate, PermissionUpdateDestination }
  * PermissionUpdateDestination is where a new permission rule should be saved to.
  */
 export const permissionUpdateDestinationSchema = z.enum([
-    // User settings (global)
-    'userSettings',
-    // Project settings (shared per-directory)
-    'projectSettings',
-    // Local settings (gitignored)
-    'localSettings',
-    // In-memory for the current session only
-    'session',
-    // From the command line arguments
-    'cliArg',
-  ])
+  // User settings (global)
+  'userSettings',
+  // Project settings (shared per-directory)
+  'projectSettings',
+  // Local settings (gitignored)
+  'localSettings',
+  // In-memory for the current session only
+  'session',
+  // From the command line arguments
+  'cliArg',
+])
 
 export const permissionUpdateSchema = z.discriminatedUnion('type', [
-    z.object({
-      type: z.literal('addRules'),
-      rules: z.array(permissionRuleValueSchema),
-      behavior: permissionBehaviorSchema,
-      destination: permissionUpdateDestinationSchema,
-    }),
-    z.object({
-      type: z.literal('replaceRules'),
-      rules: z.array(permissionRuleValueSchema),
-      behavior: permissionBehaviorSchema,
-      destination: permissionUpdateDestinationSchema,
-    }),
-    z.object({
-      type: z.literal('removeRules'),
-      rules: z.array(permissionRuleValueSchema),
-      behavior: permissionBehaviorSchema,
-      destination: permissionUpdateDestinationSchema,
-    }),
-    z.object({
-      type: z.literal('setMode'),
-      mode: externalPermissionModeSchema,
-      destination: permissionUpdateDestinationSchema,
-    }),
-    z.object({
-      type: z.literal('addDirectories'),
-      directories: z.array(z.string()),
-      destination: permissionUpdateDestinationSchema,
-    }),
-    z.object({
-      type: z.literal('removeDirectories'),
-      directories: z.array(z.string()),
-      destination: permissionUpdateDestinationSchema,
-    }),
-  ])
+  z.object({
+    type: z.literal('addRules'),
+    rules: z.array(permissionRuleValueSchema),
+    behavior: permissionBehaviorSchema,
+    destination: permissionUpdateDestinationSchema,
+  }),
+  z.object({
+    type: z.literal('replaceRules'),
+    rules: z.array(permissionRuleValueSchema),
+    behavior: permissionBehaviorSchema,
+    destination: permissionUpdateDestinationSchema,
+  }),
+  z.object({
+    type: z.literal('removeRules'),
+    rules: z.array(permissionRuleValueSchema),
+    behavior: permissionBehaviorSchema,
+    destination: permissionUpdateDestinationSchema,
+  }),
+  z.object({
+    type: z.literal('setMode'),
+    mode: externalPermissionModeSchema,
+    destination: permissionUpdateDestinationSchema,
+  }),
+  z.object({
+    type: z.literal('addDirectories'),
+    directories: z.array(z.string()),
+    destination: permissionUpdateDestinationSchema,
+  }),
+  z.object({
+    type: z.literal('removeDirectories'),
+    directories: z.array(z.string()),
+    destination: permissionUpdateDestinationSchema,
+  }),
+])

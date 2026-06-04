@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import mergeWith from 'lodash-es/mergeWith.js'
 import { dirname, join, resolve } from 'path'
 import {
@@ -323,7 +322,10 @@ export function getSettingsFilePathsForSource(source: SettingSource): string[] {
     case 'localSettings': {
       const root = getSettingsRootPathForSource(source)
       return [
-        join(root, getPreferredProjectConfigRelativePath('freecode.local.json')),
+        join(
+          root,
+          getPreferredProjectConfigRelativePath('freecode.local.json'),
+        ),
       ]
     }
     default: {
@@ -726,7 +728,6 @@ export function getManagedSettingsKeysForLogging(
       'ask',
       'defaultMode',
       'disableBypassPermissionsMode',
-      ...(feature('TRANSCRIPT_CLASSIFIER') ? ['disableAutoMode'] : []),
       'additionalDirectories',
     ]),
     autoMode: new Set([
@@ -735,7 +736,6 @@ export function getManagedSettingsKeysForLogging(
       'environment',
       'deny',
       'allow',
-      'skipAutoPermissionPrompt',
     ]),
     sandbox: new Set([
       'enabled',
@@ -1045,48 +1045,17 @@ export function hasSkipDangerousModePermissionPrompt(): boolean {
 }
 
 /**
- * Returns true if any trusted settings source has accepted the auto
- * mode opt-in dialog. projectSettings is intentionally excluded —
- * a malicious project could otherwise auto-bypass the dialog (RCE risk).
- */
-export function hasAutoModeOptIn(): boolean {
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
-    const user = getAutoModeSettingsObject(
-      getSettingsForSource('userSettings'),
-    )?.skipAutoPermissionPrompt
-    const local = getAutoModeSettingsObject(
-      getSettingsForSource('localSettings'),
-    )?.skipAutoPermissionPrompt
-    const flag = getAutoModeSettingsObject(
-      getSettingsForSource('flagSettings'),
-    )?.skipAutoPermissionPrompt
-    const policy = getAutoModeSettingsObject(
-      getSettingsForSource('policySettings'),
-    )?.skipAutoPermissionPrompt
-    const result = !!(user || local || flag || policy)
-    logForDebugging(
-      `[auto-mode] hasAutoModeOptIn=${result} skipAutoPermissionPrompt: user=${user} local=${local} flag=${flag} policy=${policy}`,
-    )
-    return result
-  }
-  return false
-}
-
-/**
  * Returns whether plan mode should use auto mode semantics. Default true
  * (opt-out). Returns false if any trusted source explicitly sets false.
  * projectSettings is excluded so a malicious project can't control this.
  */
 export function getUseAutoModeDuringPlan(): boolean {
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
-    return (
-      getSettingsForSource('policySettings')?.useAutoModeDuringPlan !== false &&
-      getSettingsForSource('flagSettings')?.useAutoModeDuringPlan !== false &&
-      getSettingsForSource('userSettings')?.useAutoModeDuringPlan !== false &&
-      getSettingsForSource('localSettings')?.useAutoModeDuringPlan !== false
-    )
-  }
-  return true
+  return (
+    getSettingsForSource('policySettings')?.useAutoModeDuringPlan !== false &&
+    getSettingsForSource('flagSettings')?.useAutoModeDuringPlan !== false &&
+    getSettingsForSource('userSettings')?.useAutoModeDuringPlan !== false &&
+    getSettingsForSource('localSettings')?.useAutoModeDuringPlan !== false
+  )
 }
 
 function getAutoModeSettingsObject(
@@ -1106,8 +1075,6 @@ function getAutoModeSettingsObject(
 export function getTrustedAutoModeRuleSections():
   | AutoModeRuleSections
   | undefined {
-  if (!feature('TRANSCRIPT_CLASSIFIER')) return undefined
-
   let sections: AutoModeRuleSections | undefined
   for (const source of [
     'userSettings',

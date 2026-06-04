@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type { DomainToolResultBlockParam } from '../../../types/domain.js'
 import * as React from 'react'
 import { BULLET_OPERATOR } from '../../../constants/figures.js'
@@ -65,11 +64,7 @@ export function UserToolErrorMessage({
     return <RejectedToolUseMessage />
   }
 
-  if (
-    feature('TRANSCRIPT_CLASSIFIER') &&
-    typeof param.content === 'string' &&
-    isClassifierDenial(param.content)
-  ) {
+  if (typeof param.content === 'string' && isClassifierDenial(param.content)) {
     return (
       <MessageResponse height={1}>
         <Text dimColor>
@@ -92,6 +87,8 @@ export function UserToolErrorMessage({
       tools,
       verbose,
       isTranscriptMode,
-    }) ?? <FallbackToolUseErrorMessage result={legacyContent} verbose={verbose} />
+    }) ?? (
+      <FallbackToolUseErrorMessage result={legacyContent} verbose={verbose} />
+    )
   )
 }

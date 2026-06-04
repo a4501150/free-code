@@ -17,17 +17,17 @@ const inputSchema = z.strictObject({})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    jobs: z.array(
-      z.object({
-        id: z.string(),
-        cron: z.string(),
-        humanSchedule: z.string(),
-        prompt: z.string(),
-        recurring: z.boolean().optional(),
-        durable: z.boolean().optional(),
-      }),
-    ),
-  })
+  jobs: z.array(
+    z.object({
+      id: z.string(),
+      cron: z.string(),
+      humanSchedule: z.string(),
+      prompt: z.string(),
+      recurring: z.boolean().optional(),
+      durable: z.boolean().optional(),
+    }),
+  ),
+})
 type OutputSchema = typeof outputSchema
 export type ListOutput = z.infer<OutputSchema>
 

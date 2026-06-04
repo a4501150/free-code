@@ -19,24 +19,24 @@ import {
 } from './UI.js'
 
 export const inputSchema = z.object({
-    server: z.string().describe('The MCP server name'),
-    uri: z.string().describe('The resource URI to read'),
-  })
+  server: z.string().describe('The MCP server name'),
+  uri: z.string().describe('The resource URI to read'),
+})
 type InputSchema = typeof inputSchema
 
 export const outputSchema = z.object({
-    contents: z.array(
-      z.object({
-        uri: z.string().describe('Resource URI'),
-        mimeType: z.string().optional().describe('MIME type of the content'),
-        text: z.string().optional().describe('Text content of the resource'),
-        blobSavedTo: z
-          .string()
-          .optional()
-          .describe('Path where binary blob content was saved'),
-      }),
-    ),
-  })
+  contents: z.array(
+    z.object({
+      uri: z.string().describe('Resource URI'),
+      mimeType: z.string().optional().describe('MIME type of the content'),
+      text: z.string().optional().describe('Text content of the resource'),
+      blobSavedTo: z
+        .string()
+        .optional()
+        .describe('Path where binary blob content was saved'),
+    }),
+  ),
+})
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>

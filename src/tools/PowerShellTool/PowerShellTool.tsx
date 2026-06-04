@@ -269,28 +269,28 @@ const isBackgroundTasksDisabled =
   isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
 
 const fullInputSchema = z.strictObject({
-    command: z.string().describe('The PowerShell command to execute'),
-    timeout: semanticNumber(z.number().optional()).describe(
-      `Optional timeout in milliseconds (max ${getMaxTimeoutMs()})`,
+  command: z.string().describe('The PowerShell command to execute'),
+  timeout: semanticNumber(z.number().optional()).describe(
+    `Optional timeout in milliseconds (max ${getMaxTimeoutMs()})`,
+  ),
+  description: z
+    .string()
+    .optional()
+    .describe(
+      'Clear, concise description of what this command does in active voice.',
     ),
-    description: z
-      .string()
-      .optional()
-      .describe(
-        'Clear, concise description of what this command does in active voice.',
-      ),
-    run_in_background: semanticBoolean(z.boolean().optional()).describe(
-      `Run this command asynchronously. Control returns to you immediately with a task ID and the path of the file the command's output is being streamed to; when the command finishes, that same path is delivered back to you as a system notification in a later turn (Read the file to see the full output). The notification arrives when the command finishes — sleeping or polling on your end does not change when it arrives. Use this whenever you'd otherwise reach for \`Start-Sleep\` or a poll loop to wait for a command. NOT a parallelism mechanism — for independent commands whose results you need together right now, send multiple PowerShell tool uses in a single message; they run concurrently in the foreground and return together.`,
-    ),
-    dangerouslyDisableSandbox: semanticBoolean(z.boolean().optional()).describe(
-      'Set this to true to dangerously override sandbox mode and run commands without sandboxing.',
-    ),
-  })
+  run_in_background: semanticBoolean(z.boolean().optional()).describe(
+    `Run this command asynchronously. Control returns to you immediately with a task ID and the path of the file the command's output is being streamed to; when the command finishes, that same path is delivered back to you as a system notification in a later turn (Read the file to see the full output). The notification arrives when the command finishes — sleeping or polling on your end does not change when it arrives. Use this whenever you'd otherwise reach for \`Start-Sleep\` or a poll loop to wait for a command. NOT a parallelism mechanism — for independent commands whose results you need together right now, send multiple PowerShell tool uses in a single message; they run concurrently in the foreground and return together.`,
+  ),
+  dangerouslyDisableSandbox: semanticBoolean(z.boolean().optional()).describe(
+    'Set this to true to dangerously override sandbox mode and run commands without sandboxing.',
+  ),
+})
 
 // Conditionally remove run_in_background from schema when background tasks are disabled
 const inputSchema = isBackgroundTasksDisabled
-    ? fullInputSchema.omit({ run_in_background: true })
-    : fullInputSchema
+  ? fullInputSchema.omit({ run_in_background: true })
+  : fullInputSchema
 type InputSchema = typeof inputSchema
 
 // Use fullInputSchema for the type to always include run_in_background
@@ -298,46 +298,42 @@ type InputSchema = typeof inputSchema
 export type PowerShellToolInput = z.infer<typeof fullInputSchema>
 
 const outputSchema = z.object({
-    stdout: z.string().describe('The standard output of the command'),
-    stderr: z.string().describe('The standard error output of the command'),
-    interrupted: z.boolean().describe('Whether the command was interrupted'),
-    returnCodeInterpretation: z
-      .string()
-      .optional()
-      .describe(
-        'Semantic interpretation for non-error exit codes with special meaning',
-      ),
-    isImage: z
-      .boolean()
-      .optional()
-      .describe('Flag to indicate if stdout contains image data'),
-    persistedOutputPath: z
-      .string()
-      .optional()
-      .describe('Path to persisted full output when too large for inline'),
-    persistedOutputSize: z
-      .number()
-      .optional()
-      .describe('Total output size in bytes when persisted'),
-    backgroundTaskId: z
-      .string()
-      .optional()
-      .describe(
-        'ID of the background task if command is running in background',
-      ),
-    backgroundedByUser: z
-      .boolean()
-      .optional()
-      .describe(
-        'True if the user manually backgrounded the command with Ctrl+B',
-      ),
-    assistantAutoBackgrounded: z
-      .boolean()
-      .optional()
-      .describe(
-        'True if the command was auto-backgrounded by the assistant-mode blocking budget',
-      ),
-  })
+  stdout: z.string().describe('The standard output of the command'),
+  stderr: z.string().describe('The standard error output of the command'),
+  interrupted: z.boolean().describe('Whether the command was interrupted'),
+  returnCodeInterpretation: z
+    .string()
+    .optional()
+    .describe(
+      'Semantic interpretation for non-error exit codes with special meaning',
+    ),
+  isImage: z
+    .boolean()
+    .optional()
+    .describe('Flag to indicate if stdout contains image data'),
+  persistedOutputPath: z
+    .string()
+    .optional()
+    .describe('Path to persisted full output when too large for inline'),
+  persistedOutputSize: z
+    .number()
+    .optional()
+    .describe('Total output size in bytes when persisted'),
+  backgroundTaskId: z
+    .string()
+    .optional()
+    .describe('ID of the background task if command is running in background'),
+  backgroundedByUser: z
+    .boolean()
+    .optional()
+    .describe('True if the user manually backgrounded the command with Ctrl+B'),
+  assistantAutoBackgrounded: z
+    .boolean()
+    .optional()
+    .describe(
+      'True if the command was auto-backgrounded by the assistant-mode blocking budget',
+    ),
+})
 type OutputSchema = typeof outputSchema
 export type Out = z.infer<OutputSchema>
 

@@ -12,15 +12,10 @@ import {
 import { permissionUpdateSchema } from './PermissionUpdateSchema.js'
 
 export const inputSchema = z.object({
-    tool_name: z
-      .string()
-      .describe('The name of the tool requesting permission'),
-    input: z.record(z.string(), z.unknown()).describe('The input for the tool'),
-    tool_use_id: z
-      .string()
-      .optional()
-      .describe('The unique tool use request ID'),
-  })
+  tool_name: z.string().describe('The name of the tool requesting permission'),
+  input: z.record(z.string(), z.unknown()).describe('The input for the tool'),
+  tool_use_id: z.string().optional().describe('The unique tool use request ID'),
+})
 
 export type Input = z.infer<typeof inputSchema>
 
@@ -32,38 +27,41 @@ export type Input = z.infer<typeof inputSchema>
 // Malformed values fall through to undefined (same pattern as updatedPermissions
 // below) so a bad string from a structured host doesn't reject the whole decision.
 const decisionClassificationField = z
-    .enum(['user_temporary', 'user_permanent', 'user_reject'])
-    .optional()
-    .catch(undefined)
+  .enum(['user_temporary', 'user_permanent', 'user_reject'])
+  .optional()
+  .catch(undefined)
 
 const PermissionAllowResultSchema = z.object({
-    behavior: z.literal('allow'),
-    updatedInput: z.record(z.string(), z.unknown()),
-    // Structured hosts may send malformed entries; fall back to undefined rather
-    // than rejecting the entire allow decision (anthropics/claude-code#29440)
-    updatedPermissions: z
-      .array(permissionUpdateSchema)
-      .optional()
-      .catch(ctx => {
-        logForDebugging(
-          `Malformed updatedPermissions from structured host ignored: ${ctx.error.issues[0]?.message ?? 'unknown'}`,
-          { level: 'warn' },
-        )
-        return undefined
-      }),
-    toolUseID: z.string().optional(),
-    decisionClassification: decisionClassificationField,
-  })
+  behavior: z.literal('allow'),
+  updatedInput: z.record(z.string(), z.unknown()),
+  // Structured hosts may send malformed entries; fall back to undefined rather
+  // than rejecting the entire allow decision (anthropics/claude-code#29440)
+  updatedPermissions: z
+    .array(permissionUpdateSchema)
+    .optional()
+    .catch(ctx => {
+      logForDebugging(
+        `Malformed updatedPermissions from structured host ignored: ${ctx.error.issues[0]?.message ?? 'unknown'}`,
+        { level: 'warn' },
+      )
+      return undefined
+    }),
+  toolUseID: z.string().optional(),
+  decisionClassification: decisionClassificationField,
+})
 
 const PermissionDenyResultSchema = z.object({
-    behavior: z.literal('deny'),
-    message: z.string(),
-    interrupt: z.boolean().optional(),
-    toolUseID: z.string().optional(),
-    decisionClassification: decisionClassificationField,
-  })
+  behavior: z.literal('deny'),
+  message: z.string(),
+  interrupt: z.boolean().optional(),
+  toolUseID: z.string().optional(),
+  decisionClassification: decisionClassificationField,
+})
 
-export const outputSchema = z.union([PermissionAllowResultSchema, PermissionDenyResultSchema])
+export const outputSchema = z.union([
+  PermissionAllowResultSchema,
+  PermissionDenyResultSchema,
+])
 
 export type Output = z.infer<typeof outputSchema>
 

@@ -73,11 +73,11 @@ const EXPLAIN_COMMAND_TOOL = {
 
 // Zod schema for parsing and validating the response
 const RiskAssessmentSchema = z.object({
-    riskLevel: z.enum(['LOW', 'MEDIUM', 'HIGH']),
-    explanation: z.string(),
-    reasoning: z.string(),
-    risk: z.string(),
-  })
+  riskLevel: z.enum(['LOW', 'MEDIUM', 'HIGH']),
+  explanation: z.string(),
+  reasoning: z.string(),
+  risk: z.string(),
+})
 
 function formatToolInput(input: unknown): string {
   if (typeof input === 'string') {

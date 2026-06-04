@@ -7,7 +7,7 @@ import type { QuerySource } from '../constants/querySource.js'
 import { expandPastedTextRefs, parseReferences } from '../history.js'
 import type { IDESelection } from '../types/ide.js'
 import type { AppState } from '../state/AppState.js'
-import type { SetToolJSXFn , CanUseToolFn } from '../Tool.js'
+import type { SetToolJSXFn, CanUseToolFn } from '../Tool.js'
 import type { LocalJSXCommandOnDone } from '../types/command.js'
 import type { Message } from '../types/message.js'
 import {

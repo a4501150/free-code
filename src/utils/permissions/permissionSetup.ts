@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { relative } from 'path'
 import {
   getOriginalCwd,
@@ -19,7 +18,6 @@ import {
   getSettings_DEPRECATED,
   getSettingsFilePathForSource,
   getUseAutoModeDuringPlan,
-  hasAutoModeOptIn,
 } from '../settings/settings.js'
 import {
   type PermissionMode,
@@ -29,10 +27,6 @@ import { applyPermissionRulesToPermissionContext } from './permissions.js'
 import { loadAllPermissionRulesFromDisk } from './permissionsLoader.js'
 
 import * as autoModeStateNs from './autoModeState.js'
-
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? autoModeStateNs
-  : null
 
 import { resolve } from 'path'
 import {
@@ -47,10 +41,8 @@ import {
   getFsImplementation,
   safeResolvePath,
 } from '../../utils/fsOperations.js'
-import { modelSupportsAutoMode } from '../betas.js'
 import { logForDebugging } from '../debug.js'
 import { gracefulShutdown } from '../gracefulShutdown.js'
-import { getMainLoopModel } from '../model/model.js'
 import {
   CROSS_PLATFORM_CODE_EXEC,
   DANGEROUS_BASH_PATTERNS,
@@ -595,32 +587,29 @@ export function transitionPermissionMode(
     setHasExitedPlanMode(true)
   }
 
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
-    if (toMode === 'plan' && fromMode !== 'plan') {
-      return prepareContextForPlanMode(context)
-    }
+  if (toMode === 'plan' && fromMode !== 'plan') {
+    return prepareContextForPlanMode(context)
+  }
 
-    // Plan with auto active counts as using the classifier (for the leaving side).
-    // isAutoModeActive() is the authoritative signal — prePlanMode/strippedDangerousRules
-    // are unreliable proxies because auto can be deactivated mid-plan (non-opt-in
-    // entry, transitionPlanAutoMode) while those fields remain set/unset.
-    const fromUsesClassifier =
-      fromMode === 'auto' ||
-      (fromMode === 'plan' &&
-        (autoModeStateModule?.isAutoModeActive() ?? false))
-    const toUsesClassifier = toMode === 'auto' // plan entry handled above
+  // Plan with auto active counts as using the classifier (for the leaving side).
+  // isAutoModeActive() is the authoritative signal — prePlanMode/strippedDangerousRules
+  // are unreliable proxies because auto can be deactivated mid-plan (non-opt-in
+  // entry, transitionPlanAutoMode) while those fields remain set/unset.
+  const fromUsesClassifier =
+    fromMode === 'auto' ||
+    (fromMode === 'plan' && autoModeStateNs.isAutoModeActive())
+  const toUsesClassifier = toMode === 'auto' // plan entry handled above
 
-    if (toUsesClassifier && !fromUsesClassifier) {
-      if (!isAutoModeGateEnabled()) {
-        throw new Error('Cannot transition to auto mode: gate is not enabled')
-      }
-      autoModeStateModule?.setAutoModeActive(true)
-      context = stripDangerousPermissionsForAutoMode(context)
-    } else if (fromUsesClassifier && !toUsesClassifier) {
-      autoModeStateModule?.setAutoModeActive(false)
-      setNeedsAutoModeExitAttachment(true)
-      context = restoreDangerousPermissions(context)
+  if (toUsesClassifier && !fromUsesClassifier) {
+    if (!isAutoModeGateEnabled()) {
+      throw new Error('Cannot transition to auto mode: gate is not enabled')
     }
+    autoModeStateNs.setAutoModeActive(true)
+    context = stripDangerousPermissionsForAutoMode(context)
+  } else if (fromUsesClassifier && !toUsesClassifier) {
+    autoModeStateNs.setAutoModeActive(false)
+    setNeedsAutoModeExitAttachment(true)
+    context = restoreDangerousPermissions(context)
   }
 
   // Only spread if there's something to clear (preserves ref equality)
@@ -692,21 +681,10 @@ export function initialPermissionModeFromCLI({
     orderedModes.push('bypassPermissions')
   }
   if (permissionModeCli) {
-    const parsedMode = permissionModeFromString(permissionModeCli)
-    if (feature('TRANSCRIPT_CLASSIFIER') && parsedMode === 'auto') {
-      orderedModes.push('auto')
-    } else {
-      orderedModes.push(parsedMode)
-    }
+    orderedModes.push(permissionModeFromString(permissionModeCli))
   }
   if (settings.permissions?.defaultMode) {
-    const settingsMode = settings.permissions.defaultMode as PermissionMode
-    // auto from settings requires the same gate check as from CLI
-    if (feature('TRANSCRIPT_CLASSIFIER') && settingsMode === 'auto') {
-      orderedModes.push('auto')
-    } else {
-      orderedModes.push(settingsMode)
-    }
+    orderedModes.push(settings.permissions.defaultMode as PermissionMode)
   }
 
   let result: { mode: PermissionMode; notification?: string } | undefined
@@ -732,8 +710,8 @@ export function initialPermissionModeFromCLI({
     result = { mode: 'default', notification }
   }
 
-  if (feature('TRANSCRIPT_CLASSIFIER') && result.mode === 'auto') {
-    autoModeStateModule?.setAutoModeActive(true)
+  if (result.mode === 'auto') {
+    autoModeStateNs.setAutoModeActive(true)
   }
 
   return result
@@ -872,7 +850,7 @@ export async function initializeToolPermissionContext({
   // Dangerous permissions (like Bash(*), Bash(python:*), PowerShell(iex:*)) would auto-allow
   // before the classifier can evaluate them, defeating the purpose of safer YOLO mode.
   let dangerousPermissions: DangerousPermissionInfo[] = []
-  if (feature('TRANSCRIPT_CLASSIFIER') && permissionMode === 'auto') {
+  if (permissionMode === 'auto') {
     dangerousPermissions = findDangerousClassifierPermissions(
       rulesFromDisk,
       parsedAllowedToolsCli,
@@ -887,9 +865,7 @@ export async function initializeToolPermissionContext({
       alwaysDenyRules: { cliArg: parsedDisallowedToolsCli },
       alwaysAskRules: {},
       isBypassPermissionsModeAvailable,
-      ...(feature('TRANSCRIPT_CLASSIFIER')
-        ? { isAutoModeAvailable: isAutoModeGateEnabled() }
-        : {}),
+      isAutoModeAvailable: isAutoModeGateEnabled(),
     },
     rulesFromDisk,
   )
@@ -946,7 +922,7 @@ export type AutoModeGateCheckResult = {
   notification?: string
 }
 
-export type AutoModeUnavailableReason = 'settings' | 'circuit-breaker' | 'model'
+export type AutoModeUnavailableReason = 'settings' | 'circuit-breaker'
 
 export function getAutoModeUnavailableNotification(
   reason: AutoModeUnavailableReason,
@@ -958,9 +934,6 @@ export function getAutoModeUnavailableNotification(
       break
     case 'circuit-breaker':
       base = 'auto mode is unavailable for your plan'
-      break
-    case 'model':
-      base = 'auto mode unavailable for this model'
       break
   }
   return base
@@ -986,21 +959,18 @@ export async function verifyAutoModeGateAccess(
   fastMode?: boolean,
 ): Promise<AutoModeGateCheckResult> {
   const disabledBySettings = isAutoModeDisabledBySettings()
-  const mainModel = getMainLoopModel()
-  const modelSupported = modelSupportsAutoMode(mainModel)
-  const carouselAvailable = !disabledBySettings && modelSupported
-  const canEnterAuto = carouselAvailable
+  const canEnterAuto = !disabledBySettings
   logForDebugging(
-    `[auto-mode] verifyAutoModeGateAccess: disabledBySettings=${disabledBySettings} model=${mainModel} modelSupported=${modelSupported} carouselAvailable=${carouselAvailable}`,
+    `[auto-mode] verifyAutoModeGateAccess: disabledBySettings=${disabledBySettings} canEnterAuto=${canEnterAuto}`,
   )
 
   // Capture CLI-flag intent now (doesn't depend on context).
-  const autoModeFlagCli = autoModeStateModule?.getAutoModeFlagCli() ?? false
+  const autoModeFlagCli = autoModeStateNs.getAutoModeFlagCli()
 
   // Return a transform function that re-evaluates context-dependent conditions
-  // against the CURRENT context at setAppState time. The gate results above
-  // (canEnterAuto, carouselAvailable) are closure-captured. But mode,
-  // prePlanMode, and isAutoModeAvailable checks MUST use the fresh ctx.
+  // against the CURRENT context at setAppState time. The gate result above
+  // is closure-captured. But mode, prePlanMode, and isAutoModeAvailable checks
+  // MUST use the fresh ctx.
   const setAvailable = (
     ctx: ToolPermissionContext,
     available: boolean,
@@ -1016,23 +986,13 @@ export async function verifyAutoModeGateAccess(
   }
 
   if (canEnterAuto) {
-    return { updateContext: ctx => setAvailable(ctx, carouselAvailable) }
+    return { updateContext: ctx => setAvailable(ctx, true) }
   }
 
-  // Gate is off or circuit-broken — determine reason (context-independent).
-  let reason: AutoModeUnavailableReason
-  if (disabledBySettings) {
-    reason = 'settings'
-    logForDebugging('auto mode disabled by settings', {
-      level: 'warn',
-    })
-  } else {
-    reason = 'model'
-    logForDebugging(
-      `auto mode disabled: model ${getMainLoopModel()} does not support auto mode`,
-      { level: 'warn' },
-    )
-  }
+  const reason: AutoModeUnavailableReason = 'settings'
+  logForDebugging('auto mode disabled by settings', {
+    level: 'warn',
+  })
   const notification = getAutoModeUnavailableNotification(reason)
 
   // Unified kick-out transform. Re-checks the FRESH ctx and only fires
@@ -1059,7 +1019,7 @@ export async function verifyAutoModeGateAccess(
       return setAvailable(ctx, false)
     }
     if (inAuto) {
-      autoModeStateModule?.setAutoModeActive(false)
+      autoModeStateNs.setAutoModeActive(false)
       setNeedsAutoModeExitAttachment(true)
       return {
         ...applyPermissionUpdate(restoreDangerousPermissions(ctx), {
@@ -1072,7 +1032,7 @@ export async function verifyAutoModeGateAccess(
     }
     // Plan with auto active: deactivate auto, restore permissions, defuse
     // prePlanMode so ExitPlanMode goes to default.
-    autoModeStateModule?.setAutoModeActive(false)
+    autoModeStateNs.setAutoModeActive(false)
     setNeedsAutoModeExitAttachment(true)
     return {
       ...restoreDangerousPermissions(ctx),
@@ -1108,7 +1068,7 @@ export async function verifyAutoModeGateAccess(
   // autoModeFlagCli only: defaultMode was auto but sync check rejected it.
   // Suppress notification if isAutoModeAvailable is already false (already
   // notified on a prior check; prevents repeat notifications on successive
-  // unsupported-model switches).
+  // gate checks).
   return {
     updateContext: kickOutOfAutoIfNeeded,
     notification: currentContext.isAutoModeAvailable ? notification : undefined,
@@ -1125,8 +1085,6 @@ export async function shouldDisableBypassPermissions(): Promise<boolean> {
 
 export function isAutoModeDisabledInSettings(settings: {
   autoMode?: boolean | { enabled?: boolean }
-  disableAutoMode?: unknown
-  permissions?: { disableAutoMode?: unknown }
 }): boolean {
   const autoMode = settings.autoMode
   if (typeof autoMode === 'boolean' && autoMode === false) return true
@@ -1138,10 +1096,7 @@ export function isAutoModeDisabledInSettings(settings: {
   ) {
     return true
   }
-  return (
-    settings.disableAutoMode === 'disable' ||
-    settings.permissions?.disableAutoMode === 'disable'
-  )
+  return false
 }
 
 function isAutoModeDisabledBySettings(): boolean {
@@ -1149,13 +1104,11 @@ function isAutoModeDisabledBySettings(): boolean {
 }
 
 /**
- * Checks if auto mode can be entered: circuit breaker is not active and settings
- * have not disabled it. Synchronous.
+ * Checks if auto mode can be entered: settings have not disabled it.
+ * Synchronous.
  */
 export function isAutoModeGateEnabled(): boolean {
-  if (isAutoModeDisabledBySettings()) return false
-  if (!modelSupportsAutoMode(getMainLoopModel())) return false
-  return true
+  return !isAutoModeDisabledBySettings()
 }
 
 /**
@@ -1163,41 +1116,7 @@ export function isAutoModeGateEnabled(): boolean {
  * Synchronous — uses state populated by verifyAutoModeGateAccess.
  */
 export function getAutoModeUnavailableReason(): AutoModeUnavailableReason | null {
-  if (isAutoModeDisabledBySettings()) return 'settings'
-  if (!modelSupportsAutoMode(getMainLoopModel())) return 'model'
-  return null
-}
-
-export type AutoModeEnabledState = 'enabled' | 'disabled' | 'opt-in'
-
-/**
- * Returns the auto mode enabled state. Always 'enabled' — disabling is
- * controlled by `autoMode.enabled` in freecode.json.
- */
-export function getAutoModeEnabledState(): AutoModeEnabledState {
-  return 'enabled'
-}
-
-/**
- * Synchronous version of getAutoModeEnabledState. Always returns 'enabled'.
- */
-export function getAutoModeEnabledStateIfCached():
-  | AutoModeEnabledState
-  | undefined {
-  return 'enabled'
-}
-
-/**
- * Returns true if the user has opted in to auto mode via any trusted mechanism:
- * - CLI flag (--enable-auto-mode / --permission-mode auto) — session-scoped
- *   availability request; the startup dialog in showSetupScreens enforces
- *   persistent consent before the REPL renders.
- * - autoMode.skipAutoPermissionPrompt setting (persistent; set by accepting
- *   the opt-in dialog or by IDE/Desktop settings toggle)
- */
-export function hasAutoModeOptInAnySource(): boolean {
-  if (autoModeStateModule?.getAutoModeFlagCli() ?? false) return true
-  return hasAutoModeOptIn()
+  return isAutoModeDisabledBySettings() ? 'settings' : null
 }
 
 /**
@@ -1256,32 +1175,22 @@ export async function checkAndDisableBypassPermissions(
 }
 
 export function isDefaultPermissionModeAuto(): boolean {
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
-    const settings = getSettings_DEPRECATED() || {}
-    return settings.permissions?.defaultMode === 'auto'
-  }
-  return false
+  const settings = getSettings_DEPRECATED() || {}
+  return settings.permissions?.defaultMode === 'auto'
 }
 
 /**
  * Whether plan mode should use auto mode semantics (classifier runs during
- * plan). True when the user has opted in to auto mode and the gate is enabled.
+ * plan). True when the auto mode gate is enabled.
  * Evaluated at permission-check time so it's reactive to config changes.
  */
 export function shouldPlanUseAutoMode(): boolean {
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
-    return (
-      hasAutoModeOptIn() &&
-      isAutoModeGateEnabled() &&
-      getUseAutoModeDuringPlan()
-    )
-  }
-  return false
+  return isAutoModeGateEnabled() && getUseAutoModeDuringPlan()
 }
 
 /**
  * Centralized plan-mode entry. Stashes the current mode as prePlanMode so
- * ExitPlanMode can restore it. When the user has opted in to auto mode,
+ * ExitPlanMode can restore it. When auto mode is enabled,
  * auto semantics stay active during plan mode.
  */
 export function prepareContextForPlanMode(
@@ -1289,25 +1198,23 @@ export function prepareContextForPlanMode(
 ): ToolPermissionContext {
   const currentMode = context.mode
   if (currentMode === 'plan') return context
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
-    const planAutoMode = shouldPlanUseAutoMode()
-    if (currentMode === 'auto') {
-      if (planAutoMode) {
-        return { ...context, prePlanMode: 'auto' }
-      }
-      autoModeStateModule?.setAutoModeActive(false)
-      setNeedsAutoModeExitAttachment(true)
-      return {
-        ...restoreDangerousPermissions(context),
-        prePlanMode: 'auto',
-      }
+  const planAutoMode = shouldPlanUseAutoMode()
+  if (currentMode === 'auto') {
+    if (planAutoMode) {
+      return { ...context, prePlanMode: 'auto' }
     }
-    if (planAutoMode && currentMode !== 'bypassPermissions') {
-      autoModeStateModule?.setAutoModeActive(true)
-      return {
-        ...stripDangerousPermissionsForAutoMode(context),
-        prePlanMode: currentMode,
-      }
+    autoModeStateNs.setAutoModeActive(false)
+    setNeedsAutoModeExitAttachment(true)
+    return {
+      ...restoreDangerousPermissions(context),
+      prePlanMode: 'auto',
+    }
+  }
+  if (planAutoMode && currentMode !== 'bypassPermissions') {
+    autoModeStateNs.setAutoModeActive(true)
+    return {
+      ...stripDangerousPermissionsForAutoMode(context),
+      prePlanMode: currentMode,
     }
   }
   logForDebugging(
@@ -1327,7 +1234,6 @@ export function prepareContextForPlanMode(
 export function transitionPlanAutoMode(
   context: ToolPermissionContext,
 ): ToolPermissionContext {
-  if (!feature('TRANSCRIPT_CLASSIFIER')) return context
   if (context.mode !== 'plan') return context
   // Mirror prepareContextForPlanMode's entry-time exclusion — never activate
   // auto mid-plan when the user entered from a dangerous mode.
@@ -1336,7 +1242,7 @@ export function transitionPlanAutoMode(
   }
 
   const want = shouldPlanUseAutoMode()
-  const have = autoModeStateModule?.isAutoModeActive() ?? false
+  const have = autoModeStateNs.isAutoModeActive()
 
   if (want && have) {
     // syncPermissionRulesFromDisk (called before us in applySettingsChange)
@@ -1347,11 +1253,11 @@ export function transitionPlanAutoMode(
   if (!want && !have) return context
 
   if (want) {
-    autoModeStateModule?.setAutoModeActive(true)
+    autoModeStateNs.setAutoModeActive(true)
     setNeedsAutoModeExitAttachment(false)
     return stripDangerousPermissionsForAutoMode(context)
   }
-  autoModeStateModule?.setAutoModeActive(false)
+  autoModeStateNs.setAutoModeActive(false)
   setNeedsAutoModeExitAttachment(true)
   return restoreDangerousPermissions(context)
 }

@@ -9,7 +9,7 @@ import { getInitialSettings } from '../../utils/settings/settings.js'
 import memoize from 'lodash-es/memoize.js'
 import { getSystemPrompt } from '../../constants/prompts.js'
 import { getSystemContext, getUserContext } from '../../context.js'
-import type { Tool, ToolUseContext , CanUseToolFn } from '../../Tool.js'
+import type { Tool, ToolUseContext, CanUseToolFn } from '../../Tool.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
 import {
   FileReadTool,

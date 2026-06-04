@@ -48,13 +48,6 @@ import {
   renderToolUseRejectedMessage,
 } from './UI.js'
 
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? autoModeStateNs
-  : null
-const permissionSetupModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? permissionSetupNs
-  : null
-
 const inputSchema = z.strictObject({}).passthrough()
 type InputSchema = typeof inputSchema
 
@@ -64,47 +57,47 @@ type InputSchema = typeof inputSchema
  * but the SDK/hooks see the normalized version with plan and file path included.
  */
 export const _sdkInputSchema = inputSchema.extend({
-    plan: z
-      .string()
-      .optional()
-      .describe('The plan content (injected by normalizeToolInput from disk)'),
-    planFilePath: z
-      .string()
-      .optional()
-      .describe('The plan file path (injected by normalizeToolInput)'),
-  })
+  plan: z
+    .string()
+    .optional()
+    .describe('The plan content (injected by normalizeToolInput from disk)'),
+  planFilePath: z
+    .string()
+    .optional()
+    .describe('The plan file path (injected by normalizeToolInput)'),
+})
 
 export const outputSchema = z.object({
-    plan: z
-      .string()
-      .nullable()
-      .describe('The plan that was presented to the user'),
-    isAgent: z.boolean(),
-    filePath: z
-      .string()
-      .optional()
-      .describe('The file path where the plan was saved'),
-    hasTaskTool: z
-      .boolean()
-      .optional()
-      .describe('Whether the Agent tool is available in the current context'),
-    planWasEdited: z
-      .boolean()
-      .optional()
-      .describe(
-        'True when the user edited the plan (CCR web UI or Ctrl+G); determines whether the plan is echoed back in tool_result',
-      ),
-    awaitingLeaderApproval: z
-      .boolean()
-      .optional()
-      .describe(
-        'When true, the teammate has sent a plan approval request to the team leader',
-      ),
-    requestId: z
-      .string()
-      .optional()
-      .describe('Unique identifier for the plan approval request'),
-  })
+  plan: z
+    .string()
+    .nullable()
+    .describe('The plan that was presented to the user'),
+  isAgent: z.boolean(),
+  filePath: z
+    .string()
+    .optional()
+    .describe('The file path where the plan was saved'),
+  hasTaskTool: z
+    .boolean()
+    .optional()
+    .describe('Whether the Agent tool is available in the current context'),
+  planWasEdited: z
+    .boolean()
+    .optional()
+    .describe(
+      'True when the user edited the plan (CCR web UI or Ctrl+G); determines whether the plan is echoed back in tool_result',
+    ),
+  awaitingLeaderApproval: z
+    .boolean()
+    .optional()
+    .describe(
+      'When true, the teammate has sent a plan approval request to the team leader',
+    ),
+  requestId: z
+    .string()
+    .optional()
+    .describe('Unique identifier for the plan approval request'),
+})
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
@@ -281,24 +274,18 @@ export const ExitPlanModeTool: Tool<InputSchema, Output> = buildTool({
     // 'default' instead. Without this, ExitPlanMode would bypass the circuit
     // breaker by calling setAutoModeActive(true) directly.
     let gateFallbackNotification: string | null = null
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
-      const prePlanRaw = appState.toolPermissionContext.prePlanMode ?? 'default'
-      if (
-        prePlanRaw === 'auto' &&
-        !(permissionSetupModule?.isAutoModeGateEnabled() ?? false)
-      ) {
-        const reason =
-          permissionSetupModule?.getAutoModeUnavailableReason() ??
-          'circuit-breaker'
-        gateFallbackNotification =
-          permissionSetupModule?.getAutoModeUnavailableNotification(reason) ??
-          'auto mode unavailable'
-        logForDebugging(
-          `[auto-mode gate @ ExitPlanModeTool] prePlanMode=${prePlanRaw} ` +
-            `but gate is off (reason=${reason}) — falling back to default on plan exit`,
-          { level: 'warn' },
-        )
-      }
+    const prePlanRaw = appState.toolPermissionContext.prePlanMode ?? 'default'
+    if (prePlanRaw === 'auto' && !permissionSetupNs.isAutoModeGateEnabled()) {
+      const reason =
+        permissionSetupNs.getAutoModeUnavailableReason() ?? 'circuit-breaker'
+      gateFallbackNotification =
+        permissionSetupNs.getAutoModeUnavailableNotification(reason) ??
+        'auto mode unavailable'
+      logForDebugging(
+        `[auto-mode gate @ ExitPlanModeTool] prePlanMode=${prePlanRaw} ` +
+          `but gate is off (reason=${reason}) — falling back to default on plan exit`,
+        { level: 'warn' },
+      )
     }
     if (gateFallbackNotification) {
       context.addNotification?.({
@@ -315,23 +302,20 @@ export const ExitPlanModeTool: Tool<InputSchema, Output> = buildTool({
       setHasExitedPlanMode(true)
       setNeedsPlanModeExitAttachment(true)
       let restoreMode = prev.toolPermissionContext.prePlanMode ?? 'default'
-      if (feature('TRANSCRIPT_CLASSIFIER')) {
-        if (
-          restoreMode === 'auto' &&
-          !(permissionSetupModule?.isAutoModeGateEnabled() ?? false)
-        ) {
-          restoreMode = 'default'
-        }
-        const finalRestoringAuto = restoreMode === 'auto'
-        // Capture pre-restore state — isAutoModeActive() is the authoritative
-        // signal (prePlanMode/strippedDangerousRules are stale after
-        // transitionPlanAutoMode deactivates mid-plan).
-        const autoWasUsedDuringPlan =
-          autoModeStateModule?.isAutoModeActive() ?? false
-        autoModeStateModule?.setAutoModeActive(finalRestoringAuto)
-        if (autoWasUsedDuringPlan && !finalRestoringAuto) {
-          setNeedsAutoModeExitAttachment(true)
-        }
+      if (
+        restoreMode === 'auto' &&
+        !permissionSetupNs.isAutoModeGateEnabled()
+      ) {
+        restoreMode = 'default'
+      }
+      const finalRestoringAuto = restoreMode === 'auto'
+      // Capture pre-restore state — isAutoModeActive() is the authoritative
+      // signal (prePlanMode/strippedDangerousRules are stale after
+      // transitionPlanAutoMode deactivates mid-plan).
+      const autoWasUsedDuringPlan = autoModeStateNs.isAutoModeActive()
+      autoModeStateNs.setAutoModeActive(finalRestoringAuto)
+      if (autoWasUsedDuringPlan && !finalRestoringAuto) {
+        setNeedsAutoModeExitAttachment(true)
       }
       // If restoring to a non-auto mode and permissions were stripped (either
       // from entering plan from auto, or from shouldPlanUseAutoMode),
@@ -340,13 +324,9 @@ export const ExitPlanModeTool: Tool<InputSchema, Output> = buildTool({
       let baseContext = prev.toolPermissionContext
       if (restoringToAuto) {
         baseContext =
-          permissionSetupModule?.stripDangerousPermissionsForAutoMode(
-            baseContext,
-          ) ?? baseContext
+          permissionSetupNs.stripDangerousPermissionsForAutoMode(baseContext)
       } else if (prev.toolPermissionContext.strippedDangerousRules) {
-        baseContext =
-          permissionSetupModule?.restoreDangerousPermissions(baseContext) ??
-          baseContext
+        baseContext = permissionSetupNs.restoreDangerousPermissions(baseContext)
       }
       return {
         ...prev,

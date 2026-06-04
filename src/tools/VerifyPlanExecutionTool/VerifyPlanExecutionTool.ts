@@ -9,10 +9,10 @@ const inputSchema = z.strictObject({})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    verified: z.boolean(),
-    message: z.string(),
-    verdict: z.enum(['PASS', 'FAIL', 'PARTIAL']).optional(),
-  })
+  verified: z.boolean(),
+  message: z.string(),
+  verdict: z.enum(['PASS', 'FAIL', 'PARTIAL']).optional(),
+})
 type OutputSchema = typeof outputSchema
 
 type Output = z.infer<OutputSchema>

@@ -6,9 +6,7 @@
  * stages of the 2-stage XML classifier to return <block>yes</block>, and
  * capture what the UI renders.
  *
- * Requires TRANSCRIPT_CLASSIFIER (and thus the entire auto-mode permission
- * path + classifier UI) which is in `fullExperimentalFeatures` — available
- * in the default dev-full build (./cli-dev).
+ * Uses auto-mode (permission path + classifier UI) available in all builds.
  */
 
 import {
@@ -84,19 +82,15 @@ describe('Auto Mode Classifier Deny E2E', () => {
     session = new TmuxSession({
       serverUrl: server.url,
 
-
       width: 140,
       height: 50,
       // Auto mode replaces the standard "? for shortcuts" footer with the
       // mode-name banner ("⏵⏵ auto mode on …"), so the default readyText
       // never matches.
       readyText: 'shift+tab to cycle',
-      // Mark this session as auto mode. defaultMode='auto' is only valid when
-      // TRANSCRIPT_CLASSIFIER is compiled in (cli-dev).
-      // autoMode.skipAutoPermissionPrompt suppresses the first-time opt-in
-      // dialog so the test can reach the classifier path immediately.
+      // Mark this session as auto mode.
       settings: {
-        autoMode: { enabled: true, skipAutoPermissionPrompt: true },
+        autoMode: { enabled: true },
         permissions: {
           defaultMode: 'auto',
         },
@@ -148,12 +142,11 @@ describe('Auto Mode Classifier Deny E2E', () => {
     session = new TmuxSession({
       serverUrl: server.url,
 
-
       width: 140,
       height: 50,
       readyText: 'shift+tab to cycle',
       settings: {
-        autoMode: { enabled: true, skipAutoPermissionPrompt: true },
+        autoMode: { enabled: true },
         permissions: { defaultMode: 'auto' },
         verbose: true,
       },

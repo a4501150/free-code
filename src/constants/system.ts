@@ -30,7 +30,9 @@ export function getCLISyspromptPrefix(options?: {
   hasAppendSystemPrompt: boolean
   model?: string
 }): CLISyspromptPrefix {
-  if (!getProviderRegistry().getCapabilities(options?.model).customSyspromptPrefix) {
+  if (
+    !getProviderRegistry().getCapabilities(options?.model).customSyspromptPrefix
+  ) {
     return DEFAULT_PREFIX
   }
 

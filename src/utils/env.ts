@@ -8,7 +8,6 @@ import { which } from './which.js'
 
 type Platform = 'win32' | 'darwin' | 'linux'
 
-
 const hasInternetAccess = memoize(async (): Promise<boolean> => {
   try {
     await axios.head('http://1.1.1.1', {

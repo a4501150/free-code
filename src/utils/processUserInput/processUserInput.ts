@@ -9,7 +9,7 @@ import type { QuerySource } from 'src/constants/querySource.js'
 import { getContentText } from 'src/utils/messages.js'
 import { type LocalJSXCommandContext } from '../../commands.js'
 import type { IDESelection } from '../../types/ide.js'
-import type { SetToolJSXFn, ToolUseContext , CanUseToolFn } from '../../Tool.js'
+import type { SetToolJSXFn, ToolUseContext, CanUseToolFn } from '../../Tool.js'
 import type {
   AssistantMessage,
   AttachmentMessage,
@@ -280,7 +280,9 @@ async function processUserInputBase(
   preExpansionInput?: string,
 ): Promise<ProcessUserInputBaseResult> {
   let inputString: string | null = null
-  let precedingInputBlocks: Array<DomainUserContentBlock | DomainUserContentBlock> = []
+  let precedingInputBlocks: Array<
+    DomainUserContentBlock | DomainUserContentBlock
+  > = []
 
   // Collect image metadata texts for isMeta message
   const imageMetadataTexts: string[] = []

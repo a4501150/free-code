@@ -29,6 +29,6 @@ export const permissionBehaviorSchema = z.enum(['allow', 'deny', 'ask'])
  *   Each tool may implement custom handling in `checkPermissions()`
  */
 export const permissionRuleValueSchema = z.object({
-    toolName: z.string(),
-    ruleContent: z.string().optional(),
-  })
+  toolName: z.string(),
+  ruleContent: z.string().optional(),
+})

@@ -241,19 +241,19 @@ export function validatePermissionRule(rule: string): {
  * Custom Zod schema for permission rule arrays
  */
 export const PermissionRuleSchema = z.string().superRefine((val, ctx) => {
-    const result = validatePermissionRule(val)
-    if (!result.valid) {
-      let message = result.error!
-      if (result.suggestion) {
-        message += `. ${result.suggestion}`
-      }
-      if (result.examples && result.examples.length > 0) {
-        message += `. Examples: ${result.examples.join(', ')}`
-      }
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message,
-        params: { received: val },
-      })
+  const result = validatePermissionRule(val)
+  if (!result.valid) {
+    let message = result.error!
+    if (result.suggestion) {
+      message += `. ${result.suggestion}`
     }
-  })
+    if (result.examples && result.examples.length > 0) {
+      message += `. Examples: ${result.examples.join(', ')}`
+    }
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message,
+      params: { received: val },
+    })
+  }
+})

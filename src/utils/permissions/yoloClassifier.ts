@@ -50,33 +50,26 @@ import {
 } from './classifierShared.js'
 import { getClaudeTempDir } from './filesystem.js'
 
-// Dead code elimination: conditional imports for auto mode classifier prompts.
 // At build time, the bundler inlines .txt files as string literals.
 /* eslint-disable custom-rules/no-process-env-top-level */
 import autoModeSystemPromptTxt from './yolo-classifier-prompts/auto_mode_system_prompt.txt'
 import permissionsExternalTxt from './yolo-classifier-prompts/permissions_external.txt'
 
-const BASE_PROMPT: string = feature('TRANSCRIPT_CLASSIFIER')
-  ? (autoModeSystemPromptTxt as string)
-  : ''
+const BASE_PROMPT: string = autoModeSystemPromptTxt as string
 
 // External template is loaded separately so it's available for
 // `claude auto-mode defaults` even in ant builds. Ant builds use
 // permissions_anthropic.txt at runtime but should dump external defaults.
-const EXTERNAL_PERMISSIONS_TEMPLATE: string = feature('TRANSCRIPT_CLASSIFIER')
-  ? (permissionsExternalTxt as string)
-  : ''
+const EXTERNAL_PERMISSIONS_TEMPLATE: string = permissionsExternalTxt as string
 
 /* eslint-enable custom-rules/no-process-env-top-level */
 
 export type AutoModeRules = string
 
-
 type ClassifierMessageParam = SideQueryOptions['messages'][number]
 type ClassifierTextBlock = DomainUserTextBlock
 type ClassifierImageBlock = DomainUserImageBlock
 type ClassifierResponse = DomainAssistantContent
-
 
 function formatRuleSection(rules: string[]): string {
   return rules.map(rule => `- ${rule}`).join('\n')
@@ -212,10 +205,10 @@ async function dumpErrorPrompts(
 }
 
 const yoloClassifierResponseSchema = z.object({
-    thinking: z.string(),
-    shouldBlock: z.boolean(),
-    reason: z.string(),
-  })
+  thinking: z.string(),
+  shouldBlock: z.boolean(),
+  reason: z.string(),
+})
 
 export const YOLO_CLASSIFIER_TOOL_NAME = 'classify_result'
 
@@ -881,9 +874,7 @@ function parseXmlThinking(text: string): string | null {
 /**
  * Extract usage stats from an API response.
  */
-function extractUsage(
-  result: ClassifierResponse,
-): ClassifierUsage {
+function extractUsage(result: ClassifierResponse): ClassifierUsage {
   return {
     inputTokens: result.usage.input_tokens,
     outputTokens: result.usage.output_tokens,
@@ -896,9 +887,7 @@ function extractUsage(
  * Extract the API request_id (req_xxx) that the SDK attaches as a
  * non-enumerable `_request_id` property on response objects.
  */
-function extractRequestId(
-  result: ClassifierResponse,
-): string | undefined {
+function extractRequestId(result: ClassifierResponse): string | undefined {
   return (result as { _request_id?: string | null })._request_id ?? undefined
 }
 
@@ -1023,9 +1012,7 @@ async function classifyYoloActionXml(
   prefixMessages: ClassifierMessageParam[],
   systemPrompt: string,
   userPrompt: string,
-  userContentBlocks: Array<
-    ClassifierTextBlock | ClassifierImageBlock
-  >,
+  userContentBlocks: Array<ClassifierTextBlock | ClassifierImageBlock>,
   model: string,
   promptLengths: NonNullable<YoloClassifierResult['promptLengths']>,
   signal: AbortSignal,
@@ -1064,9 +1051,7 @@ async function classifyYoloActionXml(
   // Wrap transcript entries in <transcript> tags for the XML classifier.
   // Wrap all content (transcript + action) in <transcript> tags.
   // The action is the final tool_use block in the transcript.
-  const wrappedContent: Array<
-    ClassifierTextBlock | ClassifierImageBlock
-  > = [
+  const wrappedContent: Array<ClassifierTextBlock | ClassifierImageBlock> = [
     { type: 'text' as const, text: '<transcript>\n' },
     ...userContentBlocks,
     { type: 'text' as const, text: '</transcript>\n' },

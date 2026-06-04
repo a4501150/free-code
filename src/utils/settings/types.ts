@@ -2,10 +2,7 @@ import { feature } from 'bun:bundle'
 import { z } from 'zod/v4'
 import { SandboxSettingsSchema } from '../../entrypoints/sandboxTypes.js'
 import { globalConfigDir, globalConfigFile, isEnvTruthy } from '../envUtils.js'
-import {
-  EXTERNAL_PERMISSION_MODES,
-  PERMISSION_MODES,
-} from '../permissions/PermissionMode.js'
+import { PERMISSION_MODES } from '../permissions/PermissionMode.js'
 import { MarketplaceSourceSchema } from '../plugins/schemas.js'
 import { THEME_SETTINGS } from '../theme.js'
 // Inlined to break circular import: types.ts → constants.ts → bootstrap/state.ts → ... → pluginLoader.ts → types.ts
@@ -59,27 +56,13 @@ export const PermissionsSchema = z
         'List of permission rules that should always prompt for confirmation',
       ),
     defaultMode: z
-      .enum(
-        feature('TRANSCRIPT_CLASSIFIER')
-          ? PERMISSION_MODES
-          : EXTERNAL_PERMISSION_MODES,
-      )
+      .enum(PERMISSION_MODES)
       .optional()
       .describe('Default permission mode when Claude Code needs access'),
     disableBypassPermissionsMode: z
       .enum(['disable'])
       .optional()
       .describe('Disable the ability to bypass permission prompts'),
-    ...(feature('TRANSCRIPT_CLASSIFIER')
-      ? {
-          disableAutoMode: z
-            .enum(['disable'])
-            .optional()
-            .describe(
-              'Disable auto mode (deprecated, use top-level autoMode instead)',
-            ),
-        }
-      : {}),
     additionalDirectories: z
       .array(z.string())
       .optional()
@@ -621,7 +604,6 @@ export type AutoModeRuleSections = {
 export type AutoModeSettings = AutoModeRuleSections & {
   enabled?: boolean
   classifierModel?: string
-  skipAutoPermissionPrompt?: boolean
 }
 
 function getStringArray(value: unknown): string[] | undefined {
@@ -645,10 +627,6 @@ export function normalizeAutoModeSetting(value: unknown): unknown {
   }
   if (typeof raw.classifierModel === 'string') {
     normalized.classifierModel = raw.classifierModel
-  }
-
-  if (typeof raw.skipAutoPermissionPrompt === 'boolean') {
-    normalized.skipAutoPermissionPrompt = raw.skipAutoPermissionPrompt
   }
 
   const environment = getStringArray(raw.environment)
@@ -689,12 +667,6 @@ export const AutoModeSettingsSchema = z.preprocess(
         .array(z.string())
         .optional()
         .describe('Rules that replace the auto mode classifier ALLOW section.'),
-      skipAutoPermissionPrompt: z
-        .boolean()
-        .optional()
-        .describe(
-          'Whether the user has accepted the auto mode opt-in dialog',
-        ),
     })
     .passthrough(),
 )
@@ -1578,16 +1550,12 @@ const _settingsSchemaValue = z
       .describe(
         'Whether the user has accepted the bypass permissions mode dialog',
       ),
-    ...(feature('TRANSCRIPT_CLASSIFIER')
-      ? {
-          useAutoModeDuringPlan: z
-            .boolean()
-            .optional()
-            .describe(
-              'Whether plan mode uses auto mode semantics when auto mode is available (default: true)',
-            ),
-        }
-      : {}),
+    useAutoModeDuringPlan: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether plan mode uses auto mode semantics when auto mode is available (default: true)',
+      ),
     autoMode: AutoModeSettingsSchema.optional().describe(
       'Auto mode configuration',
     ),

@@ -354,7 +354,9 @@ function logToolUseToolResultMismatch(
 /**
  * Type guard to check if a value is a valid Message response from the API
  */
-export function isValidAPIMessage(value: unknown): value is DomainAssistantContent {
+export function isValidAPIMessage(
+  value: unknown,
+): value is DomainAssistantContent {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -366,9 +368,6 @@ export function isValidAPIMessage(value: unknown): value is DomainAssistantConte
     typeof (value as DomainAssistantContent).usage === 'object'
   )
 }
-
-
-
 
 export function getAssistantMessageFromError(
   error: unknown,
@@ -451,8 +450,7 @@ export function getAssistantMessageFromError(
       }
 
       // Extract rate limit information from headers
-      const resetHeader =
-        error.headers?.['anthropic-ratelimit-unified-reset']
+      const resetHeader = error.headers?.['anthropic-ratelimit-unified-reset']
       if (resetHeader) {
         limits.resetsAt = Number(resetHeader)
       }
@@ -605,8 +603,7 @@ export function getAssistantMessageFromError(
   }
 
   // Server rejected the afk-mode beta header (plan does not include auto
-  // mode). AFK_MODE_BETA_HEADER is '' in non-TRANSCRIPT_CLASSIFIER builds,
-  // so the truthy guard keeps this inert there.
+  // mode). The truthy guard keeps this inert when no beta header is configured.
   if (
     AFK_MODE_BETA_HEADER &&
     error instanceof DomainTransportError &&

@@ -4,7 +4,12 @@ import {
   getToolNameForPermissionCheck,
   mcpInfoFromString,
 } from '../../services/mcp/mcpStringUtils.js'
-import type { Tool, ToolPermissionContext, ToolUseContext , CanUseToolFn } from '../../Tool.js'
+import type {
+  Tool,
+  ToolPermissionContext,
+  ToolUseContext,
+  CanUseToolFn,
+} from '../../Tool.js'
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
 import { shouldUseSandbox } from '../../tools/BashTool/shouldUseSandbox.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
@@ -56,13 +61,6 @@ import {
 
 import * as classifierDecisionNs from './classifierDecision.js'
 import * as autoModeStateNs from './autoModeState.js'
-
-const classifierDecisionModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? classifierDecisionNs
-  : null
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? autoModeStateNs
-  : null
 
 import {
   addToTurnClassifierDuration,
@@ -131,10 +129,7 @@ export function createPermissionRequestMessage(
 ): string {
   // Handle different decision reason types
   if (decisionReason) {
-    if (
-      feature('TRANSCRIPT_CLASSIFIER') &&
-      decisionReason.type === 'classifier'
-    ) {
+    if (decisionReason.type === 'classifier') {
       return `Classifier '${decisionReason.classifier}' requires approval for this ${toolName} command: ${decisionReason.reason}`
     }
     switch (decisionReason.type) {
@@ -475,17 +470,15 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
   // breaks the consecutive denial streak.
   if (result.behavior === 'allow') {
     const appState = context.getAppState()
-    if (feature('TRANSCRIPT_CLASSIFIER')) {
-      const currentDenialState =
-        context.localDenialTracking ?? appState.denialTracking
-      if (
-        appState.toolPermissionContext.mode === 'auto' &&
-        currentDenialState &&
-        currentDenialState.consecutiveDenials > 0
-      ) {
-        const newDenialState = recordSuccess(currentDenialState)
-        persistDenialState(context, newDenialState)
-      }
+    const currentDenialState =
+      context.localDenialTracking ?? appState.denialTracking
+    if (
+      appState.toolPermissionContext.mode === 'auto' &&
+      currentDenialState &&
+      currentDenialState.consecutiveDenials > 0
+    ) {
+      const newDenialState = recordSuccess(currentDenialState)
+      persistDenialState(context, newDenialState)
     }
     return result
   }
@@ -508,10 +501,9 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
     // Apply auto mode: use AI classifier instead of prompting user
     // Check this BEFORE shouldAvoidPermissionPrompts so classifiers work in headless mode
     if (
-      feature('TRANSCRIPT_CLASSIFIER') &&
-      (appState.toolPermissionContext.mode === 'auto' ||
-        (appState.toolPermissionContext.mode === 'plan' &&
-          (autoModeStateModule?.isAutoModeActive() ?? false)))
+      appState.toolPermissionContext.mode === 'auto' ||
+      (appState.toolPermissionContext.mode === 'plan' &&
+        autoModeStateNs.isAutoModeActive())
     ) {
       // Non-classifier-approvable safetyCheck decisions stay immune to ALL
       // auto-approve paths: the acceptEdits fast-path, the safe-tool allowlist,
@@ -632,7 +624,7 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
 
       // Allowlisted tools are safe and don't need YOLO classification.
       // This uses the safe-tool allowlist to skip unnecessary classifier API calls.
-      if (classifierDecisionModule!.isAutoModeAllowlistedTool(tool.name)) {
+      if (classifierDecisionNs.isAutoModeAllowlistedTool(tool.name)) {
         const newDenialState = recordSuccess(denialState)
         persistDenialState(context, newDenialState)
         logForDebugging(

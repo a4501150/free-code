@@ -33,16 +33,16 @@ import { getPrompt } from './prompt.js'
 import { renderToolUseMessage } from './UI.js'
 
 const inputSchema = z.strictObject({
-    team_name: z.string().describe('Name for the new team to create.'),
-    description: z.string().optional().describe('Team description/purpose.'),
-    agent_type: z
-      .string()
-      .optional()
-      .describe(
-        'Type/role of the team lead (e.g., "researcher", "test-runner"). ' +
-          'Used for team file and inter-agent coordination.',
-      ),
-  })
+  team_name: z.string().describe('Name for the new team to create.'),
+  description: z.string().optional().describe('Team description/purpose.'),
+  agent_type: z
+    .string()
+    .optional()
+    .describe(
+      'Type/role of the team lead (e.g., "researcher", "test-runner"). ' +
+        'Used for team file and inter-agent coordination.',
+    ),
+})
 type InputSchema = typeof inputSchema
 
 export type Output = {

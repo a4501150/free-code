@@ -15,13 +15,13 @@ export type IDEAtMentioned = {
 const NOTIFICATION_METHOD = 'at_mentioned'
 
 const AtMentionedSchema = z.object({
-    method: z.literal(NOTIFICATION_METHOD),
-    params: z.object({
-      filePath: z.string(),
-      lineStart: z.number().optional(),
-      lineEnd: z.number().optional(),
-    }),
-  })
+  method: z.literal(NOTIFICATION_METHOD),
+  params: z.object({
+    filePath: z.string(),
+    lineStart: z.number().optional(),
+    lineEnd: z.number().optional(),
+  }),
+})
 
 /**
  * A hook that tracks IDE at-mention notifications by directly registering

@@ -16,7 +16,10 @@ import { useAppState } from '../../state/AppState.js'
 import { getAgentMemoryDir } from '../../tools/AgentTool/agentMemory.js'
 import { openPath } from '../../utils/browser.js'
 import { getMemoryFiles, type MemoryFileInfo } from '../../utils/claudemd.js'
-import { getClaudeConfigHomeDir, globalConfigDir } from '../../utils/envUtils.js'
+import {
+  getClaudeConfigHomeDir,
+  globalConfigDir,
+} from '../../utils/envUtils.js'
 import { getDisplayPath } from '../../utils/file.js'
 import { formatRelativeTimeAgo } from '../../utils/format.js'
 import { projectIsInGitRepo } from '../../utils/memory/versions.js'

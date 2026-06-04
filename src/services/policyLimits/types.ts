@@ -4,12 +4,10 @@ import { z } from 'zod/v4'
  * Only blocked policies are included. If a policy key is absent, it's allowed.
  */
 export const PolicyLimitsResponseSchema = z.object({
-    restrictions: z.record(z.string(), z.object({ allowed: z.boolean() })),
-  })
+  restrictions: z.record(z.string(), z.object({ allowed: z.boolean() })),
+})
 
-export type PolicyLimitsResponse = z.infer<
-  typeof PolicyLimitsResponseSchema
->
+export type PolicyLimitsResponse = z.infer<typeof PolicyLimitsResponseSchema>
 
 /**
  * Result of fetching policy limits

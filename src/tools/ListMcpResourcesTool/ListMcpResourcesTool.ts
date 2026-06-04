@@ -12,22 +12,22 @@ import { DESCRIPTION, LIST_MCP_RESOURCES_TOOL_NAME, PROMPT } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
 const inputSchema = z.object({
-    server: z
-      .string()
-      .optional()
-      .describe('Optional server name to filter resources by'),
-  })
+  server: z
+    .string()
+    .optional()
+    .describe('Optional server name to filter resources by'),
+})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.array(
-    z.object({
-      uri: z.string().describe('Resource URI'),
-      name: z.string().describe('Resource name'),
-      mimeType: z.string().optional().describe('MIME type of the resource'),
-      description: z.string().optional().describe('Resource description'),
-      server: z.string().describe('Server that provides this resource'),
-    }),
-  )
+  z.object({
+    uri: z.string().describe('Resource URI'),
+    name: z.string().describe('Resource name'),
+    mimeType: z.string().optional().describe('MIME type of the resource'),
+    description: z.string().optional().describe('Resource description'),
+    server: z.string().describe('Server that provides this resource'),
+  }),
+)
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>

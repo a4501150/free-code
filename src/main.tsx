@@ -192,6 +192,7 @@ import {
   parseUserSpecifiedModel,
 } from './utils/model/model.js'
 import { getProviderRegistry } from './utils/model/providerRegistry.js'
+import { setAutoModeFlagCli } from './utils/permissions/autoModeState.js'
 import { PERMISSION_MODES } from './utils/permissions/PermissionMode.js'
 import {
   checkAndDisableBypassPermissions,
@@ -325,12 +326,6 @@ import {
   setUserMsgOptIn,
 } from './bootstrap/state.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
-  ? (require('./utils/permissions/autoModeState.js') as typeof import('./utils/permissions/autoModeState.js'))
-  : null
-
-/* eslint-enable @typescript-eslint/no-require-imports */
 import { initializeLspServerManager } from './services/lsp/manager.js'
 import { shouldEnablePromptSuggestion } from './services/PromptSuggestion/promptSuggestion.js'
 import {
@@ -1674,21 +1669,19 @@ async function run(): Promise<CommanderCommand> {
 
       // Store session bypass permissions mode for trust dialog check
       setSessionBypassPermissionsMode(permissionMode === 'bypassPermissions')
-      if (feature('TRANSCRIPT_CLASSIFIER')) {
-        // autoModeFlagCli is the "did the user intend auto this session" signal.
-        // Set when: --enable-auto-mode, --permission-mode auto, resolved mode
-        // is auto, OR settings defaultMode is auto but the gate denied it
-        // (permissionMode resolved to default with no explicit CLI override).
-        // Used by verifyAutoModeGateAccess to decide whether to notify on
-        // auto-unavailable, and by tengu_auto_mode_config opt-in carousel.
-        if (
-          (options as { enableAutoMode?: boolean }).enableAutoMode ||
-          permissionModeCli === 'auto' ||
-          permissionMode === 'auto' ||
-          (!permissionModeCli && isDefaultPermissionModeAuto())
-        ) {
-          autoModeStateModule?.setAutoModeFlagCli(true)
-        }
+      // autoModeFlagCli is the "did the user intend auto this session" signal.
+      // Set when: --enable-auto-mode, --permission-mode auto, resolved mode
+      // is auto, OR settings defaultMode is auto but the gate denied it
+      // (permissionMode resolved to default with no explicit CLI override).
+      // Used by verifyAutoModeGateAccess to decide whether to notify on
+      // auto-unavailable, and by tengu_auto_mode_config opt-in carousel.
+      if (
+        (options as { enableAutoMode?: boolean }).enableAutoMode ||
+        permissionModeCli === 'auto' ||
+        permissionMode === 'auto' ||
+        (!permissionModeCli && isDefaultPermissionModeAuto())
+      ) {
+        setAutoModeFlagCli(true)
       }
 
       // Parse the MCP config files/strings if provided
@@ -1956,7 +1949,7 @@ async function run(): Promise<CommanderCommand> {
       const { warnings, dangerousPermissions, overlyBroadBashPermissions } =
         initResult
 
-      if (feature('TRANSCRIPT_CLASSIFIER') && dangerousPermissions.length > 0) {
+      if (dangerousPermissions.length > 0) {
         toolPermissionContext = stripDangerousPermissionsForAutoMode(
           toolPermissionContext,
         )
@@ -2892,19 +2885,16 @@ async function run(): Promise<CommanderCommand> {
         }
 
         // Async check of auto mode gate — corrects state and disables auto if needed.
-        // Gated on TRANSCRIPT_CLASSIFIER (not USER_TYPE) so the kill switch runs for external builds too.
-        if (feature('TRANSCRIPT_CLASSIFIER')) {
-          void verifyAutoModeGateAccess(
-            toolPermissionContext,
-            headlessStore.getState().fastMode,
-          ).then(({ updateContext }) => {
-            headlessStore.setState(prev => {
-              const nextCtx = updateContext(prev.toolPermissionContext)
-              if (nextCtx === prev.toolPermissionContext) return prev
-              return { ...prev, toolPermissionContext: nextCtx }
-            })
+        void verifyAutoModeGateAccess(
+          toolPermissionContext,
+          headlessStore.getState().fastMode,
+        ).then(({ updateContext }) => {
+          headlessStore.setState(prev => {
+            const nextCtx = updateContext(prev.toolPermissionContext)
+            if (nextCtx === prev.toolPermissionContext) return prev
+            return { ...prev, toolPermissionContext: nextCtx }
           })
-        }
+        })
 
         // Set global state for session persistence
         if (options.sessionPersistence === false) {
@@ -3563,11 +3553,9 @@ async function run(): Promise<CommanderCommand> {
     )
   }
 
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
-    program.addOption(
-      new Option('--enable-auto-mode', 'Opt in to auto mode').hideHelp(),
-    )
-  }
+  program.addOption(
+    new Option('--enable-auto-mode', 'Opt in to auto mode').hideHelp(),
+  )
 
   if (feature('KAIROS')) {
     program.addOption(
@@ -4045,42 +4033,38 @@ async function run(): Promise<CommanderCommand> {
       process.exit(0)
     })
 
-  if (feature('TRANSCRIPT_CLASSIFIER')) {
-    {
-      const autoModeCmd = program
-        .command('auto-mode')
-        .description('Inspect auto mode classifier configuration')
+  const autoModeCmd = program
+    .command('auto-mode')
+    .description('Inspect auto mode classifier configuration')
 
-      autoModeCmd
-        .command('defaults')
-        .description(
-          'Print the default auto mode environment, allow, and deny rules as JSON',
-        )
-        .action(async () => {
-          autoModeDefaultsHandler()
-          process.exit(0)
-        })
+  autoModeCmd
+    .command('defaults')
+    .description(
+      'Print the default auto mode environment, allow, and deny rules as JSON',
+    )
+    .action(async () => {
+      autoModeDefaultsHandler()
+      process.exit(0)
+    })
 
-      autoModeCmd
-        .command('config')
-        .description(
-          'Print the effective auto mode config as JSON: your settings where set, defaults otherwise',
-        )
-        .action(async () => {
-          autoModeConfigHandler()
-          process.exit(0)
-        })
+  autoModeCmd
+    .command('config')
+    .description(
+      'Print the effective auto mode config as JSON: your settings where set, defaults otherwise',
+    )
+    .action(async () => {
+      autoModeConfigHandler()
+      process.exit(0)
+    })
 
-      autoModeCmd
-        .command('critique')
-        .description('Get AI feedback on your custom auto mode rules')
-        .option('--model <model>', 'Override which model is used')
-        .action(async options => {
-          await autoModeCritiqueHandler(options)
-          process.exit()
-        })
-    }
-  }
+  autoModeCmd
+    .command('critique')
+    .description('Get AI feedback on your custom auto mode rules')
+    .option('--model <model>', 'Override which model is used')
+    .action(async options => {
+      await autoModeCritiqueHandler(options)
+      process.exit()
+    })
 
   // Doctor command - check installation health
   program

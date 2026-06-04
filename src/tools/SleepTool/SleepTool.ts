@@ -13,23 +13,21 @@ import { hasCommandsInQueue } from '../../utils/messageQueueManager.js'
 import { SLEEP_TOOL_NAME, DESCRIPTION, SLEEP_TOOL_PROMPT } from './prompt.js'
 
 const inputSchema = z.strictObject({
-    duration_seconds: z
-      .number()
-      .min(1)
-      .max(3600)
-      .optional()
-      .default(60)
-      .describe(
-        'How long to sleep in seconds (1-3600). Defaults to 60 seconds.',
-      ),
-  })
+  duration_seconds: z
+    .number()
+    .min(1)
+    .max(3600)
+    .optional()
+    .default(60)
+    .describe('How long to sleep in seconds (1-3600). Defaults to 60 seconds.'),
+})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    slept: z.boolean(),
-    duration: z.number(),
-    interrupted: z.boolean(),
-  })
+  slept: z.boolean(),
+  duration: z.number(),
+  interrupted: z.boolean(),
+})
 type OutputSchema = typeof outputSchema
 
 type Output = z.infer<OutputSchema>

@@ -68,18 +68,18 @@ const inputSchema = (() => {
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    success: z.boolean(),
-    taskId: z.string(),
-    updatedFields: z.array(z.string()),
-    error: z.string().optional(),
-    statusChange: z
-      .object({
-        from: z.string(),
-        to: z.string(),
-      })
-      .optional(),
-    verificationNudgeNeeded: z.boolean().optional(),
-  })
+  success: z.boolean(),
+  taskId: z.string(),
+  updatedFields: z.array(z.string()),
+  error: z.string().optional(),
+  statusChange: z
+    .object({
+      from: z.string(),
+      to: z.string(),
+    })
+    .optional(),
+  verificationNudgeNeeded: z.boolean().optional(),
+})
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>

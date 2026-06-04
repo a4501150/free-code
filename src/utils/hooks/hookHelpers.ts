@@ -13,12 +13,12 @@ import { addFunctionHook } from './sessionHooks.js'
  * Schema for hook responses (shared by prompt and agent hooks)
  */
 export const hookResponseSchema = z.object({
-    ok: z.boolean().describe('Whether the condition was met'),
-    reason: z
-      .string()
-      .describe('Reason, if the condition was not met')
-      .optional(),
-  })
+  ok: z.boolean().describe('Whether the condition was met'),
+  reason: z
+    .string()
+    .describe('Reason, if the condition was not met')
+    .optional(),
+})
 
 /**
  * Add hook input JSON to prompt, either replacing $ARGUMENTS placeholder or appending.

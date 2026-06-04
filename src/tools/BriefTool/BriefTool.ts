@@ -16,45 +16,45 @@ import {
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
 const inputSchema = z.strictObject({
-    message: z
-      .string()
-      .describe('The message for the user. Supports markdown formatting.'),
-    attachments: z
-      .array(z.string())
-      .optional()
-      .describe(
-        'Optional file paths (absolute or relative to cwd) to attach. Use for photos, screenshots, diffs, logs, or any file the user should see alongside your message.',
-      ),
-    status: z
-      .enum(['normal', 'proactive'])
-      .describe(
-        "Use 'proactive' when you're surfacing something the user hasn't asked for and needs to see now — task completion while they're away, a blocker you hit, an unsolicited status update. Use 'normal' when replying to something the user just said.",
-      ),
-  })
+  message: z
+    .string()
+    .describe('The message for the user. Supports markdown formatting.'),
+  attachments: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Optional file paths (absolute or relative to cwd) to attach. Use for photos, screenshots, diffs, logs, or any file the user should see alongside your message.',
+    ),
+  status: z
+    .enum(['normal', 'proactive'])
+    .describe(
+      "Use 'proactive' when you're surfacing something the user hasn't asked for and needs to see now — task completion while they're away, a blocker you hit, an unsolicited status update. Use 'normal' when replying to something the user just said.",
+    ),
+})
 type InputSchema = typeof inputSchema
 
 // attachments MUST remain optional — resumed sessions replay pre-attachment
 // outputs verbatim and a required field would crash the UI renderer on resume.
 const outputSchema = z.object({
-    message: z.string().describe('The message'),
-    attachments: z
-      .array(
-        z.object({
-          path: z.string(),
-          size: z.number(),
-          isImage: z.boolean(),
-          file_uuid: z.string().optional(),
-        }),
-      )
-      .optional()
-      .describe('Resolved attachment metadata'),
-    sentAt: z
-      .string()
-      .optional()
-      .describe(
-        'ISO timestamp captured at tool execution on the emitting process. Optional — resumed sessions replay pre-sentAt outputs verbatim.',
-      ),
-  })
+  message: z.string().describe('The message'),
+  attachments: z
+    .array(
+      z.object({
+        path: z.string(),
+        size: z.number(),
+        isImage: z.boolean(),
+        file_uuid: z.string().optional(),
+      }),
+    )
+    .optional()
+    .describe('Resolved attachment metadata'),
+  sentAt: z
+    .string()
+    .optional()
+    .describe(
+      'ISO timestamp captured at tool execution on the emitting process. Optional — resumed sessions replay pre-sentAt outputs verbatim.',
+    ),
+})
 type OutputSchema = typeof outputSchema
 export type Output = z.infer<OutputSchema>
 

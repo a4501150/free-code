@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { useEffect, useRef } from 'react'
 import { useNotifications } from 'src/context/notifications.js'
 import { useAppState } from '../../state/AppState.js'
@@ -7,7 +6,6 @@ import {
   getAutoModeUnavailableNotification,
   getAutoModeUnavailableReason,
 } from '../../utils/permissions/permissionSetup.js'
-import { hasAutoModeOptIn } from '../../utils/settings/settings.js'
 
 /**
  * Shows a one-shot notification when the shift-tab carousel wraps past where
@@ -28,15 +26,13 @@ export function useAutoModeUnavailableNotification(): void {
     const prevMode = prevModeRef.current
     prevModeRef.current = mode
 
-    if (!feature('TRANSCRIPT_CLASSIFIER')) return
     if (shownRef.current) return
 
     const wrappedPastAutoSlot =
       mode === 'default' &&
       prevMode !== 'default' &&
       prevMode !== 'auto' &&
-      !isAutoModeAvailable &&
-      hasAutoModeOptIn()
+      !isAutoModeAvailable
 
     if (!wrappedPastAutoSlot) return
 

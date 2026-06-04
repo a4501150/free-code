@@ -371,7 +371,7 @@ export class TmuxSession {
         options.currentPaneOnly
           ? this.capturePane()
           : this.capturePaneWithHistory(options.historyLines),
-      (screen) => {
+      screen => {
         detectCrash(screen)
         return predicate(screen)
       },

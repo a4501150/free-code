@@ -7,10 +7,10 @@ import type { SettingsJson } from '../../utils/settings/types.js'
  * Full validation is performed in index.ts after parsing using SettingsSchema.safeParse().
  */
 export const RemoteManagedSettingsResponseSchema = z.object({
-    uuid: z.string(), // Settings UUID
-    checksum: z.string(),
-    settings: z.record(z.string(), z.unknown()) as z.ZodType<SettingsJson>,
-  })
+  uuid: z.string(), // Settings UUID
+  checksum: z.string(),
+  settings: z.record(z.string(), z.unknown()) as z.ZodType<SettingsJson>,
+})
 
 export type RemoteManagedSettingsResponse = z.infer<
   typeof RemoteManagedSettingsResponseSchema

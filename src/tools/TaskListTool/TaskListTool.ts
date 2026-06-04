@@ -12,16 +12,16 @@ const inputSchema = z.strictObject({})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    tasks: z.array(
-      z.object({
-        id: z.string(),
-        subject: z.string(),
-        status: TaskStatusSchema,
-        owner: z.string().optional(),
-        blockedBy: z.array(z.string()),
-      }),
-    ),
-  })
+  tasks: z.array(
+    z.object({
+      id: z.string(),
+      subject: z.string(),
+      status: TaskStatusSchema,
+      owner: z.string().optional(),
+      blockedBy: z.array(z.string()),
+    }),
+  ),
+})
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>

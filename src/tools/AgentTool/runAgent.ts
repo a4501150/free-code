@@ -22,7 +22,7 @@ import type {
   MCPServerConnection,
   ScopedMcpServerConfig,
 } from '../../services/mcp/types.js'
-import type { Tool, Tools, ToolUseContext , CanUseToolFn } from '../../Tool.js'
+import type { Tool, Tools, ToolUseContext, CanUseToolFn } from '../../Tool.js'
 import { killShellTasksForAgent } from '../../tasks/LocalShellTask/killShellTasks.js'
 import type { Command } from '../../types/command.js'
 import type { AgentId } from '../../types/ids.js'
@@ -403,10 +403,7 @@ export async function* runAgent({
       agentPermissionMode &&
       state.toolPermissionContext.mode !== 'bypassPermissions' &&
       state.toolPermissionContext.mode !== 'acceptEdits' &&
-      !(
-        feature('TRANSCRIPT_CLASSIFIER') &&
-        state.toolPermissionContext.mode === 'auto'
-      )
+      state.toolPermissionContext.mode !== 'auto'
     ) {
       toolPermissionContext = {
         ...toolPermissionContext,

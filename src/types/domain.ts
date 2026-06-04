@@ -215,7 +215,9 @@ export type DomainStreamEvent =
   | {
       type: 'content_block_start'
       index: number
-      content_block: DomainContentBlock | { type: string; [key: string]: unknown }
+      content_block:
+        | DomainContentBlock
+        | { type: string; [key: string]: unknown }
     }
   | {
       type: 'content_block_delta'

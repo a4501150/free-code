@@ -26,7 +26,9 @@ export function getNormalizedError(
   error: TransportErrorLike,
 ): NormalizedApiError | undefined {
   const embedded =
-    error.normalized ?? error.error?.normalized ?? error.error?.error?.normalized
+    error.normalized ??
+    error.error?.normalized ??
+    error.error?.error?.normalized
   if (embedded) return embedded
   if (typeof error.status === 'number') {
     const registry = getProviderRegistry()
@@ -157,7 +159,6 @@ function sanitizeMessageHTML(message: string): string {
   }
   return message
 }
-
 
 /**
  * Shapes of deserialized API errors from session JSONL.

@@ -400,11 +400,9 @@ export async function validateMarketplaceManifest(
   // schema with .strict() here. Note .strict() on the outer object does NOT
   // propagate into z.array() elements, so we also override the plugins array
   // with strict entries to catch typos inside individual plugin entries too.
-  const strictMarketplaceSchema = PluginMarketplaceSchema
-    .extend({
-      plugins: z.array(PluginMarketplaceEntrySchema.strict()),
-    })
-    .strict()
+  const strictMarketplaceSchema = PluginMarketplaceSchema.extend({
+    plugins: z.array(PluginMarketplaceEntrySchema.strict()),
+  }).strict()
   const result = strictMarketplaceSchema.safeParse(parsed)
 
   if (!result.success) {

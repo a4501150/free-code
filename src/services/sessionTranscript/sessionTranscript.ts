@@ -17,7 +17,12 @@ import { logError } from '../../utils/log.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 
 function getTranscriptDir(): string {
-  return join(getClaudeConfigHomeDir(), 'sessions', getSessionId(), 'transcript')
+  return join(
+    getClaudeConfigHomeDir(),
+    'sessions',
+    getSessionId(),
+    'transcript',
+  )
 }
 
 function ensureDir(dir: string): void {

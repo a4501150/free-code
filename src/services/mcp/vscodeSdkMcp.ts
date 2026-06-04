@@ -2,18 +2,13 @@ import { logForDebugging } from 'src/utils/debug.js'
 import { z } from 'zod/v4'
 import type { ConnectedMCPServer, MCPServerConnection } from './types.js'
 
-type AutoModeEnabledState = 'enabled' | 'disabled' | 'opt-in'
-function readAutoModeEnabledState(): AutoModeEnabledState {
-  return 'enabled'
-}
-
 export const LogEventNotificationSchema = z.object({
-    method: z.literal('log_event'),
-    params: z.object({
-      eventName: z.string(),
-      eventData: z.object({}).passthrough(),
-    }),
-  })
+  method: z.literal('log_event'),
+  params: z.object({
+    eventName: z.string(),
+    eventData: z.object({}).passthrough(),
+  }),
+})
 
 // Store the VSCode MCP client reference for sending notifications
 let vscodeMcpClient: ConnectedMCPServer | null = null
@@ -65,12 +60,7 @@ export function setupVscodeSdkMcp(sdkClients: MCPServerConnection[]): void {
     const gates: Record<string, boolean | string> = {
       tengu_quiet_fern: true,
       tengu_vscode_cc_auth: true,
-    }
-    // Tri-state: 'enabled' | 'disabled' | 'opt-in'. Omit if unknown so VSCode
-    // fails closed (treats absent as 'disabled').
-    const autoModeState = readAutoModeEnabledState()
-    if (autoModeState !== undefined) {
-      gates.tengu_auto_mode_state = autoModeState
+      tengu_auto_mode_state: 'enabled',
     }
     void client.client.notification({
       method: 'experiment_gates',

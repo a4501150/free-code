@@ -32,7 +32,6 @@ const fullExperimentalFeatures = [
   'QUICK_SEARCH',
   'TEAMMEM',
   'TOKEN_BUDGET',
-  'TRANSCRIPT_CLASSIFIER',
   'TREE_SITTER_BASH',
   'TREE_SITTER_BASH_SHADOW',
 ] as const

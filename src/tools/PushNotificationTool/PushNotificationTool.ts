@@ -25,26 +25,23 @@ The notification will be delivered via the user's configured notification channe
 Each notification interrupts the user — only use it when an interruption is warranted (e.g., a task they care about has finished, or input is needed and you cannot continue without it).`
 
 const inputSchema = z.strictObject({
-    title: z
-      .string()
-      .max(100)
-      .describe('Short notification title (max 100 chars).'),
-    body: z
-      .string()
-      .max(500)
-      .describe('Notification body text (max 500 chars).'),
-    priority: z
-      .enum(['low', 'normal', 'high'])
-      .optional()
-      .default('normal')
-      .describe('Notification priority level.'),
-  })
+  title: z
+    .string()
+    .max(100)
+    .describe('Short notification title (max 100 chars).'),
+  body: z.string().max(500).describe('Notification body text (max 500 chars).'),
+  priority: z
+    .enum(['low', 'normal', 'high'])
+    .optional()
+    .default('normal')
+    .describe('Notification priority level.'),
+})
 type InputSchema = typeof inputSchema
 
 const outputSchema = z.object({
-    sent: z.boolean(),
-    error: z.string().optional(),
-  })
+  sent: z.boolean(),
+  error: z.string().optional(),
+})
 type OutputSchema = typeof outputSchema
 
 type Output = z.infer<OutputSchema>

@@ -7,9 +7,7 @@ import {
 } from '../../src/entrypoints/mcp.js'
 import { isConcurrencySafeToolInput } from '../../src/services/tools/toolInput.js'
 import { AskUserQuestionTool } from '../../src/tools/AskUserQuestionTool/AskUserQuestionTool.js'
-import {
-  getMethodAndParams,
-} from '../../src/tools/LSPTool/LSPTool.js'
+import { getMethodAndParams } from '../../src/tools/LSPTool/LSPTool.js'
 import { lspToolInputSchema } from '../../src/tools/LSPTool/schemas.js'
 import { TaskStopTool } from '../../src/tools/TaskStopTool/TaskStopTool.js'
 
@@ -57,9 +55,9 @@ describe('model-facing and runtime tool schemas', () => {
     }
 
     expect(Object.keys(schema.properties)).toEqual(['task_id'])
-    expect(TaskStopTool.inputSchema.safeParse({ shell_id: 'legacy-id' }).success).toBe(
-      true,
-    )
+    expect(
+      TaskStopTool.inputSchema.safeParse({ shell_id: 'legacy-id' }).success,
+    ).toBe(true)
   })
 })
 

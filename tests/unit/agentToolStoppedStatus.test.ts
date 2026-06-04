@@ -28,9 +28,9 @@ describe('withAgentStoppedStatus', () => {
       { type: 'text', text: '<status>stopped: invalid_request</status>' },
       { type: 'text', text: 'partial result' },
     ])
-    expect(text.match(/<status>stopped: invalid_request<\/status>/g)).toHaveLength(
-      1,
-    )
+    expect(
+      text.match(/<status>stopped: invalid_request<\/status>/g),
+    ).toHaveLength(1)
   })
 
   test('all completion surfaces use the shared formatter', () => {

@@ -57,35 +57,35 @@ export type AgentMcpServerSpec =
 
 // Zod schema for agent MCP server specs
 const AgentMcpServerSpecSchema = z.union([
-    z.string(), // Reference by name
-    z.record(z.string(), McpServerConfigSchema), // Inline as { name: config }
-  ])
+  z.string(), // Reference by name
+  z.record(z.string(), McpServerConfigSchema), // Inline as { name: config }
+])
 
 // Zod schemas for JSON agent validation
 // Note: HooksSchema is lazy so the circular chain AppState -> loadAgentsDir -> settings/types
 // is broken at module load time
 const AgentJsonSchema = z.object({
-    description: z.string().min(1, 'Description cannot be empty'),
-    tools: z.array(z.string()).optional(),
-    disallowedTools: z.array(z.string()).optional(),
-    prompt: z.string().min(1, 'Prompt cannot be empty'),
-    model: z
-      .string()
-      .trim()
-      .min(1, 'Model cannot be empty')
-      .transform(m => (m.toLowerCase() === 'inherit' ? 'inherit' : m))
-      .optional(),
-    effort: z.union([z.enum(EFFORT_LEVELS), z.number().int()]).optional(),
-    permissionMode: z.enum(PERMISSION_MODES).optional(),
-    mcpServers: z.array(AgentMcpServerSpecSchema).optional(),
-    hooks: HooksSchema.optional(),
-    maxTurns: z.number().int().positive().optional(),
-    skills: z.array(z.string()).optional(),
-    initialPrompt: z.string().optional(),
-    memory: z.enum(['user', 'project', 'local']).optional(),
-    background: z.boolean().optional(),
-    isolation: z.enum(['worktree']).optional(),
-  })
+  description: z.string().min(1, 'Description cannot be empty'),
+  tools: z.array(z.string()).optional(),
+  disallowedTools: z.array(z.string()).optional(),
+  prompt: z.string().min(1, 'Prompt cannot be empty'),
+  model: z
+    .string()
+    .trim()
+    .min(1, 'Model cannot be empty')
+    .transform(m => (m.toLowerCase() === 'inherit' ? 'inherit' : m))
+    .optional(),
+  effort: z.union([z.enum(EFFORT_LEVELS), z.number().int()]).optional(),
+  permissionMode: z.enum(PERMISSION_MODES).optional(),
+  mcpServers: z.array(AgentMcpServerSpecSchema).optional(),
+  hooks: HooksSchema.optional(),
+  maxTurns: z.number().int().positive().optional(),
+  skills: z.array(z.string()).optional(),
+  initialPrompt: z.string().optional(),
+  memory: z.enum(['user', 'project', 'local']).optional(),
+  background: z.boolean().optional(),
+  isolation: z.enum(['worktree']).optional(),
+})
 
 const AgentsJsonSchema = z.record(z.string(), AgentJsonSchema)
 

@@ -62,15 +62,10 @@ export async function countMessagesTokensWithAPI(
         const model = options?.model ?? getMainLoopModel()
         const adapter = getAdapterForModel(model)
         const betas = getModelBetas(model)
-        const breakdown = await adapter.countTokens(
-          messages,
-          tools,
-          model,
-          {
-            betas,
-            system: options?.system,
-          },
-        )
+        const breakdown = await adapter.countTokens(messages, tools, model, {
+          betas,
+          system: options?.system,
+        })
         if (!breakdown) return null
         return (
           breakdown.inputTokens +
