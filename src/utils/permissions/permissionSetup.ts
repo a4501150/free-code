@@ -1192,8 +1192,8 @@ export function getAutoModeEnabledStateIfCached():
  * - CLI flag (--enable-auto-mode / --permission-mode auto) — session-scoped
  *   availability request; the startup dialog in showSetupScreens enforces
  *   persistent consent before the REPL renders.
- * - skipAutoPermissionPrompt setting (persistent; set by accepting the opt-in
- *   dialog or by IDE/Desktop settings toggle)
+ * - autoMode.skipAutoPermissionPrompt setting (persistent; set by accepting
+ *   the opt-in dialog or by IDE/Desktop settings toggle)
  */
 export function hasAutoModeOptInAnySource(): boolean {
   if (autoModeStateModule?.getAutoModeFlagCli() ?? false) return true

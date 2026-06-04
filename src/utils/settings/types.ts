@@ -621,6 +621,7 @@ export type AutoModeRuleSections = {
 export type AutoModeSettings = AutoModeRuleSections & {
   enabled?: boolean
   classifierModel?: string
+  skipAutoPermissionPrompt?: boolean
 }
 
 function getStringArray(value: unknown): string[] | undefined {
@@ -644,6 +645,10 @@ export function normalizeAutoModeSetting(value: unknown): unknown {
   }
   if (typeof raw.classifierModel === 'string') {
     normalized.classifierModel = raw.classifierModel
+  }
+
+  if (typeof raw.skipAutoPermissionPrompt === 'boolean') {
+    normalized.skipAutoPermissionPrompt = raw.skipAutoPermissionPrompt
   }
 
   const environment = getStringArray(raw.environment)
@@ -684,6 +689,12 @@ export const AutoModeSettingsSchema = z.preprocess(
         .array(z.string())
         .optional()
         .describe('Rules that replace the auto mode classifier ALLOW section.'),
+      skipAutoPermissionPrompt: z
+        .boolean()
+        .optional()
+        .describe(
+          'Whether the user has accepted the auto mode opt-in dialog',
+        ),
     })
     .passthrough(),
 )
@@ -1569,12 +1580,6 @@ const _settingsSchemaValue = z
       ),
     ...(feature('TRANSCRIPT_CLASSIFIER')
       ? {
-          skipAutoPermissionPrompt: z
-            .boolean()
-            .optional()
-            .describe(
-              'Whether the user has accepted the auto mode opt-in dialog',
-            ),
           useAutoModeDuringPlan: z
             .boolean()
             .optional()

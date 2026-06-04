@@ -735,6 +735,7 @@ export function getManagedSettingsKeysForLogging(
       'environment',
       'deny',
       'allow',
+      'skipAutoPermissionPrompt',
     ]),
     sandbox: new Set([
       'enabled',
@@ -1050,12 +1051,18 @@ export function hasSkipDangerousModePermissionPrompt(): boolean {
  */
 export function hasAutoModeOptIn(): boolean {
   if (feature('TRANSCRIPT_CLASSIFIER')) {
-    const user = getSettingsForSource('userSettings')?.skipAutoPermissionPrompt
-    const local =
-      getSettingsForSource('localSettings')?.skipAutoPermissionPrompt
-    const flag = getSettingsForSource('flagSettings')?.skipAutoPermissionPrompt
-    const policy =
-      getSettingsForSource('policySettings')?.skipAutoPermissionPrompt
+    const user = getAutoModeSettingsObject(
+      getSettingsForSource('userSettings'),
+    )?.skipAutoPermissionPrompt
+    const local = getAutoModeSettingsObject(
+      getSettingsForSource('localSettings'),
+    )?.skipAutoPermissionPrompt
+    const flag = getAutoModeSettingsObject(
+      getSettingsForSource('flagSettings'),
+    )?.skipAutoPermissionPrompt
+    const policy = getAutoModeSettingsObject(
+      getSettingsForSource('policySettings'),
+    )?.skipAutoPermissionPrompt
     const result = !!(user || local || flag || policy)
     logForDebugging(
       `[auto-mode] hasAutoModeOptIn=${result} skipAutoPermissionPrompt: user=${user} local=${local} flag=${flag} policy=${policy}`,

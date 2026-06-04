@@ -92,15 +92,14 @@ describe('Auto Mode Classifier Deny E2E', () => {
       // never matches.
       readyText: 'shift+tab to cycle',
       // Mark this session as auto mode. defaultMode='auto' is only valid when
-      // TRANSCRIPT_CLASSIFIER is compiled in (cli-dev). skipAutoPermissionPrompt
-      // suppresses the first-time opt-in dialog so the test can reach the
-      // classifier path immediately.
+      // TRANSCRIPT_CLASSIFIER is compiled in (cli-dev).
+      // autoMode.skipAutoPermissionPrompt suppresses the first-time opt-in
+      // dialog so the test can reach the classifier path immediately.
       settings: {
-        autoMode: { enabled: true },
+        autoMode: { enabled: true, skipAutoPermissionPrompt: true },
         permissions: {
           defaultMode: 'auto',
         },
-        skipAutoPermissionPrompt: true,
       },
       // --enable-auto-mode is the explicit opt-in flag matching the CLI option.
       additionalArgs: ['--enable-auto-mode'],
@@ -154,9 +153,8 @@ describe('Auto Mode Classifier Deny E2E', () => {
       height: 50,
       readyText: 'shift+tab to cycle',
       settings: {
-        autoMode: { enabled: true },
+        autoMode: { enabled: true, skipAutoPermissionPrompt: true },
         permissions: { defaultMode: 'auto' },
-        skipAutoPermissionPrompt: true,
         verbose: true,
       },
       additionalArgs: ['--enable-auto-mode', '--verbose'],

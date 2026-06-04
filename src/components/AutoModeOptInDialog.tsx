@@ -27,14 +27,14 @@ export function AutoModeOptInDialog({
     switch (value) {
       case 'accept': {
         updateSettingsForSource('userSettings', {
-          skipAutoPermissionPrompt: true,
+          autoMode: { skipAutoPermissionPrompt: true },
         })
         onAccept()
         break
       }
       case 'accept-default': {
         updateSettingsForSource('userSettings', {
-          skipAutoPermissionPrompt: true,
+          autoMode: { skipAutoPermissionPrompt: true },
           permissions: { defaultMode: 'auto' },
         })
         onAccept()
