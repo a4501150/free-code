@@ -973,20 +973,12 @@ const _settingsSchemaValue = z
     permissions: PermissionsSchema.optional().describe(
       'Tool usage permissions configuration',
     ),
-    /** @deprecated Use defaultModel in freecode.json instead. Kept for backward compatibility. */
-    model: z
-      .string()
-      .optional()
-      .describe(
-        'Override the default model used by Claude Code. ' +
-          'Deprecated: prefer defaultModel (provider-qualified) in freecode.json.',
-      ),
     defaultModel: z
       .string()
       .optional()
       .describe(
         'Provider-qualified default model (e.g. "anthropic:claude-opus-4-6"). ' +
-          'Takes priority over the legacy "model" field. Canonical location is freecode.json.',
+          'Canonical location is modelSettings.json.',
       ),
     defaultSubagentModel: z
       .string()
@@ -1352,13 +1344,6 @@ const _settingsSchemaValue = z
       .string()
       .optional()
       .describe('Advisor model for the server-side advisor tool.'),
-    autoModeClassifierModel: z
-      .string()
-      .optional()
-      .describe(
-        'Deprecated: use autoMode.classifierModel. Model to use for auto mode safety classifier. ' +
-          'Defaults to the main loop model when not set.',
-      ),
     fastMode: z
       .boolean()
       .optional()

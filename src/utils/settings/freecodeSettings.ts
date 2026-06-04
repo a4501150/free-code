@@ -1,11 +1,8 @@
 /**
  * Freecode Settings — ~/.freecode/freecode.json
  *
- * Single unified config file for freecode. Combines what was previously
- * split between settings.json and providers.json (both now legacy).
- *
- * Schema: same as SettingsSchema with providers, defaultModel,
- * defaultSubagentModel as native fields.
+ * General application settings. Provider/model configuration lives
+ * in modelSettings.json (see modelSettings.ts).
  */
 
 import { existsSync, readFileSync } from 'fs'
@@ -20,16 +17,8 @@ import { resetSettingsCache } from './settingsCache.js'
 
 // Keys that should appear last in freecode.json, in order.
 // All other keys appear before these in their natural insertion order.
-const BOTTOM_KEYS = [
-  'defaultModel',
-  'defaultSubagentModel',
-  'defaultSmallFastModel',
-  'defaultBalancedModel',
-  'defaultMostPowerfulModel',
-  'autoMode',
-  'mcpServers',
-  'providers',
-]
+// Model/provider keys now live in modelSettings.json.
+const BOTTOM_KEYS = ['autoMode', 'mcpServers']
 
 /**
  * Reorder keys for readability: large/structural blocks (mcpServers, providers)
@@ -133,52 +122,6 @@ export function writeFreecodeSettingsFile(
       patchJsoncFile(rawContent, partial),
     )
     resetSettingsCache()
-  } catch (e) {
-    logError(e)
-  }
-}
-
-/**
- * Update a specific model entry within a provider's models array in freecode.json.
- * Does in-place mutation of the parsed object to preserve model key ordering,
- * then re-emits just the touched provider slot via `writeFreecodeSettingsFile`
- * so sibling providers (and any comments attached to them) are left untouched.
- *
- * Keys set to undefined in `updates` are deleted from the model entry.
- *
- * Note: inside-subtree comments on the touched provider (including the
- * models array) are lost, consistent with the merge contract documented on
- * `writeFreecodeSettingsFile`.
- */
-export function updateProviderModelConfig(
-  providerName: string,
-  modelId: string,
-  updates: Record<string, unknown>,
-): void {
-  try {
-    const settings = readFreecodeSettingsFile()
-    if (!settings) return
-
-    const providers = settings.providers as
-      | Record<string, { models?: Array<Record<string, unknown>> }>
-      | undefined
-    if (!providers) return
-
-    const provider = providers[providerName]
-    if (!provider?.models) return
-
-    const modelEntry = provider.models.find(m => m.id === modelId)
-    if (!modelEntry) return
-
-    for (const [key, value] of Object.entries(updates)) {
-      if (value === undefined) {
-        delete modelEntry[key]
-      } else {
-        modelEntry[key] = value
-      }
-    }
-
-    writeFreecodeSettingsFile({ providers: { [providerName]: provider } })
   } catch (e) {
     logError(e)
   }

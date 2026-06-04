@@ -59,18 +59,13 @@ describe('auto-mode settings shape', () => {
     expect(isAutoModeDisabledInSettings({})).toBe(false)
   })
 
-  test('classifier model resolution prefers autoMode.classifierModel', () => {
+  test('classifier model resolution reads autoMode.classifierModel', () => {
     expect(
       getAutoModeClassifierModelFromSettings({
         autoMode: { classifierModel: 'anthropic:claude-sonnet-4-6' },
-        autoModeClassifierModel: 'legacy-model',
       }),
     ).toBe('anthropic:claude-sonnet-4-6')
-    expect(
-      getAutoModeClassifierModelFromSettings({
-        autoModeClassifierModel: 'legacy-model',
-      }),
-    ).toBe('legacy-model')
+    expect(getAutoModeClassifierModelFromSettings({})).toBeUndefined()
   })
 
   test('custom sections replace their default template regions when bundled', () => {

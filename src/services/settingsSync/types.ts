@@ -53,9 +53,9 @@ export type SettingsSyncUploadResult = {
  * Keys used for sync entries
  */
 export const SYNC_KEYS = {
-  USER_SETTINGS: '~/.freecode/settings.json',
+  USER_SETTINGS: '~/.freecode/freecode.json',
   USER_MEMORY: '~/.freecode/CLAUDE.md',
   projectSettings: (projectId: string) =>
-    `projects/${projectId}/.claude/settings.local.json`,
+    `projects/${projectId}/.freecode/freecode.local.json`,
   projectMemory: (projectId: string) => `projects/${projectId}/CLAUDE.local.md`,
 } as const

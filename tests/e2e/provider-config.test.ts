@@ -326,23 +326,14 @@ describe('Provider Config E2E', () => {
       expect(openaiRequests[0]!.body.model).toBe('test-model')
     })
 
-    test('defaultModel takes priority over legacy model setting', async () => {
-      // Both defaultModel and model are set. defaultModel should win.
+    test('defaultModel routes to the correct provider', async () => {
       openaiServer.reset([{ kind: 'text', text: 'From defaultModel' }])
-      anthropicServer.reset([textResponse('From legacy model')])
 
       session = new TmuxSession({
         serverUrl: anthropicServer.url,
         settings: {
-          model: 'test-anthropic:shared-model', // legacy — should be ignored
-          defaultModel: 'test-openai:test-model', // new — should win
+          defaultModel: 'test-openai:test-model',
           providers: {
-            'test-anthropic': {
-              type: 'anthropic',
-              baseUrl: anthropicServer.url,
-              auth: { active: 'apiKey', apiKey: { key: 'test-key' } },
-              models: [{ id: 'shared-model' }],
-            },
             'test-openai': {
               type: 'openai-chat-completions',
               baseUrl: `${openaiServer.url}/v1`,
@@ -358,7 +349,6 @@ describe('Provider Config E2E', () => {
       const screen = await session.waitForText('From defaultModel', 15_000)
       expect(screen).toContain('From defaultModel')
 
-      // Verify request went to OpenAI (defaultModel), not Anthropic (legacy model)
       const openaiRequests = openaiServer.getRequestLog()
       expect(openaiRequests.length).toBeGreaterThanOrEqual(1)
     })

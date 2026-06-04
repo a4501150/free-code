@@ -1,28 +1,27 @@
 /**
  * Centralized migration utilities for Claude Code → Free Code.
  *
- * Three migration paths:
+ * Two migration paths:
  *   1. Config directory migration: ~/.claude/ → ~/.freecode/
- *   2. Global config state migration: ~/.claude.json → ~/.freecode/state.json
- *   3. User settings migration: ~/.freecode/settings.json → ~/.freecode/freecode.json
+ *   2. User settings migration: ~/.freecode/settings.json → ~/.freecode/freecode.json
  *
  * All migrations are user-consented or auto-detected during setup.
  * Settings loading is read-only and never triggers migration.
  */
 
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { cpSync, existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
-import { dirname, join } from 'path'
+import { join } from 'path'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
-import { writeFileSyncAndFlush_DEPRECATED } from '../file.js'
 import { safeParseJSON } from '../json.js'
 import { synthesizeProvidersFromLegacy } from '../model/legacyProviderMigration.js'
 import { stripContextSuffix } from '../model/parseModelString.js'
-import { jsonStringify } from '../slowOperations.js'
 import {
   orderFreecodeKeys,
   writeFreecodeSettingsFile,
 } from './freecodeSettings.js'
+import { writeModelSettingsFile } from './modelSettings.js'
+import { MODEL_SETTINGS_KEYS } from './modelSettingsKeys.js'
 import { normalizeAutoModeSetting } from './types.js'
 
 // ── Config directory migration ──────────────────────────────────────────
@@ -54,68 +53,6 @@ export function copyConfigDir(
 
 export function migrateToFreecodeDir(): void {
   copyConfigDir(getLegacyClaudeConfigDir(), getClaudeConfigHomeDir())
-}
-
-// ── Global config state migration ───────────────────────────────────────
-
-function getLegacyGlobalConfigPath(): string {
-  return join(
-    process.env.FREECODE_CONFIG_DIR ||
-      process.env.CLAUDE_CONFIG_DIR ||
-      homedir(),
-    '.claude.json',
-  )
-}
-
-export function needsGlobalConfigMigration(): boolean {
-  if (!existsSync(getLegacyGlobalConfigPath())) return false
-  const stateJsonPath = join(getClaudeConfigHomeDir(), 'state.json')
-  return !existsSync(stateJsonPath)
-}
-
-export function migrateGlobalConfigToState(): void {
-  const legacyPath = getLegacyGlobalConfigPath()
-  if (!existsSync(legacyPath)) return
-
-  let legacy: Record<string, unknown>
-  try {
-    const content = readFileSync(legacyPath, 'utf8')
-    const parsed = safeParseJSON(content)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
-    legacy = parsed as Record<string, unknown>
-  } catch {
-    return
-  }
-
-  const STATE_KEYS = [
-    'projects',
-    'userID',
-    'firstStartTime',
-    'oauthAccount',
-    'companion',
-    'companionMuted',
-    'customApiKeyResponses',
-  ] as const
-
-  const state: Record<string, unknown> = {}
-  for (const key of STATE_KEYS) {
-    if (key in legacy && legacy[key] !== undefined) {
-      state[key] = legacy[key]
-    }
-  }
-
-  if (Object.keys(state).length === 0) return
-
-  const stateFile = join(getClaudeConfigHomeDir(), 'state.json')
-  try {
-    mkdirSync(dirname(stateFile), { recursive: true })
-  } catch {
-    // ignore
-  }
-  writeFileSyncAndFlush_DEPRECATED(
-    stateFile,
-    jsonStringify(state, null, 2) + '\n',
-  )
 }
 
 // ── User settings migration ─────────────────────────────────────────────
@@ -245,5 +182,21 @@ export function runLegacyToFreecodeMigration(): void {
 
   out.providers = providers
 
-  writeFreecodeSettingsFile(orderFreecodeKeys(out))
+  // Split output: model keys go to modelSettings.json, rest to freecode.json
+  const modelOut: Record<string, unknown> = {}
+  const generalOut: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(out)) {
+    if (MODEL_SETTINGS_KEYS.has(key)) {
+      modelOut[key] = value
+    } else {
+      generalOut[key] = value
+    }
+  }
+
+  if (Object.keys(modelOut).length > 0) {
+    writeModelSettingsFile(modelOut)
+  }
+  if (Object.keys(generalOut).length > 0) {
+    writeFreecodeSettingsFile(orderFreecodeKeys(generalOut))
+  }
 }

@@ -518,7 +518,7 @@ export async function copyWorktreeIncludeFiles(
 
 /**
  * Post-creation setup for a newly created worktree.
- * Propagates settings.local.json, configures git hooks, and symlinks directories.
+ * Propagates freecode.local.json, configures git hooks, and symlinks directories.
  */
 async function performPostCreationSetup(
   repoRoot: string,
@@ -549,14 +549,14 @@ async function performPostCreationSetup(
       await mkdirRecursive(dirname(destSettingsLocal))
       await copyFile(sourceSettingsLocal, destSettingsLocal)
       logForDebugging(
-        `Copied settings.local.json to worktree: ${destSettingsLocal}`,
+        `Copied freecode.local.json to worktree: ${destSettingsLocal}`,
       )
     }
   } catch (e: unknown) {
     const code = getErrnoCode(e)
     if (code !== 'ENOENT') {
       logForDebugging(
-        `Failed to copy settings.local.json: ${(e as Error).message}`,
+        `Failed to copy freecode.local.json: ${(e as Error).message}`,
         { level: 'warn' },
       )
     }

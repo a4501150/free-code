@@ -23,9 +23,12 @@ import { getPlatform } from '../platform.js'
 import { clone, jsonStringify } from '../slowOperations.js'
 import {
   getExistingOrPreferredProjectConfigPath,
+  getPreferredProjectConfigPath,
   getPreferredProjectConfigRelativePath,
   getProjectConfigRelativePaths,
 } from '../projectConfigPaths.js'
+import { getModelSettingsFilePath } from './modelSettings.js'
+import { MODEL_SETTINGS_KEYS } from './modelSettingsKeys.js'
 import { profileCheckpoint } from '../startupProfiler.js'
 import {
   type EditableSettingSource,
@@ -170,7 +173,7 @@ function handleFileSystemError(error: unknown, path: string): void {
     error.code === 'ENOENT'
   ) {
     logForDebugging(
-      `Broken symlink or missing file encountered for settings.json at path: ${path}`,
+      `Broken symlink or missing file encountered for settings at path: ${path}`,
     )
   } else {
     logError(error)
@@ -251,12 +254,6 @@ export function getSettingsRootPathForSource(source: SettingSource): string {
 
 /**
  * Get the user settings filename based on cowork mode.
- * Returns 'cowork_settings.json' when in cowork mode, 'settings.json' otherwise.
- *
- * Priority:
- * 1. Session state (set by CLI flag --cowork)
- * 2. Environment variable CLAUDE_CODE_USE_COWORK_PLUGINS
- * 3. Default: 'settings.json'
  */
 function getUserSettingsFilePath(): string {
   if (
@@ -265,9 +262,6 @@ function getUserSettingsFilePath(): string {
   ) {
     return 'cowork_settings.json'
   }
-  // freecode.json is the single source of truth for user settings.
-  // Legacy settings.json is only read by runLegacyToFreecodeMigration()
-  // (one-shot, user-consented migration from showSetupScreens).
   return 'freecode.json'
 }
 
@@ -308,11 +302,18 @@ export function getRelativeSettingsFilePathForSource(
 
 /**
  * Returns all candidate file paths for a source, in precedence order (last wins).
- * For project/local settings, returns both .claude/ and .freecode/ paths.
- * For other sources, returns a single-element array.
+ * For project settings, returns both .claude/ and .freecode/ paths.
+ * For local settings, only .freecode/ is used.
+ * For user settings, returns freecode.json and modelSettings.json.
  */
 export function getSettingsFilePathsForSource(source: SettingSource): string[] {
   switch (source) {
+    case 'userSettings': {
+      const single = getSettingsFilePathForSource(source)
+      const paths = single ? [single] : []
+      paths.push(getModelSettingsFilePath())
+      return paths
+    }
     case 'projectSettings': {
       const root = getSettingsRootPathForSource(source)
       return getProjectConfigRelativePaths('freecode.json').map(rel =>
@@ -321,9 +322,9 @@ export function getSettingsFilePathsForSource(source: SettingSource): string[] {
     }
     case 'localSettings': {
       const root = getSettingsRootPathForSource(source)
-      return getProjectConfigRelativePaths('freecode.local.json').map(rel =>
-        join(root, rel),
-      )
+      return [
+        join(root, getPreferredProjectConfigRelativePath('freecode.local.json')),
+      ]
     }
     default: {
       const single = getSettingsFilePathForSource(source)
@@ -346,7 +347,7 @@ function getSettingsWritePathForSource(
         'freecode.json',
       )
     case 'localSettings':
-      return getExistingOrPreferredProjectConfigPath(
+      return getPreferredProjectConfigPath(
         getOriginalCwd(),
         'freecode.local.json',
       )
@@ -590,24 +591,68 @@ export function updateSettingsForSource(
       }
     }
 
-    // Re-read raw file content (preserves comments) for the JSONC patch.
-    let rawContent: string | null = null
-    try {
-      rawContent = readFileSync(filePath)
-    } catch (e) {
-      if (!isENOENT(e)) {
-        throw e
+    // For userSettings, route model keys to modelSettings.json and the
+    // rest to freecode.json. Other sources write everything to one file.
+    if (source === 'userSettings' && Object.keys(changed).length > 0) {
+      const modelChanged: Record<string, unknown> = {}
+      const generalChanged: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(changed)) {
+        if (MODEL_SETTINGS_KEYS.has(k)) {
+          modelChanged[k] = v
+        } else {
+          generalChanged[k] = v
+        }
       }
-      // ENOENT: patchJsoncFile handles null content by serializing fresh.
+
+      if (Object.keys(modelChanged).length > 0) {
+        const modelPath = getModelSettingsFilePath()
+        let modelRaw: string | null = null
+        try {
+          modelRaw = readFileSync(modelPath)
+        } catch (e) {
+          if (!isENOENT(e)) throw e
+        }
+        markInternalWrite(modelPath)
+        getFsImplementation().mkdirSync(dirname(modelPath))
+        writeFileSyncAndFlush_DEPRECATED(
+          modelPath,
+          patchJsoncFile(modelRaw, modelChanged),
+        )
+      }
+
+      if (Object.keys(generalChanged).length > 0) {
+        let rawContent: string | null = null
+        try {
+          rawContent = readFileSync(filePath)
+        } catch (e) {
+          if (!isENOENT(e)) throw e
+        }
+        markInternalWrite(filePath)
+        writeFileSyncAndFlush_DEPRECATED(
+          filePath,
+          patchJsoncFile(rawContent, generalChanged),
+        )
+      }
+    } else {
+      // Re-read raw file content (preserves comments) for the JSONC patch.
+      let rawContent: string | null = null
+      try {
+        rawContent = readFileSync(filePath)
+      } catch (e) {
+        if (!isENOENT(e)) {
+          throw e
+        }
+        // ENOENT: patchJsoncFile handles null content by serializing fresh.
+      }
+
+      // Mark this as an internal write before writing the file
+      markInternalWrite(filePath)
+
+      writeFileSyncAndFlush_DEPRECATED(
+        filePath,
+        patchJsoncFile(rawContent, changed),
+      )
     }
-
-    // Mark this as an internal write before writing the file
-    markInternalWrite(filePath)
-
-    writeFileSyncAndFlush_DEPRECATED(
-      filePath,
-      patchJsoncFile(rawContent, changed),
-    )
 
     // Invalidate the session cache since settings have been updated
     resetSettingsCache()
@@ -1079,8 +1124,7 @@ export function getTrustedAutoModeRuleSections():
 export function getAutoModeClassifierModelFromSettings(
   settings: SettingsJson,
 ): string | undefined {
-  const nested = getAutoModeSettingsObject(settings)?.classifierModel
-  return nested || settings.autoModeClassifierModel
+  return getAutoModeSettingsObject(settings)?.classifierModel
 }
 
 export function getAutoModeClassifierModelSetting(): string | undefined {

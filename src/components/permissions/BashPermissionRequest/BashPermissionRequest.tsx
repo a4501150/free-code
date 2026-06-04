@@ -128,7 +128,7 @@ function BashPermissionRequestInner({
   // (getSimpleCommandPrefix/getFirstWordPrefix) operate on the FULL compound
   // string and pick the first two words — producing dead rules like
   // `Bash(cd src:*)` or `Bash(./script.sh && npm test)` that never match again.
-  // Users accumulate 150+ of these in settings.local.json.
+  // Users accumulate 150+ of these in freecode.local.json.
   //
   // When compound with exactly one Bash rule (e.g. `cd src && npm test` where
   // cd is read-only → only npm test needs approval), seed the editable input

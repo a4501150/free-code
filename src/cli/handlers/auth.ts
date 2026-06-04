@@ -33,10 +33,8 @@ import {
   getProviderRegistry,
   resetProviderRegistry,
 } from '../../utils/model/providerRegistry.js'
-import {
-  freecodeSettingsFileExists,
-  writeFreecodeSettingsFile,
-} from '../../utils/settings/freecodeSettings.js'
+import { freecodeSettingsFileExists } from '../../utils/settings/freecodeSettings.js'
+import { writeModelSettingsFile } from '../../utils/settings/modelSettings.js'
 import {
   DEFAULT_ANTHROPIC_MODELS,
   DEFAULT_CODEX_MODELS,
@@ -126,12 +124,12 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
     })
   }
 
-  // Persist provider config to freecode.json so it's the single source of truth.
+  // Persist provider config to modelSettings.json.
   // Login-owned providers use distinct slot names (claude-ai, claude-console) so
   // they don't clobber a user-configured `anthropic` provider (e.g. a proxy with
   // its own baseUrl + bearer token).
   if (shouldUseClaudeAIAuth(tokens.scopes)) {
-    writeFreecodeSettingsFile({
+    writeModelSettingsFile({
       providers: {
         'claude-ai': {
           type: 'anthropic',
@@ -151,8 +149,8 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
   } else if (hasAnyAnthropicScope(tokens.scopes)) {
     // Console user — API key was created above; persist with apiKey auth
     // The API key is stored in keychain/globalConfig by createAndStoreApiKey.
-    // For freecode.json we use keyEnv so it resolves at runtime.
-    writeFreecodeSettingsFile({
+    // We use keyEnv so it resolves at runtime.
+    writeModelSettingsFile({
       providers: {
         'claude-console': {
           type: 'anthropic',
@@ -167,7 +165,7 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
     })
   } else {
     // Third-party (Codex)
-    writeFreecodeSettingsFile({
+    writeModelSettingsFile({
       providers: {
         codex: {
           type: 'openai-responses',

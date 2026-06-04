@@ -46,10 +46,8 @@ import {
 import { freecodeSettingsFileExists } from './utils/settings/freecodeSettings.js'
 import {
   legacySettingsFileExists,
-  migrateGlobalConfigToState,
   migrateToFreecodeDir,
   needsConfigDirMigration,
-  needsGlobalConfigMigration,
   runLegacyToFreecodeMigration,
 } from './utils/settings/claudeMigration.js'
 import { resetProviderRegistry } from './utils/model/providerRegistry.js'
@@ -178,11 +176,6 @@ export async function showSetupScreens(
     }
     resetSettingsCache()
     resetProviderRegistry()
-  }
-
-  // Migrate ~/.claude.json state into freecode.json.state (silent, no prompt)
-  if (needsGlobalConfigMigration()) {
-    migrateGlobalConfigToState()
   }
 
   // Legacy settings migration prompt. Runs before Onboarding so that when the

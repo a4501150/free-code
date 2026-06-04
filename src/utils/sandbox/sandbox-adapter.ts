@@ -237,10 +237,12 @@ export function convertToSandboxRuntimeConfig(
     getSettingsFilePathForSource(source),
   ).filter((p): p is string => p !== undefined)
   denyWrite.push(...settingsPaths)
-  // Block writes to state.json (runtime state, separate from settings)
+  // Block writes to state.json and modelSettings.json (separate from settings)
   const userSettingsPath = getSettingsFilePathForSource('userSettings')
   if (userSettingsPath) {
-    denyWrite.push(join(resolve(userSettingsPath, '..'), 'state.json'))
+    const configDir = resolve(userSettingsPath, '..')
+    denyWrite.push(join(configDir, 'state.json'))
+    denyWrite.push(join(configDir, 'modelSettings.json'))
   }
   denyWrite.push(getManagedSettingsDropInDir())
 
@@ -248,11 +250,10 @@ export function convertToSandboxRuntimeConfig(
   // directories. This covers legacy and preferred project config dirs, and the
   // case where the user has cd'd to a different directory.
   const projectSettingsFileNames = [
-    'settings.json',
-    'settings.local.json',
     'freecode.json',
     'freecode.local.json',
     'state.json',
+    'modelSettings.json',
   ] as const
   for (const projectDir of activeProjectDirs) {
     for (const projectConfigDir of PROJECT_CONFIG_DIRS) {

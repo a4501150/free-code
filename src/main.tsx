@@ -228,10 +228,8 @@ import {
   getFreecodeConfigDir,
   getLegacyClaudeConfigDir,
   legacySettingsFileExists,
-  migrateGlobalConfigToState,
   migrateToFreecodeDir,
   needsConfigDirMigration,
-  needsGlobalConfigMigration,
 } from './utils/settings/claudeMigration.js'
 import {
   getInitialSettings,
@@ -920,12 +918,7 @@ async function run(): Promise<CommanderCommand> {
       )
     }
 
-    // Migrate ~/.claude.json state fields into freecode.json.state
-    if (needsGlobalConfigMigration()) {
-      migrateGlobalConfigToState()
-    }
-
-    // Non-interactive users who still have only legacy ~/.freecode/settings.json
+    // Non-interactive users who still have only legacy settings.json
     // get a one-line stderr nudge. Provider config is no longer synthesized
     // from env vars — users must migrate or configure freecode.json.
     if (

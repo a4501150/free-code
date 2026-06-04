@@ -1622,7 +1622,7 @@ const DEFAULT_AUTO_MODE_CONFIG: AutoModeConfig = {
 
 /**
  * Get the model for the classifier.
- * Priority: settings autoMode.classifierModel > legacy autoModeClassifierModel > main loop model (inherit).
+ * Priority: settings autoMode.classifierModel > main loop model (inherit).
  */
 function getClassifierModel(): string {
   return (

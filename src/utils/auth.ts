@@ -4,9 +4,9 @@ import { execa } from 'execa'
 import { mkdir, stat } from 'fs/promises'
 import { GoogleAuth } from 'google-auth-library'
 import {
-  readFreecodeSettingsFile,
-  writeFreecodeSettingsFile,
-} from './settings/freecodeSettings.js'
+  readModelSettingsFile,
+  writeModelSettingsFile,
+} from './settings/modelSettings.js'
 import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
 import { CLAUDE_AI_PROFILE_SCOPE } from 'src/constants/oauth.js'
@@ -1378,10 +1378,10 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
     })
     saveOAuthTokensIfNeeded(refreshedTokens)
 
-    // Update freecode.json with refreshed tokens. Login writes oauth creds to
-    // the "claude-ai" slot (distinct from a user-owned "anthropic" proxy).
+    // Update modelSettings.json with refreshed tokens. Login writes oauth creds
+    // to the "claude-ai" slot (distinct from a user-owned "anthropic" proxy).
     try {
-      const existing = readFreecodeSettingsFile() ?? {}
+      const existing = readModelSettingsFile() ?? {}
       const providers = existing.providers as
         | Record<string, Record<string, unknown>>
         | undefined
@@ -1390,7 +1390,7 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
         claudeAiProvider &&
         (claudeAiProvider.auth as Record<string, unknown>)?.active === 'oauth'
       ) {
-        writeFreecodeSettingsFile({
+        writeModelSettingsFile({
           providers: {
             'claude-ai': {
               ...claudeAiProvider,
@@ -1407,7 +1407,7 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
         })
       }
     } catch {
-      // Non-fatal: freecode.json update is best-effort
+      // Non-fatal: modelSettings.json update is best-effort
     }
 
     // Clear the cache after refreshing token

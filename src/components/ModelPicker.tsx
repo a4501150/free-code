@@ -29,7 +29,7 @@ import {
   getGroupedModelOptions,
   type ModelOptionGroup,
 } from '../utils/model/modelOptions.js'
-import { updateProviderModelConfig } from '../utils/settings/freecodeSettings.js'
+import { updateProviderModelConfig } from '../utils/settings/modelSettings.js'
 import {
   getProviderRegistry,
   resetProviderRegistry,

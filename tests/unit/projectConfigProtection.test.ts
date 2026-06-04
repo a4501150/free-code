@@ -35,10 +35,10 @@ describe('project config path protections', () => {
     'blocks project settings files under %s',
     projectConfigDir => {
       for (const fileName of [
-        'settings.json',
-        'settings.local.json',
         'freecode.json',
         'freecode.local.json',
+        'state.json',
+        'modelSettings.json',
       ]) {
         const safety = checkPathSafetyForAutoEdit(
           join('/tmp/other-project', projectConfigDir, fileName),
@@ -73,10 +73,10 @@ describe('project config path protections', () => {
 
     for (const projectConfigDir of PROJECT_CONFIG_DIRS) {
       for (const fileName of [
-        'settings.json',
-        'settings.local.json',
         'freecode.json',
         'freecode.local.json',
+        'state.json',
+        'modelSettings.json',
       ]) {
         expect(denyWrite).toContain(
           join(projectRoot, projectConfigDir, fileName),

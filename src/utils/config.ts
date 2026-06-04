@@ -16,8 +16,7 @@ import { ConfigParseError, getErrnoCode } from './errors.js'
 import { writeFileSyncAndFlush_DEPRECATED } from './file.js'
 import { getFsImplementation } from './fsOperations.js'
 import { findCanonicalGitRoot } from './git.js'
-import { patchJsoncFile, safeParseJSON, safeParseJSONC } from './json.js'
-import { getFreecodeSettingsFilePath } from './settings/freecodeSettings.js'
+import { safeParseJSON } from './json.js'
 import { stripBOM } from './jsonRead.js'
 import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
@@ -497,57 +496,6 @@ export function getCustomApiKeyStatus(
   return 'approved'
 }
 
-/**
- * One-time migration: move the `state` key from freecode.json to state.json.
- * Idempotent — does nothing if state.json already exists.
- */
-function migrateStateToOwnFile(): void {
-  const stateFile = getStateFilePath()
-  const fs = getFsImplementation()
-
-  try {
-    fs.statSync(stateFile)
-    return // state.json already exists
-  } catch {
-    // Does not exist — check freecode.json for a state key to migrate
-  }
-
-  const settingsFile = getFreecodeSettingsFilePath()
-  let rawContent: string
-  try {
-    rawContent = fs.readFileSync(settingsFile, { encoding: 'utf-8' })
-  } catch {
-    return // freecode.json doesn't exist either
-  }
-
-  const parsed = safeParseJSONC(stripBOM(rawContent))
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
-  const stateObj = (parsed as Record<string, unknown>).state
-  if (!stateObj || typeof stateObj !== 'object' || Array.isArray(stateObj))
-    return
-
-  try {
-    try {
-      fs.mkdirSync(dirname(stateFile))
-    } catch (e) {
-      if (getErrnoCode(e) !== 'EEXIST') throw e
-    }
-    writeFileSyncAndFlush_DEPRECATED(
-      stateFile,
-      jsonStringify(stateObj, null, 2) + '\n',
-    )
-    // Remove the state key from freecode.json
-    writeFileSyncAndFlush_DEPRECATED(
-      settingsFile,
-      patchJsoncFile(rawContent, { state: undefined }),
-    )
-  } catch (e) {
-    logForDebugging(`Failed to migrate state to state.json: ${e}`, {
-      level: 'error',
-    })
-  }
-}
-
 // Flag to track if config reading is allowed
 let configReadingAllowed = false
 
@@ -563,8 +511,6 @@ export function enableConfigs(): void {
   // Any reads to configuration before this flag is set show an console warning
   // to prevent us from adding config reading during module initialization
   configReadingAllowed = true
-  // Migrate state from freecode.json to state.json if needed, then validate
-  migrateStateToOwnFile()
   readStateFromDisk()
 
   logForDiagnosticsNoPII('info', 'enable_configs_completed', {

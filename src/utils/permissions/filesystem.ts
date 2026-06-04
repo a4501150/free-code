@@ -200,20 +200,21 @@ function getSettingsPaths(): string[] {
   ).filter(path => path !== undefined)
   // state.json is runtime state separate from settings but equally sensitive
   paths.push(join(getClaudeConfigHomeDir(), 'state.json'))
+  // modelSettings.json holds provider/model configuration
+  paths.push(join(getClaudeConfigHomeDir(), 'modelSettings.json'))
   return paths
 }
 
 const PROJECT_SETTINGS_FILE_NAMES = [
-  'settings.json',
-  'settings.local.json',
   'freecode.json',
   'freecode.local.json',
   'state.json',
+  'modelSettings.json',
 ] as const
 
 export function isClaudeSettingsPath(filePath: string): boolean {
   // SECURITY: Normalize path structure first to prevent bypass via redundant ./
-  // sequences like `./.claude/./settings.json` which would evade the endsWith() check
+  // sequences like `./.claude/./freecode.json` which would evade the endsWith() check
   const expandedPath = expandPath(filePath)
 
   // Normalize for case-insensitive comparison to prevent bypassing security

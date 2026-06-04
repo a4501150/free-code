@@ -12,7 +12,7 @@ import {
   resolveAppliedEffort,
   toPersistableEffort,
 } from '../../utils/effort.js'
-import { updateProviderModelConfig } from '../../utils/settings/freecodeSettings.js'
+import { updateProviderModelConfig } from '../../utils/settings/modelSettings.js'
 import {
   getProviderRegistry,
   resetProviderRegistry,
