@@ -29,12 +29,8 @@ import {
   getManagedFilePath,
   getManagedSettingsDropInDir,
 } from '../managedPath.js'
-import { type SettingsJson, SettingsSchema } from '../types.js'
-import {
-  filterInvalidPermissionRules,
-  formatZodError,
-  type ValidationError,
-} from '../validation.js'
+import type { SettingsJson } from '../types.js'
+import { parseSettingsData, type ValidationError } from '../validation.js'
 import {
   WINDOWS_REGISTRY_KEY_PATH_HKCU,
   WINDOWS_REGISTRY_KEY_PATH_HKLM,
@@ -189,13 +185,8 @@ export function parseCommandOutputAsSettings(
     return { settings: {}, errors: [] }
   }
 
-  const ruleWarnings = filterInvalidPermissionRules(data, sourcePath)
-  const parseResult = SettingsSchema().safeParse(data)
-  if (!parseResult.success) {
-    const errors = formatZodError(parseResult.error, sourcePath)
-    return { settings: {}, errors: [...ruleWarnings, ...errors] }
-  }
-  return { settings: parseResult.data, errors: ruleWarnings }
+  const { settings, errors } = parseSettingsData(data, sourcePath)
+  return { settings: settings ?? {}, errors }
 }
 
 /**

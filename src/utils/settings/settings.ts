@@ -55,8 +55,7 @@ import {
   SettingsSchema,
 } from './types.js'
 import {
-  filterInvalidPermissionRules,
-  formatZodError,
+  parseSettingsData,
   type SettingsWithErrors,
   type ValidationError,
 } from './validation.js'
@@ -221,18 +220,7 @@ function parseSettingsFileUncached(path: string): {
 
     const data = safeParseJSONC(content, false)
 
-    // Filter invalid permission rules before schema validation so one bad
-    // rule doesn't cause the entire settings file to be rejected.
-    const ruleWarnings = filterInvalidPermissionRules(data, path)
-
-    const result = SettingsSchema().safeParse(data)
-
-    if (!result.success) {
-      const errors = formatZodError(result.error, path)
-      return { settings: null, errors: [...ruleWarnings, ...errors] }
-    }
-
-    return { settings: result.data, errors: ruleWarnings }
+    return parseSettingsData(data, path)
   } catch (error) {
     handleFileSystemError(error, path)
     return { settings: null, errors: [] }
@@ -808,14 +796,13 @@ function loadSettingsFromDisk(): SettingsWithErrors {
         // 1. Remote (highest priority)
         const remoteSettings = getRemoteManagedSettingsSyncFromCache()
         if (remoteSettings && Object.keys(remoteSettings).length > 0) {
-          const result = SettingsSchema().safeParse(remoteSettings)
-          if (result.success) {
-            policySettings = result.data
-          } else {
-            // Remote exists but is invalid — surface errors even as we fall through
-            policyErrors.push(
-              ...formatZodError(result.error, 'remote managed settings'),
-            )
+          const result = parseSettingsData(
+            remoteSettings,
+            'remote managed settings',
+          )
+          policyErrors.push(...result.errors)
+          if (result.settings) {
+            policySettings = result.settings
           }
         }
 

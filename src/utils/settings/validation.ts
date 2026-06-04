@@ -263,3 +263,18 @@ export function filterInvalidPermissionRules(
   }
   return warnings
 }
+
+export function parseSettingsData(
+  data: unknown,
+  sourcePath: string,
+): { settings: SettingsJson | null; errors: ValidationError[] } {
+  const ruleWarnings = filterInvalidPermissionRules(data, sourcePath)
+  const result = SettingsSchema().safeParse(data)
+
+  if (!result.success) {
+    const errors = formatZodError(result.error, sourcePath)
+    return { settings: null, errors: [...ruleWarnings, ...errors] }
+  }
+
+  return { settings: result.data, errors: ruleWarnings }
+}
