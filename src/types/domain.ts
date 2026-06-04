@@ -205,7 +205,6 @@ export type DomainContentDelta =
   | { type: 'text_delta'; text: string }
   | { type: 'input_json_delta'; partial_json: string }
   | { type: 'thinking_delta'; thinking: string }
-  | { type: 'signature_delta'; signature: string }
   | { type: 'citations_delta'; citations: unknown }
 
 export type DomainStreamEvent =

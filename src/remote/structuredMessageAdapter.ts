@@ -3,7 +3,7 @@ import type {
   DomainStreamEvent,
 } from '../types/domain.js'
 import type { UUID } from 'crypto'
-import { anthropicStreamEventToDomain } from '../types/domainConversion.js'
+import { createAnthropicStreamEventConverter } from '../types/domainConversion.js'
 import type {
   SDKAssistantMessage,
   SDKCompactBoundaryMessage,
@@ -48,12 +48,18 @@ function convertAssistantMessage(msg: SDKAssistantMessage): AssistantMessage {
 /**
  * Convert an SDKPartialAssistantMessage (streaming) to a StreamEvent
  */
-function convertStreamEvent(msg: SDKPartialAssistantMessage): StreamEvent {
+const convertAnthropicStreamEvent = createAnthropicStreamEventConverter()
+
+function convertStreamEvent(
+  msg: SDKPartialAssistantMessage,
+): StreamEvent | null {
+  const event = convertAnthropicStreamEvent(
+    msg.event as Parameters<typeof convertAnthropicStreamEvent>[0],
+  )
+  if (!event) return null
   return {
     type: 'stream_event',
-    event: anthropicStreamEventToDomain(
-      msg.event as Parameters<typeof anthropicStreamEventToDomain>[0],
-    ) as DomainStreamEvent,
+    event: event as DomainStreamEvent,
   }
 }
 
@@ -223,8 +229,10 @@ export function convertSDKMessage(
       return { type: 'ignored' }
     }
 
-    case 'stream_event':
-      return { type: 'stream_event', event: convertStreamEvent(msg) }
+    case 'stream_event': {
+      const event = convertStreamEvent(msg)
+      return event ? { type: 'stream_event', event } : { type: 'ignored' }
+    }
 
     case 'result':
       // Only show result messages for errors. Success results are noise

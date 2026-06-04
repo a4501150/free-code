@@ -232,7 +232,6 @@ export function doesMostRecentAssistantMessageExceed200k(
  * - reasoning (thinking_delta)
  * - redacted_reasoning data
  * - tool_use input (input_json_delta)
- * Note: signature_delta is excluded from streaming counts (not model output).
  */
 export function getAssistantMessageContentLength(
   message: AssistantMessage,

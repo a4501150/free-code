@@ -1,6 +1,6 @@
 import type { DomainStreamEvent } from "../../../types/domain.js";
 import {
-	anthropicStreamEventToDomain,
+	createAnthropicStreamEventConverter,
 	type WireStreamEvent,
 } from "../../../types/domainConversion.js";
 import type { NormalizedApiError } from "../../../utils/normalizedError.js";
@@ -14,6 +14,7 @@ export async function* parseAnthropicSSEStream(
 ): AsyncGenerator<DomainStreamEvent> {
 	const reader = body.getReader();
 	const decoder = new TextDecoder();
+	const convertStreamEvent = createAnthropicStreamEventConverter();
 	let buffer = "";
 
 	try {
@@ -60,7 +61,8 @@ export async function* parseAnthropicSSEStream(
 
 				if (parsed.type === "ping") continue;
 
-				yield anthropicStreamEventToDomain(parsed as WireStreamEvent);
+				const domainEvent = convertStreamEvent(parsed as WireStreamEvent);
+				if (domainEvent) yield domainEvent;
 			}
 
 			if (done) break;

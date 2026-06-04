@@ -29,7 +29,7 @@ import { CLIENT_REQUEST_ID_HEADER } from "../../../constants/api.js";
 import type { DomainStreamEvent } from "../../../types/domain.js";
 import {
 	anthropicMessageToDomain,
-	anthropicStreamEventToDomain,
+	createAnthropicStreamEventConverter,
 	type WireStreamEvent,
 } from "../../../types/domainConversion.js";
 import {
@@ -431,9 +431,13 @@ function makeStreamingResponse(
 	normalizeError: (raw: unknown, pt: ProviderType) => NormalizedApiError,
 ): DomainStreamingResponse {
 	async function* convertEvents(): AsyncGenerator<DomainStreamEvent> {
+		const convertStreamEvent = createAnthropicStreamEventConverter();
 		try {
 			for await (const event of sdkStream) {
-				yield anthropicStreamEventToDomain(event as unknown as WireStreamEvent);
+				const domainEvent = convertStreamEvent(
+					event as unknown as WireStreamEvent,
+				);
+				if (domainEvent) yield domainEvent;
 			}
 		} catch (error) {
 			if (error instanceof DomainUserAbortError) throw error;

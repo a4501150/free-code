@@ -2870,11 +2870,6 @@ export function handleMessageFromStream(
               : '',
           )
           return
-        case 'signature_delta':
-          // Signatures are cryptographic authentication strings, not model
-          // output. Excluding them from onUpdateLength prevents them from
-          // inflating the OTPS metric and the animated token counter.
-          return
         default:
           return
       }

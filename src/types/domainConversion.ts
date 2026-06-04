@@ -322,6 +322,114 @@ export function domainToolResultToAnthropic(
 
 // ── Stream Events: Anthropic SDK → Domain ─────────────────────────
 
+type AnthropicStreamEventConverterState = {
+	signaturesByIndex: Map<number, string>;
+	blockKindsByIndex: Map<number, "thinking">;
+};
+
+function getStreamEventIndex(event: WireStreamEvent): number | undefined {
+	if (typeof event.index === "number") return event.index;
+	if (typeof event.index === "string") {
+		const index = Number(event.index);
+		return Number.isFinite(index) ? index : undefined;
+	}
+	return undefined;
+}
+
+function isAnthropicSignatureDelta(event: WireStreamEvent): boolean {
+	return (
+		event.type === "content_block_delta" &&
+		(event.delta as { type?: unknown } | undefined)?.type === "signature_delta"
+	);
+}
+
+function providerStateWithAnthropicSignature(
+	domainEvent: DomainStreamEvent,
+	signature: string,
+	blockKind: "thinking" | undefined,
+): DomainStreamEvent {
+	if (domainEvent.type !== "content_block_stop") return domainEvent;
+	const existingAnthropic = domainEvent.providerState?.anthropic;
+	const anthropicState =
+		existingAnthropic && typeof existingAnthropic === "object"
+			? (existingAnthropic as Record<string, unknown>)
+			: {};
+	return {
+		...domainEvent,
+		providerState: {
+			...(domainEvent.providerState ?? {}),
+			anthropic: {
+				...anthropicState,
+				...(blockKind && { blockKind }),
+				signature,
+			},
+		},
+	};
+}
+
+export function createAnthropicStreamEventConverter(): (
+	event: WireStreamEvent,
+) => DomainStreamEvent | null {
+	const state: AnthropicStreamEventConverterState = {
+		signaturesByIndex: new Map(),
+		blockKindsByIndex: new Map(),
+	};
+
+	return (event: WireStreamEvent): DomainStreamEvent | null => {
+		if (event.type === "message_start") {
+			state.signaturesByIndex.clear();
+			state.blockKindsByIndex.clear();
+		}
+
+		const index = getStreamEventIndex(event);
+
+		if (event.type === "content_block_start" && index !== undefined) {
+			state.signaturesByIndex.delete(index);
+			const wireBlock = event.content_block as { type?: unknown } | undefined;
+			if (wireBlock?.type === "thinking") {
+				state.blockKindsByIndex.set(index, "thinking");
+			} else {
+				state.blockKindsByIndex.delete(index);
+			}
+		}
+
+		if (isAnthropicSignatureDelta(event)) {
+			if (index !== undefined) {
+				const delta = event.delta as { signature?: unknown };
+				if (typeof delta.signature === "string") {
+					state.signaturesByIndex.set(
+						index,
+						`${state.signaturesByIndex.get(index) ?? ""}${delta.signature}`,
+					);
+				}
+			}
+			return null;
+		}
+
+		let domainEvent = anthropicStreamEventToDomain(event);
+
+		if (event.type === "content_block_stop" && index !== undefined) {
+			const signature = state.signaturesByIndex.get(index);
+			if (signature !== undefined) {
+				domainEvent = providerStateWithAnthropicSignature(
+					domainEvent,
+					signature,
+					state.blockKindsByIndex.get(index),
+				);
+			}
+			state.signaturesByIndex.delete(index);
+			state.blockKindsByIndex.delete(index);
+		}
+
+		if (event.type === "message_stop") {
+			state.signaturesByIndex.clear();
+			state.blockKindsByIndex.clear();
+		}
+
+		return domainEvent;
+	};
+}
+
 export function anthropicStreamEventToDomain(
 	event: WireStreamEvent,
 ): DomainStreamEvent {
@@ -354,9 +462,6 @@ export function anthropicStreamEventToDomain(
 					break;
 				case "thinking_delta":
 					delta = { type: "thinking_delta", thinking: d.thinking as string };
-					break;
-				case "signature_delta":
-					delta = { type: "signature_delta", signature: d.signature as string };
 					break;
 				case "citations_delta":
 					delta = {

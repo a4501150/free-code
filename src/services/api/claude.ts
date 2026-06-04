@@ -1872,28 +1872,6 @@ async function* queryModel(
                     }
                     contentBlock.text += delta.text as string
                     break
-                  case 'signature_delta':
-                    if (
-                      feature('CONNECTOR_TEXT') &&
-                      contentBlock.type === 'connector_text'
-                    ) {
-                      ;(
-                        contentBlock as unknown as { signature: string }
-                      ).signature = delta.signature as string
-                      break
-                    }
-                    if (contentBlock.type !== 'reasoning') {
-                      throw new Error('Content block is not a reasoning block')
-                    }
-                    {
-                      const rb = contentBlock as DomainReasoningBlock
-                      if (!rb.providerState) rb.providerState = {}
-                      if (!rb.providerState.anthropic)
-                        rb.providerState.anthropic = {}
-                      rb.providerState.anthropic.signature =
-                        delta.signature as string
-                    }
-                    break
                   case 'thinking_delta':
                     if (contentBlock.type !== 'reasoning') {
                       throw new Error('Content block is not a reasoning block')
