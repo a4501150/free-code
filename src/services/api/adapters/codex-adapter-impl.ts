@@ -387,6 +387,8 @@ type StreamItemState = {
   argumentsDone?: string
   textStreamed: string
   reasoningText: string
+  reasoningId?: string
+  encryptedContent?: string
   rendered: boolean
   serverToolUseIndex?: number
   serverToolUseClosed: boolean
@@ -592,8 +594,15 @@ async function* parseCodexStream(
     return state
   }
 
-  const emitBlockStop = (index: number): void => {
-    enqueue({ type: 'content_block_stop', index })
+  const emitBlockStop = (
+    index: number,
+    providerState?: Record<string, unknown>,
+  ): void => {
+    enqueue({
+      type: 'content_block_stop',
+      index,
+      ...(providerState && { providerState }),
+    })
   }
 
   const closeWebSearchServerTool = (state: StreamItemState): void => {
@@ -657,21 +666,20 @@ async function* parseCodexStream(
 
     if (openBlock?.kind !== 'thinking' || openBlock.key !== state.key) return
 
-    const finalId = readString(finalItem?.id) ?? ''
-    const finalEncrypted = readString(finalItem?.encrypted_content) ?? ''
-    if (finalId || finalEncrypted) {
-      enqueue({
-        type: 'content_block_delta',
-        index: openBlock.index,
-        delta: {
-          type: 'codex_reasoning_meta_delta',
-          codexReasoningId: finalId || undefined,
-          codexEncryptedContent: finalEncrypted || undefined,
-        } as { type: string; [key: string]: unknown },
-      })
-    }
+    const finalId = readString(finalItem?.id)
+    const finalEncrypted = readString(finalItem?.encrypted_content)
+    if (finalId) state.reasoningId = finalId
+    if (finalEncrypted) state.encryptedContent = finalEncrypted
 
-    emitBlockStop(openBlock.index)
+    const openaiResponses: Record<string, string> = {}
+    if (state.reasoningId) openaiResponses.reasoningId = state.reasoningId
+    if (state.encryptedContent) {
+      openaiResponses.encryptedContent = state.encryptedContent
+    }
+    const providerState =
+      Object.keys(openaiResponses).length > 0 ? { openaiResponses } : undefined
+
+    emitBlockStop(openBlock.index, providerState)
     contentBlockIndex++
     openBlock = null
     state.rendered = true

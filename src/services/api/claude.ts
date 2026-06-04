@@ -1849,25 +1849,6 @@ async function* queryModel(
                   throw new Error('Content block is not a connector_text block')
                 }
                 contentBlock.connector_text += delta.connector_text as string
-              } else if (delta.type === 'codex_reasoning_meta_delta') {
-                if (contentBlock.type === 'reasoning') {
-                  const d = delta as unknown as {
-                    codexReasoningId?: string
-                    codexEncryptedContent?: string
-                  }
-                  const reasoning = contentBlock as DomainReasoningBlock
-                  if (!reasoning.providerState) reasoning.providerState = {}
-                  if (!reasoning.providerState.openaiResponses)
-                    reasoning.providerState.openaiResponses = {}
-                  if (typeof d.codexReasoningId === 'string') {
-                    reasoning.providerState.openaiResponses.reasoningId =
-                      d.codexReasoningId
-                  }
-                  if (typeof d.codexEncryptedContent === 'string') {
-                    reasoning.providerState.openaiResponses.encryptedContent =
-                      d.codexEncryptedContent
-                  }
-                }
               } else {
                 switch (delta.type) {
                   case 'citations_delta':
@@ -1928,6 +1909,16 @@ async function* queryModel(
               const contentBlock = contentBlocks[part.index]
               if (!contentBlock) {
                 throw new RangeError('Content block not found')
+              }
+              if (part.providerState) {
+                const blockWithProviderState =
+                  contentBlock as typeof contentBlock & {
+                    providerState?: Record<string, unknown>
+                  }
+                blockWithProviderState.providerState = {
+                  ...(blockWithProviderState.providerState ?? {}),
+                  ...part.providerState,
+                }
               }
               if (!partialMessage) {
                 throw new Error('Message not found')
