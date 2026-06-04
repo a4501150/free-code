@@ -15,6 +15,8 @@ import { writeFileSyncAndFlush_DEPRECATED } from '../file.js'
 import { patchJsoncFile, safeParseJSONC } from '../json.js'
 import { logError } from '../log.js'
 import { jsonStringify } from '../slowOperations.js'
+import { markInternalWrite } from './internalWrites.js'
+import { resetSettingsCache } from './settingsCache.js'
 
 // Keys that should appear last in freecode.json, in order.
 // All other keys appear before these in their natural insertion order.
@@ -125,10 +127,12 @@ export function writeFreecodeSettingsFile(
       // ENOENT: patchJsoncFile handles null content by serializing fresh.
     }
 
+    markInternalWrite(filePath)
     writeFileSyncAndFlush_DEPRECATED(
       filePath,
       patchJsoncFile(rawContent, partial),
     )
+    resetSettingsCache()
   } catch (e) {
     logError(e)
   }

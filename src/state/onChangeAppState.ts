@@ -20,7 +20,6 @@ import {
   notifySessionMetadataChanged,
   type SessionExternalMetadata,
 } from '../utils/sessionState.js'
-import { writeFreecodeSettingsFile } from '../utils/settings/freecodeSettings.js'
 import type { AppState } from './AppStateStore.js'
 
 // Inverse of the push below — restore on worker restart.
@@ -88,7 +87,7 @@ export function onChangeAppState({
     newState.mainLoopModel !== oldState.mainLoopModel &&
     newState.mainLoopModel === null
   ) {
-    writeFreecodeSettingsFile({ defaultModel: undefined })
+    updateSettingsForSource('userSettings', { defaultModel: undefined })
     setMainLoopModelOverride(null)
   }
 
@@ -97,8 +96,9 @@ export function onChangeAppState({
     newState.mainLoopModel !== oldState.mainLoopModel &&
     newState.mainLoopModel !== null
   ) {
-    // Persist qualified model to freecode.json (canonical location only)
-    writeFreecodeSettingsFile({ defaultModel: newState.mainLoopModel })
+    updateSettingsForSource('userSettings', {
+      defaultModel: newState.mainLoopModel,
+    })
     setMainLoopModelOverride(newState.mainLoopModel)
   }
 

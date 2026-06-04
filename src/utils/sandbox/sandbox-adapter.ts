@@ -237,6 +237,11 @@ export function convertToSandboxRuntimeConfig(
     getSettingsFilePathForSource(source),
   ).filter((p): p is string => p !== undefined)
   denyWrite.push(...settingsPaths)
+  // Block writes to state.json (runtime state, separate from settings)
+  const userSettingsPath = getSettingsFilePathForSource('userSettings')
+  if (userSettingsPath) {
+    denyWrite.push(join(resolve(userSettingsPath, '..'), 'state.json'))
+  }
   denyWrite.push(getManagedSettingsDropInDir())
 
   // Also block project settings files in the original and current working
@@ -247,6 +252,7 @@ export function convertToSandboxRuntimeConfig(
     'settings.local.json',
     'freecode.json',
     'freecode.local.json',
+    'state.json',
   ] as const
   for (const projectDir of activeProjectDirs) {
     for (const projectConfigDir of PROJECT_CONFIG_DIRS) {

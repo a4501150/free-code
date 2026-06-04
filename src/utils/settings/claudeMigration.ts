@@ -3,7 +3,7 @@
  *
  * Three migration paths:
  *   1. Config directory migration: ~/.claude/ → ~/.freecode/
- *   2. Global config state migration: ~/.claude.json → freecode.json state key
+ *   2. Global config state migration: ~/.claude.json → ~/.freecode/state.json
  *   3. User settings migration: ~/.freecode/settings.json → ~/.freecode/freecode.json
  *
  * All migrations are user-consented or auto-detected during setup.
@@ -14,9 +14,11 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { dirname, join } from 'path'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
+import { writeFileSyncAndFlush_DEPRECATED } from '../file.js'
 import { safeParseJSON } from '../json.js'
 import { synthesizeProvidersFromLegacy } from '../model/legacyProviderMigration.js'
 import { stripContextSuffix } from '../model/parseModelString.js'
+import { jsonStringify } from '../slowOperations.js'
 import {
   orderFreecodeKeys,
   writeFreecodeSettingsFile,
@@ -67,16 +69,8 @@ function getLegacyGlobalConfigPath(): string {
 
 export function needsGlobalConfigMigration(): boolean {
   if (!existsSync(getLegacyGlobalConfigPath())) return false
-  const freecodeJsonPath = join(getClaudeConfigHomeDir(), 'freecode.json')
-  if (!existsSync(freecodeJsonPath)) return true
-  try {
-    const content = readFileSync(freecodeJsonPath, 'utf8')
-    const parsed = safeParseJSON(content)
-    if (!parsed || typeof parsed !== 'object') return true
-    return !('state' in (parsed as Record<string, unknown>))
-  } catch {
-    return true
-  }
+  const stateJsonPath = join(getClaudeConfigHomeDir(), 'state.json')
+  return !existsSync(stateJsonPath)
 }
 
 export function migrateGlobalConfigToState(): void {
@@ -112,7 +106,16 @@ export function migrateGlobalConfigToState(): void {
 
   if (Object.keys(state).length === 0) return
 
-  writeFreecodeSettingsFile({ state })
+  const stateFile = join(getClaudeConfigHomeDir(), 'state.json')
+  try {
+    mkdirSync(dirname(stateFile), { recursive: true })
+  } catch {
+    // ignore
+  }
+  writeFileSyncAndFlush_DEPRECATED(
+    stateFile,
+    jsonStringify(state, null, 2) + '\n',
+  )
 }
 
 // ── User settings migration ─────────────────────────────────────────────
@@ -244,4 +247,3 @@ export function runLegacyToFreecodeMigration(): void {
 
   writeFreecodeSettingsFile(orderFreecodeKeys(out))
 }
-

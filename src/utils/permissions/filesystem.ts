@@ -195,9 +195,12 @@ export function toPosixPath(path: string): string {
 }
 
 function getSettingsPaths(): string[] {
-  return SETTING_SOURCES.map(source =>
+  const paths = SETTING_SOURCES.map(source =>
     getSettingsFilePathForSource(source),
   ).filter(path => path !== undefined)
+  // state.json is runtime state separate from settings but equally sensitive
+  paths.push(join(getClaudeConfigHomeDir(), 'state.json'))
+  return paths
 }
 
 const PROJECT_SETTINGS_FILE_NAMES = [
@@ -205,6 +208,7 @@ const PROJECT_SETTINGS_FILE_NAMES = [
   'settings.local.json',
   'freecode.json',
   'freecode.local.json',
+  'state.json',
 ] as const
 
 export function isClaudeSettingsPath(filePath: string): boolean {

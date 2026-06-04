@@ -41,11 +41,9 @@ import {
   getInitialSettings,
   hasAutoModeOptIn,
   hasSkipDangerousModePermissionPrompt,
+  updateSettingsForSource,
 } from './utils/settings/settings.js'
-import {
-  freecodeSettingsFileExists,
-  writeFreecodeSettingsFile,
-} from './utils/settings/freecodeSettings.js'
+import { freecodeSettingsFileExists } from './utils/settings/freecodeSettings.js'
 import {
   legacySettingsFileExists,
   migrateGlobalConfigToState,
@@ -71,7 +69,7 @@ import { getClaudeAIOAuthTokens } from './utils/auth.js'
 
 export function completeOnboarding(): void {
   if (!freecodeSettingsFileExists()) {
-    writeFreecodeSettingsFile({})
+    updateSettingsForSource('userSettings', {})
   }
 }
 export function showDialog<T = void>(
@@ -199,7 +197,7 @@ export async function showSetupScreens(
     if (decision === 'yes') {
       runLegacyToFreecodeMigration()
     } else {
-      writeFreecodeSettingsFile({})
+      updateSettingsForSource('userSettings', {})
     }
     resetSettingsCache()
     resetProviderRegistry()

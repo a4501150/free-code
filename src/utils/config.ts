@@ -13,13 +13,11 @@ import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import { ConfigParseError, getErrnoCode } from './errors.js'
+import { writeFileSyncAndFlush_DEPRECATED } from './file.js'
 import { getFsImplementation } from './fsOperations.js'
 import { findCanonicalGitRoot } from './git.js'
-import { safeParseJSON, safeParseJSONC } from './json.js'
-import {
-  getFreecodeSettingsFilePath,
-  writeFreecodeSettingsFile,
-} from './settings/freecodeSettings.js'
+import { patchJsoncFile, safeParseJSON, safeParseJSONC } from './json.js'
+import { getFreecodeSettingsFilePath } from './settings/freecodeSettings.js'
 import { stripBOM } from './jsonRead.js'
 import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
@@ -274,7 +272,7 @@ export function saveGlobalConfig(
   }
 
   let written: GlobalConfig | null = null
-  const file = getFreecodeSettingsFilePath()
+  const file = getStateFilePath()
   let release: (() => void) | undefined
 
   try {
@@ -324,26 +322,25 @@ export function saveGlobalConfig(
   }
 }
 
+function getStateFilePath(): string {
+  return join(getClaudeConfigHomeDir(), 'state.json')
+}
+
 /**
- * Read the `state` key from freecode.json on disk and return it as GlobalConfig.
- * Uses JSONC parsing since freecode.json may contain comments.
+ * Read state from ~/.freecode/state.json.
  */
 function readStateFromDisk(): GlobalConfig {
   const fs = getFsImplementation()
-  const file = getFreecodeSettingsFilePath()
+  const file = getStateFilePath()
   try {
     const content = fs.readFileSync(file, { encoding: 'utf-8' })
-    const parsed = safeParseJSONC(stripBOM(content))
+    const parsed = safeParseJSON(stripBOM(content))
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return createDefaultGlobalConfig()
-    }
-    const stateObj = (parsed as Record<string, unknown>).state
-    if (!stateObj || typeof stateObj !== 'object' || Array.isArray(stateObj)) {
       return createDefaultGlobalConfig()
     }
     return {
       ...createDefaultGlobalConfig(),
-      ...(stateObj as Partial<GlobalConfig>),
+      ...(parsed as Partial<GlobalConfig>),
     }
   } catch (error) {
     if (getErrnoCode(error) === 'ENOENT') {
@@ -354,8 +351,7 @@ function readStateFromDisk(): GlobalConfig {
 }
 
 /**
- * Write the GlobalConfig as the `state` key in freecode.json.
- * Uses writeFreecodeSettingsFile for JSONC-preserving writes.
+ * Write the GlobalConfig to ~/.freecode/state.json.
  */
 function writeStateToDisk(config: GlobalConfig): void {
   const defaultConfig = createDefaultGlobalConfig()
@@ -365,7 +361,17 @@ function writeStateToDisk(config: GlobalConfig): void {
       jsonStringify(value) !==
       jsonStringify(defaultConfig[key as keyof GlobalConfig]),
   )
-  writeFreecodeSettingsFile({ state: filteredConfig })
+  const file = getStateFilePath()
+  const fs = getFsImplementation()
+  try {
+    fs.mkdirSync(dirname(file))
+  } catch (e) {
+    if (getErrnoCode(e) !== 'EEXIST') throw e
+  }
+  writeFileSyncAndFlush_DEPRECATED(
+    file,
+    jsonStringify(filteredConfig, null, 2) + '\n',
+  )
   globalConfigWriteCount++
 }
 
@@ -379,7 +385,7 @@ let globalConfigCache: { config: GlobalConfig | null; mtime: number } = {
 let lastReadFileStats: { mtime: number; size: number } | null = null
 let configCacheHits = 0
 let configCacheMisses = 0
-// Session-total count of actual disk writes to the global state in freecode.json.
+// Session-total count of actual disk writes to state.json.
 // Exposed for dev diagnostics so anomalous write rates surface in the UI.
 let globalConfigWriteCount = 0
 
@@ -410,42 +416,24 @@ let freshnessWatcherStarted = false
 function startGlobalConfigFreshnessWatcher(): void {
   if (freshnessWatcherStarted || process.env.NODE_ENV === 'test') return
   freshnessWatcherStarted = true
-  const file = getFreecodeSettingsFilePath()
+  const file = getStateFilePath()
   watchFile(
     file,
     { interval: CONFIG_FRESHNESS_POLL_MS, persistent: false },
     curr => {
-      // Our own writes fire this too — the write-through's Date.now()
-      // overshoot makes cache.mtime > file mtime, so we skip the re-read.
-      // Bun/Node also fire with curr.mtimeMs=0 when the file doesn't exist
-      // (initial callback or deletion) — the <= handles that too.
       if (curr.mtimeMs <= globalConfigCache.mtime) return
       void getFsImplementation()
         .readFile(file, { encoding: 'utf-8' })
         .then(content => {
-          // A write-through may have advanced the cache while we were reading;
-          // don't regress to the stale snapshot watchFile stat'd.
           if (curr.mtimeMs <= globalConfigCache.mtime) return
-          const parsed = safeParseJSONC(stripBOM(content))
+          const parsed = safeParseJSON(stripBOM(content))
           if (parsed === null || typeof parsed !== 'object') return
-          const stateObj = (parsed as Record<string, unknown>).state
-          if (
-            !stateObj ||
-            typeof stateObj !== 'object' ||
-            Array.isArray(stateObj)
-          ) {
-            globalConfigCache = {
-              config: createDefaultGlobalConfig(),
-              mtime: curr.mtimeMs,
-            }
-          } else {
-            globalConfigCache = {
-              config: {
-                ...createDefaultGlobalConfig(),
-                ...(stateObj as Partial<GlobalConfig>),
-              },
-              mtime: curr.mtimeMs,
-            }
+          globalConfigCache = {
+            config: {
+              ...createDefaultGlobalConfig(),
+              ...(parsed as Partial<GlobalConfig>),
+            },
+            mtime: curr.mtimeMs,
           }
           lastReadFileStats = { mtime: curr.mtimeMs, size: curr.size }
         })
@@ -479,12 +467,12 @@ export function getGlobalConfig(): GlobalConfig {
     return globalConfigCache.config
   }
 
-  // Slow path: startup load. Reads `state` from freecode.json.
+  // Slow path: startup load. Reads state.json.
   configCacheMisses++
   try {
     let stats: { mtimeMs: number; size: number } | null = null
     try {
-      stats = getFsImplementation().statSync(getFreecodeSettingsFilePath())
+      stats = getFsImplementation().statSync(getStateFilePath())
     } catch {
       // File doesn't exist
     }
@@ -509,6 +497,57 @@ export function getCustomApiKeyStatus(
   return 'approved'
 }
 
+/**
+ * One-time migration: move the `state` key from freecode.json to state.json.
+ * Idempotent — does nothing if state.json already exists.
+ */
+function migrateStateToOwnFile(): void {
+  const stateFile = getStateFilePath()
+  const fs = getFsImplementation()
+
+  try {
+    fs.statSync(stateFile)
+    return // state.json already exists
+  } catch {
+    // Does not exist — check freecode.json for a state key to migrate
+  }
+
+  const settingsFile = getFreecodeSettingsFilePath()
+  let rawContent: string
+  try {
+    rawContent = fs.readFileSync(settingsFile, { encoding: 'utf-8' })
+  } catch {
+    return // freecode.json doesn't exist either
+  }
+
+  const parsed = safeParseJSONC(stripBOM(rawContent))
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
+  const stateObj = (parsed as Record<string, unknown>).state
+  if (!stateObj || typeof stateObj !== 'object' || Array.isArray(stateObj))
+    return
+
+  try {
+    try {
+      fs.mkdirSync(dirname(stateFile))
+    } catch (e) {
+      if (getErrnoCode(e) !== 'EEXIST') throw e
+    }
+    writeFileSyncAndFlush_DEPRECATED(
+      stateFile,
+      jsonStringify(stateObj, null, 2) + '\n',
+    )
+    // Remove the state key from freecode.json
+    writeFileSyncAndFlush_DEPRECATED(
+      settingsFile,
+      patchJsoncFile(rawContent, { state: undefined }),
+    )
+  } catch (e) {
+    logForDebugging(`Failed to migrate state to state.json: ${e}`, {
+      level: 'error',
+    })
+  }
+}
+
 // Flag to track if config reading is allowed
 let configReadingAllowed = false
 
@@ -524,7 +563,8 @@ export function enableConfigs(): void {
   // Any reads to configuration before this flag is set show an console warning
   // to prevent us from adding config reading during module initialization
   configReadingAllowed = true
-  // Validate that freecode.json is parseable (reads state from disk)
+  // Migrate state from freecode.json to state.json if needed, then validate
+  migrateStateToOwnFile()
   readStateFromDisk()
 
   logForDiagnosticsNoPII('info', 'enable_configs_completed', {
@@ -864,7 +904,7 @@ export function saveCurrentProjectConfig(
     return
   }
   const absolutePath = getProjectPathForConfig()
-  const file = getFreecodeSettingsFilePath()
+  const file = getStateFilePath()
   let release: (() => void) | undefined
 
   try {

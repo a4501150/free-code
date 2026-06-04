@@ -42,7 +42,10 @@ import {
   DEFAULT_CODEX_MODELS,
 } from '../../utils/model/providerPresets.js'
 import type { ProviderConfig } from '../../utils/settings/types.js'
-import { getInitialSettings } from '../../utils/settings/settings.js'
+import {
+  getInitialSettings,
+  updateSettingsForSource,
+} from '../../utils/settings/settings.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import {
   buildAccountProperties,
@@ -243,7 +246,7 @@ export async function authLogin({
       // Mark onboarding complete — interactive paths handle this via
       // the Onboarding component, but the env var path skips it.
       if (!freecodeSettingsFileExists()) {
-        writeFreecodeSettingsFile({})
+        updateSettingsForSource('userSettings', {})
       }
 
       process.stdout.write('Login successful.\n')
