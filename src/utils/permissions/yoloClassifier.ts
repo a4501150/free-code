@@ -17,7 +17,7 @@ import {
   setLastClassifierRequests,
 } from '../../bootstrap/state.js'
 
-import { getCacheControl } from '../../services/api/claude.js'
+import { getCacheControl } from '../cacheControl.js'
 import { getNormalizedError } from '../../services/api/errorUtils.js'
 import { parsePromptTooLongTokenCounts } from '../../services/api/errors.js'
 import {

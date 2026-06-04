@@ -111,14 +111,10 @@ import {
   getAfkModeHeaderLatched,
   getFastModeHeaderLatched,
   getLastApiCompletionTimestamp,
-  getPromptCache1hAllowlist,
-  getPromptCache1hEligible,
   getSessionId,
   setAfkModeHeaderLatched,
   setFastModeHeaderLatched,
   setLastMainRequestId,
-  setPromptCache1hAllowlist,
-  setPromptCache1hEligible,
 } from 'src/bootstrap/state.js'
 import {
   AFK_MODE_BETA_HEADER,
@@ -143,7 +139,6 @@ import {
   modelSupportsAdvisor,
 } from 'src/utils/advisor.js'
 import { getAgentContext } from 'src/utils/agentContext.js'
-import { isClaudeAISubscriber } from 'src/utils/auth.js'
 import {
   modelSupportsStructuredOutputs,
   shouldIncludeFirstPartyOnlyBetas,
@@ -313,83 +308,8 @@ export function getPromptCachingEnabled(model: string): boolean {
   return true
 }
 
-export function getCacheControl({
-  scope,
-  querySource,
-}: {
-  scope?: CacheScope
-  querySource?: QuerySource
-} = {}): {
-  type: 'ephemeral'
-  ttl?: '1h'
-  scope?: CacheScope
-} {
-  return {
-    type: 'ephemeral',
-    ...(should1hCacheTTL(querySource) && { ttl: '1h' }),
-    ...(scope === 'global' && { scope }),
-  }
-}
-
-/**
- * Determines if 1h TTL should be used for prompt caching.
- *
- * Only applied when:
- * 1. User is eligible (ant or subscriber within rate limits)
- * 2. The query source matches a pattern in the allowlist
- *
- * Config shape: { allowlist: string[] }
- * Patterns support trailing '*' for prefix matching.
- * Examples:
- * - { allowlist: ["repl_main_thread*", "sdk"] } — main thread + SDK only
- * - { allowlist: ["repl_main_thread*", "sdk", "agent:*"] } — also subagents
- * - { allowlist: ["*"] } — all sources
- *
- * The allowlist is cached in STATE for session stability — prevents mixed
- * TTLs when the disk cache updates mid-request.
- */
-function should1hCacheTTL(querySource?: QuerySource): boolean {
-  // 3P Bedrock users get 1h TTL when opted in via env var — they manage their own billing
-  // No remote gating needed since 3P users don't have remote config
-  if (
-    getProviderRegistry().getDefaultProvider()?.config.type ===
-      'bedrock-converse' &&
-    isEnvTruthy(process.env.ENABLE_PROMPT_CACHING_1H_BEDROCK)
-  ) {
-    return true
-  }
-
-  // Latch eligibility in bootstrap state for session stability — prevents
-  // mid-session overage flips from changing the cache_control TTL, which
-  // would bust the server-side prompt cache (~20K tokens per flip).
-  let userEligible = getPromptCache1hEligible()
-  if (userEligible === null) {
-    userEligible = isClaudeAISubscriber() && !currentLimits.isUsingOverage
-    setPromptCache1hEligible(userEligible)
-  }
-  if (!userEligible) return false
-
-  // Cache allowlist in bootstrap state for session stability — prevents mixed
-  // TTLs when the disk cache updates mid-request
-  let allowlist = getPromptCache1hAllowlist()
-  if (allowlist === null) {
-    allowlist = getInitialSettings()?.promptCache1hAllowlist ?? [
-      'repl_main_thread*',
-      'sdk',
-      'auto_mode',
-    ]
-    setPromptCache1hAllowlist(allowlist)
-  }
-
-  return (
-    querySource !== undefined &&
-    allowlist.some(pattern =>
-      pattern.endsWith('*')
-        ? querySource.startsWith(pattern.slice(0, -1))
-        : querySource === pattern,
-    )
-  )
-}
+import { getCacheControl } from '../../utils/cacheControl.js'
+export { getCacheControl }
 
 /**
  * Configure effort parameters for API request.
