@@ -15,7 +15,6 @@ import {
 } from "../../../utils/model/providerRegistry.js";
 import type { NormalizedApiError } from "../../../utils/normalizedError.js";
 import type {
-	ProviderCapabilities,
 	ProviderConfig,
 	ProviderType,
 } from "../../../utils/settings/types.js";
@@ -77,7 +76,6 @@ async function getFoundryAuth(
 
 export const foundryAdapter: ProviderAdapter = {
 	providerType: "foundry",
-	capabilities: {} as ProviderCapabilities,
 
 	async createStream(
 		config: ProviderConfig,

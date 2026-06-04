@@ -56,7 +56,6 @@ import {
 } from "../../../utils/normalizedError.js";
 import { getProxyFetchOptions } from "../../../utils/proxy.js";
 import type {
-	ProviderCapabilities,
 	ProviderConfig,
 	ProviderType,
 } from "../../../utils/settings/types.js";
@@ -517,7 +516,6 @@ async function countTokensViaAnthropicEndpoint({
 
 export const anthropicAdapter: ProviderAdapter = {
 	providerType: "anthropic",
-	capabilities: {} as ProviderCapabilities,
 
 	async createStream(
 		_config: ProviderConfig,

@@ -14,7 +14,6 @@ import {
 } from "../../../utils/model/providerRegistry.js";
 import type { NormalizedApiError } from "../../../utils/normalizedError.js";
 import type {
-	ProviderCapabilities,
 	ProviderConfig,
 	ProviderType,
 } from "../../../utils/settings/types.js";
@@ -132,7 +131,6 @@ function applyVertexTransforms(body: Record<string, unknown>): {
 
 export const vertexAnthropicAdapter: ProviderAdapter = {
 	providerType: "vertex",
-	capabilities: {} as ProviderCapabilities,
 
 	async createStream(
 		config: ProviderConfig,

@@ -18,7 +18,6 @@ import type {
   TokenCountToolParam,
 } from '../adapter.js'
 import type {
-  ProviderCapabilities,
   ProviderConfig,
   ProviderType,
 } from '../../../utils/settings/types.js'
@@ -603,7 +602,6 @@ function parseGeminiNonStreamingResponse(
 
 export const geminiAdapter: ProviderAdapter = {
   providerType: 'gemini',
-  capabilities: {} as ProviderCapabilities,
 
   async createStream(
     config: ProviderConfig,

@@ -22,7 +22,6 @@ import type {
   TokenCountToolParam,
 } from '../adapter.js'
 import type {
-  ProviderCapabilities,
   ProviderConfig,
   ProviderType,
 } from '../../../utils/settings/types.js'
@@ -639,7 +638,6 @@ function parseOpenAINonStreamingResponse(
 
 export const openaiChatCompletionsAdapter: ProviderAdapter = {
   providerType: 'openai-chat-completions',
-  capabilities: {} as ProviderCapabilities,
 
   async createStream(
     config: ProviderConfig,

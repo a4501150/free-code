@@ -16,7 +16,6 @@ import type {
   TokenCountToolParam,
 } from '../adapter.js'
 import type {
-  ProviderCapabilities,
   ProviderConfig,
   ProviderType,
 } from '../../../utils/settings/types.js'
@@ -1168,7 +1167,6 @@ async function* parseCodexStream(
 
 export const codexAdapter: ProviderAdapter = {
   providerType: 'openai-responses',
-  capabilities: {} as ProviderCapabilities,
 
   async createStream(
     config: ProviderConfig,

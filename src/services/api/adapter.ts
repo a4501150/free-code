@@ -36,7 +36,6 @@
  * domain blocks, never as top-level fields.
  */
 import type {
-  ProviderCapabilities,
   ProviderConfig,
   ProviderType,
 } from '../../utils/settings/types.js'
@@ -113,7 +112,6 @@ export function hasThinkingBlocks(
 
 export interface ProviderAdapter {
   readonly providerType: ProviderType
-  readonly capabilities: Readonly<ProviderCapabilities>
 
   // ── Domain transport methods (new) ──────────────────────────────
 

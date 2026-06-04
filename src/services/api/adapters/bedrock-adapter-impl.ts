@@ -24,7 +24,6 @@ import {
   type TokenCountToolParam,
 } from '../adapter.js'
 import type {
-  ProviderCapabilities,
   ProviderConfig,
   ProviderType,
 } from '../../../utils/settings/types.js'
@@ -732,7 +731,6 @@ async function countTokensViaBedrock({
 
 export const bedrockAdapter: ProviderAdapter = {
   providerType: 'bedrock-converse',
-  capabilities: {} as ProviderCapabilities,
 
   async createStream(
     config: ProviderConfig,
