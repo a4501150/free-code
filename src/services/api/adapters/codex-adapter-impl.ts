@@ -47,6 +47,11 @@ import {
   DomainConnectionError,
   DomainUserAbortError,
 } from '../domain-errors.js'
+import {
+  assertOkResponse,
+  handleFetchError,
+  makeStreamingResponse,
+} from './native-fetch-helpers.js'
 
 // ── Tokenizer ──────────────────────────────────────────────────────
 
@@ -1263,41 +1268,15 @@ export const codexAdapter: ProviderAdapter = {
         signal,
       })
     } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.name === 'AbortError' || signal.aborted)
-      ) {
-        throw new DomainUserAbortError()
-      }
-      const normalized = this.normalizeError(
-        { cause: error, mid_stream: false },
-        'openai-responses',
-      )
-      throw new DomainConnectionError({
-        normalized: { ...normalized, kind: 'transport' },
-        cause: error,
-      })
+      handleFetchError(error, signal, 'openai-responses', this.normalizeError)
     }
 
-    if (!codexResponse.ok) {
-      const errorText = await codexResponse.text()
-      const normalized = this.normalizeError(
-        {
-          status: codexResponse.status,
-          body: errorText,
-          headers: codexResponse.headers,
-        },
-        'openai-responses',
-      )
-      throw new DomainTransportError({
-        normalized,
-        status: codexResponse.status,
-        headers: Object.fromEntries(codexResponse.headers.entries()),
-        raw: { status: codexResponse.status, body: errorText },
-      })
-    }
+    await assertOkResponse(
+      codexResponse,
+      'openai-responses',
+      this.normalizeError,
+    )
 
-    const abortController = new AbortController()
     const stream = parseCodexStream(
       codexResponse,
       request.model,
@@ -1305,24 +1284,11 @@ export const codexAdapter: ProviderAdapter = {
       this.normalizeError,
     )
 
-    return {
+    return makeStreamingResponse({
+      response: codexResponse,
       stream,
-      requestId: codexResponse.headers.get('x-request-id') ?? undefined,
-      responseHeaders: Object.fromEntries(codexResponse.headers.entries()),
-      abort() {
-        abortController.abort()
-      },
-      release() {
-        try {
-          abortController.abort()
-        } catch {
-          // ignore
-        }
-        if (codexResponse.body) {
-          codexResponse.body.cancel().catch(() => {})
-        }
-      },
-    }
+      requestIdHeader: 'x-request-id',
+    })
   },
 
   async createMessage(

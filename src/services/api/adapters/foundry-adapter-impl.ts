@@ -41,6 +41,12 @@ import type {
 import { anthropicAdapter } from "./anthropic-adapter-impl.js";
 import { parseAnthropicSSEStream } from "./anthropic-sse-parser.js";
 import { buildAnthropicWireBody } from "./anthropic-wire-body.js";
+import {
+	assertOkResponse,
+	assertResponseBody,
+	handleFetchError,
+	makeStreamingResponse,
+} from "./native-fetch-helpers.js";
 
 // ── Auth ─────────────────────────────────────────────────────────────
 
@@ -104,75 +110,23 @@ export const foundryAdapter: ProviderAdapter = {
 				signal,
 			});
 		} catch (error) {
-			if (
-				error instanceof Error &&
-				(error.name === "AbortError" || signal.aborted)
-			) {
-				throw new DomainUserAbortError();
-			}
-			const normalized = this.normalizeError(
-				{ cause: error, mid_stream: false },
-				"foundry",
-			);
-			throw new DomainConnectionError({
-				normalized: { ...normalized, kind: "transport" },
-				cause: error,
-				raw: error,
-			});
+			handleFetchError(error, signal, "foundry", this.normalizeError);
 		}
 
-		if (!response.ok) {
-			const errorText = await response.text();
-			const normalized = this.normalizeError(
-				{ status: response.status, body: errorText, headers: response.headers },
-				"foundry",
-			);
-			throw new DomainTransportError({
-				normalized,
-				status: response.status,
-				headers: Object.fromEntries(response.headers.entries()),
-				raw: { status: response.status, body: errorText },
-			});
-		}
+		await assertOkResponse(response, "foundry", this.normalizeError);
 
-		if (!response.body) {
-			throw new DomainConnectionError({
-				normalized: {
-					kind: "transport",
-					message: "No response body",
-					providerType: "foundry",
-					raw: null,
-				},
-				cause: null,
-				raw: null,
-			});
-		}
-
-		const abortController = new AbortController();
+		const responseBody = assertResponseBody(response, "foundry");
 		const stream = parseAnthropicSSEStream(
-			response.body,
+			responseBody,
 			"foundry",
 			this.normalizeError,
 		);
 
-		return {
+		return makeStreamingResponse({
+			response,
 			stream,
-			requestId: response.headers.get("request-id") ?? undefined,
-			responseHeaders: Object.fromEntries(response.headers.entries()),
-			abort() {
-				abortController.abort();
-			},
-			release() {
-				try {
-					abortController.abort();
-				} catch {
-					// ignore
-				}
-				if (response.body) {
-					response.body.cancel().catch(() => {});
-				}
-			},
-		};
+			requestIdHeader: "request-id",
+		});
 	},
 
 	async createMessage(

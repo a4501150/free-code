@@ -81,6 +81,11 @@ export interface TokenBreakdown {
   cacheWriteTokens?: number
 }
 
+export type NormalizeErrorFn = (
+  raw: unknown,
+  providerType: ProviderType,
+) => NormalizedApiError
+
 // Shared token-counting constants for Anthropic-shaped adapters.
 // API constraint: max_tokens must be greater than thinking.budget_tokens.
 export const TOKEN_COUNT_THINKING_BUDGET = 1024
@@ -173,5 +178,5 @@ export interface ProviderAdapter {
    * - HTTP error: `{ status: number, body: string, headers?: Headers }`.
    * - Mid-stream error: `{ mid_stream: true, cause: unknown, ... }`.
    */
-  normalizeError(raw: unknown, providerType: ProviderType): NormalizedApiError
+  normalizeError: NormalizeErrorFn
 }

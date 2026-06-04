@@ -50,6 +50,11 @@ import {
   DomainConnectionError,
   DomainUserAbortError,
 } from '../domain-errors.js'
+import {
+  assertOkResponse,
+  handleFetchError,
+  makeStreamingResponse,
+} from './native-fetch-helpers.js'
 
 // ── Auth resolution ─────────────────────────────────────────────────
 
@@ -709,41 +714,20 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
         signal,
       })
     } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.name === 'AbortError' || signal.aborted)
-      ) {
-        throw new DomainUserAbortError()
-      }
-      const normalized = this.normalizeError(
-        { cause: error, mid_stream: false },
+      handleFetchError(
+        error,
+        signal,
         'openai-chat-completions',
+        this.normalizeError,
       )
-      throw new DomainConnectionError({
-        normalized: { ...normalized, kind: 'transport' },
-        cause: error,
-      })
     }
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      const normalized = this.normalizeError(
-        {
-          status: response.status,
-          body: errorText,
-          headers: response.headers,
-        },
-        'openai-chat-completions',
-      )
-      throw new DomainTransportError({
-        normalized,
-        status: response.status,
-        headers: Object.fromEntries(response.headers.entries()),
-        raw: { status: response.status, body: errorText },
-      })
-    }
+    await assertOkResponse(
+      response,
+      'openai-chat-completions',
+      this.normalizeError,
+    )
 
-    const abortController = new AbortController()
     const stream = parseOpenAIStream(
       response,
       request.model,
@@ -751,24 +735,11 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
       this.normalizeError,
     )
 
-    return {
+    return makeStreamingResponse({
+      response,
       stream,
-      requestId: response.headers.get('x-request-id') ?? undefined,
-      responseHeaders: Object.fromEntries(response.headers.entries()),
-      abort() {
-        abortController.abort()
-      },
-      release() {
-        try {
-          abortController.abort()
-        } catch {
-          // ignore
-        }
-        if (response.body) {
-          response.body.cancel().catch(() => {})
-        }
-      },
-    }
+      requestIdHeader: 'x-request-id',
+    })
   },
 
   async createMessage(

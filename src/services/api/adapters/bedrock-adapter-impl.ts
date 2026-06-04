@@ -60,6 +60,12 @@ import {
 } from '../domain-errors.js'
 import { refreshAndGetAwsCredentials } from '../../../utils/auth.js'
 import { isEnvTruthy } from '../../../utils/envUtils.js'
+import {
+  assertOkResponse,
+  assertResponseBody,
+  handleFetchError,
+  makeStreamingResponse,
+} from './native-fetch-helpers.js'
 
 // ── AWS credentials ────────────────────────────────────────────────
 
@@ -771,78 +777,25 @@ export const bedrockAdapter: ProviderAdapter = {
         signal,
       })
     } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.name === 'AbortError' || signal.aborted)
-      ) {
-        throw new DomainUserAbortError()
-      }
-      const normalized = this.normalizeError(
-        { cause: error, mid_stream: false },
-        'bedrock-converse',
-      )
-      throw new DomainConnectionError({
-        normalized: { ...normalized, kind: 'transport' },
-        cause: error,
-      })
+      handleFetchError(error, signal, 'bedrock-converse', this.normalizeError)
     }
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      const normalized = this.normalizeError(
-        {
-          status: response.status,
-          body: errorText,
-          headers: response.headers,
-        },
-        'bedrock-converse',
-      )
-      throw new DomainTransportError({
-        normalized,
-        status: response.status,
-        headers: Object.fromEntries(response.headers.entries()),
-        raw: { status: response.status, body: errorText },
-      })
-    }
+    await assertOkResponse(response, 'bedrock-converse', this.normalizeError)
 
-    if (!response.body) {
-      throw new DomainConnectionError({
-        normalized: {
-          kind: 'transport',
-          message: 'No response body from Bedrock',
-          providerType: 'bedrock-converse',
-          raw: null,
-        },
-        cause: new Error('No response body'),
-      })
-    }
+    const responseBody = assertResponseBody(response, 'bedrock-converse')
 
-    const abortController = new AbortController()
     const stream = parseBedrockEventStream(
-      response.body,
+      responseBody,
       request.model,
       'bedrock-converse',
       this.normalizeError,
     )
 
-    return {
+    return makeStreamingResponse({
+      response,
       stream,
-      requestId: response.headers.get('x-amzn-requestid') ?? undefined,
-      responseHeaders: Object.fromEntries(response.headers.entries()),
-      abort() {
-        abortController.abort()
-      },
-      release() {
-        try {
-          abortController.abort()
-        } catch {
-          // ignore
-        }
-        if (response.body) {
-          response.body.cancel().catch(() => {})
-        }
-      },
-    }
+      requestIdHeader: 'x-amzn-requestid',
+    })
   },
 
   async createMessage(
