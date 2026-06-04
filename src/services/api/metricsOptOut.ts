@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { getApiBaseUrl } from '../../constants/api.js'
+import { getAnthropicControlPlaneUrl } from '../../constants/api.js'
 import { hasProfileScope, isClaudeAISubscriber } from '../../utils/auth.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
@@ -37,7 +37,7 @@ async function _fetchMetricsEnabled(): Promise<MetricsEnabledResponse> {
     ...authResult.headers,
   }
 
-  const endpoint = `${getApiBaseUrl()}/api/claude_code/organizations/metrics_enabled`
+  const endpoint = `${getAnthropicControlPlaneUrl()}/api/claude_code/organizations/metrics_enabled`
   const response = await axios.get<MetricsEnabledResponse>(endpoint, {
     headers,
     timeout: 5000,

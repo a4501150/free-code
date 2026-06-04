@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { getApiBaseUrl } from '../../constants/api.js'
+import { getAnthropicControlPlaneUrl } from '../../constants/api.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
 
@@ -38,7 +38,7 @@ export async function prefetchOfficialMcpUrls(): Promise<void> {
 
   try {
     const response = await axios.get<RegistryResponse>(
-      `${getApiBaseUrl()}/mcp-registry/v0/servers?version=latest&visibility=commercial`,
+      `${getAnthropicControlPlaneUrl()}/mcp-registry/v0/servers?version=latest&visibility=commercial`,
       { timeout: 5000 },
     )
 
