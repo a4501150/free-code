@@ -2,9 +2,9 @@
  * Integration tests: freecode.json JSONC round-trip.
  *
  * Exercises the real `readFreecodeSettingsFile` + `writeFreecodeSettingsFile`
- * functions against a temp `CLAUDE_CONFIG_DIR`. Mirrors what the CLI does
- * during routine writes (OAuth refresh, model picker) and confirms that
- * user-authored JSONC comments survive.
+ * functions against a temp `CLAUDE_CONFIG_DIR`. freecode.json holds general
+ * settings (autoMode, mcpServers, permissions, etc.); provider/model config
+ * lives in modelSettings.json (see modelSettings.jsonc.test.ts).
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
@@ -18,19 +18,18 @@ import {
 
 const SEEDED = `{
   // user-authored top comment
-  "providers": {
-    // keep anthropic untouched
-    "anthropic": {
-      "type": "anthropic",
-      "baseUrl": "https://api.anthropic.com"
+  "mcpServers": {
+    // keep local-tools untouched
+    "local-tools": {
+      "command": "npx",
+      "args": ["-y", "my-mcp-server"]
     },
-    "claude-ai": {
-      "type": "claudeai",
-      "auth": { "active": "oauth" }
+    "remote-tools": {
+      "url": "https://mcp.example.com"
     }
   },
-  /* default model comment */
-  "defaultModel": "anthropic:claude-opus-4-6"
+  /* auto mode comment */
+  "autoMode": { "enabled": true }
 }
 `
 
@@ -57,24 +56,23 @@ describe('freecode.json JSONC round-trip', () => {
     writeFileSync(join(tmpDir, 'freecode.json'), SEEDED)
     const parsed = readFreecodeSettingsFile()
     expect(parsed).toBeTruthy()
-    expect(parsed?.defaultModel).toBe('anthropic:claude-opus-4-6')
-    const providers = parsed?.providers as Record<string, unknown>
-    expect(Object.keys(providers).sort()).toEqual(['anthropic', 'claude-ai'])
+    expect(parsed?.autoMode).toEqual({ enabled: true })
+    const mcpServers = parsed?.mcpServers as Record<string, unknown>
+    expect(Object.keys(mcpServers).sort()).toEqual([
+      'local-tools',
+      'remote-tools',
+    ])
   })
 
-  test('writeFreecodeSettingsFile updating one provider preserves comments on siblings', () => {
+  test('writeFreecodeSettingsFile updating one mcpServer preserves comments on siblings', () => {
     const path = join(tmpDir, 'freecode.json')
     writeFileSync(path, SEEDED)
 
-    // Simulate what the OAuth refresh / /login flow does.
     writeFreecodeSettingsFile({
-      providers: {
-        'claude-ai': {
-          type: 'claudeai',
-          auth: {
-            active: 'oauth',
-            oauth: { accessToken: 'new-tok', expiresAt: 1234567890 },
-          },
+      mcpServers: {
+        'remote-tools': {
+          url: 'https://mcp-v2.example.com',
+          headers: { Authorization: 'Bearer tok' },
         },
       },
     })
@@ -82,57 +80,58 @@ describe('freecode.json JSONC round-trip', () => {
     const content = readFileSync(path, 'utf8')
     // Top-level comment survives
     expect(content).toContain('// user-authored top comment')
-    // Sibling provider's comment survives
-    expect(content).toContain('// keep anthropic untouched')
-    // Sibling provider's body is byte-identical
-    expect(content).toContain('"baseUrl": "https://api.anthropic.com"')
+    // Sibling server's comment survives
+    expect(content).toContain('// keep local-tools untouched')
+    // Sibling server's body is byte-identical
+    expect(content).toContain('"my-mcp-server"')
     // Unrelated top-level key's comment survives
-    expect(content).toContain('/* default model comment */')
-    expect(content).toContain('"anthropic:claude-opus-4-6"')
-    // New provider content is written
-    expect(content).toContain('"accessToken": "new-tok"')
+    expect(content).toContain('/* auto mode comment */')
+    expect(content).toContain('"enabled": true')
+    // New server content is written
+    expect(content).toContain('mcp-v2.example.com')
 
     // Parsed form is correct
     const reparsed = readFreecodeSettingsFile()
-    const providers = reparsed?.providers as Record<
+    const servers = reparsed?.mcpServers as Record<
       string,
       Record<string, unknown>
     >
-    expect(providers.anthropic).toEqual({
-      type: 'anthropic',
-      baseUrl: 'https://api.anthropic.com',
+    expect(servers['local-tools']).toEqual({
+      command: 'npx',
+      args: ['-y', 'my-mcp-server'],
     })
-    expect(providers['claude-ai']).toMatchObject({
-      type: 'claudeai',
+    expect(servers['remote-tools']).toMatchObject({
+      url: 'https://mcp-v2.example.com',
     })
-    expect(reparsed?.defaultModel).toBe('anthropic:claude-opus-4-6')
+    expect(reparsed?.autoMode).toEqual({ enabled: true })
   })
 
-  test('writeFreecodeSettingsFile updating a scalar leaves the providers block untouched', () => {
+  test('writeFreecodeSettingsFile updating a scalar leaves the mcpServers block untouched', () => {
     const path = join(tmpDir, 'freecode.json')
     writeFileSync(path, SEEDED)
 
-    // Simulate model picker.
-    writeFreecodeSettingsFile({ defaultModel: 'anthropic:claude-haiku-4-5' })
+    writeFreecodeSettingsFile({
+      autoMode: { enabled: false, classifierModel: 'anthropic:claude-haiku-4-5' },
+    })
 
     const content = readFileSync(path, 'utf8')
     expect(content).toContain('// user-authored top comment')
-    expect(content).toContain('// keep anthropic untouched')
-    expect(content).toContain('"claude-ai"')
+    expect(content).toContain('// keep local-tools untouched')
+    expect(content).toContain('"remote-tools"')
     // Value updated
-    expect(content).toContain('"anthropic:claude-haiku-4-5"')
-    expect(content).not.toContain('"anthropic:claude-opus-4-6"')
+    expect(content).toContain('"enabled": false')
+    expect(content).toContain('"classifierModel"')
   })
 
   test('writeFreecodeSettingsFile creates a new file when none exists (no comments to preserve)', () => {
     const path = join(tmpDir, 'freecode.json')
     writeFreecodeSettingsFile({
-      defaultModel: 'x',
-      providers: { anthropic: { type: 'anthropic' } },
+      autoMode: { enabled: true },
+      mcpServers: { tools: { command: 'echo' } },
     })
     const content = readFileSync(path, 'utf8')
-    expect(content).toContain('"defaultModel": "x"')
-    expect(content).toContain('"anthropic"')
+    expect(content).toContain('"autoMode"')
+    expect(content).toContain('"tools"')
     expect(content.endsWith('\n')).toBe(true)
   })
 })

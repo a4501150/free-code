@@ -1,9 +1,9 @@
 /**
  * Provider Config E2E Tests
  *
- * Tests the provider-based model system: configuring providers in settings.json,
+ * Tests the provider-based model system: configuring providers in modelSettings.json,
  * routing requests through OpenAI Chat Completions adapter, model alias resolution,
- * per-provider caching behavior, and legacy env var migration.
+ * and per-provider caching behavior.
  */
 
 import {

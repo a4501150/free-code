@@ -17,6 +17,7 @@
 import { mkdtemp, writeFile, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { MODEL_SETTINGS_KEYS } from '../../src/utils/settings/modelSettingsKeys'
 import { sleep, waitFor, type WaitForOptions } from '../helpers/wait-helpers'
 
 const PROJECT_ROOT = join(import.meta.dir, '..', '..')
@@ -40,7 +41,7 @@ export interface TmuxSessionOptions {
    * Use ./cli for tests that need the production feature set.
    */
   cliBinary?: string
-  /** Project-level settings to write to settings.json */
+  /** Settings to seed (model keys go to modelSettings.json, rest to freecode.json) */
   settings?: Record<string, unknown>
   /**
    * Pre-existing config dir to reuse (skips mkdtemp and does NOT rewrite
@@ -160,15 +161,15 @@ export class TmuxSession {
       projects,
     }
 
-    // freecode.json — holds both user settings and runtime state.
-    // State (trust, projects, API key approvals) lives under the `state` key.
-    // Tests can pass custom settings via the `settings` option.
+    // Config is split across three files:
+    //   freecode.json      — general settings (autoMode, permissions, etc.)
+    //   modelSettings.json  — provider/model configuration
+    //   state.json          — runtime state (trust, API key approvals, etc.)
     // Write freecode.json so the migration prompt dialog does not fire at
     // startup; the state-machine key is "freecode.json exists".
     //
     // If the test didn't provide explicit providers, auto-generate one from
-    // the mock server URL so the CLI has a working provider config (legacy
-    // env-var synthesis was removed).
+    // the mock server URL so the CLI has a working provider config.
     const effectiveSettings = { ...this._settings }
     if (!effectiveSettings.providers) {
       effectiveSettings.providers = {
@@ -184,9 +185,31 @@ export class TmuxSession {
           'test-anthropic:claude-sonnet-4-20250514'
       }
     }
+
+    // Split model keys into modelSettings.json, keep the rest in freecode.json.
+    const modelSettings: Record<string, unknown> = {}
+    const generalSettings: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(effectiveSettings)) {
+      if (MODEL_SETTINGS_KEYS.has(key)) {
+        modelSettings[key] = value
+      } else {
+        generalSettings[key] = value
+      }
+    }
+
     await writeFile(
       join(this.configDir, 'freecode.json'),
-      JSON.stringify({ ...effectiveSettings, state }, null, 2),
+      JSON.stringify(generalSettings, null, 2),
+    )
+    if (Object.keys(modelSettings).length > 0) {
+      await writeFile(
+        join(this.configDir, 'modelSettings.json'),
+        JSON.stringify(modelSettings, null, 2),
+      )
+    }
+    await writeFile(
+      join(this.configDir, 'state.json'),
+      JSON.stringify(state, null, 2),
     )
 
     // Build environment string.

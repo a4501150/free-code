@@ -52,11 +52,15 @@ async function runHeadless(options: HeadlessOptions): Promise<HeadlessResult> {
   const tempCwd = await mkdtemp(join(tmpdir(), 'claude-headless-cwd-'))
 
   try {
-    // Write freecode.json with explicit provider config (legacy env-var
-    // synthesis was removed — providers must be configured in settings).
+    // Seed settings: freecode.json (general + migration marker) and
+    // modelSettings.json (provider/model config).
     const apiKey = 'test-key-headless-12345'
     await writeFile(
       join(tempConfig, 'freecode.json'),
+      JSON.stringify({}),
+    )
+    await writeFile(
+      join(tempConfig, 'modelSettings.json'),
       JSON.stringify({
         providers: {
           'test-anthropic': {
