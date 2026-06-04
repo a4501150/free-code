@@ -1771,24 +1771,6 @@ async function* queryModel(
             isFirstChunk = false
           }
 
-          if (part.type === 'error') {
-            const domainError = (part as { error?: unknown }).error
-            throw new DomainTransportError({
-              normalized: {
-                kind: 'server',
-                message:
-                  typeof domainError === 'object' && domainError !== null
-                    ? ((domainError as { message?: string }).message ??
-                      'Stream error')
-                    : String(domainError ?? 'Stream error'),
-                providerType:
-                  registry.getProviderType(options.model) ?? 'anthropic',
-                raw: domainError,
-              },
-              raw: domainError,
-            })
-          }
-
           switch (part.type) {
             case 'message_start': {
               partialMessage = part.message

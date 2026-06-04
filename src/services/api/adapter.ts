@@ -21,9 +21,9 @@
  * 2. Content blocks follow `content_block_start` → N × `content_block_delta`
  *    → `content_block_stop`.
  * 3. After all blocks: `message_delta` (usage + stop_reason) → `message_stop`.
- * 4. An `error` event is terminal — no events may follow it.
- * 5. Fatal errors before `message_start` throw `DomainTransportError`.
- * 6. Fatal errors after streaming started yield `{ type: 'error' }` then return.
+ * 4. Fatal errors before `message_start` throw `DomainTransportError`.
+ * 5. Fatal errors after streaming started throw `DomainTransportError`
+ *    (adapters close any open blocks before throwing).
  *
  * Reasoning blocks:
  *
@@ -123,7 +123,7 @@ export interface ProviderAdapter {
    * when done, even on error paths.
    *
    * Errors during stream creation throw {@link DomainTransportError}.
-   * Errors during streaming yield `{ type: 'error' }` then end the iterable.
+   * Errors during streaming throw {@link DomainTransportError}.
    */
   createStream(
     config: ProviderConfig,

@@ -238,10 +238,6 @@ export type DomainStreamEvent =
   | {
       type: 'message_stop'
     }
-  | {
-      type: 'error'
-      error: DomainApiError
-    }
 
 // ── API Error ─────────────────────────────────────────────────────
 
