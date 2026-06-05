@@ -573,8 +573,6 @@ export async function computeSimpleEnvInfo(
     modelDescription,
     `Settings file: ${getFreecodeSettingsFilePath()}`,
     `Model settings file: ${getModelSettingsFilePath()}`,
-    `Claude Code is available as a CLI in the terminal, desktop app (Mac/Windows), web app (claude.ai/code), and IDE extensions (VS Code, JetBrains).`,
-    `Fast mode for Claude Code uses the same model with faster output. It does NOT switch to a different model. It can be toggled with /fast.`,
   ].filter(item => item !== null)
 
   return [
