@@ -81,7 +81,7 @@ export function enqueueShellNotification(
   enqueuePendingNotification({
     value: message,
     mode: 'task-notification',
-    priority: 'later',
+    priority: 'next',
     agentId,
   })
 }

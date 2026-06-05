@@ -157,7 +157,7 @@ const baseInputSchema = z.object({
     .boolean()
     .optional()
     .describe(
-      "Run this agent asynchronously. Control returns to you immediately with the agent's ID; when the agent finishes, its final report is delivered as a system notification in a later turn. The notification arrives when the agent finishes — sleeping or repeatedly checking on the agent does not change when it arrives. Use this whenever you would otherwise reach for `sleep` or repeatedly check on the agent's progress. NOT a parallelism mechanism — to run agents in parallel whose results you need together, send multiple Agent tool uses in a single message; they run concurrently in the foreground and all results return together.",
+      "Run this agent asynchronously. Control returns to you immediately with the agent's ID; when the agent finishes, its final report is delivered as a system notification as soon as possible — between tool rounds if a turn is active, or when idle. The notification arrives when the agent finishes — sleeping or repeatedly checking on the agent does not change when it arrives. Use this whenever you would otherwise reach for `sleep` or repeatedly check on the agent's progress. NOT a parallelism mechanism — to run agents in parallel whose results you need together, send multiple Agent tool uses in a single message; they run concurrently in the foreground and all results return together.",
     ),
 })
 

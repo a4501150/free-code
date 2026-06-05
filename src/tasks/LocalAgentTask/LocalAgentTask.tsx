@@ -380,7 +380,11 @@ export function enqueueAgentNotification({
 <${SUMMARY_TAG}>${summary}</${SUMMARY_TAG}>${resultSection}${usageSection}${worktreeSection}
 </${TASK_NOTIFICATION_TAG}>`
 
-  enqueuePendingNotification({ value: message, mode: 'task-notification' })
+  enqueuePendingNotification({
+    value: message,
+    mode: 'task-notification',
+    priority: 'next',
+  })
 }
 
 /**
