@@ -6,6 +6,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DEV="$SCRIPT_DIR/cli-dev"
 REBUILD_FLAG=0
 
+# Auto-install bun if not found
+if ! command -v bun &>/dev/null; then
+    echo "[code] bun not found, installing..." >&2
+    curl -fsSL https://bun.sh/install | bash >&2
+    export BUN_INSTALL="$HOME/.bun"
+    export PATH="$BUN_INSTALL/bin:$PATH"
+    if ! command -v bun &>/dev/null; then
+        echo "[code] Failed to install bun!" >&2
+        exit 1
+    fi
+    echo "[code] bun installed: $(bun --version)" >&2
+fi
+
 # If cli-dev doesn't exist, must build
 if [[ ! -f "$CLI_DEV" ]]; then
     REBUILD_FLAG=1
