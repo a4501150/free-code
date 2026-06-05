@@ -94,10 +94,6 @@ function getSystemRemindersSection(): string {
 - The conversation has unlimited context through automatic summarization.`
 }
 
-function getAntModelOverrideSection(): string | null {
-  return null
-}
-
 function getLanguageSection(
   languagePreference: string | undefined,
 ): string | null {
@@ -415,9 +411,6 @@ ${CYBER_RISK_INSTRUCTION}`,
       'Tool availability can change between turns',
     ),
     systemPromptSection('memory', () => loadMemoryPrompt()),
-    systemPromptSection('ant_model_override', () =>
-      getAntModelOverrideSection(),
-    ),
     systemPromptSection('env_info_simple', () =>
       computeSimpleEnvInfo(model, additionalWorkingDirectories),
     ),
