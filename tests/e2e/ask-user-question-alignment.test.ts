@@ -15,11 +15,10 @@ import {
   test,
   setDefaultTimeout,
 } from 'bun:test'
+setDefaultTimeout(120_000)
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { toolUseResponse, textResponse } from '../helpers/fixture-builders'
 import { TmuxSession, sleep } from './tmux-helpers'
-
-setDefaultTimeout(120_000)
 
 function getNumberColumn(line: string): number {
   const match = line.match(/(\d+)\./)

@@ -18,7 +18,9 @@ import {
   beforeAll,
   afterAll,
   afterEach,
+  setDefaultTimeout,
 } from 'bun:test'
+setDefaultTimeout(120_000)
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse } from '../helpers/fixture-builders'
 import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'

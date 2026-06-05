@@ -17,8 +17,15 @@
 import { mkdtemp, writeFile, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { setDefaultTimeout } from 'bun:test'
 import { MODEL_SETTINGS_KEYS } from '../../src/utils/settings/modelSettingsKeys'
 import { sleep, waitFor, type WaitForOptions } from '../helpers/wait-helpers'
+
+// E2E tests run through tmux and need generous timeouts. Each test file
+// should call setDefaultTimeout explicitly (bun's parallel workers don't
+// reliably inherit module-level side effects). This fallback catches any
+// new file that forgets.
+setDefaultTimeout(120_000)
 
 const PROJECT_ROOT = join(import.meta.dir, '..', '..')
 const CLI_BINARY = join(PROJECT_ROOT, 'cli-dev')

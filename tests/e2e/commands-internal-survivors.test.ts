@@ -17,12 +17,11 @@ import {
   afterEach,
   setDefaultTimeout,
 } from 'bun:test'
+setDefaultTimeout(120_000)
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { TmuxSession, createLoggingTest } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
-
-setDefaultTimeout(120_000)
 
 describe('Internal-command survivors', () => {
   let server: MockAnthropicServer

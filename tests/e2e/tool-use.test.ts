@@ -17,7 +17,9 @@ import {
   beforeAll,
   afterAll,
   afterEach,
+  setDefaultTimeout,
 } from 'bun:test'
+setDefaultTimeout(120_000)
 import { writeFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {

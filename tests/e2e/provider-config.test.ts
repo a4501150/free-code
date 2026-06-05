@@ -15,10 +15,10 @@ import {
   afterEach,
   setDefaultTimeout,
 } from 'bun:test'
+setDefaultTimeout(120_000)
 
 // e2e tests launch the compiled CLI in tmux and drive it end-to-end —
 // they need far more than bun's 5s default. Matches plan-mode.test.ts.
-setDefaultTimeout(120_000)
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

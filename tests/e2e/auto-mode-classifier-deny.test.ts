@@ -18,14 +18,13 @@ import {
   afterEach,
   setDefaultTimeout,
 } from 'bun:test'
+setDefaultTimeout(120_000)
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { toolUseResponse, textResponse } from '../helpers/fixture-builders'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
 import { TmuxSession, createLoggingTest } from './tmux-helpers'
-
-setDefaultTimeout(120_000)
 
 const test = createLoggingTest(bunTest)
 

@@ -19,7 +19,6 @@ import {
   afterEach,
   setDefaultTimeout,
 } from 'bun:test'
-
 setDefaultTimeout(120_000)
 
 import { mkdtemp } from 'node:fs/promises'

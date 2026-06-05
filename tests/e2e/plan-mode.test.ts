@@ -15,11 +15,10 @@ import {
   test,
   setDefaultTimeout,
 } from 'bun:test'
+setDefaultTimeout(120_000)
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { TmuxSession, sleep } from './tmux-helpers'
-
-setDefaultTimeout(120_000)
 
 // Generate a long text block to fill the terminal screen
 function longText(label: string, lines = 30): string {
