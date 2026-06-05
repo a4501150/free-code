@@ -19,12 +19,23 @@ if ! command -v bun &>/dev/null; then
     echo "[code] bun installed: $(bun --version)" >&2
 fi
 
+# Auto-install dependencies if node_modules is missing or stale
+if [[ ! -d "$SCRIPT_DIR/node_modules" ]] || [[ "$SCRIPT_DIR/bun.lock" -nt "$SCRIPT_DIR/node_modules/.cache/.bun-install-timestamp" ]]; then
+    echo "[code] Installing dependencies..." >&2
+    (cd "$SCRIPT_DIR" && bun install) >&2
+    if [[ $? -ne 0 ]]; then
+        echo "[code] Dependency install failed!" >&2
+        exit 1
+    fi
+    mkdir -p "$SCRIPT_DIR/node_modules/.cache"
+    touch "$SCRIPT_DIR/node_modules/.cache/.bun-install-timestamp"
+fi
+
 # If cli-dev doesn't exist, must build
 if [[ ! -f "$CLI_DEV" ]]; then
     REBUILD_FLAG=1
 else
     # Check if any src/ or scripts/ file is newer than cli-dev
-    # Using find with -newer is fast and handles the common case
     if [[ -n "$(find "$SCRIPT_DIR/src" "$SCRIPT_DIR/scripts" "$SCRIPT_DIR/package.json" -newer "$CLI_DEV" -print -quit 2>/dev/null)" ]]; then
         REBUILD_FLAG=1
     fi
