@@ -1179,11 +1179,7 @@ async function* queryModel(
       registry.isAnthropicType(options.model)
         ? getAttributionHeader(fingerprint)
         : '',
-      getCLISyspromptPrefix({
-        isNonInteractive: options.isNonInteractiveSession,
-        hasAppendSystemPrompt: options.hasAppendSystemPrompt,
-        model: options.model,
-      }),
+      getCLISyspromptPrefix(),
       ...systemPrompt,
       ...(advisorModel ? [ADVISOR_TOOL_INSTRUCTIONS] : []),
     ].filter(Boolean),

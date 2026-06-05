@@ -19,11 +19,7 @@ export const CLI_SYSPROMPT_PREFIXES: ReadonlySet<string> = new Set(
   CLI_SYSPROMPT_PREFIX_VALUES,
 )
 
-export function getCLISyspromptPrefix(_options?: {
-  isNonInteractive: boolean
-  hasAppendSystemPrompt: boolean
-  model?: string
-}): CLISyspromptPrefix {
+export function getCLISyspromptPrefix(): CLISyspromptPrefix {
   return DEFAULT_PREFIX
 }
 

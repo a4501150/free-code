@@ -161,11 +161,7 @@ export async function sideQuery(
       : [
           {
             type: 'text' as const,
-            text: getCLISyspromptPrefix({
-              isNonInteractive: false,
-              hasAppendSystemPrompt: false,
-              model,
-            }),
+            text: getCLISyspromptPrefix(),
           },
         ]),
     ...(Array.isArray(system)
