@@ -10,6 +10,7 @@ import { FileWriteTool } from './tools/FileWriteTool/FileWriteTool.js'
 import { GlobTool } from './tools/GlobTool/GlobTool.js'
 import { WebFetchTool } from './tools/WebFetchTool/WebFetchTool.js'
 import { TaskStopTool } from './tools/TaskStopTool/TaskStopTool.js'
+import { BackgroundTaskListTool } from './tools/BackgroundTaskListTool/BackgroundTaskListTool.js'
 import { BriefTool } from './tools/BriefTool/BriefTool.js'
 // Feature-gated tool imports. `feature()` is a Bun build-time macro, so any
 // namespace not reached under a disabled flag is DCE'd along with its
@@ -147,6 +148,7 @@ export function getAllBaseTools(): Tools {
     WebFetchTool,
     WebSearchTool,
     TaskStopTool,
+    BackgroundTaskListTool,
     AskUserQuestionTool,
     SkillTool,
     EnterPlanModeTool,
