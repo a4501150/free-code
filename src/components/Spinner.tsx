@@ -71,6 +71,7 @@ import { getDefaultCharacters, type SpinnerMode } from './Spinner/index.js'
 import { SpinnerAnimationRow } from './Spinner/SpinnerAnimationRow.js'
 import { useSettings } from '../hooks/useSettings.js'
 import { isInProcessTeammateTask } from '../tasks/InProcessTeammateTask/types.js'
+import { isLocalAgentTask } from '../tasks/LocalAgentTask/LocalAgentTask.js'
 import { isBackgroundTask } from '../tasks/types.js'
 import { getAllInProcessTeammateTasks } from '../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
 import { getEffortSuffix } from '../utils/effort.js'
@@ -179,6 +180,15 @@ function SpinnerWithVerbInner({
   const foregroundedTeammate = viewingAgentTaskId
     ? getViewedTeammateTask({ viewingAgentTaskId, tasks })
     : undefined
+  // Get viewed local agent (coordinator panel subagent) — separate from
+  // foregroundedTeammate which is for in-process teammates only.
+  const viewedLocalAgent =
+    !foregroundedTeammate && viewingAgentTaskId
+      ? (() => {
+          const t = tasks[viewingAgentTaskId]
+          return isLocalAgentTask(t) ? t : undefined
+        })()
+      : undefined
   const { columns } = useTerminalSize()
   const mainTasksV2 = useTasksV2()
   const subagentTasksV2 = useSubagentTasksV2(viewingAgentTaskId)
@@ -263,7 +273,9 @@ function SpinnerWithVerbInner({
     }
   }, [mode])
 
-  const effortSuffix = getEffortSuffix(getMainLoopModel())
+  const effortSuffix = getEffortSuffix(
+    viewedLocalAgent?.model ?? getMainLoopModel(),
+  )
 
   // Check if any running in-process teammates exist (needed for both modes)
   const runningTeammates = getAllInProcessTeammateTasks(tasks).filter(
@@ -326,6 +338,24 @@ function SpinnerWithVerbInner({
             leaderIdleText="Idle"
           />
         )}
+      </Box>
+    )
+  }
+
+  // When viewing a completed/failed local agent, show static status
+  if (viewedLocalAgent && viewedLocalAgent.status !== 'running') {
+    const elapsed = formatDuration(
+      (viewedLocalAgent.endTime ?? Date.now()) -
+        viewedLocalAgent.startTime -
+        (viewedLocalAgent.totalPausedMs ?? 0),
+    )
+    return (
+      <Box flexDirection="column" width="100%" alignItems="flex-start">
+        <Box flexDirection="row" flexWrap="wrap" marginTop={1} width="100%">
+          <Text dimColor>
+            {TEARDROP_ASTERISK} Worked for {elapsed}
+          </Text>
+        </Box>
       </Box>
     )
   }
@@ -410,8 +440,9 @@ function SpinnerWithVerbInner({
         teammateTokens={teammateTokens}
         foregroundedTeammate={foregroundedTeammate}
         leaderIsIdle={leaderIsIdle}
-        thinkingStatus={thinkingStatus}
+        thinkingStatus={viewedLocalAgent ? null : thinkingStatus}
         effortSuffix={effortSuffix}
+        viewedLocalAgent={viewedLocalAgent}
       />
       {showSpinnerTree && hasRunningTeammates ? (
         <TeammateSpinnerTree

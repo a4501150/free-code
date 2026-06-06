@@ -4,6 +4,7 @@ import { useMemo, useRef } from 'react'
 import { stringWidth } from '../../ink/stringWidth.js'
 import { Box, Text, useAnimationFrame } from '../../ink.js'
 import type { InProcessTeammateTaskState } from '../../tasks/InProcessTeammateTask/types.js'
+import type { LocalAgentTaskState } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { formatDuration, formatNumber } from '../../utils/format.js'
 import { toInkColor } from '../../utils/ink.js'
 import type { Theme } from '../../utils/theme.js'
@@ -59,6 +60,9 @@ export type SpinnerAnimationRowProps = {
   // Thinking (state owned by parent, mode-dependent)
   thinkingStatus: 'thinking' | number | null
   effortSuffix: string
+
+  // Viewed local agent (coordinator panel subagent) — overrides leader timing/tokens
+  viewedLocalAgent?: LocalAgentTaskState
 }
 
 /**
@@ -92,6 +96,7 @@ export function SpinnerAnimationRow({
   leaderIsIdle = false,
   thinkingStatus,
   effortSuffix,
+  viewedLocalAgent,
 }: SpinnerAnimationRowProps): React.ReactNode {
   const [viewportRef, time] = useAnimationFrame(reducedMotion ? null : 50)
 
@@ -118,14 +123,13 @@ export function SpinnerAnimationRow({
   // === Animation derivations from `time` ===
   const currentResponseLength = responseLengthRef.current
 
-  // Suppress stall detection when leader is idle — responseLengthRef and
-  // hasActiveTools both track leader state. When viewing an active teammate
-  // while leader is idle, they'd otherwise flag a false stall after 3s.
-  // Treating leaderIsIdle like hasActiveTools resets the stall timer.
+  // Suppress stall detection when leader is idle or viewing a local agent —
+  // responseLengthRef and hasActiveTools both track leader state. When viewing
+  // another agent, they'd otherwise flag a false stall after 3s.
   const { isStalled, stalledIntensity } = useStalledAnimation(
     time,
     currentResponseLength,
-    hasActiveTools || leaderIsIdle,
+    hasActiveTools || leaderIsIdle || !!viewedLocalAgent,
     reducedMotion,
   )
 
@@ -175,21 +179,30 @@ export function SpinnerAnimationRow({
   const displayedResponseLength = tokenCounterRef.current
   const leaderTokens = Math.round(displayedResponseLength / 4)
 
-  const effectiveElapsedMs = hasRunningTeammates
-    ? Math.max(elapsedTimeMs, now - turnStartRef.current)
-    : elapsedTimeMs
+  // === Effective elapsed time ===
+  // When viewing a local agent, derive elapsed from the agent's own startTime.
+  const effectiveElapsedMs = viewedLocalAgent
+    ? (viewedLocalAgent.endTime ?? now) -
+      viewedLocalAgent.startTime -
+      (viewedLocalAgent.totalPausedMs ?? 0)
+    : hasRunningTeammates
+      ? Math.max(elapsedTimeMs, now - turnStartRef.current)
+      : elapsedTimeMs
   const timerText = formatDuration(effectiveElapsedMs)
   const timerWidth = stringWidth(timerText)
 
-  // === Token count (leader + teammates, or foregrounded teammate) ===
-  const totalTokens =
-    foregroundedTeammate && !foregroundedTeammate.isIdle
+  // === Token count (leader + teammates, foregrounded teammate, or viewed local agent) ===
+  const totalTokens = viewedLocalAgent
+    ? (viewedLocalAgent.progress?.tokenCount ?? 0)
+    : foregroundedTeammate && !foregroundedTeammate.isIdle
       ? (foregroundedTeammate.progress?.tokenCount ?? 0)
       : leaderTokens + teammateTokens
   const tokenCount = formatNumber(totalTokens)
-  const tokensText = hasRunningTeammates
-    ? `${tokenCount} tokens`
-    : `${figures.arrowDown} ${tokenCount} tokens`
+  const isLocalAgentView = !!viewedLocalAgent
+  const tokensText =
+    hasRunningTeammates || isLocalAgentView
+      ? `${tokenCount} tokens`
+      : `${figures.arrowDown} ${tokenCount} tokens`
   const tokensWidth = stringWidth(tokensText)
 
   // === Thinking text (may shrink to fit) ===
@@ -207,7 +220,10 @@ export function SpinnerAnimationRow({
 
   const wantsThinking = thinkingStatus !== null
   const wantsTimerAndTokens =
-    verbose || hasRunningTeammates || effectiveElapsedMs > SHOW_TOKENS_AFTER_MS
+    verbose ||
+    hasRunningTeammates ||
+    isLocalAgentView ||
+    effectiveElapsedMs > SHOW_TOKENS_AFTER_MS
 
   const availableSpace = columns - messageWidth - 5
 
@@ -280,7 +296,9 @@ export function SpinnerAnimationRow({
     ...(showTokens
       ? [
           <Box flexDirection="row" key="tokens">
-            {!hasRunningTeammates && <SpinnerModeGlyph mode={mode} />}
+            {!hasRunningTeammates && !isLocalAgentView && (
+              <SpinnerModeGlyph mode={mode} />
+            )}
             <Text dimColor>{tokenCount} tokens</Text>
           </Box>,
         ]
