@@ -170,6 +170,7 @@ export function getSimplePrompt(): string {
     'Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it.',
     `You may specify an optional timeout in milliseconds (up to ${getMaxTimeoutMs()}ms / ${getMaxTimeoutMs() / 60000} minutes). By default, your command will timeout after ${getDefaultTimeoutMs()}ms (${getDefaultTimeoutMs() / 60000} minutes).`,
     ...(backgroundNote !== null ? [backgroundNote] : []),
+    'When running commands with potentially large output (tests, builds, linters), prefer running in background mode so the user can see progress. For background tasks (`run_in_background: true`), do NOT append `| tail` — output already streams to a file you can read in chunks via Read or BackgroundTaskOutput.',
     ...(embedded
       ? [
           // bfs (which backs `find`) uses Oniguruma for -regex, which picks the
