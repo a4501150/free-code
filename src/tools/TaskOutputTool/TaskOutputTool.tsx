@@ -205,6 +205,7 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
 - Returns the task output along with status information
 - Use block=true (default) — blocks until the task completes, equivalent to sleeping and polling the task until it exits with an exit code or hits the timeout.
 - Use block=false for non-blocking check of current status
+- For long-running processes that not supposed to exit by theirselves (for example, dev servers startup command, watchers), use block=false to peek/check the output for progress status — blocking will just wait until timeout since the task/command never completes.
 - Task IDs can be found using the /tasks command`
     },
 
