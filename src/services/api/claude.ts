@@ -622,6 +622,10 @@ export type Options = {
   extraToolSchemas?: DomainToolDefinition[]
   maxOutputTokensOverride?: number
   onStreamingFallback?: () => void
+  onStreamingRecovery?: (
+    messages: AssistantMessage[],
+    error: DomainTransportError,
+  ) => boolean
   querySource: QuerySource
   agents: AgentDefinition[]
   allowedAgentTypes?: string[]
@@ -746,6 +750,16 @@ const STREAM_IDLE_TIMEOUT_ERROR = 'Stream idle timeout - no chunks received'
 
 function isStreamIdleTimeoutError(error: unknown): boolean {
   return error instanceof Error && error.message === STREAM_IDLE_TIMEOUT_ERROR
+}
+
+function isMissingResponseCompletedError(
+  error: unknown,
+): error is DomainTransportError {
+  return (
+    error instanceof DomainTransportError &&
+    error.normalized.kind === 'transport' &&
+    error.message.includes('response.completed')
+  )
 }
 
 function shouldEnableStreamWatchdog(
@@ -1484,6 +1498,7 @@ async function* queryModel(
   }
 
   const newMessages: AssistantMessage[] = []
+  const providerConfirmedMessages: AssistantMessage[] = []
   let ttftMs = 0
   let partialMessage: DomainAssistantContent | undefined = undefined
   const contentBlocks: (ConnectorTextBlock | DomainContentBlock)[] = []
@@ -1566,6 +1581,7 @@ async function* queryModel(
 
       // reset state
       newMessages.length = 0
+      providerConfirmedMessages.length = 0
       ttftMs = 0
       partialMessage = undefined
       contentBlocks.length = 0
@@ -1819,6 +1835,9 @@ async function* queryModel(
                 ...(advisorModel && { advisorModel }),
               }
               newMessages.push(m)
+              if (part.providerConfirmed) {
+                providerConfirmedMessages.push(m)
+              }
               yield m
               break
             }
@@ -1996,6 +2015,23 @@ async function* queryModel(
             cause: streamingError,
             raw: streamingError,
           })
+        }
+
+        if (
+          isOpenAIResponsesProvider &&
+          isMissingResponseCompletedError(streamingError) &&
+          providerConfirmedMessages.length > 0 &&
+          options.onStreamingRecovery?.(
+            providerConfirmedMessages,
+            streamingError,
+          )
+        ) {
+          logForDebugging(
+            `Recovering from truncated Codex stream with ${providerConfirmedMessages.length} provider-confirmed message(s)`,
+            { level: 'warn' },
+          )
+          releaseStreamResources()
+          return
         }
 
         if (

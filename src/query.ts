@@ -85,6 +85,8 @@ import {
 import { createBudgetTracker, checkTokenBudget } from './query/tokenBudget.js'
 import { count } from './utils/array.js'
 
+const STREAM_RECOVERY_MAX_ATTEMPTS = 5
+
 function* yieldMissingToolResultBlocks(
   assistantMessages: AssistantMessage[],
   errorMessage: string,
@@ -155,6 +157,7 @@ type State = {
   pendingToolUseSummary: Promise<ToolUseSummaryMessage | null> | undefined
   stopHookActive: boolean | undefined
   turnCount: number
+  streamRecoveryCount: number
   // Why the previous iteration continued. Undefined on first iteration.
   // Lets tests assert recovery paths fired without inspecting message contents.
   transition: Continue | undefined
@@ -214,6 +217,7 @@ async function* queryLoop(
     autoCompactTracking: undefined,
     stopHookActive: undefined,
     turnCount: 1,
+    streamRecoveryCount: 0,
     pendingToolUseSummary: undefined,
     transition: undefined,
   }
@@ -255,6 +259,7 @@ async function* queryLoop(
       pendingToolUseSummary,
       stopHookActive,
       turnCount,
+      streamRecoveryCount,
     } = state
 
     yield { type: 'stream_request_start' }
@@ -452,8 +457,10 @@ async function* queryLoop(
     }
 
     queryCheckpoint('query_api_loop_start')
+    let streamingFallbackOccured = false
+    let streamingRecoveryOccured = false
+    const streamingRecoveryMessageUUIDs = new Set<string>()
     try {
-      let streamingFallbackOccured = false
       queryCheckpoint('query_api_streaming_start')
       for await (const message of deps.callModel({
         messages: prependUserContext(messagesForQuery, userContext),
@@ -475,6 +482,16 @@ async function* queryLoop(
             toolUseContext.options.isNonInteractiveSession,
           onStreamingFallback: () => {
             streamingFallbackOccured = true
+          },
+          onStreamingRecovery: messages => {
+            if (streamRecoveryCount >= STREAM_RECOVERY_MAX_ATTEMPTS) {
+              return false
+            }
+            streamingRecoveryOccured = true
+            for (const message of messages) {
+              streamingRecoveryMessageUUIDs.add(message.uuid)
+            }
+            return true
           },
           querySource,
           agents: toolUseContext.options.agentDefinitions.activeAgents,
@@ -620,6 +637,34 @@ async function* queryLoop(
           }
         }
       }
+      if (streamingRecoveryOccured) {
+        const confirmedMessages = assistantMessages.filter(message =>
+          streamingRecoveryMessageUUIDs.has(message.uuid),
+        )
+        for (const message of assistantMessages) {
+          if (!streamingRecoveryMessageUUIDs.has(message.uuid)) {
+            yield { type: 'tombstone' as const, message }
+          }
+        }
+
+        assistantMessages.length = 0
+        assistantMessages.push(...confirmedMessages)
+        toolUseBlocks.length = 0
+        for (const message of confirmedMessages) {
+          toolUseBlocks.push(
+            ...(message.message.content.filter(
+              content => content.type === 'tool_use',
+            ) as DomainToolUseBlock[]),
+          )
+        }
+        needsFollowUp = true
+
+        if (streamingToolExecutor) {
+          streamingToolExecutor.keepOnlyAssistantMessages(
+            streamingRecoveryMessageUUIDs,
+          )
+        }
+      }
       queryCheckpoint('query_api_streaming_end')
     } catch (error) {
       logError(error)
@@ -657,7 +702,7 @@ async function* queryLoop(
     }
 
     // Execute post-sampling hooks after model response is complete
-    if (assistantMessages.length > 0) {
+    if (assistantMessages.length > 0 && !streamingRecoveryOccured) {
       void executePostSamplingHooks(
         [...messagesForQuery, ...assistantMessages],
         systemPrompt,
@@ -744,6 +789,7 @@ async function* queryLoop(
           pendingToolUseSummary: undefined,
           stopHookActive: true,
           turnCount,
+          streamRecoveryCount: 0,
           transition: { reason: 'stop_hook_blocking' },
         }
         state = next
@@ -777,6 +823,7 @@ async function* queryLoop(
             pendingToolUseSummary: undefined,
             stopHookActive: undefined,
             turnCount,
+            streamRecoveryCount: 0,
             transition: { reason: 'token_budget_continuation' },
           }
           continue
@@ -1052,10 +1099,10 @@ async function* queryLoop(
     }
 
     // Each time we have tool results and are about to recurse, that's a turn
-    const nextTurnCount = turnCount + 1
+    const nextTurnCount = streamingRecoveryOccured ? turnCount : turnCount + 1
 
     // Check if we've reached the max turns limit
-    if (maxTurns && nextTurnCount > maxTurns) {
+    if (maxTurns && !streamingRecoveryOccured && nextTurnCount > maxTurns) {
       yield createAttachmentMessage({
         type: 'max_turns_reached',
         maxTurns,
@@ -1070,9 +1117,14 @@ async function* queryLoop(
       toolUseContext: toolUseContextWithQueryTracking,
       autoCompactTracking: tracking,
       turnCount: nextTurnCount,
+      streamRecoveryCount: streamingRecoveryOccured
+        ? streamRecoveryCount + 1
+        : 0,
       pendingToolUseSummary: nextPendingToolUseSummary,
       stopHookActive,
-      transition: { reason: 'next_turn' },
+      transition: {
+        reason: streamingRecoveryOccured ? 'stream_recovery' : 'next_turn',
+      },
     }
     state = next
   } // while (true)

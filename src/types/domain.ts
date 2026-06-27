@@ -228,6 +228,7 @@ export type DomainStreamEvent =
       type: 'content_block_stop'
       index: number
       providerState?: Record<string, unknown>
+      providerConfirmed?: boolean
     }
   | {
       type: 'message_delta'

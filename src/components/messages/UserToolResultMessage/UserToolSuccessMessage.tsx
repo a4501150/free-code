@@ -110,7 +110,11 @@ export function UserToolSuccessMessage({
         flexDirection="column"
         width={rendersAsAssistantText ? undefined : width}
       >
-        {renderedMessage}
+        {typeof renderedMessage === 'string' ? (
+          <Text>{renderedMessage}</Text>
+        ) : (
+          renderedMessage
+        )}
         {yoloReason && (
           <MessageResponse height={1}>
             <Text dimColor>Allowed by auto mode classifier</Text>

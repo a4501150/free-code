@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { getEmptyToolPermissionContext } from '../../src/Tool.js'
+import { z } from 'zod/v4'
+import {
+  buildTool,
+  getEmptyToolPermissionContext,
+  type ToolUseContext,
+  type Tools,
+} from '../../src/Tool.js'
+import { query } from '../../src/query.js'
 import { queryModelWithStreaming } from '../../src/services/api/claude.js'
+import { DomainTransportError } from '../../src/services/api/domain-errors.js'
 import { enableConfigs } from '../../src/utils/config.js'
 import {
   initProviderRegistry,
@@ -8,7 +16,10 @@ import {
 } from '../../src/utils/model/providerRegistry.js'
 import type { ProviderConfig } from '../../src/utils/settings/types.js'
 import { asSystemPrompt } from '../../src/utils/systemPromptType.js'
-import { createUserMessage } from '../../src/utils/messages.js'
+import {
+  createAssistantMessage,
+  createUserMessage,
+} from '../../src/utils/messages.js'
 ;(globalThis as typeof globalThis & { MACRO?: unknown }).MACRO ??= {
   VERSION: 'test',
   BUILD_TIME: '',
@@ -41,6 +52,91 @@ function setupAnthropicProvider(): void {
     },
   }
   initProviderRegistry(providers)
+}
+
+function assistantTexts(messages: unknown[]): string[] {
+  return messages
+    .filter((message: any) => message.type === 'assistant')
+    .flatMap((message: any) =>
+      Array.isArray(message.message.content)
+        ? message.message.content
+            .filter((block: any) => block.type === 'text')
+            .map((block: any) => block.text)
+        : [],
+    )
+}
+
+function createMinimalToolUseContext(tools: Tools = []): ToolUseContext {
+  const appState = {
+    toolPermissionContext: getEmptyToolPermissionContext(),
+    fastMode: false,
+    advisorModel: undefined,
+    mcp: { tools: [], clients: [] },
+    sessionHooks: new Map(),
+  }
+  return {
+    options: {
+      commands: [],
+      debug: false,
+      mainLoopModel: 'gpt-test',
+      tools,
+      verbose: false,
+      thinkingConfig: { type: 'disabled' },
+      mcpClients: [],
+      mcpResources: {},
+      isNonInteractiveSession: true,
+      agentDefinitions: {
+        activeAgents: [],
+        allAgents: [],
+        allowedAgentTypes: [],
+      },
+    },
+    abortController: new AbortController(),
+    readFileState: new Map(),
+    getAppState: () => appState,
+    setAppState: () => {},
+    setInProgressToolUseIDs: () => {},
+    setResponseLength: () => {},
+    updateFileHistoryState: () => {},
+  } as unknown as ToolUseContext
+}
+
+function toolResultContents(messages: unknown[], toolUseId: string): unknown[] {
+  return messages
+    .filter((message: any) => message.type === 'user')
+    .flatMap((message: any) =>
+      Array.isArray(message.message.content)
+        ? message.message.content
+            .filter(
+              (block: any) =>
+                block.type === 'tool_result' && block.tool_use_id === toolUseId,
+            )
+            .map((block: any) => block.content)
+        : [],
+    )
+}
+
+function createTestTool(calls: unknown[]) {
+  return buildTool({
+    name: 'TestTool',
+    inputSchema: z.object({ value: z.string() }),
+    async description() {
+      return 'Test tool'
+    },
+    async prompt() {
+      return 'Test tool'
+    },
+    async call(input) {
+      calls.push(input)
+      return { data: `result:${input.value}` }
+    },
+    renderToolUseMessage() {
+      return null
+    },
+    renderToolResultMessage() {
+      return null
+    },
+  })
 }
 
 describe('Codex stream retry', () => {
@@ -145,6 +241,276 @@ describe('Codex stream retry', () => {
           : [],
       )
     expect(assistantTexts).toEqual(['partial', 'complete'])
+  })
+
+  test('offers provider-confirmed Codex output for recovery before retrying identical prompts', async () => {
+    setupCodexProvider()
+    enableConfigs()
+
+    const originalFetch = globalThis.fetch
+    const originalAnthropicApiKey = process.env.ANTHROPIC_API_KEY
+    const originalNodeEnv = process.env.NODE_ENV
+    process.env.ANTHROPIC_API_KEY = 'test-key'
+    process.env.NODE_ENV = 'development'
+    let upstreamRequests = 0
+    globalThis.fetch = (async () => {
+      upstreamRequests++
+      const completedThenTruncated = [
+        'event: response.output_item.added',
+        'data: {"type":"response.output_item.added","item":{"type":"message"}}',
+        '',
+        'event: response.output_text.delta',
+        'data: {"type":"response.output_text.delta","delta":"confirmed"}',
+        '',
+        'event: response.output_item.done',
+        'data: {"type":"response.output_item.done","item":{"type":"message"}}',
+        '',
+        '',
+      ].join('\n')
+      return new Response(completedThenTruncated, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    let fallbackCount = 0
+    let recoveryCount = 0
+    const recovered: string[] = []
+    const yielded = []
+    try {
+      for await (const message of queryModelWithStreaming({
+        messages: [createUserMessage({ content: 'hi' })],
+        systemPrompt: asSystemPrompt([]),
+        thinkingConfig: { type: 'disabled' },
+        tools: [],
+        signal: new AbortController().signal,
+        options: {
+          getToolPermissionContext: async () => getEmptyToolPermissionContext(),
+          model: 'gpt-test',
+          isNonInteractiveSession: true,
+          querySource: 'repl_main_thread',
+          agents: [],
+          allowedAgentTypes: [],
+          hasAppendSystemPrompt: false,
+          mcpTools: [],
+          onStreamingFallback: () => {
+            fallbackCount++
+          },
+          onStreamingRecovery: messages => {
+            recoveryCount++
+            recovered.push(...assistantTexts(messages))
+            return true
+          },
+        },
+      })) {
+        yielded.push(message)
+      }
+    } finally {
+      globalThis.fetch = originalFetch
+      if (originalAnthropicApiKey === undefined) {
+        delete process.env.ANTHROPIC_API_KEY
+      } else {
+        process.env.ANTHROPIC_API_KEY = originalAnthropicApiKey
+      }
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV
+      } else {
+        process.env.NODE_ENV = originalNodeEnv
+      }
+    }
+
+    expect(upstreamRequests).toBe(1)
+    expect(fallbackCount).toBe(0)
+    expect(recoveryCount).toBe(1)
+    expect(recovered).toEqual(['confirmed'])
+    expect(assistantTexts(yielded)).toEqual(['confirmed'])
+  })
+
+  test('query loop preserves confirmed Codex history and tombstones unconfirmed output', async () => {
+    setupCodexProvider()
+    enableConfigs()
+
+    const confirmed = createAssistantMessage({ content: 'confirmed' })
+    const partial = createAssistantMessage({ content: 'partial' })
+    const final = createAssistantMessage({ content: 'done' })
+    const requests: unknown[][] = []
+    let callCount = 0
+
+    const outputs = []
+    const terminal = await (async () => {
+      const iterator = query({
+        messages: [createUserMessage({ content: 'hi' })],
+        systemPrompt: asSystemPrompt([]),
+        userContext: {},
+        systemContext: {},
+        canUseTool: async () => ({ behavior: 'allow', updatedInput: {} }),
+        toolUseContext: createMinimalToolUseContext(),
+        querySource: 'repl_main_thread',
+        deps: {
+          callModel: async function* (request: any) {
+            requests.push(request.messages)
+            callCount++
+            if (callCount === 1) {
+              yield confirmed
+              yield partial
+              request.options.onStreamingRecovery?.(
+                [confirmed],
+                new DomainTransportError({
+                  normalized: {
+                    kind: 'transport',
+                    message: 'Codex stream ended before response.completed',
+                    providerType: 'openai-responses',
+                    raw: null,
+                  },
+                }),
+              )
+              return
+            }
+            yield final
+          },
+          microcompact: async messages => ({ messages }),
+          autocompact: async () => ({ compactionResult: null }),
+          uuid: () => 'test-query-chain-id',
+        },
+      })
+
+      let next = await iterator.next()
+      while (!next.done) {
+        outputs.push(next.value)
+        next = await iterator.next()
+      }
+      return next.value
+    })()
+
+    expect(terminal.reason).toBe('completed')
+    expect(callCount).toBe(2)
+    expect(
+      outputs.some(
+        (message: any) =>
+          message.type === 'tombstone' &&
+          assistantTexts([message.message]).includes('partial'),
+      ),
+    ).toBe(true)
+    expect(assistantTexts(outputs)).toEqual(['confirmed', 'partial', 'done'])
+    expect(assistantTexts(requests[1] ?? [])).toContain('confirmed')
+    expect(assistantTexts(requests[1] ?? [])).not.toContain('partial')
+  })
+
+  test('query loop preserves confirmed Codex tool call and pairs its result after recovery', async () => {
+    setupCodexProvider()
+    enableConfigs()
+
+    const calls: unknown[] = []
+    const tools = [createTestTool(calls)]
+    const confirmedToolUseId = 'toolu_confirmed'
+    const partialToolUseId = 'toolu_partial'
+    const confirmed = createAssistantMessage({
+      content: [
+        {
+          type: 'tool_use',
+          id: confirmedToolUseId,
+          name: 'TestTool',
+          input: { value: 'confirmed' },
+        },
+      ],
+    })
+    const partial = createAssistantMessage({
+      content: [
+        {
+          type: 'tool_use',
+          id: partialToolUseId,
+          name: 'TestTool',
+          input: { value: 'partial' },
+        },
+      ],
+    })
+    const final = createAssistantMessage({ content: 'done' })
+    const requests: unknown[][] = []
+    let callCount = 0
+
+    const outputs = []
+    const terminal = await (async () => {
+      const iterator = query({
+        messages: [createUserMessage({ content: 'hi' })],
+        systemPrompt: asSystemPrompt([]),
+        userContext: {},
+        systemContext: {},
+        canUseTool: async (_tool, input) => ({
+          behavior: 'allow',
+          updatedInput: input,
+        }),
+        toolUseContext: createMinimalToolUseContext(tools),
+        querySource: 'repl_main_thread',
+        deps: {
+          callModel: async function* (request: any) {
+            requests.push(request.messages)
+            callCount++
+            if (callCount === 1) {
+              yield confirmed
+              yield partial
+              request.options.onStreamingRecovery?.(
+                [confirmed],
+                new DomainTransportError({
+                  normalized: {
+                    kind: 'transport',
+                    message: 'Codex stream ended before response.completed',
+                    providerType: 'openai-responses',
+                    raw: null,
+                  },
+                }),
+              )
+              return
+            }
+            yield final
+          },
+          microcompact: async messages => ({ messages }),
+          autocompact: async () => ({ compactionResult: null }),
+          uuid: () => 'test-query-chain-id',
+        },
+      })
+
+      let next = await iterator.next()
+      while (!next.done) {
+        outputs.push(next.value)
+        next = await iterator.next()
+      }
+      return next.value
+    })()
+
+    const followUpRequest = requests[1] ?? []
+    const requestToolUseIds = followUpRequest
+      .filter((message: any) => message.type === 'assistant')
+      .flatMap((message: any) =>
+        Array.isArray(message.message.content)
+          ? message.message.content
+              .filter((block: any) => block.type === 'tool_use')
+              .map((block: any) => block.id)
+          : [],
+      )
+
+    expect(terminal.reason).toBe('completed')
+    expect(callCount).toBe(2)
+    expect(calls).toEqual([{ value: 'confirmed' }])
+    expect(
+      outputs.some(
+        (message: any) =>
+          message.type === 'tombstone' &&
+          message.message.message.content.some(
+            (block: any) =>
+              block.type === 'tool_use' && block.id === partialToolUseId,
+          ),
+      ),
+    ).toBe(true)
+    expect(toolResultContents(outputs, confirmedToolUseId)).toEqual([
+      'result:confirmed',
+    ])
+    expect(toolResultContents(outputs, partialToolUseId)).toEqual([])
+    expect(requestToolUseIds).toContain(confirmedToolUseId)
+    expect(requestToolUseIds).not.toContain(partialToolUseId)
+    expect(toolResultContents(followUpRequest, confirmedToolUseId)).toEqual([
+      'result:confirmed',
+    ])
+    expect(toolResultContents(followUpRequest, partialToolUseId)).toEqual([])
   })
 
   test('retries mid-stream Codex server_error events', async () => {

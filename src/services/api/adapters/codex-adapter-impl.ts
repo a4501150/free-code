@@ -597,19 +597,24 @@ async function* parseCodexStream(
   const emitBlockStop = (
     index: number,
     providerState?: Record<string, unknown>,
+    providerConfirmed = false,
   ): void => {
     enqueue({
       type: 'content_block_stop',
       index,
       ...(providerState && { providerState }),
+      ...(providerConfirmed && { providerConfirmed }),
     })
   }
 
-  const closeWebSearchServerTool = (state: StreamItemState): void => {
+  const closeWebSearchServerTool = (
+    state: StreamItemState,
+    providerConfirmed = false,
+  ): void => {
     if (state.serverToolUseClosed) return
     const index = state.serverToolUseIndex
     if (typeof index !== 'number') return
-    emitBlockStop(index)
+    emitBlockStop(index, undefined, providerConfirmed)
     state.serverToolUseClosed = true
     if (openBlock?.kind === 'server_tool_use' && openBlock.key === state.key) {
       openBlock = null
@@ -620,6 +625,7 @@ async function* parseCodexStream(
   const closeThinkingBlock = (
     state: StreamItemState,
     finalItem?: CodexStreamItem,
+    providerConfirmed = false,
   ): void => {
     if (state.rendered) return
 
@@ -679,24 +685,24 @@ async function* parseCodexStream(
     const providerState =
       Object.keys(openaiResponses).length > 0 ? { openaiResponses } : undefined
 
-    emitBlockStop(openBlock.index, providerState)
+    emitBlockStop(openBlock.index, providerState, providerConfirmed)
     contentBlockIndex++
     openBlock = null
     state.rendered = true
   }
 
-  function closeOpenBlock(): void {
+  function closeOpenBlock(providerConfirmed = false): void {
     if (!openBlock) return
     const state = items.get(openBlock.key)
     if (openBlock.kind === 'thinking' && state) {
-      closeThinkingBlock(state)
+      closeThinkingBlock(state, undefined, providerConfirmed)
       return
     }
     if (openBlock.kind === 'server_tool_use' && state) {
-      closeWebSearchServerTool(state)
+      closeWebSearchServerTool(state, providerConfirmed)
       return
     }
-    emitBlockStop(openBlock.index)
+    emitBlockStop(openBlock.index, undefined, providerConfirmed)
     contentBlockIndex++
     openBlock = null
   }
@@ -762,7 +768,7 @@ async function* parseCodexStream(
     }
     harvestMessageCitations(finalItem, pendingCitations)
     if (openBlock?.kind === 'text' && openBlock.key === state.key) {
-      closeOpenBlock()
+      closeOpenBlock(true)
     }
     state.rendered = true
   }
@@ -785,7 +791,7 @@ async function* parseCodexStream(
         delta: { type: 'input_json_delta', partial_json: args },
       })
     }
-    emitBlockStop(contentBlockIndex)
+    emitBlockStop(contentBlockIndex, undefined, true)
     contentBlockIndex++
     hadToolCalls = true
     state.rendered = true
@@ -838,7 +844,7 @@ async function* parseCodexStream(
     if (typeof state.serverToolUseIndex !== 'number') {
       renderWebSearchStart(state)
     }
-    closeWebSearchServerTool(state)
+    closeWebSearchServerTool(state, true)
     let results = extractWebSearchResults(finalItem)
     if (results.length === 0 && pendingCitations.length > 0) {
       results = pendingCitations.splice(0)
@@ -856,7 +862,7 @@ async function* parseCodexStream(
         })),
       } as { type: string; [key: string]: unknown },
     })
-    emitBlockStop(contentBlockIndex)
+    emitBlockStop(contentBlockIndex, undefined, true)
     contentBlockIndex++
     state.webSearchResultEmitted = true
     state.rendered = true
@@ -875,7 +881,7 @@ async function* parseCodexStream(
     } else if (state.type === 'web_search_call') {
       renderWebSearchDone(state, finalItem)
     } else if (state.type === 'reasoning') {
-      closeThinkingBlock(state, finalItem)
+      closeThinkingBlock(state, finalItem, true)
     }
   }
 
@@ -1064,7 +1070,7 @@ async function* parseCodexStream(
           if (args !== undefined) state.argumentsDone = args
         } else if (eventType === 'response.web_search_call.completed') {
           const state = upsertItem(event, undefined, 'web_search_call')
-          closeWebSearchServerTool(state)
+          closeWebSearchServerTool(state, true)
         } else if (eventType === 'response.output_item.done') {
           const item = event.item as CodexStreamItem | undefined
           const type = readString(item?.type)

@@ -75,6 +75,19 @@ export class StreamingToolExecutor {
     this.discarded = true
   }
 
+  keepOnlyAssistantMessages(assistantMessageUuids: Set<string>): void {
+    const removedToolIds: string[] = []
+    this.tools = this.tools.filter(tool => {
+      const keep = assistantMessageUuids.has(tool.assistantMessage.uuid)
+      if (!keep) removedToolIds.push(tool.id)
+      return keep
+    })
+    for (const toolId of removedToolIds) {
+      markToolUseAsComplete(this.toolUseContext, toolId)
+    }
+    void this.processQueue()
+  }
+
   /**
    * Add a tool to the execution queue. Will start executing immediately if conditions allow.
    */
