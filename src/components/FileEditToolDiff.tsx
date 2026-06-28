@@ -5,6 +5,7 @@ import { useTerminalSize } from '../hooks/useTerminalSize.js'
 import { Box, Text } from '../ink.js'
 import type { FileEdit } from '../tools/FileEditTool/types.js'
 import {
+  adaptNewString,
   findActualString,
   preserveQuoteStyle,
 } from '../tools/FileEditTool/utils.js'
@@ -170,11 +171,13 @@ function diffToolInputsOnly(filePath: string, edits: FileEdit[]): DiffData {
 
 function normalizeEdit(fileContent: string, edit: FileEdit): FileEdit {
   const actualOld =
-    findActualString(fileContent, edit.old_string) || edit.old_string
-  const actualNew = preserveQuoteStyle(
+    findActualString(fileContent, edit.old_string, {
+      replaceAll: edit.replace_all,
+    }) || edit.old_string
+  const actualNew = adaptNewString(
     edit.old_string,
     actualOld,
-    edit.new_string,
+    preserveQuoteStyle(edit.old_string, actualOld, edit.new_string),
   )
   return { ...edit, old_string: actualOld, new_string: actualNew }
 }

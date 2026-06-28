@@ -65,6 +65,7 @@ import {
   userFacingName,
 } from './UI.js'
 import {
+  adaptNewString,
   areFileEditsInputsEquivalent,
   findActualString,
   getPatchForEdit,
@@ -297,8 +298,10 @@ export const FileEditTool = buildTool({
 
     const file = fileContent
 
-    // Use findActualString to handle quote normalization
-    const actualOldString = findActualString(file, old_string)
+    // Use findActualString to handle quote normalization and tolerant fallbacks
+    const actualOldString = findActualString(file, old_string, {
+      replaceAll: replace_all,
+    })
     if (!actualOldString) {
       return {
         result: false,
@@ -332,10 +335,16 @@ export const FileEditTool = buildTool({
       fullFilePath,
       file,
       () => {
-        // Simulate the edit to get the final content using the exact same logic as the tool
+        // Simulate the edit using the exact same logic as the tool, including
+        // quote + tolerant-match adaptations applied to new_string.
+        const simNewString = adaptNewString(
+          old_string,
+          actualOldString,
+          preserveQuoteStyle(old_string, actualOldString, new_string),
+        )
         return replace_all
-          ? file.replaceAll(actualOldString, new_string)
-          : file.replace(actualOldString, new_string)
+          ? file.replaceAll(actualOldString, simNewString)
+          : file.replace(actualOldString, simNewString)
       },
     )
 
@@ -452,15 +461,19 @@ export const FileEditTool = buildTool({
       }
     }
 
-    // 3. Use findActualString to handle quote normalization
+    // 3. Use findActualString to handle quote normalization and tolerant
+    // fallbacks (must match validateInput's matching to stay consistent).
     const actualOldString =
-      findActualString(originalFileContents, old_string) || old_string
+      findActualString(originalFileContents, old_string, {
+        replaceAll: replace_all,
+      }) || old_string
 
-    // Preserve curly quotes in new_string when the file uses them
-    const actualNewString = preserveQuoteStyle(
+    // Preserve curly quotes, then mirror any tolerant-match adjustments
+    // (line-number-prefix strip, indentation shift) into new_string.
+    const actualNewString = adaptNewString(
       old_string,
       actualOldString,
-      new_string,
+      preserveQuoteStyle(old_string, actualOldString, new_string),
     )
 
     // 4. Generate patch

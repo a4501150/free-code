@@ -1,4 +1,4 @@
-import { type StructuredPatchHunk, structuredPatch } from 'diff'
+import { diffLines, type StructuredPatchHunk, structuredPatch } from 'diff'
 import { logError } from 'src/utils/log.js'
 import { expandPath } from 'src/utils/path.js'
 import { countCharInString } from 'src/utils/stringUtils.js'
@@ -12,6 +12,7 @@ import {
   addLineNumbers,
   convertLeadingTabsToSpaces,
   readFileSyncCached,
+  stripLineNumberPrefix,
 } from '../../utils/file.js'
 import type { EditInput, FileEdit } from './types.js'
 
@@ -64,32 +65,278 @@ export function stripTrailingWhitespace(str: string): string {
 }
 
 /**
- * Finds the actual string in the file content that matches the search string,
- * accounting for quote normalization
+ * Finds the literal substring in the file content that corresponds to the
+ * model's search string. The return value is ALWAYS an exact substring of
+ * `fileContent` (or null), because callers feed it into `fileContent.split(...)`
+ * and `.replace(...)` — a non-literal result would silently fail to apply.
+ *
+ * The first two passes (exact + curly-quote) are byte-identical to the original
+ * behavior, so Anthropic models (which reproduce old_string verbatim) are
+ * unaffected. The remaining tolerant passes only run when both of those fail,
+ * to rescue near-misses common in non-Anthropic models (leaked Read line-number
+ * prefixes, indentation/whitespace drift, a wrong interior line). All tolerant
+ * passes require a unique match and fail closed to avoid wrong-location edits.
+ *
  * @param fileContent The file content to search in
  * @param searchString The string to search for
+ * @param options.replaceAll When true, single-location passes (block-anchor,
+ *   fuzzy) are skipped to avoid ambiguity.
  * @returns The actual string found in the file, or null if not found
  */
 export function findActualString(
   fileContent: string,
   searchString: string,
+  options: { replaceAll?: boolean } = {},
 ): string | null {
-  // First try exact match
+  const { replaceAll = false } = options
+
+  // Pass 1: exact match
   if (fileContent.includes(searchString)) {
     return searchString
   }
 
-  // Try with normalized quotes
-  const normalizedSearch = normalizeQuotes(searchString)
+  // Pass 2: curly-quote normalization
   const normalizedFile = normalizeQuotes(fileContent)
+  const quoteIndex = normalizedFile.indexOf(normalizeQuotes(searchString))
+  if (quoteIndex !== -1) {
+    return fileContent.substring(quoteIndex, quoteIndex + searchString.length)
+  }
 
-  const searchIndex = normalizedFile.indexOf(normalizedSearch)
-  if (searchIndex !== -1) {
-    // Find the actual string in the file that matches
-    return fileContent.substring(searchIndex, searchIndex + searchString.length)
+  // ---- Tolerant fallbacks (only reached after exact + quote fail) ----
+
+  // Pass 3: leaked Read line-number prefixes (`12\tcode` / `␠␠␠␠␠12→code`).
+  const deprefixed = searchString
+    .split('\n')
+    .map(stripLineNumberPrefix)
+    .join('\n')
+  if (deprefixed !== searchString) {
+    if (fileContent.includes(deprefixed)) {
+      return deprefixed
+    }
+    const idx = normalizedFile.indexOf(normalizeQuotes(deprefixed))
+    if (idx !== -1) {
+      return fileContent.substring(idx, idx + deprefixed.length)
+    }
+  }
+
+  // Subsequent line-structural passes work on the de-prefixed search so a
+  // prefix leak doesn't also defeat them.
+  const searchForLines = deprefixed !== searchString ? deprefixed : searchString
+
+  // Pass 4: whitespace-insensitive per-line match (unique run).
+  const wsSpan = findWhitespaceInsensitiveSpan(fileContent, searchForLines)
+  if (wsSpan !== null) {
+    return wsSpan
+  }
+
+  if (!replaceAll) {
+    // Pass 5: block-anchor (first + last line, unique, exact line count).
+    const anchorSpan = findBlockAnchorSpan(fileContent, searchForLines)
+    if (anchorSpan !== null) {
+      return anchorSpan
+    }
+
+    // Pass 6: conservative line-similarity fuzzy (last resort, fails closed).
+    const fuzzySpan = findFuzzySpan(fileContent, searchForLines)
+    if (fuzzySpan !== null) {
+      return fuzzySpan
+    }
   }
 
   return null
+}
+
+/** Byte offset of the start of each line (offsets.length === line count). */
+function getLineOffsets(text: string): number[] {
+  const offsets = [0]
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\n') {
+      offsets.push(i + 1)
+    }
+  }
+  return offsets
+}
+
+/**
+ * The literal file substring spanning whole lines [start..end] (inclusive),
+ * excluding the trailing newline after the last line.
+ */
+function lineSpan(
+  fileContent: string,
+  fileLines: string[],
+  offsets: number[],
+  start: number,
+  end: number,
+): string {
+  return fileContent.slice(
+    offsets[start]!,
+    offsets[end]! + fileLines[end]!.length,
+  )
+}
+
+/**
+ * Match a multi-line block ignoring per-line leading/trailing whitespace.
+ * Returns the unique literal file span, or null if absent or ambiguous.
+ */
+function findWhitespaceInsensitiveSpan(
+  fileContent: string,
+  searchString: string,
+): string | null {
+  const searchTrim = searchString.split('\n').map(l => l.trim())
+  const n = searchTrim.length
+  if (n === 0 || searchTrim.every(l => l === '')) {
+    return null
+  }
+
+  const fileLines = fileContent.split('\n')
+  const offsets = getLineOffsets(fileContent)
+
+  let foundStart = -1
+  let count = 0
+  for (let i = 0; i + n <= fileLines.length; i++) {
+    let ok = true
+    for (let j = 0; j < n; j++) {
+      if (fileLines[i + j]!.trim() !== searchTrim[j]) {
+        ok = false
+        break
+      }
+    }
+    if (ok) {
+      count++
+      if (count === 1) {
+        foundStart = i
+      } else {
+        return null // ambiguous — fail closed
+      }
+    }
+  }
+  if (count !== 1) {
+    return null
+  }
+  return lineSpan(
+    fileContent,
+    fileLines,
+    offsets,
+    foundStart,
+    foundStart + n - 1,
+  )
+}
+
+/**
+ * Match a block of >= 3 lines using its first and last (trimmed) lines as
+ * anchors, requiring the window to be exactly the block's line count. Handles a
+ * wrong interior line. Requires a unique anchor pair; fails closed otherwise.
+ */
+function findBlockAnchorSpan(
+  fileContent: string,
+  searchString: string,
+): string | null {
+  const searchLines = searchString.split('\n')
+  const n = searchLines.length
+  if (n < 3) {
+    return null
+  }
+  const firstAnchor = searchLines[0]!.trim()
+  const lastAnchor = searchLines[n - 1]!.trim()
+  if (firstAnchor === '' || lastAnchor === '') {
+    return null
+  }
+
+  const fileLines = fileContent.split('\n')
+  const offsets = getLineOffsets(fileContent)
+
+  let foundStart = -1
+  let count = 0
+  for (let i = 0; i + n <= fileLines.length; i++) {
+    if (
+      fileLines[i]!.trim() === firstAnchor &&
+      fileLines[i + n - 1]!.trim() === lastAnchor
+    ) {
+      count++
+      if (count === 1) {
+        foundStart = i
+      } else {
+        return null // ambiguous — fail closed
+      }
+    }
+  }
+  if (count !== 1) {
+    return null
+  }
+  return lineSpan(
+    fileContent,
+    fileLines,
+    offsets,
+    foundStart,
+    foundStart + n - 1,
+  )
+}
+
+const FUZZY_MIN_SCORE = 0.85
+const FUZZY_MIN_MARGIN = 0.05
+const FUZZY_MAX_FILE_LINES = 5000
+const FUZZY_MAX_BLOCK_LINES = 200
+
+/** Fraction of `searchString` lines that survive an LCS line-diff (0..1). */
+function lineSimilarityRatio(a: string, b: string, lineCount: number): number {
+  let unchanged = 0
+  for (const part of diffLines(a, b)) {
+    if (!part.added && !part.removed) {
+      unchanged += part.count ?? 0
+    }
+  }
+  return lineCount === 0 ? 0 : unchanged / lineCount
+}
+
+/**
+ * Last-resort fuzzy match: slide a window the size of the search block and pick
+ * the most line-similar window (after trimming each line). Accepts only when
+ * the best window clears FUZZY_MIN_SCORE AND beats the runner-up by
+ * FUZZY_MIN_MARGIN, so ambiguous or low-confidence regions fail closed.
+ */
+function findFuzzySpan(
+  fileContent: string,
+  searchString: string,
+): string | null {
+  const searchLines = searchString.split('\n')
+  const n = searchLines.length
+  if (n < 2 || n > FUZZY_MAX_BLOCK_LINES) {
+    return null
+  }
+  const fileLines = fileContent.split('\n')
+  if (fileLines.length < n || fileLines.length > FUZZY_MAX_FILE_LINES) {
+    return null
+  }
+
+  const searchTrimmed = searchLines.map(l => l.trim()).join('\n')
+  const offsets = getLineOffsets(fileContent)
+
+  let best = -1
+  let bestScore = 0
+  let secondScore = 0
+  for (let i = 0; i + n <= fileLines.length; i++) {
+    const windowTrimmed = fileLines
+      .slice(i, i + n)
+      .map(l => l.trim())
+      .join('\n')
+    const score = lineSimilarityRatio(searchTrimmed, windowTrimmed, n)
+    if (score > bestScore) {
+      secondScore = bestScore
+      bestScore = score
+      best = i
+    } else if (score > secondScore) {
+      secondScore = score
+    }
+  }
+
+  if (
+    best === -1 ||
+    bestScore < FUZZY_MIN_SCORE ||
+    bestScore - secondScore < FUZZY_MIN_MARGIN
+  ) {
+    return null
+  }
+  return lineSpan(fileContent, fileLines, offsets, best, best + n - 1)
 }
 
 /**
@@ -196,6 +443,110 @@ function applyCurlySingleQuotes(str: string): string {
     }
   }
   return result.join('')
+}
+
+/** Leading run of spaces/tabs on a single line. */
+function leadingWhitespace(line: string): string {
+  const m = line.match(/^[ \t]*/)
+  return m ? m[0] : ''
+}
+
+/**
+ * When a tolerant pass matched a file span whose indentation differs uniformly
+ * from the model's old_string, apply the same leading-whitespace shift to every
+ * non-blank new_string line. Returns the original newString (identity) when the
+ * delta is non-uniform, incompatible (e.g. tabs vs spaces), or the line counts
+ * differ — worse indentation is acceptable, corruption is not.
+ */
+function applyIndentDelta(
+  oldLines: string[],
+  actualLines: string[],
+  newString: string,
+): string {
+  if (oldLines.length !== actualLines.length) {
+    return newString
+  }
+
+  const deltas: Array<{ mode: 'add' | 'remove' | 'none'; prefix: string }> = []
+  for (let i = 0; i < oldLines.length; i++) {
+    const o = oldLines[i]!
+    const a = actualLines[i]!
+    if (o.trim() === '' || a.trim() === '') {
+      continue
+    }
+    const ows = leadingWhitespace(o)
+    const aws = leadingWhitespace(a)
+    if (ows === aws) {
+      deltas.push({ mode: 'none', prefix: '' })
+    } else if (aws.startsWith(ows)) {
+      deltas.push({ mode: 'add', prefix: aws.slice(ows.length) })
+    } else if (ows.startsWith(aws)) {
+      deltas.push({ mode: 'remove', prefix: ows.slice(aws.length) })
+    } else {
+      return newString // incompatible indentation
+    }
+  }
+
+  if (deltas.length === 0) {
+    return newString
+  }
+  const first = deltas[0]!
+  for (const d of deltas) {
+    if (d.mode !== first.mode || d.prefix !== first.prefix) {
+      return newString // non-uniform delta
+    }
+  }
+  if (first.mode === 'none') {
+    return newString
+  }
+
+  return newString
+    .split('\n')
+    .map(line => {
+      if (line.trim() === '') {
+        return line
+      }
+      if (first.mode === 'add') {
+        return first.prefix + line
+      }
+      return line.startsWith(first.prefix)
+        ? line.slice(first.prefix.length)
+        : line
+    })
+    .join('\n')
+}
+
+/**
+ * Mirror, in new_string, the adjustments a tolerant `findActualString` pass made
+ * when matching old_string against the file. Identity when the match was exact
+ * (oldString === actualOldString), so the common case is untouched. Handles:
+ *  - leaked Read line-number prefixes (strip them from new_string too), and
+ *  - a uniform leading-indentation shift between old_string and the file span.
+ * Quote style is handled separately by `preserveQuoteStyle`.
+ */
+export function adaptNewString(
+  oldString: string,
+  actualOldString: string,
+  newString: string,
+): string {
+  if (oldString === actualOldString) {
+    return newString
+  }
+
+  let result = newString
+  let oldLines = oldString.split('\n')
+  const actualLines = actualOldString.split('\n')
+
+  const oldHadPrefixes = oldLines.some(l => stripLineNumberPrefix(l) !== l)
+  const actualHasPrefixes = actualLines.some(
+    l => stripLineNumberPrefix(l) !== l,
+  )
+  if (oldHadPrefixes && !actualHasPrefixes) {
+    result = result.split('\n').map(stripLineNumberPrefix).join('\n')
+    oldLines = oldLines.map(stripLineNumberPrefix)
+  }
+
+  return applyIndentDelta(oldLines, actualLines, result)
 }
 
 /**

@@ -20,6 +20,7 @@ import { firstLineOf } from '../../utils/stringUtils.js'
 import type { ThemeName } from '../../utils/theme.js'
 import type { FileEditOutput } from './types.js'
 import {
+  adaptNewString,
   findActualString,
   getPatchForEdit,
   preserveQuoteStyle,
@@ -300,8 +301,13 @@ async function loadRejectionDiff(
       })
       return { patch, firstLine: null, fileContent: undefined }
     }
-    const actualOld = findActualString(ctx.content, oldString) || oldString
-    const actualNew = preserveQuoteStyle(oldString, actualOld, newString)
+    const actualOld =
+      findActualString(ctx.content, oldString, { replaceAll }) || oldString
+    const actualNew = adaptNewString(
+      oldString,
+      actualOld,
+      preserveQuoteStyle(oldString, actualOld, newString),
+    )
     const { patch } = getPatchForEdit({
       filePath,
       fileContents: ctx.content,
