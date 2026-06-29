@@ -74,7 +74,11 @@ import {
 import type { MemoryType } from './memory/types.js'
 import { expandPath } from './path.js'
 import { pathInWorkingPath } from './permissions/filesystem.js'
-import { PROJECT_CONFIG_DIRS } from './projectConfigPaths.js'
+import {
+  LEGACY_PROJECT_CONFIG_DIR,
+  PREFERRED_PROJECT_CONFIG_DIR,
+  PROJECT_CONFIG_DIRS,
+} from './projectConfigPaths.js'
 import { isSettingSourceEnabled } from './settings/constants.js'
 import { getInitialSettings } from './settings/settings.js'
 
@@ -89,10 +93,15 @@ const MEMORY_INSTRUCTION_PROMPT =
 // Recommended max character count for a memory file
 export const MAX_MEMORY_CHARACTER_COUNT = 40000
 
-function getProjectClaudeMdPaths(dir: string): string[] {
-  return PROJECT_CONFIG_DIRS.map(projectConfigDir =>
-    join(dir, projectConfigDir, 'CLAUDE.md'),
-  )
+// CLAUDE.md paths for a directory, honoring .freecode-over-.claude precedence:
+// when .freecode/CLAUDE.md exists, the legacy .claude/CLAUDE.md is ignored.
+// Only affects CLAUDE.md — rules/ dirs under both config dirs are still loaded.
+function getProjectClaudeMdPathsWithPrecedence(dir: string): string[] {
+  const preferred = join(dir, PREFERRED_PROJECT_CONFIG_DIR, 'CLAUDE.md')
+  if (getFsImplementation().existsSync(preferred)) {
+    return [preferred]
+  }
+  return [join(dir, LEGACY_PROJECT_CONFIG_DIR, 'CLAUDE.md')]
 }
 
 function getProjectRulesDirs(dir: string): string[] {
@@ -895,10 +904,10 @@ export const getMemoryFiles = memoize(
           )),
         )
 
-        // Try reading project config CLAUDE.md and rules/*.md files (Project)
-        // in precedence order, so .freecode entries are loaded after .claude.
-        for (const projectConfigDir of PROJECT_CONFIG_DIRS) {
-          const configClaudeMdPath = join(dir, projectConfigDir, 'CLAUDE.md')
+        // Project config CLAUDE.md, honoring .freecode-over-.claude precedence.
+        for (const configClaudeMdPath of getProjectClaudeMdPathsWithPrecedence(
+          dir,
+        )) {
           result.push(
             ...(await processMemoryFile(
               configClaudeMdPath,
@@ -907,7 +916,11 @@ export const getMemoryFiles = memoize(
               includeExternal,
             )),
           )
+        }
 
+        // Project config rules/*.md from all config dirs (precedence is
+        // CLAUDE.md-only), loaded so .freecode entries follow .claude.
+        for (const projectConfigDir of PROJECT_CONFIG_DIRS) {
           const rulesDir = join(dir, projectConfigDir, 'rules')
           result.push(
             ...(await processMdRules({
@@ -953,11 +966,11 @@ export const getMemoryFiles = memoize(
           )),
         )
 
-        // Try reading project config CLAUDE.md and rules/*.md files from the
-        // additional directory in precedence order, so .freecode entries are
-        // loaded after .claude.
-        for (const projectConfigDir of PROJECT_CONFIG_DIRS) {
-          const configClaudeMdPath = join(dir, projectConfigDir, 'CLAUDE.md')
+        // Project config CLAUDE.md from the additional directory, honoring
+        // .freecode-over-.claude precedence.
+        for (const configClaudeMdPath of getProjectClaudeMdPathsWithPrecedence(
+          dir,
+        )) {
           result.push(
             ...(await processMemoryFile(
               configClaudeMdPath,
@@ -966,7 +979,11 @@ export const getMemoryFiles = memoize(
               includeExternal,
             )),
           )
+        }
 
+        // Project config rules/*.md from all config dirs (precedence is
+        // CLAUDE.md-only), loaded so .freecode entries follow .claude.
+        for (const projectConfigDir of PROJECT_CONFIG_DIRS) {
           const rulesDir = join(dir, projectConfigDir, 'rules')
           result.push(
             ...(await processMdRules({
@@ -1247,7 +1264,9 @@ export async function getMemoryFilesForNestedDirectory(
         false,
       )),
     )
-    for (const configClaudeMdPath of getProjectClaudeMdPaths(dir)) {
+    for (const configClaudeMdPath of getProjectClaudeMdPathsWithPrecedence(
+      dir,
+    )) {
       result.push(
         ...(await processMemoryFile(
           configClaudeMdPath,

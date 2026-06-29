@@ -26,11 +26,16 @@ import { handleMcpjsonServerApprovals } from './services/mcpServerApproval.js'
 import { AppStateProvider } from './state/AppState.js'
 import { onChangeAppState } from './state/onChangeAppState.js'
 import {
+  clearMemoryFileCaches,
   getExternalClaudeMdIncludes,
   getMemoryFiles,
   shouldShowClaudeMdExternalIncludesWarning,
 } from './utils/claudemd.js'
-import { checkHasTrustDialogAccepted } from './utils/config.js'
+import {
+  checkHasTrustDialogAccepted,
+  getGlobalConfig,
+  saveGlobalConfig,
+} from './utils/config.js'
 import { isEnvTruthy } from './utils/envUtils.js'
 import { type FpsMetrics, FpsTracker } from './utils/fpsTracker.js'
 import { applyConfigEnvironmentVariables } from './utils/managedEnv.js'
@@ -46,7 +51,9 @@ import { freecodeSettingsFileExists } from './utils/settings/freecodeSettings.js
 import {
   legacySettingsFileExists,
   migrateToFreecodeDir,
+  migrateUserClaudeMd,
   needsConfigDirMigration,
+  needsUserClaudeMdMigration,
   runLegacyToFreecodeMigration,
 } from './utils/settings/claudeMigration.js'
 import { resetProviderRegistry } from './utils/model/providerRegistry.js'
@@ -56,6 +63,7 @@ import { Onboarding } from './components/Onboarding.js'
 import { TrustDialog } from './components/TrustDialog/TrustDialog.js'
 import { ClaudeMdExternalIncludesDialog } from './components/ClaudeMdExternalIncludesDialog.js'
 import { ConfigDirMigrationDialog } from './components/ConfigDirMigrationDialog.js'
+import { ClaudeMdMigrationDialog } from './components/ClaudeMdMigrationDialog.js'
 import { MigrationPromptDialog } from './components/MigrationPromptDialog.js'
 import { GroveDialog } from './components/grove/Grove.js'
 import { BypassPermissionsModeDialog } from './components/BypassPermissionsModeDialog.js'
@@ -174,6 +182,26 @@ export async function showSetupScreens(
     }
     resetSettingsCache()
     resetProviderRegistry()
+  }
+
+  // CLAUDE.md migration: copy ~/.claude/CLAUDE.md → the preferred config-home
+  // CLAUDE.md when the latter is absent. Shown once — the flag suppresses
+  // re-prompts after a decline (accepting creates the file, clearing the check).
+  if (
+    needsUserClaudeMdMigration() &&
+    !getGlobalConfig().hasUserClaudeMdMigrationPromptShown
+  ) {
+    const decision = await showSetupDialog<'yes' | 'no'>(root, done => (
+      <ClaudeMdMigrationDialog onDone={done} />
+    ))
+    if (decision === 'yes') {
+      migrateUserClaudeMd()
+    }
+    saveGlobalConfig(c => ({
+      ...c,
+      hasUserClaudeMdMigrationPromptShown: true,
+    }))
+    clearMemoryFileCaches()
   }
 
   // Legacy settings migration prompt. Runs before Onboarding so that when the

@@ -55,6 +55,33 @@ export function migrateToFreecodeDir(): void {
   copyConfigDir(getLegacyClaudeConfigDir(), getClaudeConfigHomeDir())
 }
 
+// ── User CLAUDE.md migration (~/.claude/CLAUDE.md → <config home>/CLAUDE.md) ──
+
+export function getUserLegacyClaudeMdPath(): string {
+  return join(getLegacyClaudeConfigDir(), 'CLAUDE.md')
+}
+
+export function getUserPreferredClaudeMdPath(): string {
+  return join(getClaudeConfigHomeDir(), 'CLAUDE.md')
+}
+
+// True when the legacy ~/.claude/CLAUDE.md exists but the preferred
+// config-home CLAUDE.md does not, and no custom config dir is in use. Callers
+// suppress re-prompts after the user has decided (see showSetupScreens).
+export function needsUserClaudeMdMigration(): boolean {
+  if (process.env.FREECODE_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR) {
+    return false
+  }
+  return (
+    existsSync(getUserLegacyClaudeMdPath()) &&
+    !existsSync(getUserPreferredClaudeMdPath())
+  )
+}
+
+export function migrateUserClaudeMd(): void {
+  cpSync(getUserLegacyClaudeMdPath(), getUserPreferredClaudeMdPath())
+}
+
 // ── User settings migration ─────────────────────────────────────────────
 
 const CONSUMED_ENV_VARS: readonly string[] = [

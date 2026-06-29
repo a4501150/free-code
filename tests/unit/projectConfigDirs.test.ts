@@ -37,7 +37,7 @@ describe('project config directory discovery', () => {
     ])
   })
 
-  test('CLAUDE.md discovery loads .freecode entries after legacy .claude entries', async () => {
+  test('CLAUDE.md discovery prefers .freecode and skips legacy .claude when both exist; rules load from both', async () => {
     const projectRoot = makeTempDir()
     mkdirSync(join(projectRoot, '.claude', 'rules'), { recursive: true })
     mkdirSync(join(projectRoot, '.freecode', 'rules'), { recursive: true })
@@ -65,10 +65,28 @@ describe('project config directory discovery', () => {
     )
 
     expect(files.map(file => file.content.trim())).toEqual([
-      'legacy instructions',
       'preferred instructions',
       'legacy rules',
       'preferred rules',
+    ])
+  })
+
+  test('CLAUDE.md discovery falls back to legacy .claude when .freecode CLAUDE.md is absent', async () => {
+    const projectRoot = makeTempDir()
+    mkdirSync(join(projectRoot, '.claude'), { recursive: true })
+    writeFileSync(
+      join(projectRoot, '.claude', 'CLAUDE.md'),
+      'legacy instructions\n',
+    )
+
+    const files = await getMemoryFilesForNestedDirectory(
+      projectRoot,
+      join(projectRoot, 'src', 'file.ts'),
+      new Set(),
+    )
+
+    expect(files.map(file => file.content.trim())).toEqual([
+      'legacy instructions',
     ])
   })
 

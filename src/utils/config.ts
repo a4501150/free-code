@@ -131,6 +131,7 @@ export type GlobalConfig = {
   oauthAccount?: { accountUuid?: string }
   companion?: { name: string; personality: string; hatchedAt: number }
   companionMuted?: boolean
+  hasUserClaudeMdMigrationPromptShown?: boolean
   customApiKeyResponses?: {
     approved?: string[]
     rejected?: string[]
