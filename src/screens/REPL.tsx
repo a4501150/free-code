@@ -1,12 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { feature } from 'bun:bundle'
-import {
-  snapshotOutputTokensForTurn,
-  getCurrentTurnTokenBudget,
-  getTurnOutputTokens,
-  getBudgetContinuationCount,
-} from '../bootstrap/state.js'
-import { parseTokenBudget } from '../utils/tokenBudget.js'
 import { count } from '../utils/array.js'
 import { dirname, join } from 'path'
 import { tmpdir } from 'os'
@@ -1179,9 +1172,6 @@ export function REPL({
   // Start time of the first turn that had swarm teammates running
   // Used to compute total elapsed time (including teammate execution) for the deferred message
   const swarmStartTimeRef = React.useRef<number | null>(null)
-  const swarmBudgetInfoRef = React.useRef<
-    { tokens: number; limit: number; nudges: number } | undefined
-  >(undefined)
 
   // Ref to track current focusedInputDialog for use in callbacks
   // This avoids stale closures when checking dialog state in timer callbacks
@@ -1718,14 +1708,11 @@ export function REPL({
   useEffect(() => {
     if (!hasRunningTeammates && swarmStartTimeRef.current !== null) {
       const totalMs = Date.now() - swarmStartTimeRef.current
-      const deferredBudget = swarmBudgetInfoRef.current
       swarmStartTimeRef.current = null
-      swarmBudgetInfoRef.current = undefined
       setMessages(prev => [
         ...prev,
         createTurnDurationMessage(
           totalMs,
-          deferredBudget,
           // Count only what recordTranscript will persist — ephemeral
           // progress ticks and non-ant attachments are filtered by
           // isLoggableMessage and never reach disk. Using raw prev.length
@@ -2299,12 +2286,6 @@ export function REPL({
     }
 
     resetLoadingState()
-
-    // Clear any active token budget so the backstop doesn't fire on
-    // a stale budget if the query generator hasn't exited yet.
-    if (feature('TOKEN_BUDGET')) {
-      snapshotOutputTokensForTurn(null)
-    }
 
     if (focusedInputDialog === 'tool-permission') {
       // Tool use confirm handles the abort signal itself
@@ -3180,12 +3161,6 @@ export function REPL({
         resetTimingRefs()
         setMessages(oldMessages => [...oldMessages, ...newMessages])
         responseLengthRef.current = 0
-        if (feature('TOKEN_BUDGET')) {
-          const parsedBudget = input ? parseTokenBudget(input) : null
-          snapshotOutputTokensForTurn(
-            parsedBudget ?? getCurrentTurnTokenBudget(),
-          )
-        }
         setStreamingToolUses([])
         setStreamingText(null)
 
@@ -3239,32 +3214,13 @@ export function REPL({
             abortController.signal.aborted,
           )
 
-          // Capture budget info before clearing (ant-only)
-          let budgetInfo:
-            | { tokens: number; limit: number; nudges: number }
-            | undefined
-          if (feature('TOKEN_BUDGET')) {
-            if (
-              getCurrentTurnTokenBudget() !== null &&
-              getCurrentTurnTokenBudget()! > 0 &&
-              !abortController.signal.aborted
-            ) {
-              budgetInfo = {
-                tokens: getTurnOutputTokens(),
-                limit: getCurrentTurnTokenBudget()!,
-                nudges: getBudgetContinuationCount(),
-              }
-            }
-            snapshotOutputTokensForTurn(null)
-          }
-
-          // Add turn duration message for turns longer than 30s or with a budget
+          // Add turn duration message for turns longer than 30s
           // Skip if user aborted or if in loop mode (too noisy between ticks)
           // Defer if swarm teammates are still running (show when they finish)
           const turnDurationMs =
             Date.now() - loadingStartTimeRef.current - totalPausedMsRef.current
           if (
-            (turnDurationMs > 30000 || budgetInfo !== undefined) &&
+            turnDurationMs > 30000 &&
             !abortController.signal.aborted &&
             !proactiveActive
           ) {
@@ -3276,16 +3232,11 @@ export function REPL({
               if (swarmStartTimeRef.current === null) {
                 swarmStartTimeRef.current = loadingStartTimeRef.current
               }
-              // Always update budget — later turns may carry the actual budget
-              if (budgetInfo) {
-                swarmBudgetInfoRef.current = budgetInfo
-              }
             } else {
               setMessages(prev => [
                 ...prev,
                 createTurnDurationMessage(
                   turnDurationMs,
-                  budgetInfo,
                   count(prev, isLoggableMessage),
                 ),
               ])

@@ -269,7 +269,6 @@ The default build enables the production-supported flags in `defaultFeatures`; `
 | ----------------- | ----------------------------------------------------------------- |
 | `ULTRATHINK`      | Deep thinking mode -- type "ultrathink" to boost reasoning effort |
 | `VOICE_MODE`      | Push-to-talk voice input and dictation                            |
-| `TOKEN_BUDGET`    | Token budget tracking and usage warnings                          |
 | `HISTORY_PICKER`  | Interactive prompt history picker                                 |
 | `MESSAGE_ACTIONS` | Message action entrypoints in the UI                              |
 | `QUICK_SEARCH`    | Prompt quick-search                                               |

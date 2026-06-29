@@ -76,13 +76,6 @@ import { handleStopHooks } from './query/stopHooks.js'
 import { buildQueryConfig } from './query/config.js'
 import { productionDeps, type QueryDeps } from './query/deps.js'
 import type { Terminal, Continue } from './query/transitions.js'
-import { feature } from 'bun:bundle'
-import {
-  getCurrentTurnTokenBudget,
-  getTurnOutputTokens,
-  incrementBudgetContinuationCount,
-} from './bootstrap/state.js'
-import { createBudgetTracker, checkTokenBudget } from './query/tokenBudget.js'
 import { count } from './utils/array.js'
 
 const STREAM_RECOVERY_MAX_ATTEMPTS = 25
@@ -140,7 +133,7 @@ export type QueryParams = {
   maxTurns?: number
   skipCacheWrite?: boolean
   // API task_budget (output_config.task_budget, beta task-budgets-2026-03-13).
-  // Distinct from the tokenBudget +500k auto-continue feature. `total` is the
+  // `total` is the
   // budget for the whole agentic turn; `remaining` is computed per iteration
   // from cumulative API usage. See configureTaskBudgetParams in claude.ts.
   taskBudget?: { total: number }
@@ -221,7 +214,6 @@ async function* queryLoop(
     pendingToolUseSummary: undefined,
     transition: undefined,
   }
-  const budgetTracker = feature('TOKEN_BUDGET') ? createBudgetTracker() : null
 
   // task_budget.remaining tracking across compaction boundaries. Undefined
   // until first compact fires — while context is uncompacted the server can
@@ -794,48 +786,6 @@ async function* queryLoop(
         }
         state = next
         continue
-      }
-
-      if (feature('TOKEN_BUDGET')) {
-        const decision = checkTokenBudget(
-          budgetTracker!,
-          toolUseContext.agentId,
-          getCurrentTurnTokenBudget(),
-          getTurnOutputTokens(),
-        )
-
-        if (decision.action === 'continue') {
-          incrementBudgetContinuationCount()
-          logForDebugging(
-            `Token budget continuation #${decision.continuationCount}: ${decision.pct}% (${decision.turnTokens.toLocaleString()} / ${decision.budget.toLocaleString()})`,
-          )
-          state = {
-            messages: [
-              ...messagesForQuery,
-              ...assistantMessages,
-              createUserMessage({
-                content: decision.nudgeMessage,
-                isMeta: true,
-              }),
-            ],
-            toolUseContext,
-            autoCompactTracking: tracking,
-            pendingToolUseSummary: undefined,
-            stopHookActive: undefined,
-            turnCount,
-            streamRecoveryCount: 0,
-            transition: { reason: 'token_budget_continuation' },
-          }
-          continue
-        }
-
-        if (decision.completionEvent) {
-          if (decision.completionEvent.diminishingReturns) {
-            logForDebugging(
-              `Token budget early stop: diminishing returns at ${decision.completionEvent.pct}%`,
-            )
-          }
-        }
       }
 
       return { reason: 'completed' }

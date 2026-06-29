@@ -9,7 +9,6 @@ import {
   REFERENCE_MARK,
   TEARDROP_ASTERISK,
 } from '../../constants/figures.js'
-import figures from 'figures'
 import { basename } from 'path'
 import { MessageResponse } from '../MessageResponse.js'
 import { FilePathLink } from '../FilePathLink.js'
@@ -27,7 +26,7 @@ import type {
   SystemAwaySummaryMessage,
 } from '../../types/message.js'
 import { SystemAPIErrorMessage } from './SystemAPIErrorMessage.js'
-import { formatDuration, formatNumber } from '../../utils/format.js'
+import { formatDuration } from '../../utils/format.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { CtrlOToExpand } from '../CtrlOToExpand.js'
 import { Markdown } from '../Markdown.js'
@@ -310,23 +309,8 @@ function TurnDurationMessage({
   const showTurnDuration = getInitialSettings().showTurnDuration ?? true
 
   const duration = formatDuration(message.durationMs)
-  const hasBudget = message.budgetLimit !== undefined
-  const budgetSuffix = (() => {
-    if (!hasBudget) return ''
-    const tokens = message.budgetTokens!
-    const limit = message.budgetLimit!
-    const usage =
-      tokens >= limit
-        ? `${formatNumber(tokens)} used (${formatNumber(limit)} min ${figures.tick})`
-        : `${formatNumber(tokens)} / ${formatNumber(limit)} (${Math.round((tokens / limit) * 100)}%)`
-    const nudges =
-      message.budgetNudges! > 0
-        ? ` \u00B7 ${message.budgetNudges} ${message.budgetNudges === 1 ? 'nudge' : 'nudges'}`
-        : ''
-    return `${showTurnDuration ? ' \u00B7 ' : ''}${usage}${nudges}`
-  })()
 
-  if (!showTurnDuration && !hasBudget) {
+  if (!showTurnDuration) {
     return null
   }
 
@@ -342,7 +326,6 @@ function TurnDurationMessage({
       </Box>
       <Text dimColor>
         {showTurnDuration && `${verb} for ${duration}`}
-        {budgetSuffix}
         {backgroundTaskSummary &&
           ` \u00B7 ${backgroundTaskSummary} still running`}
       </Text>

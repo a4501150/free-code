@@ -11,7 +11,6 @@
 
 export type Continue =
   | { reason: 'stop_hook_blocking' }
-  | { reason: 'token_budget_continuation' }
   | { reason: 'stream_recovery' }
   | { reason: 'next_turn' }
 

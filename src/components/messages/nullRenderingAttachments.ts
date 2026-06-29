@@ -37,7 +37,6 @@ const NULL_RENDERING_TYPES = [
   'task_reminder',
   'auto_mode',
   'auto_mode_exit',
-  'output_token_usage',
   'current_session_memory',
   'compaction_reminder',
   'companion_intro',

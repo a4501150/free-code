@@ -163,7 +163,6 @@ import {
   getRainbowColor,
   isUltrathinkEnabled,
 } from '../../utils/thinking.js'
-import { findTokenBudgetPositions } from '../../utils/tokenBudget.js'
 import { findUltrareviewTriggerPositions } from '../../utils/ultrareview/keyword.js'
 import {
   getVisibleAgentTasks,
@@ -693,12 +692,6 @@ function PromptInput({
     })
   }, [displayedValue, commands])
 
-  const tokenBudgetTriggers = useMemo(
-    () =>
-      feature('TOKEN_BUDGET') ? findTokenBudgetPositions(displayedValue) : [],
-    [displayedValue],
-  )
-
   const knownChannelsVersion = useSyncExternalStore(
     subscribeKnownChannels,
     getKnownChannelsVersion,
@@ -830,16 +823,6 @@ function PromptInput({
       })
     }
 
-    // Add token budget highlighting (blue)
-    for (const trigger of tokenBudgetTriggers) {
-      highlights.push({
-        start: trigger.start,
-        end: trigger.end,
-        color: 'suggestion',
-        priority: 5,
-      })
-    }
-
     for (const trigger of slackChannelTriggers) {
       highlights.push({
         start: trigger.start,
@@ -909,7 +892,6 @@ function PromptInput({
     imageRefPositions,
     memberMentionHighlights,
     slashCommandTriggers,
-    tokenBudgetTriggers,
     slackChannelTriggers,
     displayedValue,
     voiceInterimRange,

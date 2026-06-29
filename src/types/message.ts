@@ -208,9 +208,6 @@ export type SystemStopHookSummaryMessage = SystemBase & {
 export type SystemTurnDurationMessage = SystemBase & {
   subtype: 'turn_duration'
   durationMs: number
-  budgetTokens?: number
-  budgetLimit?: number
-  budgetNudges?: number
   messageCount?: number
 }
 

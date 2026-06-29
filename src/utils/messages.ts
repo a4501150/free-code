@@ -56,7 +56,7 @@ import {
   memoryHeader,
 } from './attachments.js'
 import { quote } from './bash/shellQuote.js'
-import { formatNumber, formatTokens } from './format.js'
+import { formatTokens } from './format.js'
 import { jsonStringify } from './slowOperations.js'
 
 // Hook attachments that have a hookName field (excludes HookPermissionDecisionAttachment)
@@ -3759,20 +3759,6 @@ You have exited auto mode. The user may now want to interact more directly. You 
           isMeta: true,
         }),
       ]
-    case 'output_token_usage': {
-      const turnText =
-        attachment.budget !== null
-          ? `${formatNumber(attachment.turn)} / ${formatNumber(attachment.budget)}`
-          : formatNumber(attachment.turn)
-      return [
-        createUserMessage({
-          content: wrapInSystemReminder(
-            `Output tokens \u2014 turn: ${turnText} \u00b7 session: ${formatNumber(attachment.session)}`,
-          ),
-          isMeta: true,
-        }),
-      ]
-    }
     case 'hook_blocking_error':
       return [
         createUserMessage({
@@ -4077,16 +4063,12 @@ export function createStopHookSummaryMessage(
 
 export function createTurnDurationMessage(
   durationMs: number,
-  budget?: { tokens: number; limit: number; nudges: number },
   messageCount?: number,
 ): SystemTurnDurationMessage {
   return {
     type: 'system',
     subtype: 'turn_duration',
     durationMs,
-    budgetTokens: budget?.tokens,
-    budgetLimit: budget?.limit,
-    budgetNudges: budget?.nudges,
     messageCount,
     timestamp: new Date().toISOString(),
     uuid: randomUUID(),

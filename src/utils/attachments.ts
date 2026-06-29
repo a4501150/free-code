@@ -117,8 +117,6 @@ import {
   getSdkBetas,
   getTotalCostUSD,
   getTotalOutputTokens,
-  getCurrentTurnTokenBudget,
-  getTurnOutputTokens,
   hasExitedPlanModeInSession,
   setHasExitedPlanMode,
   needsPlanModeExitAttachment,
@@ -585,12 +583,6 @@ export type Attachment =
       remaining: number
     }
   | {
-      type: 'output_token_usage'
-      turn: number
-      session: number
-      budget: number | null
-    }
-  | {
       type: 'structured_output'
       data: unknown
     }
@@ -864,9 +856,6 @@ export async function getAttachments(
           Promise.resolve(
             getMaxBudgetUsdAttachment(toolUseContext.options.maxBudgetUsd),
           ),
-        ),
-        maybe('output_token_usage', async () =>
-          Promise.resolve(getOutputTokenUsageAttachment()),
         ),
         ...(feature('VERIFY_PLAN')
           ? [
@@ -3563,24 +3552,6 @@ function getTokenUsageAttachment(
       remaining: contextWindow - usedTokens,
     },
   ]
-}
-
-function getOutputTokenUsageAttachment(): Attachment[] {
-  if (feature('TOKEN_BUDGET')) {
-    const budget = getCurrentTurnTokenBudget()
-    if (budget === null || budget <= 0) {
-      return []
-    }
-    return [
-      {
-        type: 'output_token_usage',
-        turn: getTurnOutputTokens(),
-        session: getTotalOutputTokens(),
-        budget,
-      },
-    ]
-  }
-  return []
 }
 
 function getMaxBudgetUsdAttachment(maxBudgetUsd?: number): Attachment[] {
