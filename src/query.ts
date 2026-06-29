@@ -85,7 +85,7 @@ import {
 import { createBudgetTracker, checkTokenBudget } from './query/tokenBudget.js'
 import { count } from './utils/array.js'
 
-const STREAM_RECOVERY_MAX_ATTEMPTS = 5
+const STREAM_RECOVERY_MAX_ATTEMPTS = 25
 
 function* yieldMissingToolResultBlocks(
   assistantMessages: AssistantMessage[],

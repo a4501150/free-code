@@ -62,7 +62,7 @@ import {
 import { getOrCreateUserID } from '../../utils/config.js'
 import { getModelMaxOutputTokens } from '../../utils/context.js'
 import { resolveAppliedEffort } from '../../utils/effort.js'
-import { isEnvDefinedFalsy, isEnvTruthy } from '../../utils/envUtils.js'
+import { isEnvTruthy } from '../../utils/envUtils.js'
 import { errorMessage } from '../../utils/errors.js'
 import { computeFingerprintFromMessages } from '../../utils/fingerprint.js'
 import { sleep } from '../../utils/sleep.js'
@@ -752,26 +752,30 @@ function isStreamIdleTimeoutError(error: unknown): boolean {
   return error instanceof Error && error.message === STREAM_IDLE_TIMEOUT_ERROR
 }
 
-function isMissingResponseCompletedError(
+// Provider-agnostic: a stream that ended mid-response is flagged by the adapter
+// via `stream_truncated` on the normalized error's raw payload. Recovery is
+// further gated on provider-confirmed output, so providers that emit neither
+// signal simply fall through to the generic mid-stream retry below.
+export function isStreamTruncationError(
   error: unknown,
 ): error is DomainTransportError {
   return (
     error instanceof DomainTransportError &&
     error.normalized.kind === 'transport' &&
-    error.message.includes('response.completed')
+    typeof error.normalized.raw === 'object' &&
+    error.normalized.raw !== null &&
+    (error.normalized.raw as { stream_truncated?: boolean }).stream_truncated ===
+      true
   )
 }
 
-function shouldEnableStreamWatchdog(
-  isOpenAIResponsesProvider: boolean,
-): boolean {
-  if (isEnvDefinedFalsy(process.env.CLAUDE_ENABLE_STREAM_WATCHDOG)) {
-    return false
-  }
-  return (
-    isOpenAIResponsesProvider ||
-    isEnvTruthy(process.env.CLAUDE_ENABLE_STREAM_WATCHDOG)
-  )
+// Generic domain-event idle watchdog. Opt-in only: the Codex adapter performs
+// its own raw-stream idle detection (`readUpstream`), so enabling this for
+// openai-responses would run a second, racing timer that reclassifies
+// truncations as `mid_stream` and defeats recovery. Providers without an
+// adapter-level watchdog can turn this on via CLAUDE_ENABLE_STREAM_WATCHDOG.
+function shouldEnableStreamWatchdog(): boolean {
+  return isEnvTruthy(process.env.CLAUDE_ENABLE_STREAM_WATCHDOG)
 }
 
 function getStreamFirstEventTimeoutMs(): number {
@@ -1052,9 +1056,6 @@ async function* queryModel(
       ? ((await getInferenceProfileBackingModel(options.model)) ??
         options.model)
       : options.model
-  const isOpenAIResponsesProvider =
-    registry.getProviderType(options.model) === 'openai-responses'
-
   queryCheckpoint('query_tool_schema_build_start')
   const isAgenticQuery =
     options.querySource.startsWith('repl_main_thread') ||
@@ -1591,9 +1592,7 @@ async function* queryModel(
 
       // Streaming idle timeout watchdog: use a conservative first-event guard,
       // then a tighter post-first-event guard for stale streams.
-      const streamWatchdogEnabled = shouldEnableStreamWatchdog(
-        isOpenAIResponsesProvider,
-      )
+      const streamWatchdogEnabled = shouldEnableStreamWatchdog()
       const streamFirstEventTimeoutMs = getStreamFirstEventTimeoutMs()
       const streamBetweenEventsTimeoutMs = getStreamBetweenEventsTimeoutMs()
       let hasReceivedStreamEvent = false
@@ -2018,8 +2017,7 @@ async function* queryModel(
         }
 
         if (
-          isOpenAIResponsesProvider &&
-          isMissingResponseCompletedError(streamingError) &&
+          isStreamTruncationError(streamingError) &&
           providerConfirmedMessages.length > 0 &&
           options.onStreamingRecovery?.(
             providerConfirmedMessages,
@@ -2027,7 +2025,7 @@ async function* queryModel(
           )
         ) {
           logForDebugging(
-            `Recovering from truncated Codex stream with ${providerConfirmedMessages.length} provider-confirmed message(s)`,
+            `Recovering from truncated stream with ${providerConfirmedMessages.length} provider-confirmed message(s)`,
             { level: 'warn' },
           )
           releaseStreamResources()

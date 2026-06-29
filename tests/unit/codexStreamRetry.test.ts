@@ -7,7 +7,10 @@ import {
   type Tools,
 } from '../../src/Tool.js'
 import { query } from '../../src/query.js'
-import { queryModelWithStreaming } from '../../src/services/api/claude.js'
+import {
+  isStreamTruncationError,
+  queryModelWithStreaming,
+} from '../../src/services/api/claude.js'
 import { DomainTransportError } from '../../src/services/api/domain-errors.js'
 import { enableConfigs } from '../../src/utils/config.js'
 import {
@@ -747,6 +750,248 @@ describe('Codex stream retry', () => {
           : [],
       )
     expect(assistantTexts).toContain('complete')
+  })
+
+  test('isStreamTruncationError keys on the stream_truncated flag, not the message', () => {
+    // Idle-timeout truncation: flagged, but the message has no "response.completed".
+    const idleTruncation = new DomainTransportError({
+      normalized: {
+        kind: 'transport',
+        message: 'Codex stream idle timeout waiting for upstream SSE',
+        providerType: 'openai-responses',
+        raw: { stream_truncated: true, mid_stream: true },
+      },
+    })
+    // Clean-EOF truncation before completion: also flagged.
+    const eofTruncation = new DomainTransportError({
+      normalized: {
+        kind: 'transport',
+        message: 'Codex stream ended before response.completed',
+        providerType: 'openai-responses',
+        raw: { stream_truncated: true, mid_stream: true },
+      },
+    })
+    // Generic mid-stream transport error from a different provider: not a truncation.
+    const midStream = new DomainTransportError({
+      normalized: {
+        kind: 'transport',
+        message: 'The operation was aborted.',
+        providerType: 'anthropic',
+        raw: { mid_stream: true },
+      },
+    })
+    // The flag only counts for transport-kind errors.
+    const serverError = new DomainTransportError({
+      normalized: {
+        kind: 'server',
+        message: 'boom',
+        providerType: 'openai-responses',
+        raw: { stream_truncated: true },
+      },
+    })
+
+    expect(isStreamTruncationError(idleTruncation)).toBe(true)
+    expect(isStreamTruncationError(eofTruncation)).toBe(true)
+    expect(isStreamTruncationError(midStream)).toBe(false)
+    expect(isStreamTruncationError(serverError)).toBe(false)
+    expect(isStreamTruncationError(new Error('nope'))).toBe(false)
+  })
+
+  test('query loop allows more than five consecutive stream recoveries', async () => {
+    setupCodexProvider()
+    enableConfigs()
+
+    const final = createAssistantMessage({ content: 'done' })
+    const recoveryResults: (boolean | undefined)[] = []
+    let callCount = 0
+    const truncationError = new DomainTransportError({
+      normalized: {
+        kind: 'transport',
+        message: 'Codex stream ended before response.completed',
+        providerType: 'openai-responses',
+        raw: { stream_truncated: true, mid_stream: true },
+      },
+    })
+
+    const outputs = []
+    const terminal = await (async () => {
+      const iterator = query({
+        messages: [createUserMessage({ content: 'hi' })],
+        systemPrompt: asSystemPrompt([]),
+        userContext: {},
+        systemContext: {},
+        canUseTool: async () => ({ behavior: 'allow', updatedInput: {} }),
+        toolUseContext: createMinimalToolUseContext(),
+        querySource: 'repl_main_thread',
+        deps: {
+          callModel: async function* (request: any) {
+            callCount++
+            // Confirm one new item per attempt, then truncate — seven times in a
+            // row. The old cap of five would deny recovery on the sixth attempt.
+            if (callCount <= 7) {
+              const chunk = createAssistantMessage({
+                content: `chunk${callCount}`,
+              })
+              yield chunk
+              recoveryResults.push(
+                request.options.onStreamingRecovery?.([chunk], truncationError),
+              )
+              return
+            }
+            yield final
+          },
+          microcompact: async messages => ({ messages }),
+          autocompact: async () => ({ compactionResult: null }),
+          uuid: () => 'test-query-chain-id',
+        },
+      })
+
+      let next = await iterator.next()
+      while (!next.done) {
+        outputs.push(next.value)
+        next = await iterator.next()
+      }
+      return next.value
+    })()
+
+    expect(callCount).toBe(8)
+    expect(recoveryResults).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ])
+    expect(terminal.reason).toBe('completed')
+    expect(assistantTexts(outputs)).toContain('done')
+  })
+
+  test('recovers confirmed output when a Codex stream stalls (adapter watchdog only)', async () => {
+    setupCodexProvider()
+    enableConfigs()
+
+    const originalFetch = globalThis.fetch
+    const originalAnthropicApiKey = process.env.ANTHROPIC_API_KEY
+    const originalNodeEnv = process.env.NODE_ENV
+    const originalWatchdog = process.env.CLAUDE_ENABLE_STREAM_WATCHDOG
+    const originalIdleTimeout = process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS
+    process.env.ANTHROPIC_API_KEY = 'test-key'
+    process.env.NODE_ENV = 'development'
+    // Leave the generic watchdog at its default (opt-in/off). Only the Codex
+    // adapter watchdog runs, so the stall surfaces deterministically as a
+    // stream_truncated error that feeds recovery.
+    delete process.env.CLAUDE_ENABLE_STREAM_WATCHDOG
+    process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS = '20'
+
+    const encoder = new TextEncoder()
+    let upstreamRequests = 0
+    globalThis.fetch = (async () => {
+      upstreamRequests++
+      // Confirm one message item (output_item.done) then stall forever.
+      const confirmedThenStalled = [
+        'event: response.output_item.added',
+        'data: {"type":"response.output_item.added","item":{"type":"message"}}',
+        '',
+        'event: response.output_text.delta',
+        'data: {"type":"response.output_text.delta","delta":"confirmed"}',
+        '',
+        'event: response.output_item.done',
+        'data: {"type":"response.output_item.done","item":{"type":"message"}}',
+        '',
+        '',
+      ].join('\n')
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode(confirmedThenStalled))
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    let fallbackCount = 0
+    let recoveryCount = 0
+    const recovered: string[] = []
+    const yielded = []
+    const abortController = new AbortController()
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        (async () => {
+          for await (const message of queryModelWithStreaming({
+            messages: [createUserMessage({ content: 'hi' })],
+            systemPrompt: asSystemPrompt([]),
+            thinkingConfig: { type: 'disabled' },
+            tools: [],
+            signal: abortController.signal,
+            options: {
+              getToolPermissionContext: async () =>
+                getEmptyToolPermissionContext(),
+              model: 'gpt-test',
+              isNonInteractiveSession: true,
+              querySource: 'repl_main_thread',
+              agents: [],
+              allowedAgentTypes: [],
+              hasAppendSystemPrompt: false,
+              mcpTools: [],
+              onStreamingFallback: () => {
+                fallbackCount++
+              },
+              onStreamingRecovery: messages => {
+                recoveryCount++
+                recovered.push(...assistantTexts(messages))
+                return true
+              },
+            },
+          })) {
+            yielded.push(message)
+          }
+        })(),
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => {
+            abortController.abort()
+            reject(new Error('stalled Codex recovery test timed out'))
+          }, 2_000)
+        }),
+      ])
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId)
+      globalThis.fetch = originalFetch
+      if (originalAnthropicApiKey === undefined) {
+        delete process.env.ANTHROPIC_API_KEY
+      } else {
+        process.env.ANTHROPIC_API_KEY = originalAnthropicApiKey
+      }
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV
+      } else {
+        process.env.NODE_ENV = originalNodeEnv
+      }
+      if (originalWatchdog === undefined) {
+        delete process.env.CLAUDE_ENABLE_STREAM_WATCHDOG
+      } else {
+        process.env.CLAUDE_ENABLE_STREAM_WATCHDOG = originalWatchdog
+      }
+      if (originalIdleTimeout === undefined) {
+        delete process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS
+      } else {
+        process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS = originalIdleTimeout
+      }
+    }
+
+    // The stall is recovered, not retried from scratch: one upstream request,
+    // no fallback, and the confirmed output is offered for recovery.
+    expect(upstreamRequests).toBe(1)
+    expect(fallbackCount).toBe(0)
+    expect(recoveryCount).toBe(1)
+    expect(recovered).toEqual(['confirmed'])
+    expect(assistantTexts(yielded)).toEqual(['confirmed'])
   })
 })
 
