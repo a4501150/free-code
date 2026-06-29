@@ -14,16 +14,18 @@ import type { ToolUseContext } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
-import { countLinesChanged } from '../../utils/diff.js'
+import { countLinesChanged, getPatchFromContents } from '../../utils/diff.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { isENOENT } from '../../utils/errors.js'
 import {
+  convertLeadingTabsToSpaces,
   FILE_NOT_FOUND_CWD_NOTE,
   findSimilarFile,
   getFileModificationTime,
   suggestPathUnderCwd,
   writeTextContent,
 } from '../../utils/file.js'
+import { applyHashlineEdits } from '../../utils/hashline.js'
 import {
   fileHistoryEnabled,
   fileHistoryTrackEdit,
@@ -64,13 +66,6 @@ import {
   renderToolUseRejectedMessage,
   userFacingName,
 } from './UI.js'
-import {
-  adaptNewString,
-  areFileEditsInputsEquivalent,
-  findActualString,
-  getPatchForEdit,
-  preserveQuoteStyle,
-} from './utils.js'
 
 // V8/Bun string length limit is ~2^30 characters (~1 billion). For typical
 // ASCII/Latin-1 files, 1 byte on disk = 1 character, so 1 GiB in stat bytes
@@ -102,7 +97,7 @@ export const FileEditTool = buildTool({
     return outputSchema
   },
   toAutoClassifierInput(input) {
-    return `${input.file_path}: ${input.new_string}`
+    return `${input.file_path}: ${JSON.stringify(input.edits)}`
   },
   getPath(input): string {
     return input.file_path
@@ -130,24 +125,19 @@ export const FileEditTool = buildTool({
   renderToolUseRejectedMessage,
   renderToolUseErrorMessage,
   async validateInput(input: FileEditInput, toolUseContext: ToolUseContext) {
-    const { file_path, old_string, new_string, replace_all = false } = input
+    const { file_path, edits } = input
     // Use expandPath for consistent path normalization (especially on Windows
     // where "/" vs "\" can cause readFileState lookup mismatches)
     const fullFilePath = expandPath(file_path)
 
-    // Reject edits to team memory files that introduce secrets
-    const secretError = checkTeamMemSecrets(fullFilePath, new_string)
+    // Reject edits to team memory files that introduce secrets. Scan the
+    // combined replacement text across all edits.
+    const replacementText = edits
+      .map(e => ('lines' in e ? (e.lines ?? '') : ''))
+      .join('\n')
+    const secretError = checkTeamMemSecrets(fullFilePath, replacementText)
     if (secretError) {
       return { result: false, message: secretError, errorCode: 0 }
-    }
-    if (old_string === new_string) {
-      return {
-        result: false,
-        behavior: 'ask',
-        message:
-          'No changes to make: old_string and new_string are exactly the same.',
-        errorCode: 1,
-      }
     }
 
     // Check if path should be ignored based on permission settings
@@ -215,12 +205,9 @@ export const FileEditTool = buildTool({
       }
     }
 
-    // File doesn't exist
+    // File doesn't exist. Hashline edits reference existing lines, so the file
+    // must be read first — creation goes through the Write tool.
     if (fileContent === null) {
-      // Empty old_string on nonexistent file means new file creation — valid
-      if (old_string === '') {
-        return { result: true }
-      }
       // Try to find a similar file with a different extension
       const similarFilename = findSimilarFile(fullFilePath)
       const cwdSuggestion = await suggestPathUnderCwd(fullFilePath)
@@ -237,24 +224,6 @@ export const FileEditTool = buildTool({
         behavior: 'ask',
         message,
         errorCode: 4,
-      }
-    }
-
-    // File exists with empty old_string — only valid if file is empty
-    if (old_string === '') {
-      // Only reject if the file has content (for file creation attempt)
-      if (fileContent.trim() !== '') {
-        return {
-          result: false,
-          behavior: 'ask',
-          message: 'Cannot create new file - file already exists.',
-          errorCode: 3,
-        }
-      }
-
-      // Empty file with empty old_string is valid - we're replacing empty with content
-      return {
-        result: true,
       }
     }
 
@@ -298,15 +267,14 @@ export const FileEditTool = buildTool({
 
     const file = fileContent
 
-    // Use findActualString to handle quote normalization and tolerant fallbacks
-    const actualOldString = findActualString(file, old_string, {
-      replaceAll: replace_all,
-    })
-    if (!actualOldString) {
+    // Dry-run the hashline edits to validate anchors against current content.
+    // On failure the error already includes fresh anchors for the model.
+    const dryRun = applyHashlineEdits(file, edits, file_path)
+    if (!dryRun.ok) {
       return {
         result: false,
         behavior: 'ask',
-        message: `String to replace not found in file.\nString: ${old_string}`,
+        message: dryRun.error,
         meta: {
           isFilePathAbsolute: String(isAbsolute(file_path)),
         },
@@ -314,68 +282,24 @@ export const FileEditTool = buildTool({
       }
     }
 
-    const matches = file.split(actualOldString).length - 1
-
-    // Check if we have multiple matches but replace_all is false
-    if (matches > 1 && !replace_all) {
-      return {
-        result: false,
-        behavior: 'ask',
-        message: `Found ${matches} matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: ${old_string}`,
-        meta: {
-          isFilePathAbsolute: String(isAbsolute(file_path)),
-          actualOldString,
-        },
-        errorCode: 9,
-      }
-    }
-
-    // Additional validation for Claude settings files
+    // Additional validation for Claude settings files, against the simulated
+    // post-edit content.
     const settingsValidationResult = validateInputForSettingsFileEdit(
       fullFilePath,
       file,
-      () => {
-        // Simulate the edit using the exact same logic as the tool, including
-        // quote + tolerant-match adaptations applied to new_string.
-        const simNewString = adaptNewString(
-          old_string,
-          actualOldString,
-          preserveQuoteStyle(old_string, actualOldString, new_string),
-        )
-        return replace_all
-          ? file.replaceAll(actualOldString, simNewString)
-          : file.replace(actualOldString, simNewString)
-      },
+      () => dryRun.updatedContent,
     )
 
     if (settingsValidationResult !== null) {
       return settingsValidationResult
     }
 
-    return { result: true, meta: { actualOldString } }
+    return { result: true }
   },
   inputsEquivalent(input1, input2) {
-    return areFileEditsInputsEquivalent(
-      {
-        file_path: input1.file_path,
-        edits: [
-          {
-            old_string: input1.old_string,
-            new_string: input1.new_string,
-            replace_all: input1.replace_all ?? false,
-          },
-        ],
-      },
-      {
-        file_path: input2.file_path,
-        edits: [
-          {
-            old_string: input2.old_string,
-            new_string: input2.new_string,
-            replace_all: input2.replace_all ?? false,
-          },
-        ],
-      },
+    return (
+      input1.file_path === input2.file_path &&
+      JSON.stringify(input1.edits) === JSON.stringify(input2.edits)
     )
   },
   async call(
@@ -389,7 +313,7 @@ export const FileEditTool = buildTool({
     _,
     parentMessage,
   ) {
-    const { file_path, old_string, new_string, replace_all = false } = input
+    const { file_path, edits } = input
 
     // 1. Get current state
     const fs = getFsImplementation()
@@ -461,28 +385,28 @@ export const FileEditTool = buildTool({
       }
     }
 
-    // 3. Use findActualString to handle quote normalization and tolerant
-    // fallbacks (must match validateInput's matching to stay consistent).
-    const actualOldString =
-      findActualString(originalFileContents, old_string, {
-        replaceAll: replace_all,
-      }) || old_string
+    // 3. Compute the updated content. The IDE-amend flow supplies the final
+    // content directly; otherwise apply the hashline edits by anchor.
+    let updatedFile: string
+    let editCount: number
+    if (input._overrideContent) {
+      updatedFile = input._overrideContent.newContent
+      editCount = edits.length
+    } else {
+      const r = applyHashlineEdits(originalFileContents, edits, file_path)
+      if (!r.ok) {
+        throw new Error(r.error)
+      }
+      updatedFile = r.updatedContent
+      editCount = r.editCount
+    }
 
-    // Preserve curly quotes, then mirror any tolerant-match adjustments
-    // (line-number-prefix strip, indentation shift) into new_string.
-    const actualNewString = adaptNewString(
-      old_string,
-      actualOldString,
-      preserveQuoteStyle(old_string, actualOldString, new_string),
-    )
-
-    // 4. Generate patch
-    const { patch, updatedFile } = getPatchForEdit({
+    // 4. Generate the display patch. Leading tabs are rendered as spaces to
+    // match the TUI's diff styling (display-only — disk gets the raw content).
+    const patch = getPatchFromContents({
       filePath: absoluteFilePath,
-      fileContents: originalFileContents,
-      oldString: actualOldString,
-      newString: actualNewString,
-      replaceAll: replace_all,
+      oldContent: convertLeadingTabsToSpaces(originalFileContents),
+      newContent: convertLeadingTabsToSpaces(updatedFile),
     })
 
     // 5. Write to disk
@@ -536,12 +460,10 @@ export const FileEditTool = buildTool({
     // 8. Yield result
     const data = {
       filePath: file_path,
-      oldString: actualOldString,
-      newString: new_string,
       originalFile: originalFileContents,
       structuredPatch: patch,
       userModified: userModified ?? false,
-      replaceAll: replace_all,
+      editCount,
       ...(gitDiff && { gitDiff }),
     }
     return {
@@ -549,18 +471,10 @@ export const FileEditTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(data: FileEditOutput, toolUseID) {
-    const { filePath, userModified, replaceAll } = data
+    const { filePath, userModified } = data
     const modifiedNote = userModified
       ? '.  The user modified your proposed changes before accepting them. '
       : ''
-
-    if (replaceAll) {
-      return {
-        tool_use_id: toolUseID,
-        type: 'tool_result',
-        content: `The file ${filePath} has been updated${modifiedNote}. All occurrences were successfully replaced.`,
-      }
-    }
 
     return {
       tool_use_id: toolUseID,

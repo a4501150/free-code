@@ -1,8 +1,7 @@
-import { isCompactLinePrefixEnabled } from '../../utils/file.js'
 import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
 
 function getPreReadInstruction(): string {
-  return `\n- Before editing an existing file, you must use your \`${FILE_READ_TOOL_NAME}\` tool to read that target file. This tool will error if you attempt to edit an existing file without reading it first. `
+  return `\n- Before editing you must use your \`${FILE_READ_TOOL_NAME}\` tool to read that target file. The Read output shows each line as \`LINE:HASH|content\`; copy the \`LINE:HASH\` anchors into your edits. This tool will error if you attempt to edit a file without reading it first.`
 }
 
 export function getEditToolDescription(): string {
@@ -10,16 +9,13 @@ export function getEditToolDescription(): string {
 }
 
 function getDefaultEditDescription(): string {
-  const prefixFormat = isCompactLinePrefixEnabled()
-    ? 'line number + tab'
-    : 'spaces + line number + arrow'
-  const minimalUniquenessHint = ''
-  return `Performs exact string replacements in files.
+  return `Edits a file by referencing LINE:HASH anchors from the Read tool output.
 
 Usage:${getPreReadInstruction()}
-- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: ${prefixFormat}. Everything after that is the actual file content to match. Never include any part of the line number prefix in the old_string or new_string.
+- Each edit has: op ("replace" | "insert_after" | "delete"), start (a "LINE:HASH" anchor), optional end (a "LINE:HASH" anchor for a multi-line replace/delete; defaults to start), and lines (the new text for replace/insert_after; omit for delete).
+- replace: replaces lines start..end with \`lines\`. insert_after: inserts \`lines\` after the \`start\` line (use "0" to insert at the top of the file). delete: removes lines start..end.
+- Provide only the content after the \`|\` in \`lines\` — never include the \`LINE:HASH|\` anchor prefix itself.
+- Anchors are validated against the current file. If the file changed since you read it, the hash won't match and the edit is rejected together with fresh anchors — re-read the file or use the returned anchors and retry.
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
-- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
-- The edit will FAIL if \`old_string\` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use \`replace_all\` to change every instance of \`old_string\`.${minimalUniquenessHint}
-- Use \`replace_all\` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.`
+- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.`
 }

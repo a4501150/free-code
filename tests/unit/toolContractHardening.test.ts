@@ -7,6 +7,7 @@ import {
 } from '../../src/entrypoints/mcp.js'
 import { isConcurrencySafeToolInput } from '../../src/services/tools/toolInput.js'
 import { AskUserQuestionTool } from '../../src/tools/AskUserQuestionTool/AskUserQuestionTool.js'
+import { inputSchema as fileEditInputSchema } from '../../src/tools/FileEditTool/types.js'
 import { getMethodAndParams } from '../../src/tools/LSPTool/LSPTool.js'
 import { lspToolInputSchema } from '../../src/tools/LSPTool/schemas.js'
 import { TaskStopTool } from '../../src/tools/TaskStopTool/TaskStopTool.js'
@@ -154,5 +155,40 @@ describe('LSP operation-specific contracts', () => {
         '/repo/file.ts',
       ),
     ).toMatchObject({ params: { position: { line: 1, character: 2 } } })
+  })
+})
+
+describe('FileEdit op-shape tolerance', () => {
+  test('tolerates a stray "lines" field on a delete op', () => {
+    expect(
+      fileEditInputSchema.safeParse({
+        file_path: '/repo/x.ts',
+        edits: [{ op: 'delete', start: '3:abc', lines: 'ignored' }],
+      }).success,
+    ).toBe(true)
+  })
+
+  test('accepts a delete op with no lines field', () => {
+    expect(
+      fileEditInputSchema.safeParse({
+        file_path: '/repo/x.ts',
+        edits: [{ op: 'delete', start: '3:abc' }],
+      }).success,
+    ).toBe(true)
+  })
+
+  test('still requires lines for replace and insert_after', () => {
+    expect(
+      fileEditInputSchema.safeParse({
+        file_path: '/repo/x.ts',
+        edits: [{ op: 'replace', start: '3:abc' }],
+      }).success,
+    ).toBe(false)
+    expect(
+      fileEditInputSchema.safeParse({
+        file_path: '/repo/x.ts',
+        edits: [{ op: 'insert_after', start: '3:abc' }],
+      }).success,
+    ).toBe(false)
   })
 })

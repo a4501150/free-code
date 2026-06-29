@@ -74,19 +74,7 @@ function SedEditPermissionRequestInner({
     return applySedSubstitution(oldContent, sedInfo)
   }, [oldContent, sedInfo])
 
-  // Create the edit representation for the diff
-  const edits = useMemo(() => {
-    if (oldContent === newContent) {
-      return []
-    }
-    return [
-      {
-        old_string: oldContent,
-        new_string: newContent,
-        replace_all: false,
-      },
-    ]
-  }, [oldContent, newContent])
+  const hasChanges = oldContent !== newContent
 
   // Determine appropriate message when no changes
   const noChangesMessage = useMemo(() => {
@@ -124,8 +112,12 @@ function SedEditPermissionRequestInner({
         </Text>
       }
       content={
-        edits.length > 0 ? (
-          <FileEditToolDiff file_path={filePath} edits={edits} />
+        hasChanges ? (
+          <FileEditToolDiff
+            file_path={filePath}
+            oldContent={oldContent}
+            newContent={newContent}
+          />
         ) : (
           <Text dimColor>{noChangesMessage}</Text>
         )

@@ -12,7 +12,7 @@ export const MAX_LINES_TO_READ = 2000
 export const DESCRIPTION = 'Read a file from the local filesystem.'
 
 export const LINE_FORMAT_INSTRUCTION =
-  '- Results are returned using cat -n format, with line numbers starting at 1'
+  '- Each line is returned as `LINE:HASH|content` (e.g. `12:a3f|  return x`). LINE is the 1-based line number, HASH is a short content fingerprint, and the actual file content is everything after the `|`. The Edit tool references these `LINE:HASH` anchors.'
 
 /**
  * Renders the Read tool prompt template.  The caller (FileReadTool) supplies

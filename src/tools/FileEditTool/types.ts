@@ -1,34 +1,72 @@
 import { z } from 'zod/v4'
-import { semanticBoolean } from '../../utils/semanticBoolean.js'
 
-// The input schema with optional replace_all
-const inputSchema = z.strictObject({
-  file_path: z.string().describe('The absolute path to the file to modify'),
-  old_string: z.string().describe('The text to replace'),
-  new_string: z
+const editOp = z.object({
+  op: z
+    .enum(['replace', 'insert_after', 'delete'])
+    .describe('The edit operation to perform.'),
+  start: z
     .string()
     .describe(
-      'The text to replace it with (must be different from old_string)',
+      'Start anchor "LINE:HASH" copied from Read output (e.g. "12:a3f"). Use "0" to insert at the top.',
     ),
-  replace_all: semanticBoolean(z.boolean().default(false).optional()).describe(
-    'Replace all occurrences of old_string (default false)',
-  ),
+  end: z
+    .string()
+    .optional()
+    .describe(
+      'End anchor "LINE:HASH" for a multi-line replace/delete; defaults to start.',
+    ),
+  lines: z
+    .string()
+    .optional()
+    .describe(
+      'Replacement/inserted text (newline-separated). Required for replace/insert_after; omit for delete.',
+    ),
 })
+
+export type EditOp = z.output<typeof editOp>
+
+const refineEdits = (v: { edits: EditOp[] }, ctx: z.RefinementCtx): void => {
+  v.edits.forEach((e, i) => {
+    if (
+      (e.op === 'replace' || e.op === 'insert_after') &&
+      e.lines === undefined
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `edits[${i}]: "${e.op}" requires "lines" (the new text).`,
+        path: ['edits', i, 'lines'],
+      })
+    }
+  })
+}
+
+const editFields = {
+  file_path: z.string().describe('The absolute path to the file to modify'),
+  edits: z
+    .array(editOp)
+    .min(1)
+    .describe('Edits to apply, referenced by LINE:HASH anchors.'),
+}
+
+// Model-facing schema. _overrideContent is intentionally absent so the model
+// cannot bypass anchor validation by supplying raw file content.
+const inputSchema = z.strictObject(editFields).superRefine(refineEdits)
 type InputSchema = typeof inputSchema
 
-// Parsed output — what call() receives. z.output not z.input: with
-// semanticBoolean the input side is unknown (preprocess accepts anything).
-export type FileEditInput = z.output<InputSchema>
+// Full schema includes the internal _overrideContent field, set by the IDE-amend
+// flow after the user edits the proposed diff in their editor.
+const fullInputSchema = z
+  .strictObject({
+    ...editFields,
+    _overrideContent: z
+      .object({ newContent: z.string() })
+      .optional()
+      .describe('Internal: pre-computed full file content from an IDE amend.'),
+  })
+  .superRefine(refineEdits)
 
-// Individual edit without file_path
-export type EditInput = Omit<FileEditInput, 'file_path'>
-
-// Runtime version where replace_all is always defined
-export type FileEdit = {
-  old_string: string
-  new_string: string
-  replace_all: boolean
-}
+// Parsed output — what call()/validateInput receive (includes _overrideContent).
+export type FileEditInput = z.output<typeof fullInputSchema>
 
 export const hunkSchema = z.object({
   oldStart: z.number(),
@@ -55,8 +93,6 @@ export const gitDiffSchema = z.object({
 // Output schema for FileEditTool
 const outputSchema = z.object({
   filePath: z.string().describe('The file path that was edited'),
-  oldString: z.string().describe('The original string that was replaced'),
-  newString: z.string().describe('The new string that replaced it'),
   originalFile: z
     .string()
     .describe('The original file contents before editing'),
@@ -66,11 +102,12 @@ const outputSchema = z.object({
   userModified: z
     .boolean()
     .describe('Whether the user modified the proposed changes'),
-  replaceAll: z.boolean().describe('Whether all occurrences were replaced'),
+  editCount: z.number().describe('Number of edits applied'),
   gitDiff: gitDiffSchema.optional(),
 })
 type OutputSchema = typeof outputSchema
 
 export type FileEditOutput = z.infer<OutputSchema>
 
-export { inputSchema, outputSchema }
+export { inputSchema, fullInputSchema, outputSchema }
+export type { InputSchema }

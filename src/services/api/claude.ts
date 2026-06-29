@@ -764,8 +764,8 @@ export function isStreamTruncationError(
     error.normalized.kind === 'transport' &&
     typeof error.normalized.raw === 'object' &&
     error.normalized.raw !== null &&
-    (error.normalized.raw as { stream_truncated?: boolean }).stream_truncated ===
-      true
+    (error.normalized.raw as { stream_truncated?: boolean })
+      .stream_truncated === true
   )
 }
 

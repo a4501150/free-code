@@ -7,35 +7,29 @@ import {
 describe('renderToolCallParams', () => {
   const input = {
     file_path: '/src/foo.ts',
-    old_string: 'const a = 1',
-    new_string: 'const b = 2',
-    replace_all: false,
+    edits: [{ op: 'replace', start: '1:abc', lines: 'const b = 2' }],
   }
 
   test('compact mode without compactParamKeys shows all params', () => {
     const result = renderToolCallParams(input, 'compact')
     expect(result).toContain('file_path:')
-    expect(result).toContain('old_string:')
-    expect(result).toContain('new_string:')
-    expect(result).toContain('replace_all:')
+    expect(result).toContain('edits:')
   })
 
   test('compact mode with compactParamKeys shows only listed keys', () => {
     const result = renderToolCallParams(input, 'compact', ['file_path'])
     expect(result).toContain('file_path:')
-    expect(result).not.toContain('old_string')
-    expect(result).not.toContain('new_string')
-    expect(result).not.toContain('replace_all')
+    expect(result).not.toContain('edits')
   })
 
   test('compactParamKeys preserves declared order', () => {
     const result = renderToolCallParams(input, 'compact', [
-      'replace_all',
+      'edits',
       'file_path',
     ])
-    const replaceIdx = result.indexOf('replace_all')
+    const editsIdx = result.indexOf('edits')
     const fileIdx = result.indexOf('file_path')
-    expect(replaceIdx).toBeLessThan(fileIdx)
+    expect(editsIdx).toBeLessThan(fileIdx)
   })
 
   test('compactParamKeys skips keys not present in input', () => {
@@ -75,9 +69,7 @@ describe('renderToolCallParams', () => {
   test('full mode ignores compactParamKeys', () => {
     const result = renderToolCallParams(input, 'full', ['file_path'])
     expect(result).toContain('file_path:')
-    expect(result).toContain('old_string:')
-    expect(result).toContain('new_string:')
-    expect(result).toContain('replace_all:')
+    expect(result).toContain('edits:')
   })
 
   test('empty compactParamKeys array returns empty string in compact mode', () => {

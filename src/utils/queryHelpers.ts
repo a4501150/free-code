@@ -25,6 +25,7 @@ import type { OrphanedPermission } from '../types/textInputTypes.js'
 import { logForDebugging } from './debug.js'
 import { isFsInaccessible } from './errors.js'
 import { getFileModificationTime, stripLineNumberPrefix } from './file.js'
+import { stripHashlinePrefix } from './hashline.js'
 import { readFileSyncWithMetadata } from './fileRead.js'
 import {
   createFileStateCacheWithSizeLimit,
@@ -434,11 +435,17 @@ export function extractReadFilesFromMessages(
               '',
             )
 
-            // Extract the actual file content from the tool result
-            // Tool results for text files contain line numbers, we need to strip those
+            // Extract the actual file content from the tool result. Current Read
+            // output is `LINE:HASH|content` (strip via stripHashlinePrefix); older
+            // transcripts used cat -n line numbers (fall back to stripLineNumberPrefix).
             const fileContent = processedContent
               .split('\n')
-              .map(stripLineNumberPrefix)
+              .map(line => {
+                const stripped = stripHashlinePrefix(line)
+                return stripped === line
+                  ? stripLineNumberPrefix(line)
+                  : stripped
+              })
               .join('\n')
               .trim()
 

@@ -144,35 +144,26 @@ export function FilePermissionDialog<T extends ToolInput = ToolInput>({
     ? {
         onChange: (
           option: PermissionOption,
-          input: {
-            file_path: string
-            edits: Array<{
-              old_string: string
-              new_string: string
-              replace_all?: boolean
-            }>
-          },
+          input: { file_path: string; newContent: string },
         ) => {
           const transformedInput = ideDiffSupport!.applyChanges(
             parsedInput,
-            input.edits,
+            input.newContent,
           )
           fileDialogResult.onChange(option, transformedInput)
         },
         toolUseContext,
         filePath: ideDiffConfig.filePath,
-        edits: (ideDiffConfig.edits || []).map(e => ({
-          old_string: e.old_string,
-          new_string: e.new_string,
-          replace_all: e.replace_all || false,
-        })),
+        oldContent: ideDiffConfig.oldContent,
+        newContent: ideDiffConfig.newContent,
         editMode: ideDiffConfig.editMode || 'single',
       }
     : {
         onChange: () => {},
         toolUseContext,
         filePath: '',
-        edits: [],
+        oldContent: '',
+        newContent: '',
         editMode: 'single' as const,
       }
 

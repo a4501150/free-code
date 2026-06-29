@@ -41,9 +41,8 @@ function toSummary(task: TaskState): TaskSummary {
   }
   if (task.type === 'local_bash') {
     base.command = (task as TaskStateBase & { command?: string }).command
-    const result = (
-      task as TaskStateBase & { result?: { code?: number } }
-    ).result
+    const result = (task as TaskStateBase & { result?: { code?: number } })
+      .result
     if (result?.code !== undefined) {
       base.exit_code = result.code
     }

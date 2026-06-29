@@ -1,4 +1,3 @@
-import { diffLines } from 'diff'
 import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises'
 import { extname, join } from 'path'
 import type { Command } from '../commands.js'
@@ -10,6 +9,7 @@ import {
 import type { LogOption } from '../types/logs.js'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
 import { toError } from '../utils/errors.js'
+import { parseAnchor } from '../utils/hashline.js'
 import { logError } from '../utils/log.js'
 import { extractTextContent } from '../utils/messages.js'
 import { getDefaultMainLoopModel } from '../utils/model/model.js'
@@ -381,11 +381,24 @@ function extractToolStats(log: LogOption): {
               }
 
               if (toolName === 'Edit') {
-                const oldString = (input.old_string as string) || ''
-                const newString = (input.new_string as string) || ''
-                for (const change of diffLines(oldString, newString)) {
-                  if (change.added) linesAdded += change.count || 0
-                  if (change.removed) linesRemoved += change.count || 0
+                // Hashline edits carry no before/after strings; approximate from
+                // the replacement text (added) and the anchor range (removed).
+                const edits =
+                  (input.edits as Array<Record<string, unknown>>) || []
+                for (const e of edits) {
+                  const op = e.op as string
+                  const lines = typeof e.lines === 'string' ? e.lines : ''
+                  if (lines !== '') {
+                    linesAdded += countCharInString(lines, '\n') + 1
+                  }
+                  if (op === 'replace' || op === 'delete') {
+                    const start = parseAnchor(String(e.start ?? ''))
+                    const end =
+                      e.end != null ? parseAnchor(String(e.end)) : start
+                    if (start && end && end.line >= start.line) {
+                      linesRemoved += end.line - start.line + 1
+                    }
+                  }
                 }
               }
 

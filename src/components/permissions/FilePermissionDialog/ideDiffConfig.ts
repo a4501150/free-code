@@ -1,42 +1,27 @@
 import type { ToolInput } from './useFilePermissionDialog.js'
 
-export interface FileEdit {
-  old_string: string
-  new_string: string
-  replace_all?: boolean
-}
-
 export interface IDEDiffConfig {
   filePath: string
-  edits?: FileEdit[]
+  oldContent: string
+  newContent: string
   editMode?: 'single' | 'multiple'
 }
 
 export interface IDEDiffChangeInput {
   file_path: string
-  edits: FileEdit[]
+  newContent: string
 }
 
 export interface IDEDiffSupport<TInput extends ToolInput> {
   getConfig(input: TInput): IDEDiffConfig
-  applyChanges(input: TInput, modifiedEdits: FileEdit[]): TInput
+  applyChanges(input: TInput, newContent: string): TInput
 }
 
-export function createSingleEditDiffConfig(
+export function createContentDiffConfig(
   filePath: string,
-  oldString: string,
-  newString: string,
-  replaceAll?: boolean,
+  oldContent: string,
+  newContent: string,
+  editMode: 'single' | 'multiple' = 'single',
 ): IDEDiffConfig {
-  return {
-    filePath,
-    edits: [
-      {
-        old_string: oldString,
-        new_string: newString,
-        replace_all: replaceAll,
-      },
-    ],
-    editMode: 'single',
-  }
+  return { filePath, oldContent, newContent, editMode }
 }

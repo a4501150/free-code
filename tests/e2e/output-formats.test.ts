@@ -57,10 +57,7 @@ async function runHeadless(options: HeadlessOptions): Promise<HeadlessResult> {
     // Seed settings: freecode.json (general + migration marker) and
     // modelSettings.json (provider/model config).
     const apiKey = 'test-key-headless-12345'
-    await writeFile(
-      join(tempConfig, 'freecode.json'),
-      JSON.stringify({}),
-    )
+    await writeFile(join(tempConfig, 'freecode.json'), JSON.stringify({}))
     await writeFile(
       join(tempConfig, 'modelSettings.json'),
       JSON.stringify({

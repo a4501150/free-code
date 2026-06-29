@@ -25,12 +25,12 @@ import { getCwd } from '../../utils/cwd.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from '../../utils/envUtils.js'
 import { getErrnoCode, isENOENT } from '../../utils/errors.js'
 import {
-  addLineNumbers,
   FILE_NOT_FOUND_CWD_NOTE,
   findSimilarFile,
   getFileModificationTimeAsync,
   suggestPathUnderCwd,
 } from '../../utils/file.js'
+import { formatHashline } from '../../utils/hashline.js'
 import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
 import { formatFileSize } from '../../utils/format.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
@@ -708,9 +708,9 @@ function pickLineFormatInstruction(): string {
   return LINE_FORMAT_INSTRUCTION
 }
 
-/** Format file content with line numbers. */
+/** Format file content as model-facing `LINE:HASH|content` hashlines. */
 function formatFileLines(file: { content: string; startLine: number }): string {
-  return addLineNumbers(file)
+  return formatHashline(file.content, file.startLine)
 }
 
 export const CYBER_RISK_MITIGATION_REMINDER =

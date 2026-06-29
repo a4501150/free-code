@@ -855,15 +855,7 @@ describe('Codex stream retry', () => {
     })()
 
     expect(callCount).toBe(8)
-    expect(recoveryResults).toEqual([
-      true,
-      true,
-      true,
-      true,
-      true,
-      true,
-      true,
-    ])
+    expect(recoveryResults).toEqual([true, true, true, true, true, true, true])
     expect(terminal.reason).toBe('completed')
     expect(assistantTexts(outputs)).toContain('done')
   })

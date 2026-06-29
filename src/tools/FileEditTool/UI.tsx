@@ -11,57 +11,32 @@ import { FilePathLink } from '../../components/FilePathLink.js'
 import { Text } from '../../ink.js'
 import type { Tools } from '../../Tool.js'
 import type { Message, ProgressMessage } from '../../types/message.js'
-import { adjustHunkLineNumbers, CONTEXT_LINES } from '../../utils/diff.js'
-import { FILE_NOT_FOUND_CWD_NOTE, getDisplayPath } from '../../utils/file.js'
+import { getPatchFromContents } from '../../utils/diff.js'
+import {
+  convertLeadingTabsToSpaces,
+  FILE_NOT_FOUND_CWD_NOTE,
+  getDisplayPath,
+} from '../../utils/file.js'
+import { applyHashlineEdits } from '../../utils/hashline.js'
 import { logError } from '../../utils/log.js'
 import { getPlansDirectory } from '../../utils/plans.js'
-import { readEditContext } from '../../utils/readEditContext.js'
+import { openForScan, readCapped } from '../../utils/readEditContext.js'
 import { firstLineOf } from '../../utils/stringUtils.js'
 import type { ThemeName } from '../../utils/theme.js'
-import type { FileEditOutput } from './types.js'
-import {
-  adaptNewString,
-  findActualString,
-  getPatchForEdit,
-  preserveQuoteStyle,
-} from './utils.js'
+import type { EditOp, FileEditOutput } from './types.js'
 
 export function userFacingName(
-  input:
-    | Partial<{
-        file_path: string
-        old_string: string
-        new_string: string
-        replace_all: boolean
-        edits: unknown[]
-      }>
-    | undefined,
+  input: Partial<{ file_path: string; edits: unknown[] }> | undefined,
 ): string {
-  if (!input) {
-    return 'Update'
-  }
-  if (input.file_path?.startsWith(getPlansDirectory())) {
+  // Hashline edits always modify an existing file (line-ref based).
+  if (input?.file_path?.startsWith(getPlansDirectory())) {
     return 'Updated plan'
-  }
-  // Hashline edits always modify an existing file (line-ref based)
-  if (input.edits != null) {
-    return 'Update'
-  }
-  if (input.old_string === '') {
-    return 'Create'
   }
   return 'Update'
 }
 
 export function getToolUseSummary(
-  input:
-    | Partial<{
-        file_path: string
-        old_string: string
-        new_string: string
-        replace_all: boolean
-      }>
-    | undefined,
+  input: Partial<{ file_path: string }> | undefined,
 ): string | null {
   if (!input?.file_path) {
     return null
@@ -111,10 +86,7 @@ export function renderToolResultMessage(
 export function renderToolUseRejectedMessage(
   input: {
     file_path: string
-    old_string?: string
-    new_string?: string
-    replace_all?: boolean
-    edits?: unknown[]
+    edits?: EditOp[]
   },
   options: {
     columns: number
@@ -128,12 +100,9 @@ export function renderToolUseRejectedMessage(
 ): React.ReactElement {
   const { style, verbose } = options
   const filePath = input.file_path
-  const oldString = input.old_string ?? ''
-  const newString = input.new_string ?? ''
-  const replaceAll = input.replace_all ?? false
+  const edits = input.edits ?? []
 
-  // Defensive: if input has an unexpected shape, show a simple rejection message
-  if ('edits' in input && input.edits != null) {
+  if (edits.length === 0) {
     return (
       <FileEditToolUseRejectedMessage
         file_path={filePath}
@@ -144,27 +113,10 @@ export function renderToolUseRejectedMessage(
     )
   }
 
-  const isNewFile = oldString === ''
-
-  // For new file creation, show content preview instead of diff
-  if (isNewFile) {
-    return (
-      <FileEditToolUseRejectedMessage
-        file_path={filePath}
-        operation="write"
-        content={newString}
-        firstLine={firstLineOf(newString)}
-        verbose={verbose}
-      />
-    )
-  }
-
   return (
     <EditRejectionDiff
       filePath={filePath}
-      oldString={oldString}
-      newString={newString}
-      replaceAll={replaceAll}
+      edits={edits}
       style={style}
       verbose={verbose}
     />
@@ -218,22 +170,16 @@ type RejectionDiffData = {
 
 function EditRejectionDiff({
   filePath,
-  oldString,
-  newString,
-  replaceAll,
+  edits,
   style,
   verbose,
 }: {
   filePath: string
-  oldString: string
-  newString: string
-  replaceAll: boolean
+  edits: EditOp[]
   style?: 'condensed'
   verbose: boolean
 }): React.ReactNode {
-  const [dataPromise] = useState(() =>
-    loadRejectionDiff(filePath, oldString, newString, replaceAll),
-  )
+  const [dataPromise] = useState(() => loadRejectionDiff(filePath, edits))
   return (
     <Suspense
       fallback={
@@ -282,47 +228,41 @@ function EditRejectionBody({
 
 async function loadRejectionDiff(
   filePath: string,
-  oldString: string,
-  newString: string,
-  replaceAll: boolean,
+  edits: EditOp[],
 ): Promise<RejectionDiffData> {
+  const empty: RejectionDiffData = {
+    patch: [],
+    firstLine: null,
+    fileContent: undefined,
+  }
   try {
-    // Chunked read — context window around the first occurrence. replaceAll
-    // still shows matches *within* the window via getPatchForEdit; we accept
-    // losing the all-occurrences view to keep the read bounded.
-    const ctx = await readEditContext(filePath, oldString, CONTEXT_LINES)
-    if (ctx === null || ctx.truncated || ctx.content === '') {
-      // ENOENT / not found / truncated — diff just the tool inputs.
-      const { patch } = getPatchForEdit({
-        filePath,
-        fileContents: oldString,
-        oldString,
-        newString,
-      })
-      return { patch, firstLine: null, fileContent: undefined }
+    // Hashline anchors are absolute line numbers, so applying them needs the
+    // whole file. readCapped bounds the read; the rendered hunks are bounded by
+    // getPatchFromContents' context window.
+    const handle = await openForScan(filePath)
+    if (handle === null) return empty
+    let oldContent: string | null
+    try {
+      oldContent = await readCapped(handle)
+    } finally {
+      await handle.close()
     }
-    const actualOld =
-      findActualString(ctx.content, oldString, { replaceAll }) || oldString
-    const actualNew = adaptNewString(
-      oldString,
-      actualOld,
-      preserveQuoteStyle(oldString, actualOld, newString),
-    )
-    const { patch } = getPatchForEdit({
+    if (oldContent === null) return empty
+    const r = applyHashlineEdits(oldContent, edits, filePath)
+    if (!r.ok) return empty
+    const patch = getPatchFromContents({
       filePath,
-      fileContents: ctx.content,
-      oldString: actualOld,
-      newString: actualNew,
-      replaceAll,
+      oldContent: convertLeadingTabsToSpaces(oldContent),
+      newContent: convertLeadingTabsToSpaces(r.updatedContent),
     })
     return {
-      patch: adjustHunkLineNumbers(patch, ctx.lineOffset - 1),
-      firstLine: ctx.lineOffset === 1 ? firstLineOf(ctx.content) : null,
-      fileContent: ctx.content,
+      patch,
+      firstLine: firstLineOf(oldContent),
+      fileContent: oldContent,
     }
   } catch (e) {
     // User may have manually applied the change while the diff was shown.
     logError(e as Error)
-    return { patch: [], firstLine: null, fileContent: undefined }
+    return empty
   }
 }

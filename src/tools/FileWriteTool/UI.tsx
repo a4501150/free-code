@@ -16,8 +16,8 @@ import { Box, Text } from '../../ink.js'
 import type { ToolProgressData } from '../../Tool.js'
 import type { ProgressMessage } from '../../types/message.js'
 import { getCwd } from '../../utils/cwd.js'
-import { getPatchForDisplay } from '../../utils/diff.js'
-import { getDisplayPath } from '../../utils/file.js'
+import { getPatchFromContents } from '../../utils/diff.js'
+import { convertLeadingTabsToSpaces, getDisplayPath } from '../../utils/file.js'
 import { logError } from '../../utils/log.js'
 import { getPlansDirectory } from '../../utils/plans.js'
 import { openForScan, readCapped } from '../../utils/readEditContext.js'
@@ -246,12 +246,10 @@ async function loadRejectionDiff(
     // File exceeds MAX_SCAN_BYTES — fall back to the create view rather than
     // OOMing on a diff of a multi-GB file.
     if (oldContent === null) return { type: 'create' }
-    const patch = getPatchForDisplay({
+    const patch = getPatchFromContents({
       filePath,
-      fileContents: oldContent,
-      edits: [
-        { old_string: oldContent, new_string: content, replace_all: false },
-      ],
+      oldContent: convertLeadingTabsToSpaces(oldContent),
+      newContent: convertLeadingTabsToSpaces(content),
     })
     return { type: 'update', patch, oldContent }
   } catch (e) {

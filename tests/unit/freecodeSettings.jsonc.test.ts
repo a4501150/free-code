@@ -111,7 +111,10 @@ describe('freecode.json JSONC round-trip', () => {
     writeFileSync(path, SEEDED)
 
     writeFreecodeSettingsFile({
-      autoMode: { enabled: false, classifierModel: 'anthropic:claude-haiku-4-5' },
+      autoMode: {
+        enabled: false,
+        classifierModel: 'anthropic:claude-haiku-4-5',
+      },
     })
 
     const content = readFileSync(path, 'utf8')

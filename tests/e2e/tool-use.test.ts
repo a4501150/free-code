@@ -28,6 +28,7 @@ import {
 } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
+import { hashLine } from '../../src/utils/hashline.js'
 import { TmuxSession, createLoggingTest } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
@@ -151,10 +152,11 @@ describe('Tool Use E2E', () => {
       expect(readContent).toContain('Line two')
 
       const editFilePath = join(session.cwd, 'test-edit.txt')
-      await writeFile(
-        editFilePath,
-        'The quick brown fox jumps over the lazy dog.',
-      )
+      const editOriginal = 'The quick brown fox jumps over the lazy dog.'
+      await writeFile(editFilePath, editOriginal)
+      // Anchor referencing line 1 (the test controls the file content, so the
+      // hash is computed the same way the Read tool tags it).
+      const editAnchor = `1:${hashLine(editOriginal)}`
       server.reset([
         toolUseResponse([{ name: 'Read', input: { file_path: editFilePath } }]),
         toolUseResponse([
@@ -162,8 +164,13 @@ describe('Tool Use E2E', () => {
             name: 'Edit',
             input: {
               file_path: editFilePath,
-              old_string: 'quick brown fox',
-              new_string: 'slow red turtle',
+              edits: [
+                {
+                  op: 'replace',
+                  start: editAnchor,
+                  lines: 'The slow red turtle jumps over the lazy dog.',
+                },
+              ],
             },
           },
         ]),
@@ -368,7 +375,9 @@ describe('Tool Use E2E', () => {
       await session.start()
 
       const editFile = join(session.cwd, 'compact-edit.txt')
-      await writeFile(editFile, 'alpha beta gamma')
+      const compactOriginal = 'alpha beta gamma'
+      await writeFile(editFile, compactOriginal)
+      const compactAnchor = `1:${hashLine(compactOriginal)}`
 
       // Read first (required before Edit), then Edit
       server.reset([
@@ -378,9 +387,13 @@ describe('Tool Use E2E', () => {
             name: 'Edit',
             input: {
               file_path: editFile,
-              old_string: 'beta',
-              new_string: 'BETA',
-              replace_all: false,
+              edits: [
+                {
+                  op: 'replace',
+                  start: compactAnchor,
+                  lines: 'alpha BETA gamma',
+                },
+              ],
             },
           },
         ]),
@@ -389,9 +402,10 @@ describe('Tool Use E2E', () => {
       const screen = await session.submitAndApprove('Edit the file', 60_000)
 
       // In compact mode (default), the header should show only file_path,
-      // NOT replace_all or old_string.
-      expect(screen).not.toContain('replace_all')
-      expect(screen).not.toContain('old_string')
+      // NOT the edits payload (the diff body below the header still shows the
+      // changed content, which is expected).
+      expect(screen).not.toContain('edits')
+      expect(screen).not.toContain('op:')
       // The header should show "Update(file_path: ...)"
       expect(screen).toMatch(/Update\(file_path:/)
     })

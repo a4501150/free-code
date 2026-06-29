@@ -1,40 +1,49 @@
 import { basename, relative } from 'path'
-import React from 'react'
+import React, { useMemo } from 'react'
 import { FileEditToolDiff } from 'src/components/FileEditToolDiff.js'
 import { getCwd } from 'src/utils/cwd.js'
+import { isENOENT } from 'src/utils/errors.js'
+import { readFileSync } from 'src/utils/fileRead.js'
+import { applyHashlineEdits } from 'src/utils/hashline.js'
 import type { z } from 'zod/v4'
 import { Text } from '../../../ink.js'
 import { FileEditTool } from '../../../tools/FileEditTool/FileEditTool.js'
 import { FilePermissionDialog } from '../FilePermissionDialog/FilePermissionDialog.js'
 import {
-  createSingleEditDiffConfig,
-  type FileEdit,
+  createContentDiffConfig,
   type IDEDiffSupport,
 } from '../FilePermissionDialog/ideDiffConfig.js'
 import type { PermissionRequestProps } from '../PermissionRequest.js'
 
 type FileEditInput = z.infer<typeof FileEditTool.inputSchema>
 
+function readOldContent(filePath: string): string {
+  try {
+    return readFileSync(filePath)
+  } catch (e) {
+    if (!isENOENT(e)) throw e
+    return ''
+  }
+}
+
+function computeNewContent(input: FileEditInput): {
+  oldContent: string
+  newContent: string
+} {
+  const oldContent = readOldContent(input.file_path)
+  const r = applyHashlineEdits(oldContent, input.edits, input.file_path)
+  return { oldContent, newContent: r.ok ? r.updatedContent : oldContent }
+}
+
 const ideDiffSupport: IDEDiffSupport<FileEditInput> = {
-  getConfig: (input: FileEditInput) =>
-    createSingleEditDiffConfig(
-      input.file_path,
-      input.old_string,
-      input.new_string,
-      input.replace_all,
-    ),
-  applyChanges: (input: FileEditInput, modifiedEdits: FileEdit[]) => {
-    const firstEdit = modifiedEdits[0]
-    if (firstEdit) {
-      return {
-        ...input,
-        old_string: firstEdit.old_string,
-        new_string: firstEdit.new_string,
-        replace_all: firstEdit.replace_all,
-      }
-    }
-    return input
+  getConfig: (input: FileEditInput) => {
+    const { oldContent, newContent } = computeNewContent(input)
+    return createContentDiffConfig(input.file_path, oldContent, newContent)
   },
+  applyChanges: (input: FileEditInput, newContent: string) => ({
+    ...input,
+    _overrideContent: { newContent },
+  }),
 }
 
 export function FileEditPermissionRequest(
@@ -45,7 +54,15 @@ export function FileEditPermissionRequest(
   }
 
   const parsed = parseInput(props.toolUseConfirm.input)
-  const { file_path, old_string, new_string, replace_all } = parsed
+  const { file_path } = parsed
+
+  // Single read drives the terminal diff preview. Memoized on the raw input so
+  // we don't re-read the file on every render.
+  const { oldContent, newContent } = useMemo(
+    () => computeNewContent(parsed),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [props.toolUseConfirm.input],
+  )
 
   return (
     <FilePermissionDialog
@@ -65,9 +82,8 @@ export function FileEditPermissionRequest(
       content={
         <FileEditToolDiff
           file_path={file_path}
-          edits={[
-            { old_string, new_string, replace_all: replace_all || false },
-          ]}
+          oldContent={oldContent}
+          newContent={newContent}
         />
       }
       path={file_path}

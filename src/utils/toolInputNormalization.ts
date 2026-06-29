@@ -1,10 +1,8 @@
 import { BashTool } from 'src/tools/BashTool/BashTool.js'
 import { FileEditTool } from 'src/tools/FileEditTool/FileEditTool.js'
-import {
-  normalizeFileEditInput,
-  stripTrailingWhitespace,
-} from 'src/tools/FileEditTool/utils.js'
+import { stripTrailingWhitespace } from 'src/tools/FileEditTool/utils.js'
 import { FileWriteTool } from 'src/tools/FileWriteTool/FileWriteTool.js'
+import { stripHashlinePrefix } from './hashline.js'
 import type { AgentId } from 'src/types/ids.js'
 import type { z } from 'zod/v4'
 import type { Tool } from '../Tool.js'
@@ -76,24 +74,21 @@ export function normalizeToolInput<T extends Tool>(
       // Validated upstream, won't throw
       const parsedInput = FileEditTool.inputSchema.parse(input)
 
-      // This is a workaround for tokens claude can't see
-      const { file_path, edits } = normalizeFileEditInput({
-        file_path: parsedInput.file_path,
-        edits: [
-          {
-            old_string: parsedInput.old_string,
-            new_string: parsedInput.new_string,
-            replace_all: parsedInput.replace_all,
-          },
-        ],
-      })
+      // Defensive: strip any leaked `LINE:HASH|` anchor prefix the model copied
+      // into the replacement text of an edit.
+      const edits = parsedInput.edits.map(e =>
+        'lines' in e && e.lines !== undefined
+          ? {
+              ...e,
+              lines: e.lines.split('\n').map(stripHashlinePrefix).join('\n'),
+            }
+          : e,
+      )
 
       // SAFETY: See comment in BashTool case above
       return {
-        replace_all: edits[0]!.replace_all,
-        file_path,
-        old_string: edits[0]!.old_string,
-        new_string: edits[0]!.new_string,
+        file_path: parsedInput.file_path,
+        edits,
       } as z.infer<T['inputSchema']>
     }
     case FileWriteTool.name: {

@@ -683,7 +683,6 @@ export const BashTool = buildTool({
       if (sedInfo) {
         return fileEditUserFacingName({
           file_path: sedInfo.filePath,
-          old_string: 'x',
         })
       }
     }

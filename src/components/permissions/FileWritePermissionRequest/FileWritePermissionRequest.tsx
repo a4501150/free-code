@@ -8,8 +8,7 @@ import { isENOENT } from '../../../utils/errors.js'
 import { readFileSync } from '../../../utils/fileRead.js'
 import { FilePermissionDialog } from '../FilePermissionDialog/FilePermissionDialog.js'
 import {
-  createSingleEditDiffConfig,
-  type FileEdit,
+  createContentDiffConfig,
   type IDEDiffSupport,
 } from '../FilePermissionDialog/ideDiffConfig.js'
 import type { PermissionRequestProps } from '../PermissionRequest.js'
@@ -27,23 +26,12 @@ const ideDiffSupport: IDEDiffSupport<FileWriteToolInput> = {
       oldContent = ''
     }
 
-    return createSingleEditDiffConfig(
-      input.file_path,
-      oldContent,
-      input.content,
-      false, // For file writes, we replace the entire content
-    )
+    return createContentDiffConfig(input.file_path, oldContent, input.content)
   },
-  applyChanges: (input: FileWriteToolInput, modifiedEdits: FileEdit[]) => {
-    const firstEdit = modifiedEdits[0]
-    if (firstEdit) {
-      return {
-        ...input,
-        content: firstEdit.new_string,
-      }
-    }
-    return input
-  },
+  applyChanges: (input: FileWriteToolInput, newContent: string) => ({
+    ...input,
+    content: newContent,
+  }),
 }
 
 export function FileWritePermissionRequest(

@@ -3,7 +3,8 @@ import { useMemo } from 'react'
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js'
 import { Box, NoSelect, Text } from '../../../ink.js'
 import { intersperse } from '../../../utils/array.js'
-import { getPatchForDisplay } from '../../../utils/diff.js'
+import { getPatchFromContents } from '../../../utils/diff.js'
+import { convertLeadingTabsToSpaces } from '../../../utils/file.js'
 import { HighlightedCode } from '../../HighlightedCode.js'
 import { StructuredDiff } from '../../StructuredDiff.js'
 
@@ -25,16 +26,10 @@ export function FileWriteToolDiff({
     if (!fileExists) {
       return null
     }
-    return getPatchForDisplay({
+    return getPatchFromContents({
       filePath: file_path,
-      fileContents: oldContent,
-      edits: [
-        {
-          old_string: oldContent,
-          new_string: content,
-          replace_all: false,
-        },
-      ],
+      oldContent: convertLeadingTabsToSpaces(oldContent),
+      newContent: convertLeadingTabsToSpaces(content),
     })
   }, [fileExists, file_path, oldContent, content])
 

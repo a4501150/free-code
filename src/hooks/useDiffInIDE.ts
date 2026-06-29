@@ -11,13 +11,7 @@ import type {
   McpWebSocketIDEServerConfig,
 } from '../services/mcp/types.js'
 import type { ToolUseContext } from '../Tool.js'
-import type { FileEdit } from '../tools/FileEditTool/types.js'
-import {
-  getEditsForPatch,
-  getPatchForEdits,
-} from '../tools/FileEditTool/utils.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
-import { getPatchFromContents } from '../utils/diff.js'
 import { isENOENT } from '../utils/errors.js'
 import {
   callIdeRpc,
@@ -34,12 +28,13 @@ type Props = {
     option: PermissionOption,
     input: {
       file_path: string
-      edits: FileEdit[]
+      newContent: string
     },
   ): void
   toolUseContext: ToolUseContext
   filePath: string
-  edits: FileEdit[]
+  oldContent: string
+  newContent: string
   editMode: 'single' | 'multiple'
 }
 
@@ -47,8 +42,7 @@ export function useDiffInIDE({
   onChange,
   toolUseContext,
   filePath,
-  edits,
-  editMode,
+  newContent,
 }: Props): {
   closeTabInIDE: () => void
   showingDiffInIDE: boolean
@@ -80,25 +74,14 @@ export function useDiffInIDE({
     }
 
     try {
-      const { oldContent, newContent } = await showDiffInIDE(
-        filePath,
-        edits,
-        toolUseContext,
-        tabName,
-      )
+      const { oldContent: baseContent, newContent: finalContent } =
+        await showDiffInIDE(filePath, newContent, toolUseContext, tabName)
       // Skip if component has been unmounted
       if (isUnmounted.current) {
         return
       }
 
-      const newEdits = computeEditsFromContents(
-        filePath,
-        oldContent,
-        newContent,
-        editMode,
-      )
-
-      if (newEdits.length === 0) {
+      if (finalContent === baseContent) {
         // No changes -- edit was rejected (eg. reverted)
         // We close the tab here because 'no' no longer auto-closes
         const ideClient = getConnectedIdeClient(
@@ -112,18 +95,19 @@ export function useDiffInIDE({
           { type: 'reject' },
           {
             file_path: filePath,
-            edits: edits,
+            newContent,
           },
         )
         return
       }
 
-      // File was modified - edit was accepted
+      // File was modified - edit was accepted (finalContent may include the
+      // user's manual amendments made in the IDE diff view).
       onChange(
         { type: 'accept-once' },
         {
           file_path: filePath,
-          edits: newEdits,
+          newContent: finalContent,
         },
       )
     } catch (error) {
@@ -159,42 +143,6 @@ export function useDiffInIDE({
 }
 
 /**
- * Re-computes the edits from the old and new contents. This is necessary
- * to apply any edits the user may have made to the new contents.
- */
-export function computeEditsFromContents(
-  filePath: string,
-  oldContent: string,
-  newContent: string,
-  editMode: 'single' | 'multiple',
-): FileEdit[] {
-  // Use unformatted patches, otherwise the edits will be formatted.
-  const singleHunk = editMode === 'single'
-  const patch = getPatchFromContents({
-    filePath,
-    oldContent,
-    newContent,
-    singleHunk,
-  })
-
-  if (patch.length === 0) {
-    return []
-  }
-
-  // For single edit mode, verify we only got one hunk
-  if (singleHunk && patch.length > 1) {
-    logError(
-      new Error(
-        `Unexpected number of hunks: ${patch.length}. Expected 1 hunk.`,
-      ),
-    )
-  }
-
-  // Re-compute the edits to match the patch
-  return getEditsForPatch(patch)
-}
-
-/**
  * Done if:
  *
  * 1. Tab is closed in IDE
@@ -210,7 +158,7 @@ export function computeEditsFromContents(
  */
 async function showDiffInIDE(
   file_path: string,
-  edits: FileEdit[],
+  proposedContent: string,
   toolUseContext: ToolUseContext,
   tabName: string,
 ): Promise<{ oldContent: string; newContent: string }> {
@@ -252,11 +200,7 @@ async function showDiffInIDE(
   // Open the diff in the IDE
   const ideClient = getConnectedIdeClient(toolUseContext.options.mcpClients)
   try {
-    const { updatedFile } = getPatchForEdits({
-      filePath: oldFilePath,
-      fileContents: oldContent,
-      edits,
-    })
+    const updatedFile = proposedContent
 
     if (!ideClient || ideClient.type !== 'connected') {
       throw new Error('IDE client not available')
