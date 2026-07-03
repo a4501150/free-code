@@ -264,6 +264,7 @@ export async function* runAgent({
   description,
   transcriptSubdir,
   onQueryProgress,
+  onStreamMode,
 }: {
   agentDefinition: AgentDefinition
   promptMessages: Message[]
@@ -317,6 +318,9 @@ export async function* runAgent({
    * during long single-block streams (e.g. thinking) where no assistant
    * message is yielded for >60s. */
   onQueryProgress?: () => void
+  /** Optional callback fired when the sub-agent's stream mode changes
+   * (e.g. entering/leaving a thinking block). Used to update the spinner. */
+  onStreamMode?: (isThinking: boolean) => void
 }): AsyncGenerator<Message | StreamEvent, void> {
   // Track subagent usage for feature discovery
 
@@ -641,8 +645,7 @@ export async function* runAgent({
     debug: toolUseContext.options.debug,
     verbose: toolUseContext.options.verbose,
     mainLoopModel: resolvedAgentModel,
-    // Disable thinking in subagents to control output token costs.
-    thinkingConfig: { type: 'disabled' as const },
+    thinkingConfig: toolUseContext.options.thinkingConfig,
     mcpClients: mergedMcpClients,
     mcpResources: toolUseContext.options.mcpResources,
     agentDefinitions: toolUseContext.options.agentDefinitions,
@@ -718,6 +721,14 @@ export async function* runAgent({
       maxTurns: maxTurns ?? agentDefinition.maxTurns,
     })) {
       onQueryProgress?.()
+      // Detect thinking state changes from content_block_start events
+      if (
+        message.type === 'stream_event' &&
+        message.event.type === 'content_block_start' &&
+        onStreamMode
+      ) {
+        onStreamMode(message.event.content_block.type === 'thinking')
+      }
       // Forward subagent API request starts to parent's metrics display
       // so TTFT/OTPS update during subagent execution.
       if (

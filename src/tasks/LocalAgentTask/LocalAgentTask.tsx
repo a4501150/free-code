@@ -234,6 +234,8 @@ export type LocalAgentTaskState = TaskStateBase & {
   // timestamp = hide + GC-eligible after this time. Set at terminal transition
   // and on unselect; cleared on retain.
   evictAfter?: number
+  /** Whether the sub-agent model is currently in a thinking block */
+  isThinking?: boolean
 }
 
 export function isLocalAgentTask(task: unknown): task is LocalAgentTaskState {
@@ -486,6 +488,19 @@ export function updateAgentProgress(
         ? { ...progress, summary: existingSummary }
         : progress,
     }
+  })
+}
+
+export function updateAgentThinking(
+  taskId: string,
+  isThinking: boolean,
+  setAppState: SetAppState,
+): void {
+  updateTaskState<LocalAgentTaskState>(taskId, setAppState, task => {
+    if (task.status !== 'running' || task.isThinking === isThinking) {
+      return task
+    }
+    return { ...task, isThinking }
   })
 }
 

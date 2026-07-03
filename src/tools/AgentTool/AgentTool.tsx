@@ -29,6 +29,7 @@ import {
   registerAsyncAgent,
   unregisterAgentForeground,
   updateAgentProgress as updateAsyncAgentProgress,
+  updateAgentThinking,
   updateProgressFromMessage,
   updateProgressFromUsage,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
@@ -806,6 +807,12 @@ export const AgentTool = buildTool({
                   abortController: agentBackgroundTask.abortController!,
                 },
                 onCacheSafeParams,
+                onStreamMode: (isThinking: boolean) =>
+                  updateAgentThinking(
+                    agentBackgroundTask.agentId,
+                    isThinking,
+                    rootSetAppState,
+                  ),
               }),
             metadata,
             description,
@@ -942,6 +949,14 @@ export const AgentTool = buildTool({
                     stopForegroundSummarization = stop
                   }
                 : undefined,
+            onStreamMode: foregroundTaskId
+              ? (isThinking: boolean) =>
+                  updateAgentThinking(
+                    foregroundTaskId,
+                    isThinking,
+                    rootSetAppState,
+                  )
+              : undefined,
           })[Symbol.asyncIterator]()
 
           // Track if an error occurred during iteration
@@ -1050,6 +1065,12 @@ export const AgentTool = buildTool({
                               stopBackgroundedSummarization = stop
                             }
                           : undefined,
+                        onStreamMode: (isThinking: boolean) =>
+                          updateAgentThinking(
+                            backgroundedTaskId,
+                            isThinking,
+                            rootSetAppState,
+                          ),
                       })) {
                         // Forward final usage from non-Anthropic providers'
                         // message_delta stream events to the tracker. Don't
