@@ -85,6 +85,19 @@ function getCodexStreamBetweenChunksTimeoutMs(): number | null {
   )
 }
 
+const RETRY_AFTER_RE = /try again in\s*(\d+(?:\.\d+)?)\s*(s|ms|seconds?)/i
+
+function parseRetryAfterFromMessage(message: string | undefined): number | undefined {
+  if (!message) return undefined
+  const match = RETRY_AFTER_RE.exec(message)
+  if (!match) return undefined
+  const value = parseFloat(match[1])
+  if (!Number.isFinite(value)) return undefined
+  const unit = match[2].toLowerCase()
+  if (unit === 'ms') return Math.round(value)
+  return Math.round(value * 1000)
+}
+
 // ── JWT helpers ────────────────────────────────────────────────────
 
 const JWT_CLAIM_PATH = 'https://api.openai.com/auth'
@@ -1097,6 +1110,21 @@ async function* parseCodexStream(
           logForDebugging(
             `[codex-adapter] stream end model=${modelId} duration_ms=${Date.now() - streamStart} content_blocks=${contentBlockIndex} input=${inputTokens} output=${outputTokens} cacheRead=${cacheReadInputTokens} hadToolCalls=${hadToolCalls} webSearch=${webSearchCount}`,
           )
+          break
+        } else if (eventType === 'response.incomplete') {
+          const response = event.response as Record<string, unknown> | undefined
+          const details = response?.incomplete_details as Record<string, unknown> | undefined
+          const reason = readString(details?.reason) ?? 'unknown'
+          closeOpenBlock()
+          const normalized = normalizeError(
+            {
+              cause: new Error(`Incomplete response returned, reason: ${reason}`),
+              stream_truncated: true,
+              mid_stream: true,
+            },
+            providerType,
+          )
+          throw new DomainTransportError({ normalized, raw: `incomplete: ${reason}` })
         }
       }
 
@@ -1105,7 +1133,7 @@ async function* parseCodexStream(
         yield yieldQueue.shift()!
       }
 
-      if (done) break
+      if (done || sawResponseCompleted) break
     }
   } catch (error) {
     // Flush any remaining queued events
@@ -1406,11 +1434,15 @@ export const codexAdapter: ProviderAdapter = {
       if (r.refusal) return { ...base, kind: 'content_filter' }
       if (code === 'content_filter') return { ...base, kind: 'content_filter' }
       if (code === 'rate_limit_exceeded' || code === 'insufficient_quota') {
-        return { ...base, kind: 'rate_limit' }
+        const retryAfterMs = parseRetryAfterFromMessage(errMessage)
+        return { ...base, kind: 'rate_limit', ...(retryAfterMs !== undefined && { retryAfterMs }) }
       }
       if (code === 'invalid_api_key') return { ...base, kind: 'auth' }
       if (code === 'server_error' || apiErrorType === 'server_error') {
         return { ...base, kind: 'server' }
+      }
+      if (code === 'server_is_overloaded' || code === 'slow_down') {
+        return { ...base, kind: 'overloaded' }
       }
       if (code === 'context_length_exceeded') {
         return { ...base, kind: 'context_overflow' }

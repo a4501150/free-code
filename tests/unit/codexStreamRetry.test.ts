@@ -985,6 +985,207 @@ describe('Codex stream retry', () => {
     expect(recovered).toEqual(['confirmed'])
     expect(assistantTexts(yielded)).toEqual(['confirmed'])
   })
+
+  test('retries when response.incomplete is received', async () => {
+    setupCodexProvider()
+    enableConfigs()
+
+    const originalFetch = globalThis.fetch
+    const originalAnthropicApiKey = process.env.ANTHROPIC_API_KEY
+    const originalNodeEnv = process.env.NODE_ENV
+    process.env.ANTHROPIC_API_KEY = 'test-key'
+    process.env.NODE_ENV = 'development'
+    let upstreamRequests = 0
+    globalThis.fetch = (async () => {
+      upstreamRequests++
+      const firstIncomplete = [
+        'event: response.output_item.added',
+        'data: {"type":"response.output_item.added","item":{"type":"message"}}',
+        '',
+        'event: response.output_text.delta',
+        'data: {"type":"response.output_text.delta","delta":"partial"}',
+        '',
+        'event: response.output_item.done',
+        'data: {"type":"response.output_item.done","item":{"type":"message"}}',
+        '',
+        'event: response.incomplete',
+        'data: {"type":"response.incomplete","response":{"incomplete_details":{"reason":"content_filter"}}}',
+        '',
+        '',
+      ].join('\n')
+      const secondComplete = [
+        'event: response.output_item.added',
+        'data: {"type":"response.output_item.added","item":{"type":"message"}}',
+        '',
+        'event: response.output_text.delta',
+        'data: {"type":"response.output_text.delta","delta":"complete"}',
+        '',
+        'event: response.output_item.done',
+        'data: {"type":"response.output_item.done","item":{"type":"message"}}',
+        '',
+        'event: response.completed',
+        'data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}',
+        '',
+        '',
+      ].join('\n')
+      return new Response(
+        upstreamRequests === 1 ? firstIncomplete : secondComplete,
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    let recoveryCount = 0
+    const recovered: string[] = []
+    const yielded = []
+    try {
+      for await (const message of queryModelWithStreaming({
+        messages: [createUserMessage({ content: 'hi' })],
+        systemPrompt: asSystemPrompt([]),
+        thinkingConfig: { type: 'disabled' },
+        tools: [],
+        signal: new AbortController().signal,
+        options: {
+          getToolPermissionContext: async () => getEmptyToolPermissionContext(),
+          model: 'gpt-test',
+          isNonInteractiveSession: true,
+          querySource: 'repl_main_thread',
+          agents: [],
+          allowedAgentTypes: [],
+          hasAppendSystemPrompt: false,
+          mcpTools: [],
+          onStreamingRecovery: messages => {
+            recoveryCount++
+            recovered.push(...assistantTexts(messages))
+            return true
+          },
+        },
+      })) {
+        yielded.push(message)
+      }
+    } finally {
+      globalThis.fetch = originalFetch
+      if (originalAnthropicApiKey === undefined) {
+        delete process.env.ANTHROPIC_API_KEY
+      } else {
+        process.env.ANTHROPIC_API_KEY = originalAnthropicApiKey
+      }
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV
+      } else {
+        process.env.NODE_ENV = originalNodeEnv
+      }
+    }
+
+    // response.incomplete with confirmed output triggers recovery, not full retry
+    expect(recoveryCount).toBe(1)
+    expect(recovered).toEqual(['partial'])
+  })
+
+  test('exits stream immediately after response.completed without waiting for EOF', async () => {
+    setupCodexProvider()
+    enableConfigs()
+
+    const originalFetch = globalThis.fetch
+    const originalAnthropicApiKey = process.env.ANTHROPIC_API_KEY
+    const originalNodeEnv = process.env.NODE_ENV
+    process.env.ANTHROPIC_API_KEY = 'test-key'
+    process.env.NODE_ENV = 'development'
+    const encoder = new TextEncoder()
+    globalThis.fetch = (async () => {
+      const prefix = [
+        'event: response.output_item.added',
+        'data: {"type":"response.output_item.added","item":{"type":"message"}}',
+        '',
+        'event: response.output_text.delta',
+        'data: {"type":"response.output_text.delta","delta":"hello"}',
+        '',
+        'event: response.output_item.done',
+        'data: {"type":"response.output_item.done","item":{"type":"message"}}',
+        '',
+        'event: response.completed',
+        'data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}',
+        '',
+        '',
+      ].join('\n')
+      // Stream that sends response.completed but never closes
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode(prefix))
+            // Intentionally never close the stream
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const yielded = []
+    const abortController = new AbortController()
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        (async () => {
+          for await (const message of queryModelWithStreaming({
+            messages: [createUserMessage({ content: 'hi' })],
+            systemPrompt: asSystemPrompt([]),
+            thinkingConfig: { type: 'disabled' },
+            tools: [],
+            signal: abortController.signal,
+            options: {
+              getToolPermissionContext: async () =>
+                getEmptyToolPermissionContext(),
+              model: 'gpt-test',
+              isNonInteractiveSession: true,
+              querySource: 'repl_main_thread',
+              agents: [],
+              allowedAgentTypes: [],
+              hasAppendSystemPrompt: false,
+              mcpTools: [],
+            },
+          })) {
+            yielded.push(message)
+          }
+        })(),
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => {
+            abortController.abort()
+            reject(new Error('early-exit test timed out - stream did not exit after response.completed'))
+          }, 2_000)
+        }),
+      ])
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId)
+      globalThis.fetch = originalFetch
+      if (originalAnthropicApiKey === undefined) {
+        delete process.env.ANTHROPIC_API_KEY
+      } else {
+        process.env.ANTHROPIC_API_KEY = originalAnthropicApiKey
+      }
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV
+      } else {
+        process.env.NODE_ENV = originalNodeEnv
+      }
+    }
+
+    // Stream completed successfully without timing out
+    const texts = yielded
+      .filter(message => message.type === 'assistant')
+      .flatMap(message =>
+        Array.isArray(message.message.content)
+          ? message.message.content
+              .filter(block => block.type === 'text')
+              .map(block => block.text)
+          : [],
+      )
+    expect(texts).toEqual(['hello'])
+  })
 })
 
 describe('Mid-stream retry (non-Codex)', () => {

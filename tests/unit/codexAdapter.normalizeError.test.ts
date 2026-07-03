@@ -85,4 +85,89 @@ describe('codexAdapter.normalizeError', () => {
     expect(e.kind).toBe('context_overflow')
     expect(e.message).toBe('Maximum context length exceeded')
   })
+
+  test('server_is_overloaded code → overloaded', () => {
+    const e = codexAdapter.normalizeError(
+      {
+        mid_stream: true,
+        body: JSON.stringify({
+          error: {
+            code: 'server_is_overloaded',
+            message: 'The server is currently overloaded.',
+          },
+        }),
+      },
+      'openai-responses',
+    )
+    expect(e.kind).toBe('overloaded')
+  })
+
+  test('slow_down code → overloaded', () => {
+    const e = codexAdapter.normalizeError(
+      {
+        mid_stream: true,
+        body: JSON.stringify({
+          error: {
+            code: 'slow_down',
+            message: 'Please slow down.',
+          },
+        }),
+      },
+      'openai-responses',
+    )
+    expect(e.kind).toBe('overloaded')
+  })
+
+  test('rate_limit_exceeded with retry delay → rate_limit with retryAfterMs', () => {
+    const e = codexAdapter.normalizeError(
+      {
+        mid_stream: true,
+        body: JSON.stringify({
+          error: {
+            code: 'rate_limit_exceeded',
+            message:
+              'Rate limit reached for gpt-5.1 in organization org-AAA on tokens per min (TPM): Limit 30000, Used 22999, Requested 12528. Please try again in 11.054s.',
+          },
+        }),
+      },
+      'openai-responses',
+    )
+    expect(e.kind).toBe('rate_limit')
+    expect(e.retryAfterMs).toBe(11054)
+  })
+
+  test('rate_limit_exceeded with ms delay → rate_limit with retryAfterMs', () => {
+    const e = codexAdapter.normalizeError(
+      {
+        mid_stream: true,
+        body: JSON.stringify({
+          error: {
+            code: 'rate_limit_exceeded',
+            message:
+              'Rate limit reached. Please try again in 28ms.',
+          },
+        }),
+      },
+      'openai-responses',
+    )
+    expect(e.kind).toBe('rate_limit')
+    expect(e.retryAfterMs).toBe(28)
+  })
+
+  test('rate_limit_exceeded without delay → rate_limit without retryAfterMs', () => {
+    const e = codexAdapter.normalizeError(
+      {
+        mid_stream: true,
+        body: JSON.stringify({
+          error: {
+            code: 'rate_limit_exceeded',
+            message: 'Rate limit exceeded.',
+          },
+        }),
+      },
+      'openai-responses',
+    )
+    expect(e.kind).toBe('rate_limit')
+    expect(e.retryAfterMs).toBeUndefined()
+  })
 })

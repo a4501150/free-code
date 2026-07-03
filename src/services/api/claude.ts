@@ -2037,7 +2037,11 @@ async function* queryModel(
           !signal.aborted
         ) {
           const retryAttempt = midstreamRetryAttempt + 1
-          const delayMs = getRetryDelay(retryAttempt)
+          const serverRetryAfterMs =
+            streamingError instanceof DomainTransportError
+              ? streamingError.normalized.retryAfterMs
+              : undefined
+          const delayMs = serverRetryAfterMs ?? getRetryDelay(retryAttempt)
           const retryError =
             streamingError instanceof DomainTransportError
               ? streamingError
