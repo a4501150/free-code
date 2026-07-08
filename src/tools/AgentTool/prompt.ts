@@ -136,7 +136,7 @@ ${whenNotToUseSection}
 
 Usage notes:
 - Always include a short description (3-5 words) summarizing what the agent will do${concurrencyNote}
-- The agent returns a single message back to you; the result is not visible to the user, so send a concise summary yourself.${
+- The agent returns a single message back to you; the result is not visible to the user, so send a concise summary yourself. Agents are NOT suitable for retrieving full file contents — file data read by the agent is summarized or lost in the single-message handoff. To get full file content, use the Read tool directly instead of delegating to an agent.${
     isAgentSwarmsEnabled()
       ? `
 - To continue a previously spawned agent, use ${SEND_MESSAGE_TOOL_NAME} with the agent's ID or name as the \`to\` field. The agent resumes with its full context preserved. Each Agent invocation starts fresh — provide a complete task description.`
