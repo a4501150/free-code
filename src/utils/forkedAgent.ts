@@ -20,6 +20,7 @@ import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
 import type { AgentId } from '../types/ids.js'
 import type { Message } from '../types/message.js'
 import { createChildAbortController } from './abortController.js'
+import { withAgenticSystemPromptInvariants } from './agenticSystemPrompt.js'
 import { logForDebugging } from './debug.js'
 import { cloneFileStateCache } from './fileStateCache.js'
 import type { REPLHookContext } from './hooks/postSamplingHooks.js'
@@ -540,7 +541,7 @@ export async function runForkedAgent({
   try {
     for await (const message of query({
       messages: initialMessages,
-      systemPrompt,
+      systemPrompt: withAgenticSystemPromptInvariants(systemPrompt),
       userContext,
       systemContext,
       canUseTool,

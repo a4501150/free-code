@@ -69,12 +69,17 @@ describe('tool prompt contracts', () => {
 })
 
 describe('conditional mode prompt alignment', () => {
-  test('main prompt gates named-tool and verifier guidance by exposure', () => {
+  test('main prompt keeps generic tool routing and verifier exposure gates', () => {
     const source = readSource('src/constants/prompts.ts')
 
-    expect(source).toContain('enabledTools.has(FILE_READ_TOOL_NAME)')
-    expect(source).toContain('enabledTools.has(FILE_EDIT_TOOL_NAME)')
-    expect(source).toContain('enabledTools.has(FILE_WRITE_TOOL_NAME)')
+    expect(source).toContain('const hasDedicatedTools')
+    expect(source).toContain(
+      'When a relevant dedicated tool is available, prefer it over shell commands',
+    )
+    expect(source).not.toContain('enabledTools.has(FILE_READ_TOOL_NAME)')
+    expect(source).not.toContain('enabledTools.has(FILE_EDIT_TOOL_NAME)')
+    expect(source).not.toContain('enabledTools.has(FILE_WRITE_TOOL_NAME)')
+    expect(source).not.toContain('For multi-step work, use')
     expect(source).toContain('hasPlanVerifier')
     expect(source).toContain('DANGEROUS_uncachedSystemPromptSection')
     expect(source).toContain('Tool availability can change between turns')
@@ -111,17 +116,53 @@ describe('conditional mode prompt alignment', () => {
     expect(source).toContain('customPrompt === undefined')
   })
 
-  test('shell temporary-file and background-task guidance is consistent', () => {
+  test('universal platform policy has one owner', () => {
+    const invariant = readSource('src/utils/agenticSystemPrompt.ts')
     const bashPrompt = readSource('src/tools/BashTool/prompt.ts')
-    const bashSchema = readSource('src/tools/BashTool/BashTool.tsx')
+    const editPrompt = readSource('src/tools/FileEditTool/prompt.ts')
+    const writePrompt = readSource('src/tools/FileWriteTool/prompt.ts')
+    const verificationPrompt = readSource(
+      'src/tools/AgentTool/built-in/verificationAgent.ts',
+    )
     const mainPrompt = readSource('src/constants/prompts.ts')
+    const forkedAgent = readSource('src/utils/forkedAgent.ts')
 
-    expect(bashPrompt).toContain(
+    expect(invariant).toContain('including in file contents')
+    expect(invariant).toContain('platform-provided temporary directory')
+    expect(invariant).toContain('Never hardcode \\`/tmp\\`')
+    expect(editPrompt).not.toContain('Only use emojis')
+    expect(writePrompt).not.toContain('Only use emojis')
+    expect(bashPrompt).not.toContain(
       'scratchpad directory provided in the system prompt',
     )
-    expect(bashPrompt).toContain('BackgroundTaskOutput')
-    expect(bashSchema).toContain('Read or BackgroundTaskOutput')
-    expect(mainPrompt).toContain('sandbox-specific temporary-file guidance')
+    expect(verificationPrompt).toContain('an allowed temporary location')
+    expect(verificationPrompt).not.toContain('/tmp or $TMPDIR')
+    expect(mainPrompt).toContain('\\`${scratchpadDir}\\`')
+    expect(mainPrompt).not.toContain('sandbox-specific temporary-file guidance')
+    expect(mainPrompt).not.toContain('Only use emojis')
+    expect(forkedAgent).toContain(
+      'systemPrompt: withAgenticSystemPromptInvariants(systemPrompt)',
+    )
+  })
+
+  test('Sleep and Agent tool prompts own their field-specific guidance', () => {
+    const mainPrompt = readSource('src/constants/prompts.ts')
+    const sleepPrompt = readSource('src/tools/SleepTool/prompt.ts')
+    const agentPrompt = readSource('src/tools/AgentTool/prompt.ts')
+    const agentSchema = readSource('src/tools/AgentTool/AgentTool.tsx')
+
+    expect(mainPrompt).toContain('MUST call ${SLEEP_TOOL_NAME}')
+    expect(mainPrompt).not.toContain('Each wake-up costs an API call')
+    expect(sleepPrompt).toContain('Each wake-up costs an API call')
+    expect(mainPrompt).not.toContain('/<skill-name> is shorthand')
+    expect(mainPrompt).not.toContain('For broader codebase exploration')
+    expect(agentPrompt).toContain(
+      'Avoid duplicating work that active agents are already doing',
+    )
+    expect(agentSchema).toContain('NOT a parallelism mechanism')
+    expect(agentSchema).toContain(
+      'sleeping or repeatedly checking on the agent does not change when it arrives',
+    )
   })
 })
 

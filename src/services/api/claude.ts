@@ -116,7 +116,10 @@ import {
   STRUCTURED_OUTPUTS_BETA_HEADER,
   TASK_BUDGETS_BETA_HEADER,
 } from 'src/constants/betas.js'
-import type { QuerySource } from 'src/constants/querySource.js'
+import {
+  isAgenticQuerySource,
+  type QuerySource,
+} from 'src/constants/querySource.js'
 import type { Notification } from 'src/context/notifications.js'
 import { addToTotalSessionCost } from 'src/cost-tracker.js'
 import { getInitialSettings } from 'src/utils/settings/settings.js'
@@ -130,6 +133,7 @@ import {
   modelSupportsAdvisor,
 } from 'src/utils/advisor.js'
 import { getAgentContext } from 'src/utils/agentContext.js'
+import { withAgenticSystemPromptInvariantsForQuery } from 'src/utils/agenticSystemPrompt.js'
 import {
   modelSupportsStructuredOutputs,
   shouldIncludeFirstPartyOnlyBetas,
@@ -1056,12 +1060,7 @@ async function* queryModel(
         options.model)
       : options.model
   queryCheckpoint('query_tool_schema_build_start')
-  const isAgenticQuery =
-    options.querySource.startsWith('repl_main_thread') ||
-    options.querySource.startsWith('agent:') ||
-    options.querySource === 'sdk' ||
-    options.querySource === 'hook_agent' ||
-    options.querySource === 'verification_agent'
+  const isAgenticQuery = isAgenticQuerySource(options.querySource)
   const betas = getMergedBetas(options.model, { isAgenticQuery })
 
   // Always send the advisor beta header when advisor is enabled, so
@@ -1187,6 +1186,11 @@ async function* queryModel(
   // Must run before injecting synthetic messages so the fingerprint reflects
   // the actual user input.
   const fingerprint = computeFingerprintFromMessages(messagesForAPI)
+
+  systemPrompt = withAgenticSystemPromptInvariantsForQuery(
+    systemPrompt,
+    options.querySource,
+  )
 
   systemPrompt = asSystemPrompt(
     [

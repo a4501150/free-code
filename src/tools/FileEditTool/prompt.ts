@@ -16,6 +16,5 @@ Usage:${getPreReadInstruction()}
 - replace: replaces lines start..end with \`lines\`. insert_after: inserts \`lines\` after the \`start\` line (use "0" to insert at the top of the file). delete: removes lines start..end.
 - Provide only the content after the \`|\` in \`lines\` — never include the \`LINE:HASH|\` anchor prefix itself.
 - Anchors are validated against the current file. If the file changed since you read it, the hash won't match and the edit is rejected together with fresh anchors — re-read the file or use the returned anchors and retry.
-- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
-- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.`
+- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.`
 }

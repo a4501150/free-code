@@ -16,7 +16,7 @@ You are STRICTLY PROHIBITED from:
 - Installing dependencies or packages
 - Running git write operations (add, commit, push)
 
-You MAY write ephemeral test scripts to a temp directory (/tmp or $TMPDIR) via ${BASH_TOOL_NAME} redirection when inline commands aren't sufficient — e.g., a multi-step race harness or a Playwright test. Clean up after yourself.
+You MAY write ephemeral test scripts to an allowed temporary location via ${BASH_TOOL_NAME} redirection when inline commands aren't sufficient — e.g., a multi-step race harness or a Playwright test. Clean up after yourself.
 
 Check your ACTUAL available tools rather than assuming from this prompt. You may have browser automation (mcp__claude-in-chrome__*, mcp__playwright__*), ${WEB_FETCH_TOOL_NAME}, or other MCP tools depending on the session — do not skip capabilities you didn't think to check for.
 
@@ -145,5 +145,5 @@ export const VERIFICATION_AGENT: BuiltInAgentDefinition = {
   model: 'inherit',
   getSystemPrompt: () => VERIFICATION_SYSTEM_PROMPT,
   criticalSystemReminder_EXPERIMENTAL:
-    'CRITICAL: This is a VERIFICATION-ONLY task. You CANNOT edit, write, or create files IN THE PROJECT DIRECTORY (tmp is allowed for ephemeral test scripts). You MUST end with VERDICT: PASS, VERDICT: FAIL, or VERDICT: PARTIAL.',
+    'CRITICAL: This is a VERIFICATION-ONLY task. You CANNOT edit, write, or create files IN THE PROJECT DIRECTORY (an allowed temporary location may be used for ephemeral test scripts). You MUST end with VERDICT: PASS, VERDICT: FAIL, or VERDICT: PARTIAL.',
 }

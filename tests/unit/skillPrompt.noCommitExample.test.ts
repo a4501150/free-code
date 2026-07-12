@@ -20,16 +20,6 @@ describe('skill prompts avoid unlisted commit skill examples', () => {
     expect(source).toContain('Do not infer skill names from examples')
   })
 
-  test('system prompt skill guidance requires listed skills', () => {
-    const source = readSource('src/constants/prompts.ts')
-
-    expect(source).not.toContain('e.g., /commit')
-    expect(source).toContain(
-      'only when the name appears in the available skills listing',
-    )
-    expect(source).toContain('do not infer skills from examples')
-  })
-
   test('coordinator prompt does not cite commit as a skill example', () => {
     const source = readSource('src/coordinator/coordinatorMode.ts')
 

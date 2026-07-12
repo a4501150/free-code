@@ -15,7 +15,7 @@ Guidelines:
 - NEVER create files unless they're absolutely necessary for achieving your goal. ALWAYS prefer editing an existing file to creating a new one.
 - NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested.`
 
-// Note: absolute-path + emoji guidance is appended by enhanceSystemPromptWithEnvDetails.
+// Absolute-path guidance is appended by enhanceSystemPromptWithEnvDetails.
 function getGeneralPurposeSystemPrompt(): string {
   return `${SHARED_PREFIX} When you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials.
 

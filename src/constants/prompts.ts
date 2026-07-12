@@ -11,32 +11,16 @@ import {
   AGENT_TOOL_NAME,
   VERIFICATION_AGENT_TYPE,
 } from '../tools/AgentTool/constants.js'
-import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
-import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
-import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
-import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
-import { TASK_LIST_TOOL_NAME } from '../tools/TaskListTool/constants.js'
-import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 import { VERIFY_PLAN_EXECUTION_TOOL_NAME } from '../tools/VerifyPlanExecutionTool/constants.js'
 import type { Tools } from '../Tool.js'
-import type { Command } from '../types/command.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { getPublicModelDisplayName } from '../utils/model/model.js'
-import { getSkillToolCommands } from 'src/commands.js'
-import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
 import type {
   MCPServerConnection,
   ConnectedMCPServer,
 } from '../services/mcp/types.js'
-import { GLOB_TOOL_NAME } from 'src/tools/GlobTool/prompt.js'
-import { GREP_TOOL_NAME } from 'src/tools/GrepTool/prompt.js'
-import { shouldPreferBashForSearch } from 'src/utils/embeddedTools.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from '../tools/AskUserQuestionTool/prompt.js'
-import {
-  EXPLORE_AGENT,
-  EXPLORE_AGENT_MIN_QUERIES,
-} from 'src/tools/AgentTool/built-in/exploreAgent.js'
-import { areExplorePlanAgentsEnabled } from 'src/tools/AgentTool/builtInAgents.js'
+
 import {
   isScratchpadEnabled,
   getScratchpadDir,
@@ -187,57 +171,24 @@ When you encounter an obstacle, do not use destructive actions as a shortcut to 
 }
 
 function getUsingYourToolsSection(enabledTools: Set<string>): string {
-  const hasTaskWorkflow = [
-    TASK_CREATE_TOOL_NAME,
-    TASK_UPDATE_TOOL_NAME,
-    TASK_LIST_TOOL_NAME,
-  ].every(tool => enabledTools.has(tool))
-  const taskGuidance = hasTaskWorkflow
-    ? `For multi-step work, use ${TASK_CREATE_TOOL_NAME} to track concrete outcomes, ${TASK_UPDATE_TOOL_NAME} to keep their status current, and ${TASK_LIST_TOOL_NAME} to find follow-up work.`
-    : null
+  // In REPL mode, direct primitive tools are hidden (REPL_ONLY_TOOLS).
+  // REPL's own prompt covers primitive operations.
+  if (isReplModeEnabled()) return ''
 
-  // In REPL mode, Read/Write/Edit/Glob/Grep/Bash/Agent are hidden from direct
-  // use (REPL_ONLY_TOOLS). REPL's own prompt covers primitive operations.
-  if (isReplModeEnabled()) {
-    if (!taskGuidance) return ''
-    return [`# Using your tools`, ...prependBullets([taskGuidance])].join(`\n`)
-  }
-
-  const providedToolSubitems = [
-    enabledTools.has(FILE_READ_TOOL_NAME)
-      ? `To read files use ${FILE_READ_TOOL_NAME} instead of shell file-display commands`
-      : null,
-    enabledTools.has(FILE_EDIT_TOOL_NAME)
-      ? `To edit files use ${FILE_EDIT_TOOL_NAME} instead of shell text-replacement commands`
-      : null,
-    enabledTools.has(FILE_WRITE_TOOL_NAME)
-      ? `To create files use ${FILE_WRITE_TOOL_NAME} instead of shell redirection`
-      : null,
-    enabledTools.has(GLOB_TOOL_NAME)
-      ? `To search for files use ${GLOB_TOOL_NAME} instead of shell file-discovery commands`
-      : null,
-    enabledTools.has(GREP_TOOL_NAME)
-      ? `To search file contents use ${GREP_TOOL_NAME} instead of shell text-search commands`
-      : null,
-  ].filter((item): item is string => item !== null)
-
+  const hasDedicatedTools = [...enabledTools].some(
+    tool => tool !== BASH_TOOL_NAME,
+  )
   const items = [
-    providedToolSubitems.length > 0
-      ? `When a relevant dedicated tool is available, prefer it over shell commands because dedicated tools are easier for the user to review:`
+    hasDedicatedTools
+      ? `When a relevant dedicated tool is available, prefer it over shell commands because dedicated tools are easier for the user to review.`
       : null,
-    providedToolSubitems.length > 0 ? providedToolSubitems : null,
     enabledTools.has(BASH_TOOL_NAME)
       ? `Reserve ${BASH_TOOL_NAME} for system commands and terminal operations that require shell execution.`
       : null,
-    taskGuidance,
     `You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between them, make all independent tool calls in parallel. Maximize use of parallel tool calls where possible to increase efficiency. However, if some tool calls depend on previous calls to inform dependent values, do NOT call these tools in parallel and instead call them sequentially. For instance, if one operation must complete before another starts, run these operations sequentially instead.`,
   ].filter(item => item !== null)
 
   return [`# Using your tools`, ...prependBullets(items)].join(`\n`)
-}
-
-function getAgentToolSection(): string {
-  return `Use the ${AGENT_TOOL_NAME} tool with specialized agents when the task at hand matches the agent's description. Subagents are valuable for parallelizing independent queries or for protecting the main context window from excessive results, but they should not be used excessively when not needed. Importantly, avoid duplicating work that subagents are already doing - if you delegate research to a subagent, do not also perform the same searches yourself.`
 }
 
 /**
@@ -248,23 +199,9 @@ function getAgentToolSection(): string {
  */
 function getSessionSpecificGuidanceSection(
   enabledTools: Set<string>,
-  skillToolCommands: Command[],
 ): string | null {
   const hasAskUserQuestionTool = enabledTools.has(ASK_USER_QUESTION_TOOL_NAME)
-  const hasSkills =
-    skillToolCommands.length > 0 && enabledTools.has(SKILL_TOOL_NAME)
   const hasAgentTool = enabledTools.has(AGENT_TOOL_NAME)
-  const searchTools = shouldPreferBashForSearch()
-    ? enabledTools.has(BASH_TOOL_NAME)
-      ? `\`find\` or \`grep\` via the ${BASH_TOOL_NAME} tool`
-      : null
-    : [GLOB_TOOL_NAME, GREP_TOOL_NAME].filter(tool => enabledTools.has(tool))
-          .length > 0
-      ? [GLOB_TOOL_NAME, GREP_TOOL_NAME]
-          .filter(tool => enabledTools.has(tool))
-          .map(tool => `the ${tool} tool`)
-          .join(' or ')
-      : null
   const hasPlanVerifier = enabledTools.has(VERIFY_PLAN_EXECUTION_TOOL_NAME)
   const verificationGuidance = feature('VERIFY_PLAN')
     ? (hasAgentTool || hasPlanVerifier) &&
@@ -282,16 +219,7 @@ function getSessionSpecificGuidanceSection(
     getIsNonInteractiveSession()
       ? null
       : `If you need the user to run a shell command themselves (e.g., an interactive login like \`gcloud auth login\`), suggest they type \`! <command>\` in the prompt — the \`!\` prefix runs the command in this session so its output lands directly in the conversation.`,
-    hasAgentTool ? getAgentToolSection() : null,
-    ...(hasAgentTool && areExplorePlanAgentsEnabled() && searchTools
-      ? [
-          `For simple, directed codebase searches (e.g. for a specific file/class/function) use ${searchTools} directly.`,
-          `For broader codebase exploration and deep research, use the ${AGENT_TOOL_NAME} tool with subagent_type=${EXPLORE_AGENT.agentType}. This is slower than using ${searchTools} directly, so use this only when a simple, directed search proves to be insufficient or when your task will clearly require more than ${EXPLORE_AGENT_MIN_QUERIES} queries.`,
-        ]
-      : []),
-    hasSkills
-      ? `/<skill-name> is shorthand for users to invoke a user-invocable skill. When executed, the skill gets expanded to a full prompt. Use the ${SKILL_TOOL_NAME} tool to execute it only when the name appears in the available skills listing. IMPORTANT: Only use ${SKILL_TOOL_NAME} for listed skills - do not infer skills from examples, common workflows, or built-in CLI commands.`
-      : null,
+
     verificationGuidance,
   ].filter(item => item !== null)
 
@@ -353,7 +281,6 @@ from conversation context, not intermediate files.`
 
 function getFormattingSection(): string {
   const items = [
-    `Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.`,
     `When referencing specific functions or pieces of code include the pattern file_path:line_number to allow the user to easily navigate to the source code location.`,
     `When referencing GitHub issues or pull requests, use the owner/repo#123 format (e.g. anthropics/claude-code#100) so they render as clickable links.`,
     `Do not use a colon before tool calls. Your tool calls may not be shown directly in the output, so text like "Let me read the file:" followed by a read tool call should just be "Let me read the file." with a period.`,
@@ -375,11 +302,10 @@ export async function getSystemPrompt(
     ].filter(s => s !== null)
   }
 
-  const cwd = getCwd()
-  const [skillToolCommands, envInfo] = await Promise.all([
-    getSkillToolCommands(cwd),
-    computeSimpleEnvInfo(model, additionalWorkingDirectories),
-  ])
+  const envInfo = await computeSimpleEnvInfo(
+    model,
+    additionalWorkingDirectories,
+  )
 
   const settings = getInitialSettings()
   const enabledTools = new Set(tools.map(_ => _.name))
@@ -408,7 +334,7 @@ ${CYBER_RISK_INSTRUCTION}`,
   const dynamicSections = [
     DANGEROUS_uncachedSystemPromptSection(
       'session_guidance',
-      () => getSessionSpecificGuidanceSection(enabledTools, skillToolCommands),
+      () => getSessionSpecificGuidanceSection(enabledTools),
       'Tool availability can change between turns',
     ),
     systemPromptSection('memory', () => loadMemoryPrompt()),
@@ -605,7 +531,6 @@ export async function enhanceSystemPromptWithEnvDetails(
 - IMPORTANT: You are in an agentic tool-use loop environment. A response without tool calls ends the loop and is your final answer. Always include tool calls if you have more work to do.
 - Agent threads always have their cwd reset between bash calls, as a result please only use absolute file paths.
 - In your final response, share file paths (always absolute, never relative) that are relevant to the task. Include code snippets only when the exact text is load-bearing (e.g., a bug you found, a function signature the caller asked for) — do not recap code you merely read.
-- For clear communication with the user the assistant MUST avoid using emojis.
 - Do not use a colon before tool calls. Text like "Let me read the file:" followed by a read tool call should just be "Let me read the file." with a period.`
   const envInfo = await computeEnvInfo(model, additionalWorkingDirectories)
   return [...existingSystemPrompt, notes, envInfo]
@@ -626,8 +551,6 @@ export function getScratchpadInstructions(): string | null {
 
 Use this session-specific scratchpad directory for intermediate artifacts, working files, and data that should not belong in the user's project:
 \`${scratchpadDir}\`
-
-For ephemeral files created inside shell commands, follow any sandbox-specific temporary-file guidance supplied by the shell tool. Do not write directly to \`/tmp\` unless the user explicitly requests it.
 
 The scratchpad directory is isolated from the user's project and can normally be used without permission prompts.`
 }
@@ -659,7 +582,7 @@ Multiple ticks may be batched into a single message. This is normal — just pro
 
 ## Pacing
 
-Use the ${SLEEP_TOOL_NAME} tool to control how long you wait between actions. Sleep longer when waiting for slow processes, shorter when actively iterating. Each wake-up costs an API call, but the prompt cache expires after 5 minutes of inactivity — balance accordingly.
+Use the ${SLEEP_TOOL_NAME} tool to control how long you wait between actions. Sleep longer when waiting for slow processes and shorter when actively iterating.
 
 **If you have nothing useful to do on a tick, you MUST call ${SLEEP_TOOL_NAME}.** Never respond with only a status message like "still waiting" or "nothing to do" — that wastes a turn and burns tokens for no reason.
 

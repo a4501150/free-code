@@ -45,3 +45,13 @@ export type QuerySource =
   | 'agent_summary'
   // eslint-disable-next-line @typescript-eslint/ban-types
   | (string & {})
+
+export function isAgenticQuerySource(querySource: QuerySource): boolean {
+  return (
+    querySource.startsWith('repl_main_thread') ||
+    querySource.startsWith('agent:') ||
+    querySource === 'sdk' ||
+    querySource === 'hook_agent' ||
+    querySource === 'verification_agent'
+  )
+}

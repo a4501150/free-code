@@ -141,11 +141,6 @@ function getSimpleSandboxSection(): string {
           'If a command fails due to sandbox restrictions, work with the user to adjust sandbox settings instead.',
         ]
 
-  const items: Array<string | string[]> = [
-    ...sandboxOverrideItems,
-    'For temporary files created by shell commands, use the scratchpad directory provided in the system prompt when one is available; otherwise use the `$TMPDIR` environment variable. TMPDIR is automatically set to a sandbox-writable directory. Do NOT use `/tmp` directly.',
-  ]
-
   return [
     '',
     '## Command sandbox',
@@ -154,7 +149,7 @@ function getSimpleSandboxSection(): string {
     'The sandbox has the following restrictions:',
     restrictionsLines.join('\n'),
     '',
-    ...prependBullets(items),
+    ...prependBullets(sandboxOverrideItems),
   ].join('\n')
 }
 
