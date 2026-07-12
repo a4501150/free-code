@@ -1,4 +1,7 @@
 import { z } from 'zod/v4'
+import * as React from 'react'
+import { MessageResponse } from '../../components/MessageResponse.js'
+import { Text } from '../../ink.js'
 import type { TaskStateBase } from '../../Task.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import type { TaskState } from '../../tasks/types.js'
@@ -58,6 +61,19 @@ function toSummary(task: TaskState): TaskSummary {
   return base
 }
 
+export function renderToolResultMessage(output: Output): React.ReactNode {
+  const summary =
+    output.count === 0
+      ? 'No background tasks.'
+      : `${output.count} background task(s).`
+
+  return (
+    <MessageResponse height={1}>
+      <Text>{summary}</Text>
+    </MessageResponse>
+  )
+}
+
 export const BackgroundTaskListTool = buildTool({
   name: BACKGROUND_TASK_LIST_TOOL_NAME,
   userFacingName: () => 'List Background Tasks',
@@ -86,12 +102,7 @@ export const BackgroundTaskListTool = buildTool({
   renderToolUseMessage() {
     return 'Listing background tasks...'
   },
-  renderToolResultMessage(output: Output) {
-    if (output.count === 0) {
-      return 'No background tasks.'
-    }
-    return `${output.count} background task(s).`
-  },
+  renderToolResultMessage,
   async call(_input, { getAppState }) {
     const allTasks = Object.values(getAppState().tasks ?? {}) as TaskState[]
 
