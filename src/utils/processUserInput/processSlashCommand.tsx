@@ -47,7 +47,6 @@ import {
   prepareForkedCommandContext,
 } from '../forkedAgent.js'
 import { getFsImplementation } from '../fsOperations.js'
-import { isFullscreenEnvEnabled } from '../fullscreen.js'
 import { toArray } from '../generators.js'
 import { registerSkillHooks } from '../hooks/registerSkillHooks.js'
 import { logError } from '../log.js'
@@ -656,20 +655,17 @@ async function getMessagesForSlashCommand(
               (content: string) => createUserMessage({ content, isMeta: true }),
             )
 
-            // In fullscreen the command just showed as a centered modal
-            // pane — the transient notification is enough feedback. The
-            // "❯ /config" + "⎿ dismissed" transcript entries are
-            // type:system subtype:local_command (user-visible but NOT sent
-            // to the model), so skipping them doesn't affect model context.
-            // Outside fullscreen keep them so scrollback shows what ran.
+            // The command just showed as a centered modal pane — the transient
+            // notification is enough feedback. The "❯ /config" + "⎿ dismissed"
+            // transcript entries are type:system subtype:local_command
+            // (user-visible but NOT sent to the model), so skipping them
+            // doesn't affect model context.
             // Only skip "<Name> dismissed" modal-close notifications —
             // commands that early-exit before showing a modal (/rename,
             // /proactive) use display:system for actual output that must
             // reach the transcript.
             const skipTranscript =
-              isFullscreenEnvEnabled() &&
-              typeof result === 'string' &&
-              result.endsWith(' dismissed')
+              typeof result === 'string' && result.endsWith(' dismissed')
 
             void resolve({
               messages:

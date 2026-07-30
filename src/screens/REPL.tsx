@@ -428,9 +428,9 @@ import {
 } from '../components/FullscreenLayout.js'
 import { BackgroundTasksDialog } from '../components/tasks/BackgroundTasksDialog.js'
 import {
-  isFullscreenEnvEnabled,
-  maybeGetTmuxMouseHint,
   isMouseTrackingEnabled,
+  maybeGetTmuxControlModeWarning,
+  maybeGetTmuxMouseHint,
 } from '../utils/fullscreen.js'
 import { AlternateScreen } from '../ink/components/AlternateScreen.js'
 import { ScrollKeybindingHandler } from '../components/ScrollKeybindingHandler.js'
@@ -467,23 +467,12 @@ const RECENT_SCROLL_REPIN_WINDOW_MS = 3000
  * Must be rendered inside KeybindingSetup to access keybinding context.
  */
 function TranscriptModeFooter({
-  showAllInTranscript,
-  virtualScroll,
   searchBadge,
-  suppressShowAll = false,
   status,
 }: {
-  showAllInTranscript: boolean
-  virtualScroll: boolean
   /** Minimap while navigating a closed-bar search. Shows n/N hints +
    *  right-aligned count instead of scroll hints. */
   searchBadge?: { current: number; count: number }
-  /** Hide the ctrl+e hint. The [ dump path shares this footer with
-   *  env-opted dump (CLAUDE_CODE_NO_FLICKER=0 / DISABLE_VIRTUAL_SCROLL=1),
-   *  but ctrl+e only works in the env case — useGlobalKeybindings.tsx
-   *  gates on !virtualScrollActive which is env-derived, doesn't know
-   *  [ happened. */
-  suppressShowAll?: boolean
   /** Transient status (v-for-editor progress). Notifications render inside
    *  PromptInput which isn't mounted in transcript — addNotification queues
    *  but nothing draws it. */
@@ -493,11 +482,6 @@ function TranscriptModeFooter({
     'app:toggleTranscript',
     'Global',
     'ctrl+o',
-  )
-  const showAllShortcut = useShortcutDisplay(
-    'transcript:toggleShowAll',
-    'Transcript',
-    'ctrl+e',
   )
   return (
     <Box
@@ -517,11 +501,7 @@ function TranscriptModeFooter({
         Showing detailed transcript · {toggleShortcut} to toggle
         {searchBadge
           ? ' · n/N to navigate'
-          : virtualScroll
-            ? ` · ${figures.arrowUp}${figures.arrowDown} scroll · home/end top/bottom`
-            : suppressShowAll
-              ? ''
-              : ` · ${showAllShortcut} to ${showAllInTranscript ? 'collapse' : 'show all'}`}
+          : ` · ${figures.arrowUp}${figures.arrowDown} scroll · home/end top/bottom`}
       </Text>
       {status ? (
         // v-for-editor render progress — transient, preempts the search
@@ -784,10 +764,6 @@ export function REPL({
     () => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE),
     [],
   )
-  const disableVirtualScroll = useMemo(
-    () => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL),
-    [],
-  )
   const disableMessageActions = feature('MESSAGE_ACTIONS')
     ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
       useMemo(
@@ -916,12 +892,6 @@ export function REPL({
   )
 
   const [screen, setScreen] = useState<Screen>('prompt')
-  const [showAllInTranscript, setShowAllInTranscript] = useState(false)
-  // [ forces the dump-to-scrollback path inside transcript mode. Separate
-  // from CLAUDE_CODE_NO_FLICKER=0 (which is process-lifetime) — this is
-  // ephemeral, reset on transcript exit. Diagnostic escape hatch so
-  // terminal/tmux native cmd-F can search the full flat render.
-  const [dumpMode, setDumpMode] = useState(false)
   // v-for-editor render progress. Inline in the footer — notifications
   // render inside PromptInput which isn't mounted in transcript.
   const [editorStatus, setEditorStatus] = useState('')
@@ -1189,21 +1159,30 @@ export function REPL({
   // don't accidentally dismiss or answer a permission prompt the user hasn't read yet.
   const [isPromptInputActive, setIsPromptInputActive] = React.useState(false)
 
-  // tmux + fullscreen + `mouse off`: one-time hint that wheel won't scroll.
-  // We no longer mutate tmux's session-scoped mouse option (it poisoned
-  // sibling panes); tmux users already know this tradeoff from vim/less.
+  // Terminal-compatibility notices, once per session.
+  // tmux + `mouse off`: wheel won't scroll. We no longer mutate tmux's
+  // session-scoped mouse option (it poisoned sibling panes); tmux users
+  // already know this tradeoff from vim/less.
+  // tmux -CC: alt-screen + mouse tracking is unrecoverable there and we no
+  // longer have an inline fallback, so say so instead of degrading silently.
   useEffect(() => {
-    if (isFullscreenEnvEnabled()) {
-      void maybeGetTmuxMouseHint().then(hint => {
-        if (hint) {
-          addNotification({
-            key: 'tmux-mouse-hint',
-            text: hint,
-            priority: 'low',
-          })
-        }
+    const controlModeWarning = maybeGetTmuxControlModeWarning()
+    if (controlModeWarning) {
+      addNotification({
+        key: 'tmux-control-mode-warning',
+        text: controlModeWarning,
+        priority: 'high',
       })
     }
+    void maybeGetTmuxMouseHint().then(hint => {
+      if (hint) {
+        addNotification({
+          key: 'tmux-mouse-hint',
+          text: hint,
+          priority: 'low',
+        })
+      }
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -2770,21 +2749,17 @@ export function REPL({
         event,
         newMessage => {
           if (isCompactBoundaryMessage(newMessage)) {
-            // Fullscreen: keep pre-compact messages for scrollback. query.ts
-            // slices at the boundary for API calls, Messages.tsx skips the
-            // boundary filter in fullscreen, and useLogMessages treats this
-            // as an incremental append (first uuid unchanged). Cap at one
+            // Keep pre-compact messages so the ScrollBox can scroll to them.
+            // query.ts slices at the boundary for API calls, Messages.tsx skips
+            // the boundary filter, and useLogMessages treats this as an
+            // incremental append (first uuid unchanged). Cap at one
             // compact-interval of scrollback — normalizeMessages/applyGrouping
             // are O(n) per render, so drop everything before the previous
             // boundary to keep n bounded across multi-day sessions.
-            if (isFullscreenEnvEnabled()) {
-              setMessages(old => [
-                ...getMessagesAfterCompactBoundary(old),
-                newMessage,
-              ])
-            } else {
-              setMessages(() => [newMessage])
-            }
+            setMessages(old => [
+              ...getMessagesAfterCompactBoundary(old),
+              newMessage,
+            ])
             // Bump conversationId so Messages.tsx row keys change and
             // stale memoized rows remount with post-compact content.
             setConversationId(randomUUID())
@@ -3552,26 +3527,12 @@ export function REPL({
                   text: result,
                   priority: 'immediate',
                 })
-                // In fullscreen the command just showed as a centered modal
-                // pane — the notification above is enough feedback. Adding
-                // "❯ /config" + "⎿ dismissed" to the transcript is clutter
-                // (those messages are type:system subtype:local_command —
-                // user-visible but NOT sent to the model, so skipping them
-                // doesn't change model context). Outside fullscreen the
-                // transcript entry stays so scrollback shows what ran.
-                if (!isFullscreenEnvEnabled()) {
-                  newMessages.push(
-                    createCommandInputMessage(
-                      formatCommandInputTags(
-                        getCommandName(matchingCommand),
-                        commandArgs,
-                      ),
-                    ),
-                    createCommandInputMessage(
-                      `<${LOCAL_COMMAND_STDOUT_TAG}>${escapeXml(result)}</${LOCAL_COMMAND_STDOUT_TAG}>`,
-                    ),
-                  )
-                }
+                // The command just showed as a centered modal pane — the
+                // notification above is enough feedback. Adding "❯ /config" +
+                // "⎿ dismissed" to the transcript is clutter (those messages
+                // are type:system subtype:local_command — user-visible but NOT
+                // sent to the model, so skipping them doesn't change model
+                // context).
               }
               // Inject meta messages (model-visible, user-hidden) into the transcript
               if (doneOptions?.metaMessages?.length) {
@@ -4449,7 +4410,6 @@ export function REPL({
   }, [])
 
   // Props for GlobalKeybindingHandlers component (rendered inside KeybindingSetup)
-  const virtualScrollActive = isFullscreenEnvEnabled() && !disableVirtualScroll
 
   // Transcript search state. Hooks must be unconditional so they live here
   // (not inside the `if (screen === 'transcript')` branch below); isActive
@@ -4498,15 +4458,8 @@ export function REPL({
         event.stopImmediatePropagation()
       }
     },
-    // Search needs virtual scroll (jumpRef drives VirtualMessageList). [
-    // kills it, so !dumpMode — after [ there's nothing to jump in.
-    {
-      isActive:
-        screen === 'transcript' &&
-        virtualScrollActive &&
-        !searchOpen &&
-        !dumpMode,
-    },
+    // Search needs virtual scroll (jumpRef drives VirtualMessageList).
+    { isActive: screen === 'transcript' && !searchOpen },
   )
   const {
     setQuery: setHighlight,
@@ -4546,15 +4499,7 @@ export function REPL({
         event.stopImmediatePropagation()
         return
       }
-      if (input === '[' && !dumpMode) {
-        // Force dump-to-scrollback. Also expand + uncap — no point dumping
-        // a subset. Terminal/tmux cmd-F can now find anything. Guard here
-        // (not in isActive) so v still works post-[ — dump-mode footer at
-        // ~4898 wires editorStatus, confirming v is meant to stay live.
-        setDumpMode(true)
-        setShowAllInTranscript(true)
-        event.stopImmediatePropagation()
-      } else if (input === 'v') {
+      if (input === 'v') {
         // less-style: v opens the file in $VISUAL/$EDITOR. Render the full
         // transcript (same path /export uses), write to tmp, hand off.
         // openFileInExternalEditor handles alt-screen suspend/resume for
@@ -4609,17 +4554,14 @@ export function REPL({
         })()
       }
     },
-    // !searchOpen: typing 'v' or '[' in the search bar is search input, not
-    // a command. No !dumpMode here — v should work after [ (the [ handler
-    // guards itself inline).
-    { isActive: screen === 'transcript' && virtualScrollActive && !searchOpen },
+    // !searchOpen: typing 'v' in the search bar is search input, not a command.
+    { isActive: screen === 'transcript' && !searchOpen },
   )
 
   // Fresh `less` per transcript entry. Prevents stale highlights matching
   // unrelated normal-mode text (overlay is alt-screen-global) and avoids
-  // surprise n/N on re-entry. Same exit resets [ dump mode — each ctrl+o
-  // entry is a fresh instance.
-  const inTranscript = screen === 'transcript' && virtualScrollActive
+  // surprise n/N on re-entry.
+  const inTranscript = screen === 'transcript'
   useEffect(() => {
     if (!inTranscript) {
       setSearchQuery('')
@@ -4628,7 +4570,6 @@ export function REPL({
       setSearchOpen(false)
       editorGenRef.current++
       clearTimeout(editorTimerRef.current)
-      setDumpMode(false)
       setEditorStatus('')
     }
   }, [inTranscript])
@@ -4643,12 +4584,9 @@ export function REPL({
   const globalKeybindingProps = {
     screen,
     setScreen,
-    showAllInTranscript,
-    setShowAllInTranscript,
     messageCount: messages.length,
     onEnterTranscript: handleEnterTranscript,
     onExitTranscript: handleExitTranscript,
-    virtualScrollActive,
     // Bar-open is a mode (owns keystrokes — j/k type, Esc cancels).
     // Navigating (query set, bar closed) is NOT — Esc exits transcript,
     // same as less q with highlights still visible. useSearchInput
@@ -4679,17 +4617,9 @@ export function REPL({
 
   if (screen === 'transcript') {
     // Virtual scroll replaces the 30-message cap: everything is scrollable
-    // and memory is bounded by the viewport. Without it, wrapping transcript
-    // in a ScrollBox would mount all messages (~250 MB on long sessions —
-    // the exact problem), so the kill switch and non-fullscreen paths must
-    // fall through to the legacy render: no alt screen, dump to terminal
-    // scrollback, 30-cap + Ctrl+E. Reusing scrollRef is safe — normal-mode
-    // and transcript-mode are mutually exclusive (this early return), so
-    // only one ScrollBox is ever mounted at a time.
-    const transcriptScrollRef =
-      isFullscreenEnvEnabled() && !disableVirtualScroll && !dumpMode
-        ? scrollRef
-        : undefined
+    // and memory is bounded by the viewport. Reusing scrollRef is safe —
+    // normal-mode and transcript-mode are mutually exclusive (this early
+    // return), so only one ScrollBox is ever mounted at a time.
     const transcriptMessagesElement = (
       <Messages
         messages={transcriptMessages}
@@ -4704,17 +4634,15 @@ export function REPL({
         screen={screen}
         agentDefinitions={agentDefinitions}
         streamingToolUses={transcriptStreamingToolUses}
-        showAllInTranscript={showAllInTranscript}
         onOpenRateLimitOptions={handleOpenRateLimitOptions}
         isLoading={isLoading}
         hidePastThinking={true}
         streamingThinking={streamingThinking}
-        scrollRef={transcriptScrollRef}
+        scrollRef={scrollRef}
         jumpRef={jumpRef}
         onSearchMatchesChange={onSearchMatchesChange}
         scanElement={scanElement}
         setPositions={setPositions}
-        disableRenderCap={dumpMode}
       />
     )
     const transcriptToolJSX = toolJSX && (
@@ -4743,7 +4671,7 @@ export function REPL({
           onSubmit={onSubmit}
           isActive={!toolJSX?.isLocalJSXCommand}
         />
-        {transcriptScrollRef ? (
+        {
           // ScrollKeybindingHandler must mount before CancelRequestHandler so
           // ctrl+c-with-selection copies instead of cancelling the active task.
           // Its raw useInput handler only stops propagation when a selection
@@ -4760,9 +4688,9 @@ export function REPL({
             // gets yellow. Next n/N re-establishes via step()→jump().
             onScroll={() => jumpRef.current?.disarmSearch()}
           />
-        ) : null}
+        }
         <CancelRequestHandler {...cancelRequestProps} />
-        {transcriptScrollRef ? (
+        {
           <FullscreenLayout
             scrollRef={scrollRef}
             scrollable={
@@ -4817,8 +4745,6 @@ export function REPL({
                 />
               ) : (
                 <TranscriptModeFooter
-                  showAllInTranscript={showAllInTranscript}
-                  virtualScroll={true}
                   status={editorStatus || undefined}
                   searchBadge={
                     searchQuery && searchCount > 0
@@ -4829,37 +4755,20 @@ export function REPL({
               )
             }
           />
-        ) : (
-          <>
-            {transcriptMessagesElement}
-            {transcriptToolJSX}
-            <SandboxViolationExpandedView />
-            <TranscriptModeFooter
-              showAllInTranscript={showAllInTranscript}
-              virtualScroll={false}
-              suppressShowAll={dumpMode}
-              status={editorStatus || undefined}
-            />
-          </>
-        )}
+        }
       </KeybindingSetup>
     )
-    // The virtual-scroll branch (FullscreenLayout above) needs
-    // <AlternateScreen>'s <Box height={rows}> constraint — without it,
-    // ScrollBox's flexGrow has no ceiling, viewport = content height,
-    // scrollTop pins at 0, and Ink's screen buffer sizes to the full
-    // spacer (200×5k+ rows on long sessions). Same root type + props as
-    // normal mode's wrap below so React reconciles and the alt buffer
-    // stays entered across toggle. The 30-cap dump branch stays
-    // unwrapped — it wants native terminal scrollback.
-    if (transcriptScrollRef) {
-      return (
-        <AlternateScreen mouseTracking={isMouseTrackingEnabled()}>
-          {transcriptReturn}
-        </AlternateScreen>
-      )
-    }
-    return transcriptReturn
+    // FullscreenLayout needs <AlternateScreen>'s <Box height={rows}>
+    // constraint — without it, ScrollBox's flexGrow has no ceiling, viewport =
+    // content height, scrollTop pins at 0, and Ink's screen buffer sizes to the
+    // full spacer (200×5k+ rows on long sessions). Same root type + props as
+    // normal mode's wrap below so React reconciles and the alt buffer stays
+    // entered across toggle.
+    return (
+      <AlternateScreen mouseTracking={isMouseTrackingEnabled()}>
+        {transcriptReturn}
+      </AlternateScreen>
+    )
   }
 
   // Get viewed agent task (inlined from selectors for explicit data flow).
@@ -4917,29 +4826,25 @@ export function REPL({
         )}
         verbose={verbose}
         workerBadge={toolUseConfirmQueue[0]?.workerBadge}
-        setStickyFooter={
-          isFullscreenEnvEnabled() ? setPermissionStickyFooter : undefined
-        }
+        setStickyFooter={setPermissionStickyFooter}
       />
     ) : null
 
-  // In fullscreen, ALL local-jsx slash commands float in the modal slot —
-  // FullscreenLayout wraps them in an absolute-positioned bottom-anchored
-  // pane (▔ divider, ModalContext). Pane/Dialog inside detect the context
-  // and skip their own top-level frame. Non-fullscreen keeps the inline
-  // render paths below. Commands that used to route through bottom
-  // (immediate: /model, /mcp, /btw, ...) and scrollable (non-immediate:
-  // /config, /theme, /diff, ...) both go here now.
-  const toolJsxCentered =
-    isFullscreenEnvEnabled() && toolJSX?.isLocalJSXCommand === true
+  // ALL local-jsx slash commands float in the modal slot — FullscreenLayout
+  // wraps them in an absolute-positioned bottom-anchored pane (▔ divider,
+  // ModalContext). Pane/Dialog inside detect the context and skip their own
+  // top-level frame. Commands that used to route through bottom (immediate:
+  // /model, /mcp, /btw, ...) and scrollable (non-immediate: /config, /theme,
+  // /diff, ...) both go here now.
+  const toolJsxCentered = toolJSX?.isLocalJSXCommand === true
   // BackgroundTasksDialog (and its child ShellDetailDialog) also routes
-  // through the modal slot in fullscreen so it gets the full-terminal budget
+  // through the modal slot so it gets the full-terminal budget
   // (rows - MODAL_TRANSCRIPT_PEEK) instead of the bottom slot's maxHeight=50%
   // cap. The 50% cap caused yoga to squish deep children to h=0 when the
   // dialog was tall (overlapping rows like "Output:" + position label) and
   // clipped the input guide below the viewport. PromptInput returns null in
   // this case so its input doesn't render behind the modal.
-  const showBashesDialogInModal = isFullscreenEnvEnabled() && !!showBashesDialog
+  const showBashesDialogInModal = !!showBashesDialog
   const centeredModal: React.ReactNode = toolJsxCentered ? (
     toolJSX!.jsx
   ) : showBashesDialogInModal ? (
@@ -4994,10 +4899,9 @@ export function REPL({
       <ScrollKeybindingHandler
         scrollRef={scrollRef}
         isActive={
-          isFullscreenEnvEnabled() &&
-          (centeredModal != null ||
-            !focusedInputDialog ||
-            focusedInputDialog === 'tool-permission')
+          centeredModal != null ||
+          !focusedInputDialog ||
+          focusedInputDialog === 'tool-permission'
         }
         onScroll={
           centeredModal || toolPermissionOverlay || viewedAgentTask
@@ -5005,9 +4909,7 @@ export function REPL({
             : composedOnScroll
         }
       />
-      {feature('MESSAGE_ACTIONS') &&
-      isFullscreenEnvEnabled() &&
-      !disableMessageActions ? (
+      {feature('MESSAGE_ACTIONS') && !disableMessageActions ? (
         <MessageActionsKeybindings
           handlers={messageActionHandlers}
           isActive={cursor !== null}
@@ -5051,7 +4953,6 @@ export function REPL({
                 conversationId={conversationId}
                 screen={screen}
                 streamingToolUses={streamingToolUses}
-                showAllInTranscript={showAllInTranscript}
                 agentDefinitions={agentDefinitions}
                 onOpenRateLimitOptions={handleOpenRateLimitOptions}
                 isLoading={isLoading}
@@ -5060,8 +4961,8 @@ export function REPL({
                 }
                 isBriefOnly={viewedAgentTask ? false : isBriefOnly}
                 unseenDivider={viewedAgentTask ? undefined : unseenDivider}
-                scrollRef={isFullscreenEnvEnabled() ? scrollRef : undefined}
-                trackStickyPrompt={isFullscreenEnvEnabled() ? true : undefined}
+                scrollRef={scrollRef}
+                trackStickyPrompt
                 cursor={cursor}
                 setCursor={setCursor}
                 cursorNavRef={cursorNavRef}
@@ -5110,7 +5011,7 @@ export function REPL({
                 !hasRunningTeammates &&
                 isBriefOnly &&
                 !viewedAgentTask && <BriefIdleStatus />}
-              {isFullscreenEnvEnabled() && <PromptInputQueuedCommands />}
+              <PromptInputQueuedCommands />
             </>
           }
           bottom={
@@ -5383,9 +5284,7 @@ export function REPL({
                         onShowMessageSelector={handleShowMessageSelector}
                         onMessageActionsEnter={
                           // Works during isLoading — edit cancels first; uuid selection survives appends.
-                          feature('MESSAGE_ACTIONS') &&
-                          isFullscreenEnvEnabled() &&
-                          !disableMessageActions
+                          feature('MESSAGE_ACTIONS') && !disableMessageActions
                             ? enterMessageActions
                             : undefined
                         }
@@ -5514,12 +5413,12 @@ export function REPL({
                         ...result.attachments,
                         ...result.hookResults,
                       ]
-                      // Fullscreen 'from' keeps scrollback; 'up_to' must not
+                      // 'from' keeps the raw prefix; 'up_to' must not
                       // (old[0] unchanged + grown array means incremental
                       // useLogMessages path, so boundary never persisted).
                       // Find by uuid since old is raw REPL history and compact
                       // boundaries can shift the active messageIndex.
-                      if (isFullscreenEnvEnabled() && direction === 'from') {
+                      if (direction === 'from') {
                         setMessages(old => {
                           const rawIdx = old.findIndex(
                             m => m.uuid === message.uuid,
@@ -5575,12 +5474,9 @@ export function REPL({
       </MCPConnectionManager>
     </KeybindingSetup>
   )
-  if (isFullscreenEnvEnabled()) {
-    return (
-      <AlternateScreen mouseTracking={isMouseTrackingEnabled()}>
-        {mainReturn}
-      </AlternateScreen>
-    )
-  }
-  return mainReturn
+  return (
+    <AlternateScreen mouseTracking={isMouseTrackingEnabled()}>
+      {mainReturn}
+    </AlternateScreen>
+  )
 }

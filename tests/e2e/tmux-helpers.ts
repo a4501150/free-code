@@ -343,6 +343,19 @@ export class TmuxSession {
     await exec(`tmux send-keys -t ${this.sessionName} ${key}`)
   }
 
+  /**
+   * Left-click at (col, row), 1-indexed like the SGR wire format.
+   *
+   * Press then release with no motion in between — that is what the app turns
+   * into a DOM click (a drag becomes a text selection instead and suppresses
+   * onClick). Sent as literal bytes because `tmux send-keys -M` forwards an
+   * existing tmux mouse event rather than synthesizing one at coordinates.
+   */
+  async sendMouseClick(col: number, row: number): Promise<void> {
+    await this.sendText(`\x1b[<0;${col};${row}M`)
+    await this.sendText(`\x1b[<0;${col};${row}m`)
+  }
+
   // ── Output ─────────────────────────────────────────────────
 
   async capturePane(): Promise<string> {

@@ -24,7 +24,6 @@ import instances from '../ink/instances.js'
 import { Box, Text } from '../ink.js'
 import type { Message } from '../types/message.js'
 import { openBrowser, openPath } from '../utils/browser.js'
-import { isFullscreenEnvEnabled } from '../utils/fullscreen.js'
 import { plural } from '../utils/stringUtils.js'
 import { isNullRenderingAttachment } from './messages/nullRenderingAttachments.js'
 import PromptInputFooterSuggestions from './PromptInput/PromptInputFooterSuggestions.js'
@@ -286,16 +285,12 @@ export function computeUnseenDivider(
 }
 
 /**
- * Layout wrapper for the REPL. In fullscreen mode, puts scrollable
- * content in a sticky-scroll box and pins bottom content via flexbox.
- * Outside fullscreen mode, renders content sequentially so the existing
- * main-screen scrollback rendering works unchanged.
+ * Layout wrapper for the REPL: puts scrollable content in a sticky-scroll box
+ * and pins bottom content via flexbox.
  *
- * Fullscreen mode defaults on for ants (CLAUDE_CODE_NO_FLICKER=0 to opt out)
- * and off for external users (CLAUDE_CODE_NO_FLICKER=1 to opt in).
- * The <AlternateScreen> wrapper
- * (alt buffer + mouse tracking + height constraint) lives at REPL's root
- * so nothing can accidentally render outside it.
+ * The <AlternateScreen> wrapper (alt buffer + mouse tracking + height
+ * constraint) lives at REPL's root so nothing can accidentally render outside
+ * it.
  */
 export function FullscreenLayout({
   scrollable,
@@ -336,10 +331,9 @@ export function FullscreenLayout({
       s.getScrollTop() + s.getPendingDelta() + s.getViewportHeight() < dividerY
     )
   })
-  // Wire up hyperlink click handling — in fullscreen mode, mouse tracking
-  // intercepts clicks before the terminal can open OSC 8 links natively.
+  // Wire up hyperlink click handling — mouse tracking intercepts clicks before
+  // the terminal can open OSC 8 links natively.
   useLayoutEffect(() => {
-    if (!isFullscreenEnvEnabled()) return
     const ink = instances.get(process.stdout)
     if (!ink) return
     ink.onHyperlinkClick = url => {
@@ -362,79 +356,78 @@ export function FullscreenLayout({
     }
   }, [])
 
-  if (isFullscreenEnvEnabled()) {
-    // Overlay renders BELOW messages inside the same ScrollBox — user can
-    // scroll up to see prior context while a permission dialog is showing.
-    // The ScrollBox never unmounts across overlay transitions, so scroll
-    // position is preserved without save/restore. stickyScroll auto-scrolls
-    // to the appended overlay when it mounts (if user was already at
-    // bottom); REPL re-pins on the overlay appear/dismiss transition for
-    // the case where sticky was broken. Tall dialogs (FileEdit diffs) still
-    // get PgUp/PgDn/wheel — same scrollRef drives the same ScrollBox.
-    // Three sticky states: null (at bottom), {text,scrollTo} (scrolled up,
-    // header shows), 'clicked' (just clicked header — hide it so the
-    // content ❯ takes row 0). padCollapsed covers the latter two: once
-    // scrolled away from bottom, padding drops to 0 and stays there until
-    // repin. headerVisible is only the middle state. After click:
-    // scrollBox_y=0 (header gone) + padding=0 → viewportTop=0 → ❯ at
-    // row 0. On next scroll the onChange fires with a fresh {text} and
-    // header comes back (viewportTop 0→1, a single 1-row shift —
-    // acceptable since user explicitly scrolled).
-    const sticky = hideSticky ? null : stickyPrompt
-    const headerPrompt =
-      sticky != null && sticky !== 'clicked' && overlay == null ? sticky : null
-    const padCollapsed = sticky != null && overlay == null
-    return (
-      <PromptOverlayProvider>
-        <Box flexGrow={1} flexDirection="column" overflow="hidden">
-          {headerPrompt && (
-            <StickyPromptHeader
-              text={headerPrompt.text}
-              onClick={headerPrompt.scrollTo}
-            />
-          )}
-          <ScrollBox
-            ref={scrollRef}
-            flexGrow={1}
-            flexDirection="column"
-            paddingTop={padCollapsed ? 0 : 1}
-            stickyScroll
-          >
-            <ScrollChromeContext value={chromeCtx}>
-              {scrollable}
-            </ScrollChromeContext>
-            {overlay}
-          </ScrollBox>
-          {!hidePill && pillVisible && overlay == null && (
-            <NewMessagesPill count={newMessageCount} onClick={onPillClick} />
-          )}
-          {bottomFloat != null && (
-            <Box position="absolute" bottom={0} right={0} opaque>
-              {bottomFloat}
-            </Box>
-          )}
-        </Box>
-        <Box flexDirection="column" flexShrink={0} width="100%" maxHeight="50%">
-          <SuggestionsOverlay />
-          <DialogOverlay />
-          <Box
-            flexDirection="column"
-            width="100%"
-            flexGrow={1}
-            overflowY="hidden"
-          >
-            {bottom}
+  // Overlay renders BELOW messages inside the same ScrollBox — user can
+  // scroll up to see prior context while a permission dialog is showing.
+  // The ScrollBox never unmounts across overlay transitions, so scroll
+  // position is preserved without save/restore. stickyScroll auto-scrolls
+  // to the appended overlay when it mounts (if user was already at
+  // bottom); REPL re-pins on the overlay appear/dismiss transition for
+  // the case where sticky was broken. Tall dialogs (FileEdit diffs) still
+  // get PgUp/PgDn/wheel — same scrollRef drives the same ScrollBox.
+  // Three sticky states: null (at bottom), {text,scrollTo} (scrolled up,
+  // header shows), 'clicked' (just clicked header — hide it so the
+  // content ❯ takes row 0). padCollapsed covers the latter two: once
+  // scrolled away from bottom, padding drops to 0 and stays there until
+  // repin. headerVisible is only the middle state. After click:
+  // scrollBox_y=0 (header gone) + padding=0 → viewportTop=0 → ❯ at
+  // row 0. On next scroll the onChange fires with a fresh {text} and
+  // header comes back (viewportTop 0→1, a single 1-row shift —
+  // acceptable since user explicitly scrolled).
+  const sticky = hideSticky ? null : stickyPrompt
+  const headerPrompt =
+    sticky != null && sticky !== 'clicked' && overlay == null ? sticky : null
+  const padCollapsed = sticky != null && overlay == null
+  return (
+    <PromptOverlayProvider>
+      <Box flexGrow={1} flexDirection="column" overflow="hidden">
+        {headerPrompt && (
+          <StickyPromptHeader
+            text={headerPrompt.text}
+            onClick={headerPrompt.scrollTo}
+          />
+        )}
+        <ScrollBox
+          ref={scrollRef}
+          flexGrow={1}
+          flexDirection="column"
+          paddingTop={padCollapsed ? 0 : 1}
+          stickyScroll
+        >
+          <ScrollChromeContext value={chromeCtx}>
+            {scrollable}
+          </ScrollChromeContext>
+          {overlay}
+        </ScrollBox>
+        {!hidePill && pillVisible && overlay == null && (
+          <NewMessagesPill count={newMessageCount} onClick={onPillClick} />
+        )}
+        {bottomFloat != null && (
+          <Box position="absolute" bottom={0} right={0} opaque>
+            {bottomFloat}
           </Box>
+        )}
+      </Box>
+      <Box flexDirection="column" flexShrink={0} width="100%" maxHeight="50%">
+        <SuggestionsOverlay />
+        <DialogOverlay />
+        <Box
+          flexDirection="column"
+          width="100%"
+          flexGrow={1}
+          overflowY="hidden"
+        >
+          {bottom}
         </Box>
-        {modal != null && (
-          <ModalContext
-            value={{
-              rows: terminalRows - MODAL_TRANSCRIPT_PEEK - 1,
-              columns: columns - 4,
-              scrollRef: modalScrollRef ?? null,
-            }}
-          >
-            {/* Bottom-anchored, grows upward to fit content. maxHeight keeps a
+      </Box>
+      {modal != null && (
+        <ModalContext
+          value={{
+            rows: terminalRows - MODAL_TRANSCRIPT_PEEK - 1,
+            columns: columns - 4,
+            scrollRef: modalScrollRef ?? null,
+          }}
+        >
+          {/* Bottom-anchored, grows upward to fit content. maxHeight keeps a
                 few rows of transcript peek above the ▔ divider. Short modals
                 (/model) sit small at the bottom with lots of transcript above;
                 tall modals grow as needed, clipped by overflow.
@@ -453,41 +446,31 @@ export function FullscreenLayout({
                 h=0 to absorb the deficit — it's the only shrinkable sibling.
                 The wrapper keeps it at 1 row; overflow past maxHeight is
                 clipped at the bottom by overflow=hidden instead. */}
-            <Box
-              position="absolute"
-              bottom={0}
-              left={0}
-              right={0}
-              maxHeight={terminalRows - MODAL_TRANSCRIPT_PEEK}
-              flexDirection="column"
-              overflow="hidden"
-              opaque
-            >
-              <Box flexShrink={0}>
-                <Text color="permission">{'▔'.repeat(columns)}</Text>
-              </Box>
-              <Box
-                flexDirection="column"
-                paddingX={2}
-                flexShrink={0}
-                overflow="hidden"
-              >
-                {modal}
-              </Box>
+          <Box
+            position="absolute"
+            bottom={0}
+            left={0}
+            right={0}
+            maxHeight={terminalRows - MODAL_TRANSCRIPT_PEEK}
+            flexDirection="column"
+            overflow="hidden"
+            opaque
+          >
+            <Box flexShrink={0}>
+              <Text color="permission">{'▔'.repeat(columns)}</Text>
             </Box>
-          </ModalContext>
-        )}
-      </PromptOverlayProvider>
-    )
-  }
-
-  return (
-    <>
-      {scrollable}
-      {bottom}
-      {overlay}
-      {modal}
-    </>
+            <Box
+              flexDirection="column"
+              paddingX={2}
+              flexShrink={0}
+              overflow="hidden"
+            >
+              {modal}
+            </Box>
+          </Box>
+        </ModalContext>
+      )}
+    </PromptOverlayProvider>
   )
 }
 

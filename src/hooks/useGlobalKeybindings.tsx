@@ -17,12 +17,9 @@ import * as briefToolNs from '../tools/BriefTool/BriefTool.js'
 type Props = {
   screen: Screen
   setScreen: React.Dispatch<React.SetStateAction<Screen>>
-  showAllInTranscript: boolean
-  setShowAllInTranscript: React.Dispatch<React.SetStateAction<boolean>>
   messageCount: number
   onEnterTranscript?: () => void
   onExitTranscript?: () => void
-  virtualScrollActive?: boolean
   searchBarOpen?: boolean
 }
 
@@ -30,18 +27,14 @@ type Props = {
  * Registers global keybinding handlers for:
  * - ctrl+t: Toggle todo list
  * - ctrl+o: Toggle transcript mode
- * - ctrl+e: Toggle showing all messages in transcript
  * - ctrl+c/escape: Exit transcript mode
  */
 export function GlobalKeybindingHandlers({
   screen,
   setScreen,
-  showAllInTranscript,
-  setShowAllInTranscript,
   messageCount,
   onEnterTranscript,
   onExitTranscript,
-  virtualScrollActive,
   searchBarOpen = false,
 }: Props): null {
   const expandedView = useAppState(s => s.expandedView)
@@ -103,7 +96,6 @@ export function GlobalKeybindingHandlers({
 
     const isEnteringTranscript = screen !== 'transcript'
     setScreen(s => (s === 'transcript' ? 'prompt' : 'transcript'))
-    setShowAllInTranscript(false)
     if (isEnteringTranscript && onEnterTranscript) {
       onEnterTranscript()
     }
@@ -114,33 +106,19 @@ export function GlobalKeybindingHandlers({
     screen,
     setScreen,
     isBriefOnly,
-    showAllInTranscript,
-    setShowAllInTranscript,
     messageCount,
     setAppState,
     onEnterTranscript,
     onExitTranscript,
   ])
 
-  // Toggle showing all messages in transcript mode (ctrl+e)
-  const handleToggleShowAll = useCallback(() => {
-    setShowAllInTranscript(prev => !prev)
-  }, [showAllInTranscript, setShowAllInTranscript, messageCount])
-
   // Exit transcript mode (ctrl+c or escape)
   const handleExitTranscript = useCallback(() => {
     setScreen('prompt')
-    setShowAllInTranscript(false)
     if (onExitTranscript) {
       onExitTranscript()
     }
-  }, [
-    setScreen,
-    showAllInTranscript,
-    setShowAllInTranscript,
-    messageCount,
-    onExitTranscript,
-  ])
+  }, [setScreen, onExitTranscript])
 
   // Toggle brief-only view (ctrl+shift+b). Pure display filter toggle —
   // does not touch opt-in state. Asymmetric gate (mirrors /brief): OFF
@@ -196,10 +174,6 @@ export function GlobalKeybindingHandlers({
 
   // Transcript-specific bindings (only active when in transcript mode)
   const isInTranscript = screen === 'transcript'
-  useKeybinding('transcript:toggleShowAll', handleToggleShowAll, {
-    context: 'Transcript',
-    isActive: isInTranscript && !virtualScrollActive,
-  })
   useKeybinding('transcript:exit', handleExitTranscript, {
     context: 'Transcript',
     // Bar-open is a mode (owns keystrokes). Navigating (highlights

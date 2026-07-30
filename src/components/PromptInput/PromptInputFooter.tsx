@@ -3,17 +3,13 @@ import * as React from 'react'
 import { memo, type ReactNode, useMemo, useRef } from 'react'
 import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
 import { useSetPromptOverlay } from '../../context/promptOverlayContext.js'
-import type { VerificationStatus } from '../../hooks/useApiKeyVerification.js'
-import type { IDESelection } from '../../types/ide.js'
 import { useSettings } from '../../hooks/useSettings.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { Box, Text } from '../../ink.js'
-import type { MCPServerConnection } from '../../services/mcp/types.js'
 import { useAppState } from '../../state/AppState.js'
 import type { ToolPermissionContext } from '../../Tool.js'
 import type { Message } from '../../types/message.js'
 import type { PromptInputMode, VimMode } from '../../types/textInputTypes.js'
-import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js'
 import {
   CoordinatorTaskPanel,
   useCoordinatorTaskCount,
@@ -23,24 +19,17 @@ import {
   StatusLine,
   statusLineShouldDisplay,
 } from '../StatusLine.js'
-import { Notifications } from './Notifications.js'
 import { PromptInputFooterLeftSide } from './PromptInputFooterLeftSide.js'
-import {
-  PromptInputFooterSuggestions,
-  type SuggestionItem,
-} from './PromptInputFooterSuggestions.js'
+import type { SuggestionItem } from './PromptInputFooterSuggestions.js'
 import { PromptInputHelpMenu } from './PromptInputHelpMenu.js'
 
 type Props = {
-  apiKeyStatus: VerificationStatus
-  debug: boolean
   exitMessage: {
     show: boolean
     key?: string
   }
   vimMode: VimMode | undefined
   mode: PromptInputMode
-  verbose: boolean
   suggestions: SuggestionItem[]
   selectedSuggestion: number
   maxColumnWidth?: number
@@ -51,10 +40,7 @@ type Props = {
   tasksSelected: boolean
   teamsSelected: boolean
   teammateFooterIndex?: number
-  ideSelection: IDESelection | undefined
-  mcpClients?: MCPServerConnection[]
   isPasting?: boolean
-  isInputWrapped?: boolean
   messages: Message[]
   isSearching: boolean
   historyQuery: string
@@ -73,12 +59,9 @@ type Props = {
 }
 
 function PromptInputFooter({
-  apiKeyStatus,
-  debug,
   exitMessage,
   vimMode,
   mode,
-  verbose,
   suggestions,
   selectedSuggestion,
   maxColumnWidth,
@@ -89,10 +72,7 @@ function PromptInputFooter({
   tasksSelected,
   teamsSelected,
   teammateFooterIndex,
-  ideSelection,
-  mcpClients,
   isPasting = false,
-  isInputWrapped = false,
   messages,
   isSearching,
   historyQuery,
@@ -110,11 +90,9 @@ function PromptInputFooter({
     [messages],
   )
   const isNarrow = columns < 80
-  // In fullscreen the bottom slot is flexShrink:0, so every row here is a row
-  // stolen from the ScrollBox. Drop the optional StatusLine first. Non-fullscreen
-  // has terminal scrollback to absorb overflow, so we never hide StatusLine there.
-  const isFullscreen = isFullscreenEnvEnabled()
-  const isShort = isFullscreen && rows < 24
+  // The bottom slot is flexShrink:0, so every row here is a row stolen from
+  // the ScrollBox. Drop the optional StatusLine first on short terminals.
+  const isShort = rows < 24
 
   // Pill highlights when tasks is the active footer item AND no specific
   // agent row is selected. When coordinatorTaskIndex >= 0 the pointer has
@@ -129,27 +107,15 @@ function PromptInputFooter({
   // Hide `? for shortcuts` if the user has a custom status line, or during ctrl-r
   const suppressHint =
     suppressHintFromProps || statusLineShouldDisplay(settings) || isSearching
-  // Fullscreen: portal data to FullscreenLayout — see promptOverlayContext.tsx
+  // Suggestions portal to FullscreenLayout — see promptOverlayContext.tsx
   const overlayData = useMemo(
     () =>
-      isFullscreen && suggestions.length
+      suggestions.length
         ? { suggestions, selectedSuggestion, maxColumnWidth }
         : null,
-    [isFullscreen, suggestions, selectedSuggestion, maxColumnWidth],
+    [suggestions, selectedSuggestion, maxColumnWidth],
   )
   useSetPromptOverlay(overlayData)
-
-  if (suggestions.length && !isFullscreen) {
-    return (
-      <Box paddingX={2} paddingY={0}>
-        <PromptInputFooterSuggestions
-          suggestions={suggestions}
-          selectedSuggestion={selectedSuggestion}
-          maxColumnWidth={maxColumnWidth}
-        />
-      </Box>
-    )
-  }
 
   if (helpOpen) {
     return (
@@ -195,20 +161,6 @@ function PromptInputFooter({
             historyFailedMatch={historyFailedMatch}
             onOpenTasksDialog={onOpenTasksDialog}
           />
-        </Box>
-        <Box flexShrink={1} gap={1}>
-          {isFullscreen ? null : (
-            <Notifications
-              apiKeyStatus={apiKeyStatus}
-              debug={debug}
-              verbose={verbose}
-              messages={messages}
-              ideSelection={ideSelection}
-              mcpClients={mcpClients}
-              isInputWrapped={isInputWrapped}
-              isNarrow={isNarrow}
-            />
-          )}
         </Box>
       </Box>
       {(feature('COORDINATOR_MODE') && isCoordinatorMode()) ||

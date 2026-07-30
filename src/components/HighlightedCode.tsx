@@ -10,7 +10,6 @@ import {
   Text,
   useTheme,
 } from '../ink.js'
-import { isFullscreenEnvEnabled } from '../utils/fullscreen.js'
 import sliceAnsi from '../utils/sliceAnsi.js'
 import { countCharInString } from '../utils/stringUtils.js'
 import { HighlightedCodeFallback } from './HighlightedCode/Fallback.js'
@@ -67,12 +66,9 @@ export const HighlightedCode = memo(function HighlightedCode({
 
   // Gutter width matches ColorFile's layout in lib.rs: space + right-aligned
   // line number (max_digits = lineCount.toString().length) + space. No marker
-  // column like the diff path. Wrap in <NoSelect> so fullscreen selection
-  // yields clean code without line numbers. Only split in fullscreen mode
-  // (~4× DOM nodes + sliceAnsi cost); non-fullscreen uses terminal-native
-  // selection where noSelect is meaningless.
+  // column like the diff path. Wrap in <NoSelect> so selection yields clean
+  // code without line numbers.
   const gutterWidth = useMemo(() => {
-    if (!isFullscreenEnvEnabled()) return 0
     const lineCount = countCharInString(code, '\n') + 1
     return lineCount.toString().length + 2
   }, [code])

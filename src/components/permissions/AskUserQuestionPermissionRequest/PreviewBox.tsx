@@ -28,6 +28,9 @@ type PreviewBoxProps = {
   minWidth?: number
   /** Maximum width available for this box (e.g., the container width). */
   maxWidth?: number
+  /** Highlights the border and switches the scroll hint — the panel owns the
+   *  bare arrow keys while focused. */
+  isFocused?: boolean
 }
 
 const BOX_CHARS = {
@@ -71,6 +74,7 @@ function PreviewBoxBody({
   maxWidth,
   scrollOffset = 0,
   onScrollBoundsChange,
+  isFocused = false,
   highlight,
 }: PreviewBoxProps & { highlight: CliHighlight | null }): React.ReactNode {
   const { columns: terminalWidth } = useTerminalSize()
@@ -124,17 +128,26 @@ function PreviewBoxBody({
   const boxWidth = Math.min(contentWidth + 4, effectiveMaxWidth)
   const innerWidth = boxWidth - 4 // Account for borders and padding
 
+  // Focused region gets a suggestion-colored border, unfocused stays dim —
+  // same idiom as SearchBox, applied to the manual BOX_CHARS border.
+  const borderColor = isFocused ? 'suggestion' : undefined
+
   // Render top border
   const topBorder = `${BOX_CHARS.topLeft}${BOX_CHARS.horizontal.repeat(boxWidth - 2)}${BOX_CHARS.topRight}`
 
   // Render bottom border
   const bottomBorder = `${BOX_CHARS.bottomLeft}${BOX_CHARS.horizontal.repeat(boxWidth - 2)}${BOX_CHARS.bottomRight}`
 
-  // Scroll position bar (e.g. ├─ ↑↓ 5-18 of 24 · shift+↑/↓ to scroll ─┤)
+  // Scroll position bar (e.g. ├─ ↑↓ 5-18 of 24 · click to scroll ─┤).
+  // The hint names the portable gesture: Apple Terminal strips shift from arrow
+  // keys, so shift+↑/↓ is unreachable there and clicking is the way in.
   const scrollBar = isScrollable
     ? (() => {
         const range = `${offset + 1}-${offset + visibleLines.length} of ${contentLines.length}`
-        const fullLabel = ` ${figures.arrowUp}${figures.arrowDown} ${range} \u00b7 shift+${figures.arrowUp}/${figures.arrowDown} to scroll `
+        const hint = isFocused
+          ? `${figures.arrowUp}${figures.arrowDown} to scroll`
+          : 'click to scroll'
+        const fullLabel = ` ${figures.arrowUp}${figures.arrowDown} ${range} \u00b7 ${hint} `
         const available = boxWidth - 2
         const label =
           stringWidth(fullLabel) <= available
@@ -148,7 +161,9 @@ function PreviewBoxBody({
 
   return (
     <Box flexDirection="column">
-      <Text dimColor>{topBorder}</Text>
+      <Text color={borderColor} dimColor={!isFocused}>
+        {topBorder}
+      </Text>
 
       {lines.map((line, index) => {
         // Pad or truncate line to fit inner width (using visual width for unicode/emoji/CJK).
@@ -162,9 +177,11 @@ function PreviewBoxBody({
 
         return (
           <Box key={index} flexDirection="row">
-            <Text dimColor>{BOX_CHARS.vertical} </Text>
+            <Text color={borderColor} dimColor={!isFocused}>
+              {BOX_CHARS.vertical}{' '}
+            </Text>
             <Ansi>{displayLine}</Ansi>
-            <Text dimColor>
+            <Text color={borderColor} dimColor={!isFocused}>
               {padding} {BOX_CHARS.vertical}
             </Text>
           </Box>
@@ -173,7 +190,9 @@ function PreviewBoxBody({
 
       {scrollBar && <Text color="warning">{scrollBar}</Text>}
 
-      <Text dimColor>{bottomBorder}</Text>
+      <Text color={borderColor} dimColor={!isFocused}>
+        {bottomBorder}
+      </Text>
     </Box>
   )
 }

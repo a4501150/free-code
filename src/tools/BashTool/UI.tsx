@@ -14,7 +14,6 @@ import type { ProgressMessage } from '../../types/message.js'
 import { env } from '../../utils/env.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { getDisplayPath } from '../../utils/file.js'
-import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js'
 import type { ThemeName } from '../../utils/theme.js'
 import type { BashProgress, BashToolInput, Out } from './BashTool.js'
 import BashToolResultMessage from './BashToolResultMessage.js'
@@ -91,13 +90,11 @@ export function renderToolUseMessage(
   if (!verbose) {
     const lines = command.split('\n')
 
-    if (isFullscreenEnvEnabled()) {
-      const label = extractBashCommentLabel(command)
-      if (label) {
-        return label.length > MAX_COMMAND_DISPLAY_CHARS
-          ? label.slice(0, MAX_COMMAND_DISPLAY_CHARS) + '…'
-          : label
-      }
+    const label = extractBashCommentLabel(command)
+    if (label) {
+      return label.length > MAX_COMMAND_DISPLAY_CHARS
+        ? label.slice(0, MAX_COMMAND_DISPLAY_CHARS) + '…'
+        : label
     }
 
     const needsLineTruncation = lines.length > MAX_COMMAND_DISPLAY_LINES

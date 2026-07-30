@@ -121,7 +121,6 @@ import {
   isFastModeEnabled,
   isFastModeSupportedByModel,
 } from '../../utils/fastMode.js'
-import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js'
 import type { PromptInputHelpers } from '../../utils/handlePromptSubmit.js'
 import {
   getImageFromClipboard,
@@ -176,7 +175,6 @@ import { ModelPicker } from '../ModelPicker.js'
 import { QuickOpenDialog } from '../QuickOpenDialog.js'
 import TextInput from '../TextInput.js'
 import { ThinkingToggle } from '../ThinkingToggle.js'
-import { BackgroundTasksDialog } from '../tasks/BackgroundTasksDialog.js'
 import { shouldHideTasksFooter } from '../tasks/taskStatusUtils.js'
 import { TeamsDialog } from '../teams/TeamsDialog.js'
 import VimTextInput from '../VimTextInput.js'
@@ -185,7 +183,6 @@ import { Notifications } from './Notifications.js'
 import PromptInputFooter from './PromptInputFooter.js'
 import type { SuggestionItem } from './PromptInputFooterSuggestions.js'
 import { PromptInputModeIndicator } from './PromptInputModeIndicator.js'
-import { PromptInputQueuedCommands } from './PromptInputQueuedCommands.js'
 import { PromptInputStashNotice } from './PromptInputStashNotice.js'
 import { useMaybeTruncateInput } from './useMaybeTruncateInput.js'
 import { usePromptInputPlaceholder } from './usePromptInputPlaceholder.js'
@@ -2141,18 +2138,15 @@ function PromptInput({
   const { columns, rows } = useTerminalSize()
   const textInputColumns = columns - 3
 
-  // POC: click-to-position-cursor. Mouse tracking is only enabled inside
-  // <AlternateScreen>, so this is dormant in the normal main-screen REPL.
-  // localCol/localRow are relative to the onClick Box's top-left; the Box
-  // tightly wraps the text input so they map directly to (column, line)
-  // in the Cursor wrap model. MeasuredText.getOffsetFromPosition handles
-  // wide chars, wrapped lines, and clamps past-end clicks to line end.
-  const maxVisibleLines = isFullscreenEnvEnabled()
-    ? Math.max(
-        MIN_INPUT_VIEWPORT_LINES,
-        Math.floor(rows / 2) - PROMPT_FOOTER_LINES,
-      )
-    : undefined
+  // Click-to-position-cursor. localCol/localRow are relative to the onClick
+  // Box's top-left; the Box tightly wraps the text input so they map directly
+  // to (column, line) in the Cursor wrap model.
+  // MeasuredText.getOffsetFromPosition handles wide chars, wrapped lines, and
+  // clamps past-end clicks to line end.
+  const maxVisibleLines = Math.max(
+    MIN_INPUT_VIEWPORT_LINES,
+    Math.floor(rows / 2) - PROMPT_FOOTER_LINES,
+  )
 
   const handleInputClick = useCallback(
     (e: ClickEvent) => {
@@ -2337,30 +2331,11 @@ function PromptInput({
   ])
 
   if (showBashesDialog) {
-    // In fullscreen, REPL routes BackgroundTasksDialog through the modal
-    // slot so it gets the full-terminal vertical budget instead of the
-    // bottom slot's maxHeight=50% cap (which caused yoga to squish the
-    // dialog and clip the input guide). Return null here so PromptInput's
-    // own UI doesn't render behind the modal. Non-fullscreen keeps the
-    // inline render — there's no modal slot in that mode and no maxHeight
-    // constraint, so the dialog fits naturally.
-    if (isFullscreenEnvEnabled()) {
-      return null
-    }
-    return (
-      <BackgroundTasksDialog
-        onDone={() => setShowBashesDialog(false)}
-        toolUseContext={getToolUseContext(
-          messages,
-          [],
-          new AbortController(),
-          mainLoopModel,
-        )}
-        initialDetailTaskId={
-          typeof showBashesDialog === 'string' ? showBashesDialog : undefined
-        }
-      />
-    )
+    // REPL routes BackgroundTasksDialog through the modal slot so it gets the
+    // full-terminal vertical budget instead of the bottom slot's maxHeight=50%
+    // cap (which squished the dialog and clipped the input guide). Render
+    // nothing here so PromptInput's own UI doesn't sit behind the modal.
+    return null
   }
 
   if (isAgentSwarmsEnabled() && showTeamsDialog) {
@@ -2537,7 +2512,6 @@ function PromptInput({
 
   return (
     <Box flexDirection="column" marginTop={briefOwnsGap ? 0 : 1}>
-      {!isFullscreenEnvEnabled() && <PromptInputQueuedCommands />}
       {hasSuppressedDialogs && (
         <Box marginTop={1} marginLeft={2}>
           <Text dimColor>Waiting for permission…</Text>
@@ -2604,12 +2578,9 @@ function PromptInput({
         </Box>
       )}
       <PromptInputFooter
-        apiKeyStatus={apiKeyStatus}
-        debug={debug}
         exitMessage={exitMessage}
         vimMode={isVimModeEnabled() ? vimMode : undefined}
         mode={mode}
-        verbose={verbose}
         suggestions={suggestions}
         selectedSuggestion={selectedSuggestion}
         maxColumnWidth={maxColumnWidth}
@@ -2620,21 +2591,16 @@ function PromptInput({
         tasksSelected={tasksSelected}
         teamsSelected={teamsSelected}
         teammateFooterIndex={teammateFooterIndex}
-        ideSelection={ideSelection}
-        mcpClients={mcpClients}
         isPasting={isPasting}
-        isInputWrapped={isInputWrapped}
         messages={messages}
         isSearching={isSearchingHistory}
         historyQuery={historyQuery}
         setHistoryQuery={setHistoryQuery}
         historyFailedMatch={historyFailedMatch}
-        onOpenTasksDialog={
-          isFullscreenEnvEnabled() ? handleOpenTasksDialog : undefined
-        }
+        onOpenTasksDialog={handleOpenTasksDialog}
         conversationId={conversationId}
       />
-      {isFullscreenEnvEnabled() ? (
+      {
         // position=absolute takes zero layout height so the spinner
         // doesn't shift when a notification appears/disappears. Yoga
         // anchors absolute children at the parent's content-box origin;
@@ -2671,7 +2637,7 @@ function PromptInput({
             isInputWrapped={isInputWrapped}
           />
         </Box>
-      ) : null}
+      }
     </Box>
   )
 }

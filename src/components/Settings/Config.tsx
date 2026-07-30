@@ -98,7 +98,6 @@ import {
   getFastModeModel,
   isFastModeSupportedByModel,
 } from '../../utils/fastMode.js'
-import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js'
 import {
   DEFAULT_AUTO_COMPACT_BUFFER,
   DEFAULT_AUTO_COMPACT_PERCENTAGE,
@@ -949,21 +948,15 @@ export function Config({
         updateUserSettings({ copyFullResponse })
       },
     },
-    // Copy-on-select is only meaningful with in-app selection (fullscreen
-    // alt-screen mode). In inline mode the terminal emulator owns selection.
-    ...(isFullscreenEnvEnabled()
-      ? [
-          {
-            id: 'copyOnSelect',
-            label: 'Copy on select',
-            value: settingsData?.copyOnSelect ?? true,
-            type: 'boolean' as const,
-            onChange(copyOnSelect: boolean) {
-              updateUserSettings({ copyOnSelect })
-            },
-          },
-        ]
-      : []),
+    {
+      id: 'copyOnSelect',
+      label: 'Copy on select',
+      value: settingsData?.copyOnSelect ?? true,
+      type: 'boolean' as const,
+      onChange(copyOnSelect: boolean) {
+        updateUserSettings({ copyOnSelect })
+      },
+    },
     // autoUpdates setting is hidden - use DISABLE_AUTOUPDATER env var to control
     autoUpdaterDisabledReason
       ? {

@@ -7,7 +7,6 @@ import { Box, Text } from '../../ink.js'
 import { useAppState } from '../../state/AppState.js'
 import { getEffortSuffix } from '../../utils/effort.js'
 import { truncate } from '../../utils/format.js'
-import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js'
 import {
   formatModelAndBilling,
   getLogoDisplayData,
@@ -16,7 +15,6 @@ import {
 import { renderModelSetting } from '../../utils/model/model.js'
 import { OffscreenFreeze } from '../OffscreenFreeze.js'
 import { AnimatedClawd } from './AnimatedClawd.js'
-import { Clawd } from './Clawd.js'
 
 export function CondensedLogo(): ReactNode {
   const { columns } = useTerminalSize()
@@ -66,7 +64,7 @@ export function CondensedLogo(): ReactNode {
   return (
     <OffscreenFreeze>
       <Box flexDirection="row" gap={2} alignItems="center">
-        {isFullscreenEnvEnabled() ? <AnimatedClawd /> : <Clawd />}
+        <AnimatedClawd />
 
         {/* Info */}
         <Box flexDirection="column">

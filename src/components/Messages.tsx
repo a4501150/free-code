@@ -27,15 +27,12 @@ import { collapseBackgroundBashNotifications } from '../utils/collapseBackground
 import { collapseHookSummaries } from '../utils/collapseHookSummaries.js'
 import { collapseReadSearchGroups } from '../utils/collapseReadSearch.js'
 import { collapseTeammateShutdowns } from '../utils/collapseTeammateShutdowns.js'
-import { isEnvTruthy } from '../utils/envUtils.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
-import { isFullscreenEnvEnabled } from '../utils/fullscreen.js'
 import { applyGrouping } from '../utils/groupToolUses.js'
 import {
   buildMessageLookups,
   createAssistantMessage,
   deriveUUID,
-  getMessagesAfterCompactBoundary,
   getToolUseID,
   getToolUseIDs,
   hasUnresolvedHooksFromLookup,
@@ -296,10 +293,6 @@ type Props = {
       currentIdx: number
     } | null,
   ) => void
-  /** Bypass MAX_MESSAGES_WITHOUT_VIRTUALIZATION. For one-shot headless renders
-   *  (e.g. /export via renderToString) where the memory concern doesn't apply
-   *  and the "already in scrollback" justification doesn't hold. */
-  disableRenderCap?: boolean
   /** In-transcript cursor; expanded overrides verbose for selected message. */
   cursor?: MessageActionsState | null
   setCursor?: (cursor: MessageActionsState | null) => void
@@ -323,10 +316,9 @@ const MAX_MESSAGES_TO_SHOW_IN_TRANSCRIPT_MODE = 30
 // of fibers, and per-frame write costs that push the process into a GC
 // death spiral (observed: 59 GB RSS, 14k mmap/munmap/sec). Content dropped
 // from this slice has already been printed to terminal scrollback — users
-// can still scroll up natively. VirtualMessageList (the default ant path)
-// bypasses this cap entirely. Headless one-shot renders (e.g. /export)
-// pass disableRenderCap to opt out — they have no scrollback and the
-// memory concern doesn't apply to renderToString.
+// can still scroll up natively. VirtualMessageList (the default path)
+// bypasses this cap entirely, and the chunked export path uses renderRange
+// which takes precedence over the slice.
 //
 // The slice boundary is tracked as a UUID anchor, not a count-derived
 // index. Count-based slicing (slice(-200)) drops one message from the
@@ -414,7 +406,6 @@ const MessagesImpl = ({
   onSearchMatchesChange,
   scanElement,
   setPositions,
-  disableRenderCap = false,
   cursor = null,
   setCursor,
   cursorNavRef,
@@ -534,16 +525,11 @@ const MessagesImpl = ({
   )
 
   const isTranscriptMode = screen === 'transcript'
-  // Hoisted to mount-time — this component re-renders on every scroll.
-  const disableVirtualScroll = useMemo(
-    () => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL),
-    [],
-  )
   // Virtual scroll replaces the transcript cap: everything is scrollable and
   // memory is bounded by the mounted-item count, not the total. scrollRef is
-  // only passed when isFullscreenEnvEnabled() is true (REPL.tsx gates it),
-  // so scrollRef's presence is the signal.
-  const virtualScrollRuntimeGate = scrollRef != null && !disableVirtualScroll
+  // only passed for the main message list (REPL.tsx gates it), so scrollRef's
+  // presence is the signal.
+  const virtualScrollRuntimeGate = scrollRef != null
   const shouldTruncate =
     isTranscriptMode && !showAllInTranscript && !virtualScrollRuntimeGate
 
@@ -561,18 +547,8 @@ const MessagesImpl = ({
   // 100-173ms stop-the-world pauses on the 1GB heap.
   const { collapsed, lookups, hasTruncatedMessages, hiddenMessageCount } =
     useMemo(() => {
-      // In fullscreen mode the alt buffer has no native scrollback, so the
-      // compact-boundary filter just hides history the ScrollBox could
-      // otherwise scroll to. Main-screen mode keeps the filter — pre-compact
-      // rows live above the viewport in native scrollback there, and
-      // re-rendering them triggers full resets.
-      const compactAwareMessages =
-        verbose || isFullscreenEnvEnabled()
-          ? normalizedMessages
-          : getMessagesAfterCompactBoundary(normalizedMessages)
-
       const messagesToShowNotTruncated = reorderMessagesInUI(
-        compactAwareMessages
+        normalizedMessages
           .filter(
             (msg): msg is Exclude<NormalizedMessage, ProgressMessageType> =>
               msg.type !== 'progress',
@@ -664,8 +640,7 @@ const MessagesImpl = ({
     // component's lifetime (scrollRef is either always passed or never).
     // renderRange is first: the chunked export path slices the
     // post-grouping array so each chunk gets correct tool-call grouping.
-    const capApplies = !virtualScrollRuntimeGate && !disableRenderCap
-    const sliceStart = capApplies
+    const sliceStart = !virtualScrollRuntimeGate
       ? computeSliceStart(collapsed, sliceAnchorRef)
       : 0
     return renderRange
@@ -673,7 +648,7 @@ const MessagesImpl = ({
       : sliceStart > 0
         ? collapsed.slice(sliceStart)
         : collapsed
-  }, [collapsed, renderRange, virtualScrollRuntimeGate, disableRenderCap])
+  }, [collapsed, renderRange, virtualScrollRuntimeGate])
 
   const streamingToolUseIDs = useMemo(
     () => new Set(streamingToolUses.map(_ => _.contentBlock.id)),
@@ -924,18 +899,12 @@ const MessagesImpl = ({
       )}
 
       {/* Show all indicator */}
-      {isTranscriptMode &&
-        showAllInTranscript &&
-        hiddenMessageCount > 0 &&
-        // disableRenderCap (e.g. [ dump-to-scrollback) means we're uncapped
-        // as a one-shot escape hatch, not a toggle — ctrl+e is dead and
-        // nothing is actually "hidden" to restore.
-        !disableRenderCap && (
-          <Divider
-            title={`${toggleShowAllShortcut} to hide ${chalk.bold(hiddenMessageCount)} previous messages`}
-            width={columns}
-          />
-        )}
+      {isTranscriptMode && showAllInTranscript && hiddenMessageCount > 0 && (
+        <Divider
+          title={`${toggleShowAllShortcut} to hide ${chalk.bold(hiddenMessageCount)} previous messages`}
+          width={columns}
+        />
+      )}
 
       {/* Messages - rendered as memoized MessageRow components.
           flatMap inserts the unseen-divider as a separate keyed sibling so

@@ -7,7 +7,6 @@ import { Box, Text } from '../ink.js'
 import { useAppState, useSetAppState } from '../state/AppState.js'
 import type { AppState } from '../state/AppStateStore.js'
 import { getGlobalConfig } from '../utils/config.js'
-import { isFullscreenActive } from '../utils/fullscreen.js'
 import type { Theme } from '../utils/theme.js'
 import { getCompanion } from './companion.js'
 import { renderFace, renderSprite, spriteFrameCount } from './sprites.js'
@@ -103,30 +102,10 @@ function SpeechBubble({
 export const MIN_COLS_FOR_FULL_SPRITE = 100
 const SPRITE_BODY_WIDTH = 12
 const NAME_ROW_PAD = 2 // focused state wraps name in spaces: ` name `
-const SPRITE_PADDING_X = 2
-const BUBBLE_WIDTH = 36 // SpeechBubble box (34) + tail column
 const NARROW_QUIP_CAP = 24
 
 function spriteColWidth(nameWidth: number): number {
   return Math.max(SPRITE_BODY_WIDTH, nameWidth + NAME_ROW_PAD)
-}
-
-// Width the sprite area consumes. PromptInput subtracts this so text wraps
-// correctly. In fullscreen the bubble floats over scrollback (no extra
-// width); in non-fullscreen it sits inline and needs BUBBLE_WIDTH more.
-// Narrow terminals: 0 — REPL.tsx stacks the one-liner on its own row
-// (above input in fullscreen, below in scrollback), so no reservation.
-export function companionReservedColumns(
-  terminalColumns: number,
-  speaking: boolean,
-): number {
-  if (!feature('BUDDY')) return 0
-  const companion = getCompanion()
-  if (!companion || getGlobalConfig().companionMuted) return 0
-  if (terminalColumns < MIN_COLS_FOR_FULL_SPRITE) return 0
-  const nameWidth = stringWidth(companion.name)
-  const bubble = speaking && !isFullscreenActive() ? BUBBLE_WIDTH : 0
-  return spriteColWidth(nameWidth) + SPRITE_PADDING_X + bubble
 }
 
 export function CompanionSprite(): React.ReactNode {
@@ -279,29 +258,10 @@ export function CompanionSprite(): React.ReactNode {
     </Box>
   )
 
-  if (!reaction) {
-    return <Box paddingX={1}>{spriteColumn}</Box>
-  }
-
-  // Fullscreen: bubble renders separately via CompanionFloatingBubble in
+  // The speech bubble renders separately via CompanionFloatingBubble in
   // FullscreenLayout's bottomFloat slot (the bottom slot's overflowY:hidden
   // would clip a position:absolute overlay here). Sprite body only.
-  // Non-fullscreen: bubble sits inline beside the sprite (input shrinks)
-  // because floating into Static scrollback can't be cleared.
-  if (isFullscreenActive()) {
-    return <Box paddingX={1}>{spriteColumn}</Box>
-  }
-  return (
-    <Box flexDirection="row" alignItems="flex-end" paddingX={1} flexShrink={0}>
-      <SpeechBubble
-        text={reaction}
-        color={color}
-        fading={fading}
-        tail="right"
-      />
-      {spriteColumn}
-    </Box>
-  )
+  return <Box paddingX={1}>{spriteColumn}</Box>
 }
 
 // Floating bubble overlay for fullscreen mode. Mounted in FullscreenLayout's

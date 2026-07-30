@@ -19,6 +19,9 @@ import { PreviewBox } from './PreviewBox.js'
 import { QuestionNavigationBar } from './QuestionNavigationBar.js'
 import type { QuestionState } from './use-multiple-choice-state.js'
 
+/** Region that owns the bare arrow keys. Clicking a panel moves focus to it. */
+type Region = 'options' | 'preview' | 'footer'
+
 type Props = {
   question: Question
   questions: Question[]
@@ -70,7 +73,9 @@ export function PreviewQuestionView({
   onFinishPlanInterview,
 }: Props): React.ReactNode {
   const isInPlanMode = useAppState(s => s.toolPermissionContext.mode) === 'plan'
-  const [isFooterFocused, setIsFooterFocused] = useState(false)
+  // Which region owns the bare arrow keys. Mutually exclusive, so one value
+  // rather than parallel booleans — two regions can never look focused at once.
+  const [region, setRegion] = useState<Region>('options')
   const [footerIndex, setFooterIndex] = useState(0)
   const [isInNotesInput, setIsInNotesInput] = useState(false)
   const [cursorOffset, setCursorOffset] = useState(0)
@@ -92,7 +97,7 @@ export function PreviewQuestionView({
   const [scrollOffset, setScrollOffset] = useState(0)
   const [maxScrollOffset, setMaxScrollOffset] = useState(0)
 
-  // Reset focusedIndex when navigating to a different question
+  // Reset focusedIndex and region when navigating to a different question
   const prevQuestionText = useRef(questionText)
   if (prevQuestionText.current !== questionText) {
     prevQuestionText.current = questionText
@@ -101,6 +106,7 @@ export function PreviewQuestionView({
       ? allOptions.findIndex(opt => opt.label === selected)
       : -1
     setFocusedIndex(idx >= 0 ? idx : 0)
+    setRegion('options')
   }
 
   // Each option has its own preview, so reset scrolling whenever the displayed
@@ -122,6 +128,7 @@ export function PreviewQuestionView({
       if (!option) return
 
       setFocusedIndex(index)
+      setRegion('options')
       onUpdateQuestionState(
         questionText,
         { selectedValue: option.label },
@@ -149,6 +156,8 @@ export function PreviewQuestionView({
 
       if (newIndex >= 0 && newIndex < allOptions.length) {
         setFocusedIndex(newIndex)
+        // Acting on the option list takes focus back from the preview.
+        setRegion('options')
       }
     },
     [focusedIndex, allOptions.length, isInNotesInput],
@@ -181,7 +190,7 @@ export function PreviewQuestionView({
       'tabs:previous': () => onTabPrev?.(),
       'tabs:next': () => onTabNext?.(),
     },
-    { context: 'Tabs', isActive: !isInNotesInput && !isFooterFocused },
+    { context: 'Tabs', isActive: !isInNotesInput && region !== 'footer' },
   )
 
   // Re-submit the answer (plain label) when exiting notes input.
@@ -194,12 +203,16 @@ export function PreviewQuestionView({
     }
   }, [selectedValue, questionText, onAnswer, onTextInputFocus])
 
-  const handleDownFromPreview = useCallback(() => {
-    setIsFooterFocused(true)
+  const focusOptions = useCallback(() => {
+    setRegion('options')
   }, [])
 
-  const handleUpFromFooter = useCallback(() => {
-    setIsFooterFocused(false)
+  const focusPreview = useCallback(() => {
+    setRegion('preview')
+  }, [])
+
+  const focusFooter = useCallback(() => {
+    setRegion('footer')
   }, [])
 
   const scrollPreview = useCallback(
@@ -211,23 +224,41 @@ export function PreviewQuestionView({
     [maxScrollOffset],
   )
 
-  // Handle keyboard input for option/footer/notes navigation.
-  // Always active — the handler routes internally based on isFooterFocused/isInNotesInput.
+  // Handle keyboard input for option/preview/footer/notes navigation.
+  // Always active — the handler routes internally based on region/isInNotesInput.
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      // Preview scrolling stays available while navigating options or the
-      // footer; the notes input owns the arrow keys while typing.
+      // shift+arrow scrolls the preview from any region. Apple Terminal strips
+      // shift from arrows (they arrive bare), so clicking the preview to focus
+      // it is the portable path — see the region === 'preview' branch below.
       if (!isInNotesInput && e.shift && (e.key === 'up' || e.key === 'down')) {
         e.preventDefault()
         scrollPreview(e.key === 'up' ? -1 : 1)
         return
       }
 
-      if (isFooterFocused) {
+      // Focused preview owns the bare arrows. Everything else (enter, digits,
+      // n, tab) falls through to the option list, which takes focus back — see
+      // the option-navigation branch below.
+      // Escape is deliberately NOT handled here: CancelRequestHandler claims it
+      // through the keybinding emitter, which runs before any DOM handler
+      // (App.tsx emits 'input' before dispatchKeyboardEvent), so escape always
+      // cancels the request no matter what this handler does.
+      if (
+        region === 'preview' &&
+        !isInNotesInput &&
+        (e.key === 'up' || e.key === 'down')
+      ) {
+        e.preventDefault()
+        scrollPreview(e.key === 'up' ? -1 : 1)
+        return
+      }
+
+      if (region === 'footer') {
         if (e.key === 'up' || (e.ctrl && e.key === 'p')) {
           e.preventDefault()
           if (footerIndex === 0) {
-            handleUpFromFooter()
+            focusOptions()
           } else {
             setFooterIndex(0)
           }
@@ -278,7 +309,7 @@ export function PreviewQuestionView({
         e.preventDefault()
         if (focusedIndex === allOptions.length - 1) {
           // At bottom of options, go to footer
-          handleDownFromPreview()
+          focusFooter()
         } else {
           handleNavigate('down')
         }
@@ -289,6 +320,7 @@ export function PreviewQuestionView({
         // Press 'n' to focus the notes input
         e.preventDefault()
         setIsInNotesInput(true)
+        setRegion('options')
         onTextInputFocus(true)
       } else if (e.key === 'escape') {
         e.preventDefault()
@@ -302,14 +334,14 @@ export function PreviewQuestionView({
       }
     },
     [
-      isFooterFocused,
+      region,
       footerIndex,
       isInPlanMode,
       isInNotesInput,
       focusedIndex,
       allOptions.length,
-      handleUpFromFooter,
-      handleDownFromPreview,
+      focusOptions,
+      focusFooter,
       handleNavigate,
       scrollPreview,
       handleSelectOption,
@@ -372,13 +404,21 @@ export function PreviewQuestionView({
           {/* Side-by-side layout: options on left, preview on right */}
           <Box marginTop={1} flexDirection="row" gap={4}>
             {/* Left panel: vertical option list */}
-            <Box flexDirection="column" width={30}>
+            <Box flexDirection="column" width={30} onClick={focusOptions}>
               {allOptions.map((option, index) => {
-                const isFocused = focusedIndex === index
+                const isFocused = focusedIndex === index && region === 'options'
                 const isSelected = selectedValue === option.label
 
                 return (
-                  <Box key={option.label} flexDirection="row">
+                  <Box
+                    key={option.label}
+                    flexDirection="row"
+                    // Focus only — a stray click must not answer the question.
+                    onClick={() => {
+                      setFocusedIndex(index)
+                      focusOptions()
+                    }}
+                  >
                     {isFocused ? (
                       <Text color="suggestion">{figures.pointer}</Text>
                     ) : (
@@ -406,14 +446,17 @@ export function PreviewQuestionView({
 
             {/* Right panel: preview + notes */}
             <Box flexDirection="column" flexGrow={1}>
-              <PreviewBox
-                content={previewContent || 'No preview available'}
-                maxLines={previewMaxLines}
-                minWidth={minContentWidth}
-                maxWidth={previewMaxWidth}
-                scrollOffset={scrollOffset}
-                onScrollBoundsChange={setMaxScrollOffset}
-              />
+              <Box flexDirection="column" onClick={focusPreview}>
+                <PreviewBox
+                  content={previewContent || 'No preview available'}
+                  maxLines={previewMaxLines}
+                  minWidth={minContentWidth}
+                  maxWidth={previewMaxWidth}
+                  scrollOffset={scrollOffset}
+                  onScrollBoundsChange={setMaxScrollOffset}
+                  isFocused={region === 'preview'}
+                />
+              </Box>
               <Box marginTop={1} flexDirection="row" gap={1}>
                 <Text color="suggestion">Notes:</Text>
                 {isInNotesInput ? (
@@ -447,15 +490,22 @@ export function PreviewQuestionView({
           {/* Footer section */}
           <Box flexDirection="column" marginTop={1}>
             <Divider color="inactive" />
-            <Box flexDirection="row" gap={1}>
-              {isFooterFocused && footerIndex === 0 ? (
+            <Box
+              flexDirection="row"
+              gap={1}
+              onClick={() => {
+                setFooterIndex(0)
+                focusFooter()
+              }}
+            >
+              {region === 'footer' && footerIndex === 0 ? (
                 <Text color="suggestion">{figures.pointer}</Text>
               ) : (
                 <Text> </Text>
               )}
               <Text
                 color={
-                  isFooterFocused && footerIndex === 0
+                  region === 'footer' && footerIndex === 0
                     ? 'suggestion'
                     : undefined
                 }
@@ -464,15 +514,22 @@ export function PreviewQuestionView({
               </Text>
             </Box>
             {isInPlanMode && (
-              <Box flexDirection="row" gap={1}>
-                {isFooterFocused && footerIndex === 1 ? (
+              <Box
+                flexDirection="row"
+                gap={1}
+                onClick={() => {
+                  setFooterIndex(1)
+                  focusFooter()
+                }}
+              >
+                {region === 'footer' && footerIndex === 1 ? (
                   <Text color="suggestion">{figures.pointer}</Text>
                 ) : (
                   <Text> </Text>
                 )}
                 <Text
                   color={
-                    isFooterFocused && footerIndex === 1
+                    region === 'footer' && footerIndex === 1
                       ? 'suggestion'
                       : undefined
                   }

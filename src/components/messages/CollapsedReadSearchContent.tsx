@@ -15,7 +15,6 @@ import { uniq } from '../../utils/array.js'
 import { getToolUseIdsFromCollapsedGroup } from '../../utils/collapseReadSearch.js'
 import { getDisplayPath } from '../../utils/file.js'
 import { formatDuration, formatSecondsShort } from '../../utils/format.js'
-import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js'
 import type { buildMessageLookups } from '../../utils/messages.js'
 import type { ThemeName } from '../../utils/theme.js'
 import { CtrlOToExpand } from '../CtrlOToExpand.js'
@@ -239,9 +238,7 @@ export function CollapsedReadSearchContent({
   // same command isn't counted twice. gitOpBashCount is read live (no max-ref
   // needed — it's 0 until results arrive, then only grows).
   const gitOpBashCount = message.gitOpBashCount ?? 0
-  const bashCount = isFullscreenEnvEnabled()
-    ? Math.max(0, maxBashCountRef.current - gitOpBashCount)
-    : 0
+  const bashCount = Math.max(0, maxBashCountRef.current - gitOpBashCount)
 
   const hasNonMemoryOps =
     searchCount > 0 ||
@@ -367,7 +364,7 @@ export function CollapsedReadSearchContent({
   // commands (npm install, tests) looked frozen. Shown after 2s so fast
   // commands stay clean; the ticking counter reassures that slow ones aren't stuck.
   let shellProgressSuffix = ''
-  if (isFullscreenEnvEnabled() && isActiveGroup) {
+  if (isActiveGroup) {
     let elapsed: number | undefined
     let lines = 0
     for (const id of toolUseIds) {
@@ -407,7 +404,7 @@ export function CollapsedReadSearchContent({
       </Text>,
     )
   }
-  if (isFullscreenEnvEnabled() && message.commits?.length) {
+  if (message.commits?.length) {
     const byKind = {
       committed: 'committed',
       amended: 'amended commit',
@@ -420,11 +417,11 @@ export function CollapsedReadSearchContent({
       }
     }
   }
-  if (isFullscreenEnvEnabled() && message.pushes?.length) {
+  if (message.pushes?.length) {
     const branches = uniq(message.pushes.map(p => p.branch))
     pushPart('push', 'pushed to', <Text bold>{branches.join(', ')}</Text>)
   }
-  if (isFullscreenEnvEnabled() && message.branches?.length) {
+  if (message.branches?.length) {
     const byAction: Record<string, string> = {
       merged: 'merged',
       rebased: 'rebased onto',
@@ -437,7 +434,7 @@ export function CollapsedReadSearchContent({
       )
     }
   }
-  if (isFullscreenEnvEnabled() && message.prs?.length) {
+  if (message.prs?.length) {
     const verbs: Record<string, string> = {
       created: 'created',
       edited: 'edited',
@@ -561,7 +558,7 @@ export function CollapsedReadSearchContent({
     )
   }
 
-  if (isFullscreenEnvEnabled() && bashCount > 0) {
+  if (bashCount > 0) {
     const isFirst = nonMemParts.length === 0
     const verb = isActiveGroup
       ? isFirst

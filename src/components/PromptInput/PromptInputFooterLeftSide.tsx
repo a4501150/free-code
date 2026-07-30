@@ -35,7 +35,6 @@ import { formatDuration } from '../../utils/format.js'
 import { VoiceWarmupHint } from './VoiceIndicator.js'
 import { useVoiceEnabled } from '../../hooks/useVoiceEnabled.js'
 import { useVoiceState } from '../../context/voice.js'
-import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js'
 import { isXtermJs } from '../../ink/terminal.js'
 import { useHasSelection, useSelection } from '../../ink/hooks/use-selection.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
@@ -468,7 +467,7 @@ function ModeIndicator({
   // the activation key, show feedback regardless of other hints.
   if (feature('VOICE_MODE') && voiceEnabled && voiceWarmingUp) {
     parts.push(<VoiceWarmupHint key="voice-warmup" />)
-  } else if (isFullscreenEnvEnabled() && selectionHintHasContent) {
+  } else if (selectionHintHasContent) {
     // xterm.js (VS Code/Cursor/Windsurf) force-selection modifier is
     // platform-specific and gated on macOS (SelectionService.shouldForceSelection):
     //   macOS:     altKey && macOptionClickForcesSelection (VS Code default: false)
@@ -526,16 +525,16 @@ function ModeIndicator({
     )
   }
 
-  // In fullscreen the bottom section is flexShrink:0 — every row here
-  // is a row stolen from the ScrollBox. This component must have a STABLE
-  // height so the footer never grows/shrinks and shifts scroll content.
+  // The bottom section is flexShrink:0 — every row here is a row stolen from
+  // the ScrollBox. This component must have a STABLE height so the footer never
+  // grows/shrinks and shifts scroll content.
   // Returning null when parts is empty (e.g. StatusLine on → suppressHint
   // → showHint=false → no "? for shortcuts") would let a later-added
   // part (e.g. the selection copy/native-select hints) grow the column
-  // from 0→1 row. Always render 1 row in fullscreen; return a space when
-  // empty so Yoga reserves the row without painting anything visible.
+  // from 0→1 row. Always render 1 row; a space reserves it in Yoga without
+  // painting anything visible.
   if (parts.length === 0 && !tasksPart && !modePart) {
-    return isFullscreenEnvEnabled() ? <Text> </Text> : null
+    return <Text> </Text>
   }
 
   // flexShrink=0 keeps mode + pill at natural width; the remaining parts

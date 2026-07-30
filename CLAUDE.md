@@ -111,3 +111,15 @@ Settings hooks, plugin-registered hooks, and session-derived (agent/skill frontm
 ### modelSettings.json is filtered to model keys on read
 
 `modelSettings.json` merges after `freecode.json` within `userSettings`, and `SettingsSchema` is `.passthrough()`, so any general key there would silently outrank `freecode.json`. Reads project it to `MODEL_SETTINGS_KEYS` ([src/utils/settings/modelSettingsKeys.ts](src/utils/settings/modelSettingsKeys.ts)) to mirror the existing write routing. The projection runs on raw JSON _before_ schema validation, so an invalid general key can't fail the file and take its provider config down with it. Model keys still resolve from `freecode.json` when absent from `modelSettings.json`.
+
+### Terminals mangle modified arrow keys — don't build UI on them
+
+Apple Terminal strips shift from arrows: `shift+↑` arrives as a bare `up`, so a `key.shift`-gated branch can never fire there, and the bare arrow silently triggers whatever plain-arrow behavior exists. It sends `option+↑` as ESC-prefixed `ESC ESC [ A`, often split across reads, which [src/ink/parse-keypress.ts](src/ink/parse-keypress.ts) parses as `escape` then `up` — enough to cancel a dialog. ESC-prefix _is_ folded into `meta` for letters (`ESC p` → meta+p, which is why `alt+p` works), just not for CSI sequences. Modified arrows are fine as an enhancement on terminals that transmit them (iTerm2/Ghostty/kitty/WezTerm), but anything a user must be able to reach needs a plain key or a mouse click.
+
+### Only the keybinding emitter can claim a key; DOM handlers always run second
+
+[src/ink/components/App.tsx](src/ink/components/App.tsx) emits the `input` event to all `useInput`/`useKeybinding` listeners and only then calls `dispatchKeyboardEvent`, and the two paths carry different event objects. A DOM `onKeyDown` therefore cannot pre-empt a registered keybinding: `preventDefault()`/`stopPropagation()` on the `KeyboardEvent` can't undo an action the emitter already ran. Concretely, `CancelRequestHandler` ([src/hooks/useCancelRequest.ts](src/hooks/useCancelRequest.ts)) claims escape whenever a query is in flight, so a dialog cannot repurpose escape for an inner "leave this sub-region" step — it will cancel the request first. Layered escape semantics have to be built in the emitter layer (an overlay registration or a competing keybinding), not in `onKeyDown`.
+
+### Click-to-focus is free; region focus is component state
+
+[src/ink/hit-test.ts](src/ink/hit-test.ts) focuses the nearest ancestor with a numeric `tabIndex` before dispatching `onClick`, so a dialog gets click-to-focus without any focus plumbing. Adding `tabIndex` to inner panels is usually the wrong move: it changes Tab traversal (which dialogs often bind to something else) and exposes the reconciler's focus-restoration stack when panels re-render. Prefer keeping one focusable root and tracking which panel owns the arrow keys in component state, driven by `onClick`. Note that a click that drags becomes a text selection and never produces `onClick` at all.

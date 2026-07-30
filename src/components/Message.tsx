@@ -26,7 +26,6 @@ import type {
   SystemMessage,
 } from '../types/message.js'
 import { type AdvisorBlock, isAdvisorBlock } from '../utils/advisor.js'
-import { isFullscreenEnvEnabled } from '../utils/fullscreen.js'
 import { logError } from '../utils/log.js'
 import type { buildMessageLookups } from '../utils/messages.js'
 import { CompactSummary } from './CompactSummary.js'
@@ -38,7 +37,6 @@ import { AssistantToolUseMessage } from './messages/AssistantToolUseMessage.js'
 import { AttachmentMessage } from './messages/AttachmentMessage.js'
 import { TruncationIndicator } from './messages/TruncationIndicator.js'
 import { CollapsedReadSearchContent } from './messages/CollapsedReadSearchContent.js'
-import { CompactBoundaryMessage } from './messages/CompactBoundaryMessage.js'
 import { GroupedToolUseContent } from './messages/GroupedToolUseContent.js'
 import { SystemTextMessage } from './messages/SystemTextMessage.js'
 import { UserImageMessage } from './messages/UserImageMessage.js'
@@ -216,13 +214,10 @@ function MessageImpl({
     }
     case 'system':
       if (message.subtype === 'compact_boundary') {
-        // Fullscreen keeps pre-compact messages in the ScrollBox (REPL.tsx
-        // appends instead of resetting, Messages.tsx skips the boundary
-        // filter) — scroll up for history, no need for the ctrl+o hint.
-        if (isFullscreenEnvEnabled()) {
-          return null
-        }
-        return <CompactBoundaryMessage />
+        // Pre-compact messages stay in the ScrollBox (REPL.tsx appends instead
+        // of resetting, Messages.tsx skips the boundary filter) — scroll up for
+        // history, so the boundary needs no marker of its own.
+        return null
       }
       if (message.subtype === 'microcompact_boundary') {
         // Logged at creation time in createMicrocompactBoundaryMessage

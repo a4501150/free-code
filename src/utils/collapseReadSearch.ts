@@ -25,7 +25,6 @@ import type {
   SystemStopHookSummaryMessage,
 } from '../types/message.js'
 import { getDisplayPath } from './file.js'
-import { isFullscreenEnvEnabled } from './fullscreen.js'
 import {
   isAutoManagedMemoryFile,
   isAutoManagedMemoryPattern,
@@ -221,12 +220,10 @@ export function getSearchOrReadInfo(
   )
   const isList = result.isList ?? false
   const isCollapsible = result.isSearch || result.isRead || isList
-  // Under fullscreen mode, non-search/read Bash commands are also collapsible
-  // as their own category — "Ran N bash commands" instead of breaking the group.
+  // Non-search/read Bash commands are also collapsible as their own category
+  // — "Ran N bash commands" instead of breaking the group.
   return {
-    isCollapsible:
-      isCollapsible ||
-      (isFullscreenEnvEnabled() ? toolName === BASH_TOOL_NAME : false),
+    isCollapsible: isCollapsible || toolName === BASH_TOOL_NAME,
     isSearch: result.isSearch,
     isRead: result.isRead,
     isList,
@@ -235,9 +232,7 @@ export function getSearchOrReadInfo(
     isTaskManagement: false,
     isAbsorbedSilently: false,
     ...(tool.isMcp && { mcpServerName: tool.mcpInfo?.serverName }),
-    isBash: isFullscreenEnvEnabled()
-      ? !isCollapsible && toolName === BASH_TOOL_NAME
-      : undefined,
+    isBash: !isCollapsible && toolName === BASH_TOOL_NAME,
   }
 }
 
@@ -676,15 +671,13 @@ function createEmptyGroup(): GroupAccumulator {
   }
   group.mcpCallCount = 0
   group.mcpServerNames = new Set()
-  if (isFullscreenEnvEnabled()) {
-    group.bashCount = 0
-    group.bashCommands = new Map()
-    group.commits = []
-    group.pushes = []
-    group.branches = []
-    group.prs = []
-    group.gitOpBashCount = 0
-  }
+  group.bashCount = 0
+  group.bashCommands = new Map()
+  group.commits = []
+  group.pushes = []
+  group.branches = []
+  group.prs = []
+  group.gitOpBashCount = 0
   return group
 }
 
@@ -767,16 +760,14 @@ function createCollapsedGroup(
     result.mcpCallCount = group.mcpCallCount
     result.mcpServerNames = [...(group.mcpServerNames ?? [])]
   }
-  if (isFullscreenEnvEnabled()) {
-    if ((group.bashCount ?? 0) > 0) {
-      result.bashCount = group.bashCount
-      result.gitOpBashCount = group.gitOpBashCount
-    }
-    if ((group.commits?.length ?? 0) > 0) result.commits = group.commits
-    if ((group.pushes?.length ?? 0) > 0) result.pushes = group.pushes
-    if ((group.branches?.length ?? 0) > 0) result.branches = group.branches
-    if ((group.prs?.length ?? 0) > 0) result.prs = group.prs
+  if ((group.bashCount ?? 0) > 0) {
+    result.bashCount = group.bashCount
+    result.gitOpBashCount = group.gitOpBashCount
   }
+  if ((group.commits?.length ?? 0) > 0) result.commits = group.commits
+  if ((group.pushes?.length ?? 0) > 0) result.pushes = group.pushes
+  if ((group.branches?.length ?? 0) > 0) result.branches = group.branches
+  if ((group.prs?.length ?? 0) > 0) result.prs = group.prs
   if (group.hookCount > 0) {
     result.hookTotalMs = group.hookTotalMs
     result.hookCount = group.hookCount
@@ -854,7 +845,7 @@ export function collapseReadSearchGroups(
         if (input?.query) {
           currentGroup.latestDisplayHint = `"${input.query}"`
         }
-      } else if (isFullscreenEnvEnabled() && toolInfo.isBash) {
+      } else if (toolInfo.isBash) {
         // Non-search/read Bash command — counted separately so the summary
         // says "Ran N bash commands" instead of breaking the group.
         const count = countToolUses(msg)
@@ -935,7 +926,7 @@ export function collapseReadSearchGroups(
     } else if (isCollapsibleToolResult(msg, currentGroup.toolUseIds)) {
       currentGroup.messages.push(msg)
       // Scan bash results for commit SHAs / PR URLs to surface in the summary
-      if (isFullscreenEnvEnabled() && currentGroup.bashCommands?.size) {
+      if (currentGroup.bashCommands?.size) {
         scanBashResultForGitOps(msg, currentGroup)
       }
     } else if (currentGroup.messages.length > 0 && isPreToolHookSummary(msg)) {

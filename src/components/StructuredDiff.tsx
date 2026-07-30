@@ -3,7 +3,6 @@ import * as React from 'react'
 import { memo } from 'react'
 import { useSettings } from '../hooks/useSettings.js'
 import { Box, NoSelect, RawAnsi, useTheme } from '../ink.js'
-import { isFullscreenEnvEnabled } from '../utils/fullscreen.js'
 import sliceAnsi from '../utils/sliceAnsi.js'
 import { expectColorDiff } from './StructuredDiff/colorDiff.js'
 import { StructuredDiffFallback } from './StructuredDiff/Fallback.js'
@@ -63,7 +62,6 @@ function renderColorDiff(
   theme: string,
   width: number,
   dim: boolean,
-  splitGutter: boolean,
 ): CachedRender | null {
   const ColorDiff = expectColorDiff()
   if (!ColorDiff) return null
@@ -73,7 +71,7 @@ function renderColorDiff(
   // single-column output stays correct; we just lose noSelect. Without
   // this, sliceAnsi(line, gutterWidth) would return empty content and
   // RawAnsi(width<=0) is untested.
-  const rawGutterWidth = splitGutter ? computeGutterWidth(patch) : 0
+  const rawGutterWidth = computeGutterWidth(patch)
   const gutterWidth =
     rawGutterWidth > 0 && rawGutterWidth < width ? rawGutterWidth : 0
 
@@ -133,12 +131,6 @@ export const StructuredDiff = memo(function StructuredDiff({
   // which expects u32 (can't handle negative numbers)
   const safeWidth = Math.max(1, Math.floor(width))
 
-  // Only split out a noSelect gutter in fullscreen mode — terminal native
-  // selection is used otherwise and noSelect is meaningless. Both branches
-  // are now O(1) Yoga leaves per diff on remount (2 vs 1), so this gate
-  // only saves cold-cache sliceAnsi work when fullscreen is off.
-  const splitGutter = isFullscreenEnvEnabled()
-
   const cached =
     skipHighlighting || syntaxHighlightingDisabled
       ? null
@@ -150,7 +142,6 @@ export const StructuredDiff = memo(function StructuredDiff({
           theme,
           safeWidth,
           dim,
-          splitGutter,
         )
 
   if (!cached) {

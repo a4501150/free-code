@@ -38,7 +38,6 @@ import {
 } from '../utils/context.js'
 import { getCwd } from '../utils/cwd.js'
 import { logForDebugging } from '../utils/debug.js'
-import { isFullscreenEnvEnabled } from '../utils/fullscreen.js'
 import {
   createBaseHookInput,
   executeStatusLineCommand,
@@ -430,19 +429,19 @@ function StatusLineInner({
   // Get padding from settings or default to 0
   const paddingX = settings?.statusLine?.padding ?? 0
 
-  // StatusLine must have stable height in fullscreen — the footer is
-  // flexShrink:0 so a 0→1 row change when the command finishes steals
-  // a row from ScrollBox and shifts content. Reserve the row while loading
-  // (same trick as PromptInputFooterLeftSide).
+  // StatusLine must have stable height — the footer is flexShrink:0 so a
+  // 0→1 row change when the command finishes steals a row from ScrollBox and
+  // shifts content. Reserve the row while loading (same trick as
+  // PromptInputFooterLeftSide).
   return (
     <Box paddingX={paddingX} gap={2}>
       {statusLineText ? (
         <Text dimColor wrap="truncate">
           <Ansi>{statusLineText}</Ansi>
         </Text>
-      ) : isFullscreenEnvEnabled() ? (
+      ) : (
         <Text> </Text>
-      ) : null}
+      )}
     </Box>
   )
 }
