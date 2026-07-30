@@ -1,10 +1,9 @@
 /**
  * Files are loaded in the following order:
  *
- * 1. Managed memory (eg. /etc/claude-code/CLAUDE.md) - Global instructions for all users
- * 2. User memory (~/.freecode/CLAUDE.md) - Private global instructions for all projects
- * 3. Project memory (CLAUDE.md, project config CLAUDE.md, and project config rules/*.md in project roots) - Instructions checked into the codebase
- * 4. Local memory (CLAUDE.local.md in project roots) - Private project-specific instructions
+ * 1. User memory (~/.freecode/CLAUDE.md) - Private global instructions for all projects
+ * 2. Project memory (CLAUDE.md, project config CLAUDE.md, and project config rules/*.md in project roots) - Instructions checked into the codebase
+ * 3. Local memory (CLAUDE.local.md in project roots) - Private project-specific instructions
  *
  * Files are loaded in reverse order of priority, i.e. the latest files are highest priority
  * with the model paying more attention to them.
@@ -553,7 +552,7 @@ const MAX_INCLUDE_DEPTH = 5
 /**
  * Checks whether a CLAUDE.md file path is excluded by the claudeMdExcludes setting.
  * Only applies to User, Project, and Local memory types.
- * Managed, AutoMem, and TeamMem types are never excluded.
+ * AutoMem and TeamMem types are never excluded.
  *
  * Matches both the original path and the realpath-resolved path to handle symlinks
  * (e.g., /tmp -> /private/tmp on macOS).
@@ -1341,11 +1340,11 @@ export async function processConditionedMdRules(
     }
 
     // For Project rules: glob patterns are relative to the project directory.
-    // For Managed/User rules: glob patterns are relative to the original CWD.
+    // For User rules: glob patterns are relative to the original CWD.
     const baseDir =
       type === 'Project'
         ? dirname(dirname(rulesDir)) // Parent of project config dir
-        : getOriginalCwd() // Project root for managed/user rules
+        : getOriginalCwd() // Project root for user rules
 
     const relativePath = isAbsolute(targetPath)
       ? relative(baseDir, targetPath)

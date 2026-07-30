@@ -1562,7 +1562,7 @@ function getHooksConfig(
  * the full merged config.
  *
  * Intentionally over-approximates: returns true if any matcher exists for the
- * event, even if managed-only filtering or pattern matching would later
+ * event, even if pattern matching would later
  * discard it. A false positive just means we proceed to the full matching
  * path; a false negative would skip a hook, so we err on the side of true.
  *

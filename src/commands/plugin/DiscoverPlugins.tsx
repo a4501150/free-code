@@ -178,7 +178,7 @@ export function DiscoverPlugins({
                 entry,
                 marketplaceName: name,
                 pluginId,
-                // Only block when globally installed (user/managed scope).
+                // Only block when globally installed (user scope).
                 // Project/local-scope installs don't block — user may want to
                 // promote to user scope so it's available everywhere (gh-29997).
                 isInstalled: isPluginGloballyInstalled(pluginId),

@@ -132,10 +132,7 @@ import {
   getMcpToolsCommandsAndResources,
   prefetchAllMcpResources,
 } from './services/mcp/client.js'
-import {
-  VALID_INSTALLABLE_SCOPES,
-  VALID_UPDATE_SCOPES,
-} from './services/plugins/pluginCliCommands.js'
+import { VALID_INSTALLABLE_SCOPES } from './services/plugins/pluginCliCommands.js'
 import { initBundledSkills } from './skills/bundled/index.js'
 import {
   replaceFromSnapshot,
@@ -1724,9 +1721,9 @@ async function run(): Promise<CommanderCommand> {
             scope: 'dynamic' as const,
           }))
 
-          // Enforce managed policy (allowedMcpServers / deniedMcpServers) on
+          // Enforce policy (allowedMcpServers / deniedMcpServers) on
           // --mcp-config servers. Without this, the CLI flag bypasses the
-          // enterprise allowlist that user/project/local configs go through in
+          // allowlist that user/project/local configs go through in
           // getClaudeCodeMcpConfigs — callers spread dynamicMcpConfig back on
           // top of filtered results. Filter here at the source so all
           // downstream consumers see the policy-filtered set.
@@ -3907,7 +3904,7 @@ async function run(): Promise<CommanderCommand> {
     )
     .option(
       '-s, --scope <scope>',
-      `Installation scope: ${VALID_UPDATE_SCOPES.join(', ')} (default: user)`,
+      `Installation scope: ${VALID_INSTALLABLE_SCOPES.join(', ')} (default: user)`,
     )
     .addOption(coworkOption())
     .action(

@@ -84,7 +84,7 @@ export function resolveAgentModelDisplay(
 
 /**
  * Get a human-readable label for the source that overrides an agent.
- * Returns lowercase, e.g. "user", "project", "managed".
+ * Returns lowercase, e.g. "user", "project", "plugin".
  */
 export function getOverrideSourceLabel(source: AgentSource): string {
   return getSourceDisplayName(source).toLowerCase()

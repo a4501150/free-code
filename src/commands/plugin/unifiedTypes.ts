@@ -2,7 +2,7 @@ import type { ConnectedMCPServer } from '../../components/mcp/types.js'
 import type { LoadedPlugin, PluginError } from '../../types/plugin.js'
 
 /** Display-only UI scope for installed items. Superset of ConfigScope for
- *  plugins (`builtin`, `flagged`, `enterprise`) and of MCP ConfigScope. */
+ *  plugins (`builtin`, `flagged`) and of MCP ConfigScope. */
 export type UnifiedInstalledItemScope =
   | 'user'
   | 'project'

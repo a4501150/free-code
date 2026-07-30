@@ -992,8 +992,7 @@ const _settingsSchemaValue = z
       .optional()
       .describe(
         'Override mapping from Anthropic model ID (e.g. "claude-opus-4-6") to provider-specific ' +
-          'model ID (e.g. a Bedrock inference profile ARN). Typically set in managed settings by ' +
-          'enterprise administrators.',
+          'model ID (e.g. a Bedrock inference profile ARN).',
       ),
     providers: z
       .record(z.string(), ProviderConfigSchema)
@@ -1412,7 +1411,7 @@ const _settingsSchemaValue = z
       .describe(
         'Glob patterns or absolute paths of CLAUDE.md files to exclude from loading. ' +
           'Patterns are matched against absolute file paths using picomatch. ' +
-          'Only applies to User, Project, and Local memory types (Managed/policy files cannot be excluded). ' +
+          'Only applies to User, Project, and Local memory types (auto-memory files cannot be excluded). ' +
           'Examples: "/home/user/monorepo/CLAUDE.md", "**/code/CLAUDE.md", "**/some-dir/.freecode/rules/**"',
       ),
     fineGrainedToolStreaming: z

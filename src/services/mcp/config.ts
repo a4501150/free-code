@@ -456,7 +456,7 @@ function isMcpServerAllowedByPolicy(
 }
 
 /**
- * Filter a record of MCP server configs by managed policy (allowedMcpServers /
+ * Filter a record of MCP server configs by policy (allowedMcpServers /
  * deniedMcpServers). Servers blocked by policy are dropped and their names
  * returned so callers can warn the user.
  *

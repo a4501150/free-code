@@ -12,7 +12,6 @@
  */
 
 import { createHash } from 'crypto'
-import { sep } from 'path'
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../../services/analytics/index.js'
 import type {
   LoadedPlugin,
@@ -68,17 +67,6 @@ export function getTelemetryPluginScope(
   return 'user-local'
 }
 
-/**
- * How a plugin arrived in the session. Splits self-selected from org-pushed
- * — plugin_scope alone doesn't (an official plugin can be user-installed OR
- * org-pushed; both are scope='official').
- */
-export type EnabledVia =
-  | 'user-install'
-  | 'org-policy'
-  | 'default-enable'
-  | 'seed-mount'
-
 /** How a skill/command invocation was triggered. */
 export type InvocationTrigger =
   | 'user-slash'
@@ -94,24 +82,6 @@ export type InstallSource =
   | 'ui-discover'
   | 'ui-suggestion'
   | 'deep-link'
-
-export function getEnabledVia(
-  plugin: LoadedPlugin,
-  managedNames: Set<string> | null,
-  seedDirs: string[],
-): EnabledVia {
-  if (plugin.isBuiltin) return 'default-enable'
-  if (managedNames?.has(plugin.name)) return 'org-policy'
-  // Trailing sep: /opt/plugins must not match /opt/plugins-extra
-  if (
-    seedDirs.some(dir =>
-      plugin.path.startsWith(dir.endsWith(sep) ? dir : dir + sep),
-    )
-  ) {
-    return 'seed-mount'
-  }
-  return 'user-install'
-}
 
 /**
  * Common plugin telemetry fields keyed off name@marketplace. Returns the
@@ -144,8 +114,8 @@ export function buildPluginTelemetryFields(
 }
 
 /**
- * Per-invocation callers (SkillTool, processSlashCommand) pass
- * managedNames=null — the session-level tengu_plugin_enabled_for_session
+ * Per-invocation callers (SkillTool, processSlashCommand) don't resolve a
+ * scope of their own — the session-level tengu_plugin_enabled_for_session
  * event carries the authoritative plugin_scope, and per-invocation rows can
  * join on plugin_id_hash to recover it. This keeps hot-path call sites free
  * of the extra settings read.

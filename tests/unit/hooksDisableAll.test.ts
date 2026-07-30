@@ -3,10 +3,9 @@
  * hooks. Plugin-registered and session-derived (agent/skill frontmatter) hooks
  * are assembled separately in hooks.ts and are gated on areAllHooksDisabled().
  *
- * This previously rode on the managed-settings helper shouldAllowManagedHooksOnly(),
- * which returned true whenever a non-managed source set disableAllHooks. Removing
- * managed settings collapsed the two into this one predicate; these tests pin the
- * resulting behavior so the plugin/session gating can't be dropped by accident.
+ * Each channel checks areAllHooksDisabled() independently, so dropping the
+ * check at any single one silently re-enables that channel. These tests pin
+ * the gating so it can't be removed by accident.
  */
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 

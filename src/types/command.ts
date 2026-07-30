@@ -168,13 +168,7 @@ export type CommandBase = {
   version?: string // Version of the command/skill
   disableModelInvocation?: boolean // Whether to disable this command from being invoked by models
   userInvocable?: boolean // Whether users can invoke this skill by typing /skill-name
-  loadedFrom?:
-    | 'commands_DEPRECATED'
-    | 'skills'
-    | 'plugin'
-    | 'managed'
-    | 'bundled'
-    | 'mcp' // Where the command was loaded from
+  loadedFrom?: 'commands_DEPRECATED' | 'skills' | 'plugin' | 'bundled' | 'mcp' // Where the command was loaded from
   kind?: 'workflow' // Distinguishes workflow-backed commands (badged in autocomplete)
   immediate?: boolean // If true, command executes immediately without waiting for a stop point (bypasses queue)
   isSensitive?: boolean // If true, args are redacted from the conversation history

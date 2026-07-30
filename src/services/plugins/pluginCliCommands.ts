@@ -26,10 +26,9 @@ import {
   uninstallPluginOp,
   updatePluginOp,
   VALID_INSTALLABLE_SCOPES,
-  VALID_UPDATE_SCOPES,
 } from './pluginOperations.js'
 
-export { VALID_INSTALLABLE_SCOPES, VALID_UPDATE_SCOPES }
+export { VALID_INSTALLABLE_SCOPES }
 
 type PluginCliCommand =
   | 'install'

@@ -14,7 +14,6 @@ import {
   uninstallPlugin,
   updatePluginCli,
   VALID_INSTALLABLE_SCOPES,
-  VALID_UPDATE_SCOPES,
 } from '../../services/plugins/pluginCliCommands.js'
 import { getPluginErrorMessage } from '../../types/plugin.js'
 import { errorMessage } from '../../utils/errors.js'
@@ -56,7 +55,7 @@ import { plural } from '../../utils/stringUtils.js'
 import { cliError, cliOk } from '../exit.js'
 
 // Re-export for main.tsx to reference in option definitions
-export { VALID_INSTALLABLE_SCOPES, VALID_UPDATE_SCOPES }
+export { VALID_INSTALLABLE_SCOPES }
 
 /**
  * Helper function to handle marketplace command errors consistently.
@@ -787,18 +786,18 @@ export async function pluginUpdateHandler(
   if (options.cowork) setUseCoworkPlugins(true)
   const { name, marketplace } = parsePluginIdentifier(plugin)
 
-  let scope: (typeof VALID_UPDATE_SCOPES)[number] = 'user'
+  let scope: (typeof VALID_INSTALLABLE_SCOPES)[number] = 'user'
   if (options.scope) {
     if (
-      !VALID_UPDATE_SCOPES.includes(
-        options.scope as (typeof VALID_UPDATE_SCOPES)[number],
+      !VALID_INSTALLABLE_SCOPES.includes(
+        options.scope as (typeof VALID_INSTALLABLE_SCOPES)[number],
       )
     ) {
       cliError(
-        `Invalid scope "${options.scope}". Valid scopes: ${VALID_UPDATE_SCOPES.join(', ')}`,
+        `Invalid scope "${options.scope}". Valid scopes: ${VALID_INSTALLABLE_SCOPES.join(', ')}`,
       )
     }
-    scope = options.scope as (typeof VALID_UPDATE_SCOPES)[number]
+    scope = options.scope as (typeof VALID_INSTALLABLE_SCOPES)[number]
   }
   if (options.cowork && scope !== 'user') {
     cliError('--cowork can only be used with user scope')

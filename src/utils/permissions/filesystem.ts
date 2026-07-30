@@ -232,7 +232,7 @@ export function isClaudeSettingsPath(filePath: string): boolean {
     // Include project settings/freecode files even for other projects
     return true
   }
-  // Check for current project's settings files (including managed settings and CLI args)
+  // Check for current project's settings files (including CLI args)
   // Both paths are now absolute and normalized for consistent comparison
   return getSettingsPaths().some(
     settingsPath => normalizeCaseForComparison(settingsPath) === normalizedPath,

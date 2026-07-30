@@ -788,10 +788,9 @@ export function ManagePlugins({
       project: 0,
       local: 1,
       user: 2,
-      enterprise: 3,
-      managed: 4,
-      dynamic: 5,
-      builtin: 6,
+      dynamic: 3,
+      builtin: 4,
+      claudeai: 5,
     }
 
     // Build final list by merging plugins (with their child MCPs) and standalone MCPs
@@ -1200,18 +1199,6 @@ export function ManagePlugins({
       return
     }
 
-    // Managed scope plugins can only be updated, not enabled/disabled/uninstalled
-    if (
-      !isBuiltin &&
-      !isInstallableScope(pluginScope) &&
-      operation !== 'update'
-    ) {
-      setProcessError(
-        'This plugin is managed by your organization. Contact your admin to disable it.',
-      )
-      return
-    }
-
     setIsProcessing(true)
     setProcessError(null)
 
@@ -1240,8 +1227,7 @@ export function ManagePlugins({
           break
         }
         case 'uninstall': {
-          if (isBuiltin) break // guarded above; narrows pluginScope
-          if (!isInstallableScope(pluginScope)) break
+          if (isBuiltin) break // guarded above
           // If the plugin is enabled in .freecode/freecode.json (shared with the
           // team), divert to a confirmation dialog that offers to disable in
           // freecode.local.json instead. Check the settings file directly —
@@ -1377,43 +1363,39 @@ export function ManagePlugins({
       const mergedSettings = getSettings_DEPRECATED()
       const currentPending = pendingToggles.get(pluginId)
       const isEnabled = mergedSettings?.enabledPlugins?.[pluginId] !== false
-      const pluginScope = item.scope as PluginScope
-      const isBuiltin = item.scope === 'builtin'
-      if (isBuiltin || isInstallableScope(pluginScope)) {
-        const newPending = new Map(pendingToggles)
-        // Omit scope — see handleSingleOperation's enable/disable comment.
-        if (currentPending) {
-          // Cancel: reverse the operation back to the original state
-          newPending.delete(pluginId)
-          void (async () => {
-            try {
-              if (currentPending === 'will-disable') {
-                await enablePluginOp(pluginId)
-              } else {
-                await disablePluginOp(pluginId)
-              }
-              clearAllCaches()
-            } catch (err) {
-              logError(err)
+      const newPending = new Map(pendingToggles)
+      // Omit scope — see handleSingleOperation's enable/disable comment.
+      if (currentPending) {
+        // Cancel: reverse the operation back to the original state
+        newPending.delete(pluginId)
+        void (async () => {
+          try {
+            if (currentPending === 'will-disable') {
+              await enablePluginOp(pluginId)
+            } else {
+              await disablePluginOp(pluginId)
             }
-          })()
-        } else {
-          newPending.set(pluginId, isEnabled ? 'will-disable' : 'will-enable')
-          void (async () => {
-            try {
-              if (isEnabled) {
-                await disablePluginOp(pluginId)
-              } else {
-                await enablePluginOp(pluginId)
-              }
-              clearAllCaches()
-            } catch (err) {
-              logError(err)
+            clearAllCaches()
+          } catch (err) {
+            logError(err)
+          }
+        })()
+      } else {
+        newPending.set(pluginId, isEnabled ? 'will-disable' : 'will-enable')
+        void (async () => {
+          try {
+            if (isEnabled) {
+              await disablePluginOp(pluginId)
+            } else {
+              await enablePluginOp(pluginId)
             }
-          })()
-        }
-        setPendingToggles(newPending)
+            clearAllCaches()
+          } catch (err) {
+            logError(err)
+          }
+        })()
       }
+      setPendingToggles(newPending)
     } else if (item?.type === 'mcp') {
       void toggleMcpServer(item.client.name)
     }
@@ -1846,12 +1828,7 @@ export function ManagePlugins({
       const pluginScope = selectedPlugin.scope as PluginScope
       // Dialog is only reachable from the uninstall case (which guards on
       // isBuiltin), but TS can't track that across viewState transitions.
-      if (
-        !pluginScope ||
-        pluginScope === ('builtin' as PluginScope) ||
-        !isInstallableScope(pluginScope)
-      )
-        return
+      if (!pluginScope || pluginScope === ('builtin' as PluginScope)) return
       const doUninstall = async (deleteDataDir: boolean) => {
         setIsProcessing(true)
         setProcessError(null)
@@ -2719,6 +2696,8 @@ export function ManagePlugins({
               return 'Built-in'
             case 'dynamic':
               return 'Built-in'
+            case 'claudeai':
+              return 'Claude.ai'
             default:
               return scope
           }

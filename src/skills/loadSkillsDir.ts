@@ -66,7 +66,6 @@ export type LoadedFrom =
   | 'commands_DEPRECATED'
   | 'skills'
   | 'plugin'
-  | 'managed'
   | 'bundled'
   | 'mcp'
 
@@ -644,7 +643,7 @@ export const getSkillDirCommands = memoize(
     const additionalDirs = getAdditionalDirectoriesForClaudeMd()
     const projectSettingsEnabled = isSettingSourceEnabled('projectSettings')
 
-    // --bare: skip auto-discovery (managed/user/project dir walks + legacy
+    // --bare: skip auto-discovery (user/project dir walks + legacy
     // commands-dir). Load ONLY explicit --add-dir paths. Bundled skills
     // register separately.
     if (isBareMode()) {

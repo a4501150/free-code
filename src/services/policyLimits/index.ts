@@ -2,8 +2,8 @@
  * Policy Limits Service
  *
  * Fetches organization-level policy restrictions from the API and uses them
- * to disable CLI features. Follows the same patterns as remote managed settings
- * (fail open, ETag caching, background polling, retry logic).
+ * to disable CLI features. Fails open, with ETag caching, background polling,
+ * and retry logic.
  *
  * Eligibility:
  * - Console users (API key): All eligible

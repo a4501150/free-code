@@ -338,7 +338,7 @@ function fanOut(source: SettingSource): void {
 
 /**
  * Manually notify listeners of a settings change.
- * Used for programmatic settings changes (e.g., remote managed settings refresh)
+ * Used for programmatic settings changes (e.g., remote user settings refresh)
  * that don't involve file system changes.
  */
 export function notifyChange(source: SettingSource): void {

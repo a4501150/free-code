@@ -142,7 +142,7 @@ async function updatePlugin(
  *
  * Iterates installed_plugins.json, filters to plugins whose marketplace is in
  * the set, further filters each plugin's installations to those relevant to
- * the current project (user/managed scope, or project/local scope matching
+ * the current project (user scope, or project/local scope matching
  * cwd — see isInstallationRelevantToCurrentProject), then calls updatePluginOp
  * per installation. Already-up-to-date plugins are silently skipped.
  *

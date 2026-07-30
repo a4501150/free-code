@@ -11,10 +11,6 @@ export const call: LocalCommandCall = async (_args, context) => {
   // take effect. Non-CCR headless (e.g. vscode SDK subprocess) shares disk
   // with whoever writes settings — the file watcher delivers changes, no
   // re-pull needed there.
-  //
-  // Managed settings intentionally NOT re-fetched: it already polls hourly
-  // (POLLING_INTERVAL_MS), and policy enforcement is eventually-consistent
-  // by design (stale-cache fallback on fetch failure). Interactive
 
   const r = await refreshActivePlugins(context.setAppState)
 

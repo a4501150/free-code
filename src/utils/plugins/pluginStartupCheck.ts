@@ -48,7 +48,7 @@ export async function checkEnabledPlugins(): Promise<string[]> {
     }
   }
 
-  // Merged settings (policy > local > project > user) override --add-dir
+  // Merged settings (local > project > user) override --add-dir
   if (settings.enabledPlugins) {
     for (const [pluginId, value] of Object.entries(settings.enabledPlugins)) {
       if (!pluginId.includes('@')) {
@@ -75,20 +75,17 @@ export async function checkEnabledPlugins(): Promise<string[]> {
  * Gets the user-editable scope that "owns" each enabled plugin.
  *
  * Used for scope tracking: determining where to write back when a user
- * enables/disables a plugin. Managed (policy) settings are processed first
- * (lowest priority) because the user cannot edit them — the scope should
- * resolve to the highest user-controllable source.
+ * enables/disables a plugin.
  *
  * NOTE: This is NOT the authoritative "is this plugin enabled?" check.
- * Use checkEnabledPlugins() for that — it uses merged settings where
- * policy has highest priority and can block user-enabled plugins.
+ * Use checkEnabledPlugins() for that — it uses merged settings.
  *
  * Precedence (lowest to highest):
  * 0. addDir (--add-dir directories) - session-only, lowest priority
- * 2. user (userSettings)
- * 3. project (projectSettings)
- * 4. local (localSettings)
- * 5. flag (flagSettings) - session-only, not persisted
+ * 1. user (userSettings)
+ * 2. project (projectSettings)
+ * 3. local (localSettings)
+ * 4. flag (flagSettings) - session-only, not persisted
  *
  * @returns Map of plugin ID to the user-editable scope that owns it
  */

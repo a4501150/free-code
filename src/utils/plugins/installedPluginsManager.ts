@@ -398,7 +398,7 @@ function saveInstalledPluginsV2(data: InstalledPluginsFileV2): void {
  * Used for V2 format where each plugin has an array of installations.
  *
  * @param pluginId - Plugin ID in "plugin@marketplace" format
- * @param scope - Installation scope (managed/user/project/local)
+ * @param scope - Installation scope (user/project/local)
  * @param installPath - Path to versioned plugin directory
  * @param metadata - Additional installation metadata
  * @param projectPath - Project path (required for project/local scopes)
@@ -791,7 +791,7 @@ export function removeAllPluginsForMarketplace(marketplaceName: string): {
  * DiscoverPlugins.tsx was hiding plugins that were only installed in an
  * unrelated project.
  *
- * - user/managed scopes: always relevant (global)
+ * - user scope: always relevant (global)
  * - project/local scopes: only if projectPath matches the current project
  *
  * getOriginalCwd() (not getCwd()) because "current project" is where Claude
@@ -807,7 +807,7 @@ export function isInstallationRelevantToCurrentProject(
  * Check if a plugin is installed in a way relevant to the current project.
  *
  * @param pluginId - Plugin ID in "plugin@marketplace" format
- * @returns True if the plugin has a user/managed-scoped installation, OR a
+ * @returns True if the plugin has a user-scoped installation, OR a
  *   project/local-scoped installation whose projectPath matches the current
  *   project. Returns false for plugins only installed in other projects.
  */
@@ -827,10 +827,10 @@ export function isPluginInstalled(pluginId: string): boolean {
 }
 
 /**
- * True only if the plugin has a USER or MANAGED scope installation.
+ * True only if the plugin has a USER scope installation.
  *
  * Use this in UI flows that decide whether to offer installation at all.
- * A user/managed-scope install means the plugin is available everywhere —
+ * A user-scope install means the plugin is available everywhere —
  * there's nothing the user can add. A project/local-scope install means the
  * user might still want to install at user scope to make it global.
  *

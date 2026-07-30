@@ -142,7 +142,7 @@ export async function parseMarketplaceInput(
 
   // Handle GitHub shorthand (owner/repo, owner/repo#ref, or owner/repo@ref)
   // Accept both # and @ as ref separators — the display formatter uses @, so users
-  // naturally type @ when copying from error messages or managed settings.
+  // naturally type @ when copying from error messages or settings.
   if (trimmed.includes('/') && !trimmed.startsWith('@')) {
     if (trimmed.includes(':')) {
       return null

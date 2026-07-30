@@ -284,7 +284,7 @@ export function getProjectDirsUpToHome(
 }
 
 /**
- * Loads markdown files from managed, user, and project directories
+ * Loads markdown files from user and project directories
  * @param subdir Subdirectory (eg. "agents" or "commands")
  * @param cwd Current working directory for project directory traversal
  * @returns Array of parsed markdown files with metadata

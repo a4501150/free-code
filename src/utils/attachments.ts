@@ -1699,7 +1699,7 @@ export function memoryFilesToAttachments(
  * that apply to the target file path.
  *
  * Processing order (must be preserved):
- * 1. Managed/User conditional rules matching targetPath
+ * 1. User conditional rules matching targetPath
  * 2. Nested directories (CWD → target): CLAUDE.md + unconditional + conditional rules
  * 3. CWD-level directories (root → CWD): conditional rules only
  *
@@ -1724,7 +1724,7 @@ async function getNestedMemoryAttachmentsForFile(
     const processedPaths = new Set<string>()
     const originalCwd = getOriginalCwd()
 
-    // Phase 1: Process Managed and User conditional rules
+    // Phase 1: Process User conditional rules
     const userRules = await getUserConditionalRules(filePath, processedPaths)
     attachments.push(
       ...memoryFilesToAttachments(userRules, toolUseContext, filePath),

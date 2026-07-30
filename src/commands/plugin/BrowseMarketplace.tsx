@@ -245,7 +245,7 @@ export function BrowseMarketplace({
                   entry: plugin,
                   marketplaceName: name,
                   pluginId,
-                  // isPluginGloballyInstalled: only block when user/managed scope
+                  // isPluginGloballyInstalled: only block when user scope
                   // exists (nothing to add). Project/local-scope installs don't
                   // block — user may want to promote to user scope (gh-29997).
                   isInstalled: isPluginGloballyInstalled(pluginId),
@@ -257,7 +257,7 @@ export function BrowseMarketplace({
           }
 
           if (foundPlugin && foundMarketplace) {
-            // Block only on global (user/managed) install — project/local scope
+            // Block only on global (user) install — project/local scope
             // means the user might still want to add a user-scope entry so the
             // plugin is available in other projects (gh-29997, gh-29240, gh-29392).
             // The plugin-details view offers all three scope options; the backend
@@ -325,7 +325,7 @@ export function BrowseMarketplace({
             entry,
             marketplaceName: marketplaceName,
             pluginId,
-            // Only mark as "installed" when globally scoped (user/managed).
+            // Only mark as "installed" when globally scoped (user).
             // Project/local installs don't block — user can add user scope
             // via the plugin-details view (gh-29997).
             isInstalled: isPluginGloballyInstalled(pluginId),

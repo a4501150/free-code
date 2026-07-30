@@ -103,7 +103,7 @@ export type BaseAgentDefinition = {
   effort?: EffortValue
   permissionMode?: PermissionMode
   maxTurns?: number // Maximum number of agentic turns before stopping
-  filename?: string // Original filename without .md extension (for user/project/managed agents)
+  filename?: string // Original filename without .md extension (for user/project agents)
   baseDir?: string
   criticalSystemReminder_EXPERIMENTAL?: string // Short message re-injected at every user turn
   requiredMcpServers?: string[] // MCP server name patterns that must be configured for agent to be available

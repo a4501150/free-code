@@ -459,8 +459,7 @@ export async function runHeadless(
   },
 ): Promise<void> {
   // Fire user settings download now so it overlaps with the MCP/tool setup
-  // below. Managed settings already started in main.tsx preAction; this gives
-  // user settings a similar head start. The cached promise is joined in
+  // below. The cached promise is joined in
   // installPluginsAndApplyMcpInBackground before plugin install reads
   // enabledPlugins.
 
@@ -1618,9 +1617,9 @@ function runHeadlessStreaming(
   // Called after CLAUDE_CODE_SYNC_PLUGIN_INSTALL completes (before first query)
   // and after non-sync background install finishes.
   // refreshActivePlugins calls clearAllCaches() which is required because
-  // loadAllPlugins() may have run during main.tsx startup BEFORE managed
-  // settings were fetched. Without clearing, getCommands() would rebuild
-  // from a stale plugin list.
+  // loadAllPlugins() may have run during main.tsx startup BEFORE user settings
+  // were fetched. Without clearing, getCommands() would rebuild from a stale
+  // plugin list.
   async function refreshPluginState(): Promise<void> {
     // refreshActivePlugins handles the full cache sweep (clearAllCaches),
     // reloads all plugin component loaders, writes AppState.plugins +
@@ -1640,8 +1639,8 @@ function runHeadlessStreaming(
     //
     // The previous filter used a negative set-diff (!freshAgentTypes.has(a))
     // which also matched plugin agents that were in the poisoned initial
-    // currentAgents but correctly excluded from freshAgentDefs after managed
-    // settings applied — leaking policy-blocked agents into the init message.
+    // currentAgents but correctly excluded from freshAgentDefs — leaking
+    // agents into the init message.
     // See gh-23085: settings read at Commander-definition time poisoned
     // the settings cache before setEligibility(true) ran.
     const sdkAgents = currentAgents.filter(a => a.source === 'flagSettings')

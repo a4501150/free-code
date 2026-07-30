@@ -73,13 +73,6 @@ export const VALID_INSTALLABLE_SCOPES = ['user', 'project', 'local'] as const
 /** Installation scope type derived from VALID_INSTALLABLE_SCOPES */
 export type InstallableScope = (typeof VALID_INSTALLABLE_SCOPES)[number]
 
-/** Valid scopes for update operations */
-export const VALID_UPDATE_SCOPES: readonly PluginScope[] = [
-  'user',
-  'project',
-  'local',
-] as const
-
 /**
  * Assert that a scope is a valid installable scope at runtime
  * @param scope The scope to validate
@@ -266,7 +259,7 @@ export function getPluginInstallationFromV2(pluginId: string): {
 
   const currentProjectPath = getOriginalCwd()
 
-  // Find installations by priority: local > project > user > managed
+  // Find installations by priority: local > project > user
   const localInstall = installations.find(
     inst => inst.scope === 'local' && inst.projectPath === currentProjectPath,
   )
@@ -289,7 +282,7 @@ export function getPluginInstallationFromV2(pluginId: string): {
     return { scope: userInstall.scope }
   }
 
-  // Fall back to first installation (could be managed)
+  // Fall back to first installation (project/local scope from another project)
   return {
     scope: installations[0]!.scope,
     projectPath: installations[0]!.projectPath,
@@ -801,7 +794,7 @@ export async function disableAllPluginsOp(): Promise<PluginOperationResult> {
  * 6. Cleans up old version if no longer referenced by any installation
  *
  * @param plugin Plugin name or plugin@marketplace identifier
- * @param scope Scope to update. Unlike install/uninstall/enable/disable, managed scope IS allowed.
+ * @param scope Scope to update
  * @returns Result indicating success/failure with version info
  */
 export async function updatePluginOp(

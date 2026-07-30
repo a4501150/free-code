@@ -112,8 +112,7 @@ export function validatePathWithinBase(
  *
  * @param pluginId - Plugin ID in "plugin@marketplace" format
  * @param entry - Plugin marketplace entry
- * @param scope - Installation scope (user, project, local, or managed). Defaults to 'user'.
- *                'managed' scope is used for plugins installed automatically from managed settings.
+ * @param scope - Installation scope (user, project, or local). Defaults to 'user'.
  * @param projectPath - Project path (required for project/local scopes)
  * @param localSourcePath - For local plugins, the resolved absolute path to the source directory
  * @returns The installation path
@@ -225,8 +224,7 @@ export async function cacheAndRegisterPlugin(
  * External plugins should use cacheAndRegisterPlugin() instead.
  *
  * @param info - Plugin installation information
- * @param scope - Installation scope (user, project, local, or managed). Defaults to 'user'.
- *                'managed' scope is used for plugins registered from managed settings.
+ * @param scope - Installation scope (user, project, or local). Defaults to 'user'.
  * @param projectPath - Project path (required for project/local scopes)
  */
 export function registerPluginInstallation(

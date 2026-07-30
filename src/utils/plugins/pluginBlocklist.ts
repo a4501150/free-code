@@ -87,20 +87,9 @@ export async function detectAndUninstallDelistedPlugins(): Promise<string[]> {
       for (const pluginId of delisted) {
         if (pluginId in alreadyFlagged) continue
 
-        // Skip managed-only plugins — enterprise admin should handle those
-        const installations = installedPlugins.plugins[pluginId] ?? []
-        const hasUserInstall = installations.some(
-          i =>
-            i.scope === 'user' || i.scope === 'project' || i.scope === 'local',
-        )
-        if (!hasUserInstall) continue
-
-        // Auto-uninstall the delisted plugin from all user-controllable scopes
-        for (const installation of installations) {
+        // Auto-uninstall the delisted plugin from every scope it's installed at
+        for (const installation of installedPlugins.plugins[pluginId] ?? []) {
           const { scope } = installation
-          if (scope !== 'user' && scope !== 'project' && scope !== 'local') {
-            continue
-          }
           try {
             await uninstallPluginOp(pluginId, scope)
           } catch (error) {

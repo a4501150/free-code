@@ -158,9 +158,7 @@ export const McpServerStatusSchema = z
     scope: z
       .string()
       .optional()
-      .describe(
-        'Configuration scope (e.g., project, user, local, claudeai, managed)',
-      ),
+      .describe('Configuration scope (e.g., project, user, local, claudeai)'),
     tools: z
       .array(
         z.object({
