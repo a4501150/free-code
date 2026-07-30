@@ -11,17 +11,12 @@
  * with (the channel's MCP tool, SendUserMessage, or both).
  *
  * feature('KAIROS'). Runtime gate tengu_harbor.
- * Requires claude.ai OAuth auth — API key users are blocked until
  */
 
 import type { ServerCapabilities } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod/v4'
 import { type ChannelEntry, getAllowedChannels } from '../../bootstrap/state.js'
 import { CHANNEL_TAG } from '../../constants/xml.js'
-import {
-  getClaudeAIOAuthTokens,
-  getSubscriptionType,
-} from '../../utils/auth.js'
 import { parsePluginIdentifier } from '../../utils/plugins/pluginIdentifier.js'
 import { getSettingsForSource } from '../../utils/settings/settings.js'
 import { escapeXmlAttr } from '../../utils/xml.js'
@@ -111,7 +106,7 @@ export type ChannelGateResult =
   | { action: 'register' }
   | {
       action: 'skip'
-      kind: 'capability' | 'auth' | 'session' | 'marketplace' | 'allowlist'
+      kind: 'capability' | 'session' | 'marketplace' | 'allowlist'
       reason: string
     }
 
@@ -138,14 +133,12 @@ export function findChannelEntry(
 /**
  * Gate an MCP server's channel-notification path. Caller checks
  * feature('KAIROS') first (build-time elimination). Gate order: capability
- * → runtime gate (tengu_harbor) →
- * auth (OAuth only) → org policy → session --channels → allowlist.
- * API key users are blocked at the auth layer — channels requires
- * claude.ai auth; console orgs have no admin opt-in surface yet.
+ * → runtime gate (tengu_harbor) → session --channels → marketplace →
+ * allowlist.
  *
- *   skip      Not a channel server, or managed org hasn't opted in, or
- *             not in session --channels. Connection stays up; handler
- *             not registered.
+ *   skip      Not a channel server, or not in session --channels, or the
+ *             server failed marketplace/allowlist verification. Connection
+ *             stays up; handler not registered.
  *   register  Subscribe to notifications/claude/channel.
  *
  * Which servers can connect at all is governed by allowedMcpServers —
@@ -165,15 +158,6 @@ export function gateChannelServer(
       action: 'skip',
       kind: 'capability',
       reason: 'server did not declare claude/channel capability',
-    }
-  }
-
-  // OAuth-only. API key users (console) are blocked.
-  if (!getClaudeAIOAuthTokens()?.accessToken) {
-    return {
-      action: 'skip',
-      kind: 'auth',
-      reason: 'channels requires claude.ai authentication (run /login)',
     }
   }
 

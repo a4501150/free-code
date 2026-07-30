@@ -2561,7 +2561,7 @@ export function ManagePlugins({
         isAuthenticated: undefined,
         config: client.config as McpHTTPServerConfig,
       }
-    } else {
+    } else if (configType === 'claudeai-proxy') {
       server = {
         name: client.name,
         client,
@@ -2570,6 +2570,10 @@ export function ManagePlugins({
         isAuthenticated: undefined,
         config: client.config as McpClaudeAIProxyServerConfig,
       }
+    } else {
+      // sdk / sse-ide / ws-ide have no tool-list representation.
+      setViewState('plugin-list')
+      return null
     }
 
     return (
@@ -2621,7 +2625,7 @@ export function ManagePlugins({
         isAuthenticated: undefined,
         config: client.config as McpHTTPServerConfig,
       }
-    } else {
+    } else if (configType === 'claudeai-proxy') {
       server = {
         name: client.name,
         client,
@@ -2630,6 +2634,10 @@ export function ManagePlugins({
         isAuthenticated: undefined,
         config: client.config as McpClaudeAIProxyServerConfig,
       }
+    } else {
+      // sdk / sse-ide / ws-ide have no tool-detail representation.
+      setViewState('plugin-list')
+      return null
     }
 
     return (

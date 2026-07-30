@@ -549,13 +549,9 @@ export function useManageMCPConnections(
                     entry !== undefined)
                 ) {
                   channelWarnedKindsRef.current.add(gate.kind)
-                  // auth gets custom toast copy (shorter, actionable);
                   // marketplace/allowlist reuse the gate's reason verbatim
                   // since it already names the mismatch.
-                  const text =
-                    gate.kind === 'auth'
-                      ? 'Channels require claude.ai authentication · run /login'
-                      : gate.reason
+                  const text = gate.reason
                   addNotification({
                     key: `channels-blocked-${gate.kind}`,
                     priority: 'high',

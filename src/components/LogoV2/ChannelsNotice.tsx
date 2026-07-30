@@ -13,10 +13,6 @@ import {
 import { Box, Text } from '../../ink.js'
 import { getChannelAllowlist } from '../../services/mcp/channelAllowlist.js'
 import { getMcpConfigsByScope } from '../../services/mcp/config.js'
-import {
-  getClaudeAIOAuthTokens,
-  getSubscriptionType,
-} from '../../utils/auth.js'
 import { loadInstalledPluginsV2 } from '../../utils/plugins/installedPluginsManager.js'
 import { getSettingsForSource } from '../../utils/settings/settings.js'
 
@@ -25,18 +21,16 @@ export function ChannelsNotice(): React.ReactNode {
   // after the logo; any re-render past that point forces a full terminal
   // reset, so these must be captured once so a later re-render cannot flip
   // branches.
-  const [{ channels, noAuth, list, unmatched }] = useState(() => {
+  const [{ channels, list, unmatched }] = useState(() => {
     const ch = getAllowedChannels()
     if (ch.length === 0)
       return {
         channels: ch,
-        noAuth: false,
         list: '',
         unmatched: [] as Unmatched[],
       }
     return {
       channels: ch,
-      noAuth: !getClaudeAIOAuthTokens()?.accessToken,
       list: ch.map(formatEntry).join(', '),
       unmatched: findUnmatched(ch),
     }
@@ -52,19 +46,6 @@ export function ChannelsNotice(): React.ReactNode {
       : getHasDevChannels()
         ? '--dangerously-load-development-channels'
         : '--channels'
-
-  if (noAuth) {
-    return (
-      <Box paddingLeft={2} flexDirection="column">
-        <Text color="error">
-          {flag} ignored ({list})
-        </Text>
-        <Text dimColor>
-          Channels require claude.ai authentication · run /login, then restart
-        </Text>
-      </Box>
-    )
-  }
 
   // "Listening for" not "active" — at this point we only know the allowlist
   // was set. Server connection, capability declaration, and whether the name
