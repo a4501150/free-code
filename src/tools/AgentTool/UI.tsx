@@ -23,9 +23,13 @@ import {
   useIsAgentToolUseExpanded,
   useToggleAgentToolUseExpansion,
 } from '../../state/agentExpansion.js'
-import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js'
+import {
+  type AppState,
+  useAppStateMaybeOutsideOfProvider,
+} from '../../state/AppState.js'
 import { getDumpPromptsPath } from '../../services/api/dumpPrompts.js'
 import { findToolByName, type Tools } from '../../Tool.js'
+import { isLocalAgentTask } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import type { Message, ProgressMessage } from '../../types/message.js'
 import type { AgentToolProgress } from '../../types/tools.js'
 import { count } from '../../utils/array.js'
@@ -639,15 +643,87 @@ export function calculateAgentProgressTokens(
     return null
   }
 
-  let latestInputTokens = 0
+  // Peak, not latest: input_tokens is cumulative per turn, so it collapses
+  // when the subagent auto-compacts. Taking the max keeps the counter from
+  // running backwards; without compaction it's identical to latest.
+  let peakInputTokens = 0
   let cumulativeOutputTokens = 0
   for (const usage of usageByMessageId.values()) {
-    latestInputTokens = usage.inputTokens
+    peakInputTokens = Math.max(peakInputTokens, usage.inputTokens)
     cumulativeOutputTokens += usage.outputTokens
   }
 
-  const totalTokens = latestInputTokens + cumulativeOutputTokens
+  const totalTokens = peakInputTokens + cumulativeOutputTokens
   return totalTokens > 0 ? totalTokens : null
+}
+
+/**
+ * Verb the subagent stored on its own task while compacting its context. The
+ * AgentTool's isolated context can't reach the leader's spinner, so every
+ * agent surface reads the status straight off the task.
+ */
+function agentCompactStatusFromTasks(
+  tasks: AppState['tasks'] | undefined,
+  progressMessages: ProgressMessage<Progress>[],
+): string | undefined {
+  const firstData = progressMessages[0]?.data
+  const agentId =
+    firstData && hasProgressMessage(firstData) ? firstData.agentId : undefined
+  if (!agentId || !tasks) return undefined
+  const task = tasks[agentId]
+  return isLocalAgentTask(task) ? task.compactStatus : undefined
+}
+
+function useAgentCompactStatus(
+  progressMessages: ProgressMessage<Progress>[],
+): string | undefined {
+  const tasks = useAppStateMaybeOutsideOfProvider(state => state.tasks)
+  return agentCompactStatusFromTasks(tasks, progressMessages)
+}
+
+function AgentCompactStatusLine({
+  progressMessages,
+}: {
+  progressMessages: ProgressMessage<Progress>[]
+}): React.ReactNode {
+  const compactStatus = useAgentCompactStatus(progressMessages)
+  if (!compactStatus) return null
+  return <Text dimColor>{compactStatus}…</Text>
+}
+
+function CondensedAgentProgressLine({
+  progressMessages,
+  toolUseCount,
+  tokens,
+  isAgentRunning,
+}: {
+  progressMessages: ProgressMessage<Progress>[]
+  toolUseCount: number
+  tokens: number | null
+  isAgentRunning: boolean
+}): React.ReactNode {
+  const compactStatus = useAgentCompactStatus(progressMessages)
+  const statusText = compactStatus
+    ? `${compactStatus}…`
+    : isAgentRunning
+      ? 'In progress…'
+      : 'Stopped'
+  return (
+    <MessageResponse height={1}>
+      <Text dimColor>
+        {statusText} · <Text bold>{toolUseCount}</Text> tool{' '}
+        {toolUseCount === 1 ? 'use' : 'uses'}
+        {tokens && ` · ${formatNumber(tokens)} tokens`} ·{' '}
+        <ConfigurableShortcutHint
+          action="app:toggleTranscript"
+          context="Global"
+          fallback="ctrl+o"
+          description="expand"
+          parens
+        />
+      </Text>
+    </MessageResponse>
+  )
 }
 
 export function renderToolUseProgressMessage(
@@ -677,6 +753,8 @@ export function renderToolUseProgressMessage(
       </MessageResponse>
     )
   }
+
+  const firstData = progressMessages[0]?.data
 
   // Checks to see if we should show a super condensed progress message summary.
   // This prevents flickers when the terminal size is too small to render all the dynamic content
@@ -709,23 +787,14 @@ export function renderToolUseProgressMessage(
 
   if (shouldUseCondensedMode) {
     const { toolUseCount, tokens } = getProgressStats()
-    const statusText = isAgentRunning ? 'In progress…' : 'Stopped'
 
     return (
-      <MessageResponse height={1}>
-        <Text dimColor>
-          {statusText} · <Text bold>{toolUseCount}</Text> tool{' '}
-          {toolUseCount === 1 ? 'use' : 'uses'}
-          {tokens && ` · ${formatNumber(tokens)} tokens`} ·{' '}
-          <ConfigurableShortcutHint
-            action="app:toggleTranscript"
-            context="Global"
-            fallback="ctrl+o"
-            description="expand"
-            parens
-          />
-        </Text>
-      </MessageResponse>
+      <CondensedAgentProgressLine
+        progressMessages={progressMessages}
+        toolUseCount={toolUseCount}
+        tokens={tokens}
+        isAgentRunning={isAgentRunning}
+      />
     )
   }
 
@@ -766,7 +835,6 @@ export function renderToolUseProgressMessage(
     return content.some(c => c.type === 'tool_use')
   })
 
-  const firstData = progressMessages[0]?.data
   const prompt =
     firstData && hasProgressMessage(firstData) ? firstData.prompt : undefined
 
@@ -864,6 +932,7 @@ export function renderToolUseProgressMessage(
             )
           })}
         </SubAgentProvider>
+        <AgentCompactStatusLine progressMessages={progressMessages} />
         {hiddenToolUseCount > 0 && (
           <PlusNMoreWithStats
             allProgressMessages={progressMessages}
@@ -1260,6 +1329,9 @@ function GroupedAgentToolUseView({
   const activeAgents = useAppStateMaybeOutsideOfProvider(
     state => state.agentDefinitions.activeAgents,
   )
+  // Subscribed once for the whole group — agentStats below is a plain map, so
+  // it can't call a hook per row.
+  const tasks = useAppStateMaybeOutsideOfProvider(state => state.tasks)
 
   const anyUnresolved = toolUses.some(t => !t.isResolved)
   const nowMs = useNow(anyUnresolved)
@@ -1283,6 +1355,7 @@ function GroupedAgentToolUseView({
     ({ param, isResolved, isError, progressMessages, result }) => {
       const stats = calculateAgentStats(progressMessages, result?.output, nowMs)
       const lastToolInfo = extractLastToolInfo(progressMessages, tools)
+      const compactStatus = agentCompactStatusFromTasks(tasks, progressMessages)
       const parsedInput = inputSchema.safeParse(param.input)
 
       // teammate_spawned is not part of the exported Output type (cast through unknown
@@ -1370,6 +1443,7 @@ function GroupedAgentToolUseView({
         color,
         descriptionColor,
         lastToolInfo,
+        compactStatus,
         taskDescription,
         name,
       }
@@ -1422,6 +1496,7 @@ function GroupedAgentToolUseView({
           isAsync={stat.isAsync}
           shouldAnimate={shouldAnimate}
           lastToolInfo={stat.lastToolInfo}
+          compactStatus={stat.compactStatus}
           hideType={false}
           name={stat.name}
           showTree={!isSingleAgent}

@@ -305,6 +305,7 @@ import {
   extractBashToolsFromMessages,
 } from '../utils/queryHelpers.js'
 import { runPostCompactCleanup } from '../services/compact/postCompactCleanup.js'
+import { compactProgressLabel } from '../services/compact/compactProgressLabel.js'
 import {
   provisionContentReplacementState,
   reconstructContentReplacementState,
@@ -839,7 +840,11 @@ export function REPL({
   useEffect(() => {
     if (!viewingAgentTaskId || !needsBootstrap) return
     const taskId = viewingAgentTaskId
-    void getAgentTranscript(asAgentId(taskId)).then(result => {
+    // includePreCompactHistory: the view is a display surface, so it should
+    // show everything the agent did, not just the current compact interval.
+    void getAgentTranscript(asAgentId(taskId), {
+      includePreCompactHistory: true,
+    }).then(result => {
       setAppState(prev => {
         const t = prev.tasks[taskId]
         if (!isLocalAgentTask(t) || t.diskLoaded || !t.retain) return prev
@@ -2607,26 +2612,13 @@ export function REPL({
         setResponseLength,
         setStreamMode,
         onCompactProgress: event => {
-          switch (event.type) {
-            case 'hooks_start':
-              setSpinnerColor('claudeBlue_FOR_SYSTEM_SPINNER')
-              setSpinnerShimmerColor('claudeBlueShimmer_FOR_SYSTEM_SPINNER')
-              setSpinnerMessage(
-                event.hookType === 'pre_compact'
-                  ? 'Running PreCompact hooks\u2026'
-                  : event.hookType === 'post_compact'
-                    ? 'Running PostCompact hooks\u2026'
-                    : 'Running SessionStart hooks\u2026',
-              )
-              break
-            case 'compact_start':
-              setSpinnerMessage('Compacting conversation')
-              break
-            case 'compact_end':
-              setSpinnerMessage(null)
-              setSpinnerColor(null)
-              setSpinnerShimmerColor(null)
-              break
+          setSpinnerMessage(compactProgressLabel(event))
+          if (event.type === 'hooks_start') {
+            setSpinnerColor('claudeBlue_FOR_SYSTEM_SPINNER')
+            setSpinnerShimmerColor('claudeBlueShimmer_FOR_SYSTEM_SPINNER')
+          } else if (event.type === 'compact_end') {
+            setSpinnerColor(null)
+            setSpinnerShimmerColor(null)
           }
         },
         setInProgressToolUseIDs,

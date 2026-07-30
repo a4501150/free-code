@@ -15,7 +15,9 @@ import { enhanceSystemPromptWithEnvDetails } from '../../constants/prompts.js'
 import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
 import { startAgentSummarization } from '../../services/AgentSummary/agentSummary.js'
 import { clearDumpState } from '../../services/api/dumpPrompts.js'
+import { compactProgressLabel } from '../../services/compact/compactProgressLabel.js'
 import {
+  appendRetainedAgentMessage,
   completeAgentTask as completeAsyncAgent,
   createActivityDescriptionResolver,
   createProgressTracker,
@@ -29,6 +31,7 @@ import {
   registerAsyncAgent,
   unregisterAgentForeground,
   updateAgentProgress as updateAsyncAgentProgress,
+  updateAgentCompactStatus,
   updateAgentThinking,
   updateProgressFromMessage,
   updateProgressFromUsage,
@@ -813,6 +816,12 @@ export const AgentTool = buildTool({
                     isThinking,
                     rootSetAppState,
                   ),
+                onCompactProgress: event =>
+                  updateAgentCompactStatus(
+                    agentBackgroundTask.agentId,
+                    compactProgressLabel(event),
+                    rootSetAppState,
+                  ),
               }),
             metadata,
             description,
@@ -957,6 +966,14 @@ export const AgentTool = buildTool({
                     rootSetAppState,
                   )
               : undefined,
+            onCompactProgress: foregroundTaskId
+              ? event =>
+                  updateAgentCompactStatus(
+                    foregroundTaskId,
+                    compactProgressLabel(event),
+                    rootSetAppState,
+                  )
+              : undefined,
           })[Symbol.asyncIterator]()
 
           // Track if an error occurred during iteration
@@ -1071,6 +1088,12 @@ export const AgentTool = buildTool({
                             isThinking,
                             rootSetAppState,
                           ),
+                        onCompactProgress: event =>
+                          updateAgentCompactStatus(
+                            backgroundedTaskId,
+                            compactProgressLabel(event),
+                            rootSetAppState,
+                          ),
                       })) {
                         // Forward final usage from non-Anthropic providers'
                         // message_delta stream events to the tracker. Don't
@@ -1101,6 +1124,11 @@ export const AgentTool = buildTool({
 
                         const m = msg as MessageType
                         agentMessages.push(m)
+                        appendRetainedAgentMessage(
+                          backgroundedTaskId,
+                          m,
+                          rootSetAppState,
+                        )
 
                         // Track progress for backgrounded agents
                         updateProgressFromMessage(
@@ -1307,6 +1335,13 @@ export const AgentTool = buildTool({
 
               const message = value as MessageType
               agentMessages.push(message)
+              if (foregroundTaskId) {
+                appendRetainedAgentMessage(
+                  foregroundTaskId,
+                  message,
+                  rootSetAppState,
+                )
+              }
 
               // Emit task_progress for the VS Code subagent panel
               updateProgressFromMessage(

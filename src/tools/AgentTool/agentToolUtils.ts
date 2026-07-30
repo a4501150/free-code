@@ -16,6 +16,7 @@ import type {
 } from '../../Tool.js'
 import { toolMatchesName } from '../../Tool.js'
 import {
+  appendRetainedAgentMessage,
   completeAgentTask as completeAsyncAgent,
   createActivityDescriptionResolver,
   createProgressTracker,
@@ -23,7 +24,6 @@ import {
   failAgentTask as failAsyncAgent,
   getProgressUpdate,
   getTokenCountFromTracker,
-  isLocalAgentTask,
   killAsyncAgent,
   type ProgressTracker,
   updateAgentProgress as updateAsyncAgentProgress,
@@ -528,21 +528,7 @@ export async function runAsyncAgentLifecycle({
 
       const message = value as MessageType
       agentMessages.push(message)
-      // Append immediately when UI holds the task (retain). Bootstrap reads
-      // disk in parallel and UUID-merges the prefix — disk-write-before-yield
-      // means live is always a suffix of disk, so merge is order-correct.
-      rootSetAppState(prev => {
-        const t = prev.tasks[taskId]
-        if (!isLocalAgentTask(t) || !t.retain) return prev
-        const base = t.messages ?? []
-        return {
-          ...prev,
-          tasks: {
-            ...prev.tasks,
-            [taskId]: { ...t, messages: [...base, message] },
-          },
-        }
-      })
+      appendRetainedAgentMessage(taskId, message, rootSetAppState)
       updateProgressFromMessage(
         tracker,
         message,

@@ -28,6 +28,9 @@ type Props = {
   isAsync?: boolean
   shouldAnimate: boolean
   lastToolInfo?: string | null
+  /** Verb while the subagent compacts its own context. Replaces lastToolInfo:
+   *  the agent isn't running a tool, it's rebuilding its context. */
+  compactStatus?: string | null
   hideType?: boolean
   showTree?: boolean
 }
@@ -49,6 +52,7 @@ export function AgentProgressLine({
   isAsync = false,
   shouldAnimate,
   lastToolInfo,
+  compactStatus,
   hideType = false,
   showTree = true,
 }: Props): React.ReactNode {
@@ -58,7 +62,9 @@ export function AgentProgressLine({
   // Determine the status text
   const getStatusText = (): string => {
     if (!isResolved) {
-      const parts: string[] = [lastToolInfo || 'Initializing…']
+      const parts: string[] = [
+        compactStatus ? `${compactStatus}…` : lastToolInfo || 'Initializing…',
+      ]
       if (toolUseCount > 0) {
         parts.push(
           toolUseCount === 1 ? '1 tool use' : `${toolUseCount} tool uses`,

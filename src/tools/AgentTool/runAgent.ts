@@ -22,9 +22,16 @@ import type {
   MCPServerConnection,
   ScopedMcpServerConfig,
 } from '../../services/mcp/types.js'
-import type { Tool, Tools, ToolUseContext, CanUseToolFn } from '../../Tool.js'
+import type {
+  CanUseToolFn,
+  CompactProgressEvent,
+  Tool,
+  Tools,
+  ToolUseContext,
+} from '../../Tool.js'
 import { killShellTasksForAgent } from '../../tasks/LocalShellTask/killShellTasks.js'
 import type { Command } from '../../types/command.js'
+import { isAnyReasoningBlock } from '../../types/domainGuards.js'
 import type { AgentId } from '../../types/ids.js'
 import type {
   AssistantMessage,
@@ -244,6 +251,7 @@ export async function* runAgent({
   transcriptSubdir,
   onQueryProgress,
   onStreamMode,
+  onCompactProgress,
 }: {
   agentDefinition: AgentDefinition
   promptMessages: Message[]
@@ -300,6 +308,10 @@ export async function* runAgent({
   /** Optional callback fired when the sub-agent's stream mode changes
    * (e.g. entering/leaving a thinking block). Used to update the spinner. */
   onStreamMode?: (isThinking: boolean) => void
+  /** Optional callback fired as the sub-agent compacts its own context.
+   * createSubagentContext deliberately drops the parent's UI callbacks, so
+   * this is the only channel by which subagent compaction reaches the UI. */
+  onCompactProgress?: (event: CompactProgressEvent) => void
 }): AsyncGenerator<Message | StreamEvent, void> {
   // Track subagent usage for feature discovery
 
@@ -650,6 +662,10 @@ export async function* runAgent({
     agentToolUseContext.preserveToolUseResults = true
   }
 
+  if (onCompactProgress) {
+    agentToolUseContext.onCompactProgress = onCompactProgress
+  }
+
   // Expose cache-safe params for background summarization (prompt cache sharing)
   if (onCacheSafeParams) {
     onCacheSafeParams({
@@ -692,13 +708,16 @@ export async function* runAgent({
       maxTurns: maxTurns ?? agentDefinition.maxTurns,
     })) {
       onQueryProgress?.()
-      // Detect thinking state changes from content_block_start events
-      if (
-        message.type === 'stream_event' &&
-        message.event.type === 'content_block_start' &&
-        onStreamMode
-      ) {
-        onStreamMode(message.event.content_block.type === 'thinking')
+      // Track thinking state from stream events. content_block carries the
+      // DOMAIN block type ('reasoning'), not the wire type ('thinking').
+      if (message.type === 'stream_event' && onStreamMode) {
+        if (message.event.type === 'content_block_start') {
+          onStreamMode(isAnyReasoningBlock(message.event.content_block))
+        } else if (message.event.type === 'message_stop') {
+          // Otherwise 'thinking' sticks through the tool call that follows a
+          // turn whose last block was a reasoning block.
+          onStreamMode(false)
+        }
       }
       // Forward subagent API request starts to parent's metrics display
       // so TTFT/OTPS update during subagent execution.

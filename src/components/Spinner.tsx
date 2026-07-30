@@ -192,14 +192,34 @@ function SpinnerWithVerbInner({
   >(null)
   const thinkingStartRef = useRef<number | null>(null)
 
+  // When viewing a subagent the leader's stream mode describes the leader, not
+  // the agent on screen. Drive the same state machine from the agent's own flag
+  // so the drill-down gets the min-display and "thought for Ns" readout too.
+  const thinkingMode = viewedLocalAgent
+    ? viewedLocalAgent.isThinking
+      ? 'thinking'
+      : 'responding'
+    : mode
+  const thinkingSourceId = viewedLocalAgent?.id
+  const thinkingSourceRef = useRef(thinkingSourceId)
+
   useEffect(() => {
     let showDurationTimer: ReturnType<typeof setTimeout> | null = null
     let clearStatusTimer: ReturnType<typeof setTimeout> | null = null
 
-    if (mode === 'requesting') {
+    // Entering or leaving a subagent view swaps the thinking source. Drop the
+    // in-flight timing so the new source doesn't inherit a "thought for Ns"
+    // that belongs to the one we just navigated away from.
+    if (thinkingSourceRef.current !== thinkingSourceId) {
+      thinkingSourceRef.current = thinkingSourceId
       thinkingStartRef.current = null
       setThinkingStatus(null)
-    } else if (mode === 'thinking') {
+    }
+
+    if (thinkingMode === 'requesting') {
+      thinkingStartRef.current = null
+      setThinkingStatus(null)
+    } else if (thinkingMode === 'thinking') {
       // Started thinking
       if (thinkingStartRef.current === null) {
         thinkingStartRef.current = Date.now()
@@ -231,7 +251,7 @@ function SpinnerWithVerbInner({
       if (showDurationTimer) clearTimeout(showDurationTimer)
       if (clearStatusTimer) clearTimeout(clearStatusTimer)
     }
-  }, [mode])
+  }, [thinkingMode, thinkingSourceId])
 
   // Find the current in-progress task and next pending task
   const currentTodo = tasksV2?.find(
@@ -250,9 +270,10 @@ function SpinnerWithVerbInner({
     randomVerb
 
   const effectiveVerb =
-    foregroundedTeammate && !foregroundedTeammate.isIdle
+    viewedLocalAgent?.compactStatus ??
+    (foregroundedTeammate && !foregroundedTeammate.isIdle
       ? (foregroundedTeammate.spinnerVerb ?? randomVerb)
-      : leaderVerb
+      : leaderVerb)
   const message = effectiveVerb + '…'
 
   // Track CLI activity when spinner is active
@@ -407,13 +428,7 @@ function SpinnerWithVerbInner({
         teammateTokens={teammateTokens}
         foregroundedTeammate={foregroundedTeammate}
         leaderIsIdle={leaderIsIdle}
-        thinkingStatus={
-          viewedLocalAgent
-            ? viewedLocalAgent.isThinking
-              ? 'thinking'
-              : null
-            : thinkingStatus
-        }
+        thinkingStatus={thinkingStatus}
         effortSuffix={effortSuffix}
         viewedLocalAgent={viewedLocalAgent}
       />

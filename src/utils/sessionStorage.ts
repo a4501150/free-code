@@ -1632,11 +1632,16 @@ function findLatestMessage<T extends { timestamp: string }>(
  * Builds a conversation chain from a leaf message to root
  * @param messages Map of all messages
  * @param leafMessage The leaf message to start from
+ * @param opts.followCompactBoundaries Walk through compact boundaries via
+ *   `logicalParentUuid` instead of stopping at their `parentUuid: null` root.
+ *   For display surfaces that want the full history; leave off when
+ *   reconstructing API context, where truncating at the boundary is the point.
  * @returns Array of messages from root to leaf
  */
 export function buildConversationChain(
   messages: Map<UUID, TranscriptMessage>,
   leafMessage: TranscriptMessage,
+  opts?: { followCompactBoundaries?: boolean },
 ): TranscriptMessage[] {
   const transcript: TranscriptMessage[] = []
   const seen = new Set<UUID>()
@@ -1652,9 +1657,10 @@ export function buildConversationChain(
     }
     seen.add(currentMsg.uuid)
     transcript.push(currentMsg)
-    currentMsg = currentMsg.parentUuid
-      ? messages.get(currentMsg.parentUuid)
-      : undefined
+    const nextUuid: UUID | null | undefined =
+      currentMsg.parentUuid ??
+      (opts?.followCompactBoundaries ? currentMsg.logicalParentUuid : undefined)
+    currentMsg = nextUuid ? messages.get(nextUuid) : undefined
   }
   transcript.reverse()
   return recoverOrphanedParallelToolResults(messages, transcript, seen)
@@ -3616,10 +3622,16 @@ async function getStatOnlyLogsForWorktrees(
  * Retrieves the transcript for a specific agent by agentId.
  * Directly loads the agent-specific transcript file.
  * @param agentId The agent ID to search for
+ * @param opts.includePreCompactHistory Walk through compact boundaries so the
+ *   chain spans the agent's whole life. For the drill-down transcript view;
+ *   callers rebuilding API context (resume, summarization) must leave it off.
  * @returns The conversation chain and budget replacement records for the agent,
  *          or null if not found
  */
-export async function getAgentTranscript(agentId: AgentId): Promise<{
+export async function getAgentTranscript(
+  agentId: AgentId,
+  opts?: { includePreCompactHistory?: boolean },
+): Promise<{
   messages: Message[]
   contentReplacements: ContentReplacementRecord[]
 } | null> {
@@ -3650,7 +3662,9 @@ export async function getAgentTranscript(agentId: AgentId): Promise<{
     }
 
     // Build the conversation chain
-    const transcript = buildConversationChain(messages, leafMessage)
+    const transcript = buildConversationChain(messages, leafMessage, {
+      followCompactBoundaries: opts?.includePreCompactHistory,
+    })
 
     // Filter to only include messages with this agentId
     const agentTranscript = transcript.filter(msg => msg.agentId === agentId)

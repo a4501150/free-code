@@ -85,6 +85,17 @@ Anthropic attribution uses a fingerprint derived from the first API user message
 
 `TasksV2Store` in [src/hooks/useTasksV2.ts](src/hooks/useTasksV2.ts) must use `getMainTaskListId()`, not `getTaskListId()`. Signals like `notifyTasksUpdated()` fire inside the subagent's `AsyncLocalStorage` scope, and `setTimeout` inherits that context — causing the main UI to fetch from the wrong task list directory.
 
+### Subagent UI state travels through the task, not the parent's callbacks
+
+`createSubagentContext` in [src/utils/forkedAgent.ts](src/utils/forkedAgent.ts) deliberately nulls every parent UI callback, so nothing a subagent does can reach the leader's spinner directly. Anything the drill-down or the Agent card must show has to be routed onto `LocalAgentTaskState` ([src/tasks/LocalAgentTask/LocalAgentTask.tsx](src/tasks/LocalAgentTask/LocalAgentTask.tsx)) via an explicit `runAgent` callback, the way `onStreamMode` and `onCompactProgress` are. Two consequences:
+
+- Every `runAgent` consumer must call `appendRetainedAgentMessage`, or the drill-down transcript for that flavour of agent renders empty. There are three loops: `runAsyncAgentLifecycle` in [src/tools/AgentTool/agentToolUtils.ts](src/tools/AgentTool/agentToolUtils.ts), plus the foreground and backgrounded-continuation loops in [src/tools/AgentTool/AgentTool.tsx](src/tools/AgentTool/AgentTool.tsx).
+- The live Agent card in the main transcript is `AgentProgressLine` reached through `GroupedAgentToolUseView`, _not_ `renderToolUseProgressMessage` — the latter only serves the non-grouped and slash-command paths. Changing only one of them looks like the change had no effect.
+
+### `stream_event` content blocks carry domain types, not wire types
+
+By the time a `stream_event` leaves [src/services/api/claude.ts](src/services/api/claude.ts) its `content_block` has been converted to a `DomainContentBlock`, so extended thinking is `reasoning`/`redacted_reasoning` — never `thinking`. `DomainStreamEvent.content_block` widens to `{ type: string; ... }` ([src/types/domain.ts](src/types/domain.ts)), so comparing against a wire type still typechecks and silently never matches. Use the guards in [src/types/domainGuards.ts](src/types/domainGuards.ts).
+
 ### Project config uses both `.claude/` and `.freecode/` directories
 
 Per-project config supports both `.claude/` (legacy) and `.freecode/` (preferred). When both exist, `.freecode/` takes precedence. Use helpers from [src/utils/projectConfigPaths.ts](src/utils/projectConfigPaths.ts) instead of hardcoding either directory name.

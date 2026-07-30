@@ -66,9 +66,11 @@ const MAX_RECENT_ACTIVITIES = 5
 export type ProgressTracker = {
   toolUseCount: number
   // Track input and output separately to avoid double-counting.
-  // input_tokens in Claude API is cumulative per turn (includes all previous context),
-  // so we keep the latest value. output_tokens is per-turn, so we sum those.
-  latestInputTokens: number
+  // input_tokens in Claude API is cumulative per turn (includes all previous
+  // context), so we keep the high-water mark — keeping the *latest* would make
+  // the counter jump backwards when the agent auto-compacts. output_tokens is
+  // per-turn, so we sum those.
+  peakInputTokens: number
   cumulativeOutputTokens: number
   recentActivities: ToolActivity[]
 }
@@ -76,14 +78,14 @@ export type ProgressTracker = {
 export function createProgressTracker(): ProgressTracker {
   return {
     toolUseCount: 0,
-    latestInputTokens: 0,
+    peakInputTokens: 0,
     cumulativeOutputTokens: 0,
     recentActivities: [],
   }
 }
 
 export function getTokenCountFromTracker(tracker: ProgressTracker): number {
-  return tracker.latestInputTokens + tracker.cumulativeOutputTokens
+  return tracker.peakInputTokens + tracker.cumulativeOutputTokens
 }
 
 /**
@@ -118,11 +120,13 @@ export function updateProgressFromUsage(
   tracker: ProgressTracker,
   usage: ProgressUsage,
 ): void {
-  // Keep latest input (it's cumulative in the API), sum outputs
-  tracker.latestInputTokens =
+  // Peak input (it's cumulative in the API), sum outputs
+  tracker.peakInputTokens = Math.max(
+    tracker.peakInputTokens,
     (usage.input_tokens ?? 0) +
-    (usage.cache_creation_input_tokens ?? 0) +
-    (usage.cache_read_input_tokens ?? 0)
+      (usage.cache_creation_input_tokens ?? 0) +
+      (usage.cache_read_input_tokens ?? 0),
+  )
   tracker.cumulativeOutputTokens += usage.output_tokens ?? 0
 }
 
@@ -143,11 +147,13 @@ export function updateProgressFromMessage(
   // path is unaffected. Non-Anthropic updates flow through
   // updateProgressFromUsage on message_delta stream events.
   if (usage.input_tokens > 0 || usage.output_tokens > 0) {
-    // Keep latest input (it's cumulative in the API), sum outputs
-    tracker.latestInputTokens =
+    // Peak input (it's cumulative in the API), sum outputs
+    tracker.peakInputTokens = Math.max(
+      tracker.peakInputTokens,
       usage.input_tokens +
-      (usage.cache_creation_input_tokens ?? 0) +
-      (usage.cache_read_input_tokens ?? 0)
+        (usage.cache_creation_input_tokens ?? 0) +
+        (usage.cache_read_input_tokens ?? 0),
+    )
     tracker.cumulativeOutputTokens += usage.output_tokens
   }
   for (const content of message.message.content) {
@@ -236,6 +242,9 @@ export type LocalAgentTaskState = TaskStateBase & {
   evictAfter?: number
   /** Whether the sub-agent model is currently in a thinking block */
   isThinking?: boolean
+  /** Spinner verb while the sub-agent compacts its own context (e.g.
+   * "Compacting conversation"). undefined when not compacting. */
+  compactStatus?: string
 }
 
 export function isLocalAgentTask(task: unknown): task is LocalAgentTaskState {
@@ -283,6 +292,25 @@ export function appendMessageToLocalAgent(
     ...task,
     messages: [...(task.messages ?? []), message],
   }))
+}
+
+/**
+ * Stream a message into the viewed transcript, but only while the UI holds the
+ * task (retain). Bootstrap reads disk in parallel and UUID-merges the prefix —
+ * disk-write-before-yield means live is always a suffix of disk, so the merge
+ * stays order-correct. Every agent run loop must call this, or the drill-down
+ * for that flavour of agent renders empty.
+ */
+export function appendRetainedAgentMessage(
+  taskId: string,
+  message: Message,
+  setAppState: SetAppState,
+): void {
+  updateTaskState<LocalAgentTaskState>(taskId, setAppState, task =>
+    task.retain
+      ? { ...task, messages: [...(task.messages ?? []), message] }
+      : task,
+  )
 }
 
 export function drainPendingMessages(
@@ -501,6 +529,20 @@ export function updateAgentThinking(
       return task
     }
     return { ...task, isThinking }
+  })
+}
+
+export function updateAgentCompactStatus(
+  taskId: string,
+  compactStatus: string | null,
+  setAppState: SetAppState,
+): void {
+  const next = compactStatus ?? undefined
+  updateTaskState<LocalAgentTaskState>(taskId, setAppState, task => {
+    if (task.status !== 'running' || task.compactStatus === next) {
+      return task
+    }
+    return { ...task, compactStatus: next }
   })
 }
 

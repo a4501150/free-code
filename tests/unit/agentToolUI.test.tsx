@@ -129,6 +129,24 @@ describe('AgentTool UI', () => {
     ).toBe(1800)
   })
 
+  test('agent progress tokens do not drop when the subagent compacts', () => {
+    // Auto-compaction collapses the cumulative input_tokens the API reports.
+    // The counter tracks the peak so it never runs backwards.
+    expect(
+      calculateAgentProgressTokens([
+        agentProgressMessage({ inputTokens: 150_000, outputTokens: 400 }),
+        agentProgressMessage({
+          progressId: 'progress-2',
+          assistantId: 'assistant-2',
+          messageId: 'msg-2',
+          inputTokens: 20_000,
+          outputTokens: 100,
+          toolUseId: 'tool-2',
+        }),
+      ]),
+    ).toBe(150_500)
+  })
+
   test('rejected agent progress is rendered as no longer running', () => {
     const node = renderToolUseRejectedMessage(
       {
