@@ -18,8 +18,6 @@ import {
   isSettingSourceEnabled,
   type SettingSource,
 } from './settings/constants.js'
-import { getManagedFilePath } from './settings/managedPath.js'
-import { isRestrictedToPluginOnly } from './settings/pluginOnlyPolicy.js'
 
 // Claude configuration directory names
 export const CLAUDE_CONFIG_DIRECTORIES = [
@@ -298,7 +296,6 @@ export const loadMarkdownFilesForSubdir = memoize(
   ): Promise<MarkdownFile[]> {
     const searchStartTime = Date.now()
     const userDir = join(getClaudeConfigHomeDir(), subdir)
-    const managedDir = join(getManagedFilePath(), '.claude', subdir)
     const projectDirs = getProjectDirsUpToHome(subdir, cwd)
 
     // For git worktrees where the worktree does NOT have a project config
@@ -333,18 +330,9 @@ export const loadMarkdownFilesForSubdir = memoize(
       }
     }
 
-    const [managedFiles, userFiles, projectFilesNested] = await Promise.all([
-      // Always load managed (policy settings)
-      loadMarkdownFiles(managedDir).then(_ =>
-        _.map(file => ({
-          ...file,
-          baseDir: managedDir,
-          source: 'policySettings' as const,
-        })),
-      ),
+    const [userFiles, projectFilesNested] = await Promise.all([
       // Conditionally load user files
-      isSettingSourceEnabled('userSettings') &&
-      !(subdir === 'agents' && isRestrictedToPluginOnly('agents'))
+      isSettingSourceEnabled('userSettings')
         ? loadMarkdownFiles(userDir).then(_ =>
             _.map(file => ({
               ...file,
@@ -354,8 +342,7 @@ export const loadMarkdownFilesForSubdir = memoize(
           )
         : Promise.resolve([]),
       // Conditionally load project files from all directories up to home
-      isSettingSourceEnabled('projectSettings') &&
-      !(subdir === 'agents' && isRestrictedToPluginOnly('agents'))
+      isSettingSourceEnabled('projectSettings')
         ? Promise.all(
             projectDirs.map(projectDir =>
               loadMarkdownFiles(projectDir).then(_ =>
@@ -373,8 +360,8 @@ export const loadMarkdownFilesForSubdir = memoize(
     // Flatten nested project files array
     const projectFiles = projectFilesNested.flat()
 
-    // Combine all files with priority: managed > user > project
-    const allFiles = [...managedFiles, ...userFiles, ...projectFiles]
+    // Combine all files with priority: user > project
+    const allFiles = [...userFiles, ...projectFiles]
 
     // Deduplicate files that resolve to the same physical file (same inode).
     // This prevents the same file from appearing multiple times when ~/.freecode is

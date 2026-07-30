@@ -1,9 +1,6 @@
 import * as React from 'react'
 import { Box, Text } from '../../ink.js'
-import {
-  SandboxManager,
-  shouldAllowManagedSandboxDomainsOnly,
-} from '../../utils/sandbox/sandbox-adapter.js'
+import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 
 export function SandboxConfigTab(): React.ReactNode {
   const isEnabled = SandboxManager.isSandboxingEnabled()
@@ -86,8 +83,7 @@ export function SandboxConfigTab(): React.ReactNode {
           networkConfig.deniedHosts.length > 0)) && (
         <Box marginTop={1} flexDirection="column">
           <Text bold color="permission">
-            Network Restrictions
-            {shouldAllowManagedSandboxDomainsOnly() ? ' (Managed)' : ''}:
+            Network Restrictions:
           </Text>
           {networkConfig.allowedHosts &&
             networkConfig.allowedHosts.length > 0 && (

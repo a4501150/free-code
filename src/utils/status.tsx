@@ -36,11 +36,7 @@ import {
   getEnabledSettingSources,
   getSettingSourceDisplayNameCapitalized,
 } from './settings/constants.js'
-import {
-  getManagedFileSettingsPresence,
-  getPolicySettingsOrigin,
-  getSettingsForSource,
-} from './settings/settings.js'
+import { getSettingsForSource } from './settings/settings.js'
 import type { ThemeName } from './theme.js'
 
 export type Property = {
@@ -202,38 +198,9 @@ export function buildSettingSourcesProperties(): Property[] {
   })
 
   // Map internal names to user-friendly names
-  // For policySettings, distinguish between remote and local (or skip if neither exists)
-  const sourceNames = sourcesWithSettings
-    .map(source => {
-      if (source === 'policySettings') {
-        const origin = getPolicySettingsOrigin()
-        if (origin === null) {
-          return null // Skip - no policy settings exist
-        }
-        switch (origin) {
-          case 'remote':
-            return 'Enterprise managed settings (remote)'
-          case 'plist':
-            return 'Enterprise managed settings (plist)'
-          case 'hklm':
-            return 'Enterprise managed settings (HKLM)'
-          case 'file': {
-            const { hasBase, hasDropIns } = getManagedFileSettingsPresence()
-            if (hasBase && hasDropIns) {
-              return 'Enterprise managed settings (file + drop-ins)'
-            }
-            if (hasDropIns) {
-              return 'Enterprise managed settings (drop-ins)'
-            }
-            return 'Enterprise managed settings (file)'
-          }
-          case 'hkcu':
-            return 'Enterprise managed settings (HKCU)'
-        }
-      }
-      return getSettingSourceDisplayNameCapitalized(source)
-    })
-    .filter((name): name is string => name !== null)
+  const sourceNames = sourcesWithSettings.map(source =>
+    getSettingSourceDisplayNameCapitalized(source),
+  )
 
   return [
     {

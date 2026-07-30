@@ -11,8 +11,7 @@ import {
   getHasDevChannels,
 } from '../../bootstrap/state.js'
 import { Box, Text } from '../../ink.js'
-import { isChannelsEnabled } from '../../services/mcp/channelAllowlist.js'
-import { getEffectiveChannelAllowlist } from '../../services/mcp/channelNotification.js'
+import { getChannelAllowlist } from '../../services/mcp/channelAllowlist.js'
 import { getMcpConfigsByScope } from '../../services/mcp/config.js'
 import {
   getClaudeAIOAuthTokens,
@@ -24,39 +23,24 @@ import { getSettingsForSource } from '../../utils/settings/settings.js'
 export function ChannelsNotice(): React.ReactNode {
   // Snapshot all reads at mount. This notice enters scrollback immediately
   // after the logo; any re-render past that point forces a full terminal
-  // reset. getAllowedChannels (bootstrap state), getSettingsForSource
-  // (session cache updated by background polling / /login), and
-  // isChannelsEnabled must be captured once
-  // so a later re-render cannot flip branches.
-  const [{ channels, disabled, noAuth, policyBlocked, list, unmatched }] =
-    useState(() => {
-      const ch = getAllowedChannels()
-      if (ch.length === 0)
-        return {
-          channels: ch,
-          disabled: false,
-          noAuth: false,
-          policyBlocked: false,
-          list: '',
-          unmatched: [] as Unmatched[],
-        }
-      const l = ch.map(formatEntry).join(', ')
-      const sub = getSubscriptionType()
-      const managed = sub === 'team' || sub === 'enterprise'
-      const policy = getSettingsForSource('policySettings')
-      const allowlist = getEffectiveChannelAllowlist(
-        sub,
-        policy?.allowedChannelPlugins,
-      )
+  // reset, so these must be captured once so a later re-render cannot flip
+  // branches.
+  const [{ channels, noAuth, list, unmatched }] = useState(() => {
+    const ch = getAllowedChannels()
+    if (ch.length === 0)
       return {
         channels: ch,
-        disabled: !isChannelsEnabled(),
-        noAuth: !getClaudeAIOAuthTokens()?.accessToken,
-        policyBlocked: managed && policy?.channelsEnabled !== true,
-        list: l,
-        unmatched: findUnmatched(ch, allowlist),
+        noAuth: false,
+        list: '',
+        unmatched: [] as Unmatched[],
       }
-    })
+    return {
+      channels: ch,
+      noAuth: !getClaudeAIOAuthTokens()?.accessToken,
+      list: ch.map(formatEntry).join(', '),
+      unmatched: findUnmatched(ch),
+    }
+  })
   if (channels.length === 0) return null
 
   // When both flags are passed, the list mixes entries and a single flag
@@ -69,17 +53,6 @@ export function ChannelsNotice(): React.ReactNode {
         ? '--dangerously-load-development-channels'
         : '--channels'
 
-  if (disabled) {
-    return (
-      <Box paddingLeft={2} flexDirection="column">
-        <Text color="error">
-          {flag} ignored ({list})
-        </Text>
-        <Text dimColor>Channels are not currently available</Text>
-      </Box>
-    )
-  }
-
   if (noAuth) {
     return (
       <Box paddingLeft={2} flexDirection="column">
@@ -89,26 +62,6 @@ export function ChannelsNotice(): React.ReactNode {
         <Text dimColor>
           Channels require claude.ai authentication · run /login, then restart
         </Text>
-      </Box>
-    )
-  }
-
-  if (policyBlocked) {
-    return (
-      <Box paddingLeft={2} flexDirection="column">
-        <Text color="error">
-          {flag} blocked by org policy ({list})
-        </Text>
-        <Text dimColor>Inbound messages will be silently dropped</Text>
-        <Text dimColor>
-          Have an administrator set channelsEnabled: true in managed settings to
-          enable
-        </Text>
-        {unmatched.map(u => (
-          <Text key={`${formatEntry(u.entry)}:${u.why}`} color="warning">
-            {formatEntry(u.entry)} · {u.why}
-          </Text>
-        ))}
       </Box>
     )
   }
@@ -141,14 +94,11 @@ function formatEntry(c: ChannelEntry): string {
 
 type Unmatched = { entry: ChannelEntry; why: string }
 
-function findUnmatched(
-  entries: readonly ChannelEntry[],
-  allowlist: ReturnType<typeof getEffectiveChannelAllowlist>,
-): Unmatched[] {
+function findUnmatched(entries: readonly ChannelEntry[]): Unmatched[] {
   // Server-kind: build one Set from all scopes up front. getMcpConfigsByScope
   // is not cached (project scope walks the dir tree); getMcpConfigByName would
   // redo that walk per entry.
-  const scopes = ['enterprise', 'user', 'project', 'local'] as const
+  const scopes = ['user', 'project', 'local'] as const
   const configured = new Set<string>()
   for (const scope of scopes) {
     for (const name of Object.keys(getMcpConfigsByScope(scope).servers)) {
@@ -164,10 +114,9 @@ function findUnmatched(
 
   // Plugin-kind allowlist check: same {marketplace, plugin} test as the
   // gate at channelNotification.ts. entry.dev bypasses (dev flag opts out
-  // of the allowlist). Org list replaces ledger when set (team/enterprise).
-  // Cold cache yields [] so every plugin
-  // entry warns; same tradeoff the gate already accepts.
-  const { entries: allowed, source } = allowlist
+  // of the allowlist). Cold cache yields [] so every plugin entry warns;
+  // same tradeoff the gate already accepts.
+  const allowed = getChannelAllowlist()
 
   // Independent ifs — a plugin entry that's both uninstalled AND
   // unlisted shows two lines. Server kind checks config + dev flag.
@@ -194,13 +143,7 @@ function findUnmatched(
         e => e.plugin === entry.name && e.marketplace === entry.marketplace,
       )
     ) {
-      out.push({
-        entry,
-        why:
-          source === 'org'
-            ? "not on your org's approved channels list"
-            : 'not on the approved channels allowlist',
-      })
+      out.push({ entry, why: 'not on the approved channels allowlist' })
     }
   }
   return out

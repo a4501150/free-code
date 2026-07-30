@@ -5,7 +5,7 @@ import { logForDebugging } from './debug.js'
 import { withDiagnosticsTiming } from './diagLogs.js'
 import { globalConfigDir, isBareMode } from './envUtils.js'
 import { updateWatchPaths } from './hooks/fileChangedWatcher.js'
-import { shouldAllowManagedHooksOnly } from './hooks/hooksConfigSnapshot.js'
+import { areAllHooksDisabled } from './hooks/hooksConfigSnapshot.js'
 import { executeSessionStartHooks, executeSetupHooks } from './hooks.js'
 import { logError } from './log.js'
 import { loadPluginHooks } from './plugins/loadPluginHooks.js'
@@ -51,10 +51,9 @@ export async function processSessionStartHooks(
   const additionalContexts: string[] = []
   const allWatchPaths: string[] = []
 
-  // Skip loading plugin hooks if restricted to managed hooks only
-  // Plugin hooks are untrusted external code that should be blocked by policy
-  if (shouldAllowManagedHooksOnly()) {
-    logForDebugging('Skipping plugin hooks - allowManagedHooksOnly is enabled')
+  // Skip loading plugin hooks when disableAllHooks is set
+  if (areAllHooksDisabled()) {
+    logForDebugging('Skipping plugin hooks - disableAllHooks is enabled')
   } else {
     // Ensure plugin hooks are loaded before executing SessionStart hooks.
     // loadPluginHooks() may be called early during startup (fire-and-forget, non-blocking)
@@ -184,8 +183,8 @@ export async function processSetupHooks(
   const hookMessages: HookResultMessage[] = []
   const additionalContexts: string[] = []
 
-  if (shouldAllowManagedHooksOnly()) {
-    logForDebugging('Skipping plugin hooks - allowManagedHooksOnly is enabled')
+  if (areAllHooksDisabled()) {
+    logForDebugging('Skipping plugin hooks - disableAllHooks is enabled')
   } else {
     try {
       await loadPluginHooks()

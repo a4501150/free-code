@@ -1,17 +1,17 @@
 /**
  * Minimal module for firing macOS keychain reads in parallel with main.tsx
- * module evaluation, same pattern as startMdmRawRead() in settings/mdm/rawRead.ts.
+ * module evaluation.
  *
- * isRemoteManagedSettingsEligible() reads two separate keychain entries
- * SEQUENTIALLY via sync execSync during applySafeConfigEnvironmentVariables():
+ * Auth resolution reads two separate keychain entries SEQUENTIALLY via sync
+ * execSync during startup:
  *   1. "Claude Code-credentials" (OAuth tokens)  — ~32ms
  *   2. "Claude Code" (legacy API key)            — ~33ms
  * Sequential cost: ~65ms on every macOS startup.
  *
  * Firing both here lets the subprocesses run in parallel with the ~65ms of
- * main.tsx imports. ensureKeychainPrefetchCompleted() is awaited alongside
- * ensureMdmSettingsLoaded() in main.tsx preAction — nearly free since the
- * subprocesses finish during import evaluation. Sync read() and
+ * main.tsx imports. ensureKeychainPrefetchCompleted() is awaited in main.tsx
+ * preAction — nearly free since the subprocesses finish during import
+ * evaluation. Sync read() and
  * getApiKeyFromConfigOrMacOSKeychain() then hit their caches.
  *
  * Imports stay minimal: child_process + macOsKeychainHelpers.ts (NOT
@@ -63,8 +63,8 @@ function spawnSecurity(serviceName: string): Promise<SpawnResult> {
 }
 
 /**
- * Fire both keychain reads in parallel. Called at main.tsx top-level
- * immediately after startMdmRawRead(). Non-darwin is a no-op.
+ * Fire both keychain reads in parallel. Called at main.tsx top-level.
+ * Non-darwin is a no-op.
  */
 export function startKeychainPrefetch(): void {
   if (process.platform !== 'darwin' || prefetchPromise || isBareMode()) return
@@ -89,9 +89,9 @@ export function startKeychainPrefetch(): void {
 }
 
 /**
- * Await prefetch completion. Called in main.tsx preAction alongside
- * ensureMdmSettingsLoaded() — nearly free since subprocesses finish during
- * the ~65ms of main.tsx imports. Resolves immediately on non-darwin.
+ * Await prefetch completion. Called in main.tsx preAction — nearly free since
+ * subprocesses finish during the ~65ms of main.tsx imports. Resolves
+ * immediately on non-darwin.
  */
 export async function ensureKeychainPrefetchCompleted(): Promise<void> {
   if (prefetchPromise) await prefetchPromise

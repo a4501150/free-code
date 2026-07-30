@@ -12,8 +12,6 @@
  *
  * feature('KAIROS'). Runtime gate tengu_harbor.
  * Requires claude.ai OAuth auth — API key users are blocked until
- * console gets a channelsEnabled admin surface. Teams/Enterprise orgs
- * must explicitly opt in via channelsEnabled: true in managed settings.
  */
 
 import type { ServerCapabilities } from '@modelcontextprotocol/sdk/types.js'
@@ -30,7 +28,6 @@ import { escapeXmlAttr } from '../../utils/xml.js'
 import {
   type ChannelAllowlistEntry,
   getChannelAllowlist,
-  isChannelsEnabled,
 } from './channelAllowlist.js'
 
 export const ChannelMessageNotificationSchema = z.object({
@@ -110,40 +107,11 @@ export function wrapChannelMessage(
   return `<${CHANNEL_TAG} source="${escapeXmlAttr(serverName)}"${attrs}>\n${content}\n</${CHANNEL_TAG}>`
 }
 
-/**
- * Effective allowlist for the current session. Team/enterprise orgs can set
- * allowedChannelPlugins in managed settings — when set, it REPLACES the
- * built-in ledger (admin owns the trust decision). Undefined falls back
- * to the ledger. Unmanaged users always get the ledger.
- *
- * Callers already read sub/policy for the policy gate — pass them in to
- * avoid double-reading getSettingsForSource (uncached).
- */
-export function getEffectiveChannelAllowlist(
-  sub: ReturnType<typeof getSubscriptionType>,
-  orgList: ChannelAllowlistEntry[] | undefined,
-): {
-  entries: ChannelAllowlistEntry[]
-  source: 'org' | 'ledger'
-} {
-  if ((sub === 'team' || sub === 'enterprise') && orgList) {
-    return { entries: orgList, source: 'org' }
-  }
-  return { entries: getChannelAllowlist(), source: 'ledger' }
-}
-
 export type ChannelGateResult =
   | { action: 'register' }
   | {
       action: 'skip'
-      kind:
-        | 'capability'
-        | 'disabled'
-        | 'auth'
-        | 'policy'
-        | 'session'
-        | 'marketplace'
-        | 'allowlist'
+      kind: 'capability' | 'auth' | 'session' | 'marketplace' | 'allowlist'
       reason: string
     }
 
@@ -200,20 +168,7 @@ export function gateChannelServer(
     }
   }
 
-  // Overall runtime gate. After capability so normal MCP servers never hit
-  // this path. Before auth/policy so the killswitch works regardless of
-  // session state.
-  if (!isChannelsEnabled()) {
-    return {
-      action: 'skip',
-      kind: 'disabled',
-      reason: 'channels feature is not currently available',
-    }
-  }
-
-  // OAuth-only. API key users (console) are blocked — there's no
-  // channelsEnabled admin surface in console yet, so the policy opt-in
-  // flow doesn't exist for them. Drop this when console parity lands.
+  // OAuth-only. API key users (console) are blocked.
   if (!getClaudeAIOAuthTokens()?.accessToken) {
     return {
       action: 'skip',
@@ -221,14 +176,6 @@ export function gateChannelServer(
       reason: 'channels requires claude.ai authentication (run /login)',
     }
   }
-
-  // Subscription type and policy settings — used by the allowlist below
-  // to decide whether to use org-level or built-in allowlist.
-  const sub = getSubscriptionType()
-  const policy =
-    sub === 'team' || sub === 'enterprise'
-      ? getSettingsForSource('policySettings')
-      : undefined
 
   // User-level session opt-in. A server must be explicitly listed in
   // --channels to push inbound this session — protects against a trusted
@@ -266,22 +213,15 @@ export function gateChannelServer(
     // not the session-wide bit) bypasses — so accepting the dev dialog for
     // one entry doesn't leak allowlist-bypass to --channels entries.
     if (!entry.dev) {
-      const { entries, source } = getEffectiveChannelAllowlist(
-        sub,
-        policy?.allowedChannelPlugins,
-      )
       if (
-        !entries.some(
+        !getChannelAllowlist().some(
           e => e.plugin === entry.name && e.marketplace === entry.marketplace,
         )
       ) {
         return {
           action: 'skip',
           kind: 'allowlist',
-          reason:
-            source === 'org'
-              ? `plugin ${entry.name}@${entry.marketplace} is not on your org's approved channels list (set allowedChannelPlugins in managed settings)`
-              : `plugin ${entry.name}@${entry.marketplace} is not on the approved channels allowlist (use --dangerously-load-development-channels for local dev)`,
+          reason: `plugin ${entry.name}@${entry.marketplace} is not on the approved channels allowlist (use --dangerously-load-development-channels for local dev)`,
         }
       }
     }

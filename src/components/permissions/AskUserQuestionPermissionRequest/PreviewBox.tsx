@@ -1,4 +1,5 @@
-import React, { Suspense, use, useMemo } from 'react'
+import figures from 'figures'
+import React, { Suspense, use, useEffect, useMemo } from 'react'
 import { useSettings } from '../../../hooks/useSettings.js'
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js'
 import { stringWidth } from '../../../ink/stringWidth.js'
@@ -14,8 +15,13 @@ type PreviewBoxProps = {
   /** The preview content to display. Markdown is rendered with syntax highlighting
    * for code blocks (```ts, ```py, etc.). Also supports plain multi-line text. */
   content: string
-  /** Maximum number of lines to display before truncating. @default 20 */
+  /** Maximum number of lines the box body may occupy, including the scroll
+   * indicator row when the content overflows. @default 20 */
   maxLines?: number
+  /** First content line to display. Clamped internally to the scrollable range. */
+  scrollOffset?: number
+  /** Reports the largest usable scrollOffset so the owner can clamp its state. */
+  onScrollBoundsChange?: (maxScrollOffset: number) => void
   /** Minimum height (in lines) for the preview box. Content will be padded if shorter. */
   minHeight?: number
   /** Minimum width for the preview box. @default 40 */
@@ -63,6 +69,8 @@ function PreviewBoxBody({
   minHeight,
   minWidth = 40,
   maxWidth,
+  scrollOffset = 0,
+  onScrollBoundsChange,
   highlight,
 }: PreviewBoxProps & { highlight: CliHighlight | null }): React.ReactNode {
   const { columns: terminalWidth } = useTerminalSize()
@@ -80,24 +88,32 @@ function PreviewBoxBody({
     [content, theme, highlight],
   )
   const contentLines = rendered.split('\n')
-  const isTruncated = contentLines.length > effectiveMaxLines
+  const isScrollable = contentLines.length > effectiveMaxLines
 
-  // Truncate to effectiveMaxLines
-  const truncatedLines = isTruncated
-    ? contentLines.slice(0, effectiveMaxLines)
-    : contentLines
+  // When the content overflows, the last body row becomes the scroll indicator
+  // so the box height stays at effectiveMaxLines either way.
+  const visibleCount = isScrollable
+    ? Math.max(1, effectiveMaxLines - 1)
+    : effectiveMaxLines
+  const maxScrollOffset = Math.max(0, contentLines.length - visibleCount)
+  const offset = Math.min(Math.max(0, scrollOffset), maxScrollOffset)
+  const visibleLines = contentLines.slice(offset, offset + visibleCount)
+
+  useEffect(() => {
+    onScrollBoundsChange?.(maxScrollOffset)
+  }, [maxScrollOffset, onScrollBoundsChange])
 
   // Pad content with empty lines if shorter than minHeight, but never exceed
-  // the truncation limit — otherwise padding undoes the truncation
+  // the visible window — otherwise padding grows the box past its budget
   const effectiveMinHeight = Math.min(minHeight ?? 0, effectiveMaxLines)
   const paddingNeeded = Math.max(
     0,
-    effectiveMinHeight - truncatedLines.length - (isTruncated ? 1 : 0),
+    effectiveMinHeight - visibleLines.length - (isScrollable ? 1 : 0),
   )
   const lines =
     paddingNeeded > 0
-      ? [...truncatedLines, ...Array<string>(paddingNeeded).fill('')]
-      : truncatedLines
+      ? [...visibleLines, ...Array<string>(paddingNeeded).fill('')]
+      : visibleLines
 
   // Calculate content width (max visual line width, handling unicode/emoji/CJK)
   const contentWidth = Math.max(
@@ -114,14 +130,19 @@ function PreviewBoxBody({
   // Render bottom border
   const bottomBorder = `${BOX_CHARS.bottomLeft}${BOX_CHARS.horizontal.repeat(boxWidth - 2)}${BOX_CHARS.bottomRight}`
 
-  // Build the truncation separator bar (e.g. ├─── ✂ ─── 42 lines hidden ──────┤)
-  const truncationBar = isTruncated
+  // Scroll position bar (e.g. ├─ ↑↓ 5-18 of 24 · shift+↑/↓ to scroll ─┤)
+  const scrollBar = isScrollable
     ? (() => {
-        const hiddenCount = contentLines.length - effectiveMaxLines
-        const label = `${BOX_CHARS.horizontal.repeat(3)} \u2702 ${BOX_CHARS.horizontal.repeat(3)} ${hiddenCount} lines hidden `
-        const labelWidth = stringWidth(label)
-        const fillWidth = Math.max(0, boxWidth - 2 - labelWidth)
-        return `${BOX_CHARS.teeLeft}${label}${BOX_CHARS.horizontal.repeat(fillWidth)}${BOX_CHARS.teeRight}`
+        const range = `${offset + 1}-${offset + visibleLines.length} of ${contentLines.length}`
+        const fullLabel = ` ${figures.arrowUp}${figures.arrowDown} ${range} \u00b7 shift+${figures.arrowUp}/${figures.arrowDown} to scroll `
+        const available = boxWidth - 2
+        const label =
+          stringWidth(fullLabel) <= available
+            ? fullLabel
+            : sliceAnsi(` ${range} `, 0, available)
+        const fillWidth = Math.max(0, available - stringWidth(label))
+        const leftFill = Math.min(3, fillWidth)
+        return `${BOX_CHARS.teeLeft}${BOX_CHARS.horizontal.repeat(leftFill)}${label}${BOX_CHARS.horizontal.repeat(fillWidth - leftFill)}${BOX_CHARS.teeRight}`
       })()
     : null
 
@@ -150,7 +171,7 @@ function PreviewBoxBody({
         )
       })}
 
-      {truncationBar && <Text color="warning">{truncationBar}</Text>}
+      {scrollBar && <Text color="warning">{scrollBar}</Text>}
 
       <Text dimColor>{bottomBorder}</Text>
     </Box>

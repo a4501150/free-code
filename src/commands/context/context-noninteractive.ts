@@ -196,9 +196,6 @@ function formatContextAsMarkdownTable(data: ContextData): string {
         case 'flagSettings':
           sourceDisplay = 'Flag'
           break
-        case 'policySettings':
-          sourceDisplay = 'Policy'
-          break
         case 'plugin':
           sourceDisplay = 'Plugin'
           break

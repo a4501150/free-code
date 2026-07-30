@@ -8,9 +8,8 @@ import { useKeybinding } from '../keybindings/useKeybinding.js'
 import { getSSLErrorHint } from '../services/api/errorUtils.js'
 import { sendNotification } from '../services/notifier.js'
 import { OAuthService } from '../services/oauth/index.js'
-import { getOauthAccountInfo, validateForceLoginOrg } from '../utils/auth.js'
+import { getOauthAccountInfo } from '../utils/auth.js'
 import { logError } from '../utils/log.js'
-import { getSettings_DEPRECATED } from '../utils/settings/settings.js'
 import { Select } from './CustomSelect/select.js'
 import { KeyboardShortcutHint } from './design-system/KeyboardShortcutHint.js'
 import { Spinner } from './Spinner.js'
@@ -20,7 +19,6 @@ type Props = {
   onDone(): void
   startingMessage?: string
   mode?: 'login' | 'setup-token'
-  forceLoginMethod?: 'claudeai' | 'console'
 }
 
 type OAuthStatus =
@@ -43,25 +41,11 @@ export function ConsoleOAuthFlow({
   onDone,
   startingMessage,
   mode = 'login',
-  forceLoginMethod: forceLoginMethodProp,
 }: Props): React.ReactNode {
-  const settings = getSettings_DEPRECATED() || {}
-  const forceLoginMethod = forceLoginMethodProp ?? settings.forceLoginMethod
-  const orgUUID = settings.forceLoginOrgUUID
-  const forcedMethodMessage =
-    forceLoginMethod === 'claudeai'
-      ? 'Login method pre-selected: Subscription Plan (Claude Pro/Max)'
-      : forceLoginMethod === 'console'
-        ? 'Login method pre-selected: API Usage Billing (Anthropic Console)'
-        : null
-
   const terminal = useTerminalNotification()
 
   const [oauthStatus, setOAuthStatus] = useState<OAuthStatus>(() => {
     if (mode === 'setup-token') {
-      return { state: 'ready_to_start' }
-    }
-    if (forceLoginMethod === 'claudeai' || forceLoginMethod === 'console') {
       return { state: 'ready_to_start' }
     }
     return { state: 'idle' }
@@ -72,7 +56,7 @@ export function ConsoleOAuthFlow({
   const [oauthService] = useState(() => new OAuthService())
   const [loginWithClaudeAi, setLoginWithClaudeAi] = useState(() => {
     // Use Claude AI auth for setup-token mode to support user:inference scope
-    return mode === 'setup-token' || forceLoginMethod === 'claudeai'
+    return mode === 'setup-token'
   })
   // After a few seconds we suggest the user to copy/paste url if the
   // browser did not open automatically. In this flow we expect the user to
@@ -81,9 +65,6 @@ export function ConsoleOAuthFlow({
   const [urlCopied, setUrlCopied] = useState(false)
 
   const textInputColumns = useTerminalSize().columns - PASTE_HERE_MSG.length - 1
-
-  // Log forced login method on mount
-  useEffect(() => {}, [forceLoginMethod])
 
   // Retry logic
   useEffect(() => {
@@ -192,7 +173,6 @@ export function ConsoleOAuthFlow({
             loginWithClaudeAi,
             inferenceOnly: mode === 'setup-token',
             expiresIn: mode === 'setup-token' ? 365 * 24 * 60 * 60 : undefined, // 1 year for setup-token
-            orgUUID,
           },
         )
         .catch(err => {
@@ -225,11 +205,6 @@ export function ConsoleOAuthFlow({
       } else {
         await installOAuthTokens(result)
 
-        const orgResult = await validateForceLoginOrg()
-        if (!orgResult.valid) {
-          throw new Error(orgResult.message)
-        }
-
         setOAuthStatus({ state: 'success' })
         void sendNotification(
           {
@@ -250,7 +225,7 @@ export function ConsoleOAuthFlow({
         },
       })
     }
-  }, [oauthService, setShowPastePrompt, loginWithClaudeAi, mode, orgUUID])
+  }, [oauthService, setShowPastePrompt, loginWithClaudeAi, mode])
 
   const pendingOAuthStartRef = useRef(false)
 
@@ -345,7 +320,6 @@ export function ConsoleOAuthFlow({
           oauthStatus={oauthStatus}
           mode={mode}
           startingMessage={startingMessage}
-          forcedMethodMessage={forcedMethodMessage}
           showPastePrompt={showPastePrompt}
           pastedCode={pastedCode}
           setPastedCode={setPastedCode}
@@ -365,7 +339,6 @@ type OAuthStatusMessageProps = {
   oauthStatus: OAuthStatus
   mode: 'login' | 'setup-token'
   startingMessage: string | undefined
-  forcedMethodMessage: string | null
   showPastePrompt: boolean
   pastedCode: string
   setPastedCode: (value: string) => void
@@ -381,7 +354,6 @@ function OAuthStatusMessage({
   oauthStatus,
   mode,
   startingMessage,
-  forcedMethodMessage,
   showPastePrompt,
   pastedCode,
   setPastedCode,
@@ -508,12 +480,6 @@ function OAuthStatusMessage({
     case 'waiting_for_login':
       return (
         <Box flexDirection="column" gap={1}>
-          {forcedMethodMessage && (
-            <Box>
-              <Text dimColor>{forcedMethodMessage}</Text>
-            </Box>
-          )}
-
           {!showPastePrompt && (
             <Box>
               <Spinner />

@@ -12,7 +12,6 @@ import * as React from 'react'
 import type { HookEvent } from 'src/structuredProtocol/index.js'
 import type { HookEventMetadata } from 'src/utils/hooks/hooksConfigManager.js'
 import { Box, Link, Text } from '../../ink.js'
-import { globalConfigFile } from '../../utils/envUtils.js'
 import { plural } from '../../utils/stringUtils.js'
 import { Select } from '../CustomSelect/select.js'
 import { Dialog } from '../design-system/Dialog.js'
@@ -21,7 +20,6 @@ type Props = {
   hookEventMetadata: Record<HookEvent, HookEventMetadata>
   hooksByEvent: Partial<Record<HookEvent, number>>
   totalHooksCount: number
-  restrictedByPolicy: boolean
   onSelectEvent: (event: HookEvent) => void
   onCancel: () => void
 }
@@ -30,7 +28,6 @@ export function SelectEventMode({
   hookEventMetadata,
   hooksByEvent,
   totalHooksCount,
-  restrictedByPolicy,
   onSelectEvent,
   onCancel,
 }: Props): React.ReactNode {
@@ -39,19 +36,6 @@ export function SelectEventMode({
   return (
     <Dialog title="Hooks" subtitle={subtitle} onCancel={onCancel}>
       <Box flexDirection="column" gap={1}>
-        {restrictedByPolicy && (
-          <Box flexDirection="column">
-            <Text color="suggestion">
-              {figures.info} Hooks Restricted by Policy
-            </Text>
-            <Text dimColor>
-              Only hooks from managed settings can run. User-defined hooks from
-              {globalConfigFile()}, .freecode/freecode.json, and
-              .freecode/freecode.local.json are blocked.
-            </Text>
-          </Box>
-        )}
-
         <Box flexDirection="column">
           <Text dimColor>
             {figures.info} This menu is read-only. To add or modify hooks, edit

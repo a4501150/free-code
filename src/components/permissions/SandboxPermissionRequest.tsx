@@ -1,9 +1,6 @@
 import * as React from 'react'
 import { Box, Text } from 'src/ink.js'
-import {
-  type NetworkHostPattern,
-  shouldAllowManagedSandboxDomainsOnly,
-} from 'src/utils/sandbox/sandbox-adapter.js'
+import { type NetworkHostPattern } from 'src/utils/sandbox/sandbox-adapter.js'
 import { Select } from '../CustomSelect/select.js'
 import { PermissionDialog } from './PermissionDialog.js'
 
@@ -37,22 +34,16 @@ export function SandboxPermissionRequest({
     }
   }
 
-  const managedDomainsOnly = shouldAllowManagedSandboxDomainsOnly()
-
   const options = [
     { label: 'Yes', value: 'yes' },
-    ...(!managedDomainsOnly
-      ? [
-          {
-            label: (
-              <Text>
-                Yes, and don&apos;t ask again for <Text bold>{host}</Text>
-              </Text>
-            ),
-            value: 'yes-dont-ask-again',
-          },
-        ]
-      : []),
+    {
+      label: (
+        <Text>
+          Yes, and don&apos;t ask again for <Text bold>{host}</Text>
+        </Text>
+      ),
+      value: 'yes-dont-ask-again',
+    },
     {
       label: (
         <Text>

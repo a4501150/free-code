@@ -61,7 +61,6 @@ export function AgentsMenu({ tools, onExit }: Props): React.ReactNode {
       'built-in': allAgents.filter(a => a.source === 'built-in'),
       userSettings: allAgents.filter(a => a.source === 'userSettings'),
       projectSettings: allAgents.filter(a => a.source === 'projectSettings'),
-      policySettings: allAgents.filter(a => a.source === 'policySettings'),
       localSettings: allAgents.filter(a => a.source === 'localSettings'),
       flagSettings: allAgents.filter(a => a.source === 'flagSettings'),
       plugin: allAgents.filter(a => a.source === 'plugin'),
@@ -117,7 +116,6 @@ export function AgentsMenu({ tools, onExit }: Props): React.ReactNode {
               ...agentsBySource['userSettings'],
               ...agentsBySource['projectSettings'],
               ...agentsBySource['localSettings'],
-              ...agentsBySource['policySettings'],
               ...agentsBySource['flagSettings'],
               ...agentsBySource['plugin'],
             ]

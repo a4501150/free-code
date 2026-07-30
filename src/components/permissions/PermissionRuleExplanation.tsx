@@ -48,10 +48,7 @@ function stringsForDecisionReason(
         reasonString: `Permission rule ${chalk.bold(
           permissionRuleValueToString(reason.rule.ruleValue),
         )} requires confirmation for this ${toolType}.`,
-        configString:
-          reason.rule.source === 'policySettings'
-            ? undefined
-            : '/permissions to update rules',
+        configString: '/permissions to update rules',
       }
     case 'hook': {
       const hookReasonString = reason.reason ? `:\n${reason.reason}` : '.'

@@ -429,7 +429,7 @@ export function findOverlyBroadPowerShellPermissions(
 
 /**
  * Type guard to check if a PermissionRuleSource is a valid PermissionUpdateDestination.
- * Sources like 'flagSettings', 'policySettings', and 'command' are not valid destinations.
+ * Sources like 'flagSettings' and 'command' are not valid destinations.
  */
 function isPermissionUpdateDestination(
   source: PermissionRuleSource,
@@ -457,7 +457,7 @@ export function removeDangerousPermissions(
     PermissionRuleValue[]
   >()
   for (const perm of dangerousPermissions) {
-    // Skip sources that can't be persisted (flagSettings, policySettings, command)
+    // Skip sources that can't be persisted (flagSettings, command)
     if (!isPermissionUpdateDestination(perm.source)) {
       continue
     }

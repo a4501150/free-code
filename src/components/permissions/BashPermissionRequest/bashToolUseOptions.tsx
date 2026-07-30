@@ -1,7 +1,6 @@
 import { BASH_TOOL_NAME } from '../../../tools/BashTool/toolName.js'
 import { extractOutputRedirections } from '../../../utils/bash/commands.js'
 import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpdateSchema.js'
-import { shouldShowAlwaysAllowOptions } from '../../../utils/permissions/permissionsLoader.js'
 import type { OptionWithDescription } from '../../CustomSelect/select.js'
 import { generateShellSuggestionsLabel } from '../shellPermissionHelpers.js'
 
@@ -58,49 +57,46 @@ export function bashToolUseOptions({
     })
   }
 
-  // Only show "always allow" options when not restricted by allowManagedPermissionRulesOnly
-  if (shouldShowAlwaysAllowOptions()) {
-    // Show an editable input for the prefix rule instead of the
-    // Haiku-generated suggestion label — but only when the suggestions
-    // don't contain non-Bash items (addDirectories, Read rules) that
-    // the editable prefix can't represent.
-    const hasNonBashSuggestions = suggestions.some(
-      s =>
-        s.type === 'addDirectories' ||
-        (s.type === 'addRules' &&
-          s.rules?.some(r => r.toolName !== BASH_TOOL_NAME)),
+  // Show an editable input for the prefix rule instead of the
+  // Haiku-generated suggestion label — but only when the suggestions
+  // don't contain non-Bash items (addDirectories, Read rules) that
+  // the editable prefix can't represent.
+  const hasNonBashSuggestions = suggestions.some(
+    s =>
+      s.type === 'addDirectories' ||
+      (s.type === 'addRules' &&
+        s.rules?.some(r => r.toolName !== BASH_TOOL_NAME)),
+  )
+  if (
+    editablePrefix !== undefined &&
+    onEditablePrefixChange &&
+    !hasNonBashSuggestions &&
+    suggestions.length > 0
+  ) {
+    options.push({
+      type: 'input',
+      label: 'Yes, and don\u2019t ask again for',
+      value: 'yes-prefix-edited',
+      placeholder: 'command prefix (e.g., npm run:*)',
+      initialValue: editablePrefix,
+      onChange: onEditablePrefixChange,
+      allowEmptySubmitToCancel: true,
+      showLabelWithValue: true,
+      labelValueSeparator: ': ',
+      resetCursorOnUpdate: true,
+    })
+  } else if (suggestions.length > 0) {
+    const label = generateShellSuggestionsLabel(
+      suggestions,
+      BASH_TOOL_NAME,
+      stripBashRedirections,
     )
-    if (
-      editablePrefix !== undefined &&
-      onEditablePrefixChange &&
-      !hasNonBashSuggestions &&
-      suggestions.length > 0
-    ) {
-      options.push({
-        type: 'input',
-        label: 'Yes, and don\u2019t ask again for',
-        value: 'yes-prefix-edited',
-        placeholder: 'command prefix (e.g., npm run:*)',
-        initialValue: editablePrefix,
-        onChange: onEditablePrefixChange,
-        allowEmptySubmitToCancel: true,
-        showLabelWithValue: true,
-        labelValueSeparator: ': ',
-        resetCursorOnUpdate: true,
-      })
-    } else if (suggestions.length > 0) {
-      const label = generateShellSuggestionsLabel(
-        suggestions,
-        BASH_TOOL_NAME,
-        stripBashRedirections,
-      )
 
-      if (label) {
-        options.push({
-          label,
-          value: 'yes-apply-suggestions',
-        })
-      }
+    if (label) {
+      options.push({
+        label,
+        value: 'yes-apply-suggestions',
+      })
     }
   }
 

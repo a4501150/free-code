@@ -13,14 +13,8 @@ import { ContextSuggestions } from './ContextSuggestions.js'
 
 const RESERVED_CATEGORY_NAME = 'Autocompact buffer'
 
-// Order for displaying source groups: Project > User > Managed > Plugin > Built-in
-const SOURCE_DISPLAY_ORDER = [
-  'Project',
-  'User',
-  'Managed',
-  'Plugin',
-  'Built-in',
-]
+// Order for displaying source groups: Project > User > Plugin > Built-in
+const SOURCE_DISPLAY_ORDER = ['Project', 'User', 'Plugin', 'Built-in']
 
 /** Group items by source type for display, sorted by tokens descending within each group */
 function groupBySource<

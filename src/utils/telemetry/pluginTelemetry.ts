@@ -50,29 +50,21 @@ export function hashPluginId(name: string, marketplace?: string): string {
 }
 
 /**
- * 4-value scope enum for plugin origin. Distinct from PluginScope
- * (managed/user/project/local) which is installation-target — this is
+ * Scope enum for plugin origin. Distinct from PluginScope
+ * (user/project/local) which is installation-target — this is
  * marketplace-origin.
  *
  * - official: from an allowlisted Anthropic marketplace
  * - default-bundle: ships with product (@builtin), auto-enabled
- * - org: enterprise admin-pushed via managed settings (policySettings)
  * - user-local: user added marketplace or local plugin
  */
-export type TelemetryPluginScope =
-  | 'official'
-  | 'org'
-  | 'user-local'
-  | 'default-bundle'
+export type TelemetryPluginScope = 'official' | 'user-local' | 'default-bundle'
 
 export function getTelemetryPluginScope(
-  name: string,
   marketplace: string | undefined,
-  managedNames: Set<string> | null,
 ): TelemetryPluginScope {
   if (marketplace === BUILTIN_MARKETPLACE_NAME) return 'default-bundle'
   if (isOfficialMarketplaceName(marketplace)) return 'official'
-  if (managedNames?.has(name)) return 'org'
   return 'user-local'
 }
 
@@ -129,7 +121,6 @@ export function getEnabledVia(
 export function buildPluginTelemetryFields(
   name: string,
   marketplace: string | undefined,
-  managedNames: Set<string> | null = null,
 ): {
   plugin_id_hash: AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
   plugin_scope: AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
@@ -137,7 +128,7 @@ export function buildPluginTelemetryFields(
   marketplace_name_redacted: AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
   is_official_plugin: boolean
 } {
-  const scope = getTelemetryPluginScope(name, marketplace, managedNames)
+  const scope = getTelemetryPluginScope(marketplace)
   // Both official marketplaces and builtin plugins are Anthropic-controlled
   // — safe to expose real names in the redacted columns.
   const isAnthropicControlled =
@@ -159,16 +150,12 @@ export function buildPluginTelemetryFields(
  * join on plugin_id_hash to recover it. This keeps hot-path call sites free
  * of the extra settings read.
  */
-export function buildPluginCommandTelemetryFields(
-  pluginInfo: { pluginManifest: PluginManifest; repository: string },
-  managedNames: Set<string> | null = null,
-): ReturnType<typeof buildPluginTelemetryFields> {
+export function buildPluginCommandTelemetryFields(pluginInfo: {
+  pluginManifest: PluginManifest
+  repository: string
+}): ReturnType<typeof buildPluginTelemetryFields> {
   const { marketplace } = parsePluginIdentifier(pluginInfo.repository)
-  return buildPluginTelemetryFields(
-    pluginInfo.pluginManifest.name,
-    marketplace,
-    managedNames,
-  )
+  return buildPluginTelemetryFields(pluginInfo.pluginManifest.name, marketplace)
 }
 
 /**
@@ -179,7 +166,6 @@ export function buildPluginCommandTelemetryFields(
  */
 export function logPluginsEnabledForSession(
   plugins: LoadedPlugin[],
-  managedNames: Set<string> | null,
   seedDirs: string[],
 ): void {
   for (const plugin of plugins) {
@@ -228,10 +214,7 @@ export function classifyPluginCommandError(
  * can compute a load-success rate. PluginError.type is already a bounded
  * enum — use it directly as error_category.
  */
-export function logPluginLoadErrors(
-  errors: PluginError[],
-  managedNames: Set<string> | null,
-): void {
+export function logPluginLoadErrors(errors: PluginError[]): void {
   for (const err of errors) {
     const { name, marketplace } = parsePluginIdentifier(err.source)
     // Not all PluginError variants carry a plugin name (some have pluginId,

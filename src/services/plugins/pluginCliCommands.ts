@@ -10,7 +10,6 @@ import figures from 'figures'
 import { errorMessage } from '../../utils/errors.js'
 import { gracefulShutdown } from '../../utils/gracefulShutdown.js'
 import { logError } from '../../utils/log.js'
-import { getManagedPluginNames } from '../../utils/plugins/managedPlugins.js'
 import { parsePluginIdentifier } from '../../utils/plugins/pluginIdentifier.js'
 import type { PluginScope } from '../../utils/plugins/schemas.js'
 import { writeToStdout } from '../../utils/process.js'
@@ -68,11 +67,7 @@ function handlePluginCommandError(
           ...(marketplace && {
             _PROTO_marketplace_name: marketplace,
           }),
-          ...buildPluginTelemetryFields(
-            name,
-            marketplace,
-            getManagedPluginNames(),
-          ),
+          ...buildPluginTelemetryFields(name, marketplace),
         }
       })()
     : {}

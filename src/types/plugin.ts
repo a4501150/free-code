@@ -248,14 +248,6 @@ export type PluginError =
       error: string
     }
   | {
-      type: 'marketplace-blocked-by-policy'
-      source: string
-      plugin?: string
-      marketplace: string
-      blockedByBlocklist?: boolean // true if blocked by blockedMarketplaces, false if not in strictKnownMarketplaces
-      allowedSources: string[] // Formatted source strings (e.g., "github:owner/repo")
-    }
-  | {
       type: 'dependency-unsatisfied'
       source: string
       plugin: string
@@ -338,11 +330,6 @@ export function getPluginErrorMessage(error: PluginError): string {
       return `Plugin "${error.plugin}" LSP server "${error.serverName}" timed out on ${error.method} request after ${error.timeoutMs}ms`
     case 'lsp-request-failed':
       return `Plugin "${error.plugin}" LSP server "${error.serverName}" ${error.method} request failed: ${error.error}`
-    case 'marketplace-blocked-by-policy':
-      if (error.blockedByBlocklist) {
-        return `Marketplace '${error.marketplace}' is blocked by enterprise policy`
-      }
-      return `Marketplace '${error.marketplace}' is not in the allowed marketplace list`
     case 'dependency-unsatisfied': {
       const hint =
         error.reason === 'not-enabled'

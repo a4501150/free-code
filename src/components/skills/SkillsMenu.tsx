@@ -90,7 +90,6 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
 
   const skillsBySource = useMemo((): Record<SkillSource, SkillCommand[]> => {
     const groups: Record<SkillSource, SkillCommand[]> = {
-      policySettings: [],
       userSettings: [],
       projectSettings: [],
       localSettings: [],
@@ -189,7 +188,6 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
       <Box flexDirection="column" gap={1}>
         {renderSkillGroup('projectSettings')}
         {renderSkillGroup('userSettings')}
-        {renderSkillGroup('policySettings')}
         {renderSkillGroup('plugin')}
         {renderSkillGroup('mcp')}
       </Box>

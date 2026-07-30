@@ -120,9 +120,8 @@ export function getFilePermissionOptions({
   const inGlobalClaudeFolder = isInGlobalClaudeFolder(filePath)
 
   // Option 2: For .claude/ folder, show special option instead of generic session option
-  // Note: Session-level options are always shown since they only affect in-memory state,
-  // not persisted settings. The allowManagedPermissionRulesOnly setting only restricts
-  // persisted permission rules.
+  // Note: Session-level options are always shown since they only affect in-memory
+  // state, not persisted settings.
   if ((inClaudeFolder || inGlobalClaudeFolder) && operationType !== 'read') {
     options.push({
       label: 'Yes, and allow Claude to edit its own settings for this session',

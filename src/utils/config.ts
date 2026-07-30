@@ -23,7 +23,6 @@ import { logError } from './log.js'
 import type { MemoryType } from './memory/types.js'
 import { normalizePathForConfigKey } from './path.js'
 import { getEssentialTrafficOnlyReason } from './privacyLevel.js'
-import { getManagedFilePath } from './settings/managedPath.js'
 
 import * as teamMemPathsNs from '../memdir/teamMemPaths.js'
 
@@ -987,8 +986,6 @@ export function getMemoryPath(memoryType: MemoryType): string {
       return join(cwd, 'CLAUDE.local.md')
     case 'Project':
       return join(cwd, 'CLAUDE.md')
-    case 'Managed':
-      return join(getManagedFilePath(), 'CLAUDE.md')
     case 'AutoMem':
       return getAutoMemEntrypoint()
   }
@@ -997,10 +994,6 @@ export function getMemoryPath(memoryType: MemoryType): string {
     return teamMemPaths!.getTeamMemEntrypoint()
   }
   return '' // unreachable in external builds where TeamMem is not in MemoryType
-}
-
-export function getManagedClaudeRulesDir(): string {
-  return join(getManagedFilePath(), '.claude', 'rules')
 }
 
 export function getUserClaudeRulesDir(): string {

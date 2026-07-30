@@ -34,7 +34,6 @@ import {
 import { loadKnownMarketplacesConfig } from '../../utils/plugins/marketplaceManager.js'
 import { OFFICIAL_MARKETPLACE_NAME } from '../../utils/plugins/officialMarketplace.js'
 import { installPluginFromMarketplace } from '../../utils/plugins/pluginInstallationHelpers.js'
-import { isPluginBlockedByPolicy } from '../../utils/plugins/pluginPolicy.js'
 import { plural } from '../../utils/stringUtils.js'
 import { truncateToWidth } from '../../utils/truncate.js'
 import {
@@ -188,10 +187,8 @@ export function DiscoverPlugins({
           }
         }
 
-        // Filter out installed and policy-blocked plugins
-        const uninstalledPlugins = allPlugins.filter(
-          p => !p.isInstalled && !isPluginBlockedByPolicy(p.pluginId),
-        )
+        // Filter out installed plugins
+        const uninstalledPlugins = allPlugins.filter(p => !p.isInstalled)
 
         // Fetch install counts and sort by popularity
         try {
@@ -890,26 +887,6 @@ function EmptyStateMessage({
         <>
           <Text dimColor>Git is required to install marketplaces.</Text>
           <Text dimColor>Please install git and restart Claude Code.</Text>
-        </>
-      )
-    case 'all-blocked-by-policy':
-      return (
-        <>
-          <Text dimColor>
-            Your organization policy does not allow any external marketplaces.
-          </Text>
-          <Text dimColor>Contact your administrator.</Text>
-        </>
-      )
-    case 'policy-restricts-sources':
-      return (
-        <>
-          <Text dimColor>
-            Your organization restricts which marketplaces can be added.
-          </Text>
-          <Text dimColor>
-            Switch to the Marketplaces tab to view allowed sources.
-          </Text>
         </>
       )
     case 'all-marketplaces-failed':

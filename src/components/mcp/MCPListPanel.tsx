@@ -32,7 +32,7 @@ type SelectableItem =
 
 // Define scope order for display (constant, outside component)
 // 'dynamic' (built-in) is rendered separately at the end
-const SCOPE_ORDER: ConfigScope[] = ['project', 'local', 'user', 'enterprise']
+const SCOPE_ORDER: ConfigScope[] = ['project', 'local', 'user']
 
 // Get scope heading parts (label is bold, path is grey)
 function getScopeHeading(scope: ConfigScope): { label: string; path?: string } {
@@ -43,8 +43,6 @@ function getScopeHeading(scope: ConfigScope): { label: string; path?: string } {
       return { label: 'User MCPs', path: describeMcpConfigFilePath(scope) }
     case 'local':
       return { label: 'Local MCPs', path: describeMcpConfigFilePath(scope) }
-    case 'enterprise':
-      return { label: 'Enterprise MCPs' }
     case 'dynamic':
       return { label: 'Built-in MCPs', path: 'always available' }
     default:

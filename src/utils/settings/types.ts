@@ -220,18 +220,6 @@ export const DeniedMcpServerEntrySchema = z
  * - Invalid settings are simply not used, but remain in the file to be fixed by the user
  */
 
-/**
- * Surfaces lockable by `strictPluginOnlyCustomization`. Exported so the
- * schema preprocess (below) and the runtime helper (pluginOnlyPolicy.ts)
- * share one source of truth.
- */
-export const CUSTOMIZATION_SURFACES = [
-  'skills',
-  'agents',
-  'hooks',
-  'mcp',
-] as const
-
 // ── Provider config schemas ──────────────────────────────────────────
 
 export const PROVIDER_TYPES = [
@@ -458,10 +446,6 @@ export const ProviderCapabilitiesSchema = z.object({
     .boolean()
     .optional()
     .describe('Provider supports the Anthropic OAuth profile flow'),
-  supportsRemoteManagedSettings: z
-    .boolean()
-    .optional()
-    .describe('Provider supports remote-managed-settings sync'),
   supportsPolicyLimits: z
     .boolean()
     .optional()
@@ -1041,13 +1025,12 @@ const _settingsSchemaValue = z
       .array(z.string())
       .optional()
       .describe('List of rejected MCP servers from .mcp.json'),
-    // Enterprise allowlist of MCP servers
+    // Allowlist of MCP servers
     allowedMcpServers: z
       .array(AllowedMcpServerEntrySchema)
       .optional()
       .describe(
-        'Enterprise allowlist of MCP servers that can be used. ' +
-          'Applies to all scopes including enterprise servers from managed-mcp.json. ' +
+        'Allowlist of MCP servers that can be used. ' +
           'If undefined, all servers are allowed. If empty array, no servers are allowed. ' +
           'Denylist takes precedence - if a server is on both lists, it is denied.',
       ),
@@ -1096,15 +1079,6 @@ const _settingsSchemaValue = z
         'Default shell for input-box ! commands. ' +
           "Defaults to 'bash' on all platforms (no Windows auto-flip).",
       ),
-    // Only run hooks defined in managed settings (managed-settings.json)
-    allowManagedHooksOnly: z
-      .boolean()
-      .optional()
-      .describe(
-        'When true (and set in managed settings), only hooks from managed settings run. ' +
-          'User, project, and local hooks are ignored.',
-      ),
-    // Allowlist of URL patterns HTTP hooks may target (follows allowedMcpServers precedent)
     allowedHttpHookUrls: z
       .array(z.string())
       .optional()
@@ -1124,55 +1098,6 @@ const _settingsSchemaValue = z
           "When set, each hook's effective allowedEnvVars is the intersection with this list. " +
           'If undefined, no restriction is applied. ' +
           'Arrays merge across settings sources (same semantics as allowedMcpServers).',
-      ),
-    // Only use permission rules defined in managed settings (managed-settings.json)
-    allowManagedPermissionRulesOnly: z
-      .boolean()
-      .optional()
-      .describe(
-        'When true (and set in managed settings), only permission rules (allow/deny/ask) from managed settings are respected. ' +
-          'User, project, local, and CLI argument permission rules are ignored.',
-      ),
-    // Only read MCP allowlist policy from managed settings
-    allowManagedMcpServersOnly: z
-      .boolean()
-      .optional()
-      .describe(
-        'When true (and set in managed settings), allowedMcpServers is only read from managed settings. ' +
-          'deniedMcpServers still merges from all sources, so users can deny servers for themselves. ' +
-          'Users can still add their own MCP servers, but only the admin-defined allowlist applies.',
-      ),
-    // Force customizations through plugins only (LinkedIn ask via GTM)
-    strictPluginOnlyCustomization: z
-      .preprocess(
-        // Forwards-compat: drop unknown surface names so a future enum
-        // value (e.g. 'commands') doesn't fail safeParse and null out the
-        // ENTIRE managed-settings file (settings.ts:101). ["skills",
-        // "commands"] on an old client → ["skills"] → locks what it knows,
-        // ignores what it doesn't. Degrades to less-locked, never to
-        // everything-unlocked.
-        v =>
-          Array.isArray(v)
-            ? v.filter(x =>
-                (CUSTOMIZATION_SURFACES as readonly string[]).includes(x),
-              )
-            : v,
-        z.union([z.boolean(), z.array(z.enum(CUSTOMIZATION_SURFACES))]),
-      )
-      .optional()
-      // Non-array invalid values ("skills" string, {object}) pass through
-      // the preprocess unchanged and would fail the union → null the whole
-      // managed-settings file. .catch drops the field to undefined instead.
-      // Degrades to unlocked-for-this-field, never to everything-broken.
-      // Doctor flags the raw value.
-      .catch(undefined)
-      .describe(
-        'When set in managed settings, blocks non-plugin customization sources for the listed surfaces. ' +
-          'Array form locks specific surfaces (e.g. ["skills", "hooks"]); `true` locks all four; `false` is an explicit no-op. ' +
-          `Blocked: ${globalConfigDir()}/{surface}/, .claude/{surface}/ (project), freecode.json hooks, .mcp.json. ` +
-          'NOT blocked: managed (policySettings) sources, plugin-provided customizations. ' +
-          'Composes with strictKnownMarketplaces for end-to-end admin control — plugins gated by ' +
-          'marketplace allowlist, everything else blocked here.',
       ),
     toolCallDisplay: z
       .enum(['compact', 'full'])
@@ -1231,40 +1156,6 @@ const _settingsSchemaValue = z
       .describe(
         'Additional marketplaces to make available for this repository. Typically used in repository .freecode/freecode.json to ensure team members have required plugin sources.',
       ),
-    // Enterprise strict list of allowed marketplace sources (policy settings only)
-    // When set, ONLY these exact sources can be added. Check happens BEFORE download.
-    strictKnownMarketplaces: z
-      .array(MarketplaceSourceSchema)
-      .optional()
-      .describe(
-        'Enterprise strict list of allowed marketplace sources. When set in managed settings, ' +
-          'ONLY these exact sources can be added as marketplaces. The check happens BEFORE ' +
-          'downloading, so blocked sources never touch the filesystem. ' +
-          'Note: this is a policy gate only — it does NOT register marketplaces. ' +
-          'To pre-register allowed marketplaces for users, also set extraKnownMarketplaces.',
-      ),
-    // Enterprise blocklist of marketplace sources (policy settings only)
-    // When set, these exact sources are blocked. Check happens BEFORE download.
-    blockedMarketplaces: z
-      .array(MarketplaceSourceSchema)
-      .optional()
-      .describe(
-        'Enterprise blocklist of marketplace sources. When set in managed settings, ' +
-          'these exact sources are blocked from being added as marketplaces. The check happens BEFORE ' +
-          'downloading, so blocked sources never touch the filesystem.',
-      ),
-    // Force a specific login method: 'claudeai' for Claude Pro/Max, 'console' for Console billing
-    forceLoginMethod: z
-      .enum(['claudeai', 'console'])
-      .optional()
-      .describe(
-        'Force a specific login method: "claudeai" for Claude Pro/Max, "console" for Console billing',
-      ),
-    // Organization UUID to use for OAuth login (will be added as URL param to authorization URL)
-    forceLoginOrgUUID: z
-      .string()
-      .optional()
-      .describe('Organization UUID to use for OAuth login'),
     otelHeadersHelper: z
       .string()
       .optional()
@@ -1470,50 +1361,6 @@ const _settingsSchemaValue = z
             ),
         }
       : {}),
-    // Teams/Enterprise opt-IN for channel notifications. Default OFF.
-    // MCP servers that declare the claude/channel capability can push
-    // inbound messages into the conversation; for managed orgs this only
-    // works when explicitly enabled. Which servers can connect at all is
-    // still governed by allowedMcpServers/deniedMcpServers. Not
-    // Not feature-spread: the spread wrecks type inference for
-    // allowedChannelPlugins (the .passthrough() catch-all gives {} instead of
-    // the array type).
-    channelsEnabled: z
-      .boolean()
-      .optional()
-      .describe(
-        'Teams/Enterprise opt-in for channel notifications (MCP servers with the ' +
-          'claude/channel capability pushing inbound messages). Default off. ' +
-          'Set true to allow; users then select servers via --channels.',
-      ),
-    // Org-level channel plugin allowlist. When set, REPLACES the
-    // Anthropic ledger — admin owns the trust decision. Undefined means
-    // fall back to the ledger. Plugin-only entry shape (same as the
-    // ledger); server-kind entries still need the dev flag.
-    allowedChannelPlugins: z
-      .array(
-        z.object({
-          marketplace: z.string(),
-          plugin: z.string(),
-        }),
-      )
-      .optional()
-      .describe(
-        'Teams/Enterprise allowlist of channel plugins. When set, ' +
-          'replaces the default Anthropic allowlist — admins decide which ' +
-          'plugins may push inbound messages. Undefined falls back to the default. ' +
-          'Requires channelsEnabled: true.',
-      ),
-    ...(feature('KAIROS')
-      ? {
-          defaultView: z
-            .enum(['chat', 'transcript'])
-            .optional()
-            .describe(
-              'Default transcript view: chat (SendUserMessage checkpoints only) or transcript (full)',
-            ),
-        }
-      : {}),
     prefersReducedMotion: z
       .boolean()
       .optional()
@@ -1567,15 +1414,6 @@ const _settingsSchemaValue = z
           'Patterns are matched against absolute file paths using picomatch. ' +
           'Only applies to User, Project, and Local memory types (Managed/policy files cannot be excluded). ' +
           'Examples: "/home/user/monorepo/CLAUDE.md", "**/code/CLAUDE.md", "**/some-dir/.freecode/rules/**"',
-      ),
-    pluginTrustMessage: z
-      .string()
-      .optional()
-      .describe(
-        'Custom message to append to the plugin trust warning shown before installation. ' +
-          'Only read from policy settings (managed-settings.json / MDM). ' +
-          'Useful for enterprise administrators to add organization-specific context ' +
-          '(e.g., "All plugins from our internal marketplace are vetted and approved.").',
       ),
     fineGrainedToolStreaming: z
       .boolean()

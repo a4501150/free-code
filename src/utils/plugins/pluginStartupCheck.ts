@@ -85,7 +85,6 @@ export async function checkEnabledPlugins(): Promise<string[]> {
  *
  * Precedence (lowest to highest):
  * 0. addDir (--add-dir directories) - session-only, lowest priority
- * 1. managed (policySettings) - not user-editable
  * 2. user (userSettings)
  * 3. project (projectSettings)
  * 4. local (localSettings)
@@ -114,7 +113,6 @@ export function getPluginEditableScopes(): Map<string, ExtendedPluginScope> {
     scope: ExtendedPluginScope
     source: SettingSource
   }> = [
-    { scope: 'managed', source: 'policySettings' },
     { scope: 'user', source: 'userSettings' },
     { scope: 'project', source: 'projectSettings' },
     { scope: 'local', source: 'localSettings' },
@@ -258,9 +256,9 @@ export type PluginInstallResult = {
 }
 
 /**
- * Installation scope type for install functions (excludes 'managed' which is read-only)
+ * Installation scope type for install functions
  */
-type InstallableScope = Exclude<PluginScope, 'managed'>
+type InstallableScope = PluginScope
 
 /**
  * Installs the selected plugins

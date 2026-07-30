@@ -42,7 +42,6 @@ const ALL_FALSE_CAPABILITIES: Required<ProviderCapabilities> = {
   supportsFastMode: false,
   showModelPricing: false,
   supportsOAuthProfile: false,
-  supportsRemoteManagedSettings: false,
   supportsPolicyLimits: false,
   supportsSettingsSync: false,
   supportsTeamMemorySync: false,
@@ -73,7 +72,6 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     supportsFastMode: true,
     showModelPricing: true,
     supportsOAuthProfile: true,
-    supportsRemoteManagedSettings: true,
     supportsPolicyLimits: true,
     supportsSettingsSync: true,
     supportsTeamMemorySync: true,
@@ -427,7 +425,6 @@ export class ProviderRegistry {
       | 'supportsFastMode'
       | 'showModelPricing'
       | 'supportsOAuthProfile'
-      | 'supportsRemoteManagedSettings'
       | 'supportsPolicyLimits'
       | 'supportsSettingsSync'
       | 'supportsTeamMemorySync'

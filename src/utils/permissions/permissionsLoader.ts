@@ -24,25 +24,6 @@ import {
   permissionRuleValueToString,
 } from './permissionRuleParser.js'
 
-/**
- * Returns true if allowManagedPermissionRulesOnly is enabled in managed settings (policySettings).
- * When enabled, only permission rules from managed settings are respected.
- */
-export function shouldAllowManagedPermissionRulesOnly(): boolean {
-  return (
-    getSettingsForSource('policySettings')?.allowManagedPermissionRulesOnly ===
-    true
-  )
-}
-
-/**
- * Returns true if "always allow" options should be shown in permission prompts.
- * When allowManagedPermissionRulesOnly is enabled, these options are hidden.
- */
-export function shouldShowAlwaysAllowOptions(): boolean {
-  return !shouldAllowManagedPermissionRulesOnly()
-}
-
 const SUPPORTED_RULE_BEHAVIORS = [
   'allow',
   'deny',
@@ -114,16 +95,10 @@ function settingsJsonToRules(
 }
 
 /**
- * Loads all permission rules from all relevant sources (managed and project settings)
+ * Loads all permission rules from all enabled settings sources
  * @returns Array of all permission rules
  */
 export function loadAllPermissionRulesFromDisk(): PermissionRule[] {
-  // If allowManagedPermissionRulesOnly is set, only use managed permission rules
-  if (shouldAllowManagedPermissionRulesOnly()) {
-    return getPermissionRulesForSource('policySettings')
-  }
-
-  // Otherwise, load from all enabled sources (backwards compatible)
   const rules: PermissionRule[] = []
 
   for (const source of getEnabledSettingSources()) {
@@ -148,7 +123,7 @@ export type PermissionRuleFromEditableSettings = PermissionRule & {
   source: EditableSettingSource
 }
 
-// Editable sources that can be modified (excludes policySettings and flagSettings)
+// Editable sources that can be modified (excludes flagSettings)
 const EDITABLE_SOURCES: EditableSettingSource[] = [
   'userSettings',
   'projectSettings',
@@ -237,11 +212,6 @@ export function addPermissionRulesToSettings(
   },
   source: EditableSettingSource,
 ): boolean {
-  // When allowManagedPermissionRulesOnly is enabled, don't persist new permission rules
-  if (shouldAllowManagedPermissionRulesOnly()) {
-    return false
-  }
-
   if (ruleValues.length < 1) {
     // No rules to add
     return true

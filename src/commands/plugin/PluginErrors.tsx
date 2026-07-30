@@ -38,10 +38,6 @@ export function formatErrorMessage(error: PluginError): string {
       return `Failed to extract MCPB ${error.mcpbPath}: ${error.reason}`
     case 'mcpb-invalid-manifest':
       return `MCPB manifest invalid at ${error.mcpbPath}: ${error.validationError}`
-    case 'marketplace-blocked-by-policy':
-      return error.blockedByBlocklist
-        ? `Marketplace "${error.marketplace}" is blocked by enterprise policy`
-        : `Marketplace "${error.marketplace}" is not in the allowed marketplace list`
     case 'dependency-unsatisfied':
       return error.reason === 'not-enabled'
         ? `Dependency "${error.dependency}" is disabled`
@@ -111,13 +107,6 @@ export function getErrorGuidance(error: PluginError): string | null {
       return 'Verify the MCPB file is valid and not corrupted'
     case 'mcpb-invalid-manifest':
       return 'Contact the plugin author about the invalid manifest'
-    case 'marketplace-blocked-by-policy':
-      if (error.blockedByBlocklist) {
-        return 'This marketplace source is explicitly blocked by your administrator'
-      }
-      return error.allowedSources.length > 0
-        ? `Allowed sources: ${error.allowedSources.join(', ')}`
-        : 'Contact your administrator to configure allowed marketplace sources'
     case 'dependency-unsatisfied':
       return error.reason === 'not-enabled'
         ? `Enable "${error.dependency}" or uninstall "${error.plugin}"`

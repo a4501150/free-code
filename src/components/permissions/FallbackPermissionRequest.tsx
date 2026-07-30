@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo } from 'react'
 import { getOriginalCwd } from '../../bootstrap/state.js'
 import { Box, Text, useTheme } from '../../ink.js'
-import { shouldShowAlwaysAllowOptions } from '../../utils/permissions/permissionsLoader.js'
 import { truncateToLines } from '../../utils/stringUtils.js'
 import {
   type PermissionRequestEvent,
@@ -84,7 +83,6 @@ export function FallbackPermissionRequest({
   }, [toolUseConfirm, onDone, onReject])
 
   const originalCwd = getOriginalCwd()
-  const showAlwaysAllowOptions = shouldShowAlwaysAllowOptions()
   const options = useMemo((): PermissionPromptOption<FallbackOptionValue>[] => {
     const result: PermissionPromptOption<FallbackOptionValue>[] = [
       {
@@ -94,17 +92,15 @@ export function FallbackPermissionRequest({
       },
     ]
 
-    if (showAlwaysAllowOptions) {
-      result.push({
-        label: (
-          <Text>
-            Yes, and don&apos;t ask again for <Text bold>{userFacingName}</Text>{' '}
-            commands in <Text bold>{originalCwd}</Text>
-          </Text>
-        ),
-        value: 'yes-dont-ask-again',
-      })
-    }
+    result.push({
+      label: (
+        <Text>
+          Yes, and don&apos;t ask again for <Text bold>{userFacingName}</Text>{' '}
+          commands in <Text bold>{originalCwd}</Text>
+        </Text>
+      ),
+      value: 'yes-dont-ask-again',
+    })
 
     result.push({
       label: 'No',
@@ -113,7 +109,7 @@ export function FallbackPermissionRequest({
     })
 
     return result
-  }, [userFacingName, originalCwd, showAlwaysAllowOptions])
+  }, [userFacingName, originalCwd])
 
   const toolAnalyticsContext = useMemo(
     (): ToolAnalyticsContext => ({

@@ -8,7 +8,8 @@ const command = {
     const currentlyEnabled = SandboxManager.isSandboxingEnabled()
     const autoAllow = SandboxManager.isAutoAllowBashIfSandboxedEnabled()
     const allowUnsandboxed = SandboxManager.areUnsandboxedCommandsAllowed()
-    const isLocked = SandboxManager.areSandboxSettingsLockedByPolicy()
+    const isLocked =
+      SandboxManager.areSandboxSettingsLockedByHigherPrioritySource()
     const hasDeps = SandboxManager.checkDependencies().errors.length === 0
 
     // Show warning icon if dependencies missing, otherwise enabled/disabled status

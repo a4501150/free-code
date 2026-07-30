@@ -1,20 +1,11 @@
 // These side-effects must run before all other imports:
 // 1. profileCheckpoint marks entry before heavy module evaluation begins
-// 2. startMdmRawRead fires MDM subprocesses (plutil/reg query) so they run in
-//    parallel with the remaining ~135ms of imports below
-// 3. startKeychainPrefetch fires both macOS keychain reads (OAuth + legacy API
-//    key) in parallel — isRemoteManagedSettingsEligible() otherwise reads them
-//    sequentially via sync spawn inside applySafeConfigEnvironmentVariables()
-//    (~65ms on every macOS startup)
+// 2. startKeychainPrefetch fires both macOS keychain reads (OAuth + legacy API
+//    key) in parallel (~65ms on every macOS startup)
 import { profileCheckpoint, profileReport } from './utils/startupProfiler.js'
 
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
 profileCheckpoint('main_tsx_entry')
-
-import { startMdmRawRead } from './utils/settings/mdm/rawRead.js'
-
-// eslint-disable-next-line custom-rules/no-top-level-side-effects
-startMdmRawRead()
 
 import {
   ensureKeychainPrefetchCompleted,
@@ -51,10 +42,6 @@ import {
   loadPolicyLimits,
   refreshPolicyLimits,
 } from './services/policyLimits/index.js'
-import {
-  loadRemoteManagedSettings,
-  refreshRemoteManagedSettings,
-} from './services/remoteManagedSettings/index.js'
 import type { ToolInputJSONSchema } from './Tool.js'
 import {
   createSyntheticOutputTool,
@@ -74,7 +61,6 @@ import {
   getSubscriptionType,
   prefetchAwsCredentialsAndBedRockInfoIfSafe,
   prefetchGcpCredentialsIfSafe,
-  validateForceLoginOrg,
 } from './utils/auth.js'
 import {
   checkHasTrustDialogAccepted,
@@ -206,7 +192,6 @@ import {
 } from './utils/permissions/permissionSetup.js'
 import { cleanupOrphanedPluginVersionsInBackground } from './utils/plugins/cacheUtils.js'
 import { initializeVersionedPlugins } from './utils/plugins/installedPluginsManager.js'
-import { getManagedPluginNames } from './utils/plugins/managedPlugins.js'
 import { getGlobExclusionsForPluginCache } from './utils/plugins/orphanedPluginFilter.js'
 import { getPluginSeedDirs } from './utils/plugins/pluginDirectories.js'
 import { countFilesRoundedRg } from './utils/ripgrep.js'
@@ -222,7 +207,6 @@ import {
   searchSessionsByCustomTitle,
   sessionIdExists,
 } from './utils/sessionStorage.js'
-import { ensureMdmSettingsLoaded } from './utils/settings/mdm/settings.js'
 import { freecodeSettingsFileExists } from './utils/settings/freecodeSettings.js'
 import {
   copyConfigDir,
@@ -234,7 +218,6 @@ import {
 } from './utils/settings/claudeMigration.js'
 import {
   getInitialSettings,
-  getManagedSettingsKeysForLogging,
   getSettingsForSource,
   getSettingsWithErrors,
 } from './utils/settings/settings.js'
@@ -258,9 +241,7 @@ import { registerMcpXaaIdpCommand } from 'src/commands/mcp/xaaIdpCommand.js'
 import { fetchClaudeAIMcpConfigsIfEligible } from 'src/services/mcp/claudeai.js'
 import { clearServerCache } from 'src/services/mcp/client.js'
 import {
-  areMcpConfigsAllowedWithEnterpriseMcpConfig,
   dedupClaudeAiMcpServers,
-  doesEnterpriseMcpConfigExist,
   filterMcpServersByPolicy,
   getClaudeCodeMcpConfigs,
   getMcpServerSignature,
@@ -406,22 +387,6 @@ import { startBackgroundHousekeeping } from './utils/backgroundHousekeeping.js'
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
 profileCheckpoint('main_tsx_imports_loaded')
 
-/**
- * Log managed settings keys to Statsig for analytics.
- * This is called after init() completes to ensure settings are loaded
- * and environment variables are applied before model resolution.
- */
-function logManagedSettings(): void {
-  try {
-    const policySettings = getSettingsForSource('policySettings')
-    if (policySettings) {
-      const allKeys = getManagedSettingsKeysForLogging(policySettings)
-    }
-  } catch {
-    // Silently ignore errors - this is just for analytics
-  }
-}
-
 // Check if running in debug/inspection mode
 function isBeingDebugged() {
   const isBun = isRunningWithBun()
@@ -471,9 +436,8 @@ function logSessionTelemetry(): void {
   void logSkillsLoaded(getCwd(), getContextWindowForModel(model, getSdkBetas()))
   void loadAllPluginsCacheOnly()
     .then(({ enabled, errors }) => {
-      const managedNames = getManagedPluginNames()
-      logPluginsEnabledForSession(enabled, managedNames, getPluginSeedDirs())
-      logPluginLoadErrors(errors, managedNames)
+      logPluginsEnabledForSession(enabled, getPluginSeedDirs())
+      logPluginLoadErrors(errors)
     })
     .catch(err => logError(err))
 }
@@ -856,16 +820,11 @@ async function run(): Promise<CommanderCommand> {
   // not when displaying help. This avoids the need for env variable signaling.
   program.hook('preAction', async thisCommand => {
     profileCheckpoint('preAction_start')
-    // Await async subprocess loads started at module evaluation (lines 12-20).
-    // Nearly free — subprocesses complete during the ~135ms of imports above.
-    // Must resolve before init() which triggers the first settings read
-    // (applySafeConfigEnvironmentVariables → getSettingsForSource('policySettings')
-    // → isRemoteManagedSettingsEligible → sync keychain reads otherwise ~65ms).
-    await Promise.all([
-      ensureMdmSettingsLoaded(),
-      ensureKeychainPrefetchCompleted(),
-    ])
-    profileCheckpoint('preAction_after_mdm')
+    // Await the async keychain prefetch started at module evaluation. Nearly
+    // free — it completes during the ~135ms of imports above, and resolving it
+    // here keeps init()'s first settings read off the sync keychain path.
+    await ensureKeychainPrefetchCompleted()
+    profileCheckpoint('preAction_after_keychain')
     await init()
     profileCheckpoint('preAction_after_init')
 
@@ -928,14 +887,9 @@ async function run(): Promise<CommanderCommand> {
       )
     }
 
-    // Load remote managed settings for enterprise customers (non-blocking)
-    // Fails open - if fetch fails, continues without remote settings
-    // Settings are applied via hot-reload when they arrive
-    // Must happen after init() to ensure config reading is allowed
-    void loadRemoteManagedSettings()
     void loadPolicyLimits()
 
-    profileCheckpoint('preAction_after_remote_settings')
+    profileCheckpoint('preAction_after_policy_limits')
 
     // Load settings sync (non-blocking, fail-open)
     // CLI: uploads local settings to remote (CCR download is handled by print.ts)
@@ -1789,32 +1743,6 @@ async function run(): Promise<CommanderCommand> {
       // Extract strict MCP config flag
       const strictMcpConfig = options.strictMcpConfig || false
 
-      // Check if enterprise MCP configuration exists. When it does, only allow dynamic MCP
-      // configs that contain special server types (sdk)
-      if (doesEnterpriseMcpConfigExist()) {
-        if (strictMcpConfig) {
-          process.stderr.write(
-            chalk.red(
-              'You cannot use --strict-mcp-config when an enterprise MCP config is present',
-            ),
-          )
-          process.exit(1)
-        }
-
-        // For --mcp-config, allow if all servers are internal types (sdk)
-        if (
-          dynamicMcpConfig &&
-          !areMcpConfigsAllowedWithEnterpriseMcpConfig(dynamicMcpConfig)
-        ) {
-          process.stderr.write(
-            chalk.red(
-              'You cannot dynamically configure MCP servers when an enterprise MCP config is present',
-            ),
-          )
-          process.exit(1)
-        }
-      }
-
       // Store additional directories for CLAUDE.md loading (controlled by env var)
       setAdditionalDirectoriesForClaudeMd(addDir)
 
@@ -1964,13 +1892,12 @@ async function run(): Promise<CommanderCommand> {
       // claude.ai config fetch: -p mode only (interactive uses useManageMCPConnections
       // two-phase loading). Kicked off here to overlap with setup(); awaited
       // before runHeadless so single-turn -p sees connectors. Skipped under
-      // enterprise/strict MCP to preserve policy boundaries.
+      // strict MCP to preserve the configured boundary.
       const claudeaiConfigPromise: Promise<
         Record<string, ScopedMcpServerConfig>
       > =
         isNonInteractiveSession &&
         !strictMcpConfig &&
-        !doesEnterpriseMcpConfigExist() &&
         // --bare / SIMPLE: skip claude.ai proxy servers (datadog, Gmail,
         // Slack, BigQuery, PubMed — 6-14s each to connect). Scripted calls
         // that need MCP pass --mcp-config explicitly.
@@ -1979,7 +1906,7 @@ async function run(): Promise<CommanderCommand> {
               const { allowed, blocked } = filterMcpServersByPolicy(configs)
               if (blocked.length > 0) {
                 process.stderr.write(
-                  `Warning: claude.ai MCP ${plural(blocked.length, 'server')} blocked by enterprise policy: ${blocked.join(', ')}\n`,
+                  `Warning: claude.ai MCP ${plural(blocked.length, 'server')} blocked by MCP settings: ${blocked.join(', ')}\n`,
                 )
               }
               return allowed
@@ -2518,17 +2445,8 @@ async function run(): Promise<CommanderCommand> {
         if (onboardingShown) {
           // Refresh auth-dependent services now that the user has logged in during onboarding.
           // Keep in sync with the post-login logic in src/commands/login.tsx
-          void refreshRemoteManagedSettings()
           void refreshPolicyLimits()
           resetUserCache()
-        }
-
-        // Validate that the active token's org matches forceLoginOrgUUID (if set
-        // in managed settings). Runs after onboarding so managed settings and
-        // login state are fully loaded.
-        const orgValidation = await validateForceLoginOrg()
-        if (!orgValidation.valid) {
-          await exitWithError(root, orgValidation.message)
         }
       }
 
@@ -2745,8 +2663,6 @@ async function run(): Promise<CommanderCommand> {
             : undefined,
       })
 
-      logManagedSettings()
-
       // Register PID file for concurrent-session detection (~/.freecode/sessions/)
       // and fire multi-clauding telemetry. Lives here (not init.ts) so only the
       // REPL path registers — not subcommands like `claude doctor`. Chained:
@@ -2826,14 +2742,6 @@ async function run(): Promise<CommanderCommand> {
         // loadInitialMessages awaits it. Downstream await still observes the
         // rejection — this just prevents the spurious global handler fire.
         sessionStartHooksPromise?.catch(() => {})
-
-        profileCheckpoint('before_validateForceLoginOrg')
-        // Validate org restriction for non-interactive sessions
-        const orgValidation = await validateForceLoginOrg()
-        if (!orgValidation.valid) {
-          process.stderr.write(orgValidation.message + '\n')
-          process.exit(1)
-        }
 
         // Headless mode supports all prompt commands and some local commands
         // If disableSlashCommands is true, return empty array

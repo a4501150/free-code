@@ -16,9 +16,6 @@ export const SETTING_SOURCES = [
 
   // Flag settings (from --settings flag)
   'flagSettings',
-
-  // Policy settings (managed-settings.json or remote settings from API)
-  'policySettings',
 ] as const
 
 export type SettingSource = (typeof SETTING_SOURCES)[number]
@@ -33,8 +30,6 @@ export function getSettingSourceName(source: SettingSource): string {
       return 'project, gitignored'
     case 'flagSettings':
       return 'cli flag'
-    case 'policySettings':
-      return 'managed'
   }
 }
 
@@ -55,8 +50,6 @@ export function getSourceDisplayName(
       return 'Local'
     case 'flagSettings':
       return 'Flag'
-    case 'policySettings':
-      return 'Managed'
     case 'plugin':
       return 'Plugin'
     case 'built-in':
@@ -81,8 +74,6 @@ export function getSettingSourceDisplayNameLowercase(
       return 'project local settings'
     case 'flagSettings':
       return 'command line arguments'
-    case 'policySettings':
-      return 'enterprise managed settings'
     case 'cliArg':
       return 'CLI argument'
     case 'command':
@@ -109,8 +100,6 @@ export function getSettingSourceDisplayNameCapitalized(
       return 'Project local settings'
     case 'flagSettings':
       return 'Command line arguments'
-    case 'policySettings':
-      return 'Enterprise managed settings'
     case 'cliArg':
       return 'CLI argument'
     case 'command':
@@ -153,15 +142,16 @@ export function parseSettingSourcesFlag(flag: string): SettingSource[] {
 }
 
 /**
- * Get enabled setting sources with policy/flag always included
+ * Get enabled setting sources with flag settings always included last
+ * (highest precedence).
  * @returns Array of enabled SettingSource values
  */
 export function getEnabledSettingSources(): SettingSource[] {
   const allowed = getAllowedSettingSources()
 
-  // Always include policy and flag settings
-  const result = new Set<SettingSource>(allowed)
-  result.add('policySettings')
+  const result = new Set<SettingSource>(
+    allowed.filter(s => s !== 'flagSettings'),
+  )
   result.add('flagSettings')
   return Array.from(result)
 }
@@ -177,12 +167,9 @@ export function isSettingSourceEnabled(source: SettingSource): boolean {
 }
 
 /**
- * Editable setting sources (excludes policySettings and flagSettings which are read-only)
+ * Editable setting sources (excludes flagSettings which is read-only)
  */
-export type EditableSettingSource = Exclude<
-  SettingSource,
-  'policySettings' | 'flagSettings'
->
+export type EditableSettingSource = Exclude<SettingSource, 'flagSettings'>
 
 /**
  * List of sources where permission rules can be saved, in display order.

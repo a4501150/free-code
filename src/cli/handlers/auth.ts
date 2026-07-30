@@ -24,7 +24,6 @@ import {
   isUsing3PServices,
   saveCodexOAuthTokens,
   saveOAuthTokensIfNeeded,
-  validateForceLoginOrg,
 } from '../../utils/auth.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
@@ -207,13 +206,8 @@ export async function authLogin({
     process.exit(1)
   }
 
-  const settings = getInitialSettings()
-  // forceLoginMethod is a hard constraint (enterprise setting) — matches ConsoleOAuthFlow behavior.
-  // Without it, --console selects Console; --claudeai (or no flag) selects claude.ai.
-  const loginWithClaudeAi = settings.forceLoginMethod
-    ? settings.forceLoginMethod === 'claudeai'
-    : !useConsole
-  const orgUUID = settings.forceLoginOrgUUID
+  // --console selects Console; --claudeai (or no flag) selects claude.ai.
+  const loginWithClaudeAi = !useConsole
 
   // Fast path: if a refresh token is provided via env var, skip the browser
   // OAuth flow and exchange it directly for tokens.
@@ -234,12 +228,6 @@ export async function authLogin({
     try {
       const tokens = await refreshOAuthToken(envRefreshToken, { scopes })
       await installOAuthTokens(tokens)
-
-      const orgResult = await validateForceLoginOrg()
-      if (!orgResult.valid) {
-        process.stderr.write(orgResult.message + '\n')
-        process.exit(1)
-      }
 
       // Mark onboarding complete — interactive paths handle this via
       // the Onboarding component, but the env var path skips it.
@@ -273,17 +261,10 @@ export async function authLogin({
         loginWithClaudeAi,
         loginHint: email,
         loginMethod: resolvedLoginMethod,
-        orgUUID,
       },
     )
 
     await installOAuthTokens(result)
-
-    const orgResult = await validateForceLoginOrg()
-    if (!orgResult.valid) {
-      process.stderr.write(orgResult.message + '\n')
-      process.exit(1)
-    }
 
     process.stdout.write('Login successful.\n')
     process.exit(0)

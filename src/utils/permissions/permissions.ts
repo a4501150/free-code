@@ -56,7 +56,6 @@ import {
 import {
   deletePermissionRuleFromSettings,
   type PermissionRuleFromEditableSettings,
-  shouldAllowManagedPermissionRulesOnly,
 } from './permissionsLoader.js'
 
 import * as classifierDecisionNs from './classifierDecision.js'
@@ -1163,11 +1162,7 @@ export async function deletePermissionRule({
   initialContext,
   setToolPermissionContext,
 }: EditPermissionRuleArgs & { rule: PermissionRule }): Promise<void> {
-  if (
-    rule.source === 'policySettings' ||
-    rule.source === 'flagSettings' ||
-    rule.source === 'command'
-  ) {
+  if (rule.source === 'flagSettings' || rule.source === 'command') {
     throw new Error('Cannot delete permission rules from read-only settings')
   }
 
@@ -1253,29 +1248,6 @@ export function syncPermissionRulesFromDisk(
   rules: PermissionRule[],
 ): ToolPermissionContext {
   let context = toolPermissionContext
-
-  // When allowManagedPermissionRulesOnly is enabled, clear all non-policy sources
-  if (shouldAllowManagedPermissionRulesOnly()) {
-    const sourcesToClear: PermissionUpdateDestination[] = [
-      'userSettings',
-      'projectSettings',
-      'localSettings',
-      'cliArg',
-      'session',
-    ]
-    const behaviors: PermissionBehavior[] = ['allow', 'deny', 'ask']
-
-    for (const source of sourcesToClear) {
-      for (const behavior of behaviors) {
-        context = applyPermissionUpdate(context, {
-          type: 'replaceRules',
-          rules: [],
-          behavior,
-          destination: source,
-        })
-      }
-    }
-  }
 
   // Clear all disk-based source:behavior combos before applying new rules.
   // Without this, removing a rule from settings (e.g. deleting a deny entry)

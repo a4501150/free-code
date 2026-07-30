@@ -8,10 +8,7 @@ import {
 import type { LoadedPlugin } from '../../types/plugin.js'
 import { logForDebugging } from '../debug.js'
 import { settingsChangeDetector } from '../settings/changeDetector.js'
-import {
-  getSettings_DEPRECATED,
-  getSettingsForSource,
-} from '../settings/settings.js'
+import { getSettings_DEPRECATED } from '../settings/settings.js'
 import type { PluginHookMatcher } from '../settings/types.js'
 import { jsonStringify } from '../slowOperations.js'
 import { clearPluginCache, loadAllPluginsCacheOnly } from './pluginLoader.js'
@@ -219,38 +216,29 @@ export function resetHotReloadState(): void {
  * `loadAllPluginsCacheOnly()` for change detection. Sorts keys so comparison is
  * deterministic regardless of insertion order.
  *
- * Hashes FOUR fields — not just enabledPlugins — because the memoized
- * loadAllPluginsCacheOnly() also reads strictKnownMarketplaces, blockedMarketplaces
- * (pluginLoader.ts:1933 via getBlockedMarketplaces), and
- * extraKnownMarketplaces. If remote managed settings set only one of
- * these (no enabledPlugins), a snapshot keyed only on enabledPlugins
- * would never diff, the listener would skip, and the memoized result
- * would retain the pre-remote marketplace allow/blocklist.
- * See #23085 / #23152 poisoned-cache discussion (Slack C09N89L3VNJ).
+ * Hashes extraKnownMarketplaces as well as enabledPlugins because the memoized
+ * loadAllPluginsCacheOnly() reads both. Keying only on enabledPlugins would let a
+ * marketplace-only change slip through: the snapshot would never diff, the
+ * listener would skip, and the memoized result would retain a stale marketplace
+ * list. See #23085 / #23152 poisoned-cache discussion.
  */
 // Exported for testing — the listener at setupPluginHookHotReload uses this
 // for change detection; tests verify it diffs on the fields that matter.
 export function getPluginAffectingSettingsSnapshot(): string {
   const merged = getSettings_DEPRECATED()
-  const policy = getSettingsForSource('policySettings')
-  // Key-sort the two Record fields so insertion order doesn't flap the hash.
-  // Array fields (strictKnownMarketplaces, blockedMarketplaces) have
-  // schema-stable order.
+  // Key-sort both Record fields so insertion order doesn't flap the hash.
   const sortKeys = <T extends Record<string, unknown>>(o: T | undefined) =>
     o ? Object.fromEntries(Object.entries(o).sort()) : {}
   return jsonStringify({
     enabledPlugins: sortKeys(merged.enabledPlugins),
     extraKnownMarketplaces: sortKeys(merged.extraKnownMarketplaces),
-    strictKnownMarketplaces: policy?.strictKnownMarketplaces ?? [],
-    blockedMarketplaces: policy?.blockedMarketplaces ?? [],
   })
 }
 
 /**
- * Set up hot reload for plugin hooks when remote settings change.
- * When policySettings changes (e.g., from remote managed settings),
- * compares the plugin-affecting settings snapshot and only reloads if it
- * actually changed.
+ * Set up hot reload for plugin hooks when settings change. Compares the
+ * plugin-affecting settings snapshot and only reloads if it actually changed,
+ * so unrelated settings edits don't churn the plugin cache.
  */
 export function setupPluginHookHotReload(): void {
   if (hotReloadSubscribed) {
@@ -258,30 +246,28 @@ export function setupPluginHookHotReload(): void {
   }
   hotReloadSubscribed = true
 
-  // Capture the initial snapshot so the first policySettings change can compare
+  // Capture the initial snapshot so the first settings change can compare
   lastPluginSettingsSnapshot = getPluginAffectingSettingsSnapshot()
 
-  settingsChangeDetector.subscribe(source => {
-    if (source === 'policySettings') {
-      const newSnapshot = getPluginAffectingSettingsSnapshot()
-      if (newSnapshot === lastPluginSettingsSnapshot) {
-        logForDebugging(
-          'Plugin hooks: skipping reload, plugin-affecting settings unchanged',
-        )
-        return
-      }
-
-      lastPluginSettingsSnapshot = newSnapshot
+  settingsChangeDetector.subscribe(() => {
+    const newSnapshot = getPluginAffectingSettingsSnapshot()
+    if (newSnapshot === lastPluginSettingsSnapshot) {
       logForDebugging(
-        'Plugin hooks: reloading due to plugin-affecting settings change',
+        'Plugin hooks: skipping reload, plugin-affecting settings unchanged',
       )
-
-      // Clear all plugin-related caches
-      clearPluginCache('loadPluginHooks: plugin-affecting settings changed')
-      clearPluginHookCache()
-
-      // Reload hooks (fire-and-forget, don't block)
-      void loadPluginHooks()
+      return
     }
+
+    lastPluginSettingsSnapshot = newSnapshot
+    logForDebugging(
+      'Plugin hooks: reloading due to plugin-affecting settings change',
+    )
+
+    // Clear all plugin-related caches
+    clearPluginCache('loadPluginHooks: plugin-affecting settings changed')
+    clearPluginHookCache()
+
+    // Reload hooks (fire-and-forget, don't block)
+    void loadPluginHooks()
   })
 }

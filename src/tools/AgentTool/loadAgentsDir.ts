@@ -184,7 +184,6 @@ export function getActiveAgentsFromList(
   const pluginAgents = allAgents.filter(a => a.source === 'plugin')
   const userAgents = allAgents.filter(a => a.source === 'userSettings')
   const projectAgents = allAgents.filter(a => a.source === 'projectSettings')
-  const managedAgents = allAgents.filter(a => a.source === 'policySettings')
   const flagAgents = allAgents.filter(a => a.source === 'flagSettings')
 
   const agentGroups = [
@@ -193,7 +192,6 @@ export function getActiveAgentsFromList(
     userAgents,
     projectAgents,
     flagAgents,
-    managedAgents,
   ]
 
   const agentMap = new Map<string, AgentDefinition>()

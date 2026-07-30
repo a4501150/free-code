@@ -1,4 +1,3 @@
-import { isRemoteManagedSettingsEligible } from '../services/remoteManagedSettings/syncCache.js'
 import { clearCACertsCache } from './caCerts.js'
 import { isEnvTruthy } from './envUtils.js'
 import {
@@ -94,27 +93,21 @@ function filterSettingsEnv(
  *
  * - userSettings (~/.freecode/freecode.json): controlled by the user, not project-specific
  * - flagSettings (--settings CLI flag or SDK inline settings): explicitly passed by the user
- * - policySettings (managed settings from enterprise API or local managed-settings.json):
- *   controlled by IT/admin (highest priority, cannot be overridden)
  *
  * Project-scoped sources (projectSettings, localSettings) are excluded because they live
  * inside the project directory and could be committed by a malicious actor to redirect
  * traffic (e.g., ANTHROPIC_BASE_URL) to an attacker-controlled server.
  */
-const TRUSTED_SETTING_SOURCES = [
-  'userSettings',
-  'flagSettings',
-  'policySettings',
-] as const
+const TRUSTED_SETTING_SOURCES = ['userSettings', 'flagSettings'] as const
 
 /**
  * Apply environment variables from trusted sources to process.env.
- * Called before the trust dialog so that user/enterprise env vars like
+ * Called before the trust dialog so that user env vars like
  * ANTHROPIC_BASE_URL take effect during first-run/onboarding.
  *
- * For trusted sources (user settings, managed settings, CLI flags), ALL env vars
- * are applied — including ones like ANTHROPIC_BASE_URL that would be dangerous
- * from project-scoped settings.
+ * For trusted sources (user settings, CLI flags), ALL env vars are applied —
+ * including ones like ANTHROPIC_BASE_URL that would be dangerous from
+ * project-scoped settings.
  *
  * For project-scoped sources (projectSettings, localSettings), only safe env vars
  * from the SAFE_ENV_VARS allowlist are applied. These are applied after trust is
@@ -134,12 +127,11 @@ export function applySafeConfigEnvironmentVariables(): void {
   // snapshot so the desktop host's operational vars (OTEL, etc.) are not
   // overridden.
 
-  // Apply ALL env vars from trusted setting sources, policySettings last.
+  // Apply ALL env vars from trusted setting sources.
   // Gate on isSettingSourceEnabled so SDK settingSources: [] (isolation mode)
-  // doesn't get clobbered by ~/.freecode/freecode.json env (gh#217). policy/flag
-  // sources are always enabled, so this only ever filters userSettings.
+  // doesn't get clobbered by ~/.freecode/freecode.json env (gh#217). flagSettings
+  // is always enabled, so this only ever filters userSettings.
   for (const source of TRUSTED_SETTING_SOURCES) {
-    if (source === 'policySettings') continue
     if (!isSettingSourceEnabled(source)) continue
     Object.assign(
       process.env,
@@ -147,27 +139,12 @@ export function applySafeConfigEnvironmentVariables(): void {
     )
   }
 
-  // Compute remote-managed-settings eligibility now, with userSettings and
-  // flagSettings env applied. Eligibility reads CLAUDE_CODE_USE_BEDROCK,
-  // ANTHROPIC_BASE_URL — both settable via settings.env.
-  // getSettingsForSource('policySettings') below consults the remote cache,
-  // which guards on this. The two-phase structure makes the ordering
-  // dependency visible: non-policy env → eligibility → policy env.
-  isRemoteManagedSettingsEligible()
-
-  Object.assign(
-    process.env,
-    filterSettingsEnv(getSettingsForSource('policySettings')?.env),
-  )
-
   // Apply only safe env vars from the fully-merged settings (which includes
   // project-scoped sources). For safe vars that also exist in trusted sources,
   // the merged value (which may come from a higher-priority project source)
   // will overwrite the trusted value — this is acceptable since these vars are
-  // in the safe allowlist. Only policySettings values are guaranteed to survive
-  // unchanged (it has the highest merge priority in both loops) — except
-  // provider-routing vars, which filterSettingsEnv strips from every source
-  // when CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST is set.
+  // in the safe allowlist. Provider-routing vars are stripped from every source
+  // by filterSettingsEnv when CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST is set.
   const settingsEnv = filterSettingsEnv(getSettings_DEPRECATED()?.env)
   for (const [key, value] of Object.entries(settingsEnv)) {
     if (SAFE_ENV_VARS.has(key.toUpperCase())) {

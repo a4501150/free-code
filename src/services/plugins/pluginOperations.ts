@@ -55,7 +55,6 @@ import {
   loadPluginManifest,
 } from '../../utils/plugins/pluginLoader.js'
 import { deletePluginOptions } from '../../utils/plugins/pluginOptionsStorage.js'
-import { isPluginBlockedByPolicy } from '../../utils/plugins/pluginPolicy.js'
 import { getPluginEditableScopes } from '../../utils/plugins/pluginStartupCheck.js'
 import { calculatePluginVersion } from '../../utils/plugins/pluginVersioning.js'
 import type {
@@ -68,18 +67,17 @@ import {
 } from '../../utils/settings/settings.js'
 import { plural } from '../../utils/stringUtils.js'
 
-/** Valid installable scopes (excludes 'managed' which can only be installed from managed-settings.json) */
+/** Valid installable scopes */
 export const VALID_INSTALLABLE_SCOPES = ['user', 'project', 'local'] as const
 
 /** Installation scope type derived from VALID_INSTALLABLE_SCOPES */
 export type InstallableScope = (typeof VALID_INSTALLABLE_SCOPES)[number]
 
-/** Valid scopes for update operations (includes 'managed' since managed plugins can be updated) */
+/** Valid scopes for update operations */
 export const VALID_UPDATE_SCOPES: readonly PluginScope[] = [
   'user',
   'project',
   'local',
-  'managed',
 ] as const
 
 /**
@@ -98,7 +96,7 @@ export function assertInstallableScope(
 }
 
 /**
- * Type guard to check if a scope is an installable scope (not 'managed').
+ * Type guard to check if a scope is an installable scope.
  * Use this for type narrowing in conditional blocks.
  */
 export function isInstallableScope(
@@ -395,16 +393,6 @@ export async function installPluginOp(
           success: false,
           message: formatResolutionError(result.resolution),
         }
-      case 'blocked-by-policy':
-        return {
-          success: false,
-          message: `Plugin "${result.pluginName}" is blocked by your organization's policy and cannot be installed`,
-        }
-      case 'dependency-blocked-by-policy':
-        return {
-          success: false,
-          message: `Plugin "${result.pluginName}" depends on "${result.blockedDependency}", which is blocked by your organization's policy`,
-        }
     }
   }
 
@@ -644,16 +632,6 @@ export async function setPluginEnabledOp(
     return {
       success: false,
       message: `Plugin "${plugin}" not found in any editable settings scope. Use plugin@marketplace format.`,
-    }
-  }
-
-  // ── Policy guard ──
-  // Org-blocked plugins cannot be enabled at any scope. Check after pluginId
-  // is resolved so we catch both full identifiers and bare-name lookups.
-  if (enabled && isPluginBlockedByPolicy(pluginId)) {
-    return {
-      success: false,
-      message: `Plugin "${pluginId}" is blocked by your organization's policy and cannot be enabled`,
     }
   }
 

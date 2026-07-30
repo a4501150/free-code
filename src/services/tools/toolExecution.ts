@@ -147,7 +147,7 @@ export function classifyToolError(error: unknown): string {
  * the interactive path's semantics (permissionLogging.ts:81): session-scoped
  * grants are temporary, on-disk grants are permanent, and user-authored
  * denies are user_reject regardless of persistence. Everything the user
- * didn't write (cliArg, policySettings, projectSettings, flagSettings) is
+ * didn't write (cliArg, projectSettings, flagSettings) is
  * config.
  */
 function ruleSourceToOTelSource(

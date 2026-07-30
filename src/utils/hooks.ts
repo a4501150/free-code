@@ -39,8 +39,7 @@ import {
 import { checkHasTrustDialogAccepted } from './config.js'
 import {
   getHooksConfigFromSnapshot,
-  shouldAllowManagedHooksOnly,
-  shouldDisableAllHooksIncludingManaged,
+  areAllHooksDisabled,
 } from './hooks/hooksConfigSnapshot.js'
 import {
   getTranscriptPathForSession,
@@ -1507,16 +1506,17 @@ function getHooksConfig(
     | SessionDerivedHookMatcher
   > = [...(getHooksConfigFromSnapshot()?.[hookEvent] ?? [])]
 
-  // Check if only managed hooks should run (used for both registered and session hooks)
-  const managedOnly = shouldAllowManagedHooksOnly()
+  // Applies to every channel below: settings hooks are already excluded by the
+  // snapshot, but plugin-registered and session-derived hooks are assembled here
+  // and must be suppressed too.
+  const hooksDisabled = areAllHooksDisabled()
 
   // Process registered hooks (SDK callbacks and plugin native hooks)
   const registeredHooks = getRegisteredHooks()?.[hookEvent]
   if (registeredHooks) {
     for (const matcher of registeredHooks) {
-      // Skip plugin hooks when restricted to managed hooks only
       // Plugin hooks have pluginRoot set, SDK callbacks do not
-      if (managedOnly && 'pluginRoot' in matcher) {
+      if (hooksDisabled && 'pluginRoot' in matcher) {
         continue
       }
       hooks.push(matcher)
@@ -1526,14 +1526,10 @@ function getHooksConfig(
   // Merge session hooks for the current session only
   // Function hooks (like structured output enforcement) must be scoped to their session
   // to prevent hooks from one agent leaking to another (e.g., verification agent to main agent)
-  // Skip session hooks entirely when allowManagedHooksOnly is set —
-  // this prevents frontmatter hooks from agents/skills from bypassing the policy.
-  // strictPluginOnlyCustomization does NOT block here — it gates at the
-  // REGISTRATION sites (runAgent.ts:526 for agent frontmatter hooks) where
-  // agentDefinition.source is known. A blanket block here would also kill
-  // plugin-provided agents' frontmatter hooks, which is too broad.
+  // Skip session hooks entirely when disableAllHooks is set — this prevents
+  // frontmatter hooks from agents/skills from bypassing the setting.
   // Also skip if appState not provided (for backwards compatibility)
-  if (!managedOnly && appState !== undefined) {
+  if (!hooksDisabled && appState !== undefined) {
     const sessionHooks = getSessionHooks(appState, sessionId, hookEvent).get(
       hookEvent,
     )
@@ -1970,7 +1966,7 @@ async function* executeHooks({
   ) => (request: PromptRequest) => Promise<PromptResponse>
   toolInputSummary?: string | null
 }): AsyncGenerator<AggregatedHookResult> {
-  if (shouldDisableAllHooksIncludingManaged()) {
+  if (areAllHooksDisabled()) {
     return
   }
 
@@ -2048,9 +2044,7 @@ async function* executeHooks({
       hook_event: hookEvent,
       hook_name: hookName,
       num_hooks: String(matchingHooks.length),
-      managed_only: String(shouldAllowManagedHooksOnly()),
       hook_definitions: hookDefinitionsJson,
-      hook_source: shouldAllowManagedHooksOnly() ? 'policySettings' : 'merged',
     })
   }
 
@@ -2916,9 +2910,7 @@ async function* executeHooks({
       num_blocking: String(outcomes.blocking),
       num_non_blocking_error: String(outcomes.non_blocking_error),
       num_cancelled: String(outcomes.cancelled),
-      managed_only: String(shouldAllowManagedHooksOnly()),
       hook_definitions: jsonStringify(hookDefinitionsComplete),
-      hook_source: shouldAllowManagedHooksOnly() ? 'policySettings' : 'merged',
     })
   }
 
@@ -2979,9 +2971,9 @@ async function executeHooksOutsideREPL({
 
   const hookEvent = hookInput.hook_event_name
   const hookName = matchQuery ? `${hookEvent}:${matchQuery}` : hookEvent
-  if (shouldDisableAllHooksIncludingManaged()) {
+  if (areAllHooksDisabled()) {
     logForDebugging(
-      `Skipping hooks for ${hookName} due to 'disableAllHooks' managed setting`,
+      `Skipping hooks for ${hookName} due to the 'disableAllHooks' setting`,
     )
     return []
   }
@@ -4142,17 +4134,12 @@ export type ConfigChangeSource =
   | 'user_settings'
   | 'project_settings'
   | 'local_settings'
-  | 'policy_settings'
   | 'skills'
 
 /**
  * Execute config change hooks when configuration files change during a session.
  * Fired by file watchers when settings, skills, or commands change on disk.
- * Enables enterprise admins to audit/log configuration changes for security.
- *
- * Policy settings are enterprise-managed and must never be blockable by hooks.
- * Hooks still fire (for audit logging) but blocking results are ignored — callers
- * will always see an empty result for policy sources.
+ * Enables auditing/logging of configuration changes.
  *
  * @param source The type of config that changed
  * @param filePath Optional path to the changed file
@@ -4175,12 +4162,6 @@ export async function executeConfigChangeHooks(
     timeoutMs,
     matchQuery: source,
   })
-
-  // Policy settings are enterprise-managed — hooks fire for audit logging
-  // but must never block policy changes from being applied
-  if (source === 'policy_settings') {
-    return results.map(r => ({ ...r, blocked: false }))
-  }
 
   return results
 }
@@ -4247,7 +4228,7 @@ export type InstructionsLoadReason =
   | 'include'
   | 'compact'
 
-export type InstructionsMemoryType = 'User' | 'Project' | 'Local' | 'Managed'
+export type InstructionsMemoryType = 'User' | 'Project' | 'Local'
 
 /**
  * Check if InstructionsLoaded hooks are configured (without executing them).
@@ -4534,8 +4515,8 @@ export async function executeStatusLineCommand(
   timeoutMs: number = 5000, // Short timeout for status line
   logResult: boolean = false,
 ): Promise<string | undefined> {
-  // Check if all hooks (including statusLine) are disabled by managed settings
-  if (shouldDisableAllHooksIncludingManaged()) {
+  // Check if all hooks (including statusLine) are disabled
+  if (areAllHooksDisabled()) {
     return undefined
   }
 
@@ -4548,14 +4529,7 @@ export async function executeStatusLineCommand(
     return undefined
   }
 
-  // When disableAllHooks is set in non-managed settings, only managed statusLine runs
-  // (non-managed settings cannot disable managed commands, but non-managed commands are disabled)
-  let statusLine
-  if (shouldAllowManagedHooksOnly()) {
-    statusLine = getSettingsForSource('policySettings')?.statusLine
-  } else {
-    statusLine = getSettings_DEPRECATED()?.statusLine
-  }
+  const statusLine = getSettings_DEPRECATED()?.statusLine
 
   if (!statusLine || statusLine.type !== 'command') {
     return undefined
@@ -4624,8 +4598,8 @@ export async function executeFileSuggestionCommand(
   signal?: AbortSignal,
   timeoutMs: number = 5000, // Short timeout for typeahead suggestions
 ): Promise<string[]> {
-  // Check if all hooks are disabled by managed settings
-  if (shouldDisableAllHooksIncludingManaged()) {
+  // Check if all hooks are disabled
+  if (areAllHooksDisabled()) {
     return []
   }
 
@@ -4638,14 +4612,7 @@ export async function executeFileSuggestionCommand(
     return []
   }
 
-  // When disableAllHooks is set in non-managed settings, only managed fileSuggestion runs
-  // (non-managed settings cannot disable managed commands, but non-managed commands are disabled)
-  let fileSuggestion
-  if (shouldAllowManagedHooksOnly()) {
-    fileSuggestion = getSettingsForSource('policySettings')?.fileSuggestion
-  } else {
-    fileSuggestion = getSettings_DEPRECATED()?.fileSuggestion
-  }
+  const fileSuggestion = getSettings_DEPRECATED()?.fileSuggestion
 
   if (!fileSuggestion || fileSuggestion.type !== 'command') {
     return []
@@ -4847,21 +4814,21 @@ async function executeHookCallback({
  * Checks both settings-file hooks (getHooksConfigFromSnapshot) and registered
  * hooks (plugin hooks + SDK callback hooks via registerHookCallbacks).
  *
- * Must mirror the managedOnly filtering in getHooksConfig() — when
- * shouldAllowManagedHooksOnly() is true, plugin hooks (pluginRoot set) are
- * skipped at execution, so we must also skip them here. Otherwise this returns
- * true but executeWorktreeCreateHook() finds no matching hooks and throws,
- * blocking the git-worktree fallback.
+ * Must mirror the disableAllHooks filtering in getHooksConfig() — when hooks are
+ * disabled, plugin hooks (pluginRoot set) are skipped at execution, so we must
+ * also skip them here. Otherwise this returns true but
+ * executeWorktreeCreateHook() finds no matching hooks and throws, blocking the
+ * git-worktree fallback.
  */
 export function hasWorktreeCreateHook(): boolean {
   const snapshotHooks = getHooksConfigFromSnapshot()?.['WorktreeCreate']
   if (snapshotHooks && snapshotHooks.length > 0) return true
   const registeredHooks = getRegisteredHooks()?.['WorktreeCreate']
   if (!registeredHooks || registeredHooks.length === 0) return false
-  // Mirror getHooksConfig(): skip plugin hooks in managed-only mode
-  const managedOnly = shouldAllowManagedHooksOnly()
+  // Mirror getHooksConfig(): skip plugin hooks when hooks are disabled
+  const hooksDisabled = areAllHooksDisabled()
   return registeredHooks.some(
-    matcher => !(managedOnly && 'pluginRoot' in matcher),
+    matcher => !(hooksDisabled && 'pluginRoot' in matcher),
   )
 }
 

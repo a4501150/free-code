@@ -15,7 +15,6 @@ import { useCallback, useMemo, useState } from 'react'
 import type { HookEvent } from 'src/structuredProtocol/index.js'
 import { useAppState, useAppStateStore } from 'src/state/AppState.js'
 import type { CommandResultDisplay } from '../../commands.js'
-import { useSettingsChange } from '../../hooks/useSettingsChange.js'
 import { Box, Text } from '../../ink.js'
 import { useKeybinding } from '../../keybindings/useKeybinding.js'
 import {
@@ -26,10 +25,7 @@ import {
   groupHooksByEventAndMatcher,
 } from '../../utils/hooks/hooksConfigManager.js'
 import type { IndividualHookConfig } from '../../utils/hooks/hooksSettings.js'
-import {
-  getSettings_DEPRECATED,
-  getSettingsForSource,
-} from '../../utils/settings/settings.js'
+import { getSettings_DEPRECATED } from '../../utils/settings/settings.js'
 import { plural } from '../../utils/stringUtils.js'
 import { Dialog } from '../design-system/Dialog.js'
 import { SelectEventMode } from './SelectEventMode.js'
@@ -55,41 +51,6 @@ export function HooksConfigMenu({ toolNames, onExit }: Props): React.ReactNode {
   const [modeState, setModeState] = useState<ModeState>({
     mode: 'select-event',
   })
-  // Cache whether hooks are disabled by policy settings.
-  // getSettingsForSource() is expensive (file read + JSON parse + validation),
-  // so we compute it once on mount and only re-compute when policy settings change.
-  // Short-circuit evaluation ensures we skip the expensive check when hooks aren't disabled.
-  const [disabledByPolicy, setDisabledByPolicy] = useState(() => {
-    const settings = getSettings_DEPRECATED()
-    const hooksDisabled = settings?.disableAllHooks === true
-    return (
-      hooksDisabled &&
-      getSettingsForSource('policySettings')?.disableAllHooks === true
-    )
-  })
-
-  // Check if hooks are restricted to managed-only by policy
-  const [restrictedByPolicy, setRestrictedByPolicy] = useState(() => {
-    return (
-      getSettingsForSource('policySettings')?.allowManagedHooksOnly === true
-    )
-  })
-
-  // Update cached values when policy settings change
-  useSettingsChange(source => {
-    if (source === 'policySettings') {
-      const settings = getSettings_DEPRECATED()
-      const hooksDisabled = settings?.disableAllHooks === true
-      setDisabledByPolicy(
-        hooksDisabled &&
-          getSettingsForSource('policySettings')?.disableAllHooks === true,
-      )
-      setRestrictedByPolicy(
-        getSettingsForSource('policySettings')?.allowManagedHooksOnly === true,
-      )
-    }
-  })
-
   // Extract commonly used values from modeState for convenience
   const mode = modeState.mode
   const selectedEvent = 'event' in modeState ? modeState.event : 'PreToolUse'
@@ -219,8 +180,7 @@ export function HooksConfigMenu({ toolNames, onExit }: Props): React.ReactNode {
         <Box flexDirection="column" gap={1}>
           <Box flexDirection="column">
             <Text>
-              All hooks are currently <Text bold>disabled</Text>
-              {disabledByPolicy && ' by a managed settings file'}. You have{' '}
+              All hooks are currently <Text bold>disabled</Text>. You have{' '}
               <Text bold>{totalHooksCount}</Text> configured{' '}
               {plural(totalHooksCount, 'hook')} that{' '}
               {plural(totalHooksCount, 'is', 'are')} not running.
@@ -234,12 +194,10 @@ export function HooksConfigMenu({ toolNames, onExit }: Props): React.ReactNode {
               · Tool operations will proceed without hook validation
             </Text>
           </Box>
-          {!disabledByPolicy && (
-            <Text dimColor>
-              To re-enable hooks, remove &quot;disableAllHooks&quot; from
-              freecode.json or ask Claude.
-            </Text>
-          )}
+          <Text dimColor>
+            To re-enable hooks, remove &quot;disableAllHooks&quot; from
+            freecode.json or ask Claude.
+          </Text>
         </Box>
       </Dialog>
     )
@@ -252,7 +210,6 @@ export function HooksConfigMenu({ toolNames, onExit }: Props): React.ReactNode {
           hookEventMetadata={hookEventMetadata}
           hooksByEvent={hooksByEvent}
           totalHooksCount={totalHooksCount}
-          restrictedByPolicy={restrictedByPolicy}
           onSelectEvent={event => {
             if (getMatcherMetadata(event, combinedToolNames) !== undefined) {
               setModeState({ mode: 'select-matcher', event })

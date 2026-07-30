@@ -35,7 +35,6 @@ import {
 } from '../../utils/plugins/marketplaceManager.js'
 import { OFFICIAL_MARKETPLACE_NAME } from '../../utils/plugins/officialMarketplace.js'
 import { installPluginFromMarketplace } from '../../utils/plugins/pluginInstallationHelpers.js'
-import { isPluginBlockedByPolicy } from '../../utils/plugins/pluginPolicy.js'
 import { plural } from '../../utils/stringUtils.js'
 import { truncateToWidth } from '../../utils/truncate.js'
 import {
@@ -322,7 +321,6 @@ export function BrowseMarketplace({
         const installablePlugins: InstallablePlugin[] = []
         for (const entry of marketplace.plugins) {
           const pluginId = createPluginId(entry.name, marketplaceName)
-          if (isPluginBlockedByPolicy(pluginId)) continue
           installablePlugins.push({
             entry,
             marketplaceName: marketplaceName,

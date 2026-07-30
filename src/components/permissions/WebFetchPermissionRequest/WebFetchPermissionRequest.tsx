@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react'
 import { Box, Text, useTheme } from '../../../ink.js'
 import { WebFetchTool } from '../../../tools/WebFetchTool/WebFetchTool.js'
-import { shouldShowAlwaysAllowOptions } from '../../../utils/permissions/permissionsLoader.js'
 import {
   type OptionWithDescription,
   Select,
@@ -50,7 +49,6 @@ export function WebFetchPermissionRequest({
   usePermissionRequestLogging(toolUseConfirm, permissionEvent)
 
   // Generate permission options specific to domains
-  const showAlwaysAllowOptions = shouldShowAlwaysAllowOptions()
   const options = useMemo((): OptionWithDescription<string>[] => {
     const result: OptionWithDescription<string>[] = [
       {
@@ -59,16 +57,14 @@ export function WebFetchPermissionRequest({
       },
     ]
 
-    if (showAlwaysAllowOptions) {
-      result.push({
-        label: (
-          <Text>
-            Yes, and don&apos;t ask again for <Text bold>{hostname}</Text>
-          </Text>
-        ),
-        value: 'yes-dont-ask-again-domain',
-      })
-    }
+    result.push({
+      label: (
+        <Text>
+          Yes, and don&apos;t ask again for <Text bold>{hostname}</Text>
+        </Text>
+      ),
+      value: 'yes-dont-ask-again-domain',
+    })
 
     result.push({
       label: (
@@ -80,7 +76,7 @@ export function WebFetchPermissionRequest({
     })
 
     return result
-  }, [hostname, showAlwaysAllowOptions])
+  }, [hostname])
 
   function onChange(newValue: string) {
     switch (newValue) {

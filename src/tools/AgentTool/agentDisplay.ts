@@ -25,7 +25,6 @@ export const AGENT_SOURCE_GROUPS: AgentSourceGroup[] = [
   { label: 'User agents', source: 'userSettings' },
   { label: 'Project agents', source: 'projectSettings' },
   { label: 'Local agents', source: 'localSettings' },
-  { label: 'Managed agents', source: 'policySettings' },
   { label: 'Plugin agents', source: 'plugin' },
   { label: 'CLI arg agents', source: 'flagSettings' },
   { label: 'Built-in agents', source: 'built-in' },

@@ -87,6 +87,11 @@ export function PreviewQuestionView({
   // Track which option is focused (for preview display)
   const [focusedIndex, setFocusedIndex] = useState(0)
 
+  // Preview scrolling: offset into the focused option's rendered preview lines,
+  // plus the scrollable range reported back by PreviewBox.
+  const [scrollOffset, setScrollOffset] = useState(0)
+  const [maxScrollOffset, setMaxScrollOffset] = useState(0)
+
   // Reset focusedIndex when navigating to a different question
   const prevQuestionText = useRef(questionText)
   if (prevQuestionText.current !== questionText) {
@@ -96,6 +101,15 @@ export function PreviewQuestionView({
       ? allOptions.findIndex(opt => opt.label === selected)
       : -1
     setFocusedIndex(idx >= 0 ? idx : 0)
+  }
+
+  // Each option has its own preview, so reset scrolling whenever the displayed
+  // preview changes (question switch or option focus change).
+  const previewKey = `${questionText}\u0000${focusedIndex}`
+  const prevPreviewKey = useRef(previewKey)
+  if (prevPreviewKey.current !== previewKey) {
+    prevPreviewKey.current = previewKey
+    setScrollOffset(0)
   }
 
   const focusedOption = allOptions[focusedIndex]
@@ -188,10 +202,27 @@ export function PreviewQuestionView({
     setIsFooterFocused(false)
   }, [])
 
+  const scrollPreview = useCallback(
+    (delta: number) => {
+      setScrollOffset(prev =>
+        Math.min(Math.max(0, prev + delta), maxScrollOffset),
+      )
+    },
+    [maxScrollOffset],
+  )
+
   // Handle keyboard input for option/footer/notes navigation.
   // Always active — the handler routes internally based on isFooterFocused/isInNotesInput.
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      // Preview scrolling stays available while navigating options or the
+      // footer; the notes input owns the arrow keys while typing.
+      if (!isInNotesInput && e.shift && (e.key === 'up' || e.key === 'down')) {
+        e.preventDefault()
+        scrollPreview(e.key === 'up' ? -1 : 1)
+        return
+      }
+
       if (isFooterFocused) {
         if (e.key === 'up' || (e.ctrl && e.key === 'p')) {
           e.preventDefault()
@@ -280,6 +311,7 @@ export function PreviewQuestionView({
       handleUpFromFooter,
       handleDownFromPreview,
       handleNavigate,
+      scrollPreview,
       handleSelectOption,
       handleNotesExit,
       onRespondToClaude,
@@ -379,6 +411,8 @@ export function PreviewQuestionView({
                 maxLines={previewMaxLines}
                 minWidth={minContentWidth}
                 maxWidth={previewMaxWidth}
+                scrollOffset={scrollOffset}
+                onScrollBoundsChange={setMaxScrollOffset}
               />
               <Box marginTop={1} flexDirection="row" gap={1}>
                 <Text color="suggestion">Notes:</Text>

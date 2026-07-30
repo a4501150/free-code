@@ -13,7 +13,7 @@ import {
   hasSkipDangerousModePermissionPrompt,
 } from '../../utils/settings/settings.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
-import { getEnterpriseMcpFilePath, getMcpConfigByName } from './config.js'
+import { getMcpConfigByName } from './config.js'
 import { mcpInfoFromString } from './mcpStringUtils.js'
 import { normalizeNameForMCP } from './normalization.js'
 import {
@@ -270,8 +270,6 @@ export function describeMcpConfigFilePath(scope: ConfigScope): string {
       return `${getFreecodeSettingsFilePath()} [project: ${getCwd()}]`
     case 'dynamic':
       return 'Dynamically configured'
-    case 'enterprise':
-      return getEnterpriseMcpFilePath()
     case 'claudeai':
       return 'claude.ai'
     default:
@@ -289,8 +287,6 @@ export function getScopeLabel(scope: ConfigScope): string {
       return 'User config (available in all your projects)'
     case 'dynamic':
       return 'Dynamic config (from command line)'
-    case 'enterprise':
-      return 'Enterprise config (managed by your organization)'
     case 'claudeai':
       return 'claude.ai config'
     default:
@@ -378,7 +374,7 @@ export function getProjectMcpServerStatus(
   // the user has explicitly chosen to bypass all permission checks.
   // SECURITY: We intentionally only check skipDangerousModePermissionPrompt via
   // hasSkipDangerousModePermissionPrompt(), which reads from userSettings/localSettings/
-  // flagSettings/policySettings but NOT projectSettings (repo-level .freecode/freecode.json).
+  // flagSettings but NOT projectSettings (repo-level .freecode/freecode.json).
   // This is intentional: a repo should not be able to accept the bypass dialog on behalf of
   // users. We also do NOT check getSessionBypassPermissionsMode() here because
   // sessionBypassPermissionsMode can be set from project settings before the dialog is shown,

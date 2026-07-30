@@ -90,7 +90,6 @@ export function McpParsingWarnings(): React.ReactNode {
         { scope: 'user', config: getMcpConfigsByScope('user') },
         { scope: 'project', config: getMcpConfigsByScope('project') },
         { scope: 'local', config: getMcpConfigsByScope('local') },
-        { scope: 'enterprise', config: getMcpConfigsByScope('enterprise') },
       ] satisfies Array<{
         scope: ConfigScope
         config: { errors: ValidationError[] }

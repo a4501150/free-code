@@ -16,8 +16,8 @@ import { getInitialSettings } from './settings.js'
  * reloads permissions and hooks, and pushes the new state.
  *
  * Used by both the interactive path (AppState.tsx via useSettingsChange) and
- * the headless/SDK path (print.ts direct subscribe) so that managed-settings
- * / policy changes are fully applied in both modes.
+ * the headless/SDK path (print.ts direct subscribe) so that settings changes
+ * are fully applied in both modes.
  *
  * The settings cache is reset by the notifier (changeDetector.fanOut) before
  * listeners are iterated, so getInitialSettings() here reads fresh disk

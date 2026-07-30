@@ -164,7 +164,6 @@ function getAutoMemPathOverride(): string | undefined {
  */
 function getAutoMemPathSetting(): string | undefined {
   const dir =
-    getSettingsForSource('policySettings')?.autoMemoryDirectory ??
     getSettingsForSource('flagSettings')?.autoMemoryDirectory ??
     getSettingsForSource('localSettings')?.autoMemoryDirectory ??
     getSettingsForSource('userSettings')?.autoMemoryDirectory

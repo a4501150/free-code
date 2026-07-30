@@ -6,7 +6,6 @@ mock.module('../../src/bootstrap/state.js', () => ({
     'projectSettings',
     'localSettings',
     'flagSettings',
-    'policySettings',
   ],
 }))
 

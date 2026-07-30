@@ -75,7 +75,6 @@ type ErrorRowAction =
       sources: Array<{ source: EditableSettingSource; scope: string }>
     }
   | { kind: 'remove-installed-marketplace'; name: string }
-  | { kind: 'managed-only'; name: string }
   | { kind: 'none' }
 
 type ErrorRow = {
@@ -88,11 +87,9 @@ type ErrorRow = {
 
 /**
  * Determine which settings sources define an extraKnownMarketplace entry.
- * Returns the editable sources (user/project/local) and whether policy also has it.
  */
 function getExtraMarketplaceSourceInfo(name: string): {
   editableSources: Array<{ source: EditableSettingSource; scope: string }>
-  isInPolicy: boolean
 } {
   const editableSources: Array<{
     source: EditableSettingSource
@@ -112,14 +109,11 @@ function getExtraMarketplaceSourceInfo(name: string): {
     }
   }
 
-  const policySettings = getSettingsForSource('policySettings')
-  const isInPolicy = Boolean(policySettings?.extraKnownMarketplaces?.[name])
-
-  return { editableSources, isInPolicy }
+  return { editableSources }
 }
 
 function buildMarketplaceAction(name: string): ErrorRowAction {
-  const { editableSources, isInPolicy } = getExtraMarketplaceSourceInfo(name)
+  const { editableSources } = getExtraMarketplaceSourceInfo(name)
 
   if (editableSources.length > 0) {
     return {
@@ -127,10 +121,6 @@ function buildMarketplaceAction(name: string): ErrorRowAction {
       name,
       sources: editableSources,
     }
-  }
-
-  if (isInPolicy) {
-    return { kind: 'managed-only', name }
   }
 
   // Marketplace is in known_marketplaces.json but not in extraKnownMarketplaces
@@ -215,16 +205,11 @@ function buildErrorRows(
     shownMarketplaceNames.add(m.name)
     const action = buildMarketplaceAction(m.name)
     const sourceInfo = getExtraMarketplaceSourceInfo(m.name)
-    const scope = sourceInfo.isInPolicy
-      ? 'managed'
-      : sourceInfo.editableSources[0]?.scope
+    const scope = sourceInfo.editableSources[0]?.scope
     rows.push({
       label: m.name,
       message: m.error ?? 'Installation failed',
-      guidance:
-        action.kind === 'managed-only'
-          ? 'Managed by your organization — contact your admin'
-          : undefined,
+      guidance: undefined,
       action,
       scope,
     })
@@ -236,16 +221,11 @@ function buildErrorRows(
     shownMarketplaceNames.add(marketplace)
     const action = buildMarketplaceAction(marketplace)
     const sourceInfo = getExtraMarketplaceSourceInfo(marketplace)
-    const scope = sourceInfo.isInPolicy
-      ? 'managed'
-      : sourceInfo.editableSources[0]?.scope
+    const scope = sourceInfo.editableSources[0]?.scope
     rows.push({
       label: marketplace,
       message: formatErrorMessage(e),
-      guidance:
-        action.kind === 'managed-only'
-          ? 'Managed by your organization — contact your admin'
-          : getErrorGuidance(e),
+      guidance: getErrorGuidance(e),
       action,
       scope,
     })
@@ -388,8 +368,7 @@ function ErrorsTabContent({
   const extraMarketplaceErrors = errors.filter(
     e =>
       (e.type === 'marketplace-not-found' ||
-        e.type === 'marketplace-load-failed' ||
-        e.type === 'marketplace-blocked-by-policy') &&
+        e.type === 'marketplace-load-failed') &&
       !failedMarketplaceNames.has(e.marketplace),
   )
 
@@ -398,8 +377,7 @@ function ErrorsTabContent({
     if (isTransientError(e)) return false
     if (
       e.type === 'marketplace-not-found' ||
-      e.type === 'marketplace-load-failed' ||
-      e.type === 'marketplace-blocked-by-policy'
+      e.type === 'marketplace-load-failed'
     ) {
       return false
     }
@@ -411,8 +389,7 @@ function ErrorsTabContent({
     if (isTransientError(e)) return false
     if (
       e.type === 'marketplace-not-found' ||
-      e.type === 'marketplace-load-failed' ||
-      e.type === 'marketplace-blocked-by-policy'
+      e.type === 'marketplace-load-failed'
     ) {
       return false
     }
@@ -497,9 +474,6 @@ function ErrorsTabContent({
         })()
         break
       }
-      case 'managed-only':
-        // No action available — guidance text already shown
-        break
       case 'none':
         break
     }
@@ -522,10 +496,7 @@ function ErrorsTabContent({
   }
 
   const selectedAction = rows[clampedIndex]?.action
-  const hasAction =
-    selectedAction &&
-    selectedAction.kind !== 'none' &&
-    selectedAction.kind !== 'managed-only'
+  const hasAction = selectedAction && selectedAction.kind !== 'none'
 
   if (rows.length === 0) {
     return (

@@ -214,14 +214,13 @@ export const getHookEventMetadata = memoize(
       ConfigChange: {
         summary: 'When configuration files change during a session',
         description:
-          'Input to command is JSON with source (user_settings, project_settings, local_settings, policy_settings, skills) and file_path.\nExit code 0 - allow the change\nExit code 2 - block the change from being applied to the session\nOther exit codes - show stderr to user only',
+          'Input to command is JSON with source (user_settings, project_settings, local_settings, skills) and file_path.\nExit code 0 - allow the change\nExit code 2 - block the change from being applied to the session\nOther exit codes - show stderr to user only',
         matcherMetadata: {
           fieldToMatch: 'source',
           values: [
             'user_settings',
             'project_settings',
             'local_settings',
-            'policy_settings',
             'skills',
           ],
         },

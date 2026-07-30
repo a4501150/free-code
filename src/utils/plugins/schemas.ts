@@ -989,8 +989,8 @@ export const PluginSourceSchema = z.union([
  *
  * Keeping this narrow prevents PluginManifestSchema.partial() from expanding
  * inline in settingsTypes.generated.ts — that expansion is ~870 lines per
- * occurrence, and MarketplaceSource appears three times in the settings schema
- * (extraKnownMarketplaces, strictKnownMarketplaces, blockedMarketplaces).
+ * occurrence, and MarketplaceSource appears in the settings schema
+ * (extraKnownMarketplaces).
  */
 const SettingsMarketplacePluginSchema = z
   .object({
@@ -1104,29 +1104,6 @@ export const MarketplaceSourceSchema = z.discriminatedUnion('source', [
     path: z
       .string()
       .describe('Local directory containing .claude-plugin/marketplace.json'),
-  }),
-  z.object({
-    source: z.literal('hostPattern'),
-    hostPattern: z
-      .string()
-      .describe(
-        'Regex pattern to match the host/domain extracted from any marketplace source type. ' +
-          'For github sources, matches against "github.com". For git sources (SSH or HTTPS), ' +
-          'extracts the hostname from the URL. Use in strictKnownMarketplaces to allow all ' +
-          'marketplaces from a specific host (e.g., "^github\\.mycompany\\.com$").',
-      ),
-  }),
-  z.object({
-    source: z.literal('pathPattern'),
-    pathPattern: z
-      .string()
-      .describe(
-        'Regex pattern matched against the .path field of file and directory sources. ' +
-          'Use in strictKnownMarketplaces to allow filesystem-based marketplaces alongside ' +
-          'hostPattern restrictions for network sources. Use ".*" to allow all filesystem ' +
-          'paths, or a narrower pattern (e.g., "^/opt/approved/") to restrict to specific ' +
-          'directories.',
-      ),
   }),
   z
     .object({
@@ -1388,7 +1365,6 @@ export const InstalledPluginsFileSchemaV1 = z.object({
  * Scope types for plugin installation (V2)
  *
  * Plugins can be installed at different scopes:
- * - managed: Enterprise/system-wide (read-only, platform-specific paths)
  * - user: User's global settings (~/.freecode/freecode.json)
  * - project: Shared project settings ($project/.freecode/freecode.json)
  * - local: Personal project overrides ($project/.freecode/freecode.local.json)
@@ -1396,7 +1372,7 @@ export const InstalledPluginsFileSchemaV1 = z.object({
  * Note: 'flag' scope plugins (from --settings) are session-only and
  * are NOT persisted to installed_plugins.json.
  */
-export const PluginScopeSchema = z.enum(['managed', 'user', 'project', 'local'])
+export const PluginScopeSchema = z.enum(['user', 'project', 'local'])
 
 /**
  * Schema for a single plugin installation entry (V2)

@@ -10,9 +10,7 @@ export const ConfigScopeSchema = z.enum([
   'user',
   'project',
   'dynamic',
-  'enterprise',
   'claudeai',
-  'managed',
 ])
 export type ConfigScope = z.infer<typeof ConfigScopeSchema>
 

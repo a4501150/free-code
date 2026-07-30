@@ -48,7 +48,6 @@ type ShadowResult =
  * Check if a permission rule source is shared (visible to other users).
  * Shared settings include:
  * - projectSettings: Committed to git, shared with team
- * - policySettings: Enterprise-managed, pushed to all users
  * - command: From slash command frontmatter, potentially shared
  *
  * Personal settings include:
@@ -59,11 +58,7 @@ type ShadowResult =
  * - flagSettings: From --settings flag (runtime)
  */
 export function isSharedSettingSource(source: PermissionRuleSource): boolean {
-  return (
-    source === 'projectSettings' ||
-    source === 'policySettings' ||
-    source === 'command'
-  )
+  return source === 'projectSettings' || source === 'command'
 }
 
 /**
@@ -105,8 +100,8 @@ function generateFixSuggestion(
  * from PERSONAL settings don't shadow specific allow rules because:
  * - Sandboxed commands are auto-allowed regardless of ask rules
  * - This only applies to personal settings (userSettings, localSettings, etc.)
- * - Shared settings (projectSettings, policySettings) always warn because
- *   other team members may not have sandbox enabled
+ * - Shared settings (projectSettings) always warn because other team members
+ *   may not have sandbox enabled
  */
 function isAllowRuleShadowedByAskRule(
   allowRule: PermissionRule,

@@ -31,7 +31,7 @@ import {
 import { getConnectedIdeName } from './ide.js'
 import {
   filterInjectedMemoryFiles,
-  getManagedAndUserConditionalRules,
+  getUserConditionalRules,
   getMemoryFiles,
   getMemoryFilesForNestedDirectory,
   getConditionalRulesForCwdLevelDirectory,
@@ -1623,12 +1623,7 @@ export function getDirectoriesToProcess(
 function isInstructionsMemoryType(
   type: MemoryFileInfo['type'],
 ): type is InstructionsMemoryType {
-  return (
-    type === 'User' ||
-    type === 'Project' ||
-    type === 'Local' ||
-    type === 'Managed'
-  )
+  return type === 'User' || type === 'Project' || type === 'Local'
 }
 
 /** Exported for testing — regression guard for LRU-eviction re-injection. */
@@ -1730,12 +1725,9 @@ async function getNestedMemoryAttachmentsForFile(
     const originalCwd = getOriginalCwd()
 
     // Phase 1: Process Managed and User conditional rules
-    const managedUserRules = await getManagedAndUserConditionalRules(
-      filePath,
-      processedPaths,
-    )
+    const userRules = await getUserConditionalRules(filePath, processedPaths)
     attachments.push(
-      ...memoryFilesToAttachments(managedUserRules, toolUseContext, filePath),
+      ...memoryFilesToAttachments(userRules, toolUseContext, filePath),
     )
 
     // Phase 2: Get directories to process

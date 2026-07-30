@@ -128,7 +128,7 @@ export function useManagePlugins({
       // clears caches first). This reinit is defensive — it reads the same
       // memoized loadAllPlugins() result as the original init unless a cache
       // invalidation happened between main.tsx:3203 and REPL mount (e.g.
-      // seed marketplace registration or policySettings hot-reload).
+      // seed marketplace registration or settings hot-reload).
       const lspServerCounts = await Promise.all(
         enabled.map(async p => {
           if (p.lspServers) return Object.keys(p.lspServers).length

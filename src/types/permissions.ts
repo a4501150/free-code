@@ -55,7 +55,6 @@ export type PermissionRuleSource =
   | 'projectSettings'
   | 'localSettings'
   | 'flagSettings'
-  | 'policySettings'
   | 'cliArg'
   | 'command'
   | 'session'

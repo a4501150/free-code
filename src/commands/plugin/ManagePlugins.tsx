@@ -81,7 +81,6 @@ import {
   type PluginOptionSchema,
   savePluginOptions,
 } from '../../utils/plugins/pluginOptionsStorage.js'
-import { isPluginBlockedByPolicy } from '../../utils/plugins/pluginPolicy.js'
 import { getPluginEditableScopes } from '../../utils/plugins/pluginStartupCheck.js'
 import {
   getSettings_DEPRECATED,
@@ -152,7 +151,7 @@ type MarketplaceInfo = {
 type PluginState = {
   plugin: LoadedPlugin
   marketplace: string
-  scope?: 'user' | 'project' | 'local' | 'managed' | 'builtin'
+  scope?: 'user' | 'project' | 'local' | 'builtin'
   pendingEnable?: boolean // Toggle enable/disable
   pendingUpdate?: boolean // Marked for update
 }
@@ -502,21 +501,6 @@ async function checkIfLocalPlugin(
   return null
 }
 
-/**
- * Filter out plugins that are force-disabled by org policy (policySettings).
- * These are blocked by the organization and cannot be re-enabled by the user.
- * Checks policySettings directly rather than installation scope, since managed
- * settings don't create installation records with scope 'managed'.
- */
-export function filterManagedDisabledPlugins(
-  plugins: LoadedPlugin[],
-): LoadedPlugin[] {
-  return plugins.filter(plugin => {
-    const marketplace = plugin.source.split('@')[1] || 'local'
-    return !isPluginBlockedByPolicy(`${plugin.name}@${marketplace}`)
-  })
-}
-
 export function ManagePlugins({
   setViewState: setParentViewState,
   setResult,
@@ -694,7 +678,7 @@ export function ManagePlugins({
     // Build plugin items (unsorted for now)
     type PluginWithChildren = {
       item: UnifiedInstalledItem & { type: 'plugin' }
-      originalScope: 'user' | 'project' | 'local' | 'managed' | 'builtin'
+      originalScope: 'user' | 'project' | 'local' | 'builtin'
       childMcps: Array<{ displayName: string; client: MCPServerConnection }>
     }
     const pluginsWithChildren: PluginWithChildren[] = []
@@ -1057,10 +1041,7 @@ export function ManagePlugins({
         const { enabled, disabled } = await loadAllPlugins()
         const mergedSettings = getSettings_DEPRECATED() // Use merged settings to respect all layers
 
-        const allPlugins = filterManagedDisabledPlugins([
-          ...enabled,
-          ...disabled,
-        ])
+        const allPlugins = [...enabled, ...disabled]
 
         // Group plugins by marketplace
         const pluginsByMarketplace: Record<string, LoadedPlugin[]> = {}
@@ -1751,7 +1732,7 @@ export function ManagePlugins({
             const pluginScope = viewState.plugin.scope as PluginScope
             // Pass scope to uninstallPluginOp so it can find the correct V2
             // installation record and clean up on-disk files. Fall back to
-            // default scope if not installable (e.g. 'managed', though that
+            // default scope if not installable
             // case is guarded by isActive below). deleteDataDir=false: this
             // is a recovery path for a plugin that failed to load — it may
             // be reinstallable, so don't nuke ${CLAUDE_PLUGIN_DATA} silently.
@@ -1803,7 +1784,7 @@ export function ManagePlugins({
       isActive:
         typeof viewState === 'object' &&
         viewState.type === 'failed-plugin-details' &&
-        viewState.plugin.scope !== 'managed',
+        true,
     },
   )
 
@@ -2428,18 +2409,10 @@ export function ManagePlugins({
         </Text>
         <Text color="error">{errorMessage}</Text>
 
-        {failedPlugin.scope === 'managed' ? (
-          <Box marginTop={1}>
-            <Text dimColor>
-              Managed by your organization — contact your admin
-            </Text>
-          </Box>
-        ) : (
-          <Box marginTop={1}>
-            <Text color="suggestion">{figures.pointer} </Text>
-            <Text bold>Remove</Text>
-          </Box>
-        )}
+        <Box marginTop={1}>
+          <Text color="suggestion">{figures.pointer} </Text>
+          <Text bold>Remove</Text>
+        </Box>
 
         {isProcessing && <Text>Processing…</Text>}
         {processError && <Text color="error">{processError}</Text>}
@@ -2447,14 +2420,12 @@ export function ManagePlugins({
         <Box marginTop={1}>
           <Text dimColor italic>
             <Byline>
-              {failedPlugin.scope !== 'managed' && (
-                <ConfigurableShortcutHint
-                  action="select:accept"
-                  context="Select"
-                  fallback="Enter"
-                  description="remove"
-                />
-              )}
+              <ConfigurableShortcutHint
+                action="select:accept"
+                context="Select"
+                fallback="Enter"
+                description="remove"
+              />
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
@@ -2744,10 +2715,6 @@ export function ManagePlugins({
               return 'Local'
             case 'user':
               return 'User'
-            case 'enterprise':
-              return 'Enterprise'
-            case 'managed':
-              return 'Managed'
             case 'builtin':
               return 'Built-in'
             case 'dynamic':

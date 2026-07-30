@@ -10,10 +10,6 @@ import {
   initializePolicyLimitsLoadingPromise,
   isPolicyLimitsEligible,
 } from '../services/policyLimits/index.js'
-import {
-  initializeRemoteManagedSettingsLoadingPromise,
-  isEligibleForRemoteManagedSettings,
-} from '../services/remoteManagedSettings/index.js'
 import { preconnectAnthropicApi } from '../utils/apiPreconnect.js'
 import { cleanupSessionTeams } from '../utils/swarm/teamHelpers.js'
 import { applyExtraCACertsFromConfig } from '../utils/caCertsConfig.js'
@@ -83,16 +79,10 @@ export const init = memoize(async (): Promise<void> => {
     // Detect GitHub repository asynchronously (populates cache for gitDiff PR linking)
     void detectCurrentRepository()
 
-    // Initialize the loading promise early so that other systems (like plugin hooks)
-    // can await remote settings loading. The promise includes a timeout to prevent
-    // deadlocks if loadRemoteManagedSettings() is never called (e.g., non-CLI tests).
-    if (isEligibleForRemoteManagedSettings()) {
-      initializeRemoteManagedSettingsLoadingPromise()
-    }
     if (isPolicyLimitsEligible()) {
       initializePolicyLimitsLoadingPromise()
     }
-    profileCheckpoint('init_after_remote_settings_check')
+    profileCheckpoint('init_after_policy_limits_check')
 
     // Record the first start time
     recordFirstStartTime()

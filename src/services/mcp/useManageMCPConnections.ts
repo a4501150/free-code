@@ -27,7 +27,6 @@ import omit from 'lodash-es/omit.js'
 import reject from 'lodash-es/reject.js'
 import {
   dedupClaudeAiMcpServers,
-  doesEnterpriseMcpConfigExist,
   filterMcpServersByPolicy,
   getClaudeCodeMcpConfigs,
   isMcpServerDisabled,
@@ -550,17 +549,13 @@ export function useManageMCPConnections(
                     entry !== undefined)
                 ) {
                   channelWarnedKindsRef.current.add(gate.kind)
-                  // disabled/auth/policy get custom toast copy (shorter, actionable);
+                  // auth gets custom toast copy (shorter, actionable);
                   // marketplace/allowlist reuse the gate's reason verbatim
                   // since it already names the mismatch.
                   const text =
-                    gate.kind === 'disabled'
-                      ? 'Channels are not currently available'
-                      : gate.kind === 'auth'
-                        ? 'Channels require claude.ai authentication · run /login'
-                        : gate.kind === 'policy'
-                          ? 'Channels are not enabled for your org · have an administrator set channelsEnabled: true in managed settings'
-                          : gate.reason
+                    gate.kind === 'auth'
+                      ? 'Channels require claude.ai authentication · run /login'
+                      : gate.reason
                   addNotification({
                     key: `channels-blocked-${gate.kind}`,
                     priority: 'high',
@@ -771,7 +766,7 @@ export function useManageMCPConnections(
       // inside getClaudeCodeMcpConfigs; it's awaited only at the dedup step.
       // Phase 2 below awaits the same promise — no second network call.
       let claudeaiPromise: Promise<Record<string, ScopedMcpServerConfig>>
-      if (isStrictMcpConfig || doesEnterpriseMcpConfigExist()) {
+      if (isStrictMcpConfig) {
         claudeaiPromise = Promise.resolve({})
       } else {
         clearClaudeAIMcpConfigsCache()
@@ -872,7 +867,6 @@ export function useManageMCPConnections(
       // Log server counts after both phases complete
       const allConfigs = { ...configs, ...claudeaiConfigs }
       const counts = {
-        enterprise: 0,
         global: 0,
         project: 0,
         user: 0,
@@ -880,8 +874,7 @@ export function useManageMCPConnections(
         claudeai: 0,
       }
       for (const [, serverConfig] of Object.entries(allConfigs)) {
-        if (serverConfig.scope === 'enterprise') counts.enterprise++
-        else if (serverConfig.scope === 'user') counts.global++
+        if (serverConfig.scope === 'user') counts.global++
         else if (serverConfig.scope === 'project') counts.project++
         else if (serverConfig.scope === 'local') counts.user++
         else if (serverConfig.scope === 'dynamic') counts.plugin++

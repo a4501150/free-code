@@ -49,7 +49,6 @@ import { truncateEntrypointContent } from '../memdir/memdir.js'
 import { getAutoMemEntrypoint, isAutoMemoryEnabled } from '../memdir/paths.js'
 import {
   getCurrentProjectConfig,
-  getManagedClaudeRulesDir,
   getMemoryPath,
   getUserClaudeRulesDir,
 } from './config.js'
@@ -809,28 +808,6 @@ export const getMemoryFiles = memoize(
       config.hasClaudeMdExternalIncludesApproved ||
       false
 
-    // Process Managed file first (always loaded - policy settings)
-    const managedClaudeMd = getMemoryPath('Managed')
-    result.push(
-      ...(await processMemoryFile(
-        managedClaudeMd,
-        'Managed',
-        processedPaths,
-        includeExternal,
-      )),
-    )
-    // Process Managed .freecode/rules/*.md files
-    const managedClaudeRulesDir = getManagedClaudeRulesDir()
-    result.push(
-      ...(await processMdRules({
-        rulesDir: managedClaudeRulesDir,
-        type: 'Managed',
-        processedPaths,
-        includeExternal,
-        conditionalRule: false,
-      })),
-    )
-
     // Process User file (only if userSettings is enabled)
     if (isSettingSourceEnabled('userSettings')) {
       const userClaudeMd = getMemoryPath('User')
@@ -1086,12 +1063,7 @@ export const getMemoryFiles = memoize(
 function isInstructionsMemoryType(
   type: MemoryType,
 ): type is InstructionsMemoryType {
-  return (
-    type === 'User' ||
-    type === 'Project' ||
-    type === 'Local' ||
-    type === 'Managed'
-  )
+  return type === 'User' || type === 'Project' || type === 'Local'
 }
 
 // Load reason to report for top-level (non-included) files on the next eager
@@ -1195,30 +1167,18 @@ export const getClaudeMds = (
 }
 
 /**
- * Gets managed and user conditional rules that match the target path.
+ * Gets user conditional rules that match the target path.
  * This is the first phase of nested memory loading.
  *
  * @param targetPath The target file path to match against glob patterns
  * @param processedPaths Set of already processed file paths (will be mutated)
  * @returns Array of MemoryFileInfo objects for matching conditional rules
  */
-export async function getManagedAndUserConditionalRules(
+export async function getUserConditionalRules(
   targetPath: string,
   processedPaths: Set<string>,
 ): Promise<MemoryFileInfo[]> {
   const result: MemoryFileInfo[] = []
-
-  // Process Managed conditional .freecode/rules/*.md files
-  const managedClaudeRulesDir = getManagedClaudeRulesDir()
-  result.push(
-    ...(await processConditionedMdRules(
-      targetPath,
-      managedClaudeRulesDir,
-      'Managed',
-      processedPaths,
-      false,
-    )),
-  )
 
   if (isSettingSourceEnabled('userSettings')) {
     // Process User conditional .freecode/rules/*.md files

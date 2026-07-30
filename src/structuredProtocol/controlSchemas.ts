@@ -418,7 +418,6 @@ export const SDKControlGetSettingsResponseSchema = z
             'projectSettings',
             'localSettings',
             'flagSettings',
-            'policySettings',
           ]),
           settings: z.record(z.string(), z.unknown()),
         }),

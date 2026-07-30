@@ -800,11 +800,7 @@ export function removeAllPluginsForMarketplace(marketplaceName: string): {
 export function isInstallationRelevantToCurrentProject(
   inst: PluginInstallationEntry,
 ): boolean {
-  return (
-    inst.scope === 'user' ||
-    inst.scope === 'managed' ||
-    inst.projectPath === getOriginalCwd()
-  )
+  return inst.scope === 'user' || inst.projectPath === getOriginalCwd()
 }
 
 /**
@@ -852,9 +848,7 @@ export function isPluginGloballyInstalled(pluginId: string): boolean {
   if (!installations || installations.length === 0) {
     return false
   }
-  const hasGlobalEntry = installations.some(
-    entry => entry.scope === 'user' || entry.scope === 'managed',
-  )
+  const hasGlobalEntry = installations.some(entry => entry.scope === 'user')
   if (!hasGlobalEntry) return false
   // Same settings divergence guard as isPluginInstalled — if enabledPlugins
   // was clobbered, treat as not-installed so the user can re-enable.

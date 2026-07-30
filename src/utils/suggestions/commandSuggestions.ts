@@ -312,7 +312,6 @@ export function generateCommandSuggestions(
     const builtinCommands: Command[] = []
     const userCommands: Command[] = []
     const projectCommands: Command[] = []
-    const policyCommands: Command[] = []
     const otherCommands: Command[] = []
 
     visibleCommands.forEach(cmd => {
@@ -325,8 +324,6 @@ export function generateCommandSuggestions(
         userCommands.push(cmd)
       } else if (cmd.type === 'prompt' && cmd.source === 'projectSettings') {
         projectCommands.push(cmd)
-      } else if (cmd.type === 'prompt' && cmd.source === 'policySettings') {
-        policyCommands.push(cmd)
       } else {
         otherCommands.push(cmd)
       }
@@ -339,7 +336,6 @@ export function generateCommandSuggestions(
     builtinCommands.sort(sortAlphabetically)
     userCommands.sort(sortAlphabetically)
     projectCommands.sort(sortAlphabetically)
-    policyCommands.sort(sortAlphabetically)
     otherCommands.sort(sortAlphabetically)
 
     // Combine with built-in commands prioritized first,
@@ -348,7 +344,6 @@ export function generateCommandSuggestions(
       ...builtinCommands,
       ...userCommands,
       ...projectCommands,
-      ...policyCommands,
       ...otherCommands,
     ].map(cmd => createCommandSuggestionItem(cmd))
   }

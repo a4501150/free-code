@@ -51,7 +51,7 @@ export async function call(
   }
 
   // Check if sandbox settings are locked by higher-priority settings
-  if (SandboxManager.areSandboxSettingsLockedByPolicy()) {
+  if (SandboxManager.areSandboxSettingsLockedByHigherPrioritySource()) {
     const message = color(
       'error',
       themeName,

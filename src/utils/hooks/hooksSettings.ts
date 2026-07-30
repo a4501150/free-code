@@ -15,7 +15,6 @@ import { getSessionHooks } from './sessionHooks.js'
 
 export type HookSource =
   | EditableSettingSource
-  | 'policySettings'
   | 'pluginHook'
   | 'sessionHook'
   | 'builtinHook'
@@ -93,50 +92,42 @@ export function getHookDisplayText(
 export function getAllHooks(appState: AppState): IndividualHookConfig[] {
   const hooks: IndividualHookConfig[] = []
 
-  // Check if restricted to managed hooks only
-  const policySettings = getSettingsForSource('policySettings')
-  const restrictedToManagedOnly = policySettings?.allowManagedHooksOnly === true
+  // Get hooks from all editable sources
+  const sources = [
+    'userSettings',
+    'projectSettings',
+    'localSettings',
+  ] as EditableSettingSource[]
 
-  // If allowManagedHooksOnly is set, don't show any hooks in the UI
-  // (user/project/local are blocked, and managed hooks are intentionally hidden)
-  if (!restrictedToManagedOnly) {
-    // Get hooks from all editable sources
-    const sources = [
-      'userSettings',
-      'projectSettings',
-      'localSettings',
-    ] as EditableSettingSource[]
+  // Track which settings files we've already processed to avoid duplicates
+  // (e.g., when running from home directory, userSettings and projectSettings
+  // both resolve to ~/.freecode/freecode.json)
+  const seenFiles = new Set<string>()
 
-    // Track which settings files we've already processed to avoid duplicates
-    // (e.g., when running from home directory, userSettings and projectSettings
-    // both resolve to ~/.freecode/freecode.json)
-    const seenFiles = new Set<string>()
-
-    for (const source of sources) {
-      const filePath = getSettingsFilePathForSource(source)
-      if (filePath) {
-        const resolvedPath = resolve(filePath)
-        if (seenFiles.has(resolvedPath)) {
-          continue
-        }
-        seenFiles.add(resolvedPath)
-      }
-
-      const sourceSettings = getSettingsForSource(source)
-      if (!sourceSettings?.hooks) {
+  for (const source of sources) {
+    const filePath = getSettingsFilePathForSource(source)
+    if (filePath) {
+      const resolvedPath = resolve(filePath)
+      if (seenFiles.has(resolvedPath)) {
         continue
       }
+      seenFiles.add(resolvedPath)
+    }
 
-      for (const [event, matchers] of Object.entries(sourceSettings.hooks)) {
-        for (const matcher of matchers as HookMatcher[]) {
-          for (const hookCommand of matcher.hooks) {
-            hooks.push({
-              event: event as HookEvent,
-              config: hookCommand,
-              matcher: matcher.matcher,
-              source,
-            })
-          }
+    const sourceSettings = getSettingsForSource(source)
+    if (!sourceSettings?.hooks) {
+      continue
+    }
+
+    for (const [event, matchers] of Object.entries(sourceSettings.hooks)) {
+      for (const matcher of matchers as HookMatcher[]) {
+        for (const hookCommand of matcher.hooks) {
+          hooks.push({
+            event: event as HookEvent,
+            config: hookCommand,
+            matcher: matcher.matcher,
+            source,
+          })
         }
       }
     }

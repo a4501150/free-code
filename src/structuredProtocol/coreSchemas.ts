@@ -576,7 +576,6 @@ export const CONFIG_CHANGE_SOURCES = [
   'user_settings',
   'project_settings',
   'local_settings',
-  'policy_settings',
   'skills',
 ] as const
 
@@ -596,12 +595,7 @@ export const INSTRUCTIONS_LOAD_REASONS = [
   'compact',
 ] as const
 
-export const INSTRUCTIONS_MEMORY_TYPES = [
-  'User',
-  'Project',
-  'Local',
-  'Managed',
-] as const
+export const INSTRUCTIONS_MEMORY_TYPES = ['User', 'Project', 'Local'] as const
 
 export const InstructionsLoadedHookInputSchema = BaseHookInputSchema.and(
   z.object({

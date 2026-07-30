@@ -68,7 +68,6 @@ import { MigrationPromptDialog } from './components/MigrationPromptDialog.js'
 import { GroveDialog } from './components/grove/Grove.js'
 import { BypassPermissionsModeDialog } from './components/BypassPermissionsModeDialog.js'
 import { DevChannelsDialog } from './components/DevChannelsDialog.js'
-import { isChannelsEnabled } from './services/mcp/channelAllowlist.js'
 import { getClaudeAIOAuthTokens } from './utils/auth.js'
 
 export function completeOnboarding(): void {
@@ -328,18 +327,16 @@ export async function showSetupScreens(
     // channel notifications for the whole session — gh#37026.
     // checkGate_CACHED_OR_BLOCKING returns immediately if disk already says
     // true; only blocks on a cold/stale-false cache (awaits the same memoized
-    // gate check promise fired earlier). Also warms the
-    // isChannelsEnabled() check in the dev-channels dialog below.
+    // gate check promise fired earlier).
 
     if (devChannels && devChannels.length > 0) {
-      // Skip the dialog when channels are blocked (tengu_harbor off or no
-      // OAuth) — accepting then immediately seeing "not available" in
-      // ChannelsNotice is worse than no dialog. Append entries anyway so
-      // ChannelsNotice renders the blocked branch with the dev entries
-      // named. dev:true here is for the flag label in ChannelsNotice
-      // (hasNonDev check); the allowlist bypass it also grants is moot
-      // since the gate blocks upstream.
-      if (!isChannelsEnabled() || !getClaudeAIOAuthTokens()?.accessToken) {
+      // Skip the dialog when channels are blocked (no OAuth) — accepting then
+      // immediately seeing "not available" in ChannelsNotice is worse than no
+      // dialog. Append entries anyway so ChannelsNotice renders the blocked
+      // branch with the dev entries named. dev:true here is for the flag label
+      // in ChannelsNotice (hasNonDev check); the allowlist bypass it also
+      // grants is moot since the gate blocks upstream.
+      if (!getClaudeAIOAuthTokens()?.accessToken) {
         setAllowedChannels([
           ...getAllowedChannels(),
           ...devChannels.map(c => ({ ...c, dev: true })),

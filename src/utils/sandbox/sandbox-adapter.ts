@@ -35,7 +35,6 @@ import { getPlatform, type Platform } from '../platform.js'
 import { PROJECT_CONFIG_DIRS } from '../projectConfigPaths.js'
 import { settingsChangeDetector } from '../settings/changeDetector.js'
 import { SETTING_SOURCES, type SettingSource } from '../settings/constants.js'
-import { getManagedSettingsDropInDir } from '../settings/managedPath.js'
 import {
   getInitialSettings,
   getSettings_DEPRECATED,
@@ -147,24 +146,6 @@ export function resolveSandboxFilesystemPath(
 }
 
 /**
- * Check if only managed sandbox domains should be used.
- * This is true when policySettings has sandbox.network.allowManagedDomainsOnly: true
- */
-export function shouldAllowManagedSandboxDomainsOnly(): boolean {
-  return (
-    getSettingsForSource('policySettings')?.sandbox?.network
-      ?.allowManagedDomainsOnly === true
-  )
-}
-
-function shouldAllowManagedReadPathsOnly(): boolean {
-  return (
-    getSettingsForSource('policySettings')?.sandbox?.filesystem
-      ?.allowManagedReadPathsOnly === true
-  )
-}
-
-/**
  * Convert Claude Code settings format to SandboxRuntimeConfig format
  * (Function exported for testing)
  *
@@ -179,34 +160,16 @@ export function convertToSandboxRuntimeConfig(
   const allowedDomains: string[] = []
   const deniedDomains: string[] = []
 
-  // When allowManagedSandboxDomainsOnly is enabled, only use domains from policy settings
-  if (shouldAllowManagedSandboxDomainsOnly()) {
-    const policySettings = getSettingsForSource('policySettings')
-    for (const domain of policySettings?.sandbox?.network?.allowedDomains ||
-      []) {
-      allowedDomains.push(domain)
-    }
-    for (const ruleString of policySettings?.permissions?.allow || []) {
-      const rule = permissionRuleValueFromString(ruleString)
-      if (
-        rule.toolName === WEB_FETCH_TOOL_NAME &&
-        rule.ruleContent?.startsWith('domain:')
-      ) {
-        allowedDomains.push(rule.ruleContent.substring('domain:'.length))
-      }
-    }
-  } else {
-    for (const domain of settings.sandbox?.network?.allowedDomains || []) {
-      allowedDomains.push(domain)
-    }
-    for (const ruleString of permissions.allow || []) {
-      const rule = permissionRuleValueFromString(ruleString)
-      if (
-        rule.toolName === WEB_FETCH_TOOL_NAME &&
-        rule.ruleContent?.startsWith('domain:')
-      ) {
-        allowedDomains.push(rule.ruleContent.substring('domain:'.length))
-      }
+  for (const domain of settings.sandbox?.network?.allowedDomains || []) {
+    allowedDomains.push(domain)
+  }
+  for (const ruleString of permissions.allow || []) {
+    const rule = permissionRuleValueFromString(ruleString)
+    if (
+      rule.toolName === WEB_FETCH_TOOL_NAME &&
+      rule.ruleContent?.startsWith('domain:')
+    ) {
+      allowedDomains.push(rule.ruleContent.substring('domain:'.length))
     }
   }
 
@@ -244,7 +207,6 @@ export function convertToSandboxRuntimeConfig(
     denyWrite.push(join(configDir, 'state.json'))
     denyWrite.push(join(configDir, 'modelSettings.json'))
   }
-  denyWrite.push(getManagedSettingsDropInDir())
 
   // Also block project settings files in the original and current working
   // directories. This covers legacy and preferred project config dirs, and the
@@ -367,10 +329,8 @@ export function convertToSandboxRuntimeConfig(
       for (const p of fs.denyRead || []) {
         denyRead.push(resolveSandboxFilesystemPath(p, source))
       }
-      if (!shouldAllowManagedReadPathsOnly() || source === 'policySettings') {
-        for (const p of fs.allowRead || []) {
-          allowRead.push(resolveSandboxFilesystemPath(p, source))
-        }
+      for (const p of fs.allowRead || []) {
+        allowRead.push(resolveSandboxFilesystemPath(p, source))
       }
     }
   }
@@ -669,25 +629,16 @@ function getLinuxGlobPatternWarnings(): string[] {
 }
 
 /**
- * Check if sandbox settings are locked by policy
+ * Check whether sandbox settings are pinned by a source that outranks
+ * localSettings, which would make local edits ineffective.
  */
-function areSandboxSettingsLockedByPolicy(): boolean {
-  // Check if sandbox settings are explicitly set in any source that overrides localSettings
-  // These sources have higher priority than localSettings and would make local changes ineffective
-  const overridingSources = ['flagSettings', 'policySettings'] as const
-
-  for (const source of overridingSources) {
-    const settings = getSettingsForSource(source)
-    if (
-      settings?.sandbox?.enabled !== undefined ||
-      settings?.sandbox?.autoAllowBashIfSandboxed !== undefined ||
-      settings?.sandbox?.allowUnsandboxedCommands !== undefined
-    ) {
-      return true
-    }
-  }
-
-  return false
+function areSandboxSettingsLockedByHigherPrioritySource(): boolean {
+  const settings = getSettingsForSource('flagSettings')
+  return (
+    settings?.sandbox?.enabled !== undefined ||
+    settings?.sandbox?.autoAllowBashIfSandboxed !== undefined ||
+    settings?.sandbox?.allowUnsandboxedCommands !== undefined
+  )
 }
 
 /**
@@ -767,20 +718,6 @@ async function initialize(
     return
   }
 
-  // Wrap the callback to enforce allowManagedDomainsOnly policy.
-  // This ensures all code paths (REPL, print/SDK) are covered.
-  const wrappedCallback: SandboxAskCallback | undefined = sandboxAskCallback
-    ? async (hostPattern: NetworkHostPattern) => {
-        if (shouldAllowManagedSandboxDomainsOnly()) {
-          logForDebugging(
-            `[sandbox] Blocked network request to ${hostPattern.host} (allowManagedDomainsOnly)`,
-          )
-          return false
-        }
-        return sandboxAskCallback(hostPattern)
-      }
-    : undefined
-
   // Create the initialization promise synchronously (before any await) to prevent
   // race conditions where wrapWithSandbox() is called before the promise is assigned.
   initializationPromise = (async () => {
@@ -797,7 +734,7 @@ async function initialize(
       const runtimeConfig = convertToSandboxRuntimeConfig(settings)
 
       // Log monitor is automatically enabled for macOS
-      await BaseSandboxManager.initialize(runtimeConfig, wrappedCallback)
+      await BaseSandboxManager.initialize(runtimeConfig, sandboxAskCallback)
 
       // Subscribe to settings changes to update sandbox config dynamically
       settingsSubscriptionCleanup = settingsChangeDetector.subscribe(() => {
@@ -915,7 +852,7 @@ export interface ISandboxManager {
   isAutoAllowBashIfSandboxedEnabled(): boolean
   areUnsandboxedCommandsAllowed(): boolean
   isSandboxRequired(): boolean
-  areSandboxSettingsLockedByPolicy(): boolean
+  areSandboxSettingsLockedByHigherPrioritySource(): boolean
   setSandboxSettings(options: {
     enabled?: boolean
     autoAllowBashIfSandboxed?: boolean
@@ -961,7 +898,7 @@ export const SandboxManager: ISandboxManager = {
   isAutoAllowBashIfSandboxedEnabled,
   areUnsandboxedCommandsAllowed,
   isSandboxRequired,
-  areSandboxSettingsLockedByPolicy,
+  areSandboxSettingsLockedByHigherPrioritySource,
   setSandboxSettings,
   getExcludedCommands,
   wrapWithSandbox,

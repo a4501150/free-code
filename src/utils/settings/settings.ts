@@ -6,19 +6,17 @@ import {
   getOriginalCwd,
   getUseCoworkPlugins,
 } from '../../bootstrap/state.js'
-import { getRemoteManagedSettingsSyncFromCache } from '../../services/remoteManagedSettings/syncCacheState.js'
 import { uniq } from '../array.js'
 import { logForDebugging } from '../debug.js'
 import { logForDiagnosticsNoPII } from '../diagLogs.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from '../envUtils.js'
-import { getErrnoCode, isENOENT } from '../errors.js'
+import { isENOENT } from '../errors.js'
 import { writeFileSyncAndFlush_DEPRECATED } from '../file.js'
 import { readFileSync } from '../fileRead.js'
 import { getFsImplementation, safeResolvePath } from '../fsOperations.js'
 import { addFileGlobRuleToGitignore } from '../git/gitignore.js'
 import { patchJsoncFile, safeParseJSONC, SETTINGS_DEEP_KEYS } from '../json.js'
 import { logError } from '../log.js'
-import { getPlatform } from '../platform.js'
 import { clone, jsonStringify } from '../slowOperations.js'
 import {
   getExistingOrPreferredProjectConfigPath,
@@ -35,11 +33,6 @@ import {
   type SettingSource,
 } from './constants.js'
 import { markInternalWrite } from './internalWrites.js'
-import {
-  getManagedFilePath,
-  getManagedSettingsDropInDir,
-} from './managedPath.js'
-import { getHkcuSettings, getMdmSettings } from './mdm/settings.js'
 import {
   getCachedParsedFile,
   getCachedSettingsForSource,
@@ -61,103 +54,6 @@ import {
   type SettingsWithErrors,
   type ValidationError,
 } from './validation.js'
-
-/**
- * Get the path to the managed settings file based on the current platform
- */
-function getManagedSettingsFilePath(): string {
-  return join(getManagedFilePath(), 'managed-settings.json')
-}
-
-/**
- * Load file-based managed settings: managed-settings.json + managed-settings.d/*.json.
- *
- * managed-settings.json is merged first (lowest precedence / base), then drop-in
- * files are sorted alphabetically and merged on top (higher precedence, later
- * files win). This matches the systemd/sudoers drop-in convention: the base
- * file provides defaults, drop-ins customize. Separate teams can ship
- * independent policy fragments (e.g. 10-otel.json, 20-security.json) without
- * coordinating edits to a single admin-owned file.
- *
- * Exported for testing.
- */
-export function loadManagedFileSettings(): {
-  settings: SettingsJson | null
-  errors: ValidationError[]
-} {
-  const errors: ValidationError[] = []
-  let merged: SettingsJson = {}
-  let found = false
-
-  const { settings, errors: baseErrors } = parseSettingsFile(
-    getManagedSettingsFilePath(),
-  )
-  errors.push(...baseErrors)
-  if (settings && Object.keys(settings).length > 0) {
-    merged = mergeWith(merged, settings, settingsMergeCustomizer)
-    found = true
-  }
-
-  const dropInDir = getManagedSettingsDropInDir()
-  try {
-    const entries = getFsImplementation()
-      .readdirSync(dropInDir)
-      .filter(
-        d =>
-          (d.isFile() || d.isSymbolicLink()) &&
-          d.name.endsWith('.json') &&
-          !d.name.startsWith('.'),
-      )
-      .map(d => d.name)
-      .sort()
-    for (const name of entries) {
-      const { settings, errors: fileErrors } = parseSettingsFile(
-        join(dropInDir, name),
-      )
-      errors.push(...fileErrors)
-      if (settings && Object.keys(settings).length > 0) {
-        merged = mergeWith(merged, settings, settingsMergeCustomizer)
-        found = true
-      }
-    }
-  } catch (e) {
-    const code = getErrnoCode(e)
-    if (code !== 'ENOENT' && code !== 'ENOTDIR') {
-      logError(e)
-    }
-  }
-
-  return { settings: found ? merged : null, errors }
-}
-
-/**
- * Check which file-based managed settings sources are present.
- * Used by /status to show "(file)", "(drop-ins)", or "(file + drop-ins)".
- */
-export function getManagedFileSettingsPresence(): {
-  hasBase: boolean
-  hasDropIns: boolean
-} {
-  const { settings: base } = parseSettingsFile(getManagedSettingsFilePath())
-  const hasBase = !!base && Object.keys(base).length > 0
-
-  let hasDropIns = false
-  const dropInDir = getManagedSettingsDropInDir()
-  try {
-    hasDropIns = getFsImplementation()
-      .readdirSync(dropInDir)
-      .some(
-        d =>
-          (d.isFile() || d.isSymbolicLink()) &&
-          d.name.endsWith('.json') &&
-          !d.name.startsWith('.'),
-      )
-  } catch {
-    // dir doesn't exist
-  }
-
-  return { hasBase, hasDropIns }
-}
 
 /**
  * Handles file system errors appropriately
@@ -222,11 +118,37 @@ function parseSettingsFileUncached(path: string): {
 
     const data = safeParseJSONC(content, false)
 
-    return parseSettingsData(data, path)
+    // Project before validating: a general key in modelSettings.json must not
+    // be able to fail validation and null out the whole file's model config.
+    return parseSettingsData(projectIfModelSettings(data, path), path)
   } catch (error) {
     handleFileSystemError(error, path)
     return { settings: null, errors: [] }
   }
+}
+
+/**
+ * modelSettings.json owns model/provider config; freecode.json owns everything
+ * else. Writes are already routed by MODEL_SETTINGS_KEYS, so reads are filtered
+ * to match — without this, a stray general key in modelSettings.json would
+ * silently outrank freecode.json, since it merges second and the schema is
+ * .passthrough().
+ *
+ * Applied to the raw JSON before schema validation, so an invalid general key
+ * can't fail the whole file and take its model config down with it. Keys outside
+ * MODEL_SETTINGS_KEYS are ignored, not migrated.
+ */
+function projectIfModelSettings(data: unknown, path: string): unknown {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data
+  if (resolve(path) !== resolve(getModelSettingsFilePath())) return data
+
+  const projected: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(data)) {
+    if (MODEL_SETTINGS_KEYS.has(key)) {
+      projected[key] = value
+    }
+  }
+  return projected
 }
 
 /**
@@ -239,7 +161,6 @@ export function getSettingsRootPathForSource(source: SettingSource): string {
   switch (source) {
     case 'userSettings':
       return resolve(getClaudeConfigHomeDir())
-    case 'policySettings':
     case 'projectSettings':
     case 'localSettings': {
       return resolve(getOriginalCwd())
@@ -280,8 +201,6 @@ export function getSettingsFilePathForSource(
         getRelativeSettingsFilePathForSource(source),
       )
     }
-    case 'policySettings':
-      return getManagedSettingsFilePath()
     case 'flagSettings': {
       return getFlagSettingsPath()
     }
@@ -371,31 +290,6 @@ export function getSettingsForSource(
 function getSettingsForSourceUncached(
   source: SettingSource,
 ): SettingsJson | null {
-  // For policySettings: first source wins (remote > HKLM/plist > file > HKCU)
-  if (source === 'policySettings') {
-    const remoteSettings = getRemoteManagedSettingsSyncFromCache()
-    if (remoteSettings && Object.keys(remoteSettings).length > 0) {
-      return remoteSettings
-    }
-
-    const mdmResult = getMdmSettings()
-    if (Object.keys(mdmResult.settings).length > 0) {
-      return mdmResult.settings
-    }
-
-    const { settings: fileSettings } = loadManagedFileSettings()
-    if (fileSettings) {
-      return fileSettings
-    }
-
-    const hkcu = getHkcuSettings()
-    if (Object.keys(hkcu.settings).length > 0) {
-      return hkcu.settings
-    }
-
-    return null
-  }
-
   // Merge all candidate files for this source (handles .claude/ + .freecode/)
   const filePaths = getSettingsFilePathsForSource(source)
   let merged: SettingsJson | null = null
@@ -427,45 +321,6 @@ function getSettingsForSourceUncached(
 }
 
 /**
- * Get the origin of the highest-priority active policy settings source.
- * Uses "first source wins" — returns the first source that has content.
- * Priority: remote > plist/hklm > file (managed-settings.json) > hkcu
- */
-export function getPolicySettingsOrigin():
-  | 'remote'
-  | 'plist'
-  | 'hklm'
-  | 'file'
-  | 'hkcu'
-  | null {
-  // 1. Remote (highest)
-  const remoteSettings = getRemoteManagedSettingsSyncFromCache()
-  if (remoteSettings && Object.keys(remoteSettings).length > 0) {
-    return 'remote'
-  }
-
-  // 2. Admin-only MDM (HKLM / macOS plist)
-  const mdmResult = getMdmSettings()
-  if (Object.keys(mdmResult.settings).length > 0) {
-    return getPlatform() === 'macos' ? 'plist' : 'hklm'
-  }
-
-  // 3. managed-settings.json + managed-settings.d/ (file-based, requires admin)
-  const { settings: fileSettings } = loadManagedFileSettings()
-  if (fileSettings) {
-    return 'file'
-  }
-
-  // 4. HKCU (lowest — user-writable)
-  const hkcu = getHkcuSettings()
-  if (Object.keys(hkcu.settings).length > 0) {
-    return 'hkcu'
-  }
-
-  return null
-}
-
-/**
  * Merges `settings` into the existing settings for `source` using lodash mergeWith.
  *
  * To delete a key from a record field (e.g. enabledPlugins, extraKnownMarketplaces),
@@ -476,10 +331,7 @@ export function updateSettingsForSource(
   source: EditableSettingSource,
   settings: SettingsJson,
 ): { error: Error | null } {
-  if (
-    (source as unknown) === 'policySettings' ||
-    (source as unknown) === 'flagSettings'
-  ) {
+  if ((source as unknown) === 'flagSettings') {
     return { error: null }
   }
 
@@ -700,101 +552,6 @@ export function settingsMergeCustomizer(
   return undefined
 }
 
-/**
- * Get a list of setting keys from managed settings for logging purposes.
- * For certain nested settings (permissions, sandbox, hooks), expands to show
- * one level of nesting (e.g., "permissions.allow"). For other settings,
- * returns only the top-level key.
- *
- * @param settings The settings object to extract keys from
- * @returns Sorted array of key paths
- */
-export function getManagedSettingsKeysForLogging(
-  settings: SettingsJson,
-): string[] {
-  // Use .strip() to get only valid schema keys
-  const validSettings = SettingsSchema().strip().parse(settings) as Record<
-    string,
-    unknown
-  >
-  const keysToExpand = ['permissions', 'autoMode', 'sandbox', 'hooks']
-  const allKeys: string[] = []
-
-  // Define valid nested keys for each nested setting we expand
-  const validNestedKeys: Record<string, Set<string>> = {
-    permissions: new Set([
-      'allow',
-      'deny',
-      'ask',
-      'defaultMode',
-      'disableBypassPermissionsMode',
-      'additionalDirectories',
-    ]),
-    autoMode: new Set([
-      'enabled',
-      'classifierModel',
-      'environment',
-      'deny',
-      'allow',
-    ]),
-    sandbox: new Set([
-      'enabled',
-      'failIfUnavailable',
-      'allowUnsandboxedCommands',
-      'network',
-      'filesystem',
-      'ignoreViolations',
-      'excludedCommands',
-      'autoAllowBashIfSandboxed',
-      'enableWeakerNestedSandbox',
-      'enableWeakerNetworkIsolation',
-      'ripgrep',
-    ]),
-    // For hooks, we use z.record with enum keys, so we validate separately
-    hooks: new Set([
-      'PreToolUse',
-      'PostToolUse',
-      'Notification',
-      'UserPromptSubmit',
-      'SessionStart',
-      'SessionEnd',
-      'Stop',
-      'SubagentStop',
-      'PreCompact',
-      'PostCompact',
-      'TeammateIdle',
-      'TaskCreated',
-      'TaskCompleted',
-    ]),
-  }
-
-  for (const key of Object.keys(validSettings)) {
-    if (
-      keysToExpand.includes(key) &&
-      validSettings[key] &&
-      typeof validSettings[key] === 'object'
-    ) {
-      // Expand nested keys for these special settings (one level deep only)
-      const nestedObj = validSettings[key] as Record<string, unknown>
-      const validKeys = validNestedKeys[key]
-
-      if (validKeys) {
-        for (const nestedKey of Object.keys(nestedObj)) {
-          // Only include known valid nested keys
-          if (validKeys.has(nestedKey)) {
-            allKeys.push(`${key}.${nestedKey}`)
-          }
-        }
-      }
-    } else {
-      // For other settings, just use the top-level key
-      allKeys.push(key)
-    }
-  }
-
-  return allKeys.sort()
-}
-
 // Flag to prevent infinite recursion when loading settings
 let isLoadingSettings = false
 
@@ -833,71 +590,6 @@ function loadSettingsFromDisk(): SettingsWithErrors {
     // Merge settings from each source in priority order with deep merging
     const enabledSrc = getEnabledSettingSources()
     for (const source of enabledSrc) {
-      // policySettings: "first source wins" — use the highest-priority source
-      // that has content. Priority: remote > HKLM/plist > managed-settings.json > HKCU
-      if (source === 'policySettings') {
-        let policySettings: SettingsJson | null = null
-        const policyErrors: ValidationError[] = []
-
-        // 1. Remote (highest priority)
-        const remoteSettings = getRemoteManagedSettingsSyncFromCache()
-        if (remoteSettings && Object.keys(remoteSettings).length > 0) {
-          const result = parseSettingsData(
-            remoteSettings,
-            'remote managed settings',
-          )
-          policyErrors.push(...result.errors)
-          if (result.settings) {
-            policySettings = result.settings
-          }
-        }
-
-        // 2. Admin-only MDM (HKLM / macOS plist)
-        if (!policySettings) {
-          const mdmResult = getMdmSettings()
-          if (Object.keys(mdmResult.settings).length > 0) {
-            policySettings = mdmResult.settings
-          }
-          policyErrors.push(...mdmResult.errors)
-        }
-
-        // 3. managed-settings.json + managed-settings.d/ (file-based, requires admin)
-        if (!policySettings) {
-          const { settings, errors } = loadManagedFileSettings()
-          if (settings) {
-            policySettings = settings
-          }
-          policyErrors.push(...errors)
-        }
-
-        // 4. HKCU (lowest — user-writable, only if nothing above exists)
-        if (!policySettings) {
-          const hkcu = getHkcuSettings()
-          if (Object.keys(hkcu.settings).length > 0) {
-            policySettings = hkcu.settings
-          }
-          policyErrors.push(...hkcu.errors)
-        }
-
-        // Merge the winning policy source into the settings chain
-        if (policySettings) {
-          mergedSettings = mergeWith(
-            mergedSettings,
-            policySettings,
-            settingsMergeCustomizer,
-          )
-        }
-        for (const error of policyErrors) {
-          const errorKey = `${error.file}:${error.path}:${error.message}`
-          if (!seenErrors.has(errorKey)) {
-            seenErrors.add(errorKey)
-            allErrors.push(error)
-          }
-        }
-
-        continue
-      }
-
       const filePaths = getSettingsFilePathsForSource(source)
       for (const filePath of filePaths) {
         const resolvedPath = resolve(filePath)
@@ -956,7 +648,7 @@ function loadSettingsFromDisk(): SettingsWithErrors {
 /**
  * Get merged settings from all sources in priority order
  * Settings are merged from lowest to highest priority:
- * userSettings -> projectSettings -> localSettings -> policySettings
+ * userSettings -> projectSettings -> localSettings -> flagSettings
  *
  * This function returns a snapshot of settings at the time of call.
  * For React components, prefer using useSettings() hook for reactive updates
@@ -1039,8 +731,7 @@ export function hasSkipDangerousModePermissionPrompt(): boolean {
   return !!(
     getSettingsForSource('userSettings')?.skipDangerousModePermissionPrompt ||
     getSettingsForSource('localSettings')?.skipDangerousModePermissionPrompt ||
-    getSettingsForSource('flagSettings')?.skipDangerousModePermissionPrompt ||
-    getSettingsForSource('policySettings')?.skipDangerousModePermissionPrompt
+    getSettingsForSource('flagSettings')?.skipDangerousModePermissionPrompt
   )
 }
 
@@ -1051,7 +742,6 @@ export function hasSkipDangerousModePermissionPrompt(): boolean {
  */
 export function getUseAutoModeDuringPlan(): boolean {
   return (
-    getSettingsForSource('policySettings')?.useAutoModeDuringPlan !== false &&
     getSettingsForSource('flagSettings')?.useAutoModeDuringPlan !== false &&
     getSettingsForSource('userSettings')?.useAutoModeDuringPlan !== false &&
     getSettingsForSource('localSettings')?.useAutoModeDuringPlan !== false
@@ -1080,7 +770,6 @@ export function getTrustedAutoModeRuleSections():
     'userSettings',
     'localSettings',
     'flagSettings',
-    'policySettings',
   ] as const) {
     const autoMode = getAutoModeSettingsObject(getSettingsForSource(source))
     if (!autoMode) continue
@@ -1108,11 +797,6 @@ export function getAutoModeClassifierModelSetting(): string | undefined {
 
 export function rawSettingsContainsKey(key: string): boolean {
   for (const source of getEnabledSettingSources()) {
-    // Skip policySettings - we only care about user-configured settings
-    if (source === 'policySettings') {
-      continue
-    }
-
     const filePath = getSettingsFilePathForSource(source)
     if (!filePath) {
       continue

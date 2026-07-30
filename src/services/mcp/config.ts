@@ -19,8 +19,6 @@ import { logError } from '../../utils/log.js'
 import { getPluginMcpServers } from '../../utils/plugins/mcpPluginIntegration.js'
 import { loadAllPluginsCacheOnly } from '../../utils/plugins/pluginLoader.js'
 import { isSettingSourceEnabled } from '../../utils/settings/constants.js'
-import { getManagedFilePath } from '../../utils/settings/managedPath.js'
-import { isRestrictedToPluginOnly } from '../../utils/settings/pluginOnlyPolicy.js'
 import {
   getInitialSettings,
   getSettingsForSource,
@@ -49,13 +47,6 @@ import {
   type ScopedMcpServerConfig,
 } from './types.js'
 import { getProjectMcpServerStatus } from './utils.js'
-
-/**
- * Get the path to the managed MCP configuration file
- */
-export function getEnterpriseMcpFilePath(): string {
-  return join(getManagedFilePath(), 'managed-mcp.json')
-}
 
 /**
  * Internal utility: Add scope to server configs
@@ -305,28 +296,14 @@ function urlMatchesPattern(url: string, pattern: string): boolean {
 }
 
 /**
- * Get the settings to use for MCP server allowlist policy.
- * When allowManagedMcpServersOnly is set in policySettings, only managed settings
- * control which servers are allowed. Otherwise, returns merged settings.
+ * Get the settings to use for MCP server allowlist/denylist policy.
  */
-function getMcpAllowlistSettings(): SettingsJson {
-  if (shouldAllowManagedMcpServersOnly()) {
-    return getSettingsForSource('policySettings') ?? {}
-  }
+function getMcpPolicySettings(): SettingsJson {
   return getInitialSettings()
 }
 
 /**
- * Get the settings to use for MCP server denylist policy.
- * Denylists always merge from all sources — users can always deny servers
- * for themselves, even when allowManagedMcpServersOnly is set.
- */
-function getMcpDenylistSettings(): SettingsJson {
-  return getInitialSettings()
-}
-
-/**
- * Check if an MCP server is denied by enterprise policy
+ * Check if an MCP server is denied by the deniedMcpServers setting
  * Checks name-based, command-based, and URL-based restrictions
  * @param serverName The name of the server to check
  * @param config Optional server config for command/URL-based matching
@@ -336,7 +313,7 @@ function isMcpServerDenied(
   serverName: string,
   config?: McpServerConfig,
 ): boolean {
-  const settings = getMcpDenylistSettings()
+  const settings = getMcpPolicySettings()
   if (!settings.deniedMcpServers) {
     return false // No restrictions
   }
@@ -379,7 +356,7 @@ function isMcpServerDenied(
 }
 
 /**
- * Check if an MCP server is allowed by enterprise policy
+ * Check if an MCP server is allowed by the allowedMcpServers setting
  * Checks name-based, command-based, and URL-based restrictions
  * @param serverName The name of the server to check
  * @param config Optional server config for command/URL-based matching
@@ -394,7 +371,7 @@ function isMcpServerAllowedByPolicy(
     return false
   }
 
-  const settings = getMcpAllowlistSettings()
+  const settings = getMcpPolicySettings()
   if (!settings.allowedMcpServers) {
     return true // No allowlist restrictions (undefined)
   }
@@ -604,13 +581,6 @@ export async function addMcpConfig(
     )
   }
 
-  // Block adding servers when enterprise MCP config exists (it has exclusive control)
-  if (doesEnterpriseMcpConfigExist()) {
-    throw new Error(
-      `Cannot add MCP server: enterprise MCP configuration is active and has exclusive control over MCP servers`,
-    )
-  }
-
   // Validate config first (needed for command-based policy checks)
   const result = McpServerConfigSchema.safeParse(config)
   if (!result.success) {
@@ -624,14 +594,14 @@ export async function addMcpConfig(
   // Check denylist (with config for command-based checks)
   if (isMcpServerDenied(name, validatedConfig)) {
     throw new Error(
-      `Cannot add MCP server "${name}": server is explicitly blocked by enterprise policy`,
+      `Cannot add MCP server "${name}": server is blocked by deniedMcpServers`,
     )
   }
 
   // Check allowlist (with config for command-based checks)
   if (!isMcpServerAllowedByPolicy(name, validatedConfig)) {
     throw new Error(
-      `Cannot add MCP server "${name}": not allowed by enterprise policy`,
+      `Cannot add MCP server "${name}": not allowed by allowedMcpServers`,
     )
   }
 
@@ -661,8 +631,6 @@ export async function addMcpConfig(
     }
     case 'dynamic':
       throw new Error('Cannot add MCP server to scope: dynamic')
-    case 'enterprise':
-      throw new Error('Cannot add MCP server to scope: enterprise')
     case 'claudeai':
       throw new Error('Cannot add MCP server to scope: claudeai')
   }
@@ -840,9 +808,7 @@ export function getProjectMcpConfigsFromCwd(): {
  * @param scope The configuration scope
  * @returns Servers with scope information and any validation errors
  */
-export function getMcpConfigsByScope(
-  scope: 'project' | 'user' | 'local' | 'enterprise',
-): {
+export function getMcpConfigsByScope(scope: 'project' | 'user' | 'local'): {
   servers: Record<string, ScopedMcpServerConfig>
   errors: ValidationError[]
 } {
@@ -951,35 +917,6 @@ export function getMcpConfigsByScope(
         errors,
       }
     }
-    case 'enterprise': {
-      const enterpriseMcpPath = getEnterpriseMcpFilePath()
-
-      const { config, errors } = parseMcpConfigFromFilePath({
-        filePath: enterpriseMcpPath,
-        expandVars: true,
-        scope: 'enterprise',
-      })
-
-      // Missing enterprise config file is expected, but malformed files should report errors
-      if (!config) {
-        const nonMissingErrors = errors.filter(
-          e => !e.message.startsWith('MCP config file not found'),
-        )
-        if (nonMissingErrors.length > 0) {
-          logForDebugging(
-            `Enterprise MCP config errors for ${enterpriseMcpPath}: ${jsonStringify(nonMissingErrors.map(e => e.message))}`,
-            { level: 'error' },
-          )
-          return { servers: {}, errors: nonMissingErrors }
-        }
-        return { servers: {}, errors: [] }
-      }
-
-      return {
-        servers: addScopeToServers(config.mcpServers, scope),
-        errors,
-      }
-    }
   }
 }
 
@@ -989,21 +926,10 @@ export function getMcpConfigsByScope(
  * @returns The server configuration with scope, or undefined if not found
  */
 export function getMcpConfigByName(name: string): ScopedMcpServerConfig | null {
-  const { servers: enterpriseServers } = getMcpConfigsByScope('enterprise')
-
-  // When MCP is locked to plugin-only, only enterprise servers are reachable
-  // by name. User/project/local servers are blocked — same as getClaudeCodeMcpConfigs().
-  if (isRestrictedToPluginOnly('mcp')) {
-    return enterpriseServers[name] ?? null
-  }
-
   const { servers: userServers } = getMcpConfigsByScope('user')
   const { servers: projectServers } = getMcpConfigsByScope('project')
   const { servers: localServers } = getMcpConfigsByScope('local')
 
-  if (enterpriseServers[name]) {
-    return enterpriseServers[name]
-  }
   if (localServers[name]) {
     return localServers[name]
   }
@@ -1035,39 +961,9 @@ export async function getClaudeCodeMcpConfigs(
   servers: Record<string, ScopedMcpServerConfig>
   errors: PluginError[]
 }> {
-  const { servers: enterpriseServers } = getMcpConfigsByScope('enterprise')
-
-  // If an enterprise mcp config exists, do not use any others; this has exclusive control over all MCP servers
-  // (enterprise customers often do not want their users to be able to add their own MCP servers).
-  if (doesEnterpriseMcpConfigExist()) {
-    // Apply policy filtering to enterprise servers
-    const filtered: Record<string, ScopedMcpServerConfig> = {}
-
-    for (const [name, serverConfig] of Object.entries(enterpriseServers)) {
-      if (!isMcpServerAllowedByPolicy(name, serverConfig)) {
-        continue
-      }
-      filtered[name] = serverConfig
-    }
-
-    return { servers: filtered, errors: [] }
-  }
-
-  // Load other scopes — unless the managed policy locks MCP to plugin-only.
-  // Unlike the enterprise-exclusive block above, this keeps plugin servers.
-  const mcpLocked = isRestrictedToPluginOnly('mcp')
-  const noServers: { servers: Record<string, ScopedMcpServerConfig> } = {
-    servers: {},
-  }
-  const { servers: userServers } = mcpLocked
-    ? noServers
-    : getMcpConfigsByScope('user')
-  const { servers: projectServers } = mcpLocked
-    ? noServers
-    : getMcpConfigsByScope('project')
-  const { servers: localServers } = mcpLocked
-    ? noServers
-    : getMcpConfigsByScope('local')
+  const { servers: userServers } = getMcpConfigsByScope('user')
+  const { servers: projectServers } = getMcpConfigsByScope('project')
+  const { servers: localServers } = getMcpConfigsByScope('local')
 
   // Load plugin MCP servers
   const pluginMcpServers: Record<string, ScopedMcpServerConfig> = {}
@@ -1217,11 +1113,6 @@ export async function getAllMcpConfigs(): Promise<{
   servers: Record<string, ScopedMcpServerConfig>
   errors: PluginError[]
 }> {
-  // In enterprise mode, don't load claude.ai servers (enterprise has exclusive control)
-  if (doesEnterpriseMcpConfigExist()) {
-    return getClaudeCodeMcpConfigs()
-  }
-
   // Kick off the claude.ai fetch before getClaudeCodeMcpConfigs so it overlaps
   // with loadAllPluginsCacheOnly() inside. Memoized — the awaited call below is a cache hit.
   const claudeaiPromise = fetchClaudeAIMcpConfigsIfEligible()
@@ -1423,42 +1314,6 @@ export function parseMcpConfigFromFilePath(params: {
     scope,
     filePath,
   })
-}
-
-export const doesEnterpriseMcpConfigExist = memoize((): boolean => {
-  const { config } = parseMcpConfigFromFilePath({
-    filePath: getEnterpriseMcpFilePath(),
-    expandVars: true,
-    scope: 'enterprise',
-  })
-  return config !== null
-})
-
-/**
- * Check if MCP allowlist policy should only come from managed settings.
- * This is true when policySettings has allowManagedMcpServersOnly: true.
- * When enabled, allowedMcpServers is read exclusively from managed settings.
- * Users can still add their own MCP servers and deny servers via deniedMcpServers.
- */
-export function shouldAllowManagedMcpServersOnly(): boolean {
-  return (
-    getSettingsForSource('policySettings')?.allowManagedMcpServersOnly === true
-  )
-}
-
-/**
- * Check if all MCP servers in a config are allowed with enterprise MCP config.
- */
-export function areMcpConfigsAllowedWithEnterpriseMcpConfig(
-  configs: Record<string, ScopedMcpServerConfig>,
-): boolean {
-  // NOTE: While all SDK MCP servers should be safe from a security perspective, we are still discussing
-  // what the best way to do this is. In the meantime, we are limiting this to claude-vscode for now to
-  // unbreak the VSCode extension for certain enterprise customers who have enterprise MCP config enabled.
-  // https://anthropic.slack.com/archives/C093UA0KLD7/p1764975463670109
-  return Object.values(configs).every(
-    c => c.type === 'sdk' && c.name === 'claude-vscode',
-  )
 }
 
 /**

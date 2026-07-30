@@ -7,7 +7,6 @@ import { Dialog } from '../../components/design-system/Dialog.js'
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js'
 import { Box, Text } from '../../ink.js'
 import { refreshPolicyLimits } from '../../services/policyLimits/index.js'
-import { refreshRemoteManagedSettings } from '../../services/remoteManagedSettings/index.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
 import { stripSignatureBlocks } from '../../utils/messages.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
@@ -84,7 +83,6 @@ function handlePostLogin(
   context.setMessages(stripSignatureBlocks)
   if (success) {
     resetCostState()
-    void refreshRemoteManagedSettings()
     void refreshPolicyLimits()
     resetUserCache()
     resetBypassPermissionsCheck()

@@ -4,7 +4,6 @@ import { getOriginalCwd } from '../../../bootstrap/state.js'
 import { Box, Text } from '../../../ink.js'
 import { SKILL_TOOL_NAME } from '../../../tools/SkillTool/constants.js'
 import { SkillTool } from '../../../tools/SkillTool/SkillTool.js'
-import { shouldShowAlwaysAllowOptions } from '../../../utils/permissions/permissionsLoader.js'
 import {
   type PermissionRequestEvent,
   usePermissionRequestLogging,
@@ -62,7 +61,6 @@ export function SkillPermissionRequest(
   usePermissionRequestLogging(toolUseConfirm, permissionEvent)
 
   const originalCwd = getOriginalCwd()
-  const showAlwaysAllowOptions = shouldShowAlwaysAllowOptions()
   const options = useMemo((): PermissionPromptOption<SkillOptionValue>[] => {
     const baseOptions: PermissionPromptOption<SkillOptionValue>[] = [
       {
@@ -72,11 +70,8 @@ export function SkillPermissionRequest(
       },
     ]
 
-    // Only add "always allow" options when not restricted by allowManagedPermissionRulesOnly
-    const alwaysAllowOptions: PermissionPromptOption<SkillOptionValue>[] = []
-    if (showAlwaysAllowOptions) {
-      // Add exact match option
-      alwaysAllowOptions.push({
+    const alwaysAllowOptions: PermissionPromptOption<SkillOptionValue>[] = [
+      {
         label: (
           <Text>
             Yes, and don&apos;t ask again for <Text bold>{skill}</Text> in{' '}
@@ -84,23 +79,23 @@ export function SkillPermissionRequest(
           </Text>
         ),
         value: 'yes-exact',
-      })
+      },
+    ]
 
-      // Add prefix option if the skill has arguments
-      const spaceIndex = skill.indexOf(' ')
-      if (spaceIndex > 0) {
-        const commandPrefix = skill.substring(0, spaceIndex)
-        alwaysAllowOptions.push({
-          label: (
-            <Text>
-              Yes, and don&apos;t ask again for{' '}
-              <Text bold>{commandPrefix + ':*'}</Text> commands in{' '}
-              <Text bold>{originalCwd}</Text>
-            </Text>
-          ),
-          value: 'yes-prefix',
-        })
-      }
+    // Add prefix option if the skill has arguments
+    const spaceIndex = skill.indexOf(' ')
+    if (spaceIndex > 0) {
+      const commandPrefix = skill.substring(0, spaceIndex)
+      alwaysAllowOptions.push({
+        label: (
+          <Text>
+            Yes, and don&apos;t ask again for{' '}
+            <Text bold>{commandPrefix + ':*'}</Text> commands in{' '}
+            <Text bold>{originalCwd}</Text>
+          </Text>
+        ),
+        value: 'yes-prefix',
+      })
     }
 
     const noOption: PermissionPromptOption<SkillOptionValue> = {
@@ -110,7 +105,7 @@ export function SkillPermissionRequest(
     }
 
     return [...baseOptions, ...alwaysAllowOptions, noOption]
-  }, [skill, originalCwd, showAlwaysAllowOptions])
+  }, [skill, originalCwd])
 
   const toolAnalyticsContext = useMemo(
     (): ToolAnalyticsContext => ({

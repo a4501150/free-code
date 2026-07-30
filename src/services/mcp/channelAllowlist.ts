@@ -26,14 +26,6 @@ export function getChannelAllowlist(): ChannelAllowlistEntry[] {
 }
 
 /**
- * Overall channels on/off. Checked before any per-server gating —
- * when false, --channels is a no-op and no handlers register.
- */
-export function isChannelsEnabled(): boolean {
-  return true
-}
-
-/**
  * Pure allowlist check keyed off the connection's pluginSource — for UI
  * pre-filtering so the IDE only shows "Enable channel?" for servers that will
  * actually pass the gate. Not a security boundary: channel_enable still runs

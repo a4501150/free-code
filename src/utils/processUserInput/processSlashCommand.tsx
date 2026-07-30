@@ -70,10 +70,6 @@ import {
   isOfficialMarketplaceName,
   parsePluginIdentifier,
 } from '../plugins/pluginIdentifier.js'
-import {
-  isRestrictedToPluginOnly,
-  isSourceAdminTrusted,
-} from '../settings/pluginOnlyPolicy.js'
 import { parseSlashCommand } from '../slashCommandParsing.js'
 import { sleep } from '../sleep.js'
 import { logOTelEvent, redactIfDisabled } from '../telemetry/events.js'
@@ -1067,12 +1063,8 @@ async function getMessagesForPromptSlashCommand(
 
   const result = await command.getPromptForCommand(args, context)
 
-  // Register skill hooks if defined. Under ["hooks"]-only (skills not locked),
-  // user skills still load and reach this point — block hook REGISTRATION here
-  // where source is known. Mirrors the agent frontmatter gate in runAgent.ts.
-  const hooksAllowedForThisSkill =
-    !isRestrictedToPluginOnly('hooks') || isSourceAdminTrusted(command.source)
-  if (command.hooks && hooksAllowedForThisSkill) {
+  // Register skill hooks if defined.
+  if (command.hooks) {
     const sessionId = getSessionId()
     registerSkillHooks(
       context.setAppState,

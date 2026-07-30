@@ -28,7 +28,6 @@ import {
   addInstalledPlugin,
   getGitCommitSha,
 } from './installedPluginsManager.js'
-import { getManagedPluginNames } from './managedPlugins.js'
 import { getMarketplaceCacheOnly, getPluginById } from './marketplaceManager.js'
 import {
   isOfficialMarketplaceName,
@@ -40,7 +39,6 @@ import {
   getVersionedCachePath,
   getVersionedZipCachePath,
 } from './pluginLoader.js'
-import { isPluginBlockedByPolicy } from './pluginPolicy.js'
 import { calculatePluginVersion } from './pluginVersioning.js'
 import {
   isLocalPluginSource,
@@ -283,13 +281,6 @@ export type InstallCoreResult =
       reason: 'resolution-failed'
       resolution: ResolutionResult & { ok: false }
     }
-  | { ok: false; reason: 'blocked-by-policy'; pluginName: string }
-  | {
-      ok: false
-      reason: 'dependency-blocked-by-policy'
-      pluginName: string
-      blockedDependency: string
-    }
 
 /**
  * Format a failed ResolutionResult into a user-facing message. Unified on
@@ -353,14 +344,6 @@ export async function installResolvedPlugin({
 }): Promise<InstallCoreResult> {
   const settingSource = scopeToSettingSource(scope)
 
-  // ── Policy guard ──
-  // Org-blocked plugins (managed-settings.json enabledPlugins: false) cannot
-  // be installed. Checked here so all install paths (CLI, UI, hint-triggered)
-  // are covered in one place.
-  if (isPluginBlockedByPolicy(pluginId)) {
-    return { ok: false, reason: 'blocked-by-policy', pluginName: entry.name }
-  }
-
   // ── Resolve dependency closure ──
   // depInfo caches marketplace lookups so the materialize loop doesn't
   // re-fetch. Seed the root if the caller gave us its install location.
@@ -404,21 +387,6 @@ export async function installResolvedPlugin({
   )
   if (!resolution.ok) {
     return { ok: false, reason: 'resolution-failed', resolution }
-  }
-
-  // ── Policy guard for transitive dependencies ──
-  // The root plugin was already checked above, but any dependency in the
-  // closure could also be policy-blocked. Check before writing to settings
-  // so a non-blocked plugin can't pull in a blocked dependency.
-  for (const id of resolution.closure) {
-    if (id !== pluginId && isPluginBlockedByPolicy(id)) {
-      return {
-        ok: false,
-        reason: 'dependency-blocked-by-policy',
-        pluginName: entry.name,
-        blockedDependency: id,
-      }
-    }
   }
 
   // ── ACTION: write entire closure to settings in one call ──
@@ -535,16 +503,6 @@ export async function installPluginFromMarketplace({
           return {
             success: false,
             error: formatResolutionError(result.resolution),
-          }
-        case 'blocked-by-policy':
-          return {
-            success: false,
-            error: `Plugin "${result.pluginName}" is blocked by your organization's policy and cannot be installed`,
-          }
-        case 'dependency-blocked-by-policy':
-          return {
-            success: false,
-            error: `Cannot install "${result.pluginName}": dependency "${result.blockedDependency}" is blocked by your organization's policy`,
           }
       }
     }

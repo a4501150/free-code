@@ -3,27 +3,15 @@ import { stat } from 'fs/promises'
 import * as platformPath from 'path'
 import { registerCleanup } from '../cleanupRegistry.js'
 import { logForDebugging } from '../debug.js'
-import { errorMessage } from '../errors.js'
 import {
   type ConfigChangeSource,
   executeConfigChangeHooks,
   hasBlockingResult,
 } from '../hooks.js'
 import { createSignal } from '../signal.js'
-import { jsonStringify } from '../slowOperations.js'
-import { SETTING_SOURCES, type SettingSource } from './constants.js'
+import { type SettingSource } from './constants.js'
 import { clearInternalWrites, consumeInternalWrite } from './internalWrites.js'
-import { getManagedSettingsDropInDir } from './managedPath.js'
-import {
-  getHkcuSettings,
-  getMdmSettings,
-  refreshMdmSettings,
-  setMdmSettingsCache,
-} from './mdm/settings.js'
-import {
-  getSettingsFilePathForSource,
-  getSettingsFilePathsForSource,
-} from './settings.js'
+import { getSettingsFilePathsForSource } from './settings.js'
 import { resetSettingsCache } from './settingsCache.js'
 
 /**
@@ -47,12 +35,6 @@ const FILE_STABILITY_POLL_INTERVAL_MS = 500
 const INTERNAL_WRITE_WINDOW_MS = 5000
 
 /**
- * Poll interval for MDM settings (registry/plist) changes.
- * These can't be watched via filesystem events, so we poll periodically.
- */
-const MDM_POLL_INTERVAL_MS = 30 * 60 * 1000 // 30 minutes
-
-/**
  * Grace period in milliseconds before processing a settings file deletion.
  * Handles the common delete-and-recreate pattern during auto-updates or when
  * another session starts up. If an `add` or `change` event fires within this
@@ -65,8 +47,6 @@ const DELETION_GRACE_MS =
   FILE_STABILITY_THRESHOLD_MS + FILE_STABILITY_POLL_INTERVAL_MS + 200
 
 let watcher: FSWatcher | null = null
-let mdmPollTimer: ReturnType<typeof setInterval> | null = null
-let lastMdmSnapshot: string | null = null
 let initialized = false
 let disposed = false
 const pendingDeletions = new Map<string, ReturnType<typeof setTimeout>>()
@@ -76,7 +56,6 @@ const settingsChanged = createSignal<[source: SettingSource]>()
 let testOverrides: {
   stabilityThreshold?: number
   pollInterval?: number
-  mdmPollInterval?: number
   deletionGrace?: number
 } | null = null
 
@@ -87,18 +66,15 @@ export async function initialize(): Promise<void> {
   if (initialized || disposed) return
   initialized = true
 
-  // Start MDM poll for registry/plist changes (independent of filesystem watching)
-  startMdmPoll()
-
   // Register cleanup to properly dispose during graceful shutdown
   registerCleanup(dispose)
 
-  const { dirs, settingsFiles, dropInDir } = await getWatchTargets()
+  const { dirs, settingsFiles } = await getWatchTargets()
   if (disposed) return // dispose() ran during the await
   if (dirs.length === 0) return
 
   logForDebugging(
-    `Watching for changes in setting files ${[...settingsFiles].join(', ')}...${dropInDir ? ` and drop-in directory ${dropInDir}` : ''}`,
+    `Watching for changes in setting files ${[...settingsFiles].join(', ')}...`,
   )
 
   watcher = chokidar.watch(dirs, {
@@ -125,14 +101,6 @@ export async function initialize(): Promise<void> {
       // normalize back to native format for comparison
       const normalized = platformPath.normalize(path)
       if (settingsFiles.has(normalized)) return false
-      // Also accept .json files inside the managed-settings.d/ drop-in directory
-      if (
-        dropInDir &&
-        normalized.startsWith(dropInDir + platformPath.sep) &&
-        normalized.endsWith('.json')
-      ) {
-        return false
-      }
       return true
     },
     // Additional options for stability
@@ -154,13 +122,8 @@ export async function initialize(): Promise<void> {
  */
 export function dispose(): Promise<void> {
   disposed = true
-  if (mdmPollTimer) {
-    clearInterval(mdmPollTimer)
-    mdmPollTimer = null
-  }
   for (const timer of pendingDeletions.values()) clearTimeout(timer)
   pendingDeletions.clear()
-  lastMdmSnapshot = null
   clearInternalWrites()
   settingsChanged.clear()
   const w = watcher
@@ -174,6 +137,18 @@ export function dispose(): Promise<void> {
 export const subscribe = settingsChanged.subscribe
 
 /**
+ * Sources backed by files we watch. flagSettings is excluded because it's provided
+ * via CLI and won't change during the session; additionally it may be a temp file in
+ * $TMPDIR, which can contain special files (FIFOs, sockets) that cause the watcher to
+ * hang or error. See: https://github.com/anthropics/claude-code/issues/16469
+ */
+const WATCHED_SETTING_SOURCES = [
+  'userSettings',
+  'projectSettings',
+  'localSettings',
+] as const
+
+/**
  * Collect settings file paths and their deduplicated parent directories to watch.
  * Returns all potential settings file paths for watched directories, not just those
  * that exist at init time, so that newly-created files are also detected.
@@ -181,20 +156,12 @@ export const subscribe = settingsChanged.subscribe
 async function getWatchTargets(): Promise<{
   dirs: string[]
   settingsFiles: Set<string>
-  dropInDir: string | null
 }> {
   // Map from directory to all potential settings files in that directory
   const dirToSettingsFiles = new Map<string, Set<string>>()
   const dirsWithExistingFiles = new Set<string>()
 
-  for (const source of SETTING_SOURCES) {
-    // Skip flagSettings - they're provided via CLI and won't change during the session.
-    // Additionally, they may be temp files in $TMPDIR which can contain special files
-    // (FIFOs, sockets) that cause the file watcher to hang or error.
-    // See: https://github.com/anthropics/claude-code/issues/16469
-    if (source === 'flagSettings') {
-      continue
-    }
+  for (const source of WATCHED_SETTING_SOURCES) {
     const paths = getSettingsFilePathsForSource(source)
     for (const path of paths) {
       const dir = platformPath.dirname(path)
@@ -227,27 +194,12 @@ async function getWatchTargets(): Promise<{
     }
   }
 
-  // Also watch the managed-settings.d/ drop-in directory for policy fragments.
-  // We add it as a separate watched directory so chokidar's depth:0 watches
-  // its immediate children (the .json files). Any .json file inside it maps
-  // to the 'policySettings' source.
-  let dropInDir: string | null = null
-  const managedDropIn = getManagedSettingsDropInDir()
-  try {
-    const stats = await stat(managedDropIn)
-    if (stats.isDirectory()) {
-      dirsWithExistingFiles.add(managedDropIn)
-      dropInDir = managedDropIn
-    }
-  } catch {
-    // Drop-in directory doesn't exist, that's fine
-  }
-
-  return { dirs: [...dirsWithExistingFiles], settingsFiles, dropInDir }
+  return { dirs: [...dirsWithExistingFiles], settingsFiles }
 }
 
+// flagSettings is never watched (see getWatchTargets), so it can never reach here.
 function settingSourceToConfigChangeSource(
-  source: SettingSource,
+  source: Exclude<SettingSource, 'flagSettings'>,
 ): ConfigChangeSource {
   switch (source) {
     case 'userSettings':
@@ -256,9 +208,6 @@ function settingSourceToConfigChangeSource(
       return 'project_settings'
     case 'localSettings':
       return 'local_settings'
-    case 'flagSettings':
-    case 'policySettings':
-      return 'policy_settings'
   }
 }
 
@@ -356,62 +305,15 @@ function handleDelete(path: string): void {
   pendingDeletions.set(path, timer)
 }
 
-function getSourceForPath(path: string): SettingSource | undefined {
+function getSourceForPath(
+  path: string,
+): Exclude<SettingSource, 'flagSettings'> | undefined {
   // Normalize path because chokidar uses forward slashes on Windows
   const normalizedPath = platformPath.normalize(path)
 
-  // Check if the path is inside the managed-settings.d/ drop-in directory
-  const dropInDir = getManagedSettingsDropInDir()
-  if (normalizedPath.startsWith(dropInDir + platformPath.sep)) {
-    return 'policySettings'
-  }
-
-  return SETTING_SOURCES.find(source =>
+  return WATCHED_SETTING_SOURCES.find(source =>
     getSettingsFilePathsForSource(source).includes(normalizedPath),
   )
-}
-
-/**
- * Start polling for MDM settings changes (registry/plist).
- * Takes a snapshot of current MDM settings and compares on each tick.
- */
-function startMdmPoll(): void {
-  // Capture initial snapshot (includes both admin MDM and user-writable HKCU)
-  const initial = getMdmSettings()
-  const initialHkcu = getHkcuSettings()
-  lastMdmSnapshot = jsonStringify({
-    mdm: initial.settings,
-    hkcu: initialHkcu.settings,
-  })
-
-  mdmPollTimer = setInterval(() => {
-    if (disposed) return
-
-    void (async () => {
-      try {
-        const { mdm: current, hkcu: currentHkcu } = await refreshMdmSettings()
-        if (disposed) return
-
-        const currentSnapshot = jsonStringify({
-          mdm: current.settings,
-          hkcu: currentHkcu.settings,
-        })
-
-        if (currentSnapshot !== lastMdmSnapshot) {
-          lastMdmSnapshot = currentSnapshot
-          // Update the cache so sync readers pick up new values
-          setMdmSettingsCache(current, currentHkcu)
-          logForDebugging('Detected MDM settings change via poll')
-          fanOut('policySettings')
-        }
-      } catch (error) {
-        logForDebugging(`MDM poll error: ${errorMessage(error)}`)
-      }
-    })()
-  }, testOverrides?.mdmPollInterval ?? MDM_POLL_INTERVAL_MS)
-
-  // Don't let the timer keep the process alive
-  mdmPollTimer.unref()
 }
 
 /**
@@ -420,12 +322,10 @@ function startMdmPoll(): void {
  * The cache reset MUST happen here (single producer), not in each listener
  * (N consumers). Previously, listeners like useSettingsChange and
  * applySettingsChange reset defensively because some notification paths
- * (file-watch at :289/340, MDM poll at :385) did not reset before iterating
- * listeners. That defense caused N-way thrashing when N listeners were
- * subscribed: each listener cleared the cache, re-read from disk (populating
- * it), then the next listener cleared it again — N full disk reloads per
- * notification. Profile showed 5 loadSettingsFromDisk calls in 12ms when
- * remote managed settings resolved at startup.
+ * did not reset before iterating listeners. That defense caused N-way thrashing
+ * when N listeners were subscribed: each listener cleared the cache, re-read from
+ * disk (populating it), then the next listener cleared it again — N full disk
+ * reloads per notification.
  *
  * With the reset centralized here, one notification = one disk reload: the
  * first listener to call getSettingsWithErrors() pays the miss and
@@ -458,16 +358,10 @@ export function notifyChange(source: SettingSource): void {
 export function resetForTesting(overrides?: {
   stabilityThreshold?: number
   pollInterval?: number
-  mdmPollInterval?: number
   deletionGrace?: number
 }): Promise<void> {
-  if (mdmPollTimer) {
-    clearInterval(mdmPollTimer)
-    mdmPollTimer = null
-  }
   for (const timer of pendingDeletions.values()) clearTimeout(timer)
   pendingDeletions.clear()
-  lastMdmSnapshot = null
   initialized = false
   disposed = false
   testOverrides = overrides ?? null

@@ -16,7 +16,8 @@ type OverrideMode = 'open' | 'closed'
 
 export function SandboxOverridesTab({ onComplete }: Props): React.ReactNode {
   const isEnabled = SandboxManager.isSandboxingEnabled()
-  const isLocked = SandboxManager.areSandboxSettingsLockedByPolicy()
+  const isLocked =
+    SandboxManager.areSandboxSettingsLockedByHigherPrioritySource()
   const currentAllowUnsandboxed = SandboxManager.areUnsandboxedCommandsAllowed()
 
   if (!isEnabled) {

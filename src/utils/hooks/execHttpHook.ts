@@ -40,8 +40,6 @@ async function getSandboxProxyConfig(): Promise<
 /**
  * Read HTTP hook allowlist restrictions from merged settings (all sources).
  * Follows the allowedMcpServers precedent: arrays concatenate across sources.
- * When allowManagedHooksOnly is set in managed settings, only admin-defined
- * hooks run anyway, so no separate lock-down boolean is needed here.
  */
 function getHttpHookPolicy(): {
   allowedUrls: string[] | undefined

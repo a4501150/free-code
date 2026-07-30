@@ -109,7 +109,7 @@ function AskUserQuestionPermissionRequestBody({
     // PREVIEW_OVERHEAD matches the constant in PreviewQuestionView.tsx — lines
     // used by non-preview elements within the content area (margins, borders,
     // notes, footer, help text). Used here to cap preview content so that
-    // globalContentHeight reflects the *truncated* height, not the raw height.
+    // globalContentHeight reflects the *windowed* height, not the raw height.
     const PREVIEW_OVERHEAD = 11
 
     for (const q of questions) {
@@ -117,7 +117,7 @@ function AskUserQuestionPermissionRequestBody({
 
       if (hasPreview) {
         // Compute the max preview content lines that would actually display
-        // after truncation, matching the logic in PreviewQuestionView.
+        // inside the scroll window, matching the logic in PreviewQuestionView.
         const maxPreviewContentLines = Math.max(
           1,
           maxAllowedHeight - PREVIEW_OVERHEAD,
@@ -125,7 +125,7 @@ function AskUserQuestionPermissionRequestBody({
 
         // For preview questions, total = side-by-side height + footer/help
         // Side-by-side = max(left panel, right panel)
-        // Right panel = preview box (content + borders + truncation indicator) + notes
+        // Right panel = preview box (visible content + borders) + notes
         let maxPreviewBoxHeight = 0
         for (const opt of q.options) {
           if (opt.preview) {
@@ -134,14 +134,16 @@ function AskUserQuestionPermissionRequestBody({
             // applyMarkdown removes code fence markers, bold/italic syntax, etc.
             const rendered = applyMarkdown(opt.preview, theme, highlight)
             const previewLines = rendered.split('\n')
-            const isTruncated = previewLines.length > maxPreviewContentLines
-            const displayedLines = isTruncated
-              ? maxPreviewContentLines
-              : previewLines.length
-            // Preview box: displayed content + truncation indicator + 2 borders
+            // A scrollable preview spends its last body row on the scroll
+            // indicator, so the box height is capped either way.
+            const displayedLines = Math.min(
+              previewLines.length,
+              maxPreviewContentLines,
+            )
+            // Preview box: displayed content + 2 borders
             maxPreviewBoxHeight = Math.max(
               maxPreviewBoxHeight,
-              displayedLines + (isTruncated ? 1 : 0) + 2,
+              displayedLines + 2,
             )
             for (const line of previewLines) {
               maxWidth = Math.max(maxWidth, stringWidth(line))

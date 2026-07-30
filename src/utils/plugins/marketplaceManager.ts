@@ -53,14 +53,7 @@ import {
 import { markPluginVersionOrphaned } from './cacheUtils.js'
 import { classifyFetchError, logPluginFetch } from './fetchTelemetry.js'
 import { removeAllPluginsForMarketplace } from './installedPluginsManager.js'
-import {
-  extractHostFromSource,
-  formatSourceForDisplay,
-  getHostPatternsFromAllowlist,
-  getStrictKnownMarketplaces,
-  isSourceAllowedByPolicy,
-  isSourceInBlocklist,
-} from './marketplaceHelpers.js'
+import { formatSourceForDisplay } from './marketplaceHelpers.js'
 import {
   OFFICIAL_MARKETPLACE_NAME,
   OFFICIAL_MARKETPLACE_SOURCE,
@@ -1789,43 +1782,6 @@ export async function addMarketplaceSource(
   let resolvedSource = source
   if (isLocalMarketplaceSource(source) && !isAbsolute(source.path)) {
     resolvedSource = { ...source, path: resolve(source.path) }
-  }
-
-  // Check policy FIRST, before any network/filesystem operations
-  // This prevents downloading/cloning when the source is blocked
-  if (!isSourceAllowedByPolicy(resolvedSource)) {
-    // Check if explicitly blocked vs not in allowlist for better error messages
-    if (isSourceInBlocklist(resolvedSource)) {
-      throw new Error(
-        `Marketplace source '${formatSourceForDisplay(resolvedSource)}' is blocked by enterprise policy.`,
-      )
-    }
-    // Not in allowlist - build helpful error message
-    const allowlist = getStrictKnownMarketplaces() || []
-    const hostPatterns = getHostPatternsFromAllowlist()
-    const sourceHost = extractHostFromSource(resolvedSource)
-
-    let errorMessage = `Marketplace source '${formatSourceForDisplay(resolvedSource)}'`
-    if (sourceHost) {
-      errorMessage += ` (${sourceHost})`
-    }
-    errorMessage += ' is blocked by enterprise policy.'
-
-    if (allowlist.length > 0) {
-      errorMessage += ` Allowed sources: ${allowlist.map(s => formatSourceForDisplay(s)).join(', ')}`
-    } else {
-      errorMessage += ' No external marketplaces are allowed.'
-    }
-
-    // If source is a github shorthand and there are hostPatterns, suggest using full URL
-    if (resolvedSource.source === 'github' && hostPatterns.length > 0) {
-      errorMessage +=
-        `\n\nTip: The shorthand "${resolvedSource.repo}" assumes github.com. ` +
-        `For internal GitHub Enterprise, use the full URL:\n` +
-        `  git@your-github-host.com:${resolvedSource.repo}.git`
-    }
-
-    throw new Error(errorMessage)
   }
 
   // Source-idempotency: if this exact source already exists, skip clone

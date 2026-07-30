@@ -9,13 +9,6 @@ import { z } from 'zod/v4'
 export const SandboxNetworkConfigSchema = z
   .object({
     allowedDomains: z.array(z.string()).optional(),
-    allowManagedDomainsOnly: z
-      .boolean()
-      .optional()
-      .describe(
-        'When true (and set in managed settings), only allowedDomains and WebFetch(domain:...) allow rules from managed settings are respected. ' +
-          'User, project, local, and flag settings domains are ignored. Denied domains are still respected from all sources.',
-      ),
     allowUnixSockets: z
       .array(z.string())
       .optional()
@@ -67,12 +60,6 @@ export const SandboxFilesystemConfigSchema = z
         'Paths to re-allow reading within denyRead regions. ' +
           'Takes precedence over denyRead for matching paths.',
       ),
-    allowManagedReadPathsOnly: z
-      .boolean()
-      .optional()
-      .describe(
-        'When true (set in managed settings), only allowRead paths from policySettings are used.',
-      ),
   })
   .optional()
 
@@ -88,8 +75,7 @@ export const SandboxSettingsSchema = z
       .describe(
         'Exit with an error at startup if sandbox.enabled is true but the sandbox cannot start ' +
           '(missing dependencies, unsupported platform, or platform not in enabledPlatforms). ' +
-          'When false (default), a warning is shown and commands run unsandboxed. ' +
-          'Intended for managed-settings deployments that require sandboxing as a hard gate.',
+          'When false (default), a warning is shown and commands run unsandboxed.',
       ),
     // Note: enabledPlatforms is an undocumented setting read via .passthrough()
     // It restricts sandboxing to specific platforms (e.g., ["macos"]).

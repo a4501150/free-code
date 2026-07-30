@@ -8,8 +8,6 @@ export type UnifiedInstalledItemScope =
   | 'project'
   | 'local'
   | 'dynamic'
-  | 'managed'
-  | 'enterprise'
   | 'builtin'
   | 'flagged'
   | 'claudeai'

@@ -108,33 +108,6 @@ function RuleDetails({
     </Box>
   )
 
-  // Managed settings can't be edited
-  if (rule.source === 'policySettings') {
-    return (
-      <>
-        <Box
-          flexDirection="column"
-          gap={1}
-          borderStyle="round"
-          paddingLeft={1}
-          paddingRight={1}
-          borderColor="permission"
-        >
-          <Text bold color="permission">
-            Rule details
-          </Text>
-          {ruleDescription}
-          <Text italic>
-            This rule is configured by managed settings and cannot be modified.
-            {'\n'}
-            Contact your system administrator for more information.
-          </Text>
-        </Box>
-        {footer}
-      </>
-    )
-  }
-
   return (
     <>
       <Box

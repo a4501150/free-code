@@ -284,7 +284,6 @@ function getInitialState(): State {
       'projectSettings',
       'localSettings',
       'flagSettings',
-      'policySettings',
     ],
     // Telemetry state
     meter: null,

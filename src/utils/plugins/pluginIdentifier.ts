@@ -24,7 +24,6 @@ export type PersistablePluginScope = Exclude<ExtendedPluginScope, 'flag'>
  * Note: flagSettings maps to 'flag' which is session-only and not persisted.
  */
 export const SETTING_SOURCE_TO_SCOPE = {
-  policySettings: 'managed',
   userSettings: 'user',
   projectSettings: 'project',
   localSettings: 'local',
@@ -82,14 +81,10 @@ export function isOfficialMarketplaceName(
 }
 
 /**
- * Map from installable plugin scope to editable setting source.
+ * Map from plugin scope to editable setting source.
  * This is the inverse of SETTING_SOURCE_TO_SCOPE for editable scopes only.
- * Note: 'managed' scope cannot be installed to, so it's not included here.
  */
-const SCOPE_TO_EDITABLE_SOURCE: Record<
-  Exclude<PluginScope, 'managed'>,
-  EditableSettingSource
-> = {
+const SCOPE_TO_EDITABLE_SOURCE: Record<PluginScope, EditableSettingSource> = {
   user: 'userSettings',
   project: 'projectSettings',
   local: 'localSettings',
@@ -99,14 +94,10 @@ const SCOPE_TO_EDITABLE_SOURCE: Record<
  * Convert a plugin scope to its corresponding editable setting source
  * @param scope The plugin installation scope
  * @returns The corresponding setting source for reading/writing settings
- * @throws Error if scope is 'managed' (cannot install plugins to managed scope)
  */
 export function scopeToSettingSource(
   scope: PluginScope,
 ): EditableSettingSource {
-  if (scope === 'managed') {
-    throw new Error('Cannot install plugins to managed scope')
-  }
   return SCOPE_TO_EDITABLE_SOURCE[scope]
 }
 
@@ -118,6 +109,6 @@ export function scopeToSettingSource(
  */
 export function settingSourceToScope(
   source: EditableSettingSource,
-): Exclude<PluginScope, 'managed'> {
-  return SETTING_SOURCE_TO_SCOPE[source] as Exclude<PluginScope, 'managed'>
+): PluginScope {
+  return SETTING_SOURCE_TO_SCOPE[source] as PluginScope
 }
