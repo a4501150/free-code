@@ -87,7 +87,9 @@ function getCodexStreamBetweenChunksTimeoutMs(): number | null {
 
 const RETRY_AFTER_RE = /try again in\s*(\d+(?:\.\d+)?)\s*(s|ms|seconds?)/i
 
-function parseRetryAfterFromMessage(message: string | undefined): number | undefined {
+function parseRetryAfterFromMessage(
+  message: string | undefined,
+): number | undefined {
   if (!message) return undefined
   const match = RETRY_AFTER_RE.exec(message)
   if (!match) return undefined
@@ -1113,18 +1115,25 @@ async function* parseCodexStream(
           break
         } else if (eventType === 'response.incomplete') {
           const response = event.response as Record<string, unknown> | undefined
-          const details = response?.incomplete_details as Record<string, unknown> | undefined
+          const details = response?.incomplete_details as
+            | Record<string, unknown>
+            | undefined
           const reason = readString(details?.reason) ?? 'unknown'
           closeOpenBlock()
           const normalized = normalizeError(
             {
-              cause: new Error(`Incomplete response returned, reason: ${reason}`),
+              cause: new Error(
+                `Incomplete response returned, reason: ${reason}`,
+              ),
               stream_truncated: true,
               mid_stream: true,
             },
             providerType,
           )
-          throw new DomainTransportError({ normalized, raw: `incomplete: ${reason}` })
+          throw new DomainTransportError({
+            normalized,
+            raw: `incomplete: ${reason}`,
+          })
         }
       }
 
@@ -1435,7 +1444,11 @@ export const codexAdapter: ProviderAdapter = {
       if (code === 'content_filter') return { ...base, kind: 'content_filter' }
       if (code === 'rate_limit_exceeded' || code === 'insufficient_quota') {
         const retryAfterMs = parseRetryAfterFromMessage(errMessage)
-        return { ...base, kind: 'rate_limit', ...(retryAfterMs !== undefined && { retryAfterMs }) }
+        return {
+          ...base,
+          kind: 'rate_limit',
+          ...(retryAfterMs !== undefined && { retryAfterMs }),
+        }
       }
       if (code === 'invalid_api_key') return { ...base, kind: 'auth' }
       if (code === 'server_error' || apiErrorType === 'server_error') {

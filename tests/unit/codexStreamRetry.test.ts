@@ -1155,7 +1155,11 @@ describe('Codex stream retry', () => {
         new Promise((_, reject) => {
           timeoutId = setTimeout(() => {
             abortController.abort()
-            reject(new Error('early-exit test timed out - stream did not exit after response.completed'))
+            reject(
+              new Error(
+                'early-exit test timed out - stream did not exit after response.completed',
+              ),
+            )
           }, 2_000)
         }),
       ])

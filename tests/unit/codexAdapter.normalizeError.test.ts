@@ -143,8 +143,7 @@ describe('codexAdapter.normalizeError', () => {
         body: JSON.stringify({
           error: {
             code: 'rate_limit_exceeded',
-            message:
-              'Rate limit reached. Please try again in 28ms.',
+            message: 'Rate limit reached. Please try again in 28ms.',
           },
         }),
       },

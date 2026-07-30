@@ -407,7 +407,13 @@ function SpinnerWithVerbInner({
         teammateTokens={teammateTokens}
         foregroundedTeammate={foregroundedTeammate}
         leaderIsIdle={leaderIsIdle}
-        thinkingStatus={viewedLocalAgent ? (viewedLocalAgent.isThinking ? 'thinking' : null) : thinkingStatus}
+        thinkingStatus={
+          viewedLocalAgent
+            ? viewedLocalAgent.isThinking
+              ? 'thinking'
+              : null
+            : thinkingStatus
+        }
         effortSuffix={effortSuffix}
         viewedLocalAgent={viewedLocalAgent}
       />
