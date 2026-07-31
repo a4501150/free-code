@@ -1594,6 +1594,9 @@ export function REPL({
   const [spinnerShimmerColor, setSpinnerShimmerColor] = useState<
     keyof Theme | null
   >(null)
+  const [compactingStartTime, setCompactingStartTime] = useState<number | null>(
+    null,
+  )
   const [isMessageSelectorVisible, setIsMessageSelectorVisible] =
     useState(false)
   const [messageSelectorPreselect, setMessageSelectorPreselect] = useState<
@@ -1677,6 +1680,9 @@ export function REPL({
     setSpinnerMessage(null)
     setSpinnerColor(null)
     setSpinnerShimmerColor(null)
+    // A compaction that throws or is aborted never reaches compact_end, so the
+    // bar has to be torn down alongside the rest of the spinner state.
+    setCompactingStartTime(null)
     pickNewSpinnerTip()
     endInteractionSpan()
   }, [pickNewSpinnerTip])
@@ -2592,12 +2598,19 @@ export function REPL({
         setStreamMode,
         onCompactProgress: event => {
           setSpinnerMessage(compactProgressLabel(event))
-          if (event.type === 'hooks_start') {
-            setSpinnerColor('claudeBlue_FOR_SYSTEM_SPINNER')
-            setSpinnerShimmerColor('claudeBlueShimmer_FOR_SYSTEM_SPINNER')
-          } else if (event.type === 'compact_end') {
+          if (event.type === 'compact_end') {
             setSpinnerColor(null)
             setSpinnerShimmerColor(null)
+            setCompactingStartTime(null)
+          } else {
+            if (event.type === 'hooks_start') {
+              setSpinnerColor('claudeBlue_FOR_SYSTEM_SPINNER')
+              setSpinnerShimmerColor('claudeBlueShimmer_FOR_SYSTEM_SPINNER')
+            }
+            // PreCompact hooks fire before compact_start and SessionStart /
+            // PostCompact after it, so the bar spans every phase from a single
+            // timestamp rather than restarting on each event.
+            setCompactingStartTime(prev => prev ?? Date.now())
           }
         },
         setInProgressToolUseIDs,
@@ -5001,6 +5014,7 @@ export function REPL({
                   pauseStartTimeRef={pauseStartTimeRef}
                   overrideColor={spinnerColor}
                   overrideShimmerColor={spinnerShimmerColor}
+                  compactingStartTime={compactingStartTime}
                   hasActiveTools={inProgressToolUseIDs.size > 0}
                   leaderIsIdle={!isLoading}
                 />

@@ -40,13 +40,18 @@ export const call: LocalCommandCall = async (args, context) => {
 
   try {
     // Try session memory compaction first if no custom instructions
-    // (session memory compaction doesn't support custom instructions)
+    // (session memory compaction doesn't support custom instructions).
+    // It emits no progress of its own and can block in
+    // waitForSessionMemoryExtraction, so bracket it or a successful
+    // session-memory compact shows no compaction UI at all.
     if (!customInstructions) {
+      context.onCompactProgress?.({ type: 'compact_start' })
       const sessionMemoryResult = await trySessionMemoryCompaction(
         messages,
         context.agentId,
       )
       if (sessionMemoryResult) {
+        context.onCompactProgress?.({ type: 'compact_end' })
         getUserContext.cache.clear?.()
         runPostCompactCleanup()
         // Reset cache read baseline so the post-compact drop isn't flagged

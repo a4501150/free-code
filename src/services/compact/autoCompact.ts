@@ -187,13 +187,19 @@ export async function autoCompactIfNeeded(
     querySource,
   }
 
-  // EXPERIMENT: Try session memory compaction first
+  // EXPERIMENT: Try session memory compaction first.
+  // trySessionMemoryCompaction emits no progress of its own and can block for a
+  // while in waitForSessionMemoryExtraction, so bracket it here or a successful
+  // session-memory compact shows no compaction UI at all.
+  toolUseContext.onCompactProgress?.({ type: 'compact_start' })
   const sessionMemoryResult = await trySessionMemoryCompaction(
     messages,
     toolUseContext.agentId,
     recompactionInfo.autoCompactThreshold,
   )
+
   if (sessionMemoryResult) {
+    toolUseContext.onCompactProgress?.({ type: 'compact_end' })
     // Reset lastSummarizedMessageId since session memory compaction prunes messages
     // and the old message UUID will no longer exist after the REPL replaces messages
     setLastSummarizedMessageId(undefined)

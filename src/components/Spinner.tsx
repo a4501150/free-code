@@ -77,6 +77,8 @@ import { TEARDROP_ASTERISK } from '../constants/figures.js'
 
 import { TeammateSpinnerTree } from './Spinner/TeammateSpinnerTree.js'
 import { useAnimationFrame } from '../ink.js'
+import { ProgressBar } from './design-system/ProgressBar.js'
+import { compactProgressPercent } from './Spinner/compactProgress.js'
 export type { SpinnerMode } from './Spinner/index.js'
 
 const DEFAULT_CHARACTERS = getDefaultCharacters()
@@ -101,6 +103,8 @@ type Props = {
   hasActiveTools?: boolean
   /** Leader's turn has completed (no active query). Used to suppress stall-red spinner when only teammates are running. */
   leaderIsIdle?: boolean
+  /** When compaction is in flight, the ms timestamp it began. Drives the progress bar. */
+  compactingStartTime?: number | null
 }
 
 // Thin wrapper: branches on isBriefOnly so the two variants have independent
@@ -150,6 +154,7 @@ function SpinnerWithVerbInner({
   verbose,
   hasActiveTools = false,
   leaderIsIdle = false,
+  compactingStartTime = null,
 }: Props): React.ReactNode {
   const settings = useSettings()
   const reducedMotion = settings.prefersReducedMotion ?? false
@@ -432,7 +437,14 @@ function SpinnerWithVerbInner({
         effortSuffix={effortSuffix}
         viewedLocalAgent={viewedLocalAgent}
       />
-      {showSpinnerTree && hasRunningTeammates ? (
+      {compactingStartTime != null ? (
+        <Box width="100%" flexDirection="column">
+          <CompactProgressBar
+            startTime={compactingStartTime}
+            columns={columns}
+          />
+        </Box>
+      ) : showSpinnerTree && hasRunningTeammates ? (
         <TeammateSpinnerTree
           selectedIndex={selectedIPAgentIndex}
           isInSelectionMode={viewSelectionMode === 'selecting-agent'}
@@ -463,6 +475,41 @@ function SpinnerWithVerbInner({
           )}
         </Box>
       ) : null}
+    </Box>
+  )
+}
+
+// Official layout: bar indented 2, 6 cells held back for the " NN%" suffix,
+// never wider than 40. Below 8 usable cells it reads as noise, so drop it.
+const COMPACT_BAR_MAX_WIDTH = 40
+const COMPACT_BAR_MIN_WIDTH = 8
+const COMPACT_BAR_INDENT = 2
+const COMPACT_BAR_SUFFIX_WIDTH = 6
+
+function CompactProgressBar({
+  startTime,
+  columns,
+}: {
+  startTime: number
+  columns: number
+}): React.ReactNode {
+  // Ticker only. The percentage comes from Date.now(), not from this hook's
+  // time, which is a shared ClockContext value rather than wall clock.
+  useAnimationFrame(250)
+
+  const percent = compactProgressPercent(Date.now() - startTime)
+  const width = Math.min(
+    COMPACT_BAR_MAX_WIDTH,
+    columns - COMPACT_BAR_INDENT - COMPACT_BAR_SUFFIX_WIDTH,
+  )
+  if (width < COMPACT_BAR_MIN_WIDTH) {
+    return null
+  }
+
+  return (
+    <Box paddingLeft={COMPACT_BAR_INDENT}>
+      <ProgressBar ratio={percent / 100} width={width} variant="pill" />
+      <Text dimColor> {percent}%</Text>
     </Box>
   )
 }
