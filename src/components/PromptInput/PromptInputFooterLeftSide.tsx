@@ -15,6 +15,7 @@ import {
   permissionModeTitle,
   getModeColor,
 } from '../../utils/permissions/PermissionMode.js'
+import { PAUSE_ICON } from '../../constants/figures.js'
 import { BackgroundTaskStatus } from '../tasks/BackgroundTaskStatus.js'
 import { isBackgroundTask } from '../../tasks/types.js'
 import { isPanelAgentTask } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
@@ -330,6 +331,14 @@ function ModeIndicator({
           </Text>
         )}
       </Text>
+    ) : currentMode ? (
+      // Manual mode's label lives here rather than in PERMISSION_MODE_CONFIG: the
+      // shared symbol/title also feed TeamsDialog (which gates a glyph on the
+      // symbol being non-empty) and the permission debug readout (which appends
+      // its own " mode"), and both read wrong with a pause glyph or "Manual mode".
+      <Text color={getModeColor(currentMode)} key="mode">
+        {PAUSE_ICON} manual mode on
+      </Text>
     ) : null
 
   // Build parts array - exclude BackgroundTaskStatus when we have teammate pills
@@ -448,7 +457,14 @@ function ModeIndicator({
       />
     ) : null
 
-  if (parts.length === 0 && !tasksPart && !modePart && showHint) {
+  // Manual mode is the baseline, not a state worth trading the shortcuts hint
+  // for, so it renders alongside it. Every other mode still displaces the hint.
+  if (
+    parts.length === 0 &&
+    !tasksPart &&
+    (!modePart || !hasActiveMode) &&
+    showHint
+  ) {
     parts.push(
       <Text dimColor key="shortcuts-hint">
         ? for shortcuts
