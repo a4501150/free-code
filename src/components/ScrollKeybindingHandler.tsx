@@ -894,7 +894,11 @@ export function dragScrollDirection(
 export function jumpBy(s: ScrollBoxHandle, delta: number): boolean {
   const max = Math.max(0, s.getScrollHeight() - s.getViewportHeight())
   const target = s.getScrollTop() + s.getPendingDelta() + delta
-  if (target >= max) {
+  // Downward jumps re-pin once they reach the follow threshold (which sits at
+  // the bottom as it was when the user scrolled away). Upward jumps must reach
+  // the real maxScroll to count as at-bottom — a stale threshold below the
+  // current position would otherwise turn PgUp into a jump to the bottom.
+  if (target >= (delta > 0 ? s.getFollowThreshold() : max)) {
     // Eager-write scrollTop so follow-scroll sees followDelta=0. Callers
     // that ran translateSelectionForJump already shifted; scrollToBottom()
     // alone would double-shift via the render-phase sticky follow.
@@ -906,17 +910,17 @@ export function jumpBy(s: ScrollBoxHandle, delta: number): boolean {
   return false
 }
 
-// Wheel-down past maxScroll re-enables sticky so wheeling at the bottom
-// naturally re-pins (matches typical chat-app behavior). Returns the
-// resulting sticky state so callers can propagate it.
+// Wheel-down to the bottom — or back to where the bottom was when the user
+// scrolled away — re-enables sticky so wheeling down naturally re-pins
+// (matches typical chat-app behavior). Returns the resulting sticky state so
+// callers can propagate it.
 function scrollDown(s: ScrollBoxHandle, amount: number): boolean {
-  const max = Math.max(0, s.getScrollHeight() - s.getViewportHeight())
   // Include pendingDelta: scrollBy accumulates into pendingScrollDelta
   // without updating scrollTop, so getScrollTop() alone is stale within
   // a batch of wheel events. Without this, wheeling to the bottom never
   // re-enables sticky scroll.
   const effectiveTop = s.getScrollTop() + s.getPendingDelta()
-  if (effectiveTop + amount >= max) {
+  if (effectiveTop + amount >= s.getFollowThreshold()) {
     s.scrollToBottom()
     return true
   }

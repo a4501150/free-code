@@ -805,6 +805,7 @@ function renderNodeToOutput(
             scrollTopBeforeFollow >= prevMaxScroll
           ) {
             node.stickyScroll = true
+            node.scrollFollowBaseline = undefined
           }
         }
         const followDelta = (node.scrollTop ?? 0) - scrollTopBeforeFollow

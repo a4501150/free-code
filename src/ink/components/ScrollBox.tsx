@@ -51,6 +51,16 @@ export type ScrollBoxHandle = {
    */
   isSticky: () => boolean
   /**
+   * scrollTop at or past which a downward scroll should re-pin to the live
+   * bottom. maxScroll while pinned; once stickiness is broken it's the
+   * smaller of maxScroll and the bottom as it was when stickiness broke, so
+   * scrolling back to where the user left off resumes following even when
+   * content arrived while they were up there. Without this, wheeling back
+   * down by the amount you wheeled up lands short of a bottom that moved,
+   * and nothing ever re-pins.
+   */
+  getFollowThreshold: () => number
+  /**
    * Subscribe to imperative scroll changes (scrollTo/scrollBy/scrollToBottom).
    * Does NOT fire for stickyScroll updates done by the Ink renderer — those
    * happen during Ink's render phase after React has committed. Callers that
@@ -78,6 +88,21 @@ export type ScrollBoxProps = Except<
    * grows. Unset manually via scrollTo/scrollBy to break the stickiness.
    */
   stickyScroll?: boolean
+}
+
+function maxScrollOf(el: DOMElement): number {
+  return Math.max(0, (el.scrollHeight ?? 0) - (el.scrollViewportHeight ?? 0))
+}
+
+// Break stickiness, remembering where the bottom was. Only the first break
+// records: subsequent scrolls while already unpinned must keep the original
+// baseline, or each one moves the finish line and the user can never scroll
+// back to it.
+function breakSticky(el: DOMElement): void {
+  if (el.stickyScroll !== false) {
+    el.scrollFollowBaseline = maxScrollOf(el)
+  }
+  el.stickyScroll = false
 }
 
 /**
@@ -128,7 +153,6 @@ function ScrollBox({
       scheduleRenderFrom(el)
     })
   }
-
   useImperativeHandle(
     ref,
     (): ScrollBoxHandle => ({
@@ -137,7 +161,7 @@ function ScrollBox({
         if (!el) return
         // Explicit false overrides the DOM attribute so manual scroll
         // breaks stickiness. Render code checks ?? precedence.
-        el.stickyScroll = false
+        breakSticky(el)
         el.pendingScrollDelta = undefined
         el.scrollAnchor = undefined
         el.scrollTop = Math.max(0, Math.floor(y))
@@ -146,7 +170,7 @@ function ScrollBox({
       scrollToElement(el: DOMElement, offset = 0) {
         const box = domRef.current
         if (!box) return
-        box.stickyScroll = false
+        breakSticky(box)
         box.pendingScrollDelta = undefined
         box.scrollAnchor = { el, offset }
         scrollMutated(box)
@@ -154,7 +178,7 @@ function ScrollBox({
       scrollBy(dy: number) {
         const el = domRef.current
         if (!el) return
-        el.stickyScroll = false
+        breakSticky(el)
         // Wheel input cancels any in-flight anchor seek — user override.
         el.scrollAnchor = undefined
         // Accumulate in pendingScrollDelta; renderer drains it at a capped
@@ -168,6 +192,7 @@ function ScrollBox({
         if (!el) return
         el.pendingScrollDelta = undefined
         el.stickyScroll = true
+        el.scrollFollowBaseline = undefined
         markDirty(el)
         notify()
         forceRender(n => n + 1)
@@ -202,6 +227,13 @@ function ScrollBox({
         const el = domRef.current
         if (!el) return false
         return el.stickyScroll ?? Boolean(el.attributes['stickyScroll'])
+      },
+      getFollowThreshold() {
+        const el = domRef.current
+        if (!el) return 0
+        const max = maxScrollOf(el)
+        const baseline = el.scrollFollowBaseline
+        return baseline === undefined ? max : Math.min(max, baseline)
       },
       subscribe(listener: () => void) {
         listenersRef.current.add(listener)

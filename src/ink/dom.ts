@@ -73,6 +73,12 @@ export type DOMElement = {
   scrollViewportHeight?: number
   scrollViewportTop?: number
   stickyScroll?: boolean
+  // maxScroll at the moment stickyScroll was broken — "where the bottom was
+  // when the user scrolled away". Scrolling back down to it means the user
+  // caught up to where they left off, so following resumes even though
+  // content grew meanwhile (the live bottom moved past their old one).
+  // Undefined while pinned.
+  scrollFollowBaseline?: number
   // Set by ScrollBox.scrollToElement; render-node-to-output reads
   // el.yogaNode.getComputedTop() (FRESH — same Yoga pass as scrollHeight)
   // and sets scrollTop = top + offset, then clears this. Unlike an
