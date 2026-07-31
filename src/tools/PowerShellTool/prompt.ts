@@ -13,7 +13,13 @@ import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../FileWriteTool/prompt.js'
 import { GLOB_TOOL_NAME } from '../GlobTool/prompt.js'
 import { GREP_TOOL_NAME } from '../GrepTool/prompt.js'
+import { getCommitAndPRInstructions } from '../shared/gitInstructions.js'
 import { POWERSHELL_TOOL_NAME } from './toolName.js'
+
+const POWERSHELL_MULTILINE_SYNTAX = {
+  commit: 'a single-quoted here-string (see "Passing multiline strings" above)',
+  pr: 'a here-string',
+}
 
 export function getDefaultTimeoutMs(): number {
   return getDefaultBashTimeoutMs()
@@ -60,6 +66,9 @@ function getEditionSection(edition: PowerShellEdition | null): string {
 export async function getPrompt(): Promise<string> {
   const backgroundNote = getBackgroundUsageNote()
   const edition = await getPowerShellEdition()
+  const gitInstructions = getCommitAndPRInstructions(
+    POWERSHELL_MULTILINE_SYNTAX,
+  )
 
   return `Executes a given PowerShell command with optional timeout. Working directory persists between commands; shell state (variables, functions) does not.
 
@@ -122,9 +131,5 @@ ${backgroundNote ? backgroundNote + '\n' : ''}\
     - If the commands depend on each other and must run sequentially, chain them in a single ${POWERSHELL_TOOL_NAME} call (see edition-specific chaining syntax above).
     - Use \`;\` only when you need to run commands sequentially but don't care if earlier commands fail.
     - DO NOT use newlines to separate commands (newlines are ok in quoted strings and here-strings)
-  - Do NOT prefix commands with \`cd\` or \`Set-Location\` -- the working directory is already set to the correct project directory automatically.
-  - For git commands:
-    - Prefer to create a new commit rather than amending an existing commit.
-    - Before running destructive operations (e.g., git reset --hard, git push --force, git checkout --), consider whether there is a safer alternative that achieves the same goal. Only use destructive operations when they are truly the best approach.
-    - Never skip hooks (--no-verify) or bypass signing (--no-gpg-sign, -c commit.gpgsign=false) unless the user has explicitly asked for it. If a hook fails, investigate and fix the underlying issue.`
+  - Do NOT prefix commands with \`cd\` or \`Set-Location\` -- the working directory is already set to the correct project directory automatically.${gitInstructions ? `\n\n${gitInstructions}` : ''}`
 }

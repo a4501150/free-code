@@ -27,6 +27,10 @@ mock.module('../../src/utils/model/model.js', () => ({
 }))
 
 const { getAttributionTexts } = await import('../../src/utils/attribution.js')
+const { getCommitAndPRInstructions } =
+  await import('../../src/tools/shared/gitInstructions.js')
+
+const HEREDOC_SYNTAX = { commit: 'a HEREDOC', pr: 'a HEREDOC' }
 
 function resetAttributionMocks() {
   settings = {}
@@ -89,18 +93,56 @@ describe('getAttributionTexts', () => {
   })
 })
 
-describe('Bash prompt attribution integration', () => {
+describe('shared git instructions', () => {
   const repoRoot = process.cwd()
 
-  test('keeps normal commit and PR footer guidance', () => {
-    const source = readFileSync(
-      join(repoRoot, 'src/tools/BashTool/prompt.ts'),
-      'utf8',
-    )
+  test('both shell prompts build the section from the shared helper', () => {
+    for (const file of [
+      'src/tools/BashTool/prompt.ts',
+      'src/tools/PowerShellTool/prompt.ts',
+    ]) {
+      const source = readFileSync(join(repoRoot, file), 'utf8')
+      expect(source).toContain('getCommitAndPRInstructions')
+    }
+  })
 
-    expect(source).toContain('getAttributionTexts()')
-    expect(source).toContain('commitFooter')
-    expect(source).toContain('gh pr create')
-    expect(source).toContain('prFooter')
+  test('keeps normal commit and PR footer guidance', () => {
+    resetAttributionMocks()
+
+    const section = getCommitAndPRInstructions(HEREDOC_SYNTAX)
+
+    expect(section).toContain('conventional commit format')
+    expect(section).toContain(
+      'Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>',
+    )
+    expect(section).toContain('gh pr create')
+    expect(section).toContain('Generated with [Claude Code](')
+  })
+
+  test('drops both footers when attribution is disabled', () => {
+    resetAttributionMocks()
+    settings = { includeCoAuthoredBy: false }
+
+    const section = getCommitAndPRInstructions(HEREDOC_SYNTAX)
+
+    expect(section).toContain('conventional commit format')
+    expect(section).not.toContain('Co-Authored-By')
+    expect(section).not.toContain('Generated with [Claude Code](')
+  })
+
+  test('emits nothing when git instructions are disabled', () => {
+    resetAttributionMocks()
+    const previous = process.env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS
+    process.env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS = '1'
+
+    try {
+      expect(getCommitAndPRInstructions(HEREDOC_SYNTAX)).toBe('')
+    } finally {
+      if (previous === undefined) {
+        delete process.env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS
+      } else {
+        process.env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS = previous
+      }
+    }
   })
 })

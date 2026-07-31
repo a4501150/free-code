@@ -1,8 +1,6 @@
 import { prependBullets } from '../../constants/prompts.js'
-import { getAttributionTexts } from '../../utils/attribution.js'
 import { shouldPreferBashForSearch } from '../../utils/embeddedTools.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
-import { shouldIncludeGitInstructions } from '../../utils/gitSettings.js'
 import { getClaudeTempDir } from '../../utils/permissions/filesystem.js'
 import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
@@ -10,6 +8,7 @@ import {
   getDefaultBashTimeoutMs,
   getMaxBashTimeoutMs,
 } from '../../utils/timeouts.js'
+import { getCommitAndPRInstructions } from '../shared/gitInstructions.js'
 
 export function getDefaultTimeoutMs(): number {
   return getDefaultBashTimeoutMs()
@@ -26,24 +25,9 @@ function getBackgroundUsageNote(): string | null {
   return "If you're about to use `sleep` or a polling loop, use `run_in_background: true` instead. The tool returns immediately with a task ID and a file path that streams the command's stdout/stderr (Read the file as it accumulates, or use BackgroundTaskOutput to retrieve task status and output). When the command exits, a <task-notification> system message arrives as soon as possible — between tool rounds if a turn is active, or when idle. The notification only fires when the bash command exits — sleeping or polling on your end does not change when it arrives. For polling external state via bash, wrap the polling in a single backgrounded bash loop with a clear exit condition (e.g. `while ! check; do sleep 5; done`). If you need to background commands that never terminate (so the notification never fires) — for example, `tail -f`, dev servers, long-running watchers — inspect output as needed and stop the task via BackgroundTaskStop when it's no longer needed."
 }
 
-function getCommitAndPRInstructions(): string {
-  if (!shouldIncludeGitInstructions()) return ''
-
-  const { commit: commitFooter, pr: prFooter } = getAttributionTexts()
-
-  const commitLine = commitFooter
-    ? `- For git commits, pass multi-line messages via a HEREDOC (\`git commit -m "$(cat <<'EOF' ... EOF\n)"\`) to preserve newlines and avoid shell-escaping issues. Include \`${commitFooter}\` at the end of the message.`
-    : `- For git commits, pass multi-line messages via a HEREDOC (\`git commit -m "$(cat <<'EOF' ... EOF\n)"\`) to preserve newlines and avoid shell-escaping issues.`
-
-  const prLine = prFooter
-    ? `- For \`gh pr create\`, pass the body via a HEREDOC (same pattern). End the body with \`${prFooter}\`.`
-    : `- For \`gh pr create\`, pass the body via a HEREDOC (same pattern).`
-
-  return `# Git commits and pull requests
-
-- Use conventional commit format: \`type(scope): subject\` (e.g. \`feat(auth): add OAuth2 support\`, \`fix(api): handle null response\`).
-${commitLine}
-${prLine}`
+const BASH_MULTILINE_SYNTAX = {
+  commit: `a HEREDOC (\`git commit -m "$(cat <<'EOF' ... EOF\n)"\`)`,
+  pr: 'a HEREDOC',
 }
 
 // SandboxManager merges config from multiple sources (settings layers, defaults,
@@ -177,12 +161,14 @@ export function getSimplePrompt(): string {
       : []),
   ]
 
+  const gitInstructions = getCommitAndPRInstructions(BASH_MULTILINE_SYNTAX)
+
   return [
     'Executes a given bash command and returns its output. The working directory persists between commands, but shell state does not.',
     '',
     '# Instructions',
     ...prependBullets(instructionItems),
     getSimpleSandboxSection(),
-    ...(getCommitAndPRInstructions() ? ['', getCommitAndPRInstructions()] : []),
+    ...(gitInstructions ? ['', gitInstructions] : []),
   ].join('\n')
 }
