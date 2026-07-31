@@ -698,7 +698,10 @@ function writeLineToScreen(
         for (let i = 0; i < spacesToNextStop && offsetX < screenWidth; i++) {
           setCellAt(screen, offsetX, y, {
             char: ' ',
-            styleId: stylePool.none,
+            // Inherit the tab's own style: these cells are part of the styled run,
+            // so stylePool.none would punch an unpainted hole through any
+            // background or inverse video (e.g. tab-separated `du -sh` output).
+            styleId: character.styleId,
             width: CellWidth.Narrow,
             hyperlink: undefined,
           })
