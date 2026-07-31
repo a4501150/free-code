@@ -97,12 +97,9 @@ function ResumeCommand({
         const allLogs = allProjects
           ? await loadAllProjectsMessageLogs()
           : await loadSameRepoMessageLogs(paths)
-        const resumable = filterResumableSessions(allLogs, getSessionId())
-        if (resumable.length === 0) {
-          onDone('No conversations found to resume')
-          return
-        }
-        setLogs(resumable)
+        // An empty list is not an error: LogSelector renders its own empty
+        // state, which is the only way to reach Ctrl+A (show all projects).
+        setLogs(filterResumableSessions(allLogs, getSessionId()))
       } catch (_err) {
         onDone('Failed to load conversations')
       } finally {

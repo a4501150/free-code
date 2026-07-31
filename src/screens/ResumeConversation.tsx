@@ -9,7 +9,6 @@ import { Spinner } from '../components/Spinner.js'
 import { restoreCostStateForSession } from '../cost-tracker.js'
 import { setClipboard } from '../ink/termio/osc.js'
 import { Box, Text } from '../ink.js'
-import { useKeybinding } from '../keybindings/useKeybinding.js'
 import type {
   MCPServerConnection,
   ScopedMcpServerConfig,
@@ -373,10 +372,6 @@ export function ResumeConversation({
     )
   }
 
-  if (filteredLogs.length === 0) {
-    return <NoConversationsMessage />
-  }
-
   return (
     <LogSelector
       logs={filteredLogs}
@@ -392,24 +387,6 @@ export function ResumeConversation({
       onToggleAllProjects={handleToggleAllProjects}
       onAgenticSearch={agenticSessionSearch}
     />
-  )
-}
-
-function NoConversationsMessage(): React.ReactNode {
-  useKeybinding(
-    'app:interrupt',
-    () => {
-      // eslint-disable-next-line custom-rules/no-process-exit
-      process.exit(1)
-    },
-    { context: 'Global' },
-  )
-
-  return (
-    <Box flexDirection="column">
-      <Text>No conversations found to resume.</Text>
-      <Text dimColor>Press Ctrl+C to exit and start a new conversation.</Text>
-    </Box>
   )
 }
 

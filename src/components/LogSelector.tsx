@@ -1,5 +1,6 @@
 import chalk from 'chalk'
 import figures from 'figures'
+import { basename } from 'node:path'
 import React from 'react'
 import { getOriginalCwd, getSessionId } from '../bootstrap/state.js'
 import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js'
@@ -485,8 +486,12 @@ export function LogSelector({
     snippets,
   ])
 
-  // Derive the focused log from focusedNode
-  const focusedLog = focusedNode?.value.log ?? null
+  const isEmpty = logs.length === 0
+
+  // Derive the focused log from focusedNode. focusedNode survives a filter
+  // toggle that empties the list, and a log that is no longer displayed must not
+  // keep driving preview/rename or their footer hints.
+  const focusedLog = isEmpty ? null : (focusedNode?.value.log ?? null)
 
   const getExpandCollapseHint = (): string => {
     if (!isResumeWithRenameEnabled || !focusedLog) return ''
@@ -703,6 +708,25 @@ export function LogSelector({
     },
   )
 
+  // Escape with an empty list — neither Select nor TreeSelect is mounted, so
+  // nothing else owns escape and the picker would be unexitable.
+  useKeybinding(
+    'confirm:no',
+    () => {
+      onCancel?.()
+    },
+    {
+      context: 'Confirmation',
+      isActive:
+        isEmpty &&
+        viewMode !== 'preview' &&
+        viewMode !== 'rename' &&
+        viewMode !== 'search' &&
+        !isAgenticSearchOptionFocused &&
+        agenticSearchState.status !== 'searching',
+    },
+  )
+
   // Handle non-escape input
   useInput(
     (input, key) => {
@@ -786,7 +810,9 @@ export function LogSelector({
           setPreviewLog(focusedLog)
           setViewMode('preview')
         } else if (
-          focusedLog &&
+          // When empty there is no focusedLog to gate on, but the empty state
+          // still advertises "Type to search" (useful after Ctrl+A).
+          (focusedLog || isEmpty) &&
           keyIsNotCtrlOrMeta &&
           input.length > 0 &&
           !/^\s+$/.test(input)
@@ -813,8 +839,9 @@ export function LogSelector({
 
   // Search box takes 3 lines (border top, content, border bottom)
   const searchBoxLines = 3
+  // +1 over the search box for the project-name line
   const headerLines =
-    5 + searchBoxLines + (showAdditionalFilterLine ? 1 : 0) + tagTabsLines
+    6 + searchBoxLines + (showAdditionalFilterLine ? 1 : 0) + tagTabsLines
   const footerLines = 2
   const visibleCount = Math.max(
     1,
@@ -829,11 +856,6 @@ export function LogSelector({
       onLoadMore(visibleCount * 3)
     }
   }, [focusedIndex, visibleCount, displayedLogs.length, onLoadMore])
-
-  // Early return if no logs
-  if (logs.length === 0) {
-    return null
-  }
 
   // Show preview mode if active
   if (viewMode === 'preview' && previewLog && isResumeWithRenameEnabled) {
@@ -884,6 +906,9 @@ export function LogSelector({
         isTerminalFocused={isTerminalFocused}
         cursorOffset={searchCursorOffset}
       />
+      <Box flexShrink={0} paddingLeft={2}>
+        <Text dimColor>{basename(getOriginalCwd())}</Text>
+      </Box>
       {filterIndicators.length > 0 && viewMode !== 'search' && (
         <Box flexShrink={0} paddingLeft={2}>
           <Text dimColor>
@@ -958,8 +983,19 @@ export function LogSelector({
         )}
 
       {/* Hide session list when agentic search is in progress */}
-      {agenticSearchState.status === 'searching' ? null : viewMode ===
-          'rename' && focusedLog ? (
+      {agenticSearchState.status === 'searching' ? null : isEmpty ? (
+        <Box paddingLeft={2} flexDirection="column" flexShrink={0}>
+          <Text>
+            No conversations found in{' '}
+            {showAllProjects ? 'any project' : 'this project'}.
+          </Text>
+          {onToggleAllProjects && (
+            <Text dimColor>
+              Ctrl+A to show {showAllProjects ? 'current dir' : 'all projects'}
+            </Text>
+          )}
+        </Box>
+      ) : viewMode === 'rename' && focusedLog ? (
         <Box paddingLeft={2} flexDirection="column">
           <Text bold>Rename session:</Text>
           <Box paddingTop={1}>
@@ -1121,8 +1157,12 @@ export function LogSelector({
                   action={`show ${showAllWorktrees ? 'current worktree' : 'all worktrees'}`}
                 />
               )}
-              <KeyboardShortcutHint shortcut="Ctrl+V" action="preview" />
-              <KeyboardShortcutHint shortcut="Ctrl+R" action="rename" />
+              {focusedLog && (
+                <KeyboardShortcutHint shortcut="Ctrl+V" action="preview" />
+              )}
+              {focusedLog && (
+                <KeyboardShortcutHint shortcut="Ctrl+R" action="rename" />
+              )}
               <Text>Type to search</Text>
               <ConfigurableShortcutHint
                 action="confirm:no"
@@ -1130,9 +1170,11 @@ export function LogSelector({
                 fallback="Esc"
                 description="cancel"
               />
-              {getExpandCollapseHint() && (
+              {/* Ternary, not &&: an empty string survives Children.toArray, so
+                  Byline would render a trailing " · " with nothing after it. */}
+              {getExpandCollapseHint() ? (
                 <Text>{getExpandCollapseHint()}</Text>
-              )}
+              ) : null}
             </Byline>
           </Text>
         )}
