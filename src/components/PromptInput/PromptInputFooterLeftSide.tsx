@@ -336,7 +336,7 @@ function ModeIndicator({
       // shared symbol/title also feed TeamsDialog (which gates a glyph on the
       // symbol being non-empty) and the permission debug readout (which appends
       // its own " mode"), and both read wrong with a pause glyph or "Manual mode".
-      <Text color={getModeColor(currentMode)} key="mode">
+      <Text dimColor key="mode">
         {PAUSE_ICON} manual mode on
       </Text>
     ) : null
