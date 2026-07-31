@@ -100,9 +100,9 @@ By the time a `stream_event` leaves [src/services/api/claude.ts](src/services/ap
 
 Per-project config supports both `.claude/` (legacy) and `.freecode/` (preferred). When both exist, `.freecode/` takes precedence. Use helpers from [src/utils/projectConfigPaths.ts](src/utils/projectConfigPaths.ts) instead of hardcoding either directory name.
 
-### ScrollBox children should not rely on percentage height
+### ScrollBox children must not size themselves from the cross axis
 
-Inside ScrollBox content, a Yoga node with percentage height can collapse after culling and re-entry. Prefer an explicit minimum height or stretch with no shrink for divider-like children. See [src/components/LogoV2/LogoV2.tsx](src/components/LogoV2/LogoV2.tsx) for the current pattern.
+Inside ScrollBox content, a Yoga node whose height comes from the parent — a percentage height, or `alignSelf: 'stretch'` on a node with no content — can collapse after culling and re-entry, falling back to its `minHeight`. A vertical divider built that way silently paints short. Give divider-like nodes real content instead: in [src/components/LogoV2/LogoV2.tsx](src/components/LogoV2/LogoV2.tsx) the divider is the right panel's `borderLeft`, so its height is the feed's own height. Reproduce with `!seq 1 200` to push the node out of view, then PgUp back to it.
 
 ### `disableAllHooks` must be checked at every hook channel
 

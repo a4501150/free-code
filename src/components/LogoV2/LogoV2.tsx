@@ -270,7 +270,6 @@ export function LogoV2(): React.ReactNode {
           <Box
             flexDirection={layoutMode === 'horizontal' ? 'row' : 'column'}
             paddingX={1}
-            gap={1}
           >
             {/* Left Panel */}
             <Box
@@ -293,38 +292,37 @@ export function LogoV2(): React.ReactNode {
               </Box>
             </Box>
 
-            {/* Vertical divider */}
+            {/* Right Panel - Project Onboarding or Recent Activity and What's New */}
+            {/* The vertical divider is this panel's left border: its height comes
+                from the feed content, so it can't come up short the way a
+                zero-width stretched node does after ScrollBox culling. */}
             {layoutMode === 'horizontal' && (
               <Box
-                width={0}
-                alignSelf={'stretch' as 'auto'}
                 flexShrink={0}
+                minHeight={9}
+                paddingLeft={1}
                 borderStyle="single"
                 borderColor="claude"
                 borderDimColor
                 borderTop={false}
                 borderBottom={false}
-                borderLeft={false}
-                minHeight={9}
-              />
-            )}
-
-            {/* Right Panel - Project Onboarding or Recent Activity and What's New */}
-            {layoutMode === 'horizontal' && (
-              <FeedColumn
-                feeds={
-                  showOnboarding
-                    ? [
-                        createProjectOnboardingFeed(getSteps()),
-                        createRecentActivityFeed(activities),
-                      ]
-                    : [
-                        createRecentActivityFeed(activities),
-                        createWhatsNewFeed(changelog),
-                      ]
-                }
-                maxWidth={rightWidth}
-              />
+                borderRight={false}
+              >
+                <FeedColumn
+                  feeds={
+                    showOnboarding
+                      ? [
+                          createProjectOnboardingFeed(getSteps()),
+                          createRecentActivityFeed(activities),
+                        ]
+                      : [
+                          createRecentActivityFeed(activities),
+                          createWhatsNewFeed(changelog),
+                        ]
+                  }
+                  maxWidth={rightWidth}
+                />
+              </Box>
             )}
           </Box>
         </Box>
