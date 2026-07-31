@@ -7,7 +7,7 @@ export function isConcurrencySafeToolInput(
 ): boolean {
   if (!tool) return false
   const parsedInput = tool.inputSchema.safeParse(
-    stripStrictNullInputs(tool.inputSchema, input),
+    stripStrictNullInputs(tool.inputJSONSchema ?? tool.inputSchema, input),
   )
   if (!parsedInput.success) return false
   try {

@@ -43,7 +43,7 @@ export function parseMCPToolInput(
   args: unknown,
 ): Record<string, unknown> {
   const parsedInput = tool.inputSchema.safeParse(
-    stripStrictNullInputs(tool.inputSchema, args ?? {}),
+    stripStrictNullInputs(tool.inputJSONSchema ?? tool.inputSchema, args ?? {}),
   )
   if (!parsedInput.success) {
     throw new Error(

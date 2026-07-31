@@ -108,6 +108,10 @@ Inside ScrollBox content, a Yoga node whose height comes from the parent — a p
 
 Settings hooks, plugin-registered hooks, and session-derived (agent/skill frontmatter) hooks are assembled separately in [src/utils/hooks.ts](src/utils/hooks.ts). `areAllHooksDisabled()` from [src/utils/hooks/hooksConfigSnapshot.ts](src/utils/hooks/hooksConfigSnapshot.ts) gates each one independently — dropping the check at any single channel silently re-enables that channel. `hasWorktreeCreateHook()` mirrors the same filtering and must stay in sync, or it reports hooks that execution then can't find.
 
+### Null tool arguments are omissions, except where the schema admits null
+
+The Responses API normalizes a function tool's schema into OpenAI's strict subset on its own, and strict requires every property to sit in `required` — so on the codex path a model cannot omit an optional field and sends `null` instead. [src/utils/stripStrictNullInputs.ts](src/utils/stripStrictNullInputs.ts) removes those placeholders before validation, but only where the schema says the field may be absent, and never for a `null` the schema itself admits: an MCP tool can mean something by it (agent-browser's `browser_open {profile: null}` asks for a throwaway profile). Same for `""` on a required field, which is a value, not an omission. Pass it `tool.inputJSONSchema ?? tool.inputSchema` — an MCP tool's Zod schema is an opaque passthrough, so the Zod schema alone makes every MCP argument unrecognizable and strips it.
+
 ### modelSettings.json is filtered to model keys on read
 
 `modelSettings.json` merges after `freecode.json` within `userSettings`, and `SettingsSchema` is `.passthrough()`, so any general key there would silently outrank `freecode.json`. Reads project it to `MODEL_SETTINGS_KEYS` ([src/utils/settings/modelSettingsKeys.ts](src/utils/settings/modelSettingsKeys.ts)) to mirror the existing write routing. The projection runs on raw JSON _before_ schema validation, so an invalid general key can't fail the file and take its provider config down with it. Model keys still resolve from `freecode.json` when absent from `modelSettings.json`.

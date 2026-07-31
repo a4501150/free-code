@@ -479,8 +479,12 @@ async function checkPermissionsAndCallTool(
   ) => void,
 ): Promise<MessageUpdateLazy[]> {
   // Strip `null` and `""` placeholders that models sometimes emit for
-  // optional fields before Zod validation.
-  const coercedInput = stripStrictNullInputs(tool.inputSchema, input)
+  // optional fields before Zod validation. An MCP tool's Zod schema is an
+  // opaque passthrough, so pass the JSON Schema the model was actually shown.
+  const coercedInput = stripStrictNullInputs(
+    tool.inputJSONSchema ?? tool.inputSchema,
+    input,
+  )
   const parsedInput = tool.inputSchema.safeParse(coercedInput)
   if (!parsedInput.success) {
     let errorContent = formatZodValidationError(tool.name, parsedInput.error)

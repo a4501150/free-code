@@ -2465,9 +2465,11 @@ export function normalizeContentFromAPI(
           const tool = findToolByName(tools, contentBlock.name)
           if (tool) {
             // Strip `null` and `""` placeholders that models sometimes emit
-            // for optional fields before UI-side parsing.
+            // for optional fields before UI-side parsing. An MCP tool's Zod
+            // schema is an opaque passthrough, so pass the JSON Schema the
+            // model was actually shown.
             normalizedInput = stripStrictNullInputs(
-              tool.inputSchema,
+              tool.inputJSONSchema ?? tool.inputSchema,
               normalizedInput,
             )
             try {
