@@ -84,8 +84,14 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     authManagedExternally: true,
     credentialRefresh: 'aws',
     tokenCountingMethod: 'bedrock-custom',
+    // Converse rejects Anthropic beta HTTP headers; the accepted ones travel
+    // in additionalModelRequestFields.anthropic_beta instead.
+    betasInBody: true,
     regionPrefixPropagation: true,
     enrichModelIdErrors: true,
+    // Converse returns signed `reasoningContent` blocks that must be replayed
+    // verbatim and in position once thinking is enabled.
+    preservesReasoningAcrossTurns: true,
   },
   vertex: {
     ...ALL_FALSE_CAPABILITIES,
@@ -106,21 +112,29 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     // thinking blocks across turns.
     preservesReasoningAcrossTurns: true,
   },
-  'openai-chat-completions': { ...ALL_FALSE_CAPABILITIES },
+  'openai-chat-completions': {
+    ...ALL_FALSE_CAPABILITIES,
+    // Which field carries reasoning differs per endpoint, so the adapter
+    // remembers whichever one the response used and echoes back into that
+    // same one. Set this false for an endpoint that rejects unknown
+    // assistant-message fields.
+    preservesReasoningAcrossTurns: true,
+  },
   'openai-responses': {
     ...ALL_FALSE_CAPABILITIES,
     // The Codex adapter round-trips reasoning across turns by echoing
     // opaque `{type:"reasoning", id, encrypted_content, summary}` items in
     // `input[]` on each outbound request. The encrypted_content blob is
-    // carried across turns on the in-memory `thinking` content block via
-    // a Codex-specific side-channel (`codexReasoningId` /
-    // `codexEncryptedContent`). See codex-fetch-adapter.ts.
+    // carried across turns on the reasoning block's `providerState`.
     preservesReasoningAcrossTurns: true,
   },
   gemini: {
     ...ALL_FALSE_CAPABILITIES,
     authManagedExternally: true,
     credentialRefresh: 'gcp' as const,
+    // Gemini 3 rejects multi-step function calling when a thought signature
+    // is missing, so signatures must be replayed on the parts that carry them.
+    preservesReasoningAcrossTurns: true,
   },
 }
 

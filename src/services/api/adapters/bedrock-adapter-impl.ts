@@ -49,6 +49,8 @@ import type {
 import type {
   DomainAssistantContent,
   DomainContentBlock,
+  DomainReasoningBlock,
+  DomainRedactedReasoningBlock,
   DomainStreamEvent,
   DomainStopReason,
 } from '../../../types/domain.js'
@@ -187,6 +189,37 @@ function parseEventStreamMessage(buffer: Uint8Array): {
   return { headers, payload }
 }
 
+/**
+ * `redactedContent` is base64 on the REST wire, which is what this adapter
+ * sees because it signs and fetches directly rather than going through the AWS
+ * SDK. The byte-array forms are handled anyway so a future SDK path can't
+ * silently double-encode.
+ */
+function decodeRedactedContent(value: unknown): string | undefined {
+  if (typeof value === 'string') return value || undefined
+  if (value instanceof Uint8Array) {
+    return value.length > 0 ? Buffer.from(value).toString('base64') : undefined
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0
+      ? Buffer.from(value as number[]).toString('base64')
+      : undefined
+  }
+  return undefined
+}
+
+/**
+ * Concatenating independently-padded base64 strings corrupts the bytes, so
+ * fragments are decoded and rejoined before re-encoding.
+ */
+function joinBase64(fragments: string[] | undefined): string | undefined {
+  if (!fragments || fragments.length === 0) return undefined
+  if (fragments.length === 1) return fragments[0]
+  return Buffer.concat(
+    fragments.map(fragment => Buffer.from(fragment, 'base64')),
+  ).toString('base64')
+}
+
 // ── Domain → Bedrock Converse request translation ──────────────────
 
 function translateDomainContentBlock(
@@ -267,9 +300,26 @@ function translateDomainContentBlock(
       return null
     }
 
-    case 'reasoning':
-    case 'redacted_reasoning':
-      return null
+    // Signed reasoning must go back verbatim and in position once thinking is
+    // enabled, or Converse rejects the assistant turn. Blocks whose signature
+    // never arrived are dropped upstream by stripForeignReasoningBlocks.
+    case 'reasoning': {
+      const rb = block as DomainReasoningBlock
+      const signature = rb.providerState?.bedrockConverse?.signature
+      if (!signature) return null
+      return {
+        reasoningContent: {
+          reasoningText: { text: rb.text ?? '', signature },
+        },
+      }
+    }
+
+    case 'redacted_reasoning': {
+      const rb = block as DomainRedactedReasoningBlock
+      const redacted = rb.providerState?.bedrockConverse?.redactedContent
+      if (!redacted) return null
+      return { reasoningContent: { redactedContent: redacted } }
+    }
 
     default:
       return null
@@ -359,6 +409,36 @@ function domainRequestToConverseBody(
     body.inferenceConfig = inferenceConfig
   }
 
+  // Converse has no first-class slot for Anthropic-specific parameters, so
+  // thinking and effort ride in `additionalModelRequestFields` under
+  // Anthropic's snake_case names rather than Converse's camelCase. Betas
+  // arrive already folded into extraBody as `anthropic_beta` by the
+  // `betasInBody` path, which is also what restricts them to the identifiers
+  // Converse accepts — the header-only betas would 400 here.
+  const additionalModelRequestFields: Record<string, unknown> = {
+    ...request.extraBody,
+  }
+
+  if (request.thinking) {
+    if (request.thinking.type === 'enabled') {
+      additionalModelRequestFields.thinking = {
+        type: 'enabled',
+        budget_tokens: request.thinking.budgetTokens,
+      }
+    } else if (request.thinking.type === 'adaptive') {
+      // Adaptive thinking takes no budget; effort travels in output_config.
+      additionalModelRequestFields.thinking = { type: 'adaptive' }
+    }
+  }
+
+  if (request.outputConfig) {
+    additionalModelRequestFields.output_config = request.outputConfig
+  }
+
+  if (Object.keys(additionalModelRequestFields).length > 0) {
+    body.additionalModelRequestFields = additionalModelRequestFields
+  }
+
   return body
 }
 
@@ -391,6 +471,18 @@ async function* parseBedrockEventStream(
   let cacheReadInputTokens = 0
   let cacheWriteInputTokens = 0
   let stopReason: string | null = null
+
+  // Per-index block state. Text and reasoning blocks are opened on their first
+  // delta, and a reasoning block's signature/redacted fragments accumulate
+  // here until contentBlockStop hands them to the domain layer.
+  const openBlocks = new Map<
+    number,
+    {
+      kind: 'text' | 'reasoning' | 'redacted_reasoning' | 'tool_use'
+      signature?: string
+      redactedFragments?: string[]
+    }
+  >()
 
   const reader = eventStreamBody.getReader()
   let buffer = new Uint8Array(0)
@@ -474,8 +566,12 @@ async function* parseBedrockEventStream(
             const index = eventPayload.contentBlockIndex as number
             const start = eventPayload.start as Record<string, unknown>
 
+            // ContentBlockStart only ever carries a toolUse member. Text and
+            // reasoning blocks are identified by their first delta, so they
+            // are opened lazily below rather than guessed at here.
             if (start?.toolUse) {
               const toolUse = start.toolUse as Record<string, unknown>
+              openBlocks.set(index, { kind: 'tool_use' })
               yield {
                 type: 'content_block_start',
                 index,
@@ -486,21 +582,6 @@ async function* parseBedrockEventStream(
                   input: {},
                 },
               }
-            } else if (start?.reasoningContent) {
-              yield {
-                type: 'content_block_start',
-                index,
-                content_block: {
-                  type: 'reasoning',
-                  text: '',
-                },
-              }
-            } else {
-              yield {
-                type: 'content_block_start',
-                index,
-                content_block: { type: 'text', text: '' },
-              }
             }
             break
           }
@@ -510,6 +591,14 @@ async function* parseBedrockEventStream(
             const delta = eventPayload.delta as Record<string, unknown>
 
             if (delta?.text !== undefined) {
+              if (!openBlocks.has(index)) {
+                openBlocks.set(index, { kind: 'text' })
+                yield {
+                  type: 'content_block_start',
+                  index,
+                  content_block: { type: 'text', text: '' },
+                }
+              }
               yield {
                 type: 'content_block_delta',
                 index,
@@ -536,17 +625,46 @@ async function* parseBedrockEventStream(
                 string,
                 unknown
               >
-              const reasoningText =
-                typeof reasoning.text === 'string' ? reasoning.text : ''
-              if (reasoningText.length > 0) {
+              const redactedFragment = decodeRedactedContent(
+                reasoning.redactedContent,
+              )
+
+              let state = openBlocks.get(index)
+              if (!state) {
+                // Whichever member arrives first decides the block type: a
+                // redacted block only ever carries redactedContent.
+                const kind = redactedFragment
+                  ? ('redacted_reasoning' as const)
+                  : ('reasoning' as const)
+                state = { kind }
+                openBlocks.set(index, state)
+                yield {
+                  type: 'content_block_start',
+                  index,
+                  content_block:
+                    kind === 'redacted_reasoning'
+                      ? { type: 'redacted_reasoning' }
+                      : { type: 'reasoning', text: '' },
+                }
+              }
+
+              // A ReasoningContentBlockDelta is a union: each one carries
+              // exactly one of text, signature, or redactedContent. AWS does
+              // not promise the signature arrives in a single delta, so
+              // fragments accumulate rather than overwrite.
+              if (typeof reasoning.text === 'string' && reasoning.text) {
                 yield {
                   type: 'content_block_delta',
                   index,
                   delta: {
                     type: 'thinking_delta',
-                    thinking: reasoningText,
+                    thinking: reasoning.text,
                   },
                 }
+              } else if (typeof reasoning.signature === 'string') {
+                state.signature = (state.signature ?? '') + reasoning.signature
+              } else if (redactedFragment) {
+                ;(state.redactedFragments ??= []).push(redactedFragment)
               }
             }
             break
@@ -554,7 +672,26 @@ async function* parseBedrockEventStream(
 
           case 'contentBlockStop': {
             const index = eventPayload.contentBlockIndex as number
-            yield { type: 'content_block_stop', index }
+            const state = openBlocks.get(index)
+            // A block that produced no deltas was never opened downstream, so
+            // closing it would be a stop for a block that does not exist.
+            if (!state) break
+            openBlocks.delete(index)
+
+            const bedrockConverse: Record<string, string> = {}
+            if (state.signature) bedrockConverse.signature = state.signature
+            const redactedContent = joinBase64(state.redactedFragments)
+            if (redactedContent) {
+              bedrockConverse.redactedContent = redactedContent
+            }
+
+            yield {
+              type: 'content_block_stop',
+              index,
+              ...(Object.keys(bedrockConverse).length > 0 && {
+                providerState: { bedrockConverse },
+              }),
+            }
             break
           }
 
@@ -639,13 +776,33 @@ function parseConverseNonStreamingResponse(
         input: toolUse.input || {},
       })
     } else if (block.reasoningContent) {
+      // ReasoningContentBlock is a union: reasoningText xor redactedContent.
       const reasoning = block.reasoningContent as Record<string, unknown>
+      const redactedContent = decodeRedactedContent(reasoning.redactedContent)
+      if (redactedContent) {
+        content.push({
+          type: 'redacted_reasoning',
+          providerState: { bedrockConverse: { redactedContent } },
+        })
+        continue
+      }
+
       const reasoningText = reasoning.reasoningText as
         | Record<string, unknown>
         | undefined
       const text =
         typeof reasoningText?.text === 'string' ? reasoningText.text : ''
-      content.push({ type: 'reasoning', text })
+      const signature =
+        typeof reasoningText?.signature === 'string'
+          ? reasoningText.signature
+          : undefined
+      content.push({
+        type: 'reasoning',
+        text,
+        ...(signature && {
+          providerState: { bedrockConverse: { signature } },
+        }),
+      })
     }
   }
 

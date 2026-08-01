@@ -41,6 +41,7 @@ import type {
 import type {
   DomainAssistantContent,
   DomainContentBlock,
+  ProviderState,
   DomainStreamEvent,
   DomainStopReason,
 } from '../../../types/domain.js'
@@ -144,6 +145,14 @@ interface GeminiPart {
     response: { content: unknown }
   }
   inlineData?: { mimeType: string; data: string }
+  /** Marks a thought summary; only present when includeThoughts is set. */
+  thought?: boolean
+  /**
+   * Opaque base64 signature over the model's reasoning. It is metadata on the
+   * whole Part, so it can ride on a text or functionCall part and not just a
+   * thought one, and it must be echoed back verbatim.
+   */
+  thoughtSignature?: string
 }
 
 interface GeminiContent {
@@ -200,16 +209,35 @@ function domainMessagesToGemini(messages: DomainMessageParam[]): {
     const parts: GeminiPart[] = []
 
     for (const block of msg.content) {
-      if (block.type === 'text') {
-        parts.push({ text: (block as { text: string }).text })
+      // A thought signature is metadata on the whole Part, so it survives on
+      // whichever block it arrived with. Gemini 3 rejects a multi-step
+      // function call whose signature is missing.
+      const signature = (block as { providerState?: ProviderState })
+        .providerState?.gemini?.thoughtSignature
+      const withSignature = <T extends GeminiPart>(part: T): T =>
+        signature ? { ...part, thoughtSignature: signature } : part
+
+      if (block.type === 'reasoning') {
+        // Replaying the summary text as a thought part keeps the signature
+        // attached to the part it was minted for.
+        parts.push(
+          withSignature({
+            text: (block as { text: string }).text || '',
+            thought: true,
+          }),
+        )
+      } else if (block.type === 'text') {
+        parts.push(withSignature({ text: (block as { text: string }).text }))
       } else if (block.type === 'tool_use') {
         const tb = block as { name: string; input: unknown }
-        parts.push({
-          functionCall: {
-            name: tb.name || '',
-            args: (tb.input as Record<string, unknown>) || {},
-          },
-        })
+        parts.push(
+          withSignature({
+            functionCall: {
+              name: tb.name || '',
+              args: (tb.input as Record<string, unknown>) || {},
+            },
+          }),
+        )
       } else if (block.type === 'tool_result') {
         const tr = block as {
           tool_use_id: string
@@ -261,6 +289,55 @@ function domainMessagesToGemini(messages: DomainMessageParam[]): {
   return { contents, toolIdToName }
 }
 
+/** Our effort names → Gemini 3 thinking levels. */
+const GEMINI_THINKING_LEVELS: Record<string, string> = {
+  none: 'MINIMAL',
+  minimal: 'MINIMAL',
+  low: 'LOW',
+  medium: 'MEDIUM',
+  high: 'HIGH',
+  xhigh: 'HIGH',
+  max: 'HIGH',
+}
+
+/**
+ * Build `generationConfig.thinkingConfig`.
+ *
+ * Gemini 3 takes a `thinkingLevel`, Gemini 2.5 a `thinkingBudget`, and sending
+ * both is an error — so adaptive thinking maps to a level (the effort is
+ * already a coarse dial) and an explicit budget maps to a budget.
+ *
+ * `includeThoughts` is independent of whether the model thinks: without it the
+ * model still reasons and still bills for it, we just never see the summary.
+ */
+function domainThinkingToGemini(
+  request: DomainMessageRequest,
+): Record<string, unknown> | undefined {
+  const thinking = request.thinking
+  if (!thinking) return undefined
+
+  if (thinking.type === 'disabled') {
+    // 0 disables on the Flash families; Pro ignores it and keeps thinking,
+    // which the API accepts rather than rejects.
+    return { thinkingBudget: 0, includeThoughts: false }
+  }
+
+  if (thinking.type === 'adaptive') {
+    const effort = (request.outputConfig as { effort?: string } | undefined)
+      ?.effort
+    const level = effort ? GEMINI_THINKING_LEVELS[effort] : undefined
+    return {
+      includeThoughts: true,
+      ...(level && { thinkingLevel: level }),
+    }
+  }
+
+  return {
+    includeThoughts: true,
+    thinkingBudget: thinking.budgetTokens,
+  }
+}
+
 function domainRequestToGeminiBody(
   request: DomainMessageRequest,
 ): Record<string, unknown> {
@@ -293,6 +370,12 @@ function domainRequestToGeminiBody(
     generationConfig.temperature = request.temperature
   if (request.stopSequences)
     generationConfig.stopSequences = request.stopSequences
+
+  const thinkingConfig = domainThinkingToGemini(request)
+  if (thinkingConfig) {
+    generationConfig.thinkingConfig = thinkingConfig
+  }
+
   if (Object.keys(generationConfig).length > 0) {
     body.generationConfig = generationConfig
   }
@@ -341,7 +424,11 @@ async function* parseGeminiStream(
   let inputTokens = 0
   let outputTokens = 0
   let cacheReadInputTokens = 0
-  let currentTextBlockOpen = false
+  // Gemini streams thought summaries and answer text as sibling text parts
+  // distinguished only by a `thought` flag, so the open block's kind has to be
+  // tracked to know when one ends and the other begins.
+  let openBlockKind: 'text' | 'reasoning' | null = null
+  let pendingSignature: string | undefined
   let hadToolCalls = false
 
   const reader = response.body?.getReader()
@@ -360,11 +447,16 @@ async function* parseGeminiStream(
   let buffer = ''
 
   function closeCurrentTextBlock(): DomainStreamEvent | null {
-    if (!currentTextBlockOpen) return null
-    currentTextBlockOpen = false
+    if (!openBlockKind) return null
+    openBlockKind = null
+    const signature = pendingSignature
+    pendingSignature = undefined
     const event: DomainStreamEvent = {
       type: 'content_block_stop',
       index: contentBlockIndex,
+      ...(signature && {
+        providerState: { gemini: { thoughtSignature: signature } },
+      }),
     }
     contentBlockIndex++
     return event
@@ -432,18 +524,34 @@ async function* parseGeminiStream(
         if (content?.parts) {
           for (const part of content.parts) {
             if (part.text !== undefined) {
-              if (!currentTextBlockOpen) {
+              // A signature can arrive on a part whose text is empty, so the
+              // part is processed for its signature either way.
+              const kind = part.thought ? 'reasoning' : 'text'
+              if (openBlockKind !== kind) {
+                const closeEvent = closeCurrentTextBlock()
+                if (closeEvent) yield closeEvent
                 yield {
                   type: 'content_block_start',
                   index: contentBlockIndex,
-                  content_block: { type: 'text', text: '' },
+                  content_block:
+                    kind === 'reasoning'
+                      ? { type: 'reasoning', text: '' }
+                      : { type: 'text', text: '' },
                 }
-                currentTextBlockOpen = true
+                openBlockKind = kind
               }
-              yield {
-                type: 'content_block_delta',
-                index: contentBlockIndex,
-                delta: { type: 'text_delta', text: part.text },
+              if (part.text) {
+                yield {
+                  type: 'content_block_delta',
+                  index: contentBlockIndex,
+                  delta:
+                    kind === 'reasoning'
+                      ? { type: 'thinking_delta', thinking: part.text }
+                      : { type: 'text_delta', text: part.text },
+                }
+              }
+              if (part.thoughtSignature) {
+                pendingSignature = part.thoughtSignature
               }
             }
 
@@ -472,7 +580,15 @@ async function* parseGeminiStream(
                   partial_json: JSON.stringify(part.functionCall.args || {}),
                 },
               }
-              yield { type: 'content_block_stop', index: contentBlockIndex }
+              yield {
+                type: 'content_block_stop',
+                index: contentBlockIndex,
+                ...(part.thoughtSignature && {
+                  providerState: {
+                    gemini: { thoughtSignature: part.thoughtSignature },
+                  },
+                }),
+              }
               contentBlockIndex++
             }
           }
@@ -561,8 +677,27 @@ function parseGeminiNonStreamingResponse(
 
     if (candidateContent?.parts) {
       for (const part of candidateContent.parts) {
+        // A thought signature is metadata on the whole Part, so it is kept on
+        // whichever block that part becomes.
+        const providerState = part.thoughtSignature
+          ? { gemini: { thoughtSignature: part.thoughtSignature } }
+          : undefined
+
         if (part.text !== undefined) {
-          content.push({ type: 'text', text: part.text })
+          // A part carrying only a signature and no text must not be dropped.
+          if (part.thought) {
+            content.push({
+              type: 'reasoning',
+              text: part.text,
+              ...(providerState && { providerState }),
+            })
+          } else if (part.text || providerState) {
+            content.push({
+              type: 'text',
+              text: part.text,
+              ...(providerState && { providerState }),
+            })
+          }
         }
         if (part.functionCall) {
           hadToolCalls = true
@@ -571,6 +706,7 @@ function parseGeminiNonStreamingResponse(
             id: `toolu_gemini_${Date.now()}_${content.length}`,
             name: part.functionCall.name,
             input: part.functionCall.args || {},
+            ...(providerState && { providerState }),
           })
         }
       }

@@ -70,6 +70,7 @@ import type {
   DomainAssistantContent,
   DomainContentBlock,
   DomainReasoningBlock,
+  DomainRedactedReasoningBlock,
   DomainToolResultBlockParam,
   DomainToolResultContentItem,
   DomainToolUseBlock,
@@ -4687,16 +4688,72 @@ export function stripSignatureBlocks(messages: Message[]): Message[] {
 }
 
 /**
- * Strip reasoning blocks that don't belong to the target provider.
+ * Whether a reasoning block carries the opaque continuation data that a given
+ * provider type needs in order to replay it. Each provider only accepts its
+ * own: Anthropic-wire providers need a signature (or redacted data), the
+ * Responses API needs a reasoning id, Bedrock needs its own signature, Gemini
+ * needs a thought signature, and OpenAI-compatible endpoints need to have told
+ * us which field they use.
  *
- * Anthropic: keep blocks with a valid signature or redactedData.
- * OpenAI Responses: keep blocks with a reasoningId (encrypted/opaque).
- * All others: strip all reasoning blocks.
+ * A block with no usable state is dropped rather than sent, because every one
+ * of these providers rejects or ignores reasoning it cannot verify.
+ */
+const REASONING_STATE_PREDICATES: Partial<
+  Record<
+    ProviderType,
+    (block: DomainReasoningBlock | DomainRedactedReasoningBlock) => boolean
+  >
+> = {
+  anthropic: block => {
+    const anthro = block.providerState?.anthropic
+    return block.type === 'reasoning'
+      ? nonEmpty(anthro?.signature)
+      : nonEmpty(anthro?.redactedData)
+  },
+  'openai-responses': block =>
+    nonEmpty(block.providerState?.openaiResponses?.reasoningId),
+  'bedrock-converse': block => {
+    const bedrock = block.providerState?.bedrockConverse
+    return block.type === 'reasoning'
+      ? nonEmpty(bedrock?.signature)
+      : nonEmpty(bedrock?.redactedContent)
+  },
+  gemini: block => nonEmpty(block.providerState?.gemini?.thoughtSignature),
+  'openai-chat-completions': block => {
+    const cc = block.providerState?.openaiChatCompletions
+    return (
+      cc?.field !== undefined ||
+      (Array.isArray(cc?.details) && cc.details.length > 0)
+    )
+  },
+}
+
+function nonEmpty(value: string | undefined): boolean {
+  return typeof value === 'string' && value.length > 0
+}
+
+/**
+ * Strip reasoning blocks the target provider can't replay.
+ *
+ * Vertex and Foundry share Anthropic's wire format and its signed thinking
+ * blocks, so they use the same predicate. `preservesReasoning` comes from the
+ * provider's `preservesReasoningAcrossTurns` capability and is the kill switch
+ * for endpoints that reject unknown assistant-message fields.
  */
 export function stripForeignReasoningBlocks(
   messages: (UserMessage | AssistantMessage)[],
   targetProviderType: ProviderType | null,
+  preservesReasoning = true,
 ): (UserMessage | AssistantMessage)[] {
+  const predicate =
+    preservesReasoning && targetProviderType
+      ? REASONING_STATE_PREDICATES[
+          targetProviderType === 'vertex' || targetProviderType === 'foundry'
+            ? 'anthropic'
+            : targetProviderType
+        ]
+      : undefined
+
   let changed = false
   const result = messages.map(msg => {
     if (msg.type !== 'assistant') return msg
@@ -4712,25 +4769,7 @@ export function stripForeignReasoningBlocks(
         continue
       }
 
-      const ps = (block as DomainReasoningBlock).providerState
-      let keep = false
-
-      if (targetProviderType === 'anthropic') {
-        const anthro = ps?.anthropic
-        keep =
-          (block.type === 'reasoning' &&
-            typeof anthro?.signature === 'string' &&
-            anthro.signature.length > 0) ||
-          (block.type === 'redacted_reasoning' &&
-            typeof anthro?.redactedData === 'string' &&
-            anthro.redactedData.length > 0)
-      } else if (targetProviderType === 'openai-responses') {
-        const oai = ps?.openaiResponses
-        keep =
-          typeof oai?.reasoningId === 'string' && oai.reasoningId.length > 0
-      }
-
-      if (keep) {
+      if (predicate?.(block as DomainReasoningBlock)) {
         filtered.push(block)
       } else {
         blockChanged = true

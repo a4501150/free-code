@@ -43,6 +43,7 @@ import type {
   DomainStreamEvent,
   DomainStopReason,
   DomainUserContentBlock,
+  OpenAIChatCompletionsProviderState,
 } from '../../../types/domain.js'
 import {
   DomainTransportError,
@@ -107,7 +108,14 @@ interface OpenAIChatMessage {
   }>
   tool_call_id?: string
   name?: string
+  // OpenAI-compatible endpoints disagree on which field carries reasoning:
+  // `reasoning_content` (DeepSeek, xAI, Qwen, Kimi, GLM, Fireworks,
+  // llama-server), `reasoning` (Groq, Together, vLLM), or OpenRouter's
+  // `reasoning_details[]`, the only lossless one because it carries
+  // signatures and encrypted blocks.
   reasoning_content?: string
+  reasoning?: string
+  reasoning_details?: unknown[]
 }
 
 interface OpenAIChatTool {
@@ -193,6 +201,15 @@ function domainMessagesToOpenAI(
       let textContent = ''
       const toolCalls: NonNullable<OpenAIChatMessage['tool_calls']> = []
 
+      // Which field to echo reasoning back into is whichever one the endpoint
+      // used on the way in, recorded per block. Endpoints that reject unknown
+      // assistant-message fields opt out via the
+      // preservesReasoningAcrossTurns capability, which strips these blocks
+      // before they reach the adapter.
+      let reasoningField: 'reasoning_content' | 'reasoning' | undefined
+      let reasoningText = ''
+      const reasoningDetails: unknown[] = []
+
       for (const block of msg.content) {
         if (block.type === 'text') {
           textContent += block.text
@@ -205,8 +222,16 @@ function domainMessagesToOpenAI(
               arguments: JSON.stringify(block.input || {}),
             },
           })
+        } else if (block.type === 'reasoning') {
+          const state = block.providerState?.openaiChatCompletions
+          if (state?.details?.length) {
+            reasoningDetails.push(...state.details)
+          }
+          if (state?.field) {
+            reasoningField ??= state.field
+            reasoningText += block.text
+          }
         }
-        // reasoning / redacted_reasoning: dropped on outbound
       }
 
       const assistantMsg: OpenAIChatMessage = {
@@ -215,6 +240,12 @@ function domainMessagesToOpenAI(
       }
       if (toolCalls.length > 0) {
         assistantMsg.tool_calls = toolCalls
+      }
+      if (reasoningDetails.length > 0) {
+        assistantMsg.reasoning_details = reasoningDetails
+      }
+      if (reasoningField && reasoningText) {
+        assistantMsg[reasoningField] = reasoningText
       }
       result.push(assistantMsg)
     }
@@ -306,6 +337,27 @@ async function* parseOpenAIStream(
   let hadToolCalls = false
   let lastFinishReason: string | null = null
   const toolCallIndexMap = new Map<number, number>()
+  let observedReasoningField: 'reasoning_content' | 'reasoning' | undefined
+  const observedReasoningDetails: unknown[] = []
+
+  /**
+   * Closes a reasoning block, tagging it with the wire field this endpoint
+   * uses so the next outbound turn can echo back into the same one.
+   */
+  function closeReasoningBlock(index: number): DomainStreamEvent {
+    const state: OpenAIChatCompletionsProviderState = {}
+    if (observedReasoningField) state.field = observedReasoningField
+    if (observedReasoningDetails.length > 0) {
+      state.details = observedReasoningDetails.splice(0)
+    }
+    return {
+      type: 'content_block_stop',
+      index,
+      ...(Object.keys(state).length > 0 && {
+        providerState: { openaiChatCompletions: state },
+      }),
+    }
+  }
 
   const reader = response.body?.getReader()
   if (!reader) {
@@ -383,9 +435,17 @@ async function* parseOpenAIStream(
         const finishReason = choice.finish_reason as string | null
 
         if (delta) {
-          // Reasoning content
-          if (delta.reasoning_content) {
-            const reasoningText = delta.reasoning_content as string
+          // Reasoning content. Whichever field the endpoint used is recorded so
+          // the next outbound turn echoes back into that same one.
+          const reasoningField =
+            typeof delta.reasoning_content === 'string'
+              ? ('reasoning_content' as const)
+              : typeof delta.reasoning === 'string'
+                ? ('reasoning' as const)
+                : undefined
+          if (reasoningField) {
+            observedReasoningField = reasoningField
+            const reasoningText = delta[reasoningField] as string
             if (reasoningText.length > 0) {
               if (!inReasoningBlock) {
                 yield {
@@ -406,12 +466,18 @@ async function* parseOpenAIStream(
             }
           }
 
+          // OpenRouter streams reasoning_details fragments; they are opaque and
+          // must go back verbatim, so they accumulate rather than merge.
+          if (Array.isArray(delta.reasoning_details)) {
+            observedReasoningDetails.push(...delta.reasoning_details)
+          }
+
           // Text content
           if (delta.content) {
             const text = delta.content as string
             if (text.length > 0) {
               if (inReasoningBlock) {
-                yield { type: 'content_block_stop', index: contentBlockIndex }
+                yield closeReasoningBlock(contentBlockIndex)
                 contentBlockIndex++
                 inReasoningBlock = false
               }
@@ -447,7 +513,7 @@ async function* parseOpenAIStream(
                 currentTextBlockStarted = false
               }
               if (inReasoningBlock && !toolCallIndexMap.has(tc.index)) {
-                yield { type: 'content_block_stop', index: contentBlockIndex }
+                yield closeReasoningBlock(contentBlockIndex)
                 contentBlockIndex++
                 inReasoningBlock = false
               }
@@ -485,7 +551,7 @@ async function* parseOpenAIStream(
         if (finishReason) {
           lastFinishReason = finishReason
           if (inReasoningBlock) {
-            yield { type: 'content_block_stop', index: contentBlockIndex }
+            yield closeReasoningBlock(contentBlockIndex)
             contentBlockIndex++
             inReasoningBlock = false
           }
@@ -507,7 +573,7 @@ async function* parseOpenAIStream(
       yield { type: 'content_block_stop', index: contentBlockIndex }
     }
     if (inReasoningBlock) {
-      yield { type: 'content_block_stop', index: contentBlockIndex }
+      yield closeReasoningBlock(contentBlockIndex)
     }
     for (const [, blockIdx] of toolCallIndexMap) {
       yield { type: 'content_block_stop', index: blockIdx }
@@ -528,7 +594,7 @@ async function* parseOpenAIStream(
     yield { type: 'content_block_stop', index: contentBlockIndex }
   }
   if (inReasoningBlock) {
-    yield { type: 'content_block_stop', index: contentBlockIndex }
+    yield closeReasoningBlock(contentBlockIndex)
   }
   for (const [, blockIdx] of toolCallIndexMap) {
     yield { type: 'content_block_stop', index: blockIdx }
@@ -571,10 +637,28 @@ function parseOpenAINonStreamingResponse(
   const content: DomainContentBlock[] = []
   let hadToolCalls = false
 
-  if (msg.reasoning_content && typeof msg.reasoning_content === 'string') {
+  // Record which field carried the reasoning so the next outbound turn echoes
+  // back into that same one.
+  const reasoningField =
+    typeof msg.reasoning_content === 'string'
+      ? ('reasoning_content' as const)
+      : typeof msg.reasoning === 'string'
+        ? ('reasoning' as const)
+        : undefined
+  const reasoningDetails = Array.isArray(msg.reasoning_details)
+    ? msg.reasoning_details
+    : undefined
+
+  if (reasoningField || reasoningDetails) {
+    const state: OpenAIChatCompletionsProviderState = {}
+    if (reasoningField) state.field = reasoningField
+    if (reasoningDetails?.length) state.details = reasoningDetails
     content.push({
       type: 'reasoning',
-      text: msg.reasoning_content,
+      text: reasoningField ? (msg[reasoningField] as string) : '',
+      ...(Object.keys(state).length > 0 && {
+        providerState: { openaiChatCompletions: state },
+      }),
     })
   }
 

@@ -22,11 +22,33 @@ export type OpenAIResponsesProviderState = {
   encryptedContent?: string
 }
 
-export type OpenAIChatCompletionsProviderState = Record<string, unknown>
+/**
+ * Which wire field the endpoint used for reasoning, remembered so the next
+ * outbound turn echoes back into the same one. OpenAI-compatible endpoints
+ * disagree: `reasoning_content` (DeepSeek/xAI/Qwen/Kimi/GLM/llama-server),
+ * `reasoning` (Groq/Together/vLLM), or OpenRouter's `reasoning_details[]`,
+ * which is the only lossless form because it carries signatures and
+ * encrypted blocks. `details` holds that array verbatim.
+ */
+export type OpenAIChatCompletionsProviderState = {
+  field?: 'reasoning_content' | 'reasoning'
+  details?: unknown[]
+}
 
-export type BedrockConverseProviderState = Record<string, unknown>
+/** `redactedContent` is base64 on the REST wire; kept in that form. */
+export type BedrockConverseProviderState = {
+  signature?: string
+  redactedContent?: string
+}
 
-export type GeminiProviderState = Record<string, unknown>
+/**
+ * `thoughtSignature` is an opaque base64 string that Gemini attaches to a
+ * whole Part, so it can ride on a text or tool_use block and not just a
+ * reasoning one.
+ */
+export type GeminiProviderState = {
+  thoughtSignature?: string
+}
 
 export type ProviderState = {
   anthropic?: AnthropicProviderState
@@ -49,6 +71,7 @@ export type DomainTextBlock = {
   type: 'text'
   text: string
   citations?: unknown
+  providerState?: ProviderState
 }
 
 export type DomainToolUseBlock = {
@@ -56,6 +79,7 @@ export type DomainToolUseBlock = {
   id: string
   name: string
   input: unknown
+  providerState?: ProviderState
 }
 
 export type DomainReasoningBlock = {

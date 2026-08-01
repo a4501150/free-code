@@ -1152,13 +1152,15 @@ async function* queryModel(
   queryCheckpoint('query_message_normalization_end')
 
   // Strip reasoning blocks that don't belong to the target provider.
-  // Each provider only accepts its own opaque continuation data:
-  // Anthropic needs signed thinking blocks, OpenAI Responses needs
-  // encrypted reasoning with a reasoningId, and other providers don't
-  // accept reasoning blocks at all.
+  // Each provider only accepts its own opaque continuation data: Anthropic-wire
+  // providers (including Vertex and Foundry) need signed thinking blocks,
+  // OpenAI Responses needs encrypted reasoning with a reasoningId, Bedrock and
+  // Gemini need their own signatures, and OpenAI-compatible endpoints need to
+  // have told us which reasoning field they use.
   messagesForAPI = stripForeignReasoningBlocks(
     messagesForAPI,
     registry.getProviderType(options.model),
+    registry.getCapability(options.model, 'preservesReasoningAcrossTurns'),
   )
 
   // Repair tool_use/tool_result pairing mismatches that can occur when resuming
