@@ -7,7 +7,11 @@ process.env.COREPACK_ENABLE_AUTO_PIN = '0'
 import { daemonMain } from '../daemon/main.js'
 import { runDaemonWorker } from '../daemon/workerRegistry.js'
 import { main as cliMain } from '../main.js'
+import { setIsInteractive } from '../bootstrap/state.js'
 import { getSystemPrompt } from '../constants/prompts.js'
+import { getAllBaseTools } from '../tools.js'
+import { withAgenticSystemPromptInvariants } from '../utils/agenticSystemPrompt.js'
+import { asSystemPrompt } from '../utils/systemPromptType.js'
 import { enableConfigs } from '../utils/config.js'
 import { startCapturingEarlyInput } from '../utils/earlyInput.js'
 import { getMainLoopModel } from '../utils/model/model.js'
@@ -45,11 +49,17 @@ async function main(): Promise<void> {
   if (feature('DUMP_SYSTEM_PROMPT') && args[0] === '--dump-system-prompt') {
     profileCheckpoint('cli_dump_system_prompt_path')
     enableConfigs()
+    // Render the interactive REPL variant: the session-specific guidance and
+    // tool sections branch on these, and the default state is non-interactive
+    // with no tools, which silently drops them from the dump.
+    setIsInteractive(true)
     const modelIdx = args.indexOf('--model')
     const model = (modelIdx !== -1 && args[modelIdx + 1]) || getMainLoopModel()
-    const prompt = await getSystemPrompt([], model)
+    const prompt = await getSystemPrompt(getAllBaseTools(), model)
     // biome-ignore lint/suspicious/noConsole:: intentional console output
-    console.log(prompt.join('\n'))
+    console.log(
+      withAgenticSystemPromptInvariants(asSystemPrompt(prompt)).join('\n'),
+    )
     return
   }
 
