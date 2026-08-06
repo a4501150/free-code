@@ -807,6 +807,12 @@ const _settingsSchemaValue = z
       .describe(
         'Show turn duration (e.g. "Cooked for 1m 6s"). Defaults to true.',
       ),
+    showInjectedContext: z
+      .boolean()
+      .optional()
+      .describe(
+        'Show model-facing injected context (system reminders, user context, task notification detail) as collapsible rows in the REPL. Defaults to true.',
+      ),
     diffTool: z
       .enum(['auto', 'terminal', 'vscode'])
       .optional()

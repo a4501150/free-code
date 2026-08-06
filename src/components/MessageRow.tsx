@@ -41,6 +41,7 @@ export type Props = {
   columns: number
   isLoading: boolean
   lookups: ReturnType<typeof buildMessageLookups>
+  showInjectedContext: boolean
 }
 
 export function hasContentAfterIndex(
@@ -110,6 +111,7 @@ function MessageRowImpl({
   columns,
   isLoading,
   lookups,
+  showInjectedContext,
 }: Props): React.ReactNode {
   const isTranscriptMode = screen === 'transcript'
   const isGrouped = msg.type === 'grouped_tool_use'
@@ -194,6 +196,7 @@ function MessageRowImpl({
       isUserContinuation={isUserContinuation}
       lastThinkingBlockId={lastThinkingBlockId}
       latestBashOutputUUID={latestBashOutputUUID}
+      showInjectedContext={showInjectedContext}
     />
   )
   // OffscreenFreeze: the outer React.memo already bails for static messages,
@@ -295,6 +298,9 @@ export function areMessageRowPropsEqual(prev: Props, next: Props): boolean {
 
   // Verbose toggle changes thinking block visibility
   if (prev.verbose !== next.verbose) return false
+
+  // Toggling injected context adds/removes reminder rows
+  if (prev.showInjectedContext !== next.showInjectedContext) return false
 
   // collapsed_read_search is never static in prompt mode (matches shouldRenderStatically)
   if (

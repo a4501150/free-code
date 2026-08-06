@@ -24,6 +24,8 @@ export const TERMINAL_OUTPUT_TAGS = [
 
 export const TICK_TAG = 'tick'
 
+export const SYSTEM_REMINDER_TAG = 'system-reminder'
+
 // XML tag names for task notifications (background task completions)
 export const TASK_NOTIFICATION_TAG = 'task-notification'
 export const TASK_ID_TAG = 'task-id'

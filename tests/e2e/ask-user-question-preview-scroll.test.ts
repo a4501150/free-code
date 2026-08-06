@@ -19,7 +19,7 @@ import {
 setDefaultTimeout(120_000)
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, sleep } from './tmux-helpers'
+import { TmuxSession, sleep, findTextCell } from './tmux-helpers'
 
 const TOTAL_ROWS = 40
 
@@ -231,12 +231,9 @@ describe('AskUserQuestion Preview Scroll', () => {
     expect(screen).toContain('click to scroll')
 
     // Click inside the preview box, on the row rendering its first line.
-    const lines = screen.split('\n')
-    const previewRowIdx = lines.findIndex(l => l.includes(row(1)))
-    expect(previewRowIdx).toBeGreaterThanOrEqual(0)
-    const previewCol = lines[previewRowIdx]!.indexOf(row(1))
-    // +1 converts 0-indexed capture coords to the 1-indexed SGR wire format.
-    await session.sendMouseClick(previewCol + 1, previewRowIdx + 1)
+    const previewCell = findTextCell(screen, row(1))
+    expect(previewCell).not.toBeNull()
+    await session.sendMouseClick(previewCell!.col, previewCell!.row)
     await sleep(300)
 
     screen = await session.capturePane()

@@ -647,6 +647,24 @@ async function ensureTmuxAvailable(): Promise<void> {
 export { sleep }
 
 /**
+ * Coordinates of `needle` in a captured pane, in the 1-indexed form
+ * sendMouseClick expects. Points at the needle itself because a click on a
+ * blank cell is deliberately ignored (see ScrollBox/VirtualMessageList).
+ */
+export function findTextCell(
+  pane: string,
+  needle: string,
+): { col: number; row: number } | null {
+  const rows = pane.split('\n')
+  for (let i = 0; i < rows.length; i++) {
+    const col = rows[i]!.indexOf(needle)
+    if (col === -1) continue
+    return { col: col + 1, row: i + 1 }
+  }
+  return null
+}
+
+/**
  * Wraps bun's `test()` to log each test name and result to stdout,
  * so output is visible when captured by non-TTY tools (e.g. CI, Bash tool).
  */

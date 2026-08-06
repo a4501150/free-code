@@ -2,7 +2,10 @@
 import React from 'react'
 import { Ansi, Box, Text } from '../../ink.js'
 import type { Attachment } from 'src/utils/attachments.js'
-import type { NullRenderingAttachmentType } from './nullRenderingAttachments.js'
+import {
+  isNullRenderingAttachmentType,
+  type NullRenderingAttachmentType,
+} from './nullRenderingAttachments.js'
 import { useAppState } from '../../state/AppState.js'
 import { getDisplayPath } from 'src/utils/file.js'
 import { formatFileSize } from 'src/utils/format.js'
@@ -10,7 +13,12 @@ import { MessageResponse } from '../MessageResponse.js'
 import { basename, sep } from 'path'
 import { UserTextMessage } from './UserTextMessage.js'
 import { DiagnosticsDisplay } from '../DiagnosticsDisplay.js'
-import { getContentText } from 'src/utils/messages.js'
+import {
+  getAttachmentSystemReminderBodies,
+  getContentText,
+  isTaskNotificationText,
+} from 'src/utils/messages.js'
+import { InjectedContextMessage } from './InjectedContextMessage.js'
 import type { Theme } from 'src/utils/theme.js'
 import { UserImageMessage } from './UserImageMessage.js'
 import { toInkColor } from '../../utils/ink.js'
@@ -34,13 +42,56 @@ type Props = {
   attachment: Attachment
   verbose: boolean
   isTranscriptMode?: boolean
+  showInjectedContext: boolean
 }
 
-export function AttachmentMessage({
+/** A queued task notification renders its own detail through
+ * UserAgentNotificationMessage. normalizeAttachmentForAPI additionally wraps it
+ * in a system reminder, so the generic reminder row would duplicate it. */
+function isQueuedTaskNotification(attachment: Attachment): boolean {
+  if (attachment.type !== 'queued_command') return false
+  const text =
+    typeof attachment.prompt === 'string'
+      ? attachment.prompt
+      : getContentText(attachment.prompt) || ''
+  return isTaskNotificationText(text)
+}
+
+export function AttachmentMessage(props: Props): React.ReactNode {
+  const { attachment, addMargin, verbose, showInjectedContext } = props
+  const content = <AttachmentMessageContent {...props} />
+
+  const reminders =
+    showInjectedContext && !isQueuedTaskNotification(attachment)
+      ? getAttachmentSystemReminderBodies(attachment)
+      : []
+  if (reminders.length === 0) {
+    return content
+  }
+
+  // Null-rendering types have no line of their own, so the reminder row owns
+  // the leading margin; otherwise it sits under an existing summary line.
+  const isOnlyRow = isNullRenderingAttachmentType(attachment.type)
+
+  return (
+    <Box flexDirection="column">
+      {content}
+      <InjectedContextMessage
+        addMargin={addMargin && isOnlyRow}
+        label={`System reminder · ${attachment.type}`}
+        content={reminders.join('\n\n')}
+        verbose={verbose}
+      />
+    </Box>
+  )
+}
+
+function AttachmentMessageContent({
   attachment,
   addMargin,
   verbose,
   isTranscriptMode,
+  showInjectedContext,
 }: Props): React.ReactNode {
   const bg = useSelectedMessageBg()
   // Handle teammate_mailbox BEFORE switch
@@ -280,6 +331,8 @@ export function AttachmentMessage({
             param={{ text, type: 'text' }}
             verbose={verbose}
             isTranscriptMode={isTranscriptMode}
+            showInjectedContext={showInjectedContext}
+            isMeta={attachment.isMeta}
           />
           {hasImages &&
             attachment.imagePasteIds?.map(id => (

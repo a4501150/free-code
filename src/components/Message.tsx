@@ -41,6 +41,7 @@ import { GroupedToolUseContent } from './messages/GroupedToolUseContent.js'
 import { SystemTextMessage } from './messages/SystemTextMessage.js'
 import { UserImageMessage } from './messages/UserImageMessage.js'
 import { UserTextMessage } from './messages/UserTextMessage.js'
+import { USER_CONTEXT_ROW_UUID } from '../constants/messages.js'
 import { UserToolResultMessage } from './messages/UserToolResultMessage/UserToolResultMessage.js'
 import { OffscreenFreeze } from './OffscreenFreeze.js'
 import { ExpandShellOutputProvider } from './shell/ExpandShellOutputContext.js'
@@ -77,6 +78,10 @@ export type Props = {
   lastThinkingBlockId?: string | null
   /** UUID of the latest user bash output message (for auto-expanding) */
   latestBashOutputUUID?: string | null
+  /** Render model-facing injected context as collapsible rows. Defaults to
+   *  false: only the main transcript passes it, so agent drill-downs and queue
+   *  previews stay as they were. */
+  showInjectedContext?: boolean
 }
 
 function MessageImpl({
@@ -99,6 +104,7 @@ function MessageImpl({
   isUserContinuation = false,
   lastThinkingBlockId,
   latestBashOutputUUID,
+  showInjectedContext = false,
 }: Props): React.ReactNode {
   switch (message.type) {
     case 'attachment':
@@ -108,6 +114,7 @@ function MessageImpl({
           attachment={message.attachment}
           verbose={verbose}
           isTranscriptMode={isTranscriptMode}
+          showInjectedContext={showInjectedContext}
         />
       )
     case 'assistant': {
@@ -202,6 +209,7 @@ function MessageImpl({
               isUserContinuation={isUserContinuation}
               lookups={lookups}
               isTranscriptMode={isTranscriptMode}
+              showInjectedContext={showInjectedContext}
             />
           ))}
         </Box>
@@ -230,6 +238,7 @@ function MessageImpl({
             param={{ type: 'text', text: message.content }}
             verbose={verbose}
             isTranscriptMode={isTranscriptMode}
+            showInjectedContext={showInjectedContext}
           />
         )
       }
@@ -291,6 +300,7 @@ function UserMessage({
   isUserContinuation,
   lookups,
   isTranscriptMode,
+  showInjectedContext,
 }: {
   message: NormalizedUserMessage
   addMargin: boolean
@@ -307,6 +317,7 @@ function UserMessage({
   isUserContinuation: boolean
   lookups: ReturnType<typeof buildMessageLookups>
   isTranscriptMode: boolean
+  showInjectedContext: boolean
 }): React.ReactNode {
   const { columns } = useTerminalSize()
   switch (param.type) {
@@ -319,6 +330,13 @@ function UserMessage({
           planContent={message.planContent as string | undefined}
           isTranscriptMode={isTranscriptMode}
           timestamp={message.timestamp}
+          showInjectedContext={showInjectedContext}
+          isMeta={message.isMeta}
+          injectedContextLabel={
+            message.uuid === USER_CONTEXT_ROW_UUID
+              ? 'Session context'
+              : undefined
+          }
         />
       )
     case 'image':

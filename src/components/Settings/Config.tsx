@@ -850,6 +850,23 @@ export function Config({
       },
     },
     {
+      id: 'showInjectedContext',
+      label: 'Show injected context',
+      value: settingsData?.showInjectedContext ?? true,
+      type: 'boolean' as const,
+      onChange(showInjectedContext: boolean) {
+        updateUserSettings({ showInjectedContext })
+        // /config writes are internal, so the settings watcher suppresses them
+        // (consumeInternalWrite) and AppState never refreshes on its own. Push
+        // it so the transcript behind the dialog reacts immediately. Escape
+        // restores it from the initialAppState snapshot in revertChanges.
+        setAppState(prev => ({
+          ...prev,
+          settings: { ...prev.settings, showInjectedContext },
+        }))
+      },
+    },
+    {
       id: 'defaultPermissionMode',
       label: 'Default permission mode',
       value: settingsData?.permissions?.defaultMode || 'default',
@@ -1390,6 +1407,14 @@ export function Config({
       )
     }
     if (
+      (settingsData?.showInjectedContext ?? true) !==
+      (initialSettingsData.current?.showInjectedContext ?? true)
+    ) {
+      formattedChanges.push(
+        `${(settingsData?.showInjectedContext ?? true) ? 'Enabled' : 'Disabled'} injected context`,
+      )
+    }
+    if (
       settingsData?.autoUpdatesChannel !==
       initialSettingsData.current?.autoUpdatesChannel
     ) {
@@ -1417,6 +1442,7 @@ export function Config({
     settingsData?.terminalProgressBarEnabled,
     settingsData?.showStatusInTerminalTab,
     settingsData?.showTurnDuration,
+    settingsData?.showInjectedContext,
     isFastModeEnabled()
       ? (settingsData as Record<string, unknown> | undefined)?.fastMode
       : undefined,
@@ -1446,6 +1472,7 @@ export function Config({
     updateSettingsForSource('userSettings', {
       verbose: iu?.verbose,
       showTurnDuration: iu?.showTurnDuration,
+      showInjectedContext: iu?.showInjectedContext,
       respectGitignore: iu?.respectGitignore,
       copyFullResponse: iu?.copyFullResponse,
       copyOnSelect: iu?.copyOnSelect,

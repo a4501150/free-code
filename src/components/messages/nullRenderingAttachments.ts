@@ -1,6 +1,7 @@
 import { feature } from 'bun:bundle'
 import type { Attachment } from 'src/utils/attachments.js'
 import type { Message, NormalizedMessage } from '../../types/message.js'
+import { attachmentHasSystemReminder } from '../../utils/messages.js'
 
 /**
  * Attachment types that AttachmentMessage renders as `null` unconditionally
@@ -63,11 +64,35 @@ const NULL_RENDERING_ATTACHMENT_TYPES: ReadonlySet<Attachment['type']> =
  * attachments (hook_success, hook_additional_context, hook_cancelled) don't
  * inflate the "N messages" count or eat into the render budget (CC-724).
  */
+export function isNullRenderingAttachmentType(
+  type: Attachment['type'],
+): boolean {
+  return NULL_RENDERING_ATTACHMENT_TYPES.has(type)
+}
+
 export function isNullRenderingAttachment(
   msg: Message | NormalizedMessage,
 ): boolean {
   return (
     msg.type === 'attachment' &&
-    NULL_RENDERING_ATTACHMENT_TYPES.has(msg.attachment.type)
+    isNullRenderingAttachmentType(msg.attachment.type)
   )
+}
+
+/**
+ * Whether the transcript should drop this message entirely. Same contract as
+ * isNullRenderingAttachment (callers must filter BEFORE counting and before
+ * the render cap), but when injected context is visible a null-rendering
+ * attachment is kept if it actually contributes a system reminder — that
+ * reminder becomes the row's collapsible body. Types that contribute nothing
+ * (command_permissions, hook_cancelled, structured_output, …) stay hidden.
+ */
+export function shouldHideAttachmentInUI(
+  msg: Message | NormalizedMessage,
+  showInjectedContext: boolean,
+): boolean {
+  if (msg.type !== 'attachment') return false
+  if (!isNullRenderingAttachmentType(msg.attachment.type)) return false
+  if (!showInjectedContext) return true
+  return !attachmentHasSystemReminder(msg.attachment)
 }

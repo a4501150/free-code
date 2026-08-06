@@ -34,3 +34,7 @@ export const FLAG_ICON = '\u2691' // ⚑ - used for issue flag banner
 // Blockquote indicator
 export const BLOCKQUOTE_BAR = '\u258e' // ▎ - left one-quarter block, used as blockquote line prefix
 export const HEAVY_HORIZONTAL = '\u2501' // ━ - heavy box-drawing horizontal
+
+// Disclosure triangles for a row whose body expands in place
+export const DISCLOSURE_COLLAPSED = '\u25b8' // ▸
+export const DISCLOSURE_EXPANDED = '\u25be' // ▾

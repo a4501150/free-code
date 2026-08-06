@@ -105,6 +105,8 @@ import {
   COMMAND_NAME_TAG,
   LOCAL_COMMAND_CAVEAT_TAG,
   LOCAL_COMMAND_STDOUT_TAG,
+  SYSTEM_REMINDER_TAG,
+  TASK_NOTIFICATION_TAG,
 } from '../constants/xml.js'
 import { DiagnosticTrackingService } from '../services/diagnosticTracking.js'
 import {
@@ -2926,6 +2928,99 @@ export function wrapMessagesInSystemReminder(
   })
 }
 
+/**
+ * Whether text is a synthetic block of the given tag. Prefix-anchored on
+ * purpose: `.includes()` would reclassify a user prompt that merely mentions
+ * the tag name, and the synthetic renderers then swallow the real prompt.
+ */
+function startsWithTag(text: string, tagName: string): boolean {
+  const trimmed = text.trimStart()
+  if (!trimmed.startsWith(`<${tagName}`)) return false
+  const after = trimmed[tagName.length + 1]
+  if (after === undefined) return false
+  // Same whitespace rule as extractTag, or a tag that extracts would not be
+  // recognized here (`<system-reminder\tfoo="bar">`).
+  return after === '>' || /\s/.test(after)
+}
+
+export function isSystemReminderText(text: string): boolean {
+  return startsWithTag(text, SYSTEM_REMINDER_TAG)
+}
+
+export function isTaskNotificationText(text: string): boolean {
+  return startsWithTag(text, TASK_NOTIFICATION_TAG)
+}
+
+export function extractSystemReminderBody(text: string): string | null {
+  if (!isSystemReminderText(text)) return null
+  return extractTag(text, SYSTEM_REMINDER_TAG)?.trim() || null
+}
+
+/**
+ * Whether a normalized user row is injected context rather than something the
+ * human typed. Reads the single text block directly — normalizeMessages splits
+ * user content one block per row, so getContentText's filter/map/join would
+ * allocate three throwaway values per mounted row.
+ */
+export function isInjectedContextText(message: NormalizedUserMessage): boolean {
+  const block = message.message.content[0]
+  if (block?.type !== 'text') return false
+  return isSystemReminderText(block.text) || isTaskNotificationText(block.text)
+}
+
+/**
+ * Only the yes/no is cached, not the bodies: this is consulted for every
+ * attachment in an O(n)-over-history filter pass, and retaining every derived
+ * body would hold a second copy of every file/resource/memory attachment's
+ * text for the life of the session. Attachments don't mutate, so keying on the
+ * object is safe.
+ */
+const attachmentHasReminderCache = new WeakMap<Attachment, boolean>()
+
+export function attachmentHasSystemReminder(attachment: Attachment): boolean {
+  const cached = attachmentHasReminderCache.get(attachment)
+  if (cached !== undefined) return cached
+  const has = getAttachmentSystemReminderBodies(attachment).length > 0
+  attachmentHasReminderCache.set(attachment, has)
+  return has
+}
+
+/**
+ * The system reminder bodies an attachment contributes to the request. The
+ * text only exists after normalizeAttachmentForAPI, so producing it is the
+ * only way to know what an attachment injects.
+ */
+export function getAttachmentSystemReminderBodies(
+  attachment: Attachment,
+): string[] {
+  // This runs while rendering, and over the whole history on every new
+  // message. normalizeAttachmentForAPI was written for the request path, where
+  // a throw surfaces as a turn error; here an attachment persisted by another
+  // version with a different shape would take down the entire transcript.
+  let normalized: UserMessage[]
+  try {
+    normalized = normalizeAttachmentForAPI(attachment)
+  } catch {
+    return []
+  }
+
+  const bodies: string[] = []
+  for (const message of normalized) {
+    const content = message.message.content
+    if (typeof content === 'string') {
+      const body = extractSystemReminderBody(content)
+      if (body) bodies.push(body)
+      continue
+    }
+    for (const block of content) {
+      if (block.type !== 'text') continue
+      const body = extractSystemReminderBody(block.text)
+      if (body) bodies.push(body)
+    }
+  }
+  return bodies
+}
+
 function getPlanModeInstructions(attachment: {
   reminderType: 'full' | 'sparse'
   isSubAgent?: boolean
@@ -4273,6 +4368,7 @@ export function getMessagesAfterCompactBoundary<
 export function shouldShowUserMessage(
   message: NormalizedMessage,
   isTranscriptMode: boolean,
+  showInjectedContext: boolean,
 ): boolean {
   if (message.type !== 'user') return true
   if (message.isMeta) {
@@ -4280,6 +4376,7 @@ export function shouldShowUserMessage(
     // should see what arrived. The <channel> tag in UserTextMessage handles
     // the actual rendering.
     if (feature('KAIROS') && message.origin?.kind === 'channel') return true
+    if (showInjectedContext && isInjectedContextText(message)) return true
     return false
   }
   if (message.isVisibleInTranscriptOnly && !isTranscriptMode) return false

@@ -25,7 +25,7 @@ import { Box, Text } from '../ink.js'
 import type { Message } from '../types/message.js'
 import { openBrowser, openPath } from '../utils/browser.js'
 import { plural } from '../utils/stringUtils.js'
-import { isNullRenderingAttachment } from './messages/nullRenderingAttachments.js'
+import { shouldHideAttachmentInUI } from './messages/nullRenderingAttachments.js'
 import PromptInputFooterSuggestions from './PromptInput/PromptInputFooterSuggestions.js'
 import type { StickyPrompt } from './VirtualMessageList.js'
 
@@ -264,17 +264,20 @@ export type UnseenDivider = { firstUnseenUuid: Message['uuid']; count: number }
 export function computeUnseenDivider(
   messages: readonly Message[],
   dividerIndex: number | null,
+  showInjectedContext: boolean,
 ): UnseenDivider | undefined {
   if (dividerIndex === null) return undefined
-  // Skip progress and null-rendering attachments when picking the divider
-  // anchor — Messages.tsx filters these out of renderableMessages before the
-  // dividerBeforeIndex search, so their UUID wouldn't be found (CC-724).
+  // Skip progress and hidden attachments when picking the divider anchor —
+  // Messages.tsx filters these out of renderableMessages before the
+  // dividerBeforeIndex search, so their UUID wouldn't be found (CC-724). The
+  // predicate must match Messages.tsx's, or a reminder-bearing attachment that
+  // now renders would be chosen here and then skipped there.
   // Hook attachments use randomUUID() so nothing shares their 24-char prefix.
   let anchorIdx = dividerIndex
   while (
     anchorIdx < messages.length &&
     (messages[anchorIdx]?.type === 'progress' ||
-      isNullRenderingAttachment(messages[anchorIdx]!))
+      shouldHideAttachmentInUI(messages[anchorIdx]!, showInjectedContext))
   ) {
     anchorIdx++
   }

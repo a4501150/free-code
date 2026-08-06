@@ -412,6 +412,7 @@ import { usePluginInstallationStatus } from 'src/hooks/notifs/usePluginInstallat
 import { usePluginAutoupdateNotification } from 'src/hooks/notifs/usePluginAutoupdateNotification.js'
 import { performStartupChecks } from 'src/utils/plugins/performStartupChecks.js'
 import { UserTextMessage } from 'src/components/messages/UserTextMessage.js'
+import { useShowInjectedContext } from '../hooks/useShowInjectedContext.js'
 import { AwsAuthStatusBox } from '../components/AwsAuthStatusBox.js'
 import { useRateLimitWarningNotification } from 'src/hooks/notifs/useRateLimitWarningNotification.js'
 import { useDeprecationWarningNotification } from 'src/hooks/notifs/useDeprecationWarningNotification.js'
@@ -1414,10 +1415,11 @@ export function REPL({
   const [cursor, setCursor] = useState<MessageActionsState | null>(null)
   const cursorNavRef = useRef<MessageActionsNav | null>(null)
   // Memoized so Messages' React.memo holds.
+  const showInjectedContext = useShowInjectedContext()
   const unseenDivider = useMemo(
-    () => computeUnseenDivider(messages, dividerIndex),
+    () => computeUnseenDivider(messages, dividerIndex, showInjectedContext),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- length change covers appends; useUnseenDivider's count-drop guard clears dividerIndex on replace/rewind
-    [dividerIndex, messages.length],
+    [dividerIndex, messages.length, showInjectedContext],
   )
   // Re-pin scroll to bottom and clear the unseen-messages baseline. Called
   // on any user-driven return-to-live action (submit, type-into-empty,
@@ -4656,6 +4658,7 @@ export function REPL({
         onSearchMatchesChange={onSearchMatchesChange}
         scanElement={scanElement}
         setPositions={setPositions}
+        showRequestOnlyUserContext={true}
       />
     )
     const transcriptToolJSX = toolJSX && (
@@ -4979,6 +4982,11 @@ export function REPL({
                 cursor={cursor}
                 setCursor={setCursor}
                 cursorNavRef={cursorNavRef}
+                // The user-context block belongs to this session's requests,
+                // not a subagent's or teammate's.
+                showRequestOnlyUserContext={
+                  !viewedAgentTask && !viewedTeammateTask
+                }
               />
               <AwsAuthStatusBox />
               {/* Hide the processing placeholder while a modal is showing —
@@ -4991,6 +4999,7 @@ export function REPL({
                   param={{ text: placeholderText, type: 'text' }}
                   addMargin={true}
                   verbose={verbose}
+                  showInjectedContext={false}
                 />
               )}
               {toolJSX &&

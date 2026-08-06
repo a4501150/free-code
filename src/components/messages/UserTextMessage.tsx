@@ -6,16 +6,19 @@ import {
   COMMAND_MESSAGE_TAG,
   COMMAND_NAME_TAG,
   LOCAL_COMMAND_CAVEAT_TAG,
-  TASK_NOTIFICATION_TAG,
   TEAMMATE_MESSAGE_TAG,
   TICK_TAG,
 } from '../../constants/xml.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import {
+  extractSystemReminderBody,
   extractTag,
   INTERRUPT_MESSAGE,
   INTERRUPT_MESSAGE_FOR_TOOL_USE,
+  isSystemReminderText,
+  isTaskNotificationText,
 } from '../../utils/messages.js'
+import { InjectedContextMessage } from './InjectedContextMessage.js'
 import { InterruptedByUser } from '../InterruptedByUser.js'
 import { MessageResponse } from '../MessageResponse.js'
 import { UserAgentNotificationMessage } from './UserAgentNotificationMessage.js'
@@ -37,6 +40,10 @@ type Props = {
   planContent?: string
   isTranscriptMode?: boolean
   timestamp?: string
+  showInjectedContext: boolean
+  isMeta?: boolean
+  /** Heading for an injected-context row. Defaults to 'System reminder'. */
+  injectedContextLabel?: string
 }
 
 export function UserTextMessage({
@@ -46,6 +53,9 @@ export function UserTextMessage({
   planContent,
   isTranscriptMode,
   timestamp,
+  showInjectedContext,
+  isMeta,
+  injectedContextLabel,
 }: Props): React.ReactNode {
   if (param.text.trim() === NO_CONTENT_MESSAGE) {
     return null
@@ -142,8 +152,15 @@ export function UserTextMessage({
   }
 
   // Task notifications (agent completions, bash completions, etc.)
-  if (param.text.startsWith(`<${TASK_NOTIFICATION_TAG}`)) {
-    return <UserAgentNotificationMessage addMargin={addMargin} param={param} />
+  if (isTaskNotificationText(param.text)) {
+    return (
+      <UserAgentNotificationMessage
+        addMargin={addMargin}
+        param={param}
+        verbose={verbose}
+        showInjectedContext={showInjectedContext}
+      />
+    )
   }
 
   // MCP resource and polling update notifications
@@ -159,6 +176,22 @@ export function UserTextMessage({
     if (param.text.startsWith('<channel source="')) {
       const { UserChannelMessage } = userChannelNs
       return <UserChannelMessage addMargin={addMargin} param={param} />
+    }
+  }
+
+  // Model-facing context the user does not normally see. Gated on isMeta so a
+  // real prompt that happens to open with the tag still renders as a prompt.
+  if (showInjectedContext && isMeta && isSystemReminderText(param.text)) {
+    const body = extractSystemReminderBody(param.text)
+    if (body) {
+      return (
+        <InjectedContextMessage
+          addMargin={addMargin}
+          label={injectedContextLabel ?? 'System reminder'}
+          content={body}
+          verbose={verbose}
+        />
+      )
     }
   }
 

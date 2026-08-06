@@ -27,15 +27,19 @@ import { collapseBackgroundBashNotifications } from '../utils/collapseBackground
 import { collapseHookSummaries } from '../utils/collapseHookSummaries.js'
 import { collapseReadSearchGroups } from '../utils/collapseReadSearch.js'
 import { collapseTeammateShutdowns } from '../utils/collapseTeammateShutdowns.js'
+import { USER_CONTEXT_ROW_UUID } from '../constants/messages.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import { applyGrouping } from '../utils/groupToolUses.js'
 import {
   buildMessageLookups,
   createAssistantMessage,
+  createUserMessage,
   deriveUUID,
+  attachmentHasSystemReminder,
   getToolUseID,
   getToolUseIDs,
   hasUnresolvedHooksFromLookup,
+  isInjectedContextText,
   isNotEmptyMessage,
   normalizeMessages,
   reorderMessagesInUI,
@@ -57,7 +61,10 @@ import {
   type MessageActionsState,
 } from './messageActions.js'
 import { AssistantThinkingMessage } from './messages/AssistantThinkingMessage.js'
-import { isNullRenderingAttachment } from './messages/nullRenderingAttachments.js'
+import { shouldHideAttachmentInUI } from './messages/nullRenderingAttachments.js'
+import { useShowInjectedContext } from '../hooks/useShowInjectedContext.js'
+import { getUserContext } from '../context.js'
+import { formatUserContextMessageContent } from '../utils/contextInjection.js'
 import { OffscreenFreeze } from './OffscreenFreeze.js'
 import type { ToolUseConfirm } from './permissions/PermissionRequest.js'
 import { StatusNotices } from './StatusNotices.js'
@@ -305,6 +312,11 @@ type Props = {
    *  (start === 0); later chunks are mid-stream continuations.
    *  Measured Mar 2026: 538-msg session, 20 slices → −55% plateau RSS. */
   renderRange?: readonly [start: number, end: number]
+  /** Render the request-only user-context block (CLAUDE.md, git status, date)
+   *  as a display-only row at the top of the transcript. Off by default so
+   *  session previews and headless export never inject the CURRENT directory's
+   *  context into an old session's transcript. */
+  showRequestOnlyUserContext?: boolean
 }
 
 const MAX_MESSAGES_TO_SHOW_IN_TRANSCRIPT_MODE = 30
@@ -410,8 +422,10 @@ const MessagesImpl = ({
   setCursor,
   cursorNavRef,
   renderRange,
+  showRequestOnlyUserContext = false,
 }: Props): React.ReactNode => {
   const { columns } = useTerminalSize()
+  const showInjectedContext = useShowInjectedContext()
   const toggleShowAllShortcut = useShortcutDisplay(
     'transcript:toggleShowAll',
     'Transcript',
@@ -553,12 +567,14 @@ const MessagesImpl = ({
             (msg): msg is Exclude<NormalizedMessage, ProgressMessageType> =>
               msg.type !== 'progress',
           )
-          // CC-724: drop attachment messages that AttachmentMessage renders as
-          // null (hook_success, hook_additional_context, hook_cancelled, etc.)
+          // CC-724: drop attachment messages that render as null
+          // (hook_success, hook_additional_context, hook_cancelled, etc.)
           // BEFORE counting/slicing so they don't inflate the "N messages"
           // count in ctrl-o or consume slots in the 200-message render cap.
-          .filter(msg => !isNullRenderingAttachment(msg))
-          .filter(_ => shouldShowUserMessage(_, isTranscriptMode)),
+          .filter(msg => !shouldHideAttachmentInUI(msg, showInjectedContext))
+          .filter(_ =>
+            shouldShowUserMessage(_, isTranscriptMode, showInjectedContext),
+          ),
         syntheticStreamingToolUseMessages,
       )
       // Three-tier filtering. Transcript mode (ctrl+o screen) is truly unfiltered.
@@ -629,7 +645,48 @@ const MessagesImpl = ({
       shouldTruncate,
       tools,
       isBriefOnly,
+      showInjectedContext,
     ])
+
+  // The user-context block (CLAUDE.md, git status, date) is built per-request
+  // by prependUserContext and never stored, so it is reconstructed here for
+  // display only. It must NOT enter `messages`: normalizeMessagesForAPI would
+  // drop an isVirtual copy, but transformMessagesForExternalTranscript promotes
+  // isVirtual back to real on persist, and on --resume that would change the
+  // first API user message and break attribution + the cached prefix.
+  const [userContextText, setUserContextText] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void getUserContext().then(context => {
+      if (!cancelled) {
+        setUserContextText(formatUserContextMessageContent(context))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+    // conversationId changes on clear/compact/resume/rewind — re-resolve then.
+  }, [conversationId])
+
+  const showUserContextRow =
+    showRequestOnlyUserContext &&
+    showInjectedContext &&
+    userContextText !== null
+
+  const userContextRow = useMemo((): RenderableMessage | null => {
+    // Gated synchronously, not by clearing the state above: an effect clears
+    // one render too late, and for that render UserTextMessage would see the
+    // row with the setting already off and print its raw tags as a prompt.
+    if (!showUserContextRow) return null
+    const msg = createUserMessage({ content: userContextText!, isMeta: true })
+    msg.uuid = USER_CONTEXT_ROW_UUID as UUID
+    return normalizeMessages([msg])[0] ?? null
+  }, [showUserContextRow, userContextText])
+
+  const displayCollapsed = useMemo(
+    () => (userContextRow ? [userContextRow, ...collapsed] : collapsed),
+    [userContextRow, collapsed],
+  )
 
   // Cheap slice — only runs when scroll range or slice config changes.
   const renderableMessages = useMemo(() => {
@@ -641,14 +698,14 @@ const MessagesImpl = ({
     // renderRange is first: the chunked export path slices the
     // post-grouping array so each chunk gets correct tool-call grouping.
     const sliceStart = !virtualScrollRuntimeGate
-      ? computeSliceStart(collapsed, sliceAnchorRef)
+      ? computeSliceStart(displayCollapsed, sliceAnchorRef)
       : 0
     return renderRange
-      ? collapsed.slice(renderRange[0], renderRange[1])
+      ? displayCollapsed.slice(renderRange[0], renderRange[1])
       : sliceStart > 0
-        ? collapsed.slice(sliceStart)
-        : collapsed
-  }, [collapsed, renderRange, virtualScrollRuntimeGate])
+        ? displayCollapsed.slice(sliceStart)
+        : displayCollapsed
+  }, [displayCollapsed, renderRange, virtualScrollRuntimeGate])
 
   const streamingToolUseIDs = useMemo(
     () => new Set(streamingToolUses.map(_ => _.contentBlock.id)),
@@ -702,6 +759,12 @@ const MessagesImpl = ({
   const isItemClickable = useCallback(
     (msg: RenderableMessage): boolean => {
       if (msg.type === 'collapsed_read_search') return true
+      if (showInjectedContext) {
+        if (msg.type === 'attachment') {
+          return attachmentHasSystemReminder(msg.attachment)
+        }
+        if (msg.type === 'user' && isInjectedContextText(msg)) return true
+      }
       if (msg.type === 'assistant') {
         const first = msg.message.content[0]
         // In-progress tool_use rows are clickable when the tool reports it
@@ -735,7 +798,7 @@ const MessagesImpl = ({
       const tool = name ? findToolByName(tools, name) : undefined
       return tool?.isResultTruncated?.(msg.toolUseResult as never) ?? false
     },
-    [tools],
+    [tools, showInjectedContext],
   )
 
   const canAnimate =
@@ -806,6 +869,7 @@ const MessagesImpl = ({
         columns={columns}
         isLoading={isLoading}
         lookups={lookups}
+        showInjectedContext={showInjectedContext}
       />
     )
 
