@@ -806,6 +806,13 @@ function renderNodeToOutput(
           ) {
             node.stickyScroll = true
             node.scrollFollowBaseline = undefined
+            // Tell React-land: this is the one sticky transition that doesn't
+            // go through ScrollBox's imperative API, and scroll-derived
+            // chrome (the jump-to-bottom pill) can't see it otherwise.
+            // Microtask, so the listeners' React updates land after this
+            // frame instead of re-entering it.
+            const notifyScroll = node.notifyScrollListeners
+            if (notifyScroll) queueMicrotask(notifyScroll)
           }
         }
         const followDelta = (node.scrollTop ?? 0) - scrollTopBeforeFollow

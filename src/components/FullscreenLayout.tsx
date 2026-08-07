@@ -288,6 +288,35 @@ export function computeUnseenDivider(
 }
 
 /**
+ * Should the "jump to bottom" pill show? `dividerY` is the scrollHeight
+ * snapshot taken at scroll-away (null = pinned, nothing unseen).
+ *
+ * Two guards keep a stale snapshot from stranding the pill on screen:
+ *
+ * • `isSticky()` is the authoritative "at the live bottom" signal, and it's
+ *   what the pill's own click sets. Position alone can't be trusted here —
+ *   scrollToBottom flips the flag and notifies listeners BEFORE the renderer
+ *   moves scrollTop, so the positional check still reads the old position on
+ *   the frame the user clicks.
+ *
+ * • `dividerY` is an absolute content-y that content can shrink out from
+ *   under: virtualized items measuring below DEFAULT_ESTIMATE, a collapsing
+ *   tool result. Once scrollHeight drops below the snapshot the viewport
+ *   bottom can never reach it, so the pill stays up forever — including
+ *   after scrolling to the bottom by hand. Clamping to the current
+ *   scrollHeight degrades the test to plain "not at the bottom".
+ */
+export function isJumpToBottomVisible(
+  s: ScrollBoxHandle | null | undefined,
+  dividerY: number | null | undefined,
+): boolean {
+  if (!s || dividerY == null) return false
+  if (s.isSticky()) return false
+  const target = Math.min(dividerY, s.getScrollHeight())
+  return s.getScrollTop() + s.getPendingDelta() + s.getViewportHeight() < target
+}
+
+/**
  * Layout wrapper for the REPL: puts scrollable content in a sticky-scroll box
  * and pins bottom content via flexbox.
  *
@@ -326,14 +355,9 @@ export function FullscreenLayout({
       scrollRef?.current?.subscribe(listener) ?? (() => {}),
     [scrollRef],
   )
-  const pillVisible = useSyncExternalStore(subscribe, () => {
-    const s = scrollRef?.current
-    const dividerY = dividerYRef?.current
-    if (!s || dividerY == null) return false
-    return (
-      s.getScrollTop() + s.getPendingDelta() + s.getViewportHeight() < dividerY
-    )
-  })
+  const pillVisible = useSyncExternalStore(subscribe, () =>
+    isJumpToBottomVisible(scrollRef?.current, dividerYRef?.current),
+  )
   // Wire up hyperlink click handling — mouse tracking intercepts clicks before
   // the terminal can open OSC 8 links natively.
   useLayoutEffect(() => {

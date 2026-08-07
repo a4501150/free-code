@@ -79,6 +79,14 @@ export type DOMElement = {
   // content grew meanwhile (the live bottom moved past their old one).
   // Undefined while pinned.
   scrollFollowBaseline?: number
+  // ScrollBox's subscriber notify, parked here so render-node-to-output can
+  // fire it when its positional follow restores stickyScroll. Every other
+  // sticky transition goes through the imperative API (which notifies), so
+  // without this the renderer's restore is invisible to React and
+  // scroll-derived chrome (the jump-to-bottom pill) stays as it was until
+  // something else re-renders. Deferred to a microtask by the caller —
+  // listeners schedule React work and must not re-enter this frame.
+  notifyScrollListeners?: () => void
   // Set by ScrollBox.scrollToElement; render-node-to-output reads
   // el.yogaNode.getComputedTop() (FRESH — same Yoga pass as scrollHeight)
   // and sets scrollTop = top + offset, then clears this. Unlike an
