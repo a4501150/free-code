@@ -168,6 +168,7 @@ import {
   tokenCountWithEstimation,
 } from './tokens.js'
 import {
+  calculateTokenWarningState,
   getConfiguredContextWindowSize,
   isAutoCompactEnabled,
 } from '../services/compact/autoCompact.js'
@@ -616,7 +617,7 @@ export type Attachment =
       count: number
     }
   | {
-      type: 'compaction_reminder'
+      type: 'auto_compact_imminent'
     }
   | {
       type: 'date_change'
@@ -809,18 +810,14 @@ export async function getAttachments(
     maybe('critical_system_reminder', () =>
       Promise.resolve(getCriticalSystemReminderAttachment(toolUseContext)),
     ),
-    ...(feature('COMPACTION_REMINDERS')
-      ? [
-          maybe('compaction_reminder', () =>
-            Promise.resolve(
-              getCompactionReminderAttachment(
-                messages ?? [],
-                toolUseContext.options.mainLoopModel,
-              ),
-            ),
-          ),
-        ]
-      : []),
+    maybe('auto_compact_imminent', () =>
+      Promise.resolve(
+        getAutoCompactImminentAttachment(
+          messages ?? [],
+          toolUseContext.options.mainLoopModel,
+        ),
+      ),
+    ),
   ]
 
   // Attachments which are semantically only for the main conversation or don't have concurrency-safe implementations
@@ -3546,6 +3543,42 @@ function getTokenUsageAttachment(
   ]
 }
 
+/**
+ * Fires once as the context approaches the auto-compact trigger, so the model
+ * can surface state it still needs before older messages become a summary.
+ *
+ * One delivery per compaction window, derived from the transcript rather than
+ * session state: compaction replaces the history that holds the attachment, so
+ * the next window re-arms on its own.
+ */
+export function getAutoCompactImminentAttachment(
+  messages: Message[],
+  model: string,
+): Attachment[] {
+  if (!isAutoCompactEnabled()) {
+    return []
+  }
+
+  const { isAboveWarningThreshold } = calculateTokenWarningState(
+    tokenCountWithEstimation(messages),
+    model,
+  )
+  if (!isAboveWarningThreshold) {
+    return []
+  }
+
+  const alreadyDelivered = messages.some(
+    message =>
+      message.type === 'attachment' &&
+      message.attachment.type === 'auto_compact_imminent',
+  )
+  if (alreadyDelivered) {
+    return []
+  }
+
+  return [{ type: 'auto_compact_imminent' }]
+}
+
 function getMaxBudgetUsdAttachment(maxBudgetUsd?: number): Attachment[] {
   if (maxBudgetUsd === undefined) {
     return []
@@ -3622,27 +3655,6 @@ const getVerifyPlanReminderAttachment: (
       return [{ type: 'verify_plan_reminder' }]
     }
   : async () => []
-
-export function getCompactionReminderAttachment(
-  messages: Message[],
-  model: string,
-): Attachment[] {
-  if (!isAutoCompactEnabled()) {
-    return []
-  }
-
-  const contextWindow = getContextWindowForModel(model, getSdkBetas())
-  if (contextWindow < 1_000_000) {
-    return []
-  }
-
-  const usedTokens = tokenCountWithEstimation(messages)
-  if (usedTokens < contextWindow * 0.25) {
-    return []
-  }
-
-  return [{ type: 'compaction_reminder' }]
-}
 
 function isFileReadDenied(
   filePath: string,

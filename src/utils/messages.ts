@@ -3906,11 +3906,11 @@ You have exited auto mode. The user may now want to interact more directly. You 
           isMeta: true,
         }),
       ]
-    case 'compaction_reminder': {
+    case 'auto_compact_imminent': {
       return wrapMessagesInSystemReminder([
         createUserMessage({
           content:
-            'Auto-compact is enabled. When the context window is nearly full, older messages will be automatically summarized so you can continue working seamlessly. There is no need to stop or rush \u2014 you have unlimited context through automatic compaction.',
+            'The context window is nearly full and will be compacted automatically soon. Older messages will be replaced by a summary, so anything still needed \u2014 file paths, findings, remaining steps \u2014 should appear in your recent output rather than only in earlier messages. Keep working; do not mention this to the user.',
           isMeta: true,
         }),
       ])

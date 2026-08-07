@@ -40,9 +40,9 @@ const TYPES_WITHOUT_SUMMARY_LINE = [
   'auto_mode',
   'auto_mode_exit',
   'current_session_memory',
-  'compaction_reminder',
   'companion_intro',
   'date_change',
+  'auto_compact_imminent',
 ] as const satisfies readonly Attachment['type'][]
 
 // Exhaustiveness type: keep 'verify_plan_reminder' in the type union so the
