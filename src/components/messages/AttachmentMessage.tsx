@@ -3,9 +3,9 @@ import React from 'react'
 import { Ansi, Box, Text } from '../../ink.js'
 import type { Attachment } from 'src/utils/attachments.js'
 import {
-  isNullRenderingAttachmentType,
-  type NullRenderingAttachmentType,
-} from './nullRenderingAttachments.js'
+  hasNoSummaryLine,
+  type AttachmentWithoutSummaryLine,
+} from './attachmentVisibility.js'
 import { useAppState } from '../../state/AppState.js'
 import { getDisplayPath } from 'src/utils/file.js'
 import { formatFileSize } from 'src/utils/format.js'
@@ -69,9 +69,9 @@ export function AttachmentMessage(props: Props): React.ReactNode {
     return content
   }
 
-  // Null-rendering types have no line of their own, so the reminder row owns
-  // the leading margin; otherwise it sits under an existing summary line.
-  const isOnlyRow = isNullRenderingAttachmentType(attachment.type)
+  // These types have no line of their own, so the reminder row owns the
+  // leading margin; otherwise it sits under an existing summary line.
+  const isOnlyRow = hasNoSummaryLine(attachment.type)
 
   return (
     <Box flexDirection="column">
@@ -470,16 +470,17 @@ function AttachmentMessageContent({
         </Box>
       )
     default:
-      // Exhaustiveness: every type reaching here must be in NULL_RENDERING_TYPES.
-      // If TS errors, a new Attachment type was added without a case above AND
-      // without an entry in NULL_RENDERING_TYPES — decide: render something (add
-      // a case) or render nothing (add to the array). Messages.tsx pre-filters
-      // these so this branch is defense-in-depth for other render paths.
+      // Exhaustiveness: every type reaching here must be in
+      // TYPES_WITHOUT_SUMMARY_LINE. If TS errors, a new Attachment type was
+      // added without a case above AND without an entry there — decide: render
+      // something (add a case) or render no line of its own (add to the array).
+      // Messages.tsx pre-filters these so this branch is defense-in-depth for
+      // other render paths.
       //
       // teammate_mailbox is handled BEFORE the switch in a runtime-gated block
       // that TS can't narrow through — excluded here via type union.
       attachment.type satisfies
-        | NullRenderingAttachmentType
+        | AttachmentWithoutSummaryLine
         | 'teammate_mailbox'
         | 'bagel_console'
       return null

@@ -61,7 +61,7 @@ import {
   type MessageActionsState,
 } from './messageActions.js'
 import { AssistantThinkingMessage } from './messages/AssistantThinkingMessage.js'
-import { shouldHideAttachmentInUI } from './messages/nullRenderingAttachments.js'
+import { shouldHideAttachmentInUI } from './messages/attachmentVisibility.js'
 import { useShowInjectedContext } from '../hooks/useShowInjectedContext.js'
 import { getUserContext } from '../context.js'
 import { formatUserContextMessageContent } from '../utils/contextInjection.js'

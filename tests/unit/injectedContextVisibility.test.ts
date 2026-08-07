@@ -13,7 +13,7 @@ import {
   shouldShowUserMessage,
   wrapInSystemReminder,
 } from '../../src/utils/messages.js'
-import { shouldHideAttachmentInUI } from '../../src/components/messages/nullRenderingAttachments.js'
+import { shouldHideAttachmentInUI } from '../../src/components/messages/attachmentVisibility.js'
 import type { Attachment } from '../../src/utils/attachments.js'
 import type { NormalizedMessage } from '../../src/types/message.js'
 import { USER_CONTEXT_ROW_UUID } from '../../src/constants/messages.js'

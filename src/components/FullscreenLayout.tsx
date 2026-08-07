@@ -25,7 +25,7 @@ import { Box, Text } from '../ink.js'
 import type { Message } from '../types/message.js'
 import { openBrowser, openPath } from '../utils/browser.js'
 import { plural } from '../utils/stringUtils.js'
-import { shouldHideAttachmentInUI } from './messages/nullRenderingAttachments.js'
+import { shouldHideAttachmentInUI } from './messages/attachmentVisibility.js'
 import PromptInputFooterSuggestions from './PromptInput/PromptInputFooterSuggestions.js'
 import type { StickyPrompt } from './VirtualMessageList.js'
 
