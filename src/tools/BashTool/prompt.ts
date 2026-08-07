@@ -149,7 +149,7 @@ export function getSimplePrompt(): string {
     'Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it.',
     `You may specify an optional timeout in milliseconds (up to ${getMaxTimeoutMs()}ms / ${getMaxTimeoutMs() / 60000} minutes). By default, your command will timeout after ${getDefaultTimeoutMs()}ms (${getDefaultTimeoutMs() / 60000} minutes).`,
     ...(backgroundNote !== null ? [backgroundNote] : []),
-    'When running commands with potentially large output, prefer running in background mode so the user can see progress. For background tasks (`run_in_background: true`), do NOT append `| tail` — output already streams to a file you can read in chunks via Read or BackgroundTaskOutput.',
+    "Do not append `| tail`, `| head`, or `--limit`-style flags to shrink a command's output: whether it runs in the foreground or the background, output beyond the inline preview is written to a file whose path comes back with the result, so read it with Read or BackgroundTaskOutput instead. Truncating inside the command throws the rest away for the user too.",
     ...(embedded
       ? [
           // bfs (which backs `find`) uses Oniguruma for -regex, which picks the
