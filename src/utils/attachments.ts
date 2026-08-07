@@ -18,11 +18,8 @@ import { count, uniq } from './array.js'
 import { getFsImplementation } from './fsOperations.js'
 import { readdir, stat } from 'fs/promises'
 import type { IDESelection } from '../types/ide.js'
-import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
-import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
-import { type Task, listTasks, getTaskListId } from './tasks.js'
 import { getPlanFilePath, getPlan } from './plans.js'
 import {
   type PlanModeRenderContext,
@@ -147,20 +144,12 @@ import {
   clearAllLSPDiagnostics,
 } from '../services/lsp/LSPDiagnosticRegistry.js'
 import { logForDebugging } from './debug.js'
-import {
-  extractTextContent,
-  getUserMessageText,
-  isThinkingMessage,
-} from './messages.js'
+import { extractTextContent, getUserMessageText } from './messages.js'
 import { isHumanTurn } from './messagePredicates.js'
 import { isEnvTruthy, getClaudeConfigHomeDir } from './envUtils.js'
 import { feature } from 'bun:bundle'
-import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
 import * as sessionTranscriptNs from '../services/sessionTranscript/sessionTranscript.js'
 
-const BRIEF_TOOL_NAME: string | null = feature('KAIROS')
-  ? briefToolPromptNs.BRIEF_TOOL_NAME
-  : null
 const sessionTranscriptModule = feature('KAIROS') ? sessionTranscriptNs : null
 import { hasUltrathinkKeyword, isUltrathinkEnabled } from './thinking.js'
 import {
@@ -204,11 +193,6 @@ import {
 import { isInProcessTeammate } from './teammateContext.js'
 import { removeTeammateFromTeamFile } from './swarm/teamHelpers.js'
 import { unassignTeammateTasks } from './tasks.js'
-
-export const TODO_REMINDER_CONFIG = {
-  TURNS_SINCE_WRITE: 10,
-  TURNS_BETWEEN_REMINDERS: 10,
-} as const
 
 export const PLAN_MODE_ATTACHMENT_CONFIG = {
   TURNS_BETWEEN_ATTACHMENTS: 5,
@@ -436,11 +420,6 @@ export type Attachment =
   | {
       type: 'opened_file_in_ide'
       filename: string
-    }
-  | {
-      type: 'task_reminder'
-      content: Task[]
-      itemCount: number
     }
   | {
       type: 'nested_memory'
@@ -783,9 +762,6 @@ export async function getAttachments(
     maybe('plan_mode_exit', () => getPlanModeExitAttachment(toolUseContext)),
     maybe('auto_mode', () => getAutoModeAttachments(messages, toolUseContext)),
     maybe('auto_mode_exit', () => getAutoModeExitAttachment(toolUseContext)),
-    maybe('todo_reminders', () =>
-      getTaskReminderAttachments(messages, toolUseContext),
-    ),
     ...(isAgentSwarmsEnabled()
       ? [
           // Skip teammate mailbox for the session_memory forked agent.
@@ -3041,112 +3017,6 @@ export function createAttachmentMessage(
     uuid: randomUUID(),
     timestamp: new Date().toISOString(),
   }
-}
-
-function getTaskReminderTurnCounts(messages: Message[]): {
-  turnsSinceLastTaskManagement: number
-  turnsSinceLastReminder: number
-} {
-  let lastTaskManagementIndex = -1
-  let lastReminderIndex = -1
-  let assistantTurnsSinceTaskManagement = 0
-  let assistantTurnsSinceReminder = 0
-
-  // Iterate backwards to find most recent events
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i]
-
-    if (message?.type === 'assistant') {
-      if (isThinkingMessage(message)) {
-        // Skip thinking messages
-        continue
-      }
-
-      // Check for TaskCreate or TaskUpdate usage BEFORE incrementing counter
-      if (
-        lastTaskManagementIndex === -1 &&
-        'message' in message &&
-        Array.isArray(message.message?.content) &&
-        message.message.content.some(
-          block =>
-            block.type === 'tool_use' &&
-            (block.name === TASK_CREATE_TOOL_NAME ||
-              block.name === TASK_UPDATE_TOOL_NAME),
-        )
-      ) {
-        lastTaskManagementIndex = i
-      }
-
-      // Count assistant turns before finding events
-      if (lastTaskManagementIndex === -1) assistantTurnsSinceTaskManagement++
-      if (lastReminderIndex === -1) assistantTurnsSinceReminder++
-    } else if (
-      lastReminderIndex === -1 &&
-      message?.type === 'attachment' &&
-      message.attachment.type === 'task_reminder'
-    ) {
-      lastReminderIndex = i
-    }
-
-    if (lastTaskManagementIndex !== -1 && lastReminderIndex !== -1) {
-      break
-    }
-  }
-
-  return {
-    turnsSinceLastTaskManagement: assistantTurnsSinceTaskManagement,
-    turnsSinceLastReminder: assistantTurnsSinceReminder,
-  }
-}
-
-async function getTaskReminderAttachments(
-  messages: Message[] | undefined,
-  toolUseContext: ToolUseContext,
-): Promise<Attachment[]> {
-  // When SendUserMessage is in the toolkit, it's the primary communication
-  // channel and the model is always told to use it (#20467). TaskUpdate
-  // becomes a side channel — nudging the model about it conflicts with the
-  // brief workflow. The tool itself stays available; this only gates the nag.
-  if (
-    BRIEF_TOOL_NAME &&
-    toolUseContext.options.tools.some(t => toolMatchesName(t, BRIEF_TOOL_NAME))
-  ) {
-    return []
-  }
-
-  // Skip if TaskUpdate tool is not available
-  if (
-    !toolUseContext.options.tools.some(t =>
-      toolMatchesName(t, TASK_UPDATE_TOOL_NAME),
-    )
-  ) {
-    return []
-  }
-
-  // Skip if no messages provided
-  if (!messages || messages.length === 0) {
-    return []
-  }
-
-  const { turnsSinceLastTaskManagement, turnsSinceLastReminder } =
-    getTaskReminderTurnCounts(messages)
-
-  // Check if we should show a reminder
-  if (
-    turnsSinceLastTaskManagement >= TODO_REMINDER_CONFIG.TURNS_SINCE_WRITE &&
-    turnsSinceLastReminder >= TODO_REMINDER_CONFIG.TURNS_BETWEEN_REMINDERS
-  ) {
-    const tasks = await listTasks(getTaskListId())
-    return [
-      {
-        type: 'task_reminder',
-        content: tasks,
-        itemCount: tasks.length,
-      },
-    ]
-  }
-
-  return []
 }
 
 /**

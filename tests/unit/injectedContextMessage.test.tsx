@@ -3,8 +3,8 @@ import * as React from 'react'
 import { InjectedContextMessage } from '../../src/components/messages/InjectedContextMessage.js'
 import { renderToAnsiString } from '../../src/utils/staticRender.js'
 
-const BODY = `The task tools haven't been used recently.
-Consider using TaskCreate.
+const BODY = `Plan mode is active. You cannot make any edits.
+Present your plan with ExitPlanMode.
 <task-id>abc</task-id>`
 
 describe('InjectedContextMessage', () => {
@@ -12,15 +12,15 @@ describe('InjectedContextMessage', () => {
     const rendered = await renderToAnsiString(
       <InjectedContextMessage
         addMargin={false}
-        label="System reminder · task_reminder"
+        label="System reminder · plan_mode"
         content={BODY}
         verbose={false}
       />,
     )
 
-    expect(rendered).toContain('System reminder · task_reminder')
+    expect(rendered).toContain('System reminder · plan_mode')
     expect(rendered).toContain('(3 lines)')
-    expect(rendered).not.toContain('TaskCreate')
+    expect(rendered).not.toContain('ExitPlanMode')
     // Not the ⎿ tool-result glyph: these rows often have no parent line at
     // all, so a disclosure triangle is used instead.
     expect(rendered).toContain('▸')
@@ -37,7 +37,7 @@ describe('InjectedContextMessage', () => {
       />,
     )
 
-    expect(rendered).toContain('TaskCreate')
+    expect(rendered).toContain('ExitPlanMode')
     expect(rendered).toContain('▾')
     // Rendered as plain text, so notification metadata survives rather than
     // being interpreted as markup.

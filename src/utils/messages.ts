@@ -120,9 +120,7 @@ import {
   type Output as FileReadToolOutput,
 } from '../tools/FileReadTool/FileReadTool.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../tools/SendMessageTool/constants.js'
-import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
 import { TASK_OUTPUT_TOOL_NAME } from '../tools/TaskOutputTool/constants.js'
-import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 import type { PermissionMode } from '../types/permissions.js'
 import {
   normalizeToolInput,
@@ -3474,23 +3472,6 @@ Read the team config to discover your teammates' names. Check the task list peri
         }),
       ])
     }
-    case 'task_reminder': {
-      const taskItems = attachment.content
-        .map(task => `#${task.id}. [${task.status}] ${task.subject}`)
-        .join('\n')
-
-      let message = `The task tools haven't been used recently. If you're working on tasks that would benefit from tracking progress, consider using ${TASK_CREATE_TOOL_NAME} to add new tasks and ${TASK_UPDATE_TOOL_NAME} to update task status (set to in_progress when starting, completed when done). Also consider cleaning up the task list if it has become stale. Only use these if relevant to the current work. This is just a gentle reminder - ignore if not applicable. Make sure that you NEVER mention this reminder to the user\n`
-      if (taskItems.length > 0) {
-        message += `\n\nHere are the existing tasks:\n\n${taskItems}`
-      }
-
-      return wrapMessagesInSystemReminder([
-        createUserMessage({
-          content: message,
-          isMeta: true,
-        }),
-      ])
-    }
     case 'nested_memory': {
       return wrapMessagesInSystemReminder([
         createUserMessage({
@@ -4021,6 +4002,7 @@ You have exited auto mode. The user may now want to interact more directly. You 
     'todo',
     'task_progress', // removed in PR #19337
     'ultramemory', // removed in PR #23596
+    'task_reminder',
   ]
   if (LEGACY_ATTACHMENT_TYPES.includes((attachment as { type: string }).type)) {
     return []

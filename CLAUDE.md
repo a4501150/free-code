@@ -144,6 +144,8 @@ Once `stickyScroll` is broken, the renderer's positional follow only resumes on 
 
 When an attachment should fire once per compaction window, derive the guard from the transcript rather than session state: `getAutoCompactImminentAttachment` ([src/utils/attachments.ts](src/utils/attachments.ts)) skips when a copy is already present, and compaction replaces the history holding it, so the next window re-arms with no reset hook. Note the ordering — run the cheap threshold check before the O(n) scan.
 
+A throttle measured in "turns" must count human turns, never assistant messages. Streaming emits one `AssistantMessage` per content block ([src/services/api/claude.ts](src/services/api/claude.ts)), so a response with a text block plus three parallel tool calls advances an assistant-message counter by four, and the tool loop re-checks the threshold just as fast. `getPlanModeAttachmentTurnCount` counts non-meta, non-tool-result user messages for this reason; the deleted `task_reminder` counted assistant messages and fired several times per user turn. Also prefer a trigger that decays: its other gate was "turns since the last `TaskCreate`/`TaskUpdate`", which a session that never uses those tools satisfies forever.
+
 ### Reasoning preservation is per-provider opaque state, gated by one capability
 
 Every provider round-trips reasoning differently and none of them accept another's data, so a reasoning block's continuation data lives under `providerState.<provider>` ([src/types/domain.ts](src/types/domain.ts)) and `stripForeignReasoningBlocks` ([src/utils/messages.ts](src/utils/messages.ts)) drops any block whose target provider can't verify it. Three things to keep in mind when touching this:

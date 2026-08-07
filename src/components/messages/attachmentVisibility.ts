@@ -36,7 +36,6 @@ const TYPES_WITHOUT_SUMMARY_LINE = [
   'token_usage',
   'ultrathink_effort',
   'max_turns_reached',
-  'task_reminder',
   'auto_mode',
   'auto_mode_exit',
   'current_session_memory',
