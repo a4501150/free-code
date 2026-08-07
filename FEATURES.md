@@ -62,7 +62,6 @@ These are in the dev-full list but not the default list.
 - `PROMPT_CACHE_BREAK_DETECTION` — enables cache-break detection around compaction/query/API flow.
 - `QUICK_SEARCH` — enables prompt quick-search behavior.
 - `TEAMMEM` — enables team-memory files, watcher hooks, and related UI messages.
-- `TRANSCRIPT_CLASSIFIER` — enables transcript-classifier checks for auto mode.
 - `TREE_SITTER_BASH` — enables the tree-sitter bash parser backend.
 - `TREE_SITTER_BASH_SHADOW` — enables the tree-sitter bash shadow rollout path.
 
