@@ -198,11 +198,25 @@ export function isMcpSessionExpiredError(error: Error): boolean {
 const DEFAULT_MCP_TOOL_TIMEOUT_MS = 100_000_000
 
 /**
- * Cap on MCP tool descriptions and server instructions sent to the model.
- * OpenAPI-generated MCP servers have been observed dumping 15-60KB of endpoint
- * docs into tool.description; this caps the p95 tail without losing the intent.
+ * Nothing an MCP server sends is truncated. Both of these are report-only
+ * thresholds: a cap the user cannot see and the server author cannot change,
+ * that silently rewrites their text into something else, is worse than the
+ * bloat it prevents. Truncation cut prose mid-sentence and left only a
+ * debug-log trace. A warning naming the server is enough to act on, and
+ * `excludeTools` is already the lever for dropping a specific offender.
+ *
+ * Tool descriptions: OpenAPI-generated servers have been observed dumping
+ * 15-60KB of endpoint docs into tool.description, and the cost is per-tool on
+ * every request. For calibration, agent-browser's longest of 32 tools is ~500
+ * chars and its median is ~120, so this fires only for the pathological case.
  */
-const MAX_MCP_DESCRIPTION_LENGTH = 2048
+const LARGE_MCP_TOOL_DESCRIPTION_LENGTH = 2048
+
+/**
+ * Server instructions: one per server, announced once, but re-sent with the
+ * transcript on every turn thereafter.
+ */
+const LARGE_MCP_INSTRUCTIONS_LENGTH = 8192
 
 /**
  * Gets the timeout for MCP tool calls in milliseconds.
@@ -1057,17 +1071,11 @@ export const connectToServer = memoize(
 
       const capabilities = client.getServerCapabilities()
       const serverVersion = client.getServerVersion()
-      const rawInstructions = client.getInstructions()
-      let instructions = rawInstructions
-      if (
-        rawInstructions &&
-        rawInstructions.length > MAX_MCP_DESCRIPTION_LENGTH
-      ) {
-        instructions =
-          rawInstructions.slice(0, MAX_MCP_DESCRIPTION_LENGTH) + '… [truncated]'
-        logMCPDebug(
+      const instructions = client.getInstructions()
+      if (instructions && instructions.length > LARGE_MCP_INSTRUCTIONS_LENGTH) {
+        logMCPError(
           name,
-          `Server instructions truncated from ${rawInstructions.length} to ${MAX_MCP_DESCRIPTION_LENGTH} chars`,
+          `Server instructions are ${instructions.length} chars. They are sent in full, and re-sent with the transcript on every turn thereafter.`,
         )
       }
 
@@ -1637,6 +1645,18 @@ export const fetchToolsForClient = memoizeWithLRU(
         client.config.type === 'sdk' &&
         isEnvTruthy(process.env.CLAUDE_AGENT_SDK_MCP_NO_PREFIX)
 
+      const overlong = toolsToProcess.filter(
+        t => (t.description?.length ?? 0) > LARGE_MCP_TOOL_DESCRIPTION_LENGTH,
+      )
+      if (overlong.length > 0) {
+        logMCPError(
+          client.name,
+          `${overlong.length} tool description(s) exceed ${LARGE_MCP_TOOL_DESCRIPTION_LENGTH} chars. They are sent in full, on every request: ${overlong
+            .map(t => `${t.name} (${t.description?.length})`)
+            .join(', ')}. Use excludeTools to drop any you do not need.`,
+        )
+      }
+
       // Convert MCP tools to our Tool format
       return toolsToProcess
         .map((tool): Tool => {
@@ -1651,11 +1671,10 @@ export const fetchToolsForClient = memoizeWithLRU(
             async description() {
               return tool.description ?? ''
             },
+            // Identical to description() only since truncation was dropped.
+            // Both are placeholders on MCPTool, so neither override is spare.
             async prompt() {
-              const desc = tool.description ?? ''
-              return desc.length > MAX_MCP_DESCRIPTION_LENGTH
-                ? desc.slice(0, MAX_MCP_DESCRIPTION_LENGTH) + '… [truncated]'
-                : desc
+              return tool.description ?? ''
             },
             isConcurrencySafe() {
               return tool.annotations?.readOnlyHint ?? false
