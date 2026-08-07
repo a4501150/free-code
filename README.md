@@ -281,7 +281,6 @@ The default build enables the production-supported flags in `defaultFeatures`; `
 | `BUILTIN_EXPLORE_PLAN_AGENTS` | Built-in explore/plan agent presets                |
 | `AGENT_TRIGGERS`              | Local cron/trigger tools for background automation |
 | `EXTRACT_MEMORIES`            | Post-query automatic memory extraction             |
-| `COMPACTION_REMINDERS`        | Smart reminders around context compaction          |
 | `TEAMMEM`                     | Team-memory files and watcher hooks                |
 | `AGENT_MEMORY_SNAPSHOT`       | Custom-agent memory snapshot state                 |
 | `VERIFY_PLAN`                 | Manual-only plan verification tooling              |
