@@ -72,7 +72,7 @@ import { userFacingName as fileEditUserFacingName } from '../FileEditTool/UI.js'
 import { trackGitOperations } from '../shared/gitOperationTracking.js'
 import {
   bashToolHasPermission,
-  commandHasAnyCd,
+  isNormalizedCdCommand,
   matchWildcardPattern,
   permissionRuleExtractPrefix,
 } from './bashPermissions.js'
@@ -631,7 +631,7 @@ export const BashTool = buildTool({
     return this.isReadOnly?.(input) ?? false
   },
   isReadOnly(input) {
-    const compoundCommandHasCd = commandHasAnyCd(input.command)
+    const compoundCommandHasCd = isNormalizedCdCommand(input.command)
     const result = checkReadOnlyConstraints(input, compoundCommandHasCd)
     return result.behavior === 'allow'
   },

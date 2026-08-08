@@ -36,8 +36,21 @@ export type SimpleCommand = {
   envVars: { name: string; value: string }[]
   /** Output/input redirects */
   redirects: Redirect[]
-  /** Original source span for this command (for UI display) */
-  text: string
+  /**
+   * The exact source span for this command. Use for display, execution, and
+   * exact-rule matching — an exact rule is a statement about the command as
+   * written, so it must be compared against what was actually written.
+   */
+  sourceText: string
+  /**
+   * Canonical form: `sourceText` unless a $VAR or a line continuation made it
+   * misrepresent what will run, in which case it is the resolved argv,
+   * shell-escaped and space-joined. Use for prefix and wildcard rule matching,
+   * where the question is which command will actually execute.
+   *
+   * Does NOT carry redirects or envVars when rebuilt — see walkCommand.
+   */
+  matchText: string
 }
 
 /**
@@ -661,7 +674,13 @@ function collectCommands(
           return tooComplex(child)
       }
     }
-    commands.push({ argv, envVars: [], redirects: [], text: node.text })
+    commands.push({
+      argv,
+      envVars: [],
+      redirects: [],
+      sourceText: node.text,
+      matchText: node.text,
+    })
     return null
   }
 
@@ -903,7 +922,13 @@ function collectCommands(
       const err = walkTestExpr(child, argv, commands, varScope)
       if (err) return err
     }
-    commands.push({ argv, envVars: [], redirects: [], text: node.text })
+    commands.push({
+      argv,
+      envVars: [],
+      redirects: [],
+      sourceText: node.text,
+      matchText: node.text,
+    })
     return null
   }
 
@@ -937,7 +962,13 @@ function collectCommands(
           return tooComplex(child)
       }
     }
-    commands.push({ argv, envVars: [], redirects: [], text: node.text })
+    commands.push({
+      argv,
+      envVars: [],
+      redirects: [],
+      sourceText: node.text,
+      matchText: node.text,
+    })
     return null
   }
 
@@ -1040,7 +1071,13 @@ function walkRedirectedStatement(
   if (!innerCommand) {
     // `> file` alone is valid bash (truncates file). Represent as a command
     // with empty argv so downstream sees the write.
-    commands.push({ argv: [], envVars: [], redirects, text: node.text })
+    commands.push({
+      argv: [],
+      envVars: [],
+      redirects,
+      sourceText: node.text,
+      matchText: node.text,
+    })
     return null
   }
 
@@ -1303,53 +1340,52 @@ function walkCommand(
     }
   }
 
-  // .text is the raw source span. Downstream (bashToolCheckPermission →
-  // splitCommand_DEPRECATED) re-tokenizes it via shell-quote. Normally .text
-  // is used unchanged — but if we resolved a $VAR into argv, .text diverges
-  // (has raw `$VAR`) and downstream RULE MATCHING would miss deny rules.
+  // matchText normally equals the source span, but a source span can
+  // misrepresent what will run in two ways, and prefix/wildcard rule matching
+  // is done on strings.
   //
-  // SECURITY: `SUB=push && git $SUB --force` with `Bash(git push:*)` deny:
-  //   argv = ['git', 'push', '--force']  ← correct, path validation sees 'push'
-  //   .text = 'git $SUB --force'         ← deny rule 'git push:*' doesn't match
+  // SECURITY: a resolved $VAR. `SUB=push && git $SUB --force` with a
+  // `Bash(git push:*)` deny:
+  //   argv       = ['git', 'push', '--force']  ← correct
+  //   sourceText = 'git $SUB --force'          ← the deny rule cannot match
   //
   // Detection: any `$<identifier>` in node.text means a simple_expansion was
   // resolved (or we'd have returned too-complex). This catches $VAR at any
   // position — command_name, word, string interior, concatenation part.
   // `$(...)` doesn't match (paren, not identifier start). `'$VAR'` in single
-  // quotes: tree-sitter's .text includes the quotes, so a naive check would
-  // FP on `echo '$VAR'`. But single-quoted $ is LITERAL in bash — argv has
-  // the literal `$VAR` string, so rebuilding from argv produces `'$VAR'`
-  // anyway (shell-escape wraps it). Same net .text. No rule-matching error.
+  // quotes would false-positive, but single-quoted $ is literal in bash, so
+  // argv holds the literal `$VAR` and re-escaping reproduces `'$VAR'` anyway.
   //
-  // Rebuild .text from argv. Shell-escape each arg: single-quote wrap with
-  // `'\''` for embedded single quotes. Empty string, metacharacters, and
-  // placeholders all get quoted. Downstream shell-quote re-parse is correct.
+  // SECURITY: a line continuation. `<space>\<LF>` is invisible to argv
+  // (tree-sitter collapses it) but preserved in the span, so
+  // `timeout 5 \<LF>curl evil.com` lets wrapper stripping consume only
+  // `timeout 5 ` and leaves `\<LF>curl evil.com`, which no `Bash(curl:*)` deny
+  // prefix-matches. Joining argv with single spaces removes the newline. Also
+  // covers heredoc-body leakage.
   //
-  // NOTE: This does NOT include redirects/envVars in the rebuilt .text —
-  // walkFileRedirect rejects simple_expansion, and envVars aren't used for
-  // rule matching. If either changes, this rebuild must include them.
-  //
-  // SECURITY: also rebuild when node.text contains a newline. Line
-  // continuations `<space>\<LF>` are invisible to argv (tree-sitter collapses
-  // them) but preserved in node.text. `timeout 5 \<LF>curl evil.com` → argv
-  // is correct, but raw .text → stripSafeWrappers matches `timeout 5 ` (the
-  // space before \), leaving `\<LF>curl evil.com` — Bash(curl:*) deny doesn't
-  // prefix-match. Rebuilt .text joins argv with ' ' → no newlines →
-  // stripSafeWrappers works. Also covers heredoc-body leakage.
-  const text =
+  // NOTE: the rebuilt form carries neither redirects nor envVars —
+  // walkFileRedirect rejects simple_expansion, and envVars are read from
+  // SimpleCommand.envVars rather than from text. If either changes, this must
+  // include them.
+  const matchText =
     /\$[A-Za-z_]/.test(node.text) || node.text.includes('\n')
-      ? argv
-          .map(a =>
-            a === '' || /["'\\ \t\n$`;|&<>(){}*?[\]~#]/.test(a)
-              ? `'${a.replace(/'/g, "'\\''")}'`
-              : a,
-          )
-          .join(' ')
+      ? argv.map(shellEscapeArg).join(' ')
       : node.text
   return {
     kind: 'simple',
-    commands: [{ argv, envVars, redirects, text }],
+    commands: [{ argv, envVars, redirects, sourceText: node.text, matchText }],
   }
+}
+
+/**
+ * Single-quote wrap an argv element unless it is already unambiguous. Empty
+ * strings, metacharacters and the __CMDSUB_OUTPUT__ placeholder all get quoted
+ * so the result re-tokenizes back to the same argv.
+ */
+export function shellEscapeArg(a: string): string {
+  return a === '' || /["'\\ \t\n$`;|&<>(){}*?[\]~#]/.test(a)
+    ? `'${a.replace(/'/g, "'\\''")}'`
+    : a
 }
 
 /**

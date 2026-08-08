@@ -10,7 +10,7 @@ import {
   type SpeculationResult,
   type SpeculationState,
 } from '../../state/AppStateStore.js'
-import { commandHasAnyCd } from '../../tools/BashTool/bashPermissions.js'
+import { isNormalizedCdCommand } from '../../tools/BashTool/bashPermissions.js'
 import { checkReadOnlyConstraints } from '../../tools/BashTool/readOnlyValidation.js'
 import type { SpeculationAcceptMessage } from '../../types/logs.js'
 import type { Message } from '../../types/message.js'
@@ -551,8 +551,10 @@ export async function startSpeculation(
               : ''
           if (
             !command ||
-            checkReadOnlyConstraints({ command }, commandHasAnyCd(command))
-              .behavior !== 'allow'
+            checkReadOnlyConstraints(
+              { command },
+              isNormalizedCdCommand(command),
+            ).behavior !== 'allow'
           ) {
             logForDebugging(
               `[Speculation] Stopping at bash: ${command.slice(0, 50) || 'missing command'}`,

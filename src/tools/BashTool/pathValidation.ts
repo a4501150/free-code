@@ -907,13 +907,12 @@ function validateSinglePathCommandArgv(
       message: `Command '${baseCmd}' is not a path-restricted command`,
     }
   }
-  // sed read-only override: use .text for the allowlist check since
-  // sedCommandIsAllowedByAllowlist takes a string. argv is already
-  // wrapper-stripped but .text is raw tree-sitter span (includes
-  // `timeout 5 ` prefix), so strip here too.
+  // sed read-only override: sedCommandIsAllowedByAllowlist takes a string, so
+  // feed it the source span. argv is already wrapper-stripped but the span
+  // still carries any `timeout 5 ` prefix, so strip here too.
   const operationTypeOverride =
     baseCmd === 'sed' &&
-    sedCommandIsAllowedByAllowlist(stripSafeWrappers(cmd.text))
+    sedCommandIsAllowedByAllowlist(stripSafeWrappers(cmd.sourceText))
       ? ('read' as FileOperationType)
       : undefined
   const pathChecker = createPathChecker(

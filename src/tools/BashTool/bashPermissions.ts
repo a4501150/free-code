@@ -8,14 +8,13 @@ import {
   type ParseForSecurityResult,
   parseForSecurity,
   parseForSecurityFromAst,
+  shellEscapeArg,
   type Redirect,
   type SimpleCommand,
 } from '../../utils/bash/ast.js'
 import {
   type CommandPrefixResult,
-  extractOutputRedirections,
   getCommandSubcommandPrefix,
-  splitCommand_DEPRECATED,
 } from '../../utils/bash/commands.js'
 import { parseCommandRaw } from '../../utils/bash/parser.js'
 import {
@@ -59,8 +58,6 @@ import { checkPermissionMode } from './modeValidation.js'
 import { checkPathConstraints } from './pathValidation.js'
 import { checkSedConstraints } from './sedValidation.js'
 import { shouldUseSandbox } from './shouldUseSandbox.js'
-
-const splitCommand = splitCommand_DEPRECATED
 
 // Env-var assignment prefix (VAR=value). Shared across three while-loops that
 // skip safe env vars before extracting the command name.
@@ -546,6 +543,66 @@ export function stripAllLeadingEnvVars(
   return stripped.trim()
 }
 
+/**
+ * Whether `command` runs more than one command.
+ *
+ * SECURITY: fails closed. Callers use this to stop a prefix allow rule from
+ * matching a compound command — `Bash(cd:*)` must not allow
+ * `cd /path && python3 evil.py` — so anything we cannot analyze must count as
+ * compound.
+ */
+function isCompound(command: string): boolean {
+  const parsed = parseForSecurity(command)
+  return parsed.kind !== 'simple' || parsed.commands.length > 1
+}
+
+/**
+ * `command` with any output redirection removed.
+ *
+ * Falls back to the command unchanged when it is not a single analyzable
+ * command: a compound one is already rejected by the compound check for allow
+ * rules, and deny rules are matched per-subcommand by checkSemanticsDeny.
+ */
+function commandWithoutRedirects(command: string): string {
+  const parsed = parseForSecurity(command)
+  return parsed.kind === 'simple' && parsed.commands.length === 1
+    ? parsed.commands[0]!.sourceText
+    : command
+}
+
+/**
+ * Extra match candidate built from the resolved argv, with safe wrappers
+ * removed.
+ *
+ * This is what makes `env git status` and `stdbuf -o 0 git status` reach
+ * `Bash(git status:*)` the same way `timeout 5 git status` already did.
+ * stripWrappers works on argv and fails closed on any flag it does not
+ * understand, where stripSafeWrappers is a regex that deliberately
+ * under-approximates because it cannot.
+ *
+ * SECURITY (HackerOne #3543050): dropping a `VAR=value` assignment changes
+ * what the command sees, so allow rules only get this candidate when every
+ * assignment involved is in SAFE_ENV_VARS — otherwise `DOCKER_HOST=evil docker
+ * ps` would auto-match `Bash(docker ps:*)`. Deny and ask rules take it
+ * unconditionally: a denied command must stay denied however it is dressed.
+ */
+function argvCandidates(
+  cmd: SimpleCommand,
+  stripAllEnvVars: boolean,
+): string[] {
+  const stripped = stripWrappers(cmd.argv)
+  if (stripped.kind !== 'ok') return []
+  if (!stripAllEnvVars) {
+    const consumed = cmd.argv.slice(0, cmd.argv.length - stripped.argv.length)
+    const names = [
+      ...cmd.envVars.map(v => v.name),
+      ...consumed.flatMap(a => /^([A-Za-z_]\w*)=/.exec(a)?.[1] ?? []),
+    ]
+    if (!names.every(n => SAFE_ENV_VARS.has(n))) return []
+  }
+  return [stripped.argv.map(shellEscapeArg).join(' ')]
+}
+
 function filterRulesByContentsMatchingInput(
   input: z.infer<typeof BashTool.inputSchema>,
   rules: Map<string, PermissionRule>,
@@ -553,23 +610,40 @@ function filterRulesByContentsMatchingInput(
   {
     stripAllEnvVars = false,
     skipCompoundCheck = false,
-  }: { stripAllEnvVars?: boolean; skipCompoundCheck?: boolean } = {},
+    astCommand,
+  }: {
+    stripAllEnvVars?: boolean
+    skipCompoundCheck?: boolean
+    astCommand?: SimpleCommand
+  } = {},
 ): PermissionRule[] {
-  const command = input.command.trim()
+  // Exact rules are statements about the command as written, so they match the
+  // source span. Prefix and wildcard rules ask which command will actually run,
+  // so they match the canonical form — which differs only when a $VAR or a line
+  // continuation made the span misleading (see SimpleCommand.matchText).
+  const command = (
+    astCommand
+      ? matchMode === 'exact'
+        ? astCommand.sourceText
+        : astCommand.matchText
+      : input.command
+  ).trim()
 
-  // Strip output redirections for permission matching
-  // This allows rules like Bash(python:*) to match "python script.py > output.txt"
-  // Security validation of redirection targets happens separately in checkPathConstraints
-  const commandWithoutRedirections =
-    extractOutputRedirections(command).commandWithoutRedirections
-
-  // For exact matching, try both the original command (to preserve quotes)
-  // and the command without redirections (to allow rules without redirections to match)
-  // For prefix matching, only use the command without redirections
-  const commandsForMatching =
-    matchMode === 'exact'
-      ? [command, commandWithoutRedirections]
-      : [commandWithoutRedirections]
+  // Strip output redirections for permission matching, so that a rule like
+  // Bash(python:*) matches "python script.py > output.txt". Redirection targets
+  // are validated separately in checkPathConstraints.
+  //
+  // A SimpleCommand needs no stripping: the AST attaches redirects to the
+  // command as structured data, and both of its text forms are already the
+  // span without them.
+  //
+  // Without one, re-derive it — and for exact matching also keep the original,
+  // so a rule written with the redirection still matches.
+  const commandsForMatching = astCommand
+    ? [command]
+    : matchMode === 'exact'
+      ? [command, commandWithoutRedirects(command)]
+      : [commandWithoutRedirects(command)]
 
   // Strip safe wrapper commands (timeout, time, nice, nohup) and env vars for matching
   // This allows rules like Bash(npm install:*) to match "timeout 10 npm install foo"
@@ -578,6 +652,9 @@ function filterRulesByContentsMatchingInput(
     const strippedCommand = stripSafeWrappers(cmd)
     return strippedCommand !== cmd ? [cmd, strippedCommand] : [cmd]
   })
+  if (astCommand) {
+    commandsToTry.push(...argvCandidates(astCommand, stripAllEnvVars))
+  }
 
   // SECURITY: For deny/ask rules, also try matching after stripping ALL leading
   // env var prefixes. This prevents bypass via `FOO=bar denied_command` where
@@ -633,7 +710,7 @@ function filterRulesByContentsMatchingInput(
   }
 
   // Precompute compound-command status for each candidate to avoid re-parsing
-  // inside the rule filter loop (which would scale splitCommand calls with
+  // inside the rule filter loop (which would scale parses with
   // rules.length × commandsToTry.length). The compound check only applies to
   // prefix/wildcard matching in 'prefix' mode, and only for allow rules.
   // SECURITY: deny/ask rules must match compound commands so they can't be
@@ -642,7 +719,7 @@ function filterRulesByContentsMatchingInput(
   if (matchMode === 'prefix' && !skipCompoundCheck) {
     for (const cmd of commandsToTry) {
       if (!isCompoundCommand.has(cmd)) {
-        isCompoundCommand.set(cmd, splitCommand(cmd).length > 1)
+        isCompoundCommand.set(cmd, isCompound(cmd))
       }
     }
   }
@@ -663,11 +740,9 @@ function filterRulesByContentsMatchingInput(
               case 'prefix': {
                 // SECURITY: Don't allow prefix rules to match compound commands.
                 // e.g., Bash(cd:*) must NOT match "cd /path && python3 evil.py".
-                // In the normal flow commands are split before reaching here, but
-                // shell escaping can defeat the first splitCommand pass — e.g.,
-                //   cd src\&\& python3 hello.py  →  splitCommand  →  ["cd src&& python3 hello.py"]
-                // which then looks like a single command that starts with "cd ".
-                // Re-splitting the candidate here catches those cases.
+                // In the normal flow commands are split before reaching here,
+                // but a candidate produced by wrapper or env-var stripping is a
+                // string that was never split, so re-check it.
                 if (isCompoundCommand.get(cmdToMatch)) {
                   return false
                 }
@@ -718,7 +793,10 @@ function matchingRulesForInput(
   input: z.infer<typeof BashTool.inputSchema>,
   toolPermissionContext: ToolPermissionContext,
   matchMode: 'exact' | 'prefix',
-  { skipCompoundCheck = false }: { skipCompoundCheck?: boolean } = {},
+  {
+    skipCompoundCheck = false,
+    astCommand,
+  }: { skipCompoundCheck?: boolean; astCommand?: SimpleCommand } = {},
 ) {
   const denyRuleByContents = getRuleByContentsForTool(
     toolPermissionContext,
@@ -731,7 +809,7 @@ function matchingRulesForInput(
     input,
     denyRuleByContents,
     matchMode,
-    { stripAllEnvVars: true, skipCompoundCheck: true },
+    { stripAllEnvVars: true, skipCompoundCheck: true, astCommand },
   )
 
   const askRuleByContents = getRuleByContentsForTool(
@@ -743,7 +821,7 @@ function matchingRulesForInput(
     input,
     askRuleByContents,
     matchMode,
-    { stripAllEnvVars: true, skipCompoundCheck: true },
+    { stripAllEnvVars: true, skipCompoundCheck: true, astCommand },
   )
 
   const allowRuleByContents = getRuleByContentsForTool(
@@ -755,7 +833,7 @@ function matchingRulesForInput(
     input,
     allowRuleByContents,
     matchMode,
-    { skipCompoundCheck },
+    { skipCompoundCheck, astCommand },
   )
 
   return {
@@ -771,10 +849,11 @@ function matchingRulesForInput(
 export const bashToolCheckExactMatchPermission = (
   input: z.infer<typeof BashTool.inputSchema>,
   toolPermissionContext: ToolPermissionContext,
+  astCommand?: SimpleCommand,
 ): PermissionResult => {
   const command = input.command.trim()
   const { matchingDenyRules, matchingAskRules, matchingAllowRules } =
-    matchingRulesForInput(input, toolPermissionContext, 'exact')
+    matchingRulesForInput(input, toolPermissionContext, 'exact', { astCommand })
 
   // 1. Deny if exact command was denied
   if (matchingDenyRules[0] !== undefined) {
@@ -839,6 +918,7 @@ export const bashToolCheckPermission = (
   const exactMatchResult = bashToolCheckExactMatchPermission(
     input,
     toolPermissionContext,
+    astCommand,
   )
 
   // 1a. Deny/ask if exact command has a rule
@@ -857,6 +937,7 @@ export const bashToolCheckPermission = (
   const { matchingDenyRules, matchingAskRules, matchingAllowRules } =
     matchingRulesForInput(input, toolPermissionContext, 'prefix', {
       skipCompoundCheck: astCommand !== undefined,
+      astCommand,
     })
 
   // 2a. Deny if command has a deny rule
@@ -965,11 +1046,13 @@ export async function checkCommandAndSuggestRules(
   toolPermissionContext: ToolPermissionContext,
   commandPrefixResult: CommandPrefixResult | null | undefined,
   compoundCommandHasCd?: boolean,
+  astCommand?: SimpleCommand,
 ): Promise<PermissionResult> {
   // 1. Check exact match first
   const exactMatchResult = bashToolCheckExactMatchPermission(
     input,
     toolPermissionContext,
+    astCommand,
   )
   if (exactMatchResult.behavior !== 'passthrough') {
     return exactMatchResult
@@ -980,6 +1063,7 @@ export async function checkCommandAndSuggestRules(
     input,
     toolPermissionContext,
     compoundCommandHasCd,
+    astCommand,
   )
   // 2a. Deny/ask if command was explictly denied/asked
   if (
@@ -1026,6 +1110,7 @@ export async function checkCommandAndSuggestRules(
 function checkSandboxAutoAllow(
   input: z.infer<typeof BashTool.inputSchema>,
   toolPermissionContext: ToolPermissionContext,
+  astCommands: SimpleCommand[],
 ): PermissionResult {
   const command = input.command.trim()
 
@@ -1056,14 +1141,14 @@ function checkSandboxAutoAllow(
   // Otherwise a wildcard ask rule matching the full command (e.g., Bash(*echo*))
   // would return 'ask' before a prefix deny rule on a subcommand (e.g., Bash(rm:*))
   // gets checked, downgrading a deny to an ask.
-  const subcommands = splitCommand(command)
-  if (subcommands.length > 1) {
+  if (astCommands.length > 1) {
     let firstAskRule: PermissionRule | undefined
-    for (const sub of subcommands) {
+    for (const sub of astCommands) {
       const subResult = matchingRulesForInput(
-        { command: sub },
+        { command: sub.sourceText },
         toolPermissionContext,
         'prefix',
+        { astCommand: sub },
       )
       // Deny takes priority — return immediately
       if (subResult.matchingDenyRules[0] !== undefined) {
@@ -1115,24 +1200,17 @@ function checkSandboxAutoAllow(
 }
 
 /**
- * Filter out `cd ${cwd}` prefix subcommands, keeping astCommands aligned.
- * Extracted to keep bashToolHasPermission compact.
+ * Drop the `cd ${cwd}` prefix subcommand that models like to prepend. It is a
+ * no-op, and keeping it turns every command into a compound one.
  */
-function filterCdCwdSubcommands(
-  rawSubcommands: string[],
-  astCommands: SimpleCommand[] | undefined,
+function dropCdToCwd(
+  commands: SimpleCommand[],
   cwd: string,
   cwdMingw: string,
-): { subcommands: string[]; astCommandsByIdx: (SimpleCommand | undefined)[] } {
-  const subcommands: string[] = []
-  const astCommandsByIdx: (SimpleCommand | undefined)[] = []
-  for (let i = 0; i < rawSubcommands.length; i++) {
-    const cmd = rawSubcommands[i]!
-    if (cmd === `cd ${cwd}` || cmd === `cd ${cwdMingw}`) continue
-    subcommands.push(cmd)
-    astCommandsByIdx.push(astCommands?.[i])
-  }
-  return { subcommands, astCommandsByIdx }
+): SimpleCommand[] {
+  return commands.filter(
+    c => c.sourceText !== `cd ${cwd}` && c.sourceText !== `cd ${cwdMingw}`,
+  )
 }
 
 /**
@@ -1170,7 +1248,7 @@ function checkEarlyExitDeny(
 
 /**
  * checkSemantics-path deny enforcement. Calls checkEarlyExitDeny (exact-match
- * + full-command prefix deny), then checks each individual SimpleCommand .text
+ * + full-command prefix deny), then checks each individual SimpleCommand
  * span against prefix deny rules. The per-subcommand check is needed because
  * filterRulesByContentsMatchingInput has a compound-command guard
  * (splitCommand().length > 1 → prefix rules return false) that defeats
@@ -1183,15 +1261,16 @@ function checkEarlyExitDeny(
 function checkSemanticsDeny(
   input: z.infer<typeof BashTool.inputSchema>,
   toolPermissionContext: ToolPermissionContext,
-  commands: readonly { text: string }[],
+  commands: readonly SimpleCommand[],
 ): PermissionResult | null {
   const fullCmd = checkEarlyExitDeny(input, toolPermissionContext)
   if (fullCmd !== null) return fullCmd
   for (const cmd of commands) {
     const subDeny = matchingRulesForInput(
-      { ...input, command: cmd.text },
+      { ...input, command: cmd.matchText },
       toolPermissionContext,
       'prefix',
+      { astCommand: cmd },
     ).matchingDenyRules[0]
     if (subDeny !== undefined) {
       return {
@@ -1274,16 +1353,11 @@ export async function bashToolHasPermission(
     }
   }
 
-  // Stash the tokenized subcommands for use below. Downstream code (rule
-  // matching, path extraction, cd detection) still operates on strings, so
-  // we pass the original source span for each SimpleCommand. Downstream
-  // processing (stripSafeWrappers, parseCommandArguments) re-tokenizes
-  // these spans — that re-tokenization has known bugs (stripCommentLines
-  // mishandles newlines inside quotes), but checkSemantics already caught
-  // any argv element containing a newline, so those bugs can't bite here.
-  // Migrating downstream to operate on argv directly is a later commit.
+  // Downstream code (rule matching, path extraction, cd detection) is reached
+  // with both the SimpleCommand and its source span: the span is the identity
+  // and display string, the SimpleCommand carries the resolved argv, envVars
+  // and redirects that security decisions are actually made from.
   const astCommands: SimpleCommand[] = astResult.commands
-  const astSubcommands: string[] = astCommands.map(c => c.text)
   const astRedirects: Redirect[] = astCommands.flatMap(c => c.redirects)
 
   // Check sandbox auto-allow (which respects explicit deny/ask rules)
@@ -1296,6 +1370,7 @@ export async function bashToolHasPermission(
     const sandboxAutoAllowResult = checkSandboxAutoAllow(
       input,
       appState.toolPermissionContext,
+      astCommands,
     )
     if (sandboxAutoAllowResult.behavior !== 'passthrough') {
       return sandboxAutoAllowResult
@@ -1352,7 +1427,7 @@ export async function bashToolHasPermission(
         input,
         getCwd(),
         appState.toolPermissionContext,
-        commandHasAnyCd(input.command),
+        isNormalizedCdCommand(input.command),
         astRedirects,
         astCommands,
       )
@@ -1364,27 +1439,18 @@ export async function bashToolHasPermission(
     return commandOperatorResult
   }
 
-  // Split into subcommands. The cd-cwd filter strips the `cd ${cwd}` prefix
-  // that models like to prepend.
-  //
   // No fanout cap is needed: only the legacy splitCommand path could explode
   // exponentially (CC-643). The AST returns a bounded list or short-circuits
   // to 'too-complex' for structures it can't represent.
   const cwd = getCwd()
   const cwdMingw =
     getPlatform() === 'windows' ? windowsPathToPosixPath(cwd) : cwd
-  const { subcommands, astCommandsByIdx } = filterCdCwdSubcommands(
-    astSubcommands,
-    astCommands,
-    cwd,
-    cwdMingw,
-  )
+  const commands = dropCdToCwd(astCommands, cwd, cwdMingw)
+  const subcommands = commands.map(c => c.sourceText)
 
   // Ask if there are multiple `cd` commands
-  const cdCommands = subcommands.filter(subCommand =>
-    isNormalizedCdCommand(subCommand),
-  )
-  if (cdCommands.length > 1) {
+  const cdCommandCount = count(commands, commandIsCd)
+  if (cdCommandCount > 1) {
     const decisionReason = {
       type: 'other' as const,
       reason:
@@ -1399,7 +1465,7 @@ export async function bashToolHasPermission(
 
   // Track if compound command contains cd for security validation
   // This prevents bypassing path checks via: cd .claude/ (or .freecode/) && mv test.txt freecode.json
-  const compoundCommandHasCd = cdCommands.length > 0
+  const compoundCommandHasCd = cdCommandCount > 0
 
   // SECURITY: Block compound commands that have both cd AND git
   // This prevents sandbox escape via: cd /malicious/dir && git status
@@ -1409,9 +1475,7 @@ export async function bashToolHasPermission(
   // BashTool.isReadOnly(), which would re-derive compoundCommandHasCd=false
   // from just "git status" alone, bypassing the readOnlyValidation.ts check.
   if (compoundCommandHasCd) {
-    const hasGitCommand = subcommands.some(cmd =>
-      isNormalizedGitCommand(cmd.trim()),
-    )
+    const hasGitCommand = commands.some(commandIsGit)
     if (hasGitCommand) {
       const decisionReason = {
         type: 'other' as const,
@@ -1438,12 +1502,12 @@ export async function bashToolHasPermission(
   // output redirection validation on each subcommand. However, since splitCommand strips
   // redirections before we get here, we MUST validate output redirections on the ORIGINAL
   // command AFTER checking deny rules but BEFORE returning results.
-  const subcommandPermissionDecisions = subcommands.map((command, i) =>
+  const subcommandPermissionDecisions = commands.map(cmd =>
     bashToolCheckPermission(
-      { command },
+      { command: cmd.sourceText },
       appState.toolPermissionContext,
       compoundCommandHasCd,
-      astCommandsByIdx[i],
+      cmd,
     ),
   )
 
@@ -1568,30 +1632,32 @@ export async function bashToolHasPermission(
 
   // If there is only one command, no need to process subcommands
   appState = context.getAppState() // re-compute the latest in case the user hit shift+tab
-  if (subcommands.length === 1) {
-    const result = await checkCommandAndSuggestRules(
-      { command: subcommands[0]! },
+  if (commands.length === 1) {
+    const only = commands[0]!
+    return await checkCommandAndSuggestRules(
+      { command: only.sourceText },
       appState.toolPermissionContext,
       commandSubcommandPrefix,
       compoundCommandHasCd,
+      only,
     )
-    return result
   }
 
   // Check subcommand permission results
   const subcommandResults: Map<string, PermissionResult> = new Map()
-  for (const subcommand of subcommands) {
+  for (const cmd of commands) {
     subcommandResults.set(
-      subcommand,
+      cmd.sourceText,
       await checkCommandAndSuggestRules(
         {
           // Pass through input params like `sandbox`
           ...input,
-          command: subcommand,
+          command: cmd.sourceText,
         },
         appState.toolPermissionContext,
-        commandSubcommandPrefix?.subcommandPrefixes.get(subcommand),
+        commandSubcommandPrefix?.subcommandPrefixes.get(cmd.sourceText),
         compoundCommandHasCd,
+        cmd,
       ),
     )
   }
@@ -1703,15 +1769,47 @@ export async function bashToolHasPermission(
 function effectiveArgvs(command: string): string[][] | null {
   const parsed = parseForSecurity(command)
   if (parsed.kind !== 'simple') return null
-  return parsed.commands.map(cmd => {
-    const stripped = stripWrappers(cmd.argv)
-    return stripped.kind === 'ok' ? stripped.argv : cmd.argv
-  })
+  return parsed.commands.map(cmd => effectiveArgv(cmd))
+}
+
+function effectiveArgv(cmd: SimpleCommand): string[] {
+  const stripped = stripWrappers(cmd.argv)
+  return stripped.kind === 'ok' ? stripped.argv : cmd.argv
+}
+
+function argvIsGit(argv: string[]): boolean {
+  return (
+    argv[0] === 'git' ||
+    // `xargs git ...` runs git in the current directory, so it must be treated
+    // as a git command for the cd+git security checks. This matches the xargs
+    // prefix handling in filterRulesByContentsMatchingInput.
+    (argv[0] === 'xargs' && argv.includes('git'))
+  )
 }
 
 /**
- * Checks if a subcommand is a git command after normalizing away safe wrappers
- * and shell quotes.
+ * pushd/popd change cwd just like cd, so
+ *   pushd /tmp/bare-repo && git status
+ * must trigger the same cd+git guard. Mirrors PowerShell's
+ * DIRECTORY_CHANGE_ALIASES (src/utils/powershell/parser.ts).
+ */
+function argvIsCd(argv: string[]): boolean {
+  return argv[0] === 'cd' || argv[0] === 'pushd' || argv[0] === 'popd'
+}
+
+/** Whether an already-parsed command is git, ignoring safe wrappers. */
+export function commandIsGit(cmd: SimpleCommand): boolean {
+  return argvIsGit(effectiveArgv(cmd))
+}
+
+/** Whether an already-parsed command changes the working directory. */
+export function commandIsCd(cmd: SimpleCommand): boolean {
+  return argvIsCd(effectiveArgv(cmd))
+}
+
+/**
+ * Whether any command in `command` is git, after normalizing away safe
+ * wrappers and shell quotes.
  *
  * Fails safe: an unanalyzable command counts as git, because the callers use
  * this to APPLY restrictions (the cd+git bare-repo gate, the git-internal
@@ -1725,41 +1823,17 @@ export function isNormalizedGitCommand(command: string): boolean {
   }
   const argvs = effectiveArgvs(command)
   if (argvs === null) return true
-  return argvs.some(
-    argv =>
-      argv[0] === 'git' ||
-      // `xargs git ...` runs git in the current directory, so it must be
-      // treated as a git command for the cd+git security checks. This matches
-      // the xargs prefix handling in filterRulesByContentsMatchingInput.
-      (argv[0] === 'xargs' && argv.includes('git')),
-  )
+  return argvs.some(argvIsGit)
 }
 
 /**
- * Checks if a subcommand changes the working directory, after normalizing away
- * safe wrappers and shell quotes.
- *
- * Matches pushd/popd too — they change cwd just like cd, so
- *   pushd /tmp/bare-repo && git status
- * must trigger the same cd+git guard. Mirrors PowerShell's
- * DIRECTORY_CHANGE_ALIASES (src/utils/powershell/parser.ts).
+ * Whether any command in `command` changes the working directory, after
+ * normalizing away safe wrappers and shell quotes.
  *
  * Fails safe for the same reason as isNormalizedGitCommand.
  */
 export function isNormalizedCdCommand(command: string): boolean {
   const argvs = effectiveArgvs(command)
   if (argvs === null) return true
-  return argvs.some(
-    argv => argv[0] === 'cd' || argv[0] === 'pushd' || argv[0] === 'popd',
-  )
-}
-
-/**
- * Checks if a compound command contains any cd command,
- * using normalized detection that handles env var prefixes and shell quotes.
- */
-export function commandHasAnyCd(command: string): boolean {
-  return splitCommand(command).some(subcmd =>
-    isNormalizedCdCommand(subcmd.trim()),
-  )
+  return argvs.some(argvIsCd)
 }
