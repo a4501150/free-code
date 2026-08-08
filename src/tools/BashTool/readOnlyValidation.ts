@@ -1274,7 +1274,7 @@ function isCommandSafeViaFlagParsing(
     // Reject tokens with BOTH `{` and `,` (brace expansion obfuscation).
     // `git diff {@'{'0},--output=/tmp/pwned}` → shell-quote strips quotes
     // → token `{@{0},--output=/tmp/pwned}` has `{` + `,` → brace expansion.
-    // This is defense-in-depth with validateBraceExpansion in bashSecurity.ts.
+    // This is defense-in-depth with the parser's own brace-expansion refusal.
     // We require BOTH `{` and `,` to avoid false positives on legitimate
     // patterns: `stash@{0}` (git ref, has `{` no `,`), `{{.State}}` (Go
     // template, no `,`), `prefix-{}-suffix` (xargs, no `,`). Sequence form
@@ -1507,7 +1507,7 @@ const READONLY_COMMAND_REGEXES = new Set([
  * commands; hand-written regexes like uniq's `\S+` and cd's `"[^"]*"` allow `$`.
  * Matches `$` followed by `[A-Za-z_@*#?!$0-9-]` covering `$VAR`, `$_`, `$@`,
  * `$*`, `$#`, `$?`, `$!`, `$$`, `$-`, `$0`-`$9`. Does NOT match `${` or `$(` —
- * those are caught by COMMAND_SUBSTITUTION_PATTERNS in bashSecurity.ts.
+ * those are refused by the parser outright.
  *
  * @param command The command string to check
  * @returns true if the command contains unquoted glob or expandable `$`

@@ -16,7 +16,7 @@ import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import { POWERSHELL_TOOL_NAME } from '../../tools/PowerShellTool/toolName.js'
 import { REPL_TOOL_NAME } from '../../tools/REPLTool/constants.js'
 import type { AssistantMessage } from '../../types/message.js'
-import { extractOutputRedirections } from '../bash/commands.js'
+import { commandWithoutRedirects } from '../bash/ast.js'
 import { logForDebugging } from '../debug.js'
 import { AbortError, toError } from '../errors.js'
 import { logError } from '../log.js'
@@ -151,18 +151,11 @@ export function createPermissionRequestMessage(
         const needsApproval: string[] = []
         for (const [cmd, result] of decisionReason.reasons) {
           if (result.behavior === 'ask' || result.behavior === 'passthrough') {
-            // Strip output redirections for display to avoid showing filenames as commands
-            // Only do this for Bash tool to avoid affecting other tools
-            if (toolName === 'Bash') {
-              const { commandWithoutRedirections, redirections } =
-                extractOutputRedirections(cmd)
-              // Only use stripped version if there were actual redirections
-              const displayCmd =
-                redirections.length > 0 ? commandWithoutRedirections : cmd
-              needsApproval.push(displayCmd)
-            } else {
-              needsApproval.push(cmd)
-            }
+            // Strip output redirections for display to avoid showing filenames
+            // as commands. Only for Bash, to avoid affecting other tools.
+            needsApproval.push(
+              toolName === 'Bash' ? commandWithoutRedirects(cmd) : cmd,
+            )
           }
         }
         if (needsApproval.length > 0) {

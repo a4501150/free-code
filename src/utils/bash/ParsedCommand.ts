@@ -1,9 +1,4 @@
-import memoize from 'lodash-es/memoize.js'
-import {
-  extractOutputRedirections,
-  splitCommandWithOperators,
-} from './commands.js'
-import { parseCommand, type Node } from './parser.js'
+import type { Node } from './parser.js'
 import {
   analyzeCommand,
   type TreeSitterAnalysis,
@@ -12,90 +7,6 @@ import {
 export type OutputRedirection = {
   target: string
   operator: '>' | '>>'
-}
-
-/**
- * Interface for parsed command implementations.
- * Both tree-sitter and regex fallback implementations conform to this.
- */
-export interface IParsedCommand {
-  readonly originalCommand: string
-  toString(): string
-  getPipeSegments(): string[]
-  withoutOutputRedirections(): string
-  getOutputRedirections(): OutputRedirection[]
-  /**
-   * Returns tree-sitter analysis data if available.
-   * Returns null for the regex fallback implementation.
-   */
-  getTreeSitterAnalysis(): TreeSitterAnalysis | null
-}
-
-/**
- * @deprecated Legacy regex/shell-quote path. Only used when tree-sitter is
- * unavailable. The primary gate is parseForSecurity (ast.ts).
- *
- * Regex-based fallback implementation using shell-quote parser.
- * Used when tree-sitter is not available.
- * Exported for testing purposes.
- */
-export class RegexParsedCommand_DEPRECATED implements IParsedCommand {
-  readonly originalCommand: string
-
-  constructor(command: string) {
-    this.originalCommand = command
-  }
-
-  toString(): string {
-    return this.originalCommand
-  }
-
-  getPipeSegments(): string[] {
-    try {
-      const parts = splitCommandWithOperators(this.originalCommand)
-      const segments: string[] = []
-      let currentSegment: string[] = []
-
-      for (const part of parts) {
-        if (part === '|') {
-          if (currentSegment.length > 0) {
-            segments.push(currentSegment.join(' '))
-            currentSegment = []
-          }
-        } else {
-          currentSegment.push(part)
-        }
-      }
-
-      if (currentSegment.length > 0) {
-        segments.push(currentSegment.join(' '))
-      }
-
-      return segments.length > 0 ? segments : [this.originalCommand]
-    } catch {
-      return [this.originalCommand]
-    }
-  }
-
-  withoutOutputRedirections(): string {
-    if (!this.originalCommand.includes('>')) {
-      return this.originalCommand
-    }
-    const { commandWithoutRedirections, redirections } =
-      extractOutputRedirections(this.originalCommand)
-    return redirections.length > 0
-      ? commandWithoutRedirections
-      : this.originalCommand
-  }
-
-  getOutputRedirections(): OutputRedirection[] {
-    const { redirections } = extractOutputRedirections(this.originalCommand)
-    return redirections
-  }
-
-  getTreeSitterAnalysis(): TreeSitterAnalysis | null {
-    return null
-  }
 }
 
 type RedirectionNode = OutputRedirection & {
@@ -148,7 +59,7 @@ function extractRedirectionNodes(rootNode: Node): RedirectionNode[] {
   return redirections
 }
 
-class TreeSitterParsedCommand implements IParsedCommand {
+export class ParsedCommand {
   readonly originalCommand: string
   // Tree-sitter's startIndex/endIndex are UTF-8 byte offsets, but JS
   // String.slice() uses UTF-16 code-unit indices. For ASCII they coincide;
@@ -237,60 +148,13 @@ class TreeSitterParsedCommand implements IParsedCommand {
   }
 }
 
-/**
- * Build a TreeSitterParsedCommand from a pre-parsed AST root. Lets callers
- * that already have the tree skip the redundant parse that
- * ParsedCommand.parse would do.
- */
+/** Build a ParsedCommand from an AST root the caller already has. */
 export function buildParsedCommandFromRoot(
   command: string,
   root: Node,
-): IParsedCommand {
+): ParsedCommand {
   const pipePositions = extractPipePositions(root)
   const redirectionNodes = extractRedirectionNodes(root)
   const analysis = analyzeCommand(root, command)
-  return new TreeSitterParsedCommand(
-    command,
-    pipePositions,
-    redirectionNodes,
-    analysis,
-  )
-}
-
-function doParse(command: string): IParsedCommand | null {
-  if (!command) return null
-
-  const data = parseCommand(command)
-  if (data) return buildParsedCommandFromRoot(command, data.rootNode)
-
-  // Fallback to regex implementation
-  return new RegexParsedCommand_DEPRECATED(command)
-}
-
-// Single-entry cache: legacy callers (bashCommandIsSafeAsync,
-// buildSegmentWithoutRedirections) may call ParsedCommand.parse repeatedly
-// with the same command string. Each parse() is ~1 parse + ~6 tree
-// walks, so caching the most recent command skips the redundant work.
-// Size-1 bound avoids leaking TreeSitterParsedCommand instances.
-let lastCmd: string | undefined
-let lastResult: Promise<IParsedCommand | null> | undefined
-
-/**
- * ParsedCommand provides methods for working with shell commands.
- * Uses tree-sitter when available for quote-aware parsing,
- * falls back to regex-based parsing otherwise.
- */
-export const ParsedCommand = {
-  /**
-   * Parse a command string and return a ParsedCommand instance.
-   * Returns null if parsing fails completely.
-   */
-  parse(command: string): Promise<IParsedCommand | null> {
-    if (command === lastCmd && lastResult !== undefined) {
-      return lastResult
-    }
-    lastCmd = command
-    lastResult = Promise.resolve(doParse(command))
-    return lastResult
-  },
+  return new ParsedCommand(command, pipePositions, redirectionNodes, analysis)
 }

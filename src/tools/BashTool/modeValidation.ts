@@ -1,6 +1,6 @@
 import type { z } from 'zod/v4'
 import type { ToolPermissionContext } from '../../Tool.js'
-import { splitCommand_DEPRECATED } from '../../utils/bash/commands.js'
+import { parseForSecurity, type SimpleCommand } from '../../utils/bash/ast.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import type { BashTool } from './BashTool.js'
 
@@ -21,11 +21,10 @@ function isFilesystemCommand(command: string): command is FilesystemCommand {
 }
 
 function validateCommandForMode(
-  cmd: string,
+  cmd: SimpleCommand,
   toolPermissionContext: ToolPermissionContext,
 ): PermissionResult {
-  const trimmedCmd = cmd.trim()
-  const [baseCmd] = trimmedCmd.split(/\s+/)
+  const baseCmd = cmd.argv[0]
 
   if (!baseCmd) {
     return {
@@ -41,7 +40,7 @@ function validateCommandForMode(
   ) {
     return {
       behavior: 'allow',
-      updatedInput: { command: cmd },
+      updatedInput: { command: cmd.sourceText },
       decisionReason: {
         type: 'mode',
         mode: 'acceptEdits',
@@ -89,10 +88,17 @@ export function checkPermissionMode(
     }
   }
 
-  const commands = splitCommand_DEPRECATED(input.command)
+  // A command the parser refuses gets no mode-based auto-approval.
+  const parsed = parseForSecurity(input.command)
+  if (parsed.kind !== 'simple') {
+    return {
+      behavior: 'passthrough',
+      message: 'Command cannot be parsed, no mode-specific validation applied',
+    }
+  }
 
   // Check each subcommand
-  for (const cmd of commands) {
+  for (const cmd of parsed.commands) {
     const result = validateCommandForMode(cmd, toolPermissionContext)
 
     // If any command triggers mode-specific behavior, return that result

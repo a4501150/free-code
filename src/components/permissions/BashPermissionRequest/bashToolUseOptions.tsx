@@ -1,5 +1,5 @@
 import { BASH_TOOL_NAME } from '../../../tools/BashTool/toolName.js'
-import { extractOutputRedirections } from '../../../utils/bash/commands.js'
+import { commandWithoutRedirects } from '../../../utils/bash/ast.js'
 import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpdateSchema.js'
 import type { OptionWithDescription } from '../../CustomSelect/select.js'
 import { generateShellSuggestionsLabel } from '../shellPermissionHelpers.js'
@@ -9,16 +9,6 @@ export type BashToolUseOption =
   | 'yes-apply-suggestions'
   | 'yes-prefix-edited'
   | 'no'
-
-/**
- * Strip output redirections so filenames don't show as commands in the label.
- */
-function stripBashRedirections(command: string): string {
-  const { commandWithoutRedirections, redirections } =
-    extractOutputRedirections(command)
-  // Only use stripped version if there were actual redirections
-  return redirections.length > 0 ? commandWithoutRedirections : command
-}
 
 export function bashToolUseOptions({
   suggestions = [],
@@ -89,7 +79,7 @@ export function bashToolUseOptions({
     const label = generateShellSuggestionsLabel(
       suggestions,
       BASH_TOOL_NAME,
-      stripBashRedirections,
+      commandWithoutRedirects,
     )
 
     if (label) {

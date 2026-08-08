@@ -1,19 +1,13 @@
 import type { z } from 'zod/v4'
 import {
-  isUnsafeCompoundCommand_DEPRECATED,
-  splitCommand_DEPRECATED,
-} from '../../utils/bash/commands.js'
-import {
   buildParsedCommandFromRoot,
-  type IParsedCommand,
-  ParsedCommand,
+  type ParsedCommand,
 } from '../../utils/bash/ParsedCommand.js'
-import { type Node } from '../../utils/bash/parser.js'
+import { type Node, parseCommandRaw } from '../../utils/bash/parser.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js'
 import { createPermissionRequestMessage } from '../../utils/permissions/permissions.js'
 import { BashTool } from './BashTool.js'
-import { bashCommandIsSafeAsync_DEPRECATED } from './bashSecurity.js'
 
 export type CommandIdentityCheckers = {
   isNormalizedCdCommand: (command: string) => boolean
@@ -56,15 +50,14 @@ async function segmentedCommandPermissionResult(
     let hasCd = false
     let hasGit = false
     for (const segment of segments) {
-      const subcommands = splitCommand_DEPRECATED(segment)
-      for (const sub of subcommands) {
-        const trimmed = sub.trim()
-        if (checkers.isNormalizedCdCommand(trimmed)) {
-          hasCd = true
-        }
-        if (checkers.isNormalizedGitCommand(trimmed)) {
-          hasGit = true
-        }
+      // Both checkers scan every command in a compound segment, so a segment
+      // like `cd sub && echo` is covered without splitting it first.
+      const trimmed = segment.trim()
+      if (checkers.isNormalizedCdCommand(trimmed)) {
+        hasCd = true
+      }
+      if (checkers.isNormalizedGitCommand(trimmed)) {
+        hasGit = true
       }
     }
     if (hasCd && hasGit) {
@@ -160,23 +153,23 @@ async function segmentedCommandPermissionResult(
  * treating filenames as commands in permission checking.
  * Uses ParsedCommand to preserve original quoting.
  */
-async function buildSegmentWithoutRedirections(
-  segmentCommand: string,
-): Promise<string> {
+function buildSegmentWithoutRedirections(segmentCommand: string): string {
   // Fast path: skip parsing if no redirection operators present
   if (!segmentCommand.includes('>')) {
     return segmentCommand
   }
 
-  // Use ParsedCommand to strip redirections while preserving quotes
-  const parsed = await ParsedCommand.parse(segmentCommand)
-  return parsed?.withoutOutputRedirections() ?? segmentCommand
+  const root = parseCommandRaw(segmentCommand)
+  if (!root) return segmentCommand
+  return buildParsedCommandFromRoot(
+    segmentCommand,
+    root,
+  ).withoutOutputRedirections()
 }
 
 /**
- * Wrapper that resolves an IParsedCommand (from a pre-parsed AST root if
- * available, else via ParsedCommand.parse) and delegates to
- * bashToolCheckCommandOperatorPermissions.
+ * Wrapper that builds a ParsedCommand from the AST root the caller already
+ * has and delegates to bashToolCheckCommandOperatorPermissions.
  */
 export async function checkCommandOperatorPermissions(
   input: z.infer<typeof BashTool.inputSchema>,
@@ -184,19 +177,13 @@ export async function checkCommandOperatorPermissions(
     input: z.infer<typeof BashTool.inputSchema>,
   ) => Promise<PermissionResult>,
   checkers: CommandIdentityCheckers,
-  astRoot: Node | null,
+  astRoot: Node,
 ): Promise<PermissionResult> {
-  const parsed = astRoot
-    ? buildParsedCommandFromRoot(input.command, astRoot)
-    : await ParsedCommand.parse(input.command)
-  if (!parsed) {
-    return { behavior: 'passthrough', message: 'Failed to parse command' }
-  }
   return bashToolCheckCommandOperatorPermissions(
     input,
     bashToolHasPermissionFn,
     checkers,
-    parsed,
+    buildParsedCommandFromRoot(input.command, astRoot),
   )
 }
 
@@ -210,25 +197,16 @@ async function bashToolCheckCommandOperatorPermissions(
     input: z.infer<typeof BashTool.inputSchema>,
   ) => Promise<PermissionResult>,
   checkers: CommandIdentityCheckers,
-  parsed: IParsedCommand,
+  parsed: ParsedCommand,
 ): Promise<PermissionResult> {
   // 1. Check for unsafe compound commands (subshells, command groups).
-  const tsAnalysis = parsed.getTreeSitterAnalysis()
-  const isUnsafeCompound = tsAnalysis
-    ? tsAnalysis.compoundStructure.hasSubshell ||
-      tsAnalysis.compoundStructure.hasCommandGroup
-    : isUnsafeCompoundCommand_DEPRECATED(input.command)
-  if (isUnsafeCompound) {
-    // This command contains an operator like `>` that we don't support as a subcommand separator
-    // Check if bashCommandIsSafe_DEPRECATED has a more specific message
-    const safetyResult = await bashCommandIsSafeAsync_DEPRECATED(input.command)
-
+  const { compoundStructure } = parsed.getTreeSitterAnalysis()
+  if (compoundStructure.hasSubshell || compoundStructure.hasCommandGroup) {
     const decisionReason = {
       type: 'other' as const,
-      reason:
-        safetyResult.behavior === 'ask' && safetyResult.message
-          ? safetyResult.message
-          : 'This command uses shell operators that require approval for safety',
+      reason: compoundStructure.hasSubshell
+        ? 'This command runs a subshell, whose effects cannot be attributed to any one subcommand, so it requires approval'
+        : 'This command uses a command group, whose effects cannot be attributed to any one subcommand, so it requires approval',
     }
     return {
       behavior: 'ask',
@@ -250,9 +228,7 @@ async function bashToolCheckCommandOperatorPermissions(
   }
 
   // Strip output redirections from each segment while preserving quotes
-  const segments = await Promise.all(
-    pipeSegments.map(segment => buildSegmentWithoutRedirections(segment)),
-  )
+  const segments = pipeSegments.map(buildSegmentWithoutRedirections)
 
   // Handle as segmented command
   return segmentedCommandPermissionResult(

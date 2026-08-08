@@ -11,7 +11,6 @@ import type { AppState } from 'src/state/AppState.js'
 import { z } from 'zod/v4'
 import { getKairosActive } from '../../bootstrap/state.js'
 import { TOOL_SUMMARY_MAX_LENGTH } from '../../constants/toolLimits.js'
-import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../../services/analytics/index.js'
 import { notifyVscodeFileUpdated } from '../../services/mcp/vscodeSdkMcp.js'
 import type {
   CanUseToolFn,
@@ -31,10 +30,7 @@ import {
 import type { AgentId } from '../../types/ids.js'
 import type { AssistantMessage } from '../../types/message.js'
 import { parseForSecurity } from '../../utils/bash/ast.js'
-import {
-  splitCommand_DEPRECATED,
-  splitCommandWithOperators,
-} from '../../utils/bash/commands.js'
+import { splitCommandWithOperators } from '../../utils/bash/commands.js'
 import { detectCodeIndexingFromCommand } from '../../utils/codeIndexing.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { isENOENT, ShellError } from '../../utils/errors.js'
@@ -377,52 +373,6 @@ type InputSchema = typeof inputSchema
 // (even when it's omitted from the schema, the code needs to handle it)
 export type BashToolInput = z.infer<typeof fullInputSchema>
 
-const COMMON_BACKGROUND_COMMANDS = [
-  'npm',
-  'yarn',
-  'pnpm',
-  'node',
-  'python',
-  'python3',
-  'go',
-  'cargo',
-  'make',
-  'docker',
-  'terraform',
-  'webpack',
-  'vite',
-  'jest',
-  'pytest',
-  'curl',
-  'wget',
-  'build',
-  'test',
-  'serve',
-  'watch',
-  'dev',
-] as const
-
-function getCommandTypeForLogging(
-  command: string,
-): AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS {
-  const parts = splitCommand_DEPRECATED(command)
-  if (parts.length === 0) return 'other'
-
-  // Check each part of the command to see if any match common background commands
-  for (const part of parts) {
-    const baseCommand = part.split(' ')[0] || ''
-    if (
-      COMMON_BACKGROUND_COMMANDS.includes(
-        baseCommand as (typeof COMMON_BACKGROUND_COMMANDS)[number],
-      )
-    ) {
-      return baseCommand
-    }
-  }
-
-  return 'other'
-}
-
 const outputSchema = z.object({
   stdout: z.string().describe('The standard output of the command'),
   stderr: z.string().describe('The standard error output of the command'),
@@ -497,39 +447,13 @@ import type { BashProgress } from '../../types/tools.js'
  * @returns false for commands that should not be auto-backgrounded (like sleep)
  */
 function isAutobackgroundingAllowed(command: string): boolean {
-  const parts = splitCommand_DEPRECATED(command)
-  if (parts.length === 0) return true
+  const parsed = parseForSecurity(command)
+  if (parsed.kind !== 'simple') return true
 
-  // Get the first part which should be the base command
-  const baseCommand = parts[0]?.trim()
+  const baseCommand = parsed.commands[0]?.argv[0]
   if (!baseCommand) return true
 
   return !DISALLOWED_AUTO_BACKGROUND_COMMANDS.includes(baseCommand)
-}
-
-/**
- * Detect standalone or leading `sleep N` patterns that should use Monitor
- * instead. Catches `sleep 5`, `sleep 5 && check`, `sleep 5; check` — but
- * not sleep inside pipelines, subshells, or scripts (those are fine).
- */
-export function detectBlockedSleepPattern(command: string): string | null {
-  const parts = splitCommand_DEPRECATED(command)
-  if (parts.length === 0) return null
-
-  const first = parts[0]?.trim() ?? ''
-  // Bare `sleep N` or `sleep N.N` as the first subcommand.
-  // Float durations (sleep 0.5) are allowed — those are legit pacing, not polls.
-  const m = /^sleep\s+(\d+)\s*$/.exec(first)
-  if (!m) return null
-  const secs = parseInt(m[1]!, 10)
-  if (secs < 2) return null // sub-2s sleeps are fine (rate limiting, pacing)
-
-  // `sleep N` alone → "what are you waiting for?"
-  // `sleep N && check` → "use Monitor { command: check }"
-  const rest = parts.slice(1).join(' ').trim()
-  return rest
-    ? `sleep ${secs} followed by: ${rest}`
-    : `standalone sleep ${secs}`
 }
 
 /**
@@ -686,10 +610,10 @@ export const BashTool = buildTool({
         })
       }
     }
-    // Env var FIRST: shouldUseSandbox → splitCommand_DEPRECATED → shell-quote's
-    // `new RegExp` per call. userFacingName runs per-render for every bash
-    // message in history; with ~50 msgs + one slow-to-tokenize command, this
-    // exceeds the shimmer tick → transition abort → infinite retry (#21605).
+    // Env var FIRST: shouldUseSandbox parses the command, and userFacingName
+    // runs per-render for every bash message in history; with ~50 msgs + one
+    // slow-to-parse command this exceeds the shimmer tick → transition abort →
+    // infinite retry (#21605).
     return isEnvTruthy(process.env.CLAUDE_CODE_BASH_SANDBOX_SHOW_INDICATOR) &&
       shouldUseSandbox(input)
       ? 'SandboxedBash'

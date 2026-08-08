@@ -6,6 +6,7 @@ import {
   createCommandPrefixExtractor,
   createSubcommandPrefixExtractor,
 } from '../shell/prefix.js'
+import { splitIntoCommands } from './ast.js'
 import { extractHeredocs, restoreHeredocs } from './heredoc.js'
 import { quote, tryParseShellCommand } from './shellQuote.js'
 
@@ -60,9 +61,8 @@ function isStaticRedirectTarget(target: string): boolean {
   // word-initial position as a comment token. In bash, `#` after whitespace
   // also starts a comment (`> #file` is a syntax error). But shell-quote
   // returns it as a comment OBJECT; splitCommandWithOperators maps it back to
-  // string `#foo`. This differs from extractOutputRedirections (which sees the
-  // comment object as non-string, missing the target). While `> #file` is
-  // unexecutable in bash, rejecting `#`-prefixed targets closes the differential.
+  // string `#foo`. While `> #file` is unexecutable in bash, rejecting
+  // `#`-prefixed targets closes the differential.
   if (target.startsWith('#')) return false
   return (
     !target.startsWith('!') && // No history expansion like !!, !-1, !foo
@@ -248,126 +248,6 @@ export function splitCommandWithOperators(command: string): string[] {
   }
 }
 
-export function filterControlOperators(
-  commandsAndOperators: string[],
-): string[] {
-  return commandsAndOperators.filter(
-    part => !(ALL_SUPPORTED_CONTROL_OPERATORS as Set<string>).has(part),
-  )
-}
-
-/**
- * @deprecated Legacy regex/shell-quote path. Only used when tree-sitter is
- * unavailable. The primary gate is parseForSecurity (ast.ts).
- *
- * Splits a command string into individual commands based on shell operators
- */
-export function splitCommand_DEPRECATED(command: string): string[] {
-  const parts: (string | undefined)[] = splitCommandWithOperators(command)
-  // Handle standard input/output/error redirection
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i]
-    if (part === undefined) {
-      continue
-    }
-
-    // Strip redirections so they don't appear as separate commands in permission prompts.
-    // Handles: 2>&1, 2>/dev/null, > file.txt, >> file.txt
-    // Security validation of file targets happens separately in checkPathConstraints()
-    if (part === '>&' || part === '>' || part === '>>') {
-      const prevPart = parts[i - 1]?.trim()
-      const nextPart = parts[i + 1]?.trim()
-      const afterNextPart = parts[i + 2]?.trim()
-      if (nextPart === undefined) {
-        continue
-      }
-
-      // Determine if this redirection should be stripped
-      let shouldStrip = false
-      let stripThirdToken = false
-
-      // SPECIAL CASE: The adjacent-string collapse merges `/dev/null` and `2`
-      // into `/dev/null 2` for `> /dev/null 2>&1`. The trailing ` 2` is the FD
-      // prefix of the NEXT redirect (`>&1`). Detect this: nextPart ends with
-      // ` <FD>` AND afterNextPart is a redirect operator. Split off the FD
-      // suffix so isStaticRedirectTarget sees only the actual target. The FD
-      // suffix is harmless to drop — it's handled when the loop reaches `>&`.
-      let effectiveNextPart = nextPart
-      if (
-        (part === '>' || part === '>>') &&
-        nextPart.length >= 3 &&
-        nextPart.charAt(nextPart.length - 2) === ' ' &&
-        ALLOWED_FILE_DESCRIPTORS.has(nextPart.charAt(nextPart.length - 1)) &&
-        (afterNextPart === '>' ||
-          afterNextPart === '>>' ||
-          afterNextPart === '>&')
-      ) {
-        effectiveNextPart = nextPart.slice(0, -2)
-      }
-
-      if (part === '>&' && ALLOWED_FILE_DESCRIPTORS.has(nextPart)) {
-        // 2>&1 style (no space after >&)
-        shouldStrip = true
-      } else if (
-        part === '>' &&
-        nextPart === '&' &&
-        afterNextPart !== undefined &&
-        ALLOWED_FILE_DESCRIPTORS.has(afterNextPart)
-      ) {
-        // 2 > &1 style (spaces around everything)
-        shouldStrip = true
-        stripThirdToken = true
-      } else if (
-        part === '>' &&
-        nextPart.startsWith('&') &&
-        nextPart.length > 1 &&
-        ALLOWED_FILE_DESCRIPTORS.has(nextPart.slice(1))
-      ) {
-        // 2 > &1 style (space before &1 but not after)
-        shouldStrip = true
-      } else if (
-        (part === '>' || part === '>>') &&
-        isStaticRedirectTarget(effectiveNextPart)
-      ) {
-        // General file redirection: > file.txt, >> file.txt, > /tmp/output.txt
-        // Only strip static targets; keep dynamic ones (with $, `, *, etc.) visible
-        shouldStrip = true
-      }
-
-      if (shouldStrip) {
-        // Remove trailing file descriptor from previous part if present
-        // (e.g., strip '2' from 'echo foo 2' for `echo foo 2>file`).
-        //
-        // SECURITY: Only strip when the digit is preceded by a SPACE and
-        // stripping leaves a non-empty string. shell-quote can't distinguish
-        // `2>` (FD redirect) from `2 >` (arg + stdout). Without the space
-        // check, `cat /tmp/path2 > out` truncates to `cat /tmp/path`. Without
-        // the length check, `echo ; 2 > file` erases the `2` subcommand.
-        if (
-          prevPart &&
-          prevPart.length >= 3 &&
-          ALLOWED_FILE_DESCRIPTORS.has(prevPart.charAt(prevPart.length - 1)) &&
-          prevPart.charAt(prevPart.length - 2) === ' '
-        ) {
-          parts[i - 1] = prevPart.slice(0, -2)
-        }
-
-        // Remove the redirection operator and target
-        parts[i] = undefined
-        parts[i + 1] = undefined
-        if (stripThirdToken) {
-          parts[i + 2] = undefined
-        }
-      }
-    }
-  }
-  // Remove undefined parts and empty strings (from stripped file descriptors)
-  const stringParts = parts.filter(
-    (part): part is string => part !== undefined && part !== '',
-  )
-  return filterControlOperators(stringParts)
-}
-
 /**
  * Checks if a command is a help command (e.g., "foo --help" or "foo bar --help")
  * and should be allowed as-is without going through prefix extraction.
@@ -509,7 +389,7 @@ const getCommandPrefix = createCommandPrefixExtractor({
 
 export const getCommandSubcommandPrefix = createSubcommandPrefixExtractor(
   getCommandPrefix,
-  splitCommand_DEPRECATED,
+  splitIntoCommands,
 )
 
 /**
@@ -518,275 +398,6 @@ export const getCommandSubcommandPrefix = createSubcommandPrefixExtractor(
 export function clearCommandPrefixCaches(): void {
   getCommandPrefix.cache.clear()
   getCommandSubcommandPrefix.cache.clear()
-}
-
-const COMMAND_LIST_SEPARATORS = new Set<ControlOperator>([
-  '&&',
-  '||',
-  ';',
-  ';;',
-  '|',
-])
-
-const ALL_SUPPORTED_CONTROL_OPERATORS = new Set<ControlOperator>([
-  ...COMMAND_LIST_SEPARATORS,
-  '>&',
-  '>',
-  '>>',
-])
-
-// Checks if this is just a list of commands
-function isCommandList(command: string): boolean {
-  // Generate unique placeholders for this parse to prevent injection attacks
-  const placeholders = generatePlaceholders()
-
-  // Extract heredocs before parsing - shell-quote parses << incorrectly
-  const { processedCommand } = extractHeredocs(command)
-
-  const parseResult = tryParseShellCommand(
-    processedCommand
-      .replaceAll('"', `"${placeholders.DOUBLE_QUOTE}`) // parse() strips out quotes :P
-      .replaceAll("'", `'${placeholders.SINGLE_QUOTE}`), // parse() strips out quotes :P
-    varName => `$${varName}`, // Preserve shell variables
-  )
-
-  // If parse failed, it's not a safe command list
-  if (!parseResult.success) {
-    return false
-  }
-
-  const parts = parseResult.tokens
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i]
-    const nextPart = parts[i + 1]
-    if (part === undefined) {
-      continue
-    }
-
-    if (typeof part === 'string') {
-      // Strings are safe
-      continue
-    }
-    if ('comment' in part) {
-      // Don't trust comments, they can contain command injection
-      return false
-    }
-    if ('op' in part) {
-      if (part.op === 'glob') {
-        // Globs are safe
-        continue
-      } else if (COMMAND_LIST_SEPARATORS.has(part.op)) {
-        // Command list separators are safe
-        continue
-      } else if (part.op === '>&') {
-        // Redirection to standard input/output/error file descriptors is safe
-        if (
-          nextPart !== undefined &&
-          typeof nextPart === 'string' &&
-          ALLOWED_FILE_DESCRIPTORS.has(nextPart.trim())
-        ) {
-          continue
-        }
-      } else if (part.op === '>') {
-        // Output redirections are validated by pathValidation.ts
-        continue
-      } else if (part.op === '>>') {
-        // Append redirections are validated by pathValidation.ts
-        continue
-      }
-      // Other operators are unsafe
-      return false
-    }
-  }
-  // No unsafe operators found in entire command
-  return true
-}
-
-/**
- * @deprecated Legacy regex/shell-quote path. Only used when tree-sitter is
- * unavailable. The primary gate is parseForSecurity (ast.ts).
- */
-export function isUnsafeCompoundCommand_DEPRECATED(command: string): boolean {
-  // Defense-in-depth: if shell-quote can't parse the command at all,
-  // treat it as unsafe so it always prompts the user. Even though bash
-  // would likely also reject malformed syntax, we don't want to rely
-  // on that assumption for security.
-  const { processedCommand } = extractHeredocs(command)
-  const parseResult = tryParseShellCommand(
-    processedCommand,
-    varName => `$${varName}`,
-  )
-  if (!parseResult.success) {
-    return true
-  }
-
-  return splitCommand_DEPRECATED(command).length > 1 && !isCommandList(command)
-}
-
-/**
- * Extracts output redirections from a command if present.
- * Only handles simple string targets (no variables or command substitutions).
- *
- * TODO(inigo): Refactor and simplify once we have AST parsing
- *
- * @returns Object containing the command without redirections and the target paths if found
- */
-export function extractOutputRedirections(cmd: string): {
-  commandWithoutRedirections: string
-  redirections: Array<{ target: string; operator: '>' | '>>' }>
-  hasDangerousRedirection: boolean
-} {
-  const redirections: Array<{ target: string; operator: '>' | '>>' }> = []
-  let hasDangerousRedirection = false
-
-  // SECURITY: Extract heredocs BEFORE line-continuation joining AND parsing.
-  // This matches splitCommandWithOperators (line 101). Quoted-heredoc bodies
-  // are LITERAL text in bash (`<< 'EOF'\n${}\nEOF` — ${} is NOT expanded, and
-  // `\<newline>` is NOT a continuation). But shell-quote doesn't understand
-  // heredocs; it sees `${}` on line 2 as an unquoted bad substitution and throws.
-  //
-  // ORDER MATTERS: If we join continuations first, a quoted heredoc body
-  // containing `x\<newline>DELIM` gets joined to `xDELIM` — the delimiter
-  // shifts, and `> /etc/passwd` that bash executes gets swallowed into the
-  // heredoc body and NEVER reaches path validation.
-  //
-  // Attack: `cat <<'ls'\nx\\\nls\n> /etc/passwd\nls` with Bash(cat:*)
-  //   - bash: quoted heredoc → `\` is literal, body = `x\`, next `ls` closes
-  //     heredoc → `> /etc/passwd` TRUNCATES the file, final `ls` runs
-  //   - join-first (OLD, WRONG): `x\<NL>ls` → `xls`, delimiter search finds
-  //     the LAST `ls`, body = `xls\n> /etc/passwd` → redirections:[] →
-  //     /etc/passwd NEVER validated → FILE WRITE, no prompt
-  //   - extract-first (NEW, matches splitCommandWithOperators): body = `x\`,
-  //     `> /etc/passwd` survives → captured → path-validated
-  //
-  // Original attack (why extract-before-parse exists at all):
-  //   `echo payload << 'EOF' > /etc/passwd\n${}\nEOF` with Bash(echo:*)
-  //   - bash: quoted heredoc → ${} literal, echo writes "payload\n" to /etc/passwd
-  //   - checkPathConstraints: calls THIS function on original → ${} crashes
-  //     shell-quote → previously returned {redirections:[], dangerous:false}
-  //     → /etc/passwd NEVER validated → FILE WRITE, no prompt.
-  const { processedCommand: heredocExtracted, heredocs } = extractHeredocs(cmd)
-
-  // SECURITY: Join line continuations AFTER heredoc extraction, BEFORE parsing.
-  // Without this, `> \<newline>/etc/passwd` causes shell-quote to emit an
-  // empty-string token for `\<newline>` and a separate token for the real path.
-  // The extractor picks up `''` as the target; isSimpleTarget('') was vacuously
-  // true (now also fixed as defense-in-depth); path.resolve(cwd,'') returns cwd
-  // (always allowed). Meanwhile bash joins the continuation and writes to
-  // /etc/passwd. Even backslash count = newline is a separator (not continuation).
-  const processedCommand = heredocExtracted.replace(/\\+\n/g, match => {
-    const backslashCount = match.length - 1
-    if (backslashCount % 2 === 1) {
-      return '\\'.repeat(backslashCount - 1)
-    }
-    return match
-  })
-
-  // Try to parse the heredoc-extracted command
-  const parseResult = tryParseShellCommand(processedCommand, env => `$${env}`)
-
-  // SECURITY: FAIL-CLOSED on parse failure. Previously returned
-  // {redirections:[], hasDangerousRedirection:false} — a silent bypass.
-  // If shell-quote can't parse (even after heredoc extraction), we cannot
-  // verify what redirections exist. Any `>` in the command could write files.
-  // Callers MUST treat this as dangerous and ask the user.
-  if (!parseResult.success) {
-    return {
-      commandWithoutRedirections: cmd,
-      redirections: [],
-      hasDangerousRedirection: true,
-    }
-  }
-
-  const parsed = parseResult.tokens
-
-  // Find redirected subshells (e.g., "(cmd) > file")
-  const redirectedSubshells = new Set<number>()
-  const parenStack: Array<{ index: number; isStart: boolean }> = []
-
-  parsed.forEach((part, i) => {
-    if (isOperator(part, '(')) {
-      const prev = parsed[i - 1]
-      const isStart =
-        i === 0 ||
-        (prev &&
-          typeof prev === 'object' &&
-          'op' in prev &&
-          ['&&', '||', ';', '|'].includes(prev.op))
-      parenStack.push({ index: i, isStart: !!isStart })
-    } else if (isOperator(part, ')') && parenStack.length > 0) {
-      const opening = parenStack.pop()!
-      const next = parsed[i + 1]
-      if (
-        opening.isStart &&
-        (isOperator(next, '>') || isOperator(next, '>>'))
-      ) {
-        redirectedSubshells.add(opening.index).add(i)
-      }
-    }
-  })
-
-  // Process command and extract redirections
-  const kept: ParseEntry[] = []
-  let cmdSubDepth = 0
-
-  for (let i = 0; i < parsed.length; i++) {
-    const part = parsed[i]
-    if (!part) continue
-
-    const [prev, next] = [parsed[i - 1], parsed[i + 1]]
-
-    // Skip redirected subshell parens
-    if (
-      (isOperator(part, '(') || isOperator(part, ')')) &&
-      redirectedSubshells.has(i)
-    ) {
-      continue
-    }
-
-    // Track command substitution depth
-    if (
-      isOperator(part, '(') &&
-      prev &&
-      typeof prev === 'string' &&
-      prev.endsWith('$')
-    ) {
-      cmdSubDepth++
-    } else if (isOperator(part, ')') && cmdSubDepth > 0) {
-      cmdSubDepth--
-    }
-
-    // Extract redirections outside command substitutions
-    if (cmdSubDepth === 0) {
-      const { skip, dangerous } = handleRedirection(
-        part,
-        prev,
-        next,
-        parsed[i + 2],
-        parsed[i + 3],
-        redirections,
-        kept,
-      )
-      if (dangerous) {
-        hasDangerousRedirection = true
-      }
-      if (skip > 0) {
-        i += skip
-        continue
-      }
-    }
-
-    kept.push(part)
-  }
-
-  return {
-    commandWithoutRedirections: restoreHeredocs(
-      [reconstructCommand(kept, processedCommand)],
-      heredocs,
-    )[0]!,
-    redirections,
-    hasDangerousRedirection,
-  }
 }
 
 function isOperator(part: ParseEntry | undefined, op: string): boolean {
@@ -800,8 +411,7 @@ function isSimpleTarget(target: ParseEntry | undefined): target is string {
   // class check below vacuously; path.resolve(cwd,'') returns cwd (always in
   // allowed root). An empty target can arise from shell-quote emitting '' for
   // `\<newline>`. In bash, `> \<newline>/etc/passwd` joins the continuation
-  // and writes to /etc/passwd. Defense-in-depth with the line-continuation
-  // join fix in extractOutputRedirections.
+  // and writes to /etc/passwd.
   if (typeof target !== 'string' || target.length === 0) return false
   return (
     !target.startsWith('!') && // History expansion patterns like !!, !-1, !foo

@@ -1,4 +1,4 @@
-import { splitCommand_DEPRECATED } from '../../utils/bash/commands.js'
+import { parseForSecurity } from '../../utils/bash/ast.js'
 import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 import { getSettings_DEPRECATED } from '../../utils/settings/settings.js'
 import {
@@ -30,12 +30,13 @@ function containsExcludedCommand(command: string): boolean {
   // subcommands and check each one against excluded patterns. This prevents a
   // compound command from escaping the sandbox just because its first subcommand
   // matches an excluded pattern.
-  let subcommands: string[]
-  try {
-    subcommands = splitCommand_DEPRECATED(command)
-  } catch {
-    subcommands = [command]
-  }
+  // A command we can't parse is checked whole; excludedCommands is a
+  // convenience feature, and the sandbox prompt is the actual control.
+  const parsed = parseForSecurity(command)
+  const subcommands =
+    parsed.kind === 'simple'
+      ? parsed.commands.map(c => c.sourceText)
+      : [command]
 
   for (const subcommand of subcommands) {
     const trimmed = subcommand.trim()

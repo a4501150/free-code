@@ -8,6 +8,7 @@ import {
   type ParseForSecurityResult,
   parseForSecurity,
   parseForSecurityFromAst,
+  commandWithoutRedirects,
   shellEscapeArg,
   type Redirect,
   type SimpleCommand,
@@ -554,20 +555,6 @@ export function stripAllLeadingEnvVars(
 function isCompound(command: string): boolean {
   const parsed = parseForSecurity(command)
   return parsed.kind !== 'simple' || parsed.commands.length > 1
-}
-
-/**
- * `command` with any output redirection removed.
- *
- * Falls back to the command unchanged when it is not a single analyzable
- * command: a compound one is already rejected by the compound check for allow
- * rules, and deny rules are matched per-subcommand by checkSemanticsDeny.
- */
-function commandWithoutRedirects(command: string): string {
-  const parsed = parseForSecurity(command)
-  return parsed.kind === 'simple' && parsed.commands.length === 1
-    ? parsed.commands[0]!.sourceText
-    : command
 }
 
 /**
@@ -1305,10 +1292,9 @@ export async function bashToolHasPermission(
 ): Promise<PermissionResult> {
   let appState = context.getAppState()
 
-  // 0. AST-based security parse. This is the ONLY parser: it replaces both
-  // tryParseShellCommand (the shell-quote pre-check) and the bashCommandIsSafe
-  // misparsing gate. It yields either a clean SimpleCommand[] (quotes
-  // resolved, no hidden substitutions) or 'too-complex'.
+  // 0. AST-based security parse. This is the only parser: it yields either a
+  // clean SimpleCommand[] (quotes resolved, no hidden substitutions) or
+  // 'too-complex'.
   //
   // There is deliberately no fallback. The legacy shell-quote path mis-parsed
   // in ways it could not detect (backslashes inside single quotes, \r as
@@ -1317,21 +1303,25 @@ export async function bashToolHasPermission(
   // through it. Falling back to it on any parse difficulty handed those
   // bypasses to exactly the inputs most likely to be adversarial.
   const astRoot = parseCommandRaw(input.command)
-  const astResult: ParseForSecurityResult = parseForSecurityFromAst(
-    input.command,
-    astRoot,
-  )
+  const astResult: ParseForSecurityResult =
+    astRoot === null
+      ? { kind: 'too-complex', reason: 'Command could not be parsed' }
+      : parseForSecurityFromAst(input.command, astRoot)
 
-  if (astResult.kind === 'too-complex') {
-    // Parse succeeded but found structure we can't statically analyze
-    // (command substitution, expansion, control flow, parser differential).
-    // Respect exact-match deny/ask/allow, then prefix/wildcard deny. Only
-    // fall through to ask if no deny matched — don't downgrade deny to ask.
+  if (astRoot === null || astResult.kind === 'too-complex') {
+    // Either the parse failed outright, or it succeeded and found structure we
+    // can't statically analyze (command substitution, expansion, control flow,
+    // parser differential). Respect exact-match deny/ask/allow, then
+    // prefix/wildcard deny. Only fall through to ask if no deny matched —
+    // don't downgrade deny to ask.
     const earlyExit = checkEarlyExitDeny(input, appState.toolPermissionContext)
     if (earlyExit !== null) return earlyExit
     const decisionReason: PermissionDecisionReason = {
       type: 'other' as const,
-      reason: astResult.reason,
+      reason:
+        astResult.kind === 'too-complex'
+          ? astResult.reason
+          : 'Command could not be parsed',
     }
     return {
       behavior: 'ask',

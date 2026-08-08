@@ -1,8 +1,8 @@
 /**
  * AST-based bash command analysis using tree-sitter.
  *
- * This module replaces the shell-quote + hand-rolled char-walker approach in
- * bashSecurity.ts / commands.ts. Instead of detecting parser differentials
+ * This module replaces the shell-quote + hand-rolled char-walker approach the
+ * Bash tool used to run alongside it. Instead of detecting parser differentials
  * one-by-one, we parse with tree-sitter-bash and walk the tree with an
  * EXPLICIT allowlist of node types. Any node type not in the allowlist causes
  * the entire command to be classified as 'too-complex', which means it goes
@@ -396,6 +396,34 @@ export function parseForSecurity(cmd: string): ParseForSecurityResult {
   // pre-checks in parseForSecurityFromAst need to see and reject.
   if (cmd === '') return { kind: 'simple', commands: [] }
   return parseForSecurityFromAst(cmd, parseCommandRaw(cmd))
+}
+
+/**
+ * The source span of every command in `cmd`, or `[cmd]` when it cannot be
+ * analyzed.
+ *
+ * For display and prefix suggestion only. Falling back to the whole string is
+ * fail-open, which is why no security decision may be built on this: a caller
+ * that needs to know what will run must handle the unanalyzable case itself.
+ */
+export function splitIntoCommands(cmd: string): string[] {
+  const parsed = parseForSecurity(cmd)
+  return parsed.kind === 'simple'
+    ? parsed.commands.map(c => c.sourceText)
+    : [cmd]
+}
+
+/**
+ * `cmd` with any output redirection removed, so a filename is not displayed as
+ * a command and a rule can match without repeating the redirection.
+ *
+ * Returns the command unchanged when it is not a single analyzable command.
+ */
+export function commandWithoutRedirects(cmd: string): string {
+  const parsed = parseForSecurity(cmd)
+  return parsed.kind === 'simple' && parsed.commands.length === 1
+    ? parsed.commands[0]!.sourceText
+    : cmd
 }
 
 /**
@@ -1438,9 +1466,7 @@ function walkArgument(
       // the raw text. Required for checkSemantics: `\eval` must match
       // EVAL_LIKE_BUILTINS, `\zmodload` must match ZSH_DANGEROUS_BUILTINS.
       // Also makes argv accurate: `find -exec {} \;` → argv has `;` not
-      // `\;`. (Deny-rule matching on .text already worked via downstream
-      // splitCommand_DEPRECATED unescaping — see walkCommand comment.) `\<whitespace>`
-      // is already rejected by BACKSLASH_WHITESPACE_RE.
+      // `\;`. `\<whitespace>` is already rejected by BACKSLASH_WHITESPACE_RE.
       if (BRACE_EXPANSION_RE.test(node.text)) {
         return {
           kind: 'too-complex',
@@ -2071,10 +2097,9 @@ function tooComplex(node: Node): ParseForSecurityResult {
 //
 // Everything above answers "can we tokenize?". Everything below answers
 // "is the resulting argv dangerous in ways that don't involve parsing?".
-// These are checks on argv[0] or argv content that the old bashSecurity.ts
-// validators performed but which have nothing to do with parser
-// differentials. They're here (not in bashSecurity.ts) because they operate
-// on SimpleCommand and need to run for every extracted command.
+// These are checks on argv[0] or argv content that have nothing to do with
+// parser differentials. They operate on SimpleCommand and run for every
+// extracted command.
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -2450,11 +2475,7 @@ export function checkSemantics(commands: SimpleCommand[]): SemanticCheckResult {
     }
 
     // jq's system() built-in executes arbitrary shell commands, and flags
-    // like --from-file can read arbitrary files into jq variables. On the
-    // legacy path these are caught by validateJqCommand in bashSecurity.ts,
-    // but that validator is gated behind `astSubcommands === null` and
-    // never runs when the AST parse succeeds. Mirror the checks here so
-    // the AST path has the same defence.
+    // like --from-file can read arbitrary files into jq variables.
     if (name === 'jq') {
       for (const arg of a) {
         if (/\bsystem\s*\(/.test(arg)) {

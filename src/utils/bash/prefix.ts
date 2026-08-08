@@ -1,5 +1,5 @@
 import { buildPrefix } from '../shell/specPrefix.js'
-import { splitCommand_DEPRECATED } from './commands.js'
+import { splitIntoCommands } from './ast.js'
 import { extractCommandArguments, parseCommand } from './parser.js'
 import { getCommandSpec } from './registry.js'
 
@@ -136,7 +136,7 @@ export async function getCompoundCommandPrefixesStatic(
   command: string,
   excludeSubcommand?: (subcommand: string) => boolean,
 ): Promise<string[]> {
-  const subcommands = splitCommand_DEPRECATED(command)
+  const subcommands = splitIntoCommands(command)
   if (subcommands.length <= 1) {
     const result = await getCommandPrefixStatic(command)
     return result?.commandPrefix ? [result.commandPrefix] : []

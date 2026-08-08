@@ -289,7 +289,6 @@ export function extractQuoteContext(
 
 /**
  * Extract compound command structure from the AST.
- * Replaces isUnsafeCompoundCommand() and splitCommand() for tree-sitter path.
  */
 export function extractCompoundStructure(
   rootNode: unknown,
