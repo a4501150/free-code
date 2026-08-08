@@ -237,18 +237,9 @@ class TreeSitterParsedCommand implements IParsedCommand {
   }
 }
 
-const getTreeSitterAvailable = memoize(async (): Promise<boolean> => {
-  try {
-    const testResult = await parseCommand('echo test')
-    return testResult !== null
-  } catch {
-    return false
-  }
-})
-
 /**
  * Build a TreeSitterParsedCommand from a pre-parsed AST root. Lets callers
- * that already have the tree skip the redundant native.parse that
+ * that already have the tree skip the redundant parse that
  * ParsedCommand.parse would do.
  */
 export function buildParsedCommandFromRoot(
@@ -266,22 +257,11 @@ export function buildParsedCommandFromRoot(
   )
 }
 
-async function doParse(command: string): Promise<IParsedCommand | null> {
+function doParse(command: string): IParsedCommand | null {
   if (!command) return null
 
-  const treeSitterAvailable = await getTreeSitterAvailable()
-  if (treeSitterAvailable) {
-    try {
-      const data = await parseCommand(command)
-      if (data) {
-        // Native NAPI parser returns plain JS objects (no WASM handles);
-        // nothing to free — extract directly.
-        return buildParsedCommandFromRoot(command, data.rootNode)
-      }
-    } catch {
-      // Fall through to regex implementation
-    }
-  }
+  const data = parseCommand(command)
+  if (data) return buildParsedCommandFromRoot(command, data.rootNode)
 
   // Fallback to regex implementation
   return new RegexParsedCommand_DEPRECATED(command)
@@ -289,7 +269,7 @@ async function doParse(command: string): Promise<IParsedCommand | null> {
 
 // Single-entry cache: legacy callers (bashCommandIsSafeAsync,
 // buildSegmentWithoutRedirections) may call ParsedCommand.parse repeatedly
-// with the same command string. Each parse() is ~1 native.parse + ~6 tree
+// with the same command string. Each parse() is ~1 parse + ~6 tree
 // walks, so caching the most recent command skips the redundant work.
 // Size-1 bound avoids leaking TreeSitterParsedCommand instances.
 let lastCmd: string | undefined
@@ -310,7 +290,7 @@ export const ParsedCommand = {
       return lastResult
     }
     lastCmd = command
-    lastResult = doParse(command)
+    lastResult = Promise.resolve(doParse(command))
     return lastResult
   },
 }

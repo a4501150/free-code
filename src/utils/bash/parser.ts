@@ -1,11 +1,4 @@
-import { feature } from 'bun:bundle'
-
-import { logForDebugging } from '../debug.js'
-import {
-  ensureParserInitialized,
-  getParserModule,
-  type TsNode,
-} from './bashParser.js'
+import { parseSource, type TsNode } from './bashParser.js'
 
 export type Node = TsNode
 
@@ -16,7 +9,6 @@ export interface ParsedCommandData {
   originalCommand: string
 }
 
-const MAX_COMMAND_LENGTH = 10000
 const DECLARATION_COMMANDS = new Set([
   'export',
   'declare',
@@ -33,97 +25,30 @@ const SUBSTITUTION_TYPES = new Set([
 ])
 const COMMAND_TYPES = new Set(['command', 'declaration_command'])
 
-let logged = false
-function logLoadOnce(success: boolean): void {
-  if (logged) return
-  logged = true
-  logForDebugging(
-    success ? 'tree-sitter: native module loaded' : 'tree-sitter: unavailable',
-  )
-}
-
 /**
- * Awaits WASM init (Parser.init + Language.load). Must be called before
- * parseCommand/parseCommandRaw for the parser to be available. Idempotent.
- */
-export async function ensureInitialized(): Promise<void> {
-  if (feature('TREE_SITTER_BASH') || feature('TREE_SITTER_BASH_SHADOW')) {
-    await ensureParserInitialized()
-  }
-}
-
-export async function parseCommand(
-  command: string,
-): Promise<ParsedCommandData | null> {
-  if (!command || command.length > MAX_COMMAND_LENGTH) return null
-
-  // Gate: ant-only until pentest. External builds fall back to legacy
-  // regex/shell-quote path. Guarding the whole body inside the positive
-  // branch lets Bun DCE the NAPI import AND keeps telemetry honest — we
-  // only fire tengu_tree_sitter_load when a load was genuinely attempted.
-  if (feature('TREE_SITTER_BASH')) {
-    await ensureParserInitialized()
-    const mod = getParserModule()
-    logLoadOnce(mod !== null)
-    if (!mod) return null
-
-    try {
-      const rootNode = mod.parse(command)
-      if (!rootNode) return null
-
-      const commandNode = findCommandNode(rootNode, null)
-      const envVars = extractEnvVars(commandNode)
-
-      return { rootNode, envVars, commandNode, originalCommand: command }
-    } catch {
-      return null
-    }
-  }
-  return null
-}
-
-/**
- * SECURITY: Sentinel for "parser was loaded and attempted, but aborted"
- * (timeout / node budget / Rust panic). Distinct from `null` (module not
- * loaded). Adversarial input can trigger abort under MAX_COMMAND_LENGTH:
- * `(( a[0][0]... ))` with ~2800 subscripts hits PARSE_TIMEOUT_MICROS.
- * Callers MUST treat this as fail-closed (too-complex), NOT route to legacy.
- */
-export const PARSE_ABORTED = Symbol('parse-aborted')
-
-/**
- * Raw parse — skips findCommandNode/extractEnvVars which the security
- * walker in ast.ts doesn't use. Saves one tree walk per bash command.
+ * Parse a command and locate its first command node plus leading env vars.
  *
- * Returns:
- *   - Node: parse succeeded
- *   - null: module not loaded / feature off / empty / over-length
- *   - PARSE_ABORTED: module loaded but parse failed (timeout/panic)
+ * Returns null for empty input or a parser bug. There is no fallback parser,
+ * so null is fail-closed: security callers must treat it as 'too-complex'.
  */
-export async function parseCommandRaw(
-  command: string,
-): Promise<Node | null | typeof PARSE_ABORTED> {
-  if (!command || command.length > MAX_COMMAND_LENGTH) return null
-  if (feature('TREE_SITTER_BASH') || feature('TREE_SITTER_BASH_SHADOW')) {
-    await ensureParserInitialized()
-    const mod = getParserModule()
-    logLoadOnce(mod !== null)
-    if (!mod) return null
-    try {
-      const result = mod.parse(command)
-      // SECURITY: Module loaded; null here = timeout/node-budget abort in
-      // bashParser.ts (PARSE_TIMEOUT_MS=50, MAX_NODES=50_000).
-      // Previously collapsed into `return null` → parse-unavailable → legacy
-      // path, which lacks EVAL_LIKE_BUILTINS — `trap`, `enable`, `hash` leaked.
-      if (result === null) {
-        return PARSE_ABORTED
-      }
-      return result
-    } catch {
-      return PARSE_ABORTED
-    }
-  }
-  return null
+export function parseCommand(command: string): ParsedCommandData | null {
+  if (!command) return null
+  const rootNode = parseSource(command)
+  if (!rootNode) return null
+
+  const commandNode = findCommandNode(rootNode, null)
+  const envVars = extractEnvVars(commandNode)
+
+  return { rootNode, envVars, commandNode, originalCommand: command }
+}
+
+/**
+ * Raw parse — skips findCommandNode/extractEnvVars, which the security walker
+ * in ast.ts doesn't use. Saves one tree walk per bash command.
+ */
+export function parseCommandRaw(command: string): Node | null {
+  if (!command) return null
+  return parseSource(command)
 }
 
 function findCommandNode(node: Node, parent: Node | null): Node | null {

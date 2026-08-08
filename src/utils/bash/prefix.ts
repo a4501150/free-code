@@ -32,7 +32,7 @@ export async function getCommandPrefixStatic(
 ): Promise<{ commandPrefix: string | null } | null> {
   if (wrapperCount > 2 || recursionDepth > 10) return null
 
-  const parsed = await parseCommand(command)
+  const parsed = parseCommand(command)
   if (!parsed) return null
   if (!parsed.commandNode) {
     return { commandPrefix: null }

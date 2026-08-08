@@ -19,8 +19,9 @@
     "compile": "bun run ./scripts/build.ts --compile",
     "dev": "bun run ./src/entrypoints/cli.tsx",
     "format": "prettier --write .",
-    "test": "bun test tests/e2e/ --timeout 120000",
+    "test": "bun run test:unit && bun run test:e2e",
     "test:e2e": "bun test tests/e2e/ --timeout 120000",
+    "test:unit": "bun test tests/unit/",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

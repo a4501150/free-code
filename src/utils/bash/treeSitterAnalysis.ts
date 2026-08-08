@@ -5,8 +5,6 @@
  * parse trees, providing more accurate analysis than regex/shell-quote
  * parsing. Each function takes a root node and command string, and returns
  * structured data that can be used by security validators.
- *
- * The native NAPI parser returns plain JS objects — no cleanup needed.
  */
 
 type TreeSitterNode = {

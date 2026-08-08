@@ -6,6 +6,7 @@ import {
   checkSemantics,
   nodeTypeId,
   type ParseForSecurityResult,
+  parseForSecurity,
   parseForSecurityFromAst,
   type Redirect,
   type SimpleCommand,
@@ -18,6 +19,7 @@ import {
 } from '../../utils/bash/commands.js'
 import { parseCommandRaw } from '../../utils/bash/parser.js'
 import { tryParseShellCommand } from '../../utils/bash/shellQuote.js'
+import { stripWrappers } from '../../utils/bash/wrappers.js'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
@@ -409,20 +411,24 @@ export function stripSafeWrappers(command: string): string {
     // timeout ran. Contrast ENV_VAR_PATTERN below which already allowlists.
     /^timeout[ \t]+(?:(?:--(?:foreground|preserve-status|verbose)|--(?:kill-after|signal)=[A-Za-z0-9_.+-]+|--(?:kill-after|signal)[ \t]+[A-Za-z0-9_.+-]+|-v|-[ks][ \t]+[A-Za-z0-9_.+-]+|-[ks][A-Za-z0-9_.+-]+)[ \t]+)*(?:--[ \t]+)?\d+(?:\.\d+)?[smhd]?[ \t]+/,
     /^time[ \t]+(?:--[ \t]+)?/,
-    // SECURITY: keep in sync with checkSemantics wrapper-strip (ast.ts
-    // ~:1990-2080) AND stripWrappersFromArgv (pathValidation.ts ~:1260).
-    // Previously this pattern REQUIRED `-n N`; checkSemantics already handled
-    // bare `nice` and legacy `-N`. Asymmetry meant checkSemantics exposed the
-    // wrapped command to semantic checks but deny-rule matching and the cd+git
-    // gate saw the wrapper name. `nice rm -rf /` with Bash(rm:*) deny became
-    // ask instead of deny; `cd evil && nice git status` skipped the bare-repo
-    // RCE gate. PR #21503 fixed stripWrappersFromArgv; this was missed.
-    // Now matches: `nice cmd`, `nice -n N cmd`, `nice -N cmd` (all forms
-    // checkSemantics strips).
+    // SECURITY: these patterns are a REGEX APPROXIMATION of the canonical
+    // argv-level wrapper parser in src/utils/bash/wrappers.ts, and they are
+    // knowingly narrower than it. A regex cannot fail closed on an
+    // unrecognized flag the way the argv parser does, so it must under-strip
+    // rather than risk exposing a flag as the command name.
+    //
+    // Consequences of the gap, all in the "deny rule fails to match" direction
+    // (never auto-allow, because checkSemantics resolves the real command and
+    // runs first): `env rm -rf /` and `stdbuf -o 0 rm -rf /` are not reduced to
+    // `rm` here, so a Bash(rm:*) deny does not match them.
+    //
+    // This whole regex layer is replaced when rule matching moves to argv;
+    // until then do not add wrappers here without adding them to wrappers.ts.
+    // The `nice` history is the cautionary tale: this pattern once required
+    // `-n N` while checkSemantics already handled bare `nice` and legacy `-N`,
+    // so `nice rm -rf /` evaded a Bash(rm:*) deny and
+    // `cd evil && nice git status` evaded the bare-repo RCE gate.
     /^nice(?:[ \t]+-n[ \t]+-?\d+|[ \t]+-\d+)?[ \t]+(?:--[ \t]+)?/,
-    // stdbuf: fused short flags only (-o0, -eL). checkSemantics handles more
-    // (space-separated, long --output=MODE), but we fail-closed on those
-    // above so not over-stripping here is safe. Main need: `stdbuf -o0 cmd`.
     /^stdbuf(?:[ \t]+-[ioe][LN0-9]+)+[ \t]+(?:--[ \t]+)?/,
     /^nohup[ \t]+(?:--[ \t]+)?/,
   ] as const
@@ -478,90 +484,6 @@ export function stripSafeWrappers(command: string): string {
   }
 
   return stripped.trim()
-}
-
-// SECURITY: allowlist for timeout flag VALUES (signals are TERM/KILL/9,
-// durations are 5/5s/10.5). Rejects $ ( ) ` | ; & and newlines that
-// previously matched via [^ \t]+ — `timeout -k$(id) 10 ls` must NOT strip.
-const TIMEOUT_FLAG_VALUE_RE = /^[A-Za-z0-9_.+-]+$/
-
-/**
- * Parse timeout's GNU flags (long + short, fused + space-separated) and
- * return the argv index of the DURATION token, or -1 if flags are unparseable.
- * Enumerates: --foreground/--preserve-status/--verbose (no value),
- * --kill-after/--signal (value, both =fused and space-separated), -v (no
- * value), -k/-s (value, both fused and space-separated).
- *
- * Extracted from stripWrappersFromArgv to keep bashToolHasPermission compact.
- */
-function skipTimeoutFlags(a: readonly string[]): number {
-  let i = 1
-  while (i < a.length) {
-    const arg = a[i]!
-    const next = a[i + 1]
-    if (
-      arg === '--foreground' ||
-      arg === '--preserve-status' ||
-      arg === '--verbose'
-    )
-      i++
-    else if (/^--(?:kill-after|signal)=[A-Za-z0-9_.+-]+$/.test(arg)) i++
-    else if (
-      (arg === '--kill-after' || arg === '--signal') &&
-      next &&
-      TIMEOUT_FLAG_VALUE_RE.test(next)
-    )
-      i += 2
-    else if (arg === '--') {
-      i++
-      break
-    } // end-of-options marker
-    else if (arg.startsWith('--')) return -1
-    else if (arg === '-v') i++
-    else if (
-      (arg === '-k' || arg === '-s') &&
-      next &&
-      TIMEOUT_FLAG_VALUE_RE.test(next)
-    )
-      i += 2
-    else if (/^-[ks][A-Za-z0-9_.+-]+$/.test(arg)) i++
-    else if (arg.startsWith('-')) return -1
-    else break
-  }
-  return i
-}
-
-/**
- * Argv-level counterpart to stripSafeWrappers. Strips the same wrapper
- * commands (timeout, time, nice, nohup) from AST-derived argv. Env vars
- * are already separated into SimpleCommand.envVars so no env-var stripping.
- *
- * KEEP IN SYNC with SAFE_WRAPPER_PATTERNS above — if you add a wrapper
- * there, add it here too.
- */
-export function stripWrappersFromArgv(argv: string[]): string[] {
-  // SECURITY: Consume optional `--` after wrapper options, matching what the
-  // wrapper does. Otherwise `['nohup','--','rm','--','-/../foo']` yields `--`
-  // as baseCmd and skips path validation. See SAFE_WRAPPER_PATTERNS comment.
-  let a = argv
-  for (;;) {
-    if (a[0] === 'time' || a[0] === 'nohup') {
-      a = a.slice(a[1] === '--' ? 2 : 1)
-    } else if (a[0] === 'timeout') {
-      const i = skipTimeoutFlags(a)
-      if (i < 0 || !a[i] || !/^\d+(?:\.\d+)?[smhd]?$/.test(a[i]!)) return a
-      a = a.slice(i + 1)
-    } else if (
-      a[0] === 'nice' &&
-      a[1] === '-n' &&
-      a[2] &&
-      /^-?\d+$/.test(a[2])
-    ) {
-      a = a.slice(a[3] === '--' ? 4 : 3)
-    } else {
-      return a
-    }
-  }
 }
 
 /**
@@ -1328,18 +1250,14 @@ export async function bashToolHasPermission(
   // no hidden substitutions) or 'too-complex' — which is exactly the signal
   // we need to decide whether splitCommand's output can be trusted.
   //
-  // When tree-sitter WASM is unavailable OR the injection check is disabled
-  // via env var, we fall back to the old path (legacy gate at ~1370 runs).
+  // When the injection check is disabled via env var we fall back to the old
+  // path (legacy gate below runs).
   const injectionCheckDisabled = isEnvTruthy(
     process.env.CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK,
   )
   // Parse once here; the resulting AST feeds both parseForSecurityFromAst
-  // and bashToolCheckCommandOperatorPermissions. parseCommandRaw self-gates on
-  // TREE_SITTER_BASH / TREE_SITTER_BASH_SHADOW and returns null when both are
-  // off, so the flags need no second check here.
-  let astRoot = injectionCheckDisabled
-    ? null
-    : await parseCommandRaw(input.command)
+  // and bashToolCheckCommandOperatorPermissions.
+  let astRoot = injectionCheckDisabled ? null : parseCommandRaw(input.command)
   let astResult: ParseForSecurityResult = astRoot
     ? parseForSecurityFromAst(input.command, astRoot)
     : { kind: 'parse-unavailable' }
@@ -1993,57 +1911,67 @@ export async function bashToolHasPermission(
 }
 
 /**
- * Checks if a subcommand is a git command after normalizing away safe wrappers
- * (env vars, timeout, etc.) and shell quotes.
+ * Effective argv for each simple command in `command`, with safe wrappers
+ * (`env`, `timeout`, `nice`, `stdbuf`, `time`, `nohup`) removed, or null when
+ * the command can't be statically analyzed.
  *
- * SECURITY: Must normalize before matching to prevent bypasses like:
- *   'git' status    — shell quotes hide the command from a naive regex
- *   NO_COLOR=1 git status — env var prefix hides the command
+ * SECURITY: normalizing via the AST rather than a regex is what makes
+ * `'git' status`, `NO_COLOR=1 git status`, `env git status` and
+ * `stdbuf -o 0 git status` all resolve to `git`. A wrapper form that one layer
+ * strips and another doesn't is directly exploitable — see wrappers.ts.
+ */
+function effectiveArgvs(command: string): string[][] | null {
+  const parsed = parseForSecurity(command)
+  if (parsed.kind !== 'simple') return null
+  return parsed.commands.map(cmd => {
+    const stripped = stripWrappers(cmd.argv)
+    return stripped.kind === 'ok' ? stripped.argv : cmd.argv
+  })
+}
+
+/**
+ * Checks if a subcommand is a git command after normalizing away safe wrappers
+ * and shell quotes.
+ *
+ * Fails safe: an unanalyzable command counts as git, because the callers use
+ * this to APPLY restrictions (the cd+git bare-repo gate, the git-internal
+ * write check). Saying "maybe git" costs a prompt; saying "not git" skips a
+ * security gate.
  */
 export function isNormalizedGitCommand(command: string): boolean {
   // Fast path: catch the most common case before any parsing
   if (command.startsWith('git ') || command === 'git') {
     return true
   }
-  const stripped = stripSafeWrappers(command)
-  const parsed = tryParseShellCommand(stripped)
-  if (parsed.success && parsed.tokens.length > 0) {
-    // Direct git command
-    if (parsed.tokens[0] === 'git') {
-      return true
-    }
-    // "xargs git ..." — xargs runs git in the current directory,
-    // so it must be treated as a git command for cd+git security checks.
-    // This matches the xargs prefix handling in filterRulesByContentsMatchingInput.
-    if (parsed.tokens[0] === 'xargs' && parsed.tokens.includes('git')) {
-      return true
-    }
-    return false
-  }
-  return /^git(?:\s|$)/.test(stripped)
+  const argvs = effectiveArgvs(command)
+  if (argvs === null) return true
+  return argvs.some(
+    argv =>
+      argv[0] === 'git' ||
+      // `xargs git ...` runs git in the current directory, so it must be
+      // treated as a git command for the cd+git security checks. This matches
+      // the xargs prefix handling in filterRulesByContentsMatchingInput.
+      (argv[0] === 'xargs' && argv.includes('git')),
+  )
 }
 
 /**
- * Checks if a subcommand is a cd command after normalizing away safe wrappers
- * (env vars, timeout, etc.) and shell quotes.
+ * Checks if a subcommand changes the working directory, after normalizing away
+ * safe wrappers and shell quotes.
  *
- * SECURITY: Must normalize before matching to prevent bypasses like:
- *   FORCE_COLOR=1 cd sub — env var prefix hides the cd from a naive /^cd / regex
- *   This mirrors isNormalizedGitCommand to ensure symmetric normalization.
- *
- * Also matches pushd/popd — they change cwd just like cd, so
+ * Matches pushd/popd too — they change cwd just like cd, so
  *   pushd /tmp/bare-repo && git status
  * must trigger the same cd+git guard. Mirrors PowerShell's
  * DIRECTORY_CHANGE_ALIASES (src/utils/powershell/parser.ts).
+ *
+ * Fails safe for the same reason as isNormalizedGitCommand.
  */
 export function isNormalizedCdCommand(command: string): boolean {
-  const stripped = stripSafeWrappers(command)
-  const parsed = tryParseShellCommand(stripped)
-  if (parsed.success && parsed.tokens.length > 0) {
-    const cmd = parsed.tokens[0]
-    return cmd === 'cd' || cmd === 'pushd' || cmd === 'popd'
-  }
-  return /^(?:cd|pushd|popd)(?:\s|$)/.test(stripped)
+  const argvs = effectiveArgvs(command)
+  if (argvs === null) return true
+  return argvs.some(
+    argv => argv[0] === 'cd' || argv[0] === 'pushd' || argv[0] === 'popd',
+  )
 }
 
 /**

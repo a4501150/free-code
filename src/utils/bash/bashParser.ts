@@ -6,7 +6,7 @@
  * indices).
  *
  * Grammar reference: tree-sitter-bash. Validated against a 3449-input golden
- * corpus generated from the WASM parser.
+ * corpus generated from the reference WASM parser this replaced.
  */
 
 export type TsNode = {
@@ -17,33 +17,9 @@ export type TsNode = {
   children: TsNode[]
 }
 
-type ParserModule = {
-  parse: (source: string, timeoutMs?: number) => TsNode | null
-}
-
-/**
- * 50ms wall-clock cap — bails out on pathological/adversarial input.
- * Pass `Infinity` via `parse(src, Infinity)` to disable (e.g. correctness
- * tests, where CI jitter would otherwise cause spurious null returns).
- */
-const PARSE_TIMEOUT_MS = 50
-
-/** Node budget cap — bails out before OOM on deeply nested input. */
-const MAX_NODES = 50_000
-
-const MODULE: ParserModule = { parse: parseSource }
-
-const READY = Promise.resolve()
-
-/** No-op: pure-TS parser needs no async init. Kept for API compatibility. */
-export function ensureParserInitialized(): Promise<void> {
-  return READY
-}
-
-/** Always succeeds — pure-TS needs no init. */
-export function getParserModule(): ParserModule | null {
-  return MODULE
-}
+// No caps: this is a client CLI, and there is no fallback parser to hand a
+// bailout to. A pathological input costs the user a slow parse they can
+// interrupt, not a permission bypass.
 
 // ───────────────────────────── Tokenizer ─────────────────────────────
 
@@ -598,16 +574,13 @@ type ParseState = {
   srcBytes: number
   /** True when byte offsets == char indices (no multi-byte UTF-8) */
   isAscii: boolean
-  nodeCount: number
-  deadline: number
-  aborted: boolean
   /** Depth of backtick nesting — inside `...`, ` terminates words */
   inBacktick: number
   /** When set, parseSimpleCommand stops at this token (for `[` backtrack) */
   stopToken: string | null
 }
 
-function parseSource(source: string, timeoutMs?: number): TsNode | null {
+export function parseSource(source: string): TsNode | null {
   const L = makeLexer(source)
   const srcBytes = byteLengthUtf8(source)
   const P: ParseState = {
@@ -615,17 +588,15 @@ function parseSource(source: string, timeoutMs?: number): TsNode | null {
     src: source,
     srcBytes,
     isAscii: srcBytes === source.length,
-    nodeCount: 0,
-    deadline: performance.now() + (timeoutMs ?? PARSE_TIMEOUT_MS),
-    aborted: false,
     inBacktick: 0,
     stopToken: null,
   }
   try {
-    const program = parseProgram(P)
-    if (P.aborted) return null
-    return program
+    return parseProgram(P)
   } catch {
+    // A throw here is a parser bug, not untrusted input we understood. There
+    // is no fallback parser, so null is the fail-closed signal: callers turn
+    // it into 'too-complex' and prompt.
     return null
   }
 }
@@ -644,18 +615,6 @@ function byteLengthUtf8(s: string): number {
   return b
 }
 
-function checkBudget(P: ParseState): void {
-  P.nodeCount++
-  if (P.nodeCount > MAX_NODES) {
-    P.aborted = true
-    throw new Error('budget')
-  }
-  if ((P.nodeCount & 0x7f) === 0 && performance.now() > P.deadline) {
-    P.aborted = true
-    throw new Error('timeout')
-  }
-}
-
 /** Build a node. Slices text from source by byte range via char-index lookup. */
 function mk(
   P: ParseState,
@@ -664,7 +623,6 @@ function mk(
   end: number,
   children: TsNode[],
 ): TsNode {
-  checkBudget(P)
   return {
     type,
     text: sliceBytes(P, start, end),

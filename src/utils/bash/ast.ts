@@ -20,7 +20,8 @@
 
 import { SHELL_KEYWORDS } from './bashParser.js'
 import type { Node } from './parser.js'
-import { PARSE_ABORTED, parseCommandRaw } from './parser.js'
+import { parseCommandRaw } from './parser.js'
+import { stripWrappers } from './wrappers.js'
 
 export type Redirect = {
   op: '>' | '>>' | '<' | '<<' | '>&' | '>|' | '<&' | '&>' | '&>>' | '<<<'
@@ -108,11 +109,6 @@ function containsAnyPlaceholder(value: string): boolean {
  * the value IS a single literal argument.
  */
 const BARE_VAR_UNSAFE_RE = /[ \t\n*?[]/
-
-// stdbuf flag forms — hoisted from the wrapper-stripping while-loop
-const STDBUF_SHORT_SEP_RE = /^-[ioe]$/
-const STDBUF_SHORT_FUSED_RE = /^-[ioe]./
-const STDBUF_LONG_RE = /^--(input|output|error)=/
 
 /**
  * Known-safe environment variables that bash sets automatically. Their values
@@ -375,20 +371,14 @@ const DOLLAR = String.fromCharCode(0x24)
 /**
  * Parse a bash command string and extract a flat list of simple commands.
  * Returns 'too-complex' if the command uses any shell feature we can't
- * statically analyze. Returns 'parse-unavailable' if tree-sitter WASM isn't
- * loaded — caller should fall back to conservative behavior.
+ * statically analyze, which the caller must turn into a permission prompt.
  */
-export async function parseForSecurity(
-  cmd: string,
-): Promise<ParseForSecurityResult> {
+export function parseForSecurity(cmd: string): ParseForSecurityResult {
   // parseCommandRaw('') returns null (falsy check), so short-circuit here.
   // Don't use .trim() — it strips Unicode whitespace (\u00a0 etc.) which the
   // pre-checks in parseForSecurityFromAst need to see and reject.
   if (cmd === '') return { kind: 'simple', commands: [] }
-  const root = await parseCommandRaw(cmd)
-  return root === null
-    ? { kind: 'parse-unavailable' }
-    : parseForSecurityFromAst(cmd, root)
+  return parseForSecurityFromAst(cmd, parseCommandRaw(cmd))
 }
 
 /**
@@ -399,7 +389,7 @@ export async function parseForSecurity(
  */
 export function parseForSecurityFromAst(
   cmd: string,
-  root: Node | typeof PARSE_ABORTED,
+  root: Node | null,
 ): ParseForSecurityResult {
   // Pre-checks: characters that cause tree-sitter and bash to disagree on
   // word boundaries. These run before tree-sitter because they're the known
@@ -441,18 +431,14 @@ export function parseForSecurityFromAst(
     return { kind: 'simple', commands: [] }
   }
 
-  if (root === PARSE_ABORTED) {
-    // SECURITY: module loaded but parse aborted (timeout / node budget /
-    // panic). Adversarially triggerable — `(( a[0][0]... ))` with ~2800
-    // subscripts hits PARSE_TIMEOUT_MICROS under the 10K length limit.
-    // Previously indistinguishable from module-not-loaded → routed to
-    // legacy (parse-unavailable), which lacks EVAL_LIKE_BUILTINS — `trap`,
-    // `enable`, `hash` leaked with Bash(*). Fail closed: too-complex → ask.
+  if (root === null) {
+    // A null parse is a parser bug, not input we understood and rejected.
+    // There is no fallback parser to consult, so fail closed rather than
+    // letting the command through unanalyzed.
     return {
       kind: 'too-complex',
-      reason:
-        'Parser aborted (timeout or resource limit) — possible adversarial input',
-      nodeType: 'PARSE_ABORT',
+      reason: 'Parser returned no tree — command cannot be statically analyzed',
+      nodeType: 'PARSE_FAILURE',
     }
   }
 
@@ -2212,176 +2198,14 @@ export type SemanticCheckResult = { ok: true } | { ok: false; reason: string }
  */
 export function checkSemantics(commands: SimpleCommand[]): SemanticCheckResult {
   for (const cmd of commands) {
-    // Strip safe wrapper commands (nohup, time, timeout N, nice -n N) so
-    // `nohup eval "..."` and `timeout 5 jq 'system(...)'` are checked
-    // against the wrapped command, not the wrapper. Inlined here to avoid
-    // circular import with bashPermissions.ts.
-    let a = cmd.argv
-    for (;;) {
-      if (a[0] === 'time' || a[0] === 'nohup') {
-        a = a.slice(1)
-      } else if (a[0] === 'timeout') {
-        // `timeout 5`, `timeout 5s`, `timeout 5.5`, plus optional GNU flags
-        // preceding the duration. Long: --foreground, --kill-after=N,
-        // --signal=SIG, --preserve-status. Short: -k DUR, -s SIG, -v (also
-        // fused: -k5, -sTERM).
-        // SECURITY (SAST Mar 2026): the previous loop only skipped `--long`
-        // flags, so `timeout -k 5 10 eval ...` broke out with name='timeout'
-        // and the wrapped eval was never checked. Now handle known short
-        // flags AND fail closed on any unrecognized flag — an unknown flag
-        // means we can't locate the wrapped command, so we must not silently
-        // fall through to name='timeout'.
-        let i = 1
-        while (i < a.length) {
-          const arg = a[i]!
-          if (
-            arg === '--foreground' ||
-            arg === '--preserve-status' ||
-            arg === '--verbose'
-          ) {
-            i++ // known no-value long flags
-          } else if (/^--(?:kill-after|signal)=[A-Za-z0-9_.+-]+$/.test(arg)) {
-            i++ // --kill-after=5, --signal=TERM (value fused with =)
-          } else if (
-            (arg === '--kill-after' || arg === '--signal') &&
-            a[i + 1] &&
-            /^[A-Za-z0-9_.+-]+$/.test(a[i + 1]!)
-          ) {
-            i += 2 // --kill-after 5, --signal TERM (space-separated)
-          } else if (arg.startsWith('--')) {
-            // Unknown long flag, OR --kill-after/--signal with non-allowlisted
-            // value (e.g. placeholder from $() substitution). Fail closed.
-            return {
-              ok: false,
-              reason: `timeout with ${arg} flag cannot be statically analyzed`,
-            }
-          } else if (arg === '-v') {
-            i++ // --verbose, no argument
-          } else if (
-            (arg === '-k' || arg === '-s') &&
-            a[i + 1] &&
-            /^[A-Za-z0-9_.+-]+$/.test(a[i + 1]!)
-          ) {
-            i += 2 // -k DURATION / -s SIGNAL — separate value
-          } else if (/^-[ks][A-Za-z0-9_.+-]+$/.test(arg)) {
-            i++ // fused: -k5, -sTERM
-          } else if (arg.startsWith('-')) {
-            // Unknown flag OR -k/-s with non-allowlisted value — can't locate
-            // wrapped cmd. Reject, don't fall through to name='timeout'.
-            return {
-              ok: false,
-              reason: `timeout with ${arg} flag cannot be statically analyzed`,
-            }
-          } else {
-            break // non-flag — should be the duration
-          }
-        }
-        if (a[i] && /^\d+(?:\.\d+)?[smhd]?$/.test(a[i]!)) {
-          a = a.slice(i + 1)
-        } else if (a[i]) {
-          // SECURITY (PR #21503 round 3): a[i] exists but doesn't match our
-          // duration regex. GNU timeout parses via xstrtod() (libc strtod) and
-          // accepts `.5`, `+5`, `5e-1`, `inf`, `infinity`, hex floats — none
-          // of which match `/^\d+(\.\d+)?[smhd]?$/`. Empirically verified:
-          // `timeout .5 echo ok` works. Previously this branch `break`ed
-          // (fail-OPEN) so `timeout .5 eval "id"` with `Bash(timeout:*)` left
-          // name='timeout' and eval was never checked. Now fail CLOSED —
-          // consistent with the unknown-FLAG handling above (lines ~1895,1912).
-          return {
-            ok: false,
-            reason: `timeout duration '${a[i]}' cannot be statically analyzed`,
-          }
-        } else {
-          break // no more args — `timeout` alone, inert
-        }
-      } else if (a[0] === 'nice') {
-        // `nice cmd`, `nice -n N cmd`, `nice -N cmd` (legacy). All run cmd
-        // at a lower priority. argv[0] check must see the wrapped cmd.
-        if (a[1] === '-n' && a[2] && /^-?\d+$/.test(a[2])) {
-          a = a.slice(3)
-        } else if (a[1] && /^-\d+$/.test(a[1])) {
-          a = a.slice(2) // `nice -10 cmd`
-        } else if (a[1] && /[$(`]/.test(a[1])) {
-          // SECURITY: walkArgument returns node.text for arithmetic_expansion,
-          // so `nice $((0-5)) jq ...` has a[1]='$((0-5))'. Bash expands it to
-          // '-5' (legacy nice syntax) and execs jq; we'd slice(1) here and
-          // set name='$((0-5))' which skips the jq system() check entirely.
-          // Fail closed — mirrors the timeout-duration fail-closed above.
-          return {
-            ok: false,
-            reason: `nice argument '${a[1]}' contains expansion — cannot statically determine wrapped command`,
-          }
-        } else {
-          a = a.slice(1) // bare `nice cmd`
-        }
-      } else if (a[0] === 'env') {
-        // `env [VAR=val...] [-i] [-0] [-v] [-u NAME...] cmd args` runs cmd.
-        // argv[0] check must see cmd, not env. Skip known-safe forms only.
-        // SECURITY: -S splits a string into argv (mini-shell) — must reject.
-        // -C/-P change cwd/PATH — wrapped cmd runs elsewhere, reject.
-        // Any OTHER flag → reject (fail-closed, not fail-open to name='env').
-        let i = 1
-        while (i < a.length) {
-          const arg = a[i]!
-          if (arg.includes('=') && !arg.startsWith('-')) {
-            i++ // VAR=val assignment
-          } else if (arg === '-i' || arg === '-0' || arg === '-v') {
-            i++ // flags with no argument
-          } else if (arg === '-u' && a[i + 1]) {
-            i += 2 // -u NAME unsets; takes one arg
-          } else if (arg.startsWith('-')) {
-            // -S (argv splitter), -C (altwd), -P (altpath), --anything,
-            // or unknown flag. Can't model — reject the whole command.
-            return {
-              ok: false,
-              reason: `env with ${arg} flag cannot be statically analyzed`,
-            }
-          } else {
-            break // the wrapped command
-          }
-        }
-        if (i < a.length) {
-          a = a.slice(i)
-        } else {
-          break // `env` alone (no wrapped cmd) — inert, name='env'
-        }
-      } else if (a[0] === 'stdbuf') {
-        // `stdbuf -o0 cmd` (fused), `stdbuf -o 0 cmd` (space-separated),
-        // multiple flags (`stdbuf -o0 -eL cmd`), long forms (`--output=0`).
-        // SECURITY: previous handling only stripped ONE flag and fell through
-        // to slice(2) for anything unrecognized, so `stdbuf --output 0 eval`
-        // → ['0','eval',...] → name='0' hid eval. Now iterate all known flag
-        // forms and fail closed on any unknown flag.
-        let i = 1
-        while (i < a.length) {
-          const arg = a[i]!
-          if (STDBUF_SHORT_SEP_RE.test(arg) && a[i + 1]) {
-            i += 2 // -o MODE (space-separated)
-          } else if (STDBUF_SHORT_FUSED_RE.test(arg)) {
-            i++ // -o0 (fused)
-          } else if (STDBUF_LONG_RE.test(arg)) {
-            i++ // --output=MODE (fused long)
-          } else if (arg.startsWith('-')) {
-            // --output MODE (space-separated long) or unknown flag. GNU
-            // stdbuf long options use `=` syntax, but getopt_long also
-            // accepts space-separated — we can't enumerate safely, reject.
-            return {
-              ok: false,
-              reason: `stdbuf with ${arg} flag cannot be statically analyzed`,
-            }
-          } else {
-            break // the wrapped command
-          }
-        }
-        if (i > 1 && i < a.length) {
-          a = a.slice(i)
-        } else {
-          break // `stdbuf` with no flags or no wrapped cmd — inert
-        }
-      } else {
-        break
-      }
+    // Strip safe wrappers (`time`, `nohup`, `timeout N`, `nice -n N`, `env`,
+    // `stdbuf`) so `nohup eval "..."` and `timeout 5 jq 'system(...)'` are
+    // checked against the wrapped command, not the wrapper.
+    const stripped = stripWrappers(cmd.argv)
+    if (stripped.kind === 'unrecognized') {
+      return { ok: false, reason: stripped.reason }
     }
+    const a = stripped.argv
     const name = a[0]
     if (name === undefined) continue
 

@@ -8,7 +8,7 @@ import {
   type IParsedCommand,
   ParsedCommand,
 } from '../../utils/bash/ParsedCommand.js'
-import { type Node, PARSE_ABORTED } from '../../utils/bash/parser.js'
+import { type Node } from '../../utils/bash/parser.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js'
 import { createPermissionRequestMessage } from '../../utils/permissions/permissions.js'
@@ -184,12 +184,11 @@ export async function checkCommandOperatorPermissions(
     input: z.infer<typeof BashTool.inputSchema>,
   ) => Promise<PermissionResult>,
   checkers: CommandIdentityCheckers,
-  astRoot: Node | null | typeof PARSE_ABORTED,
+  astRoot: Node | null,
 ): Promise<PermissionResult> {
-  const parsed =
-    astRoot && astRoot !== PARSE_ABORTED
-      ? buildParsedCommandFromRoot(input.command, astRoot)
-      : await ParsedCommand.parse(input.command)
+  const parsed = astRoot
+    ? buildParsedCommandFromRoot(input.command, astRoot)
+    : await ParsedCommand.parse(input.command)
   if (!parsed) {
     return { behavior: 'passthrough', message: 'Failed to parse command' }
   }

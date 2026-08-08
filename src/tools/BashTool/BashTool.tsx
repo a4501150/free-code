@@ -642,9 +642,9 @@ export const BashTool = buildTool({
     // Hook `if` filtering is "no match → skip hook" (deny-like semantics), so
     // compound commands must fire the hook if ANY subcommand matches. Without
     // splitting, `ls && git push` would bypass a `Bash(git *)` security hook.
-    const parsed = await parseForSecurity(command)
+    const parsed = parseForSecurity(command)
     if (parsed.kind !== 'simple') {
-      // parse-unavailable / too-complex: fail safe by running the hook.
+      // too-complex: fail safe by running the hook.
       return () => true
     }
     // Match on argv (strips leading VAR=val) so `FOO=bar git push` still
