@@ -728,6 +728,3 @@ export function restoreHeredocs(
  * @param command - The shell command string
  * @returns true if the command appears to contain heredoc syntax
  */
-export function containsHeredoc(command: string): boolean {
-  return HEREDOC_START_PATTERN.test(command)
-}

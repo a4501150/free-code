@@ -113,9 +113,3 @@ export function checkPermissionMode(
     message: 'No mode-specific validation required',
   }
 }
-
-export function getAutoAllowedCommands(
-  mode: ToolPermissionContext['mode'],
-): readonly string[] {
-  return mode === 'acceptEdits' ? ACCEPT_EDITS_ALLOWED_COMMANDS : []
-}

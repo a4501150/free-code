@@ -1535,9 +1535,8 @@ function containsUnquotedExpansion(command: string): boolean {
     // mode for the rest of the command, missing ALL subsequent expansions.
     // Example: `ls '\' *` — bash sees glob `*`, but desynced parser thinks
     // `*` is inside quotes → returns false (glob NOT detected).
-    // Defense-in-depth: hasShellQuoteSingleQuoteBug catches `'\'` patterns
-    // before this function is reached, but we fix the tracker anyway for
-    // consistency with the correct implementations in bashSecurity.ts.
+    // Defense-in-depth: the parser refuses `'\'` patterns before this
+    // function is reached, but the tracker is kept correct anyway.
     if (currentChar === '\\' && !inSingleQuote) {
       escaped = true
       continue

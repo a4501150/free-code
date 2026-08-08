@@ -5,7 +5,7 @@ Guidance for agents working in this repository. Keep this file short: prefer lin
 ## Start here
 
 - Use [package.json](package.json) for current build, run, format, typecheck, and test scripts.
-- The standard dev build is `bun run build:dev:full` which outputs `./cli-dev` with all feature flags enabled. E2E tests drive `./cli-dev`, so rebuild after source edits before running them.
+- The standard dev build is `bun run build:dev:full` which outputs `./cli-dev` with the default plus dev-full feature flags. E2E tests drive `./cli-dev`, so rebuild after source edits before running them.
 - The production build is `bun run build` which outputs `./cli` with default feature flags.
 - Main entry points: [src/entrypoints/cli.tsx](src/entrypoints/cli.tsx), [src/screens/REPL.tsx](src/screens/REPL.tsx), and [src/QueryEngine.ts](src/QueryEngine.ts).
 - Registries: [src/commands.ts](src/commands.ts) and [src/tools.ts](src/tools.ts). Implementations live under [src/commands/](src/commands/) and [src/tools/](src/tools/).
@@ -177,3 +177,14 @@ Global cache scope (`scope: 'global'`, the `prompt-caching-scope-*` beta, and a 
 ### Chat-completions reasoning: four wire conventions, detected not configured
 
 OpenAI-compatible endpoints disagree on the field name — `reasoning_content` (DeepSeek, xAI, Qwen, Kimi, GLM, Fireworks, llama-server), `reasoning` (Groq, Together, vLLM), OpenRouter's lossless `reasoning_details[]`, or nothing at all (OpenAI's own endpoint, which has no replayable reasoning item; that needs the Responses API). The adapter records whichever field a response used on the block's `providerState` and echoes back into that same one, so a block with no recorded field is never guessed at. Replay is genuinely required in some tool loops (DeepSeek V4 returns 400 without it) and merely ignored in others (vLLM deferred input support; most Jinja templates strip prior thinking), which is why the default is to echo and `preservesReasoningAcrossTurns: false` is the opt-out for endpoints that reject unknown assistant-message fields.
+
+### Bash permission analysis is AST-only and fails closed
+
+There is exactly one bash parser ([src/utils/bash/ast.ts](src/utils/bash/ast.ts)) and no fallback. The `shell-quote` path it replaced mis-parsed in ways it could not detect — backslashes inside single quotes, `\r` as whitespace, mid-word `#` as a comment, silently dropped unmatched quotes — so falling back to it on parse difficulty handed those bypasses to exactly the inputs most likely to be adversarial. A command the parser refuses is `too-complex`, which becomes a prompt; never a second opinion, and never "validate nothing". `shell-quote` survives only in files that parse something which is not a security decision (display heuristics, shell completion at a cursor, slash-command arguments, execution-time quoting) — keep it there.
+
+Two invariants that are easy to break by accident:
+
+- **Wrapper semantics live in one place.** `env`, `timeout`, `nice`, `nohup`, `time` and `stdbuf` are stripped by [src/utils/bash/wrappers.ts](src/utils/bash/wrappers.ts), which fails closed on any flag it does not understand. Four copies of this logic once existed and disagreed: `env git status` and `stdbuf -o 0 git status` skipped the bare-repo RCE gate, and `env rm -rf /tmp/x` did not match a `Bash(rm:*)` deny. A layer that strips a wrapper another layer doesn't is directly exploitable, in both directions.
+- **`sourceText` and `matchText` answer different questions.** `sourceText` is the exact span and is what exact rules, display and execution use; `matchText` is the resolved argv and is what prefix and wildcard rules use, so `SUB=push && git $SUB --force` matches `Bash(git push:*)`. Feeding one where the other belongs silently changes which rules match. Note `sourceText` already excludes redirects — they are structured data on the command — so a read-only check that only looks at text will miss `> /tmp/evil`.
+
+Changes here are guarded by `tests/unit/bashAstSecurity.test.ts`, `bashWrappers.test.ts`, `bashPermissionRules.test.ts`, `bashSedValidation.test.ts` and `bashReadOnly.test.ts`. The last pins a 227-command corpus because `BashTool.isReadOnly` is a positive auto-approval — `extractMemories` and `PromptSuggestion/speculation` act on it without prompting.

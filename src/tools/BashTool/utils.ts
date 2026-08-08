@@ -1,7 +1,6 @@
 import type {
   DomainBase64Source,
   DomainToolResultBlockParam,
-  DomainUserContentBlock,
 } from '../../types/domain.js'
 import { readFile, stat } from 'fs/promises'
 import { getOriginalCwd } from 'src/bootstrap/state.js'
@@ -13,7 +12,7 @@ import { setCwd } from 'src/utils/Shell.js'
 import { shouldMaintainProjectWorkingDir } from '../../utils/envUtils.js'
 import { maybeResizeAndDownsampleImageBuffer } from '../../utils/imageResizer.js'
 import { getMaxOutputLength } from '../../utils/shell/outputLimits.js'
-import { countCharInString, plural } from '../../utils/stringUtils.js'
+import { countCharInString } from '../../utils/stringUtils.js'
 /**
  * Strips leading and trailing lines that contain only whitespace/newlines.
  * Unlike trim(), this preserves whitespace within content lines and only removes
@@ -188,37 +187,4 @@ export function resetCwdIfOutsideProject(
     }
   }
   return false
-}
-
-/**
- * Creates a human-readable summary of structured content blocks.
- * Used to display MCP results with images and text in the UI.
- */
-export function createContentSummary(
-  content: DomainUserContentBlock[],
-): string {
-  const parts: string[] = []
-  let textCount = 0
-  let imageCount = 0
-
-  for (const block of content) {
-    if (block.type === 'image') {
-      imageCount++
-    } else if (block.type === 'text' && 'text' in block) {
-      textCount++
-      // Include first 200 chars of text blocks for context
-      const preview = block.text.slice(0, 200)
-      parts.push(preview + (block.text.length > 200 ? '...' : ''))
-    }
-  }
-
-  const summary: string[] = []
-  if (imageCount > 0) {
-    summary.push(`[${imageCount} ${plural(imageCount, 'image')}]`)
-  }
-  if (textCount > 0) {
-    summary.push(`[${textCount} text ${plural(textCount, 'block')}]`)
-  }
-
-  return `MCP Result: ${summary.join(', ')}${parts.length > 0 ? '\n\n' + parts.join('\n\n') : ''}`
 }
