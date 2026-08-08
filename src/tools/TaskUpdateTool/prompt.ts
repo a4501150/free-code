@@ -2,6 +2,11 @@ export const DESCRIPTION = 'Update a task in the task list'
 
 export const PROMPT = `Use this tool to update a task in the task list.
 
+## Lifecycle
+
+- Mark a task \`in_progress\` BEFORE you start it, and keep exactly one of your own tasks \`in_progress\` at a time.
+- Mark a task \`completed\` as soon as you finish it. Do not batch up completions to do at the end.
+
 ## When to Use This Tool
 
 **Mark tasks as completed:**

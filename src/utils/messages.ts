@@ -3896,6 +3896,34 @@ You have exited auto mode. The user may now want to interact more directly. You 
         }),
       ])
     }
+    case 'stale_task_list': {
+      const inProgressCount = attachment.openTasks.filter(
+        task => task.status === 'in_progress',
+      ).length
+      const lead =
+        inProgressCount === 0
+          ? 'No open task is currently marked in_progress.'
+          : inProgressCount === 1
+            ? 'One open task is currently marked in_progress.'
+            : 'Several open tasks are currently marked in_progress, which may be intentional for parallel work.'
+      const taskLines = attachment.openTasks
+        .map(task => {
+          const owner = task.owner ? ` (owner: ${task.owner})` : ''
+          const blockedBy =
+            task.blockedBy.length > 0
+              ? ` [blocked by ${task.blockedBy.map(id => `#${id}`).join(', ')}]`
+              : ''
+          return `#${task.id} [${task.status}] ${task.subject}${owner}${blockedBy}`
+        })
+        .join('\n')
+
+      return wrapMessagesInSystemReminder([
+        createUserMessage({
+          content: `The task list has not been updated in the last ${attachment.roundsSinceTaskWrite} assistant responses. ${lead}\n\nOpen tasks:\n${taskLines}\n\nReconcile the list with the work you have actually done: mark a task in_progress before working on it, and completed once it is genuinely finished. Leave entries that are already accurate as they are, and never mark something completed that is not. Do not mention this reminder to the user.`,
+          isMeta: true,
+        }),
+      ])
+    }
     case 'date_change': {
       return wrapMessagesInSystemReminder([
         createUserMessage({

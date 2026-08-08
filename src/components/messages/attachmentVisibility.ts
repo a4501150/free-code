@@ -43,6 +43,7 @@ const TYPES_WITHOUT_SUMMARY_LINE = [
   'date_change',
   'terminal_focus',
   'auto_compact_imminent',
+  'stale_task_list',
 ] as const satisfies readonly Attachment['type'][]
 
 // Exhaustiveness type: keep 'verify_plan_reminder' in the type union so the

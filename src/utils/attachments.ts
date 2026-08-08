@@ -48,6 +48,7 @@ import type {
   DomainUserImageBlock,
 } from 'src/types/domain.js'
 import type {
+  AssistantMessage,
   AttachmentMessage,
   Message,
   MessageOrigin,
@@ -197,12 +198,29 @@ import {
 } from './teammate.js'
 import { isInProcessTeammate } from './teammateContext.js'
 import { removeTeammateFromTeamFile } from './swarm/teamHelpers.js'
-import { unassignTeammateTasks } from './tasks.js'
+import { unassignTeammateTasks, listTasks, getTaskListId } from './tasks.js'
+import type { Task } from './taskSchemas.js'
+import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
+import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 
 export const PLAN_MODE_ATTACHMENT_CONFIG = {
   TURNS_BETWEEN_ATTACHMENTS: 5,
   FULL_REMINDER_EVERY_N_ATTACHMENTS: 5,
 } as const
+
+export const STALE_TASK_LIST_CONFIG = {
+  ROUNDS_SINCE_TASK_WRITE: 10,
+  ROUNDS_BETWEEN_REMINDERS: 20,
+} as const
+
+// Descriptions and metadata are excluded: an attachment is retained forever.
+export type StaleTaskListItem = {
+  id: string
+  subject: string
+  status: Exclude<Task['status'], 'completed'>
+  owner?: string
+  blockedBy: string[]
+}
 
 export const AUTO_MODE_ATTACHMENT_CONFIG = {
   TURNS_BETWEEN_ATTACHMENTS: 5,
@@ -604,6 +622,11 @@ export type Attachment =
       type: 'auto_compact_imminent'
     }
   | {
+      type: 'stale_task_list'
+      roundsSinceTaskWrite: number
+      openTasks: StaleTaskListItem[]
+    }
+  | {
       type: 'date_change'
       newDate: string
     }
@@ -774,6 +797,9 @@ export async function getAttachments(
     maybe('plan_mode_exit', () => getPlanModeExitAttachment(toolUseContext)),
     maybe('auto_mode', () => getAutoModeAttachments(messages, toolUseContext)),
     maybe('auto_mode_exit', () => getAutoModeExitAttachment(toolUseContext)),
+    maybe('stale_task_list', () =>
+      getStaleTaskListAttachment(messages ?? [], toolUseContext),
+    ),
     ...(isAgentSwarmsEnabled()
       ? [
           // Skip teammate mailbox for the session_memory forked agent.
@@ -3493,6 +3519,117 @@ export function getAutoCompactImminentAttachment(
   }
 
   return [{ type: 'auto_compact_imminent' }]
+}
+
+type TaskListActivity = {
+  kind: 'task_write' | 'reminder' | 'none'
+  rounds: number
+}
+
+function containsTaskWrite(message: AssistantMessage): boolean {
+  const content = message.message?.content
+  if (!Array.isArray(content)) return false
+  return content.some(
+    block =>
+      block.type === 'tool_use' &&
+      (block.name === TASK_CREATE_TOOL_NAME ||
+        block.name === TASK_UPDATE_TOOL_NAME),
+  )
+}
+
+// Counts assistant responses, keyed by `message.id` — never `uuid`, which is
+// per content block and is the bug that got the previous reminder deleted. The
+// ROUNDS_BETWEEN_REMINDERS cap is exact: past it neither a task write nor an
+// earlier reminder can change the verdict, so the scan stays off full history.
+function scanTaskListActivity(messages: Message[]): TaskListActivity {
+  let rounds = 0
+  let lastCountedKey: string | null = null
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (!message) continue
+
+    if (message.type === 'attachment') {
+      if (message.attachment.type === 'stale_task_list') {
+        return { kind: 'reminder', rounds }
+      }
+      continue
+    }
+
+    if (message.type !== 'assistant') {
+      // Human input and tool results both separate one response from the next.
+      lastCountedKey = null
+      continue
+    }
+
+    if (message.isMeta || message.isApiErrorMessage) continue
+
+    const responseKey =
+      message.message?.id || message.requestId || '<anonymous>'
+    const alreadyCounted = responseKey === lastCountedKey
+
+    if (containsTaskWrite(message)) {
+      // The response that performed the write is round zero.
+      return {
+        kind: 'task_write',
+        rounds: alreadyCounted ? rounds - 1 : rounds,
+      }
+    }
+    if (alreadyCounted) continue
+
+    lastCountedKey = responseKey
+    rounds++
+    if (rounds > STALE_TASK_LIST_CONFIG.ROUNDS_BETWEEN_REMINDERS) {
+      return { kind: 'none', rounds }
+    }
+  }
+
+  return { kind: 'none', rounds }
+}
+
+// Self-terminating both ways: closing the list out silences it, and the
+// reminder it emits suppresses the next until a task write re-arms it.
+export async function getStaleTaskListAttachment(
+  messages: Message[],
+  toolUseContext: ToolUseContext,
+): Promise<Attachment[]> {
+  if (
+    !toolUseContext.options.tools.some(t =>
+      toolMatchesName(t, TASK_UPDATE_TOOL_NAME),
+    )
+  ) {
+    return []
+  }
+  if (messages.length === 0) return []
+
+  const activity = scanTaskListActivity(messages)
+  if (activity.kind === 'reminder') return []
+  if (activity.rounds < STALE_TASK_LIST_CONFIG.ROUNDS_SINCE_TASK_WRITE) {
+    return []
+  }
+
+  const tasks = await listTasks(getTaskListId())
+  const completedIds = new Set(
+    tasks.filter(t => t.status === 'completed').map(t => t.id),
+  )
+  const openTasks: StaleTaskListItem[] = tasks
+    .filter(t => !t.metadata?._internal && t.status !== 'completed')
+    .map(t => ({
+      id: t.id,
+      subject: t.subject,
+      status: t.status === 'in_progress' ? 'in_progress' : 'pending',
+      ...(t.owner ? { owner: t.owner } : {}),
+      blockedBy: t.blockedBy.filter(id => !completedIds.has(id)),
+    }))
+  if (openTasks.length === 0) return []
+
+  return [
+    {
+      type: 'stale_task_list',
+      roundsSinceTaskWrite: activity.rounds,
+      openTasks,
+    },
+  ]
 }
 
 function getMaxBudgetUsdAttachment(maxBudgetUsd?: number): Attachment[] {

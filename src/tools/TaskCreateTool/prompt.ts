@@ -16,6 +16,14 @@ export function getPrompt(): string {
   return `Use this tool to create a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.
 It also helps the user understand the progress of the task and overall progress of their requests.
 
+## Lifecycle
+
+Once a list exists, keep it accurate as you work — a list that lags behind the work is worse than no list:
+
+- Mark a task \`in_progress\` BEFORE you start it, and keep exactly one of your own tasks \`in_progress\` at a time.
+- Mark a task \`completed\` as soon as you finish it. Do not batch up completions to do at the end.
+- Add follow-up tasks as you discover them, and delete tasks that are no longer relevant.
+
 ## When to Use This Tool
 
 Use this tool proactively in these scenarios:
@@ -26,18 +34,10 @@ Use this tool proactively in these scenarios:
 - User explicitly requests todo list - When the user directly asks you to use the todo list
 - User provides multiple tasks - When users provide a list of things to be done (numbered or comma-separated)
 - After receiving new instructions - Immediately capture user requirements as tasks
-- When you start working on a task - Mark it as in_progress BEFORE beginning work
-- After completing a task - Mark it as completed and add any new follow-up tasks discovered during implementation
 
 ## When NOT to Use This Tool
 
-Skip using this tool when:
-- There is only a single, straightforward task
-- The task is trivial and tracking it provides no organizational benefit
-- The task can be completed in less than 3 trivial steps
-- The task is purely conversational or informational
-
-NOTE that you should not use this tool if there is only one trivial task to do. In this case you are better off just doing the task directly.
+Skip it for a single straightforward task, or for purely conversational or informational requests - just do the work directly.
 
 All tasks are created with status \`pending\`.
 
