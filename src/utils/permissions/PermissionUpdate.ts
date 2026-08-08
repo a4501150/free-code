@@ -42,10 +42,6 @@ export function extractRules(
   })
 }
 
-export function hasRules(updates: PermissionUpdate[] | undefined): boolean {
-  return extractRules(updates).length > 0
-}
-
 /**
  * Applies a single permission update to the context and returns the updated context
  * @param context The current permission context

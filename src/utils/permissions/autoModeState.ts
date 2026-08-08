@@ -16,8 +16,3 @@ export function setAutoModeFlagCli(passed: boolean): void {
 export function getAutoModeFlagCli(): boolean {
   return autoModeFlagCli
 }
-
-export function _resetForTesting(): void {
-  autoModeActive = false
-  autoModeFlagCli = false
-}

@@ -117,7 +117,6 @@ type State = {
   // to the API so /share's serialized_conversation.json reflects reality.
   lastAPIRequestMessages: CapturedAPIRequestMessages | null
   // Last auto-mode classifier request(s) for /share transcript
-  lastClassifierRequests: unknown[] | null
   // CLAUDE.md content cached by context.ts for the auto-mode classifier.
   // Breaks the yoloClassifier → claudemd → filesystem → permissions cycle.
   cachedClaudeMdContent: string | null
@@ -314,7 +313,6 @@ function getInitialState(): State {
     lastAPIRequest: null,
     lastAPIRequestMessages: null,
     // Last auto-mode classifier request(s) for /share transcript
-    lastClassifierRequests: null,
     cachedClaudeMdContent: null,
     // In-memory error log for recent errors
     inMemoryErrorLog: [],
@@ -1098,14 +1096,6 @@ export function setLastAPIRequestMessages(
 
 export function getLastAPIRequestMessages(): CapturedAPIRequestMessages | null {
   return STATE.lastAPIRequestMessages
-}
-
-export function setLastClassifierRequests(requests: unknown[] | null): void {
-  STATE.lastClassifierRequests = requests
-}
-
-export function getLastClassifierRequests(): unknown[] | null {
-  return STATE.lastClassifierRequests
 }
 
 export function setCachedClaudeMdContent(content: string | null): void {

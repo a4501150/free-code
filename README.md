@@ -83,27 +83,31 @@ Claude Code currently has 28 active feature flags gated behind `bun:bundle` comp
 
 ## Model Providers
 
-free-code supports **five API providers** out of the box. Set the corresponding environment variable to switch providers -- no code changes needed.
+Providers are configured in `freecode.json`, which supports **seven wire formats**: `anthropic`, `openai-responses`, `openai-chat-completions`, `bedrock-converse`, `vertex`, `foundry`, and `gemini`. See [src/utils/settings/types.ts](src/utils/settings/types.ts) for the schema and [src/utils/model/providerPresets.ts](src/utils/model/providerPresets.ts) for the built-in model presets.
+
+The five environment variables below are legacy shortcuts, kept because they are what most people already have set. Each one synthesizes the equivalent `freecode.json` provider at startup ([src/utils/model/legacyProviderMigration.ts](src/utils/model/legacyProviderMigration.ts)), so no config file is needed to get going.
 
 ### Anthropic (Direct API) -- Default
 
 Use Anthropic's first-party API directly.
 
-| Model             | ID                  |
-| ----------------- | ------------------- |
-| Claude Opus 4.6   | `claude-opus-4-6`   |
-| Claude Sonnet 4.6 | `claude-sonnet-4-6` |
-| Claude Haiku 4.5  | `claude-haiku-4-5`  |
+| Model             | ID                          |
+| ----------------- | --------------------------- |
+| Claude Opus 4.7   | `claude-opus-4-7`           |
+| Claude Opus 4.6   | `claude-opus-4-6`           |
+| Claude Sonnet 4.6 | `claude-sonnet-4-6`         |
+| Claude Haiku 4.5  | `claude-haiku-4-5-20251001` |
 
 ### OpenAI Codex
 
 Use OpenAI's Codex models for code generation. Requires a Codex subscription.
 
-| Model                       | ID              |
-| --------------------------- | --------------- |
-| GPT-5.3 Codex (recommended) | `gpt-5.3-codex` |
-| GPT-5.4                     | `gpt-5.4`       |
-| GPT-5.4 Mini                | `gpt-5.4-mini`  |
+| Model                       | ID                    |
+| --------------------------- | --------------------- |
+| GPT-5.4                     | `gpt-5.4`             |
+| GPT-5.3 Codex (recommended) | `gpt-5.3-codex`       |
+| GPT-5.4 Mini                | `gpt-5.4-mini`        |
+| GPT-5.3 Codex Spark         | `gpt-5.3-codex-spark` |
 
 ```bash
 export CLAUDE_CODE_USE_OPENAI=1
@@ -120,7 +124,7 @@ export AWS_REGION="us-east-1"   # or AWS_DEFAULT_REGION
 free-code
 ```
 
-Uses your standard AWS credentials (environment variables, `~/.aws/config`, or IAM role). Models are mapped to Bedrock ARN format automatically (e.g., `us.anthropic.claude-opus-4-6-v1`).
+Uses your standard AWS credentials (environment variables, `~/.aws/config`, or IAM role). Models are mapped to Bedrock ARN format automatically (e.g., `us.anthropic.claude-opus-4-7`).
 
 | Variable                            | Purpose                           |
 | ----------------------------------- | --------------------------------- |
@@ -162,6 +166,8 @@ Supports custom deployment IDs as model names.
 | AWS Bedrock         | `CLAUDE_CODE_USE_BEDROCK=1` | AWS credentials              |
 | Google Vertex AI    | `CLAUDE_CODE_USE_VERTEX=1`  | `gcloud` ADC                 |
 | Anthropic Foundry   | `CLAUDE_CODE_USE_FOUNDRY=1` | `ANTHROPIC_FOUNDRY_API_KEY`  |
+
+Gemini and any OpenAI-compatible chat-completions endpoint (Groq, Together, DeepSeek, vLLM, OpenRouter, llama-server, ...) have no legacy shortcut and are configured in `freecode.json` directly.
 
 ---
 
@@ -318,7 +324,7 @@ src/
   components/             # Ink/React terminal UI components
   hooks/                  # React hooks
   services/               # API clients, MCP, OAuth, analytics
-    api/                  # API client + Codex fetch adapter
+    api/                  # Provider adapters (one per wire format), retry, errors
     oauth/                # OAuth flows (Anthropic + OpenAI)
   state/                  # App state store
   utils/                  # Utilities

@@ -98,10 +98,3 @@ export async function getPowerShellEdition(): Promise<PowerShellEdition | null> 
     .replace(/\.exe$/, '')
   return base === 'pwsh' ? 'core' : 'desktop'
 }
-
-/**
- * Resets the cached PowerShell path. Only for testing.
- */
-export function resetPowerShellCache(): void {
-  cachedPowerShellPath = null
-}

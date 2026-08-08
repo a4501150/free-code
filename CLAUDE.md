@@ -22,7 +22,7 @@ Read these files instead of duplicating their contents here:
 - Legacy provider migration: [src/utils/model/legacyProviderMigration.ts](src/utils/model/legacyProviderMigration.ts).
 - Agent model resolution and sentinels: [src/utils/model/agent.ts](src/utils/model/agent.ts).
 - Model helpers: [src/utils/model/modelResolution.ts](src/utils/model/modelResolution.ts), [src/utils/model/modelDisplay.ts](src/utils/model/modelDisplay.ts), and [src/utils/model/model.ts](src/utils/model/model.ts).
-- API client impure shell: [src/services/api/client.ts](src/services/api/client.ts).
+- Provider adapter registry and transport: [src/services/api/adapters/index.ts](src/services/api/adapters/index.ts) and the per-provider implementations beside it.
 - Provider adapters: [src/services/api/](src/services/api/).
 - API constants: [src/constants/api.ts](src/constants/api.ts).
 - Build flags, defines, and React Compiler staging: [scripts/build.ts](scripts/build.ts).
@@ -48,7 +48,7 @@ Read these files instead of duplicating their contents here:
 ## Provider system rules
 
 - Provider configuration is driven by `freecode.json`. Read the source-of-truth files above for exact schemas and resolution order.
-- Keep adapters pure: no direct env reads and no auth imports inside provider adapters. Auth/config enters through `ProviderConfig` and injected callbacks; [src/services/api/client.ts](src/services/api/client.ts) owns the impure boundary.
+- Prefer taking auth and config through `ProviderConfig` and injected callbacks rather than reading env directly, so a provider's behaviour is determined by its config. Some adapters must own credential acquisition themselves (Bedrock signing, Gemini's `GoogleAuth`), which is why there is no single impure boundary to route everything through.
 - Query capabilities through the registry instead of branching on provider identity. Special cases for Anthropic proxies, first-party features, and cache behavior belong in the provider/model layer.
 - Auth is independent of wire format. Do not assume a provider type implies a specific auth method.
 - Do not hardcode Anthropic URLs or API versions outside [src/constants/api.ts](src/constants/api.ts).
@@ -59,11 +59,11 @@ Read these files instead of duplicating their contents here:
 
 Three mechanisms are required for 1P Anthropic API requests. All three must stay gated to Anthropic-type providers.
 
-1. **`x-anthropic-billing-header`** (system prompt block) — Attribution string embedded as the first system prompt `TextBlockParam` (not an HTTP header). Built by `getAttributionHeader()` in [src/constants/system.ts](src/constants/system.ts). Contains `cc_version=<version>.<fingerprint>`, `cc_entrypoint`, `cch=<integrity_hash>`, and optional `cc_workload`. The `cch` placeholder is replaced at fetch time in [src/services/api/client.ts](src/services/api/client.ts) with an xxHash64 over the serialized body; the server verifies this to gate features like fast mode. Never carries a cache breakpoint: `cch` changes on every request, so one there could not hit. Can be disabled via `CLAUDE_CODE_ATTRIBUTION_HEADER=false`.
+1. **`x-anthropic-billing-header`** (system prompt block) — Attribution string embedded as the first system prompt `TextBlockParam` (not an HTTP header). Built by `getAttributionHeader()` in [src/constants/system.ts](src/constants/system.ts). Contains `cc_version=<version>.<fingerprint>`, `cc_entrypoint`, `cch=<integrity_hash>`, and optional `cc_workload`. The `cch` placeholder is replaced at fetch time in [src/services/api/adapters/anthropic-adapter-impl.ts](src/services/api/adapters/anthropic-adapter-impl.ts) with an xxHash64 over the serialized body (see [src/utils/cch.ts](src/utils/cch.ts)); the server verifies this to gate features like fast mode. Never carries a cache breakpoint: `cch` changes on every request, so one there could not hit. Can be disabled via `CLAUDE_CODE_ATTRIBUTION_HEADER=false`.
 
 2. **`metadata.user_id`** (request body field) — JSON-stringified object containing `device_id`, `account_uuid`, `session_id`, and optional extra fields from `CLAUDE_CODE_EXTRA_METADATA`. Built by `getAPIMetadata()` in [src/services/api/claude.ts](src/services/api/claude.ts). Required for rate limiting and user identification; requests without it get 429s.
 
-3. **`CLISyspromptPrefix`** (system prompt identity) — The "You are Claude Code, Anthropic's official CLI" string placed immediately after the billing header. Built by `getCLISyspromptPrefix()` in [src/constants/system.ts](src/constants/system.ts). The 1P API requires this for non-Haiku models; requests without it are rejected. Has three variants (default, headless with preset, headless without preset) selected by the `customSyspromptPrefix` provider capability. Its own block in `splitSysPromptPrefix`, but uncached — at ~30 tokens a breakpoint there would only cover `tools + attribution + prefix`, which the tools breakpoint already covers without the varying attribution block.
+3. **`CLISyspromptPrefix`** (system prompt identity) — The "You are Claude Code, Anthropic's official CLI" string placed immediately after the billing header. Built by `getCLISyspromptPrefix()` in [src/constants/system.ts](src/constants/system.ts). The 1P API requires this for non-Haiku models; requests without it are rejected. There is one variant; `CLI_SYSPROMPT_PREFIXES` is a set so `splitSysPromptPrefix` can identify the block by content rather than position, and a provider that declares `customSyspromptPrefix: false` omits it. Its own block in `splitSysPromptPrefix`, but uncached — at ~30 tokens a breakpoint there would only cover `tools + attribution + prefix`, which the tools breakpoint already covers without the varying attribution block.
 
 ## Build and settings rules
 
@@ -79,7 +79,7 @@ Virtual scrolling caches item heights by message UUID and conversation ID. If yo
 
 ### Fingerprint stability depends on the first API user message
 
-Anthropic attribution uses a fingerprint derived from the first API user message. Do not add per-turn dynamic content ahead of it, reshape the stable user-context prepend, remove module-level memoization from user context, or clear user-context caches except at semantic invalidation boundaries such as prompt injection changes, compact, or clear. Read [src/utils/fingerprint.ts](src/utils/fingerprint.ts), [src/utils/api.ts](src/utils/api.ts), [src/context.ts](src/context.ts), [src/services/api/claude.ts](src/services/api/claude.ts), and the compact/clear cleanup code before touching this flow.
+Anthropic attribution uses a fingerprint derived from the first API user message. Do not add per-turn dynamic content ahead of it, reshape the stable user-context prepend, remove module-level memoization from user context, or clear user-context caches except at semantic invalidation boundaries such as prompt injection changes, compact, or clear. Read [src/utils/fingerprint.ts](src/utils/fingerprint.ts), [src/utils/contextInjection.ts](src/utils/contextInjection.ts), [src/context.ts](src/context.ts), [src/services/api/claude.ts](src/services/api/claude.ts), and the compact/clear cleanup code before touching this flow.
 
 ### UI task store must bypass AsyncLocalStorage agent context
 

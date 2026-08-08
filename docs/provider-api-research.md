@@ -1,6 +1,11 @@
 # Provider API Research
 
-Research compiled 2026-04-21. Sources cited inline.
+Research compiled 2026-04-21 against the vendor APIs as they were then. It is a
+point-in-time snapshot, not a spec: where it disagrees with the adapters in
+[../src/services/api/adapters/](../src/services/api/adapters/), the adapters are
+what actually runs and win.
+
+Sources cited inline.
 
 ---
 
@@ -20,7 +25,7 @@ These are the dimensions where providers fundamentally diverge in ways that forc
 
 6. **Tool schema wrapping differs.** Anthropic uses `input_schema` (JSON Schema). Chat Completions wraps the function under `{"type":"function","function":{"name","description","parameters"}}`. Responses API flattens it to `{"type":"function","name","description","parameters"}`. Gemini uses `functionDeclarations[].parameters` (OpenAPI subset). Bedrock Converse uses `toolSpec.inputSchema.json` (an extra level of wrapping).
 
-7. **Streaming event namespaces are entirely disjoint.** Anthropic: `message_start`, `content_block_start/delta/stop`, `message_delta`, `message_stop`. Chat Completions: `data: {choices:[{delta:{}}]}` chunks with no named events. Responses API: `response.output_text.delta`, `response.function_call_arguments.delta`, `response.reasoning_text.delta`, `response.done`. Gemini: repeated `GenerateContentResponse` SSE objects via `?alt=sse`. Bedrock ConverseStream: typed union events (`messageStart`, `contentBlockDelta`, `messageStop`, `metadata`). Tool-call arguments are streamed as chunked JSON in Anthropic (`input_json_delta`), Chat Completions (`delta.tool_calls[].function.arguments`), and Responses (`response.function_call_arguments.delta`), but Gemini returns function call args as a complete JSON object in one part.
+7. **Streaming event namespaces are entirely disjoint.** Anthropic: `message_start`, `content_block_start/delta/stop`, `message_delta`, `message_stop`. Chat Completions: `data: {choices:[{delta:{}}]}` chunks with no named events. Responses API: `response.output_text.delta`, `response.function_call_arguments.delta`, `response.reasoning_text.delta`, `response.completed`. Gemini: repeated `GenerateContentResponse` SSE objects via `?alt=sse`. Bedrock ConverseStream: typed union events (`messageStart`, `contentBlockDelta`, `messageStop`, `metadata`). Tool-call arguments are streamed as chunked JSON in Anthropic (`input_json_delta`), Chat Completions (`delta.tool_calls[].function.arguments`), and Responses (`response.function_call_arguments.delta`), but Gemini returns function call args as a complete JSON object in one part.
 
 8. **Usage/token accounting field names are entirely different per provider**, with caching fields added orthogonally and no common schema.
 
@@ -344,7 +349,7 @@ Semantic named events (not just raw JSON chunks):
 | `response.reasoning_summary_text.delta`  | Summary delta                                                   |
 | `response.reasoning_summary_text.done`   | Summary complete                                                |
 | `response.output_item.done`              | Item finalized                                                  |
-| `response.done`                          | Entire response complete; `status` field on the response object |
+| `response.completed`                     | Entire response complete; `status` field on the response object |
 | `error`                                  | Error event                                                     |
 
 #### Usage Fields
@@ -662,8 +667,8 @@ No API version header. Model capabilities are gated by model ID. `additionalMode
 | Text delta       | `content_block_delta` / `text_delta` | `delta.content`                                 | `response.output_text.delta`             | Partial `GenerateContentResponse` | `contentBlockDelta`    |
 | Tool args delta  | `input_json_delta`                   | `delta.tool_calls[].function.arguments`         | `response.function_call_arguments.delta` | No delta (whole args in one part) | `contentBlockDelta`    |
 | Reasoning delta  | `thinking_delta`                     | Not applicable                                  | `response.reasoning_text.delta`          | (no streaming delta)              | Not exposed            |
-| Usage            | `message_delta` usage                | Final chunk (if `stream_options.include_usage`) | `response.done` object                   | Not in stream                     | `metadata` event       |
-| Stream end       | `message_stop`                       | `data: [DONE]`                                  | `response.done`                          | Stream closes                     | `messageStop`          |
+| Usage            | `message_delta` usage                | Final chunk (if `stream_options.include_usage`) | `response.completed` object              | `usageMetadata` on chunks         | `metadata` event       |
+| Stream end       | `message_stop`                       | `data: [DONE]`                                  | `response.completed`                     | Stream closes                     | `messageStop`          |
 | Mid-stream error | `event: error`                       | `data:{error:{...}}`                            | `error` event                            | HTTP drop                         | Typed exception events |
 
 ### Usage Fields

@@ -532,17 +532,21 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
         createDenialTrackingState()
 
       // PowerShell requires explicit user permission in auto mode unless
-      // POWERSHELL_AUTO_MODE (ant-only build flag) is on. When disabled, this
-      // guard keeps PS out of the classifier and skips the acceptEdits
-      // fast-path below. When enabled, PS flows through to the classifier like
-      // Bash — the classifier prompt gets POWERSHELL_DENY_GUIDANCE appended so
-      // it recognizes `iex (iwr ...)` as download-and-execute, etc.
+      // POWERSHELL_AUTO_MODE is on. When disabled, this guard keeps PS out of
+      // the classifier and skips the acceptEdits fast-path below. When enabled,
+      // PS flows through to the classifier like Bash.
+      //
+      // KNOWN GAP: POWERSHELL_DENY_GUIDANCE in yoloClassifier.ts is meant to be
+      // appended to the classifier's deny list so it maps PS idioms
+      // (`iex (iwr ...)`, `Remove-Item -Recurse -Force`) onto the existing block
+      // categories, but nothing appends it — see the comment on that constant.
+      //
       // Note: this runs inside the behavior === 'ask' branch, so allow rules
       // that fire earlier (step 2b toolAlwaysAllowedRule, PS prefix allow)
       // return before reaching here. Allow-rule protection is handled by
-      // permissionSetup.ts: isOverlyBroadPowerShellAllowRule strips PowerShell(*)
-      // and isDangerousPowerShellPermission strips iex/pwsh/Start-Process
-      // prefix rules for ant users and auto mode entry.
+      // isDangerousPowerShellPermission in permissionSetup.ts, which strips
+      // both PowerShell(*) and iex/pwsh/Start-Process prefix rules on auto mode
+      // entry.
       if (
         tool.name === POWERSHELL_TOOL_NAME &&
         !feature('POWERSHELL_AUTO_MODE')

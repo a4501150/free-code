@@ -65,9 +65,10 @@ These are in the dev-full list but not the default list.
 These are referenced in source but are not in the default or dev-full lists.
 
 - `BUDDY` — companion sprite, its speech-bubble notifications, and the `/buddy`
-  command. Referenced only inside `src/buddy/`: nothing imports those modules and
-  `src/commands/buddy/buddy.ts` is not registered in `src/commands.ts`, so
-  enabling the flag currently has no effect.
+  command. The only importer of `src/buddy/` is `src/commands/buddy/buddy.ts`,
+  which is not registered in `src/commands.ts`; the flag-gated modules
+  (`prompt.ts`, `CompanionSprite.tsx`, `useBuddyNotification.tsx`) have no
+  consumers at all. Enabling the flag currently has no effect.
 - `DEDICATED_SEARCH_TOOLS` — enables dedicated search-tool behavior where referenced.
 - `VERIFY_PLAN` — enables plan verification guidance and task/todo verification nudges.
 - `WORKTREE_MODE` — enables worktree-mode behavior where referenced.

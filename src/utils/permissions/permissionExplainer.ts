@@ -11,18 +11,6 @@ import { jsonStringify } from '../slowOperations.js'
 
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH'
 
-// Map risk levels to numeric values for analytics
-const RISK_LEVEL_NUMERIC: Record<RiskLevel, number> = {
-  LOW: 1,
-  MEDIUM: 2,
-  HIGH: 3,
-}
-
-// Error type codes for analytics
-const ERROR_TYPE_PARSE = 1
-const ERROR_TYPE_NETWORK = 2
-const ERROR_TYPE_UNKNOWN = 3
-
 export type PermissionExplanation = {
   riskLevel: RiskLevel
   explanation: string
