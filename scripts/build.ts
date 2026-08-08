@@ -30,8 +30,6 @@ const fullExperimentalFeatures = [
   'PROMPT_CACHE_BREAK_DETECTION',
   'QUICK_SEARCH',
   'TEAMMEM',
-  'TREE_SITTER_BASH',
-  'TREE_SITTER_BASH_SHADOW',
 ] as const
 
 function runCommand(cmd: string[]): string | null {

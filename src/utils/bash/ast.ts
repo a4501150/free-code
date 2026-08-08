@@ -40,10 +40,14 @@ export type SimpleCommand = {
   text: string
 }
 
+/**
+ * Two outcomes only. There is no "parser unavailable" state: the parser is
+ * always present, and there is no fallback parser to route to, so anything we
+ * cannot analyze is 'too-complex' and the caller must prompt.
+ */
 export type ParseForSecurityResult =
   | { kind: 'simple'; commands: SimpleCommand[] }
   | { kind: 'too-complex'; reason: string; nodeType?: string }
-  | { kind: 'parse-unavailable' }
 
 /**
  * Structural node types that represent composition of commands. We recurse
