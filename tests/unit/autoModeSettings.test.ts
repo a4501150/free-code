@@ -90,3 +90,60 @@ describe('auto-mode settings shape', () => {
     expect(rules).not.toContain('<user_allow_rules_to_replace>')
   })
 })
+
+describe('classifier template sections: rules replace, extras append', () => {
+  const { replaceTemplateSection, buildExternalAutoModeRules } = __test__
+  const template = '<tag>- Default one\n- Default two</tag>'
+
+  test('undefined rules keep the template defaults', () => {
+    expect(replaceTemplateSection(template, 'tag', undefined)).toBe(
+      '- Default one\n- Default two',
+    )
+  })
+
+  test('supplied rules replace the defaults', () => {
+    // A user's autoMode settings mean "use these instead", not "add these".
+    expect(replaceTemplateSection(template, 'tag', ['Mine'])).toBe('- Mine')
+  })
+
+  test('an empty rule array is an override, not an absence', () => {
+    expect(replaceTemplateSection(template, 'tag', [])).toBe('')
+  })
+
+  // The bug this guards: POWERSHELL_DENY_GUIDANCE was written to be appended
+  // to the deny section, but the only channel available replaced it. Passing
+  // the guidance as `rules` would have deleted every default BLOCK rule.
+  test('extras append to the defaults rather than replacing them', () => {
+    expect(replaceTemplateSection(template, 'tag', undefined, ['Extra'])).toBe(
+      '- Default one\n- Default two\n- Extra',
+    )
+  })
+
+  test('extras append after a user override too', () => {
+    expect(replaceTemplateSection(template, 'tag', ['Mine'], ['Extra'])).toBe(
+      '- Mine\n- Extra',
+    )
+  })
+
+  test('extras survive an empty override', () => {
+    expect(replaceTemplateSection(template, 'tag', [], ['Extra'])).toBe(
+      '- Extra',
+    )
+  })
+
+  test('deny extras reach the real permissions template', () => {
+    const marker = 'PowerShell Elevation Marker'
+    const rules = buildExternalAutoModeRules(undefined, [marker])
+    expect(rules).toContain(`- ${marker}`)
+    // ...without displacing the template's own BLOCK rules.
+    expect(rules).toContain('- Git Destructive:')
+    expect(rules).toContain('- Data Exfiltration:')
+  })
+
+  test('deny extras do not leak into the allow section', () => {
+    const rules = buildExternalAutoModeRules(undefined, ['Marker'])
+    const allowIndex = rules.indexOf('- Test Artifacts:')
+    expect(allowIndex).toBeGreaterThan(-1)
+    expect(rules.indexOf('- Marker')).toBeLessThan(allowIndex)
+  })
+})

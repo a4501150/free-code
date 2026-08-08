@@ -73,20 +73,36 @@ function formatRuleSection(rules: string[]): string {
   return rules.map(rule => `- ${rule}`).join('\n')
 }
 
+/**
+ * Render one `<tag>...</tag>` section of the permissions template.
+ *
+ * `rules` REPLACES the section: undefined keeps the template's own rules, and
+ * any array (including an empty one) overrides them, because that is what a
+ * user's autoMode settings mean. `extra` is different — it is appended after
+ * whichever of those won, so a caller can add rules without having to know or
+ * restate the defaults. Assigning extra rules to `rules` instead would silently
+ * delete the template's entire section.
+ */
 function replaceTemplateSection(
   template: string,
   tag: string,
   rules: string[] | undefined,
+  extra: readonly string[] = [],
 ): string {
   return template.replace(
     new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`),
-    (_m, defaults: string) =>
-      rules === undefined ? defaults : formatRuleSection(rules),
+    (_m, defaults: string) => {
+      const base = rules === undefined ? defaults : formatRuleSection(rules)
+      if (extra.length === 0) return base
+      const appended = formatRuleSection([...extra])
+      return base === '' ? appended : `${base}\n${appended}`
+    },
   )
 }
 
 export function buildExternalAutoModeRules(
   sections?: AutoModeRuleSections,
+  denyExtra: readonly string[] = [],
 ): AutoModeRules {
   return replaceTemplateSection(
     replaceTemplateSection(
@@ -97,6 +113,7 @@ export function buildExternalAutoModeRules(
       ),
       'user_deny_rules_to_replace',
       sections?.deny,
+      denyExtra,
     ),
     'user_allow_rules_to_replace',
     sections?.allow,
@@ -109,9 +126,10 @@ export function getDefaultExternalAutoModeRules(): AutoModeRules {
 
 function buildSystemPromptWithRuleSections(
   sections?: AutoModeRuleSections,
+  denyExtra: readonly string[] = [],
 ): string {
   return BASE_PROMPT.replace('<permissions_template>', () =>
-    buildExternalAutoModeRules(sections),
+    buildExternalAutoModeRules(sections, denyExtra),
   )
 }
 
@@ -790,7 +808,10 @@ function buildBoundedClassifierInput({
 export async function buildYoloSystemPrompt(
   _context: ToolPermissionContext,
 ): Promise<string> {
-  return buildSystemPromptWithRuleSections(getTrustedAutoModeRuleSections())
+  return buildSystemPromptWithRuleSections(
+    getTrustedAutoModeRuleSections(),
+    POWERSHELL_DENY_GUIDANCE,
+  )
 }
 // ============================================================================
 // 2-Stage XML Classifier
@@ -1623,25 +1644,20 @@ function isJsonlTranscriptEnabled(): boolean {
 }
 
 /**
- * PowerShell-specific deny guidance for the classifier: maps PS idioms onto the
- * existing BLOCK categories so it recognizes `iex (iwr ...)` as "Code from
- * External", `Remove-Item -Recurse -Force` as "Irreversible Local
- * Destruction", and so on.
+ * PowerShell-specific deny guidance, appended to the classifier's deny section
+ * by buildYoloSystemPrompt. Maps PS idioms onto the existing BLOCK categories
+ * so the classifier recognizes `iex (iwr ...)` as "Code from External",
+ * `Remove-Item -Recurse -Force` as "Irreversible Local Destruction", and so on.
  *
- * NOT WIRED. It is meant to extend the deny section that
- * buildSystemPromptWithRuleSections renders, but replaceTemplateSection
- * *substitutes* that section rather than appending to it: passing this list as
- * `sections.deny` would discard the template's own deny rules, and passing
- * nothing leaves the guidance out. Connecting it needs an "extra rules" path
- * through replaceTemplateSection that survives both the default and
- * user-override cases. Kept rather than deleted because the content is the
- * hard part and the gap is real: with POWERSHELL_AUTO_MODE on, PowerShell
- * reaches the classifier without it.
+ * It has to go through replaceTemplateSection's `extra` parameter rather than
+ * `sections.deny`, because that argument replaces the template's deny rules
+ * instead of adding to them.
  *
- * Guarded at definition for DCE — with the flag off, the string content is
- * absent from the build (same pattern as the .txt requires above).
+ * Guarded at definition for DCE — with the flag off this is `[]`, the strings
+ * are absent from the build, and appending it is a no-op (same pattern as the
+ * .txt requires above).
  */
-const POWERSHELL_DENY_GUIDANCE: readonly string[] = feature(
+export const POWERSHELL_DENY_GUIDANCE: readonly string[] = feature(
   'POWERSHELL_AUTO_MODE',
 )
   ? [
@@ -1738,6 +1754,7 @@ export function formatActionForClassifier(
 export const __test__ = {
   buildBoundedClassifierInput,
   buildExternalAutoModeRules,
+  replaceTemplateSection,
   buildSystemPromptWithRuleSections,
   buildToolLookup,
   detectPromptTooLong,

@@ -13,6 +13,7 @@ import {
   buildDefaultExternalSystemPrompt,
   buildExternalAutoModeRules,
   getDefaultExternalAutoModeRules,
+  POWERSHELL_DENY_GUIDANCE,
 } from '../../utils/permissions/yoloClassifier.js'
 import { getTrustedAutoModeRuleSections } from '../../utils/settings/settings.js'
 import { sideQuery } from '../../utils/sideQuery.js'
@@ -30,7 +31,12 @@ export function autoModeDefaultsHandler(): void {
  * provided, external defaults otherwise.
  */
 export function autoModeConfigHandler(): void {
-  writeRules(buildExternalAutoModeRules(getTrustedAutoModeRuleSections()))
+  writeRules(
+    buildExternalAutoModeRules(
+      getTrustedAutoModeRuleSections(),
+      POWERSHELL_DENY_GUIDANCE,
+    ),
+  )
 }
 
 const CRITIQUE_SYSTEM_PROMPT =
