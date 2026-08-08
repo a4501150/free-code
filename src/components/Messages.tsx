@@ -1,4 +1,5 @@
 import { feature } from 'bun:bundle'
+import { diagRenderedList } from '../utils/diag.js'
 import chalk from 'chalk'
 import type { UUID } from 'crypto'
 import type { RefObject } from 'react'
@@ -630,6 +631,11 @@ const MessagesImpl = ({
       const hiddenMessageCount =
         messagesToShowNotTruncated.length -
         MAX_MESSAGES_TO_SHOW_IN_TRANSCRIPT_MODE
+
+      diagRenderedList(
+        collapsed as unknown as { uuid: string; type: string }[],
+        syntheticStreamingToolUseMessages.length,
+      )
 
       return {
         collapsed,
