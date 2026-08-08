@@ -1,6 +1,6 @@
 // TEMPORARY DIAGNOSTIC — remove once the duplicate-row bug is root-caused.
 // Surfaces through the normal debug log, so `--debug` is the only switch.
-import { logForDebugging } from './debug.js'
+import { isDebugMode, logForDebugging } from './debug.js'
 
 let lastSignature = ''
 
@@ -8,6 +8,10 @@ export function diagRenderedList(
   items: { uuid: string; type: string }[],
   syntheticCount: number,
 ): void {
+  // Bail before the counting pass, not just before the log. This runs inside
+  // the O(n) transform memo in Messages, so without this an extra Map of n
+  // entries would be built on every recompute in ordinary non-debug runs.
+  if (!isDebugMode()) return
   const counts = new Map<string, number>()
   for (const item of items) {
     counts.set(item.uuid, (counts.get(item.uuid) ?? 0) + 1)
