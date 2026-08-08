@@ -41,6 +41,7 @@ const TYPES_WITHOUT_SUMMARY_LINE = [
   'current_session_memory',
   'companion_intro',
   'date_change',
+  'terminal_focus',
   'auto_compact_imminent',
 ] as const satisfies readonly Attachment['type'][]
 

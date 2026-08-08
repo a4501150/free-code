@@ -39,10 +39,8 @@ import {
   createToolUseSummaryMessage,
 } from './utils/messages.js'
 import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummaryGenerator.js'
-import {
-  prependUserContext,
-  appendSystemContext,
-} from './utils/contextInjection.js'
+import { prependUserContext } from './utils/contextInjection.js'
+import { getEnvContext } from './context.js'
 import {
   createAttachmentMessage,
   filterDuplicateMemoryAttachments,
@@ -322,9 +320,7 @@ async function* queryLoop(
     messagesForQuery = microcompactResult.messages
     queryCheckpoint('query_microcompact_end')
 
-    const fullSystemPrompt = asSystemPrompt(
-      appendSystemContext(systemPrompt, systemContext),
-    )
+    const fullSystemPrompt = asSystemPrompt(systemPrompt)
 
     queryCheckpoint('query_autocompact_start')
     const { compactionResult, consecutiveFailures } = await deps.autocompact(
@@ -421,6 +417,22 @@ async function* queryLoop(
 
     queryCheckpoint('query_setup_end')
 
+    // Environment facts (cwd, model, platform, git status, scratchpad) ride in
+    // the prepended user-context message rather than the system prompt. Keeping
+    // the system prompt free of session-scoped bytes is what lets it stay
+    // byte-identical across sessions and projects, so a new session reads the
+    // cached prefix instead of writing it. See the caching notes in CLAUDE.md.
+    const effectiveUserContext = {
+      ...userContext,
+      ...systemContext,
+      env: await getEnvContext(
+        currentModel,
+        Array.from(
+          appState.toolPermissionContext.additionalWorkingDirectories.keys(),
+        ),
+      ),
+    }
+
     // Create fetch wrapper once per query session to avoid memory retention.
     // Each call to createDumpPromptsFetch creates a closure that captures the request body.
     // Creating it once means only the latest request body is retained (~700KB),
@@ -455,7 +467,7 @@ async function* queryLoop(
     try {
       queryCheckpoint('query_api_streaming_start')
       for await (const message of deps.callModel({
-        messages: prependUserContext(messagesForQuery, userContext),
+        messages: prependUserContext(messagesForQuery, effectiveUserContext),
         systemPrompt: fullSystemPrompt,
         thinkingConfig: toolUseContext.options.thinkingConfig,
         tools: toolUseContext.options.tools,

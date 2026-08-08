@@ -3904,6 +3904,16 @@ You have exited auto mode. The user may now want to interact more directly. You 
         }),
       ])
     }
+    case 'terminal_focus': {
+      return wrapMessagesInSystemReminder([
+        createUserMessage({
+          content: attachment.focused
+            ? `The user has focused the terminal — they are watching again. Be more collaborative: surface choices and keep output easy to follow in real time.`
+            : `The user has unfocused the terminal — they are not actively watching. Lean into autonomous action; only pause for genuinely irreversible or high-risk decisions.`,
+          isMeta: true,
+        }),
+      ])
+    }
     case 'ultrathink_effort': {
       return wrapMessagesInSystemReminder([
         createUserMessage({

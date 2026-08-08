@@ -32,7 +32,6 @@ export type { NonNullableUsage }
 export { EMPTY_USAGE }
 
 // Strategy used for global prompt caching
-export type GlobalCacheStrategy = 'tool_based' | 'system_prompt' | 'none'
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -288,7 +287,6 @@ function logAPISuccess({
   gateway,
   queryTracking,
   permissionMode,
-  globalCacheStrategy,
   textContentLength,
   thinkingContentLength,
   toolUseContentLengths,
@@ -314,7 +312,6 @@ function logAPISuccess({
   gateway?: KnownGateway
   queryTracking?: QueryChainTracking
   permissionMode?: PermissionMode
-  globalCacheStrategy?: GlobalCacheStrategy
   textContentLength?: number
   thinkingContentLength?: number
   toolUseContentLengths?: Record<string, number>
@@ -358,7 +355,6 @@ export function logAPISuccessAndDuration({
   permissionMode,
   newMessages,
   llmSpan,
-  globalCacheStrategy,
   requestSetupMs,
   attemptStartTimes,
   fastMode,
@@ -387,8 +383,6 @@ export function logAPISuccessAndDuration({
   newMessages?: AssistantMessage[]
   /** The span from startLLMRequestSpan - pass this to correctly match responses to requests */
   llmSpan?: Span
-  /** Strategy used for global prompt caching: 'tool_based', 'system_prompt', or 'none' */
-  globalCacheStrategy?: GlobalCacheStrategy
   /** Time spent in pre-request setup before the successful attempt */
   requestSetupMs?: number
   /** Timestamps (Date.now()) of each attempt start — used for retry sub-spans in Perfetto */
@@ -464,7 +458,6 @@ export function logAPISuccessAndDuration({
     gateway,
     queryTracking,
     permissionMode,
-    globalCacheStrategy,
     textContentLength,
     thinkingContentLength,
     toolUseContentLengths,

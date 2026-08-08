@@ -6,7 +6,6 @@ import {
   CONTEXT_1M_BETA_HEADER,
   CONTEXT_MANAGEMENT_BETA_HEADER,
   INTERLEAVED_THINKING_BETA_HEADER,
-  PROMPT_CACHING_SCOPE_BETA_HEADER,
   REDACT_THINKING_BETA_HEADER,
   STRUCTURED_OUTPUTS_BETA_HEADER,
   WEB_SEARCH_BETA_HEADER,
@@ -119,21 +118,6 @@ export function shouldIncludeFirstPartyOnlyBetas(model?: string): boolean {
   )
 }
 
-/**
- * Global-scope prompt caching is firstParty only. Foundry is excluded because
- * Foundry users were never bucketed into the rollout experiment — the
- * treatment data is firstParty-only.
- */
-export function shouldUseGlobalCacheScope(model?: string): boolean {
-  const caps = model
-    ? getProviderRegistry().getCapabilities(model)
-    : getProviderRegistry().getCapabilities()
-  return (
-    caps.globalCacheScope &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)
-  )
-}
-
 export const getAllModelBetas = memoize((model: string): string[] => {
   const betaHeaders = []
   const providerType = getProviderRegistry().getProviderType(model)
@@ -196,11 +180,6 @@ export const getAllModelBetas = memoize((model: string): string[] => {
     (providerType === 'vertex' || providerType === 'foundry')
   ) {
     betaHeaders.push(WEB_SEARCH_BETA_HEADER)
-  }
-
-  // Always send the beta header for 1P. The header is a no-op without a scope field.
-  if (includeFirstPartyOnlyBetas) {
-    betaHeaders.push(PROMPT_CACHING_SCOPE_BETA_HEADER)
   }
 
   // If ANTHROPIC_BETAS is set, split it by commas and add to betaHeaders.

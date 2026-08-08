@@ -30,7 +30,6 @@ import { getFreecodeSettingsFilePath } from '../utils/settings/freecodeSettings.
 import { getModelSettingsFilePath } from '../utils/settings/modelSettings.js'
 import { isReplModeEnabled } from '../tools/REPLTool/constants.js'
 import { feature } from 'bun:bundle'
-import { shouldUseGlobalCacheScope } from '../utils/betas.js'
 import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
 import * as briefToolModuleNs from '../tools/BriefTool/BriefTool.js'
 import {
@@ -57,18 +56,6 @@ import { CYBER_RISK_INSTRUCTION } from './cyberRiskInstruction.js'
 
 export const CLAUDE_CODE_DOCS_MAP_URL =
   'https://code.claude.com/docs/en/claude_code_docs_map.md'
-
-/**
- * Boundary marker separating static (cross-org cacheable) content from dynamic content.
- * Everything BEFORE this marker in the system prompt array can use scope: 'global'.
- * Everything AFTER contains user/session-specific content and should not be cached.
- *
- * WARNING: Do not remove or reorder this marker without updating cache logic in:
- * - src/utils/api.ts (splitSysPromptPrefix)
- * - src/services/api/claude.ts (buildSystemPromptBlocks)
- */
-export const SYSTEM_PROMPT_DYNAMIC_BOUNDARY =
-  '__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__'
 
 function getHooksSection(): string {
   return `Users may configure 'hooks', shell commands that execute in response to events like tool calls, in settings. Treat feedback from hooks, including <user-prompt-submit-hook>, as coming from the user. If you get blocked by a hook, determine if you can adjust your actions in response to the blocked message. If not, ask the user to check their hooks configuration.`
@@ -192,10 +179,9 @@ function getUsingYourToolsSection(enabledTools: Set<string>): string {
 }
 
 /**
- * Session-variant guidance that would fragment the cacheScope:'global'
- * prefix if placed before SYSTEM_PROMPT_DYNAMIC_BOUNDARY. Each conditional
- * here is a runtime bit that would otherwise multiply the Blake2b prefix
- * hash variants (2^N). See PR #24490, #24171 for the same bug class.
+ * Guidance conditional on which tools are enabled. Free with respect to the
+ * prompt cache: the tools array precedes the system prompt in the cache
+ * prefix, so any change to `enabledTools` has already invalidated this block.
  */
 function getSessionSpecificGuidanceSection(
   enabledTools: Set<string>,
@@ -302,11 +288,6 @@ export async function getSystemPrompt(
     ].filter(s => s !== null)
   }
 
-  const envInfo = await computeSimpleEnvInfo(
-    model,
-    additionalWorkingDirectories,
-  )
-
   const settings = getInitialSettings()
   const enabledTools = new Set(tools.map(_ => _.name))
 
@@ -318,14 +299,12 @@ export async function getSystemPrompt(
 ${CYBER_RISK_INSTRUCTION}`,
       getSystemRemindersSection(),
       await loadMemoryPrompt(),
-      envInfo,
       getLanguageSection(settings.language),
       // When delta enabled, instructions are announced via persisted
       // mcp_instructions_delta attachments (attachments.ts) instead.
       isMcpInstructionsDeltaEnabled()
         ? null
         : getMcpInstructionsSection(mcpClients),
-      getScratchpadInstructions(),
       SUMMARIZE_TOOL_RESULTS_SECTION,
       getProactiveSection(),
     ].filter(s => s !== null)
@@ -338,9 +317,6 @@ ${CYBER_RISK_INSTRUCTION}`,
       'Tool availability can change between turns',
     ),
     systemPromptSection('memory', () => loadMemoryPrompt()),
-    systemPromptSection('env_info_simple', () =>
-      computeSimpleEnvInfo(model, additionalWorkingDirectories),
-    ),
     systemPromptSection('language', () =>
       getLanguageSection(settings.language),
     ),
@@ -357,7 +333,6 @@ ${CYBER_RISK_INSTRUCTION}`,
           : getMcpInstructionsSection(mcpClients),
       'MCP servers connect/disconnect between turns',
     ),
-    systemPromptSection('scratchpad', () => getScratchpadInstructions()),
     systemPromptSection(
       'summarize_tool_results',
       () => SUMMARIZE_TOOL_RESULTS_SECTION,
@@ -371,7 +346,9 @@ ${CYBER_RISK_INSTRUCTION}`,
     await resolveSystemPromptSections(dynamicSections)
 
   return [
-    // --- Static content (cacheable) ---
+    // Static across every session, project and machine for a given version.
+    // Anything session-scoped belongs in the user context (src/context.ts),
+    // not here — see the prompt caching notes in CLAUDE.md.
     getSimpleIntroSection(),
     getSimpleSystemSection(),
     getSimpleDoingTasksSection(),
@@ -380,9 +357,9 @@ ${CYBER_RISK_INSTRUCTION}`,
     getUsingYourToolsSection(enabledTools),
     getFormattingSection(),
     getTextOutputSection(),
-    // === BOUNDARY MARKER - DO NOT MOVE OR REMOVE ===
-    ...(shouldUseGlobalCacheScope() ? [SYSTEM_PROMPT_DYNAMIC_BOUNDARY] : []),
-    // --- Dynamic content (registry-managed) ---
+    // Tool-derived and per-user sections. Tool-derived variation is free: the
+    // tools array precedes the system prompt in the cache prefix, so any tool
+    // change has already invalidated this block.
     ...resolvedDynamicSections,
   ].filter(s => s !== null)
 }
@@ -621,7 +598,7 @@ Do not narrate each step, list every file you read, or explain routine actions. 
 
 ## Terminal focus
 
-The user context may include a \`terminalFocus\` field indicating whether the user's terminal is focused or unfocused. Use this to calibrate how autonomous you are:
+You will be notified when the user focuses or unfocuses their terminal. Use the most recent notification to calibrate how autonomous you are:
 - **Unfocused**: The user is away. Lean heavily into autonomous action — make decisions, explore, commit, push. Only pause for genuinely irreversible or high-risk actions.
 - **Focused**: The user is watching. Be more collaborative — surface choices, ask before committing to large changes, and keep your output concise so it's easy to follow in real time.${BRIEF_PROACTIVE_SECTION && briefToolModule?.isBriefEnabled() ? `\n\n${BRIEF_PROACTIVE_SECTION}` : ''}`
 }

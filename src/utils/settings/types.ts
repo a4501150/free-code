@@ -383,12 +383,6 @@ export type ProviderTokenCountingMethod =
   (typeof PROVIDER_TOKEN_COUNTING_METHODS)[number]
 
 export const ProviderCapabilitiesSchema = z.object({
-  // Prompt caching
-  globalCacheScope: z
-    .boolean()
-    .optional()
-    .describe('Supports global-scope prompt caching (Anthropic native only)'),
-
   // Streaming & request features
   eagerInputStreaming: z
     .boolean()

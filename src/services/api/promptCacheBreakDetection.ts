@@ -36,9 +36,6 @@ type PreviousState = {
   systemCharCount: number
   model: string
   fastMode: boolean
-  /** 'tool_based' | 'system_prompt' | 'none' — flips when MCP tools are
-   *  discovered/removed. */
-  globalCacheStrategy: string
   /** Sorted beta header list. Diffed to show which headers were added/removed. */
   betas: string[]
   /** AFK_MODE_BETA_HEADER presence — should NOT break cache anymore
@@ -68,7 +65,6 @@ type PendingChanges = {
   modelChanged: boolean
   fastModeChanged: boolean
   cacheControlChanged: boolean
-  globalCacheStrategyChanged: boolean
   betasChanged: boolean
   autoModeChanged: boolean
   overageChanged: boolean
@@ -82,8 +78,6 @@ type PendingChanges = {
   changedToolSchemas: string[]
   previousModel: string
   newModel: string
-  prevGlobalCacheStrategy: string
-  newGlobalCacheStrategy: string
   addedBetas: string[]
   removedBetas: string[]
   prevEffortValue: string
@@ -224,7 +218,6 @@ export type PromptStateSnapshot = {
   model: string
   agentId?: AgentId
   fastMode?: boolean
-  globalCacheStrategy?: string
   betas?: readonly string[]
   autoModeActive?: boolean
   isUsingOverage?: boolean
@@ -245,7 +238,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
       model,
       agentId,
       fastMode,
-      globalCacheStrategy = '',
       betas = [],
       autoModeActive = false,
       isUsingOverage = false,
@@ -301,7 +293,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
         systemCharCount,
         model,
         fastMode: isFastMode,
-        globalCacheStrategy,
         betas: sortedBetas,
         autoModeActive,
         isUsingOverage,
@@ -324,8 +315,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
     const modelChanged = model !== prev.model
     const fastModeChanged = isFastMode !== prev.fastMode
     const cacheControlChanged = cacheControlHash !== prev.cacheControlHash
-    const globalCacheStrategyChanged =
-      globalCacheStrategy !== prev.globalCacheStrategy
     const betasChanged =
       sortedBetas.length !== prev.betas.length ||
       sortedBetas.some((b, i) => b !== prev.betas[i])
@@ -340,7 +329,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
       modelChanged ||
       fastModeChanged ||
       cacheControlChanged ||
-      globalCacheStrategyChanged ||
       betasChanged ||
       autoModeChanged ||
       overageChanged ||
@@ -370,7 +358,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
         modelChanged,
         fastModeChanged,
         cacheControlChanged,
-        globalCacheStrategyChanged,
         betasChanged,
         autoModeChanged,
         overageChanged,
@@ -384,8 +371,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
         systemCharDelta: systemCharCount - prev.systemCharCount,
         previousModel: prev.model,
         newModel: model,
-        prevGlobalCacheStrategy: prev.globalCacheStrategy,
-        newGlobalCacheStrategy: globalCacheStrategy,
         addedBetas: sortedBetas.filter(b => !prevBetaSet.has(b)),
         removedBetas: prev.betas.filter(b => !newBetaSet.has(b)),
         prevEffortValue: prev.effortValue,
@@ -403,7 +388,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
     prev.systemCharCount = systemCharCount
     prev.model = model
     prev.fastMode = isFastMode
-    prev.globalCacheStrategy = globalCacheStrategy
     prev.betas = sortedBetas
     prev.autoModeActive = autoModeActive
     prev.isUsingOverage = isUsingOverage
@@ -505,16 +489,7 @@ export async function checkResponseForCacheBreak(
       if (changes.fastModeChanged) {
         parts.push('fast mode toggled')
       }
-      if (changes.globalCacheStrategyChanged) {
-        parts.push(
-          `global cache strategy changed (${changes.prevGlobalCacheStrategy || 'none'} → ${changes.newGlobalCacheStrategy || 'none'})`,
-        )
-      }
-      if (
-        changes.cacheControlChanged &&
-        !changes.globalCacheStrategyChanged &&
-        !changes.systemPromptChanged
-      ) {
+      if (changes.cacheControlChanged && !changes.systemPromptChanged) {
         // Only report as standalone cause if nothing else explains it —
         // otherwise the scope/TTL flip is a consequence, not the root cause.
         parts.push('cache_control changed (scope or TTL)')

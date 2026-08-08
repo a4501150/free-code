@@ -20,7 +20,6 @@ export type ToolSchema = {
   input_schema: APIToolInputSchema
   cache_control?: {
     type: 'ephemeral'
-    scope?: 'global' | 'org'
     ttl?: '5m' | '1h'
   }
 }
@@ -33,7 +32,6 @@ export type ToolSchemaUnion =
 type ToolSchemaWithExtras = ToolSchema & {
   cache_control?: {
     type: 'ephemeral'
-    scope?: 'global' | 'org'
     ttl?: '5m' | '1h'
   }
   eager_input_streaming?: boolean
@@ -82,7 +80,6 @@ export async function toolToAPISchema(
     model?: string
     cacheControl?: {
       type: 'ephemeral'
-      scope?: 'global' | 'org'
       ttl?: '5m' | '1h'
     }
   },
@@ -162,9 +159,8 @@ export async function toolToAPISchema(
   // not in the base-tool allowlist at the one choke point all tool schemas pass
   // through — including fields added in the future.
   // cache_control is allowlisted: the base {type: 'ephemeral'} shape is
-  // standard prompt caching (Bedrock/Vertex supported); the beta sub-fields
-  // (scope, ttl) are already gated upstream by shouldIncludeFirstPartyOnlyBetas
-  // which independently respects this kill switch.
+  // standard prompt caching (Bedrock/Vertex supported); the ttl sub-field is
+  // gated upstream in getCacheControl.
   // github.com/anthropics/claude-code/issues/20031
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)) {
     const allowed = new Set([

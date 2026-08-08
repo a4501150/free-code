@@ -41,8 +41,8 @@ export type DomainMessageParam =
 export type DomainSystemBlock = {
   type: 'text'
   text: string
-  cacheControl?: DomainCacheControl
-  cacheScope?: string | null
+  // Snake_case because Anthropic-wire adapters pass this straight through.
+  cache_control?: DomainCacheControl
 }
 
 export type DomainToolDefinition = {
@@ -50,8 +50,7 @@ export type DomainToolDefinition = {
   description?: string | null
   input_schema?: Record<string, unknown>
   type?: string | null
-  cacheControl?: DomainCacheControl
-  cacheScope?: string | null
+  cache_control?: DomainCacheControl
   [key: string]: unknown
 }
 

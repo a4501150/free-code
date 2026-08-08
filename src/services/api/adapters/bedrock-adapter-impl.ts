@@ -48,6 +48,7 @@ import type {
 } from '../domain-transport.js'
 import type {
   DomainAssistantContent,
+  DomainCacheControl,
   DomainContentBlock,
   DomainReasoningBlock,
   DomainRedactedReasoningBlock,
@@ -326,6 +327,19 @@ function translateDomainContentBlock(
   }
 }
 
+/**
+ * Converse expresses a cache breakpoint as a standalone `cachePoint` entry in
+ * `system[]`, `toolConfig.tools[]` or `messages[].content[]`, rather than as a
+ * field on the block it follows. `ttl` is omitted for the 5m default.
+ */
+function toCachePoint(
+  cacheControl: DomainCacheControl | undefined,
+): Record<string, unknown> | null {
+  if (!cacheControl) return null
+  const ttl = (cacheControl as { ttl?: string }).ttl
+  return { cachePoint: { type: 'default', ...(ttl ? { ttl } : {}) } }
+}
+
 function domainMessagesToConverse(
   messages: DomainMessageParam[],
 ): Array<Record<string, unknown>> {
@@ -333,13 +347,25 @@ function domainMessagesToConverse(
 
   for (const msg of messages) {
     const content: Array<Record<string, unknown>> = []
+    let pendingCachePoint: Record<string, unknown> | null = null
     for (const block of msg.content) {
       const translated = translateDomainContentBlock(block)
       if (translated) {
         content.push(translated)
       }
+      // Carried to the end of the message: a cache point must follow the
+      // content it covers, and a marked block can translate to null.
+      const cachePoint = toCachePoint(
+        (block as { cache_control?: DomainCacheControl }).cache_control,
+      )
+      if (cachePoint) {
+        pendingCachePoint = cachePoint
+      }
     }
     if (content.length > 0) {
+      if (pendingCachePoint) {
+        content.push(pendingCachePoint)
+      }
       result.push({ role: msg.role, content })
     }
   }
@@ -351,8 +377,9 @@ function domainToolsToConverse(
   tools: DomainToolDefinition[],
   toolChoice?: DomainMessageRequest['toolChoice'],
 ): Record<string, unknown> {
-  const toolConfig: Record<string, unknown> = {
-    tools: tools.map(tool => ({
+  const toolEntries: Array<Record<string, unknown>> = []
+  for (const tool of tools) {
+    toolEntries.push({
       toolSpec: {
         name: tool.name,
         ...(tool.description ? { description: tool.description } : {}),
@@ -360,8 +387,14 @@ function domainToolsToConverse(
           json: tool.input_schema || { type: 'object', properties: {} },
         },
       },
-    })),
+    })
+    const cachePoint = toCachePoint(tool.cache_control)
+    if (cachePoint) {
+      toolEntries.push(cachePoint)
+    }
   }
+
+  const toolConfig: Record<string, unknown> = { tools: toolEntries }
 
   if (toolChoice) {
     if (toolChoice.type === 'auto') {
@@ -382,10 +415,14 @@ function domainRequestToConverseBody(
   const body: Record<string, unknown> = {}
 
   if (request.system && request.system.length > 0) {
-    const systemBlocks: Array<{ text: string }> = []
+    const systemBlocks: Array<Record<string, unknown>> = []
     for (const block of request.system) {
       if (block.type === 'text' && typeof block.text === 'string') {
         systemBlocks.push({ text: block.text })
+        const cachePoint = toCachePoint(block.cache_control)
+        if (cachePoint) {
+          systemBlocks.push(cachePoint)
+        }
       }
     }
     if (systemBlocks.length > 0) {

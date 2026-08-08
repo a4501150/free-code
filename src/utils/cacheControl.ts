@@ -12,20 +12,16 @@ import { getProviderRegistry } from './model/providerRegistry.js'
 import { isEnvTruthy } from './envUtils.js'
 
 export function getCacheControl({
-  scope,
   querySource,
 }: {
-  scope?: 'global' | 'org'
   querySource?: QuerySource
 } = {}): {
   type: 'ephemeral'
   ttl?: '1h'
-  scope?: 'global' | 'org'
 } {
   return {
     type: 'ephemeral',
     ...(should1hCacheTTL(querySource) && { ttl: '1h' }),
-    ...(scope === 'global' && { scope }),
   }
 }
 

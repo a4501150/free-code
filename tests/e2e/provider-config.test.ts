@@ -274,6 +274,116 @@ describe('Provider Config E2E', () => {
       const bodyStr = JSON.stringify(requests[0]!.body)
       expect(bodyStr).not.toContain('cache_control')
     })
+
+    test('explicit-breakpoint provider marks tools, system and last message', async () => {
+      // The cache prefix order is tools -> system -> messages, so these are
+      // three distinct resume points. The tools breakpoint is the only one
+      // ahead of the attribution block, whose cch= hash changes every request.
+      anthropicServer.reset([textResponse('Cached')])
+
+      session = new TmuxSession({ serverUrl: anthropicServer.url })
+      await session.start()
+      await session.sendLine('Test breakpoints')
+      await session.waitForText('Cached', 15_000)
+
+      const requests = anthropicServer.getRequestLog()
+      expect(requests.length).toBeGreaterThanOrEqual(1)
+      const body = requests[0]!.body as {
+        system: Array<{ text: string; cache_control?: unknown }>
+        tools: Array<{ name: string; cache_control?: unknown }>
+        messages: Array<{ content: Array<{ cache_control?: unknown }> }>
+      }
+
+      // Exactly one marked tool, and it is the last one.
+      const markedTools = body.tools.filter(t => t.cache_control !== undefined)
+      expect(markedTools).toHaveLength(1)
+      expect(body.tools.at(-1)!.cache_control).toBeDefined()
+
+      // Exactly one marked system block, and never the attribution block.
+      const markedSystem = body.system.filter(
+        b => b.cache_control !== undefined,
+      )
+      expect(markedSystem).toHaveLength(1)
+      expect(body.system[0]!.text).toContain('x-anthropic-billing-header')
+      expect(body.system[0]!.cache_control).toBeUndefined()
+
+      // Exactly one marked message, and it is the last.
+      const markedMessages = body.messages.filter(m =>
+        m.content.some(c => c.cache_control !== undefined),
+      )
+      expect(markedMessages).toHaveLength(1)
+      expect(
+        body.messages.at(-1)!.content.some(c => c.cache_control !== undefined),
+      ).toBe(true)
+
+      // 3 of the API's 4 allowed breakpoints; a 5th would be a 400.
+      const total = JSON.stringify(body).split('"cache_control"').length - 1
+      expect(total).toBe(3)
+
+      // Global cache scope is gone.
+      expect(JSON.stringify(body)).not.toContain('"scope"')
+    })
+
+    test('the system prompt carries no session-scoped bytes', async () => {
+      // What lets a fresh session in a new project read the system prefix
+      // instead of writing it. Environment facts live in the user context.
+      anthropicServer.reset([textResponse('Static')])
+
+      session = new TmuxSession({ serverUrl: anthropicServer.url })
+      await session.start()
+      await session.sendLine('Test static prompt')
+      await session.waitForText('Static', 15_000)
+
+      const body = anthropicServer.getRequestLog()[0]!.body as {
+        system: Array<{ text: string }>
+        messages: Array<{ content: Array<{ text?: string }> }>
+      }
+      const systemText = body.system.map(b => b.text).join('\n')
+      expect(systemText).not.toContain(session.cwd)
+      expect(systemText).not.toContain('# Environment')
+      expect(systemText).not.toContain('# Scratchpad Directory')
+
+      // ...and they are present in the prepended user-context message instead.
+      const firstMessage = body.messages[0]!.content.map(
+        c => c.text ?? '',
+      ).join('\n')
+      expect(firstMessage).toContain('# env')
+      expect(firstMessage).toContain('Primary working directory')
+    })
+
+    test('two sessions in different projects send an identical system prefix', async () => {
+      // The payoff for keeping the system prompt static: a fresh session in a
+      // different directory can *read* the cached system prefix instead of
+      // writing it. Previously guaranteed to be a write, because cwd and the
+      // per-session scratchpad path were both in the system prompt.
+      async function cachedSystemBlock(): Promise<string> {
+        anthropicServer.reset([textResponse('Done.')])
+        // No cwd option, so each session gets its own mkdtemp directory.
+        const s = new TmuxSession({ serverUrl: anthropicServer.url })
+        try {
+          await s.start()
+          await s.sendLine('hello')
+          await s.waitForText('Done.', 15_000)
+          const body = anthropicServer.getRequestLog()[0]!.body as {
+            system: Array<{ text: string; cache_control?: unknown }>
+          }
+          const cached = body.system.filter(b => b.cache_control !== undefined)
+          expect(cached).toHaveLength(1)
+          return cached[0]!.text
+        } finally {
+          await s.stop()
+        }
+      }
+
+      const first = await cachedSystemBlock()
+      const second = await cachedSystemBlock()
+
+      // Byte-for-byte, with no normalization: any per-session or per-project
+      // value that creeps back into a prompt section will fail here.
+      expect(second).toBe(first)
+      // Guard against the assertion passing on an empty or trivial block.
+      expect(first.length).toBeGreaterThan(2000)
+    })
   })
 
   // ─── Default Model Config ────────────────────────────────────

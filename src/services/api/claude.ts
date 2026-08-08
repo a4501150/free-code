@@ -45,7 +45,7 @@ import type {
   UserMessage,
 } from '../../types/message.js'
 import { toolToAPISchema } from '../../utils/toolSchemas.js'
-import { type CacheScope, splitSysPromptPrefix } from './systemPromptBlocks.js'
+import { splitSysPromptPrefix } from './systemPromptBlocks.js'
 import {
   clearApiKeyHelperCache,
   clearAwsCredentialsCache,
@@ -112,7 +112,6 @@ import {
   CONTEXT_MANAGEMENT_BETA_HEADER,
   EFFORT_BETA_HEADER,
   FAST_MODE_BETA_HEADER,
-  PROMPT_CACHING_SCOPE_BETA_HEADER,
   STRUCTURED_OUTPUTS_BETA_HEADER,
   TASK_BUDGETS_BETA_HEADER,
 } from 'src/constants/betas.js'
@@ -137,7 +136,6 @@ import { withAgenticSystemPromptInvariantsForQuery } from 'src/utils/agenticSyst
 import {
   modelSupportsStructuredOutputs,
   shouldIncludeFirstPartyOnlyBetas,
-  shouldUseGlobalCacheScope,
 } from 'src/utils/betas.js'
 import { getMaxThinkingTokensForModel } from 'src/utils/context.js'
 import { logForDebugging } from 'src/utils/debug.js'
@@ -188,7 +186,6 @@ import {
 } from './errors.js'
 import {
   EMPTY_USAGE,
-  type GlobalCacheStrategy,
   logAPIError,
   logAPIQuery,
   logAPISuccessAndDuration,
@@ -596,17 +593,22 @@ export function assistantMessageToMessageParam(
         ],
       }
     } else {
-      return {
-        role: 'assistant',
-        content: message.message.content.map((block, i) => ({
-          ...block,
-          ...(i === message.message.content.length - 1 &&
+      // Anthropic rejects cache_control on a thinking block, so walk back to
+      // the last block that can carry it. Testing only the final block would
+      // silently drop the message breakpoint whenever a turn ends in reasoning.
+      const content = message.message.content
+      const markerIndex = content.findLastIndex(
+        block =>
           block.type !== 'reasoning' &&
           block.type !== 'redacted_reasoning' &&
-          (feature('CONNECTOR_TEXT') ? !isConnectorTextBlock(block) : true)
-            ? enablePromptCaching
-              ? { cache_control: getCacheControl({ querySource }) }
-              : {}
+          (feature('CONNECTOR_TEXT') ? !isConnectorTextBlock(block) : true),
+      )
+      return {
+        role: 'assistant',
+        content: content.map((block, i) => ({
+          ...block,
+          ...(enablePromptCaching && i === markerIndex
+            ? { cache_control: getCacheControl({ querySource }) }
             : {}),
         })),
       }
@@ -1110,34 +1112,29 @@ async function* queryModel(
 
   const filteredTools: Tools = tools
 
-  const useGlobalCacheFeature = shouldUseGlobalCacheScope(options.model)
-  // MCP tools are per-user → dynamic tool section → can't globally cache.
-  const needsToolBasedCacheMarker =
-    useGlobalCacheFeature && filteredTools.some(t => t.isMcp === true)
-
-  // Ensure prompt_caching_scope beta header is present when global cache is enabled.
-  if (
-    useGlobalCacheFeature &&
-    !betas.includes(PROMPT_CACHING_SCOPE_BETA_HEADER)
-  ) {
-    betas.push(PROMPT_CACHING_SCOPE_BETA_HEADER)
-  }
-
-  // Determine global cache strategy for logging
-  const globalCacheStrategy: GlobalCacheStrategy = useGlobalCacheFeature
-    ? needsToolBasedCacheMarker
-      ? 'none'
-      : 'system_prompt'
-    : 'none'
+  // Three of the API's four cache breakpoints: the last tool (below), the
+  // cached system block (buildSystemPromptBlocks) and the last message
+  // (addCacheBreakpoints). The prefix order is tools → system → messages, so
+  // the tools breakpoint is the only one ahead of the attribution block, whose
+  // `cch=` hash differs on every request.
+  const enablePromptCaching =
+    options.enablePromptCaching ?? getPromptCachingEnabled(options.model)
 
   const toolSchemas = await Promise.all(
-    filteredTools.map(tool =>
+    filteredTools.map((tool, index) =>
       toolToAPISchema(tool, {
         getToolPermissionContext: options.getToolPermissionContext,
         tools: filteredTools,
         agents: options.agents,
         allowedAgentTypes: options.allowedAgentTypes,
         model: options.model,
+        // Last real tool only. Server tools are appended after this array, so
+        // marking the last element of `allTools` would put the breakpoint
+        // behind a suffix that /advisor toggles.
+        cacheControl:
+          enablePromptCaching && index === filteredTools.length - 1
+            ? getCacheControl({ querySource: options.querySource })
+            : undefined,
       }),
     ),
   )
@@ -1205,12 +1202,8 @@ async function* queryModel(
     ].filter(Boolean),
   )
 
-  const enablePromptCaching =
-    options.enablePromptCaching ?? getPromptCachingEnabled(options.model)
   const system = buildSystemPromptBlocks(systemPrompt, enablePromptCaching, {
-    skipGlobalCacheForSystemPrompt: needsToolBasedCacheMarker,
     querySource: options.querySource,
-    model: options.model,
   })
   const useBetas = betas.length > 0
 
@@ -1274,7 +1267,6 @@ async function* queryModel(
       model: options.model,
       agentId: options.agentId,
       fastMode: fastModeHeaderLatched,
-      globalCacheStrategy,
       betas,
       autoModeActive: afkHeaderLatched,
       isUsingOverage: currentLimits.isUsingOverage ?? false,
@@ -2331,7 +2323,6 @@ async function* queryModel(
       // only when beta tracing is enabled
       newMessages,
       llmSpan,
-      globalCacheStrategy,
       requestSetupMs: start - startIncludingRetries,
       attemptStartTimes,
       fastMode: isFastModeRequest,
@@ -2495,23 +2486,18 @@ export function buildSystemPromptBlocks(
   systemPrompt: SystemPrompt,
   enablePromptCaching: boolean,
   options?: {
-    skipGlobalCacheForSystemPrompt?: boolean
     querySource?: QuerySource
-    model?: string
   },
 ): DomainSystemBlock[] {
-  // IMPORTANT: Do not add any more blocks for caching or you will get a 400
-  return splitSysPromptPrefix(systemPrompt, {
-    skipGlobalCacheForSystemPrompt: options?.skipGlobalCacheForSystemPrompt,
-    model: options?.model,
-  }).map(block => {
+  // The API rejects more than 4 cache_control blocks per request. This is one
+  // of them; the tools array and the last message carry the other two.
+  return splitSysPromptPrefix(systemPrompt).map(block => {
     return {
       type: 'text' as const,
       text: block.text,
       ...(enablePromptCaching &&
-        block.cacheScope !== null && {
+        block.cached && {
           cache_control: getCacheControl({
-            scope: block.cacheScope,
             querySource: options?.querySource,
           }),
         }),

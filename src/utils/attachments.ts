@@ -122,6 +122,8 @@ import {
   setNeedsAutoModeExitAttachment,
   getLastEmittedDate,
   setLastEmittedDate,
+  getLastEmittedTerminalFocus,
+  setLastEmittedTerminalFocus,
   getKairosActive,
 } from '../bootstrap/state.js'
 import type { QuerySource } from '../constants/querySource.js'
@@ -149,8 +151,11 @@ import { isHumanTurn } from './messagePredicates.js'
 import { isEnvTruthy, getClaudeConfigHomeDir } from './envUtils.js'
 import { feature } from 'bun:bundle'
 import * as sessionTranscriptNs from '../services/sessionTranscript/sessionTranscript.js'
+import * as proactiveNs from '../proactive/index.js'
+import { getTerminalFocused } from '../ink/terminal-focus-state.js'
 
 const sessionTranscriptModule = feature('KAIROS') ? sessionTranscriptNs : null
+const proactiveModule = feature('KAIROS') ? proactiveNs : null
 import { hasUltrathinkKeyword, isUltrathinkEnabled } from './thinking.js'
 import {
   tokenCountFromLastAPIResponse,
@@ -603,6 +608,10 @@ export type Attachment =
       newDate: string
     }
   | {
+      type: 'terminal_focus'
+      focused: boolean
+    }
+  | {
       type: 'ultrathink_effort'
       level: 'high'
     }
@@ -735,6 +744,9 @@ export async function getAttachments(
     maybe('queued_commands', () => getQueuedCommandAttachments(queuedCommands)),
     maybe('date_change', () =>
       Promise.resolve(getDateChangeAttachments(messages)),
+    ),
+    maybe('terminal_focus', () =>
+      Promise.resolve(getTerminalFocusAttachments()),
     ),
     maybe('ultrathink_effort', () =>
       Promise.resolve(getUltrathinkEffortAttachment(input)),
@@ -1289,6 +1301,40 @@ export function getDateChangeAttachments(
   }
 
   return [{ type: 'date_change', newDate: currentDate }]
+}
+
+/**
+ * Announces terminal focus transitions while proactive mode is active, so the
+ * model can calibrate how autonomous to be.
+ *
+ * Appended at the tail rather than injected into the user context: focus flips
+ * whenever the user alt-tabs, and the user context is API message 0, so putting
+ * it there rewrote the cached message prefix several times a minute. Only
+ * transitions are emitted, which is also what keeps this from duplicating once
+ * per tool-loop iteration.
+ *
+ * Exported for testing.
+ */
+export function getTerminalFocusAttachments(): Attachment[] {
+  if (!feature('KAIROS') || !proactiveModule?.isProactiveActive()) {
+    return []
+  }
+
+  const focused = getTerminalFocused()
+  const lastFocused = getLastEmittedTerminalFocus()
+
+  if (lastFocused === null) {
+    // First observation — establish the baseline without announcing it.
+    setLastEmittedTerminalFocus(focused)
+    return []
+  }
+
+  if (focused === lastFocused) {
+    return []
+  }
+
+  setLastEmittedTerminalFocus(focused)
+  return [{ type: 'terminal_focus', focused }]
 }
 
 function getUltrathinkEffortAttachment(input: string | null): Attachment[] {

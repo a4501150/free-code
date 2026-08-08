@@ -5,6 +5,7 @@
 import {
   clearInvokedSkills,
   setLastEmittedDate,
+  setLastEmittedTerminalFocus,
 } from '../../bootstrap/state.js'
 import { clearCommandsCache } from '../../commands.js'
 import { clearAgentDefinitionsCache } from '../../tools/AgentTool/loadAgentsDir.js'
@@ -64,6 +65,9 @@ export function clearSessionCaches(
 
   // Clear last emitted date so it's re-detected on next turn
   setLastEmittedDate(null)
+  // Re-baseline terminal focus so the fresh conversation doesn't open with a
+  // transition announcement for a state the model was never told about.
+  setLastEmittedTerminalFocus(null)
 
   // Run post-compaction cleanup (clears system prompt sections, microcompact tracking,
   // classifier approvals, speculative checks, and — for main-thread compacts — memory

@@ -1631,10 +1631,6 @@ export function REPL({
   const [isSearchingHistory, setIsSearchingHistory] = useState(false)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
 
-  const isTerminalFocused = useTerminalFocus()
-  const terminalFocusRef = useRef(isTerminalFocused)
-  terminalFocusRef.current = isTerminalFocused
-
   const [theme] = useTheme()
 
   // resetLoadingState runs twice per turn (onQueryImpl tail + onQuery finally).
@@ -3025,20 +3021,15 @@ export function REPL({
           getUserContext(),
           getSystemContext(),
         ])
+      // Terminal focus is deliberately not here: it flips whenever the user
+      // alt-tabs, and this object becomes API message 0. It is announced as an
+      // append-only `terminal_focus` attachment instead (attachments.ts).
       const userContext = {
         ...baseUserContext,
         ...getCoordinatorUserContext(
           freshMcpClients,
           isScratchpadEnabled() ? getScratchpadDir() : undefined,
         ),
-        ...(feature('KAIROS') &&
-        proactiveModule?.isProactiveActive() &&
-        !terminalFocusRef.current
-          ? {
-              terminalFocus:
-                'The terminal is unfocused \u2014 the user is not actively watching.',
-            }
-          : {}),
       }
       queryCheckpoint('query_context_loading_end')
 

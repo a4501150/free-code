@@ -50,7 +50,7 @@ export function synthesizeProvidersFromLegacy(opts: {
     const region = getEnv('AWS_REGION') || getEnv('AWS_DEFAULT_REGION')
     providers['bedrock'] = {
       type: 'bedrock-converse',
-      cache: { type: 'none' },
+      cache: { type: 'explicit-breakpoint' },
       auth: {
         active: 'aws',
         aws: { region: region || 'us-east-1' },
@@ -84,7 +84,7 @@ export function synthesizeProvidersFromLegacy(opts: {
     providers['foundry'] = {
       type: 'foundry',
       ...(foundryBaseUrl ? { baseUrl: foundryBaseUrl } : {}),
-      cache: { type: 'none' },
+      cache: { type: 'explicit-breakpoint' },
       auth: {
         active: foundryApiKey ? 'apiKey' : 'azure',
         ...(foundryApiKey

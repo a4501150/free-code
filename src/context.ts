@@ -5,6 +5,10 @@ import {
 } from './bootstrap/state.js'
 import { getLocalISODate } from './constants/common.js'
 import {
+  computeSimpleEnvInfo,
+  getScratchpadInstructions,
+} from './constants/prompts.js'
+import {
   filterInjectedMemoryFiles,
   getClaudeMds,
   getMemoryFiles,
@@ -96,7 +100,28 @@ export const getGitStatus = memoize(async (): Promise<string | null> => {
 })
 
 /**
- * This context is prepended to each conversation, and cached for the duration of the conversation.
+ * The `# Environment` block: cwd, worktree state, platform, shell, model and
+ * settings paths. Memoized per (model, additional working directories) so the
+ * bytes are frozen for as long as those hold, which is what keeps the prepended
+ * user-context message stable turn to turn.
+ *
+ * A model switch does change these bytes, but a model switch invalidates the
+ * server-side cache anyway, so that costs nothing.
+ */
+export const getEnvContext = memoize(
+  (model: string, additionalWorkingDirectories: string[]): Promise<string> =>
+    computeSimpleEnvInfo(model, additionalWorkingDirectories),
+  (model: string, additionalWorkingDirectories: string[]) =>
+    `${model}\u0000${additionalWorkingDirectories.join('\u0000')}`,
+)
+
+/**
+ * Session-scoped project context. Rides in the prepended user-context message
+ * (assembled in query.ts), never the system prompt: the system prompt has to
+ * stay byte-identical across sessions and projects for its cached prefix to be
+ * reusable, and every value here varies by cwd, session or repo state.
+ *
+ * Memoized for the session, so these bytes are frozen once computed.
  */
 export const getSystemContext = memoize(
   async (): Promise<{
@@ -109,6 +134,7 @@ export const getSystemContext = memoize(
     const gitStatus = !shouldIncludeGitInstructions()
       ? null
       : await getGitStatus()
+    const scratchpad = getScratchpadInstructions()
 
     logForDiagnosticsNoPII('info', 'system_context_completed', {
       duration_ms: Date.now() - startTime,
@@ -118,6 +144,7 @@ export const getSystemContext = memoize(
 
     return {
       ...(gitStatus && { gitStatus }),
+      ...(scratchpad && { scratchpad }),
     }
   },
 )

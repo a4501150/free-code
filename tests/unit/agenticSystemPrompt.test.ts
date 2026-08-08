@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '../../src/constants/prompts.js'
 import {
   isAgenticQuerySource,
   type QuerySource,
@@ -35,7 +34,6 @@ beforeEach(() => {
     anthropic: {
       type: 'anthropic',
       baseUrl: 'http://anthropic.test',
-      capabilities: { globalCacheScope: true },
       auth: { active: 'apiKey', apiKey: { key: 'test-key' } },
       models: [{ id: 'claude-test' }],
     },
@@ -141,12 +139,11 @@ describe('agentic system prompt invariants', () => {
     expect(AGENTIC_SYSTEM_PROMPT_INVARIANTS).toContain('Never hardcode `/tmp`')
   })
 
-  test('keeps the invariant in the global static block without adding a block', () => {
+  test('keeps the invariant in the cached system block without adding a block', () => {
     const prompt = asSystemPrompt([
       getCLISyspromptPrefix(),
       AGENTIC_SYSTEM_PROMPT_INVARIANTS,
       'static guidance',
-      SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
       'dynamic guidance',
     ])
 
@@ -155,38 +152,19 @@ describe('agentic system prompt invariants', () => {
       querySource: 'sdk',
     })
 
-    expect(splitBlocks).toHaveLength(3)
-    expect(splitBlocks[1]?.cacheScope).toBe('global')
+    expect(splitBlocks).toHaveLength(2)
+    expect(splitBlocks[0]).toEqual({
+      text: getCLISyspromptPrefix(),
+      cached: false,
+    })
+    expect(splitBlocks[1]?.cached).toBe(true)
     expect(splitBlocks[1]?.text).toContain(AGENTIC_SYSTEM_PROMPT_INVARIANTS)
     expect(
       splitBlocks[1]?.text.indexOf(AGENTIC_SYSTEM_PROMPT_INVARIANTS),
     ).toBeLessThan(splitBlocks[1]?.text.indexOf('static guidance') ?? -1)
-    expect(splitBlocks[2]).toEqual({
-      text: 'dynamic guidance',
-      cacheScope: null,
-    })
+    expect(splitBlocks[1]?.text).toContain('dynamic guidance')
     expect(apiBlocks).toHaveLength(splitBlocks.length)
-    expect(apiBlocks[1]?.cache_control?.scope).toBe('global')
-  })
-
-  test('keeps prompts without a boundary in the existing org remainder', () => {
-    const prompt = asSystemPrompt([
-      getCLISyspromptPrefix(),
-      AGENTIC_SYSTEM_PROMPT_INVARIANTS,
-      'replacement prompt',
-    ])
-
-    const splitBlocks = splitSysPromptPrefix(prompt)
-    const apiBlocks = buildSystemPromptBlocks(prompt, true, {
-      querySource: 'sdk',
-    })
-
-    expect(splitBlocks).toHaveLength(2)
-    expect(splitBlocks[1]?.cacheScope).toBe('org')
-    expect(splitBlocks[1]?.text).toContain(AGENTIC_SYSTEM_PROMPT_INVARIANTS)
-    expect(splitBlocks[1]?.text).toContain('replacement prompt')
-    expect(apiBlocks).toHaveLength(splitBlocks.length)
-    expect(apiBlocks[1]?.cache_control).toBeDefined()
-    expect(apiBlocks[1]?.cache_control?.scope).toBeUndefined()
+    expect(apiBlocks[0]?.cache_control).toBeUndefined()
+    expect(apiBlocks[1]?.cache_control).toEqual({ type: 'ephemeral' })
   })
 })

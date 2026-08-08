@@ -9,8 +9,6 @@ export const STRUCTURED_OUTPUTS_BETA_HEADER = 'structured-outputs-2025-12-15'
 export const WEB_SEARCH_BETA_HEADER = 'web-search-2025-03-05'
 export const EFFORT_BETA_HEADER = 'effort-2025-11-24'
 export const TASK_BUDGETS_BETA_HEADER = 'task-budgets-2026-03-13'
-export const PROMPT_CACHING_SCOPE_BETA_HEADER =
-  'prompt-caching-scope-2026-01-05'
 export const FAST_MODE_BETA_HEADER = 'fast-mode-2026-02-01'
 export const REDACT_THINKING_BETA_HEADER = 'redact-thinking-2026-02-12'
 export const TOKEN_EFFICIENT_TOOLS_BETA_HEADER =

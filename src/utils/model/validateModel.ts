@@ -1,6 +1,7 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { getProviderRegistry } from './providerRegistry.js'
 import { sideQuery } from '../sideQuery.js'
+import { getCacheControl } from '../cacheControl.js'
 import {
   DomainTransportError,
   DomainConnectionError,
@@ -53,7 +54,9 @@ export async function validateModel(
             {
               type: 'text',
               text: 'Hi',
-              cache_control: { type: 'ephemeral' },
+              cache_control: getCacheControl({
+                querySource: 'model_validation',
+              }),
             },
           ],
         },

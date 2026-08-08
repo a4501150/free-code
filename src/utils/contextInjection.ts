@@ -1,18 +1,5 @@
 import type { Message } from '../types/message.js'
 import { createUserMessage } from './messages.js'
-import type { SystemPrompt } from './systemPromptType.js'
-
-export function appendSystemContext(
-  systemPrompt: SystemPrompt,
-  context: { [k: string]: string },
-): string[] {
-  return [
-    ...systemPrompt,
-    Object.entries(context)
-      .map(([key, value]) => `${key}: ${value}`)
-      .join('\n'),
-  ].filter(Boolean)
-}
 
 /**
  * The exact content of the user-context system reminder that prependUserContext

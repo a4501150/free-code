@@ -1,10 +1,7 @@
-import {
-  getSystemPrompt,
-  SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
-} from 'src/constants/prompts.js'
+import { getSystemPrompt } from 'src/constants/prompts.js'
 import { microcompactMessages } from 'src/services/compact/microCompact.js'
 import { getCommandName } from '../commands.js'
-import { getSystemContext } from '../context.js'
+import { getEnvContext, getSystemContext } from '../context.js'
 import {
   getAutoCompactThreshold,
   getConfiguredContextWindowSize,
@@ -234,23 +231,25 @@ function extractSectionName(content: string): string {
 
 async function countSystemTokens(
   effectiveSystemPrompt: readonly string[],
+  model: string,
 ): Promise<{
   systemPromptTokens: number
   systemPromptSections: SystemPromptSectionDetail[]
 }> {
-  // Get system context (gitStatus, etc.) which is always included
-  const systemContext = await getSystemContext()
+  // Session-scoped context (gitStatus, scratchpad, env) no longer lives in the
+  // system prompt — query.ts folds it into the prepended user-context message —
+  // but it is sent on every request, so the breakdown still has to count it.
+  const [systemContext, env] = await Promise.all([
+    getSystemContext(),
+    getEnvContext(model, []),
+  ])
 
-  // Build named entries: system prompt parts + system context values
-  // Skip empty strings and the global-cache boundary marker
+  // Build named entries: system prompt parts + session-scoped context values
   const namedEntries: Array<{ name: string; content: string }> = [
     ...effectiveSystemPrompt
-      .filter(
-        content =>
-          content.length > 0 && content !== SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
-      )
+      .filter(content => content.length > 0)
       .map(content => ({ name: extractSectionName(content), content })),
-    ...Object.entries(systemContext)
+    ...Object.entries({ ...systemContext, env })
       .filter(([, content]) => content.length > 0)
       .map(([name, content]) => ({ name, content })),
   ]
@@ -740,7 +739,7 @@ export async function analyzeContextUsage(
     { slashCommandTokens, commandInfo },
     messageBreakdown,
   ] = await Promise.all([
-    countSystemTokens(effectiveSystemPrompt),
+    countSystemTokens(effectiveSystemPrompt, runtimeModel),
     countMemoryFileTokens(),
     countBuiltInToolTokens(
       tools,

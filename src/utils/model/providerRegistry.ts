@@ -25,7 +25,6 @@ import { parseModelString, stripContextSuffix } from './parseModelString.js'
 // ── Capability defaults by provider type ──────────────────────────────
 
 const ALL_FALSE_CAPABILITIES: Required<ProviderCapabilities> = {
-  globalCacheScope: false,
   eagerInputStreaming: false,
   clientRequestId: false,
   betasInBody: false,
@@ -50,12 +49,33 @@ const ALL_FALSE_CAPABILITIES: Required<ProviderCapabilities> = {
   preservesReasoningAcrossTurns: false,
 }
 
+/**
+ * Which caching mechanism each wire format actually supports, used when a
+ * provider config does not pin `cache.type` explicitly.
+ *
+ * Anthropic-wire providers take explicit `cache_control` breakpoints — the
+ * prompt-caching docs list the Claude API, AWS, Google Cloud and Microsoft
+ * Foundry as supporting them. Bedrock Converse takes the same markers,
+ * translated to `cachePoint` entries by its adapter. OpenAI and Gemini cache
+ * prefixes server-side with no client markers at all, so emitting breakpoints
+ * for them is dead weight.
+ */
+const DEFAULT_CACHE_TYPE_BY_PROVIDER: Record<ProviderType, ProviderCacheType> =
+  {
+    anthropic: 'explicit-breakpoint',
+    vertex: 'explicit-breakpoint',
+    foundry: 'explicit-breakpoint',
+    'bedrock-converse': 'explicit-breakpoint',
+    'openai-chat-completions': 'automatic-prefix',
+    'openai-responses': 'automatic-prefix',
+    gemini: 'automatic-prefix',
+  }
+
 const PROVIDER_CAPABILITY_DEFAULTS: Record<
   ProviderType,
   Required<ProviderCapabilities>
 > = {
   anthropic: {
-    globalCacheScope: true,
     eagerInputStreaming: true,
     clientRequestId: true,
     betasInBody: false,
@@ -171,7 +191,6 @@ function deriveCapabilities(
   ) {
     base = {
       ...base,
-      globalCacheScope: false,
       eagerInputStreaming: false,
       clientRequestId: false,
       firstPartyFeatures: false,
@@ -359,7 +378,13 @@ export class ProviderRegistry {
 
   getProviderCacheType(model: string): ProviderCacheType {
     const provider = this.getProviderForModel(model)
-    return provider?.config.cache?.type ?? 'explicit-breakpoint'
+    if (provider?.config.cache?.type) return provider.config.cache.type
+    // Default by wire format. Emitting explicit markers for a provider whose
+    // adapter discards them is wasted work, and claiming 'none' for one that
+    // caches automatically would misreport its usage.
+    return provider?.config.type
+      ? DEFAULT_CACHE_TYPE_BY_PROVIDER[provider.config.type]
+      : 'explicit-breakpoint'
   }
 
   getProviderType(model: string): ProviderType | null {

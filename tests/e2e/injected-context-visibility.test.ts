@@ -228,13 +228,15 @@ describe('Injected context visibility', () => {
         })
         const serialized = JSON.stringify(log[0]!.body.messages)
         // Each session gets its own mkdtemp config dir and cwd, and both paths
-        // appear inside the skills/keybindings reminder. Normalize that
-        // per-session noise so the comparison is about the setting only.
+        // appear inside the skills/keybindings reminder. The scratchpad path in
+        // the user context additionally carries a per-session UUID. Normalize
+        // that per-session noise so the comparison is about the setting only.
         return serialized
           .split(s.configDirPath ?? '\u0000')
           .join('<CONFIG_DIR>')
           .split(s.cwd)
           .join('<CWD>')
+          .replace(/`[^`]*\/scratchpad`/g, '`<SCRATCHPAD>`')
       } finally {
         await s.stop()
       }
