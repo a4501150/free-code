@@ -29,7 +29,7 @@ import {
   PATH_EXTRACTORS,
   type PathCommand,
 } from './pathValidation.js'
-import { sedCommandIsAllowedByAllowlist } from './sedValidation.js'
+import { sedArgsAreAllowedByAllowlist } from './sedValidation.js'
 
 // Unified command validation configuration system
 type CommandConfig = {
@@ -240,9 +240,9 @@ const COMMAND_ALLOWLIST: Record<string, CommandConfig> = {
       '--version': 'none',
     },
     additionalCommandIsDangerousCallback: (
-      rawCommand: string,
-      _args: string[],
-    ) => !sedCommandIsAllowedByAllowlist(rawCommand),
+      _rawCommand: string,
+      args: string[],
+    ) => !sedArgsAreAllowedByAllowlist(args),
   },
   sort: {
     safeFlags: {

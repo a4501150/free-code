@@ -3,11 +3,6 @@ import { isAbsolute, resolve } from 'path'
 import type { z } from 'zod/v4'
 import type { ToolPermissionContext } from '../../Tool.js'
 import type { Redirect, SimpleCommand } from '../../utils/bash/ast.js'
-import {
-  extractOutputRedirections,
-  splitCommand_DEPRECATED,
-} from '../../utils/bash/commands.js'
-import { tryParseShellCommand } from '../../utils/bash/shellQuote.js'
 import { stripWrappersOrUnchanged } from '../../utils/bash/wrappers.js'
 import { getDirectoryForPath } from '../../utils/path.js'
 import { allWorkingDirectories } from '../../utils/permissions/filesystem.js'
@@ -22,7 +17,6 @@ import {
   validatePath,
 } from '../../utils/permissions/pathValidation.js'
 import type { BashTool } from './BashTool.js'
-import { stripSafeWrappers } from './bashPermissions.js'
 import { sedCommandIsAllowedByAllowlist } from './sedValidation.js'
 
 export type PathCommand =
@@ -786,106 +780,11 @@ export function createPathChecker(
 }
 
 /**
- * Parses command arguments using shell-quote, converting glob objects to strings.
- * This is necessary because shell-quote parses patterns like *.txt as glob objects,
- * but we need them as strings for path validation.
- */
-function parseCommandArguments(cmd: string): string[] {
-  const parseResult = tryParseShellCommand(cmd, env => `$${env}`)
-  if (!parseResult.success) {
-    // Malformed shell syntax, return empty array
-    return []
-  }
-  const parsed = parseResult.tokens
-  const extractedArgs: string[] = []
-
-  for (const arg of parsed) {
-    if (typeof arg === 'string') {
-      // Include empty strings - they're valid arguments (e.g., grep "" /tmp/t)
-      extractedArgs.push(arg)
-    } else if (
-      typeof arg === 'object' &&
-      arg !== null &&
-      'op' in arg &&
-      arg.op === 'glob' &&
-      'pattern' in arg
-    ) {
-      // shell-quote parses glob patterns as objects, but we need them as strings for validation
-      extractedArgs.push(String(arg.pattern))
-    }
-  }
-
-  return extractedArgs
-}
-
-/**
- * Validates a single command for path constraints and shell safety.
+ * Validates a single command's paths against the allowed directories.
  *
- * This function:
- * 1. Parses the command arguments
- * 2. Checks if it's a path command (cd, ls, find)
- * 3. Validates for shell injection patterns
- * 4. Validates all paths are within allowed directories
- *
- * @param cmd - The command string to validate
- * @param cwd - Current working directory
- * @param toolPermissionContext - Context containing allowed directories
- * @param compoundCommandHasCd - Whether the full compound command contains a cd
- * @returns PermissionResult - 'passthrough' if not a path command, otherwise validation result
- */
-function validateSinglePathCommand(
-  cmd: string,
-  cwd: string,
-  toolPermissionContext: ToolPermissionContext,
-  compoundCommandHasCd?: boolean,
-): PermissionResult {
-  // SECURITY: Strip wrapper commands (timeout, nice, nohup, time) before extracting
-  // the base command. Without this, dangerous commands wrapped with these utilities
-  // would bypass path validation since the wrapper command (e.g., 'timeout') would
-  // be checked instead of the actual command (e.g., 'rm').
-  // Example: 'timeout 10 rm -rf /' would otherwise see 'timeout' as the base command.
-  const strippedCmd = stripSafeWrappers(cmd)
-
-  // Parse command into arguments, handling quotes and globs
-  const extractedArgs = parseCommandArguments(strippedCmd)
-  if (extractedArgs.length === 0) {
-    return {
-      behavior: 'passthrough',
-      message: 'Empty command - no paths to validate',
-    }
-  }
-
-  // Check if this is a path command we need to validate
-  const [baseCmd, ...args] = extractedArgs
-  if (!baseCmd || !SUPPORTED_PATH_COMMANDS.includes(baseCmd as PathCommand)) {
-    return {
-      behavior: 'passthrough',
-      message: `Command '${baseCmd}' is not a path-restricted command`,
-    }
-  }
-
-  // For read-only sed commands (e.g., sed -n '1,10p' file.txt),
-  // validate file paths as read operations instead of write operations.
-  // sed is normally classified as 'write' for path validation, but when the
-  // command is purely reading (line printing with -n), file args are read-only.
-  const operationTypeOverride =
-    baseCmd === 'sed' && sedCommandIsAllowedByAllowlist(strippedCmd)
-      ? ('read' as FileOperationType)
-      : undefined
-
-  // Validate all paths are within allowed directories
-  const pathChecker = createPathChecker(
-    baseCmd as PathCommand,
-    operationTypeOverride,
-  )
-  return pathChecker(args, cwd, toolPermissionContext, compoundCommandHasCd)
-}
-
-/**
- * Like validateSinglePathCommand but operates on AST-derived argv directly
- * instead of re-parsing the command string with shell-quote. Avoids the
- * shell-quote single-quote backslash bug that causes parseCommandArguments
- * to silently return [] and skip path validation.
+ * Operates on AST-derived argv: quotes, escapes and safe wrappers are already
+ * resolved, so there is no re-tokenization step that could disagree with what
+ * bash will actually run.
  */
 function validateSinglePathCommandArgv(
   cmd: SimpleCommand,
@@ -907,12 +806,10 @@ function validateSinglePathCommandArgv(
       message: `Command '${baseCmd}' is not a path-restricted command`,
     }
   }
-  // sed read-only override: sedCommandIsAllowedByAllowlist takes a string, so
-  // feed it the source span. argv is already wrapper-stripped but the span
-  // still carries any `timeout 5 ` prefix, so strip here too.
+  // sed read-only override: sed is classified as a write command, but a purely
+  // line-printing invocation only reads its file arguments.
   const operationTypeOverride =
-    baseCmd === 'sed' &&
-    sedCommandIsAllowedByAllowlist(stripSafeWrappers(cmd.sourceText))
+    baseCmd === 'sed' && sedCommandIsAllowedByAllowlist(cmd)
       ? ('read' as FileOperationType)
       : undefined
   const pathChecker = createPathChecker(
@@ -1015,51 +912,32 @@ export function checkPathConstraints(
   input: z.infer<typeof BashTool.inputSchema>,
   cwd: string,
   toolPermissionContext: ToolPermissionContext,
-  compoundCommandHasCd?: boolean,
-  astRedirects?: Redirect[],
-  astCommands?: SimpleCommand[],
+  compoundCommandHasCd: boolean | undefined,
+  commands: SimpleCommand[] | null,
 ): PermissionResult {
-  // SECURITY: Process substitution >(cmd) can execute commands that write to files
-  // without those files appearing as redirect targets. For example:
-  //   echo secret > >(tee .git/config)
-  // The tee command writes to .git/config but it's not detected as a redirect.
-  // Require explicit approval for any command containing process substitution.
-  // Skip on AST path — process_substitution is in DANGEROUS_TYPES and
-  // already returned too-complex before reaching here.
-  if (!astCommands && />>\s*>\s*\(|>\s*>\s*\(|<\s*\(/.test(input.command)) {
+  // SECURITY: null means the parser refused the command, so we have neither
+  // argv nor redirects to validate. There is no second parser to consult and
+  // no safe reading of "validate nothing", so ask.
+  if (commands === null) {
     return {
       behavior: 'ask',
       message:
-        'Process substitution (>(...) or <(...)) can execute arbitrary commands and requires manual approval',
+        'This command could not be analyzed for path safety and requires manual approval',
       decisionReason: {
         type: 'other',
-        reason: 'Process substitution requires manual approval',
+        reason: 'Command could not be parsed for path validation',
       },
     }
   }
 
-  // SECURITY: When AST-derived redirects are available, use them directly
-  // instead of re-parsing with shell-quote. shell-quote has a known
-  // single-quote backslash bug that silently merges redirect operators into
-  // garbled tokens on a successful parse (not a parse failure, so the
-  // fail-closed guard doesn't help). The AST already resolved targets
-  // correctly and checkSemantics validated them.
-  const { redirections, hasDangerousRedirection } = astRedirects
-    ? astRedirectsToOutputRedirections(astRedirects)
-    : extractOutputRedirections(input.command)
+  // Process substitution >(cmd) can execute commands that write to files
+  // without those files appearing as redirect targets — `echo secret > >(tee
+  // .git/config)`. It is in the parser's rejected set, so reaching here means
+  // the command has none.
 
-  // SECURITY: If we found a redirection operator with a target containing shell expansion
-  // syntax ($VAR or %VAR%), require manual approval since the target can't be safely validated.
-  if (hasDangerousRedirection) {
-    return {
-      behavior: 'ask',
-      message: 'Shell expansion syntax in paths requires manual approval',
-      decisionReason: {
-        type: 'other',
-        reason: 'Shell expansion syntax in paths requires manual approval',
-      },
-    }
-  }
+  const redirections = astRedirectsToOutputRedirections(
+    commands.flatMap(c => c.redirects),
+  )
   const redirectionResult = validateOutputRedirections(
     redirections,
     cwd,
@@ -1070,35 +948,15 @@ export function checkPathConstraints(
     return redirectionResult
   }
 
-  // SECURITY: When AST-derived commands are available, iterate them with
-  // pre-parsed argv instead of re-parsing via splitCommand_DEPRECATED + shell-quote.
-  // shell-quote has a single-quote backslash bug that causes
-  // parseCommandArguments to silently return [] and skip path validation
-  // (isDangerousRemovalPath etc). The AST already resolved argv correctly.
-  if (astCommands) {
-    for (const cmd of astCommands) {
-      const result = validateSinglePathCommandArgv(
-        cmd,
-        cwd,
-        toolPermissionContext,
-        compoundCommandHasCd,
-      )
-      if (result.behavior === 'ask' || result.behavior === 'deny') {
-        return result
-      }
-    }
-  } else {
-    const commands = splitCommand_DEPRECATED(input.command)
-    for (const cmd of commands) {
-      const result = validateSinglePathCommand(
-        cmd,
-        cwd,
-        toolPermissionContext,
-        compoundCommandHasCd,
-      )
-      if (result.behavior === 'ask' || result.behavior === 'deny') {
-        return result
-      }
+  for (const cmd of commands) {
+    const result = validateSinglePathCommandArgv(
+      cmd,
+      cwd,
+      toolPermissionContext,
+      compoundCommandHasCd,
+    )
+    if (result.behavior === 'ask' || result.behavior === 'deny') {
+      return result
     }
   }
 
@@ -1113,11 +971,13 @@ export function checkPathConstraints(
  * Convert AST-derived Redirect[] to the format expected by
  * validateOutputRedirections. Filters to output-only redirects (excluding
  * fd duplications like 2>&1) and maps operators to '>' | '>>'.
+ *
+ * There is no "dangerous redirection" outcome: an unresolvable target such as
+ * `> $VAR` never reaches here, because the parser refuses it.
  */
-function astRedirectsToOutputRedirections(redirects: Redirect[]): {
-  redirections: Array<{ target: string; operator: '>' | '>>' }>
-  hasDangerousRedirection: boolean
-} {
+function astRedirectsToOutputRedirections(
+  redirects: Redirect[],
+): Array<{ target: string; operator: '>' | '>>' }> {
   const redirections: Array<{ target: string; operator: '>' | '>>' }> = []
   for (const r of redirects) {
     switch (r.op) {
@@ -1145,9 +1005,7 @@ function astRedirectsToOutputRedirections(redirects: Redirect[]): {
         break
     }
   }
-  // AST targets are fully resolved (no shell expansion) — checkSemantics
-  // already validated them. No dangerous redirections are possible.
-  return { redirections, hasDangerousRedirection: false }
+  return redirections
 }
 
 /**

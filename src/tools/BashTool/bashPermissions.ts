@@ -571,6 +571,15 @@ function commandWithoutRedirects(command: string): string {
 }
 
 /**
+ * Every command in `command`, or null when the parser refuses it. Callers must
+ * treat null as "cannot be checked" rather than "nothing to check".
+ */
+function parsedCommands(command: string): SimpleCommand[] | null {
+  const parsed = parseForSecurity(command)
+  return parsed.kind === 'simple' ? parsed.commands : null
+}
+
+/**
  * Extra match candidate built from the resolved argv, with safe wrappers
  * removed.
  *
@@ -966,17 +975,15 @@ export const bashToolCheckPermission = (
 
   // 3. Check path constraints
   // This check comes after deny/ask rules so explicit rules take precedence.
-  // SECURITY: When AST-derived argv is available for this subcommand, pass
-  // it through so checkPathConstraints uses it directly instead of re-parsing
-  // with shell-quote (which has a single-quote backslash bug that causes
-  // parseCommandArguments to return [] and silently skip path validation).
+  // Path validation reads argv and redirects off the SimpleCommand, so re-parse
+  // only when the caller had none to give us; a command that will not parse
+  // becomes an ask rather than a skipped check.
   const pathResult = checkPathConstraints(
     input,
     getCwd(),
     toolPermissionContext,
     compoundCommandHasCd,
-    astCommand?.redirects,
-    astCommand ? [astCommand] : undefined,
+    astCommand ? [astCommand] : parsedCommands(input.command),
   )
   if (pathResult.behavior !== 'passthrough') {
     return pathResult
@@ -1000,7 +1007,12 @@ export const bashToolCheckPermission = (
   }
 
   // 5b. Check sed constraints (blocks dangerous sed operations before mode auto-allow)
-  const sedConstraintResult = checkSedConstraints(input, toolPermissionContext)
+  // Path validation above already asked when the command would not parse, so
+  // an empty list here means there was genuinely nothing to check.
+  const sedConstraintResult = checkSedConstraints(
+    astCommand ? [astCommand] : (parsedCommands(input.command) ?? []),
+    toolPermissionContext,
+  )
   if (sedConstraintResult.behavior !== 'passthrough') {
     return sedConstraintResult
   }
@@ -1358,7 +1370,6 @@ export async function bashToolHasPermission(
   // and display string, the SimpleCommand carries the resolved argv, envVars
   // and redirects that security decisions are actually made from.
   const astCommands: SimpleCommand[] = astResult.commands
-  const astRedirects: Redirect[] = astCommands.flatMap(c => c.redirects)
 
   // Check sandbox auto-allow (which respects explicit deny/ask rules)
   // Only call this if sandboxing and auto-allow are both enabled
@@ -1428,7 +1439,6 @@ export async function bashToolHasPermission(
         getCwd(),
         appState.toolPermissionContext,
         isNormalizedCdCommand(input.command),
-        astRedirects,
         astCommands,
       )
       if (pathResult.behavior !== 'passthrough') {
@@ -1531,20 +1541,15 @@ export async function bashToolHasPermission(
     }
   }
 
-  // Validate output redirections on the ORIGINAL command (before splitCommand stripped them)
-  // This must happen AFTER checking deny rules but BEFORE returning results.
-  // Output redirections like "> /etc/passwd" are stripped by splitCommand, so the per-subcommand
-  // checkPathConstraints calls won't see them. We validate them here on the original input.
-  // SECURITY: When AST data is available, pass AST-derived redirects so
-  // checkPathConstraints uses them directly instead of re-parsing with
-  // shell-quote (which has a known single-quote backslash misparsing bug
-  // that can silently hide redirect operators).
+  // Validate output redirections for the whole command. A redirect belongs to
+  // the command list, not to any one subcommand, so the per-subcommand
+  // checkPathConstraints calls above did not see the full set. Runs AFTER deny
+  // rules but BEFORE returning results.
   const pathResult = checkPathConstraints(
     input,
     getCwd(),
     appState.toolPermissionContext,
     compoundCommandHasCd,
-    astRedirects,
     astCommands,
   )
   if (pathResult.behavior === 'deny') {
