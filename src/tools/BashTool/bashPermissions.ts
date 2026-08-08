@@ -18,7 +18,10 @@ import {
   splitCommand_DEPRECATED,
 } from '../../utils/bash/commands.js'
 import { parseCommandRaw } from '../../utils/bash/parser.js'
-import { stripWrappers } from '../../utils/bash/wrappers.js'
+import {
+  stripWrappers,
+  stripWrappersFromSource,
+} from '../../utils/bash/wrappers.js'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
@@ -609,11 +612,20 @@ function filterRulesByContentsMatchingInput(
           commandsToTry.push(envStripped)
           seen.add(envStripped)
         }
-        // Try stripping safe wrappers
-        const wrapperStripped = stripSafeWrappers(cmd)
-        if (!seen.has(wrapperStripped)) {
-          commandsToTry.push(wrapperStripped)
-          seen.add(wrapperStripped)
+        // Try stripping safe wrappers. Two strippers, because neither alone is
+        // sufficient: the regex one handles env-var prefixes and comments but
+        // under-approximates wrapper flags (a regex cannot fail closed on an
+        // unknown flag), while the argv one is exact but declines on non-ASCII
+        // input and on argument shapes it can't map back to a source offset.
+        // Candidates are matched with .some(), so contributing both is additive.
+        for (const wrapperStripped of [
+          stripSafeWrappers(cmd),
+          stripWrappersFromSource(cmd),
+        ]) {
+          if (wrapperStripped !== null && !seen.has(wrapperStripped)) {
+            commandsToTry.push(wrapperStripped)
+            seen.add(wrapperStripped)
+          }
         }
       }
       startIdx = endIdx

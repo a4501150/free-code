@@ -4,9 +4,15 @@ import { checkSemantics, parseForSecurity } from '../../src/utils/bash/ast.js'
 import { parseCommandRaw, parseCommand } from '../../src/utils/bash/parser.js'
 import {
   stripWrappers,
+  stripWrappersFromSource,
   stripWrappersOrUnchanged,
 } from '../../src/utils/bash/wrappers.js'
 import {
+  getEmptyToolPermissionContext,
+  type ToolPermissionContext,
+} from '../../src/Tool.js'
+import {
+  bashToolCheckPermission,
   isNormalizedCdCommand,
   isNormalizedGitCommand,
 } from '../../src/tools/BashTool/bashPermissions.js'
@@ -276,5 +282,89 @@ describe('parser has no input caps', () => {
     expect(parseCommandRaw('ls')).not.toBeInstanceOf(Promise)
     expect(parseCommand('ls')).not.toBeInstanceOf(Promise)
     expect(parseForSecurity('ls')).not.toBeInstanceOf(Promise)
+  })
+})
+
+describe('stripWrappersFromSource: exact, and preserves source quoting', () => {
+  test('strips the wrapper forms the regex stripper misses', () => {
+    for (const [command, expected] of [
+      ['env rm -rf /tmp/x', 'rm -rf /tmp/x'],
+      ['env FOO=bar rm -rf /tmp/x', 'rm -rf /tmp/x'],
+      ['env -i rm -rf /tmp/x', 'rm -rf /tmp/x'],
+      ['env -u PATH rm -rf /tmp/x', 'rm -rf /tmp/x'],
+      ['stdbuf -o 0 rm -rf /tmp/x', 'rm -rf /tmp/x'],
+      ['stdbuf --output=0 rm -rf /tmp/x', 'rm -rf /tmp/x'],
+      ['nice rm -rf /tmp/x', 'rm -rf /tmp/x'],
+      ['timeout 5 rm -rf /tmp/x', 'rm -rf /tmp/x'],
+      // Only the leading command is considered, matching the `^`-anchored
+      // regexes this corrects.
+      ['env git status && ls', 'git status && ls'],
+    ] as const) {
+      expect(stripWrappersFromSource(command)).toBe(expected)
+    }
+  })
+
+  test('returns the original source, not a requoted argv join', () => {
+    // Rules are matched by string prefix, so requoting would change matching.
+    expect(stripWrappersFromSource("env rm 'a b'")).toBe("rm 'a b'")
+    expect(stripWrappersFromSource('env rm "a  b"')).toBe('rm "a  b"')
+  })
+
+  test('declines rather than guessing', () => {
+    for (const command of [
+      // Unanalyzable wrapper flags.
+      'env -S "rm -rf /tmp/x"',
+      'env -C /tmp rm -rf x',
+      'stdbuf --output 0 rm -rf /tmp/x',
+      // No wrapper at all — no candidate to contribute.
+      'rm -rf /tmp/x',
+      'ls -la',
+      // A quoted wrapper name is not the wrapper.
+      "'env' rm -rf /tmp/x",
+    ]) {
+      expect(stripWrappersFromSource(command)).toBeNull()
+    }
+  })
+
+  test('declines on non-ASCII, where byte offsets diverge from string indices', () => {
+    // Slicing a byte offset into a JS string would corrupt the command.
+    expect(stripWrappersFromSource('env rm /tmp/café')).toBeNull()
+  })
+})
+
+describe('regression: deny rules see through every wrapper form', () => {
+  // `env rm -rf /` and `stdbuf -o 0 rm -rf /` did not match a Bash(rm:*) deny,
+  // because rule matching used the regex stripper, which handles neither.
+  const denyCtx: ToolPermissionContext = {
+    ...getEmptyToolPermissionContext(),
+    alwaysDenyRules: { localSettings: ['Bash(rm:*)'] },
+  }
+
+  for (const command of [
+    'rm -rf /tmp/x',
+    'nice rm -rf /tmp/x',
+    'nice -10 rm -rf /tmp/x',
+    'timeout 5 rm -rf /tmp/x',
+    'nohup rm -rf /tmp/x',
+    'time rm -rf /tmp/x',
+    'env rm -rf /tmp/x',
+    'env -i rm -rf /tmp/x',
+    'env FOO=bar rm -rf /tmp/x',
+    'env -u PATH rm -rf /tmp/x',
+    'stdbuf -o 0 rm -rf /tmp/x',
+    'stdbuf -o0 rm -rf /tmp/x',
+    'stdbuf --output=0 rm -rf /tmp/x',
+  ]) {
+    test(`Bash(rm:*) denies ${command}`, () => {
+      expect(
+        bashToolCheckPermission({ command }, denyCtx, false).behavior,
+      ).toBe('deny')
+    })
+  }
+
+  test('an unrelated command is not denied', () => {
+    expect(
+      bashToolCheckPermission({ command: 'ls -la' }, denyCtx, false).behavior,
+    ).not.toBe('deny')
   })
 })

@@ -1,3 +1,6 @@
+import { parseCommand } from './parser.js'
+import type { TsNode } from './bashParser.js'
+
 /**
  * Canonical safe-wrapper stripping: `time`, `nohup`, `timeout`, `nice`, `env`,
  * `stdbuf`.
@@ -219,4 +222,63 @@ export function stripWrappers(argv: readonly string[]): WrapperStripResult {
 export function stripWrappersOrUnchanged(argv: string[]): string[] {
   const result = stripWrappers(argv)
   return result.kind === 'ok' ? result.argv : argv
+}
+
+/**
+ * Node types whose source span is exactly one argv element. Anything else
+ * (expansions, substitutions, arithmetic) means we cannot map an argv index
+ * back to a source offset, so callers must not strip.
+ */
+const ARG_NODE_TYPES = new Set([
+  'command_name',
+  'word',
+  'string',
+  'raw_string',
+  'number',
+  'concatenation',
+])
+
+const REDIRECT_NODE_TYPES = new Set(['file_redirect', 'herestring_redirect'])
+
+/**
+ * Strip leading wrappers from a command STRING, returning the original source
+ * from the wrapped command onward, or null when that can't be determined safely.
+ *
+ * Returning a slice of the original source rather than a re-serialization of
+ * argv is deliberate: permission rules are matched by string prefix, so any
+ * requoting would change what matches.
+ *
+ * Only the leading command is considered, mirroring the `^`-anchored regexes
+ * this exists to correct: `env git status && ls` yields `git status && ls`.
+ */
+export function stripWrappersFromSource(command: string): string | null {
+  // Parser offsets are UTF-8 byte offsets. They coincide with JS string indices
+  // only for ASCII, and slicing on a mismatch would corrupt the command.
+  if (Buffer.byteLength(command) !== command.length) return null
+
+  const commandNode = parseCommand(command)?.commandNode
+  if (!commandNode || commandNode.type !== 'command') return null
+
+  const argNodes: TsNode[] = []
+  for (const child of commandNode.children) {
+    // Command-local VAR=val prefixes are not argv elements.
+    if (child.type === 'variable_assignment') continue
+    // Redirects are validated separately and may appear anywhere; the leading
+    // wrapper tokens we care about are already collected by the time one shows.
+    if (REDIRECT_NODE_TYPES.has(child.type)) break
+    if (!ARG_NODE_TYPES.has(child.type)) return null
+    argNodes.push(child)
+  }
+
+  // Raw node text, not resolved argv: a quoted `'env'` therefore does not match
+  // the wrapper table and nothing is stripped, which is the safe direction.
+  const stripped = stripWrappers(argNodes.map(n => n.text))
+  if (stripped.kind !== 'ok') return null
+
+  const removed = argNodes.length - stripped.argv.length
+  if (removed <= 0) return null
+  const start = argNodes[removed]?.startIndex
+  if (start === undefined) return null
+
+  return command.slice(start)
 }
