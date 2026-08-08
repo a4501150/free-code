@@ -453,6 +453,11 @@ import {
 // Stable stub for the history loader's non-KAIROS branch — avoids a new
 // function identity each render, which would break composedOnScroll's memo.
 const HISTORY_STUB = { maybeLoadOlder: (_: ScrollBoxHandle) => {} }
+// Stable identities for the agent-drill-down branches below. An inline [] or
+// new Set() would change every render, invalidating the memos in Messages that
+// key off them (syntheticStreamingToolUseMessages, streamingToolUseIDs).
+const EMPTY_STREAMING_TOOL_USES: StreamingToolUse[] = []
+const EMPTY_IN_PROGRESS_TOOL_USE_IDS = new Set<string>()
 // Window after a user-initiated scroll during which type-into-empty does NOT
 // repin to bottom. Josh Rosen's workflow: Claude emits long output → scroll
 // up to read the start → start typing → before this fix, snapped to bottom.
@@ -1429,6 +1434,17 @@ export function REPL({
     onRepin()
     setCursor(null)
   }, [onRepin, setCursor])
+  // Entering or leaving an agent's transcript swaps the message source under
+  // a ScrollBox that never unmounts, so scrollTop/sticky/clamp would carry
+  // over and park the new view at the old view's offset. Re-pin so each view
+  // opens at its own tail. Nothing is needed for the async sidechain
+  // bootstrap that fills an agent's messages a frame or two later — this runs
+  // before that I/O starts, and sticky follow tracks the growing content.
+  const prevViewingAgentTaskIdRef = useRef(viewingAgentTaskId)
+  useLayoutEffect(() => {
+    if (prevViewingAgentTaskIdRef.current !== viewingAgentTaskId) repinScroll()
+    prevViewingAgentTaskIdRef.current = viewingAgentTaskId
+  }, [viewingAgentTaskId, repinScroll])
   // Backstop for the submit-handler repin at onSubmit. If a buffered stdin
   // event (wheel/drag) races between handler-fire and state-commit, the
   // handler's scrollToBottom can be undone. This effect fires on the render
@@ -4935,7 +4951,7 @@ export function REPL({
           modalScrollRef={modalScrollRef}
           dividerYRef={dividerYRef}
           hidePill={!!viewedAgentTask}
-          hideSticky={!!viewedTeammateTask}
+          hideSticky={!!viewedAgentTask}
           newMessageCount={unseenDivider?.count ?? 0}
           onPillClick={() => {
             setCursor(null)
@@ -4945,6 +4961,14 @@ export function REPL({
             <>
               <TeammateViewHeader />
               <Messages
+                // Remount on every view switch. The drill-down swaps the
+                // message source inside a tree that never unmounts, so
+                // without this the surviving useVirtualScroll instance carries
+                // the other transcript's heightCache/offsets/listOrigin into
+                // this one — and row keys are `${uuid}-${conversationId}`,
+                // which collide by construction since agent sidechains keep
+                // the leader's UUIDs for fork-inherited messages.
+                key={viewingAgentTaskId ?? 'leader'}
                 messages={displayedMessages}
                 tools={tools}
                 commands={commands}
@@ -4952,15 +4976,24 @@ export function REPL({
                 toolJSX={toolJSX}
                 toolUseConfirmQueue={toolUseConfirmQueue}
                 inProgressToolUseIDs={
-                  viewedTeammateTask
-                    ? (viewedTeammateTask.inProgressToolUseIDs ?? new Set())
+                  viewedAgentTask
+                    ? (viewedTeammateTask?.inProgressToolUseIDs ??
+                      EMPTY_IN_PROGRESS_TOOL_USE_IDS)
                     : inProgressToolUseIDs
                 }
                 isMessageSelectorVisible={isMessageSelectorVisible}
                 conversationId={conversationId}
                 screen={screen}
-                streamingToolUses={streamingToolUses}
+                // Messages synthesizes rows for streaming tool uses absent
+                // from the displayed list, so the leader's in-flight calls
+                // would be appended to an agent's transcript.
+                streamingToolUses={
+                  viewedAgentTask
+                    ? EMPTY_STREAMING_TOOL_USES
+                    : streamingToolUses
+                }
                 agentDefinitions={agentDefinitions}
+                hideLogo={!!viewedAgentTask}
                 onOpenRateLimitOptions={handleOpenRateLimitOptions}
                 isLoading={isLoading}
                 streamingText={

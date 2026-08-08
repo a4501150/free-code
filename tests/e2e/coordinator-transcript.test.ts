@@ -136,4 +136,178 @@ describe('Coordinator worker transcript view', () => {
     const afterInput = await session.capturePaneWithHistory()
     expect(afterInput).toContain('please also say goodbye')
   })
+
+  test('switching between leader and worker isolates each transcript', async () => {
+    // The drill-down swaps the message source inside a tree that never
+    // unmounts (same ScrollBox, same Messages/useVirtualScroll instances), so
+    // leader state used to bleed into the worker view: the welcome/logo box,
+    // leader rows, and the leader's scroll offset.
+    //
+    // Both transcripts are grown past the 40-row pane so each has a tail the
+    // other one's scroll offset would hide, and each view is scrolled up
+    // before switching away.
+    const filler = (tag: string) =>
+      Array.from({ length: 60 }, (_, i) => `${tag} filler line ${i}`).join('\n')
+    const leaderText = `LEADERTOPMARK\n${filler('leader')}\nLEADERTAILMARK`
+    const workerText = `WORKERTOPMARK\n${filler('worker')}\nWORKERTAILMARK`
+
+    // Phase 1 responses are interchangeable and carry no markers. Exact queue
+    // indices are unusable here: the coordinator's post-Agent follow-up races
+    // the worker's first turn (the mock server is strictly FIFO), and the
+    // leader takes another turn of its own when the worker completes. The
+    // queue is reset once everything is idle, after which each explicit turn
+    // is the only request in flight.
+    server.reset([
+      toolUseResponse(
+        [
+          {
+            name: 'Agent',
+            input: {
+              prompt: 'Say ack and stop',
+              description: 'sleeper worker',
+              subagent_type: 'worker',
+              run_in_background: true,
+            },
+          },
+        ],
+        'Spawning worker.',
+      ),
+      ...Array.from({ length: 6 }, () => textResponse('ack')),
+    ])
+
+    session = new TmuxSession({
+      serverUrl: server.url,
+      settings: {
+        providers: {
+          'test-anthropic': {
+            type: 'anthropic',
+            baseUrl: server.url,
+            auth: {
+              active: 'apiKey',
+              apiKey: { key: 'test-key-e2e-integration-99' },
+            },
+            models: [{ id: 'main-model' }, { id: 'worker-model' }],
+          },
+        },
+        defaultModel: 'test-anthropic:main-model',
+        defaultSubagentModel: 'test-anthropic:worker-model',
+      },
+      additionalEnv: {
+        CLAUDE_CODE_COORDINATOR_MODE: '1',
+        CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '0',
+      },
+    })
+    await session.start()
+
+    await session.sendLine('spawn a worker')
+    await waitForRequest(server, req => req.body.model === 'worker-model', {
+      timeoutMs: 15_000,
+      description: 'worker first API request',
+    })
+    await session.waitForScreen(s => s.includes('sleeper worker'), {
+      timeoutMs: 15_000,
+      currentPaneOnly: true,
+      description: 'worker row in coordinator panel',
+    })
+
+    // Settle: no new request for ~2s, so the reset can't land mid-turn.
+    let prevCount = -1
+    let stableTicks = 0
+    for (let i = 0; i < 40 && stableTicks < 3; i++) {
+      await sleep(700)
+      const count = server.getRequestCount()
+      if (count === prevCount) {
+        stableTicks++
+      } else {
+        stableTicks = 0
+        prevCount = count
+      }
+    }
+    expect(stableTicks).toBeGreaterThanOrEqual(3)
+
+    // Phase 2: marked responses, one per explicit turn.
+    server.reset([
+      textResponse(leaderText),
+      textResponse(workerText),
+      ...Array.from({ length: 4 }, () => textResponse('spare.')),
+    ])
+
+    await session.sendLine('grow the leader transcript')
+    await session.waitForScreen(s => s.includes('LEADERTAILMARK'), {
+      timeoutMs: 30_000,
+      currentPaneOnly: true,
+      description: 'leader tail visible',
+    })
+
+    const enterWorker = async () => {
+      await session.sendSpecialKey('Down')
+      await sleep(300)
+      await session.sendSpecialKey('Down')
+      await sleep(300)
+      await session.sendSpecialKey('Enter')
+      await sleep(1500)
+    }
+
+    // capturePane, never capturePaneWithHistory: tmux scrollback legitimately
+    // holds text from previously viewed screens, so only the current pane can
+    // establish isolation.
+    await enterWorker()
+    const firstWorkerView = await session.waitForScreen(
+      s => s.includes('sleeper worker') && !s.includes('LEADERTAILMARK'),
+      {
+        timeoutMs: 15_000,
+        currentPaneOnly: true,
+        description: 'worker view without leader tail',
+      },
+    )
+    // The worker transcript is short here, so all of it renders — which is
+    // exactly when an unhidden logo header would be visible.
+    expect(firstWorkerView).not.toContain('Welcome back')
+    expect(firstWorkerView).not.toContain('LEADERTOPMARK')
+    expect(firstWorkerView).not.toContain('leader filler line')
+
+    await session.sendLine('grow the worker transcript')
+    const grownWorkerView = await session.waitForScreen(
+      s => s.includes('WORKERTAILMARK'),
+      {
+        timeoutMs: 30_000,
+        currentPaneOnly: true,
+        description: 'worker tail visible',
+      },
+    )
+    expect(grownWorkerView).not.toContain('LEADERTAILMARK')
+    expect(grownWorkerView).not.toContain('leader filler line')
+
+    // Scroll the worker up, then leave: the leader must land on its own tail.
+    await session.sendSpecialKey('PageUp')
+    await sleep(500)
+    await session.sendSpecialKey('Escape')
+    const backToLeader = await session.waitForScreen(
+      s => s.includes('LEADERTAILMARK'),
+      {
+        timeoutMs: 15_000,
+        currentPaneOnly: true,
+        description: 'leader tail visible after leaving worker',
+      },
+    )
+    expect(backToLeader).not.toContain('WORKERTAILMARK')
+    expect(backToLeader).not.toContain('worker filler line')
+
+    // Scroll the leader up, then re-enter. exitTeammateView cleared the task's
+    // messages and diskLoaded, so this re-runs the async sidechain bootstrap.
+    await session.sendSpecialKey('PageUp')
+    await sleep(500)
+    await enterWorker()
+    const reenteredWorker = await session.waitForScreen(
+      s => s.includes('WORKERTAILMARK'),
+      {
+        timeoutMs: 15_000,
+        currentPaneOnly: true,
+        description: 'worker tail visible on re-entry',
+      },
+    )
+    expect(reenteredWorker).not.toContain('LEADERTAILMARK')
+    expect(reenteredWorker).not.toContain('leader filler line')
+    expect(reenteredWorker).not.toContain('Welcome back')
+  })
 })
