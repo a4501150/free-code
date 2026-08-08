@@ -1,10 +1,12 @@
 import type { z } from 'zod/v4'
 import { getOriginalCwd } from '../../bootstrap/state.js'
 import {
-  extractOutputRedirections,
-  splitCommand_DEPRECATED,
-} from '../../utils/bash/commands.js'
-import { tryParseShellCommand } from '../../utils/bash/shellQuote.js'
+  checkSemantics,
+  parseForSecurity,
+  type Redirect,
+  type SimpleCommand,
+} from '../../utils/bash/ast.js'
+import { stripWrappersOrUnchanged } from '../../utils/bash/wrappers.js'
 import { getCwd } from '../../utils/cwd.js'
 import { isCurrentDirectoryBareGitRepo } from '../../utils/git.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
@@ -15,15 +17,13 @@ import {
   DOCKER_READ_ONLY_COMMANDS,
   EXTERNAL_READONLY_COMMANDS,
   type FlagArgType,
-  GH_READ_ONLY_COMMANDS,
   GIT_READ_ONLY_COMMANDS,
   PYRIGHT_READ_ONLY_COMMANDS,
   RIPGREP_READ_ONLY_COMMANDS,
   validateFlags,
 } from '../../utils/shell/readOnlyCommandValidation.js'
 import type { BashTool } from './BashTool.js'
-import { isNormalizedGitCommand } from './bashPermissions.js'
-import { bashCommandIsSafe_DEPRECATED } from './bashSecurity.js'
+import { commandIsGit } from './bashPermissions.js'
 import {
   COMMAND_OPERATION_TYPE,
   PATH_EXTRACTORS,
@@ -1177,35 +1177,16 @@ const SAFE_TARGET_COMMANDS_FOR_XARGS = [
  * Unified command validation function that replaces individual validator functions.
  * Uses declarative configuration from COMMAND_ALLOWLIST to validate commands and their flags.
  * Handles combined flags, argument validation, and shell quoting bypass detection.
+ *
+ * `tokens` is resolved argv, so operators cannot appear in it — a pipe or a
+ * redirect is structure the parser already separated out. `rawCommand` is the
+ * source span, used by the per-command regexes and callbacks that need to see
+ * quoting.
  */
-export function isCommandSafeViaFlagParsing(command: string): boolean {
-  // Parse the command to get individual tokens using shell-quote for accuracy
-  // Handle glob operators by converting them to strings, they don't matter from the perspective
-  // of this function
-  const parseResult = tryParseShellCommand(command, env => `$${env}`)
-  if (!parseResult.success) return false
-
-  const parsed = parseResult.tokens.map(token => {
-    if (typeof token !== 'string') {
-      token = token as { op: 'glob'; pattern: string }
-      if (token.op === 'glob') {
-        return token.pattern
-      }
-    }
-    return token
-  })
-
-  // If there are operators (pipes, redirects, etc.), it's not a simple command.
-  // Breaking commands down into their constituent parts is handled upstream of
-  // this function, so we reject anything with operators here.
-  const hasOperators = parsed.some(token => typeof token !== 'string')
-  if (hasOperators) {
-    return false
-  }
-
-  // Now we know all tokens are strings
-  const tokens = parsed as string[]
-
+function isCommandSafeViaFlagParsing(
+  tokens: string[],
+  rawCommand: string,
+): boolean {
   if (tokens.length === 0) {
     return false
   }
@@ -1307,7 +1288,7 @@ export function isCommandSafeViaFlagParsing(command: string): boolean {
   if (
     !validateFlags(tokens, commandTokens, commandConfig, {
       commandName: tokens[0],
-      rawCommand: command,
+      rawCommand: rawCommand,
       xargsTargetCommands:
         tokens[0] === 'xargs' ? SAFE_TARGET_COMMANDS_FOR_XARGS : undefined,
     })
@@ -1315,24 +1296,24 @@ export function isCommandSafeViaFlagParsing(command: string): boolean {
     return false
   }
 
-  if (commandConfig.regex && !commandConfig.regex.test(command)) {
+  if (commandConfig.regex && !commandConfig.regex.test(rawCommand)) {
     return false
   }
-  if (!commandConfig.regex && /`/.test(command)) {
+  if (!commandConfig.regex && /`/.test(rawCommand)) {
     return false
   }
   // Block newlines and carriage returns in grep/rg patterns as they can be used for injection
   if (
     !commandConfig.regex &&
     (tokens[0] === 'rg' || tokens[0] === 'grep') &&
-    /[\n\r]/.test(command)
+    /[\n\r]/.test(rawCommand)
   ) {
     return false
   }
   if (
     commandConfig.additionalCommandIsDangerousCallback &&
     commandConfig.additionalCommandIsDangerousCallback(
-      command,
+      rawCommand,
       tokens.slice(commandTokens),
     )
   ) {
@@ -1477,7 +1458,6 @@ const READONLY_COMMAND_REGEXES = new Set([
   // Misc. safe commands
   // tree command moved to COMMAND_ALLOWLIST for proper flag validation (blocks -o/--output)
   /^history(?:\s+\d+)?\s*$/, // Only allow bare history or history with numeric argument - prevents file writing
-  /^alias$/,
   /^arch(?:\s+(?:--help|-h))?\s*$/, // Only allow arch with help flags or no arguments
 
   // Network commands - only allow exact commands with no arguments to prevent network manipulation
@@ -1604,21 +1584,52 @@ function containsUnquotedExpansion(command: string): boolean {
 }
 
 /**
- * Checks if a single command string is read-only based on READONLY_COMMAND_REGEXES.
- * Internal helper function that validates individual commands.
+ * Redirects a read-only command may still carry: file-descriptor duplication
+ * (`2>&1`), which moves output between streams and touches no file, and a write
+ * to /dev/null, which discards it.
  *
- * @param command The command string to check
- * @returns true if the command is read-only
+ * Everything else — a write to a real file, an append, an input redirect —
+ * means the command is not read-only. This is deliberately narrow: `< file`
+ * reads a path that nothing in this flow validates.
  */
-function isCommandReadOnly(command: string): boolean {
-  // Handle common stderr-to-stdout redirection pattern
-  // This handles both "command 2>&1" at the end of a full command
-  // and "command 2>&1" as part of a pipeline component
-  let testCommand = command.trim()
-  if (testCommand.endsWith(' 2>&1')) {
-    // Remove the stderr redirection for pattern matching
-    testCommand = testCommand.slice(0, -5).trim()
+function redirectsAreReadOnly(redirects: Redirect[]): boolean {
+  return redirects.every(r => {
+    switch (r.op) {
+      case '>&':
+      case '<&':
+        return /^\d+$/.test(r.target)
+      case '>':
+      case '>>':
+      case '>|':
+      case '&>':
+      case '&>>':
+        return r.target === '/dev/null'
+      default:
+        return false
+    }
+  })
+}
+
+/**
+ * Checks if a single command is read-only.
+ *
+ * Reads argv for token-level checks and the source span for the checks that
+ * need to see quoting — `ls '*'` is literal where `ls *` expands, and argv
+ * alone cannot tell them apart.
+ */
+function isCommandReadOnly(cmd: SimpleCommand): boolean {
+  if (!redirectsAreReadOnly(cmd.redirects)) {
+    return false
   }
+
+  // An environment assignment can change what a command does (`GIT_DIR=`,
+  // `LD_PRELOAD=`), and nothing here validates them, so a command carrying one
+  // is not classified read-only.
+  if (cmd.envVars.length > 0) {
+    return false
+  }
+
+  const testCommand = cmd.sourceText.trim()
 
   // Check for Windows UNC paths that could be vulnerable to WebDAV attacks
   // Do this early to prevent any command with UNC paths from being marked as read-only
@@ -1647,7 +1658,7 @@ function isCommandReadOnly(command: string): boolean {
   // This requires defining a set of known safe flags. Claude can help with this,
   // but please look over it to ensure it didn't add any flags that allow file writes
   // code execution, or network requests.
-  if (isCommandSafeViaFlagParsing(testCommand)) {
+  if (isCommandSafeViaFlagParsing(cmd.argv, testCommand)) {
     return true
   }
 
@@ -1686,16 +1697,9 @@ function isCommandReadOnly(command: string): boolean {
   return false
 }
 
-/**
- * Checks if a compound command contains any git command.
- *
- * @param command The full command string to check
- * @returns true if any subcommand is a git command
- */
-function commandHasAnyGit(command: string): boolean {
-  return splitCommand_DEPRECATED(command).some(subcmd =>
-    isNormalizedGitCommand(subcmd.trim()),
-  )
+/** Whether any command in the list is a git invocation. */
+function commandHasAnyGit(commands: SimpleCommand[]): boolean {
+  return commands.some(commandIsGit)
 }
 
 /**
@@ -1723,20 +1727,13 @@ function isGitInternalPath(path: string): boolean {
 const NON_CREATING_WRITE_COMMANDS = new Set(['rm', 'rmdir', 'sed'])
 
 /**
- * Extracts write paths from a subcommand using PATH_EXTRACTORS.
+ * Extracts write paths from a command using PATH_EXTRACTORS.
  * Only returns paths for commands that can create new files/directories
  * (write/create operations excluding deletion and in-place modification).
  */
-function extractWritePathsFromSubcommand(subcommand: string): string[] {
-  const parseResult = tryParseShellCommand(subcommand, env => `$${env}`)
-  if (!parseResult.success) return []
-
-  const tokens = parseResult.tokens.filter(
-    (t): t is string => typeof t === 'string',
-  )
-  if (tokens.length === 0) return []
-
-  const baseCmd = tokens[0]
+function extractWritePaths(cmd: SimpleCommand): string[] {
+  const argv = stripWrappersOrUnchanged(cmd.argv)
+  const baseCmd = argv[0]
   if (!baseCmd) return []
 
   // Only consider commands that can create files at target paths
@@ -1754,7 +1751,7 @@ function extractWritePathsFromSubcommand(subcommand: string): string[] {
   const extractor = PATH_EXTRACTORS[baseCmd as PathCommand]
   if (!extractor) return []
 
-  return extractor(tokens.slice(1))
+  return extractor(argv.slice(1))
 }
 
 /**
@@ -1769,27 +1766,21 @@ function extractWritePathsFromSubcommand(subcommand: string): string[] {
  * Example attack:
  * mkdir -p objects refs hooks && echo '#!/bin/bash\nmalicious' > hooks/pre-commit && touch HEAD && git status
  *
- * @param command The full command string to check
- * @returns true if any subcommand writes to git-internal paths
+ * @param commands The parsed commands to check
+ * @returns true if any command writes to git-internal paths
  */
-function commandWritesToGitInternalPaths(command: string): boolean {
-  const subcommands = splitCommand_DEPRECATED(command)
-
-  for (const subcmd of subcommands) {
-    const trimmed = subcmd.trim()
-
+function commandWritesToGitInternalPaths(commands: SimpleCommand[]): boolean {
+  for (const cmd of commands) {
     // Check write paths from path-based commands (mkdir, touch, cp, mv)
-    const writePaths = extractWritePathsFromSubcommand(trimmed)
-    for (const path of writePaths) {
+    for (const path of extractWritePaths(cmd)) {
       if (isGitInternalPath(path)) {
         return true
       }
     }
 
     // Check output redirections (e.g., echo x > hooks/pre-commit)
-    const { redirections } = extractOutputRedirections(trimmed)
-    for (const { target } of redirections) {
-      if (isGitInternalPath(target)) {
+    for (const r of cmd.redirects) {
+      if (isGitInternalPath(r.target)) {
         return true
       }
     }
@@ -1814,27 +1805,26 @@ export function checkReadOnlyConstraints(
 ): PermissionResult {
   const { command } = input
 
-  // Detect if the command is not parseable and return early
-  const result = tryParseShellCommand(command, env => `$${env}`)
-  if (!result.success) {
+  // The parser is the only gate. A command it refuses is one whose argv,
+  // redirects and structure we do not know, so it cannot be classified
+  // read-only; a command it accepts but checkSemantics rejects is dangerous by
+  // name (eval, trap, zmodload) whatever its arguments look like.
+  const parsed = parseForSecurity(command)
+  if (parsed.kind !== 'simple') {
     return {
       behavior: 'passthrough',
       message: 'Command cannot be parsed, requires further permission checks',
     }
   }
-
-  // Check the original command for safety before splitting
-  // This is important because splitCommand_DEPRECATED may transform the command
-  // (e.g., ${VAR} becomes $VAR)
-  if (bashCommandIsSafe_DEPRECATED(command).behavior !== 'passthrough') {
+  const commands = parsed.commands
+  if (!checkSemantics(commands).ok) {
     return {
       behavior: 'passthrough',
       message: 'Command is not read-only, requires further permission checks',
     }
   }
 
-  // Check for Windows UNC paths in the original command before transformation
-  // This must be done before splitCommand_DEPRECATED because splitCommand_DEPRECATED may transform backslashes
+  // Check for Windows UNC paths, which can be vulnerable to WebDAV attacks
   if (containsVulnerableUncPath(command)) {
     return {
       behavior: 'ask',
@@ -1844,7 +1834,7 @@ export function checkReadOnlyConstraints(
   }
 
   // Check once if any subcommand is a git command (used for multiple security checks below)
-  const hasGitCommand = commandHasAnyGit(command)
+  const hasGitCommand = commandHasAnyGit(commands)
 
   // SECURITY: Block compound commands that have both cd AND git
   // This prevents sandbox escape via: cd /malicious/dir && git status
@@ -1875,7 +1865,7 @@ export function checkReadOnlyConstraints(
   // (HEAD, objects/, refs/, hooks/) and then runs git, which would execute
   // malicious hooks from the newly created files.
   // Example attack: mkdir -p hooks && echo 'malicious' > hooks/pre-commit && git status
-  if (hasGitCommand && commandWritesToGitInternalPaths(command)) {
+  if (hasGitCommand && commandWritesToGitInternalPaths(commands)) {
     return {
       behavior: 'passthrough',
       message:
@@ -1900,15 +1890,9 @@ export function checkReadOnlyConstraints(
     }
   }
 
-  // Check if all subcommands are read-only
-  const allSubcommandsReadOnly = splitCommand_DEPRECATED(command).every(
-    subcmd => {
-      if (bashCommandIsSafe_DEPRECATED(subcmd).behavior !== 'passthrough') {
-        return false
-      }
-      return isCommandReadOnly(subcmd)
-    },
-  )
+  // Check if all subcommands are read-only. checkSemantics ran over the whole
+  // list above, so there is no per-command safety re-check to do here.
+  const allSubcommandsReadOnly = commands.every(isCommandReadOnly)
 
   if (allSubcommandsReadOnly) {
     return {
