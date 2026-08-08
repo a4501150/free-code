@@ -14,7 +14,7 @@
   <a href="#quick-install"><img src="https://img.shields.io/badge/install-one--liner-blue?style=flat-square" alt="Install" /></a>
   <a href="https://github.com/paoloanzn/free-code/stargazers"><img src="https://img.shields.io/github/stars/paoloanzn/free-code?style=flat-square" alt="Stars" /></a>
   <a href="https://github.com/paoloanzn/free-code/issues"><img src="https://img.shields.io/github/issues/paoloanzn/free-code?style=flat-square" alt="Issues" /></a>
-  <a href="https://github.com/paoloanzn/free-code/blob/main/FEATURES.md"><img src="https://img.shields.io/badge/features-66%20flags-orange?style=flat-square" alt="Feature Flags" /></a>
+  <a href="https://github.com/paoloanzn/free-code/blob/main/FEATURES.md"><img src="https://img.shields.io/badge/features-30%20flags-orange?style=flat-square" alt="Feature Flags" /></a>
   <a href="#ipfs-mirror"><img src="https://img.shields.io/badge/IPFS-mirrored-teal?style=flat-square" alt="IPFS" /></a>
 </p>
 
@@ -77,7 +77,7 @@ This fork extracted the original source from inline base64 source maps embedded 
 
 ### Experimental features unlocked
 
-Claude Code currently has 39 active feature flags gated behind `bun:bundle` compile-time switches. The default build enables the 16 production-supported flags in `defaultFeatures`, and `build:dev:full` adds all 20 flags in the `fullExperimentalFeatures` set. See [Experimental Features](#experimental-features) below, or refer to [FEATURES.md](FEATURES.md) for the full audit.
+Claude Code currently has 30 active feature flags gated behind `bun:bundle` compile-time switches. The default build enables the 10 production-supported flags in `defaultFeatures`, and `build:dev:full` adds the 16 flags in the `fullExperimentalFeatures` set. Four more are referenced in source but sit in neither list, so they are only ever on in a hand-rolled `--feature=NAME` build. See [Experimental Features](#experimental-features) below, or refer to [FEATURES.md](FEATURES.md) for the full audit.
 
 ---
 
@@ -192,10 +192,10 @@ bun run build
 
 | Command                  | Output               | Features                    | Description                     |
 | ------------------------ | -------------------- | --------------------------- | ------------------------------- |
-| `bun run build`          | `./cli`              | 16 default flags            | Production-like binary          |
-| `bun run build:dev`      | `./cli-dev`          | 16 default flags            | Dev version stamp               |
-| `bun run build:dev:full` | `./cli-dev`          | Default + 20 dev-full flags | Full experimental build         |
-| `bun run compile`        | `./dist/cli`         | 16 default flags            | Alternative output path         |
+| `bun run build`          | `./cli`              | 10 default flags            | Production-like binary          |
+| `bun run build:dev`      | `./cli-dev`          | 10 default flags            | Dev version stamp               |
+| `bun run build:dev:full` | `./cli-dev`          | Default + 16 dev-full flags | Full experimental build         |
+| `bun run compile`        | `./dist/cli`         | 10 default flags            | Alternative output path         |
 | `bun run dev`            | _(runs from source)_ | Runtime `feature()` checks  | No compile step, slower startup |
 
 ### React Compiler (Optional)
@@ -273,6 +273,7 @@ The default build enables the production-supported flags in `defaultFeatures`; `
 | `MESSAGE_ACTIONS` | Message action entrypoints in the UI                              |
 | `QUICK_SEARCH`    | Prompt quick-search                                               |
 | `AWAY_SUMMARY`    | Away-from-keyboard summary behavior                               |
+| `BUDDY`           | Manual-only companion sprite; modules are currently unreferenced  |
 
 ### Agents, Memory & Planning
 
@@ -297,7 +298,7 @@ The default build enables the production-supported flags in `defaultFeatures`; `
 | `MCP_RICH_OUTPUT`              | Richer MCP tool result rendering                 |
 | `DEDICATED_SEARCH_TOOLS`       | Manual-only dedicated search tools               |
 
-See [FEATURES.md](FEATURES.md) for the complete audit of all 39 active flags.
+See [FEATURES.md](FEATURES.md) for the complete audit of all 30 active flags.
 
 ---
 

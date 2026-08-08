@@ -1333,16 +1333,13 @@ export async function bashToolHasPermission(
   const injectionCheckDisabled = isEnvTruthy(
     process.env.CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK,
   )
-  // Feature flag killswitch for shadow mode — when off, skip the native parse
-  // entirely. Computed once; feature() must stay inline in the ternary below.
-  const shadowEnabled = feature('TREE_SITTER_BASH_SHADOW') ? true : false
   // Parse once here; the resulting AST feeds both parseForSecurityFromAst
-  // and bashToolCheckCommandOperatorPermissions.
+  // and bashToolCheckCommandOperatorPermissions. parseCommandRaw self-gates on
+  // TREE_SITTER_BASH / TREE_SITTER_BASH_SHADOW and returns null when both are
+  // off, so the flags need no second check here.
   let astRoot = injectionCheckDisabled
     ? null
-    : feature('TREE_SITTER_BASH_SHADOW') && !shadowEnabled
-      ? null
-      : await parseCommandRaw(input.command)
+    : await parseCommandRaw(input.command)
   let astResult: ParseForSecurityResult = astRoot
     ? parseForSecurityFromAst(input.command, astRoot)
     : { kind: 'parse-unavailable' }

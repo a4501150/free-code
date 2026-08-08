@@ -1,11 +1,12 @@
 # Feature Flags Audit
 
-Audit date: 2026-05-04
+Audit date: 2026-08-07
 
-This repository currently references 34 active compile-time flags through
-`feature(...)`. The default build enables the production-supported subset in
-`scripts/build.ts`; `--feature-set=dev-full` additionally enables the
-experimental list in the same file.
+This repository references 30 active compile-time flags through `feature(...)`.
+The default build enables the 10 production-supported flags listed in
+`scripts/build.ts`; `--feature-set=dev-full` additionally enables the 16
+experimental flags in the same file. The remaining 4 are in neither list and are
+only ever on in a hand-rolled `--feature=NAME` build.
 
 ## Build variants
 
@@ -25,10 +26,6 @@ These are included in the default feature list.
 - `HARD_FAIL` — enables stricter failure/logging behavior.
 - `STREAMLINED_OUTPUT` — enables streamlined output formatting.
 - `UNATTENDED_RETRY` — enables unattended retry behavior in API retry flows.
-
-### Slash-command and skill behavior
-
-- `BUDDY` — enables buddy command/UI surfaces that remain in this snapshot.
 
 ### Runtime/settings behavior
 
@@ -69,6 +66,10 @@ These are in the dev-full list but not the default list.
 
 These are referenced in source but are not in the default or dev-full lists.
 
+- `BUDDY` — companion sprite, its speech-bubble notifications, and the `/buddy`
+  command. Referenced only inside `src/buddy/`: nothing imports those modules and
+  `src/commands/buddy/buddy.ts` is not registered in `src/commands.ts`, so
+  enabling the flag currently has no effect.
 - `DEDICATED_SEARCH_TOOLS` — enables dedicated search-tool behavior where referenced.
 - `VERIFY_PLAN` — enables plan verification guidance and task/todo verification nudges.
 - `WORKTREE_MODE` — enables worktree-mode behavior where referenced.
@@ -78,6 +79,4 @@ These are referenced in source but are not in the default or dev-full lists.
 - Feature-aware build logic: `scripts/build.ts`
 - Feature-gated command imports: `src/commands.ts`
 - Feature-gated tool imports: `src/tools.ts`
-- Feature-gated task imports: `src/tasks.ts`
-- Feature-gated query behavior: `src/query.ts`
 - Feature-gated CLI entry paths: `src/entrypoints/cli.tsx`
