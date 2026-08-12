@@ -53,6 +53,10 @@ const BRIEF_PROACTIVE_SECTION: string | null = feature('KAIROS')
   : null
 const briefToolModule = feature('KAIROS') ? briefToolModuleNs : null
 import { CYBER_RISK_INSTRUCTION } from './cyberRiskInstruction.js'
+import {
+  getActiveOutputStyle,
+  type OutputStyleConfig,
+} from '../outputStyles/outputStyles.js'
 
 export const CLAUDE_CODE_DOCS_MAP_URL =
   'https://code.claude.com/docs/en/claude_code_docs_map.md'
@@ -90,10 +94,18 @@ export function prependBullets(items: Array<string | string[]>): string[] {
   )
 }
 
-function getSimpleIntroSection(): string {
+function getSimpleIntroSection(outputStyle: OutputStyleConfig | null): string {
+  // A style that keeps the coding instructions is a layer on top of the coding
+  // agent. One that drops them is redefining what the agent is for, so the
+  // style becomes the role.
+  const role =
+    outputStyle && !outputStyle.keepCodingInstructions
+      ? 'according to your "Output Style" below, which describes how you should respond to user queries'
+      : 'with software engineering tasks'
+
   // eslint-disable-next-line custom-rules/prompt-spacing
   return `
-You are an interactive agent that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
+You are an interactive agent that helps users ${role}. Use the instructions below and the tools available to you to assist the user.
 
 ${CYBER_RISK_INSTRUCTION}
 IMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.`
@@ -139,6 +151,7 @@ function getCodeStyleSection(): string {
     `Don't add error handling, fallbacks, or validation for scenarios that can't happen. Trust internal code and framework guarantees. Only validate at system boundaries (user input, external APIs). Don't use feature flags or backwards-compatibility shims when you can just change the code.`,
     `Don't create helpers, utilities, or abstractions for one-time operations. Don't design for hypothetical future requirements. The right amount of complexity is what the task actually requires—no speculative abstractions, but no half-finished implementations either. Three similar lines of code is better than a premature abstraction.`,
     `Avoid backwards-compatibility hacks like renaming unused _vars, re-exporting types, adding // removed comments for removed code, etc. If you are certain that something is unused, you can delete it completely.`,
+    `Default to writing no comments. Only add one when the WHY is non-obvious — a hidden constraint, a subtle invariant, a workaround for a specific bug, behavior that would surprise a reader. If removing the comment wouldn't confuse a future reader, don't write it. Don't explain WHAT the code does — well-named identifiers already do that. Don't reference the current task or callers ("used by X", "added for the Y flow", "handles the case from issue #123"); those belong in the PR description and rot as the codebase evolves. Don't remove existing comments unless you're removing the code they describe or you know they're wrong; a comment that looks pointless may encode a constraint or a lesson from a past bug that isn't visible in the current diff. Never write multi-paragraph docstrings or multi-line comment blocks — one short line max. Don't create planning, decision, or analysis documents unless the user asks for them — work from conversation context, not intermediate files.`,
   ]
   return [`# Code style`, ...prependBullets(items)].join(`\n`)
 }
@@ -219,18 +232,12 @@ function getTextOutputSection(): string {
 Assume users can't see most tool calls or thinking — only your text output. Before
 your first tool call, state in one sentence what you're about to do. While
 working, give short updates at key moments: when you find something, when you
-change direction, or when you hit a blocker. Brief is good — silent is not. One
-sentence per update is almost always enough.
+change direction, or when you hit a blocker.
 
 Don't narrate your internal deliberation. User-facing text should be relevant
 communication to the user, not a running commentary on your thought process.
 State results and decisions directly, and focus user-facing text on relevant
 updates for the user.
-
-When you do write updates, write so the reader can pick up cold: complete
-sentences, no unexplained jargon or shorthand from earlier in the session. But
-keep it tight — a clear sentence is better than a clear paragraph. Match the
-response's depth to the user's apparent expertise.
 
 Speak up about your judgment, not just your compliance. If you notice the user's
 request is based on a misconception, or spot a bug adjacent to what they asked
@@ -242,27 +249,41 @@ code), say so explicitly rather than implying success. Report outcomes faithfull
 — never claim "all tests pass" when output shows failures, never suppress or
 simplify failing checks to manufacture a green result, and never characterize
 incomplete or broken work as done. Equally, when a check did pass or a task is
-complete, state it plainly without unnecessary disclaimers.
+complete, state it plainly without unnecessary disclaimers.`
+}
+
+/**
+ * How much to say and how to shape it. Replaced wholesale by an output style
+ * unless the style opts to keep it.
+ */
+function getResponseStyleSection(): string {
+  return `# Response style
+
+Brief is good — silent is not. One sentence per update is almost always enough.
+
+When you do write updates, write so the reader can pick up cold: complete
+sentences, no unexplained jargon or shorthand from earlier in the session. But
+keep it tight — a clear sentence is better than a clear paragraph. Match the
+response's depth to the user's apparent expertise.
 
 End-of-turn summary: as short as the change allows, often one or two sentences.
 What changed and what's next.
 
 Match responses to the task: a simple question gets a direct answer, not headers
-and sections.
+and sections.`
+}
 
-In code: default to writing no comments. Only add one when the WHY is non-obvious
-— a hidden constraint, a subtle invariant, a workaround for a specific bug,
-behavior that would surprise a reader. If removing the comment wouldn't confuse a
-future reader, don't write it. Don't explain WHAT the code does — well-named
-identifiers already do that. Don't reference the current task or callers ("used
-by X", "added for the Y flow", "handles the case from issue #123"); those belong
-in the PR description and rot as the codebase evolves. Don't remove existing
-comments unless you're removing the code they describe or you know they're wrong;
-a comment that looks pointless may encode a constraint or a lesson from a past
-bug that isn't visible in the current diff. Never write multi-paragraph
-docstrings or multi-line comment blocks — one short line max. Don't create
-planning, decision, or analysis documents unless the user asks for them — work
-from conversation context, not intermediate files.`
+/**
+ * The selected output style. Carries the style's name and body only — a source
+ * path would fragment the cached system prefix.
+ */
+function getOutputStyleSection(
+  outputStyle: OutputStyleConfig | null,
+): string | null {
+  if (outputStyle === null) return null
+
+  return `# Output Style: ${outputStyle.name}
+${outputStyle.prompt}`
 }
 
 function getFormattingSection(): string {
@@ -310,6 +331,12 @@ ${CYBER_RISK_INSTRUCTION}`,
     ].filter(s => s !== null)
   }
 
+  const outputStyle = await getActiveOutputStyle()
+  const keepCodingInstructions =
+    outputStyle === null || outputStyle.keepCodingInstructions
+  const keepResponseStyle =
+    outputStyle === null || outputStyle.keepResponseStyle
+
   const dynamicSections = [
     DANGEROUS_uncachedSystemPromptSection(
       'session_guidance',
@@ -346,17 +373,23 @@ ${CYBER_RISK_INSTRUCTION}`,
     await resolveSystemPromptSections(dynamicSections)
 
   return [
-    // Static across every session, project and machine for a given version.
-    // Anything session-scoped belongs in the user context (src/context.ts),
-    // not here — see the prompt caching notes in CLAUDE.md.
-    getSimpleIntroSection(),
+    // Static across every session, project and machine for a given
+    // configuration. Anything session-scoped belongs in the user context
+    // (src/context.ts), not here — see the prompt caching notes in CLAUDE.md.
+    getSimpleIntroSection(outputStyle),
     getSimpleSystemSection(),
-    getSimpleDoingTasksSection(),
-    getCodeStyleSection(),
+    // What the agent is for, and how it writes code. An output style that does
+    // not keep these is redefining the agent.
+    ...(keepCodingInstructions
+      ? [getSimpleDoingTasksSection(), getCodeStyleSection()]
+      : []),
     getActionsSection(),
     getUsingYourToolsSection(enabledTools),
     getFormattingSection(),
     getTextOutputSection(),
+    // How much to say. The style follows it, so the style has the last word.
+    ...(keepResponseStyle ? [getResponseStyleSection()] : []),
+    getOutputStyleSection(outputStyle),
     // Tool-derived and per-user sections. Tool-derived variation is free: the
     // tools array precedes the system prompt in the cache prefix, so any tool
     // change has already invalidated this block.

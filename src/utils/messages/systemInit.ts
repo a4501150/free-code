@@ -11,6 +11,7 @@ import {
 } from 'src/tools/AgentTool/constants.js'
 import { getAnthropicApiKeyWithSource } from '../auth.js'
 import { getCwd } from '../cwd.js'
+import { getActiveOutputStyleNameSync } from '../../outputStyles/outputStyles.js'
 import { getFastModeState } from '../fastMode.js'
 
 // TODO(next-minor): remove this translation once structured consumers have migrated
@@ -68,6 +69,7 @@ export function buildSystemInitMessage(inputs: SystemInitInputs): SDKMessage {
     skills: inputs.skills
       .filter(s => s.userInvocable !== false)
       .map(skill => skill.name),
+    output_style: getActiveOutputStyleNameSync(),
     plugins: inputs.plugins.map(plugin => ({
       name: plugin.name,
       path: plugin.path,

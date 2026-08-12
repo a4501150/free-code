@@ -20,6 +20,13 @@ export type StatusLineCommandInput = {
     id: string
     display_name: string
   }
+  /**
+   * The output style governing this process's system prompt — the resolved
+   * active style, not a pending settings value. `none` when styling is off.
+   */
+  output_style: {
+    name: string
+  }
   workspace: {
     current_dir: string
     project_dir: string

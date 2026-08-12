@@ -2,6 +2,7 @@ import { readdir, rm, stat, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { clearCommandsCache } from '../../commands.js'
 import { clearAgentDefinitionsCache } from '../../tools/AgentTool/loadAgentsDir.js'
+import { clearOutputStyleCaches } from '../../outputStyles/outputStyles.js'
 import { clearPromptCache } from '../../tools/SkillTool/prompt.js'
 import { resetSentSkillNames } from '../attachments.js'
 import { logForDebugging } from '../debug.js'
@@ -9,6 +10,7 @@ import { getErrnoCode } from '../errors.js'
 import { logError } from '../log.js'
 import { loadInstalledPluginsFromDisk } from './installedPluginsManager.js'
 import { clearPluginAgentCache } from './loadPluginAgents.js'
+import { clearPluginOutputStyleCache } from './loadPluginOutputStyles.js'
 import { clearPluginCommandCache } from './loadPluginCommands.js'
 import {
   clearPluginHookCache,
@@ -25,6 +27,7 @@ export function clearAllPluginCaches(): void {
   clearPluginCache()
   clearPluginCommandCache()
   clearPluginAgentCache()
+  clearPluginOutputStyleCache()
   clearPluginHookCache()
   // Prune hooks from plugins no longer in the enabled set so uninstalled/
   // disabled plugins stop firing immediately (gh-36995). Prune-only: hooks
@@ -42,6 +45,7 @@ export function clearAllCaches(): void {
   clearCommandsCache()
   clearAgentDefinitionsCache()
   clearPromptCache()
+  clearOutputStyleCaches()
   resetSentSkillNames()
 }
 

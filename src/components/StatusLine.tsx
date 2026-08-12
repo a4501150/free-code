@@ -12,6 +12,7 @@ import {
   getSessionId,
   onCostUpdate,
 } from '../bootstrap/state.js'
+import { getActiveOutputStyleNameSync } from '../outputStyles/outputStyles.js'
 import { useNotifications } from '../context/notifications.js'
 import {
   getTotalAPIDuration,
@@ -119,6 +120,9 @@ function buildStatusLineCommandInput(
     model: {
       id: runtimeModel,
       display_name: renderModelName(runtimeModel),
+    },
+    output_style: {
+      name: getActiveOutputStyleNameSync(),
     },
     workspace: {
       current_dir: getCwd(),

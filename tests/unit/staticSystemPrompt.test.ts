@@ -9,7 +9,15 @@
  * or a session path into a prompt section without noticing.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtemp, rm } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { getSystemPrompt } from '../../src/constants/prompts.js'
+import {
+  clearOutputStyleCaches,
+  resetActiveOutputStyle,
+} from '../../src/outputStyles/outputStyles.js'
+import { resetSettingsCache } from '../../src/utils/settings/settingsCache.js'
 import {
   initProviderRegistry,
   resetProviderRegistry,
@@ -25,8 +33,16 @@ import type { Tools } from '../../src/Tool.js'
 }
 
 const originalAnthropicApiKey = process.env.ANTHROPIC_API_KEY
+// The developer's own ~/.freecode may hold an output style or an outputStyle
+// setting, either of which would put its bytes in the prompt under test.
+let configDir: string
 
-beforeEach(() => {
+beforeEach(async () => {
+  configDir = await mkdtemp(join(tmpdir(), 'static-system-prompt-'))
+  process.env.FREECODE_CONFIG_DIR = configDir
+  resetSettingsCache()
+  resetActiveOutputStyle()
+  clearOutputStyleCaches()
   resetProviderRegistry()
   process.env.ANTHROPIC_API_KEY = 'test-key'
   const providers: Record<string, ProviderConfig> = {
@@ -40,8 +56,13 @@ beforeEach(() => {
   initProviderRegistry(providers)
 })
 
-afterEach(() => {
+afterEach(async () => {
   resetProviderRegistry()
+  delete process.env.FREECODE_CONFIG_DIR
+  resetSettingsCache()
+  resetActiveOutputStyle()
+  clearOutputStyleCaches()
+  await rm(configDir, { recursive: true, force: true })
   if (originalAnthropicApiKey === undefined) {
     delete process.env.ANTHROPIC_API_KEY
   } else {
@@ -77,6 +98,15 @@ describe('system prompt is free of session-scoped bytes', () => {
   test('does not contain the model id', async () => {
     const prompt = await systemPromptText()
     expect(prompt).not.toContain('claude-test')
+  })
+
+  test('does not contain an output style source path', async () => {
+    // The built-in style is bundled as source; custom and plugin styles come
+    // from disk, and only their name and body may reach the prompt.
+    const prompt = await systemPromptText()
+    expect(prompt).toContain('# Output Style: simple-english')
+    expect(prompt).not.toContain(configDir)
+    expect(prompt).not.toContain('output-styles')
   })
 
   test('is stable across repeated builds', async () => {

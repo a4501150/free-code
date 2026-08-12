@@ -1272,6 +1272,7 @@ export const SDKSystemMessageSchema = z.object({
   permissionMode: PermissionModeSchema,
   slash_commands: z.array(z.string()),
   skills: z.array(z.string()),
+  output_style: z.string().optional(),
   plugins: z.array(
     z.object({
       name: z.string(),

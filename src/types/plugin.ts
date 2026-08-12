@@ -61,13 +61,20 @@ export type LoadedPlugin = {
   agentsPaths?: string[] // Additional agent paths from manifest
   skillsPath?: string
   skillsPaths?: string[] // Additional skill paths from manifest
+  outputStylesPath?: string
+  outputStylesPaths?: string[] // Additional output style paths from manifest
   hooksConfig?: HooksSettings
   mcpServers?: Record<string, McpServerConfig>
   lspServers?: Record<string, LspServerConfig>
   settings?: Record<string, unknown>
 }
 
-export type PluginComponent = 'commands' | 'agents' | 'skills' | 'hooks'
+export type PluginComponent =
+  | 'commands'
+  | 'agents'
+  | 'skills'
+  | 'hooks'
+  | 'output-styles'
 
 /**
  * Discriminated union of plugin error types.

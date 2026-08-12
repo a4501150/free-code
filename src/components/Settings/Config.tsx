@@ -54,6 +54,8 @@ import {
 import { Dialog } from '../design-system/Dialog.js'
 import { Select } from '../CustomSelect/index.js'
 import { LanguagePicker } from '../LanguagePicker.js'
+import { OutputStylePicker } from '../OutputStylePicker.js'
+import { DEFAULT_OUTPUT_STYLE_NAME } from '../../outputStyles/outputStyles.js'
 import TextInput from '../TextInput.js'
 import {
   getExternalClaudeMdIncludes,
@@ -154,6 +156,7 @@ type SubMenu =
   | 'ExternalIncludes'
   | 'ChannelDowngrade'
   | 'Language'
+  | 'OutputStyle'
   | 'EnableAutoUpdates'
   | 'AutoCompactPercentage'
   | 'AutoCompactBuffer'
@@ -175,6 +178,10 @@ export function Config({
     settingsData?.language,
   )
   const initialLanguage = React.useRef(currentLanguage)
+  const [currentOutputStyle, setCurrentOutputStyle] = useState<
+    string | undefined
+  >(settingsData?.outputStyle)
+  const initialOutputStyle = React.useRef(currentOutputStyle)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [scrollOffset, setScrollOffset] = useState(0)
   const [isSearchMode, setIsSearchMode] = useState(true)
@@ -1095,6 +1102,13 @@ export function Config({
       onChange: () => {}, // handled by LanguagePicker submenu
     },
     {
+      id: 'outputStyle',
+      label: 'Output style',
+      value: currentOutputStyle ?? `${DEFAULT_OUTPUT_STYLE_NAME} (default)`,
+      type: 'managedEnum' as const,
+      onChange: () => {}, // handled by OutputStylePicker submenu
+    },
+    {
       id: 'editorMode',
       label: 'Editor mode',
       value: settingsData?.editorMode ?? 'normal',
@@ -1300,6 +1314,11 @@ export function Config({
         `Set response language to ${chalk.bold(currentLanguage ?? 'Default (English)')}`,
       )
     }
+    if (currentOutputStyle !== initialOutputStyle.current) {
+      formattedChanges.push(
+        `Set output style to ${chalk.bold(currentOutputStyle ?? DEFAULT_OUTPUT_STYLE_NAME)} — applies to your next session, or after /clear`,
+      )
+    }
     const initialEditorMode =
       initialSettingsData.current?.editorMode ?? 'normal'
     const currentEditorMode = settingsData?.editorMode ?? 'normal'
@@ -1432,6 +1451,7 @@ export function Config({
     changes,
     mainLoopModel,
     currentLanguage,
+    currentOutputStyle,
     settingsData?.autoCompactEnabled,
     settingsData?.autoCompactPercentage,
     settingsData?.autoCompactBuffer,
@@ -1505,6 +1525,7 @@ export function Config({
       autoUpdatesChannel: iu?.autoUpdatesChannel,
       minimumVersion: iu?.minimumVersion,
       language: iu?.language,
+      outputStyle: iu?.outputStyle,
       autoMode: iu?.autoMode,
       useAutoModeDuringPlan: (
         iu as { useAutoModeDuringPlan?: boolean } | undefined
@@ -1620,6 +1641,7 @@ export function Config({
       setting.id === 'teammateDefaultModel' ||
       setting.id === 'showExternalIncludesDialog' ||
       setting.id === 'language' ||
+      setting.id === 'outputStyle' ||
       setting.id === 'autoCompactPercentage' ||
       setting.id === 'autoCompactBuffer'
     ) {
@@ -1644,6 +1666,10 @@ export function Config({
           return
         case 'language':
           setShowSubmenu('Language')
+          setTabsHidden(true)
+          return
+        case 'outputStyle':
+          setShowSubmenu('OutputStyle')
           setTabsHidden(true)
           return
         case 'autoCompactPercentage':
@@ -1950,6 +1976,39 @@ export function Config({
               // Save to user settings
               updateSettingsForSource('userSettings', {
                 language,
+              })
+            }}
+            onCancel={() => {
+              setShowSubmenu(null)
+              setTabsHidden(false)
+            }}
+          />
+          <Text dimColor>
+            <Byline>
+              <KeyboardShortcutHint shortcut="Enter" action="confirm" />
+              <ConfigurableShortcutHint
+                action="confirm:no"
+                context="Settings"
+                fallback="Esc"
+                description="cancel"
+              />
+            </Byline>
+          </Text>
+        </>
+      ) : showSubmenu === 'OutputStyle' ? (
+        <>
+          <OutputStylePicker
+            initialStyle={currentOutputStyle}
+            onComplete={outputStyle => {
+              isDirty.current = true
+              setCurrentOutputStyle(outputStyle)
+              setShowSubmenu(null)
+              setTabsHidden(false)
+
+              // Save to user settings. The running session keeps the style it
+              // started with — the snapshot is deliberately not reset here.
+              updateSettingsForSource('userSettings', {
+                outputStyle,
               })
             }}
             onCancel={() => {

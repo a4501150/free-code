@@ -27,6 +27,7 @@ import pickBy from 'lodash-es/pickBy.js'
 import uniqBy from 'lodash-es/uniqBy.js'
 import React from 'react'
 import { getSystemContext, getUserContext } from './context.js'
+import { getActiveOutputStyle } from './outputStyles/outputStyles.js'
 import { init } from './entrypoints/init.js'
 import { addToHistory } from './history.js'
 import { createRoot, type Root } from './ink.js'
@@ -510,6 +511,9 @@ export function startDeferredPrefetches(): void {
   // Process-spawning prefetches (consumed at first API call, user is still typing)
   void initUser()
   void getUserContext()
+  // Snapshot the active output style so the statusline and the init message,
+  // which are synchronous, report the style the system prompt will carry.
+  void getActiveOutputStyle()
   prefetchSystemContextIfSafe()
   const registry = getProviderRegistry()
   const credRefresh = registry.getCapabilities().credentialRefresh

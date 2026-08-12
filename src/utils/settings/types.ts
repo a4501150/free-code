@@ -1165,6 +1165,12 @@ const _settingsSchemaValue = z
       .describe(
         'Preferred language for Claude responses and voice dictation (e.g., "japanese", "spanish")',
       ),
+    outputStyle: z
+      .string()
+      .optional()
+      .describe(
+        'Output style controlling how Claude responds: a built-in name ("simple-english", or "none" to disable styling), a markdown style in an output-styles config directory, or a plugin style ("plugin:style"). Unset and "default" both select "simple-english". Applies to the next session.',
+      ),
     skipWebFetchPreflight: z
       .boolean()
       .optional()

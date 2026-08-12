@@ -17,6 +17,10 @@ import {
   getSystemContext,
   getUserContext,
 } from '../../context.js'
+import {
+  clearOutputStyleCaches,
+  resetActiveOutputStyle,
+} from '../../outputStyles/outputStyles.js'
 import { clearFileSuggestionCaches } from '../../hooks/fileSuggestions.js'
 import { clearAllPendingCallbacks } from '../../hooks/useSwarmPermissionPoller.js'
 import { clearAllDumpState } from '../../services/api/dumpPrompts.js'
@@ -111,4 +115,10 @@ export function clearSessionCaches(
   clearWebFetchCache()
   clearAgentDefinitionsCache()
   clearPromptCache()
+  // Output styles: /clear starts a fresh conversation, which is the one
+  // boundary where re-resolving the active style is safe. Everything else
+  // (a settings write, the /config or /output-style picker) leaves the
+  // snapshot alone so a live conversation's cached prefix never moves.
+  clearOutputStyleCaches()
+  resetActiveOutputStyle()
 }

@@ -492,6 +492,27 @@ const PluginManifestAgentsSchema = z.object({
 })
 
 /**
+ * Schema for additional output style definitions in plugin manifest
+ *
+ * Allows plugins to specify extra output style files beyond those in the
+ * standard output-styles/ directory.
+ */
+const PluginManifestOutputStylesSchema = z.object({
+  outputStyles: z.union([
+    RelativeMarkdownPath.describe(
+      'Path to additional output style file (in addition to those in the output-styles/ directory, if it exists), relative to the plugin root',
+    ),
+    z
+      .array(
+        RelativeMarkdownPath.describe(
+          'Path to additional output style file (in addition to those in the output-styles/ directory, if it exists), relative to the plugin root',
+        ),
+      )
+      .describe('List of paths to additional output style files'),
+  ]),
+})
+
+/**
  * Schema for additional skill definitions in plugin manifest
  *
  * Allows plugins to specify extra skill directories beyond those in the
@@ -856,6 +877,7 @@ export const PluginManifestSchema = z.object({
   ...PluginManifestCommandsSchema.partial().shape,
   ...PluginManifestAgentsSchema.partial().shape,
   ...PluginManifestSkillsSchema.partial().shape,
+  ...PluginManifestOutputStylesSchema.partial().shape,
   ...PluginManifestChannelsSchema.partial().shape,
   ...PluginManifestMcpServerSchema.partial().shape,
   ...PluginManifestLspServerSchema.partial().shape,
