@@ -103,6 +103,10 @@ const outputSchema = z.object({
     .boolean()
     .describe('Whether the user modified the proposed changes'),
   editCount: z.number().describe('Number of edits applied'),
+  changedRegionAnchors: z
+    .string()
+    .optional()
+    .describe('Fresh LINE:HASH anchors for the lines the edit wrote'),
   gitDiff: gitDiffSchema.optional(),
 })
 type OutputSchema = typeof outputSchema

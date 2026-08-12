@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   applyHashlineEdits,
+  formatAnchoredRegions,
   formatHashline,
   hashLine,
   parseAnchor,
@@ -180,6 +181,33 @@ describe('applyHashlineEdits — guards', () => {
     }
   })
 
+  test('every stale anchor in the batch is reported at once', () => {
+    const edits: HashlineOp[] = [
+      { op: 'replace', start: '1:zzz', lines: 'ONE' },
+      { op: 'replace', start: '3:yyy', lines: 'THREE' },
+      { op: 'delete', start: '99:xxx' },
+    ]
+    const r = applyHashlineEdits(file, edits, '/tmp/x.ts')
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error).toContain('3 anchors no longer match')
+      expect(r.error).toContain(`1:${hashLine('one')}`)
+      expect(r.error).toContain(`3:${hashLine('three')}`)
+      // The file shrank below this anchor, so there is no line to quote.
+      expect(r.error).toContain('the file now has 4 line(s)')
+    }
+  })
+
+  test('a stale anchor is reported even when another edit is well formed', () => {
+    const edits: HashlineOp[] = [
+      { op: 'replace', start: anchor('one', 1), lines: 'ONE' },
+      { op: 'replace', start: '3:yyy', lines: 'THREE' },
+    ]
+    const r = applyHashlineEdits(file, edits)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('Anchor "3:yyy" no longer matches')
+  })
+
   test('out-of-bounds anchor is rejected', () => {
     const edits: HashlineOp[] = [{ op: 'replace', start: '99:abc', lines: 'x' }]
     const r = applyHashlineEdits(file, edits)
@@ -235,5 +263,45 @@ describe('applyHashlineEdits — trailing newline', () => {
     const r = applyHashlineEdits(file, edits)
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.updatedContent).toBe('a\nB')
+  })
+})
+
+describe('formatAnchoredRegions', () => {
+  const file = lines(...Array.from({ length: 100 }, (_, i) => `line ${i + 1}`))
+
+  test('anchors exactly the requested range', () => {
+    const out = formatAnchoredRegions(file, [{ start: 2, count: 2 }])
+    expect(out).toBe(
+      lines(`2:${hashLine('line 2')}|line 2`, `3:${hashLine('line 3')}|line 3`),
+    )
+  })
+
+  test('separates several regions', () => {
+    const out = formatAnchoredRegions(file, [
+      { start: 1, count: 1 },
+      { start: 50, count: 1 },
+    ])
+    expect(out).toBe(
+      lines(
+        `1:${hashLine('line 1')}|line 1`,
+        '...',
+        `50:${hashLine('line 50')}|line 50`,
+      ),
+    )
+  })
+
+  test('caps the output and says so', () => {
+    const out = formatAnchoredRegions(file, [{ start: 1, count: 100 }])
+    expect(out.split('\n')).toHaveLength(61)
+    expect(out).toContain('more changed lines not shown')
+  })
+
+  test('clamps a range that runs past the end of the file', () => {
+    const out = formatAnchoredRegions('a\nb', [{ start: 2, count: 5 }])
+    expect(out).toBe(`2:${hashLine('b')}|b`)
+  })
+
+  test('no regions yields an empty string', () => {
+    expect(formatAnchoredRegions(file, [])).toBe('')
   })
 })

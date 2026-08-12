@@ -25,7 +25,10 @@ import {
   suggestPathUnderCwd,
   writeTextContent,
 } from '../../utils/file.js'
-import { applyHashlineEdits } from '../../utils/hashline.js'
+import {
+  applyHashlineEdits,
+  formatAnchoredRegions,
+} from '../../utils/hashline.js'
 import {
   fileHistoryEnabled,
   fileHistoryTrackEdit,
@@ -458,12 +461,23 @@ export const FileEditTool = buildTool({
     let gitDiff: ToolUseDiff | undefined
 
     // 8. Yield result
+    // Anchors for what was just written. Without them a follow-up edit to this
+    // file has to Read it again: every anchor the model still holds predates
+    // this write, and the ones below it have all shifted. Sliced from the raw
+    // content, never the tab-converted display copy, or the hashes would not
+    // match what the next edit validates against.
+    const changedRegionAnchors = formatAnchoredRegions(
+      updatedFile,
+      patch.map(hunk => ({ start: hunk.newStart, count: hunk.newLines })),
+    )
+
     const data = {
       filePath: file_path,
       originalFile: originalFileContents,
       structuredPatch: patch,
       userModified: userModified ?? false,
       editCount,
+      ...(changedRegionAnchors && { changedRegionAnchors }),
       ...(gitDiff && { gitDiff }),
     }
     return {
@@ -471,15 +485,18 @@ export const FileEditTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(data: FileEditOutput, toolUseID) {
-    const { filePath, userModified } = data
+    const { filePath, userModified, changedRegionAnchors } = data
     const modifiedNote = userModified
       ? '.  The user modified your proposed changes before accepting them. '
+      : ''
+    const anchorNote = changedRegionAnchors
+      ? `\n\nAnchors for the changed lines. Use them to edit this file again without reading it first:\n${changedRegionAnchors}`
       : ''
 
     return {
       tool_use_id: toolUseID,
       type: 'tool_result',
-      content: `The file ${filePath} has been updated successfully${modifiedNote}.`,
+      content: `The file ${filePath} has been updated successfully${modifiedNote}.${anchorNote}`,
     }
   },
 } satisfies ToolDef<typeof inputSchema, FileEditOutput>)

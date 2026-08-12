@@ -211,6 +211,59 @@ describe('Tool Use E2E', () => {
       expect(fileContent).toContain('This file was created by the Write tool.')
       expect(fileContent).toContain('Second line.')
     })
+
+    test('an Edit returns anchors that the next Edit can use without a Read', async () => {
+      session = new TmuxSession({ serverUrl: server.url })
+      await session.start()
+
+      const filePath = join(session.cwd, 'anchor-chain.txt')
+      await writeFile(filePath, 'one\ntwo\nthree')
+      // After the insert, "three" sits on line 4. The only way to know that
+      // anchor without a second Read is the one the first Edit returns.
+      const shiftedAnchor = `4:${hashLine('three')}`
+
+      server.reset([
+        toolUseResponse([{ name: 'Read', input: { file_path: filePath } }]),
+        toolUseResponse([
+          {
+            name: 'Edit',
+            input: {
+              file_path: filePath,
+              edits: [
+                {
+                  op: 'insert_after',
+                  start: `1:${hashLine('one')}`,
+                  lines: 'one-b',
+                },
+              ],
+            },
+          },
+        ]),
+        toolUseResponse([
+          {
+            name: 'Edit',
+            input: {
+              file_path: filePath,
+              edits: [{ op: 'replace', start: shiftedAnchor, lines: 'THREE' }],
+            },
+          },
+        ]),
+        textResponse('Both edits applied'),
+      ])
+
+      await session.submitAndApprove('Edit the file twice')
+      const log = await waitForRequestCount(server, 4, {
+        description: 'second Edit tool_result request',
+      })
+
+      const firstEdit = resultContentString(getToolResults(log, 2)[0])
+      expect(firstEdit).toContain('Anchors for the changed lines')
+      expect(firstEdit).toContain(`${shiftedAnchor}|three`)
+
+      const secondEdit = getToolResults(log, 3)[0]
+      expect(secondEdit.is_error).not.toBe(true)
+      expect(await readFile(filePath, 'utf-8')).toBe('one\none-b\ntwo\nTHREE')
+    })
   })
 
   // Grep/Glob tools are feature-gated behind DEDICATED_SEARCH_TOOLS and

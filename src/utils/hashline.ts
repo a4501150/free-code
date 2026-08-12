@@ -68,6 +68,11 @@ type ResolvedOp = {
 
 const WINDOW = 2
 
+// Fresh anchors are quoted back on failure and after a successful edit. Both
+// budgets bound what one tool result can add to the transcript.
+const MAX_STALE_WINDOWS = 3
+const MAX_REGION_ANCHOR_LINES = 60
+
 function freshWindow(fileLines: string[], line: number): string {
   const lo = Math.max(1, line - WINDOW)
   const hi = Math.min(fileLines.length, line + WINDOW)
@@ -80,6 +85,100 @@ function freshWindow(fileLines: string[], line: number): string {
 
 function fileLabel(filePath?: string): string {
   return filePath ? `file ${filePath}` : 'the file'
+}
+
+// One anchor that cannot be resolved against the current content: either its
+// line moved out of range, or the line at that number holds different content.
+type StaleAnchor = { anchor: Anchor; actual: string | null }
+
+// A single-line replace/delete resolves start and end to the same anchor, so
+// the batch report has to collapse them or it counts every one twice.
+function addStale(
+  stale: StaleAnchor[],
+  anchor: Anchor,
+  actual: string | null,
+): void {
+  const text = anchorText(anchor)
+  if (stale.some(s => anchorText(s.anchor) === text)) return
+  stale.push({ anchor, actual })
+}
+
+/**
+ * One report for every stale anchor in the batch, so a re-anchored retry does
+ * not have to discover them one rejection at a time.
+ */
+function staleAnchorError(
+  stale: StaleAnchor[],
+  fileLines: string[],
+  filePath?: string,
+): string {
+  const label = fileLabel(filePath)
+  const head =
+    stale.length === 1
+      ? `Anchor "${anchorText(stale[0]!.anchor)}" no longer matches ${label}.`
+      : `${stale.length} anchors no longer match ${label}.`
+  const detail = stale.map(s =>
+    s.actual === null
+      ? `  "${anchorText(s.anchor)}" → the file now has ${fileLines.length} line(s)`
+      : `  "${anchorText(s.anchor)}" → line ${s.anchor.line} is now "${s.anchor.line}:${s.actual}"`,
+  )
+  const inRange = stale
+    .filter(s => s.actual !== null)
+    .slice(0, MAX_STALE_WINDOWS)
+  const windows = inRange.map(s => freshWindow(fileLines, s.anchor.line))
+  const omitted = stale.filter(s => s.actual !== null).length - inRange.length
+  return [
+    `${head} The file changed since you read it.`,
+    ...detail,
+    ...(windows.length > 0
+      ? [
+          'Current content near the stale anchors:',
+          windows.join('\n...\n'),
+          ...(omitted > 0 ? [`... (${omitted} more not shown)`] : []),
+        ]
+      : []),
+    'Re-read the file or use these anchors and retry.',
+  ].join('\n')
+}
+
+function anchorText(anchor: Anchor): string {
+  return anchor.hash === null
+    ? String(anchor.line)
+    : `${anchor.line}:${anchor.hash}`
+}
+
+/**
+ * Anchored `LINE:HASH|content` blocks for 1-based line ranges of `content`,
+ * separated by `...`. Used to hand back the anchors of the lines an edit just
+ * wrote, so a follow-up edit needs no second Read.
+ */
+export function formatAnchoredRegions(
+  content: string,
+  regions: { start: number; count: number }[],
+): string {
+  const fileLines = content.split('\n')
+  const blocks: string[] = []
+  let budget = MAX_REGION_ANCHOR_LINES
+  let truncated = false
+  for (const region of regions) {
+    if (budget <= 0) {
+      truncated = true
+      break
+    }
+    const lo = Math.max(1, region.start)
+    const hi = Math.min(fileLines.length, region.start + region.count - 1)
+    const out: string[] = []
+    for (let n = lo; n <= hi && budget > 0; n++) {
+      out.push(`${n}:${hashLine(fileLines[n - 1])}|${fileLines[n - 1]}`)
+      budget--
+    }
+    if (hi - lo + 1 > out.length) truncated = true
+    if (out.length > 0) blocks.push(out.join('\n'))
+  }
+  if (blocks.length === 0) return ''
+  return truncated
+    ? `${blocks.join('\n...\n')}\n... (more changed lines not shown — Read the file for their anchors)`
+    : blocks.join('\n...\n')
 }
 
 /**
@@ -96,6 +195,9 @@ export function applyHashlineEdits(
 ): ApplyResult {
   const fileLines = fileContent.split('\n')
   const resolved: ResolvedOp[] = []
+  // Staleness is reported for the whole batch at once: a model that re-anchors
+  // one edit at a time pays a rejection per anchor.
+  const stale: StaleAnchor[] = []
 
   for (const edit of edits) {
     const startAnchor = parseAnchor(edit.start)
@@ -135,30 +237,40 @@ export function applyHashlineEdits(
       }
     }
 
-    // Range validation.
+    // Range validation. A line past the end of the file is staleness (the file
+    // shrank), not a malformed request, so it joins the batch report below.
     if (isInsert) {
-      // insert_after: start line 0 = top; otherwise must be an existing line.
-      if (startAnchor.line < 0 || startAnchor.line > fileLines.length) {
+      if (startAnchor.line < 0) {
         return {
           ok: false,
-          error: `Insert anchor "${edit.start}" refers to line ${startAnchor.line}, but ${fileLabel(
+          error: `Insert anchor "${edit.start}" refers to line ${startAnchor.line} in ${fileLabel(
             filePath,
-          )} has ${fileLines.length} line(s). Use "0" to insert at the top.`,
+          )}. Use "0" to insert at the top.`,
         }
       }
+      if (startAnchor.line > fileLines.length) {
+        addStale(stale, startAnchor, null)
+        continue
+      }
     } else {
-      if (
-        startAnchor.line < 1 ||
-        startAnchor.line > fileLines.length ||
-        endAnchor.line < 1 ||
-        endAnchor.line > fileLines.length
-      ) {
+      if (startAnchor.line < 1 || endAnchor.line < 1) {
         return {
           ok: false,
-          error: `Anchor range ${startAnchor.line}..${endAnchor.line} is out of bounds; ${fileLabel(
+          error: `Anchor range ${startAnchor.line}..${endAnchor.line} is invalid in ${fileLabel(
             filePath,
-          )} has ${fileLines.length} line(s). Re-read the file for current anchors.`,
+          )}. Lines are 1-based; "0" is only valid for insert_after.`,
         }
+      }
+      if (
+        startAnchor.line > fileLines.length ||
+        endAnchor.line > fileLines.length
+      ) {
+        for (const anchor of [startAnchor, endAnchor]) {
+          if (anchor.line > fileLines.length) {
+            addStale(stale, anchor, null)
+          }
+        }
+        continue
       }
       if (endAnchor.line < startAnchor.line) {
         return {
@@ -176,21 +288,16 @@ export function applyHashlineEdits(
         ? []
         : [startAnchor]
       : [startAnchor, endAnchor]
+    let anchorStale = false
     for (const anchor of anchorsToCheck) {
       if (anchor.hash === null) continue
       const actual = hashLine(fileLines[anchor.line - 1])
       if (actual !== anchor.hash) {
-        return {
-          ok: false,
-          error: `Anchor "${anchor.line}:${anchor.hash}" no longer matches ${fileLabel(
-            filePath,
-          )} (line ${anchor.line} is now "${anchor.line}:${actual}"). The file changed since you read it. Current content near line ${anchor.line}:\n${freshWindow(
-            fileLines,
-            anchor.line,
-          )}\nRe-read the file or use these anchors and retry.`,
-        }
+        addStale(stale, anchor, actual)
+        anchorStale = true
       }
     }
+    if (anchorStale) continue
 
     resolved.push({
       op: edit.op,
@@ -198,6 +305,10 @@ export function applyHashlineEdits(
       endLine: isInsert ? startAnchor.line : endAnchor.line,
       lines,
     })
+  }
+
+  if (stale.length > 0) {
+    return { ok: false, error: staleAnchorError(stale, fileLines, filePath) }
   }
 
   // Overlap detection. insert_after at line N is modeled as the point [N, N];

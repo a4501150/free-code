@@ -15,6 +15,7 @@ Usage:${getPreReadInstruction()}
 - Each edit has: op ("replace" | "insert_after" | "delete"), start (a "LINE:HASH" anchor), optional end (a "LINE:HASH" anchor for a multi-line replace/delete; defaults to start), and lines (the new text for replace/insert_after; omit for delete).
 - replace: replaces lines start..end with \`lines\`. insert_after: inserts \`lines\` after the \`start\` line (use "0" to insert at the top of the file). delete: removes lines start..end.
 - Provide only the content after the \`|\` in \`lines\` — never include the \`LINE:HASH|\` anchor prefix itself.
-- Anchors are validated against the current file. If the file changed since you read it, the hash won't match and the edit is rejected together with fresh anchors — re-read the file or use the returned anchors and retry.
+- Anchors are validated against the current file. If the file changed since you read it, the edit is rejected and every stale anchor is listed with fresh ones — re-read the file or use the returned anchors and retry.
+- A successful edit returns fresh anchors for the lines it wrote. Use those for follow-up edits to the same file instead of reading it again. Anchors you already hold for lines below an edit have shifted, so do not reuse them.
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.`
 }
