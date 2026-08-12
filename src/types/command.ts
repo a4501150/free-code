@@ -95,6 +95,11 @@ export type ResumeEntrypoint =
   | 'slash_command_session_id'
   | 'slash_command_title'
   | 'fork'
+  // A /resume the user redirected into a new session because the target was
+  // already open in another live process. Unlike 'fork' (which /branch uses to
+  // continue the CURRENT session under a new ID) the messages come from a
+  // different session, so tool-use IDs are not already correct.
+  | 'ownership_fork'
 
 export type CommandResultDisplay = 'skip' | 'system' | 'user'
 

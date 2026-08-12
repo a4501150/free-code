@@ -9,6 +9,10 @@
 import React from 'react'
 import { App } from './components/App.js'
 import { InvalidSettingsDialog } from './components/InvalidSettingsDialog.js'
+import {
+  ResumeSessionConflictDialog,
+  type ResumeSessionConflictChoice,
+} from './components/ResumeSessionConflictDialog.js'
 import { SnapshotUpdateDialog } from './components/agents/SnapshotUpdateDialog.js'
 import type { StatsStore } from './context/stats.js'
 import type { Root } from './ink.js'
@@ -18,6 +22,7 @@ import { ResumeConversation } from './screens/ResumeConversation.js'
 import type { AppState } from './state/AppStateStore.js'
 import type { AgentMemoryScope } from './tools/AgentTool/agentMemory.js'
 import type { FpsMetrics } from './utils/fpsTracker.js'
+import type { ResumeSessionConflict } from './utils/sessionRestore.js'
 import type { ValidationError } from './utils/settings/validation.js'
 
 type ResumeConversationProps = React.ComponentProps<typeof ResumeConversation>
@@ -61,6 +66,23 @@ export async function launchInvalidSettingsDialog(
       settingsErrors={props.settingsErrors}
       onContinue={done}
       onExit={props.onExit}
+    />
+  ))
+}
+
+/**
+ * Shown when the session a startup --resume/--continue targets is already held
+ * by another live process. The dialog itself routes Esc and Ctrl-C to 'cancel'.
+ */
+export async function launchResumeSessionConflictDialog(
+  root: Root,
+  conflict: ResumeSessionConflict,
+): Promise<ResumeSessionConflictChoice> {
+  return showSetupDialog<ResumeSessionConflictChoice>(root, done => (
+    <ResumeSessionConflictDialog
+      sessionId={conflict.sessionId}
+      holders={conflict.holders}
+      onChoice={done}
     />
   ))
 }

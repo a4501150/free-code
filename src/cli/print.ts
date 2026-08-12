@@ -54,6 +54,7 @@ import type { Stream } from 'src/utils/stream.js'
 import { EMPTY_USAGE } from 'src/services/api/logging.js'
 import {
   loadConversationForResume,
+  type LoadConversationForResumeOptions,
   type TurnInterruptionState,
 } from 'src/utils/conversationRecovery.js'
 import type {
@@ -271,7 +272,9 @@ import {
   fileHistoryGetDiffStats,
 } from 'src/utils/fileHistory.js'
 import {
+  checkResumeSessionOwnership,
   restoreAgentFromSession,
+  ResumeSessionInUseError,
   restoreSessionStateFromLog,
 } from 'src/utils/sessionRestore.js'
 import { SandboxManager } from 'src/utils/sandbox/sandbox-adapter.js'
@@ -4374,12 +4377,23 @@ async function loadInitialMessages(
   },
 ): Promise<LoadInitialMessagesResult> {
   const persistSession = !isSessionPersistenceDisabled()
+  // No dialog is possible here, so a session another live process already
+  // holds is a hard failure rather than a prompt. Refusing inside the loader
+  // means nothing has been copied and no resume hook has run.
+  const resumeOwnershipGuard: LoadConversationForResumeOptions = {
+    beforeResumeSideEffects: async ({ sessionId }) => {
+      if (options.forkSession) return
+      const conflict = await checkResumeSessionOwnership(sessionId)
+      if (conflict) throw new ResumeSessionInUseError(conflict)
+    },
+  }
   // Handle continue in print mode
   if (options.continue) {
     try {
       const result = await loadConversationForResume(
         undefined /* sessionId */,
         undefined /* file path */,
+        resumeOwnershipGuard,
       )
       if (result) {
         // Match coordinator mode to the resumed session's mode
@@ -4446,7 +4460,11 @@ async function loadInitialMessages(
         }
       }
     } catch (error) {
-      logError(error)
+      if (error instanceof ResumeSessionInUseError) {
+        emitLoadError(error.message, options.outputFormat)
+      } else {
+        logError(error)
+      }
       gracefulShutdownSync(1)
       return { messages: [] }
     }
@@ -4475,6 +4493,7 @@ async function loadInitialMessages(
       const result = await loadConversationForResume(
         parsedSessionId.sessionId,
         parsedSessionId.jsonlFile || undefined,
+        resumeOwnershipGuard,
       )
 
       if (!result || result.messages.length === 0) {
@@ -4567,6 +4586,11 @@ async function loadInitialMessages(
         agentSetting: result.agentSetting,
       }
     } catch (error) {
+      if (error instanceof ResumeSessionInUseError) {
+        emitLoadError(error.message, options.outputFormat)
+        gracefulShutdownSync(1)
+        return { messages: [] }
+      }
       logError(error)
       const errorMessage =
         error instanceof Error

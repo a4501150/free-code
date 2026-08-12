@@ -436,11 +436,24 @@ export async function loadMessagesFromJsonlPath(path: string): Promise<{
  *   Used when --resume receives a .jsonl path (cli/print.ts routes
  *   on suffix), typically for cross-directory resume where the
  *   transcript lives outside the current project dir.
+ * @param options.beforeResumeSideEffects - Called once the target log and its
+ *   session ID are known, before anything is copied, restored or hooked.
+ *   Throwing from it aborts the resume with nothing done. This is the only
+ *   point at which a caller can still refuse the target.
  * @returns Object containing the deserialized messages and the original log, or null if not found
  */
+export type LoadConversationForResumeOptions = {
+  beforeResumeSideEffects?: (target: {
+    sessionId: UUID | undefined
+    log: LogOption | null
+    transcriptPath?: string
+  }) => void | Promise<void>
+}
+
 export async function loadConversationForResume(
   source: string | LogOption | undefined,
   sourceJsonlFile: string | undefined,
+  options: LoadConversationForResumeOptions = {},
 ): Promise<{
   messages: Message[]
   turnInterruptionState: TurnInterruptionState
@@ -500,6 +513,16 @@ export async function loadConversationForResume(
       if (!sessionId) {
         sessionId = getSessionIdFromLog(log) as UUID
       }
+    }
+
+    const transcriptPath = log?.fullPath ?? sourceJsonlFile
+    await options.beforeResumeSideEffects?.({
+      sessionId,
+      log,
+      ...(transcriptPath ? { transcriptPath } : {}),
+    })
+
+    if (log) {
       // Pass the original session ID to ensure the plan slug is associated with
       // the session we're resuming, not the temporary session ID before resume
       if (sessionId) {

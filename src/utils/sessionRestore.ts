@@ -23,7 +23,11 @@ import type { PersistedWorktreeSession } from '../types/logs.js'
 import type { Message } from '../types/message.js'
 import { renameRecordingForSession } from './asciicast.js'
 import { clearMemoryFileCaches } from './claudemd.js'
-import { updateSessionName } from './concurrentSessions.js'
+import {
+  type ConcurrentSessionEntry,
+  getLiveSessionHolders,
+  updateSessionName,
+} from './concurrentSessions.js'
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
 import type { FileHistorySnapshot } from './fileHistory.js'
@@ -45,6 +49,61 @@ import {
   getCurrentWorktreeSession,
   restoreWorktreeSession,
 } from './worktree.js'
+
+export type ResumeSessionConflict = {
+  sessionId: string
+  holders: ConcurrentSessionEntry[]
+}
+
+/**
+ * Another live process already holding the session we are about to resume.
+ * Adopting it anyway means two processes append to one transcript and share
+ * every store keyed on the session ID, the task list included.
+ *
+ * Returns null when nobody else holds it, and also whenever the registry
+ * cannot answer — see getLiveSessionHolders for why this fails open. Callers
+ * own the policy: this renders nothing and exits nothing.
+ */
+export async function checkResumeSessionOwnership(
+  sessionId: string | undefined,
+): Promise<ResumeSessionConflict | null> {
+  if (!sessionId) return null
+  const holders = await getLiveSessionHolders(sessionId)
+  return holders.length > 0 ? { sessionId, holders } : null
+}
+
+export function describeSessionHolder(holder: ConcurrentSessionEntry): string {
+  const parts = [`PID ${holder.pid}`, holder.cwd]
+  if (holder.name) parts.push(holder.name)
+  parts.push(`started ${new Date(holder.startedAt).toISOString()}`)
+  return parts.join(', ')
+}
+
+/** Raised on the headless resume path, where no dialog can be shown. */
+export class ResumeSessionInUseError extends Error {
+  constructor(readonly conflict: ResumeSessionConflict) {
+    super(
+      `Error: session ${conflict.sessionId} is already open in another process ` +
+        `(${conflict.holders.map(describeSessionHolder).join('; ')}). ` +
+        `Use --fork-session to resume it into a new session instead.`,
+    )
+    this.name = 'ResumeSessionInUseError'
+  }
+}
+
+/**
+ * Thrown after the user declines a conflicting resume, to unwind the load.
+ *
+ * gracefulShutdownSync only *schedules* the exit and returns, so a guard that
+ * merely called it would fall through and adopt the very session the user just
+ * refused, right up until the process died. Callers swallow this.
+ */
+export class ResumeCancelledError extends Error {
+  constructor() {
+    super('Resume cancelled')
+    this.name = 'ResumeCancelledError'
+  }
+}
 
 type ResumeResult = {
   messages?: Message[]
@@ -297,6 +356,86 @@ export function exitRestoredWorktree(): void {
 }
 
 /**
+ * Take ownership of a resumed session at startup: which ID this process ends
+ * up on, which transcript it writes to, and which metadata it carries.
+ *
+ * Shared by the two startup paths — the `--resume`/`--continue` flags and the
+ * interactive picker — which held byte-identical copies of this. The
+ * mid-session `/resume` in REPL.tsx and the headless path in cli/print.ts
+ * deliberately do NOT use it: `/resume` has to switch even when forking (it
+ * mints a new ID) and clears metadata first, and print mode has no asciicast
+ * recording, no cost UI and no worktree of its own.
+ */
+export async function adoptResumedSessionAtStartup(
+  result: ResumeLoadResult,
+  opts: {
+    /** Keep the fresh startup ID and write a new transcript instead. */
+    fork: boolean
+    /** Session to adopt. Defaults to the loaded conversation's own ID. */
+    targetSessionId?: string
+    /** Its dirname becomes the project dir, for cross-project resume. */
+    transcriptPath?: string
+  },
+): Promise<void> {
+  const sid = opts.fork ? undefined : (opts.targetSessionId ?? result.sessionId)
+  if (!opts.fork) {
+    if (sid) {
+      // When resuming from a different project directory (git worktrees,
+      // cross-project), transcriptPath points to the actual file; its dirname
+      // is the project dir. Otherwise the session lives in the current project.
+      switchSession(
+        asSessionId(sid),
+        opts.transcriptPath ? dirname(opts.transcriptPath) : null,
+      )
+      // Rename asciicast recording to match the resumed session ID so
+      // getSessionRecordingPaths() can discover it during /share
+      await renameRecordingForSession()
+      await resetSessionFilePointer()
+      restoreCostStateForSession(sid)
+    }
+  } else if (result.contentReplacements?.length) {
+    // A fork keeps the fresh startup session ID. useLogMessages will copy
+    // source messages into the new JSONL via recordTranscript, but
+    // content-replacement entries are a separate entry type only written by
+    // recordContentReplacement (which query.ts calls for newlyReplaced, never
+    // the pre-loaded records). Without this seed, `claude -r {newSessionId}`
+    // finds source tool_use_ids in messages but no matching replacement
+    // records → they're classified as FROZEN → full content sent (cache miss,
+    // permanent overage). insertContentReplacement stamps sessionId =
+    // getSessionId() = the fresh ID, so loadTranscriptFile's keyed lookup
+    // will match.
+    await recordContentReplacement(result.contentReplacements)
+  }
+
+  // Restore session metadata so /status shows the saved name and metadata
+  // is re-appended on session exit. Fork doesn't take ownership of the
+  // original session's worktree — a "Remove" on the fork's exit dialog
+  // would delete a worktree the original session still references — so
+  // strip worktreeSession from the fork path so the cache stays unset.
+  restoreSessionMetadata(
+    opts.fork ? { ...result, worktreeSession: undefined } : result,
+  )
+
+  if (!opts.fork) {
+    // Cd back into the worktree the session was in when it last exited.
+    // Done after restoreSessionMetadata (which caches the worktree state
+    // from the transcript) so if the directory is gone we can override
+    // the cache before adoptResumedSessionFile writes it.
+    restoreWorktreeForResume(result.worktreeSession)
+
+    // Point sessionFile at the resumed transcript and re-append metadata
+    // now. resetSessionFilePointer above nulled it (so the old fresh-session
+    // path doesn't leak), but that blocks reAppendSessionMetadata — which
+    // bails on null — from running in the exit cleanup handler. For fork,
+    // useLogMessages populates a *new* file via recordTranscript on REPL
+    // mount; the normal lazy-materialize path is correct there.
+    // Guarded on sid: with nothing to switch to there is no transcript to
+    // adopt either.
+    if (sid) adoptResumedSessionFile()
+  }
+}
+
+/**
  * Process a loaded conversation for resume/continue.
  *
  * Handles coordinator mode matching, session ID setup, agent restoration,
@@ -328,60 +467,13 @@ export async function processResumedConversation(
     }
   }
 
-  // Reuse the resumed session's ID unless --fork-session is specified
-  if (!opts.forkSession) {
-    const sid = opts.sessionIdOverride ?? result.sessionId
-    if (sid) {
-      // When resuming from a different project directory (git worktrees,
-      // cross-project), transcriptPath points to the actual file; its dirname
-      // is the project dir. Otherwise the session lives in the current project.
-      switchSession(
-        asSessionId(sid),
-        opts.transcriptPath ? dirname(opts.transcriptPath) : null,
-      )
-      // Rename asciicast recording to match the resumed session ID so
-      // getSessionRecordingPaths() can discover it during /share
-      await renameRecordingForSession()
-      await resetSessionFilePointer()
-      restoreCostStateForSession(sid)
-    }
-  } else if (result.contentReplacements?.length) {
-    // --fork-session keeps the fresh startup session ID. useLogMessages will
-    // copy source messages into the new JSONL via recordTranscript, but
-    // content-replacement entries are a separate entry type only written by
-    // recordContentReplacement (which query.ts calls for newlyReplaced, never
-    // the pre-loaded records). Without this seed, `claude -r {newSessionId}`
-    // finds source tool_use_ids in messages but no matching replacement records
-    // → they're classified as FROZEN → full content sent (cache miss, permanent
-    // overage). insertContentReplacement stamps sessionId = getSessionId() =
-    // the fresh ID, so loadTranscriptFile's keyed lookup will match.
-    await recordContentReplacement(result.contentReplacements)
-  }
-
-  // Restore session metadata so /status shows the saved name and metadata
-  // is re-appended on session exit. Fork doesn't take ownership of the
-  // original session's worktree — a "Remove" on the fork's exit dialog
-  // would delete a worktree the original session still references — so
-  // strip worktreeSession from the fork path so the cache stays unset.
-  restoreSessionMetadata(
-    opts.forkSession ? { ...result, worktreeSession: undefined } : result,
-  )
-
-  if (!opts.forkSession) {
-    // Cd back into the worktree the session was in when it last exited.
-    // Done after restoreSessionMetadata (which caches the worktree state
-    // from the transcript) so if the directory is gone we can override
-    // the cache before adoptResumedSessionFile writes it.
-    restoreWorktreeForResume(result.worktreeSession)
-
-    // Point sessionFile at the resumed transcript and re-append metadata
-    // now. resetSessionFilePointer above nulled it (so the old fresh-session
-    // path doesn't leak), but that blocks reAppendSessionMetadata — which
-    // bails on null — from running in the exit cleanup handler. For fork,
-    // useLogMessages populates a *new* file via recordTranscript on REPL
-    // mount; the normal lazy-materialize path is correct there.
-    adoptResumedSessionFile()
-  }
+  await adoptResumedSessionAtStartup(result, {
+    fork: opts.forkSession,
+    ...(opts.sessionIdOverride
+      ? { targetSessionId: opts.sessionIdOverride }
+      : {}),
+    ...(opts.transcriptPath ? { transcriptPath: opts.transcriptPath } : {}),
+  })
 
   // Restore agent setting from resumed session
   const { agentDefinition: restoredAgent, agentType: resumedAgentType } =

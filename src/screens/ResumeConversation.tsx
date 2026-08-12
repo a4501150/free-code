@@ -1,12 +1,20 @@
 import { feature } from 'bun:bundle'
-import { dirname } from 'path'
+// Dead code elimination: conditional import for coordinator mode
+/* eslint-disable @typescript-eslint/no-require-imports */
+const coordinatorModeModule = feature('COORDINATOR_MODE')
+  ? (require('../coordinator/coordinatorMode.js') as typeof import('../coordinator/coordinatorMode.js'))
+  : null
+/* eslint-enable @typescript-eslint/no-require-imports */
 import React from 'react'
 import { useTerminalSize } from 'src/hooks/useTerminalSize.js'
-import { getOriginalCwd, switchSession } from '../bootstrap/state.js'
+import { getOriginalCwd } from '../bootstrap/state.js'
 import type { Command } from '../commands.js'
 import { LogSelector } from '../components/LogSelector.js'
+import {
+  ResumeSessionConflictDialog,
+  type ResumeSessionConflictChoice,
+} from '../components/ResumeSessionConflictDialog.js'
 import { Spinner } from '../components/Spinner.js'
-import { restoreCostStateForSession } from '../cost-tracker.js'
 import { setClipboard } from '../ink/termio/osc.js'
 import { Box, Text } from '../ink.js'
 import type {
@@ -17,31 +25,29 @@ import { useAppState, useSetAppState } from '../state/AppState.js'
 import type { Tool } from '../Tool.js'
 import type { AgentColorName } from '../tools/AgentTool/agentColorManager.js'
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
-import { asSessionId } from '../types/ids.js'
 import type { LogOption } from '../types/logs.js'
 import type { Message } from '../types/message.js'
 import { agenticSessionSearch } from '../utils/agenticSessionSearch.js'
-import { renameRecordingForSession } from '../utils/asciicast.js'
 import { updateSessionName } from '../utils/concurrentSessions.js'
 import { loadConversationForResume } from '../utils/conversationRecovery.js'
 import { checkCrossProjectResume } from '../utils/crossProjectResume.js'
 import type { FileHistorySnapshot } from '../utils/fileHistory.js'
+import { gracefulShutdownSync } from '../utils/gracefulShutdown.js'
 import { logError } from '../utils/log.js'
 import { createSystemMessage } from '../utils/messages.js'
 import {
+  adoptResumedSessionAtStartup,
+  checkResumeSessionOwnership,
   computeStandaloneAgentContext,
+  ResumeCancelledError,
+  type ResumeSessionConflict,
   restoreAgentFromSession,
-  restoreWorktreeForResume,
 } from '../utils/sessionRestore.js'
 import {
-  adoptResumedSessionFile,
   enrichLogs,
   isCustomTitleEnabled,
   loadAllProjectsMessageLogsProgressive,
   loadSameRepoMessageLogsProgressive,
-  recordContentReplacement,
-  resetSessionFilePointer,
-  restoreSessionMetadata,
   saveMode,
   type SessionLogResult,
 } from '../utils/sessionStorage.js'
@@ -121,6 +127,10 @@ export function ResumeConversation({
   const [crossProjectCommand, setCrossProjectCommand] = React.useState<
     string | null
   >(null)
+  const [ownershipConflict, setOwnershipConflict] = React.useState<{
+    conflict: ResumeSessionConflict
+    resolve: (choice: ResumeSessionConflictChoice) => void
+  } | null>(null)
   const sessionLogResultRef = React.useRef<SessionLogResult | null>(null)
   // Mirror of logs.length so loadMoreLogs can compute value indices outside
   // the setLogs updater (keeping it pure per React's contract).
@@ -230,18 +240,33 @@ export function ResumeConversation({
       }
     }
 
+    // Adopting a session another live process already holds makes both append
+    // to one transcript and share every store keyed on the session ID. Asked
+    // inside the loader, before it copies anything or runs a resume hook.
+    let effectiveForkSession = !!forkSession
     try {
-      const result = await loadConversationForResume(log, undefined)
+      const result = await loadConversationForResume(log, undefined, {
+        beforeResumeSideEffects: async ({ sessionId }) => {
+          if (effectiveForkSession) return
+          const conflict = await checkResumeSessionOwnership(sessionId)
+          if (!conflict) return
+          const choice = await new Promise<ResumeSessionConflictChoice>(
+            resolve => setOwnershipConflict({ conflict, resolve }),
+          )
+          setOwnershipConflict(null)
+          if (choice === 'cancel') {
+            gracefulShutdownSync(1)
+            throw new ResumeCancelledError()
+          }
+          if (choice === 'fork') effectiveForkSession = true
+        },
+      })
       if (!result) {
         throw new Error('Failed to load conversation')
       }
 
-      if (feature('COORDINATOR_MODE')) {
-        /* eslint-disable @typescript-eslint/no-require-imports */
-        const coordinatorModule =
-          require('../coordinator/coordinatorMode.js') as typeof import('../coordinator/coordinatorMode.js')
-        /* eslint-enable @typescript-eslint/no-require-imports */
-        const warning = coordinatorModule.matchSessionMode(result.mode)
+      if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
+        const warning = coordinatorModeModule.matchSessionMode(result.mode)
         if (warning) {
           const { getAgentDefinitionsWithOverrides, getActiveAgentsFromList } =
             loadAgentsDirNs
@@ -260,17 +285,10 @@ export function ResumeConversation({
         }
       }
 
-      if (result.sessionId && !forkSession) {
-        switchSession(
-          asSessionId(result.sessionId),
-          log.fullPath ? dirname(log.fullPath) : null,
-        )
-        await renameRecordingForSession()
-        await resetSessionFilePointer()
-        restoreCostStateForSession(result.sessionId)
-      } else if (forkSession && result.contentReplacements?.length) {
-        await recordContentReplacement(result.contentReplacements)
-      }
+      await adoptResumedSessionAtStartup(result, {
+        fork: effectiveForkSession,
+        ...(log.fullPath ? { transcriptPath: log.fullPath } : {}),
+      })
 
       const { agentDefinition: resolvedAgentDef } = restoreAgentFromSession(
         result.agentSetting,
@@ -279,12 +297,10 @@ export function ResumeConversation({
       )
       setAppState(prev => ({ ...prev, agent: resolvedAgentDef?.agentType }))
 
-      if (feature('COORDINATOR_MODE')) {
-        /* eslint-disable @typescript-eslint/no-require-imports */
-        const { isCoordinatorMode } =
-          require('../coordinator/coordinatorMode.js') as typeof import('../coordinator/coordinatorMode.js')
-        /* eslint-enable @typescript-eslint/no-require-imports */
-        saveMode(isCoordinatorMode() ? 'coordinator' : 'normal')
+      if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
+        saveMode(
+          coordinatorModeModule.isCoordinatorMode() ? 'coordinator' : 'normal',
+        )
       }
 
       const standaloneAgentContext = computeStandaloneAgentContext(
@@ -295,17 +311,6 @@ export function ResumeConversation({
         setAppState(prev => ({ ...prev, standaloneAgentContext }))
       }
       void updateSessionName(result.agentName)
-
-      restoreSessionMetadata(
-        forkSession ? { ...result, worktreeSession: undefined } : result,
-      )
-
-      if (!forkSession) {
-        restoreWorktreeForResume(result.worktreeSession)
-        if (result.sessionId) {
-          adoptResumedSessionFile()
-        }
-      }
 
       setLogs([])
       setResumeData({
@@ -319,9 +324,21 @@ export function ResumeConversation({
         mainThreadAgentDefinition: resolvedAgentDef,
       })
     } catch (e) {
+      // The user declined; shutdown is already under way.
+      if (e instanceof ResumeCancelledError) return
       logError(e as Error)
       throw e
     }
+  }
+
+  if (ownershipConflict) {
+    return (
+      <ResumeSessionConflictDialog
+        sessionId={ownershipConflict.conflict.sessionId}
+        holders={ownershipConflict.conflict.holders}
+        onChoice={ownershipConflict.resolve}
+      />
+    )
   }
 
   if (crossProjectCommand) {

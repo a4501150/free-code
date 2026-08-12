@@ -116,6 +116,7 @@ import type { StatsStore } from './context/stats.js'
 import {
   launchInvalidSettingsDialog,
   launchResumeChooser,
+  launchResumeSessionConflictDialog,
   launchSnapshotUpdateDialog,
 } from './dialogLaunchers.js'
 import { SHOW_CURSOR } from './ink/termio/dec.js'
@@ -149,7 +150,10 @@ import {
 import type { LogOption } from './types/logs.js'
 import type { Message as MessageType } from './types/message.js'
 import { getContextWindowForModel } from './utils/context.js'
-import { loadConversationForResume } from './utils/conversationRecovery.js'
+import {
+  loadConversationForResume,
+  type LoadConversationForResumeOptions,
+} from './utils/conversationRecovery.js'
 import {
   globalConfigDir,
   hasNodeOption,
@@ -275,6 +279,8 @@ import { setAllHookEventsEnabled } from 'src/utils/hooks/hookEvents.js'
 import { peekForStdinData, writeToStderr } from 'src/utils/process.js'
 import { setCwd } from 'src/utils/Shell.js'
 import {
+  checkResumeSessionOwnership,
+  ResumeCancelledError,
   type ProcessedResume,
   processResumedConversation,
 } from 'src/utils/sessionRestore.js'
@@ -3201,6 +3207,31 @@ async function run(): Promise<CommanderCommand> {
         initialState,
       }
 
+      // Adopting a session another live process already holds makes both
+      // append to one transcript and share every store keyed on the session
+      // ID, the task list included. Resolved inside the loader, before it
+      // copies anything or runs a resume hook, so cancelling leaves no trace.
+      let effectiveForkSession = !!options.forkSession
+      const resumeOwnershipGuard = (
+        sessionIdOverride?: string,
+      ): LoadConversationForResumeOptions => ({
+        beforeResumeSideEffects: async ({ sessionId: loadedSessionId }) => {
+          if (effectiveForkSession) return
+          // processResumedConversation adopts the override when there is one,
+          // so that is the ID whose ownership matters.
+          const conflict = await checkResumeSessionOwnership(
+            sessionIdOverride ?? loadedSessionId,
+          )
+          if (!conflict) return
+          const choice = await launchResumeSessionConflictDialog(root, conflict)
+          if (choice === 'cancel') {
+            gracefulShutdownSync(1)
+            throw new ResumeCancelledError()
+          }
+          if (choice === 'fork') effectiveForkSession = true
+        },
+      })
+
       if (options.continue) {
         // Continue the most recent conversation directly
         let resumeSucceeded = false
@@ -3213,6 +3244,7 @@ async function run(): Promise<CommanderCommand> {
           const result = await loadConversationForResume(
             undefined /* sessionId */,
             undefined /* sourceFile */,
+            resumeOwnershipGuard(),
           )
           if (!result) {
             return await exitWithError(
@@ -3224,7 +3256,7 @@ async function run(): Promise<CommanderCommand> {
           const loaded = await processResumedConversation(
             result,
             {
-              forkSession: !!options.forkSession,
+              forkSession: effectiveForkSession,
               transcriptPath: result.fullPath,
             },
             resumeContext,
@@ -3255,6 +3287,8 @@ async function run(): Promise<CommanderCommand> {
             renderAndRun,
           )
         } catch (error) {
+          // The user declined; shutdown is already under way.
+          if (error instanceof ResumeCancelledError) return
           logError(error)
           process.exit(1)
         }
@@ -3318,6 +3352,7 @@ async function run(): Promise<CommanderCommand> {
             const result = await loadConversationForResume(
               matchedLog ?? sessionId,
               undefined,
+              resumeOwnershipGuard(sessionId),
             )
 
             if (!result) {
@@ -3331,7 +3366,7 @@ async function run(): Promise<CommanderCommand> {
             processedResume = await processResumedConversation(
               result,
               {
-                forkSession: !!options.forkSession,
+                forkSession: effectiveForkSession,
                 sessionIdOverride: sessionId,
                 transcriptPath: fullPath,
               },
@@ -3342,6 +3377,8 @@ async function run(): Promise<CommanderCommand> {
               mainThreadAgentDefinition = processedResume.restoredAgentDef
             }
           } catch (error) {
+            // The user declined; shutdown is already under way.
+            if (error instanceof ResumeCancelledError) return
             logError(error)
             await exitWithError(root, `Failed to resume session ${sessionId}`)
           }

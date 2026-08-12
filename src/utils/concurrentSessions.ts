@@ -14,7 +14,13 @@ import { getPlatform } from './platform.js'
 import { jsonParse, jsonStringify } from './slowOperations.js'
 import { getAgentId } from './teammate.js'
 
-export type SessionKind = 'interactive' | 'bg' | 'daemon' | 'daemon-worker'
+export const SESSION_KINDS = [
+  'interactive',
+  'bg',
+  'daemon',
+  'daemon-worker',
+] as const
+export type SessionKind = (typeof SESSION_KINDS)[number]
 export type SessionStatus = 'busy' | 'idle' | 'waiting'
 
 function getSessionsDir(): string {
@@ -154,4 +160,103 @@ export async function countConcurrentSessions(): Promise<number> {
     }
   }
   return count
+}
+
+export type ConcurrentSessionEntry = {
+  pid: number
+  sessionId: string
+  cwd: string
+  startedAt: number
+  kind: SessionKind
+  entrypoint?: string
+  name?: string
+}
+
+async function readSessionEntry(
+  path: string,
+  filenamePid: number,
+): Promise<ConcurrentSessionEntry | null> {
+  let data: unknown
+  try {
+    data = jsonParse(await readFile(path, 'utf8'))
+  } catch (e) {
+    logForDebugging(
+      `[concurrentSessions] unreadable entry ${path}: ${errorMessage(e)}`,
+    )
+    return null
+  }
+  if (typeof data !== 'object' || data === null) return null
+
+  const { pid, sessionId, cwd, startedAt, kind, entrypoint, name } =
+    data as Record<string, unknown>
+
+  // The filename is what liveness was probed against, so a body claiming a
+  // different PID describes some other process and can't be trusted to
+  // report it.
+  if (pid !== filenamePid) {
+    logForDebugging(
+      `[concurrentSessions] entry ${path} claims pid ${String(pid)}`,
+    )
+    return null
+  }
+  if (typeof sessionId !== 'string' || !sessionId) return null
+  if (typeof cwd !== 'string') return null
+  if (!Number.isFinite(startedAt) || (startedAt as number) <= 0) return null
+  if (!SESSION_KINDS.includes(kind as SessionKind)) return null
+  if (entrypoint !== undefined && typeof entrypoint !== 'string') return null
+  if (name !== undefined && typeof name !== 'string') return null
+
+  return {
+    pid: filenamePid,
+    sessionId,
+    cwd,
+    startedAt: startedAt as number,
+    kind: kind as SessionKind,
+    ...(entrypoint ? { entrypoint } : {}),
+    ...(name ? { name } : {}),
+  }
+}
+
+/**
+ * Live sessions holding `sessionId`, excluding this process.
+ *
+ * Read-only on purpose. This answers an ownership question, so unlike
+ * countConcurrentSessions it must not sweep: a PID that isn't probeable from
+ * here belongs to a session we have no business deleting. That same
+ * unprobeability makes the answer fail open — isProcessRunning collapses
+ * EPERM to false, so a holder owned by another user is missed rather than
+ * falsely reported. It is also not a lock; a holder can exit immediately
+ * after the read.
+ */
+export async function getLiveSessionHolders(
+  sessionId: string,
+): Promise<ConcurrentSessionEntry[]> {
+  const dir = getSessionsDir()
+  let files: string[]
+  try {
+    files = await readdir(dir)
+  } catch (e) {
+    if (!isFsInaccessible(e)) {
+      logForDebugging(
+        `[concurrentSessions] holder readdir failed: ${errorMessage(e)}`,
+      )
+    }
+    return []
+  }
+
+  const holders: ConcurrentSessionEntry[] = []
+  await Promise.all(
+    files.map(async file => {
+      // Same strict filename guard as countConcurrentSessions.
+      if (!/^\d+\.json$/.test(file)) return
+      const pid = parseInt(file.slice(0, -5), 10)
+      if (pid === process.pid) return
+      if (!isProcessRunning(pid)) return
+
+      const entry = await readSessionEntry(join(dir, file), pid)
+      if (entry && entry.sessionId === sessionId) holders.push(entry)
+    }),
+  )
+
+  return holders.sort((a, b) => a.startedAt - b.startedAt || a.pid - b.pid)
 }

@@ -118,6 +118,10 @@ import {
 } from '../components/permissions/PermissionRequest.js'
 import { ElicitationDialog } from '../components/mcp/ElicitationDialog.js'
 import { PromptDialog } from '../components/hooks/PromptDialog.js'
+import {
+  ResumeSessionConflictDialog,
+  type ResumeSessionConflictChoice,
+} from '../components/ResumeSessionConflictDialog.js'
 import type { PromptRequest, PromptResponse } from '../types/hooks.js'
 import PromptInput from '../components/PromptInput/PromptInput.js'
 import { PromptInputQueuedCommands } from '../components/PromptInput/PromptInputQueuedCommands.js'
@@ -176,12 +180,14 @@ const VoiceKeybindingHandler: typeof import('../hooks/useVoiceIntegration.js').V
   feature('VOICE_MODE') ? voiceIntegrationNs.VoiceKeybindingHandler : () => null
 // Dead code elimination: conditional import for coordinator mode
 /* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
+const coordinatorModeModule = feature('COORDINATOR_MODE')
+  ? (require('../coordinator/coordinatorMode.js') as typeof import('../coordinator/coordinatorMode.js'))
+  : null
 const getCoordinatorUserContext: (
   mcpClients: ReadonlyArray<{ name: string }>,
   scratchpadDir?: string,
-) => { [k: string]: string } = feature('COORDINATOR_MODE')
-  ? require('../coordinator/coordinatorMode.js').getCoordinatorUserContext
-  : () => ({})
+) => { [k: string]: string } =
+  coordinatorModeModule?.getCoordinatorUserContext ?? (() => ({}))
 /* eslint-enable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 import useCanUseTool from '../hooks/useCanUseTool.js'
 import type { ToolPermissionContext, Tool } from '../Tool.js'
@@ -291,6 +297,7 @@ import {
   resetSessionFilePointer,
   adoptResumedSessionFile,
   removeTranscriptMessage,
+  recordContentReplacement,
   restoreSessionMetadata,
   getCurrentSessionTitle,
   isEphemeralToolProgress,
@@ -324,6 +331,7 @@ import {
   fileHistoryHasAnyChanges,
 } from '../utils/fileHistory.js'
 import {
+  checkResumeSessionOwnership,
   computeStandaloneAgentContext,
   restoreAgentFromSession,
   restoreSessionStateFromLog,
@@ -1864,17 +1872,63 @@ export function REPL({
     async (sessionId: UUID, log: LogOption, entrypoint: ResumeEntrypoint) => {
       const resumeStart = performance.now()
       try {
+        // Adopting a session another live process already holds makes both
+        // append to one transcript and share every store keyed on the session
+        // ID. Asked before anything else here, so declining leaves the current
+        // session untouched — no hooks fired, no state torn down.
+        // /branch is exempt: it already targets an ID it just created.
+        if (entrypoint !== 'fork') {
+          const conflict = await checkResumeSessionOwnership(sessionId)
+          if (conflict) {
+            const choice = await new Promise<ResumeSessionConflictChoice>(
+              resolve => {
+                // The /resume overlay is a local JSX command, so setToolJSX
+                // ignores a replacement until that claim is released.
+                setToolJSX({
+                  jsx: null,
+                  shouldHidePromptInput: false,
+                  clearLocalJSX: true,
+                })
+                setToolJSX({
+                  jsx: (
+                    <ResumeSessionConflictDialog
+                      sessionId={conflict.sessionId}
+                      holders={conflict.holders}
+                      onChoice={resolve}
+                    />
+                  ),
+                  shouldHidePromptInput: true,
+                })
+              },
+            )
+            setToolJSX({
+              jsx: null,
+              shouldHidePromptInput: false,
+              clearLocalJSX: true,
+            })
+            if (choice === 'cancel') return
+            if (choice === 'fork') {
+              // Fork rather than adopt. A fresh ID, and no source transcript
+              // path so switchSession derives the project dir from the current
+              // cwd instead of the held session's. useLogMessages materializes
+              // the new transcript because the first message UUID changed.
+              sessionId = randomUUID()
+              log = { ...log, fullPath: undefined }
+              entrypoint = 'ownership_fork'
+            }
+          }
+        }
+        // Both flavours mint their own session ID rather than adopting the
+        // target's, so neither may adopt the target's transcript file.
+        const isFork = entrypoint === 'fork' || entrypoint === 'ownership_fork'
+
         // Deserialize messages to properly clean up the conversation
         // This filters unresolved tool uses and adds a synthetic assistant message if needed
         const messages = deserializeMessages(log.messages)
 
         // Match coordinator/normal mode to the resumed session
-        if (feature('COORDINATOR_MODE')) {
-          /* eslint-disable @typescript-eslint/no-require-imports */
-          const coordinatorModule =
-            require('../coordinator/coordinatorMode.js') as typeof import('../coordinator/coordinatorMode.js')
-          /* eslint-enable @typescript-eslint/no-require-imports */
-          const warning = coordinatorModule.matchSessionMode(log.mode)
+        if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
+          const warning = coordinatorModeModule.matchSessionMode(log.mode)
           if (warning) {
             // Re-derive agent definitions after mode switch so built-in agents
             // reflect the new coordinator/normal mode
@@ -1920,7 +1974,7 @@ export function REPL({
         // For forks, generate a new plan slug and copy the plan content so the
         // original and forked sessions don't clobber each other's plan files.
         // For regular resumes, reuse the original session's plan slug.
-        if (entrypoint === 'fork') {
+        if (isFork) {
           void copyPlanForFork(log, asSessionId(sessionId))
         } else {
           void copyPlanForResume(log, asSessionId(sessionId))
@@ -2007,7 +2061,7 @@ export function REPL({
         // this would kick the user out of a worktree they're still working
         // in. Same fork skip as processResumedConversation for the adopt —
         // fork materializes its own file via recordTranscript on REPL mount.
-        if (entrypoint !== 'fork') {
+        if (!isFork) {
           exitRestoredWorktree()
           restoreWorktreeForResume(log.worktreeSession)
           adoptResumedSessionFile()
@@ -2020,12 +2074,12 @@ export function REPL({
         }
 
         // Persist the current mode so future resumes know what mode this session was in
-        if (feature('COORDINATOR_MODE')) {
-          /* eslint-disable @typescript-eslint/no-require-imports */
-          const { isCoordinatorMode } =
-            require('../coordinator/coordinatorMode.js') as typeof import('../coordinator/coordinatorMode.js')
-          /* eslint-enable @typescript-eslint/no-require-imports */
-          saveMode(isCoordinatorMode() ? 'coordinator' : 'normal')
+        if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
+          saveMode(
+            coordinatorModeModule.isCoordinatorMode()
+              ? 'coordinator'
+              : 'normal',
+          )
         }
 
         // Restore target session's costs from the data we read earlier
@@ -2044,12 +2098,24 @@ export function REPL({
         // (branch preserves tool_use_ids), so there's no need to reconstruct.
         // createFork() does write content-replacement entries to the forked
         // JSONL with the fork's sessionId, so `claude -r {forkId}` also works.
+        // An ownership fork is NOT exempt: its messages come from a different
+        // session, so the current ref describes the wrong tool_use_ids.
         if (contentReplacementStateRef.current && entrypoint !== 'fork') {
           contentReplacementStateRef.current =
             reconstructContentReplacementState(
               messages,
               log.contentReplacements ?? [],
             )
+        }
+
+        // Nothing has written the source session's replacement records under
+        // the new ID (createFork does this for /branch), so seed them or
+        // `claude -r {newId}` classifies every tool_use as FROZEN.
+        if (
+          entrypoint === 'ownership_fork' &&
+          log.contentReplacements?.length
+        ) {
+          await recordContentReplacement(log.contentReplacements)
         }
 
         // Reset messages to the provided initial messages
