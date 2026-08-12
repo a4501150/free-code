@@ -40,7 +40,7 @@ import {
 import { SLEEP_TOOL_NAME } from '../tools/SleepTool/prompt.js'
 import { TICK_TAG } from './xml.js'
 import { logForDebugging } from '../utils/debug.js'
-import { loadMemoryPrompt } from '../memdir/memdir.js'
+import { getMemoryEnvItems, loadMemoryPrompt } from '../memdir/memdir.js'
 import { isMcpInstructionsDeltaEnabled } from '../utils/mcpInstructionsDelta.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -495,6 +495,9 @@ export async function computeSimpleEnvInfo(
     modelDescription,
     `Settings file: ${getFreecodeSettingsFilePath()}`,
     `Model settings file: ${getModelSettingsFilePath()}`,
+    // The memory prompt names these instead of interpolating them, so the
+    // system prefix stays byte-identical across projects.
+    ...getMemoryEnvItems(),
   ].filter(item => item !== null)
 
   return [

@@ -199,11 +199,19 @@ function logMemoryDirCounts(
  * Used by both buildMemoryPrompt (agent memory, includes content) and
  * loadMemoryPrompt (system prompt, content injected via user context instead).
  */
+// Real paths live in the environment block of the user context, named by these
+// labels. Interpolating one into the system prompt would make the cached
+// system prefix per-project — see the caching notes in CLAUDE.md.
+export const MEMORY_DIR_ENV_LABEL = 'Memory directory'
+export const TEAM_MEMORY_DIR_ENV_LABEL = 'Team memory directory'
+export const TRANSCRIPT_DIR_ENV_LABEL = 'Session transcript directory'
+
 export function buildMemoryLines(
   displayName: string,
   memoryDir: string,
   extraGuidelines?: string[],
   skipIndex = false,
+  useEnvPathReference = false,
 ): string[] {
   const howToSave = skipIndex
     ? [
@@ -239,7 +247,9 @@ export function buildMemoryLines(
   const lines: string[] = [
     `# ${displayName}`,
     '',
-    `You have a persistent, file-based memory system at \`${memoryDir}\`. ${DIR_EXISTS_GUIDANCE}`,
+    useEnvPathReference
+      ? `You have a persistent, file-based memory system. Its directory is the \`${MEMORY_DIR_ENV_LABEL}\` in your environment context. ${DIR_EXISTS_GUIDANCE}`
+      : `You have a persistent, file-based memory system at \`${memoryDir}\`. ${DIR_EXISTS_GUIDANCE}`,
     '',
     "You should build up this memory system over time so that future conversations can have a complete picture of who the user is, how they'd like to collaborate with you, what behaviors to avoid or repeat, and the context behind the work the user gives you.",
     '',
@@ -263,7 +273,9 @@ export function buildMemoryLines(
     '',
   ]
 
-  lines.push(...buildSearchingPastContextSection(memoryDir))
+  lines.push(
+    ...buildSearchingPastContextSection(memoryDir, useEnvPathReference),
+  )
 
   return lines
 }
@@ -333,19 +345,26 @@ function buildAssistantDailyLogPrompt(skipIndex = false): string {
   // invalidated on date change. The model derives the current date from the
   // date_change attachment (appended at the tail on midnight rollover) rather
   // than the user-context message — the latter is intentionally left stale to
-  // preserve the prompt cache prefix across midnight.
-  const logPathPattern = join(memoryDir, 'logs', 'YYYY', 'MM', 'YYYY-MM-DD.md')
+  // preserve the prompt cache prefix across midnight. The directory itself is
+  // named rather than interpolated, for the same reason.
+  const logPathPattern = join(
+    `<${MEMORY_DIR_ENV_LABEL}>`,
+    'logs',
+    'YYYY',
+    'MM',
+    'YYYY-MM-DD.md',
+  )
 
   const lines: string[] = [
     '# auto memory',
     '',
-    `You have a persistent, file-based memory system found at: \`${memoryDir}\``,
+    `You have a persistent, file-based memory system. Its directory is the \`${MEMORY_DIR_ENV_LABEL}\` in your environment context.`,
     '',
     "This session is long-lived. As you work, record anything worth remembering by **appending** to today's daily log file:",
     '',
     `\`${logPathPattern}\``,
     '',
-    "Substitute today's date (from `currentDate` in your context) for `YYYY-MM-DD`. When the date rolls over mid-session, start appending to the new day's file.",
+    "Substitute today's date (from `currentDate` in your context) for `YYYY-MM-DD`, and the environment context's path for the directory. When the date rolls over mid-session, start appending to the new day's file.",
     '',
     'Write each entry as a short timestamped bullet. Create the file (and parent directories) on first write if it does not exist. Do not rewrite or reorganize the log — it is append-only. A separate nightly process distills these logs into `MEMORY.md` and topic files.',
     '',
@@ -365,7 +384,7 @@ function buildAssistantDailyLogPrompt(skipIndex = false): string {
           `\`${ENTRYPOINT_NAME}\` is the distilled index (maintained nightly from your logs) and is loaded into your context automatically. Read it for orientation, but do not edit it directly — record new information in today's log instead.`,
           '',
         ]),
-    ...buildSearchingPastContextSection(memoryDir),
+    ...buildSearchingPastContextSection(memoryDir, true),
   ]
 
   return lines.join('\n')
@@ -374,19 +393,25 @@ function buildAssistantDailyLogPrompt(skipIndex = false): string {
 /**
  * Build the "Searching past context" section if the feature gate is enabled.
  */
-export function buildSearchingPastContextSection(autoMemDir: string): string[] {
+export function buildSearchingPastContextSection(
+  autoMemDir: string,
+  useEnvPathReference = false,
+): string[] {
   if (!(getInitialSettings()?.searchPastContext ?? true)) {
     return []
   }
-  const projectDir = getProjectDir(getOriginalCwd())
+  const memDir = useEnvPathReference ? `<${MEMORY_DIR_ENV_LABEL}>` : autoMemDir
+  const projectDir = useEnvPathReference
+    ? `<${TRANSCRIPT_DIR_ENV_LABEL}>`
+    : getProjectDir(getOriginalCwd())
   // When Grep is stripped from the registry, give the model a real shell
   // invocation. In REPL mode, both Grep and Bash are hidden from direct use —
   // the model calls them from inside REPL scripts, so the grep shell form is
   // what it will write in the script anyway.
   const embedded = shouldPreferBashForSearch() || isReplModeEnabled()
   const memSearch = embedded
-    ? `grep -rn "<search term>" ${autoMemDir} --include="*.md"`
-    : `${GREP_TOOL_NAME} with pattern="<search term>" path="${autoMemDir}" glob="*.md"`
+    ? `grep -rn "<search term>" ${memDir} --include="*.md"`
+    : `${GREP_TOOL_NAME} with pattern="<search term>" path="${memDir}" glob="*.md"`
   const transcriptSearch = embedded
     ? `grep -rn "<search term>" ${projectDir}/ --include="*.jsonl"`
     : `${GREP_TOOL_NAME} with pattern="<search term>" path="${projectDir}/" glob="*.jsonl"`
@@ -402,9 +427,36 @@ export function buildSearchingPastContextSection(autoMemDir: string): string[] {
     '```',
     transcriptSearch,
     '```',
-    'Use narrow search terms (error messages, file paths, function names) rather than broad keywords.',
+    useEnvPathReference
+      ? 'Substitute the matching paths from your environment context for the `<...>` placeholders. Use narrow search terms (error messages, file paths, function names) rather than broad keywords.'
+      : 'Use narrow search terms (error messages, file paths, function names) rather than broad keywords.',
     '',
   ]
+}
+
+/**
+ * The memory paths the system prompt refers to by name, as environment-context
+ * items. Mirrors loadMemoryPrompt's gating: nothing here when memory is off,
+ * and the team directory only when the combined prompt is the one in use.
+ */
+export function getMemoryEnvItems(): string[] {
+  if (!isAutoMemoryEnabled()) return []
+
+  const items = [`${MEMORY_DIR_ENV_LABEL}: ${getAutoMemPath()}`]
+
+  if (feature('TEAMMEM') && teamMemPaths!.isTeamMemoryEnabled()) {
+    items.push(
+      `${TEAM_MEMORY_DIR_ENV_LABEL}: ${teamMemPaths!.getTeamMemPath()}`,
+    )
+  }
+
+  if (getInitialSettings()?.searchPastContext ?? true) {
+    items.push(
+      `${TRANSCRIPT_DIR_ENV_LABEL}: ${getProjectDir(getOriginalCwd())}`,
+    )
+  }
+
+  return items
 }
 
 /**
@@ -480,6 +532,7 @@ export async function loadMemoryPrompt(): Promise<string | null> {
       autoDir,
       extraGuidelines,
       skipIndex,
+      true,
     ).join('\n')
   }
 
