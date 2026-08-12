@@ -1,225 +1,147 @@
 # CLAUDE.md
 
-Guidance for agents working in this repository. Keep this file short: prefer links to source-of-truth files over copied config values, command tables, schemas, or code examples.
+Only things that the code cannot tell you: hidden couplings, external system
+behavior, silent failures, and deliberate decisions. If reading the relevant
+file answers it, it does not belong here.
 
-## Start here
+## Build and test
 
-- Use [package.json](package.json) for current build, run, format, typecheck, and test scripts.
-- The standard dev build is `bun run build:dev:full` which outputs `./cli-dev` with the default plus dev-full feature flags. E2E tests drive `./cli-dev`, so rebuild after source edits before running them.
-- The production build is `bun run build` which outputs `./cli` with default feature flags.
-- Main entry points: [src/entrypoints/cli.tsx](src/entrypoints/cli.tsx), [src/screens/REPL.tsx](src/screens/REPL.tsx), and [src/QueryEngine.ts](src/QueryEngine.ts).
-- Registries: [src/commands.ts](src/commands.ts) and [src/tools.ts](src/tools.ts). Implementations live under [src/commands/](src/commands/) and [src/tools/](src/tools/).
-- Major subsystems live under [src/services/](src/services/), [src/state/](src/state/), [src/hooks/](src/hooks/), [src/components/](src/components/), [src/skills/](src/skills/), [src/plugins/](src/plugins/), [src/voice/](src/voice/), and [src/tasks/](src/tasks/).
+- E2E tests run `./cli-dev`. Rebuild with `bun run build:dev:full` after every source edit, or the tests pass against stale code.
+- Do not put React Compiler output in source. The checked-in `.tsx` files are the clean pre-compilation source.
+- Unit test files share one process, and `mock.module` is global and permanent for it. [tests/unit/autoCompactThreshold.test.ts](tests/unit/autoCompactThreshold.test.ts) stubs `getInitialSettings`, so a later file that writes `freecode.json` reads the stub instead. Such a test passes alone and fails in the suite. Gate it on an env var that the code reads before settings. Module-level `memoize` leaks across files the same way.
+- Read the mock server request log. Do not scrape the tmux pane, because ANSI output contaminates the text.
+- `TmuxSession` disables prompt suggestions, because hidden suggestion calls consume mock responses. A test that enables them must account for the extra requests.
+- Reset a mock server only after the previous turn is idle.
 
-## Source-of-truth map
+## Providers
 
-Read these files instead of duplicating their contents here:
+- A provider type does not imply an auth method. Bedrock and Gemini acquire credentials themselves, which is why no single boundary owns auth.
+- Gate Anthropic-platform body metadata and headers to Anthropic-type providers. Elsewhere they churn the cache key for no benefit.
 
-- Settings/freecode schema and defaults: [src/utils/settings/types.ts](src/utils/settings/types.ts).
-- Settings migration: [src/utils/settings/claudeMigration.ts](src/utils/settings/claudeMigration.ts).
-- Project config path helpers: [src/utils/projectConfigPaths.ts](src/utils/projectConfigPaths.ts).
-- Provider registry and model lookup: [src/utils/model/providerRegistry.ts](src/utils/model/providerRegistry.ts).
-- Legacy provider migration: [src/utils/model/legacyProviderMigration.ts](src/utils/model/legacyProviderMigration.ts).
-- Agent model resolution and sentinels: [src/utils/model/agent.ts](src/utils/model/agent.ts).
-- Model helpers: [src/utils/model/modelResolution.ts](src/utils/model/modelResolution.ts), [src/utils/model/modelDisplay.ts](src/utils/model/modelDisplay.ts), and [src/utils/model/model.ts](src/utils/model/model.ts).
-- Provider adapter registry and transport: [src/services/api/adapters/index.ts](src/services/api/adapters/index.ts) and the per-provider implementations beside it.
-- Provider adapters: [src/services/api/](src/services/api/).
-- API constants: [src/constants/api.ts](src/constants/api.ts).
-- Build flags, defines, and React Compiler staging: [scripts/build.ts](scripts/build.ts).
-- Runtime env semantics: search source references and read [src/utils/envUtils.ts](src/utils/envUtils.ts).
+### Anthropic first-party requests
 
-## Testing
+Three server-side requirements that no local code states:
 
-- E2E tests launch the compiled CLI through tmux. Test harnesses and fixture builders live in [tests/helpers/](tests/helpers/) and [tests/e2e/tmux-helpers.ts](tests/e2e/tmux-helpers.ts).
-- Unit tests live in [tests/unit/](tests/unit/) and cover adapters, settings, token handling, schemas, and parsing utilities.
-- After source edits, run `bun run build:dev:full` before E2E tests; otherwise tests may exercise a stale `./cli-dev`.
-- Run the suites that cover the changed subsystem. If no suite covers the behavior, add or update a focused test.
-- For new E2E files, copy timing/session patterns from existing [tests/e2e/](tests/e2e/) files rather than inventing new sleeps.
+- A request without `metadata.user_id` gets a 429.
+- The 1P API rejects a non-Haiku request without the `CLISyspromptPrefix` block.
+- The attribution block's `cch` field hashes the whole body, so it changes on every request. A cache breakpoint there can never hit.
 
-### Test gotchas
+### Reasoning
 
-- `TmuxSession` runs with `NODE_ENV=test`; debug logging is suppressed unless debug flags are passed. For ad-hoc diagnostics, CLI `console.error` output is visible through the tmux log helpers.
-- Prefer mock server request logs over pane scraping when asserting API payloads; rendered ANSI can contaminate scraped text.
-- E2E tests need explicit timeouts and polling helpers such as `waitFor`, `waitForRequestCount`, `waitForRequest`, and `TmuxSession.waitForScreen`.
-- Prompt suggestions are disabled in `TmuxSession` by default because hidden suggestion calls consume mock server responses. Tests that enable them must account for extra requests.
-- Group multiple turns in one tmux session only when startup, history, resume, and stream-state assumptions are irrelevant. Reset mock servers only after the previous turn is idle.
-- To test subagent model resolution, use a unique marker in the subagent system prompt and locate the subagent request in the mock server log. For feature-flag-gated built-ins, prefer a user-defined markdown agent in the test fixture. See [tests/e2e/provider-config.test.ts](tests/e2e/provider-config.test.ts).
-- Unit test files share one process, and `mock.module` is global and permanent for it. [tests/unit/autoCompactThreshold.test.ts](tests/unit/autoCompactThreshold.test.ts) stubs `getInitialSettings`, so every file that runs after it reads that stub's object instead of disk — a test that writes `freecode.json` and expects a settings-gated code path to change silently keeps the default, passing alone and failing in the suite. Gate such tests on an env var the code checks ahead of settings (`isAutoMemoryEnabled` reads `CLAUDE_CODE_DISABLE_AUTO_MEMORY` first). Module-level `memoize` leaks the same way: `getAutoMemPath` is keyed on `getProjectRoot()`, so it keeps returning the first file's `FREECODE_CONFIG_DIR`.
+- Reasoning continuation data is provider-specific and not portable. A `ProviderType` missing from the predicate table loses all reasoning in silence. `vertex` and `foundry` alias the `anthropic` entry.
+- Gemini signs a whole Part, so a signature rides on text and tool_use blocks too. Never move one between blocks.
+- Bedrock rejects an assistant turn whose signed blocks were edited or reordered. Removal of an intervening `toolUse` is enough to trigger it.
+- OpenAI-compatible endpoints disagree on the reasoning field name, and some reject an unknown one. The adapter records the field that a response used and echoes into that same field. Never guess it. DeepSeek V4 returns 400 without the replay, and other endpoints ignore it.
 
-## Provider system rules
+### Bedrock Converse
 
-- Provider configuration is driven by `freecode.json`. Read the source-of-truth files above for exact schemas and resolution order.
-- Prefer taking auth and config through `ProviderConfig` and injected callbacks rather than reading env directly, so a provider's behaviour is determined by its config. Some adapters must own credential acquisition themselves (Bedrock signing, Gemini's `GoogleAuth`), which is why there is no single impure boundary to route everything through.
-- Query capabilities through the registry instead of branching on provider identity. Special cases for Anthropic proxies, first-party features, and cache behavior belong in the provider/model layer.
-- Auth is independent of wire format. Do not assume a provider type implies a specific auth method.
-- Do not hardcode Anthropic URLs or API versions outside [src/constants/api.ts](src/constants/api.ts).
-- Anthropic-platform-only body metadata and headers must stay gated to Anthropic-type providers. This prevents meaningless identifiers and per-session cache-key churn on other providers.
-- `defaultSubagentModel` is a hard override for subagent routing. If changing tiered agent model behavior, read [src/utils/model/agent.ts](src/utils/model/agent.ts) and the provider-config tests first.
+- The header-only `claude-code-*` betas return 400. Only the identifiers that Converse documents can travel in the body.
+- `ContentBlockStart` carries only a `toolUse` member. Open text and reasoning blocks from the first delta instead.
+- A reasoning signature can arrive in several deltas. Accumulate the fragments, and decode base64 `redactedContent` before you join it.
 
-### Anthropic first-party request requirements
+### Stream events
 
-Three mechanisms are required for 1P Anthropic API requests. All three must stay gated to Anthropic-type providers.
+A `stream_event` that leaves [src/services/api/claude.ts](src/services/api/claude.ts)
+carries domain types, so extended thinking is `reasoning`, never `thinking`.
+`DomainStreamEvent.content_block` widens to `{ type: string }`, so a comparison
+against a wire type typechecks and silently never matches. Use
+[src/types/domainGuards.ts](src/types/domainGuards.ts).
 
-1. **`x-anthropic-billing-header`** (system prompt block) — Attribution string embedded as the first system prompt `TextBlockParam` (not an HTTP header). Built by `getAttributionHeader()` in [src/constants/system.ts](src/constants/system.ts). Contains `cc_version=<version>.<fingerprint>`, `cc_entrypoint`, `cch=<integrity_hash>`, and optional `cc_workload`. The `cch` placeholder is replaced at fetch time in [src/services/api/adapters/anthropic-adapter-impl.ts](src/services/api/adapters/anthropic-adapter-impl.ts) with an xxHash64 over the serialized body (see [src/utils/cch.ts](src/utils/cch.ts)); the server verifies this to gate features like fast mode. Never carries a cache breakpoint: `cch` changes on every request, so one there could not hit. Can be disabled via `CLAUDE_CODE_ATTRIBUTION_HEADER=false`.
+## System prompt and cache prefix
 
-2. **`metadata.user_id`** (request body field) — JSON-stringified object containing `device_id`, `account_uuid`, `session_id`, and optional extra fields from `CLAUDE_CODE_EXTRA_METADATA`. Built by `getAPIMetadata()` in [src/services/api/claude.ts](src/services/api/claude.ts). Required for rate limiting and user identification; requests without it get 429s.
+The prefix order is `tools`, then `system`, then `messages`.
 
-3. **`CLISyspromptPrefix`** (system prompt identity) — The "You are Claude Code, Anthropic's official CLI" string placed immediately after the billing header. Built by `getCLISyspromptPrefix()` in [src/constants/system.ts](src/constants/system.ts). The 1P API requires this for non-Haiku models; requests without it are rejected. There is one variant; `CLI_SYSPROMPT_PREFIXES` is a set so `splitSysPromptPrefix` can identify the block by content rather than position, and a provider that declares `customSyspromptPrefix: false` omits it. Its own block in `splitSysPromptPrefix`, but uncached — at ~30 tokens a breakpoint there would only cover `tools + attribution + prefix`, which the tools breakpoint already covers without the varying attribution block.
+- Keep the system prompt byte-identical across sessions and projects. That is what lets a fresh session in a new directory read the prefix instead of writing it. Session facts (cwd, model, git status, scratchpad path) belong in the prepended user-context message, and [tests/unit/staticSystemPrompt.test.ts](tests/unit/staticSystemPrompt.test.ts) guards the rule.
+- Tool-derived variation in the system prompt is free, because a change to the tools block already invalidates everything after it.
+- The memory prompt names directories but must not interpolate paths, which would cost a per-project prefix. Agent memory is the exception, because a subagent has no environment block.
+- The API allows four breakpoints and returns a hard 400 on a fifth. Three are in use, at three different change frequencies. Keep the fourth as headroom.
+- The tail marker belongs on the last element of `filteredTools`, because server tools are appended later. On an assistant message it walks back to the last non-reasoning block.
+- Do not spend the free breakpoint on the 20-block cache lookback. Real tool loops exceed it on 0.014% of turns, and such a miss costs one extra cache write that the next turn repairs.
+- Do not reintroduce global cache scope. It was removed on purpose, because the shared entry only pays off for byte-identical preambles at a scale this fork does not have.
+- The attribution fingerprint depends on the first API user message. Do not add per-turn content ahead of it. Do not reshape the user-context prepend. Do not drop its module-level memoization. Clear its caches only at compact, clear, or a prompt injection change.
 
-## Build and settings rules
+### Output styles
 
-- Feature flags are compile-time `feature(...)` gates. Before adding or changing a flag, inspect [scripts/build.ts](scripts/build.ts) and existing source references so the flag is intentionally default, dev-full, or explicitly build-only.
-- Do not reintroduce React Compiler artifacts into source. The checked-in `.tsx` files are the clean pre-compilation source; compiler output belongs only in the build staging path.
-- Do not copy settings tables, default model lists, env-var lists, or feature-flag lists into this file. Link to the schema or build script instead.
+- A style body must stay byte-stable, because the default style sits in the cached prefix. Never substitute `${CLAUDE_PLUGIN_ROOT}`, and never render a source path beside the name.
+- The active style is a module latch, resolved once per process, so a live conversation's prefix never moves under it. Only `/clear` resets it. A synchronous caller must use `getActiveOutputStyleNameSync`.
 
-## Non-obvious gotchas
+## Context attachments
 
-### Scroll re-pin after context clear or conversation ID changes
+- `getAttachmentMessages` runs per tool-loop iteration, not per user turn, and every attachment that it yields stays in the conversation forever. An attachment with a stable predicate duplicates on every tool call and accelerates the compaction that it warns about.
+- Put standing policy in the cached prefix instead. Guidance about one tool belongs in that tool's own description. Only cross-cutting policy belongs in [src/constants/prompts.ts](src/constants/prompts.ts). Reserve an attachment for news.
+- For a once-per-window guard, test the transcript, not session state. Compaction replaces the history and re-arms the guard with no reset hook.
+- Never count `AssistantMessage` objects as turns. Streaming emits one per content block, so one response with three parallel tool calls advances such a counter by four. Count human turns, or count responses keyed by `message.id`.
+- Prefer a trigger that decays. A gate that a session satisfies forever fires forever.
 
-Virtual scrolling caches item heights by message UUID and conversation ID. If you modify clear, compact, plan-mode approval, or any path that bumps `conversationId`, ensure scroll is re-pinned after the bump and after async operations that can render intermediate empty ranges. Read [src/hooks/useVirtualScroll.ts](src/hooks/useVirtualScroll.ts), [src/commands/clear/conversation.ts](src/commands/clear/conversation.ts), and the relevant REPL code before changing these paths.
+## Injected context in the UI
 
-### Fingerprint stability depends on the first API user message
+- Reminder text and the CLAUDE.md user-context block do not exist in the transcript. [src/components/Messages.tsx](src/components/Messages.tsx) rebuilds both at render time. Leave the request path alone.
+- `isVirtual` is not an escape hatch. `transformMessagesForExternalTranscript` promotes such a row to a real message on persist, so on resume it becomes the first API user message and breaks the fingerprint.
+- Keep `formatUserContextMessageContent` byte-identical to what `prependUserContext` sends.
+- `shouldHideAttachmentInUI` and `computeUnseenDivider` must agree, or the divider anchors to a row that the transcript then skips.
 
-Anthropic attribution uses a fingerprint derived from the first API user message. Do not add per-turn dynamic content ahead of it, reshape the stable user-context prepend, remove module-level memoization from user context, or clear user-context caches except at semantic invalidation boundaries such as prompt injection changes, compact, or clear. Read [src/utils/fingerprint.ts](src/utils/fingerprint.ts), [src/utils/contextInjection.ts](src/utils/contextInjection.ts), [src/context.ts](src/context.ts), [src/services/api/claude.ts](src/services/api/claude.ts), and the compact/clear cleanup code before touching this flow.
+## Subagents
 
-### UI task store must bypass AsyncLocalStorage agent context
+- `TasksV2Store` must call `getMainTaskListId()`. `setTimeout` inherits the subagent `AsyncLocalStorage` scope, so `getTaskListId()` reads another agent's directory.
+- `createSubagentContext` nulls every parent UI callback. Route anything that the UI must show onto `LocalAgentTaskState` through an explicit `runAgent` callback.
+- Every `runAgent` consumer must call `appendRetainedAgentMessage`, or that drill-down transcript renders empty. There are three loops.
+- The live Agent card is `AgentProgressLine` through `GroupedAgentToolUseView`. `renderToolUseProgressMessage` serves only the non-grouped and slash-command paths, so a change to one alone looks like no change at all.
 
-`TasksV2Store` in [src/hooks/useTasksV2.ts](src/hooks/useTasksV2.ts) must use `getMainTaskListId()`, not `getTaskListId()`. Signals like `notifyTasksUpdated()` fire inside the subagent's `AsyncLocalStorage` scope, and `setTimeout` inherits that context — causing the main UI to fetch from the wrong task list directory.
+The drill-down swaps data. It does not mount a screen, so ScrollBox, `Messages`
+and `useVirtualScroll` all stay alive and `conversationId` does not change.
+Three consequences, none of them visible at the call site:
 
-### Subagent UI state travels through the task, not the parent's callbacks
+- Guard every prop scoped to "whose transcript is this" on `viewedAgentTask`. Do not guard on `viewedTeammateTask`, which excludes local agents.
+- Key the subtree on the viewed task. Sidechains reuse the leader's UUIDs, so the two transcripts collide in the height cache and in React keys.
+- Re-pin scroll in the `useLayoutEffect` beside `repinScroll`. Do not add a second re-pin keyed on message count, because it also fires during ordinary streaming and drags the user down.
 
-`createSubagentContext` in [src/utils/forkedAgent.ts](src/utils/forkedAgent.ts) deliberately nulls every parent UI callback, so nothing a subagent does can reach the leader's spinner directly. Anything the drill-down or the Agent card must show has to be routed onto `LocalAgentTaskState` ([src/tasks/LocalAgentTask/LocalAgentTask.tsx](src/tasks/LocalAgentTask/LocalAgentTask.tsx)) via an explicit `runAgent` callback, the way `onStreamMode` and `onCompactProgress` are. Two consequences:
+## Sessions and resume
 
-- Every `runAgent` consumer must call `appendRetainedAgentMessage`, or the drill-down transcript for that flavour of agent renders empty. There are three loops: `runAsyncAgentLifecycle` in [src/tools/AgentTool/agentToolUtils.ts](src/tools/AgentTool/agentToolUtils.ts), plus the foreground and backgrounded-continuation loops in [src/tools/AgentTool/AgentTool.tsx](src/tools/AgentTool/AgentTool.tsx).
-- The live Agent card in the main transcript is `AgentProgressLine` reached through `GroupedAgentToolUseView`, _not_ `renderToolUseProgressMessage` — the latter only serves the non-grouped and slash-command paths. Changing only one of them looks like the change had no effect.
-
-### The subagent drill-down is a data swap, not a screen
-
-Selecting an agent in the coordinator panel only changes which array feeds `displayedMessages` in [src/screens/REPL.tsx](src/screens/REPL.tsx). The `FullscreenLayout`, the ScrollBox DOM node, `Messages`, `VirtualMessageList` and the `useVirtualScroll` instance all stay mounted, and `conversationId` is not bumped. Ctrl+O transcript mode is the opposite — an early return, so its subtree unmounts, which is why its own comment says reusing `scrollRef` is safe. Three things follow, and none of them are visible at the call site:
-
-- Every prop scoped to "whose transcript is this" needs a `viewedAgentTask` guard. Missing one leaks silently in one direction only: the leader's `streamingToolUses` used to reach the agent view, where `Messages` synthesizes rows for streaming tool uses absent from the displayed list and `reorderMessagesInUI` appends them — so leader tool calls materialized inside an agent's transcript. Guard on `viewedAgentTask` (either flavour), not `viewedTeammateTask`, which excludes local agents.
-- The subtree is keyed on the viewed task so a switch remounts it. Resetting the caches individually is not equivalent: row keys are `` `${uuid}-${conversationId}` `` and agent sidechains preserve the leader's UUIDs for fork-inherited messages ([src/tools/AgentTool/runAgent.ts](src/tools/AgentTool/runAgent.ts)), so the two transcripts can collide in `heightCache`, `expandedKeys` and React's own reconciliation.
-- ScrollBox state is imperative on the surviving DOM node, so scroll position, sticky and clamp bounds survive the swap and park the new view at the old one's offset. The re-pin lives in a `useLayoutEffect` next to `repinScroll`; it fires before the async sidechain bootstrap fills an agent's messages, and sticky follow handles the rest, so do not add a second re-pin keyed on message count — that one also fires during ordinary agent streaming and drags the user back down.
-
-### `stream_event` content blocks carry domain types, not wire types
-
-By the time a `stream_event` leaves [src/services/api/claude.ts](src/services/api/claude.ts) its `content_block` has been converted to a `DomainContentBlock`, so extended thinking is `reasoning`/`redacted_reasoning` — never `thinking`. `DomainStreamEvent.content_block` widens to `{ type: string; ... }` ([src/types/domain.ts](src/types/domain.ts)), so comparing against a wire type still typechecks and silently never matches. Use the guards in [src/types/domainGuards.ts](src/types/domainGuards.ts).
-
-### A session ID is not exclusive, and four resume paths can each adopt one
-
-Nothing stops two live processes holding one session ID: they then interleave writes into one transcript (two `{"type":"mode"}` startup headers in one file is the signature) and share every store keyed on the ID, `~/.freecode/tasks/<sessionId>/` included — which surfaces as a `stale_task_list` reminder listing another window's tasks. `getLiveSessionHolders` ([src/utils/concurrentSessions.ts](src/utils/concurrentSessions.ts)) answers who holds one; it is deliberately read-only, because `isProcessRunning` collapses `EPERM` to false, so a PID it cannot probe is one it must not sweep. That also makes the guard fail open.
-
-Four independent implementations can adopt a session, and a check added to one covers none of the others: `processResumedConversation` ([src/utils/sessionRestore.ts](src/utils/sessionRestore.ts)) for the startup flags, `ResumeConversation.onSelect` for the picker, `REPL.resume` for `/resume`, and `loadInitialMessages` ([src/cli/print.ts](src/cli/print.ts)) for headless. Only the first, second and fourth share `loadConversationForResume`, which is where the `beforeResumeSideEffects` hook fires — the one point before `copyPlanForResume`, `copyFileHistoryForResume` and `processSessionStartHooks('resume')`, so refusing there leaves no trace. `/resume` never calls that loader and has to check on its own.
-
-Two traps when refusing. `gracefulShutdownSync` only *schedules* the exit and returns, so a guard that just calls it falls through and adopts the session it declined, right up until the process dies — throw `ResumeCancelledError` after it and swallow that at each caller. And a mid-session fork is not `/branch`'s `'fork'` entrypoint: `'fork'` means "same conversation, new ID" and therefore skips content-replacement reconstruction because tool-use IDs are already correct, which is wrong when the messages come from a different session. That is what `'ownership_fork'` ([src/types/command.ts](src/types/command.ts)) distinguishes. Neither fork flavour needs to write its own transcript: `useLogMessages` re-records the whole array whenever the first message UUID changes.
-
-### Project config uses both `.claude/` and `.freecode/` directories
-
-Per-project config supports both `.claude/` (legacy) and `.freecode/` (preferred). When both exist, `.freecode/` takes precedence. Use helpers from [src/utils/projectConfigPaths.ts](src/utils/projectConfigPaths.ts) instead of hardcoding either directory name.
-
-### ScrollBox children must not size themselves from the cross axis
-
-Inside ScrollBox content, a Yoga node whose height comes from the parent — a percentage height, or `alignSelf: 'stretch'` on a node with no content — can collapse after culling and re-entry, falling back to its `minHeight`. A vertical divider built that way silently paints short. Give divider-like nodes real content instead: in [src/components/LogoV2/LogoV2.tsx](src/components/LogoV2/LogoV2.tsx) the divider is the right panel's `borderLeft`, so its height is the feed's own height. Reproduce with `!seq 1 200` to push the node out of view, then PgUp back to it.
-
-### A bordered ScrollBox's `height` is outer rows, and the modal slot owns the scroll keys
-
-`height` on a `ScrollBox` with a `borderStyle` includes the 2 border rows, so the content viewport is `height - 2`. Code that budgets in content lines has to add them back: `ShellDetailDialog` did not, so a command of 2 wrapped lines or fewer rendered an empty box, one of N <= 8 lines silently dropped its last two, and `commandScrollable` (N > height) reported nothing to scroll — no position footer, no Tab hint, no click-to-focus border.
-
-Scroll-context keys (wheel, PgUp/PgDn, ctrl+home/end) are owned by REPL's `ScrollKeybindingHandler`, which registers before any modal mounts and therefore consumes them first — a modal cannot claim them with its own `useInput`. It drives whatever handle the modal published on `ModalContext.scrollRef` (`useModalScrollRef`), falling back to the transcript. `Tabs` attaches it for tall content; a dialog with more than one panel assigns the focused one on every commit, since a panel behind `Suspense` gets its handle a commit late. Bare pager keys (arrows, j/k, g/G, ctrl+u/d/b/f) are not in that set — they only reach a modal through its own `useInput` plus `modalPagerAction`.
-
-### `disableAllHooks` must be checked at every hook channel
-
-Settings hooks, plugin-registered hooks, and session-derived (agent/skill frontmatter) hooks are assembled separately in [src/utils/hooks.ts](src/utils/hooks.ts). `areAllHooksDisabled()` from [src/utils/hooks/hooksConfigSnapshot.ts](src/utils/hooks/hooksConfigSnapshot.ts) gates each one independently — dropping the check at any single channel silently re-enables that channel. `hasWorktreeCreateHook()` mirrors the same filtering and must stay in sync, or it reports hooks that execution then can't find.
-
-### Null tool arguments are omissions, except where the schema admits null
-
-The Responses API normalizes a function tool's schema into OpenAI's strict subset on its own, and strict requires every property to sit in `required` — so on the codex path a model cannot omit an optional field and sends `null` instead. [src/utils/stripStrictNullInputs.ts](src/utils/stripStrictNullInputs.ts) removes those placeholders before validation, but only where the schema says the field may be absent, and never for a `null` the schema itself admits: an MCP tool can mean something by it (agent-browser's `browser_open {profile: null}` asks for a throwaway profile). Same for `""` on a required field, which is a value, not an omission. Pass it `tool.inputJSONSchema ?? tool.inputSchema` — an MCP tool's Zod schema is an opaque passthrough, so the Zod schema alone makes every MCP argument unrecognizable and strips it.
-
-### modelSettings.json is filtered to model keys on read
-
-`modelSettings.json` merges after `freecode.json` within `userSettings`, and `SettingsSchema` is `.passthrough()`, so any general key there would silently outrank `freecode.json`. Reads project it to `MODEL_SETTINGS_KEYS` ([src/utils/settings/modelSettingsKeys.ts](src/utils/settings/modelSettingsKeys.ts)) to mirror the existing write routing. The projection runs on raw JSON _before_ schema validation, so an invalid general key can't fail the file and take its provider config down with it. Model keys still resolve from `freecode.json` when absent from `modelSettings.json`.
-
-### Terminals mangle modified arrow keys — don't build UI on them
-
-Apple Terminal strips shift from arrows: `shift+↑` arrives as a bare `up`, so a `key.shift`-gated branch can never fire there, and the bare arrow silently triggers whatever plain-arrow behavior exists. It sends `option+↑` as ESC-prefixed `ESC ESC [ A`, often split across reads, which [src/ink/parse-keypress.ts](src/ink/parse-keypress.ts) parses as `escape` then `up` — enough to cancel a dialog. ESC-prefix _is_ folded into `meta` for letters (`ESC p` → meta+p, which is why `alt+p` works), just not for CSI sequences. Modified arrows are fine as an enhancement on terminals that transmit them (iTerm2/Ghostty/kitty/WezTerm), but anything a user must be able to reach needs a plain key or a mouse click.
-
-### Only the keybinding emitter can claim a key; DOM handlers always run second
-
-[src/ink/components/App.tsx](src/ink/components/App.tsx) emits the `input` event to all `useInput`/`useKeybinding` listeners and only then calls `dispatchKeyboardEvent`, and the two paths carry different event objects. A DOM `onKeyDown` therefore cannot pre-empt a registered keybinding: `preventDefault()`/`stopPropagation()` on the `KeyboardEvent` can't undo an action the emitter already ran. Concretely, `CancelRequestHandler` ([src/hooks/useCancelRequest.ts](src/hooks/useCancelRequest.ts)) claims escape whenever a query is in flight, so a dialog cannot repurpose escape for an inner "leave this sub-region" step — it will cancel the request first. Layered escape semantics have to be built in the emitter layer (an overlay registration or a competing keybinding), not in `onKeyDown`.
-
-### Click-to-focus is free; region focus is component state
-
-[src/ink/hit-test.ts](src/ink/hit-test.ts) focuses the nearest ancestor with a numeric `tabIndex` before dispatching `onClick`, so a dialog gets click-to-focus without any focus plumbing. Adding `tabIndex` to inner panels is usually the wrong move: it changes Tab traversal (which dialogs often bind to something else) and exposes the reconciler's focus-restoration stack when panels re-render. Prefer keeping one focusable root and tracking which panel owns the arrow keys in component state, driven by `onClick`. Note that a click that drags becomes a text selection and never produces `onClick` at all.
-
-### Sticky-scroll resume is baseline-driven, and the baseline must be cleared with the flag
-
-Once `stickyScroll` is broken, the renderer's positional follow only resumes on an exact `scrollTop >= prevMaxScroll` ([src/ink/render-node-to-output.ts](src/ink/render-node-to-output.ts)), so a transcript that grew while the user was scrolled up leaves them permanently parked short of the bottom — newest output below the fold, blank rows above the prompt, no pill (they're past the unseen-divider baseline), until the next submit re-pins. `scrollFollowBaseline` (captured on the sticky→broken transition in [src/ink/components/ScrollBox.tsx](src/ink/components/ScrollBox.tsx)) is what makes scrolling back down resume following. Two consequences: every place that restores sticky must also clear the baseline (`scrollToBottom` and the renderer's follow), or it goes stale; and only downward scrolls may compare against `getFollowThreshold()` — an upward jump measured against a threshold below the current position would jump to the bottom instead.
-
-The renderer's follow is also the one sticky transition that doesn't go through `ScrollBoxHandle`, so it can't notify subscribers by itself — it fires `notifyScrollListeners`, parked on the DOM node by ScrollBox, on a microtask. Anything derived from "are we at the bottom" (the jump-to-bottom pill) is otherwise stuck at whatever it decided on the last React render.
-
-The pill itself must not trust a position comparison alone. `dividerY` is a `scrollHeight` snapshot from scroll-away, and content can end up SHORTER than it was (a live tool/agent card collapsing when it finishes, a virtualized item measuring below `DEFAULT_ESTIMATE`) — an unreachable baseline strands the pill on screen, clicks included, because `jumpToNew` deliberately leaves the divider state alive. `isJumpToBottomVisible` ([src/components/FullscreenLayout.tsx](src/components/FullscreenLayout.tsx)) treats `isSticky()` as authoritative and clamps `dividerY` to the current `scrollHeight`.
-
-### Injected context is rebuilt for display, never moved into the transcript
-
-`showInjectedContext` renders `<system-reminder>` / `<task-notification>` content as collapsible rows. Reminder text mostly does not exist in the transcript — it is materialized from an `Attachment` by `normalizeAttachmentForAPI`, and the CLAUDE.md user-context block is built per-request by `prependUserContext` ([src/utils/contextInjection.ts](src/utils/contextInjection.ts)) and never stored. Both are reconstructed at render time in [src/components/Messages.tsx](src/components/Messages.tsx); the request path is deliberately untouched.
-
-`isVirtual` is not the escape hatch it looks like: `normalizeMessagesForAPI` strips it, but `transformMessagesForExternalTranscript` ([src/utils/sessionStorage.ts](src/utils/sessionStorage.ts)) **promotes it back to a real message on persist**, so on `--resume` a display-only row would become the first API user message and break both the attribution fingerprint and the cached prefix. Keep display-only rows inside `Messages.tsx`'s render derivation, and keep `formatUserContextMessageContent` byte-identical to what `prependUserContext` sends. Two predicates must also agree or the unseen divider anchors to a row the transcript then skips: `shouldHideAttachmentInUI` in [src/components/messages/attachmentVisibility.ts](src/components/messages/attachmentVisibility.ts) is used by both `Messages.tsx` and `computeUnseenDivider`.
-
-### Context attachments are appended per tool-loop iteration and retained forever
-
-`getAttachmentMessages` runs inside the tool-use loop in [src/query.ts](src/query.ts), not once per user turn, and every attachment it yields is pushed onto the conversation permanently. An attachment whose predicate is a pure function of stable state therefore duplicates once per tool call for the rest of the session — a deleted `compaction_reminder` reached 13 identical copies inside a single turn, and because the copies count toward the token total, it accelerated the auto-compact it existed to reassure the model about. Standing policy belongs in the cached prefix instead: guidance about one tool goes in that tool's own description, which `tool.prompt()` supplies ([src/utils/toolSchemas.ts](src/utils/toolSchemas.ts)) and which sits in the tools block ahead of the system prompt; only cross-cutting policy goes in [src/constants/prompts.ts](src/constants/prompts.ts). Reserve attachments for things that are news when they fire.
-
-When an attachment should fire once per compaction window, derive the guard from the transcript rather than session state: `getAutoCompactImminentAttachment` ([src/utils/attachments.ts](src/utils/attachments.ts)) skips when a copy is already present, and compaction replaces the history holding it, so the next window re-arms with no reset hook. Note the ordering — run the cheap threshold check before the O(n) scan.
-
-A throttle measured in "turns" must never count `AssistantMessage` objects. Streaming emits one per content block ([src/services/api/claude.ts](src/services/api/claude.ts)), so a response with a text block plus three parallel tool calls advances such a counter by four, and the tool loop re-checks the threshold just as fast — this is what made the deleted `task_reminder` fire several times per user turn. Which unit replaces it depends on what the reminder is about. `getPlanModeAttachmentTurnCount` counts human turns (non-meta, non-tool-result user messages) because plan mode is about the dialogue. `scanTaskListActivity` counts assistant _responses_, keyed by `message.id` (identical across the blocks of one response, and never `uuid`, which is per block), because the drift it detects happens during autonomous runs that a human-turn counter would sit out entirely.
-
-Also prefer a trigger that decays. `task_reminder`'s other gate was "turns since the last `TaskCreate`/`TaskUpdate`", which a session that never uses those tools satisfies forever; its replacement `getStaleTaskListAttachment` additionally requires the list to actually hold open tasks, so closing it out silences the reminder. Its backwards scan stops at the nearest task write, the previous reminder, or `ROUNDS_BETWEEN_REMINDERS` rounds — that last cap is exact rather than a heuristic, since past it neither event can change the verdict, which is what keeps the scan off the full history that `task_reminder` walked every round.
-
-### Reasoning preservation is per-provider opaque state, gated by one capability
-
-Every provider round-trips reasoning differently and none of them accept another's data, so a reasoning block's continuation data lives under `providerState.<provider>` ([src/types/domain.ts](src/types/domain.ts)) and `stripForeignReasoningBlocks` ([src/utils/messages.ts](src/utils/messages.ts)) drops any block whose target provider can't verify it. Three things to keep in mind when touching this:
-
-- The predicate table is keyed by `ProviderType`, and `vertex`/`foundry` deliberately alias to the `anthropic` entry because they share Anthropic's signed thinking blocks. A provider type missing from that table silently loses all reasoning — which is exactly how interleaved thinking was broken on Vertex and Foundry while the registry advertised `preservesReasoningAcrossTurns: true`. The capability is now the kill switch that gates the whole table, so it must stay wired to the call site in [src/services/api/claude.ts](src/services/api/claude.ts).
-- `providerState` is on text and tool_use blocks too, not just reasoning ones, because Gemini's `thoughtSignature` is metadata on a whole Part and rides on whichever part produced it. Never move a signature between blocks or merge signed with unsigned blocks.
-- Signed reasoning must be replayed verbatim and in its original position. Bedrock rejects an assistant turn whose signed blocks were edited or reordered, and removing an intervening `toolUse` so two reasoning blocks become adjacent is enough to trigger it.
-
-### Bedrock Converse hides Anthropic parameters in additionalModelRequestFields
-
-Converse normalizes away everything Anthropic-specific, so `thinking`, `output_config`, and `anthropic_beta` all go inside `additionalModelRequestFields` using Anthropic's snake*case names (`budget_tokens`, not `budgetTokens`) while real Converse fields like `inferenceConfig.maxTokens` stay camelCase. Betas reach it through the `betasInBody` capability, which is what restricts them to the identifiers Converse documents — sending the header-only betas (`claude-code-*`) would 400. Prompt caching is the exception to the snake_case rule: Converse takes a standalone `{cachePoint: {type: 'default', ttl?}}`\_entry* in`system[]`, `toolConfig.tools[]`and`messages[].content[]`rather than a field on the block it follows, so the adapter translates our`cache_control`markers into extra array entries. Two stream-shape gotchas:`ContentBlockStart`only ever carries a`toolUse`member, so text and reasoning blocks must be opened from their first delta rather than from the start event; and a reasoning signature is not promised to arrive in one delta, so fragments have to accumulate (and base64`redactedContent` fragments must be decoded before concatenating, never string-joined).
-
-### The system prompt is a static cache prefix; session facts go in user context
-
-The cache prefix order is `tools` → `system` → `messages`, on both Anthropic and Bedrock. Two things follow, and both are easy to get backwards.
-
-Tool-derived variation in the system prompt is **free**: if `enabledTools` changes, the tools block changed first and already invalidated everything downstream, so the conditionals in `getSessionSpecificGuidanceSection` and `getUsingYourToolsSection` cost nothing. Anything _not_ derived from tools is what fragments the prefix — cwd, model, scratchpad path, git status. Those live in the prepended user-context message (`getUserContext` + `getSystemContext` + `getEnvContext`, assembled into one object in [src/query.ts](src/query.ts)), never in a prompt section. Keeping the system prompt byte-identical across sessions and projects is what lets a fresh session in a new directory _read_ the ~15-20K-token system prefix instead of writing it. [tests/unit/staticSystemPrompt.test.ts](tests/unit/staticSystemPrompt.test.ts) guards this; it is easy to reintroduce a path into a section without noticing.
-
-The memory prompt is the section this is easiest to get wrong, because it is half the system prompt and it is _about_ directories. It names them (`Memory directory`, `Team memory directory`, `Session transcript directory`, exported from [src/memdir/memdir.ts](src/memdir/memdir.ts)) and `getMemoryEnvItems()` puts the real paths in the environment block instead; the search commands carry `<Memory directory>` placeholders the model substitutes. Interpolating a path back in costs a per-project prefix. Agent memory is the exception and still gets a literal path, since a subagent has no environment block of its own.
-
-Breakpoints are three of the API's four: the last real tool, the one cached system block, and the last message. The fourth slot is deliberately free — a 5th `cache_control` is a hard 400, and the API's own automatic caching (a top-level `cache_control` that auto-places one breakpoint) also 400s when four explicit ones already exist. We use explicit breakpoints rather than automatic because automatic gives exactly one, and ours sit at three different change frequencies: tools rarely change, the system block never does, the tail changes every turn. The tools breakpoint is the only one ahead of the attribution block, whose `cch=` field is a hash of the whole request body and so differs on every request — which also makes it the diagnostic if that block ever stops being stripped server-side (the tools breakpoint would hit while the system one never did). Order matters at the tail: server tools are appended _after_ `toolSchemas`, so the marker goes on the last element of `filteredTools`, not of `allTools`, or toggling `/advisor` moves it. On an assistant message the marker walks back to the last block that is not reasoning — testing only the final block silently drops the breakpoint for a turn that ends in thinking.
-
-A cache lookup only searches back **20 content blocks** from a breakpoint for an existing write. This is the one argument for a second message breakpoint, and it does not survive contact with the data. Between consecutive requests in a tool loop the transcript grows by `1 + 2N` blocks for `N` parallel tool calls (one assistant text block, `N` `tool_use`, `N` `tool_result`), so the lookback misses at `N >= 10`. Measured over 43,067 real tool-loop boundaries from 500 recent sessions in `~/.freecode/dump-prompts`: `N = 1` for 93.3% of turns, `N <= 4` for 99.8%, `N >= 10` for 0.014% (6 turns), and the largest `N` ever observed is 13. A miss also costs one extra cache write on that iteration only — the next iteration re-establishes the entry. Do not spend the fourth breakpoint on a 1-in-7,000 event that self-heals: the slot is worth more as headroom, since a 5th `cache_control` is a hard 400. Note that `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` (default 10) caps how many tools _execute_ at once and says nothing about how many the model _emits_; do not reason about `N` from it.
-
-Global cache scope (`scope: 'global'`, the `prompt-caching-scope-*` beta, and a `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` sentinel splitting static from dynamic sections) was removed. It shares one cache entry across _all_ organizations, which only pays off when millions of users send byte-identical preambles; this fork's prompt is its own, so the entry was only ever written and read by us — exactly what org scope already does. It cost three defects to keep: the sentinel was inserted based on the default provider but filtered based on the selected model, so mixed-provider setups leaked the literal string into the prompt; any MCP tool disabled it wholesale; and its static/dynamic split invited 2^N fragmentation.
-
-### An output style suppresses prompt sections, and is snapshotted per process
-
-The system prompt's static half is four groups, in order: always-on sections, the coding group (`# Doing tasks`, `# Code style`), the response group (`# Response style`), then `# Output Style: <name>`. A style drops the coding group unless it sets `keepCodingInstructions` and the response group unless it sets `keepResponseStyle`, and it takes over the intro's role sentence only when it drops the coding group — so a style that layers on top of the coding agent reads as one, and a style that replaces it does not. Split a section and the split has to respect that boundary: `# Text output` keeps the mechanics and the honesty rules because they hold whatever the style is, while length and cadence live in `# Response style` because a style is entitled to replace them.
-
-Because the built-in `simple-english` is the default, the style is part of the cached prefix for nearly every session. That only stays cacheable while style bodies are byte-stable: never substitute `${CLAUDE_PLUGIN_ROOT}` (plugin agents do; output styles deliberately do not), and never render a source path or `baseDir` alongside the name.
-
-The _active_ style is resolved once per process and stored in a module latch in [src/outputStyles/outputStyles.ts](src/outputStyles/outputStyles.ts), separate from the memoized catalogue the pickers read. `/config` and `/output-style` write the setting without touching the latch, so a live conversation's prefix never moves under it; only `/clear` calls `resetActiveOutputStyle`, since it starts a fresh conversation anyway. Anything synchronous (the statusline payload, the SDK init message) must go through `getActiveOutputStyleNameSync`, which falls back to the alias-resolved setting until the latch resolves.
-
-### Chat-completions reasoning: four wire conventions, detected not configured
-
-OpenAI-compatible endpoints disagree on the field name — `reasoning_content` (DeepSeek, xAI, Qwen, Kimi, GLM, Fireworks, llama-server), `reasoning` (Groq, Together, vLLM), OpenRouter's lossless `reasoning_details[]`, or nothing at all (OpenAI's own endpoint, which has no replayable reasoning item; that needs the Responses API). The adapter records whichever field a response used on the block's `providerState` and echoes back into that same one, so a block with no recorded field is never guessed at. Replay is genuinely required in some tool loops (DeepSeek V4 returns 400 without it) and merely ignored in others (vLLM deferred input support; most Jinja templates strip prior thinking), which is why the default is to echo and `preservesReasoningAcrossTurns: false` is the opt-out for endpoints that reject unknown assistant-message fields.
-
-### Bash permission analysis is AST-only and fails closed
-
-There is exactly one bash parser ([src/utils/bash/ast.ts](src/utils/bash/ast.ts)) and no fallback. The `shell-quote` path it replaced mis-parsed in ways it could not detect — backslashes inside single quotes, `\r` as whitespace, mid-word `#` as a comment, silently dropped unmatched quotes — so falling back to it on parse difficulty handed those bypasses to exactly the inputs most likely to be adversarial. A command the parser refuses is `too-complex`, which becomes a prompt; never a second opinion, and never "validate nothing". `shell-quote` survives only in files that parse something which is not a security decision (display heuristics, shell completion at a cursor, slash-command arguments, execution-time quoting) — keep it there.
-
-Two invariants that are easy to break by accident:
-
-- **Wrapper semantics live in one place.** `env`, `timeout`, `nice`, `nohup`, `time` and `stdbuf` are stripped by [src/utils/bash/wrappers.ts](src/utils/bash/wrappers.ts), which fails closed on any flag it does not understand. Four copies of this logic once existed and disagreed: `env git status` and `stdbuf -o 0 git status` skipped the bare-repo RCE gate, and `env rm -rf /tmp/x` did not match a `Bash(rm:*)` deny. A layer that strips a wrapper another layer doesn't is directly exploitable, in both directions.
-- **`sourceText` and `matchText` answer different questions.** `sourceText` is the exact span and is what exact rules, display and execution use; `matchText` is the resolved argv and is what prefix and wildcard rules use, so `SUB=push && git $SUB --force` matches `Bash(git push:*)`. Feeding one where the other belongs silently changes which rules match. Note `sourceText` already excludes redirects — they are structured data on the command — so a read-only check that only looks at text will miss `> /tmp/evil`.
-
-Changes here are guarded by `tests/unit/bashAstSecurity.test.ts`, `bashWrappers.test.ts`, `bashPermissionRules.test.ts`, `bashSedValidation.test.ts` and `bashReadOnly.test.ts`. The last pins a 227-command corpus because `BashTool.isReadOnly` is a positive auto-approval — `extractMemories` and `PromptSuggestion/speculation` act on it without prompting.
+- A session ID is not exclusive. Two live processes can interleave writes into one transcript and share `~/.freecode/tasks/<sessionId>/`.
+- `getLiveSessionHolders` is read-only on purpose and fails open, because `isProcessRunning` reports false for a PID that it cannot probe.
+- Four paths adopt a session, and a check in one covers none of the others: `processResumedConversation`, `ResumeConversation.onSelect`, `REPL.resume`, and `loadInitialMessages`. Only the first, second and fourth share `loadConversationForResume` and its `beforeResumeSideEffects` hook.
+- `gracefulShutdownSync` only schedules the exit and returns. Throw `ResumeCancelledError` after it, or the process adopts the session that it just refused.
+- A mid-session fork is `'ownership_fork'`, not `'fork'`. `'fork'` means one conversation with a new ID, so it skips content reconstruction, which is wrong for messages from another session.
+- Neither fork flavor writes its own transcript. `useLogMessages` re-records the array when the first message UUID changes.
+
+## Config and hooks
+
+- Per-project config lives in `.claude/` or `.freecode/`, and `.freecode/` wins. Use [src/utils/projectConfigPaths.ts](src/utils/projectConfigPaths.ts).
+- `modelSettings.json` merges after `freecode.json`, and `SettingsSchema` passes unknown keys through, so a general key there would outrank `freecode.json`. The reader filters raw JSON to `MODEL_SETTINGS_KEYS` before schema validation, so a bad key cannot take the provider config down with it.
+- `areAllHooksDisabled()` gates settings hooks, plugin hooks and session-derived hooks separately. A missed check re-enables that one channel in silence. `hasWorktreeCreateHook()` must mirror the same filtering.
+
+## Terminal UI
+
+### Scroll
+
+- A ScrollBox child must not take its height from the parent. A percentage height, or `alignSelf: 'stretch'` with no content, collapses to `minHeight` after culling and re-entry. Give a divider node real content, or use the neighbor's `borderLeft`.
+- `height` on a bordered ScrollBox includes the 2 border rows. Code that budgets in content lines must add them back.
+- REPL's `ScrollKeybindingHandler` registers before any modal and owns the wheel, PgUp, PgDn and ctrl+home/end. A modal cannot claim them with `useInput`, and must publish a handle on `ModalContext.scrollRef` instead. Bare pager keys are not in that set.
+- Re-pin scroll after any `conversationId` bump, and after async work that renders an intermediate empty range.
+- Clear `scrollFollowBaseline` wherever you restore sticky scroll. A stale baseline parks the user short of the bottom until the next submit.
+- Compare against `getFollowThreshold()` on downward scrolls only. An upward jump measured that way lands at the bottom.
+- The renderer's follow bypasses `ScrollBoxHandle`, so it calls `notifyScrollListeners` on a microtask. Anything derived from "at the bottom" is otherwise stuck at the last React render.
+- Treat `isSticky()` as authoritative for the jump-to-bottom pill, and clamp `dividerY` to the current `scrollHeight`. Content can end up shorter than the snapshot and strand the pill.
+
+### Input
+
+- Apple Terminal strips shift from arrow keys, and splits `option+↑` into `escape` then `up`. Never put a required action behind a modified arrow key.
+- The keybinding emitter runs before `dispatchKeyboardEvent`, so a DOM `onKeyDown` cannot pre-empt a registered keybinding. `CancelRequestHandler` claims escape during a query. Build layered escape semantics in the emitter layer.
+- A click focuses the nearest ancestor with a numeric `tabIndex`. Keep one focusable root per dialog and track panel focus in component state. A click that drags becomes a selection and never fires `onClick`.
+
+## Tool arguments
+
+A strict schema forces a model to send `null` for an omitted optional field.
+[src/utils/stripStrictNullInputs.ts](src/utils/stripStrictNullInputs.ts) removes
+those placeholders only where the schema allows absence. Never strip a `null`
+that the schema itself admits, because an MCP tool can mean something by it.
+Never strip `""` on a required field, which is a value. Pass
+`tool.inputJSONSchema ?? tool.inputSchema`, because a Zod passthrough hides
+every MCP argument.
+
+## Bash permissions
+
+- There is one bash parser and no fallback. A command that the parser refuses is `too-complex`, which becomes a prompt, never a second opinion. The `shell-quote` path it replaced mis-parsed in ways it could not detect, so a fallback hands bypasses to adversarial input. Keep `shell-quote` in files that parse for display, completion or quoting.
+- Strip wrappers only in [src/utils/bash/wrappers.ts](src/utils/bash/wrappers.ts), which fails closed on an unknown flag. A layer that strips a wrapper another layer keeps is exploitable in both directions.
+- `sourceText` is the exact span, for exact rules, display and execution. `matchText` is the resolved argv, for prefix and wildcard rules. `sourceText` excludes redirects, so a text-only read-only check misses `> /tmp/evil`.
+- `BashTool.isReadOnly` is a positive auto-approval. `extractMemories` and prompt speculation act on it without a prompt.
