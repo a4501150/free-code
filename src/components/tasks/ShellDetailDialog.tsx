@@ -3,13 +3,17 @@ import React, {
   use,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react'
 import type { DeepImmutable } from 'src/types/utils.js'
 import type { CommandResultDisplay } from '../../commands.js'
-import { useModalOrTerminalSize } from '../../context/modalContext.js'
+import {
+  useModalOrTerminalSize,
+  useModalScrollRef,
+} from '../../context/modalContext.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
 import ScrollBox, {
@@ -50,14 +54,21 @@ type Props = {
 // directly (path is documented in the BackgroundTaskOutput tool description).
 const SHELL_DETAIL_TAIL_BYTES = 1_048_576
 
-// Hard caps for the two scroll viewports. Actual heights are computed
-// per-render against the terminal height so the dialog fits without
-// overflowing into the messages area above; see `commandHeight`/`outputHeight`.
+// Hard caps for the two scroll viewports, counted in content lines. Actual
+// heights are computed per-render against the terminal height so the dialog
+// fits without overflowing into the messages area above; see
+// `commandHeight`/`outputHeight`.
 const OUTPUT_VIEWPORT_HEIGHT_MAX = 20
 // Floor so the box stays usable even on very short terminals.
 const OUTPUT_VIEWPORT_HEIGHT_MIN = 5
 const COMMAND_VIEWPORT_HEIGHT_MAX = 8
 const COMMAND_VIEWPORT_HEIGHT_MIN = 1
+// A bordered ScrollBox spends 2 rows of its `height` on the border itself, so
+// the content viewport is `height - 2`. Both panels budget in content lines
+// and add this back when sizing the box — without it a command of 2 lines or
+// fewer rendered an empty box, and one of N <= 8 lines hid its last 2 lines
+// while `commandScrollable` reported nothing to scroll.
+const SCROLLBOX_BORDER_ROWS = 2
 // Vertical chrome the dialog draws around the two ScrollBoxes (Pane
 // divider/pad, title, status/runtime, section labels, inter-section gaps,
 // both ScrollBox borders, both position labels, input guide). Subtracted
@@ -185,6 +196,22 @@ export function ShellDetailDialog({
     event.stopImmediatePropagation()
   })
 
+  // Wheel, PgUp/PgDn and ctrl+home/end never reach this dialog: REPL's
+  // ScrollKeybindingHandler registers before the modal mounts and consumes
+  // them first. It drives whatever handle the modal publishes on
+  // ModalContext, so publish the panel the user picked. Assigned on every
+  // commit because the output panel mounts under Suspense and its handle
+  // therefore appears a commit later than the command panel's.
+  const modalScrollRef = useModalScrollRef()
+  useLayoutEffect(() => {
+    if (!modalScrollRef) return
+    modalScrollRef.current =
+      activePanel === 'command' ? commandScrollRef.current : scrollRef.current
+    return () => {
+      modalScrollRef.current = null
+    }
+  })
+
   // Handle standard close action
   const handleClose = () =>
     onDone('Shell details dismissed', { display: 'system' })
@@ -248,7 +275,10 @@ export function ShellDetailDialog({
               <KeyboardShortcutHint shortcut="Esc/Enter/Space" action="close" />
               <KeyboardShortcutHint shortcut="↑↓/PgUp/PgDn" action="scroll" />
               {commandScrollable && (
-                <KeyboardShortcutHint shortcut="Tab" action="switch panel" />
+                <KeyboardShortcutHint
+                  shortcut="Tab/click"
+                  action="switch panel"
+                />
               )}
               {shell.status === 'running' && onKillShell && (
                 <KeyboardShortcutHint shortcut="x" action="stop" />
@@ -294,7 +324,7 @@ export function ShellDetailDialog({
             borderStyle="round"
             borderColor={panelBorderColor('command')}
             paddingX={1}
-            height={commandHeight}
+            height={commandHeight + SCROLLBOX_BORDER_ROWS}
             maxWidth={Math.max(20, columns - 8)}
           >
             {commandLines.map((line, i) => (
@@ -422,7 +452,7 @@ function ShellOutputContent({
         borderStyle="round"
         borderColor={borderColor}
         paddingX={1}
-        height={outputHeight}
+        height={outputHeight + SCROLLBOX_BORDER_ROWS}
         maxWidth={Math.max(20, columns - 8)}
       >
         {lines.map((line, i) => (

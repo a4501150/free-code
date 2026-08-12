@@ -1061,12 +1061,24 @@ export function REPL({
   // Null when fullscreen mode is disabled (ref never attached).
   const scrollRef = useRef<ScrollBoxHandle>(null)
   // Separate ref for the modal slot's inner ScrollBox — passed through
-  // FullscreenLayout → ModalContext so Tabs can attach it to its own
-  // ScrollBox for tall content (e.g. /status's MCP-server list). NOT
-  // keyboard-driven — ScrollKeybindingHandler stays on the outer ref so
-  // PgUp/PgDn/wheel always scroll the transcript behind the modal.
-  // Plumbing kept for future modal-scroll wiring.
+  // FullscreenLayout → ModalContext so a modal can own its own scroll area
+  // (Tabs attaches it for tall content like /status's MCP-server list;
+  // ShellDetailDialog publishes whichever of its two panels is focused).
   const modalScrollRef = useRef<ScrollBoxHandle>(null)
+  // What the Scroll-context keys (wheel, PgUp/PgDn, ctrl+home/end) drive: the
+  // modal's own ScrollBox when one is published, the transcript otherwise.
+  // Resolved per access rather than per render because a modal publishes its
+  // handle after the commit that mounted it. Read-only — ScrollKeybindingHandler
+  // never writes .current, and an assignment here would silently diverge from
+  // the transcript ref that FullscreenLayout owns.
+  const scrollKeyTargetRef = useMemo(
+    () => ({
+      get current(): ScrollBoxHandle | null {
+        return modalScrollRef.current ?? scrollRef.current
+      },
+    }),
+    [],
+  )
   // Timestamp of the last user-initiated scroll (wheel, PgUp/PgDn, ctrl+u,
   // End/Home, G, drag-to-scroll). Stamped in composedOnScroll — the single
   // chokepoint ScrollKeybindingHandler calls for every user scroll action.
@@ -4915,12 +4927,12 @@ export function REPL({
           ctrl+c-with-selection copies instead of cancelling the active task.
           Its raw useInput handler only stops propagation when a selection
           exists — without one, ctrl+c falls through to CancelRequestHandler.
-          PgUp/PgDn/wheel always scroll the transcript behind the modal —
-          the modal's inner ScrollBox is not keyboard-driven. onScroll
-          stays suppressed while a modal is showing so scroll doesn't
-          stamp divider/pill state. */}
+          PgUp/PgDn/wheel scroll the ScrollBox a modal published on
+          modalScrollRef, and the transcript when no modal owns one.
+          onScroll stays suppressed while a modal is showing so scroll
+          doesn't stamp divider/pill state. */}
       <ScrollKeybindingHandler
-        scrollRef={scrollRef}
+        scrollRef={scrollKeyTargetRef}
         isActive={
           centeredModal != null ||
           !focusedInputDialog ||

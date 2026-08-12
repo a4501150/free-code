@@ -356,6 +356,24 @@ export class TmuxSession {
     await this.sendText(`\x1b[<0;${col};${row}m`)
   }
 
+  /**
+   * Scroll the wheel `count` times at (col, row), 1-indexed like SGR.
+   *
+   * Button 64 is wheel-up, 65 is wheel-down. A wheel event is a press with no
+   * release, so only one byte sequence per notch.
+   */
+  async sendMouseWheel(
+    direction: 'up' | 'down',
+    col: number,
+    row: number,
+    count = 1,
+  ): Promise<void> {
+    const button = direction === 'up' ? 64 : 65
+    for (let i = 0; i < count; i++) {
+      await this.sendText(`\x1b[<${button};${col};${row}M`)
+    }
+  }
+
   // ── Output ─────────────────────────────────────────────────
 
   async capturePane(): Promise<string> {

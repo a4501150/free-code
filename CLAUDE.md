@@ -113,6 +113,12 @@ Per-project config supports both `.claude/` (legacy) and `.freecode/` (preferred
 
 Inside ScrollBox content, a Yoga node whose height comes from the parent — a percentage height, or `alignSelf: 'stretch'` on a node with no content — can collapse after culling and re-entry, falling back to its `minHeight`. A vertical divider built that way silently paints short. Give divider-like nodes real content instead: in [src/components/LogoV2/LogoV2.tsx](src/components/LogoV2/LogoV2.tsx) the divider is the right panel's `borderLeft`, so its height is the feed's own height. Reproduce with `!seq 1 200` to push the node out of view, then PgUp back to it.
 
+### A bordered ScrollBox's `height` is outer rows, and the modal slot owns the scroll keys
+
+`height` on a `ScrollBox` with a `borderStyle` includes the 2 border rows, so the content viewport is `height - 2`. Code that budgets in content lines has to add them back: `ShellDetailDialog` did not, so a command of 2 wrapped lines or fewer rendered an empty box, one of N <= 8 lines silently dropped its last two, and `commandScrollable` (N > height) reported nothing to scroll — no position footer, no Tab hint, no click-to-focus border.
+
+Scroll-context keys (wheel, PgUp/PgDn, ctrl+home/end) are owned by REPL's `ScrollKeybindingHandler`, which registers before any modal mounts and therefore consumes them first — a modal cannot claim them with its own `useInput`. It drives whatever handle the modal published on `ModalContext.scrollRef` (`useModalScrollRef`), falling back to the transcript. `Tabs` attaches it for tall content; a dialog with more than one panel assigns the focused one on every commit, since a panel behind `Suspense` gets its handle a commit late. Bare pager keys (arrows, j/k, g/G, ctrl+u/d/b/f) are not in that set — they only reach a modal through its own `useInput` plus `modalPagerAction`.
+
 ### `disableAllHooks` must be checked at every hook channel
 
 Settings hooks, plugin-registered hooks, and session-derived (agent/skill frontmatter) hooks are assembled separately in [src/utils/hooks.ts](src/utils/hooks.ts). `areAllHooksDisabled()` from [src/utils/hooks/hooksConfigSnapshot.ts](src/utils/hooks/hooksConfigSnapshot.ts) gates each one independently — dropping the check at any single channel silently re-enables that channel. `hasWorktreeCreateHook()` mirrors the same filtering and must stay in sync, or it reports hooks that execution then can't find.

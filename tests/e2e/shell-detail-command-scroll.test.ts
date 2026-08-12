@@ -5,6 +5,10 @@
  * render it as plain text above the output box, so a long multi-line bash
  * command was unreadable. It now lives in its own ScrollBox that Tab focuses,
  * sharing the pager keys with the output box.
+ *
+ * The panel budgets in content lines, so it must add the ScrollBox's 2 border
+ * rows back when sizing the box. Without that a short command lost its last
+ * two lines with nothing on screen to say so.
  */
 
 import {
@@ -33,6 +37,10 @@ const MARKER_LINES = Array.from(
   (_, i) => `: cmdmarker_${String(i).padStart(2, '0')}`,
 )
 const LONG_COMMAND = `${MARKER_LINES.join('\n')}\nsleep 120`
+
+// Three lines, so the panel is not scrollable and every line must be on
+// screen at once. Two of them used to be eaten by the border rows.
+const SHORT_COMMAND = ': shortmarker_A\n: shortmarker_B\nsleep 120'
 
 describe('Shell detail command panel', () => {
   let server: MockAnthropicServer
@@ -131,5 +139,51 @@ describe('Shell detail command panel', () => {
     const afterClick = await session.capturePane()
     expect(afterClick).toContain('lines 1-')
     expect(afterClick).not.toContain('cmdmarker_39')
+
+    // The wheel reaches the focused panel rather than the transcript behind
+    // the modal: REPL's ScrollKeybindingHandler drives whatever handle the
+    // modal published on ModalContext. 40 notches is past the 35 rows this
+    // panel can travel, so the landing spot is the bottom whatever the
+    // acceleration curve does with them.
+    await session.sendMouseWheel('down', 10, labelRow + 3, 40)
+    await session.waitForText('cmdmarker_39', 10_000)
+    expect(await session.capturePane()).not.toContain('cmdmarker_00')
+  })
+
+  test('short command shows every line', async () => {
+    server.reset([
+      toolUseResponse([
+        {
+          name: 'Bash',
+          input: {
+            command: SHORT_COMMAND,
+            description: 'short-target',
+            run_in_background: true,
+          },
+        },
+      ]),
+      textResponse('Started in background.'),
+    ])
+
+    session = new TmuxSession({
+      serverUrl: server.url,
+      additionalEnv: {
+        CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '0',
+      },
+    })
+    await session.start()
+
+    await session.submitAndApprove('Run a short task in the background')
+    await sleep(500)
+
+    await session.sendLine('/tasks')
+    await session.waitForText('Shell details', 10_000)
+
+    const screen = await session.capturePane()
+    expect(screen).toContain('shortmarker_A')
+    expect(screen).toContain('shortmarker_B')
+    expect(screen).toContain('sleep 120')
+    // Everything fits, so there is no second panel to switch to.
+    expect(screen).not.toContain('switch panel')
   })
 })
