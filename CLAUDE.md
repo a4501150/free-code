@@ -44,6 +44,7 @@ Read these files instead of duplicating their contents here:
 - Prompt suggestions are disabled in `TmuxSession` by default because hidden suggestion calls consume mock server responses. Tests that enable them must account for extra requests.
 - Group multiple turns in one tmux session only when startup, history, resume, and stream-state assumptions are irrelevant. Reset mock servers only after the previous turn is idle.
 - To test subagent model resolution, use a unique marker in the subagent system prompt and locate the subagent request in the mock server log. For feature-flag-gated built-ins, prefer a user-defined markdown agent in the test fixture. See [tests/e2e/provider-config.test.ts](tests/e2e/provider-config.test.ts).
+- Unit test files share one process, and `mock.module` is global and permanent for it. [tests/unit/autoCompactThreshold.test.ts](tests/unit/autoCompactThreshold.test.ts) stubs `getInitialSettings`, so every file that runs after it reads that stub's object instead of disk — a test that writes `freecode.json` and expects a settings-gated code path to change silently keeps the default, passing alone and failing in the suite. Gate such tests on an env var the code checks ahead of settings (`isAutoMemoryEnabled` reads `CLAUDE_CODE_DISABLE_AUTO_MEMORY` first). Module-level `memoize` leaks the same way: `getAutoMemPath` is keyed on `getProjectRoot()`, so it keeps returning the first file's `FREECODE_CONFIG_DIR`.
 
 ## Provider system rules
 
