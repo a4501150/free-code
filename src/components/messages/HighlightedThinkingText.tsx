@@ -2,7 +2,7 @@ import figures from 'figures'
 import * as React from 'react'
 import { useContext } from 'react'
 import { useQueuedMessage } from '../../context/QueuedMessageContext.js'
-import { Box, Text } from '../../ink.js'
+import { Box, NoSelect, Text, type TextProps } from '../../ink.js'
 import { formatBriefTimestamp } from '../../utils/formatBriefTimestamp.js'
 import {
   findThinkingTriggerPositions,
@@ -46,12 +46,7 @@ export function HighlightedThinkingText({
     : []
 
   if (triggers.length === 0) {
-    return (
-      <Text>
-        <Text color={pointerColor}>{figures.pointer} </Text>
-        <Text color="text">{text}</Text>
-      </Text>
-    )
+    return <PointerRow color={pointerColor}>{text}</PointerRow>
   }
 
   // Static rainbow (no shimmer — transcript messages don't animate)
@@ -82,10 +77,30 @@ export function HighlightedThinkingText({
     )
   }
 
+  return <PointerRow color={pointerColor}>{parts}</PointerRow>
+}
+
+/**
+ * The pointer sits in its own gutter box rather than inline in the text, so a
+ * prompt that wraps keeps every line at the same indent as the first one.
+ */
+function PointerRow({
+  color,
+  children,
+}: {
+  color: TextProps['color']
+  children: React.ReactNode
+}): React.ReactNode {
   return (
-    <Text>
-      <Text color={pointerColor}>{figures.pointer} </Text>
-      {parts}
-    </Text>
+    <Box flexDirection="row">
+      <NoSelect fromLeftEdge flexShrink={0}>
+        <Text color={color}>{figures.pointer} </Text>
+      </NoSelect>
+      <Box flexShrink={1} flexGrow={1}>
+        <Text color="text" wrap="wrap">
+          {children}
+        </Text>
+      </Box>
+    </Box>
   )
 }

@@ -3,7 +3,8 @@ import React from 'react'
 import { Ansi, Box, Text } from '../../ink.js'
 import type { Attachment } from 'src/utils/attachments.js'
 import {
-  hasNoSummaryLine,
+  isQueuedTaskNotification,
+  rendersNoSummaryLine,
   type AttachmentWithoutSummaryLine,
 } from './attachmentVisibility.js'
 import { useAppState } from '../../state/AppState.js'
@@ -16,7 +17,6 @@ import { DiagnosticsDisplay } from '../DiagnosticsDisplay.js'
 import {
   getAttachmentSystemReminderBodies,
   getContentText,
-  isTaskNotificationText,
 } from 'src/utils/messages.js'
 import { InjectedContextMessage } from './InjectedContextMessage.js'
 import type { Theme } from 'src/utils/theme.js'
@@ -45,18 +45,6 @@ type Props = {
   showInjectedContext: boolean
 }
 
-/** A queued task notification renders its own detail through
- * UserAgentNotificationMessage. normalizeAttachmentForAPI additionally wraps it
- * in a system reminder, so the generic reminder row would duplicate it. */
-function isQueuedTaskNotification(attachment: Attachment): boolean {
-  if (attachment.type !== 'queued_command') return false
-  const text =
-    typeof attachment.prompt === 'string'
-      ? attachment.prompt
-      : getContentText(attachment.prompt) || ''
-  return isTaskNotificationText(text)
-}
-
 export function AttachmentMessage(props: Props): React.ReactNode {
   const { attachment, addMargin, verbose, showInjectedContext } = props
   const content = <AttachmentMessageContent {...props} />
@@ -69,9 +57,9 @@ export function AttachmentMessage(props: Props): React.ReactNode {
     return content
   }
 
-  // These types have no line of their own, so the reminder row owns the
-  // leading margin; otherwise it sits under an existing summary line.
-  const isOnlyRow = hasNoSummaryLine(attachment.type)
+  // An attachment that renders no summary line has no line of its own, so the
+  // reminder row owns the leading margin; otherwise it sits under one.
+  const isOnlyRow = rendersNoSummaryLine(attachment)
 
   return (
     <Box flexDirection="column">

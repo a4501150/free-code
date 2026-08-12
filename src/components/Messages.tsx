@@ -62,7 +62,10 @@ import {
   type MessageActionsState,
 } from './messageActions.js'
 import { AssistantThinkingMessage } from './messages/AssistantThinkingMessage.js'
-import { shouldHideAttachmentInUI } from './messages/attachmentVisibility.js'
+import {
+  isInjectedContextContinuation,
+  shouldHideAttachmentInUI,
+} from './messages/attachmentVisibility.js'
 import { useShowInjectedContext } from '../hooks/useShowInjectedContext.js'
 import { getUserContext } from '../context.js'
 import { formatUserContextMessageContent } from '../utils/contextInjection.js'
@@ -840,8 +843,8 @@ const MessagesImpl = ({
   )
 
   const renderMessageRow = (msg: RenderableMessage, index: number) => {
-    const prevType = index > 0 ? renderableMessages[index - 1]?.type : undefined
-    const isUserContinuation = msg.type === 'user' && prevType === 'user'
+    const previous = index > 0 ? renderableMessages[index - 1] : undefined
+    const isUserContinuation = msg.type === 'user' && previous?.type === 'user'
     const hasContentAfter =
       msg.type === 'collapsed_read_search' &&
       (!!streamingText ||
@@ -857,6 +860,11 @@ const MessagesImpl = ({
         key={k}
         message={msg}
         isUserContinuation={isUserContinuation}
+        isInjectedContextContinuation={isInjectedContextContinuation(
+          msg,
+          previous,
+          showInjectedContext,
+        )}
         hasContentAfter={hasContentAfter}
         tools={tools}
         commands={commands}

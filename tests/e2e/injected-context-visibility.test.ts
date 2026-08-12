@@ -209,6 +209,42 @@ describe('Injected context visibility', () => {
     expect(after).not.toContain('<task-id>')
   })
 
+  test('injected rows and a wrapped prompt share one grid', async () => {
+    server.reset([textResponse('Done.')])
+
+    session = new TmuxSession({ serverUrl: server.url, width: 70 })
+    await session.start()
+
+    await session.submitAndWaitForResponse(
+      'why I see lots of `Request URL https://example.com/translations/en.json Request Method GET Status Code 404 Not Found`',
+    )
+
+    const lines = (await session.capturePaneWithHistory()).split('\n')
+
+    // The pointer sits in its own gutter, so a prompt that wraps keeps every
+    // line at the first line's indent instead of falling back to column 0.
+    const promptIdx = lines.findIndex(l => l.startsWith('\u276f why I see'))
+    expect(promptIdx).toBeGreaterThan(-1)
+    const wrapped: string[] = []
+    for (let i = promptIdx + 1; i < lines.length; i++) {
+      if (lines[i]!.trim() === '') break
+      wrapped.push(lines[i]!)
+    }
+    expect(wrapped.length).toBeGreaterThan(0)
+    for (const line of wrapped) {
+      expect(line.startsWith('  ')).toBe(true)
+    }
+
+    // A session opens with several reminders. They read as one block: one
+    // blank line above the run, none inside it.
+    const reminderIdxs = lines
+      .map((l, i) => (l.includes('\u25b8 System reminder') ? i : -1))
+      .filter(i => i !== -1)
+    expect(reminderIdxs.length).toBeGreaterThanOrEqual(2)
+    expect(reminderIdxs[1]).toBe(reminderIdxs[0]! + 1)
+    expect(lines[reminderIdxs[0]! - 1]!.trim()).toBe('')
+  })
+
   test('toggling the setting does not change the request body', async () => {
     async function wireMessages(showInjectedContext: boolean): Promise<string> {
       server.reset([textResponse('Done.')])

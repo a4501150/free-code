@@ -13,7 +13,11 @@ import {
   shouldShowUserMessage,
   wrapInSystemReminder,
 } from '../../src/utils/messages.js'
-import { shouldHideAttachmentInUI } from '../../src/components/messages/attachmentVisibility.js'
+import {
+  isInjectedContextContinuation,
+  rendersNoSummaryLine,
+  shouldHideAttachmentInUI,
+} from '../../src/components/messages/attachmentVisibility.js'
 import type { Attachment } from '../../src/utils/attachments.js'
 import type { NormalizedMessage } from '../../src/types/message.js'
 import { USER_CONTEXT_ROW_UUID } from '../../src/constants/messages.js'
@@ -119,6 +123,80 @@ describe('attachment reminder eligibility', () => {
     const msg = normalizedUser('hello')
     expect(shouldHideAttachmentInUI(msg, true)).toBe(false)
     expect(shouldHideAttachmentInUI(msg, false)).toBe(false)
+  })
+
+  test('an attachment whose only content is conditional renders no summary line', () => {
+    // AttachmentMessageContent returns null for both of these at session
+    // start, so their reminder row is the attachment's only row and owns the
+    // blank line above it.
+    expect(
+      rendersNoSummaryLine({
+        type: 'agent_listing_delta',
+        isInitial: true,
+        addedTypes: [],
+      } as unknown as Attachment),
+    ).toBe(true)
+    expect(
+      rendersNoSummaryLine({
+        type: 'agent_listing_delta',
+        isInitial: false,
+        addedTypes: ['explore'],
+      } as unknown as Attachment),
+    ).toBe(false)
+    expect(
+      rendersNoSummaryLine({
+        type: 'skill_listing',
+        isInitial: true,
+        skillCount: 3,
+      } as unknown as Attachment),
+    ).toBe(true)
+    expect(
+      rendersNoSummaryLine({
+        type: 'skill_listing',
+        isInitial: false,
+        skillCount: 3,
+      } as unknown as Attachment),
+    ).toBe(false)
+  })
+})
+
+describe('injected-context row spacing', () => {
+  const reminderRow = () =>
+    normalizedUser(wrapInSystemReminder('auto mode active'), { isMeta: true })
+
+  test('a run of reminder rows packs together', () => {
+    expect(
+      isInjectedContextContinuation(reminderRow(), reminderRow(), true),
+    ).toBe(true)
+  })
+
+  test('the first row of a run keeps its blank line', () => {
+    expect(
+      isInjectedContextContinuation(
+        reminderRow(),
+        normalizedUser('hello'),
+        true,
+      ),
+    ).toBe(false)
+    expect(isInjectedContextContinuation(reminderRow(), undefined, true)).toBe(
+      false,
+    )
+  })
+
+  test('an ordinary prompt after a reminder keeps its blank line', () => {
+    expect(
+      isInjectedContextContinuation(
+        normalizedUser('hello'),
+        reminderRow(),
+        true,
+      ),
+    ).toBe(false)
+  })
+
+  test('nothing packs when the rows are not shown', () => {
+    expect(
+      isInjectedContextContinuation(reminderRow(), reminderRow(), false),
+    ).toBe(false)
   })
 })
 

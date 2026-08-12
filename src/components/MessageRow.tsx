@@ -27,6 +27,8 @@ export type Props = {
   message: RenderableMessage
   /** Whether the previous message in renderableMessages is also a user message. */
   isUserContinuation: boolean
+  /** Whether this row and the one before it are both injected-context rows. */
+  isInjectedContextContinuation: boolean
   hasContentAfter: boolean
   tools: Tools
   commands: Command[]
@@ -97,6 +99,7 @@ export function hasContentAfterIndex(
 function MessageRowImpl({
   message: msg,
   isUserContinuation,
+  isInjectedContextContinuation,
   hasContentAfter,
   tools,
   commands,
@@ -180,7 +183,7 @@ function MessageRowImpl({
     <Message
       message={msg}
       lookups={lookups}
-      addMargin={!hasMetadata}
+      addMargin={!hasMetadata && !isInjectedContextContinuation}
       containerWidth={hasMetadata ? undefined : columns}
       tools={tools}
       commands={commands}
@@ -314,6 +317,12 @@ export function areMessageRowPropsEqual(prev: Props, next: Props): boolean {
   if (prev.columns !== next.columns) return false
 
   if (prev.hasContentAfter !== next.hasContentAfter) return false
+
+  if (
+    prev.isInjectedContextContinuation !== next.isInjectedContextContinuation
+  ) {
+    return false
+  }
 
   // latestBashOutputUUID affects rendering (full vs truncated output)
   const prevIsLatestBash = prev.latestBashOutputUUID === prev.message.uuid
