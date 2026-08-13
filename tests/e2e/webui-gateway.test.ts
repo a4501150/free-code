@@ -1,0 +1,356 @@
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test as bunTest,
+} from 'bun:test'
+import { mkdtemp, readdir, rm } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { textResponse } from '../helpers/fixture-builders'
+import { MockAnthropicServer } from '../helpers/mock-server'
+import { waitForRequestCount } from '../helpers/mock-server-wait'
+import { waitFor } from '../helpers/wait-helpers'
+import { createLoggingTest, sleep, TmuxSession } from './tmux-helpers'
+
+setDefaultTimeout(180_000)
+const test = createLoggingTest(bunTest)
+
+const CLI = join(import.meta.dir, '..', '..', 'cli-dev')
+const PASSWORD = 'a-long-enough-password'
+
+type Dirs = { config: string; home: string }
+
+async function makeDirs(): Promise<Dirs> {
+  return {
+    config: await mkdtemp(join(tmpdir(), 'webui-gw-config-')),
+    home: await mkdtemp(join(tmpdir(), 'webui-gw-home-')),
+  }
+}
+
+function env(dirs: Dirs): Record<string, string> {
+  return {
+    ...process.env,
+    FREECODE_CONFIG_DIR: dirs.config,
+    CLAUDE_CONFIG_DIR: dirs.config,
+    HOME: dirs.home,
+  } as Record<string, string>
+}
+
+async function runCli(
+  dirs: Dirs,
+  args: string[],
+  stdin?: string,
+): Promise<string> {
+  const proc = Bun.spawn([CLI, ...args], {
+    env: env(dirs),
+    stdin: stdin === undefined ? 'ignore' : new TextEncoder().encode(stdin),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const [out, err] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ])
+  await proc.exited
+  return out + err
+}
+
+/** A logged-in HTTP + WebSocket client, the way a browser would arrive. */
+class GatewayClient {
+  cookie = ''
+  csrf = ''
+  constructor(readonly baseUrl: string) {}
+
+  async login(password: string): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/api/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password }),
+    })
+    if (response.ok) {
+      const setCookie = response.headers.get('set-cookie') ?? ''
+      this.cookie = setCookie.split(';')[0] ?? ''
+      this.csrf = ((await response.json()) as { csrf: string }).csrf
+    }
+    return response.status
+  }
+
+  async sessions(): Promise<{
+    sessions: Array<{
+      processKey?: string
+      sessionId: string
+      live: boolean
+      attachable: boolean
+      holders: number
+    }>
+  }> {
+    const response = await fetch(`${this.baseUrl}/api/sessions`, {
+      headers: { cookie: this.cookie },
+    })
+    return response.json() as never
+  }
+
+  openSocket(): Promise<{
+    socket: WebSocket
+    frames: Record<string, unknown>[]
+  }> {
+    const frames: Record<string, unknown>[] = []
+    const socket = new WebSocket(`${this.baseUrl.replace('http', 'ws')}/ws`, {
+      headers: { cookie: this.cookie, origin: this.baseUrl },
+    } as never)
+    socket.addEventListener('message', event => {
+      frames.push(JSON.parse(String(event.data)))
+    })
+    return new Promise((resolve, reject) => {
+      socket.addEventListener('open', () => resolve({ socket, frames }))
+      socket.addEventListener('error', () => reject(new Error('ws error')))
+    })
+  }
+}
+
+async function waitForAttachablePid(configDir: string): Promise<number> {
+  return waitFor(
+    async () => {
+      try {
+        const files = await readdir(join(configDir, 'attach'))
+        const descriptor = files.find(f => /^\d+\.json$/.test(f))
+        return descriptor ? parseInt(descriptor.slice(0, -5), 10) : 0
+      } catch {
+        return 0
+      }
+    },
+    pid => pid > 0,
+    { description: 'a session to become attachable', timeoutMs: 30_000 },
+  )
+}
+
+describe('WebUI gateway', () => {
+  let server: MockAnthropicServer
+  let session: TmuxSession | undefined
+  let dirs: Dirs
+  let baseUrl = ''
+
+  beforeAll(async () => {
+    server = new MockAnthropicServer()
+    await server.start()
+  })
+
+  afterAll(() => {
+    server.stop()
+  })
+
+  afterEach(async () => {
+    if (session) {
+      await session.stop()
+      session = undefined
+    }
+    if (dirs) {
+      await runCli(dirs, ['web', 'stop'])
+      await runCli(dirs, ['daemon', 'stop'])
+      await rm(dirs.config, { recursive: true, force: true })
+      await rm(dirs.home, { recursive: true, force: true })
+    }
+  })
+
+  async function startGateway(): Promise<void> {
+    dirs = await makeDirs()
+    const output = await runCli(
+      dirs,
+      ['web', 'start', '--tunnel', 'none', '--password-stdin'],
+      PASSWORD,
+    )
+    const match = /http:\/\/127\.0\.0\.1:\d+/.exec(output)
+    if (!match) throw new Error(`no gateway URL in output:\n${output}`)
+    baseUrl = match[0]
+  }
+
+  test('survives the terminal that started it and refuses bad credentials', async () => {
+    await startGateway()
+
+    // A separate process sees it, which is the point of hosting it in the
+    // daemon rather than the foreground.
+    const status = await runCli(dirs, ['web', 'status'])
+    expect(status).toContain(baseUrl)
+
+    const client = new GatewayClient(baseUrl)
+    expect(await client.login('not-the-password')).toBe(401)
+
+    const unauthenticated = await fetch(`${baseUrl}/api/sessions`)
+    expect(unauthenticated.status).toBe(401)
+
+    const badOrigin = await fetch(`${baseUrl}/api/login`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://evil.example',
+      },
+      body: JSON.stringify({ password: PASSWORD }),
+    })
+    expect(badOrigin.status).toBe(403)
+
+    expect(await client.login(PASSWORD)).toBe(200)
+    expect(client.csrf.length).toBeGreaterThan(10)
+  })
+
+  test('rejects a websocket upgrade without a session cookie', async () => {
+    await startGateway()
+    const failed = await new Promise<boolean>(resolve => {
+      const socket = new WebSocket(`${baseUrl.replace('http', 'ws')}/ws`)
+      socket.addEventListener('open', () => {
+        socket.close()
+        resolve(false)
+      })
+      socket.addEventListener('error', () => resolve(true))
+      socket.addEventListener('close', () => resolve(true))
+    })
+    expect(failed).toBe(true)
+  })
+
+  test('lists a live terminal session and drives it over the websocket', async () => {
+    await startGateway()
+
+    server.reset([textResponse('Reply for the browser.')])
+    // The session must share the gateway's config home, or they look at
+    // different attach directories.
+    session = new TmuxSession({
+      serverUrl: server.url,
+      reuseConfigDir: dirs.config,
+      reuseHomeDir: dirs.home,
+    })
+    await session.start()
+    await waitForAttachablePid(dirs.config)
+
+    const client = new GatewayClient(baseUrl)
+    expect(await client.login(PASSWORD)).toBe(200)
+
+    const listed = await waitFor(
+      () => client.sessions(),
+      value => value.sessions.some(s => s.live && s.attachable),
+      { description: 'the live session to appear in the list' },
+    )
+    const live = listed.sessions.find(s => s.live && s.attachable)!
+    expect(live.processKey).toMatch(/^\d+:/)
+    expect(live.holders).toBe(1)
+
+    const { socket, frames } = await client.openSocket()
+    try {
+      socket.send(
+        JSON.stringify({
+          type: 'attach',
+          processKey: live.processKey,
+          csrf: client.csrf,
+        }),
+      )
+
+      await waitFor(
+        () => frames,
+        list => list.some(f => f.type === 'attached'),
+        { description: 'the attach acknowledgement' },
+      )
+      await waitFor(
+        () => frames,
+        list =>
+          list.some(
+            f =>
+              f.type === 'event' &&
+              (f.event as { kind: string }).kind === 'snapshot',
+          ),
+        { description: 'the session snapshot' },
+      )
+
+      const snapshot = frames.find(
+        f =>
+          f.type === 'event' &&
+          (f.event as { kind: string }).kind === 'snapshot',
+      )!
+      const meta = (snapshot.event as { meta: { sessionEpoch: number } }).meta
+
+      socket.send(
+        JSON.stringify({
+          type: 'command',
+          id: 'c1',
+          body: {
+            kind: 'submit',
+            commandId: crypto.randomUUID(),
+            content: 'a prompt sent through the gateway',
+            delivery: 'next',
+            sessionEpoch: meta.sessionEpoch,
+          },
+        }),
+      )
+
+      const log = await waitForRequestCount(server, 1, {
+        description: 'the gateway-submitted prompt reaching the API',
+      })
+      expect(JSON.stringify(log[0]!.body.messages)).toContain(
+        'a prompt sent through the gateway',
+      )
+    } finally {
+      socket.close()
+    }
+  })
+
+  test('refuses a websocket attach with a bad csrf token', async () => {
+    await startGateway()
+
+    server.reset([textResponse('unused')])
+    session = new TmuxSession({
+      serverUrl: server.url,
+      reuseConfigDir: dirs.config,
+      reuseHomeDir: dirs.home,
+    })
+    await session.start()
+    await waitForAttachablePid(dirs.config)
+
+    const client = new GatewayClient(baseUrl)
+    await client.login(PASSWORD)
+    const listed = await waitFor(
+      () => client.sessions(),
+      value => value.sessions.some(s => s.attachable),
+      { description: 'the live session to appear' },
+    )
+    const live = listed.sessions.find(s => s.attachable)!
+
+    const { socket, frames } = await client.openSocket()
+    try {
+      socket.send(
+        JSON.stringify({
+          type: 'attach',
+          processKey: live.processKey,
+          csrf: 'forged',
+        }),
+      )
+      await sleep(500)
+      expect(frames.some(f => f.code === 'bad_csrf')).toBe(true)
+      expect(frames.some(f => f.type === 'attached')).toBe(false)
+    } finally {
+      socket.close()
+    }
+  })
+
+  test('publishes a tunnel URL from a custom command provider', async () => {
+    dirs = await makeDirs()
+    // A fake emitter, so the suite never depends on a real tunnel service.
+    const output = await runCli(
+      dirs,
+      [
+        'web',
+        'start',
+        '--tunnel',
+        'command',
+        '--tunnel-command',
+        'echo https://fake-tunnel.example; sleep 30',
+        '--password-stdin',
+      ],
+      PASSWORD,
+    )
+    expect(output).toContain('https://fake-tunnel.example')
+
+    const status = await runCli(dirs, ['web', 'status'])
+    expect(status).toContain('https://fake-tunnel.example')
+  })
+})

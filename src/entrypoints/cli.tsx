@@ -92,6 +92,16 @@ async function main(): Promise<void> {
     return
   }
 
+  // Fast-path for `claude web [subcommand]`: talks to the daemon supervisor,
+  // which hosts the server so it outlives this terminal.
+  if (feature('WEBUI') && args[0] === 'web') {
+    profileCheckpoint('cli_web_path')
+    enableConfigs()
+    const { webMain } = await import('../webui/cli.js')
+    await webMain(args.slice(1))
+    return
+  }
+
   // Fast-path for --worktree --tmux: exec into tmux before loading full CLI
   const hasTmuxFlag = args.includes('--tmux') || args.includes('--tmux=classic')
   if (
