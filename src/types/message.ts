@@ -51,6 +51,7 @@ export type MessageOrigin =
   | { kind: 'scheduled_task'; taskId?: string }
   | { kind: 'plan_verification' }
   | { kind: 'sdk' }
+  | { kind: 'webui' }
 
 // ---------------------------------------------------------------------------
 // Compact metadata

@@ -2674,10 +2674,21 @@ async function run(): Promise<CommanderCommand> {
       // and fire multi-clauding telemetry. Lives here (not init.ts) so only the
       // REPL path registers — not subcommands like `claude doctor`. Chained:
       // count must run after register's write completes or it misses our own file.
-      void registerSession().then(registered => {
+      void registerSession().then(async registered => {
         if (!registered) return
         if (sessionNameArg) {
           void updateSessionName(sessionNameArg)
+        }
+        // Gate on registration: a subagent or a subcommand does not own a
+        // top-level session and must not publish an attach socket. Not
+        // awaited, so a slow listener never delays first render.
+        if (feature('WEBUI')) {
+          const { startProcessAttachHost } =
+            await import('./webui/attach/hostSingleton.js')
+          startProcessAttachHost({
+            cwd: getOriginalCwd(),
+            entrypoint: 'repl',
+          })
         }
         void countConcurrentSessions().then(count => {})
       })

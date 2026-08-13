@@ -19,6 +19,12 @@ import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpda
 import { hasPermissionsToUseTool } from '../../../utils/permissions/permissions.js'
 import type { PermissionContext } from '../PermissionContext.js'
 import { createResolveOnce } from '../PermissionContext.js'
+// Dead code elimination: conditional import for the WebUI attach host
+/* eslint-disable @typescript-eslint/no-require-imports */
+const webuiAttachModule = feature('WEBUI')
+  ? (require('../../../webui/attach/hostSingleton.js') as typeof import('../../../webui/attach/hostSingleton.js'))
+  : null
+/* eslint-enable @typescript-eslint/no-require-imports */
 
 type InteractivePermissionParams = {
   ctx: PermissionContext
@@ -59,6 +65,13 @@ function handleInteractivePermission(
   // phone, and a stale "yes abc123" after local-resolve falls through
   // tryConsumeReply (entry gone) and gets enqueued as normal chat.
   let channelUnsubscribe: (() => void) | undefined
+  // Same for a browser attached over the WebUI socket. Unlike a channel, the
+  // browser IS told to dismiss, because it renders a live dialog.
+  let webUnsubscribe: (() => void) | undefined
+  const cleanupRemoteRacers = (): void => {
+    channelUnsubscribe?.()
+    webUnsubscribe?.()
+  }
 
   const permissionPromptStartTimeMs = Date.now()
   const displayInput = result.updatedInput ?? ctx.input
@@ -75,7 +88,7 @@ function handleInteractivePermission(
     onUserInteraction() {},
     onAbort() {
       if (!claim()) return
-      channelUnsubscribe?.()
+      cleanupRemoteRacers()
       ctx.logCancelled()
       ctx.logDecision(
         { decision: 'reject', source: { type: 'user_abort' } },
@@ -91,7 +104,7 @@ function handleInteractivePermission(
     ) {
       if (!claim()) return // atomic check-and-mark before await
 
-      channelUnsubscribe?.()
+      cleanupRemoteRacers()
 
       resolveOnce(
         await ctx.handleUserAllow(
@@ -107,7 +120,7 @@ function handleInteractivePermission(
     onReject(feedback?: string, contentBlocks?: DomainUserContentBlock[]) {
       if (!claim()) return
 
-      channelUnsubscribe?.()
+      cleanupRemoteRacers()
 
       ctx.logDecision(
         {
@@ -129,7 +142,7 @@ function handleInteractivePermission(
       )
       if (freshResult.behavior === 'allow') {
         if (!claim()) return
-        channelUnsubscribe?.()
+        cleanupRemoteRacers()
         ctx.removeFromQueue()
         ctx.logDecision({ decision: 'accept', source: 'config' })
         resolveOnce(ctx.buildAllow(freshResult.updatedInput ?? ctx.input))
@@ -203,7 +216,7 @@ function handleInteractivePermission(
         channelRequestId,
         response => {
           if (!claim()) return // Another racer won
-          channelUnsubscribe?.() // both: map delete + listener remove
+          cleanupRemoteRacers() // map delete + listener remove, both racers
           ctx.removeFromQueue()
           if (response.behavior === 'allow') {
             ctx.logDecision(
@@ -239,6 +252,73 @@ function handleInteractivePermission(
     }
   }
 
+  // WebUI relay — a fourth racer. A browser attached over the session's Unix
+  // socket sees the same prompt and can answer it. Whoever answers first wins
+  // through the same claim(); the others are torn down.
+  if (feature('WEBUI')) {
+    const host = webuiAttachModule?.getAttachHost()
+    if (host) {
+      const broker = host.permissions
+      const webRequestId = broker.newRequestId()
+      const webSignal = ctx.toolUseContext.abortController.signal
+
+      const brokerUnsub = broker.open(
+        {
+          requestId: webRequestId,
+          toolName: ctx.tool.name,
+          toolUseId: ctx.toolUseID,
+          description,
+          input: displayInput as Record<string, unknown>,
+          blockedPath: result.blockedPath,
+          agentId: ctx.assistantMessage.agentId,
+          openedAt: permissionPromptStartTimeMs,
+        },
+        decision => {
+          if (!claim()) return // Another racer won
+          cleanupRemoteRacers()
+          ctx.removeFromQueue()
+
+          if (decision.behavior === 'allow') {
+            ctx.logDecision(
+              {
+                decision: 'accept',
+                source: { type: 'user', permanent: false },
+              },
+              { permissionPromptStartTimeMs },
+            )
+            // An empty updatedInput means "use the original", which is what a
+            // client too small to reconstruct the input sends.
+            const updated =
+              decision.updatedInput && Object.keys(decision.updatedInput).length
+                ? decision.updatedInput
+                : displayInput
+            resolveOnce(ctx.buildAllow(updated))
+          } else {
+            ctx.logDecision(
+              {
+                decision: 'reject',
+                source: {
+                  type: 'user_reject',
+                  hasFeedback: !!decision.message,
+                },
+              },
+              { permissionPromptStartTimeMs },
+            )
+            resolveOnce(
+              ctx.cancelAndAbort(decision.message ?? 'Denied from the WebUI'),
+            )
+          }
+        },
+      )
+
+      webUnsubscribe = () => {
+        brokerUnsub()
+        webSignal.removeEventListener('abort', webUnsubscribe!)
+      }
+      webSignal.addEventListener('abort', webUnsubscribe, { once: true })
+    }
+  }
+
   // Skip hooks if they were already awaited in the coordinator branch above
   if (!awaitAutomatedChecksBeforeDialog) {
     // Execute PermissionRequest hooks asynchronously
@@ -253,7 +333,7 @@ function handleInteractivePermission(
         permissionPromptStartTimeMs,
       )
       if (!hookDecision || !claim()) return
-      channelUnsubscribe?.()
+      cleanupRemoteRacers()
       ctx.removeFromQueue()
       resolveOnce(hookDecision)
     })()

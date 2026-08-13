@@ -4,14 +4,30 @@ import { createServer, type Server, type Socket } from 'net'
 import {
   ATTACH_PROTOCOL_VERSION,
   AttachRequestSchema,
+  MAX_ATTACH_REPLAY_EVENTS,
+  type AttachEventBody,
+  type AttachEventEnvelope,
   type AttachOutbound,
+  type AttachResponse,
+  type WebPermissionRequest,
+  type WebSessionMeta,
 } from '../protocol/attachSchemas.js'
+import {
+  diffSnapshots,
+  toWireSnapshot,
+  type WebTranscriptSnapshot,
+} from '../protocol/transcriptWire.js'
 import {
   removeAttachDescriptor,
   writeAttachDescriptor,
   type AttachDescriptor,
 } from './attachDescriptor.js'
 import { attachNdjsonReader, writeNdjson } from './ndjsonConnection.js'
+import {
+  createWebPermissionBroker,
+  type WebPermissionCallbacks,
+} from './permissionBroker.js'
+import type { AttachRuntime } from './runtime.js'
 import {
   ATTACH_FILE_MODE,
   ensureAttachDir,
@@ -22,23 +38,25 @@ import {
 type Connection = {
   socket: Socket
   authenticated: boolean
+  subscribed: boolean
 }
 
 export type AttachHost = {
   readonly descriptor: AttachDescriptor
-  /**
-   * Resolves once the socket is listening and the descriptor is on disk, so a
-   * client cannot read a descriptor that does not exist yet. Startup does not
-   * await this; only a caller that needs the socket immediately does.
-   */
   readonly ready: Promise<void>
   /**
-   * False while nothing is attached. Callers must check this before doing any
-   * work to produce an event, because this host runs in every interactive
-   * process and most processes are never attached to.
+   * False while nothing is subscribed. Every publisher must check this first:
+   * this host runs in every interactive process, and almost every process is
+   * never attached to.
    */
   readonly hasSubscribers: boolean
-  publish(event: { kind: string; [key: string]: unknown }): void
+  readonly permissions: WebPermissionCallbacks
+  registerRuntime(runtime: AttachRuntime): void
+  /** Diff the transcript and push a patch. No-op with no subscribers. */
+  publishTranscript(): void
+  /** Push session metadata (state, model, mode, cost). No-op with no subscribers. */
+  publishMeta(): void
+  publishTodos(): void
   setSessionId(sessionId: string): void
   stop(): void
 }
@@ -47,15 +65,10 @@ export type StartAttachHostOptions = {
   sessionId: string
   cwd: string
   entrypoint?: string
+  /** Process-wide cost, read lazily so the host does not import bootstrap state. */
+  getCost?: () => { costUsd: number; linesAdded: number; linesRemoved: number }
 }
 
-/**
- * Starts this process's attach socket.
- *
- * Keyed by PID rather than session ID: `/resume` changes a process's session ID
- * mid-flight, and two processes can legitimately hold one session ID after an
- * ownership takeover. The process is the stable control target.
- */
 export function startAttachHost(
   options: StartAttachHostOptions,
 ): AttachHost | null {
@@ -82,12 +95,141 @@ export function startAttachHost(
   }
 
   const connections = new Set<Connection>()
+  const replay: AttachEventEnvelope[] = []
   let sessionEpoch = 0
   let seq = 0
   let stopped = false
+  let runtime: AttachRuntime | null = null
+  let lastTranscript: WebTranscriptSnapshot = { items: [], order: [] }
+  let lastMetaJson = ''
+
+  const permissions = createWebPermissionBroker({
+    onOpened(request) {
+      emit({ kind: 'permission_opened', request })
+      publishMeta()
+    },
+    onClosed(requestId, outcome) {
+      emit({ kind: 'permission_closed', requestId, outcome })
+      publishMeta()
+    },
+  })
+
+  function hasSubscribers(): boolean {
+    for (const connection of connections) {
+      if (connection.subscribed) return true
+    }
+    return false
+  }
+
+  function emit(event: AttachEventBody): void {
+    seq += 1
+    const envelope: AttachEventEnvelope = { type: 'event', seq, event }
+    replay.push(envelope)
+    if (replay.length > MAX_ATTACH_REPLAY_EVENTS) replay.shift()
+    for (const connection of connections) {
+      if (connection.subscribed) writeNdjson(connection.socket, envelope)
+    }
+  }
+
+  function buildMeta(): WebSessionMeta {
+    const cost = options.getCost?.()
+    return {
+      pid,
+      processNonce: descriptor.processNonce,
+      sessionId: descriptor.sessionId,
+      sessionEpoch,
+      cwd: descriptor.cwd,
+      entrypoint: descriptor.entrypoint,
+      startedAt: descriptor.startedAt,
+      model: runtime?.getModel(),
+      permissionMode: runtime?.getPermissionMode(),
+      state: runtime?.getState() ?? 'idle',
+      costUsd: cost?.costUsd,
+      linesAdded: cost?.linesAdded,
+      linesRemoved: cost?.linesRemoved,
+    }
+  }
+
+  function publishTranscript(): void {
+    if (!hasSubscribers() || !runtime) return
+    const next = toWireSnapshot(runtime.getMessages())
+    const patch = diffSnapshots(lastTranscript, next)
+    lastTranscript = next
+    if (patch) emit({ kind: 'transcript', patch })
+  }
+
+  function publishMeta(): void {
+    if (!hasSubscribers()) return
+    const meta = buildMeta()
+    const json = JSON.stringify(meta)
+    if (json === lastMetaJson) return
+    lastMetaJson = json
+    emit({ kind: 'meta', meta })
+  }
+
+  function publishTodos(): void {
+    if (!hasSubscribers() || !runtime) return
+    emit({ kind: 'todos', todos: runtime.getTodos() })
+  }
+
+  function sendSnapshot(connection: Connection, afterSeq?: number): void {
+    // Replay is only valid if every event the client missed is still buffered.
+    if (afterSeq !== undefined && replay.length > 0) {
+      const earliest = replay[0]!.seq
+      if (afterSeq >= earliest - 1 && afterSeq <= seq) {
+        for (const envelope of replay) {
+          if (envelope.seq > afterSeq) writeNdjson(connection.socket, envelope)
+        }
+        return
+      }
+    }
+
+    // Full snapshot. Capturing the watermark before serializing means any event
+    // produced while we write is replayed after, never dropped or duplicated.
+    const watermark = seq
+    const transcript = runtime
+      ? toWireSnapshot(runtime.getMessages())
+      : { items: [], order: [] }
+    lastTranscript = transcript
+
+    const snapshot: AttachEventEnvelope = {
+      type: 'event',
+      seq: watermark,
+      event: {
+        kind: 'snapshot',
+        meta: buildMeta(),
+        transcript,
+        permissions: permissions.pending(),
+        todos: runtime?.getTodos() ?? [],
+      },
+    }
+    writeNdjson(connection.socket, snapshot)
+
+    for (const envelope of replay) {
+      if (envelope.seq > watermark) writeNdjson(connection.socket, envelope)
+    }
+  }
+
+  function respond(
+    socket: Socket,
+    requestId: string,
+    ok: boolean,
+    payload?: { result?: unknown; error?: { code: string; message: string } },
+  ): void {
+    writeNdjson(socket, {
+      type: 'response',
+      requestId,
+      ok,
+      ...payload,
+    } satisfies AttachResponse)
+  }
 
   const server: Server = createServer(socket => {
-    const connection: Connection = { socket, authenticated: false }
+    const connection: Connection = {
+      socket,
+      authenticated: false,
+      subscribed: false,
+    }
     connections.add(connection)
 
     attachNdjsonReader(socket, {
@@ -96,49 +238,115 @@ export function startAttachHost(
         try {
           parsed = JSON.parse(line)
         } catch {
-          fail(socket, 'bad_json', 'line was not valid JSON')
+          respond(socket, 'unknown', false, {
+            error: { code: 'bad_json', message: 'line was not valid JSON' },
+          })
           return
         }
 
         const request = AttachRequestSchema.safeParse(parsed)
         if (!request.success) {
-          fail(socket, 'bad_request', 'request failed schema validation')
+          respond(socket, 'unknown', false, {
+            error: {
+              code: 'bad_request',
+              message: 'request failed schema validation',
+            },
+          })
           return
         }
 
-        const body = request.data.request
+        const { requestId, request: body } = request.data
+
         if (body.kind === 'hello') {
-          // Timing-safe comparison is not meaningful here: the token is only
-          // reachable by a process that can already read a 0600 file in a 0700
-          // directory owned by this user.
+          // A constant-time compare adds nothing: the token is only readable by
+          // a process that can already read a 0600 file in a 0700 directory
+          // owned by this user.
           if (body.token !== descriptor.attachToken) {
-            respond(socket, {
-              type: 'response',
-              requestId: request.data.requestId,
-              ok: false,
+            respond(socket, requestId, false, {
               error: { code: 'unauthorized', message: 'bad attach token' },
             })
             socket.destroy()
             return
           }
           connection.authenticated = true
-          respond(socket, {
-            type: 'response',
-            requestId: request.data.requestId,
-            ok: true,
-            result: {
-              pid,
-              processNonce: descriptor.processNonce,
-              sessionId: descriptor.sessionId,
-              sessionEpoch,
-            },
-          })
+          respond(socket, requestId, true, { result: buildMeta() })
           return
         }
 
         if (!connection.authenticated) {
-          fail(socket, 'unauthorized', 'send hello first')
+          respond(socket, requestId, false, {
+            error: { code: 'unauthorized', message: 'send hello first' },
+          })
           socket.destroy()
+          return
+        }
+
+        switch (body.kind) {
+          case 'subscribe': {
+            connection.subscribed = true
+            sendSnapshot(connection, body.afterSeq)
+            respond(socket, requestId, true, { result: { seq } })
+            return
+          }
+
+          case 'submit': {
+            if (!runtime) {
+              respond(socket, requestId, false, {
+                error: {
+                  code: 'runtime_not_ready',
+                  message: 'the session is still starting',
+                },
+              })
+              return
+            }
+            if (body.sessionEpoch !== sessionEpoch) {
+              // The prompt was composed against a session this process has
+              // since left, via /resume or /clear.
+              respond(socket, requestId, false, {
+                error: {
+                  code: 'stale_epoch',
+                  message: 'the session changed; resynchronize and retry',
+                },
+              })
+              return
+            }
+            runtime.submit(body.content, body.delivery, body.commandId)
+            respond(socket, requestId, true)
+            return
+          }
+
+          case 'interrupt': {
+            runtime?.interrupt()
+            respond(socket, requestId, true)
+            return
+          }
+
+          case 'permission_decision': {
+            const handled = permissions.resolve(body.requestId, body.decision)
+            respond(socket, requestId, handled, {
+              ...(handled
+                ? {}
+                : {
+                    error: {
+                      code: 'interaction_not_pending',
+                      message: 'that request was already resolved',
+                    },
+                  }),
+            })
+            return
+          }
+
+          case 'set_permission_mode': {
+            runtime?.setPermissionMode(body.mode)
+            respond(socket, requestId, true)
+            return
+          }
+
+          case 'set_model': {
+            runtime?.setModel(body.model)
+            respond(socket, requestId, true)
+            return
+          }
         }
       },
       onError() {
@@ -180,19 +388,6 @@ export function startAttachHost(
   // The attach listener alone must not keep a finished headless process alive.
   server.unref()
 
-  function respond(socket: Socket, message: AttachOutbound): void {
-    writeNdjson(socket, message)
-  }
-
-  function fail(socket: Socket, code: string, message: string): void {
-    writeNdjson(socket, {
-      type: 'response',
-      requestId: 'unknown',
-      ok: false,
-      error: { code, message },
-    } satisfies AttachOutbound)
-  }
-
   function stop(): void {
     if (stopped) return
     stopped = true
@@ -208,37 +403,32 @@ export function startAttachHost(
   return {
     descriptor,
     ready,
+    permissions,
     get hasSubscribers() {
-      for (const connection of connections) {
-        if (connection.authenticated) return true
-      }
-      return false
+      return hasSubscribers()
     },
-    publish(event) {
-      seq += 1
-      const envelope: AttachOutbound = {
-        type: 'event',
-        processNonce: descriptor.processNonce,
-        sessionId: descriptor.sessionId,
-        sessionEpoch,
-        seq,
-        event,
-      }
-      for (const connection of connections) {
-        if (connection.authenticated) writeNdjson(connection.socket, envelope)
-      }
+    registerRuntime(next: AttachRuntime) {
+      runtime = next
+      publishMeta()
     },
-    setSessionId(sessionId) {
+    publishTranscript,
+    publishMeta,
+    publishTodos,
+    setSessionId(sessionId: string) {
       if (sessionId === descriptor.sessionId) return
       // The socket path stays put. Only the identity on it moves, and the epoch
-      // bump lets the gateway reject commands composed against the old session.
+      // bump lets a stale queued prompt be rejected instead of applied to the
+      // session the user just switched to.
       descriptor.sessionId = sessionId
       sessionEpoch += 1
+      lastTranscript = { items: [], order: [] }
       try {
         writeAttachDescriptor(descriptor)
       } catch {
         // A descriptor rewrite failure loses discovery, not correctness.
       }
+      emit({ kind: 'session_changed', sessionId, sessionEpoch })
+      publishTranscript()
     },
     stop,
   }

@@ -260,3 +260,39 @@ export async function getLiveSessionHolders(
 
   return holders.sort((a, b) => a.startedAt - b.startedAt || a.pid - b.pid)
 }
+
+/**
+ * Every live session on this machine, this process included.
+ *
+ * Same strict validation as getLiveSessionHolders and the same read-only,
+ * fail-open behavior: a PID we cannot probe is omitted, never swept. Unlike
+ * that function this does not filter by session ID, because the WebUI lists
+ * processes rather than asking who owns one session.
+ */
+export async function listLiveSessions(): Promise<ConcurrentSessionEntry[]> {
+  const dir = getSessionsDir()
+  let files: string[]
+  try {
+    files = await readdir(dir)
+  } catch (e) {
+    if (!isFsInaccessible(e)) {
+      logForDebugging(
+        `[concurrentSessions] live readdir failed: ${errorMessage(e)}`,
+      )
+    }
+    return []
+  }
+
+  const entries: ConcurrentSessionEntry[] = []
+  await Promise.all(
+    files.map(async file => {
+      if (!/^\d+\.json$/.test(file)) return
+      const pid = parseInt(file.slice(0, -5), 10)
+      if (!isProcessRunning(pid)) return
+      const entry = await readSessionEntry(join(dir, file), pid)
+      if (entry) entries.push(entry)
+    }),
+  )
+
+  return entries.sort((a, b) => a.startedAt - b.startedAt || a.pid - b.pid)
+}

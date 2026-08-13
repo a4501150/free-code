@@ -352,6 +352,17 @@ const proactiveModule = feature('KAIROS')
   ? require('../proactive/index.js')
   : null
 /* eslint-enable @typescript-eslint/no-require-imports */
+// Dead code elimination: conditional import for the WebUI attach host
+/* eslint-disable @typescript-eslint/no-require-imports */
+const webuiAttachModule = feature('WEBUI')
+  ? (require('../webui/attach/hostSingleton.js') as typeof import('../webui/attach/hostSingleton.js'))
+  : null
+const useReplAttachBridge = feature('WEBUI')
+  ? (
+      require('../webui/attach/replBridge.js') as typeof import('../webui/attach/replBridge.js')
+    ).useReplAttachBridge
+  : () => {}
+/* eslint-enable @typescript-eslint/no-require-imports */
 const PROACTIVE_NO_OP_SUBSCRIBE = (_cb: () => void) => () => {}
 const PROACTIVE_FALSE = () => false
 const SUGGEST_BG_PR_NOOP = (_p: string, _n: string): boolean => false
@@ -1407,6 +1418,11 @@ export function REPL({
         }
       }
       rawSetMessages(next)
+      // Mirror the transcript to an attached browser. The host returns before
+      // diffing when nothing is subscribed, which is the normal case.
+      if (feature('WEBUI')) {
+        webuiAttachModule?.publishAttachTranscript()
+      }
     },
     [],
   )
@@ -4337,6 +4353,31 @@ export function REPL({
   })
 
   useMailboxBridge({ isLoading, onSubmitMessage: handleIncomingPrompt })
+
+  // Mirror this session onto its attach socket so a browser can watch and
+  // drive it. Every callback is a no-op when the WebUI is compiled out.
+  useReplAttachBridge({
+    messagesRef,
+    getState: () =>
+      toolUseConfirmQueue.length > 0
+        ? 'requires_action'
+        : isLoading
+          ? 'running'
+          : 'idle',
+    getModel: () => mainLoopModel,
+    getPermissionMode: () => toolPermissionContext.mode,
+    todos: tasksV2,
+    onCancel,
+    onSetPermissionMode: mode => {
+      setAppState(prev => ({
+        ...prev,
+        toolPermissionContext: { ...prev.toolPermissionContext, mode },
+      }))
+    },
+    onSetModel: model => {
+      setAppState(prev => ({ ...prev, mainLoopModelForSession: model }))
+    },
+  })
 
   // Scheduled tasks from .freecode/scheduled_tasks.json (CronCreate/Delete/List)
   if (feature('AGENT_TRIGGERS')) {

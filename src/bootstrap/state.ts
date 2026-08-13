@@ -398,6 +398,10 @@ export function regenerateSessionId(
   // null so getTranscriptPath() derives from originalCwd.
   STATE.sessionId = randomUUID() as SessionId
   STATE.sessionProjectDir = null
+  // Emit like switchSession does. /clear changes the active session as surely
+  // as /resume, and subscribers that index by session ID (the PID registry, the
+  // WebUI attach descriptor) go stale without this.
+  sessionSwitched.emit(STATE.sessionId)
   return STATE.sessionId
 }
 
