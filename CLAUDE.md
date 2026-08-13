@@ -140,6 +140,22 @@ Never strip `""` on a required field, which is a value. Pass
 `tool.inputJSONSchema ?? tool.inputSchema`, because a Zod passthrough hides
 every MCP argument.
 
+## WebUI
+
+The browser UI attaches to a running session over a per-process Unix socket.
+Everything is behind `feature('WEBUI')`.
+
+- The socket keys on PID, never on session ID. `/resume` and `/clear` both change a process's session ID, and two processes can legitimately hold one session ID after an ownership takeover. The stable control target is `<pid>:<nonce>`; the nonce is what stops a recycled PID passing for the process a client was told about.
+- `regenerateSessionId()` now emits `sessionSwitched`, so `/clear` reaches the same subscribers `/resume` does. The PID registry was already going stale without it. Anything new that indexes by session ID gets this for free; anything that assumed the signal meant "resume" specifically does not.
+- A live transcript comes wholly through the socket. Splicing a JSONL snapshot to a socket tail would have to reconcile queued writes, later-mutated assistant messages, interleaved metadata records, DAG branches and `reorderMessagesInUI` order. Disk is only for sessions with no live process.
+- Prompts go through the command queue, never `Mailbox`, which polls only when the REPL is idle. "Interrupt and send" is one enqueue at `now` priority; a cancel followed by a submit races.
+- In headless, `enqueue()` does not start a turn. The stdin path calls `run()` after every enqueue, so any other producer must too.
+- The browser permission surface is a fourth racer in `interactiveHandler.ts` on the existing `claim()` contract. A browser disconnect must never deny by omission: the broker holds the request and the terminal dialog stays answerable.
+- `publishTranscript` must early-out on `hasSubscribers` before diffing. This runs on every transcript mutation in every interactive process, and almost every process is never attached to.
+- A `WEBUI`-off build still has to resolve the generated client asset module, so the build writes an empty stub when the flag is off. Without it a fresh checkout cannot build.
+- Do not use a CSP directive name as a "is the WebUI in this binary" marker. `highlight.js` ships a Content-Security-Policy grammar, so `frame-ancestors` is in every build.
+- A gateway-spawned child needs a configured config home: provider settings, trust, and API-key approval. `claude web start` creates none of those, which is why the e2e suite seeds the directory with a tmux session first.
+
 ## Bash permissions
 
 - There is one bash parser and no fallback. A command that the parser refuses is `too-complex`, which becomes a prompt, never a second opinion. The `shell-quote` path it replaced mis-parsed in ways it could not detect, so a fallback hands bypasses to adversarial input. Keep `shell-quote` in files that parse for display, completion or quoting.

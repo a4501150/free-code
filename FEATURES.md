@@ -1,10 +1,10 @@
 # Feature Flags Audit
 
-Audit date: 2026-08-08
+Audit date: 2026-08-13
 
-This repository references 28 active compile-time flags through `feature(...)`.
+This repository references 29 active compile-time flags through `feature(...)`.
 The default build enables the 10 production-supported flags listed in
-`scripts/build.ts`; `--feature-set=dev-full` additionally enables the 14
+`scripts/build.ts`; `--feature-set=dev-full` additionally enables the 15
 experimental flags in the same file. The remaining 4 are in neither list and are
 only ever on in a hand-rolled `--feature=NAME` build.
 
@@ -59,6 +59,7 @@ These are in the dev-full list but not the default list.
 - `PROMPT_CACHE_BREAK_DETECTION` — enables cache-break detection around compaction/query/API flow.
 - `QUICK_SEARCH` — enables prompt quick-search behavior.
 - `TEAMMEM` — enables team-memory files, watcher hooks, and related UI messages.
+- `WEBUI` — enables the browser session UI: a per-process attach socket, the `claude web` command, the gateway hosted by the daemon supervisor, and the tunnel providers.
 
 ## Individually enabled flags
 
