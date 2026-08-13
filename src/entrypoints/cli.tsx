@@ -82,6 +82,16 @@ async function main(): Promise<void> {
     return
   }
 
+  // Phase 0 gate for the WebUI: verifies the embedded client, the loopback
+  // server, the WebSocket upgrade and the attach socket inside the compiled
+  // binary. Dynamically imported so a WEBUI-off build never pulls the server
+  // graph in.
+  if (feature('WEBUI') && args[0] === '--webui-smoke') {
+    const { runWebuiSmoke } = await import('../webui/smoke.js')
+    process.exitCode = await runWebuiSmoke()
+    return
+  }
+
   // Fast-path for --worktree --tmux: exec into tmux before loading full CLI
   const hasTmuxFlag = args.includes('--tmux') || args.includes('--tmux=classic')
   if (

@@ -30,6 +30,7 @@ const fullExperimentalFeatures = [
   'PROMPT_CACHE_BREAK_DETECTION',
   'QUICK_SEARCH',
   'TEAMMEM',
+  'WEBUI',
 ] as const
 
 function runCommand(cmd: string[]): string | null {
@@ -157,6 +158,18 @@ const defines = {
   'MACRO.VERSION_CHANGELOG': JSON.stringify(getVersionChangelog()),
   'MACRO.GITHUB_REPO': JSON.stringify(getGitHubRepo()),
 } as const
+
+// WebUI browser bundle. Must run before the React Compiler staging copy, so
+// the generated asset module is picked up by whichever source tree the main
+// build points at. Only the clean pre-compilation client source is bundled.
+if (featureSet.has('WEBUI')) {
+  const { buildWebuiAssets } = await import('./build-webui-assets.js')
+  const sizes = await buildWebuiAssets({ minify: !dev })
+  console.log(`WebUI assets: ${sizes.jsBytes} B js, ${sizes.cssBytes} B css`)
+} else {
+  const { writeStubWebuiAssets } = await import('./build-webui-assets.js')
+  writeStubWebuiAssets()
+}
 
 // Optional React Compiler pre-build step: transforms .tsx files with
 // babel-plugin-react-compiler for automatic memoization. Enabled with

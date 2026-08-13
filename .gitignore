@@ -6,3 +6,4 @@ openclaw/
 .compiled-src/
 scratchpad/
 vendor/search-tools/
+src/webui/generated/assets.ts

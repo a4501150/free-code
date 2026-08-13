@@ -1,0 +1,74 @@
+:root {
+  --bg: #0b0d0f;
+  --bg-raised: #121517;
+  --rule: #21262b;
+  --text: #d6dade;
+  --text-dim: #7d868e;
+  --signal: #f0a35e;
+  --ok: #6fae7c;
+  --bad: #d2685f;
+  --mono:
+    ui-monospace, 'SF Mono', 'JetBrains Mono', 'IBM Plex Mono', Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.boot {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+}
+
+.boot__title {
+  margin: 0 0 2rem;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--signal);
+}
+
+.boot__probes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+
+.boot__probe {
+  display: flex;
+  gap: 1.5rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.boot__label {
+  width: 10rem;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+}
+
+.boot__probe.is-ok .boot__detail {
+  color: var(--ok);
+}
+
+.boot__probe.is-failed .boot__detail {
+  color: var(--bad);
+}
