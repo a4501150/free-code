@@ -251,6 +251,34 @@ bun run dev
 ./cli /login
 ```
 
+### Browser Session UI
+
+`WEBUI` is a dev-full flag, so this needs `./cli-dev` from `bun run build:dev:full`.
+
+```bash
+# Start the gateway inside the daemon, loopback only
+./cli-dev web start --tunnel none
+
+# Start it and expose a public URL through LocalTunnel
+./cli-dev web start
+
+./cli-dev web status   # show the URL and the tunnel state
+./cli-dev web url      # print the URL again, with a QR code
+./cli-dev web stop
+```
+
+The first run prompts for a password without echo. Read this before you set one.
+Anyone who holds the password can approve a command that runs on this machine.
+Treat it like an SSH key, not a login.
+
+The gateway runs inside the daemon, so it survives closing the terminal. The
+server binds `127.0.0.1` only, and the tunnel is the sole public path.
+
+The browser lists three kinds of session: live sessions from your own terminals,
+sessions that the gateway started itself, and historical sessions from disk. A
+terminal session is attachable only if its process came from a `WEBUI` build.
+Windows is not supported.
+
 ### Environment Variables Reference
 
 | Variable                            | Purpose                                                          |
@@ -301,8 +329,9 @@ The default build enables the production-supported flags in `defaultFeatures`; `
 | `PROMPT_CACHE_BREAK_DETECTION` | Cache-break detection in compaction/query flow   |
 | `MCP_RICH_OUTPUT`              | Richer MCP tool result rendering                 |
 | `DEDICATED_SEARCH_TOOLS`       | Manual-only dedicated search tools               |
+| `WEBUI`                        | Browser session UI, hosted by the daemon         |
 
-See [FEATURES.md](FEATURES.md) for the complete audit of all 28 active flags.
+See [FEATURES.md](FEATURES.md) for the complete audit of all 29 active flags.
 
 ---
 
@@ -333,6 +362,7 @@ src/
   plugins/                # Plugin system
   voice/                  # Voice input
   tasks/                  # Background task management
+  webui/                  # Browser session UI (attach socket, gateway, React client)
 ```
 
 ---
@@ -344,6 +374,7 @@ src/
 | **Runtime**           | [Bun](https://bun.sh)                                           |
 | **Language**          | TypeScript                                                      |
 | **Terminal UI**       | React + [Ink](https://github.com/vadimdemedes/ink)              |
+| **Browser UI**        | React 19 + hand-written CSS, served by `Bun.serve`              |
 | **CLI Parsing**       | [Commander.js](https://github.com/tj/commander.js)              |
 | **Schema Validation** | Zod v4                                                          |
 | **Code Search**       | ripgrep (bundled)                                               |
