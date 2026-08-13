@@ -17,6 +17,7 @@ import { Box } from '../ink.js'
 import type { RenderableMessage } from '../types/message.js'
 import { TextHoverColorContext } from './design-system/ThemedText.js'
 import { ScrollChromeContext } from './FullscreenLayout.js'
+import { createItemKeyCache, syncItemKeys } from './virtualItemKeys.js'
 
 // Rows of breathing room above the target when we scrollTo.
 const HEADROOM = 3
@@ -276,27 +277,8 @@ export function VirtualMessageList({
   scanElement,
   setPositions,
 }: Props): React.ReactNode {
-  // Incremental key array. Streaming appends one message at a time; rebuilding
-  // the full string array on every commit allocates O(n) per message (~1MB
-  // churn at 27k messages). Append-only delta push when the prefix matches;
-  // fall back to full rebuild on compaction, /clear, or itemKey change.
-  const keysRef = useRef<string[]>([])
-  const prevMessagesRef = useRef<typeof messages>(messages)
-  const prevItemKeyRef = useRef(itemKey)
-  if (
-    prevItemKeyRef.current !== itemKey ||
-    messages.length < keysRef.current.length ||
-    messages[0] !== prevMessagesRef.current[0]
-  ) {
-    keysRef.current = messages.map(m => itemKey(m))
-  } else {
-    for (let i = keysRef.current.length; i < messages.length; i++) {
-      keysRef.current.push(itemKey(messages[i]!))
-    }
-  }
-  prevMessagesRef.current = messages
-  prevItemKeyRef.current = itemKey
-  const keys = keysRef.current
+  const keyCacheRef = useRef(createItemKeyCache())
+  const keys = syncItemKeys(keyCacheRef.current, messages, itemKey)
   const {
     range,
     topSpacer,

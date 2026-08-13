@@ -122,6 +122,7 @@ Three consequences, none of them visible at the call site:
 - Compare against `getFollowThreshold()` on downward scrolls only. An upward jump measured that way lands at the bottom.
 - The renderer's follow bypasses `ScrollBoxHandle`, so it calls `notifyScrollListeners` on a microtask. Anything derived from "at the bottom" is otherwise stuck at the last React render.
 - Treat `isSticky()` as authoritative for the jump-to-bottom pill, and clamp `dividerY` to the current `scrollHeight`. Content can end up shorter than the snapshot and strand the pill.
+- The rendered message list is not append-only. `reorderMessagesInUI` moves a `tool_result` up beside its `tool_use`, so parallel calls that finish out of order insert a row before the tail, and a collapse or a streaming placeholder replaces a row in place. The memoized user-context row also holds index 0 steady, so a first-element check sees none of it.
 
 ### Input
 
