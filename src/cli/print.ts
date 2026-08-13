@@ -329,6 +329,9 @@ const coordinatorModeModule = feature('COORDINATOR_MODE')
 const proactiveModule = feature('KAIROS')
   ? (require('../proactive/index.js') as typeof import('../proactive/index.js'))
   : null
+const webuiHeadlessModule = feature('WEBUI')
+  ? (require('../webui/attach/headlessBridge.js') as typeof import('../webui/attach/headlessBridge.js'))
+  : null
 const cronSchedulerModule = feature('AGENT_TRIGGERS')
   ? (require('../utils/cronScheduler.js') as typeof import('../utils/cronScheduler.js'))
   : null
@@ -749,12 +752,17 @@ export async function runHeadless(
     notifySessionStateChanged('requires_action', details)
   }
 
-  const canUseTool = getCanUseToolFn(
+  let canUseTool = getCanUseToolFn(
     effectivePermissionPromptToolName,
     structuredIO,
     () => getAppState().mcp.tools,
     onPermissionPrompt,
   )
+  // A gateway-owned session has no terminal and no SDK host, so an 'ask'
+  // decision would otherwise be a silent denial. Route it to the browser.
+  if (feature('WEBUI') && webuiHeadlessModule?.shouldAttachHeadless()) {
+    canUseTool = webuiHeadlessModule.wrapCanUseToolWithWebUI(canUseTool)
+  }
   if (options.permissionPromptToolName) {
     // Remove the permission prompt tool from the list of available tools.
     filteredTools = filteredTools.filter(
@@ -1070,6 +1078,21 @@ function runHeadlessStreaming(
   // include Assistant, User, Attachment, and Progress messages.
   // TODO: Clean up this code to avoid passing around a mutable array.
   const mutableMessages: Message[] = initialMessages
+
+  // Publish this session on an attach socket when the gateway spawned us, so a
+  // server-owned session speaks the same protocol as a terminal one.
+  if (feature('WEBUI') && webuiHeadlessModule?.shouldAttachHeadless()) {
+    webuiHeadlessModule.startHeadlessAttach({
+      cwd: cwd(),
+      getMessages: () => mutableMessages,
+      isRunning: () => abortController !== undefined,
+      getModel: () => options.userSpecifiedModel,
+      getPermissionMode: () => getAppState().toolPermissionContext.mode,
+      interrupt: () => abortController?.abort('user-cancel'),
+      // `run` is declared below; the closure reads it at call time.
+      requestRun: () => void run(),
+    })
+  }
 
   // Seed the readFileState cache from the transcript (content the model saw,
   // with message timestamps) so getChangedFiles can detect external edits.

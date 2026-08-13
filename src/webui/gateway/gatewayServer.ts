@@ -25,6 +25,7 @@ import {
   CSRF_HEADER,
   type AuthFile,
 } from './auth.js'
+import { createChildSessions } from './childSessions.js'
 import {
   createSessionHub,
   type HubSubscriber,
@@ -144,6 +145,7 @@ export function startGatewayServer(
   options: StartGatewayOptions = {},
 ): GatewayServer {
   const hub: SessionHub = createSessionHub()
+  const children = createChildSessions()
   const throttle = createLoginThrottle({
     perAddress: 5,
     global: 60,
@@ -261,6 +263,39 @@ export function startGatewayServer(
           csrf: csrfTokenFor(session.auth, session.token),
           publicUrl,
         })
+      }
+
+      if (url.pathname === '/api/sessions' && request.method === 'POST') {
+        if (!originOk(request)) return json({ error: 'bad_origin' }, 403)
+        const session = authenticate(request)
+        if (!session) return json({ error: 'unauthorized' }, 401)
+        if (
+          !csrfMatches(
+            session.auth,
+            session.token,
+            request.headers.get(CSRF_HEADER),
+          )
+        ) {
+          return json({ error: 'bad_csrf' }, 403)
+        }
+
+        let cwd = ''
+        try {
+          const body = (await request.json()) as { cwd?: unknown }
+          cwd = typeof body.cwd === 'string' ? body.cwd : ''
+        } catch {
+          return json({ error: 'bad_request' }, 400)
+        }
+        if (!cwd) return json({ error: 'cwd_required' }, 400)
+
+        try {
+          return json({ session: await children.start({ cwd }) })
+        } catch (err) {
+          return json(
+            { error: err instanceof Error ? err.message : String(err) },
+            500,
+          )
+        }
       }
 
       if (url.pathname === '/api/sessions') {
@@ -400,6 +435,9 @@ export function startGatewayServer(
     },
     async stop() {
       hub.stop()
+      // Gateway-owned sessions belong to the gateway. Terminal-owned ones are
+      // the user's and are deliberately left running.
+      children.stopAll()
       await server.stop(true)
     },
   }

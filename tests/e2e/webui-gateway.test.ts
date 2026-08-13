@@ -332,6 +332,122 @@ describe('WebUI gateway', () => {
     }
   })
 
+  test('starts, drives and stops a gateway-owned session', async () => {
+    dirs = await makeDirs()
+    server.reset([textResponse('Reply from a gateway-owned session.')])
+
+    // Seed the config home the way a real install is: the tmux harness writes
+    // provider settings, trust and API-key approval. A spawned child needs all
+    // three, and `web start` alone writes none of them.
+    session = new TmuxSession({
+      serverUrl: server.url,
+      reuseConfigDir: dirs.config,
+      reuseHomeDir: dirs.home,
+    })
+    await session.start()
+    const workdir = session.cwd
+
+    const started = await runCli(
+      dirs,
+      ['web', 'start', '--tunnel', 'none', '--password-stdin'],
+      PASSWORD,
+    )
+    const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
+    if (!match) throw new Error(`no gateway URL:\n${started}`)
+    baseUrl = match[0]
+
+    const client = new GatewayClient(baseUrl)
+    expect(await client.login(PASSWORD)).toBe(200)
+
+    // The child inherits the gateway's env, so it points at the mock server
+    // and the same isolated config home.
+    const created = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie: client.cookie,
+        'x-freecode-csrf': client.csrf,
+      },
+      body: JSON.stringify({ cwd: workdir }),
+    })
+    if (created.status !== 200) {
+      throw new Error(
+        `create failed: ${created.status} ${await created.text()}`,
+      )
+    }
+    expect(created.status).toBe(200)
+    const { session: child } = (await created.json()) as {
+      session: { pid: number; processKey: string }
+    }
+    expect(child.processKey).toMatch(/^\d+:/)
+
+    const { socket, frames } = await client.openSocket()
+    try {
+      socket.send(
+        JSON.stringify({
+          type: 'attach',
+          processKey: child.processKey,
+          csrf: client.csrf,
+        }),
+      )
+      const snapshot = await waitFor(
+        () => frames,
+        list =>
+          list.some(
+            f =>
+              f.type === 'event' &&
+              (f.event as { kind: string }).kind === 'snapshot',
+          ),
+        { description: 'the child session snapshot' },
+      )
+      const meta = (
+        snapshot.find(
+          f =>
+            f.type === 'event' &&
+            (f.event as { kind: string }).kind === 'snapshot',
+        )!.event as { meta: { sessionEpoch: number } }
+      ).meta
+
+      socket.send(
+        JSON.stringify({
+          type: 'command',
+          id: 'c1',
+          body: {
+            kind: 'submit',
+            commandId: crypto.randomUUID(),
+            content: 'a prompt for the owned session',
+            delivery: 'next',
+            sessionEpoch: meta.sessionEpoch,
+          },
+        }),
+      )
+
+      const log = await waitForRequestCount(server, 1, {
+        description: 'the owned session reaching the API',
+      })
+      expect(JSON.stringify(log[0]!.body.messages)).toContain(
+        'a prompt for the owned session',
+      )
+    } finally {
+      socket.close()
+    }
+
+    // Stopping the web service stops sessions it owns.
+    await runCli(dirs, ['web', 'stop'])
+    await waitFor(
+      () => {
+        try {
+          process.kill(child.pid, 0)
+          return true
+        } catch {
+          return false
+        }
+      },
+      alive => !alive,
+      { description: 'the owned session to exit', timeoutMs: 20_000 },
+    )
+  })
+
   test('publishes a tunnel URL from a custom command provider', async () => {
     dirs = await makeDirs()
     // A fake emitter, so the suite never depends on a real tunnel service.
