@@ -192,6 +192,66 @@ describe('attach host lifecycle', () => {
   })
 })
 
+describe('idle cost', () => {
+  test('does no transcript work while nothing is subscribed', async () => {
+    const host = startAttachHost({
+      sessionId: randomUUID(),
+      cwd: process.cwd(),
+    })
+    await host!.ready
+
+    let getMessagesCalls = 0
+    host!.registerRuntime({
+      getMessages: () => {
+        getMessagesCalls += 1
+        return []
+      },
+      getState: () => 'idle',
+      getModel: () => 'm',
+      getPermissionMode: () => 'default',
+      getTodos: () => [],
+      submit: () => {},
+      interrupt: () => {},
+      setPermissionMode: () => {},
+      setModel: () => {},
+    })
+
+    // This runs on every transcript mutation in every interactive process, so
+    // an unattached session must not pay to serialize anything.
+    for (let i = 0; i < 100; i++) host!.publishTranscript()
+    expect(getMessagesCalls).toBe(0)
+
+    host!.stop()
+  })
+
+  test('unrefs its listener so it cannot hold a finished process open', async () => {
+    // A referenced listener would keep a headless run alive after its work
+    // finished, so assert it for real: a process whose only remaining handle is
+    // the attach socket must exit on its own.
+    const script = `
+      import { startAttachHost } from '${join(import.meta.dir, '..', '..', 'src/webui/attach/attachHost.ts')}'
+      const host = startAttachHost({ sessionId: crypto.randomUUID(), cwd: process.cwd() })
+      await host.ready
+      // Never call stop(). If the listener is referenced, this hangs.
+    `
+    const proc = Bun.spawn(['bun', '-e', script], {
+      env: { ...process.env, FREECODE_CONFIG_DIR: configDir },
+      stdout: 'ignore',
+      stderr: 'pipe',
+    })
+
+    const exited = await Promise.race([
+      proc.exited,
+      Bun.sleep(4000).then(() => 'timeout' as const),
+    ])
+    if (exited === 'timeout') {
+      proc.kill()
+      throw new Error('the attach listener kept the process alive')
+    }
+    expect(exited).toBe(0)
+  })
+})
+
 describe('attach handshake', () => {
   async function handshake(
     tokenFor: (attachToken: string) => string,
