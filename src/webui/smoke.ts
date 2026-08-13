@@ -50,11 +50,17 @@ export async function runWebuiSmoke(): Promise<number> {
       `js ${js?.status ?? 'missing'}, css ${css?.status ?? 'missing'}`,
     )
 
-    // 4. WebSocket upgrade in the compiled binary.
+    // 4. The websocket endpoint exists and refuses an unauthenticated client.
+    // The authenticated path is covered by tests/e2e/webui-gateway.test.ts;
+    // this command must never touch the stored password to exercise it.
     const wsResult = await probeWebSocket(
       `${server.url.replace('http', 'ws')}/ws`,
     )
-    record('websocket upgrade', wsResult.ok, wsResult.detail)
+    record(
+      'websocket guarded',
+      !wsResult.opened,
+      wsResult.opened ? 'accepted an unauthenticated client' : 'refused',
+    )
 
     // 5. Attach socket: listener, descriptor validation, authenticated hello.
     const attachResult = await probeAttachHost()
@@ -72,22 +78,22 @@ export async function runWebuiSmoke(): Promise<number> {
   return checks.every(c => c.ok) ? 0 : 1
 }
 
-function probeWebSocket(url: string): Promise<{ ok: boolean; detail: string }> {
+function probeWebSocket(url: string): Promise<{ opened: boolean }> {
   return new Promise(resolve => {
     const socket = new WebSocket(url)
     const timer = setTimeout(() => {
       socket.close()
-      resolve({ ok: false, detail: 'timed out' })
+      resolve({ opened: false })
     }, 5000)
 
-    socket.addEventListener('message', event => {
+    socket.addEventListener('open', () => {
       clearTimeout(timer)
       socket.close()
-      resolve({ ok: true, detail: String(event.data).slice(0, 48) })
+      resolve({ opened: true })
     })
     socket.addEventListener('error', () => {
       clearTimeout(timer)
-      resolve({ ok: false, detail: 'connection error' })
+      resolve({ opened: false })
     })
   })
 }
