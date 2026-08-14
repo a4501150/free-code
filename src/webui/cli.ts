@@ -14,10 +14,13 @@ function print(line: string): void {
 function usage(): void {
   print('Usage: claude web <command> [options]')
   print('')
+  print('`claude daemon` is the same command: the supervisor exists to host')
+  print('the web server, so both names drive one lifecycle.')
+  print('')
   print('Commands:')
-  print('  start   Start the web server (and tunnel) inside the daemon')
-  print('  stop    Stop the web server and tunnel')
-  print('  restart Restart the daemon and the web server, reusing the URL')
+  print('  start   Start the daemon and the web server (and tunnel)')
+  print('  stop    Stop the web server, the tunnel and the daemon')
+  print('  restart Restart both, reusing the tunnel URL. Use after a rebuild')
   print('  status  Show whether the web server is running')
   print('  url     Print the public URL, with a QR code')
   print('')
@@ -276,14 +279,31 @@ export async function webMain(args: string[]): Promise<void> {
     }
 
     case 'stop': {
-      const status = unwrap(await sendDaemonControl({ kind: 'web.stop' }))
+      // One lifecycle: the supervisor exists to host the server, so leaving it
+      // running after a stop only produces a process that serves nothing and
+      // silently ignores the next rebuild.
+      const reached = await sendDaemonControl({ kind: 'web.stop' })
+      if (!reached) {
+        print('Not running')
+        return
+      }
+      if (!reached.ok) {
+        print(`Error: ${reached.error}`)
+        process.exitCode = 1
+        return
+      }
+      await stopDaemonAndWait()
+      print('Web server and daemon stopped')
+      return
+    }
+
+    case 'list': {
+      const status = unwrap(await sendDaemonControl({ kind: 'web.status' }))
       if (!status) {
         process.exitCode = 1
         return
       }
-      print('Web server stopped')
-      print('The daemon is still running. Use `claude web restart` to')
-      print('reload it after a rebuild, or `claude daemon stop` to end it.')
+      reportStatus(status)
       return
     }
 

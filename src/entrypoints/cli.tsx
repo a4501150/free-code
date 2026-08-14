@@ -73,12 +73,20 @@ async function main(): Promise<void> {
     return
   }
 
-  // Fast-path for `claude daemon [subcommand]`: long-running supervisor.
+  // `claude daemon` and `claude web` are one command when the WebUI is in the
+  // build: the supervisor exists to host the server, so starting one without
+  // the other is never what anyone wants. A WEBUI-off build has no gateway to
+  // run, so `daemon` keeps its own bare lifecycle there.
   if (feature('DAEMON') && args[0] === 'daemon') {
     profileCheckpoint('cli_daemon_path')
     enableConfigs()
     initSinks()
-    await daemonMain(args.slice(1))
+    if (feature('WEBUI')) {
+      const { webMain } = await import('../webui/cli.js')
+      await webMain(args.slice(1))
+    } else {
+      await daemonMain(args.slice(1))
+    }
     return
   }
 
