@@ -47,8 +47,7 @@ export const BUILT_IN_OUTPUT_STYLES: {
   [NO_OUTPUT_STYLE_NAME]: null,
   [DEFAULT_OUTPUT_STYLE_NAME]: {
     name: DEFAULT_OUTPUT_STYLE_NAME,
-    description:
-      'Write prose in relaxed ASD-STE100 Simplified Technical English',
+    description: 'Write prose in ASD-STE100 Simplified Technical English',
     prompt: SIMPLE_ENGLISH_PROMPT,
     source: 'built-in',
     keepCodingInstructions: true,
