@@ -477,6 +477,171 @@ describe('WebUI gateway', () => {
     )
   })
 
+  test('resumes a past session and refuses a live or unknown one', async () => {
+    dirs = await makeDirs()
+    server.reset([
+      textResponse('An answer from before the stop.'),
+      textResponse('An answer from after the resume.'),
+    ])
+
+    // The tmux harness is the only thing that writes provider settings, trust
+    // and API-key approval, and a spawned child needs all three.
+    session = new TmuxSession({
+      serverUrl: server.url,
+      reuseConfigDir: dirs.config,
+      reuseHomeDir: dirs.home,
+    })
+    await session.start()
+    const workdir = session.cwd
+
+    const started = await runCli(
+      dirs,
+      ['web', 'start', '--tunnel', 'none', '--password-stdin'],
+      PASSWORD,
+    )
+    const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
+    if (!match) throw new Error(`no gateway URL:\n${started}`)
+    baseUrl = match[0]
+
+    const client = new GatewayClient(baseUrl)
+    expect(await client.login(PASSWORD)).toBe(200)
+
+    const post = (body: unknown): Promise<Response> =>
+      fetch(`${baseUrl}/api/sessions`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: client.cookie,
+          'x-freecode-csrf': client.csrf,
+        },
+        body: JSON.stringify(body),
+      })
+
+    // A resume ID never reaches argv unvalidated.
+    expect((await post({ resumeSessionId: 'not-a-uuid' })).status).toBe(400)
+    expect((await post({ resumeSessionId: crypto.randomUUID() })).status).toBe(
+      404,
+    )
+
+    const created = await post({ cwd: workdir })
+    expect(created.status).toBe(200)
+    const { session: child } = (await created.json()) as {
+      session: { pid: number; processKey: string; sessionId: string }
+    }
+
+    // Drive one turn, so the resumed session has something to carry back.
+    const MARKER = 'a prompt that must survive the resume'
+    const first = await client.openSocket()
+    try {
+      first.socket.send(
+        JSON.stringify({
+          type: 'attach',
+          processKey: child.processKey,
+          csrf: client.csrf,
+        }),
+      )
+      const snapshot = await waitFor(
+        () => first.frames,
+        list =>
+          list.some(
+            f =>
+              f.type === 'event' &&
+              (f.event as { kind: string }).kind === 'snapshot',
+          ),
+        { description: 'the child snapshot' },
+      )
+      const meta = (
+        snapshot.find(
+          f =>
+            f.type === 'event' &&
+            (f.event as { kind: string }).kind === 'snapshot',
+        )!.event as { meta: { sessionEpoch: number } }
+      ).meta
+
+      first.socket.send(
+        JSON.stringify({
+          type: 'command',
+          id: 'r1',
+          body: {
+            kind: 'submit',
+            commandId: crypto.randomUUID(),
+            content: MARKER,
+            delivery: 'next',
+            sessionEpoch: meta.sessionEpoch,
+          },
+        }),
+      )
+      await waitForRequestCount(server, 1, {
+        description: 'the first turn reaching the API',
+      })
+    } finally {
+      first.socket.close()
+    }
+
+    // A live session cannot be resumed. The client hides the action, and the
+    // server refuses it regardless.
+    expect((await post({ resumeSessionId: child.sessionId })).status).toBe(409)
+
+    const deleted = await fetch(`${baseUrl}/api/sessions/${child.pid}`, {
+      method: 'DELETE',
+      headers: { cookie: client.cookie, 'x-freecode-csrf': client.csrf },
+    })
+    expect(deleted.status).toBe(200)
+
+    // Wait for the transcript to land on disk as a resumable history row.
+    await waitFor(
+      async () => {
+        const { sessions } = await client.sessions()
+        return sessions.find(e => e.sessionId === child.sessionId)
+      },
+      entry => Boolean(entry) && !entry!.live,
+      { description: 'the stopped child to become history', timeoutMs: 30_000 },
+    )
+
+    const resumed = await post({ resumeSessionId: child.sessionId })
+    if (resumed.status !== 200) {
+      throw new Error(
+        `resume failed: ${resumed.status} ${await resumed.text()}`,
+      )
+    }
+    const { session: revived } = (await resumed.json()) as {
+      session: { pid: number; processKey: string; sessionId: string }
+    }
+    // Resume adopts the original ID rather than forking a new one.
+    expect(revived.sessionId).toBe(child.sessionId)
+    expect(revived.pid).not.toBe(child.pid)
+
+    const second = await client.openSocket()
+    try {
+      second.socket.send(
+        JSON.stringify({
+          type: 'attach',
+          processKey: revived.processKey,
+          csrf: client.csrf,
+        }),
+      )
+      // The first snapshot can be empty: the attach host serializes whatever
+      // the runtime holds, and the headless bridge publishes the transcript on
+      // a poll. So accept the marker from a later patch too.
+      await waitFor(
+        () => second.frames,
+        list => JSON.stringify(list).includes(MARKER),
+        {
+          description: 'the prior transcript on the resumed session',
+          timeoutMs: 30_000,
+        },
+      )
+    } finally {
+      second.socket.close()
+    }
+
+    // One live row for the resumed ID, and no leftover history row for it.
+    const { sessions: after } = await client.sessions()
+    const rows = after.filter(e => e.sessionId === child.sessionId)
+    expect(rows.length).toBe(1)
+    expect(rows[0]!.live).toBe(true)
+  })
+
   test('stops a session it owns and refuses one it does not', async () => {
     dirs = await makeDirs()
     server.reset([textResponse('unused')])

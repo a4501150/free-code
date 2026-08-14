@@ -1,5 +1,6 @@
 import type { ServerWebSocket } from 'bun'
 import { z } from 'zod'
+import { validateUuid } from '../../utils/uuid.js'
 import {
   AttachRequestBodySchema,
   type AttachEventBody,
@@ -280,16 +281,44 @@ export function startGatewayServer(
         }
 
         let cwd = ''
+        let resumeSessionId = ''
         try {
-          const body = (await request.json()) as { cwd?: unknown }
+          const body = (await request.json()) as {
+            cwd?: unknown
+            resumeSessionId?: unknown
+          }
           cwd = typeof body.cwd === 'string' ? body.cwd : ''
+          resumeSessionId =
+            typeof body.resumeSessionId === 'string' ? body.resumeSessionId : ''
         } catch {
           return json({ error: 'bad_request' }, 400)
         }
-        if (!cwd) return json({ error: 'cwd_required' }, 400)
+
+        // Resume takes its working directory from the recorded session, so a
+        // client cannot pair one session ID with an unrelated directory.
+        if (resumeSessionId) {
+          if (!validateUuid(resumeSessionId)) {
+            return json({ error: 'bad_session_id' }, 400)
+          }
+          const entries = await hub.list({ owns: children.owns })
+          const match = entries.find(e => e.sessionId === resumeSessionId)
+          if (!match) return json({ error: 'unknown_session' }, 404)
+          // The client hides resume for a live row, but its list is a poll
+          // behind. The CLI ownership guard is the last line, not the first.
+          if (match.live) return json({ error: 'session_in_use' }, 409)
+          if (!match.cwd) return json({ error: 'session_has_no_cwd' }, 422)
+          cwd = match.cwd
+        } else if (!cwd) {
+          return json({ error: 'cwd_required' }, 400)
+        }
 
         try {
-          return json({ session: await children.start({ cwd }) })
+          return json({
+            session: await children.start({
+              cwd,
+              resumeSessionId: resumeSessionId || undefined,
+            }),
+          })
         } catch (err) {
           return json(
             { error: err instanceof Error ? err.message : String(err) },

@@ -7,6 +7,7 @@ export type ChildSession = {
   pid: number
   processKey: string
   cwd: string
+  sessionId: string
 }
 
 const READY_TIMEOUT_MS = 30_000
@@ -21,7 +22,14 @@ const READY_TIMEOUT_MS = 30_000
 export function createChildSessions() {
   const children = new Map<number, ChildProcess>()
 
-  async function start(options: { cwd: string }): Promise<ChildSession> {
+  async function start(options: {
+    cwd: string
+    /**
+     * Resume this session instead of starting a fresh one. The child adopts the
+     * ID, so readiness is gated on the descriptor reporting it.
+     */
+    resumeSessionId?: string
+  }): Promise<ChildSession> {
     if (!existsSync(options.cwd)) {
       throw new Error(`no such directory: ${options.cwd}`)
     }
@@ -35,6 +43,11 @@ export function createChildSessions() {
         '--output-format',
         'stream-json',
         '--verbose',
+        // Argv is an array, so the ID is never parsed by a shell. The caller
+        // has already validated it as a UUID.
+        ...(options.resumeSessionId
+          ? ['--resume', options.resumeSessionId]
+          : []),
       ],
       {
         cwd: options.cwd,
@@ -57,11 +70,20 @@ export function createChildSessions() {
     const deadline = Date.now() + READY_TIMEOUT_MS
     while (Date.now() < deadline) {
       const descriptor = readAttachDescriptor(child.pid)
-      if (descriptor.ok) {
+      // A resumed child publishes its descriptor only after the resume loaded,
+      // so a mismatched ID means the resume has not been adopted. Returning on
+      // the first descriptor would report success for a child that then exits,
+      // which is what a nonexistent session or a holder conflict does.
+      if (
+        descriptor.ok &&
+        (!options.resumeSessionId ||
+          descriptor.descriptor.sessionId === options.resumeSessionId)
+      ) {
         return {
           pid: child.pid,
           processKey: `${child.pid}:${descriptor.descriptor.processNonce}`,
           cwd: options.cwd,
+          sessionId: descriptor.descriptor.sessionId,
         }
       }
       if (child.exitCode !== null) {
