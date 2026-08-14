@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SessionListEntry } from '../../gateway/sessionHub.js'
 import {
-  createSession,
   fetchSessions,
+  startSession,
+  type StartRequest,
   stopSession,
-  type CreateResult,
+  type StartResult,
   type StopResult,
 } from '../api.js'
 
@@ -13,7 +14,8 @@ const POLL_MS = 5000
 export type Sessions = {
   entries: SessionListEntry[]
   refresh(): Promise<void>
-  create(cwd: string): Promise<CreateResult>
+  create(cwd: string): Promise<StartResult>
+  resume(sessionId: string): Promise<StartResult>
   stop(pid: number): Promise<StopResult>
 }
 
@@ -43,14 +45,25 @@ export function useSessions(csrf: string | null): Sessions {
     return () => clearInterval(timer)
   }, [csrf, refresh])
 
-  const create = useCallback(
-    async (cwd: string): Promise<CreateResult> => {
+  const start = useCallback(
+    async (request: StartRequest): Promise<StartResult> => {
       if (!csrf) return { ok: false, error: 'not authenticated' }
-      const result = await createSession(cwd, csrf)
+      const result = await startSession(request, csrf)
       await refresh()
       return result
     },
     [csrf, refresh],
+  )
+
+  const create = useCallback(
+    (cwd: string): Promise<StartResult> => start({ cwd }),
+    [start],
+  )
+
+  const resume = useCallback(
+    (sessionId: string): Promise<StartResult> =>
+      start({ resumeSessionId: sessionId }),
+    [start],
   )
 
   const stop = useCallback(
@@ -63,5 +76,5 @@ export function useSessions(csrf: string | null): Sessions {
     [csrf, refresh],
   )
 
-  return { entries, refresh, create, stop }
+  return { entries, refresh, create, resume, stop }
 }

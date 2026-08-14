@@ -13,15 +13,16 @@ export function TopBar({
 }): React.ReactElement {
   return (
     <header className="topbar">
+      {/* A labeled control, because an unlabeled glyph hid every session
+          action behind something nobody read as a menu. */}
       <button
         type="button"
         className="topbar__menu"
         onClick={onToggleRail}
-        aria-label="Toggle sessions"
         aria-expanded={railOpen}
         aria-controls="session-rail"
       >
-        ☰
+        <span aria-hidden="true">☰</span> sessions
       </button>
       <span className="topbar__title">
         {meta ? meta.sessionId.slice(0, 8) : 'no session'}

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { SessionListEntry } from '../../gateway/sessionHub.js'
 import { useGateway } from '../hooks/useGateway.js'
 import { useSessions } from '../hooks/useSessions.js'
@@ -53,12 +53,34 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     [adopt, sessions],
   )
 
+  const resume = useCallback(
+    async (sessionId: string): Promise<string | null> => {
+      const result = await sessions.resume(sessionId)
+      if (!result.ok) return result.error
+      adopt(result.processKey)
+      return null
+    },
+    [adopt, sessions],
+  )
+
   const stop = useCallback(
-    (pid: number): void => {
-      void sessions.stop(pid)
+    async (pid: number): Promise<string | null> => {
+      const result = await sessions.stop(pid)
+      return result.ok ? null : result.error
     },
     [sessions],
   )
+
+  // Escape closes the drawer, which is the only way out on a phone that has no
+  // keyboard showing and no room for a backdrop tap.
+  useEffect(() => {
+    if (!railOpen) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setRailOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [railOpen])
 
   // Paths the session has touched, which is what @ mentions can offer without
   // giving the browser filesystem access.
@@ -96,8 +118,22 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
         defaultCwd={defaultCwd}
         onSelect={select}
         onCreate={create}
+        onResume={resume}
         onStop={stop}
+        onClose={() => setRailOpen(false)}
       />
+
+      {/* Only rendered when open, so it can never swallow a tap on the desktop
+          layout where the rail is pinned. */}
+      {railOpen ? (
+        <button
+          type="button"
+          className="scrim"
+          aria-label="Close sessions"
+          tabIndex={-1}
+          onClick={() => setRailOpen(false)}
+        />
+      ) : null}
 
       <main className="main">
         {activeKey ? (

@@ -46,31 +46,50 @@ export async function fetchSessions(): Promise<SessionListEntry[]> {
 
 const CSRF_HEADER = 'x-freecode-csrf'
 
-export type CreateResult =
-  | { ok: true; pid: number; processKey: string }
+/**
+ * The gateway answers with a short code. Turn it into something a person can
+ * act on, because the browser is often the only surface a phone user has.
+ */
+const ERROR_TEXT: Record<string, string> = {
+  bad_csrf: 'The login expired. Reload the page.',
+  bad_session_id: 'That session ID is not valid.',
+  cwd_required: 'Enter a working directory.',
+  not_owned: 'This gateway did not start that session.',
+  session_has_no_cwd: 'That session has no recorded directory.',
+  session_in_use: 'That session is already running.',
+  unauthorized: 'The login expired. Reload the page.',
+  unknown_session: 'That session is no longer in the history.',
+}
+
+async function readError(response: Response): Promise<string> {
+  const body = (await response.json().catch(() => ({}))) as { error?: string }
+  const code = body.error ?? ''
+  return ERROR_TEXT[code] ?? code ?? `failed (${response.status})`
+}
+
+/** Start a fresh session, or revive one from the history. */
+export type StartRequest = { cwd: string } | { resumeSessionId: string }
+
+export type StartResult =
+  | { ok: true; pid: number; processKey: string; sessionId: string }
   | { ok: false; error: string }
 
-export async function createSession(
-  cwd: string,
+export async function startSession(
+  request: StartRequest,
   csrf: string,
-): Promise<CreateResult> {
+): Promise<StartResult> {
   const response = await fetch('/api/sessions', {
     method: 'POST',
     headers: { 'content-type': 'application/json', [CSRF_HEADER]: csrf },
-    body: JSON.stringify({ cwd }),
+    body: JSON.stringify(request),
   })
-  const body = (await response.json().catch(() => ({}))) as {
-    session?: { pid: number; processKey: string }
-    error?: string
-  }
-  if (response.ok && body.session) {
-    return {
-      ok: true,
-      pid: body.session.pid,
-      processKey: body.session.processKey,
+  if (response.ok) {
+    const body = (await response.json().catch(() => ({}))) as {
+      session?: { pid: number; processKey: string; sessionId: string }
     }
+    if (body.session) return { ok: true, ...body.session }
   }
-  return { ok: false, error: body.error ?? `failed (${response.status})` }
+  return { ok: false, error: await readError(response) }
 }
 
 export type StopResult = { ok: true } | { ok: false; error: string }
@@ -84,8 +103,7 @@ export async function stopSession(
     headers: { [CSRF_HEADER]: csrf },
   })
   if (response.ok) return { ok: true }
-  const body = (await response.json().catch(() => ({}))) as { error?: string }
-  return { ok: false, error: body.error ?? `failed (${response.status})` }
+  return { ok: false, error: await readError(response) }
 }
 
 export type GatewaySocket = {

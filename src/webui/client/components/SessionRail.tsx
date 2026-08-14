@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { SessionListEntry } from '../../gateway/sessionHub.js'
 import { NewSessionForm } from './NewSessionForm.js'
 import { HistoryRow, SessionRow } from './SessionRow.js'
@@ -9,7 +10,9 @@ export function SessionRail({
   defaultCwd,
   onSelect,
   onCreate,
+  onResume,
   onStop,
+  onClose,
 }: {
   sessions: SessionListEntry[]
   activeKey: string | null
@@ -17,14 +20,51 @@ export function SessionRail({
   defaultCwd: string
   onSelect(entry: SessionListEntry): void
   onCreate(cwd: string): Promise<string | null>
-  onStop(pid: number): void
+  onResume(sessionId: string): Promise<string | null>
+  onStop(pid: number): Promise<string | null>
+  onClose(): void
 }): React.ReactElement {
+  const [composing, setComposing] = useState(false)
+
   const live = sessions.filter(s => s.live)
   const past = sessions.filter(s => !s.live)
 
   return (
     <nav className="rail" id="session-rail" aria-label="Sessions">
-      <h2 className="rail__title">live</h2>
+      {/* The primary action sits above both lists. Buried between them, nobody
+          found it. */}
+      <div className="rail__header">
+        <h2 className="rail__heading">sessions</h2>
+        <button
+          type="button"
+          className="rail__new-toggle"
+          aria-expanded={composing}
+          onClick={() => setComposing(open => !open)}
+        >
+          {composing ? 'cancel' : '+ new'}
+        </button>
+        <button
+          type="button"
+          className="rail__close"
+          aria-label="Close sessions"
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </div>
+
+      {composing ? (
+        <NewSessionForm
+          defaultCwd={defaultCwd}
+          onCreate={async cwd => {
+            const error = await onCreate(cwd)
+            if (!error) setComposing(false)
+            return error
+          }}
+        />
+      ) : null}
+
+      <h3 className="rail__title">live</h3>
       {live.length === 0 ? (
         <p className="rail__empty">No running sessions.</p>
       ) : (
@@ -45,15 +85,17 @@ export function SessionRail({
         </ul>
       )}
 
-      <NewSessionForm defaultCwd={defaultCwd} onCreate={onCreate} />
-
-      <h2 className="rail__title">history</h2>
+      <h3 className="rail__title">history</h3>
       {past.length === 0 ? (
         <p className="rail__empty">Nothing yet.</p>
       ) : (
         <ul className="rail__list">
           {past.slice(0, 40).map(entry => (
-            <HistoryRow key={entry.sessionId} entry={entry} />
+            <HistoryRow
+              key={entry.sessionId}
+              entry={entry}
+              onResume={onResume}
+            />
           ))}
         </ul>
       )}

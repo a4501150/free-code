@@ -72,11 +72,31 @@ input {
 
 .topbar__menu {
   display: none;
+  align-items: center;
+  gap: 0.4rem;
   background: none;
-  border: 0;
-  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--rule-bright);
+  padding: 0.2rem 0.5rem;
   cursor: pointer;
   color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.topbar__menu:hover {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+/* Sits under the drawer and over everything else, so a tap outside closes it. */
+.scrim {
+  position: fixed;
+  inset: 2.25rem 0 0;
+  z-index: 1;
+  background: rgba(8, 9, 11, 0.6);
+  border: 0;
+  cursor: pointer;
 }
 
 .topbar__title {
@@ -136,6 +156,51 @@ input {
   background: var(--bg-sunk);
 }
 
+.rail__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.rail__heading {
+  margin: 0;
+  margin-right: auto;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--signal);
+}
+
+.rail__new-toggle {
+  padding: 0.3rem 0.6rem;
+  background: var(--signal-sunk);
+  border: 1px solid var(--signal);
+  color: var(--signal);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.rail__new-toggle:hover {
+  background: var(--bg-raised);
+}
+
+/* The drawer needs its own way out. On the desktop layout the rail is pinned,
+   so there is nothing to close. */
+.rail__close {
+  display: none;
+  padding: 0.1rem 0.4rem;
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
 .rail__title {
   margin: 1rem 0.75rem 0.35rem;
   font-size: 10px;
@@ -191,16 +256,21 @@ input {
   line-height: 1.9;
 }
 
-.rail__row {
+.rail__line {
   display: flex;
   align-items: stretch;
 }
 
-.rail__row .rail__item {
+.rail__line .rail__item {
   min-width: 0;
 }
 
-.rail__stop {
+.rail__confirm {
+  display: flex;
+  flex: none;
+}
+
+.rail__action {
   flex: none;
   padding: 0 0.6rem;
   background: none;
@@ -214,9 +284,32 @@ input {
   cursor: pointer;
 }
 
-.rail__stop:hover {
+.rail__action:hover:not(:disabled) {
+  background: var(--bg-raised);
+  color: var(--signal);
+}
+
+.rail__action.is-danger {
+  color: var(--del);
+}
+
+.rail__action.is-danger:hover {
   background: var(--bg-raised);
   color: var(--del);
+}
+
+.rail__action.is-busy,
+.rail__action:disabled {
+  display: flex;
+  align-items: center;
+  cursor: default;
+  color: var(--text-faint);
+}
+
+.rail__hint {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 11px;
 }
 
 .rail__new {
@@ -882,8 +975,9 @@ input {
       'main';
   }
 
-  .topbar__menu {
-    display: block;
+  .topbar__menu,
+  .rail__close {
+    display: flex;
   }
 
   .rail {
@@ -893,12 +987,18 @@ input {
     left: 0;
     width: min(var(--rail-w), 82vw);
     transform: translateX(-101%);
-    transition: transform 160ms ease-out;
+    /* Off-screen is not closed. Without this the drawer keeps its place in the
+       tab order and in hit testing while it is out of sight. */
+    visibility: hidden;
+    transition:
+      transform 160ms ease-out,
+      visibility 160ms;
     z-index: 2;
   }
 
   .shell.is-rail-open .rail {
     transform: none;
+    visibility: visible;
   }
 
   /* The instrument column does not fit, so the top bar carries the two facts
