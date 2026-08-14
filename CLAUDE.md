@@ -157,7 +157,7 @@ Everything is behind `feature('WEBUI')`.
 - A gateway-spawned child needs a configured config home: provider settings, trust, and API-key approval. `claude web start` creates none of those, which is why the e2e suite seeds the directory with a tmux session first.
 - A rebuild does not reach a running gateway. The supervisor is a separate long-lived process on the old binary, and it spawns sessions from its own `process.execPath`, so only replacing that process picks up new code. `web restart` does; `web stop` followed by `web start` does not.
 - `webState.ts` reads `WebStartOptionsSchema` from `service.ts`, so `service.ts` must import it lazily. A static import back the other way leaves the schema undefined at evaluation time, and every state read then fails the parse and returns null.
-- Known bug, unexplained: attaching to a gateway-spawned session through the gateway leaves that child unable to answer a hello on any later connection. The process stays alive and idle with one listener. It does not reproduce when the child is spawned directly, and terminal sessions are unaffected.
+- An exception thrown while handling an attach request kills that connection silently: the child still accepts later connections and reads their lines, but never answers, and it looks alive and idle. The cause once was a runtime getter reading a `let` from above its declaration, so `startHeadlessAttach` in [src/cli/print.ts](src/cli/print.ts) must stay below every binding its callbacks read. A browser can connect the instant the socket exists.
 
 ## Bash permissions
 

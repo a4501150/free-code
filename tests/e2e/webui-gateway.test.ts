@@ -434,6 +434,33 @@ describe('WebUI gateway', () => {
       socket.close()
     }
 
+    // Re-attach after a full detach, which a browser does on every reload.
+    // Note this does not deterministically catch the temporal-dead-zone fault
+    // that once broke it, because that depended on startup timing.
+    await sleep(1000)
+    const second = await client.openSocket()
+    try {
+      second.socket.send(
+        JSON.stringify({
+          type: 'attach',
+          processKey: child.processKey,
+          csrf: client.csrf,
+        }),
+      )
+      await waitFor(
+        () => second.frames,
+        list =>
+          list.some(
+            f =>
+              f.type === 'event' &&
+              (f.event as { kind: string }).kind === 'snapshot',
+          ),
+        { description: 'a snapshot on the second attach', timeoutMs: 20_000 },
+      )
+    } finally {
+      second.socket.close()
+    }
+
     // Stopping the web service stops sessions it owns.
     await runCli(dirs, ['web', 'stop'])
     await waitFor(

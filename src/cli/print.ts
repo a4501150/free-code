@@ -1079,28 +1079,6 @@ function runHeadlessStreaming(
   // TODO: Clean up this code to avoid passing around a mutable array.
   const mutableMessages: Message[] = initialMessages
 
-  // Publish this session on an attach socket when the gateway spawned us, so a
-  // server-owned session speaks the same protocol as a terminal one.
-  if (feature('WEBUI') && webuiHeadlessModule?.shouldAttachHeadless()) {
-    webuiHeadlessModule.startHeadlessAttach({
-      cwd: cwd(),
-      getMessages: () => mutableMessages,
-      isRunning: () => abortController !== undefined,
-      // These read and write bindings declared below; the closures run later.
-      getModel: () => activeUserSpecifiedModel,
-      getPermissionMode: () => getAppState().toolPermissionContext.mode,
-      interrupt: () => abortController?.abort('user-cancel'),
-      requestRun: () => void run(),
-      setModel: model => applyModelSwitch(model),
-      setPermissionMode: mode => {
-        setAppState(prev => ({
-          ...prev,
-          toolPermissionContext: { ...prev.toolPermissionContext, mode },
-        }))
-      },
-    })
-  }
-
   // Seed the readFileState cache from the transcript (content the model saw,
   // with message timestamps) so getChangedFiles can detect external edits.
   // This cache instance must persist across ask() calls, since the edit tool
@@ -1211,6 +1189,33 @@ function runHeadlessStreaming(
     setMainLoopModelOverride(model)
     notifySessionMetadataChanged({ model })
     injectModelSwitchBreadcrumbs(requestedModel, model)
+  }
+
+  // Publish this session on an attach socket when the gateway spawned us, so a
+  // server-owned session speaks the same protocol as a terminal one.
+  //
+  // This must stay below `activeUserSpecifiedModel`. A browser can connect the
+  // instant the socket exists, and reading that binding from above its
+  // declaration throws a temporal-dead-zone error inside the socket handler,
+  // which leaves the connection accepted but never answered.
+  if (feature('WEBUI') && webuiHeadlessModule?.shouldAttachHeadless()) {
+    webuiHeadlessModule.startHeadlessAttach({
+      cwd: cwd(),
+      getMessages: () => mutableMessages,
+      isRunning: () => abortController !== undefined,
+      getModel: () => activeUserSpecifiedModel,
+      getPermissionMode: () => getAppState().toolPermissionContext.mode,
+      interrupt: () => abortController?.abort('user-cancel'),
+      // `run` is declared below, but only a browser command calls this.
+      requestRun: () => void run(),
+      setModel: model => applyModelSwitch(model),
+      setPermissionMode: mode => {
+        setAppState(prev => ({
+          ...prev,
+          toolPermissionContext: { ...prev.toolPermissionContext, mode },
+        }))
+      },
+    })
   }
 
   // Cache SDK MCP clients to avoid reconnecting on each run
