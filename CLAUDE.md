@@ -158,6 +158,16 @@ Everything is behind `feature('WEBUI')`.
 - A rebuild does not reach a running gateway. The supervisor is a separate long-lived process on the old binary, and it spawns sessions from its own `process.execPath`, so only replacing that process picks up new code. `web restart` does; `web stop` followed by `web start` does not.
 - `webState.ts` reads `WebStartOptionsSchema` from `service.ts`, so `service.ts` must import it lazily. A static import back the other way leaves the schema undefined at evaluation time, and every state read then fails the parse and returns null.
 - An exception thrown while handling an attach request kills that connection silently: the child still accepts later connections and reads their lines, but never answers, and it looks alive and idle. The cause once was a runtime getter reading a `let` from above its declaration, so `startHeadlessAttach` in [src/cli/print.ts](src/cli/print.ts) must stay below every binding its callbacks read. A browser can connect the instant the socket exists.
+- Resuming a session from the browser must wait for a descriptor whose `sessionId` equals the requested one. `loadInitialMessages` performs the resume before `startHeadlessAttach` runs, so a descriptor never carries the pre-resume ID, and accepting the first one would return 200 for a child that then exits. That is what a nonexistent session or a holder conflict looks like. The endpoint also takes the working directory from the recorded session, never from the client.
+- Do not pass `--fork-session` for a resume. Without it print mode readopts the original session ID, which is what lets the session list drop the duplicate history row.
+
+### Browser client
+
+- `styles.css` is an ordered `@import` manifest over `styles/`. Bun inlines the whole chain into one artifact and preserves manifest order, so the cascade is stated rather than inherited from the JavaScript module graph. Every `@import` must precede every ordinary rule.
+- An off-screen panel is not a closed one. The session drawer and the instrument sheet both need `visibility: hidden` on top of the transform or the zero height, or they keep their place in the tab order and in hit testing while invisible.
+- The instrument panels are one DOM tree that CSS reshapes into either a sheet or a column. Never render one of two copies behind a JavaScript media query: crossing the breakpoint would unmount the panel and discard the pending-model state that stops the control snapping back.
+- Mobile form controls must stay at 16px or larger. iOS Safari zooms on focus below that and does not zoom back. The wider layers opt back down.
+- Chromium will not open a window narrower than 500px, so in-browser checks cannot reach 390px, and none of them prove iOS keyboard behavior.
 
 ## Bash permissions
 
