@@ -85,6 +85,8 @@ class GatewayClient {
       sessionId: string
       live: boolean
       attachable: boolean
+      owned: boolean
+      pid?: number
       holders: number
     }>
   }> {
@@ -446,6 +448,92 @@ describe('WebUI gateway', () => {
       alive => !alive,
       { description: 'the owned session to exit', timeoutMs: 20_000 },
     )
+  })
+
+  test('stops a session it owns and refuses one it does not', async () => {
+    dirs = await makeDirs()
+    server.reset([textResponse('unused')])
+
+    session = new TmuxSession({
+      serverUrl: server.url,
+      reuseConfigDir: dirs.config,
+      reuseHomeDir: dirs.home,
+    })
+    await session.start()
+    const workdir = session.cwd
+    const terminalPid = await waitForAttachablePid(dirs.config)
+
+    const started = await runCli(
+      dirs,
+      ['web', 'start', '--tunnel', 'none', '--password-stdin'],
+      PASSWORD,
+    )
+    const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
+    if (!match) throw new Error(`no gateway URL:\n${started}`)
+    baseUrl = match[0]
+
+    const client = new GatewayClient(baseUrl)
+    expect(await client.login(PASSWORD)).toBe(200)
+
+    const created = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie: client.cookie,
+        'x-freecode-csrf': client.csrf,
+      },
+      body: JSON.stringify({ cwd: workdir }),
+    })
+    expect(created.status).toBe(200)
+    const { session: child } = (await created.json()) as {
+      session: { pid: number; processKey: string }
+    }
+
+    // The list must distinguish the two, or the UI cannot decide which row
+    // gets a stop button.
+    const listed = await waitFor(
+      () => client.sessions(),
+      value => value.sessions.some(s => s.owned),
+      { description: 'the owned session to appear as owned' },
+    )
+    expect(listed.sessions.find(s => s.pid === child.pid)?.owned).toBe(true)
+    expect(listed.sessions.find(s => s.pid === terminalPid)?.owned).toBe(false)
+
+    function del(pid: number, csrf = client.csrf): Promise<Response> {
+      return fetch(`${baseUrl}/api/sessions/${pid}`, {
+        method: 'DELETE',
+        headers: { cookie: client.cookie, 'x-freecode-csrf': csrf },
+      })
+    }
+
+    // The terminal session belongs to the user, not the browser.
+    expect((await del(terminalPid)).status).toBe(403)
+    expect((await del(child.pid, 'forged')).status).toBe(403)
+    expect(
+      (
+        await fetch(`${baseUrl}/api/sessions/${child.pid}`, {
+          method: 'DELETE',
+        })
+      ).status,
+    ).toBe(401)
+
+    // The terminal session survived every refusal above.
+    expect(() => process.kill(terminalPid, 0)).not.toThrow()
+
+    expect((await del(child.pid)).status).toBe(200)
+    await waitFor(
+      () => {
+        try {
+          process.kill(child.pid, 0)
+          return true
+        } catch {
+          return false
+        }
+      },
+      alive => !alive,
+      { description: 'the owned session to exit', timeoutMs: 20_000 },
+    )
+    expect(() => process.kill(terminalPid, 0)).not.toThrow()
   })
 
   test('publishes a tunnel URL from a custom command provider', async () => {

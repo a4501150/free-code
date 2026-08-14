@@ -137,6 +137,11 @@ export type WebTodo = {
   activeForm?: string
 }
 
+export type WebModelOption = {
+  value: string
+  label: string
+}
+
 export type AttachEventBody =
   | {
       kind: 'snapshot'
@@ -144,6 +149,8 @@ export type AttachEventBody =
       transcript: WebTranscriptSnapshot
       permissions: WebPermissionRequest[]
       todos: WebTodo[]
+      /** Static for the process, so it rides the snapshot and not every meta. */
+      models: WebModelOption[]
     }
   | { kind: 'transcript'; patch: TranscriptPatch }
   | { kind: 'meta'; meta: WebSessionMeta }

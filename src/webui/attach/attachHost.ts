@@ -11,7 +11,9 @@ import {
   type AttachResponse,
   type WebPermissionRequest,
   type WebSessionMeta,
+  type WebModelOption,
 } from '../protocol/attachSchemas.js'
+import { getModelOptions } from '../../utils/model/modelOptions.js'
 import {
   diffSnapshots,
   toWireSnapshot,
@@ -131,6 +133,21 @@ export function startAttachHost(
     }
   }
 
+  /**
+   * Options the browser may switch to. The null-valued "Default" entry is
+   * dropped, because `set_model` carries a model id and cannot express it.
+   */
+  function listModels(): WebModelOption[] {
+    try {
+      return getModelOptions()
+        .filter(option => typeof option.value === 'string')
+        .map(option => ({ value: option.value as string, label: option.label }))
+    } catch {
+      // A misconfigured provider registry must not break attaching.
+      return []
+    }
+  }
+
   function buildMeta(): WebSessionMeta {
     const cost = options.getCost?.()
     return {
@@ -201,6 +218,7 @@ export function startAttachHost(
         transcript,
         permissions: permissions.pending(),
         todos: runtime?.getTodos() ?? [],
+        models: listModels(),
       },
     }
     writeNdjson(connection.socket, snapshot)

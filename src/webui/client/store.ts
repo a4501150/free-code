@@ -2,6 +2,7 @@ import { useCallback, useRef, useSyncExternalStore } from 'react'
 import type {
   AttachEventBody,
   WebPermissionRequest,
+  WebModelOption,
   WebSessionMeta,
   WebTodo,
 } from '../protocol/attachSchemas.js'
@@ -13,6 +14,7 @@ export type SessionView = {
   order: string[]
   permissions: WebPermissionRequest[]
   todos: WebTodo[]
+  models: WebModelOption[]
   lastSeq: number
 }
 
@@ -23,6 +25,7 @@ export function emptyView(): SessionView {
     order: [],
     permissions: [],
     todos: [],
+    models: [],
     lastSeq: 0,
   }
 }
@@ -48,6 +51,7 @@ export function applyEvent(
       next.order = [...event.transcript.order]
       next.permissions = event.permissions
       next.todos = event.todos
+      next.models = event.models
       next.lastSeq = seq
       return next
     }

@@ -1086,11 +1086,18 @@ function runHeadlessStreaming(
       cwd: cwd(),
       getMessages: () => mutableMessages,
       isRunning: () => abortController !== undefined,
-      getModel: () => options.userSpecifiedModel,
+      // These read and write bindings declared below; the closures run later.
+      getModel: () => activeUserSpecifiedModel,
       getPermissionMode: () => getAppState().toolPermissionContext.mode,
       interrupt: () => abortController?.abort('user-cancel'),
-      // `run` is declared below; the closure reads it at call time.
       requestRun: () => void run(),
+      setModel: model => applyModelSwitch(model),
+      setPermissionMode: mode => {
+        setAppState(prev => ({
+          ...prev,
+          toolPermissionContext: { ...prev.toolPermissionContext, mode },
+        }))
+      },
     })
   }
 
@@ -1194,6 +1201,16 @@ function runHeadlessStreaming(
         } satisfies SDKUserMessageReplay)
       }
     }
+  }
+
+  /** Applies a mid-session model switch. `default` resolves to the default. */
+  function applyModelSwitch(requestedModel: string): void {
+    const model =
+      requestedModel === 'default' ? getDefaultMainLoopModel() : requestedModel
+    activeUserSpecifiedModel = model
+    setMainLoopModelOverride(model)
+    notifySessionMetadataChanged({ model })
+    injectModelSwitchBreadcrumbs(requestedModel, model)
   }
 
   // Cache SDK MCP clients to avoid reconnecting on each run
@@ -2738,15 +2755,7 @@ function runHeadlessStreaming(
           // notifySessionMetadataChanged that used to follow here is
           // now fired by onChangeAppState (with externalized mode name).
         } else if (message.request.subtype === 'set_model') {
-          const requestedModel = message.request.model ?? 'default'
-          const model =
-            requestedModel === 'default'
-              ? getDefaultMainLoopModel()
-              : requestedModel
-          activeUserSpecifiedModel = model
-          setMainLoopModelOverride(model)
-          notifySessionMetadataChanged({ model })
-          injectModelSwitchBreadcrumbs(requestedModel, model)
+          applyModelSwitch(message.request.model ?? 'default')
 
           sendControlResponseSuccess(message)
         } else if (message.request.subtype === 'set_max_thinking_tokens') {

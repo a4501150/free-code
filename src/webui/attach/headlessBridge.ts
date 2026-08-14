@@ -3,7 +3,10 @@ import type { CanUseToolFn } from '../../Tool.js'
 import type { Message } from '../../types/message.js'
 import { enqueue } from '../../utils/messageQueueManager.js'
 import type { UUID } from 'crypto'
-import type { WebSessionState } from '../protocol/attachSchemas.js'
+import type {
+  WebPermissionMode,
+  WebSessionState,
+} from '../protocol/attachSchemas.js'
 import {
   getAttachHost,
   publishAttachMeta,
@@ -30,6 +33,8 @@ export type HeadlessAttachParams = {
   getModel(): string | undefined
   getPermissionMode(): string | undefined
   interrupt(): void
+  setModel(model: string): void
+  setPermissionMode(mode: WebPermissionMode): void
   /**
    * Kicks the headless drain loop. Unlike the REPL, enqueueing alone does not
    * start a turn there: the stdin path calls run() after every enqueue.
@@ -75,10 +80,13 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
       params.interrupt()
     },
 
-    // A server-owned session is driven only from the browser, and neither
-    // switch is meaningful without the REPL's state plumbing.
-    setPermissionMode() {},
-    setModel() {},
+    setPermissionMode(mode) {
+      params.setPermissionMode(mode)
+    },
+
+    setModel(model) {
+      params.setModel(model)
+    },
   })
 
   // The headless loop mutates its message array in place, so unlike the REPL

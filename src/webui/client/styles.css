@@ -191,6 +191,83 @@ input {
   line-height: 1.9;
 }
 
+.rail__row {
+  display: flex;
+  align-items: stretch;
+}
+
+.rail__row .rail__item {
+  min-width: 0;
+}
+
+.rail__stop {
+  flex: none;
+  padding: 0 0.6rem;
+  background: none;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.rail__stop:hover {
+  background: var(--bg-raised);
+  color: var(--del);
+}
+
+.rail__new {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.75rem 0.75rem 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--rule);
+}
+
+.rail__cwd {
+  padding: 0.35rem 0.45rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+}
+
+.rail__cwd:focus {
+  border-color: var(--signal);
+  outline: none;
+}
+
+.rail__start {
+  padding: 0.35rem;
+  background: none;
+  border: 1px solid var(--rule-bright);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.rail__start:hover:not(:disabled) {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.rail__start:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.rail__error {
+  margin: 0;
+  color: var(--del);
+  font-size: 11px;
+}
+
 .rail__glyph.is-running {
   color: var(--signal);
 }
@@ -686,6 +763,22 @@ input {
   white-space: nowrap;
   text-align: right;
   min-width: 0;
+}
+
+.meter__select {
+  min-width: 0;
+  max-width: 62%;
+  padding: 0.1rem 0.2rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+}
+
+.meter__select:focus {
+  border-color: var(--signal);
+  outline: none;
 }
 
 .modes {

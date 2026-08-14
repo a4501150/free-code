@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionListEntry } from '../gateway/sessionHub.js'
 import {
   connectGateway,
+  createSession,
   fetchSessions,
   login,
+  stopSession,
   whoAmI,
   type GatewaySocket,
   type ServerFrame,
@@ -133,6 +135,31 @@ export function App(): React.ReactElement {
     [store],
   )
 
+  const create = useCallback(
+    async (cwd: string): Promise<string | null> => {
+      if (!csrf) return 'not authenticated'
+      const result = await createSession(cwd, csrf)
+      await refresh()
+      if (!result.ok) return result.error
+      // Attach straight away: the user asked for a session, not a list entry.
+      store.reset()
+      setActiveKey(result.processKey)
+      setRailOpen(false)
+      socketRef.current?.attach(result.processKey)
+      return null
+    },
+    [csrf, refresh, store],
+  )
+
+  const stop = useCallback(
+    async (pid: number): Promise<void> => {
+      if (!csrf) return
+      await stopSession(pid, csrf)
+      await refresh()
+    },
+    [csrf, refresh],
+  )
+
   // Paths the session has touched, which is what @ mentions can offer without
   // giving the browser filesystem access.
   const knownPaths = useMemo(() => {
@@ -151,6 +178,9 @@ export function App(): React.ReactElement {
   const meta = view.meta
   const busy = meta?.state === 'running'
   const pending = view.permissions[0]
+  // The browser cannot browse the filesystem, so the only sensible default is a
+  // directory some session already runs in.
+  const defaultCwd = meta?.cwd ?? sessions.find(s => s.live && s.cwd)?.cwd ?? ''
 
   return (
     <div className={`shell ${railOpen ? 'is-rail-open' : ''}`}>
@@ -186,7 +216,10 @@ export function App(): React.ReactElement {
         sessions={sessions}
         activeKey={activeKey}
         activeState={meta?.state}
+        defaultCwd={defaultCwd}
         onSelect={select}
+        onCreate={create}
+        onStop={pid => void stop(pid)}
       />
 
       <main className="main">
@@ -240,8 +273,12 @@ export function App(): React.ReactElement {
       <Instruments
         meta={meta}
         todos={view.todos}
+        models={view.models}
         onSetMode={mode =>
           socketRef.current?.send({ kind: 'set_permission_mode', mode })
+        }
+        onSetModel={model =>
+          socketRef.current?.send({ kind: 'set_model', model })
         }
       />
     </div>

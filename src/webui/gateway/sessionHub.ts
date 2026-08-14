@@ -20,6 +20,8 @@ export type SessionListEntry = {
   lastModified?: number
   live: boolean
   attachable: boolean
+  /** True when the gateway spawned this process, so it may also stop it. */
+  owned: boolean
   /** How many live processes claim this session ID. Above one needs a choice. */
   holders: number
   state?: string
@@ -53,7 +55,9 @@ export function createSessionHub() {
     return `${pid}:${nonce}`
   }
 
-  async function list(cwd?: string): Promise<SessionListEntry[]> {
+  async function list(
+    options: { cwd?: string; owns?: (pid: number) => boolean } = {},
+  ): Promise<SessionListEntry[]> {
     const live = await listLiveSessions()
 
     const holderCounts = new Map<string, number>()
@@ -78,6 +82,7 @@ export function createSessionHub() {
         startedAt: entry.startedAt,
         live: true,
         attachable,
+        owned: options.owns?.(entry.pid) ?? false,
         holders: holderCounts.get(entry.sessionId) ?? 1,
       }
     })
@@ -86,7 +91,7 @@ export function createSessionHub() {
     const liveIds = new Set(live.map(entry => entry.sessionId))
     let history: Awaited<ReturnType<typeof listSessionsImpl>> = []
     try {
-      history = await listSessionsImpl({ dir: cwd, limit: 100 })
+      history = await listSessionsImpl({ dir: options.cwd, limit: 100 })
     } catch {
       history = []
     }
@@ -101,6 +106,7 @@ export function createSessionHub() {
         lastModified: info.lastModified,
         live: false,
         attachable: false,
+        owned: false,
         holders: 0,
       })
     }

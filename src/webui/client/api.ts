@@ -44,6 +44,43 @@ export async function fetchSessions(): Promise<SessionListEntry[]> {
   return body.sessions
 }
 
+const CSRF_HEADER = 'x-freecode-csrf'
+
+export type CreateResult =
+  | { ok: true; pid: number; processKey: string }
+  | { ok: false; error: string }
+
+export async function createSession(
+  cwd: string,
+  csrf: string,
+): Promise<CreateResult> {
+  const response = await fetch('/api/sessions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', [CSRF_HEADER]: csrf },
+    body: JSON.stringify({ cwd }),
+  })
+  const body = (await response.json().catch(() => ({}))) as {
+    session?: { pid: number; processKey: string }
+    error?: string
+  }
+  if (response.ok && body.session) {
+    return {
+      ok: true,
+      pid: body.session.pid,
+      processKey: body.session.processKey,
+    }
+  }
+  return { ok: false, error: body.error ?? `failed (${response.status})` }
+}
+
+export async function stopSession(pid: number, csrf: string): Promise<boolean> {
+  const response = await fetch(`/api/sessions/${pid}`, {
+    method: 'DELETE',
+    headers: { [CSRF_HEADER]: csrf },
+  })
+  return response.ok
+}
+
 export type GatewaySocket = {
   attach(processKey: string): void
   send(body: AttachRequestBody): void

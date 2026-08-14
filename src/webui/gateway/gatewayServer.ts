@@ -298,10 +298,34 @@ export function startGatewayServer(
         }
       }
 
+      // Stopping is restricted to processes the gateway spawned. A session the
+      // user started in a terminal is not the browser's to end.
+      const stopMatch = url.pathname.match(/^\/api\/sessions\/(\d+)$/)
+      if (stopMatch && request.method === 'DELETE') {
+        if (!originOk(request)) return json({ error: 'bad_origin' }, 403)
+        const session = authenticate(request)
+        if (!session) return json({ error: 'unauthorized' }, 401)
+        if (
+          !csrfMatches(
+            session.auth,
+            session.token,
+            request.headers.get(CSRF_HEADER),
+          )
+        ) {
+          return json({ error: 'bad_csrf' }, 403)
+        }
+
+        const pid = Number(stopMatch[1])
+        if (!children.owns(pid)) {
+          return json({ error: 'not_owned' }, 403)
+        }
+        return json({ stopped: children.stop(pid) })
+      }
+
       if (url.pathname === '/api/sessions') {
         const session = authenticate(request)
         if (!session) return json({ error: 'unauthorized' }, 401)
-        return json({ sessions: await hub.list() })
+        return json({ sessions: await hub.list({ owns: children.owns }) })
       }
 
       switch (url.pathname) {

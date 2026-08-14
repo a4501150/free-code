@@ -273,6 +273,7 @@ describe('client store', () => {
     transcript: { items: [], order: [] },
     permissions: [],
     todos: [],
+    models: [{ value: 'claude-opus-5', label: 'Opus 5' }],
   }
 
   test('ignores an event at or below the last applied sequence', () => {
@@ -280,6 +281,18 @@ describe('client store', () => {
     const before = view
     view = applyEvent(view, 5, { kind: 'resync_required' })
     expect(view).toBe(before)
+  })
+
+  test('keeps the model list across a later event', () => {
+    let view = applyEvent(emptyView(), 1, snapshotEvent)
+    expect(view.models).toEqual([{ value: 'claude-opus-5', label: 'Opus 5' }])
+    // Models ride only the snapshot, so a metadata update must not drop them.
+    view = applyEvent(view, 2, {
+      kind: 'meta',
+      meta: { ...snapshotEvent.meta, model: 'claude-opus-5' },
+    })
+    expect(view.models).toHaveLength(1)
+    expect(view.meta?.model).toBe('claude-opus-5')
   })
 
   test('applies a replayed patch exactly once', () => {

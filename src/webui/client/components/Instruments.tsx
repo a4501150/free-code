@@ -1,4 +1,9 @@
-import type { WebSessionMeta, WebTodo } from '../../protocol/attachSchemas.js'
+import { useEffect, useState } from 'react'
+import type {
+  WebModelOption,
+  WebSessionMeta,
+  WebTodo,
+} from '../../protocol/attachSchemas.js'
 
 const MODES = ['default', 'acceptEdits', 'plan'] as const
 
@@ -28,20 +33,56 @@ function Meter({
 export function Instruments({
   meta,
   todos,
+  models,
   onSetMode,
+  onSetModel,
 }: {
   meta: WebSessionMeta | null
   todos: WebTodo[]
+  models: WebModelOption[]
   onSetMode(mode: (typeof MODES)[number]): void
+  onSetModel(model: string): void
 }): React.ReactElement {
   const open = todos.filter(t => t.status !== 'completed')
+
+  // The session reports its model on a poll, so binding the control straight to
+  // it makes the choice visibly snap back until the report arrives.
+  const [pendingModel, setPendingModel] = useState<string | null>(null)
+  useEffect(() => {
+    if (pendingModel && meta?.model === pendingModel) setPendingModel(null)
+  }, [meta?.model, pendingModel])
+  const shownModel = pendingModel ?? meta?.model ?? ''
 
   return (
     <aside className="instruments" aria-label="Session details">
       <section className="panel">
         <h2 className="panel__title">session</h2>
         <Meter label="state" value={meta?.state ?? '—'} />
-        <Meter label="model" value={meta?.model ?? '—'} />
+        {models.length === 0 ? (
+          <Meter label="model" value={meta?.model ?? '—'} />
+        ) : (
+          <label className="meter">
+            <span className="meter__label">model</span>
+            <select
+              className="meter__select"
+              value={shownModel}
+              onChange={event => {
+                setPendingModel(event.target.value)
+                onSetModel(event.target.value)
+              }}
+            >
+              {/* The session may run a model the registry no longer lists. */}
+              {shownModel && !models.some(m => m.value === shownModel) ? (
+                <option value={shownModel}>{shownModel}</option>
+              ) : null}
+              {models.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <Meter
           label="cost"
           value={meta ? `$${(meta.costUsd ?? 0).toFixed(4)}` : '—'}
