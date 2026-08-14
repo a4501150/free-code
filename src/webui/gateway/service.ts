@@ -3,6 +3,8 @@ import { createCommandTunnelProvider } from '../tunnel/commandTunnelProvider.js'
 import { createLocalTunnelProvider } from '../tunnel/localTunnelProvider.js'
 import type { TunnelHandle, TunnelProvider } from '../tunnel/types.js'
 import { startGatewayServer, type GatewayServer } from './gatewayServer.js'
+// webState imports WebStartOptionsSchema from this module, so importing it
+// here at module scope would leave that schema undefined at evaluation time.
 
 export const WebStartOptionsSchema = z.object({
   port: z.number().int().min(0).max(65535).optional(),
@@ -80,6 +82,14 @@ export function createWebService() {
         status.tunnelError = err instanceof Error ? err.message : String(err)
       }
     }
+
+    // Remember how this was started, so `web restart` can ask the tunnel for
+    // the same hostname instead of handing out a new URL.
+    const { subdomainOf, writeWebState } = await import('./webState.js')
+    writeWebState({
+      options,
+      subdomain: subdomainOf(status.publicUrl) ?? options.subdomain,
+    })
 
     return status
   }

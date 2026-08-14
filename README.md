@@ -264,6 +264,7 @@ bun run dev
 
 ./cli-dev web status   # show the URL and the tunnel state
 ./cli-dev web url      # print the URL again, with a QR code
+./cli-dev web restart  # reload after a rebuild, keeping the same URL
 ./cli-dev web stop
 ```
 
@@ -273,6 +274,13 @@ Treat it like an SSH key, not a login.
 
 The gateway runs inside the daemon, so it survives closing the terminal. The
 server binds `127.0.0.1` only, and the tunnel is the sole public path.
+
+After you rebuild, run `./cli-dev web restart`. A rebuild does not affect a
+running daemon, because the supervisor is a separate long-lived process still
+executing the old binary. `restart` replaces that process and asks the tunnel
+for the hostname it used before, so a URL already open on a phone keeps working.
+The provider can refuse that hostname, in which case the new URL is printed.
+Sessions the gateway owns do not survive a restart. Terminal sessions do.
 
 The browser lists three kinds of session: live sessions from your own terminals,
 sessions that the gateway started itself, and historical sessions from disk. A

@@ -7,7 +7,7 @@ import {
   setDefaultTimeout,
   test as bunTest,
 } from 'bun:test'
-import { mkdtemp, readdir, rm } from 'fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { textResponse } from '../helpers/fixture-builders'
@@ -556,5 +556,39 @@ describe('WebUI gateway', () => {
 
     const status = await runCli(dirs, ['web', 'status'])
     expect(status).toContain('https://fake-tunnel.example')
+  })
+
+  test('restart replaces the daemon and keeps the tunnel URL', async () => {
+    dirs = await makeDirs()
+    const started = await runCli(
+      dirs,
+      [
+        'web',
+        'start',
+        '--tunnel',
+        'command',
+        '--tunnel-command',
+        'echo https://kept-name.example; sleep 60',
+        '--password-stdin',
+      ],
+      PASSWORD,
+    )
+    expect(started).toContain('https://kept-name.example')
+    const firstPid = (
+      await readFile(join(dirs.config, 'daemon.pid'), 'utf-8')
+    ).trim()
+
+    // Restart must replace the supervisor process. Reloading the gateway
+    // inside the old one could never pick up a new build.
+    const restarted = await runCli(dirs, ['web', 'restart'])
+    const secondPid = (
+      await readFile(join(dirs.config, 'daemon.pid'), 'utf-8')
+    ).trim()
+
+    expect(secondPid).not.toBe(firstPid)
+    expect(restarted).toContain('https://kept-name.example')
+    expect(await runCli(dirs, ['web', 'status'])).toContain(
+      'https://kept-name.example',
+    )
   })
 })

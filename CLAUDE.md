@@ -155,6 +155,9 @@ Everything is behind `feature('WEBUI')`.
 - A `WEBUI`-off build still has to resolve the generated client asset module, so the build writes an empty stub when the flag is off. Without it a fresh checkout cannot build.
 - Do not use a CSP directive name as a "is the WebUI in this binary" marker. `highlight.js` ships a Content-Security-Policy grammar, so `frame-ancestors` is in every build.
 - A gateway-spawned child needs a configured config home: provider settings, trust, and API-key approval. `claude web start` creates none of those, which is why the e2e suite seeds the directory with a tmux session first.
+- A rebuild does not reach a running gateway. The supervisor is a separate long-lived process on the old binary, and it spawns sessions from its own `process.execPath`, so only replacing that process picks up new code. `web restart` does; `web stop` followed by `web start` does not.
+- `webState.ts` reads `WebStartOptionsSchema` from `service.ts`, so `service.ts` must import it lazily. A static import back the other way leaves the schema undefined at evaluation time, and every state read then fails the parse and returns null.
+- Known bug, unexplained: attaching to a gateway-spawned session through the gateway leaves that child unable to answer a hello on any later connection. The process stays alive and idle with one listener. It does not reproduce when the child is spawned directly, and terminal sessions are unaffected.
 
 ## Bash permissions
 

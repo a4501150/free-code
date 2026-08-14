@@ -4,6 +4,7 @@ import {
   type DaemonControlResponse,
 } from './daemonControl.js'
 import type { WebStartOptions, WebStatus } from './gateway/service.js'
+import { readWebState } from './gateway/webState.js'
 
 function print(line: string): void {
   // biome-ignore lint/suspicious/noConsole:: intentional console output
@@ -16,6 +17,7 @@ function usage(): void {
   print('Commands:')
   print('  start   Start the web server (and tunnel) inside the daemon')
   print('  stop    Stop the web server and tunnel')
+  print('  restart Restart the daemon and the web server, reusing the URL')
   print('  status  Show whether the web server is running')
   print('  url     Print the public URL, with a QR code')
   print('')
@@ -185,6 +187,22 @@ async function ensureDaemon(): Promise<boolean> {
   return false
 }
 
+/**
+ * Stops the supervisor and waits for its control socket to go away.
+ *
+ * Restarting the gateway alone cannot pick up a new build: the supervisor is a
+ * long-lived process still running the old binary, and it spawns sessions from
+ * its own `process.execPath`.
+ */
+async function stopDaemonAndWait(): Promise<void> {
+  const { daemonMain } = await import('../daemon/main.js')
+  await daemonMain(['stop'])
+  for (let attempt = 0; attempt < 50; attempt++) {
+    if (!(await sendDaemonControl({ kind: 'web.status' }, 1000))) return
+    await Bun.sleep(100)
+  }
+}
+
 function unwrap(response: DaemonControlResponse | null): WebStatus | null {
   if (!response) {
     print('The daemon is not running. Start it with: claude web start')
@@ -201,13 +219,23 @@ export async function webMain(args: string[]): Promise<void> {
   const command = args[0]
   const rest = args.slice(1)
 
+  async function launch(options: WebStartOptions): Promise<boolean> {
+    if (!(await ensureDaemon())) return false
+    const status = unwrap(
+      await sendDaemonControl({ kind: 'web.start', options }),
+    )
+    if (!status) return false
+    reportStatus(status)
+    if (status.publicUrl) {
+      print('')
+      await printQr(status.publicUrl)
+    }
+    return true
+  }
+
   switch (command) {
     case 'start': {
       if (!(await ensurePassword(rest))) {
-        process.exitCode = 1
-        return
-      }
-      if (!(await ensureDaemon())) {
         process.exitCode = 1
         return
       }
@@ -219,18 +247,31 @@ export async function webMain(args: string[]): Promise<void> {
         process.exitCode = 1
         return
       }
-      const status = unwrap(
-        await sendDaemonControl({ kind: 'web.start', options }),
-      )
-      if (!status) {
+      if (!(await launch(options))) process.exitCode = 1
+      return
+    }
+
+    case 'restart': {
+      const previous = readWebState()
+      if (!previous) {
+        print('Nothing to restart. Start it first with: claude web start')
         process.exitCode = 1
         return
       }
-      reportStatus(status)
-      if (status.publicUrl) {
-        print('')
-        await printQr(status.publicUrl)
+
+      // Ask the tunnel for the hostname it gave last time, so a URL already
+      // open on a phone keeps working. The provider may refuse it, in which
+      // case the new URL is reported as usual.
+      const options: WebStartOptions = {
+        ...previous.options,
+        ...(previous.subdomain ? { subdomain: previous.subdomain } : {}),
       }
+
+      await sendDaemonControl({ kind: 'web.stop' })
+      await stopDaemonAndWait()
+      print('Daemon stopped. Starting it again on the current build.')
+
+      if (!(await launch(options))) process.exitCode = 1
       return
     }
 
@@ -241,6 +282,8 @@ export async function webMain(args: string[]): Promise<void> {
         return
       }
       print('Web server stopped')
+      print('The daemon is still running. Use `claude web restart` to')
+      print('reload it after a rebuild, or `claude daemon stop` to end it.')
       return
     }
 
