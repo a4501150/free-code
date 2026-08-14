@@ -73,12 +73,19 @@ export async function createSession(
   return { ok: false, error: body.error ?? `failed (${response.status})` }
 }
 
-export async function stopSession(pid: number, csrf: string): Promise<boolean> {
+export type StopResult = { ok: true } | { ok: false; error: string }
+
+export async function stopSession(
+  pid: number,
+  csrf: string,
+): Promise<StopResult> {
   const response = await fetch(`/api/sessions/${pid}`, {
     method: 'DELETE',
     headers: { [CSRF_HEADER]: csrf },
   })
-  return response.ok
+  if (response.ok) return { ok: true }
+  const body = (await response.json().catch(() => ({}))) as { error?: string }
+  return { ok: false, error: body.error ?? `failed (${response.status})` }
 }
 
 export type GatewaySocket = {
@@ -132,7 +139,10 @@ export function connectGateway(handlers: {
 
   function attach(processKey: string): void {
     currentProcessKey = processKey
-    socket?.send(
+    // A send on a CONNECTING socket is dropped, not queued. Recording the key is
+    // enough, because the open handler re-attaches to it.
+    if (socket?.readyState !== WebSocket.OPEN) return
+    socket.send(
       JSON.stringify({ type: 'attach', processKey, csrf: handlers.csrf }),
     )
   }
