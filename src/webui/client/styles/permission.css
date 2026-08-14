@@ -1,0 +1,96 @@
+/**
+ * Permission is the one thing that must not be missed on a phone, so it is a
+ * tray on the bottom edge rather than a centred dialog: it is reachable by
+ * thumb, it cannot be scrolled past, and it keeps full width at 390px.
+ */
+
+.tray {
+  grid-area: tray;
+  border-top: 1px solid var(--signal);
+  background: var(--bg-raised);
+  padding: 0.75rem 1rem 1rem;
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  animation: rise 140ms ease-out;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(0.75rem);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tray {
+    animation: none;
+  }
+}
+
+.tray__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.tray__tool {
+  color: var(--signal);
+  letter-spacing: 0.06em;
+}
+
+.tray__queued {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.tray__toggle {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.tray__desc {
+  margin: 0 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.tray__blocked {
+  margin: 0 0 0.5rem;
+  color: var(--signal);
+  font-size: 12px;
+}
+
+.tray__pre {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--text-dim);
+}
+
+.tray__feedback {
+  width: 100%;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  padding: 0.4rem 0.5rem;
+  resize: none;
+}
+
+.tray__feedback:focus {
+  outline: 1px solid var(--signal);
+  outline-offset: -1px;
+}
+
+.tray__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}

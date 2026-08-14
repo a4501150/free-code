@@ -1,0 +1,41 @@
+.login,
+.boot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-faint);
+}
+
+.login__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: min(20rem, 90vw);
+}
+
+.login__title {
+  margin: 0 0 0.5rem;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--signal);
+}
+
+.login__input {
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule-bright);
+  padding: 0.5rem;
+}
+
+.login__input:focus {
+  outline: 1px solid var(--signal);
+  outline-offset: -1px;
+}
+
+.login__error {
+  margin: 0;
+  color: var(--del);
+  font-size: 12px;
+}

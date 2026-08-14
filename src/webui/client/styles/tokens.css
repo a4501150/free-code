@@ -1,0 +1,30 @@
+:root {
+  --bg: #0b0d0f;
+  --bg-raised: #101317;
+  --bg-sunk: #08090b;
+  --rule: #1e2429;
+  --rule-bright: #2c343b;
+  --text: #d6dade;
+  --text-dim: #7d868e;
+  --text-faint: #565e66;
+  --signal: #f0a35e;
+  --signal-sunk: #2a1f14;
+  --add: #6fae7c;
+  --del: #d2685f;
+  --mono:
+    ui-monospace, 'SF Mono', 'JetBrains Mono', 'IBM Plex Mono', Menlo, monospace;
+  --rail-w: 15rem;
+  --instruments-w: 16rem;
+  --topbar-h: 2.25rem;
+}
+
+/* Shared by the top bar and the session rail, so it cannot live in either. */
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}

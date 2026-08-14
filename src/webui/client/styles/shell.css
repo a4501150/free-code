@@ -1,0 +1,151 @@
+/**
+ * The two grids.
+ *
+ * `.shell` owns the top bar, the session rail and one workspace. `.main` owns
+ * the conversation and the instrument surface, which is what lets the sheet
+ * handle sit directly above the composer on a phone and become a column on a
+ * wide screen without moving in the DOM.
+ */
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr);
+  grid-template-areas:
+    'top'
+    'main';
+  height: 100vh;
+  /* Preferred, where supported: the phone's browser chrome moves. */
+  height: 100dvh;
+}
+
+.main {
+  grid-area: main;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto auto auto;
+  grid-template-areas:
+    'transcript'
+    'tray'
+    'sheet'
+    'composer';
+  min-width: 0;
+  /* Without this the transcript refuses to shrink and pushes the composer off
+     the bottom of the screen. */
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── top bar ───────────────────────────────────────────────────── */
+
+.topbar {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 0.75rem;
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-sunk);
+}
+
+.topbar__menu {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: 1px solid var(--rule-bright);
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.topbar__menu:hover {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.topbar__title {
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--signal);
+  font-size: 11px;
+}
+
+/* The narrow layouts have no instrument column in view, so the bar carries the
+   two facts that motivate opening the app at all. */
+.topbar__state {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.topbar__glyph {
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.topbar__glyph.is-running {
+  color: var(--signal);
+}
+
+.topbar__glyph.is-requires_action {
+  color: var(--signal);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+.topbar__cost {
+  color: var(--text-faint);
+}
+
+.topbar__link {
+  margin-left: auto;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.topbar__link.is-up {
+  color: var(--text-faint);
+}
+
+.topbar__link.is-down {
+  color: var(--signal);
+}
+
+/* ── tablet: the rail earns a permanent column ─────────────────── */
+
+@media (min-width: 48rem) {
+  .shell {
+    grid-template-columns: var(--rail-w) minmax(0, 1fr);
+    grid-template-areas:
+      'top top'
+      'rail main';
+  }
+
+  .topbar__menu {
+    display: none;
+  }
+}
+
+/* ── desktop: the instruments earn one too ─────────────────────── */
+
+@media (min-width: 64rem) {
+  .main {
+    grid-template-columns: minmax(0, 1fr) var(--instruments-w);
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'transcript sheet'
+      'tray sheet'
+      'composer sheet';
+  }
+
+  .topbar__state {
+    display: none;
+  }
+}

@@ -1,0 +1,108 @@
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  height: 100%;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/**
+ * Mobile-first form sizing.
+ *
+ * iOS Safari zooms the page when a field smaller than 16px takes focus, and it
+ * does not zoom back out. So the phone gets 16px everywhere and the wider
+ * layouts opt back down. Never fix this by disabling zoom in the viewport tag.
+ */
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  font-size: 16px;
+}
+
+@media (min-width: 48rem) {
+  input,
+  select,
+  textarea {
+    font-size: 13px;
+  }
+}
+
+.btn {
+  padding: 0.5rem 1rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule-bright);
+  cursor: pointer;
+  letter-spacing: 0.06em;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--signal);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn--allow {
+  flex: 1;
+  border-color: var(--add);
+  color: var(--add);
+}
+
+.btn--deny {
+  flex: 1;
+  border-color: var(--del);
+  color: var(--del);
+}
+
+.btn--send,
+.btn--stop {
+  flex: none;
+  align-self: flex-end;
+}
+
+.btn--stop {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+/* Covers the conversation while the session drawer is open, so a tap outside
+   closes it. Never rendered on the pinned-rail layouts. */
+.scrim {
+  position: fixed;
+  inset: var(--topbar-h) 0 0;
+  z-index: 1;
+  background: rgba(8, 9, 11, 0.6);
+  border: 0;
+  cursor: pointer;
+}
+
+@media (min-width: 48rem) {
+  .scrim {
+    display: none;
+  }
+}

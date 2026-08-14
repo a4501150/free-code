@@ -1,0 +1,260 @@
+/**
+ * One instrument tree, two shapes.
+ *
+ * Phone and tablet: a sheet above the composer, opened by its handle. Desktop:
+ * the right-hand column, handle hidden. The element never moves in the DOM, so
+ * there is only ever one model select and the pending-model state survives a
+ * resize.
+ */
+
+.sheet {
+  grid-area: sheet;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--rule);
+  background: var(--bg-sunk);
+}
+
+.sheet__handle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  padding-left: max(0.9rem, env(safe-area-inset-left));
+  padding-right: max(0.9rem, env(safe-area-inset-right));
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  /* The handle owns the vertical gesture. The body below it must still scroll,
+     which is why this is not on the whole sheet. */
+  touch-action: none;
+}
+
+.sheet__handle:hover {
+  background: var(--bg-raised);
+}
+
+.sheet__grip {
+  color: var(--text-faint);
+}
+
+.sheet__label {
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.sheet__summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sheet__glyph {
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.sheet__glyph.is-running {
+  color: var(--signal);
+}
+
+.sheet__glyph.is-requires_action {
+  color: var(--signal);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+.sheet__todos {
+  color: var(--signal);
+}
+
+.sheet__body {
+  height: 0;
+  overflow: hidden;
+  /* Same reason as the drawer: a zero-height panel is still focusable without
+     the visibility step. */
+  visibility: hidden;
+  transition:
+    height 160ms ease-out,
+    visibility 160ms;
+}
+
+.sheet.is-open .sheet__body {
+  height: var(--sheet-h, 45vh);
+  visibility: visible;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* A drag sets the height inline, so it must not be animated on the way. */
+.sheet.is-dragging .sheet__body {
+  visibility: visible;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet__body {
+    transition: none;
+  }
+}
+
+/* ── panels ────────────────────────────────────────────────────── */
+
+.instruments {
+  padding-bottom: 2rem;
+}
+
+.panel {
+  padding: 0.75rem;
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+  border-bottom: 1px solid var(--rule);
+}
+
+.panel__title {
+  margin: 0 0 0.5rem;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.panel__count {
+  color: var(--signal);
+  letter-spacing: 0;
+}
+
+.panel__empty {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.meter {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.meter__label {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.meter__value {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  min-width: 0;
+}
+
+.meter__select {
+  min-width: 0;
+  /* Was 62%, which clipped every model name. */
+  max-width: 100%;
+  padding: 0.2rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  color: var(--text);
+}
+
+.meter__select:focus {
+  border-color: var(--signal);
+  outline: none;
+}
+
+.modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.mode {
+  padding: 0.4rem 0.6rem;
+  background: none;
+  border: 1px solid var(--rule-bright);
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mode.is-active {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.todos {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.todo {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.todo__box {
+  color: var(--text-faint);
+  flex: none;
+  width: 1ch;
+}
+
+.todo.is-completed .todo__text {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.todo.is-in_progress .todo__text {
+  color: var(--signal);
+}
+
+@media (min-width: 48rem) {
+  .mode {
+    padding: 0.2rem 0.5rem;
+  }
+
+  .meter__select {
+    padding: 0.1rem 0.2rem;
+    font-size: 11px;
+  }
+}
+
+/* ── desktop: the sheet becomes the column ─────────────────────── */
+
+@media (min-width: 64rem) {
+  .sheet {
+    grid-row: 1 / -1;
+    border-top: 0;
+    border-left: 1px solid var(--rule);
+    overflow: hidden;
+  }
+
+  .sheet__handle {
+    display: none;
+  }
+
+  /* Always open, whatever the phone layout last left behind. */
+  .sheet__body {
+    flex: 1;
+    height: auto;
+    visibility: visible;
+    overflow-y: auto;
+    transition: none;
+  }
+}

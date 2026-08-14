@@ -1,0 +1,70 @@
+/**
+ * Stays in normal grid flow on purpose. A fixed composer fights the iOS
+ * keyboard, the content-sized textarea, the permission tray above it and the
+ * safe-area padding below it.
+ */
+
+.composer {
+  grid-area: composer;
+  border-top: 1px solid var(--rule);
+  padding: 0.6rem 1rem 1rem;
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  background: var(--bg);
+}
+
+.composer__row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.composer__input {
+  width: 100%;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  padding: 0.4rem 0.5rem;
+  resize: none;
+  min-height: 2.4rem;
+  max-height: 12rem;
+  field-sizing: content;
+}
+
+.composer__input:focus {
+  outline: 1px solid var(--signal);
+  outline-offset: -1px;
+}
+
+.composer__suggestions {
+  margin: 0 0 0.4rem;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--rule-bright);
+  background: var(--bg-sunk);
+  max-height: 11rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.composer__suggestions button {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer__suggestions button:hover,
+.composer__suggestions button.is-selected {
+  background: var(--signal-sunk);
+  color: var(--signal);
+}
+
+@media (min-width: 48rem) {
+  .composer__suggestions button {
+    padding: 0.2rem 0.6rem;
+  }
+}

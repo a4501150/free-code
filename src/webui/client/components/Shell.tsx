@@ -4,6 +4,7 @@ import { useGateway } from '../hooks/useGateway.js'
 import { useSessions } from '../hooks/useSessions.js'
 import { createViewStore, useViewStore } from '../store.js'
 import { Composer } from './Composer.js'
+import { InstrumentSheet } from './InstrumentSheet.js'
 import { Instruments } from './Instruments.js'
 import { PermissionTray } from './PermissionTray.js'
 import { SessionRail } from './SessionRail.js'
@@ -13,6 +14,7 @@ import { Transcript } from './Transcript.js'
 export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [railOpen, setRailOpen] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   const store = useMemo(() => createViewStore(), [])
   const view = useViewStore(store)
@@ -102,6 +104,13 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   const defaultCwd =
     meta?.cwd ?? sessions.entries.find(s => s.live && s.cwd)?.cwd ?? ''
 
+  // A permission request is the one thing that must not be missed on a phone,
+  // and the sheet sits between it and the composer.
+  const hasPending = Boolean(pending)
+  useEffect(() => {
+    if (hasPending) setSheetOpen(false)
+  }, [hasPending])
+
   return (
     <div className={`shell ${railOpen ? 'is-rail-open' : ''}`}>
       <TopBar
@@ -165,6 +174,26 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
           />
         ) : null}
 
+        {/* Before the composer in the DOM as well as above it on screen, so
+            the tab order matches what the eye sees. Inside `main`, so nothing
+            has to track the composer's changing height. */}
+        <InstrumentSheet
+          meta={meta}
+          todos={view.todos}
+          open={sheetOpen}
+          onToggle={setSheetOpen}
+        >
+          <Instruments
+            meta={meta}
+            todos={view.todos}
+            models={view.models}
+            onSetMode={mode =>
+              gateway.send({ kind: 'set_permission_mode', mode })
+            }
+            onSetModel={model => gateway.send({ kind: 'set_model', model })}
+          />
+        </InstrumentSheet>
+
         {activeKey ? (
           <Composer
             busy={busy}
@@ -182,14 +211,6 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
           />
         ) : null}
       </main>
-
-      <Instruments
-        meta={meta}
-        todos={view.todos}
-        models={view.models}
-        onSetMode={mode => gateway.send({ kind: 'set_permission_mode', mode })}
-        onSetModel={model => gateway.send({ kind: 'set_model', model })}
-      />
     </div>
   )
 }
