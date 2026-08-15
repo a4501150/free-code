@@ -20,6 +20,8 @@ import {
   ATTACH_PROTOCOL_VERSION,
   MAX_ATTACH_LINE_BYTES,
 } from '../../src/webui/protocol/attachSchemas.js'
+import type { Message } from '../../src/types/message.js'
+import type { UUID } from 'crypto'
 
 let configDir: string
 let previousConfigDir: string | undefined
@@ -304,5 +306,200 @@ describe('attach handshake', () => {
     const response = await handshake(() => 'not-the-token')
     expect(response.ok).toBe(false)
     expect(response.error?.code).toBe('unauthorized')
+  })
+})
+
+describe('image prompts', () => {
+  const IMAGE_UUID = '44444444-4444-4444-4444-444444444444'
+  const PIXEL = 'iVBORw0KGgo='
+
+  /** A session holding one user message: an image block, then text. */
+  function messages(): Message[] {
+    return [
+      {
+        type: 'user',
+        uuid: IMAGE_UUID as UUID,
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: 'image/png',
+                data: PIXEL,
+              },
+            },
+            { type: 'text', text: 'what is this' },
+          ],
+        },
+      },
+    ]
+  }
+
+  /** Opens a host, authenticates, and returns a request/response function. */
+  async function connect(): Promise<{
+    ask: (request: unknown) => Promise<{
+      ok?: boolean
+      result?: unknown
+      error?: { code: string }
+    }>
+    submitted: Array<{ content: string; images?: unknown }>
+    close: () => void
+  }> {
+    const host = startAttachHost({
+      sessionId: randomUUID(),
+      cwd: process.cwd(),
+    })
+    await host!.ready
+
+    const submitted: Array<{ content: string; images?: unknown }> = []
+    host!.registerRuntime({
+      getMessages: () => messages(),
+      getState: () => 'idle',
+      getModel: () => 'm',
+      getPermissionMode: () => 'default',
+      getTodos: () => [],
+      submit: (content, _delivery, _commandId, images) => {
+        submitted.push({ content, images })
+      },
+      interrupt: () => {},
+      setPermissionMode: () => {},
+      setModel: () => {},
+    })
+
+    const pending = new Map<string, (value: never) => void>()
+    const client = createConnection(host!.descriptor.socketPath)
+    attachNdjsonReader(client, {
+      onLine: line => {
+        const message = JSON.parse(line) as { requestId?: string }
+        const settle = message.requestId && pending.get(message.requestId)
+        if (settle) settle(message as never)
+      },
+      onError: () => {},
+      onClose: () => {},
+    })
+
+    let id = 0
+    const ask = (request: unknown): Promise<never> =>
+      new Promise(resolve => {
+        id += 1
+        pending.set(String(id), resolve)
+        writeNdjson(client, { type: 'request', requestId: String(id), request })
+      })
+
+    await ask({
+      kind: 'hello',
+      token: host!.descriptor.attachToken,
+      protocolVersion: ATTACH_PROTOCOL_VERSION,
+    })
+
+    return {
+      ask,
+      submitted,
+      close: () => {
+        client.destroy()
+        host!.stop()
+      },
+    }
+  }
+
+  test('passes uploaded images to the runtime', async () => {
+    const session = await connect()
+    try {
+      const response = await session.ask({
+        kind: 'submit',
+        commandId: 'c1',
+        content: 'look',
+        images: [{ mediaType: 'image/png', data: PIXEL }],
+        delivery: 'next',
+        sessionEpoch: 0,
+      })
+      expect(response.ok).toBe(true)
+      expect(session.submitted).toHaveLength(1)
+      expect(session.submitted[0]!.images).toHaveLength(1)
+    } finally {
+      session.close()
+    }
+  })
+
+  test('accepts a prompt that is only images', async () => {
+    const session = await connect()
+    try {
+      const response = await session.ask({
+        kind: 'submit',
+        commandId: 'c1',
+        content: '',
+        images: [{ mediaType: 'image/png', data: PIXEL }],
+        delivery: 'next',
+        sessionEpoch: 0,
+      })
+      expect(response.ok).toBe(true)
+    } finally {
+      session.close()
+    }
+  })
+
+  test('refuses a submit with neither text nor images', async () => {
+    // The schema cannot state "one of these two", so the host has to.
+    const session = await connect()
+    try {
+      const response = await session.ask({
+        kind: 'submit',
+        commandId: 'c1',
+        content: '',
+        delivery: 'next',
+        sessionEpoch: 0,
+      })
+      expect(response.ok).toBe(false)
+      expect(response.error?.code).toBe('empty_submit')
+      expect(session.submitted).toHaveLength(0)
+    } finally {
+      session.close()
+    }
+  })
+
+  test('answers get_image with the bytes for that block', async () => {
+    const session = await connect()
+    try {
+      const response = await session.ask({
+        kind: 'get_image',
+        itemId: `${IMAGE_UUID}:0`,
+      })
+      expect(response.ok).toBe(true)
+      expect(response.result).toEqual({
+        mediaType: 'image/png',
+        data: PIXEL,
+      })
+    } finally {
+      session.close()
+    }
+  })
+
+  test('refuses an item id that is not an image', async () => {
+    const session = await connect()
+    try {
+      // Block 1 of that message is the text block.
+      const text = await session.ask({
+        kind: 'get_image',
+        itemId: `${IMAGE_UUID}:1`,
+      })
+      expect(text.error?.code).toBe('no_such_image')
+
+      const missing = await session.ask({
+        kind: 'get_image',
+        itemId: '99999999-9999-9999-9999-999999999999:0',
+      })
+      expect(missing.error?.code).toBe('no_such_image')
+
+      const malformed = await session.ask({
+        kind: 'get_image',
+        itemId: 'nonsense',
+      })
+      expect(malformed.error?.code).toBe('no_such_image')
+    } finally {
+      session.close()
+    }
   })
 })

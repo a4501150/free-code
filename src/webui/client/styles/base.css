@@ -80,14 +80,20 @@ textarea {
 }
 
 .btn--send,
-.btn--stop {
+.btn--stop,
+.btn--attach {
   flex: none;
-  align-self: flex-end;
 }
 
 .btn--stop {
   border-color: var(--signal);
   color: var(--signal);
+}
+
+.btn--attach {
+  padding: 0.5rem 0.75rem;
+  background: none;
+  color: var(--text-dim);
 }
 
 /* Covers the conversation while the session drawer is open, so a tap outside

@@ -33,6 +33,11 @@ export type WebTranscriptItem = {
   isMeta?: boolean
   isSidechain?: boolean
   agentId?: string
+  /**
+   * Set on a user image block. Metadata only: the bytes stay in the session
+   * and travel over `get_image` when the reader asks for them.
+   */
+  image?: { mediaType: string; bytes: number }
   /** assistant */
   model?: string
   /** tool_use */
@@ -115,6 +120,7 @@ function userBlockItems(
   }
 
   const items: WebTranscriptItem[] = []
+  let imageOrdinal = 0
   content.forEach((block: DomainUserContentBlock, index) => {
     const id = `${message.uuid}:${index}`
     switch (block.type) {
@@ -147,9 +153,24 @@ function userBlockItems(
         )
         break
       }
-      case 'image':
-        items.push(finish({ ...base, id, kind: 'user', text: '[image]' }))
+      case 'image': {
+        imageOrdinal += 1
+        const source = block.source
+        const base64 = source.type === 'base64' ? source.data : ''
+        const mediaType = source.type === 'base64' ? source.media_type : ''
+        items.push({
+          ...base,
+          id,
+          kind: 'user',
+          text: `[image ${imageOrdinal}]`,
+          ...(base64 ? { image: { mediaType, bytes: base64.length } } : {}),
+          // Not `finish()`, which hashes every character of the item. This runs
+          // on every publish, and an image block never changes in place, so its
+          // media type and size already identify it.
+          rev: fingerprint(`image:${mediaType}:${base64.length}`),
+        })
         break
+      }
       default:
         items.push(
           finish({ ...base, id, kind: 'user', text: `[${block.type}]` }),

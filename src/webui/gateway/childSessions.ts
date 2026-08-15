@@ -13,13 +13,47 @@ export type ChildSession = {
 const READY_TIMEOUT_MS = 30_000
 
 /**
+ * Permission flags the gateway hands to every session it spawns.
+ *
+ * A child loads the disk settings for its own directory on its own. These are
+ * the operator's CLI choices, which a child cannot discover. There is
+ * deliberately no bypass flag: this surface is reachable behind one password.
+ */
+export type ChildSessionDefaults = {
+  permissionMode?: 'default' | 'acceptEdits' | 'plan'
+  allowedTools?: string[]
+  disallowedTools?: string[]
+  settings?: string
+  settingSources?: string
+}
+
+function defaultArgs(defaults: ChildSessionDefaults | undefined): string[] {
+  if (!defaults) return []
+  const args: string[] = []
+  if (defaults.permissionMode) {
+    args.push('--permission-mode', defaults.permissionMode)
+  }
+  if (defaults.allowedTools?.length) {
+    args.push('--allowed-tools', ...defaults.allowedTools)
+  }
+  if (defaults.disallowedTools?.length) {
+    args.push('--disallowed-tools', ...defaults.disallowedTools)
+  }
+  if (defaults.settings) args.push('--settings', defaults.settings)
+  if (defaults.settingSources) {
+    args.push('--setting-sources', defaults.settingSources)
+  }
+  return args
+}
+
+/**
  * Sessions the gateway started itself.
  *
  * A child is a normal headless CLI with the attach env var set, so it publishes
  * the same socket a terminal session does and the browser cannot tell the
  * difference once attached.
  */
-export function createChildSessions() {
+export function createChildSessions(defaults?: ChildSessionDefaults) {
   const children = new Map<number, ChildProcess>()
 
   async function start(options: {
@@ -48,6 +82,7 @@ export function createChildSessions() {
         ...(options.resumeSessionId
           ? ['--resume', options.resumeSessionId]
           : []),
+        ...defaultArgs(defaults),
       ],
       {
         cwd: options.cwd,

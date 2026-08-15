@@ -12,6 +12,20 @@ export const WebStartOptionsSchema = z.object({
   tunnelCommand: z.string().optional(),
   tunnelHost: z.string().optional(),
   subdomain: z.string().optional(),
+
+  /**
+   * Permission settings the gateway hands to every session it spawns.
+   *
+   * A child otherwise loads only the disk settings for its own directory, so
+   * anything the operator chose here would be lost. `bypassPermissions` is
+   * absent on purpose: the browser is reachable behind one password, and
+   * `WebPermissionModeSchema` refuses that mode for the same reason.
+   */
+  permissionMode: z.enum(['default', 'acceptEdits', 'plan']).optional(),
+  allowedTools: z.array(z.string()).optional(),
+  disallowedTools: z.array(z.string()).optional(),
+  settings: z.string().optional(),
+  settingSources: z.string().optional(),
 })
 
 export type WebStartOptions = z.infer<typeof WebStartOptionsSchema>
@@ -56,7 +70,16 @@ export function createWebService() {
   async function start(options: WebStartOptions): Promise<WebStatus> {
     if (server) return status
 
-    server = startGatewayServer({ port: options.port })
+    server = startGatewayServer({
+      port: options.port,
+      sessionDefaults: {
+        permissionMode: options.permissionMode,
+        allowedTools: options.allowedTools,
+        disallowedTools: options.disallowedTools,
+        settings: options.settings,
+        settingSources: options.settingSources,
+      },
+    })
     status = { running: true, url: server.url, startedAt: Date.now() }
 
     const provider = providerFor(options)

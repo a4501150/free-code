@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { connectGateway, type GatewaySocket, type ServerFrame } from '../api.js'
+import {
+  connectGateway,
+  type CommandResult,
+  type GatewaySocket,
+  type ServerFrame,
+} from '../api.js'
 import type {
   AttachEventBody,
   AttachRequestBody,
@@ -9,6 +14,7 @@ export type Gateway = {
   connected: boolean
   attach(processKey: string): void
   send(body: AttachRequestBody): void
+  request(body: AttachRequestBody): Promise<CommandResult>
 }
 
 /**
@@ -56,5 +62,11 @@ export function useGateway({
     socketRef.current?.send(body)
   }, [])
 
-  return { connected, attach, send }
+  const request = useCallback((body: AttachRequestBody) => {
+    const socket = socketRef.current
+    if (!socket) return Promise.reject(new Error('not connected'))
+    return socket.request(body)
+  }, [])
+
+  return { connected, attach, send, request }
 }

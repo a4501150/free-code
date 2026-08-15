@@ -20,6 +20,79 @@
   align-items: stretch;
 }
 
+/* Actions sit under the field rather than beside it, so `send` and `stop` keep
+   a thumb-sized target at 390px instead of squeezing the text. */
+.composer__actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.composer__spacer {
+  flex: 1;
+}
+
+/* The styled button opens this. Not `display: none`, which takes it out of the
+   accessibility tree along with its label. */
+.composer__file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.composer__attachments {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.attachment {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--rule-bright);
+}
+
+.attachment img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Offset outward: an inset control on a 44px thumbnail covers the picture it
+   is meant to describe. */
+.attachment__remove {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.4rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  line-height: 1;
+  background: var(--bg);
+  border: 1px solid var(--rule-bright);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.attachment__remove:hover {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.composer__error {
+  margin: 0 0 0.5rem;
+  color: var(--signal);
+  font-size: 12px;
+}
+
 .composer__input {
   width: 100%;
   background: var(--bg-sunk);

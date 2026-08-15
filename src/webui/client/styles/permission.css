@@ -93,4 +93,112 @@
   display: flex;
   gap: 0.5rem;
   margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Plan approval offers three sentences, not three words. Side by side they
+   truncate to nothing at 390px. */
+.tray__actions--stacked {
+  flex-direction: column;
+}
+
+/* ── plan approval ─────────────────────────────────────────────── */
+
+.tray__plan {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  max-height: 40vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ── questions ─────────────────────────────────────────────────── */
+
+.question {
+  margin-bottom: 0.75rem;
+}
+
+.question__header {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--rule-bright);
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.question__text {
+  margin: 0.35rem 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.question__options {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.question__option {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  cursor: pointer;
+}
+
+.question__option:hover {
+  border-color: var(--signal);
+}
+
+.question__option.is-picked {
+  border-color: var(--signal);
+  background: var(--signal-sunk);
+}
+
+.question__label {
+  display: block;
+  color: var(--text);
+}
+
+.question__desc {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--text-dim);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.question__preview {
+  margin: 0.35rem 0 0;
+  padding: 0.5rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.question__other {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  color: inherit;
+  font: inherit;
+}
+
+.question__other:focus {
+  outline: 1px solid var(--signal);
+  outline-offset: -1px;
 }

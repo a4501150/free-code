@@ -6,10 +6,62 @@
   padding: 1rem 0.9rem 1.5rem;
   padding-left: max(0.9rem, env(safe-area-inset-left));
   padding-right: max(0.9rem, env(safe-area-inset-right));
+  /* Anchors the lightbox, which must cover the conversation and nothing else. */
+  position: relative;
+}
+
+/* The rows need their own box because the scroller's box never changes size,
+   so a ResizeObserver on the scroller could not tell that content grew. */
+.transcript__content {
+  min-height: 0;
 }
 
 .transcript--empty {
   color: var(--text-faint);
+}
+
+.row__image {
+  padding: 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px dotted var(--signal);
+  color: var(--signal);
+  font: inherit;
+  cursor: pointer;
+}
+
+.lightbox {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  cursor: zoom-out;
+}
+
+.lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border: 1px solid var(--rule-bright);
+}
+
+.lightbox__note {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.lightbox__close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule-bright);
+  color: var(--text-dim);
+  cursor: pointer;
 }
 
 .row {

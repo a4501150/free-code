@@ -34,6 +34,13 @@ function usage(): void {
   print('  --subdomain <name>      Requested localtunnel subdomain')
   print('  --password-stdin        Read the password from stdin')
   print('  --reset-password        Replace the stored password')
+  print('')
+  print('Permission options, inherited by every session the gateway starts:')
+  print('  --permission-mode <m>   default | acceptEdits | plan')
+  print('  --allowed-tools <t...>  Tools that never prompt')
+  print('  --disallowed-tools <t...>  Tools that are always refused')
+  print('  --settings <path>       Settings file, or settings as JSON')
+  print('  --setting-sources <s>   Comma-separated setting sources')
 }
 
 function parseStartOptions(args: string[]): WebStartOptions {
@@ -63,6 +70,34 @@ function parseStartOptions(args: string[]): WebStartOptions {
         break
       case '--subdomain':
         options.subdomain = next
+        i++
+        break
+      case '--permission-mode':
+        // `bypassPermissions` is refused here for the same reason
+        // `WebPermissionModeSchema` omits it: this gateway is reachable from
+        // the internet behind one password.
+        if (next !== 'default' && next !== 'acceptEdits' && next !== 'plan') {
+          throw new Error(`unsupported permission mode: ${next}`)
+        }
+        options.permissionMode = next
+        i++
+        break
+      case '--allowed-tools':
+      case '--disallowed-tools': {
+        const tools: string[] = []
+        while (i + 1 < args.length && !args[i + 1]!.startsWith('--')) {
+          tools.push(args[++i]!)
+        }
+        if (arg === '--allowed-tools') options.allowedTools = tools
+        else options.disallowedTools = tools
+        break
+      }
+      case '--settings':
+        options.settings = next
+        i++
+        break
+      case '--setting-sources':
+        options.settingSources = next
         i++
         break
       default:

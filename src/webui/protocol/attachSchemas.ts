@@ -6,11 +6,29 @@ import type {
 
 export const ATTACH_PROTOCOL_VERSION = 1
 
-/** A single NDJSON line above this is a protocol error, not a big message. */
-export const MAX_ATTACH_LINE_BYTES = 1024 * 1024
+/**
+ * A single NDJSON line above this is a protocol error, not a big message.
+ *
+ * Large enough for a four-image upload and for a `get_image` answer holding an
+ * image at the API's 5 MB base64 ceiling (`src/constants/apiLimits.ts`).
+ */
+export const MAX_ATTACH_LINE_BYTES = 8 * 1024 * 1024
 
 /** Events retained for a reconnecting client before it must re-snapshot. */
 export const MAX_ATTACH_REPLAY_EVENTS = 2048
+
+/** Images one submit may carry. */
+export const MAX_SUBMIT_IMAGES = 4
+
+/** Base64 characters per uploaded image. The browser targets well under this. */
+export const MAX_SUBMIT_IMAGE_BASE64 = 1_000_000
+
+export const WebSubmitImageSchema = z.object({
+  mediaType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
+  data: z.string().min(1).max(MAX_SUBMIT_IMAGE_BASE64),
+})
+
+export type WebSubmitImage = z.infer<typeof WebSubmitImageSchema>
 
 /**
  * Permission modes a browser may select. Deliberately excludes
@@ -60,7 +78,11 @@ export const AttachRequestBodySchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('submit'),
     commandId: z.string().min(1).max(200),
-    content: z.string().min(1).max(200_000),
+    // Empty only when `images` carries the whole prompt. A refined member
+    // cannot sit in a discriminated union, so `attachHost` rejects a submit
+    // that is empty on both counts.
+    content: z.string().max(200_000),
+    images: z.array(WebSubmitImageSchema).max(MAX_SUBMIT_IMAGES).optional(),
     delivery: z.enum(['next', 'interrupt']),
     sessionEpoch: z.number().int().nonnegative(),
   }),
@@ -80,6 +102,11 @@ export const AttachRequestBodySchema = z.discriminatedUnion('kind', [
     kind: z.literal('set_model'),
     model: z.string().min(1).max(200),
   }),
+  z.object({
+    kind: z.literal('get_image'),
+    /** A transcript item id, which is `${message.uuid}:${blockIndex}`. */
+    itemId: z.string().min(1).max(200),
+  }),
 ])
 
 export type AttachRequestBody = z.infer<typeof AttachRequestBodySchema>
@@ -98,6 +125,12 @@ export type AttachResponse = {
   ok: boolean
   result?: unknown
   error?: { code: string; message: string }
+}
+
+/** The `get_image` result. Fetched on demand, never pushed with the transcript. */
+export type WebImagePayload = {
+  mediaType: string
+  data: string
 }
 
 export type WebSessionState = 'idle' | 'running' | 'requires_action'

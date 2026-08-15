@@ -14,6 +14,12 @@ import {
   registerAttachRuntime,
   startProcessAttachHost,
 } from './hostSingleton.js'
+import { executePermissionRequestHooksForHost } from '../../cli/structuredIO.js'
+import {
+  applyPermissionUpdates,
+  createSessionToolAllowUpdate,
+} from '../../utils/permissions/PermissionUpdate.js'
+import { buildSubmitValue } from './runtime.js'
 
 /**
  * Set by the gateway on the children it spawns. A plain `claude -p` in a script
@@ -65,10 +71,10 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
     getPermissionMode: () => params.getPermissionMode(),
     getTodos: () => [],
 
-    submit(content, delivery, commandId) {
+    submit(content, delivery, commandId, images) {
       enqueue({
         mode: 'prompt',
-        value: content,
+        value: buildSubmitValue(content, images),
         priority: delivery === 'interrupt' ? 'now' : 'next',
         uuid: commandId as UUID,
         origin: { kind: 'webui' },
@@ -112,6 +118,10 @@ export function publishHeadlessTranscript(): void {
  * Headless with no permission-prompt tool has nobody to ask, so an `ask`
  * decision is effectively a denial. This routes it to the attached browser
  * instead and waits, which is what makes a server-owned session usable.
+ *
+ * PermissionRequest hooks race the browser here, as they race the terminal
+ * dialog and the structured host. Without that, a hook that answers every
+ * other host would be ignored for a gateway-owned session alone.
  */
 export function wrapCanUseToolWithWebUI(inner: CanUseToolFn): CanUseToolFn {
   return async (
@@ -179,6 +189,18 @@ export function wrapCanUseToolWithWebUI(inner: CanUseToolFn): CanUseToolFn {
               Object.keys(browserDecision.updatedInput).length
                 ? browserDecision.updatedInput
                 : displayInput
+            if (browserDecision.persist) {
+              // Session scope only, so nothing is written to disk. The
+              // terminal's equivalent writes a durable project-local rule,
+              // which this surface must not do.
+              toolUseContext.setAppState(prev => ({
+                ...prev,
+                toolPermissionContext: applyPermissionUpdates(
+                  prev.toolPermissionContext,
+                  [createSessionToolAllowUpdate(tool.name)],
+                ),
+              }))
+            }
             finish({ behavior: 'allow', updatedInput: updated })
           } else {
             finish({
@@ -195,6 +217,18 @@ export function wrapCanUseToolWithWebUI(inner: CanUseToolFn): CanUseToolFn {
       )
 
       signal.addEventListener('abort', onAbort, { once: true })
+
+      // Racer two. `finish` is idempotent, so whoever answers first wins and
+      // the other is torn down.
+      void executePermissionRequestHooksForHost(
+        tool.name,
+        toolUseID,
+        input as Record<string, unknown>,
+        toolUseContext,
+        decision.suggestions,
+      ).then(hookDecision => {
+        if (hookDecision) finish(hookDecision)
+      })
     })
   }
 }

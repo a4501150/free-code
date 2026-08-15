@@ -9,6 +9,7 @@ import {
   type AttachEventEnvelope,
   type AttachOutbound,
   type AttachResponse,
+  type WebImagePayload,
   type WebPermissionRequest,
   type WebSessionMeta,
   type WebModelOption,
@@ -69,6 +70,37 @@ export type StartAttachHostOptions = {
   entrypoint?: string
   /** Process-wide cost, read lazily so the host does not import bootstrap state. */
   getCost?: () => { costUsd: number; linesAdded: number; linesRemoved: number }
+}
+
+/**
+ * Resolves a transcript item id back to the image bytes it stands for.
+ *
+ * Reading from the live message list rather than a cache is what stops a stale
+ * copy existing at all. The id format is `${message.uuid}:${blockIndex}`, set by
+ * `toWireSnapshot`.
+ */
+function findImage(
+  runtime: AttachRuntime,
+  itemId: string,
+): WebImagePayload | undefined {
+  const split = itemId.lastIndexOf(':')
+  if (split <= 0) return undefined
+  const uuid = itemId.slice(0, split)
+  const index = Number(itemId.slice(split + 1))
+  if (!Number.isInteger(index) || index < 0) return undefined
+
+  const message = runtime
+    .getMessages()
+    .find(candidate => candidate.uuid === uuid)
+  if (message?.type !== 'user') return undefined
+
+  const content = message.message.content
+  if (typeof content === 'string') return undefined
+  const block = content[index]
+  if (block?.type !== 'image' || block.source.type !== 'base64') {
+    return undefined
+  }
+  return { mediaType: block.source.media_type, data: block.source.data }
 }
 
 export function startAttachHost(
@@ -328,8 +360,39 @@ export function startAttachHost(
               })
               return
             }
-            runtime.submit(body.content, body.delivery, body.commandId)
+            if (!body.content && !body.images?.length) {
+              // The schema cannot express "one of these two", because a refined
+              // member cannot sit in a discriminated union.
+              respond(socket, requestId, false, {
+                error: {
+                  code: 'empty_submit',
+                  message: 'a submit needs text or at least one image',
+                },
+              })
+              return
+            }
+            runtime.submit(
+              body.content,
+              body.delivery,
+              body.commandId,
+              body.images,
+            )
             respond(socket, requestId, true)
+            return
+          }
+
+          case 'get_image': {
+            const image = runtime ? findImage(runtime, body.itemId) : undefined
+            if (!image) {
+              respond(socket, requestId, false, {
+                error: {
+                  code: 'no_such_image',
+                  message: 'that transcript item is not an image',
+                },
+              })
+              return
+            }
+            respond(socket, requestId, true, { result: image })
             return
           }
 

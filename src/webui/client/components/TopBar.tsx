@@ -27,15 +27,13 @@ export function TopBar({
       <span className="topbar__title">
         {meta ? meta.sessionId.slice(0, 8) : 'no session'}
       </span>
-      {/* Narrow screens hide the instrument column, so carry the two facts
-          that motivate opening this on a phone. */}
+      {/* Narrow screens hide the instrument column, so carry the one fact that
+          motivates opening this on a phone. Cost lives on the sheet handle and
+          in session details, which is where it stays readable on every width. */}
       {meta ? (
         <span className="topbar__state">
           <span className={`topbar__glyph is-${meta.state}`}>●</span>
           {meta.state}
-          <span className="topbar__cost">
-            ${(meta.costUsd ?? 0).toFixed(3)}
-          </span>
         </span>
       ) : null}
       <span className={`topbar__link ${connected ? 'is-up' : 'is-down'}`}>

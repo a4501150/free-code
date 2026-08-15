@@ -106,9 +106,18 @@ export async function stopSession(
   return { ok: false, error: await readError(response) }
 }
 
+/** What a command answered. `ok` false carries the gateway's short code. */
+export type CommandResult = {
+  ok: boolean
+  result?: unknown
+  error?: { code: string; message: string }
+}
+
 export type GatewaySocket = {
   attach(processKey: string): void
   send(body: AttachRequestBody): void
+  /** Send and wait for the answer. Rejects if the socket closes first. */
+  request(body: AttachRequestBody): Promise<CommandResult>
   close(): void
 }
 
@@ -127,6 +136,8 @@ export function connectGateway(handlers: {
   let attempt = 0
   let currentProcessKey: string | null = null
   let commandId = 0
+  const pending = new Map<string, (result: CommandResult) => void>()
+  const rejecters = new Map<string, (error: Error) => void>()
 
   function open(): void {
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
@@ -140,15 +151,31 @@ export function connectGateway(handlers: {
     })
 
     socket.addEventListener('message', event => {
+      let frame: ServerFrame
       try {
-        handlers.onFrame(JSON.parse(String(event.data)) as ServerFrame)
+        frame = JSON.parse(String(event.data)) as ServerFrame
       } catch {
         // A frame we cannot parse is not worth tearing the socket down for.
+        return
       }
+      if (frame.type === 'response') {
+        const settle = pending.get(frame.id)
+        pending.delete(frame.id)
+        rejecters.delete(frame.id)
+        settle?.({ ok: frame.ok, result: frame.result, error: frame.error })
+      }
+      handlers.onFrame(frame)
     })
 
     socket.addEventListener('close', () => {
       handlers.onClose()
+      // A pending answer can never arrive on a dead socket, and a caller
+      // awaiting one would hang forever.
+      for (const reject of rejecters.values()) {
+        reject(new Error('the connection dropped'))
+      }
+      pending.clear()
+      rejecters.clear()
       if (closedByUs) return
       attempt += 1
       setTimeout(open, Math.min(500 * 2 ** (attempt - 1), 10_000))
@@ -174,6 +201,19 @@ export function connectGateway(handlers: {
       socket?.send(
         JSON.stringify({ type: 'command', id: String(commandId), body }),
       )
+    },
+    request(body) {
+      commandId += 1
+      const id = String(commandId)
+      return new Promise<CommandResult>((resolve, reject) => {
+        if (socket?.readyState !== WebSocket.OPEN) {
+          reject(new Error('not connected'))
+          return
+        }
+        pending.set(id, resolve)
+        rejecters.set(id, reject)
+        socket.send(JSON.stringify({ type: 'command', id, body }))
+      })
     },
     close() {
       closedByUs = true

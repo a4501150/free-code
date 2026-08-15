@@ -1210,10 +1210,16 @@ function runHeadlessStreaming(
       requestRun: () => void run(),
       setModel: model => applyModelSwitch(model),
       setPermissionMode: mode => {
-        setAppState(prev => ({
-          ...prev,
-          toolPermissionContext: { ...prev.toolPermissionContext, mode },
-        }))
+        setAppState(prev => {
+          const context = prev.toolPermissionContext
+          // Not a bare assignment: the transition is what records `prePlanMode`
+          // on the way into plan mode and restores it on the way out.
+          const next = transitionPermissionMode(context.mode, mode, context)
+          return {
+            ...prev,
+            toolPermissionContext: { ...next, mode },
+          }
+        })
       },
     })
   }

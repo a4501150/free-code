@@ -26,7 +26,10 @@ import {
   CSRF_HEADER,
   type AuthFile,
 } from './auth.js'
-import { createChildSessions } from './childSessions.js'
+import {
+  createChildSessions,
+  type ChildSessionDefaults,
+} from './childSessions.js'
 import {
   createSessionHub,
   type HubSubscriber,
@@ -43,6 +46,8 @@ export type GatewayServer = {
 
 export type StartGatewayOptions = {
   port?: number
+  /** Permission flags every spawned session inherits. */
+  sessionDefaults?: ChildSessionDefaults
 }
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -65,6 +70,12 @@ const SECURITY_HEADERS: Record<string, string> = {
 const JS_PATH = `/assets/app.${WEBUI_JS_HASH}.js`
 const CSS_PATH = `/assets/app.${WEBUI_CSS_HASH}.css`
 const MAX_BODY_BYTES = 256 * 1024
+
+/**
+ * The socket carries prompts, and a prompt can carry images. Kept separate from
+ * the REST body limit, which has no reason to grow.
+ */
+const MAX_WS_PAYLOAD_BYTES = 6 * 1024 * 1024
 
 type SocketData = {
   /** The cookie this socket authenticated with. CSRF tokens bind to it. */
@@ -146,7 +157,7 @@ export function startGatewayServer(
   options: StartGatewayOptions = {},
 ): GatewayServer {
   const hub: SessionHub = createSessionHub()
-  const children = createChildSessions()
+  const children = createChildSessions(options.sessionDefaults)
   const throttle = createLoginThrottle({
     perAddress: 5,
     global: 60,
@@ -377,7 +388,7 @@ export function startGatewayServer(
     },
 
     websocket: {
-      maxPayloadLength: MAX_BODY_BYTES,
+      maxPayloadLength: MAX_WS_PAYLOAD_BYTES,
 
       open(ws: ServerWebSocket<SocketData>) {
         ws.send(JSON.stringify({ type: 'ready', protocolVersion: 1 }))

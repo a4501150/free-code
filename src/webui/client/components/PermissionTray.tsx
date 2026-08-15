@@ -14,7 +14,8 @@ export function PermissionTray({
 }: {
   request: WebPermissionRequest
   queued: number
-  onAllow(): void
+  /** `persist` stops this tool asking again for the rest of the session. */
+  onAllow(persist: boolean): void
   onDeny(message: string): void
 }): React.ReactElement {
   const [showInput, setShowInput] = useState(false)
@@ -69,8 +70,23 @@ export function PermissionTray({
         >
           Deny
         </button>
-        <button type="button" className="btn btn--allow" onClick={onAllow}>
+        <button
+          type="button"
+          className="btn btn--allow"
+          onClick={() => onAllow(false)}
+        >
           Allow
+        </button>
+        {/* Session scope only, and labelled as such. The terminal's equivalent
+            writes a durable rule to project-local settings, which a surface
+            reachable over a public tunnel must not do. */}
+        <button
+          type="button"
+          className="btn btn--allow"
+          title="This session only. Nothing is written to disk."
+          onClick={() => onAllow(true)}
+        >
+          Allow always
         </button>
       </div>
     </section>

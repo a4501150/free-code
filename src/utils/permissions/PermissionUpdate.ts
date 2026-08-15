@@ -184,6 +184,24 @@ export function applyPermissionUpdate(
 }
 
 /**
+ * The "stop asking about this tool" rule a browser client can ask for.
+ *
+ * Session destination on purpose. The terminal's equivalent writes a durable
+ * rule to project-local settings, and the WebUI is reachable from the internet
+ * behind a single password, so a decision made there must die with the session.
+ */
+export function createSessionToolAllowUpdate(
+  toolName: string,
+): PermissionUpdate {
+  return {
+    type: 'addRules',
+    rules: [{ toolName }],
+    behavior: 'allow',
+    destination: 'session',
+  }
+}
+
+/**
  * Applies multiple permission updates to the context and returns the updated context
  * @param context The current permission context
  * @param updates The permission updates to apply

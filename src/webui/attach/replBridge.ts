@@ -12,7 +12,7 @@ import {
   publishAttachTodos,
   registerAttachRuntime,
 } from './hostSingleton.js'
-import type { AttachRuntime } from './runtime.js'
+import { buildSubmitValue, type AttachRuntime } from './runtime.js'
 
 export type ReplAttachBridgeParams = {
   messagesRef: { current: readonly Message[] }
@@ -49,13 +49,13 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
           activeForm: task.activeForm,
         })),
 
-      submit(content, delivery, commandId) {
+      submit(content, delivery, commandId, images) {
         // 'now' is one atomic operation: the REPL's queue watcher aborts the
         // running turn with reason 'interrupt', and the drain then picks this
         // command up. Cancelling and submitting separately would race.
         enqueue({
           mode: 'prompt',
-          value: content,
+          value: buildSubmitValue(content, images),
           priority: delivery === 'interrupt' ? 'now' : 'next',
           uuid: commandId as UUID,
           origin: { kind: 'webui' },

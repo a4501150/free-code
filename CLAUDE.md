@@ -168,6 +168,17 @@ Everything is behind `feature('WEBUI')`.
 - The instrument panels are one DOM tree that CSS reshapes into either a sheet or a column. Never render one of two copies behind a JavaScript media query: crossing the breakpoint would unmount the panel and discard the pending-model state that stops the control snapping back.
 - Mobile form controls must stay at 16px or larger. iOS Safari zooms on focus below that and does not zoom back. The wider layers opt back down.
 - Chromium will not open a window narrower than 500px, so in-browser checks cannot reach 390px, and none of them prove iOS keyboard behavior.
+- The client bundle has no zod, and adding one must not change that. Every import from `protocol/attachSchemas.ts` is type-only; importing a constant from it would pull the schema library into a phone's download for the sake of one number. State the browser's own budget locally instead.
+- The page's CSP allows `img-src 'self' data:` and nothing else for images. A `blob:` URL is refused, and building one needs a `fetch` of a `data:` URL that `connect-src` refuses in turn. Set a data URL straight onto the `img`.
+- The transcript scroller follows the bottom through a `ResizeObserver` on an inner wrapper. Observing the scroller itself would never fire, because its own box never changes. Sending re-arms the follow explicitly: a reader parked further up would otherwise never see their own prompt land.
+
+### Interactive tools in the browser
+
+- `AskUserQuestion` and `ExitPlanMode` always return `ask`, and the terminal answers them by allowing with an enriched `updatedInput`, not with a boolean. A bare allow runs the tool with `answers: {}`, so the model is told the user answered nothing.
+- An approval must drop `plan` from `ExitPlanMode`'s input. The tool reads the plan from disk when it is absent, and leaving it in makes the tool report "Approved Plan (edited by user)" for a plan nobody edited. The browser cannot send the terminal's empty object, because the bridges read an empty `updatedInput` as "use the original".
+- A browser allow carries no `PermissionUpdate[]`. A mode change rides its own `set_permission_mode` request sent first; one socket delivers them in order, which reproduces the terminal ordering where the mode lands before the tool runs.
+- `persist` on a decision is session-scoped on purpose. The terminal's "don't ask again" writes a durable rule to `.freecode/freecode.local.json`, and this surface is reachable from the internet behind one password.
+- Settings rules are evaluated before the browser is ever consulted, in both hosts. Only an unresolved `ask` reaches it, so no browser decision can widen what the configuration already refused.
 
 ## Bash permissions
 

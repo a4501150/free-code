@@ -16,6 +16,7 @@ import {
 import { errorMessage } from '../../../utils/errors.js'
 import type { PermissionDecision } from '../../../utils/permissions/PermissionResult.js'
 import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpdateSchema.js'
+import { createSessionToolAllowUpdate } from '../../../utils/permissions/PermissionUpdate.js'
 import { hasPermissionsToUseTool } from '../../../utils/permissions/permissions.js'
 import type { PermissionContext } from '../PermissionContext.js'
 import { createResolveOnce } from '../PermissionContext.js'
@@ -273,12 +274,35 @@ function handleInteractivePermission(
           agentId: ctx.assistantMessage.agentId,
           openedAt: permissionPromptStartTimeMs,
         },
-        decision => {
-          if (!claim()) return // Another racer won
+        async decision => {
+          if (!claim()) return // atomic check-and-mark before await
           cleanupRemoteRacers()
           ctx.removeFromQueue()
 
           if (decision.behavior === 'allow') {
+            // An empty updatedInput means "use the original", which is what a
+            // client too small to reconstruct the input sends.
+            const updated =
+              decision.updatedInput && Object.keys(decision.updatedInput).length
+                ? decision.updatedInput
+                : displayInput
+
+            if (decision.persist) {
+              // Session scope only. The terminal's equivalent writes a durable
+              // rule to project-local settings, which a surface reachable from
+              // the internet behind one password must not do.
+              // `handleUserAllow` logs the decision itself.
+              resolveOnce(
+                await ctx.handleUserAllow(
+                  updated,
+                  [createSessionToolAllowUpdate(ctx.tool.name)],
+                  undefined,
+                  permissionPromptStartTimeMs,
+                ),
+              )
+              return
+            }
+
             ctx.logDecision(
               {
                 decision: 'accept',
@@ -286,12 +310,6 @@ function handleInteractivePermission(
               },
               { permissionPromptStartTimeMs },
             )
-            // An empty updatedInput means "use the original", which is what a
-            // client too small to reconstruct the input sends.
-            const updated =
-              decision.updatedInput && Object.keys(decision.updatedInput).length
-                ? decision.updatedInput
-                : displayInput
             resolveOnce(ctx.buildAllow(updated))
           } else {
             ctx.logDecision(

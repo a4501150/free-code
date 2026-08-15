@@ -569,7 +569,7 @@ export class StructuredIO {
 
       try {
         // Start the hook evaluation (runs in background)
-        const hookPromise = executePermissionRequestHooksForStructuredHost(
+        const hookPromise = executePermissionRequestHooksForHost(
           tool.name,
           toolUseID,
           input,
@@ -778,8 +778,11 @@ function exitWithMessage(message: string): never {
 /**
  * Execute PermissionRequest hooks and return a decision if one is made.
  * Returns undefined if no hook made a decision.
+ *
+ * Every host without a React permission queue races this against its own
+ * prompt: the structured host below, and the WebUI's headless bridge.
  */
-async function executePermissionRequestHooksForStructuredHost(
+export async function executePermissionRequestHooksForHost(
   toolName: string,
   toolUseID: string,
   input: Record<string, unknown>,

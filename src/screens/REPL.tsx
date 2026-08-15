@@ -197,7 +197,10 @@ import {
   persistPermissionUpdate,
 } from '../utils/permissions/PermissionUpdate.js'
 import { buildPermissionUpdates } from '../components/permissions/ExitPlanModePermissionRequest/ExitPlanModePermissionRequest.js'
-import { stripDangerousPermissionsForAutoMode } from '../utils/permissions/permissionSetup.js'
+import {
+  stripDangerousPermissionsForAutoMode,
+  transitionPermissionMode,
+} from '../utils/permissions/permissionSetup.js'
 import {
   getScratchpadDir,
   isScratchpadEnabled,
@@ -4369,10 +4372,16 @@ export function REPL({
     todos: tasksV2,
     onCancel,
     onSetPermissionMode: mode => {
-      setAppState(prev => ({
-        ...prev,
-        toolPermissionContext: { ...prev.toolPermissionContext, mode },
-      }))
+      setAppState(prev => {
+        const context = prev.toolPermissionContext
+        // Not a bare assignment: the transition is what records `prePlanMode`
+        // on the way into plan mode and restores it on the way out.
+        const next = transitionPermissionMode(context.mode, mode, context)
+        return {
+          ...prev,
+          toolPermissionContext: { ...next, mode },
+        }
+      })
     },
     onSetModel: model => {
       setAppState(prev => ({ ...prev, mainLoopModelForSession: model }))

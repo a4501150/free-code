@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { SessionListEntry } from '../../gateway/sessionHub.js'
+import type {
+  WebPermissionDecision,
+  WebPermissionRequest,
+} from '../../protocol/attachSchemas.js'
 import { useGateway } from '../hooks/useGateway.js'
 import { useSessions } from '../hooks/useSessions.js'
 import { createViewStore, useViewStore } from '../store.js'
@@ -7,6 +11,8 @@ import { Composer } from './Composer.js'
 import { InstrumentSheet } from './InstrumentSheet.js'
 import { Instruments } from './Instruments.js'
 import { PermissionTray } from './PermissionTray.js'
+import { approvalInput, PlanTray } from './PlanTray.js'
+import { QuestionTray } from './QuestionTray.js'
 import { SessionRail } from './SessionRail.js'
 import { TopBar } from './TopBar.js'
 import { Transcript } from './Transcript.js'
@@ -15,6 +21,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [railOpen, setRailOpen] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [followSignal, setFollowSignal] = useState(0)
 
   const store = useMemo(() => createViewStore(), [])
   const view = useViewStore(store)
@@ -96,6 +103,19 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     return [...paths]
   }, [view.items])
 
+  // Image bytes never ride the transcript, so a reader who wants to see one
+  // asks the session for it.
+  const fetchImage = useCallback(
+    async (itemId: string) => {
+      const answer = await gateway.request({ kind: 'get_image', itemId })
+      if (!answer.ok) {
+        throw new Error(answer.error?.message ?? 'the session refused')
+      }
+      return answer.result as { mediaType: string; data: string }
+    },
+    [gateway],
+  )
+
   const meta = view.meta
   const busy = meta?.state === 'running'
   const pending = view.permissions[0]
@@ -110,6 +130,78 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   useEffect(() => {
     if (hasPending) setSheetOpen(false)
   }, [hasPending])
+
+  function decide(requestId: string, decision: WebPermissionDecision): void {
+    gateway.send({ kind: 'permission_decision', requestId, decision })
+  }
+
+  /**
+   * Two tools cannot be answered yes or no. Both always ask, and the terminal
+   * answers them by allowing with an enriched input, so each needs a surface
+   * that can produce that input.
+   */
+  function renderTray(request: WebPermissionRequest): React.ReactElement {
+    const queued = view.permissions.length
+
+    if (request.toolName === 'AskUserQuestion') {
+      return (
+        <QuestionTray
+          request={request}
+          queued={queued}
+          onAnswer={updatedInput =>
+            decide(request.requestId, { behavior: 'allow', updatedInput })
+          }
+          onCancel={() =>
+            decide(request.requestId, {
+              behavior: 'deny',
+              message: 'User declined to answer questions',
+            })
+          }
+        />
+      )
+    }
+
+    if (request.toolName === 'ExitPlanMode') {
+      return (
+        <PlanTray
+          request={request}
+          queued={queued}
+          onApprove={mode => {
+            // Ordered, not raced: one socket delivers these in sequence, so
+            // the mode is in place before the tool runs. An allow cannot
+            // carry a permission update, which is how the terminal does it.
+            gateway.send({ kind: 'set_permission_mode', mode })
+            decide(request.requestId, {
+              behavior: 'allow',
+              updatedInput: approvalInput(request.input),
+            })
+          }}
+          onKeepPlanning={feedback =>
+            decide(request.requestId, {
+              behavior: 'deny',
+              message: feedback || 'Keep planning',
+            })
+          }
+        />
+      )
+    }
+
+    return (
+      <PermissionTray
+        request={request}
+        queued={queued}
+        onAllow={persist =>
+          decide(request.requestId, { behavior: 'allow', persist })
+        }
+        onDeny={message =>
+          decide(request.requestId, {
+            behavior: 'deny',
+            message: message || undefined,
+          })
+        }
+      />
+    )
+  }
 
   return (
     <div className={`shell ${railOpen ? 'is-rail-open' : ''}`}>
@@ -146,33 +238,19 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
 
       <main className="main">
         {activeKey ? (
-          <Transcript items={view.items} order={view.order} />
+          <Transcript
+            items={view.items}
+            order={view.order}
+            followSignal={followSignal}
+            onFetchImage={fetchImage}
+          />
         ) : (
           <div className="transcript transcript--empty">
             Pick a session to attach.
           </div>
         )}
 
-        {pending ? (
-          <PermissionTray
-            request={pending}
-            queued={view.permissions.length}
-            onAllow={() =>
-              gateway.send({
-                kind: 'permission_decision',
-                requestId: pending.requestId,
-                decision: { behavior: 'allow' },
-              })
-            }
-            onDeny={message =>
-              gateway.send({
-                kind: 'permission_decision',
-                requestId: pending.requestId,
-                decision: { behavior: 'deny', message: message || undefined },
-              })
-            }
-          />
-        ) : null}
+        {pending ? renderTray(pending) : null}
 
         {/* Before the composer in the DOM as well as above it on screen, so
             the tab order matches what the eye sees. Inside `main`, so nothing
@@ -198,15 +276,17 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
           <Composer
             busy={busy}
             knownPaths={knownPaths}
-            onSubmit={(text, delivery) =>
+            onSubmit={(text, delivery, images) => {
               gateway.send({
                 kind: 'submit',
                 commandId: crypto.randomUUID(),
                 content: text,
+                ...(images.length ? { images } : {}),
                 delivery,
                 sessionEpoch: meta?.sessionEpoch ?? 0,
               })
-            }
+              setFollowSignal(n => n + 1)
+            }}
             onInterrupt={() => gateway.send({ kind: 'interrupt' })}
           />
         ) : null}

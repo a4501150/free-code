@@ -1,4 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
+import {
+  imageFilesFrom,
+  prepareImage,
+  type PendingImage,
+} from '../imageUpload.js'
 
 /** Slash commands the process executes. The gateway never interprets these. */
 const COMMANDS = [
@@ -15,7 +20,16 @@ const COMMANDS = [
   '/todos',
 ]
 
+/** Mirrors `MAX_SUBMIT_IMAGES`, which the host enforces. */
+const MAX_IMAGES = 4
+
 type Suggestion = { value: string; hint?: string }
+
+/** Narrower than a plain string, so it satisfies the protocol's media enum. */
+export type SubmitImage = {
+  mediaType: PendingImage['mediaType']
+  data: string
+}
 
 /**
  * The prompt editor.
@@ -33,12 +47,19 @@ export function Composer({
 }: {
   busy: boolean
   knownPaths: string[]
-  onSubmit(text: string, delivery: 'next' | 'interrupt'): void
+  onSubmit(
+    text: string,
+    delivery: 'next' | 'interrupt',
+    images: SubmitImage[],
+  ): void
   onInterrupt(): void
 }): React.ReactElement {
   const [value, setValue] = useState('')
   const [selected, setSelected] = useState(0)
+  const [images, setImages] = useState<PendingImage[]>([])
+  const [error, setError] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const token = useMemo(() => {
     const match = /(^\/[a-z-]*)$|(@[^\s]*)$/i.exec(value)
@@ -67,13 +88,49 @@ export function Composer({
     inputRef.current?.focus()
   }
 
+  async function addFiles(files: File[]): Promise<void> {
+    if (!files.length) return
+    setError('')
+    const room = MAX_IMAGES - images.length
+    if (room <= 0) {
+      setError(`${MAX_IMAGES} images is the limit`)
+      return
+    }
+    for (const file of files.slice(0, room)) {
+      try {
+        const image = await prepareImage(file)
+        setImages(current => [...current, image])
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      }
+    }
+    if (files.length > room) setError(`${MAX_IMAGES} images is the limit`)
+  }
+
+  function removeImage(id: string): void {
+    setImages(current => {
+      const image = current.find(candidate => candidate.id === id)
+      if (image) URL.revokeObjectURL(image.previewUrl)
+      return current.filter(candidate => candidate.id !== id)
+    })
+  }
+
   function submit(delivery: 'next' | 'interrupt'): void {
     const text = value.trim()
-    if (!text) return
-    onSubmit(text, delivery)
+    if (!text && !images.length) return
+    onSubmit(
+      text,
+      delivery,
+      images.map(image => ({ mediaType: image.mediaType, data: image.data })),
+    )
+    for (const image of images) URL.revokeObjectURL(image.previewUrl)
+    setImages([])
     setValue('')
     setSelected(0)
+    setError('')
   }
+
+  const canSend = Boolean(value.trim()) || images.length > 0
 
   return (
     <div className="composer">
@@ -96,18 +153,40 @@ export function Composer({
         </ul>
       ) : null}
 
+      {images.length ? (
+        <ul className="composer__attachments">
+          {images.map(image => (
+            <li key={image.id} className="attachment">
+              <img src={image.previewUrl} alt={image.name} />
+              <button
+                type="button"
+                className="attachment__remove"
+                aria-label={`Remove ${image.name}`}
+                onClick={() => removeImage(image.id)}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {error ? <p className="composer__error">{error}</p> : null}
+
       <div className="composer__row">
         <textarea
           ref={inputRef}
           className="composer__input"
           value={value}
           rows={1}
-          placeholder={
-            busy
-              ? 'Working. Enter queues, shift+Enter interrupts.'
-              : 'Message, or / for a command'
-          }
+          placeholder="Message, or / for a command"
           onChange={event => setValue(event.target.value)}
+          onPaste={event => {
+            const files = imageFilesFrom(event.clipboardData.items)
+            if (!files.length) return
+            event.preventDefault()
+            void addFiles(files)
+          }}
           onKeyDown={event => {
             if (suggestions.length) {
               if (event.key === 'ArrowDown') {
@@ -129,28 +208,53 @@ export function Composer({
               }
             }
             if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
-              if (event.altKey) return
+              // Shift+Enter is a newline, as it is in every other chat input.
+              // Steering and stopping are the two buttons below.
+              if (event.altKey || event.shiftKey) return
               event.preventDefault()
-              // Shift+Enter while busy means "stop that and do this instead",
-              // which the process handles as one atomic queue operation.
-              submit(event.shiftKey && busy ? 'interrupt' : 'next')
+              submit('next')
             }
           }}
         />
+      </div>
+
+      <div className="composer__actions">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="composer__file"
+          onChange={event => {
+            void addFiles(imageFilesFrom(event.target.files ?? []))
+            // Lets the same file be picked twice in a row.
+            event.target.value = ''
+          }}
+        />
+        <button
+          type="button"
+          className="btn btn--attach"
+          onClick={() => fileRef.current?.click()}
+          disabled={images.length >= MAX_IMAGES}
+        >
+          + image
+        </button>
+        <span className="composer__spacer" />
+        {/* Send always queues. Stop is the only thing that ends a running
+            turn, which is what makes both safe to press by thumb. */}
+        <button
+          type="button"
+          className="btn btn--send"
+          onClick={() => submit('next')}
+          disabled={!canSend}
+        >
+          send
+        </button>
         {busy ? (
           <button type="button" className="btn btn--stop" onClick={onInterrupt}>
-            Stop
+            stop
           </button>
-        ) : (
-          <button
-            type="button"
-            className="btn btn--send"
-            onClick={() => submit('next')}
-            disabled={!value.trim()}
-          >
-            Send
-          </button>
-        )}
+        ) : null}
       </div>
     </div>
   )

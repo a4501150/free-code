@@ -20,6 +20,13 @@ import {
   diffSnapshots,
   toWireSnapshot,
 } from '../../src/webui/protocol/transcriptWire.js'
+import { buildSubmitValue } from '../../src/webui/attach/runtime.js'
+import {
+  parseQuestions,
+  serializeAnswer,
+} from '../../src/webui/client/components/QuestionTray.js'
+import { approvalInput } from '../../src/webui/client/components/PlanTray.js'
+import type { DomainUserContentBlock } from '../../src/types/domain.js'
 import type { Message } from '../../src/types/message.js'
 import type { UUID } from 'crypto'
 
@@ -255,6 +262,128 @@ describe('transcript wire', () => {
     expect(before.items[0]!.rev).not.toBe(after.items[0]!.rev)
     const patch = diffSnapshots(before, after)
     if (patch?.type === 'delta') expect(patch.upsert).toHaveLength(1)
+  })
+
+  function imageMessage(uuid: string, count: number, text?: string): Message {
+    const blocks = Array.from({ length: count }, () => ({
+      type: 'image' as const,
+      source: {
+        type: 'base64' as const,
+        media_type: 'image/png' as const,
+        data: 'A'.repeat(400),
+      },
+    }))
+    return {
+      type: 'user',
+      uuid: uuid as UUID,
+      timestamp: new Date().toISOString(),
+      message: {
+        role: 'user',
+        content: text ? [...blocks, { type: 'text', text }] : blocks,
+      },
+    }
+  }
+
+  test('numbers image blocks per message and withholds the bytes', () => {
+    const snapshot = toWireSnapshot([
+      imageMessage('11111111-1111-1111-1111-111111111111', 2, 'look'),
+    ])
+    const images = snapshot.items.filter(item => item.image)
+    expect(images.map(item => item.text)).toEqual(['[image 1]', '[image 2]'])
+    expect(images[0]!.image).toEqual({ mediaType: 'image/png', bytes: 400 })
+
+    // The whole point of the metadata-only item: a phone must not pull every
+    // image down with the transcript.
+    expect(JSON.stringify(snapshot)).not.toContain('A'.repeat(400))
+  })
+
+  test('holds an image revision steady across publishes', () => {
+    const message = imageMessage('11111111-1111-1111-1111-111111111111', 1)
+    expect(
+      diffSnapshots(toWireSnapshot([message]), toWireSnapshot([message])),
+    ).toBeNull()
+  })
+})
+
+describe('submit value', () => {
+  test('puts images first and the prompt text last', () => {
+    // Two readers depend on this order: the prompt string comes from the last
+    // block when it is text, and slash detection reads the first text block.
+    const value = buildSubmitValue('describe these', [
+      { mediaType: 'image/png', data: 'aaa' },
+      { mediaType: 'image/jpeg', data: 'bbb' },
+    ])
+    expect(Array.isArray(value)).toBe(true)
+    expect(
+      (value as DomainUserContentBlock[]).map(block => block.type),
+    ).toEqual(['image', 'image', 'text'])
+  })
+
+  test('sends a bare string when there are no images', () => {
+    expect(buildSubmitValue('hello', undefined)).toBe('hello')
+    expect(buildSubmitValue('hello', [])).toBe('hello')
+  })
+
+  test('omits the text block when only images were sent', () => {
+    const value = buildSubmitValue('', [{ mediaType: 'image/png', data: 'a' }])
+    expect(
+      (value as DomainUserContentBlock[]).map(block => block.type),
+    ).toEqual(['image'])
+  })
+})
+
+describe('question answers', () => {
+  const single = {
+    question: 'Which one?',
+    header: 'Pick',
+    options: [
+      { label: 'A', description: 'first' },
+      { label: 'B', description: 'second' },
+    ],
+  }
+
+  test('answers a single select with the chosen label', () => {
+    expect(serializeAnswer(single, { labels: ['B'], other: '' })).toBe('B')
+  })
+
+  test('joins a multi select with a comma, as the terminal does', () => {
+    expect(
+      serializeAnswer(
+        { ...single, multiSelect: true },
+        { labels: ['A', 'B'], other: '' },
+      ),
+    ).toBe('A, B')
+  })
+
+  test('uses the typed text when Other is chosen', () => {
+    expect(serializeAnswer(single, { labels: ['Other'], other: '  C  ' })).toBe(
+      'C',
+    )
+  })
+
+  test('reports nothing chosen as an empty answer', () => {
+    expect(serializeAnswer(single, { labels: [], other: '' })).toBe('')
+  })
+
+  test('reads the questions off a permission request input', () => {
+    expect(parseQuestions({ questions: [single] })).toHaveLength(1)
+    expect(parseQuestions({})).toEqual([])
+    expect(parseQuestions({ questions: 'nope' })).toEqual([])
+  })
+})
+
+describe('plan approval', () => {
+  test('drops the plan so the tool does not report a user edit', () => {
+    // The tool sets planWasEdited from the presence of `plan`, and reading it
+    // back from disk is what the terminal relies on.
+    const input = { plan: 'do the thing', planFilePath: '/tmp/p.md' }
+    expect(approvalInput(input)).toEqual({ planFilePath: '/tmp/p.md' })
+  })
+
+  test('leaves something behind, because an empty input means "use the original"', () => {
+    expect(
+      Object.keys(approvalInput({ plan: 'x', planFilePath: '/p' })).length,
+    ).toBeGreaterThan(0)
   })
 })
 
