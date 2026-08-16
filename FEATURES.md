@@ -1,6 +1,6 @@
 # Feature Flags Audit
 
-Audit date: 2026-08-13
+Audit date: 2026-08-15
 
 This repository references 29 active compile-time flags through `feature(...)`.
 The default build enables the 10 production-supported flags listed in
@@ -14,6 +14,9 @@ only ever on in a hand-rolled `--feature=NAME` build.
 - `bun run compile` builds the regular external binary at `./dist/cli`.
 - `bun run build:dev` builds `./cli-dev` with a dev-stamped version.
 - `bun run build:dev:full` builds `./cli-dev` with default plus dev-full flags.
+- `--compile --dev` together build `./dist/cli-dev`.
+
+See [docs/building.md](docs/building.md) for the full build reference.
 
 ## Default build flags
 

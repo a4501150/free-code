@@ -6,15 +6,14 @@
 
 <p align="center">
   <strong>The free build of Claude Code.</strong><br>
-  All telemetry stripped. All guardrails removed. All experimental features unlocked.<br>
-  One binary, zero callbacks home.
+  Telemetry off. Prompt guardrails stripped. Experimental features unlocked.
 </p>
 
 <p align="center">
   <a href="#quick-install"><img src="https://img.shields.io/badge/install-one--liner-blue?style=flat-square" alt="Install" /></a>
   <a href="https://github.com/paoloanzn/free-code/stargazers"><img src="https://img.shields.io/github/stars/paoloanzn/free-code?style=flat-square" alt="Stars" /></a>
   <a href="https://github.com/paoloanzn/free-code/issues"><img src="https://img.shields.io/github/issues/paoloanzn/free-code?style=flat-square" alt="Issues" /></a>
-  <a href="https://github.com/paoloanzn/free-code/blob/main/FEATURES.md"><img src="https://img.shields.io/badge/features-28%20flags-orange?style=flat-square" alt="Feature Flags" /></a>
+  <a href="FEATURES.md"><img src="https://img.shields.io/badge/features-29%20flags-orange?style=flat-square" alt="Feature Flags" /></a>
   <a href="#ipfs-mirror"><img src="https://img.shields.io/badge/IPFS-mirrored-teal?style=flat-square" alt="IPFS" /></a>
 </p>
 
@@ -26,163 +25,93 @@
 curl -fsSL https://raw.githubusercontent.com/paoloanzn/free-code/main/install.sh | bash
 ```
 
-Checks your system, installs Bun if needed, clones the repo, builds with all experimental features enabled, and symlinks `free-code` on your PATH.
+The script checks your system, installs Bun if it is missing, clones the repo,
+runs `bun run build:dev:full`, and links `free-code` onto your PATH.
 
-Then run `free-code` and use the `/login` command to authenticate with your preferred model provider.
+Then run `free-code` and use `/login` to authenticate with your provider.
 
----
+## Documentation
 
-## Table of Contents
-
-- [What is this](#what-is-this)
-- [Model Providers](#model-providers)
-- [Quick Install](#quick-install)
-- [Requirements](#requirements)
-- [Build](#build)
-- [Usage](#usage)
-- [Experimental Features](#experimental-features)
-- [Project Structure](#project-structure)
-- [Tech Stack](#tech-stack)
-- [IPFS Mirror](#ipfs-mirror)
-- [Contributing](#contributing)
-- [License](#license)
+| Document                                       | Covers                                                      |
+| ---------------------------------------------- | ----------------------------------------------------------- |
+| [docs/building.md](docs/building.md)           | Build variants, output paths, feature flags, React Compiler |
+| [docs/configuration.md](docs/configuration.md) | Providers, models, settings files, environment variables    |
+| [docs/testing.md](docs/testing.md)             | Unit and end-to-end tests, and what the e2e suite needs     |
+| [docs/architecture.md](docs/architecture.md)   | The source tree and how the parts fit                       |
+| [FEATURES.md](FEATURES.md)                     | The per-flag audit                                          |
 
 ---
 
 ## What is this
 
-A clean, buildable fork of Anthropic's [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI -- the terminal-native AI coding agent. The upstream source became publicly available on March 31, 2026 through a source map exposure in the npm distribution.
+A clean, buildable fork of Anthropic's
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI, the
+terminal-native AI coding agent. The upstream source became public on
+2026-03-31 through a source map exposure in the npm distribution.
 
-This fork applies four categories of changes on top of that snapshot:
+This fork applies four categories of change on top of that snapshot.
 
-### Telemetry removed
+### Telemetry is off
 
-The upstream binary phones home through OpenTelemetry/gRPC, Sentry error reporting, and custom event logging. In this build:
+The upstream binary reports through OpenTelemetry, Sentry and custom event
+logging. Here:
 
-- All outbound telemetry endpoints are dead-code-eliminated or stubbed
-- Remote feature flag system has been fully removed (all flags hardcoded or migrated to freecode.json)
-- No crash reports, no usage analytics, no session fingerprinting
+- `logOTelEvent` is an empty function, and `initSinks` attaches only a local error log. Nothing leaves the machine.
+- The remote feature-flag engine is gone. Every flag is now a compile-time switch or a local setting.
 
-### Security-prompt guardrails removed
+Two honest qualifications. The OpenTelemetry packages stay declared in
+`package.json`, and `src/utils/telemetry/bigqueryExporter.ts` still holds a
+network exporter that no code constructs. `src/services/api/grove.ts` still
+fetches one remote configuration. Read the code before you trust a claim of
+total silence.
 
-Anthropic injects system-level instructions into every conversation that constrain Claude's behavior beyond what the model itself enforces. These include hardcoded refusal patterns, injected "cyber risk" instruction blocks, and managed-settings security overlays pushed from Anthropic's servers.
+### Prompt guardrails are stripped
 
-This build strips those injections. The model's own safety training still applies -- this just removes the extra layer of prompt-level restrictions that the CLI wraps around it.
+Anthropic injects instructions that constrain the model beyond its own training:
+hardcoded refusal patterns, a cyber-risk instruction block and a
+managed-settings security overlay pushed from their servers.
 
-### React Compiler decompiled
+- `CYBER_RISK_INSTRUCTION` is now an empty string.
+- The managed-settings, MDM and remote-policy code is deleted, so no server can push a rule into your session.
 
-The upstream source snapshot shipped with React Compiler output baked into every `.tsx` file — function bodies mangled with `_c()` cache arrays, `$[N]` memoization slots, and `t0` parameter renaming. This made the code nearly unreadable and uneditable.
+One reminder still fires after some file reads, and it is worth knowing that it
+is permissive rather than restrictive: it tells the model that it may analyze
+malware. It is skipped for models priced at $5/Mtok or more. See
+`src/tools/FileReadTool/FileReadTool.ts`.
 
-This fork extracted the original source from inline base64 source maps embedded in each file, restoring all 517 `.tsx` files to clean, human-readable TypeScript/JSX. The React Compiler is available as an optional build step (`--react-compiler` flag) but is not used by default.
+The model's own safety training still applies. This removes the layer the CLI
+wrapped around it, nothing more.
 
-### Experimental features unlocked
+### React Compiler output is decompiled
 
-Claude Code currently has 28 active feature flags gated behind `bun:bundle` compile-time switches. The default build enables the 10 production-supported flags in `defaultFeatures`, and `build:dev:full` adds the 14 flags in the `fullExperimentalFeatures` set. Four more are referenced in source but sit in neither list, so they are only ever on in a hand-rolled `--feature=NAME` build. See [Experimental Features](#experimental-features) below, or refer to [FEATURES.md](FEATURES.md) for the full audit.
+The snapshot shipped React Compiler output baked into every `.tsx` file:
+`_c()` cache arrays, `$[N]` memoization slots, `t0` parameter renaming. The code
+was close to unreadable.
 
----
+This fork recovered the original source from the inline base64 source maps in
+each file. The 515 `.tsx` files in `src/` are clean, human-readable TSX. The
+React Compiler is now an optional build step and is off by default.
 
-## Model Providers
+### Experimental features are unlocked
 
-Providers are configured in `freecode.json`, which supports **seven wire formats**: `anthropic`, `openai-responses`, `openai-chat-completions`, `bedrock-converse`, `vertex`, `foundry`, and `gemini`. See [src/utils/settings/types.ts](src/utils/settings/types.ts) for the schema and [src/utils/model/providerPresets.ts](src/utils/model/providerPresets.ts) for the built-in model presets.
+The source gates 29 features behind `bun:bundle` compile-time switches.
 
-The five environment variables below are legacy shortcuts, kept because they are what most people already have set. Each one synthesizes the equivalent `freecode.json` provider at startup ([src/utils/model/legacyProviderMigration.ts](src/utils/model/legacyProviderMigration.ts)), so no config file is needed to get going.
+| Set                  | Flags  | Build                    |
+| -------------------- | ------ | ------------------------ |
+| Default              | 10     | `bun run build`          |
+| Default and dev-full | 25     | `bun run build:dev:full` |
+| Manual-only          | 4 more | `--feature=NAME`         |
 
-### Anthropic (Direct API) -- Default
-
-Use Anthropic's first-party API directly.
-
-| Model             | ID                          |
-| ----------------- | --------------------------- |
-| Claude Opus 4.7   | `claude-opus-4-7`           |
-| Claude Opus 4.6   | `claude-opus-4-6`           |
-| Claude Sonnet 4.6 | `claude-sonnet-4-6`         |
-| Claude Haiku 4.5  | `claude-haiku-4-5-20251001` |
-
-### OpenAI Codex
-
-Use OpenAI's Codex models for code generation. Requires a Codex subscription.
-
-| Model                       | ID                    |
-| --------------------------- | --------------------- |
-| GPT-5.4                     | `gpt-5.4`             |
-| GPT-5.3 Codex (recommended) | `gpt-5.3-codex`       |
-| GPT-5.4 Mini                | `gpt-5.4-mini`        |
-| GPT-5.3 Codex Spark         | `gpt-5.3-codex-spark` |
-
-```bash
-export CLAUDE_CODE_USE_OPENAI=1
-free-code
-```
-
-### AWS Bedrock
-
-Route requests through your AWS account via Amazon Bedrock.
-
-```bash
-export CLAUDE_CODE_USE_BEDROCK=1
-export AWS_REGION="us-east-1"   # or AWS_DEFAULT_REGION
-free-code
-```
-
-Uses your standard AWS credentials (environment variables, `~/.aws/config`, or IAM role). Models are mapped to Bedrock ARN format automatically (e.g., `us.anthropic.claude-opus-4-7`).
-
-| Variable                            | Purpose                           |
-| ----------------------------------- | --------------------------------- |
-| `CLAUDE_CODE_USE_BEDROCK`           | Enable Bedrock provider           |
-| `AWS_REGION` / `AWS_DEFAULT_REGION` | AWS region (default: `us-east-1`) |
-| `ANTHROPIC_BEDROCK_BASE_URL`        | Custom Bedrock endpoint           |
-| `AWS_BEARER_TOKEN_BEDROCK`          | Bearer token auth                 |
-| `CLAUDE_CODE_SKIP_BEDROCK_AUTH`     | Skip auth (testing)               |
-
-### Google Cloud Vertex AI
-
-Route requests through your GCP project via Vertex AI.
-
-```bash
-export CLAUDE_CODE_USE_VERTEX=1
-free-code
-```
-
-Uses Google Cloud Application Default Credentials (`gcloud auth application-default login`). Models are mapped to Vertex format automatically (e.g., `claude-opus-4-6@latest`).
-
-### Anthropic Foundry
-
-Use Anthropic Foundry for dedicated deployments.
-
-```bash
-export CLAUDE_CODE_USE_FOUNDRY=1
-export ANTHROPIC_FOUNDRY_API_KEY="..."
-free-code
-```
-
-Supports custom deployment IDs as model names.
-
-### Provider Selection Summary
-
-| Provider            | Env Variable                | Auth Method                  |
-| ------------------- | --------------------------- | ---------------------------- |
-| Anthropic (default) | --                          | `ANTHROPIC_API_KEY` or OAuth |
-| OpenAI Codex        | `CLAUDE_CODE_USE_OPENAI=1`  | OAuth via OpenAI             |
-| AWS Bedrock         | `CLAUDE_CODE_USE_BEDROCK=1` | AWS credentials              |
-| Google Vertex AI    | `CLAUDE_CODE_USE_VERTEX=1`  | `gcloud` ADC                 |
-| Anthropic Foundry   | `CLAUDE_CODE_USE_FOUNDRY=1` | `ANTHROPIC_FOUNDRY_API_KEY`  |
-
-Gemini and any OpenAI-compatible chat-completions endpoint (Groq, Together, DeepSeek, vLLM, OpenRouter, llama-server, ...) have no legacy shortcut and are configured in `freecode.json` directly.
+No single build enables all 29. The four manual-only flags stay off unless you
+name them. [FEATURES.md](FEATURES.md) audits each one.
 
 ---
 
 ## Requirements
 
-- **Runtime**: [Bun](https://bun.sh) >= 1.3.11
-- **OS**: macOS or Linux (Windows via WSL)
-- **Auth**: An API key or OAuth login for your chosen provider
-
-```bash
-# Install Bun if you don't have it
-curl -fsSL https://bun.sh/install | bash
-```
-
----
+- [Bun](https://bun.sh) 1.3.11 or later
+- macOS or Linux. Use WSL on Windows.
+- An API key or an OAuth login for your provider
 
 ## Build
 
@@ -194,228 +123,92 @@ bun run build
 ./cli
 ```
 
-### Build Variants
-
-| Command                  | Output               | Features                    | Description                     |
-| ------------------------ | -------------------- | --------------------------- | ------------------------------- |
-| `bun run build`          | `./cli`              | 10 default flags            | Production-like binary          |
-| `bun run build:dev`      | `./cli-dev`          | 10 default flags            | Dev version stamp               |
-| `bun run build:dev:full` | `./cli-dev`          | Default + 14 dev-full flags | Full experimental build         |
-| `bun run compile`        | `./dist/cli`         | 10 default flags            | Alternative output path         |
-| `bun run dev`            | _(runs from source)_ | Runtime `feature()` checks  | No compile step, slower startup |
-
-### React Compiler (Optional)
-
-Add `--react-compiler` to any build command to run the React Compiler pre-transform. This applies automatic memoization to `.tsx` components for potential render performance gains, but is not required — the terminal UI (Ink) is lightweight enough without it.
-
-```bash
-# Build with React Compiler memoization
-bun run ./scripts/build.ts --react-compiler
-
-# Combine with other flags
-bun run ./scripts/build.ts --dev --feature-set=dev-full --react-compiler
-```
-
-The source files in `src/` are always clean, human-readable React — the compiler output goes to a temporary `.compiled-src/` directory and is never committed.
-
-### Custom Feature Flags
-
-Enable specific flags without the full bundle:
-
-```bash
-# Enable just worktree mode and dedicated search tools
-bun run ./scripts/build.ts --feature=WORKTREE_MODE --feature=DEDICATED_SEARCH_TOOLS
-
-# Add a flag on top of the dev build
-bun run ./scripts/build.ts --dev --feature=VERIFY_PLAN
-```
-
----
+`bun run build` writes `./cli` with the 10 default flags.
+`bun run build:dev:full` writes `./cli-dev` with 25. Full detail is in
+[docs/building.md](docs/building.md).
 
 ## Usage
 
 ```bash
-# Interactive REPL (default)
-./cli
-
-# One-shot mode
-./cli -p "what files are in this directory?"
-
-# Specify a model
-./cli --model claude-opus-4-6
-
-# Run from source (slower startup)
-bun run dev
-
-# OAuth login
-./cli /login
+./cli                                  # interactive REPL
+./cli -p "what files are in this dir?" # one-shot
+./cli --model claude-opus-4-6          # pick a model
+./cli /login                           # OAuth login
 ```
 
-### Browser Session UI
+### Browser session UI
 
-`WEBUI` is a dev-full flag, so this needs `./cli-dev` from `bun run build:dev:full`.
+`WEBUI` is a dev-full flag, so this needs `./cli-dev`.
 
 ```bash
-# Start the gateway inside the daemon, loopback only
-./cli-dev web start --tunnel none
-
-# Start it and expose a public URL through LocalTunnel
-./cli-dev web start
-
-./cli-dev web status   # show the URL and the tunnel state
-./cli-dev web url      # print the URL again, with a QR code
-./cli-dev web restart  # reload after a rebuild, keeping the same URL
+./cli-dev web start --tunnel none   # loopback only
+./cli-dev web start                 # public URL through a tunnel
+./cli-dev web status                # URL and tunnel state
+./cli-dev web url                   # print the URL with a QR code
+./cli-dev web restart               # reload after a rebuild, keeping the URL
 ./cli-dev web stop
 ```
 
-The first run prompts for a password without echo. Read this before you set one.
-Anyone who holds the password can approve a command that runs on this machine.
+The first run asks for a password without echo. Read this before you set one:
+anyone holding that password can approve a command that runs on your machine.
 Treat it like an SSH key, not a login.
 
-The gateway runs inside the daemon, so it survives closing the terminal. The
-server binds `127.0.0.1` only, and the tunnel is the sole public path.
+The gateway lives inside the daemon, so it outlives the terminal. It binds
+`127.0.0.1`, and the tunnel is the only public path.
 
-After you rebuild, run `./cli-dev web restart`. A rebuild does not affect a
-running daemon, because the supervisor is a separate long-lived process still
-executing the old binary. `restart` replaces that process and asks the tunnel
-for the hostname it used before, so a URL already open on a phone keeps working.
-The provider can refuse that hostname, in which case the new URL is printed.
-Sessions the gateway owns do not survive a restart. Terminal sessions do.
+After a rebuild, run `web restart`. Both `web restart` and a `web stop` and
+`web start` pair pick up the new binary, but only `restart` asks the tunnel for
+the hostname it used before, so a URL already open on a phone keeps working. The
+provider can refuse, in which case the new URL is printed.
 
-The browser lists three kinds of session: live sessions from your own terminals,
-sessions that the gateway started itself, and historical sessions from disk. A
-terminal session is attachable only if its process came from a `WEBUI` build.
-Windows is not supported.
-
-### Environment Variables Reference
-
-| Variable                            | Purpose                                                          |
-| ----------------------------------- | ---------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`                 | Anthropic API key                                                |
-| `ANTHROPIC_AUTH_TOKEN`              | Auth token (alternative)                                         |
-| `ANTHROPIC_MODEL`                   | Override default model                                           |
-| `ANTHROPIC_BASE_URL`                | Custom API endpoint                                              |
-| `CLAUDE_CODE_SUBAGENT_MODEL`        | Override model for all subagents (default: inherit parent model) |
-| `CLAUDE_CODE_OAUTH_TOKEN`           | OAuth token via env                                              |
-| `CLAUDE_CODE_API_KEY_HELPER_TTL_MS` | API key helper cache TTL                                         |
-
----
-
-## Experimental Features
-
-The default build enables the production-supported flags in `defaultFeatures`; `bun run build:dev:full` adds the flags in `fullExperimentalFeatures`. Highlights:
-
-### Interaction & UI
-
-| Flag              | Description                                                       |
-| ----------------- | ----------------------------------------------------------------- |
-| `ULTRATHINK`      | Deep thinking mode -- type "ultrathink" to boost reasoning effort |
-| `VOICE_MODE`      | Push-to-talk voice input and dictation                            |
-| `HISTORY_PICKER`  | Interactive prompt history picker                                 |
-| `MESSAGE_ACTIONS` | Message action entrypoints in the UI                              |
-| `QUICK_SEARCH`    | Prompt quick-search                                               |
-| `AWAY_SUMMARY`    | Away-from-keyboard summary behavior                               |
-| `BUDDY`           | Manual-only companion sprite; modules are currently unreferenced  |
-
-### Agents, Memory & Planning
-
-| Flag                          | Description                                        |
-| ----------------------------- | -------------------------------------------------- |
-| `BUILTIN_EXPLORE_PLAN_AGENTS` | Built-in explore/plan agent presets                |
-| `AGENT_TRIGGERS`              | Local cron/trigger tools for background automation |
-| `EXTRACT_MEMORIES`            | Post-query automatic memory extraction             |
-| `TEAMMEM`                     | Team-memory files and watcher hooks                |
-| `AGENT_MEMORY_SNAPSHOT`       | Custom-agent memory snapshot state                 |
-| `VERIFY_PLAN`                 | Manual-only plan verification tooling              |
-| `WORKTREE_MODE`               | Manual-only worktree-mode behavior                 |
-
-### Tools & Infrastructure
-
-| Flag                           | Description                                      |
-| ------------------------------ | ------------------------------------------------ |
-| `POWERSHELL_AUTO_MODE`         | PowerShell-specific auto-mode permission support |
-| `PROMPT_CACHE_BREAK_DETECTION` | Cache-break detection in compaction/query flow   |
-| `MCP_RICH_OUTPUT`              | Richer MCP tool result rendering                 |
-| `DEDICATED_SEARCH_TOOLS`       | Manual-only dedicated search tools               |
-| `WEBUI`                        | Browser session UI, hosted by the daemon         |
-
-See [FEATURES.md](FEATURES.md) for the complete audit of all 29 active flags.
-
----
-
-## Project Structure
-
-```
-scripts/
-  build.ts                # Build script with feature flag system
-
-src/
-  entrypoints/cli.tsx     # CLI entrypoint
-  commands.ts             # Command registry (slash commands)
-  tools.ts                # Tool registry (agent tools)
-  QueryEngine.ts          # LLM query engine
-  screens/REPL.tsx        # Main interactive UI (Ink/React)
-
-  commands/               # /slash command implementations
-  tools/                  # Agent tool implementations (Bash, Read, Edit, etc.)
-  components/             # Ink/React terminal UI components
-  hooks/                  # React hooks
-  services/               # API clients, MCP, OAuth, analytics
-    api/                  # Provider adapters (one per wire format), retry, errors
-    oauth/                # OAuth flows (Anthropic + OpenAI)
-  state/                  # App state store
-  utils/                  # Utilities
-    model/                # Model configs, providers, validation
-  skills/                 # Skill system
-  plugins/                # Plugin system
-  voice/                  # Voice input
-  tasks/                  # Background task management
-  webui/                  # Browser session UI (attach socket, gateway, React client)
-```
+The browser lists live sessions from your terminals, sessions the gateway
+started, and past sessions from disk. A terminal session is attachable only if
+its process came from a `WEBUI` build. Windows is not supported.
 
 ---
 
 ## Tech Stack
 
-|                       |                                                                 |
-| --------------------- | --------------------------------------------------------------- |
-| **Runtime**           | [Bun](https://bun.sh)                                           |
-| **Language**          | TypeScript                                                      |
-| **Terminal UI**       | React + [Ink](https://github.com/vadimdemedes/ink)              |
-| **Browser UI**        | React 19 + hand-written CSS, served by `Bun.serve`              |
-| **CLI Parsing**       | [Commander.js](https://github.com/tj/commander.js)              |
-| **Schema Validation** | Zod v4                                                          |
-| **Code Search**       | ripgrep (bundled)                                               |
-| **Protocols**         | MCP, LSP                                                        |
-| **APIs**              | Anthropic Messages, OpenAI Codex, AWS Bedrock, Google Vertex AI |
+|                 |                                                                                    |
+| --------------- | ---------------------------------------------------------------------------------- |
+| **Runtime**     | [Bun](https://bun.sh)                                                              |
+| **Language**    | TypeScript                                                                         |
+| **Terminal UI** | React 19 on a repository-local terminal renderer built on `react-reconciler`       |
+| **Layout**      | A pure-TypeScript Yoga port, so there is no native build step                      |
+| **Browser UI**  | React 19 and hand-written CSS, served by `Bun.serve`                               |
+| **CLI parsing** | Commander, through `@commander-js/extra-typings`                                   |
+| **Validation**  | Zod v4                                                                             |
+| **Search**      | ripgrep, with `bfs` and `ugrep` alongside                                          |
+| **Protocols**   | MCP and LSP                                                                        |
+| **Providers**   | Anthropic, OpenAI Responses and Chat Completions, Bedrock, Vertex, Foundry, Gemini |
 
 ---
 
 ## IPFS Mirror
 
-A full copy of this repository is permanently pinned on IPFS via Filecoin:
+A full copy of this repository is pinned on IPFS through Filecoin.
 
 |             |                                                                                   |
 | ----------- | --------------------------------------------------------------------------------- |
 | **CID**     | `bafybeiegvef3dt24n2znnnmzcud2vxat7y7rl5ikz7y7yoglxappim54bm`                     |
 | **Gateway** | https://w3s.link/ipfs/bafybeiegvef3dt24n2znnnmzcud2vxat7y7rl5ikz7y7yoglxappim54bm |
 
-If this repo gets taken down, the code lives on.
+If this repo is taken down, the code lives on.
 
 ---
 
 ## Contributing
 
-Contributions are welcome. If you're working on feature-gated behavior, check the current audit in [FEATURES.md](FEATURES.md) first so the flag is intentionally default, dev-full, or manual-only.
+Contributions are welcome.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feat/my-feature`)
-3. Commit your changes (`git commit -m 'feat: add something'`)
-4. Push to the branch (`git push origin feat/my-feature`)
-5. Open a Pull Request
-
----
+1. Read [CLAUDE.md](CLAUDE.md). It records the couplings and external behavior that the code cannot state.
+2. Check [FEATURES.md](FEATURES.md) before you touch flag-gated behavior, so you know whether the flag is default, dev-full or manual-only.
+3. Run `bun run typecheck` and `bun run test:unit`. Run `bun run test:e2e` after `bun run build:dev:full`, because the e2e suite runs the compiled binary.
+4. Run `bun run format`.
+5. Open a pull request.
 
 ## License
 
-The original Claude Code source is the property of Anthropic. This fork exists because the source was publicly exposed through their npm distribution. Use at your own discretion.
+The original Claude Code source is the property of Anthropic. This fork exists
+because the source was exposed through their npm distribution. Use at your own
+discretion.
