@@ -140,6 +140,20 @@ Never strip `""` on a required field, which is a value. Pass
 `tool.inputJSONSchema ?? tool.inputSchema`, because a Zod passthrough hides
 every MCP argument.
 
+## Edit anchors
+
+An anchor is resolved by content, not by position, so an anchor held across an
+earlier edit still works. That is what makes a second Edit to one file possible
+without a second Read, and it is the property `str_replace` had for free.
+
+Do not try to buy a higher resolution rate by widening `HASH_LEN`. Measured over
+`src/`, 38.5% of non-blank lines share a 3-character hash with another line in
+their own file, and 37.7% still do at 4 characters: the rate is genuine
+duplicate text, not hash collisions. A fourth character recovers about 1.3% of
+anchors and charges one character on every line of every Read. The duplicates
+are what the sibling-shift rule in `applyHashlineEdits` exists for, because a
+range that ends on `}` can never be placed on its own.
+
 ## WebUI
 
 The browser UI attaches to a running session over a per-process Unix socket.

@@ -264,6 +264,58 @@ describe('Tool Use E2E', () => {
       expect(secondEdit.is_error).not.toBe(true)
       expect(await readFile(filePath, 'utf-8')).toBe('one\none-b\ntwo\nTHREE')
     })
+
+    test('a second Edit works from an anchor the first Edit made stale', async () => {
+      session = new TmuxSession({ serverUrl: server.url })
+      await session.start()
+
+      const filePath = join(session.cwd, 'anchor-drift.txt')
+      await writeFile(filePath, 'one\ntwo\nthree')
+      // The anchor the model holds from its Read. The insert below pushes
+      // "three" to line 4, so this line number is wrong by the time it is used.
+      const staleAnchor = `3:${hashLine('three')}`
+
+      server.reset([
+        toolUseResponse([{ name: 'Read', input: { file_path: filePath } }]),
+        toolUseResponse([
+          {
+            name: 'Edit',
+            input: {
+              file_path: filePath,
+              edits: [
+                {
+                  op: 'insert_after',
+                  start: `1:${hashLine('one')}`,
+                  lines: 'one-b',
+                },
+              ],
+            },
+          },
+        ]),
+        toolUseResponse([
+          {
+            name: 'Edit',
+            input: {
+              file_path: filePath,
+              edits: [{ op: 'replace', start: staleAnchor, lines: 'THREE' }],
+            },
+          },
+        ]),
+        textResponse('Both edits applied'),
+      ])
+
+      await session.submitAndApprove('Edit the file twice')
+      const log = await waitForRequestCount(server, 4, {
+        description: 'second Edit tool_result request',
+      })
+
+      const secondEdit = getToolResults(log, 3)[0]
+      expect(secondEdit.is_error).not.toBe(true)
+      expect(resultContentString(secondEdit)).toContain(
+        'did not match the stated line number',
+      )
+      expect(await readFile(filePath, 'utf-8')).toBe('one\none-b\ntwo\nTHREE')
+    })
   })
 
   // Grep/Glob tools are feature-gated behind DEDICATED_SEARCH_TOOLS and

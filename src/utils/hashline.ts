@@ -55,7 +55,13 @@ export type HashlineOp = {
 }
 
 export type ApplyResult =
-  | { ok: true; updatedContent: string; editCount: number }
+  | {
+      ok: true
+      updatedContent: string
+      editCount: number
+      /** Anchors placed by content because their line number had moved. */
+      driftCount: number
+    }
   | { ok: false; error: string }
 
 // Normalized op resolved against the current file, with 1-based line range.
@@ -87,9 +93,13 @@ function fileLabel(filePath?: string): string {
   return filePath ? `file ${filePath}` : 'the file'
 }
 
-// One anchor that cannot be resolved against the current content: either its
-// line moved out of range, or the line at that number holds different content.
-type StaleAnchor = { anchor: Anchor; actual: string | null }
+// One anchor that cannot be placed in the current content: no line carries its
+// hash, or several lines do.
+type StaleAnchor = {
+  anchor: Anchor
+  actual: string | null
+  ambiguous: boolean
+}
 
 // A single-line replace/delete resolves start and end to the same anchor, so
 // the batch report has to collapse them or it counts every one twice.
@@ -97,10 +107,11 @@ function addStale(
   stale: StaleAnchor[],
   anchor: Anchor,
   actual: string | null,
+  ambiguous: boolean,
 ): void {
   const text = anchorText(anchor)
   if (stale.some(s => anchorText(s.anchor) === text)) return
-  stale.push({ anchor, actual })
+  stale.push({ anchor, actual, ambiguous })
 }
 
 /**
@@ -117,11 +128,15 @@ function staleAnchorError(
     stale.length === 1
       ? `Anchor "${anchorText(stale[0]!.anchor)}" no longer matches ${label}.`
       : `${stale.length} anchors no longer match ${label}.`
-  const detail = stale.map(s =>
-    s.actual === null
-      ? `  "${anchorText(s.anchor)}" → the file now has ${fileLines.length} line(s)`
-      : `  "${anchorText(s.anchor)}" → line ${s.anchor.line} is now "${s.anchor.line}:${s.actual}"`,
-  )
+  const detail = stale.map(s => {
+    const name = anchorText(s.anchor)
+    if (s.ambiguous) {
+      return `  "${name}" → several lines carry that hash, so it cannot be placed by content`
+    }
+    return s.actual === null
+      ? `  "${name}" → the file now has ${fileLines.length} line(s)`
+      : `  "${name}" → line ${s.anchor.line} is now "${s.anchor.line}:${s.actual}"`
+  })
   const inRange = stale
     .filter(s => s.actual !== null)
     .slice(0, MAX_STALE_WINDOWS)
@@ -182,11 +197,70 @@ export function formatAnchoredRegions(
 }
 
 /**
- * Apply hashline edits to file content. Pure: validates each anchor's recomputed
- * hash against the current content (the staleness guard), rejects overlapping
- * ranges, then applies edits by descending start line so earlier splices don't
- * shift later offsets. On any failure returns a human-readable error that
- * includes fresh `LINE:HASH|content` anchors so the model can re-anchor.
+ * Where an anchor points in the current content. A hash names a line and the
+ * line number is only a hint, because an edit above an anchor shifts it without
+ * touching its content.
+ */
+type Resolved =
+  | { kind: 'ok'; line: number; drifted: boolean }
+  | { kind: 'missing'; actual: string | null }
+  | { kind: 'ambiguous'; actual: string | null }
+
+function hashAt(fileLines: string[], line: number): string | null {
+  return line >= 1 && line <= fileLines.length
+    ? hashLine(fileLines[line - 1])
+    : null
+}
+
+/**
+ * Place an anchor: its own line first, then the whole file. A hash that occurs
+ * once is that line however far it moved, so an anchor held across an earlier
+ * edit still works. A hash that occurs twice is no evidence at all, and no
+ * distance rule can make it so, so the caller either takes a shift from a
+ * sibling anchor or refuses. A blank line is never a candidate, because its
+ * hash identifies nothing.
+ */
+function resolveAnchor(fileLines: string[], anchor: Anchor): Resolved {
+  // An anchor with no hash asks for a line number and nothing else. There is no
+  // content to search for, so the only thing to check is that the line exists.
+  if (anchor.hash === null) {
+    return anchor.line >= 1 && anchor.line <= fileLines.length
+      ? { kind: 'ok', line: anchor.line, drifted: false }
+      : { kind: 'missing', actual: null }
+  }
+  const actual = hashAt(fileLines, anchor.line)
+  if (actual === anchor.hash) {
+    return { kind: 'ok', line: anchor.line, drifted: false }
+  }
+  let found = 0
+  for (let n = 1; n <= fileLines.length; n++) {
+    const line = fileLines[n - 1]
+    if (line.trim() === '' || hashLine(line) !== anchor.hash) continue
+    if (found !== 0) return { kind: 'ambiguous', actual }
+    found = n
+  }
+  return found === 0
+    ? { kind: 'missing', actual }
+    : { kind: 'ok', line: found, drifted: true }
+}
+
+// Place an ambiguous anchor with the shift a sibling anchor already proved.
+function shiftAnchor(
+  fileLines: string[],
+  anchor: Anchor,
+  delta: number,
+): number | null {
+  if (anchor.hash === null) return null
+  const line = anchor.line + delta
+  return hashAt(fileLines, line) === anchor.hash ? line : null
+}
+
+/**
+ * Apply hashline edits to file content. Pure: places each anchor in the current
+ * content, rejects overlapping ranges, then applies edits by descending start
+ * line so earlier splices don't shift later offsets. On any failure returns a
+ * human-readable error that includes fresh `LINE:HASH|content` anchors so the
+ * model can re-anchor.
  */
 export function applyHashlineEdits(
   fileContent: string,
@@ -198,6 +272,8 @@ export function applyHashlineEdits(
   // Staleness is reported for the whole batch at once: a model that re-anchors
   // one edit at a time pays a rejection per anchor.
   const stale: StaleAnchor[] = []
+  // Deduplicated, because a single-line op names the same anchor twice.
+  const drifted = new Set<string>()
 
   for (const edit of edits) {
     const startAnchor = parseAnchor(edit.start)
@@ -237,8 +313,9 @@ export function applyHashlineEdits(
       }
     }
 
-    // Range validation. A line past the end of the file is staleness (the file
-    // shrank), not a malformed request, so it joins the batch report below.
+    // A malformed range is rejected outright. A line past the end of the file is
+    // not one: the file may have shrunk under an anchor whose content only
+    // moved, which resolution below handles.
     if (isInsert) {
       if (startAnchor.line < 0) {
         return {
@@ -248,10 +325,6 @@ export function applyHashlineEdits(
           )}. Use "0" to insert at the top.`,
         }
       }
-      if (startAnchor.line > fileLines.length) {
-        addStale(stale, startAnchor, null)
-        continue
-      }
     } else {
       if (startAnchor.line < 1 || endAnchor.line < 1) {
         return {
@@ -260,17 +333,6 @@ export function applyHashlineEdits(
             filePath,
           )}. Lines are 1-based; "0" is only valid for insert_after.`,
         }
-      }
-      if (
-        startAnchor.line > fileLines.length ||
-        endAnchor.line > fileLines.length
-      ) {
-        for (const anchor of [startAnchor, endAnchor]) {
-          if (anchor.line > fileLines.length) {
-            addStale(stale, anchor, null)
-          }
-        }
-        continue
       }
       if (endAnchor.line < startAnchor.line) {
         return {
@@ -282,27 +344,88 @@ export function applyHashlineEdits(
       }
     }
 
-    // Hash (staleness) validation for anchored lines.
-    const anchorsToCheck: Anchor[] = isInsert
-      ? startAnchor.line === 0
-        ? []
-        : [startAnchor]
-      : [startAnchor, endAnchor]
-    let anchorStale = false
-    for (const anchor of anchorsToCheck) {
-      if (anchor.hash === null) continue
-      const actual = hashLine(fileLines[anchor.line - 1])
-      if (actual !== anchor.hash) {
-        addStale(stale, anchor, actual)
-        anchorStale = true
+    // Top-of-file insertion has no line to place.
+    if (isInsert && startAnchor.line === 0) {
+      resolved.push({ op: edit.op, startLine: 0, endLine: 0, lines })
+      continue
+    }
+
+    let startPlace = resolveAnchor(fileLines, startAnchor)
+    let endPlace =
+      isInsert || endAnchor === startAnchor
+        ? startPlace
+        : resolveAnchor(fileLines, endAnchor)
+
+    // One end places the other. A block that moved moved whole, so a unique
+    // start hands an ambiguous end its exact shift. This is what lets a range
+    // that ends on a line like "}" resolve at all, since such a line has twins
+    // everywhere and can never be placed on its own.
+    if (startPlace.kind === 'ok' && endPlace.kind === 'ambiguous') {
+      const line = shiftAnchor(
+        fileLines,
+        endAnchor,
+        startPlace.line - startAnchor.line,
+      )
+      if (line !== null) endPlace = { kind: 'ok', line, drifted: true }
+    } else if (endPlace.kind === 'ok' && startPlace.kind === 'ambiguous') {
+      const line = shiftAnchor(
+        fileLines,
+        startAnchor,
+        endPlace.line - endAnchor.line,
+      )
+      if (line !== null) startPlace = { kind: 'ok', line, drifted: true }
+    }
+
+    if (startPlace.kind !== 'ok' || endPlace.kind !== 'ok') {
+      if (startPlace.kind !== 'ok') {
+        addStale(
+          stale,
+          startAnchor,
+          startPlace.actual,
+          startPlace.kind === 'ambiguous',
+        )
+      }
+      if (endPlace.kind !== 'ok') {
+        addStale(
+          stale,
+          endAnchor,
+          endPlace.actual,
+          endPlace.kind === 'ambiguous',
+        )
+      }
+      continue
+    }
+
+    // Both ends must have moved by the same amount. If they did not, lines were
+    // added or removed inside the range and it no longer means what it did.
+    if (!isInsert) {
+      const anchored = endAnchor.line - startAnchor.line
+      const placed = endPlace.line - startPlace.line
+      if (placed !== anchored) {
+        return {
+          ok: false,
+          error: [
+            `The range "${anchorText(startAnchor)}".."${anchorText(
+              endAnchor,
+            )}" covered ${anchored + 1} line(s), but its ends now sit at lines ${startPlace.line} and ${endPlace.line} in ${fileLabel(filePath)}.`,
+            'Lines were added or removed inside it.',
+            'Current content at each end:',
+            freshWindow(fileLines, startPlace.line),
+            '...',
+            freshWindow(fileLines, endPlace.line),
+            'Re-read the file or use these anchors and retry.',
+          ].join('\n'),
+        }
       }
     }
-    if (anchorStale) continue
+
+    if (startPlace.drifted) drifted.add(anchorText(startAnchor))
+    if (endPlace.drifted) drifted.add(anchorText(endAnchor))
 
     resolved.push({
       op: edit.op,
-      startLine: startAnchor.line,
-      endLine: isInsert ? startAnchor.line : endAnchor.line,
+      startLine: startPlace.line,
+      endLine: isInsert ? startPlace.line : endPlace.line,
       lines,
     })
   }
@@ -352,5 +475,6 @@ export function applyHashlineEdits(
     ok: true,
     updatedContent: newLines.join('\n'),
     editCount: edits.length,
+    driftCount: drifted.size,
   }
 }

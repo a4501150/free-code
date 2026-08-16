@@ -392,6 +392,7 @@ export const FileEditTool = buildTool({
     // content directly; otherwise apply the hashline edits by anchor.
     let updatedFile: string
     let editCount: number
+    let driftCount = 0
     if (input._overrideContent) {
       updatedFile = input._overrideContent.newContent
       editCount = edits.length
@@ -402,6 +403,7 @@ export const FileEditTool = buildTool({
       }
       updatedFile = r.updatedContent
       editCount = r.editCount
+      driftCount = r.driftCount
     }
 
     // 4. Generate the display patch. Leading tabs are rendered as spaces to
@@ -477,6 +479,7 @@ export const FileEditTool = buildTool({
       structuredPatch: patch,
       userModified: userModified ?? false,
       editCount,
+      ...(driftCount > 0 && { driftedAnchors: driftCount }),
       ...(changedRegionAnchors && { changedRegionAnchors }),
       ...(gitDiff && { gitDiff }),
     }
@@ -485,9 +488,15 @@ export const FileEditTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(data: FileEditOutput, toolUseID) {
-    const { filePath, userModified, changedRegionAnchors } = data
+    const { filePath, userModified, changedRegionAnchors, driftedAnchors } =
+      data
     const modifiedNote = userModified
       ? '.  The user modified your proposed changes before accepting them. '
+      : ''
+    // Say so rather than correcting in silence: an anchor that moved means the
+    // model's picture of this file is out of date everywhere, not just here.
+    const driftNote = driftedAnchors
+      ? `\n\n${driftedAnchors} anchor(s) did not match the stated line number. The tool found them by content.`
       : ''
     const anchorNote = changedRegionAnchors
       ? `\n\nAnchors for the changed lines. Use them to edit this file again without reading it first:\n${changedRegionAnchors}`
@@ -496,7 +505,7 @@ export const FileEditTool = buildTool({
     return {
       tool_use_id: toolUseID,
       type: 'tool_result',
-      content: `The file ${filePath} has been updated successfully${modifiedNote}.${anchorNote}`,
+      content: `The file ${filePath} has been updated successfully${modifiedNote}.${driftNote}${anchorNote}`,
     }
   },
 } satisfies ToolDef<typeof inputSchema, FileEditOutput>)

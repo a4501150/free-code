@@ -244,6 +244,178 @@ describe('applyHashlineEdits — guards', () => {
   })
 })
 
+describe('applyHashlineEdits — anchors that moved', () => {
+  test('finds a line that moved down', () => {
+    // The model read the file when gamma sat at line 3. Two lines went in above
+    // it since, which is what an earlier edit to the same file looks like.
+    const now = lines('alpha', 'NEW1', 'NEW2', 'beta', 'gamma', 'delta')
+    const r = applyHashlineEdits(now, [
+      { op: 'replace', start: anchor('gamma', 3), lines: 'GAMMA' },
+    ])
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.updatedContent).toBe(
+        lines('alpha', 'NEW1', 'NEW2', 'beta', 'GAMMA', 'delta'),
+      )
+      expect(r.driftCount).toBe(1)
+    }
+  })
+
+  test('finds a line that moved up', () => {
+    const now = lines('gamma', 'delta')
+    const r = applyHashlineEdits(now, [
+      { op: 'replace', start: anchor('gamma', 3), lines: 'GAMMA' },
+    ])
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.updatedContent).toBe(lines('GAMMA', 'delta'))
+  })
+
+  test('finds a line that moved a long way, since there is no distance limit', () => {
+    const filler = Array.from({ length: 400 }, (_, i) => `filler ${i}`)
+    const now = lines(...filler, 'the target line')
+    const r = applyHashlineEdits(now, [
+      { op: 'delete', start: anchor('the target line', 1) },
+    ])
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.updatedContent).toBe(lines(...filler))
+  })
+
+  test('prefers an exact line match over a twin elsewhere', () => {
+    const file = lines('dup', 'x', 'dup')
+    const r = applyHashlineEdits(file, [
+      { op: 'replace', start: anchor('dup', 3), lines: 'THREE' },
+    ])
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.updatedContent).toBe(lines('dup', 'x', 'THREE'))
+      expect(r.driftCount).toBe(0)
+    }
+  })
+
+  test('refuses a hash that several lines carry', () => {
+    const file = lines('dup', 'other', 'dup', 'tail')
+    const r = applyHashlineEdits(
+      file,
+      [{ op: 'replace', start: `2:${hashLine('dup')}`, lines: 'X' }],
+      '/tmp/x.ts',
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('several lines carry that hash')
+  })
+
+  test('never places an anchor on a blank line', () => {
+    const file = lines('a', '', 'b')
+    const r = applyHashlineEdits(
+      file,
+      [{ op: 'delete', start: `3:${hashLine('')}` }],
+      '/tmp/x.ts',
+    )
+    expect(r.ok).toBe(false)
+  })
+
+  test('a unique start places an end that has twins', () => {
+    // The end of a function is "}", which every function shares, so it can never
+    // be placed on its own. The start is distinctive and hands it the shift.
+    const now = lines(
+      'new1',
+      'new2',
+      'preamble',
+      'function a() {',
+      '  body',
+      '}',
+      'function b() {',
+      '  other',
+      '}',
+    )
+    const r = applyHashlineEdits(now, [
+      {
+        op: 'replace',
+        start: anchor('function a() {', 2),
+        end: anchor('}', 4),
+        lines: 'REPLACED',
+      },
+    ])
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.updatedContent).toBe(
+        lines(
+          'new1',
+          'new2',
+          'preamble',
+          'REPLACED',
+          'function b() {',
+          '  other',
+          '}',
+        ),
+      )
+    }
+  })
+
+  test('moves a whole range when both ends shifted alike', () => {
+    const now = lines('x', 'y', 'alpha', 'beta', 'gamma')
+    const r = applyHashlineEdits(now, [
+      { op: 'delete', start: anchor('alpha', 1), end: anchor('gamma', 3) },
+    ])
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.updatedContent).toBe(lines('x', 'y'))
+      expect(r.driftCount).toBe(2)
+    }
+  })
+
+  test('refuses a range whose ends shifted differently', () => {
+    const now = lines('alpha', 'inserted', 'beta', 'gamma')
+    const r = applyHashlineEdits(
+      now,
+      [
+        {
+          op: 'replace',
+          start: anchor('alpha', 1),
+          end: anchor('gamma', 3),
+          lines: 'X',
+        },
+      ],
+      '/tmp/x.ts',
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('added or removed inside it')
+  })
+
+  test('places an anchor past the end of a file that shrank', () => {
+    const now = lines('one', 'tail')
+    const r = applyHashlineEdits(now, [
+      { op: 'replace', start: anchor('tail', 4), lines: 'TAIL' },
+    ])
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.updatedContent).toBe(lines('one', 'TAIL'))
+  })
+
+  test('counts only the anchors it had to place by content', () => {
+    const now = lines('zero', 'one', 'two', 'three')
+    const r = applyHashlineEdits(now, [
+      { op: 'replace', start: anchor('one', 2), lines: 'ONE' },
+      { op: 'replace', start: anchor('three', 3), lines: 'THREE' },
+    ])
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.updatedContent).toBe(lines('zero', 'ONE', 'two', 'THREE'))
+      expect(r.driftCount).toBe(1)
+    }
+  })
+
+  test('refuses a hashless anchor past the end of the file', () => {
+    // Nothing to search for, so it cannot be placed. Without this it would
+    // splice at the clamped end and append in silence.
+    const r = applyHashlineEdits(
+      lines('one', 'two', 'three', 'four'),
+      [{ op: 'replace', start: '99', lines: 'X' }],
+      '/tmp/x.ts',
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('the file now has 4 line(s)')
+  })
+})
+
 describe('applyHashlineEdits — trailing newline', () => {
   test('preserves a trailing newline', () => {
     const file = 'a\nb\n'

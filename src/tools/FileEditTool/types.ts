@@ -103,6 +103,10 @@ const outputSchema = z.object({
     .boolean()
     .describe('Whether the user modified the proposed changes'),
   editCount: z.number().describe('Number of edits applied'),
+  driftedAnchors: z
+    .number()
+    .optional()
+    .describe('Anchors placed by content because their line number had moved'),
   changedRegionAnchors: z
     .string()
     .optional()
