@@ -39,6 +39,119 @@
   }
 }
 
+/* ── menu levels ───────────────────────────────────────────────── */
+
+/* Narrow: one level at a time. The rules in the 48rem block below have the
+   same specificity and win by order, which is how the same tree becomes a
+   single stacked column without unmounting either level. */
+.rail.is-root .menu__sessions {
+  display: none;
+}
+
+.rail.is-sessions .menu__root {
+  display: none;
+}
+
+.menu__entry {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu__entry:hover {
+  background: var(--bg-raised);
+}
+
+.menu__entry-label {
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+.menu__entry-note {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.menu__chevron {
+  color: var(--text-faint);
+}
+
+.menu__back {
+  padding: 0.1rem 0.4rem;
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* A level's own heading needs no gap above it; `rail__title` assumes a list
+   sits before it. */
+.rail__title.is-lead {
+  margin-top: 0.5rem;
+}
+
+.menu__new {
+  padding: 0.6rem 0.75rem 0;
+}
+
+/* ── gateway actions ───────────────────────────────────────────── */
+
+.menu__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0 0.75rem;
+}
+
+.menu__action {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  color: var(--text-dim);
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.menu__action:hover {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.menu__action.is-danger {
+  border-color: var(--signal);
+  background: var(--signal-sunk);
+  color: var(--signal);
+}
+
+.menu__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.menu__note {
+  margin: 0 0 0.15rem;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 /* ── header, which holds the primary action ────────────────────── */
 
 .rail__header {
@@ -372,6 +485,19 @@
   }
 
   .rail__close {
+    display: none;
+  }
+
+  /* The button that opens the drawer is hidden at this width, so there is no
+     way back from a level and nothing to navigate. Show both stacked and drop
+     the row that would have navigated. */
+  .rail.is-root .menu__sessions,
+  .rail.is-sessions .menu__root {
+    display: block;
+  }
+
+  .menu__entry,
+  .menu__back {
     display: none;
   }
 

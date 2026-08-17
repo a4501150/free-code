@@ -138,6 +138,31 @@ export async function stopSession(
   return { ok: false, error: await readError(response) }
 }
 
+/**
+ * Replace the gateway daemon, which is how a rebuilt binary takes effect.
+ *
+ * Every gateway-owned session dies with it, this browser's included, and the
+ * socket drops. The reconnect is automatic once the replacement binds, provided
+ * the tunnel gives back the same hostname.
+ */
+export async function restartGateway(
+  csrf: string,
+): Promise<StopResult> {
+  const response = await fetch('/api/restart', {
+    method: 'POST',
+    headers: { [CSRF_HEADER]: csrf },
+  })
+  if (response.ok) return { ok: true }
+  return { ok: false, error: await readError(response) }
+}
+
+export async function logout(csrf: string): Promise<void> {
+  await fetch('/api/logout', {
+    method: 'POST',
+    headers: { [CSRF_HEADER]: csrf },
+  })
+}
+
 /** What a command answered. `ok` false carries the gateway's short code. */
 export type CommandResult = {
   ok: boolean

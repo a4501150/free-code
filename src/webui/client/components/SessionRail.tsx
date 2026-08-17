@@ -3,6 +3,12 @@ import type { SessionListEntry } from '../../gateway/sessionHub.js'
 import { NewSessionForm } from './NewSessionForm.js'
 import { HistoryRow, SessionRow } from './SessionRow.js'
 
+/**
+ * The sessions level of the menu.
+ *
+ * The header and the close button belong to `MenuDrawer`, which owns the
+ * drawer; this owns only what is specific to sessions.
+ */
 export function SessionRail({
   sessions,
   activeKey,
@@ -12,7 +18,6 @@ export function SessionRail({
   onCreate,
   onResume,
   onStop,
-  onClose,
 }: {
   sessions: SessionListEntry[]
   activeKey: string | null
@@ -22,7 +27,6 @@ export function SessionRail({
   onCreate(cwd: string): Promise<string | null>
   onResume(sessionId: string): Promise<string | null>
   onStop(pid: number): Promise<string | null>
-  onClose(): void
 }): React.ReactElement {
   const [composing, setComposing] = useState(false)
 
@@ -30,11 +34,11 @@ export function SessionRail({
   const past = sessions.filter(s => !s.live)
 
   return (
-    <nav className="rail" id="session-rail" aria-label="Sessions">
+    <div className="menu__level menu__sessions">
+      <h3 className="rail__title is-lead">sessions</h3>
       {/* The primary action sits above both lists. Buried between them, nobody
           found it. */}
-      <div className="rail__header">
-        <h2 className="rail__heading">sessions</h2>
+      <div className="menu__new">
         <button
           type="button"
           className="rail__new-toggle"
@@ -42,14 +46,6 @@ export function SessionRail({
           onClick={() => setComposing(open => !open)}
         >
           {composing ? 'cancel' : '+ new'}
-        </button>
-        <button
-          type="button"
-          className="rail__close"
-          aria-label="Close sessions"
-          onClick={onClose}
-        >
-          ×
         </button>
       </div>
 
@@ -99,6 +95,6 @@ export function SessionRail({
           ))}
         </ul>
       )}
-    </nav>
+    </div>
   )
 }

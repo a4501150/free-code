@@ -13,7 +13,7 @@ import { Instruments } from './Instruments.js'
 import { PermissionTray } from './PermissionTray.js'
 import { approvalInput, PlanTray } from './PlanTray.js'
 import { QuestionTray } from './QuestionTray.js'
-import { SessionRail } from './SessionRail.js'
+import { MenuDrawer } from './MenuDrawer.js'
 import { TopBar } from './TopBar.js'
 import { Transcript } from './Transcript.js'
 
@@ -212,11 +212,12 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
         onToggleRail={() => setRailOpen(open => !open)}
       />
 
-      <SessionRail
+      <MenuDrawer
         sessions={sessions.entries}
         activeKey={activeKey}
         activeState={meta?.state}
         defaultCwd={defaultCwd}
+        csrf={csrf}
         onSelect={select}
         onCreate={create}
         onResume={resume}
@@ -230,7 +231,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
         <button
           type="button"
           className="scrim"
-          aria-label="Close sessions"
+          aria-label="Close menu"
           tabIndex={-1}
           onClick={() => setRailOpen(false)}
         />
