@@ -17,6 +17,11 @@ export type ServerFrame =
       error?: { code: string; message: string }
     }
   | { type: 'error'; code: string; message?: string }
+  /**
+   * The attached process ended. A gateway frame rather than an
+   * `AttachEventBody`, because no process is left to have emitted it.
+   */
+  | { type: 'process_gone'; processKey: string; sessionId: string }
 
 export type LoginResult = 'ok' | 'invalid' | 'throttled' | 'error'
 
@@ -145,9 +150,7 @@ export async function stopSession(
  * socket drops. The reconnect is automatic once the replacement binds, provided
  * the tunnel gives back the same hostname.
  */
-export async function restartGateway(
-  csrf: string,
-): Promise<StopResult> {
+export async function restartGateway(csrf: string): Promise<StopResult> {
   const response = await fetch('/api/restart', {
     method: 'POST',
     headers: { [CSRF_HEADER]: csrf },
@@ -172,6 +175,12 @@ export type CommandResult = {
 
 export type GatewaySocket = {
   attach(processKey: string): void
+  /**
+   * Stop watching the current process. React state alone cannot do this: the
+   * socket remembers the key so it can re-attach after a reconnect, and would
+   * keep reaching for a process that has ended.
+   */
+  detach(): void
   send(body: AttachRequestBody): void
   /** Send and wait for the answer. Rejects if the socket closes first. */
   request(body: AttachRequestBody): Promise<CommandResult>
@@ -249,10 +258,17 @@ export function connectGateway(handlers: {
     )
   }
 
+  function detach(): void {
+    currentProcessKey = null
+    if (socket?.readyState !== WebSocket.OPEN) return
+    socket.send(JSON.stringify({ type: 'detach' }))
+  }
+
   open()
 
   return {
     attach,
+    detach,
     send(body) {
       commandId += 1
       socket?.send(

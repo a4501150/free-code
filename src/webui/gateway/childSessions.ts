@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { validateSessionCwd } from './directories.js'
 import { readAttachDescriptor } from '../attach/attachDescriptor.js'
-import { WEBUI_ATTACH_ENV } from '../attach/headlessBridge.js'
+import { WEBUI_ATTACH_ENV } from '../../utils/webuiManagedProcess.js'
 
 export type ChildSession = {
   pid: number
@@ -86,7 +86,9 @@ export function createChildSessions(defaults?: ChildSessionDefaults) {
       ],
       {
         cwd: options.cwd,
-        env: { ...process.env, [WEBUI_ATTACH_ENV]: '1' },
+        // The gateway's own PID, so a grandchild that inherits the variable
+        // cannot pass for a process this gateway spawned.
+        env: { ...process.env, [WEBUI_ATTACH_ENV]: String(process.pid) },
         // stdin stays open: closing it ends the headless session immediately.
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: false,

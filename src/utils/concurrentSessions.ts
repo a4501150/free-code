@@ -13,6 +13,7 @@ import { isProcessRunning } from './genericProcessUtils.js'
 import { getPlatform } from './platform.js'
 import { jsonParse, jsonStringify } from './slowOperations.js'
 import { getAgentId } from './teammate.js'
+import { isWebuiManagedProcess } from './webuiManagedProcess.js'
 
 export const SESSION_KINDS = [
   'interactive',
@@ -28,7 +29,10 @@ function getSessionsDir(): string {
 }
 
 function envSessionKind(): SessionKind | undefined {
-  return undefined
+  // A gateway-spawned session is a viewer for the browser, not a window a
+  // person sits at. Callers that weigh holders against each other need to tell
+  // the two apart.
+  return isWebuiManagedProcess() ? 'daemon-worker' : undefined
 }
 
 export function isBgSession(): boolean {

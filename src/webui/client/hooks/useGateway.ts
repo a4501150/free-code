@@ -13,6 +13,7 @@ import type {
 export type Gateway = {
   connected: boolean
   attach(processKey: string): void
+  detach(): void
   send(body: AttachRequestBody): void
   request(body: AttachRequestBody): Promise<CommandResult>
 }
@@ -26,9 +27,15 @@ export type Gateway = {
 export function useGateway({
   csrf,
   onEvent,
+  onProcessGone,
+  onAttachFailed,
 }: {
   csrf: string | null
   onEvent(seq: number, event: AttachEventBody): void
+  /** The attached process ended. Carries the session it was serving. */
+  onProcessGone(info: { processKey: string; sessionId: string }): void
+  /** The gateway could not reach the process, so no snapshot is coming. */
+  onAttachFailed(): void
 }): Gateway {
   const [connected, setConnected] = useState(false)
   const socketRef = useRef<GatewaySocket | null>(null)
@@ -36,6 +43,10 @@ export function useGateway({
   // Held in a ref so a new callback identity cannot tear the socket down.
   const onEventRef = useRef(onEvent)
   onEventRef.current = onEvent
+  const onProcessGoneRef = useRef(onProcessGone)
+  onProcessGoneRef.current = onProcessGone
+  const onAttachFailedRef = useRef(onAttachFailed)
+  onAttachFailedRef.current = onAttachFailed
 
   useEffect(() => {
     if (!csrf) return
@@ -43,6 +54,15 @@ export function useGateway({
       csrf,
       onFrame: (frame: ServerFrame) => {
         if (frame.type === 'event') onEventRef.current(frame.seq, frame.event)
+        if (frame.type === 'process_gone') {
+          onProcessGoneRef.current({
+            processKey: frame.processKey,
+            sessionId: frame.sessionId,
+          })
+        }
+        if (frame.type === 'error' && frame.code === 'attach_failed') {
+          onAttachFailedRef.current()
+        }
       },
       onOpen: () => setConnected(true),
       onClose: () => setConnected(false),
@@ -58,6 +78,10 @@ export function useGateway({
     socketRef.current?.attach(processKey)
   }, [])
 
+  const detach = useCallback(() => {
+    socketRef.current?.detach()
+  }, [])
+
   const send = useCallback((body: AttachRequestBody) => {
     socketRef.current?.send(body)
   }, [])
@@ -68,5 +92,5 @@ export function useGateway({
     return socket.request(body)
   }, [])
 
-  return { connected, attach, send, request }
+  return { connected, attach, detach, send, request }
 }

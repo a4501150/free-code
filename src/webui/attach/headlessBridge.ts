@@ -1,4 +1,4 @@
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import { isWebuiManagedProcess } from '../../utils/webuiManagedProcess.js'
 import type { CanUseToolFn } from '../../Tool.js'
 import type { Message } from '../../types/message.js'
 import { enqueue } from '../../utils/messageQueueManager.js'
@@ -23,15 +23,8 @@ import {
 } from '../../utils/permissions/PermissionUpdate.js'
 import { buildSubmitValue } from './runtime.js'
 
-/**
- * Set by the gateway on the children it spawns. A plain `claude -p` in a script
- * has no reason to publish a control socket, so this is opt-in rather than
- * automatic.
- */
-export const WEBUI_ATTACH_ENV = 'CLAUDE_CODE_WEBUI_ATTACH'
-
 export function shouldAttachHeadless(): boolean {
-  return isEnvTruthy(process.env[WEBUI_ATTACH_ENV])
+  return isWebuiManagedProcess()
 }
 
 export type HeadlessAttachParams = {

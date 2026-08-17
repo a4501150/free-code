@@ -485,6 +485,21 @@ export function startGatewayServer(
               event => {
                 ws.send(JSON.stringify({ type: 'event', ...event }))
               },
+              info => {
+                // A stale close must not clear an attachment the browser has
+                // already replaced.
+                if (ws.data.processKey === info.processKey) {
+                  ws.data.subscriber = null
+                  ws.data.processKey = null
+                }
+                ws.send(
+                  JSON.stringify({
+                    type: 'process_gone',
+                    processKey: info.processKey,
+                    sessionId: info.sessionId,
+                  }),
+                )
+              },
             )
             ws.data.subscriber = subscriber
             ws.data.processKey = frame.data.processKey

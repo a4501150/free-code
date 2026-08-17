@@ -87,6 +87,7 @@ class GatewayClient {
       attachable: boolean
       owned: boolean
       pid?: number
+      stoppablePid?: number
       holders: number
     }>
   }> {
@@ -163,6 +164,8 @@ async function waitForAttachablePid(configDir: string): Promise<number> {
 describe('WebUI gateway', () => {
   let server: MockAnthropicServer
   let session: TmuxSession | undefined
+  /** A second terminal, for the test that adopts a session the gateway holds. */
+  let takeover: TmuxSession | undefined
   let dirs: Dirs
   let baseUrl = ''
 
@@ -176,6 +179,10 @@ describe('WebUI gateway', () => {
   })
 
   afterEach(async () => {
+    if (takeover) {
+      await takeover.stop()
+      takeover = undefined
+    }
     if (session) {
       await session.stop()
       session = undefined
@@ -827,6 +834,184 @@ describe('WebUI gateway', () => {
       { description: 'the owned session to exit', timeoutMs: 20_000 },
     )
     expect(() => process.kill(terminalPid, 0)).not.toThrow()
+  })
+
+  test('shows one row when a terminal takes a web session over, and reports the process that ends', async () => {
+    dirs = await makeDirs()
+    server.reset([
+      textResponse('An answer from the web session.'),
+      textResponse('An answer from the terminal.'),
+    ])
+
+    // The tmux harness is the only thing that writes provider settings, trust
+    // and API-key approval, and a spawned child needs all three.
+    session = new TmuxSession({
+      serverUrl: server.url,
+      reuseConfigDir: dirs.config,
+      reuseHomeDir: dirs.home,
+    })
+    await session.start()
+    const workdir = session.cwd
+
+    const started = await runCli(
+      dirs,
+      ['web', 'start', '--tunnel', 'none', '--password-stdin'],
+      PASSWORD,
+    )
+    const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
+    if (!match) throw new Error(`no gateway URL:\n${started}`)
+    baseUrl = match[0]
+
+    const client = new GatewayClient(baseUrl)
+    expect(await client.login(PASSWORD)).toBe(200)
+
+    const created = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie: client.cookie,
+        'x-freecode-csrf': client.csrf,
+      },
+      body: JSON.stringify({ cwd: workdir }),
+    })
+    expect(created.status).toBe(200)
+    const { session: child } = (await created.json()) as {
+      session: { pid: number; processKey: string; sessionId: string }
+    }
+
+    const browser = await client.openSocket()
+    try {
+      browser.socket.send(
+        JSON.stringify({
+          type: 'attach',
+          processKey: child.processKey,
+          csrf: client.csrf,
+        }),
+      )
+      const snapshot = await waitFor(
+        () => browser.frames,
+        list =>
+          list.some(
+            f =>
+              f.type === 'event' &&
+              (f.event as { kind: string }).kind === 'snapshot',
+          ),
+        { description: 'the child snapshot' },
+      )
+      const meta = (
+        snapshot.find(
+          f =>
+            f.type === 'event' &&
+            (f.event as { kind: string }).kind === 'snapshot',
+        )!.event as { meta: { sessionEpoch: number } }
+      ).meta
+
+      // Drive one turn. `--resume` looks the session up by transcript, and a
+      // session that has never been written to has no file to find.
+      browser.socket.send(
+        JSON.stringify({
+          type: 'command',
+          id: 't1',
+          body: {
+            kind: 'submit',
+            commandId: crypto.randomUUID(),
+            content: 'a prompt that must survive the takeover',
+            delivery: 'next',
+            sessionEpoch: meta.sessionEpoch,
+          },
+        }),
+      )
+      await waitForRequestCount(server, 1, {
+        description: 'the web session turn reaching the API',
+      })
+      await waitFor(
+        async () => {
+          const root = join(dirs.config, 'projects')
+          const projects = await readdir(root).catch(() => [] as string[])
+          for (const project of projects) {
+            const files = await readdir(join(root, project)).catch(
+              () => [] as string[],
+            )
+            if (files.includes(`${child.sessionId}.jsonl`)) return true
+          }
+          return false
+        },
+        found => found,
+        { description: 'the transcript to land on disk', timeoutMs: 30_000 },
+      )
+
+      // A terminal adopts the session the web child already holds. Two live
+      // processes then claim one session ID, which used to produce two rows.
+      takeover = new TmuxSession({
+        serverUrl: server.url,
+        cwd: workdir,
+        reuseConfigDir: dirs.config,
+        reuseHomeDir: dirs.home,
+        additionalArgs: ['--resume', child.sessionId],
+        readyText: 'Session already open elsewhere',
+      })
+      await takeover.start()
+      // "Resume anyway" is the third option.
+      await takeover.sendKeys('Down')
+      await takeover.sendKeys('Down')
+      await takeover.sendKeys('Enter')
+      await takeover.waitForText('for shortcuts', 30_000)
+
+      const shared = await waitFor(
+        () => client.sessions(),
+        value =>
+          value.sessions.some(
+            s => s.sessionId === child.sessionId && s.holders === 2,
+          ),
+        { description: 'both holders to register', timeoutMs: 30_000 },
+      )
+      const rows = shared.sessions.filter(s => s.sessionId === child.sessionId)
+      expect(rows).toHaveLength(1)
+      // Both are attachable, so the terminal wins on kind: a person is at it.
+      expect(rows[0]!.processKey).not.toBe(child.processKey)
+      expect(rows[0]!.pid).not.toBe(child.pid)
+      // The web child is still the only thing the browser may stop.
+      expect(rows[0]!.owned).toBe(true)
+      expect(rows[0]!.stoppablePid).toBe(child.pid)
+
+      const deleted = await fetch(`${baseUrl}/api/sessions/${child.pid}`, {
+        method: 'DELETE',
+        headers: { cookie: client.cookie, 'x-freecode-csrf': client.csrf },
+      })
+      expect(deleted.status).toBe(200)
+
+      // Without this frame the browser keeps a dead transcript and every later
+      // command answers `not_attached`.
+      const gone = await waitFor(
+        () => browser.frames,
+        list => list.some(f => f.type === 'process_gone'),
+        { description: 'the process_gone frame', timeoutMs: 30_000 },
+      )
+      const frame = gone.find(f => f.type === 'process_gone')!
+      expect(frame.processKey).toBe(child.processKey)
+      expect(frame.sessionId).toBe(child.sessionId)
+
+      // What the browser needs to follow: one live row, now the terminal.
+      const after = await waitFor(
+        () => client.sessions(),
+        value =>
+          value.sessions.some(
+            s => s.sessionId === child.sessionId && s.live && s.holders === 1,
+          ),
+        {
+          description: 'the terminal to be the only holder',
+          timeoutMs: 30_000,
+        },
+      )
+      const remaining = after.sessions.filter(
+        s => s.sessionId === child.sessionId,
+      )
+      expect(remaining).toHaveLength(1)
+      expect(remaining[0]!.attachable).toBe(true)
+      expect(remaining[0]!.owned).toBe(false)
+    } finally {
+      browser.socket.close()
+    }
   })
 
   test('publishes a tunnel URL from a custom command provider', async () => {

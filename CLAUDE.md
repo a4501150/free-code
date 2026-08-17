@@ -136,6 +136,8 @@ The browser UI attaches to a running session over a per-process Unix socket.
 Everything is behind `feature('WEBUI')`.
 
 - The socket keys on PID, never session ID: `/resume` and `/clear` both change a process's session ID, and two processes can legitimately hold one after a takeover. The control target is `<pid>:<nonce>`, and the nonce stops a recycled PID passing for the process a client was told about.
+- The session list is one row per session, not per process, because a takeover leaves two live PIDs on one session ID. `groupLiveHolders` elects a primary — attachable first, then a terminal over a `daemon-worker`, then newest — and reports the rest as `holders`. `stoppablePid` is separate from the primary, or a stuck gateway child becomes unreachable the moment a terminal outranks it.
+- A holder counts as attachable only when its descriptor agrees with the registry on both PID and session ID. `switchSession` rewrites the descriptor asynchronously, so for a moment one session ID pairs with another session's socket.
 - `regenerateSessionId()` emits `sessionSwitched`, so `/clear` reaches the same subscribers `/resume` does. Code that assumed the signal meant "resume" specifically is wrong.
 - A live transcript comes wholly through the socket. Splicing a JSONL snapshot to a socket tail would have to reconcile queued writes, later-mutated assistant messages, interleaved metadata, DAG branches and `reorderMessagesInUI` order. Disk serves only sessions with no live process.
 - Prompts go through the command queue, never `Mailbox`, which polls only when the REPL is idle. "Interrupt and send" is one enqueue at `now` priority; a cancel followed by a submit races.
@@ -146,6 +148,7 @@ Everything is behind `feature('WEBUI')`.
 - An exception while handling an attach request kills that connection silently: the child still accepts later connections and reads their lines but never answers, looking alive and idle. A browser can connect the instant the socket exists, so every binding an attach callback reads must be declared before attach starts.
 - A browser resume must wait for a descriptor whose `sessionId` equals the one requested. `loadInitialMessages` resumes before attach starts, so no descriptor carries the pre-resume ID, and accepting the first would return 200 for a child that then exits — which is what a missing session or a holder conflict looks like. Take the working directory from the recorded session, never the client.
 - Do not pass `--fork-session` on resume. Without it print mode readopts the original session ID, which lets the session list drop the duplicate history row.
+- The registry cannot tell a gateway child from a terminal on its own. `CLAUDE_CODE_WEBUI_ATTACH` carries the gateway PID, and the predicate also requires `process.ppid` to match, because every descendant inherits the variable and a bare flag would let a `claude` started by the Bash tool claim the same identity. The answer is latched at load: the gateway can exit and reparent the child, which must not retract the identity.
 
 ### Browser client
 
@@ -155,6 +158,9 @@ Everything is behind `feature('WEBUI')`.
 - The client bundle has no zod and must keep none. Every import from `protocol/attachSchemas.ts` is type-only; importing a constant would pull the schema library into a phone's download for one number.
 - The same rule binds harder for `gateway/`, which the client imports types from. Those modules reach `fs` and `os`, so a value import does not shrink a bundle, it breaks one. Duplicate the handful of lines instead.
 - The page's CSP allows `img-src 'self' data:` and nothing else. A `blob:` URL is refused, and building one needs a `fetch` of a `data:` URL that `connect-src` refuses in turn. Set a data URL straight onto the `img`.
+- The client follows a session, not a process. It tracks `activeSessionId` beside `activeKey` and re-attaches when a holder ends, so a takeover or a restart keeps the transcript on screen. `process_gone` is a gateway frame and not an `AttachEventBody`, because no process is left to have emitted it, and `useGateway` forwards only `type === 'event'` to the store.
+- A follow must exclude process keys already known dead. The list is a five-second poll behind, so it still advertises the process that just ended, and attaching there answers `attach_failed` and never delivers a snapshot: the view strands on an empty transcript with a composer that cannot send. `chooseFollowTarget` also distinguishes "no row yet" from "the session is history", because both look like an absent live row during the gap.
+- Clearing `activeKey` in React is not enough to stop watching a process. `connectGateway` remembers the key so it can re-attach after a reconnect, so a dead one needs `detach()`.
 
 ### Interactive tools in the browser
 

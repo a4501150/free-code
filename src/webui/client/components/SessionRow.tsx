@@ -48,7 +48,7 @@ export function SessionRow({
 
   async function stop(): Promise<void> {
     setStopping(true)
-    setError((await onStop(entry.pid!)) ?? '')
+    setError((await onStop(entry.stoppablePid!)) ?? '')
     setStopping(false)
     setConfirming(false)
   }
@@ -73,8 +73,10 @@ export function SessionRow({
         </button>
 
         {/* Only a process this gateway spawned may be stopped here. A terminal
-            session is not the browser's to end. */}
-        {entry.owned && entry.pid ? (
+            session is not the browser's to end. The target is named separately,
+            because the row can front a terminal while a gateway child still
+            holds the same session. */}
+        {entry.owned && entry.stoppablePid ? (
           stopping ? (
             <span className="rail__action is-busy">stopping…</span>
           ) : confirming ? (

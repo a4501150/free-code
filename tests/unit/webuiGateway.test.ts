@@ -23,6 +23,14 @@ import {
 } from '../../src/webui/gateway/auth.js'
 import { validatePublicUrl } from '../../src/webui/tunnel/types.js'
 import {
+  groupLiveHolders,
+  type LiveHolder,
+  type SessionListEntry,
+} from '../../src/webui/gateway/sessionHub.js'
+import { chooseFollowTarget } from '../../src/webui/client/components/Shell.js'
+import { isManagedChild } from '../../src/utils/webuiManagedProcess.js'
+import type { ConcurrentSessionEntry } from '../../src/utils/concurrentSessions.js'
+import {
   listDirectories,
   PathError,
   validateSessionCwd,
@@ -669,5 +677,207 @@ describe('session directory validation', () => {
     expect(await codeOf(validateSessionCwd(join(root, 'file.txt', 'x')))).toBe(
       'cwd_not_directory',
     )
+  })
+})
+
+describe('managed child identity', () => {
+  test('accepts a direct child of the named gateway', () => {
+    expect(isManagedChild('4242', 4242)).toBe(true)
+  })
+
+  test('refuses a descendant that only inherited the variable', () => {
+    // A `claude` the Bash tool starts inside a managed session inherits the
+    // value, but its parent is that session, not the gateway.
+    expect(isManagedChild('4242', 9999)).toBe(false)
+  })
+
+  test('refuses the old flag form and any unusable value', () => {
+    expect(isManagedChild('1', 4242)).toBe(false)
+    expect(isManagedChild(undefined, 4242)).toBe(false)
+    expect(isManagedChild('', 4242)).toBe(false)
+    expect(isManagedChild('nope', 4242)).toBe(false)
+    expect(isManagedChild('0', 0)).toBe(false)
+    expect(isManagedChild('-4242', -4242)).toBe(false)
+    expect(isManagedChild('42.5', 42.5)).toBe(false)
+  })
+})
+
+describe('live session grouping', () => {
+  function holder(
+    over: Partial<ConcurrentSessionEntry> & { sessionId: string },
+    extra: { nonce?: string; owned?: boolean } = {},
+  ): LiveHolder {
+    return {
+      entry: {
+        pid: 100,
+        cwd: '/repo',
+        startedAt: 1000,
+        kind: 'interactive',
+        ...over,
+      },
+      nonce: extra.nonce,
+      owned: extra.owned ?? false,
+    }
+  }
+
+  test('emits one row for two processes holding one session', () => {
+    const rows = groupLiveHolders([
+      holder({ sessionId: 'S', pid: 100, startedAt: 1000 }, { nonce: 'a' }),
+      holder({ sessionId: 'S', pid: 200, startedAt: 2000 }, { nonce: 'b' }),
+    ])
+
+    expect(rows.length).toBe(1)
+    expect(rows[0]!.sessionId).toBe('S')
+    expect(rows[0]!.holders).toBe(2)
+  })
+
+  test('prefers a terminal over a web viewer', () => {
+    const rows = groupLiveHolders([
+      holder(
+        {
+          sessionId: 'S',
+          pid: 100,
+          startedAt: 9000,
+          kind: 'daemon-worker',
+        },
+        { nonce: 'worker' },
+      ),
+      holder(
+        { sessionId: 'S', pid: 200, startedAt: 1000, kind: 'interactive' },
+        { nonce: 'terminal' },
+      ),
+    ])
+
+    expect(rows[0]!.processKey).toBe('200:terminal')
+  })
+
+  test('prefers an attachable process over a newer unattachable one', () => {
+    const rows = groupLiveHolders([
+      holder({ sessionId: 'S', pid: 100, startedAt: 1000 }, { nonce: 'a' }),
+      holder({ sessionId: 'S', pid: 200, startedAt: 9000 }),
+    ])
+
+    expect(rows[0]!.processKey).toBe('100:a')
+    expect(rows[0]!.attachable).toBe(true)
+  })
+
+  test('breaks a tie by newest, then by pid', () => {
+    const rows = groupLiveHolders([
+      holder({ sessionId: 'S', pid: 300, startedAt: 1000 }, { nonce: 'c' }),
+      holder({ sessionId: 'S', pid: 100, startedAt: 5000 }, { nonce: 'a' }),
+      holder({ sessionId: 'S', pid: 200, startedAt: 5000 }, { nonce: 'b' }),
+    ])
+
+    expect(rows[0]!.processKey).toBe('100:a')
+  })
+
+  test('keeps an owned worker stoppable behind a terminal primary', () => {
+    const rows = groupLiveHolders([
+      holder(
+        {
+          sessionId: 'S',
+          pid: 100,
+          startedAt: 9000,
+          kind: 'daemon-worker',
+        },
+        { nonce: 'worker', owned: true },
+      ),
+      holder(
+        { sessionId: 'S', pid: 200, startedAt: 1000, kind: 'interactive' },
+        { nonce: 'terminal' },
+      ),
+    ])
+
+    expect(rows[0]!.pid).toBe(200)
+    expect(rows[0]!.owned).toBe(true)
+    expect(rows[0]!.stoppablePid).toBe(100)
+  })
+
+  test('reports no owner when the gateway spawned nothing in the group', () => {
+    const rows = groupLiveHolders([
+      holder({ sessionId: 'S', pid: 100 }, { nonce: 'a' }),
+    ])
+
+    expect(rows[0]!.owned).toBe(false)
+    expect(rows[0]!.stoppablePid).toBeUndefined()
+    expect(rows[0]!.holders).toBe(1)
+  })
+
+  test('keeps separate sessions apart and orders them by start', () => {
+    const rows = groupLiveHolders([
+      holder({ sessionId: 'B', pid: 200, startedAt: 2000 }, { nonce: 'b' }),
+      holder({ sessionId: 'A', pid: 100, startedAt: 1000 }, { nonce: 'a' }),
+    ])
+
+    expect(rows.map(row => row.sessionId)).toEqual(['A', 'B'])
+  })
+})
+
+describe('following a session across a holder change', () => {
+  function row(over: Partial<SessionListEntry>): SessionListEntry {
+    return {
+      sessionId: 'S',
+      title: 'S',
+      live: true,
+      attachable: true,
+      owned: false,
+      holders: 1,
+      ...over,
+    }
+  }
+
+  test('attaches to the live process that serves the session', () => {
+    expect(
+      chooseFollowTarget([row({ processKey: '200:b' })], 'S', new Set()),
+    ).toEqual({ kind: 'attach', processKey: '200:b', sessionId: 'S' })
+  })
+
+  test('never attaches to a process already known dead', () => {
+    // The list is a poll behind, so it still advertises the process that just
+    // ended. Attaching there answers `attach_failed` and shows nothing.
+    expect(
+      chooseFollowTarget(
+        [row({ processKey: '100:a' })],
+        'S',
+        new Set(['100:a']),
+      ),
+    ).toEqual({ kind: 'wait' })
+  })
+
+  test('skips the dead process and takes the surviving holder', () => {
+    expect(
+      chooseFollowTarget(
+        [row({ processKey: '100:a' }), row({ processKey: '200:b' })],
+        'S',
+        new Set(['100:a']),
+      ),
+    ).toEqual({ kind: 'attach', processKey: '200:b', sessionId: 'S' })
+  })
+
+  test('waits while no row describes the session at all', () => {
+    expect(
+      chooseFollowTarget(
+        [row({ sessionId: 'other', processKey: '300:c' })],
+        'S',
+        new Set(),
+      ),
+    ).toEqual({ kind: 'wait' })
+  })
+
+  test('gives up once the session is history', () => {
+    expect(
+      chooseFollowTarget(
+        [row({ live: false, attachable: false, holders: 0 })],
+        'S',
+        new Set(),
+      ),
+    ).toEqual({ kind: 'give-up' })
+  })
+
+  test('waits rather than give up when a live row carries no process key', () => {
+    // An unattachable holder is still a holder, so the session is not over.
+    expect(
+      chooseFollowTarget([row({ attachable: false })], 'S', new Set()),
+    ).toEqual({ kind: 'wait' })
   })
 })
