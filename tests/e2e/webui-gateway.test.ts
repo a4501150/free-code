@@ -7,9 +7,9 @@ import {
   setDefaultTimeout,
   test as bunTest,
 } from 'bun:test'
-import { mkdtemp, readdir, readFile, rm } from 'fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { textResponse } from '../helpers/fixture-builders'
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
@@ -94,6 +94,24 @@ class GatewayClient {
       headers: { cookie: this.cookie },
     })
     return response.json() as never
+  }
+
+  async directories(
+    path: string,
+    hidden = true,
+  ): Promise<{
+    status: number
+    body: {
+      base: string
+      parent: string | null
+      entries: { name: string; path: string }[]
+    }
+  }> {
+    const query = new URLSearchParams({ path, hidden: hidden ? '1' : '0' })
+    const response = await fetch(`${this.baseUrl}/api/directories?${query}`, {
+      headers: { cookie: this.cookie },
+    })
+    return { status: response.status, body: (await response.json()) as never }
   }
 
   openSocket(): Promise<{
@@ -210,6 +228,77 @@ describe('WebUI gateway', () => {
       socket.addEventListener('close', () => resolve(true))
     })
     expect(failed).toBe(true)
+  })
+
+  test('browses host directories and refuses a bad working directory', async () => {
+    await startGateway()
+    const client = new GatewayClient(baseUrl)
+
+    // The listing names host directories, so it is behind the same login.
+    expect((await fetch(`${baseUrl}/api/directories`)).status).toBe(401)
+    expect(await client.login(PASSWORD)).toBe(200)
+
+    const project = join(dirs.home, 'project')
+    await mkdir(join(project, 'nested'), { recursive: true })
+    await mkdir(join(dirs.home, '.dotted'))
+    await writeFile(join(dirs.home, 'notes.txt'), 'not a directory')
+
+    // A read needs no CSRF header, exactly as the session list does not.
+    const listing = await client.directories(`${dirs.home}/`)
+    expect(listing.status).toBe(200)
+    expect(listing.body.base).toBe(dirs.home)
+    expect(listing.body.parent).toBe(dirname(dirs.home))
+    const names = listing.body.entries.map(entry => entry.name)
+    expect(names).toContain('project')
+    expect(names).toContain('.dotted')
+    expect(names).not.toContain('notes.txt')
+    expect(listing.body.entries.find(e => e.name === 'project')?.path).toBe(
+      project,
+    )
+
+    const visible = await client.directories(`${dirs.home}/`, false)
+    expect(visible.body.entries.map(entry => entry.name)).not.toContain(
+      '.dotted',
+    )
+
+    // A half-typed name filters the parent instead of failing.
+    const filtered = await client.directories(join(dirs.home, 'pro'))
+    expect(filtered.body.entries.map(entry => entry.name)).toEqual(['project'])
+
+    expect((await client.directories('relative/path')).status).toBe(400)
+    expect((await client.directories('//server/share/')).status).toBe(403)
+    expect((await client.directories(`${dirs.home}/nowhere/`)).status).toBe(404)
+
+    // A working directory is checked before spawn, so each of these answers
+    // with its own reason rather than a raw errno from the child.
+    const start = async (cwd: string) =>
+      fetch(`${baseUrl}/api/sessions`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: client.cookie,
+          'x-freecode-csrf': client.csrf,
+        },
+        body: JSON.stringify({ cwd }),
+      })
+
+    const relative = await start('project')
+    expect(relative.status).toBe(400)
+    expect(((await relative.json()) as { error: string }).error).toBe(
+      'cwd_not_absolute',
+    )
+
+    const missing = await start(join(dirs.home, 'nowhere'))
+    expect(missing.status).toBe(404)
+    expect(((await missing.json()) as { error: string }).error).toBe(
+      'cwd_not_found',
+    )
+
+    const file = await start(join(dirs.home, 'notes.txt'))
+    expect(file.status).toBe(422)
+    expect(((await file.json()) as { error: string }).error).toBe(
+      'cwd_not_directory',
+    )
   })
 
   test('lists a live terminal session and drives it over the websocket', async () => {

@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, statSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'fs'
+import { homedir, tmpdir } from 'os'
+import { dirname, join } from 'path'
 import {
   buildSetCookie,
   createLoginThrottle,
@@ -15,6 +22,11 @@ import {
   writeAuthFile,
 } from '../../src/webui/gateway/auth.js'
 import { validatePublicUrl } from '../../src/webui/tunnel/types.js'
+import {
+  listDirectories,
+  PathError,
+  validateSessionCwd,
+} from '../../src/webui/gateway/directories.js'
 import { applyEvent, emptyView } from '../../src/webui/client/store.js'
 import {
   diffSnapshots,
@@ -497,5 +509,165 @@ describe('client store', () => {
       outcome: 'allow',
     })
     expect(view.permissions).toHaveLength(0)
+  })
+})
+
+describe('directory listing', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'webui-dirs-'))
+    mkdirSync(join(root, 'alpha'))
+    mkdirSync(join(root, 'Beta'))
+    mkdirSync(join(root, 'gamma'))
+    mkdirSync(join(root, '.hidden'))
+    writeFileSync(join(root, 'alpha.txt'), 'not a directory')
+  })
+
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  async function codeOf(run: Promise<unknown>): Promise<string> {
+    try {
+      await run
+      return 'no error'
+    } catch (error) {
+      return error instanceof PathError ? error.code : String(error)
+    }
+  }
+
+  test('lists the children of a path that ends in a separator', async () => {
+    const listing = await listDirectories(join(root, '/'), true)
+    expect(listing.base).toBe(root)
+    expect(listing.entries.map(entry => entry.name)).toEqual([
+      '.hidden',
+      'alpha',
+      'Beta',
+      'gamma',
+    ])
+    expect(listing.entries[0]!.path).toBe(join(root, '.hidden'))
+    expect(listing.truncated).toBe(false)
+  })
+
+  test('treats a trailing segment as a filter on its parent', async () => {
+    const listing = await listDirectories(join(root, 'a'), true)
+    expect(listing.base).toBe(root)
+    expect(listing.entries.map(entry => entry.name)).toEqual(['alpha'])
+  })
+
+  test('matches a prefix without regard to case', async () => {
+    const listing = await listDirectories(join(root, 'b'), true)
+    expect(listing.entries.map(entry => entry.name)).toEqual(['Beta'])
+  })
+
+  test('drops a hidden directory when hidden entries are off', async () => {
+    const listing = await listDirectories(join(root, '/'), false)
+    expect(listing.entries.map(entry => entry.name)).toEqual([
+      'alpha',
+      'Beta',
+      'gamma',
+    ])
+  })
+
+  test('excludes a plain file', async () => {
+    const listing = await listDirectories(join(root, 'alpha'), true)
+    expect(listing.entries.map(entry => entry.name)).toEqual(['alpha'])
+  })
+
+  test('reports the parent, and null at the root of the volume', async () => {
+    expect((await listDirectories(join(root, '/'), true)).parent).toBe(
+      dirname(root),
+    )
+    expect((await listDirectories('/', true)).parent).toBeNull()
+  })
+
+  test('lists the home directory for an empty path', async () => {
+    const listing = await listDirectories('', true)
+    expect(listing.base).toBe(homedir())
+  })
+
+  test('sees a directory made after an earlier call', async () => {
+    await listDirectories(join(root, '/'), true)
+    mkdirSync(join(root, 'delta'))
+    const listing = await listDirectories(join(root, '/'), true)
+    expect(listing.entries.map(entry => entry.name)).toContain('delta')
+  })
+
+  test('follows a link to a directory and keeps the link path', async () => {
+    symlinkSync(join(root, 'alpha'), join(root, 'link-dir'))
+    symlinkSync(join(root, 'alpha.txt'), join(root, 'link-file'))
+    symlinkSync(join(root, 'nowhere'), join(root, 'link-broken'))
+    const listing = await listDirectories(join(root, 'link'), true)
+    expect(listing.entries).toEqual([
+      { name: 'link-dir', path: join(root, 'link-dir') },
+    ])
+  })
+
+  test('refuses a relative path and a network path', async () => {
+    expect(await codeOf(listDirectories('src/', true))).toBe(
+      'path_not_absolute',
+    )
+    expect(await codeOf(listDirectories('//server/share/', true))).toBe(
+      'path_not_local',
+    )
+    expect(await codeOf(listDirectories('\\\\server\\share', true))).toBe(
+      'path_not_local',
+    )
+    expect(await codeOf(listDirectories('/a\0b', true))).toBe('bad_path')
+  })
+
+  test('reports a missing directory apart from a plain file', async () => {
+    expect(await codeOf(listDirectories(join(root, 'nowhere/'), true))).toBe(
+      'directory_not_found',
+    )
+    expect(await codeOf(listDirectories(join(root, 'alpha.txt/'), true))).toBe(
+      'path_not_directory',
+    )
+  })
+})
+
+describe('session directory validation', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'webui-cwd-'))
+    mkdirSync(join(root, 'project'))
+    writeFileSync(join(root, 'file.txt'), 'not a directory')
+  })
+
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  async function codeOf(run: Promise<unknown>): Promise<string> {
+    try {
+      await run
+      return 'no error'
+    } catch (error) {
+      return error instanceof PathError ? error.code : String(error)
+    }
+  }
+
+  test('accepts a directory and a link that leads to one', async () => {
+    symlinkSync(join(root, 'project'), join(root, 'link'))
+    expect(await codeOf(validateSessionCwd(join(root, 'project')))).toBe(
+      'no error',
+    )
+    expect(await codeOf(validateSessionCwd(join(root, 'link')))).toBe(
+      'no error',
+    )
+  })
+
+  test('separates the reasons a path cannot be a working directory', async () => {
+    expect(await codeOf(validateSessionCwd('project'))).toBe('cwd_not_absolute')
+    expect(await codeOf(validateSessionCwd('//server/share'))).toBe(
+      'cwd_not_local',
+    )
+    expect(await codeOf(validateSessionCwd(join(root, 'nowhere')))).toBe(
+      'cwd_not_found',
+    )
+    expect(await codeOf(validateSessionCwd(join(root, 'file.txt')))).toBe(
+      'cwd_not_directory',
+    )
+    expect(await codeOf(validateSessionCwd(join(root, 'file.txt', 'x')))).toBe(
+      'cwd_not_directory',
+    )
   })
 })

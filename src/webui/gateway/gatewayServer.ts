@@ -30,6 +30,7 @@ import {
   createChildSessions,
   type ChildSessionDefaults,
 } from './childSessions.js'
+import { listDirectories, PathError, PATH_ERROR_STATUS } from './directories.js'
 import {
   createSessionHub,
   type HubSubscriber,
@@ -331,6 +332,9 @@ export function startGatewayServer(
             }),
           })
         } catch (err) {
+          if (err instanceof PathError) {
+            return json({ error: err.code }, PATH_ERROR_STATUS[err.code])
+          }
           return json(
             { error: err instanceof Error ? err.message : String(err) },
             500,
@@ -366,6 +370,30 @@ export function startGatewayServer(
         const session = authenticate(request)
         if (!session) return json({ error: 'unauthorized' }, 401)
         return json({ sessions: await hub.list({ owns: children.owns }) })
+      }
+
+      // Read-only, so authentication is the whole gate, as it is for the
+      // session list. The password is already an RCE credential: a holder can
+      // start a session anywhere and approve a command. Naming a directory
+      // adds no authority.
+      if (url.pathname === '/api/directories' && request.method === 'GET') {
+        const session = authenticate(request)
+        if (!session) return json({ error: 'unauthorized' }, 401)
+        try {
+          return json(
+            await listDirectories(
+              url.searchParams.get('path') ?? '',
+              url.searchParams.get('hidden') !== '0',
+            ),
+          )
+        } catch (err) {
+          // Answer with the code alone. A raw readdir message would report
+          // which sibling paths exist.
+          if (err instanceof PathError) {
+            return json({ error: err.code }, PATH_ERROR_STATUS[err.code])
+          }
+          return json({ error: 'bad_path' }, 400)
+        }
       }
 
       switch (url.pathname) {

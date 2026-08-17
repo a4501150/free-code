@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'child_process'
-import { existsSync } from 'fs'
+import { validateSessionCwd } from './directories.js'
 import { readAttachDescriptor } from '../attach/attachDescriptor.js'
 import { WEBUI_ATTACH_ENV } from '../attach/headlessBridge.js'
 
@@ -64,9 +64,9 @@ export function createChildSessions(defaults?: ChildSessionDefaults) {
      */
     resumeSessionId?: string
   }): Promise<ChildSession> {
-    if (!existsSync(options.cwd)) {
-      throw new Error(`no such directory: ${options.cwd}`)
-    }
+    // Before spawn, because spawn reports a bare errno the browser cannot
+    // turn into advice. Every caller gets the check, not just the HTTP route.
+    await validateSessionCwd(options.cwd)
 
     const child = spawn(
       process.execPath,
