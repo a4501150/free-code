@@ -135,6 +135,32 @@ export type WebImagePayload = {
 
 export type WebSessionState = 'idle' | 'running' | 'requires_action'
 
+/**
+ * What a running turn is doing right now. Named after the TUI spinner phases so
+ * both surfaces say the same word. Absent when nothing is streaming.
+ */
+export type WebSessionActivity =
+  | 'requesting'
+  | 'thinking'
+  | 'responding'
+  | 'tool-use'
+  | 'tool-input'
+
+/**
+ * Context budget for the current window.
+ *
+ * `usedPercent` measures the last API response's input context against the model
+ * window, which is what the statusline reports. `compactPercentLeft` measures
+ * headroom against the auto-compact threshold instead, and is absent when
+ * auto-compact is off, because nothing will then compact.
+ */
+export type WebSessionContext = {
+  usedTokens: number
+  maxTokens: number
+  usedPercent: number
+  compactPercentLeft?: number
+}
+
 export type WebPermissionRequest = {
   requestId: string
   toolName: string
@@ -158,6 +184,8 @@ export type WebSessionMeta = {
   model?: string
   permissionMode?: string
   state: WebSessionState
+  activity?: WebSessionActivity
+  context?: WebSessionContext
   /** Total cost in USD for the process, not the turn. */
   costUsd?: number
   linesAdded?: number

@@ -5,6 +5,7 @@ import type { Task } from '../../utils/taskSchemas.js'
 import { enqueue } from '../../utils/messageQueueManager.js'
 import type {
   WebPermissionMode,
+  WebSessionActivity,
   WebSessionState,
 } from '../protocol/attachSchemas.js'
 import {
@@ -17,6 +18,7 @@ import { buildSubmitValue, type AttachRuntime } from './runtime.js'
 export type ReplAttachBridgeParams = {
   messagesRef: { current: readonly Message[] }
   getState: () => WebSessionState
+  getActivity: () => WebSessionActivity | undefined
   getModel: () => string | undefined
   getPermissionMode: () => string | undefined
   todos: Task[] | undefined
@@ -40,6 +42,7 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
     const runtime: AttachRuntime = {
       getMessages: () => latest.current.messagesRef.current,
       getState: () => latest.current.getState(),
+      getActivity: () => latest.current.getActivity(),
       getModel: () => latest.current.getModel(),
       getPermissionMode: () => latest.current.getPermissionMode(),
       getTodos: () =>

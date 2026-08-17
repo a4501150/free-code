@@ -4367,6 +4367,8 @@ export function REPL({
         : isLoading
           ? 'running'
           : 'idle',
+    // streamMode keeps its last value after a turn ends, so gate it on loading.
+    getActivity: () => (isLoading ? streamMode : undefined),
     getModel: () => mainLoopModel,
     getPermissionMode: () => toolPermissionContext.mode,
     todos: tasksV2,

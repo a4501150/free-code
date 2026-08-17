@@ -74,6 +74,7 @@ import {
 } from './utils/processUserInput/processUserInput.js'
 import { fetchSystemPromptParts } from './utils/queryContext.js'
 import { setCwd } from './utils/Shell.js'
+import { recordStreamActivity } from './utils/streamActivity.js'
 import {
   flushSessionStorage,
   recordTranscript,
@@ -757,6 +758,9 @@ export class QueryEngine {
           yield* normalizeMessage(message)
           break
         case 'stream_event':
+          // Above the includePartialMessages gate below, because a session that
+          // does not forward partial messages still has a phase to report.
+          recordStreamActivity(message.event)
           if (message.event.type === 'message_start') {
             // Reset current message usage for new message
             currentMessageUsage = EMPTY_USAGE

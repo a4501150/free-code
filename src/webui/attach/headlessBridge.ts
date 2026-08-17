@@ -3,8 +3,10 @@ import type { CanUseToolFn } from '../../Tool.js'
 import type { Message } from '../../types/message.js'
 import { enqueue } from '../../utils/messageQueueManager.js'
 import type { UUID } from 'crypto'
+import { getStreamActivity } from '../../utils/streamActivity.js'
 import type {
   WebPermissionMode,
+  WebSessionActivity,
   WebSessionState,
 } from '../protocol/attachSchemas.js'
 import {
@@ -67,6 +69,10 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
         : params.isRunning()
           ? 'running'
           : 'idle',
+    // The phase outlives the turn that set it, so gate on the turn still being
+    // in flight rather than showing the last thing the model did.
+    getActivity: (): WebSessionActivity | undefined =>
+      params.isRunning() ? getStreamActivity() : undefined,
     getModel: () => params.getModel(),
     getPermissionMode: () => params.getPermissionMode(),
     getTodos: () => [],

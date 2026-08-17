@@ -2,6 +2,7 @@ import type { DomainUserContentBlock } from '../../types/domain.js'
 import type { Message } from '../../types/message.js'
 import type {
   WebPermissionMode,
+  WebSessionActivity,
   WebSessionState,
   WebSubmitImage,
   WebTodo,
@@ -18,6 +19,8 @@ export type AttachRuntime = {
   /** The authoritative transcript. Called synchronously; must not copy lazily. */
   getMessages(): readonly Message[]
   getState(): WebSessionState
+  /** The phase of a streaming turn. Undefined when nothing is streaming. */
+  getActivity(): WebSessionActivity | undefined
   getModel(): string | undefined
   getPermissionMode(): string | undefined
   getTodos(): WebTodo[]
