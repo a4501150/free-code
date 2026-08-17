@@ -3,6 +3,7 @@ import type {
   AttachRequestBody,
 } from '../protocol/attachSchemas.js'
 import type { SessionListEntry } from '../gateway/sessionHub.js'
+import type { DirectoryListing } from '../gateway/directories.js'
 
 export type ServerFrame =
   | { type: 'ready'; protocolVersion: number }
@@ -44,6 +45,25 @@ export async function fetchSessions(): Promise<SessionListEntry[]> {
   return body.sessions
 }
 
+export type DirectoryResult =
+  | { ok: true; listing: DirectoryListing }
+  | { ok: false; error: string }
+
+/**
+ * Asks the host what a partial path could continue into. A trailing separator
+ * means the contents of that directory; anything else filters its parent.
+ */
+export async function fetchDirectories(
+  path: string,
+  showHidden: boolean,
+  signal: AbortSignal,
+): Promise<DirectoryResult> {
+  const query = new URLSearchParams({ path, hidden: showHidden ? '1' : '0' })
+  const response = await fetch(`/api/directories?${query}`, { signal })
+  if (!response.ok) return { ok: false, error: await readError(response) }
+  return { ok: true, listing: (await response.json()) as DirectoryListing }
+}
+
 const CSRF_HEADER = 'x-freecode-csrf'
 
 /**
@@ -52,9 +72,20 @@ const CSRF_HEADER = 'x-freecode-csrf'
  */
 const ERROR_TEXT: Record<string, string> = {
   bad_csrf: 'The login expired. Reload the page.',
+  bad_path: 'That path cannot be read.',
   bad_session_id: 'That session ID is not valid.',
+  cwd_not_absolute: 'Enter a path that starts at the root, such as /Users.',
+  cwd_not_directory: 'That path is a file, not a directory.',
+  cwd_not_found: 'There is no such directory on the host.',
+  cwd_not_local: 'A network path cannot be a working directory.',
   cwd_required: 'Enter a working directory.',
+  cwd_unreadable: 'The host cannot read that directory.',
+  directory_not_found: 'There is no such directory on the host.',
+  directory_not_readable: 'The host cannot read that directory.',
   not_owned: 'This gateway did not start that session.',
+  path_not_absolute: 'Enter a path that starts at the root, such as /Users.',
+  path_not_directory: 'That path is a file, not a directory.',
+  path_not_local: 'A network path cannot be browsed.',
   session_has_no_cwd: 'That session has no recorded directory.',
   session_in_use: 'That session is already running.',
   unauthorized: 'The login expired. Reload the page.',
@@ -64,7 +95,8 @@ const ERROR_TEXT: Record<string, string> = {
 async function readError(response: Response): Promise<string> {
   const body = (await response.json().catch(() => ({}))) as { error?: string }
   const code = body.error ?? ''
-  return ERROR_TEXT[code] ?? code ?? `failed (${response.status})`
+  // `??` would not help here: an absent code is already the empty string.
+  return ERROR_TEXT[code] || code || `failed (${response.status})`
 }
 
 /** Start a fresh session, or revive one from the history. */

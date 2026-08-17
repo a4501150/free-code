@@ -240,6 +240,95 @@
   outline: none;
 }
 
+/* ── directory picker ──────────────────────────────────────────── */
+
+.rail__browse {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.rail__dirs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--rule-bright);
+  background: var(--bg-sunk);
+  max-height: 13rem;
+  overflow-y: auto;
+  /* The rail scrolls too. Without this, running out of rows drags it. */
+  overscroll-behavior: contain;
+}
+
+.rail__dirs button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.35rem 0.55rem;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rail__dirs button:hover,
+.rail__dirs button.is-selected {
+  background: var(--signal-sunk);
+  color: var(--signal);
+}
+
+.rail__dirname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The separator and the word "up" are punctuation, not content. */
+.rail__dirnote {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.rail__browsefoot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.rail__browsefoot .rail__error,
+.rail__browsefoot .rail__hint {
+  margin: 0;
+  min-width: 0;
+  text-align: right;
+}
+
+.rail__browsefoot .is-busy {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* A drawn checkbox would be the only rounded thing in the rail. */
+.rail__toggle {
+  flex: none;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  white-space: pre;
+  cursor: pointer;
+}
+
+.rail__toggle:hover {
+  color: var(--signal);
+}
+
 .rail__start {
   padding: 0.45rem;
   background: none;
@@ -293,5 +382,10 @@
   .rail__cwd {
     padding: 0.35rem 0.45rem;
     font-size: 11px;
+  }
+
+  .rail__dirs button {
+    min-height: 0;
+    padding: 0.2rem 0.5rem;
   }
 }

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { DirectoryPicker, intoDirectory } from './DirectoryPicker.js'
 
 export function NewSessionForm({
   defaultCwd,
@@ -7,11 +8,29 @@ export function NewSessionForm({
   defaultCwd: string
   onCreate(cwd: string): Promise<string | null>
 }): React.ReactElement {
-  const [cwd, setCwd] = useState('')
+  const [cwd, setCwd] = useState(() =>
+    defaultCwd ? intoDirectory(defaultCwd) : '',
+  )
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
+  const owned = useRef(Boolean(defaultCwd))
 
-  const effective = cwd.trim() || defaultCwd
+  // The session list arrives on a poll, so a default can turn up after the form
+  // is already open. Take it once, and never over something already in the
+  // field. Setting the guard first keeps a second Strict Mode pass idle.
+  useEffect(() => {
+    if (owned.current || !defaultCwd) return
+    owned.current = true
+    setCwd(intoDirectory(defaultCwd))
+  }, [defaultCwd])
+
+  const change = useCallback((next: string) => {
+    owned.current = true
+    setCwd(next)
+    setError('')
+  }, [])
+
+  const effective = cwd.trim()
 
   async function start(event: React.FormEvent): Promise<void> {
     event.preventDefault()
@@ -22,17 +41,7 @@ export function NewSessionForm({
 
   return (
     <form className="rail__new" onSubmit={start}>
-      <input
-        className="rail__cwd"
-        value={cwd}
-        autoFocus
-        spellCheck={false}
-        autoCapitalize="off"
-        autoCorrect="off"
-        aria-label="Working directory"
-        placeholder={defaultCwd || 'working directory'}
-        onChange={event => setCwd(event.target.value)}
-      />
+      <DirectoryPicker value={cwd} onChange={change} disabled={starting} />
       <button
         type="submit"
         className="rail__start"
@@ -40,11 +49,6 @@ export function NewSessionForm({
       >
         {starting ? 'starting…' : 'start session'}
       </button>
-      {/* The browser cannot browse the filesystem, so with no session to copy a
-          directory from there is nothing to prefill. Say so. */}
-      {!effective ? (
-        <p className="rail__hint">Type an absolute path on the host.</p>
-      ) : null}
       {error ? <p className="rail__error">{error}</p> : null}
     </form>
   )

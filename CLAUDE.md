@@ -153,6 +153,7 @@ Everything is behind `feature('WEBUI')`.
 - The instrument panels are one DOM tree that CSS reshapes into a sheet or a column. Never render one of two copies behind a JavaScript media query: crossing the breakpoint would unmount the panel and discard the pending-model state that stops the control snapping back.
 - Mobile form controls must stay at 16px or larger, because iOS Safari zooms on focus below that and does not zoom back. Chromium will not open a window under 500px, so no in-browser check can reach 390px or prove iOS keyboard behavior.
 - The client bundle has no zod and must keep none. Every import from `protocol/attachSchemas.ts` is type-only; importing a constant would pull the schema library into a phone's download for one number.
+- The same rule binds harder for `gateway/`, which the client imports types from. Those modules reach `fs` and `os`, so a value import does not shrink a bundle, it breaks one. Duplicate the handful of lines instead.
 - The page's CSP allows `img-src 'self' data:` and nothing else. A `blob:` URL is refused, and building one needs a `fetch` of a `data:` URL that `connect-src` refuses in turn. Set a data URL straight onto the `img`.
 
 ### Interactive tools in the browser
