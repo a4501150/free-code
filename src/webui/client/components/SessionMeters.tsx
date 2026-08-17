@@ -12,6 +12,15 @@ function tail(path: string, max = 28): string {
   return path.length <= max ? path : `…${path.slice(-max)}`
 }
 
+/** 84,213 reads as noise in a 16rem column; 84.2k does not. */
+export function compactTokens(tokens: number): string {
+  if (tokens < 1000) return String(tokens)
+  const thousands = tokens / 1000
+  return thousands < 100
+    ? `${thousands.toFixed(1)}k`
+    : `${Math.round(thousands)}k`
+}
+
 function Meter({
   label,
   value,
@@ -47,7 +56,18 @@ export function SessionMeters({
   return (
     <section className="panel">
       <h2 className="panel__title">session</h2>
-      <Meter label="state" value={meta?.state ?? '—'} />
+      <Meter
+        label="state"
+        value={
+          meta
+            ? // The phase is only true of a turn in flight, and the session
+              // omits it otherwise, so there is nothing to suppress here.
+              meta.activity
+              ? `${meta.state} · ${meta.activity}`
+              : meta.state
+            : '—'
+        }
+      />
       {models.length === 0 ? (
         <Meter label="model" value={meta?.model ?? '—'} />
       ) : (
@@ -83,6 +103,20 @@ export function SessionMeters({
           meta ? `+${meta.linesAdded ?? 0} −${meta.linesRemoved ?? 0}` : '—'
         }
       />
+      {meta?.context ? (
+        <Meter
+          label="context"
+          value={`${compactTokens(meta.context.usedTokens)} / ${compactTokens(
+            meta.context.maxTokens,
+          )}  (${meta.context.usedPercent}%)`}
+        />
+      ) : null}
+      {meta?.context?.compactPercentLeft === undefined ? null : (
+        <Meter
+          label="compact"
+          value={`${meta.context.compactPercentLeft}% left`}
+        />
+      )}
       <Meter label="cwd" value={meta ? tail(meta.cwd) : '—'} />
     </section>
   )

@@ -91,6 +91,10 @@
   font-size: 9px;
 }
 
+.topbar__activity {
+  color: var(--text-faint);
+}
+
 .topbar__glyph.is-running {
   color: var(--signal);
 }
