@@ -209,6 +209,7 @@ describe('idle cost', () => {
         return []
       },
       getState: () => 'idle',
+      getActivity: () => undefined,
       getModel: () => 'm',
       getPermissionMode: () => 'default',
       getTodos: () => [],
@@ -358,6 +359,7 @@ describe('image prompts', () => {
     host!.registerRuntime({
       getMessages: () => messages(),
       getState: () => 'idle',
+      getActivity: () => undefined,
       getModel: () => 'm',
       getPermissionMode: () => 'default',
       getTodos: () => [],

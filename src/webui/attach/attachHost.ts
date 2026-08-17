@@ -13,8 +13,10 @@ import {
   type WebPermissionRequest,
   type WebSessionMeta,
   type WebModelOption,
+  type WebSessionContext,
 } from '../protocol/attachSchemas.js'
 import { getModelOptions } from '../../utils/model/modelOptions.js'
+import { buildContextMeter } from './contextMeter.js'
 import {
   diffSnapshots,
   toWireSnapshot,
@@ -180,8 +182,23 @@ export function startAttachHost(
     }
   }
 
+  /**
+   * Reads the provider registry for the window size, so it carries the same
+   * guard as `listModels` for the same reason. This one runs on every publish,
+   * so a throw here would break the metadata stream rather than one control.
+   */
+  function buildContext(model: string | undefined): WebSessionContext | undefined {
+    if (!runtime) return undefined
+    try {
+      return buildContextMeter(runtime.getMessages(), model)
+    } catch {
+      return undefined
+    }
+  }
+
   function buildMeta(): WebSessionMeta {
     const cost = options.getCost?.()
+    const model = runtime?.getModel()
     return {
       pid,
       processNonce: descriptor.processNonce,
@@ -190,9 +207,11 @@ export function startAttachHost(
       cwd: descriptor.cwd,
       entrypoint: descriptor.entrypoint,
       startedAt: descriptor.startedAt,
-      model: runtime?.getModel(),
+      model,
       permissionMode: runtime?.getPermissionMode(),
       state: runtime?.getState() ?? 'idle',
+      activity: runtime?.getActivity(),
+      context: buildContext(model),
       costUsd: cost?.costUsd,
       linesAdded: cost?.linesAdded,
       linesRemoved: cost?.linesRemoved,
