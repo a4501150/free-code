@@ -31,6 +31,7 @@ import {
   type ChildSessionDefaults,
 } from './childSessions.js'
 import { listDirectories, PathError, PATH_ERROR_STATUS } from './directories.js'
+import { spawnDaemonRestart } from './restart.js'
 import {
   createSessionHub,
   type HubSubscriber,
@@ -71,6 +72,9 @@ const SECURITY_HEADERS: Record<string, string> = {
 const JS_PATH = `/assets/app.${WEBUI_JS_HASH}.js`
 const CSS_PATH = `/assets/app.${WEBUI_CSS_HASH}.css`
 const MAX_BODY_BYTES = 256 * 1024
+
+/** Long enough for the 202 to reach the browser before the listener dies. */
+const RESTART_DELAY_MS = 250
 
 /**
  * The socket carries prompts, and a prompt can carry images. Kept separate from
@@ -276,6 +280,29 @@ export function startGatewayServer(
           csrf: csrfTokenFor(session.auth, session.token),
           publicUrl,
         })
+      }
+
+      // Replacing the daemon is what picks up a rebuilt binary, so the browser
+      // needs it as much as the terminal does. Gated like starting a session,
+      // because the password behind this authorizes command execution.
+      if (url.pathname === '/api/restart' && request.method === 'POST') {
+        if (!originOk(request)) return json({ error: 'bad_origin' }, 403)
+        const session = authenticate(request)
+        if (!session) return json({ error: 'unauthorized' }, 401)
+        if (
+          !csrfMatches(
+            session.auth,
+            session.token,
+            request.headers.get(CSRF_HEADER),
+          )
+        ) {
+          return json({ error: 'bad_csrf' }, 403)
+        }
+        // Answer before the restart tears down the listener carrying the
+        // answer. The browser reconnects on its own once the new gateway binds.
+        const timer = setTimeout(spawnDaemonRestart, RESTART_DELAY_MS)
+        timer.unref?.()
+        return json({ restarting: true }, 202)
       }
 
       if (url.pathname === '/api/sessions' && request.method === 'POST') {

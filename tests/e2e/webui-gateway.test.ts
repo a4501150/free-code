@@ -114,6 +114,18 @@ class GatewayClient {
     return { status: response.status, body: (await response.json()) as never }
   }
 
+  async restart(csrf = this.csrf): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/api/restart`, {
+      method: 'POST',
+      headers: {
+        cookie: this.cookie,
+        origin: this.baseUrl,
+        'x-freecode-csrf': csrf,
+      },
+    })
+    return response.status
+  }
+
   openSocket(): Promise<{
     socket: WebSocket
     frames: Record<string, unknown>[]
@@ -871,5 +883,60 @@ describe('WebUI gateway', () => {
     expect(await runCli(dirs, ['web', 'status'])).toContain(
       'https://kept-name.example',
     )
+  })
+
+  test('restarts the daemon from the browser, and refuses a forged CSRF', async () => {
+    dirs = await makeDirs()
+    const output = await runCli(
+      dirs,
+      [
+        'web',
+        'start',
+        '--tunnel',
+        'command',
+        '--tunnel-command',
+        'echo https://browser-restart.example; sleep 60',
+        '--password-stdin',
+      ],
+      PASSWORD,
+    )
+    const match = /http:\/\/127\.0\.0\.1:\d+/.exec(output)
+    if (!match) throw new Error(`no gateway URL in output:\n${output}`)
+    const client = new GatewayClient(match[0])
+    expect(await client.login(PASSWORD)).toBe(200)
+
+    // The password behind this authorizes command execution, so the route takes
+    // the same gate as starting a session.
+    expect(await client.restart('forged')).toBe(403)
+
+    const firstPid = (
+      await readFile(join(dirs.config, 'daemon.pid'), 'utf-8')
+    ).trim()
+
+    // 202, not 200: the answer has to leave before the restart destroys the
+    // listener carrying it.
+    expect(await client.restart()).toBe(202)
+
+    // The supervisor is replaced, which is the point. Reloading inside the old
+    // process could never pick up a rebuilt binary. `stopDaemon` erases the pid
+    // file before the replacement writes its own, so a read here can throw;
+    // waitFor retries through that.
+    const secondPid = await waitFor(
+      async () =>
+        (await readFile(join(dirs.config, 'daemon.pid'), 'utf-8')).trim(),
+      pid => pid.length > 0 && pid !== firstPid,
+      { description: 'the daemon pid to change' },
+    )
+    expect(secondPid).not.toBe(firstPid)
+
+    // Only now is the URL meaningful. The pid appears when the new supervisor
+    // spawns, which is before its gateway has bound and asked for the hostname.
+    expect(
+      await waitFor(
+        () => runCli(dirs, ['web', 'status']),
+        text => text.includes('https://browser-restart.example'),
+        { description: 'the replacement gateway to publish its URL' },
+      ),
+    ).toContain('https://browser-restart.example')
   })
 })
