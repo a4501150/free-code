@@ -1202,7 +1202,10 @@ function runHeadlessStreaming(
     webuiHeadlessModule.startHeadlessAttach({
       cwd: cwd(),
       getMessages: () => mutableMessages,
-      isRunning: () => abortController !== undefined,
+      // `running` spans the whole drain loop and is cleared in its finally.
+      // `abortController` is only ever assigned, so it would report a turn in
+      // flight for the life of the process after the first one.
+      isRunning: () => running,
       getModel: () => activeUserSpecifiedModel,
       getPermissionMode: () => getAppState().toolPermissionContext.mode,
       interrupt: () => abortController?.abort('user-cancel'),
