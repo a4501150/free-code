@@ -5,8 +5,17 @@ import type { WebSessionMeta, WebTodo } from '../../protocol/attachSchemas.js'
 const MAX_FRACTION = 0.8
 /** Below this the release snaps shut rather than open. */
 const SNAP_PX = 96
-/** A pointer that moves less than this was a tap, not a drag. */
-const SLOP_PX = 6
+/**
+ * A pointer whose net travel stays under this was a tap, not a drag.
+ *
+ * Measured at release against the start, never latched mid-gesture. Tapping the
+ * handle blurs the composer, the phone keyboard retracts, and the layout shifts
+ * under a finger that never moved; a latched flag turned that into a drag, and
+ * a drag that released at the open height re-opened the sheet the tap was
+ * closing. Judging the whole gesture by where it ended reads that as the tap it
+ * was.
+ */
+const SLOP_PX = 10
 
 function clampHeight(px: number): number {
   return Math.max(0, Math.min(px, window.innerHeight * MAX_FRACTION))
@@ -40,7 +49,8 @@ export function InstrumentSheet({
   const [dragHeight, setDragHeight] = useState<number | null>(null)
   const [openHeight, setOpenHeight] = useState<number | null>(null)
   const start = useRef({ y: 0, height: 0 })
-  const moved = useRef(false)
+  // Set at release from the net travel, and read by the click that follows.
+  const wasDrag = useRef(false)
   const bodyRef = useRef<HTMLDivElement>(null)
 
   // A height chosen in portrait is wrong after a rotation.
@@ -58,16 +68,19 @@ export function InstrumentSheet({
       y: event.clientY,
       height: open ? (bodyRef.current?.offsetHeight ?? 0) : 0,
     }
-    moved.current = false
+    wasDrag.current = false
+    // Before the gesture rather than after it, so the keyboard has already
+    // retracted by the time the release is measured.
+    blurComposer()
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
   function onPointerMove(event: React.PointerEvent<HTMLButtonElement>): void {
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
-    // Dragging up grows the sheet.
+    // Dragging up grows the sheet. Previewed past the slop, but not committed:
+    // the release decides whether this was a drag at all.
     const delta = start.current.y - event.clientY
-    if (Math.abs(delta) > SLOP_PX) moved.current = true
-    if (!moved.current) return
+    if (Math.abs(delta) <= SLOP_PX) return
     setDragHeight(clampHeight(start.current.height + delta))
   }
 
@@ -77,8 +90,10 @@ export function InstrumentSheet({
     }
     const height = dragHeight
     setDragHeight(null)
-    // A tap leaves the click handler to do the toggling.
-    if (!moved.current || height === null) return
+    // Net travel, so a gesture that wandered and came back is still a tap and
+    // the click handler below does the toggling.
+    wasDrag.current = Math.abs(start.current.y - event.clientY) > SLOP_PX
+    if (!wasDrag.current || height === null) return
     if (height >= SNAP_PX) {
       setOpenHeight(height)
       onToggle(true)
@@ -89,11 +104,10 @@ export function InstrumentSheet({
 
   function onClick(): void {
     // Swallow the click that follows a real drag.
-    if (moved.current) {
-      moved.current = false
+    if (wasDrag.current) {
+      wasDrag.current = false
       return
     }
-    if (!open) blurComposer()
     onToggle(!open)
   }
 
@@ -128,6 +142,9 @@ export function InstrumentSheet({
           {meta ? (
             <>
               <span className={`sheet__glyph is-${meta.state}`}>●</span>
+              {/* The collapsed handle is the whole readout on a phone, so the
+                  context percent belongs here and not only in the panel. */}
+              {meta.context ? <span>{meta.context.usedPercent}%</span> : null}
               <span>{meta.permissionMode ?? 'default'}</span>
               <span>${(meta.costUsd ?? 0).toFixed(3)}</span>
             </>

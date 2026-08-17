@@ -89,7 +89,9 @@
 }
 
 .sheet.is-open .sheet__body {
-  height: var(--sheet-h, 45vh);
+  /* dvh, not vh: vh ignores the phone's browser chrome, so the open sheet
+     reached past the visible viewport and over the transcript. */
+  height: var(--sheet-h, 45dvh);
   visibility: visible;
   overflow-y: auto;
   overscroll-behavior: contain;
