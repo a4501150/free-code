@@ -374,15 +374,80 @@ export async function webMain(args: string[]): Promise<void> {
   }
 }
 
+// The QR specification requires four empty modules on each side. Both terminal
+// renderers in the qrcode package hardcode one and ignore the margin option,
+// which is enough for a scanner to miss the code.
+const QUIET_ZONE = 4
+
+const BG_WHITE = '\u001b[47m'
+const BG_BLACK = '\u001b[40m'
+const FG_WHITE = '\u001b[37m'
+const FG_BLACK = '\u001b[30m'
+const RESET = '\u001b[0m'
+
 async function printQr(url: string): Promise<void> {
   try {
     const qrcode = await import('qrcode')
-    const rendered = await qrcode.default.toString(url, {
-      type: 'terminal',
-      small: true,
-    })
-    print(rendered)
+    const { size, data } = qrcode.default.create(url).modules
+    const width = size + QUIET_ZONE * 2
+    const isDark = (x: number, y: number): boolean => {
+      const col = x - QUIET_ZONE
+      const row = y - QUIET_ZONE
+      if (col < 0 || row < 0 || col >= size || row >= size) return false
+      return data[row * size + col] !== 0
+    }
+    // A terminal cell is about twice as tall as it is wide, so a module needs
+    // two columns to come out square.
+    const columns = process.stdout.columns ?? 80
+    print(
+      columns >= width * 2
+        ? renderQrWide(width, isDark)
+        : renderQrCompact(width, isDark),
+    )
   } catch {
     // A missing QR renderer must not fail the command that already worked.
   }
+}
+
+// Two columns per module, painted as background color. The background fills the
+// whole cell, so extra line spacing cannot open gaps between the module rows.
+function renderQrWide(
+  width: number,
+  isDark: (x: number, y: number) => boolean,
+): string {
+  const rows: string[] = []
+  for (let y = 0; y < width; y++) {
+    let row = ''
+    let painted: boolean | null = null
+    for (let x = 0; x < width; x++) {
+      const dark = isDark(x, y)
+      if (dark !== painted) {
+        row += dark ? BG_BLACK : BG_WHITE
+        painted = dark
+      }
+      row += '  '
+    }
+    rows.push(row + RESET)
+  }
+  return rows.join('\n')
+}
+
+// Half the width, for a terminal that cannot fit the wide form. One column per
+// module, two module rows per line. A terminal that adds line spacing draws
+// visible seams here, so use this form only when the wide one would wrap.
+function renderQrCompact(
+  width: number,
+  isDark: (x: number, y: number) => boolean,
+): string {
+  const rows: string[] = []
+  for (let y = 0; y < width; y += 2) {
+    let row = ''
+    for (let x = 0; x < width; x++) {
+      const top = isDark(x, y)
+      const bottom = y + 1 < width && isDark(x, y + 1)
+      row += (top ? FG_BLACK : FG_WHITE) + (bottom ? BG_BLACK : BG_WHITE) + '▀'
+    }
+    rows.push(row + RESET)
+  }
+  return rows.join('\n')
 }
