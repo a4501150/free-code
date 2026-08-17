@@ -11,6 +11,14 @@
   padding: 0.75rem 1rem 1rem;
   padding-left: max(1rem, env(safe-area-inset-left));
   padding-right: max(1rem, env(safe-area-inset-right));
+  /* `.main` is overflow:hidden, so without a cap and a scroller of its own a
+     tall tray grows past the bottom edge and is simply clipped. A question with
+     several options put its own answer buttons out of reach. The inner caps on
+     the plan and preview blocks do not help, because the tray is what overflows.
+     60dvh leaves the composer and the sheet handle below it. */
+  max-height: 60dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   animation: rise 140ms ease-out;
 }
 
@@ -109,7 +117,7 @@
   padding: 0.5rem 0.75rem;
   background: var(--bg-sunk);
   border: 1px solid var(--rule);
-  max-height: 40vh;
+  max-height: 40dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
