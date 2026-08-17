@@ -1206,7 +1206,19 @@ function runHeadlessStreaming(
       // `abortController` is only ever assigned, so it would report a turn in
       // flight for the life of the process after the first one.
       isRunning: () => running,
-      getModel: () => activeUserSpecifiedModel,
+      // An unset `--model` means the default, which is what ask() resolves it
+      // to, so report that rather than nothing: the browser's model picker fell
+      // back to showing its first option, and the context meter had no window
+      // to measure against.
+      getModel: () => {
+        if (activeUserSpecifiedModel) return activeUserSpecifiedModel
+        try {
+          return getDefaultMainLoopModel()
+        } catch {
+          // No models configured. Attaching must still work.
+          return undefined
+        }
+      },
       getPermissionMode: () => getAppState().toolPermissionContext.mode,
       interrupt: () => abortController?.abort('user-cancel'),
       // `run` is declared below, but only a browser command calls this.
