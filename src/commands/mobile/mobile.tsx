@@ -3,7 +3,7 @@ import * as React from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import { Pane } from '../../components/design-system/Pane.js'
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
-import { Box, Text } from '../../ink.js'
+import { BaseText, Box, Text } from '../../ink.js'
 import { useKeybinding } from '../../keybindings/useKeybinding.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
 
@@ -83,7 +83,12 @@ function MobileQRCode({ onDone }: Props): React.ReactNode {
         <Text> </Text>
         <Text> </Text>
         {lines.map((line, i) => (
-          <Text key={i}>{line}</Text>
+          // The renderer draws a dark module as a glyph and a light one as a
+          // space, so without explicit colors a dark terminal theme inverts the
+          // whole code.
+          <BaseText key={i} color="#000000" backgroundColor="#ffffff">
+            {line}
+          </BaseText>
         ))}
         <Text> </Text>
         <Text> </Text>
