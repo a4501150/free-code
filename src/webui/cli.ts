@@ -387,7 +387,10 @@ const RESET = '\u001b[0m'
 async function printQr(url: string): Promise<void> {
   try {
     const qrcode = await import('qrcode')
-    const { size, data } = qrcode.default.create(url).modules
+    const qrPayload = url.toUpperCase()
+    const { size, data } = qrcode.default.create(qrPayload, {
+      errorCorrectionLevel: 'L',
+    }).modules
     const width = size + QUIET_ZONE * 2
     const isDark = (x: number, y: number): boolean => {
       const col = x - QUIET_ZONE
@@ -395,14 +398,7 @@ async function printQr(url: string): Promise<void> {
       if (col < 0 || row < 0 || col >= size || row >= size) return false
       return data[row * size + col] !== 0
     }
-    // A terminal cell is about twice as tall as it is wide, so a module needs
-    // two columns to come out square.
-    const columns = process.stdout.columns ?? 80
-    print(
-      columns >= width * 2
-        ? renderQrWide(width, isDark)
-        : renderQrCompact(width, isDark),
-    )
+    print(renderQrCompact(width, isDark))
   } catch {
     // A missing QR renderer must not fail the command that already worked.
   }

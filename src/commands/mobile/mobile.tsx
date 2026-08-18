@@ -29,10 +29,10 @@ function MobileQRCode({ onDone }: Props): React.ReactNode {
           const webUrl = probe.status.publicUrl ?? probe.status.url
           if (webUrl) {
             setUrl(webUrl)
-            const qr = await qrToString(webUrl, {
+            const qr = await qrToString(webUrl.toUpperCase(), {
               type: 'utf8',
               errorCorrectionLevel: 'L',
-              margin: 1,
+              margin: 2,
             })
             setQrCode(qr)
             setStatus('ready')
@@ -86,10 +86,10 @@ function MobileQRCode({ onDone }: Props): React.ReactNode {
         }
 
         setUrl(webUrl)
-        const qr = await qrToString(webUrl, {
+        const qr = await qrToString(webUrl.toUpperCase(), {
           type: 'utf8',
           errorCorrectionLevel: 'L',
-          margin: 1,
+          margin: 2,
         })
         setQrCode(qr)
         setStatus('ready')
