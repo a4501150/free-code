@@ -31,7 +31,7 @@ import {
   type ChildSessionDefaults,
 } from './childSessions.js'
 import { listDirectories, PathError, PATH_ERROR_STATUS } from './directories.js'
-import { spawnDaemonRestart } from './restart.js'
+import { startGracefulRestart, type RestartReadyFrame } from './restart.js'
 import {
   createSessionHub,
   type HubSubscriber,
@@ -50,6 +50,8 @@ export type StartGatewayOptions = {
   port?: number
   /** Permission flags every spawned session inherits. */
   sessionDefaults?: ChildSessionDefaults
+  /** Release the daemon control socket so a new supervisor can bind it. */
+  onUnbindControl?: () => void
 }
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -73,8 +75,6 @@ const JS_PATH = `/assets/app.${WEBUI_JS_HASH}.js`
 const CSS_PATH = `/assets/app.${WEBUI_CSS_HASH}.css`
 const MAX_BODY_BYTES = 256 * 1024
 
-/** Long enough for the 202 to reach the browser before the listener dies. */
-const RESTART_DELAY_MS = 250
 
 /**
  * The socket carries prompts, and a prompt can carry images. Kept separate from
@@ -169,6 +169,12 @@ export function startGatewayServer(
     windowMs: 15 * 60 * 1000,
   })
   let publicUrl: string | null = null
+  const browsers = new Set<ServerWebSocket<SocketData>>()
+
+  function broadcast(frame: RestartReadyFrame): void {
+    const data = JSON.stringify(frame)
+    for (const ws of browsers) ws.send(data)
+  }
 
   function allowedOrigins(): string[] {
     const local = [
@@ -298,10 +304,10 @@ export function startGatewayServer(
         ) {
           return json({ error: 'bad_csrf' }, 403)
         }
-        // Answer before the restart tears down the listener carrying the
-        // answer. The browser reconnects on its own once the new gateway binds.
-        const timer = setTimeout(spawnDaemonRestart, RESTART_DELAY_MS)
-        timer.unref?.()
+        startGracefulRestart({
+          unbindControl: options.onUnbindControl ?? (() => {}),
+          broadcast,
+        })
         return json({ restarting: true }, 202)
       }
 
@@ -446,6 +452,7 @@ export function startGatewayServer(
       maxPayloadLength: MAX_WS_PAYLOAD_BYTES,
 
       open(ws: ServerWebSocket<SocketData>) {
+        browsers.add(ws)
         ws.send(JSON.stringify({ type: 'ready', protocolVersion: 1 }))
       },
 
@@ -551,6 +558,7 @@ export function startGatewayServer(
       },
 
       close(ws: ServerWebSocket<SocketData>) {
+        browsers.delete(ws)
         if (ws.data.subscriber) hub.unsubscribe(ws.data.subscriber)
         ws.data.subscriber = null
       },

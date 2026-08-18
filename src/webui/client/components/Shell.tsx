@@ -67,6 +67,10 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   const [railOpen, setRailOpen] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [followSignal, setFollowSignal] = useState(0)
+  const [restartInfo, setRestartInfo] = useState<{
+    publicUrl: string | null
+    localUrl: string | null
+  } | null>(null)
 
   const store = useMemo(() => createViewStore(), [])
   const view = useViewStore(store)
@@ -103,6 +107,13 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
       setActiveKey(null)
       store.reset()
       void sessions.refresh()
+    },
+    onRestartReady: info => {
+      setRestartInfo(info)
+      const target = info.publicUrl ?? info.localUrl
+      if (target && new URL(target).origin !== location.origin) {
+        window.location.href = target
+      }
     },
   })
 
@@ -321,6 +332,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
         activeState={meta?.state}
         defaultCwd={defaultCwd}
         csrf={csrf}
+        restartInfo={restartInfo}
         onSelect={select}
         onCreate={create}
         onResume={resume}

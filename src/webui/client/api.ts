@@ -22,6 +22,11 @@ export type ServerFrame =
    * `AttachEventBody`, because no process is left to have emitted it.
    */
   | { type: 'process_gone'; processKey: string; sessionId: string }
+  | {
+      type: 'restart_ready'
+      publicUrl: string | null
+      localUrl: string | null
+    }
 
 export type LoginResult = 'ok' | 'invalid' | 'throttled' | 'error'
 

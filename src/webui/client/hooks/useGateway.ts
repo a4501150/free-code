@@ -29,6 +29,7 @@ export function useGateway({
   onEvent,
   onProcessGone,
   onAttachFailed,
+  onRestartReady,
 }: {
   csrf: string | null
   onEvent(seq: number, event: AttachEventBody): void
@@ -36,6 +37,8 @@ export function useGateway({
   onProcessGone(info: { processKey: string; sessionId: string }): void
   /** The gateway could not reach the process, so no snapshot is coming. */
   onAttachFailed(): void
+  /** The old gateway completed a restart and is handing off to a new one. */
+  onRestartReady(info: { publicUrl: string | null; localUrl: string | null }): void
 }): Gateway {
   const [connected, setConnected] = useState(false)
   const socketRef = useRef<GatewaySocket | null>(null)
@@ -47,6 +50,8 @@ export function useGateway({
   onProcessGoneRef.current = onProcessGone
   const onAttachFailedRef = useRef(onAttachFailed)
   onAttachFailedRef.current = onAttachFailed
+  const onRestartReadyRef = useRef(onRestartReady)
+  onRestartReadyRef.current = onRestartReady
 
   useEffect(() => {
     if (!csrf) return
@@ -62,6 +67,12 @@ export function useGateway({
         }
         if (frame.type === 'error' && frame.code === 'attach_failed') {
           onAttachFailedRef.current()
+        }
+        if (frame.type === 'restart_ready') {
+          onRestartReadyRef.current({
+            publicUrl: frame.publicUrl,
+            localUrl: frame.localUrl,
+          })
         }
       },
       onOpen: () => setConnected(true),

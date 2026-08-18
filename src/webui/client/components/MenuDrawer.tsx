@@ -18,6 +18,7 @@ export function MenuDrawer({
   activeState,
   defaultCwd,
   csrf,
+  restartInfo,
   onSelect,
   onCreate,
   onResume,
@@ -29,6 +30,7 @@ export function MenuDrawer({
   activeState?: string
   defaultCwd: string
   csrf: string
+  restartInfo: { publicUrl: string | null; localUrl: string | null } | null
   onSelect(entry: SessionListEntry): void
   onCreate(cwd: string): Promise<string | null>
   onResume(sessionId: string): Promise<string | null>
@@ -101,13 +103,19 @@ export function MenuDrawer({
         </button>
 
         <h3 className="rail__title">gateway</h3>
-        <GatewayActions csrf={csrf} />
+        <GatewayActions csrf={csrf} restartInfo={restartInfo} />
       </div>
     </nav>
   )
 }
 
-function GatewayActions({ csrf }: { csrf: string }): React.ReactElement {
+function GatewayActions({
+  csrf,
+  restartInfo,
+}: {
+  csrf: string
+  restartInfo: { publicUrl: string | null; localUrl: string | null } | null
+}): React.ReactElement {
   const [confirming, setConfirming] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -121,21 +129,33 @@ function GatewayActions({ csrf }: { csrf: string }): React.ReactElement {
       setRestarting(false)
       setError(result.error)
     }
-    // On success nothing here resets: the gateway is going away, and the socket
-    // dropping is the honest signal. The top bar shows reconnecting until the
-    // replacement answers.
   }
+
+  const hasNewUrl = restartInfo && (restartInfo.publicUrl || restartInfo.localUrl)
 
   return (
     <div className="menu__actions">
-      {restarting ? (
+      {restarting && hasNewUrl ? (
+        <div className="menu__restart-info">
+          <p className="menu__note">Gateway restarted.</p>
+          {restartInfo.publicUrl ? (
+            <p className="menu__note">
+              <a href={restartInfo.publicUrl}>{restartInfo.publicUrl}</a>
+            </p>
+          ) : null}
+          {restartInfo.localUrl ? (
+            <p className="menu__note">
+              Local: <a href={restartInfo.localUrl}>{restartInfo.localUrl}</a>
+            </p>
+          ) : null}
+          <p className="menu__note">Redirecting...</p>
+        </div>
+      ) : restarting ? (
         <p className="menu__note">
-          Restarting. This page reconnects on its own once the gateway is back.
+          Restarting. Waiting for the new gateway...
         </p>
       ) : confirming ? (
         <>
-          {/* Said plainly, because it is not obvious that a gateway restart
-              takes the session you are reading with it. */}
           <p className="menu__note">
             This stops every session the gateway started, including this one.
             You can resume it from the history afterwards.

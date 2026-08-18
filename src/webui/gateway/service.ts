@@ -69,6 +69,7 @@ export function createWebService() {
   let tunnel: TunnelHandle | null = null
   let tunnelAbort: AbortController | null = null
   let status: WebStatus = { running: false }
+  let controlUnbind: (() => void) | null = null
 
   async function start(options: WebStartOptions): Promise<WebStatus> {
     if (server) return status
@@ -82,6 +83,7 @@ export function createWebService() {
         settings: options.settings,
         settingSources: options.settingSources,
       },
+      onUnbindControl: () => controlUnbind?.(),
     })
     status = { running: true, url: server.url, startedAt: Date.now() }
 
@@ -133,6 +135,9 @@ export function createWebService() {
   return {
     start,
     stop,
+    setControlUnbind(fn: () => void) {
+      controlUnbind = fn
+    },
     get status(): WebStatus {
       return status
     },

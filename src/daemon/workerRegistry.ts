@@ -29,6 +29,8 @@ const workers: Record<string, WorkerFn> = {
           status: () => service.status,
         })
 
+        service.setControlUnbind(() => control.unbind())
+
         await new Promise<void>(resolve => {
           onStop = resolve
           if (!running) resolve()

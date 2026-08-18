@@ -44,6 +44,7 @@ export type DaemonControlHandlers = {
  */
 export function startDaemonControlServer(handlers: DaemonControlHandlers): {
   stop(): void
+  unbind(): void
 } {
   const dir = getDaemonControlDir()
   mkdirSync(dir, { recursive: true, mode: DIR_MODE })
@@ -98,11 +99,14 @@ export function startDaemonControlServer(handlers: DaemonControlHandlers): {
     }
   })
 
+  const release = (): void => {
+    server.close()
+    rmSync(path, { force: true })
+  }
+
   return {
-    stop() {
-      server.close()
-      rmSync(path, { force: true })
-    },
+    stop: release,
+    unbind: release,
   }
 }
 
