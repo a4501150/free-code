@@ -13,7 +13,7 @@ export interface TunnelProvider {
   start(options: TunnelStartOptions): Promise<TunnelHandle>
 }
 
-export type TunnelKind = 'localtunnel' | 'command' | 'none'
+export type TunnelKind = 'cloudflared' | 'localtunnel' | 'command' | 'none'
 
 /**
  * Only an HTTPS URL is acceptable. The tunnel supplies the transport security

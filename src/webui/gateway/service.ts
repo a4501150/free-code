@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { createCloudflareTunnelProvider } from '../tunnel/cloudflareTunnelProvider.js'
 import { createCommandTunnelProvider } from '../tunnel/commandTunnelProvider.js'
 import { createLocalTunnelProvider } from '../tunnel/localTunnelProvider.js'
 import type { TunnelHandle, TunnelProvider } from '../tunnel/types.js'
@@ -8,7 +9,7 @@ import { startGatewayServer, type GatewayServer } from './gatewayServer.js'
 
 export const WebStartOptionsSchema = z.object({
   port: z.number().int().min(0).max(65535).optional(),
-  tunnel: z.enum(['localtunnel', 'command', 'none']).default('localtunnel'),
+  tunnel: z.enum(['cloudflared', 'localtunnel', 'command', 'none']).default('cloudflared'),
   tunnelCommand: z.string().optional(),
   tunnelHost: z.string().optional(),
   subdomain: z.string().optional(),
@@ -48,6 +49,8 @@ function providerFor(options: WebStartOptions): TunnelProvider | null {
         throw new Error('--tunnel command requires --tunnel-command')
       }
       return createCommandTunnelProvider(options.tunnelCommand)
+    case 'cloudflared':
+      return createCloudflareTunnelProvider()
     case 'localtunnel':
       return createLocalTunnelProvider({
         subdomain: options.subdomain,

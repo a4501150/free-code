@@ -26,7 +26,7 @@ function usage(): void {
   print('')
   print('Start options:')
   print('  --port <n>              Loopback port. Default: an ephemeral port')
-  print('  --tunnel <kind>         localtunnel | command | none')
+  print('  --tunnel <kind>         cloudflared | localtunnel | command | none')
   print(
     '  --tunnel-command <cmd>  Command that prints an https URL. {port} is substituted',
   )
@@ -44,7 +44,7 @@ function usage(): void {
 }
 
 function parseStartOptions(args: string[]): WebStartOptions {
-  const options: WebStartOptions = { tunnel: 'localtunnel' }
+  const options: WebStartOptions = { tunnel: 'cloudflared' }
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
     const next = args[i + 1]
@@ -54,7 +54,12 @@ function parseStartOptions(args: string[]): WebStartOptions {
         i++
         break
       case '--tunnel':
-        if (next !== 'localtunnel' && next !== 'command' && next !== 'none') {
+        if (
+          next !== 'cloudflared' &&
+          next !== 'localtunnel' &&
+          next !== 'command' &&
+          next !== 'none'
+        ) {
           throw new Error(`unknown tunnel kind: ${next}`)
         }
         options.tunnel = next

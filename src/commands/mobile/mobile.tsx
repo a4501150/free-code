@@ -65,7 +65,7 @@ function MobileQRCode({ onDone }: Props): React.ReactNode {
 
         const startResult = await sendDaemonControl({
           kind: 'web.start',
-          options: { tunnel: 'localtunnel' },
+          options: { tunnel: 'cloudflared' },
         })
         if (!startResult?.ok) {
           setErrorMsg(
