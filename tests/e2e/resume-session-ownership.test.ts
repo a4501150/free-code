@@ -226,7 +226,7 @@ describe('Resume session ownership', () => {
     const session = await startConflicting(['--continue'])
     await session.waitForText(DIALOG_TEXT, 20_000)
 
-    // Move to "Cancel and exit" and confirm.
+    // "Cancel and exit" is the second option (first is fork, since holder is not attachable).
     await session.sendKeys('Down')
     await session.sendKeys('Enter')
 
@@ -245,27 +245,30 @@ describe('Resume session ownership', () => {
     await session.stop()
   })
 
-  test('--continue can take over, and then both windows share the transcript', async () => {
+  test('--continue with non-attachable holder does not show join option', async () => {
     const held = await primeSession()
     await fakeHolder(held)
-    const heldPath = join(await projectDir(), `${held}.jsonl`)
-    const sizeBefore = (await stat(heldPath)).size
 
-    server.reset([textTurn('Shared response')])
+    server.reset([textTurn('should never be requested')])
     const session = await startConflicting(['--continue'])
-    await session.waitForText(DIALOG_TEXT, 20_000)
 
-    // Move to "Resume anyway" and confirm.
-    await session.sendKeys('Down')
+    // The dialog must not show "Join this session" when the holder has no
+    // attach descriptor.
+    const dialog = await session.waitForText(DIALOG_TEXT, 20_000)
+    expect(dialog).not.toContain('Join this session')
+    expect(dialog).toContain('Fork into a new session')
+
+    // Cancel out.
     await session.sendKeys('Down')
     await session.sendKeys('Enter')
-    await session.waitForText('for shortcuts', 30_000)
-    await session.sendLine('Follow up')
-    await session.waitForText('Shared response', 20_000)
 
-    expect(await claimedSessionIds()).toContain(held)
-    expect((await stat(heldPath)).size).toBeGreaterThan(sizeBefore)
-    expect(await transcripts()).toHaveLength(1)
+    const deadline = Date.now() + 20_000
+    let claimed = await claimedSessionIds()
+    while (claimed.length > 0 && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 250))
+      claimed = await claimedSessionIds()
+    }
+    expect(claimed).toEqual([])
 
     await session.stop()
   })

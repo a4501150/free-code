@@ -32,6 +32,8 @@ import { init } from './entrypoints/init.js'
 import { addToHistory } from './history.js'
 import { createRoot, type Root } from './ink.js'
 import { launchRepl } from './replLauncher.js'
+import { AttachedSession } from './screens/AttachedSession.js'
+import { App } from './components/App.js'
 import { fetchBootstrapData } from './services/api/bootstrap.js'
 import { prefetchOfficialMcpUrls } from './services/mcp/officialRegistry.js'
 import type {
@@ -3223,6 +3225,7 @@ async function run(): Promise<CommanderCommand> {
       // ID, the task list included. Resolved inside the loader, before it
       // copies anything or runs a resume hook, so cancelling leaves no trace.
       let effectiveForkSession = !!options.forkSession
+      let joinTargetPid: number | null = null
       const resumeOwnershipGuard = (
         sessionIdOverride?: string,
       ): LoadConversationForResumeOptions => ({
@@ -3237,6 +3240,10 @@ async function run(): Promise<CommanderCommand> {
           const choice = await launchResumeSessionConflictDialog(root, conflict)
           if (choice === 'cancel') {
             gracefulShutdownSync(1)
+            throw new ResumeCancelledError()
+          }
+          if (choice === 'join') {
+            joinTargetPid = conflict.holders[0]?.pid ?? null
             throw new ResumeCancelledError()
           }
           if (choice === 'fork') effectiveForkSession = true
@@ -3298,8 +3305,17 @@ async function run(): Promise<CommanderCommand> {
             renderAndRun,
           )
         } catch (error) {
-          // The user declined; shutdown is already under way.
-          if (error instanceof ResumeCancelledError) return
+          if (error instanceof ResumeCancelledError) {
+            if (joinTargetPid !== null) {
+              await renderAndRun(
+                root,
+                <App getFpsMetrics={getFpsMetrics} stats={stats}>
+                  <AttachedSession pid={joinTargetPid} />
+                </App>,
+              )
+            }
+            return
+          }
           logError(error)
           process.exit(1)
         }
@@ -3388,8 +3404,17 @@ async function run(): Promise<CommanderCommand> {
               mainThreadAgentDefinition = processedResume.restoredAgentDef
             }
           } catch (error) {
-            // The user declined; shutdown is already under way.
-            if (error instanceof ResumeCancelledError) return
+            if (error instanceof ResumeCancelledError) {
+              if (joinTargetPid !== null) {
+                await renderAndRun(
+                  root,
+                  <App getFpsMetrics={getFpsMetrics} stats={stats}>
+                    <AttachedSession pid={joinTargetPid} />
+                  </App>,
+                )
+              }
+              return
+            }
             logError(error)
             await exitWithError(root, `Failed to resume session ${sessionId}`)
           }

@@ -7,11 +7,13 @@ import type { ConcurrentSessionEntry } from '../utils/concurrentSessions.js'
 import { Select } from './CustomSelect/index.js'
 import { PermissionDialog } from './permissions/PermissionDialog.js'
 
-export type ResumeSessionConflictChoice = 'fork' | 'cancel' | 'takeover'
+export type ResumeSessionConflictChoice = 'join' | 'fork' | 'cancel'
 
 type Props = {
   sessionId: string
   holders: readonly ConcurrentSessionEntry[]
+  /** True when the primary holder has a valid attach descriptor. */
+  holderAttachable: boolean
   onChoice: (choice: ResumeSessionConflictChoice) => void
 }
 
@@ -27,6 +29,7 @@ function formatStartedAt(startedAt: number): string {
 export function ResumeSessionConflictDialog({
   sessionId,
   holders,
+  holderAttachable,
   onChoice,
 }: Props): React.ReactNode {
   // Default onExit is useApp().exit() → Ink.unmount(), which tears the tree
@@ -60,18 +63,23 @@ export function ResumeSessionConflictDialog({
         </Box>
 
         <Text>
-          Resuming it here would append to the same transcript and share the
-          same task list.
+          {holderAttachable
+            ? 'You can join this session or fork into a new one.'
+            : 'The holder is not attachable. You can fork into a new session.'}
         </Text>
 
         <Select
           options={[
+            ...(holderAttachable
+              ? [
+                  {
+                    label: 'Join this session',
+                    value: 'join',
+                  },
+                ]
+              : []),
             { label: 'Fork into a new session', value: 'fork' },
             { label: 'Cancel and exit', value: 'cancel' },
-            {
-              label: 'Resume anyway (both windows share the transcript)',
-              value: 'takeover',
-            },
           ]}
           onChange={value => onChoice(value as ResumeSessionConflictChoice)}
           onCancel={() => onChoice('cancel')}

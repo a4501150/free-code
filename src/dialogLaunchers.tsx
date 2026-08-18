@@ -18,6 +18,7 @@ import type { StatsStore } from './context/stats.js'
 import type { Root } from './ink.js'
 import { renderAndRun, showSetupDialog } from './interactiveHelpers.js'
 import { KeybindingSetup } from './keybindings/KeybindingProviderSetup.js'
+import { readAttachDescriptor } from './webui/attach/attachDescriptor.js'
 import { ResumeConversation } from './screens/ResumeConversation.js'
 import type { AppState } from './state/AppStateStore.js'
 import type { AgentMemoryScope } from './tools/AgentTool/agentMemory.js'
@@ -78,10 +79,16 @@ export async function launchResumeSessionConflictDialog(
   root: Root,
   conflict: ResumeSessionConflict,
 ): Promise<ResumeSessionConflictChoice> {
+  const primaryHolder = conflict.holders[0]
+  const attachable = primaryHolder
+    ? readAttachDescriptor(primaryHolder.pid).ok
+    : false
+
   return showSetupDialog<ResumeSessionConflictChoice>(root, done => (
     <ResumeSessionConflictDialog
       sessionId={conflict.sessionId}
       holders={conflict.holders}
+      holderAttachable={attachable}
       onChoice={done}
     />
   ))

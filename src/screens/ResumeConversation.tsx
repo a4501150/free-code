@@ -55,6 +55,8 @@ import * as loadAgentsDirNs from '../tools/AgentTool/loadAgentsDir.js'
 import type { ThinkingConfig } from '../utils/thinking.js'
 import type { ContentReplacementRecord } from '../utils/toolResultStorage.js'
 import { REPL } from './REPL.js'
+import { readAttachDescriptor } from '../webui/attach/attachDescriptor.js'
+import { AttachedSession } from './AttachedSession.js'
 
 function parsePrIdentifier(value: string): number | null {
   const directNumber = parseInt(value, 10)
@@ -131,6 +133,7 @@ export function ResumeConversation({
     conflict: ResumeSessionConflict
     resolve: (choice: ResumeSessionConflictChoice) => void
   } | null>(null)
+  const [joinPid, setJoinPid] = React.useState<number | null>(null)
   const sessionLogResultRef = React.useRef<SessionLogResult | null>(null)
   // Mirror of logs.length so loadMoreLogs can compute value indices outside
   // the setLogs updater (keeping it pure per React's contract).
@@ -258,6 +261,13 @@ export function ResumeConversation({
             gracefulShutdownSync(1)
             throw new ResumeCancelledError()
           }
+          if (choice === 'join') {
+            const holderPid = conflict.holders[0]?.pid
+            if (holderPid) {
+              setJoinPid(holderPid)
+              throw new ResumeCancelledError()
+            }
+          }
           if (choice === 'fork') effectiveForkSession = true
         },
       })
@@ -331,11 +341,20 @@ export function ResumeConversation({
     }
   }
 
+  if (joinPid !== null) {
+    return <AttachedSession pid={joinPid} />
+  }
+
   if (ownershipConflict) {
     return (
       <ResumeSessionConflictDialog
         sessionId={ownershipConflict.conflict.sessionId}
         holders={ownershipConflict.conflict.holders}
+        holderAttachable={
+          ownershipConflict.conflict.holders[0]
+            ? readAttachDescriptor(ownershipConflict.conflict.holders[0].pid).ok
+            : false
+        }
         onChoice={ownershipConflict.resolve}
       />
     )

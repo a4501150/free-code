@@ -122,6 +122,7 @@ import {
   ResumeSessionConflictDialog,
   type ResumeSessionConflictChoice,
 } from '../components/ResumeSessionConflictDialog.js'
+import { readAttachDescriptor } from '../webui/attach/attachDescriptor.js'
 import type { PromptRequest, PromptResponse } from '../types/hooks.js'
 import PromptInput from '../components/PromptInput/PromptInput.js'
 import { PromptInputQueuedCommands } from '../components/PromptInput/PromptInputQueuedCommands.js'
@@ -1913,6 +1914,11 @@ export function REPL({
                     <ResumeSessionConflictDialog
                       sessionId={conflict.sessionId}
                       holders={conflict.holders}
+                      holderAttachable={
+                        conflict.holders[0]
+                          ? readAttachDescriptor(conflict.holders[0].pid).ok
+                          : false
+                      }
                       onChoice={resolve}
                     />
                   ),
@@ -1925,7 +1931,7 @@ export function REPL({
               shouldHidePromptInput: false,
               clearLocalJSX: true,
             })
-            if (choice === 'cancel') return
+            if (choice === 'cancel' || choice === 'join') return
             if (choice === 'fork') {
               // Fork rather than adopt. A fresh ID, and no source transcript
               // path so switchSession derives the project dir from the current
