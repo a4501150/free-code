@@ -24,6 +24,7 @@ export type AttachRuntime = {
   getModel(): string | undefined
   getPermissionMode(): string | undefined
   getTodos(): WebTodo[]
+  getCommands(): string[]
 
   /**
    * Queue a prompt. `interrupt` aborts the running turn and runs this next, as

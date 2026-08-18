@@ -1031,6 +1031,18 @@ export function REPL({
     [disableSlashCommands, mergedCommands],
   )
 
+  const commandNames = useMemo(
+    () =>
+      [
+        ...new Set(
+          commands
+            .filter(c => !c.isHidden)
+            .flatMap(c => [getCommandName(c), ...(c.aliases ?? [])]),
+        ),
+      ],
+    [commands],
+  )
+
   useIdeLogging(mcp.clients)
   useIdeSelection(mcp.clients, setIDESelection)
 
@@ -4378,6 +4390,7 @@ export function REPL({
     getModel: () => mainLoopModel,
     getPermissionMode: () => toolPermissionContext.mode,
     todos: tasksV2,
+    commandNames,
     onCancel,
     onSetPermissionMode: mode => {
       setAppState(prev => {

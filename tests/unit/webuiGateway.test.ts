@@ -423,6 +423,7 @@ describe('client store', () => {
     permissions: [],
     todos: [],
     models: [{ value: 'claude-opus-5', label: 'Opus 5' }],
+    commands: ['help', 'compact', 'status'],
   }
 
   test('ignores an event at or below the last applied sequence', () => {

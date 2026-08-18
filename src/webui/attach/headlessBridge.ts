@@ -33,6 +33,7 @@ export type HeadlessAttachParams = {
   isRunning(): boolean
   getModel(): string | undefined
   getPermissionMode(): string | undefined
+  getCommands(): string[]
   interrupt(): void
   setModel(model: string): void
   setPermissionMode(mode: WebPermissionMode): void
@@ -69,6 +70,7 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
     getModel: () => params.getModel(),
     getPermissionMode: () => params.getPermissionMode(),
     getTodos: () => [],
+    getCommands: () => params.getCommands(),
 
     submit(content, delivery, commandId, images) {
       enqueue({

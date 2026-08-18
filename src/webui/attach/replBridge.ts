@@ -22,6 +22,7 @@ export type ReplAttachBridgeParams = {
   getModel: () => string | undefined
   getPermissionMode: () => string | undefined
   todos: Task[] | undefined
+  commandNames: string[]
   onCancel: () => void
   onSetPermissionMode: (mode: WebPermissionMode) => void
   onSetModel: (model: string) => void
@@ -51,6 +52,7 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
           status: task.status,
           activeForm: task.activeForm,
         })),
+      getCommands: () => latest.current.commandNames,
 
       submit(content, delivery, commandId, images) {
         // 'now' is one atomic operation: the REPL's queue watcher aborts the

@@ -15,6 +15,7 @@ export type SessionView = {
   permissions: WebPermissionRequest[]
   todos: WebTodo[]
   models: WebModelOption[]
+  commands: string[]
   lastSeq: number
 }
 
@@ -26,6 +27,7 @@ export function emptyView(): SessionView {
     permissions: [],
     todos: [],
     models: [],
+    commands: [],
     lastSeq: 0,
   }
 }
@@ -52,6 +54,7 @@ export function applyEvent(
       next.permissions = event.permissions
       next.todos = event.todos
       next.models = event.models
+      next.commands = event.commands ?? []
       next.lastSeq = seq
       return next
     }

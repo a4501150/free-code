@@ -5,20 +5,6 @@ import {
   type PendingImage,
 } from '../imageUpload.js'
 
-/** Slash commands the process executes. The gateway never interprets these. */
-const COMMANDS = [
-  '/clear',
-  '/compact',
-  '/config',
-  '/context',
-  '/cost',
-  '/help',
-  '/model',
-  '/resume',
-  '/status',
-  '/tasks',
-  '/todos',
-]
 
 /** Mirrors `MAX_SUBMIT_IMAGES`, which the host enforces. */
 const MAX_IMAGES = 4
@@ -42,11 +28,13 @@ export type SubmitImage = {
 export function Composer({
   busy,
   knownPaths,
+  commands,
   onSubmit,
   onInterrupt,
 }: {
   busy: boolean
   knownPaths: string[]
+  commands: string[]
   onSubmit(
     text: string,
     delivery: 'next' | 'interrupt',
@@ -62,13 +50,17 @@ export function Composer({
   const fileRef = useRef<HTMLInputElement>(null)
 
   const token = useMemo(() => {
-    const match = /(^\/[a-z-]*)$|(@[^\s]*)$/i.exec(value)
+    const match = /(^\/[^\s]*)$|(@[^\s]*)$/i.exec(value)
     return match ? (match[1] ?? match[2] ?? '') : ''
   }, [value])
 
   const suggestions = useMemo<Suggestion[]>(() => {
     if (token.startsWith('/')) {
-      return COMMANDS.filter(c => c.startsWith(token)).map(value => ({ value }))
+      const query = token.toLowerCase()
+      return commands
+        .map(name => (name.startsWith('/') ? name : `/${name}`))
+        .filter(c => c.toLowerCase().startsWith(query))
+        .map(value => ({ value }))
     }
     if (token.startsWith('@')) {
       const needle = token.slice(1).toLowerCase()
@@ -78,7 +70,7 @@ export function Composer({
         .map(path => ({ value: `@${path}` }))
     }
     return []
-  }, [token, knownPaths])
+  }, [token, knownPaths, commands])
 
   function accept(suggestion: Suggestion): void {
     setValue(

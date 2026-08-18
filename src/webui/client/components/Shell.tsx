@@ -382,6 +382,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
           <Composer
             busy={busy}
             knownPaths={knownPaths}
+            commands={view.commands}
             onSubmit={(text, delivery, images) => {
               gateway.send({
                 kind: 'submit',

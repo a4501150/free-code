@@ -212,6 +212,7 @@ export type AttachEventBody =
       todos: WebTodo[]
       /** Static for the process, so it rides the snapshot and not every meta. */
       models: WebModelOption[]
+      commands: string[]
     }
   | { kind: 'transcript'; patch: TranscriptPatch }
   | { kind: 'meta'; meta: WebSessionMeta }

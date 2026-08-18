@@ -428,6 +428,16 @@ export function canBatchWith(
   )
 }
 
+function commandsToNames(cmds: Command[]): string[] {
+  return [
+    ...new Set(
+      cmds
+        .filter(c => !c.isHidden)
+        .flatMap(c => [getCommandName(c), ...(c.aliases ?? [])]),
+    ),
+  ]
+}
+
 export async function runHeadless(
   inputPrompt: string | AsyncIterable<string>,
   getAppState: () => AppState,
@@ -1198,6 +1208,7 @@ function runHeadlessStreaming(
   // instant the socket exists, and reading that binding from above its
   // declaration throws a temporal-dead-zone error inside the socket handler,
   // which leaves the connection accepted but never answered.
+  let headlessCommandNames = commandsToNames(commands)
   if (feature('WEBUI') && webuiHeadlessModule?.shouldAttachHeadless()) {
     webuiHeadlessModule.startHeadlessAttach({
       cwd: cwd(),
@@ -1220,6 +1231,7 @@ function runHeadlessStreaming(
         }
       },
       getPermissionMode: () => getAppState().toolPermissionContext.mode,
+      getCommands: () => headlessCommandNames,
       interrupt: () => abortController?.abort('user-cancel'),
       // `run` is declared below, but only a browser command calls this.
       requestRun: () => void run(),
@@ -1700,6 +1712,7 @@ function runHeadlessStreaming(
     // captured by the query loop (REPL uses AppState instead). getCommands is
     // fresh because refreshActivePlugins cleared its cache.
     currentCommands = await getCommands(cwd())
+    headlessCommandNames = commandsToNames(currentCommands)
 
     // Preserve SDK-provided agents (--agents CLI flag or SDK initialize
     // control_request) — both inject via parseAgentsFromJson with
@@ -1757,6 +1770,7 @@ function runHeadlessStreaming(
     clearCommandsCache()
     void getCommands(cwd()).then(newCommands => {
       currentCommands = newCommands
+      headlessCommandNames = commandsToNames(currentCommands)
     })
   })
 
@@ -2926,6 +2940,7 @@ function runHeadlessStreaming(
             ])
             if (cmdsR.status === 'fulfilled') {
               currentCommands = cmdsR.value
+              headlessCommandNames = commandsToNames(currentCommands)
             } else {
               logError(cmdsR.reason)
             }

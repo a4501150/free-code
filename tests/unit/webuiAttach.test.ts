@@ -213,6 +213,7 @@ describe('idle cost', () => {
       getModel: () => 'm',
       getPermissionMode: () => 'default',
       getTodos: () => [],
+      getCommands: () => [],
       submit: () => {},
       interrupt: () => {},
       setPermissionMode: () => {},
@@ -363,6 +364,7 @@ describe('image prompts', () => {
       getModel: () => 'm',
       getPermissionMode: () => 'default',
       getTodos: () => [],
+      getCommands: () => [],
       submit: (content, _delivery, _commandId, images) => {
         submitted.push({ content, images })
       },

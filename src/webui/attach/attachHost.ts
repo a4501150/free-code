@@ -270,6 +270,7 @@ export function startAttachHost(
         permissions: permissions.pending(),
         todos: runtime?.getTodos() ?? [],
         models: listModels(),
+        commands: runtime?.getCommands() ?? [],
       },
     }
     writeNdjson(connection.socket, snapshot)
