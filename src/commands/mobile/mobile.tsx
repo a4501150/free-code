@@ -6,50 +6,98 @@ import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
 import { BaseText, Box, Text } from '../../ink.js'
 import { useKeybinding } from '../../keybindings/useKeybinding.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
+import { sendDaemonControl } from '../../webui/daemonControl.js'
+import { readAuthFile } from '../../webui/gateway/auth.js'
 
-type Platform = 'ios' | 'android'
+type Status = 'checking' | 'starting' | 'ready' | 'error'
 
 type Props = {
   onDone: () => void
 }
 
-const PLATFORMS: Record<Platform, { url: string }> = {
-  ios: {
-    url: 'https://apps.apple.com/app/claude-by-anthropic/id6473753684',
-  },
-  android: {
-    url: 'https://play.google.com/store/apps/details?id=com.anthropic.claude',
-  },
-}
-
 function MobileQRCode({ onDone }: Props): React.ReactNode {
-  const [platform, setPlatform] = useState<Platform>('ios')
-  const [qrCodes, setQrCodes] = useState<Record<Platform, string>>({
-    ios: '',
-    android: '',
-  })
+  const [status, setStatus] = useState<Status>('checking')
+  const [url, setUrl] = useState<string>('')
+  const [qrCode, setQrCode] = useState<string>('')
+  const [errorMsg, setErrorMsg] = useState<string>('')
 
-  const { url } = PLATFORMS[platform]
-  const qrCode = qrCodes[platform]
-
-  // Generate both QR codes upfront to avoid flicker when switching
   useEffect(() => {
-    async function generateQRCodes(): Promise<void> {
-      const [ios, android] = await Promise.all([
-        qrToString(PLATFORMS.ios.url, {
+    void (async () => {
+      try {
+        const probe = await sendDaemonControl({ kind: 'web.status' }, 2000)
+        if (probe?.ok && probe.status.running) {
+          const webUrl = probe.status.publicUrl ?? probe.status.url
+          if (webUrl) {
+            setUrl(webUrl)
+            const qr = await qrToString(webUrl, {
+              type: 'utf8',
+              errorCorrectionLevel: 'L',
+              margin: 1,
+            })
+            setQrCode(qr)
+            setStatus('ready')
+            return
+          }
+        }
+
+        if (!readAuthFile()) {
+          setErrorMsg(
+            'No password is set. Run `claude web start` first to set one.',
+          )
+          setStatus('error')
+          return
+        }
+
+        setStatus('starting')
+
+        const { daemonMain } = await import('../../daemon/main.js')
+        const daemonProbe = await sendDaemonControl(
+          { kind: 'web.status' },
+          2000,
+        )
+        if (!daemonProbe) {
+          await daemonMain(['start'])
+          for (let attempt = 0; attempt < 50; attempt++) {
+            await Bun.sleep(100)
+            if (await sendDaemonControl({ kind: 'web.status' }, 2000)) break
+          }
+        }
+
+        const startResult = await sendDaemonControl({
+          kind: 'web.start',
+          options: { tunnel: 'localtunnel' },
+        })
+        if (!startResult?.ok) {
+          setErrorMsg(
+            startResult
+              ? `Start failed: ${startResult.error}`
+              : 'The daemon did not respond.',
+          )
+          setStatus('error')
+          return
+        }
+
+        const webUrl =
+          startResult.status.publicUrl ?? startResult.status.url
+        if (!webUrl) {
+          setErrorMsg('The web server started but returned no URL.')
+          setStatus('error')
+          return
+        }
+
+        setUrl(webUrl)
+        const qr = await qrToString(webUrl, {
           type: 'utf8',
           errorCorrectionLevel: 'L',
-        }),
-        qrToString(PLATFORMS.android.url, {
-          type: 'utf8',
-          errorCorrectionLevel: 'L',
-        }),
-      ])
-      setQrCodes({ ios, android })
-    }
-    generateQRCodes().catch(() => {
-      // QR generation failed, leave empty
-    })
+          margin: 1,
+        })
+        setQrCode(qr)
+        setStatus('ready')
+      } catch (err) {
+        setErrorMsg(err instanceof Error ? err.message : String(err))
+        setStatus('error')
+      }
+    })()
   }, [])
 
   const handleClose = useCallback(() => {
@@ -62,12 +110,44 @@ function MobileQRCode({ onDone }: Props): React.ReactNode {
     if (e.key === 'q' || (e.ctrl && e.key === 'c')) {
       e.preventDefault()
       onDone()
-      return
     }
-    if (e.key === 'tab' || e.key === 'left' || e.key === 'right') {
-      e.preventDefault()
-      setPlatform(prev => (prev === 'ios' ? 'android' : 'ios'))
-    }
+  }
+
+  if (status === 'checking') {
+    return (
+      <Pane>
+        <Box flexDirection="column" tabIndex={0} autoFocus>
+          <Text dimColor>Checking web server status...</Text>
+        </Box>
+      </Pane>
+    )
+  }
+
+  if (status === 'starting') {
+    return (
+      <Pane>
+        <Box flexDirection="column" tabIndex={0} autoFocus>
+          <Text dimColor>Starting web server and tunnel...</Text>
+        </Box>
+      </Pane>
+    )
+  }
+
+  if (status === 'error') {
+    return (
+      <Pane>
+        <Box
+          flexDirection="column"
+          tabIndex={0}
+          autoFocus
+          onKeyDown={handleKeyDown}
+        >
+          <Text color="red">{errorMsg}</Text>
+          <Text> </Text>
+          <Text dimColor>(esc to close)</Text>
+        </Box>
+      </Pane>
+    )
   }
 
   const lines = qrCode.split('\n').filter(line => line.length > 0)
@@ -81,35 +161,16 @@ function MobileQRCode({ onDone }: Props): React.ReactNode {
         onKeyDown={handleKeyDown}
       >
         <Text> </Text>
-        <Text> </Text>
         {lines.map((line, i) => (
-          // The renderer draws a dark module as a glyph and a light one as a
-          // space, so without explicit colors a dark terminal theme inverts the
-          // whole code.
           <BaseText key={i} color="#000000" backgroundColor="#ffffff">
             {line}
           </BaseText>
         ))}
         <Text> </Text>
-        <Text> </Text>
-
-        {/* Controls */}
-        <Box flexDirection="row" gap={2}>
-          <Text>
-            <Text bold={platform === 'ios'} underline={platform === 'ios'}>
-              iOS
-            </Text>
-            <Text dimColor>{' / '}</Text>
-            <Text
-              bold={platform === 'android'}
-              underline={platform === 'android'}
-            >
-              Android
-            </Text>
-          </Text>
-          <Text dimColor>(tab to switch, esc to close)</Text>
-        </Box>
+        <Text dimColor>Scan to open the web interface on your phone</Text>
         <Text dimColor>{url}</Text>
+        <Text> </Text>
+        <Text dimColor>(esc to close)</Text>
       </Box>
     </Pane>
   )

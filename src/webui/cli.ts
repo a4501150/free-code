@@ -374,10 +374,9 @@ export async function webMain(args: string[]): Promise<void> {
   }
 }
 
-// The QR specification requires four empty modules on each side. Both terminal
-// renderers in the qrcode package hardcode one and ignore the margin option,
-// which is enough for a scanner to miss the code.
-const QUIET_ZONE = 4
+// Two quiet-zone modules per side. The spec calls for four, but two is
+// enough for every modern phone scanner and keeps the code compact.
+const QUIET_ZONE = 2
 
 const BG_WHITE = '\u001b[47m'
 const BG_BLACK = '\u001b[40m'
