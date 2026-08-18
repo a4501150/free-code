@@ -1,0 +1,73 @@
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "<your-auth-token>",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_NO_FLICKER": "1",
+    "ENABLE_TOOL_SEARCH": "false",
+    "CLAUDE_CODE_VERIFY_PLAN": "false",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": 128000
+  },
+  "permissions": {
+    "allow": [
+      "mcp__vscode-mcp",
+      "mcp__agent-browser",
+      "Bash",
+      "Read",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "WebFetch"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.freecode/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true
+  },
+  "alwaysThinkingEnabled": true,
+  "showClearContextOnPlanAccept": true,
+  "autoMemoryEnabled": false,
+  "toolCallDisplay": "compact",
+  "showAgentPanel": true,
+
+  "autoCompactEnabled": true,
+  "autoCompactPercentage": 100,
+  "autoCompactBuffer": 20000,
+
+  "showExpandedTodos": false,
+  "showSpinnerTree": false,
+
+  "mcpServers": {
+    "vscode-mcp": {
+      "command": "node",
+      "args": [
+        "<path-to>/vsc-lsp-mcp/dist/cli.js"
+      ],
+      "includeTools": [
+        "definition",
+        "declaration",
+        "implementation",
+        "hover",
+        "find_references",
+        "rename",
+        "search_symbols",
+        "get_diagnostics",
+        "open_workspace",
+        "close_workspace",
+        "health_check"
+      ]
+    },
+
+    "agent-browser": {
+      "command": "node",
+      "args": [
+        "<path-to>/agent-browser/dist/index.js"
+      ],
+      "env": {}
+    }
+  },
+
+  "skipDangerousModePermissionPrompt": true
+}
