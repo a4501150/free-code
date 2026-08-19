@@ -899,54 +899,63 @@ describe('restart redirect', () => {
     }
   }
 
-  test('chooses localUrl when browser is on localhost', () => {
+  // Stub fetch so the DNS probe resolves immediately in tests.
+  const originalFetch = globalThis.fetch
+  beforeEach(() => {
+    globalThis.fetch = async () => new Response(null, { status: 200 })
+  })
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test('chooses localUrl when browser is on localhost', async () => {
     const loc = fakeLoc('localhost', 'http://localhost:3000')
-    redirectAfterRestart(
+    await redirectAfterRestart(
       { publicUrl: 'https://abc.trycloudflare.com', localUrl: 'http://localhost:4000' },
       loc,
     )
     expect(loc.calls).toEqual(['http://localhost:4000'])
   })
 
-  test('chooses localUrl when browser is on 127.0.0.1', () => {
+  test('chooses localUrl when browser is on 127.0.0.1', async () => {
     const loc = fakeLoc('127.0.0.1', 'http://127.0.0.1:3000')
-    redirectAfterRestart(
+    await redirectAfterRestart(
       { publicUrl: 'https://abc.trycloudflare.com', localUrl: 'http://127.0.0.1:4000' },
       loc,
     )
     expect(loc.calls).toEqual(['http://127.0.0.1:4000'])
   })
 
-  test('chooses publicUrl when browser is on a tunnel hostname', () => {
+  test('chooses publicUrl when browser is on a tunnel hostname', async () => {
     const loc = fakeLoc('old.trycloudflare.com', 'https://old.trycloudflare.com')
-    redirectAfterRestart(
+    await redirectAfterRestart(
       { publicUrl: 'https://new.trycloudflare.com', localUrl: 'http://127.0.0.1:4000' },
       loc,
     )
     expect(loc.calls).toEqual(['https://new.trycloudflare.com'])
   })
 
-  test('does not redirect a remote browser to loopback', () => {
+  test('does not redirect a remote browser to loopback', async () => {
     const loc = fakeLoc('old.trycloudflare.com', 'https://old.trycloudflare.com')
-    redirectAfterRestart(
+    await redirectAfterRestart(
       { publicUrl: null, localUrl: 'http://127.0.0.1:4000' },
       loc,
     )
     expect(loc.calls).toEqual([])
   })
 
-  test('does not redirect when target is the same origin', () => {
+  test('does not redirect when target is the same origin', async () => {
     const loc = fakeLoc('localhost', 'http://localhost:3000')
-    redirectAfterRestart(
+    await redirectAfterRestart(
       { publicUrl: null, localUrl: 'http://localhost:3000' },
       loc,
     )
     expect(loc.calls).toEqual([])
   })
 
-  test('does not redirect when both URLs are null', () => {
+  test('does not redirect when both URLs are null', async () => {
     const loc = fakeLoc('localhost', 'http://localhost:3000')
-    redirectAfterRestart({ publicUrl: null, localUrl: null }, loc)
+    await redirectAfterRestart({ publicUrl: null, localUrl: null }, loc)
     expect(loc.calls).toEqual([])
   })
 })

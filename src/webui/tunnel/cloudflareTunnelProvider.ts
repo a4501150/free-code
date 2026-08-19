@@ -29,14 +29,11 @@ const GITHUB_RELEASE =
   'https://github.com/cloudflare/cloudflared/releases/latest/download'
 
 const STARTUP_TIMEOUT_MS = 60_000
-const PROBE_RETRY_MS = 500
 
 export type CloudflareDeps = {
   resolveBinary: () => Promise<string>
   spawnProcess: (binary: string, args: readonly string[]) => ChildProcess
-  fetchUrl: typeof fetch
   startupTimeoutMs: number
-  probeRetryMs: number
 }
 
 function downloadUrl(): string {
@@ -118,25 +115,6 @@ async function ensureBinary(): Promise<string> {
 // Startup helpers
 // ---------------------------------------------------------------------------
 
-function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(signal.reason)
-      return
-    }
-    const timer = setTimeout(done, ms)
-    function done(): void {
-      signal.removeEventListener('abort', abort)
-      resolve()
-    }
-    function abort(): void {
-      clearTimeout(timer)
-      reject(signal.reason)
-    }
-    signal.addEventListener('abort', abort, { once: true })
-  })
-}
-
 /**
  * Wait for cloudflared to print its quick-tunnel URL AND register at least one
  * tunnel connection. The URL alone is not sufficient: cloudflared documents it
@@ -211,55 +189,13 @@ function waitForRegistration(
 }
 
 /**
- * Poll the public URL until it returns a non-5xx response. A successful HTTP
- * response means DNS resolved, Cloudflare accepted the hostname, the tunnel
- * connection routes traffic, and the local gateway answers through that route.
- */
-async function waitForReachable(
-  url: string,
-  signal: AbortSignal,
-  fetchFn: typeof fetch,
-  retryMs: number,
-): Promise<void> {
-  let lastError: string | null = null
-  // biome-ignore lint/correctness/noConstantCondition: loop exits via return or throw
-  while (true) {
-    try {
-      const resp = await fetchFn(url, {
-        method: 'HEAD',
-        signal,
-        redirect: 'manual',
-      })
-      if (resp.status < 500) return
-      lastError = `HTTP ${resp.status}`
-    } catch (err) {
-      if (signal.aborted) {
-        const detail = lastError ? ` (last: ${lastError})` : ''
-        throw signal.reason ?? new Error(`tunnel not reachable${detail}`)
-      }
-      lastError = err instanceof Error ? err.message : String(err)
-    }
-    try {
-      await abortableDelay(retryMs, signal)
-    } catch {
-      const detail = lastError ? ` (last: ${lastError})` : ''
-      throw signal.reason ?? new Error(`tunnel not reachable${detail}`)
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
-
-/**
  * Cloudflare quick tunnel. Zero account, zero config, ~100 ms added latency.
  *
  * Downloads `cloudflared` to `~/.freecode/bin/` on first use if not in PATH.
  * Each invocation gets a random hostname.
  *
- * `start()` resolves only after the tunnel connection is registered AND the
- * public URL responds to an HTTP request, so consumers can trust the URL.
+ * `start()` resolves only after the tunnel connection is registered, so
+ * consumers can trust the URL.
  */
 export function createCloudflareTunnelProvider(
   overrides: Partial<CloudflareDeps> = {},
@@ -268,9 +204,7 @@ export function createCloudflareTunnelProvider(
     resolveBinary: ensureBinary,
     spawnProcess: (bin, args) =>
       spawn(bin, [...args], { stdio: ['ignore', 'pipe', 'pipe'] }),
-    fetchUrl: fetch,
     startupTimeoutMs: STARTUP_TIMEOUT_MS,
-    probeRetryMs: PROBE_RETRY_MS,
     ...overrides,
   }
 
@@ -327,12 +261,6 @@ export function createCloudflareTunnelProvider(
 
       try {
         const publicUrl = await waitForRegistration(child, startup.signal)
-        await waitForReachable(
-          publicUrl,
-          startup.signal,
-          deps.fetchUrl,
-          deps.probeRetryMs,
-        )
 
         const onAbort = (): void => {
           child.kill('SIGTERM')

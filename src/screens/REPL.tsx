@@ -309,6 +309,7 @@ import {
   saveWorktreeState,
   getAgentTranscript,
   saveMode,
+  saveAiGeneratedTitle,
 } from '../utils/sessionStorage.js'
 import { deserializeMessages } from '../utils/conversationRecovery.js'
 import {
@@ -1341,14 +1342,14 @@ export function REPL({
   const sessionTitle = terminalTitleFromRename
     ? getCurrentSessionTitle(getSessionId())
     : undefined
-  const [haikuTitle, setHaikuTitle] = useState<string>()
+  const [autoTitle, setAutoTitle] = useState<string>()
   // Gates the one-shot Haiku call that generates the tab title. Seeded true
   // on resume (initialMessages present) so we don't re-title a resumed
   // session from mid-conversation context.
-  const haikuTitleAttemptedRef = useRef((initialMessages?.length ?? 0) > 0)
+  const autoTitleAttemptedRef = useRef((initialMessages?.length ?? 0) > 0)
   const agentTitle = mainThreadAgentDefinition?.agentType
   const terminalTitle =
-    sessionTitle ?? agentTitle ?? haikuTitle ?? 'Claude Code'
+    sessionTitle ?? agentTitle ?? autoTitle ?? 'Claude Code'
   const isWaitingForApproval =
     toolUseConfirmQueue.length > 0 ||
     promptQueue.length > 0 ||
@@ -1365,7 +1366,7 @@ export function REPL({
   // Title animation state lives in <AnimatedTerminalTitle> so the 960ms tick
   // doesn't re-render REPL. titleDisabled/terminalTitle are still computed
   // here because onQueryImpl reads them (background session description,
-  // haiku title extraction gate).
+  // auto-title extraction gate).
 
   // Prevent macOS from sleeping while Claude is working
   useEffect(() => {
@@ -2085,8 +2086,8 @@ export function REPL({
         // Resumed sessions shouldn't re-title from mid-conversation context
         // (same reasoning as the useRef seed), and the previous session's
         // Haiku title shouldn't carry over.
-        haikuTitleAttemptedRef.current = true
-        setHaikuTitle(undefined)
+        autoTitleAttemptedRef.current = true
+        setAutoTitle(undefined)
 
         // Exit any worktree a prior /resume entered, then cd into the one
         // this session was in. Without the exit, resuming from worktree B
@@ -3023,7 +3024,7 @@ export function REPL({
         !titleDisabled &&
         !sessionTitle &&
         !agentTitle &&
-        !haikuTitleAttemptedRef.current
+        !autoTitleAttemptedRef.current
       ) {
         const firstUserMessage = newMessages.find(
           m => m.type === 'user' && !m.isMeta,
@@ -3043,14 +3044,16 @@ export function REPL({
           !text.startsWith(`<${COMMAND_NAME_TAG}>`) &&
           !text.startsWith(`<${BASH_INPUT_TAG}>`)
         ) {
-          haikuTitleAttemptedRef.current = true
+          autoTitleAttemptedRef.current = true
           void generateSessionTitle(text, new AbortController().signal).then(
             title => {
-              if (title) setHaikuTitle(title)
-              else haikuTitleAttemptedRef.current = false
+              if (title) {
+                setAutoTitle(title)
+                saveAiGeneratedTitle(getSessionId() as UUID, title)
+              } else autoTitleAttemptedRef.current = false
             },
             () => {
-              haikuTitleAttemptedRef.current = false
+              autoTitleAttemptedRef.current = false
             },
           )
         }
@@ -3428,8 +3431,8 @@ export function REPL({
           setConversationId,
           scrollToBottom: () => scrollRef.current?.scrollToBottom(),
         })
-        haikuTitleAttemptedRef.current = false
-        setHaikuTitle(undefined)
+        autoTitleAttemptedRef.current = false
+        setAutoTitle(undefined)
         bashTools.current.clear()
         bashToolsProcessedIdx.current = 0
 

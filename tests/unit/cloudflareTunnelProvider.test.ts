@@ -15,16 +15,11 @@ function fakeChild(): ChildProcess {
   return child
 }
 
-function deps(
-  child: ChildProcess,
-  fetchFn?: typeof fetch,
-): CloudflareDeps {
+function deps(child: ChildProcess): CloudflareDeps {
   return {
     resolveBinary: async () => '/bin/fake',
     spawnProcess: () => child,
-    fetchUrl: fetchFn ?? (async () => new Response(null, { status: 200 })),
     startupTimeoutMs: 5000,
-    probeRetryMs: 20,
   }
 }
 
@@ -52,7 +47,7 @@ function emitRegistered(child: ChildProcess): void {
 const tick = () => Bun.sleep(10)
 
 describe('cloudflare tunnel provider', () => {
-  test('resolves only after URL, registration, and a successful probe', async () => {
+  test('resolves only after both URL and registration', async () => {
     const child = fakeChild()
     const provider = createCloudflareTunnelProvider(deps(child))
     const signal = new AbortController()
@@ -62,7 +57,6 @@ describe('cloudflare tunnel provider', () => {
 
     emitUrl(child)
     await tick()
-    // URL alone does not resolve — registration is still missing
     emitRegistered(child)
 
     const handle = await ready
@@ -87,33 +81,6 @@ describe('cloudflare tunnel provider', () => {
     await handle.close()
   })
 
-  test('retries a transient 502 until 200', async () => {
-    const child = fakeChild()
-    let calls = 0
-    const fetchFn = async (
-      _url: string | URL | Request,
-      init?: RequestInit,
-    ) => {
-      calls++
-      if (init?.signal?.aborted)
-        throw new DOMException('aborted', 'AbortError')
-      return new Response(null, { status: calls < 3 ? 502 : 200 })
-    }
-    const provider = createCloudflareTunnelProvider(
-      deps(child, fetchFn as typeof fetch),
-    )
-    const signal = new AbortController()
-
-    const ready = provider.start({ port: 9999, signal: signal.signal })
-    await tick()
-    emitUrl(child)
-    emitRegistered(child)
-
-    const handle = await ready
-    expect(calls).toBeGreaterThanOrEqual(3)
-    await handle.close()
-  })
-
   test('rejects when cloudflared exits after URL but before registration', async () => {
     const child = fakeChild()
     const provider = createCloudflareTunnelProvider(deps(child))
@@ -122,38 +89,6 @@ describe('cloudflare tunnel provider', () => {
     const ready = provider.start({ port: 9999, signal: signal.signal })
     await tick()
     emitUrl(child)
-    await tick()
-    child.emit('exit', 1, null)
-
-    await expect(ready).rejects.toThrow(/exited before ready/)
-  })
-
-  test('rejects when cloudflared exits during probe', async () => {
-    const child = fakeChild()
-    const fetchFn = async (
-      _url: string | URL | Request,
-      init?: RequestInit,
-    ) => {
-      return new Promise<Response>((_, reject) => {
-        const sig = init?.signal
-        if (sig?.aborted) {
-          reject(sig.reason)
-          return
-        }
-        sig?.addEventListener('abort', () => reject(sig.reason), {
-          once: true,
-        })
-      })
-    }
-    const provider = createCloudflareTunnelProvider(
-      deps(child, fetchFn as typeof fetch),
-    )
-    const signal = new AbortController()
-
-    const ready = provider.start({ port: 9999, signal: signal.signal })
-    await tick()
-    emitUrl(child)
-    emitRegistered(child)
     await tick()
     child.emit('exit', 1, null)
 
@@ -173,23 +108,6 @@ describe('cloudflare tunnel provider', () => {
     emitUrl(child)
 
     await expect(ready).rejects.toThrow(/did not become ready/)
-  })
-
-  test('rejects with a deadline error when probe never succeeds', async () => {
-    const child = fakeChild()
-    const fetchFn = async () => new Response(null, { status: 502 })
-    const provider = createCloudflareTunnelProvider({
-      ...deps(child, fetchFn as typeof fetch),
-      startupTimeoutMs: 300,
-    })
-    const signal = new AbortController()
-
-    const ready = provider.start({ port: 9999, signal: signal.signal })
-    await tick()
-    emitUrl(child)
-    emitRegistered(child)
-
-    await expect(ready).rejects.toThrow()
   })
 
   test('rejects when caller aborts during startup', async () => {
