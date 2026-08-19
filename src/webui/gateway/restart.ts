@@ -6,6 +6,26 @@ export type RestartReadyFrame = {
   localUrl: string | null
 }
 
+const PROBE_ATTEMPTS = 30
+const PROBE_INTERVAL_MS = 1000
+const PROBE_TIMEOUT_MS = 5000
+
+async function waitForTunnelReachable(url: string): Promise<void> {
+  for (let i = 0; i < PROBE_ATTEMPTS; i++) {
+    try {
+      const res = await fetch(url, {
+        method: 'HEAD',
+        redirect: 'follow',
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      })
+      if (res.status < 500) return
+    } catch {
+      // DNS not propagated or connection refused — retry.
+    }
+    await Bun.sleep(PROBE_INTERVAL_MS)
+  }
+}
+
 /**
  * Graceful restart: keep the old gateway alive while the replacement starts,
  * then push the new URLs to every connected browser before exiting.
@@ -59,6 +79,8 @@ export async function gracefulRestart(ctx: {
 
   const publicUrl = result?.ok ? result.status.publicUrl ?? null : null
   const localUrl = result?.ok ? result.status.url ?? null : null
+
+  if (publicUrl) await waitForTunnelReachable(publicUrl)
 
   ctx.broadcast({ type: 'restart_ready', publicUrl, localUrl })
 

@@ -31,26 +31,15 @@ export type FollowChoice =
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
 
-export async function redirectAfterRestart(
+export function redirectAfterRestart(
   info: { publicUrl: string | null; localUrl: string | null },
   loc: { hostname: string; origin: string; replace(url: string): void },
-): Promise<void> {
+): void {
   const target = LOOPBACK_HOSTS.has(loc.hostname)
     ? info.localUrl
     : info.publicUrl
   if (!target) return
   if (new URL(target).origin === loc.origin) return
-
-  // The tunnel is registered but DNS may not have propagated to this device.
-  for (let i = 0; i < 20; i++) {
-    try {
-      await fetch(target, { mode: 'no-cors', signal: AbortSignal.timeout(3000) })
-      break
-    } catch {
-      await new Promise(r => setTimeout(r, 1000))
-    }
-  }
-
   loc.replace(target)
 }
 
@@ -135,7 +124,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     },
     onRestartReady: info => {
       setRestartInfo(info)
-      void redirectAfterRestart(info, window.location)
+      redirectAfterRestart(info, window.location)
     },
   })
 
