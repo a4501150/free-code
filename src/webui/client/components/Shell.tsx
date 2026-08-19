@@ -29,6 +29,20 @@ export type FollowChoice =
   | { kind: 'give-up' }
   | { kind: 'wait' }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+
+export function redirectAfterRestart(
+  info: { publicUrl: string | null; localUrl: string | null },
+  loc: { hostname: string; origin: string; replace(url: string): void },
+): void {
+  const target = LOOPBACK_HOSTS.has(loc.hostname)
+    ? info.localUrl
+    : info.publicUrl
+  if (!target) return
+  if (new URL(target).origin === loc.origin) return
+  loc.replace(target)
+}
+
 /**
  * Picks the process that serves `sessionId` now.
  *
@@ -110,10 +124,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     },
     onRestartReady: info => {
       setRestartInfo(info)
-      const target = info.publicUrl ?? info.localUrl
-      if (target && new URL(target).origin !== location.origin) {
-        window.location.href = target
-      }
+      redirectAfterRestart(info, window.location)
     },
   })
 

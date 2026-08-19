@@ -27,7 +27,10 @@ import {
   type LiveHolder,
   type SessionListEntry,
 } from '../../src/webui/gateway/sessionHub.js'
-import { chooseFollowTarget } from '../../src/webui/client/components/Shell.js'
+import {
+  chooseFollowTarget,
+  redirectAfterRestart,
+} from '../../src/webui/client/components/Shell.js'
 import { isManagedChild } from '../../src/utils/webuiManagedProcess.js'
 import type { ConcurrentSessionEntry } from '../../src/utils/concurrentSessions.js'
 import {
@@ -880,5 +883,70 @@ describe('following a session across a holder change', () => {
     expect(
       chooseFollowTarget([row({ attachable: false })], 'S', new Set()),
     ).toEqual({ kind: 'wait' })
+  })
+})
+
+describe('restart redirect', () => {
+  function fakeLoc(hostname: string, origin: string) {
+    const calls: string[] = []
+    return {
+      hostname,
+      origin,
+      replace(url: string) {
+        calls.push(url)
+      },
+      calls,
+    }
+  }
+
+  test('chooses localUrl when browser is on localhost', () => {
+    const loc = fakeLoc('localhost', 'http://localhost:3000')
+    redirectAfterRestart(
+      { publicUrl: 'https://abc.trycloudflare.com', localUrl: 'http://localhost:4000' },
+      loc,
+    )
+    expect(loc.calls).toEqual(['http://localhost:4000'])
+  })
+
+  test('chooses localUrl when browser is on 127.0.0.1', () => {
+    const loc = fakeLoc('127.0.0.1', 'http://127.0.0.1:3000')
+    redirectAfterRestart(
+      { publicUrl: 'https://abc.trycloudflare.com', localUrl: 'http://127.0.0.1:4000' },
+      loc,
+    )
+    expect(loc.calls).toEqual(['http://127.0.0.1:4000'])
+  })
+
+  test('chooses publicUrl when browser is on a tunnel hostname', () => {
+    const loc = fakeLoc('old.trycloudflare.com', 'https://old.trycloudflare.com')
+    redirectAfterRestart(
+      { publicUrl: 'https://new.trycloudflare.com', localUrl: 'http://127.0.0.1:4000' },
+      loc,
+    )
+    expect(loc.calls).toEqual(['https://new.trycloudflare.com'])
+  })
+
+  test('does not redirect a remote browser to loopback', () => {
+    const loc = fakeLoc('old.trycloudflare.com', 'https://old.trycloudflare.com')
+    redirectAfterRestart(
+      { publicUrl: null, localUrl: 'http://127.0.0.1:4000' },
+      loc,
+    )
+    expect(loc.calls).toEqual([])
+  })
+
+  test('does not redirect when target is the same origin', () => {
+    const loc = fakeLoc('localhost', 'http://localhost:3000')
+    redirectAfterRestart(
+      { publicUrl: null, localUrl: 'http://localhost:3000' },
+      loc,
+    )
+    expect(loc.calls).toEqual([])
+  })
+
+  test('does not redirect when both URLs are null', () => {
+    const loc = fakeLoc('localhost', 'http://localhost:3000')
+    redirectAfterRestart({ publicUrl: null, localUrl: null }, loc)
+    expect(loc.calls).toEqual([])
   })
 })

@@ -23,9 +23,21 @@ import {
 } from './types.js'
 
 const URL_PATTERN = /https:\/\/[^\s"'<>]+\.trycloudflare\.com/
+const REGISTERED_RE = /Registered tunnel connection/
 
 const GITHUB_RELEASE =
   'https://github.com/cloudflare/cloudflared/releases/latest/download'
+
+const STARTUP_TIMEOUT_MS = 60_000
+const PROBE_RETRY_MS = 500
+
+export type CloudflareDeps = {
+  resolveBinary: () => Promise<string>
+  spawnProcess: (binary: string, args: readonly string[]) => ChildProcess
+  fetchUrl: typeof fetch
+  startupTimeoutMs: number
+  probeRetryMs: number
+}
 
 function downloadUrl(): string {
   const os = platform()
@@ -102,74 +114,246 @@ async function ensureBinary(): Promise<string> {
   return downloadBinary()
 }
 
+// ---------------------------------------------------------------------------
+// Startup helpers
+// ---------------------------------------------------------------------------
+
+function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason)
+      return
+    }
+    const timer = setTimeout(done, ms)
+    function done(): void {
+      signal.removeEventListener('abort', abort)
+      resolve()
+    }
+    function abort(): void {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
+/**
+ * Wait for cloudflared to print its quick-tunnel URL AND register at least one
+ * tunnel connection. The URL alone is not sufficient: cloudflared documents it
+ * as "may take some time to be reachable."
+ */
+function waitForRegistration(
+  child: ChildProcess,
+  signal: AbortSignal,
+): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason)
+      return
+    }
+
+    let url: string | null = null
+    let registered = false
+    let stdoutCarry = ''
+    let stderrCarry = ''
+
+    function scan(text: string): void {
+      if (!url) {
+        const m = URL_PATTERN.exec(text)
+        if (m) {
+          try {
+            url = validatePublicUrl(m[0])
+          } catch (e) {
+            cleanup()
+            reject(e)
+            return
+          }
+        }
+      }
+      if (!registered && REGISTERED_RE.test(text)) registered = true
+      if (url && registered) {
+        cleanup()
+        resolve(url)
+      }
+    }
+
+    function onStdout(chunk: Buffer): void {
+      const combined = stdoutCarry + chunk.toString('utf-8')
+      scan(combined)
+      stdoutCarry = combined.slice(-4096)
+    }
+
+    function onStderr(chunk: Buffer): void {
+      const combined = stderrCarry + chunk.toString('utf-8')
+      scan(combined)
+      stderrCarry = combined.slice(-4096)
+    }
+
+    function onAbort(): void {
+      cleanup()
+      reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new Error('startup aborted'),
+      )
+    }
+
+    function cleanup(): void {
+      child.stdout?.removeListener('data', onStdout)
+      child.stderr?.removeListener('data', onStderr)
+      signal.removeEventListener('abort', onAbort)
+    }
+
+    child.stdout?.on('data', onStdout)
+    child.stderr?.on('data', onStderr)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+/**
+ * Poll the public URL until it returns a non-5xx response. A successful HTTP
+ * response means DNS resolved, Cloudflare accepted the hostname, the tunnel
+ * connection routes traffic, and the local gateway answers through that route.
+ */
+async function waitForReachable(
+  url: string,
+  signal: AbortSignal,
+  fetchFn: typeof fetch,
+  retryMs: number,
+): Promise<void> {
+  let lastError: string | null = null
+  // biome-ignore lint/correctness/noConstantCondition: loop exits via return or throw
+  while (true) {
+    try {
+      const resp = await fetchFn(url, {
+        method: 'HEAD',
+        signal,
+        redirect: 'manual',
+      })
+      if (resp.status < 500) return
+      lastError = `HTTP ${resp.status}`
+    } catch (err) {
+      if (signal.aborted) {
+        const detail = lastError ? ` (last: ${lastError})` : ''
+        throw signal.reason ?? new Error(`tunnel not reachable${detail}`)
+      }
+      lastError = err instanceof Error ? err.message : String(err)
+    }
+    try {
+      await abortableDelay(retryMs, signal)
+    } catch {
+      const detail = lastError ? ` (last: ${lastError})` : ''
+      throw signal.reason ?? new Error(`tunnel not reachable${detail}`)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
+
 /**
  * Cloudflare quick tunnel. Zero account, zero config, ~100 ms added latency.
  *
  * Downloads `cloudflared` to `~/.freecode/bin/` on first use if not in PATH.
  * Each invocation gets a random hostname.
+ *
+ * `start()` resolves only after the tunnel connection is registered AND the
+ * public URL responds to an HTTP request, so consumers can trust the URL.
  */
-export function createCloudflareTunnelProvider(): TunnelProvider {
+export function createCloudflareTunnelProvider(
+  overrides: Partial<CloudflareDeps> = {},
+): TunnelProvider {
+  const deps: CloudflareDeps = {
+    resolveBinary: ensureBinary,
+    spawnProcess: (bin, args) =>
+      spawn(bin, [...args], { stdio: ['ignore', 'pipe', 'pipe'] }),
+    fetchUrl: fetch,
+    startupTimeoutMs: STARTUP_TIMEOUT_MS,
+    probeRetryMs: PROBE_RETRY_MS,
+    ...overrides,
+  }
+
   return {
     name: 'cloudflared',
     async start({ port, signal }: TunnelStartOptions): Promise<TunnelHandle> {
-      const binary = await ensureBinary()
+      const binary = await deps.resolveBinary()
 
-      const child: ChildProcess = spawn(
-        binary,
-        ['--config', '/dev/null', 'tunnel', '--url', `http://127.0.0.1:${port}`],
-        { stdio: ['ignore', 'pipe', 'pipe'] },
+      const child: ChildProcess = deps.spawnProcess(binary, [
+        '--config',
+        '/dev/null',
+        'tunnel',
+        '--url',
+        `http://127.0.0.1:${port}`,
+      ])
+
+      // One deadline for URL extraction, registration, and reachability.
+      const startup = new AbortController()
+      const timer = setTimeout(
+        () =>
+          startup.abort(
+            new Error(
+              `cloudflared did not become ready within ${deps.startupTimeoutMs / 1000}s`,
+            ),
+          ),
+        deps.startupTimeoutMs,
       )
 
-      const publicUrl = await new Promise<string>((resolve, reject) => {
-        let settled = false
-        const timer = setTimeout(() => {
-          if (settled) return
-          settled = true
-          child.kill('SIGTERM')
-          reject(new Error('cloudflared printed no tunnel URL in 60 s'))
-        }, 60_000)
-
-        const scan = (chunk: Buffer): void => {
-          if (settled) return
-          const match = URL_PATTERN.exec(chunk.toString('utf-8'))
-          if (!match) return
-          settled = true
-          clearTimeout(timer)
-          try {
-            resolve(validatePublicUrl(match[0]))
-          } catch (err) {
-            reject(err)
-          }
-        }
-
-        child.stdout?.on('data', scan)
-        child.stderr?.on('data', scan)
-
-        child.once('error', err => {
-          if (settled) return
-          settled = true
-          clearTimeout(timer)
-          reject(new Error(`cloudflared failed to start: ${err.message}`))
-        })
-        child.once('exit', code => {
-          if (settled) return
-          settled = true
-          clearTimeout(timer)
-          reject(new Error(`cloudflared exited with code ${code}`))
-        })
-      })
-
-      const onAbort = (): void => {
-        child.kill('SIGTERM')
+      const onChildError = (err: Error): void => {
+        if (!startup.signal.aborted)
+          startup.abort(
+            new Error(`cloudflared failed to start: ${err.message}`),
+          )
       }
-      signal.addEventListener('abort', onAbort, { once: true })
+      const onChildExit = (
+        code: number | null,
+        sig: string | null,
+      ): void => {
+        if (!startup.signal.aborted) {
+          const detail = sig ? `signal ${sig}` : `code ${code}`
+          startup.abort(
+            new Error(`cloudflared exited before ready (${detail})`),
+          )
+        }
+      }
+      const onCallerAbort = (): void => {
+        if (!startup.signal.aborted)
+          startup.abort(new Error('cloudflared startup cancelled'))
+      }
 
-      return {
-        publicUrl,
-        async close() {
-          signal.removeEventListener('abort', onAbort)
+      child.once('error', onChildError)
+      child.once('exit', onChildExit)
+      signal.addEventListener('abort', onCallerAbort, { once: true })
+
+      try {
+        const publicUrl = await waitForRegistration(child, startup.signal)
+        await waitForReachable(
+          publicUrl,
+          startup.signal,
+          deps.fetchUrl,
+          deps.probeRetryMs,
+        )
+
+        const onAbort = (): void => {
           child.kill('SIGTERM')
-        },
+        }
+        signal.addEventListener('abort', onAbort, { once: true })
+
+        return {
+          publicUrl,
+          async close() {
+            signal.removeEventListener('abort', onAbort)
+            child.kill('SIGTERM')
+          },
+        }
+      } catch (err) {
+        child.kill('SIGTERM')
+        throw err
+      } finally {
+        clearTimeout(timer)
+        child.removeListener('error', onChildError)
+        child.removeListener('exit', onChildExit)
+        signal.removeEventListener('abort', onCallerAbort)
       }
     },
   }
