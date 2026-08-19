@@ -32,7 +32,7 @@ function MobileQRCode({ onDone }: Props): React.ReactNode {
             const qr = await qrToString(webUrl.toUpperCase(), {
               type: 'utf8',
               errorCorrectionLevel: 'L',
-              margin: 2,
+              margin: 4,
             })
             setQrCode(qr)
             setStatus('ready')
@@ -89,7 +89,7 @@ function MobileQRCode({ onDone }: Props): React.ReactNode {
         const qr = await qrToString(webUrl.toUpperCase(), {
           type: 'utf8',
           errorCorrectionLevel: 'L',
-          margin: 2,
+          margin: 4,
         })
         setQrCode(qr)
         setStatus('ready')

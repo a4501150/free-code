@@ -443,7 +443,10 @@ export function startGatewayServer(
         default:
           return new Response('not found', {
             status: 404,
-            headers: SECURITY_HEADERS,
+            headers: {
+              ...SECURITY_HEADERS,
+              'content-type': 'text/plain; charset=utf-8',
+            },
           })
       }
     },

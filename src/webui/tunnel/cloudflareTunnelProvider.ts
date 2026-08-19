@@ -116,7 +116,7 @@ export function createCloudflareTunnelProvider(): TunnelProvider {
 
       const child: ChildProcess = spawn(
         binary,
-        ['tunnel', '--url', `http://127.0.0.1:${port}`],
+        ['--config', '/dev/null', 'tunnel', '--url', `http://127.0.0.1:${port}`],
         { stdio: ['ignore', 'pipe', 'pipe'] },
       )
 

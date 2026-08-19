@@ -379,9 +379,7 @@ export async function webMain(args: string[]): Promise<void> {
   }
 }
 
-// Two quiet-zone modules per side. The spec calls for four, but two is
-// enough for every modern phone scanner and keeps the code compact.
-const QUIET_ZONE = 2
+const QUIET_ZONE = 4
 
 const BG_WHITE = '\u001b[47m'
 const BG_BLACK = '\u001b[40m'
@@ -403,7 +401,12 @@ async function printQr(url: string): Promise<void> {
       if (col < 0 || row < 0 || col >= size || row >= size) return false
       return data[row * size + col] !== 0
     }
-    print(renderQrCompact(width, isDark))
+    const columns = process.stdout.columns || 80
+    print(
+      columns >= width
+        ? renderQrCompact(width, isDark)
+        : renderQrWide(width, isDark),
+    )
   } catch {
     // A missing QR renderer must not fail the command that already worked.
   }
