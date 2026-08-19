@@ -123,11 +123,12 @@ export function autoNameSessionFromPlan(
     [createUserMessage({ content: plan.slice(0, 1000) })],
     new AbortController().signal,
   )
-    .then(async name => {
+    .then(async result => {
       // On clear-context acceptance, regenerateSessionId() has run by now —
       // this intentionally names the NEW execution session. Do not "fix" by
       // capturing sessionId once; that would name the abandoned planning session.
-      if (!name || getCurrentSessionTitle(getSessionId())) return
+      if (!result.ok || getCurrentSessionTitle(getSessionId())) return
+      const name = result.name
       const sessionId = getSessionId() as UUID
       const fullPath = getTranscriptPath()
       await saveCustomTitle(sessionId, name, fullPath, 'auto')

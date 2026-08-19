@@ -7,13 +7,17 @@ import { extractTextContent } from '../../utils/messages.js'
 import { extractConversationText } from '../../utils/sessionTitle.js'
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
 
+export type NameResult =
+  | { ok: true; name: string }
+  | { ok: false; reason: 'no_text' | 'model_failed' | 'bad_response' }
+
 export async function generateSessionName(
   messages: Message[],
   signal: AbortSignal,
-): Promise<string | null> {
+): Promise<NameResult> {
   const conversationText = extractConversationText(messages)
   if (!conversationText) {
-    return null
+    return { ok: false, reason: 'no_text' }
   }
 
   try {
@@ -52,9 +56,13 @@ export async function generateSessionName(
       'name' in response &&
       typeof (response as { name: unknown }).name === 'string'
     ) {
-      return (response as { name: string }).name
+      return { ok: true, name: (response as { name: string }).name }
     }
-    return null
+    logForDebugging(
+      `generateSessionName: unparseable response: ${content.slice(0, 200)}`,
+      { level: 'error' },
+    )
+    return { ok: false, reason: 'bad_response' }
   } catch (error) {
     // Haiku timeout/rate-limit/network are expected operational failures —
     // logForDebugging, not logError. May be called frequently,
@@ -62,6 +70,6 @@ export async function generateSessionName(
     logForDebugging(`generateSessionName failed: ${errorMessage(error)}`, {
       level: 'error',
     })
-    return null
+    return { ok: false, reason: 'model_failed' }
   }
 }

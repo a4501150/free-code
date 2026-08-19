@@ -12,7 +12,7 @@ import {
   saveCustomTitle,
 } from '../../utils/sessionStorage.js'
 import { isTeammate } from '../../utils/teammate.js'
-import { generateSessionName } from './generateSessionName.js'
+import { generateSessionName, type NameResult } from './generateSessionName.js'
 
 export async function call(
   onDone: LocalJSXCommandOnDone,
@@ -30,18 +30,32 @@ export async function call(
 
   let newName: string
   if (!args || args.trim() === '') {
-    const generated = await generateSessionName(
-      getMessagesAfterCompactBoundary(context.messages),
+    const postCompact = getMessagesAfterCompactBoundary(context.messages)
+    let result: NameResult = await generateSessionName(
+      postCompact,
       context.abortController.signal,
     )
-    if (!generated) {
-      onDone(
-        'Could not generate a name: no conversation context yet. Usage: /rename <name>',
-        { display: 'system' },
+    if (
+      !result.ok &&
+      result.reason === 'no_text' &&
+      postCompact.length !== context.messages.length
+    ) {
+      result = await generateSessionName(
+        context.messages,
+        context.abortController.signal,
       )
+    }
+    if (!result.ok) {
+      const msg =
+        result.reason === 'no_text'
+          ? 'No conversation context yet.'
+          : result.reason === 'model_failed'
+            ? 'Could not reach the model for name generation.'
+            : 'Model returned an unparseable response.'
+      onDone(`${msg} Usage: /rename <name>`, { display: 'system' })
       return null
     }
-    newName = generated
+    newName = result.name
   } else {
     newName = args.trim()
   }
