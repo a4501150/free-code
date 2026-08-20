@@ -1033,14 +1033,13 @@ export function REPL({
   )
 
   const commandNames = useMemo(
-    () =>
-      [
-        ...new Set(
-          commands
-            .filter(c => !c.isHidden)
-            .flatMap(c => [getCommandName(c), ...(c.aliases ?? [])]),
-        ),
-      ],
+    () => [
+      ...new Set(
+        commands
+          .filter(c => !c.isHidden)
+          .flatMap(c => [getCommandName(c), ...(c.aliases ?? [])]),
+      ),
+    ],
     [commands],
   )
 
@@ -1348,8 +1347,7 @@ export function REPL({
   // session from mid-conversation context.
   const autoTitleAttemptedRef = useRef((initialMessages?.length ?? 0) > 0)
   const agentTitle = mainThreadAgentDefinition?.agentType
-  const terminalTitle =
-    sessionTitle ?? agentTitle ?? autoTitle ?? 'Claude Code'
+  const terminalTitle = sessionTitle ?? agentTitle ?? autoTitle ?? 'Claude Code'
   const isWaitingForApproval =
     toolUseConfirmQueue.length > 0 ||
     promptQueue.length > 0 ||
@@ -4810,7 +4808,6 @@ export function REPL({
         streamingToolUses={transcriptStreamingToolUses}
         onOpenRateLimitOptions={handleOpenRateLimitOptions}
         isLoading={isLoading}
-        hidePastThinking={true}
         streamingThinking={streamingThinking}
         scrollRef={scrollRef}
         jumpRef={jumpRef}
@@ -5152,6 +5149,9 @@ export function REPL({
                   isLoading && !viewedAgentTask ? visibleStreamingText : null
                 }
                 isBriefOnly={viewedAgentTask ? false : isBriefOnly}
+                streamingThinking={
+                  isLoading && !viewedAgentTask ? streamingThinking : null
+                }
                 unseenDivider={viewedAgentTask ? undefined : unseenDivider}
                 scrollRef={scrollRef}
                 trackStickyPrompt

@@ -142,7 +142,7 @@ function MobileQRCode({ onDone }: Props): React.ReactNode {
           autoFocus
           onKeyDown={handleKeyDown}
         >
-          <Text color="red">{errorMsg}</Text>
+          <Text color="error">{errorMsg}</Text>
           <Text> </Text>
           <Text dimColor>(esc to close)</Text>
         </Box>

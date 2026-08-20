@@ -733,6 +733,8 @@ export function normalizeMessages(messages: Message[]): NormalizedMessage[] {
             error: message.error,
             isApiErrorMessage: message.isApiErrorMessage,
             advisorModel: message.advisorModel,
+            thinkingDurationMs: (message as Record<string, unknown>)
+              .thinkingDurationMs,
           } as NormalizedAssistantMessage
         })
       }
@@ -2690,6 +2692,8 @@ export type StreamingThinking = {
   thinking: string
   isStreaming: boolean
   streamingEndedAt?: number
+  startedAt?: number
+  durationMs?: number
 }
 
 const SUBAGENT_TYPE_RE = /"subagent_type"\s*:\s*"([^"]+)"/
@@ -2736,11 +2740,21 @@ export function handleMessageFromStream(
         block => block.type === 'reasoning',
       )
       if (thinkingBlock && thinkingBlock.type === 'reasoning') {
-        onStreamingThinking?.(() => ({
-          thinking: thinkingBlock.text,
-          isStreaming: false,
-          streamingEndedAt: Date.now(),
-        }))
+        onStreamingThinking?.(current => {
+          const durationMs = current?.startedAt
+            ? Date.now() - current.startedAt
+            : undefined
+          if (durationMs !== undefined) {
+            ;(message as Record<string, unknown>).thinkingDurationMs =
+              durationMs
+          }
+          return {
+            thinking: thinkingBlock.text,
+            isStreaming: false,
+            streamingEndedAt: Date.now(),
+            durationMs,
+          }
+        })
       }
     }
     // Clear streaming text NOW so the render can switch displayedMessages
@@ -2782,6 +2796,11 @@ export function handleMessageFromStream(
         case 'reasoning':
         case 'redacted_reasoning':
           onSetStreamMode('thinking')
+          onStreamingThinking?.(current =>
+            current?.isStreaming
+              ? current
+              : { thinking: '', isStreaming: true, startedAt: Date.now() },
+          )
           return
         case 'text':
           onSetStreamMode('responding')
@@ -2866,13 +2885,21 @@ export function handleMessageFromStream(
           })
           return
         }
-        case 'thinking_delta':
-          onUpdateLength(
+        case 'thinking_delta': {
+          const deltaThinking =
             typeof message.event.delta.thinking === 'string'
               ? message.event.delta.thinking
-              : '',
-          )
+              : ''
+          onUpdateLength(deltaThinking)
+          if (deltaThinking) {
+            onStreamingThinking?.(current =>
+              current
+                ? { ...current, thinking: current.thinking + deltaThinking }
+                : null,
+            )
+          }
           return
+        }
         default:
           return
       }

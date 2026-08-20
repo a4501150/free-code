@@ -1,16 +1,18 @@
 import type { DomainReasoningBlock } from '../../types/domain.js'
 import React from 'react'
-import { Box, Text } from '../../ink.js'
+import { Box, Text, useAnimationFrame } from '../../ink.js'
 import { CtrlOToExpand } from '../CtrlOToExpand.js'
 import { Markdown } from '../Markdown.js'
+import { formatSecondsShort } from '../../utils/format.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 
 type Props = {
   param: DomainReasoningBlock | { type: 'thinking'; thinking: string }
   addMargin: boolean
   isTranscriptMode: boolean
   verbose: boolean
-  /** When true, hide this thinking block entirely (used for past thinking in transcript mode) */
-  hideInTranscript?: boolean
+  isStreaming?: boolean
+  durationMs?: number
 }
 
 export function AssistantThinkingMessage({
@@ -18,27 +20,34 @@ export function AssistantThinkingMessage({
   addMargin = false,
   isTranscriptMode,
   verbose,
-  hideInTranscript = false,
+  isStreaming = false,
+  durationMs,
 }: Props): React.ReactNode {
   const thinking =
     'thinking' in param ? param.thinking : (param as { text: string }).text
-  if (!thinking) {
-    return null
-  }
 
-  if (hideInTranscript) {
+  if (!thinking && !isStreaming) {
     return null
   }
 
   const shouldShowFullThinking = isTranscriptMode || verbose
-  const label = '∴ Thinking'
+
+  const label = isStreaming
+    ? '∴ thinking'
+    : durationMs !== undefined
+      ? `∴ thought for ${formatSecondsShort(durationMs)}`
+      : '∴ thought'
 
   if (!shouldShowFullThinking) {
     return (
       <Box marginTop={addMargin ? 1 : 0}>
-        <Text dimColor italic>
-          {label} <CtrlOToExpand />
-        </Text>
+        {isStreaming ? (
+          <ThinkingAnimation />
+        ) : (
+          <Text dimColor italic>
+            {label} <CtrlOToExpand />
+          </Text>
+        )}
       </Box>
     )
   }
@@ -50,12 +59,45 @@ export function AssistantThinkingMessage({
       marginTop={addMargin ? 1 : 0}
       width="100%"
     >
-      <Text dimColor italic>
-        {label}…
-      </Text>
-      <Box paddingLeft={2}>
-        <Markdown dimColor>{thinking}</Markdown>
+      {isStreaming ? (
+        <ThinkingAnimation />
+      ) : (
+        <Text dimColor italic>
+          {label}
+        </Text>
+      )}
+      {thinking && (
+        <Box paddingLeft={2}>
+          <Markdown dimColor>{thinking}</Markdown>
+        </Box>
+      )}
+    </Box>
+  )
+}
+
+const GLYPH_CYCLE = ['⠋', '⠙', '⠸', '⠴', '⠦', '⠇']
+
+function ThinkingAnimation(): React.ReactNode {
+  const reducedMotion = getInitialSettings().prefersReducedMotion ?? false
+  const [ref, time] = useAnimationFrame(reducedMotion ? null : 120)
+
+  if (reducedMotion) {
+    return (
+      <Box ref={ref}>
+        <Text dimColor italic>
+          ∴ thinking
+        </Text>
       </Box>
+    )
+  }
+
+  const glyph = GLYPH_CYCLE[Math.floor(time / 150) % GLYPH_CYCLE.length]!
+
+  return (
+    <Box ref={ref}>
+      <Text dimColor italic>
+        {glyph} thinking
+      </Text>
     </Box>
   )
 }

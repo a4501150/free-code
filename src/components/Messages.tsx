@@ -270,8 +270,6 @@ type Props = {
   /** Hide the logo/header - used for subagent zoom view */
   hideLogo?: boolean
   isLoading: boolean
-  /** In transcript mode, hide all thinking blocks except the last one */
-  hidePastThinking?: boolean
   /** Streaming thinking content (live updates, not frozen) */
   streamingThinking?: StreamingThinking | null
   /** Streaming text preview (rendered as last item so transition to final message is positionally seamless) */
@@ -411,7 +409,6 @@ const MessagesImpl = ({
   onOpenRateLimitOptions,
   hideLogo = false,
   isLoading,
-  hidePastThinking = false,
   streamingThinking,
   streamingText,
   isBriefOnly = false,
@@ -441,47 +438,16 @@ const MessagesImpl = ({
     [messages],
   )
 
-  // Check if streaming thinking should be visible (streaming or within 30s timeout)
   const isStreamingThinkingVisible = useMemo(() => {
     if (!streamingThinking) return false
-    if (streamingThinking.isStreaming) return true
-    if (streamingThinking.streamingEndedAt) {
-      return Date.now() - streamingThinking.streamingEndedAt < 30000
-    }
-    return false
+    return streamingThinking.isStreaming
   }, [streamingThinking])
 
-  // Find the last thinking block (message UUID + content index) for hiding past thinking in transcript mode
-  // When streaming thinking is visible, use a special ID that won't match any completed thinking block
-  // With adaptive thinking, only consider thinking blocks from the current turn and stop searching once we
-  // hit the last user message.
-  const lastThinkingBlockId = useMemo(() => {
-    if (!hidePastThinking) return null
-    // If streaming thinking is visible, hide all completed thinking blocks by using a non-matching ID
-    if (isStreamingThinkingVisible) return 'streaming'
-    // Iterate backwards to find the last message with a thinking block
-    for (let i = normalizedMessages.length - 1; i >= 0; i--) {
-      const msg = normalizedMessages[i]
-      if (msg?.type === 'assistant') {
-        const content = msg.message.content
-        // Find the last thinking block in this message
-        for (let j = content.length - 1; j >= 0; j--) {
-          if (content[j]?.type === 'reasoning') {
-            return `${msg.uuid}:${j}`
-          }
-        }
-      } else if (msg?.type === 'user') {
-        const hasToolResult = msg.message.content.some(
-          block => block.type === 'tool_result',
-        )
-        if (!hasToolResult) {
-          // Reached a previous user turn so don't show stale thinking from before
-          return 'no-thinking'
-        }
-      }
-    }
-    return null
-  }, [normalizedMessages, hidePastThinking, isStreamingThinkingVisible])
+  const [streamingThinkingExpanded, setStreamingThinkingExpanded] =
+    useState(false)
+  useEffect(() => {
+    if (!isStreamingThinkingVisible) setStreamingThinkingExpanded(false)
+  }, [isStreamingThinkingVisible])
 
   // Find the latest user bash output message (from ! commands)
   // This allows us to show full output for the most recent bash command
@@ -785,6 +751,9 @@ const MessagesImpl = ({
           const tool = findToolByName(tools, first.name)
           return tool?.isProgressTruncated?.() ?? false
         }
+        if (first?.type === 'reasoning' && (first as { text?: string }).text) {
+          return true
+        }
         const b = first as unknown as AdvisorBlock | undefined
         return (
           b != null &&
@@ -878,7 +847,6 @@ const MessagesImpl = ({
         screen={screen}
         canAnimate={canAnimate}
         onOpenRateLimitOptions={onOpenRateLimitOptions}
-        lastThinkingBlockId={lastThinkingBlockId}
         latestBashOutputUUID={latestBashOutputUUID}
         columns={columns}
         isLoading={isLoading}
@@ -1018,6 +986,25 @@ const MessagesImpl = ({
         renderableMessages.flatMap(renderMessageRow)
       )}
 
+      {isStreamingThinkingVisible && streamingThinking && !isBriefOnly && (
+        <Box
+          marginTop={1}
+          onClick={() => setStreamingThinkingExpanded(prev => !prev)}
+        >
+          <AssistantThinkingMessage
+            param={{
+              type: 'reasoning' as const,
+              text: streamingThinking.thinking,
+            }}
+            addMargin={false}
+            isTranscriptMode={screen === 'transcript'}
+            verbose={streamingThinkingExpanded || verbose}
+            isStreaming={streamingThinking.isStreaming}
+            durationMs={streamingThinking.durationMs}
+          />
+        </Box>
+      )}
+
       {streamingText && !isBriefOnly && (
         <Box
           alignItems="flex-start"
@@ -1033,21 +1020,6 @@ const MessagesImpl = ({
               <StreamingMarkdown>{streamingText}</StreamingMarkdown>
             </Box>
           </Box>
-        </Box>
-      )}
-
-      {isStreamingThinkingVisible && streamingThinking && !isBriefOnly && (
-        <Box marginTop={1}>
-          <AssistantThinkingMessage
-            param={{
-              type: 'reasoning' as const,
-              text: streamingThinking.thinking,
-            }}
-            addMargin={false}
-            isTranscriptMode={true}
-            verbose={verbose}
-            hideInTranscript={false}
-          />
         </Box>
       )}
     </>

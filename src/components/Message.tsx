@@ -74,8 +74,6 @@ export type Props = {
   onOpenRateLimitOptions?: () => void
   isActiveCollapsedGroup?: boolean
   isUserContinuation?: boolean
-  /** ID of the last thinking block (uuid:index) to show, used for hiding past thinking in transcript mode */
-  lastThinkingBlockId?: string | null
   /** UUID of the latest user bash output message (for auto-expanding) */
   latestBashOutputUUID?: string | null
   /** Render model-facing injected context as collapsible rows. Defaults to
@@ -102,7 +100,6 @@ function MessageImpl({
   onOpenRateLimitOptions,
   isActiveCollapsedGroup,
   isUserContinuation = false,
-  lastThinkingBlockId,
   latestBashOutputUUID,
   showInjectedContext = false,
 }: Props): React.ReactNode {
@@ -148,9 +145,12 @@ function MessageImpl({
               isTranscriptMode={isTranscriptMode}
               lookups={lookups}
               onOpenRateLimitOptions={onOpenRateLimitOptions}
-              thinkingBlockId={`${message.uuid}:${index}`}
-              lastThinkingBlockId={lastThinkingBlockId}
               advisorModel={message.advisorModel}
+              thinkingDurationMs={
+                typeof message.thinkingDurationMs === 'number'
+                  ? (message.thinkingDurationMs as number)
+                  : undefined
+              }
             />
           ))}
           {showTruncationIndicator && (
@@ -382,9 +382,8 @@ function AssistantMessageBlock({
   isTranscriptMode,
   lookups,
   onOpenRateLimitOptions,
-  thinkingBlockId,
-  lastThinkingBlockId,
   advisorModel,
+  thinkingDurationMs,
 }: {
   param:
     | DomainContentBlock
@@ -408,11 +407,8 @@ function AssistantMessageBlock({
   isTranscriptMode: boolean
   lookups: ReturnType<typeof buildMessageLookups>
   onOpenRateLimitOptions?: () => void
-  /** ID of this content block's message:index for thinking block comparison */
-  thinkingBlockId: string
-  /** ID of the last thinking block to show, null means show all */
-  lastThinkingBlockId?: string | null
   advisorModel?: string
+  thinkingDurationMs?: number
 }): React.ReactNode {
   if (feature('CONNECTOR_TEXT')) {
     if (isConnectorTextBlock(param)) {
@@ -461,23 +457,16 @@ function AssistantMessageBlock({
         return null
       }
       return <AssistantRedactedThinkingMessage addMargin={addMargin} />
-    case 'reasoning': {
-      if (!isTranscriptMode && !verbose) {
-        return null
-      }
-      // In transcript mode with hidePastThinking, only show the last thinking block
-      const isLastThinking =
-        !lastThinkingBlockId || thinkingBlockId === lastThinkingBlockId
+    case 'reasoning':
       return (
         <AssistantThinkingMessage
           addMargin={addMargin}
           param={param}
           isTranscriptMode={isTranscriptMode}
           verbose={verbose}
-          hideInTranscript={isTranscriptMode && !isLastThinking}
+          durationMs={thinkingDurationMs}
         />
       )
-    }
     case 'server_tool_use':
     case 'advisor_tool_result':
       if (isAdvisorBlock(param)) {
@@ -514,15 +503,6 @@ export function hasThinkingContent(m: {
 /** Exported for testing */
 export function areMessagePropsEqual(prev: Props, next: Props): boolean {
   if (prev.message.uuid !== next.message.uuid) return false
-  // Only re-render on lastThinkingBlockId change if this message actually
-  // has thinking content — otherwise every message in scrollback re-renders
-  // whenever streaming thinking starts/stops (CC-941).
-  if (
-    prev.lastThinkingBlockId !== next.lastThinkingBlockId &&
-    hasThinkingContent(next.message)
-  ) {
-    return false
-  }
   // Verbose toggle changes thinking block visibility/expansion
   if (prev.verbose !== next.verbose) return false
   // Only re-render if this message's "is latest bash output" status changed,

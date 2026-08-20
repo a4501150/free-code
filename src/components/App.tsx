@@ -8,7 +8,7 @@ import type { FpsMetrics } from '../utils/fpsTracker.js'
 type Props = {
   getFpsMetrics: () => FpsMetrics | undefined
   stats?: StatsStore
-  initialState: AppState
+  initialState?: AppState
   children: React.ReactNode
 }
 
