@@ -1,4 +1,7 @@
 import { spawn } from 'child_process'
+import { writeFileSync } from 'fs'
+import { join } from 'path'
+import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 
 export type RestartReadyFrame = {
   type: 'restart_ready'
@@ -64,6 +67,13 @@ export async function gracefulRestart(ctx: {
     env: process.env,
   })
   child.unref()
+
+  if (child.pid) {
+    writeFileSync(
+      join(getClaudeConfigHomeDir(), 'daemon.pid'),
+      String(child.pid),
+    )
+  }
 
   // Wait for the new daemon to bind the control socket.
   for (let i = 0; i < 50; i++) {

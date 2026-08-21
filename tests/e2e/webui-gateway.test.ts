@@ -836,11 +836,10 @@ describe('WebUI gateway', () => {
     expect(() => process.kill(terminalPid, 0)).not.toThrow()
   })
 
-  test('shows one row when a terminal takes a web session over, and reports the process that ends', async () => {
+  test('terminal joins a web session and sees engine exit when the child is stopped', async () => {
     dirs = await makeDirs()
     server.reset([
       textResponse('An answer from the web session.'),
-      textResponse('An answer from the terminal.'),
     ])
 
     // The tmux harness is the only thing that writes provider settings, trust
@@ -906,8 +905,7 @@ describe('WebUI gateway', () => {
         )!.event as { meta: { sessionEpoch: number } }
       ).meta
 
-      // Drive one turn. `--resume` looks the session up by transcript, and a
-      // session that has never been written to has no file to find.
+      // Drive one turn so the transcript has content for the terminal to see.
       browser.socket.send(
         JSON.stringify({
           type: 'command',
@@ -915,7 +913,7 @@ describe('WebUI gateway', () => {
           body: {
             kind: 'submit',
             commandId: crypto.randomUUID(),
-            content: 'a prompt that must survive the takeover',
+            content: 'a prompt for the web session',
             delivery: 'next',
             sessionEpoch: meta.sessionEpoch,
           },
@@ -940,8 +938,9 @@ describe('WebUI gateway', () => {
         { description: 'the transcript to land on disk', timeoutMs: 30_000 },
       )
 
-      // A terminal adopts the session the web child already holds. Two live
-      // processes then claim one session ID, which used to produce two rows.
+      // A terminal joins the session as an attach client. "Join this
+      // session" is the first (already-selected) option in the conflict
+      // dialog.
       takeover = new TmuxSession({
         serverUrl: server.url,
         cwd: workdir,
@@ -951,37 +950,30 @@ describe('WebUI gateway', () => {
         readyText: 'Session already open elsewhere',
       })
       await takeover.start()
-      // "Resume anyway" is the third option.
-      await takeover.sendKeys('Down')
-      await takeover.sendKeys('Down')
       await takeover.sendKeys('Enter')
-      await takeover.waitForText('for shortcuts', 30_000)
+      await takeover.waitForText('Enter to send', 30_000)
 
-      const shared = await waitFor(
-        () => client.sessions(),
-        value =>
-          value.sessions.some(
-            s => s.sessionId === child.sessionId && s.holders === 2,
-          ),
-        { description: 'both holders to register', timeoutMs: 30_000 },
+      // The terminal sees the transcript from the web session.
+      await takeover.waitForText('An answer from the web session', 10_000)
+
+      // Joining does not create a second holder. The web child remains the
+      // sole session engine; the terminal is a pure attach client.
+      const listing = await client.sessions()
+      const rows = listing.sessions.filter(
+        s => s.sessionId === child.sessionId,
       )
-      const rows = shared.sessions.filter(s => s.sessionId === child.sessionId)
       expect(rows).toHaveLength(1)
-      // Both are attachable, so the terminal wins on kind: a person is at it.
-      expect(rows[0]!.processKey).not.toBe(child.processKey)
-      expect(rows[0]!.pid).not.toBe(child.pid)
-      // The web child is still the only thing the browser may stop.
+      expect(rows[0]!.holders).toBe(1)
       expect(rows[0]!.owned).toBe(true)
       expect(rows[0]!.stoppablePid).toBe(child.pid)
 
+      // Stop the web child. The browser gets process_gone.
       const deleted = await fetch(`${baseUrl}/api/sessions/${child.pid}`, {
         method: 'DELETE',
         headers: { cookie: client.cookie, 'x-freecode-csrf': client.csrf },
       })
       expect(deleted.status).toBe(200)
 
-      // Without this frame the browser keeps a dead transcript and every later
-      // command answers `not_attached`.
       const gone = await waitFor(
         () => browser.frames,
         list => list.some(f => f.type === 'process_gone'),
@@ -991,24 +983,8 @@ describe('WebUI gateway', () => {
       expect(frame.processKey).toBe(child.processKey)
       expect(frame.sessionId).toBe(child.sessionId)
 
-      // What the browser needs to follow: one live row, now the terminal.
-      const after = await waitFor(
-        () => client.sessions(),
-        value =>
-          value.sessions.some(
-            s => s.sessionId === child.sessionId && s.live && s.holders === 1,
-          ),
-        {
-          description: 'the terminal to be the only holder',
-          timeoutMs: 30_000,
-        },
-      )
-      const remaining = after.sessions.filter(
-        s => s.sessionId === child.sessionId,
-      )
-      expect(remaining).toHaveLength(1)
-      expect(remaining[0]!.attachable).toBe(true)
-      expect(remaining[0]!.owned).toBe(false)
+      // The terminal detects the engine exit.
+      await takeover.waitForText('Session engine exited', 30_000)
     } finally {
       browser.socket.close()
     }
@@ -1103,9 +1079,8 @@ describe('WebUI gateway', () => {
     expect(await client.restart()).toBe(202)
 
     // The supervisor is replaced, which is the point. Reloading inside the old
-    // process could never pick up a rebuilt binary. `stopDaemon` erases the pid
-    // file before the replacement writes its own, so a read here can throw;
-    // waitFor retries through that.
+    // process could never pick up a rebuilt binary. gracefulRestart writes the
+    // new PID after spawning the replacement.
     const secondPid = await waitFor(
       async () =>
         (await readFile(join(dirs.config, 'daemon.pid'), 'utf-8')).trim(),
