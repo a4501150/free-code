@@ -26,7 +26,7 @@ export const DaemonControlRequestSchema = z.discriminatedUnion('kind', [
 export type DaemonControlRequest = z.infer<typeof DaemonControlRequestSchema>
 
 export type DaemonControlResponse =
-  | { ok: true; status: WebStatus }
+  | { ok: true; status: WebStatus; daemonPid: number }
   | { ok: false; error: string }
 
 export type DaemonControlHandlers = {
@@ -65,14 +65,23 @@ export function startDaemonControlServer(handlers: DaemonControlHandlers): {
                 response = {
                   ok: true,
                   status: await handlers.start(parsed.options),
+                  daemonPid: process.pid,
                 }
                 break
               case 'web.stop':
                 await handlers.stop()
-                response = { ok: true, status: handlers.status() }
+                response = {
+                  ok: true,
+                  status: handlers.status(),
+                  daemonPid: process.pid,
+                }
                 break
               case 'web.status':
-                response = { ok: true, status: handlers.status() }
+                response = {
+                  ok: true,
+                  status: handlers.status(),
+                  daemonPid: process.pid,
+                }
                 break
             }
           } catch (err) {

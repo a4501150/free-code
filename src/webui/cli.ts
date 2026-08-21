@@ -237,12 +237,35 @@ async function ensureDaemon(): Promise<boolean> {
  * long-lived process still running the old binary, and it spawns sessions from
  * its own `process.execPath`.
  */
-async function stopDaemonAndWait(): Promise<void> {
-  const { daemonMain } = await import('../daemon/main.js')
-  await daemonMain(['stop'])
+async function stopDaemonAndWait(daemonPid?: number): Promise<void> {
+  const { readPid, PID_FILE } = await import('../daemon/main.js')
+  const { unlinkSync } = await import('fs')
+  const pid = readPid() ?? daemonPid
+  if (pid) {
+    try {
+      process.kill(pid, 'SIGTERM')
+    } catch {
+      // Already exited.
+    }
+    try {
+      unlinkSync(PID_FILE)
+    } catch {
+      // Already removed.
+    }
+  }
   for (let attempt = 0; attempt < 50; attempt++) {
-    if (!(await sendDaemonControl({ kind: 'web.status' }, 1000))) return
+    if (!(await sendDaemonControl({ kind: 'web.status' }, 1000))) break
     await Bun.sleep(100)
+  }
+  if (pid) {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      try {
+        process.kill(pid, 0)
+      } catch {
+        return
+      }
+      await Bun.sleep(100)
+    }
   }
 }
 
@@ -310,8 +333,8 @@ export async function webMain(args: string[]): Promise<void> {
         ...(previous.subdomain ? { subdomain: previous.subdomain } : {}),
       }
 
-      await sendDaemonControl({ kind: 'web.stop' })
-      await stopDaemonAndWait()
+      const stopResult = await sendDaemonControl({ kind: 'web.stop' })
+      await stopDaemonAndWait(stopResult?.ok ? stopResult.daemonPid : undefined)
       print('Daemon stopped. Starting it again on the current build.')
 
       if (!(await launch(options))) process.exitCode = 1
@@ -332,7 +355,7 @@ export async function webMain(args: string[]): Promise<void> {
         process.exitCode = 1
         return
       }
-      await stopDaemonAndWait()
+      await stopDaemonAndWait(reached.daemonPid)
       print('Web server and daemon stopped')
       return
     }

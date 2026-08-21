@@ -264,6 +264,8 @@ export function createCloudflareTunnelProvider(
 
         const onAbort = (): void => {
           child.kill('SIGTERM')
+          child.stdout?.destroy()
+          child.stderr?.destroy()
         }
         signal.addEventListener('abort', onAbort, { once: true })
 
@@ -272,10 +274,14 @@ export function createCloudflareTunnelProvider(
           async close() {
             signal.removeEventListener('abort', onAbort)
             child.kill('SIGTERM')
+            child.stdout?.destroy()
+            child.stderr?.destroy()
           },
         }
       } catch (err) {
         child.kill('SIGTERM')
+        child.stdout?.destroy()
+        child.stderr?.destroy()
         throw err
       } finally {
         clearTimeout(timer)

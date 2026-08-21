@@ -3,9 +3,9 @@ import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
 
-const PID_FILE = join(getClaudeConfigHomeDir(), 'daemon.pid')
+export const PID_FILE = join(getClaudeConfigHomeDir(), 'daemon.pid')
 
-function readPid(): number | null {
+export function readPid(): number | null {
   try {
     if (!existsSync(PID_FILE)) return null
     const pid = parseInt(readFileSync(PID_FILE, 'utf-8').trim(), 10)

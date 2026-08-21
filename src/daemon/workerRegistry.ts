@@ -1,4 +1,7 @@
 import { feature } from 'bun:bundle'
+import { readFileSync, unlinkSync } from 'fs'
+import { join } from 'path'
+import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
 
 type WorkerFn = () => Promise<void>
 
@@ -55,6 +58,13 @@ const workers: Record<string, WorkerFn> = {
     } finally {
       process.off('SIGTERM', onSignal)
       process.off('SIGINT', onSignal)
+      try {
+        const pidFile = join(getClaudeConfigHomeDir(), 'daemon.pid')
+        const stored = parseInt(readFileSync(pidFile, 'utf-8').trim(), 10)
+        if (stored === process.pid) unlinkSync(pidFile)
+      } catch {
+        // PID file already gone or belongs to a replacement.
+      }
     }
   },
 }

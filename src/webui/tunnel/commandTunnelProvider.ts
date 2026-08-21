@@ -24,6 +24,7 @@ export function createCommandTunnelProvider(command: string): TunnelProvider {
       const resolved = command.replaceAll('{port}', String(port))
       const child: ChildProcess = spawn('/bin/sh', ['-c', resolved], {
         stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
       })
 
       const publicUrl = await new Promise<string>((resolve, reject) => {
@@ -65,8 +66,17 @@ export function createCommandTunnelProvider(command: string): TunnelProvider {
         })
       })
 
+      function killChild(): void {
+        try {
+          process.kill(-child.pid!, 'SIGTERM')
+        } catch {
+          child.kill('SIGTERM')
+        }
+        child.stdout?.destroy()
+        child.stderr?.destroy()
+      }
       const onAbort = (): void => {
-        child.kill('SIGTERM')
+        killChild()
       }
       signal.addEventListener('abort', onAbort, { once: true })
 
@@ -74,7 +84,7 @@ export function createCommandTunnelProvider(command: string): TunnelProvider {
         publicUrl,
         async close() {
           signal.removeEventListener('abort', onAbort)
-          child.kill('SIGTERM')
+          killChild()
         },
       }
     },

@@ -59,6 +59,29 @@ async function runCli(
   return out + err
 }
 
+async function waitForExit(pid: number, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return
+    }
+    await sleep(50)
+  }
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch {}
+}
+
+async function captureDaemonPid(dirs: Dirs): Promise<number | undefined> {
+  try {
+    return parseInt(await readFile(join(dirs.config, 'daemon.pid'), 'utf-8'), 10)
+  } catch {
+    return undefined
+  }
+}
+
 /** A logged-in HTTP + WebSocket client, the way a browser would arrive. */
 class GatewayClient {
   cookie = ''
@@ -167,6 +190,7 @@ describe('WebUI gateway', () => {
   /** A second terminal, for the test that adopts a session the gateway holds. */
   let takeover: TmuxSession | undefined
   let dirs: Dirs
+  const daemonPids: number[] = []
   let baseUrl = ''
 
   beforeAll(async () => {
@@ -190,6 +214,8 @@ describe('WebUI gateway', () => {
     if (dirs) {
       await runCli(dirs, ['web', 'stop'])
       await runCli(dirs, ['daemon', 'stop'])
+      await Promise.all(daemonPids.map(pid => waitForExit(pid)))
+      daemonPids.length = 0
       await rm(dirs.config, { recursive: true, force: true })
       await rm(dirs.home, { recursive: true, force: true })
     }
@@ -205,6 +231,7 @@ describe('WebUI gateway', () => {
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(output)
     if (!match) throw new Error(`no gateway URL in output:\n${output}`)
     baseUrl = match[0]
+    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
   }
 
   test('survives the terminal that started it and refuses bad credentials', async () => {
@@ -465,6 +492,7 @@ describe('WebUI gateway', () => {
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
     if (!match) throw new Error(`no gateway URL:\n${started}`)
     baseUrl = match[0]
+    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
 
     const client = new GatewayClient(baseUrl)
     expect(await client.login(PASSWORD)).toBe(200)
@@ -610,6 +638,7 @@ describe('WebUI gateway', () => {
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
     if (!match) throw new Error(`no gateway URL:\n${started}`)
     baseUrl = match[0]
+    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
 
     const client = new GatewayClient(baseUrl)
     expect(await client.login(PASSWORD)).toBe(200)
@@ -771,6 +800,7 @@ describe('WebUI gateway', () => {
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
     if (!match) throw new Error(`no gateway URL:\n${started}`)
     baseUrl = match[0]
+    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
 
     const client = new GatewayClient(baseUrl)
     expect(await client.login(PASSWORD)).toBe(200)
@@ -860,6 +890,7 @@ describe('WebUI gateway', () => {
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
     if (!match) throw new Error(`no gateway URL:\n${started}`)
     baseUrl = match[0]
+    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
 
     const client = new GatewayClient(baseUrl)
     expect(await client.login(PASSWORD)).toBe(200)
@@ -1007,6 +1038,7 @@ describe('WebUI gateway', () => {
       PASSWORD,
     )
     expect(output).toContain('https://fake-tunnel.example')
+    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
 
     const status = await runCli(dirs, ['web', 'status'])
     expect(status).toContain('https://fake-tunnel.example')
@@ -1028,6 +1060,7 @@ describe('WebUI gateway', () => {
       PASSWORD,
     )
     expect(started).toContain('https://kept-name.example')
+    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
     const firstPid = (
       await readFile(join(dirs.config, 'daemon.pid'), 'utf-8')
     ).trim()
@@ -1040,6 +1073,7 @@ describe('WebUI gateway', () => {
     ).trim()
 
     expect(secondPid).not.toBe(firstPid)
+    daemonPids.push(parseInt(secondPid, 10))
     expect(restarted).toContain('https://kept-name.example')
     expect(await runCli(dirs, ['web', 'status'])).toContain(
       'https://kept-name.example',
@@ -1061,6 +1095,7 @@ describe('WebUI gateway', () => {
       ],
       PASSWORD,
     )
+    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(output)
     if (!match) throw new Error(`no gateway URL in output:\n${output}`)
     const client = new GatewayClient(match[0])
@@ -1088,6 +1123,7 @@ describe('WebUI gateway', () => {
       { description: 'the daemon pid to change' },
     )
     expect(secondPid).not.toBe(firstPid)
+    daemonPids.push(parseInt(secondPid, 10))
 
     // Only now is the URL meaningful. The pid appears when the new supervisor
     // spawns, which is before its gateway has bound and asked for the hostname.

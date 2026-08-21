@@ -94,7 +94,9 @@ export function createWebService() {
       try {
         // Start the tunnel only after the loopback server answers, so it never
         // publishes a URL that 502s.
-        const health = await fetch(`${server.url}/`)
+        const health = await fetch(`${server.url}/`, {
+          headers: { connection: 'close' },
+        })
         if (!health.ok)
           throw new Error(`loopback health check ${health.status}`)
 
