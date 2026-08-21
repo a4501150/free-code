@@ -62,6 +62,7 @@ export type AttachHost = {
   /** Push session metadata (state, model, mode, cost). No-op with no subscribers. */
   publishMeta(): void
   publishTodos(): void
+  publishPendingCommands(): void
   setSessionId(sessionId: string): void
   stop(): void
 }
@@ -199,6 +200,8 @@ export function startAttachHost(
   function buildMeta(): WebSessionMeta {
     const cost = options.getCost?.()
     const model = runtime?.getModel()
+    const isCompacting = runtime?.getIsCompacting() ?? false
+    const inProgressIds = runtime?.getInProgressToolUseIds()
     return {
       pid,
       processNonce: descriptor.processNonce,
@@ -210,11 +213,17 @@ export function startAttachHost(
       model,
       permissionMode: runtime?.getPermissionMode(),
       state: runtime?.getState() ?? 'idle',
-      activity: runtime?.getActivity(),
+      activity: isCompacting
+        ? 'compacting'
+        : runtime?.getActivity(),
       context: buildContext(model),
       costUsd: cost?.costUsd,
       linesAdded: cost?.linesAdded,
       linesRemoved: cost?.linesRemoved,
+      inProgressToolUseIds:
+        inProgressIds && inProgressIds.size > 0
+          ? Array.from(inProgressIds)
+          : undefined,
     }
   }
 
@@ -238,6 +247,16 @@ export function startAttachHost(
   function publishTodos(): void {
     if (!hasSubscribers() || !runtime) return
     emit({ kind: 'todos', todos: runtime.getTodos() })
+  }
+
+  let lastPendingJson = ''
+  function publishPendingCommands(): void {
+    if (!hasSubscribers() || !runtime) return
+    const commands = runtime.getPendingCommands()
+    const json = JSON.stringify(commands)
+    if (json === lastPendingJson) return
+    lastPendingJson = json
+    emit({ kind: 'pending_commands', commands })
   }
 
   function sendSnapshot(connection: Connection, afterSeq?: number): void {
@@ -269,6 +288,7 @@ export function startAttachHost(
         transcript,
         permissions: permissions.pending(),
         todos: runtime?.getTodos() ?? [],
+        pendingCommands: runtime?.getPendingCommands() ?? [],
         models: listModels(),
         commands: runtime?.getCommands() ?? [],
       },
@@ -515,6 +535,7 @@ export function startAttachHost(
     publishTranscript,
     publishMeta,
     publishTodos,
+    publishPendingCommands,
     setSessionId(sessionId: string) {
       if (sessionId === descriptor.sessionId) return
       // The socket path stays put. Only the identity on it moves, and the epoch

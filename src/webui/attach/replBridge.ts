@@ -2,14 +2,16 @@ import { useEffect, useRef } from 'react'
 import type { UUID } from 'crypto'
 import type { Message } from '../../types/message.js'
 import type { Task } from '../../utils/taskSchemas.js'
-import { enqueue } from '../../utils/messageQueueManager.js'
+import { enqueue, getCommandQueueSnapshot } from '../../utils/messageQueueManager.js'
 import type {
+  WebPendingCommand,
   WebPermissionMode,
   WebSessionActivity,
   WebSessionState,
 } from '../protocol/attachSchemas.js'
 import {
   publishAttachMeta,
+  publishAttachPendingCommands,
   publishAttachTodos,
   registerAttachRuntime,
 } from './hostSingleton.js'
@@ -19,8 +21,10 @@ export type ReplAttachBridgeParams = {
   messagesRef: { current: readonly Message[] }
   getState: () => WebSessionState
   getActivity: () => WebSessionActivity | undefined
+  getIsCompacting: () => boolean
   getModel: () => string | undefined
   getPermissionMode: () => string | undefined
+  getInProgressToolUseIds: () => ReadonlySet<string>
   todos: Task[] | undefined
   commandNames: string[]
   onCancel: () => void
@@ -44,6 +48,7 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
       getMessages: () => latest.current.messagesRef.current,
       getState: () => latest.current.getState(),
       getActivity: () => latest.current.getActivity(),
+      getIsCompacting: () => latest.current.getIsCompacting(),
       getModel: () => latest.current.getModel(),
       getPermissionMode: () => latest.current.getPermissionMode(),
       getTodos: () =>
@@ -53,11 +58,29 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
           activeForm: task.activeForm,
         })),
       getCommands: () => latest.current.commandNames,
+      getPendingCommands: () => {
+        const snapshot = getCommandQueueSnapshot()
+        const commands: WebPendingCommand[] = []
+        for (const cmd of snapshot) {
+          if (cmd.mode !== 'prompt') continue
+          const text =
+            typeof cmd.value === 'string'
+              ? cmd.value
+              : cmd.value
+                  .filter(
+                    (b): b is { type: 'text'; text: string } =>
+                      b.type === 'text',
+                  )
+                  .map(b => b.text)
+                  .join('\n')
+          if (text && cmd.uuid) commands.push({ id: cmd.uuid, text })
+        }
+        return commands
+      },
+      getInProgressToolUseIds: () =>
+        latest.current.getInProgressToolUseIds(),
 
       submit(content, delivery, commandId, images) {
-        // 'now' is one atomic operation: the REPL's queue watcher aborts the
-        // running turn with reason 'interrupt', and the drain then picks this
-        // command up. Cancelling and submitting separately would race.
         enqueue({
           mode: 'prompt',
           value: buildSubmitValue(content, images),
@@ -87,6 +110,7 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
   // publishing per render keeps state fresh without one subscription per field.
   useEffect(() => {
     publishAttachMeta()
+    publishAttachPendingCommands()
   })
 
   useEffect(() => {

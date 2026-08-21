@@ -145,6 +145,7 @@ export type WebSessionActivity =
   | 'responding'
   | 'tool-use'
   | 'tool-input'
+  | 'compacting'
 
 /**
  * Context budget for the current window.
@@ -190,6 +191,8 @@ export type WebSessionMeta = {
   costUsd?: number
   linesAdded?: number
   linesRemoved?: number
+  /** Tool-use IDs currently executing, so the browser can show running state. */
+  inProgressToolUseIds?: string[]
 }
 
 export type WebTodo = {
@@ -203,6 +206,11 @@ export type WebModelOption = {
   label: string
 }
 
+export type WebPendingCommand = {
+  id: string
+  text: string
+}
+
 export type AttachEventBody =
   | {
       kind: 'snapshot'
@@ -210,6 +218,7 @@ export type AttachEventBody =
       transcript: WebTranscriptSnapshot
       permissions: WebPermissionRequest[]
       todos: WebTodo[]
+      pendingCommands: WebPendingCommand[]
       /** Static for the process, so it rides the snapshot and not every meta. */
       models: WebModelOption[]
       commands: string[]
@@ -219,6 +228,7 @@ export type AttachEventBody =
   | { kind: 'permission_opened'; request: WebPermissionRequest }
   | { kind: 'permission_closed'; requestId: string; outcome: string }
   | { kind: 'todos'; todos: WebTodo[] }
+  | { kind: 'pending_commands'; commands: WebPendingCommand[] }
   | { kind: 'session_changed'; sessionId: string; sessionEpoch: number }
   | { kind: 'resync_required' }
 

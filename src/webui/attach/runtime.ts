@@ -1,6 +1,7 @@
 import type { DomainUserContentBlock } from '../../types/domain.js'
 import type { Message } from '../../types/message.js'
 import type {
+  WebPendingCommand,
   WebPermissionMode,
   WebSessionActivity,
   WebSessionState,
@@ -21,10 +22,13 @@ export type AttachRuntime = {
   getState(): WebSessionState
   /** The phase of a streaming turn. Undefined when nothing is streaming. */
   getActivity(): WebSessionActivity | undefined
+  getIsCompacting(): boolean
   getModel(): string | undefined
   getPermissionMode(): string | undefined
   getTodos(): WebTodo[]
   getCommands(): string[]
+  getPendingCommands(): WebPendingCommand[]
+  getInProgressToolUseIds(): ReadonlySet<string>
 
   /**
    * Queue a prompt. `interrupt` aborts the running turn and runs this next, as

@@ -60,6 +60,7 @@ import {
   type FileStateCache,
 } from './utils/fileStateCache.js'
 import { headlessProfilerCheckpoint } from './utils/headlessProfiler.js'
+import { setIsCompacting } from './utils/streamActivity.js'
 import { registerStructuredOutputEnforcement } from './utils/hooks/hookHelpers.js'
 import { getInMemoryErrors } from './utils/log.js'
 import { countToolCalls, SYNTHETIC_MESSAGES } from './utils/messages.js'
@@ -171,6 +172,8 @@ export class QueryEngine {
   private hasHandledOrphanedPermission = false
   private readFileState: FileStateCache
   private loadedNestedMemoryPaths = new Set<string>()
+  inProgressToolUseIds: Set<string> = new Set()
+  isCompacting = false
 
   constructor(config: QueryEngineConfig) {
     this.config = config
@@ -355,7 +358,14 @@ export class QueryEngine {
       nestedMemoryAttachmentTriggers: new Set<string>(),
       loadedNestedMemoryPaths: this.loadedNestedMemoryPaths,
       dynamicSkillDirTriggers: new Set<string>(),
-      setInProgressToolUseIDs: () => {},
+      setInProgressToolUseIDs: updater => {
+        this.inProgressToolUseIds = updater(this.inProgressToolUseIds)
+      },
+      onCompactProgress: event => {
+        const active = event.type !== 'compact_end'
+        this.isCompacting = active
+        setIsCompacting(active)
+      },
       setResponseLength: () => {},
       updateFileHistoryState: (
         updater: (prev: FileHistoryState) => FileHistoryState,
@@ -493,7 +503,14 @@ export class QueryEngine {
       nestedMemoryAttachmentTriggers: new Set<string>(),
       loadedNestedMemoryPaths: this.loadedNestedMemoryPaths,
       dynamicSkillDirTriggers: new Set<string>(),
-      setInProgressToolUseIDs: () => {},
+      setInProgressToolUseIDs: updater => {
+        this.inProgressToolUseIds = updater(this.inProgressToolUseIds)
+      },
+      onCompactProgress: event => {
+        const active = event.type !== 'compact_end'
+        this.isCompacting = active
+        setIsCompacting(active)
+      },
       setResponseLength: () => {},
       updateFileHistoryState: processUserInputContext.updateFileHistoryState,
       setSDKStatus,

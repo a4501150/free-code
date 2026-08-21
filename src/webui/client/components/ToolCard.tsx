@@ -36,12 +36,35 @@ function summarizeInput(item: WebTranscriptItem): string {
   }
 }
 
+type ToolStatus = 'running' | 'completed' | 'error' | 'pending'
+
+function getToolStatus(
+  item: WebTranscriptItem,
+  result?: WebTranscriptItem,
+  inProgressToolUseIds?: string[],
+): ToolStatus {
+  if (result?.isError) return 'error'
+  if (result) return 'completed'
+  if (item.toolUseId && inProgressToolUseIds?.includes(item.toolUseId)) {
+    return 'running'
+  }
+  return 'pending'
+}
+
+function StatusDot({ status }: { status: ToolStatus }): React.ReactElement {
+  return <span className={`tool__status is-${status}`} />
+}
+
 export function ToolCard({
   item,
   result,
+  inProgressToolUseIds,
+  compact,
 }: {
   item: WebTranscriptItem
   result?: WebTranscriptItem
+  inProgressToolUseIds?: string[]
+  compact?: boolean
 }): React.ReactElement {
   const [open, setOpen] = useState(false)
   const input = (item.toolInput ?? {}) as Record<string, unknown>
@@ -50,17 +73,25 @@ export function ToolCard({
     typeof input.old_string === 'string' &&
     typeof input.new_string === 'string'
 
+  const status = getToolStatus(item, result, inProgressToolUseIds)
+
   return (
-    <div className={`tool ${result?.isError ? 'is-error' : ''}`}>
+    <div
+      className={`tool ${result?.isError ? 'is-error' : ''} ${compact ? 'is-compact' : ''}`}
+    >
       <button
         type="button"
         className="tool__head"
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
       >
+        <StatusDot status={status} />
         <span className="tool__caret">{open ? '▾' : '▸'}</span>
         <span className="tool__name">{item.toolName}</span>
         <span className="tool__summary">{summarizeInput(item)}</span>
+        {status === 'running' ? (
+          <span className="tool__badge tool__badge--running">running</span>
+        ) : null}
         {result?.isError ? <span className="tool__badge">error</span> : null}
       </button>
 

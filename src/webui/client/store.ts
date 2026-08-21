@@ -1,6 +1,7 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react'
 import type {
   AttachEventBody,
+  WebPendingCommand,
   WebPermissionRequest,
   WebModelOption,
   WebSessionMeta,
@@ -14,6 +15,7 @@ export type SessionView = {
   order: string[]
   permissions: WebPermissionRequest[]
   todos: WebTodo[]
+  pendingCommands: WebPendingCommand[]
   models: WebModelOption[]
   commands: string[]
   lastSeq: number
@@ -26,6 +28,7 @@ export function emptyView(): SessionView {
     order: [],
     permissions: [],
     todos: [],
+    pendingCommands: [],
     models: [],
     commands: [],
     lastSeq: 0,
@@ -53,6 +56,7 @@ export function applyEvent(
       next.order = [...event.transcript.order]
       next.permissions = event.permissions
       next.todos = event.todos
+      next.pendingCommands = event.pendingCommands ?? []
       next.models = event.models
       next.commands = event.commands ?? []
       next.lastSeq = seq
@@ -97,6 +101,10 @@ export function applyEvent(
 
     case 'todos':
       next.todos = event.todos
+      return next
+
+    case 'pending_commands':
+      next.pendingCommands = event.commands
       return next
 
     case 'session_changed':

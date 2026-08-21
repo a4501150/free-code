@@ -40,6 +40,8 @@ export type WebTranscriptItem = {
   image?: { mediaType: string; bytes: number }
   /** assistant */
   model?: string
+  /** Provider message ID, shared by sibling tool calls from one response. */
+  messageId?: string
   /** tool_use */
   toolName?: string
   toolUseId?: string
@@ -97,24 +99,85 @@ function finish(item: Omit<WebTranscriptItem, 'rev'>): WebTranscriptItem {
   return { ...item, rev: fingerprint(JSON.stringify(rest)) }
 }
 
+/**
+ * Strips synthetic XML-like tags from user message text.
+ *
+ * The TUI has dedicated renderers for these tags. The browser receives plain
+ * text, so strip or unwrap them at the server boundary.
+ */
+function stripSyntheticTags(text: string): string {
+  // Tags whose content should be removed entirely
+  const stripTags = [
+    'command-name',
+    'command-message',
+    'command-args',
+    'local-command-caveat',
+    'bash-input',
+    'system-reminder',
+    'skill-format',
+  ]
+  // Tags whose content should be kept (unwrap)
+  const unwrapTags = [
+    'local-command-stdout',
+    'local-command-stderr',
+    'bash-stdout',
+    'bash-stderr',
+  ]
+
+  let result = text
+  for (const tag of stripTags) {
+    result = result.replace(
+      new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`, 'g'),
+      '',
+    )
+  }
+  for (const tag of unwrapTags) {
+    result = result.replace(
+      new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'g'),
+      '$1',
+    )
+  }
+  return result.trim()
+}
+
 function userBlockItems(
   message: Message & { type: 'user' },
 ): WebTranscriptItem[] {
+  // Compact summaries are internal continuation context, not user-facing.
+  if ((message as { isCompactSummary?: boolean }).isCompactSummary) {
+    return [
+      finish({
+        id: `${message.uuid}:0`,
+        kind: 'user',
+        timestamp: message.timestamp,
+        isMeta: true,
+        text: 'Conversation compacted',
+      }),
+    ]
+  }
+
   const content = message.message.content
   const base = {
     timestamp: message.timestamp,
-    isMeta: message.isMeta === true ? true : undefined,
+    isMeta:
+      message.isMeta === true ||
+      (message as { isVisibleInTranscriptOnly?: boolean })
+        .isVisibleInTranscriptOnly === true
+        ? true
+        : undefined,
     isSidechain: message.isSidechain,
     agentId: message.agentId,
   }
 
   if (typeof content === 'string') {
+    const cleaned = stripSyntheticTags(content)
+    if (!cleaned) return []
     return [
       finish({
         ...base,
         id: `${message.uuid}:0`,
         kind: 'user',
-        text: clip(content),
+        text: clip(cleaned),
       }),
     ]
   }
@@ -124,11 +187,14 @@ function userBlockItems(
   content.forEach((block: DomainUserContentBlock, index) => {
     const id = `${message.uuid}:${index}`
     switch (block.type) {
-      case 'text':
+      case 'text': {
+        const cleaned = stripSyntheticTags(block.text)
+        if (!cleaned) break
         items.push(
-          finish({ ...base, id, kind: 'user', text: clip(block.text) }),
+          finish({ ...base, id, kind: 'user', text: clip(cleaned) }),
         )
         break
+      }
       case 'tool_result': {
         const raw = block.content
         const text =
@@ -189,6 +255,7 @@ function assistantBlockItems(
     isSidechain: message.isSidechain,
     agentId: message.agentId,
     model: message.message.model,
+    messageId: message.message.id,
   }
 
   const items: WebTranscriptItem[] = []
@@ -250,30 +317,70 @@ export function toWireSnapshot(
       case 'assistant':
         items.push(...assistantBlockItems(message))
         break
-      case 'attachment':
+      case 'attachment': {
+        // Queued commands carry the user's prompt text. Serialize it as a
+        // user item so the browser shows what the user typed.
+        const att = message.attachment
+        if (att.type === 'queued_command') {
+          const prompt = att.prompt
+          const text =
+            typeof prompt === 'string'
+              ? prompt
+              : Array.isArray(prompt)
+                ? prompt
+                    .filter(
+                      (b): b is { type: 'text'; text: string } =>
+                        b.type === 'text',
+                    )
+                    .map(b => b.text)
+                    .join('\n')
+                : ''
+          if (text) {
+            items.push(
+              finish({
+                id: `${message.uuid}:0`,
+                kind: 'user',
+                timestamp: message.timestamp,
+                isMeta: true,
+                text: clip(text),
+              }),
+            )
+          }
+          break
+        }
         items.push(
           finish({
             id: `${message.uuid}:0`,
             kind: 'attachment',
             timestamp: message.timestamp,
             isMeta: true,
-            text: message.attachment.type,
+            text: att.type,
           }),
         )
         break
-      case 'system':
+      }
+      case 'system': {
+        // Hide compact boundaries, same as TUI behavior.
+        const subtype = (message as { subtype?: string }).subtype
+        if (
+          subtype === 'compact_boundary' ||
+          subtype === 'microcompact_boundary'
+        ) {
+          break
+        }
         items.push(
           finish({
             id: `${message.uuid}:0`,
             kind: 'system',
             timestamp: message.timestamp,
             text: clip(message.content ?? ''),
-            subtype: (message as { subtype?: string }).subtype,
+            subtype,
             level: message.level,
             isMeta: message.isMeta,
           }),
         )
         break
+      }
       default:
         break
     }

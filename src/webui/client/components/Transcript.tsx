@@ -7,6 +7,7 @@ import {
   useState,
 } from 'react'
 import type { WebTranscriptItem } from '../../protocol/transcriptWire.js'
+import type { WebPendingCommand } from '../../protocol/attachSchemas.js'
 import { renderMarkdown } from '../markdown.js'
 import { ToolCard } from './ToolCard.js'
 
@@ -16,13 +17,26 @@ function sizeLabel(bytes: number): string {
   return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`
 }
 
+type ToolGroup = {
+  kind: 'tool_group'
+  messageId: string
+  toolName: string
+  items: Array<{ item: WebTranscriptItem; result?: WebTranscriptItem }>
+}
+
+type RowEntry =
+  | { kind: 'row'; item: WebTranscriptItem; result?: WebTranscriptItem }
+  | ToolGroup
+
 const Row = memo(function Row({
   item,
   result,
+  inProgressToolUseIds,
   onOpenImage,
 }: {
   item: WebTranscriptItem
   result?: WebTranscriptItem
+  inProgressToolUseIds?: string[]
   onOpenImage(item: WebTranscriptItem): void
 }): React.ReactElement | null {
   switch (item.kind) {
@@ -69,7 +83,13 @@ const Row = memo(function Row({
       )
 
     case 'tool_use':
-      return <ToolCard item={item} result={result} />
+      return (
+        <ToolCard
+          item={item}
+          result={result}
+          inProgressToolUseIds={inProgressToolUseIds}
+        />
+      )
 
     case 'system':
       if (!item.text) return null
@@ -84,6 +104,55 @@ const Row = memo(function Row({
     case 'attachment':
       return null
   }
+})
+
+const AgentGroup = memo(function AgentGroup({
+  group,
+  inProgressToolUseIds,
+}: {
+  group: ToolGroup
+  inProgressToolUseIds?: string[]
+}): React.ReactElement {
+  const running = group.items.filter(
+    ({ item }) =>
+      item.toolUseId && inProgressToolUseIds?.includes(item.toolUseId),
+  ).length
+  const completed = group.items.filter(({ result }) => result).length
+  const errored = group.items.filter(
+    ({ result }) => result?.isError,
+  ).length
+  const total = group.items.length
+
+  let header: string
+  if (running > 0) {
+    header = `Running ${total} agent${total > 1 ? 's' : ''}…`
+  } else if (errored > 0) {
+    header = `${total} agent${total > 1 ? 's' : ''} finished (${errored} error${errored > 1 ? 's' : ''})`
+  } else if (completed === total) {
+    header = `${total} agent${total > 1 ? 's' : ''} finished`
+  } else {
+    header = `${total} agent${total > 1 ? 's' : ''}`
+  }
+
+  return (
+    <div className="agent-group">
+      <div className="agent-group__header">
+        <span
+          className={`agent-group__dot ${running > 0 ? 'is-running' : errored > 0 ? 'is-error' : 'is-done'}`}
+        />
+        {header}
+      </div>
+      {group.items.map(({ item, result }) => (
+        <ToolCard
+          key={item.id}
+          item={item}
+          result={result}
+          inProgressToolUseIds={inProgressToolUseIds}
+          compact
+        />
+      ))}
+    </div>
+  )
 })
 
 /** How close to the bottom still counts as following the conversation. */
@@ -104,11 +173,15 @@ type OpenImage = {
 export function Transcript({
   items,
   order,
+  pendingCommands,
+  inProgressToolUseIds,
   followSignal,
   onFetchImage,
 }: {
   items: Map<string, WebTranscriptItem>
   order: string[]
+  pendingCommands: WebPendingCommand[]
+  inProgressToolUseIds?: string[]
   /**
    * Bumped when the reader does something that means "show me the newest",
    * which sending a message is. Without it, a reader who scrolled up to quote
@@ -118,7 +191,7 @@ export function Transcript({
   /** Resolves the bytes for one image, which the wire deliberately omits. */
   onFetchImage(itemId: string): Promise<{ mediaType: string; data: string }>
 }): React.ReactElement {
-  const rows = useMemo(() => {
+  const entries = useMemo(() => {
     const list = order
       .map(id => items.get(id))
       .filter((item): item is WebTranscriptItem => Boolean(item))
@@ -130,13 +203,65 @@ export function Transcript({
         resultsByToolUse.set(item.toolUseId, item)
       }
     }
-    return list.map(item => ({
-      item,
-      result:
-        item.kind === 'tool_use' && item.toolUseId
-          ? resultsByToolUse.get(item.toolUseId)
-          : undefined,
-    }))
+
+    // Build entries, grouping consecutive Agent tool_use items by messageId.
+    const entries: RowEntry[] = []
+    let i = 0
+    while (i < list.length) {
+      const item = list[i]!
+      if (
+        item.kind === 'tool_use' &&
+        item.toolName === 'Agent' &&
+        item.messageId
+      ) {
+        // Collect consecutive Agent calls with same messageId
+        const groupItems: Array<{
+          item: WebTranscriptItem
+          result?: WebTranscriptItem
+        }> = []
+        const messageId = item.messageId
+        while (
+          i < list.length &&
+          list[i]!.kind === 'tool_use' &&
+          list[i]!.toolName === 'Agent' &&
+          list[i]!.messageId === messageId
+        ) {
+          const cur = list[i]!
+          groupItems.push({
+            item: cur,
+            result: cur.toolUseId
+              ? resultsByToolUse.get(cur.toolUseId)
+              : undefined,
+          })
+          i++
+        }
+        if (groupItems.length > 1) {
+          entries.push({
+            kind: 'tool_group',
+            messageId,
+            toolName: 'Agent',
+            items: groupItems,
+          })
+        } else {
+          entries.push({
+            kind: 'row',
+            item: groupItems[0]!.item,
+            result: groupItems[0]!.result,
+          })
+        }
+      } else {
+        entries.push({
+          kind: 'row',
+          item,
+          result:
+            item.kind === 'tool_use' && item.toolUseId
+              ? resultsByToolUse.get(item.toolUseId)
+              : undefined,
+        })
+        i++
+      }
+    }
+    return entries
   }, [items, order])
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -209,15 +334,32 @@ export function Transcript({
       }}
     >
       <div className="transcript__content" ref={contentRef}>
-        {rows.length ? (
-          rows.map(({ item, result }) => (
-            <Row
-              key={item.id}
-              item={item}
-              result={result}
-              onOpenImage={target => void openImage(target)}
-            />
-          ))
+        {entries.length || pendingCommands.length ? (
+          <>
+            {entries.map(entry =>
+              entry.kind === 'tool_group' ? (
+                <AgentGroup
+                  key={`group:${entry.messageId}`}
+                  group={entry}
+                  inProgressToolUseIds={inProgressToolUseIds}
+                />
+              ) : (
+                <Row
+                  key={entry.item.id}
+                  item={entry.item}
+                  result={entry.result}
+                  inProgressToolUseIds={inProgressToolUseIds}
+                  onOpenImage={target => void openImage(target)}
+                />
+              ),
+            )}
+            {pendingCommands.map(cmd => (
+              <div key={cmd.id} className="row row--user is-pending">
+                <span className="row__gutter">›</span>
+                <div className="row__body">{cmd.text}</div>
+              </div>
+            ))}
+          </>
         ) : (
           <div className="transcript--empty">No messages yet.</div>
         )}

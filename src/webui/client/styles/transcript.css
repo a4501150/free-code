@@ -107,6 +107,16 @@
   color: var(--signal);
 }
 
+/* ── pending queued messages ──────────────────────────────────── */
+
+.row--user.is-pending {
+  opacity: 0.45;
+}
+
+.row--user.is-pending .row__gutter {
+  color: var(--text-faint);
+}
+
 /* ── rendered markdown ─────────────────────────────────────────── */
 
 /* The row body preserves whitespace for plain text. Rendered markdown must
@@ -220,6 +230,76 @@
   margin-left: auto;
   color: var(--del);
   font-size: 11px;
+}
+
+.tool__badge--running {
+  color: var(--signal);
+}
+
+/* Tool status dot */
+.tool__status {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+.tool__status.is-running {
+  background: var(--signal);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.tool__status.is-completed {
+  background: var(--add);
+}
+.tool__status.is-error {
+  background: var(--del);
+}
+.tool__status.is-pending {
+  background: var(--text-faint);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.tool.is-compact {
+  margin-bottom: 0.25rem;
+  border-left: none;
+  margin-left: 0.75rem;
+}
+
+/* ── agent group ──────────────────────────────────────────────── */
+
+.agent-group {
+  margin: 0 0 0.85rem;
+  border-left: 1px solid var(--rule-bright);
+}
+
+.agent-group__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0 0.35rem 0.75rem;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.agent-group__dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.agent-group__dot.is-running {
+  background: var(--signal);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.agent-group__dot.is-done {
+  background: var(--add);
+}
+.agent-group__dot.is-error {
+  background: var(--del);
 }
 
 .tool__body {

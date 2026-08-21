@@ -1,10 +1,11 @@
 import { isWebuiManagedProcess } from '../../utils/webuiManagedProcess.js'
 import type { CanUseToolFn } from '../../Tool.js'
 import type { Message } from '../../types/message.js'
-import { enqueue } from '../../utils/messageQueueManager.js'
+import { enqueue, getCommandQueueSnapshot } from '../../utils/messageQueueManager.js'
 import type { UUID } from 'crypto'
-import { getStreamActivity } from '../../utils/streamActivity.js'
+import { getStreamActivity, getIsCompacting, getInProgressToolUseIds as getGlobalInProgressIds } from '../../utils/streamActivity.js'
 import type {
+  WebPendingCommand,
   WebPermissionMode,
   WebSessionActivity,
   WebSessionState,
@@ -12,6 +13,7 @@ import type {
 import {
   getAttachHost,
   publishAttachMeta,
+  publishAttachPendingCommands,
   publishAttachTranscript,
   registerAttachRuntime,
   startProcessAttachHost,
@@ -34,13 +36,10 @@ export type HeadlessAttachParams = {
   getModel(): string | undefined
   getPermissionMode(): string | undefined
   getCommands(): string[]
+  getInProgressToolUseIds?(): ReadonlySet<string>
   interrupt(): void
   setModel(model: string): void
   setPermissionMode(mode: WebPermissionMode): void
-  /**
-   * Kicks the headless drain loop. Unlike the REPL, enqueueing alone does not
-   * start a turn there: the stdin path calls run() after every enqueue.
-   */
   requestRun(): void
 }
 
@@ -63,14 +62,34 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
         : params.isRunning()
           ? 'running'
           : 'idle',
-    // The phase outlives the turn that set it, so gate on the turn still being
-    // in flight rather than showing the last thing the model did.
     getActivity: (): WebSessionActivity | undefined =>
       params.isRunning() ? getStreamActivity() : undefined,
+    getIsCompacting: () => getIsCompacting(),
     getModel: () => params.getModel(),
     getPermissionMode: () => params.getPermissionMode(),
     getTodos: () => [],
     getCommands: () => params.getCommands(),
+    getPendingCommands: () => {
+      const snapshot = getCommandQueueSnapshot()
+      const commands: WebPendingCommand[] = []
+      for (const cmd of snapshot) {
+        if (cmd.mode !== 'prompt') continue
+        const text =
+          typeof cmd.value === 'string'
+            ? cmd.value
+            : cmd.value
+                .filter(
+                  (b): b is { type: 'text'; text: string } =>
+                    b.type === 'text',
+                )
+                .map(b => b.text)
+                .join('\n')
+        if (text && cmd.uuid) commands.push({ id: cmd.uuid, text })
+      }
+      return commands
+    },
+    getInProgressToolUseIds: () =>
+      params.getInProgressToolUseIds?.() ?? getGlobalInProgressIds(),
 
     submit(content, delivery, commandId, images) {
       enqueue({
@@ -103,6 +122,7 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
     if (!host.hasSubscribers) return
     publishAttachTranscript()
     publishAttachMeta()
+    publishAttachPendingCommands()
   }, 400)
   timer.unref?.()
 }
@@ -111,6 +131,7 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
 export function publishHeadlessTranscript(): void {
   publishAttachTranscript()
   publishAttachMeta()
+  publishAttachPendingCommands()
 }
 
 /**

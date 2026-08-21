@@ -26,6 +26,28 @@ export function clearStreamActivity(): void {
   current = undefined
 }
 
+let compacting = false
+
+export function getIsCompacting(): boolean {
+  return compacting
+}
+
+export function setIsCompacting(value: boolean): void {
+  compacting = value
+}
+
+let inProgressToolUseIds: Set<string> = new Set()
+
+export function getInProgressToolUseIds(): ReadonlySet<string> {
+  return inProgressToolUseIds
+}
+
+export function setInProgressToolUseIds(
+  updater: (prev: Set<string>) => Set<string>,
+): void {
+  inProgressToolUseIds = updater(inProgressToolUseIds)
+}
+
 /** Mirrors the phase transitions in `handleMessageFromStream`. */
 export function recordStreamActivity(event: DomainStreamEvent): void {
   switch (event.type) {

@@ -214,6 +214,9 @@ describe('idle cost', () => {
       getPermissionMode: () => 'default',
       getTodos: () => [],
       getCommands: () => [],
+      getPendingCommands: () => [],
+      getIsCompacting: () => false,
+      getInProgressToolUseIds: () => new Set(),
       submit: () => {},
       interrupt: () => {},
       setPermissionMode: () => {},
@@ -365,6 +368,9 @@ describe('image prompts', () => {
       getPermissionMode: () => 'default',
       getTodos: () => [],
       getCommands: () => [],
+      getPendingCommands: () => [],
+      getIsCompacting: () => false,
+      getInProgressToolUseIds: () => new Set(),
       submit: (content, _delivery, _commandId, images) => {
         submitted.push({ content, images })
       },
