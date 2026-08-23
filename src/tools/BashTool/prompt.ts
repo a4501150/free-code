@@ -150,7 +150,7 @@ export function getSimplePrompt(): string {
     `You may specify an optional timeout in milliseconds (up to ${getMaxTimeoutMs()}ms / ${getMaxTimeoutMs() / 60000} minutes). By default, your command will timeout after ${getDefaultTimeoutMs()}ms (${getDefaultTimeoutMs() / 60000} minutes).`,
     ...(backgroundNote !== null ? [backgroundNote] : []),
     'When a command streams progress — `gh run watch`, a build, a test run, anything backgrounded — run it bare, with no pipe. A filter that must read to EOF (`tail`, `sort`, `wc`) holds every line until the command exits. Piping also makes many programs switch from line buffering to block buffering. Either way the output file stays empty while the command runs, so the user watching the task sees a blank progress row until it ends. The full output lands in that file anyway, so filtering it gains you nothing.',
-    "Do not append `| tail`, `| head`, or `--limit`-style flags to shrink a command's output: whether it runs in the foreground or the background, output beyond the inline preview is written to a file whose path comes back with the result, so read it with Read or BackgroundTaskOutput instead. Truncating inside the command throws the rest away for the user too.",
+    "Do not use `| tail`, `| head`, `--limit`-style flags, or any other technique to shrink a command's output. The tool already caps inline output and persists the full result to a file whose path comes back with the result, so there is no context-length cost for large output. Read the persisted file with Read or BackgroundTaskOutput instead. Truncating inside the command throws the rest away for the user too.",
     ...(embedded
       ? [
           // bfs (which backs `find`) uses Oniguruma for -regex, which picks the

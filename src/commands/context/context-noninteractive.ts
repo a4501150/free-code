@@ -176,9 +176,20 @@ function formatContextAsMarkdownTable(data: ContextData): string {
     }
   }
 
-  // Custom agents
+  // System tools
+  if (systemTools && systemTools.length > 0) {
+    output += `### System Tools\n\n`
+    output += `| Tool | Tokens |\n`
+    output += `|------|--------|\n`
+    for (const tool of [...systemTools].sort((a, b) => b.tokens - a.tokens)) {
+      output += `| ${tool.name} | ${formatTokens(tool.tokens)} |\n`
+    }
+    output += `\n`
+  }
+
+  // Agents
   if (agents.length > 0) {
-    output += `### Custom Agents\n\n`
+    output += `### Agents\n\n`
     output += `| Agent Type | Source | Tokens |\n`
     output += `|------------|--------|--------|\n`
     for (const agent of agents) {

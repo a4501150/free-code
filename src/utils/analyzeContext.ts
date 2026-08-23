@@ -159,7 +159,7 @@ export interface ContextData {
   readonly model: string
   readonly memoryFiles: MemoryFile[]
   readonly mcpTools: McpTool[]
-  /** Ant-only: per-tool breakdown of always-loaded built-in tools */
+  /** Per-tool breakdown of built-in tools */
   readonly systemTools?: SystemToolDetail[]
   /** Ant-only: per-section breakdown of system prompt */
   readonly systemPromptSections?: SystemPromptSectionDetail[]
@@ -346,9 +346,35 @@ async function countBuiltInToolTokens(
     model,
   )
 
+  // Estimate per-tool proportions for display (same approach as MCP tools)
+  const estimates = await Promise.all(
+    builtInTools.map(async t =>
+      roughTokenCountEstimation(
+        jsonStringify({
+          name: t.name,
+          description: await t.prompt({
+            getToolPermissionContext,
+            tools,
+            agents: agentInfo?.activeAgents ?? [],
+          }),
+          input_schema: t.inputJSONSchema ?? {},
+        }),
+      ),
+    ),
+  )
+  const estimateTotal = estimates.reduce((s, e) => s + e, 0) || 1
+  const tokensByTool = estimates.map(e =>
+    Math.round((e / estimateTotal) * builtInToolTokens),
+  )
+
+  const systemToolDetails: SystemToolDetail[] = builtInTools.map((tool, i) => ({
+    name: tool.name,
+    tokens: tokensByTool[i]!,
+  }))
+
   return {
     builtInToolTokens,
-    systemToolDetails: [],
+    systemToolDetails,
   }
 }
 
@@ -513,20 +539,18 @@ export async function countMcpToolTokens(
   }
 }
 
-async function countCustomAgentTokens(agentDefinitions: {
+async function countAgentTokens(agentDefinitions: {
   activeAgents: AgentDefinition[]
 }): Promise<{
   agentTokens: number
   agentDetails: Agent[]
 }> {
-  const customAgents = agentDefinitions.activeAgents.filter(
-    a => a.source !== 'built-in',
-  )
+  const allAgents = agentDefinitions.activeAgents
   const agentDetails: Agent[] = []
   let agentTokens = 0
 
   const tokenCounts = await Promise.all(
-    customAgents.map(agent =>
+    allAgents.map(agent =>
       countTokensWithFallback(
         [
           {
@@ -539,9 +563,11 @@ async function countCustomAgentTokens(agentDefinitions: {
     ),
   )
 
-  for (const [i, agent] of customAgents.entries()) {
+  for (const [i, agent] of allAgents.entries()) {
     const tokens = tokenCounts[i] || 0
-    agentTokens += tokens || 0
+    if (agent.source !== 'built-in') {
+      agentTokens += tokens || 0
+    }
     agentDetails.push({
       agentType: agent.agentType,
       source: agent.source,
@@ -753,7 +779,7 @@ export async function analyzeContextUsage(
       agentDefinitions,
       runtimeModel,
     ),
-    countCustomAgentTokens(agentDefinitions),
+    countAgentTokens(agentDefinitions),
     countSlashCommandTokens(tools, getToolPermissionContext, agentDefinitions),
     approximateMessageTokens(messages),
   ])
@@ -793,7 +819,7 @@ export async function analyzeContextUsage(
   }
 
   // Built-in tools right after system prompt (skills shown separately below)
-  // Ant users get a per-tool breakdown via systemToolDetails
+  // Per-tool breakdown available via systemToolDetails
   const systemToolsTokens = builtInToolTokens - skillFrontmatterTokens
   if (systemToolsTokens > 0) {
     cats.push({
@@ -812,10 +838,11 @@ export async function analyzeContextUsage(
     })
   }
 
-  // Custom agents after MCP tools
+  // Agents after MCP tools (category total covers custom agents only;
+  // built-in agent tokens are part of the Agent tool in System tools)
   if (agentTokens > 0) {
     cats.push({
-      name: 'Custom agents',
+      name: 'Agents',
       tokens: agentTokens,
       color: 'permission',
     })
@@ -1069,7 +1096,7 @@ export async function analyzeContextUsage(
     model: runtimeModel,
     memoryFiles: memoryFileDetails,
     mcpTools: mcpToolDetails,
-    systemTools: undefined,
+    systemTools: systemToolDetails.length > 0 ? systemToolDetails : undefined,
     systemPromptSections: undefined,
     agents: agentDetails,
     slashCommands:

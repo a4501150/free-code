@@ -204,6 +204,28 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
       </Box>
 
       <Box flexDirection="column" marginLeft={-1}>
+        {systemTools && systemTools.length > 0 && (
+          <Box flexDirection="column" marginTop={1}>
+            <Box>
+              <Text bold>System tools</Text>
+              <Text dimColor>
+                {' '}
+                ({systemTools.length} {plural(systemTools.length, 'tool')},{' '}
+                {formatTokens(systemTools.reduce((s, t) => s + t.tokens, 0))}{' '}
+                tokens)
+              </Text>
+            </Box>
+            {[...systemTools]
+              .sort((a, b) => b.tokens - a.tokens)
+              .map((tool, i) => (
+                <Box key={i}>
+                  <Text>└ {tool.name}: </Text>
+                  <Text dimColor>{formatTokens(tool.tokens)} tokens</Text>
+                </Box>
+              ))}
+          </Box>
+        )}
+
         {mcpTools.length > 0 && (
           <Box flexDirection="column" marginTop={1}>
             <Box>
@@ -245,7 +267,7 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
         {agents.length > 0 && (
           <Box flexDirection="column" marginTop={1}>
             <Box>
-              <Text bold>Custom agents</Text>
+              <Text bold>Agents</Text>
               <Text dimColor> · /agents</Text>
             </Box>
             {Array.from(groupBySource(agents).entries()).map(
