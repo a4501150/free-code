@@ -58,7 +58,6 @@ export function buildAnthropicWireBody(
   if (request.outputConfig) body.output_config = request.outputConfig
   if (request.contextManagement)
     body.context_management = request.contextManagement
-  if (request.advisorModel) body.advisor_model = request.advisorModel
   if (request.stopSequences) body.stop_sequences = request.stopSequences
 
   if (request.extraBody) {

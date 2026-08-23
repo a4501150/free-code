@@ -1,52 +1,38 @@
 import type { Command } from '../commands.js'
 import type { LocalCommandCall } from '../types/command.js'
+import { isAdvisorEnabled } from '../utils/advisor.js'
 import {
-  canUserConfigureAdvisor,
-  isValidAdvisorModel,
-  modelSupportsAdvisor,
-} from '../utils/advisor.js'
-import {
-  getDefaultMainLoopModelSetting,
-  normalizeModelStringForAPI,
   parseUserSpecifiedModel,
 } from '../utils/model/model.js'
+import { getProviderRegistry } from '../utils/model/providerRegistry.js'
 import { validateModel } from '../utils/model/validateModel.js'
 import { updateSettingsForSource } from '../utils/settings/settings.js'
 
 const call: LocalCommandCall = async (args, context) => {
-  const arg = args.trim().toLowerCase()
-  const baseModel = parseUserSpecifiedModel(
-    context.getAppState().mainLoopModel ?? getDefaultMainLoopModelSetting(),
-  )
+  const arg = args.trim()
 
   if (!arg) {
-    const current = context.getAppState().advisorModel
-    if (!current) {
+    const config = context.getAppState().settings?.advisorConfig
+    const current = config?.advisorModel
+    if (!current || !config?.enabled) {
       return {
         type: 'text',
         value:
-          'Advisor: not set\nUse "/advisor <model>" to enable (e.g. "/advisor opus").',
-      }
-    }
-    if (!modelSupportsAdvisor(baseModel)) {
-      return {
-        type: 'text',
-        value: `Advisor: ${current} (inactive)\nThe current model (${baseModel}) does not support advisors.`,
+          'Advisor: not set\nUse "/advisor <model>" to enable (e.g. "/advisor anthropic:opus").',
       }
     }
     return {
       type: 'text',
-      value: `Advisor: ${current}\nUse "/advisor unset" to disable or "/advisor <model>" to change.`,
+      value: `Advisor: ${current}\nUse "/advisor off" to disable or "/advisor <model>" to change.`,
     }
   }
 
-  if (arg === 'unset' || arg === 'off') {
-    const prev = context.getAppState().advisorModel
-    context.setAppState(s => {
-      if (s.advisorModel === undefined) return s
-      return { ...s, advisorModel: undefined }
+  if (arg.toLowerCase() === 'unset' || arg.toLowerCase() === 'off') {
+    const config = context.getAppState().settings?.advisorConfig
+    const prev = config?.advisorModel
+    updateSettingsForSource('userSettings', {
+      advisorConfig: { enabled: false, advisorModel: prev },
     })
-    updateSettingsForSource('userSettings', { advisorModel: undefined })
     return {
       type: 'text',
       value: prev
@@ -55,41 +41,27 @@ const call: LocalCommandCall = async (args, context) => {
     }
   }
 
-  const normalizedModel = normalizeModelStringForAPI(arg)
   const resolvedModel = parseUserSpecifiedModel(arg)
-  const { valid, error } = await validateModel(resolvedModel)
-  if (!valid) {
-    return {
-      type: 'text',
-      value: error
-        ? `Invalid advisor model: ${error}`
-        : `Unknown model: ${arg} (${resolvedModel})`,
+  const provider = getProviderRegistry().getProviderForModel(resolvedModel)
+  if (!provider) {
+    const { valid, error } = await validateModel(resolvedModel)
+    if (!valid) {
+      return {
+        type: 'text',
+        value: error
+          ? `Invalid advisor model: ${error}`
+          : `Unknown model: ${arg} (${resolvedModel})`,
+      }
     }
   }
 
-  if (!isValidAdvisorModel(resolvedModel)) {
-    return {
-      type: 'text',
-      value: `The model ${arg} (${resolvedModel}) cannot be used as an advisor`,
-    }
-  }
-
-  context.setAppState(s => {
-    if (s.advisorModel === normalizedModel) return s
-    return { ...s, advisorModel: normalizedModel }
+  updateSettingsForSource('userSettings', {
+    advisorConfig: { enabled: true, advisorModel: resolvedModel },
   })
-  updateSettingsForSource('userSettings', { advisorModel: normalizedModel })
-
-  if (!modelSupportsAdvisor(baseModel)) {
-    return {
-      type: 'text',
-      value: `Advisor set to ${normalizedModel}.\nNote: Your current model (${baseModel}) does not support advisors. Switch to a supported model to use the advisor.`,
-    }
-  }
 
   return {
     type: 'text',
-    value: `Advisor set to ${normalizedModel}.`,
+    value: `Advisor set to ${resolvedModel}.`,
   }
 }
 
@@ -98,9 +70,9 @@ const advisor = {
   name: 'advisor',
   description: 'Configure the advisor model',
   argumentHint: '[<model>|off]',
-  isEnabled: () => canUserConfigureAdvisor(),
+  isEnabled: () => true,
   get isHidden() {
-    return !canUserConfigureAdvisor()
+    return false
   },
   supportsNonInteractive: true,
   call,

@@ -79,7 +79,6 @@ export type DomainMessageRequest = {
   metadata?: Record<string, unknown>
   extraBody?: Record<string, unknown>
   outputConfig?: Record<string, unknown>
-  advisorModel?: string
   previousRequestId?: string
   clientRequestId?: string
   contextManagement?: Record<string, unknown>

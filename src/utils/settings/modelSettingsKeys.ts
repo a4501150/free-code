@@ -8,7 +8,6 @@ export const MODEL_SETTINGS_KEYS: ReadonlySet<string> = new Set([
   'availableSubagentModels',
   'modelOverrides',
   'planModeModel',
-  'advisorModel',
   'teammateDefaultModel',
   'advisorConfig',
 ])

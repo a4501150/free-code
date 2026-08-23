@@ -124,13 +124,7 @@ import { addToTotalSessionCost } from 'src/cost-tracker.js'
 import { getInitialSettings } from 'src/utils/settings/settings.js'
 import type { AgentId } from 'src/types/ids.js'
 import { isAwsCredentialsProviderError } from 'src/utils/aws.js'
-import {
-  ADVISOR_TOOL_INSTRUCTIONS,
-  getExperimentAdvisorModels,
-  isAdvisorEnabled,
-  isValidAdvisorModel,
-  modelSupportsAdvisor,
-} from 'src/utils/advisor.js'
+import { isAdvisorEnabled } from 'src/utils/advisor.js'
 import { getAgentContext } from 'src/utils/agentContext.js'
 import { withAgenticSystemPromptInvariantsForQuery } from 'src/utils/agenticSystemPrompt.js'
 import {
@@ -647,7 +641,6 @@ export type Options = {
   agentId?: AgentId // Only set for subagents
   outputFormat?: Record<string, unknown>
   fastMode?: boolean
-  advisorModel?: string
   addNotification?: (notif: Notification) => void
   // API-side task budget (output_config.task_budget). Sent to the API
   // so the model can pace itself. `remaining` is computed by the caller
@@ -1065,49 +1058,10 @@ async function* queryModel(
   const isAgenticQuery = isAgenticQuerySource(options.querySource)
   const betas = getMergedBetas(options.model, { isAgenticQuery })
 
-  // Always send the advisor beta header when advisor is enabled, so
-  // non-agentic queries (compact, side_question, extract_memories, etc.)
-  // can parse advisor server_tool_use blocks already in the conversation history.
+  // Legacy: send advisor beta header so old server-side advisor blocks
+  // in conversation history can be parsed without error.
   if (isAdvisorEnabled()) {
     betas.push(ADVISOR_BETA_HEADER)
-  }
-
-  let advisorModel: string | undefined
-  if (isAgenticQuery && isAdvisorEnabled()) {
-    let advisorOption = options.advisorModel
-
-    const advisorExperiment = getExperimentAdvisorModels()
-    if (advisorExperiment !== undefined) {
-      if (
-        normalizeModelStringForAPI(advisorExperiment.baseModel) ===
-        normalizeModelStringForAPI(options.model)
-      ) {
-        // Override the advisor model if the base model matches. We
-        // should only have experiment models if the user cannot
-        // configure it themselves.
-        advisorOption = advisorExperiment.advisorModel
-      }
-    }
-
-    if (advisorOption) {
-      const normalizedAdvisorModel = normalizeModelStringForAPI(
-        parseUserSpecifiedModel(advisorOption),
-      )
-      if (!modelSupportsAdvisor(options.model)) {
-        logForDebugging(
-          `[AdvisorTool] Skipping advisor - base model ${options.model} does not support advisor`,
-        )
-      } else if (!isValidAdvisorModel(normalizedAdvisorModel)) {
-        logForDebugging(
-          `[AdvisorTool] Skipping advisor - ${normalizedAdvisorModel} is not a valid advisor model`,
-        )
-      } else {
-        advisorModel = normalizedAdvisorModel
-        logForDebugging(
-          `[AdvisorTool] Server-side tool enabled with ${advisorModel} as the advisor model`,
-        )
-      }
-    }
   }
 
   const filteredTools: Tools = tools
@@ -1198,7 +1152,6 @@ async function* queryModel(
         : '',
       getCLISyspromptPrefix(),
       ...systemPrompt,
-      ...(advisorModel ? [ADVISOR_TOOL_INSTRUCTIONS] : []),
     ].filter(Boolean),
   )
 
@@ -1211,16 +1164,6 @@ async function* queryModel(
   // Note: The actual new_context message extraction is done in sessionTracing.ts using
   // hash-based tracking per querySource (agent) from the messagesForAPI array
   const extraToolSchemas = [...(options.extraToolSchemas ?? [])]
-  if (advisorModel) {
-    // Server tools must be in the tools array by API contract. Appended after
-    // toolSchemas (which carries the cache_control marker) so toggling /advisor
-    // only churns the small suffix, not the cached prefix.
-    extraToolSchemas.push({
-      type: 'advisor_20260301',
-      name: 'advisor',
-      model: advisorModel,
-    })
-  }
   const allTools: DomainToolDefinition[] = [...toolSchemas, ...extraToolSchemas]
 
   const isFastMode =
@@ -1457,7 +1400,6 @@ async function* queryModel(
       }),
       ...(speed !== undefined && { speed }),
       ...(previousRequestId && { previousRequestId }),
-      ...(advisorModel && { advisorModel }),
     }
 
     return domainRequest
@@ -1828,7 +1770,6 @@ async function* queryModel(
                 type: 'assistant',
                 uuid: randomUUID(),
                 timestamp: new Date().toISOString(),
-                ...(advisorModel && { advisorModel }),
               }
               newMessages.push(m)
               if (part.providerConfirmed) {
@@ -2149,7 +2090,6 @@ async function* queryModel(
           type: 'assistant',
           uuid: randomUUID(),
           timestamp: new Date().toISOString(),
-          ...(advisorModel && { advisorModel }),
         }
         newMessages.push(m)
         fallbackMessage = m

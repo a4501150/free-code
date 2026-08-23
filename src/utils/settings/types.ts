@@ -1219,10 +1219,6 @@ const _settingsSchemaValue = z
       .string()
       .optional()
       .describe('Model to use in plan mode. If not set, uses defaultModel.'),
-    advisorModel: z
-      .string()
-      .optional()
-      .describe('Advisor model for the server-side advisor tool.'),
     fastMode: z
       .boolean()
       .optional()
@@ -1547,13 +1543,11 @@ const _settingsSchemaValue = z
     advisorConfig: z
       .object({
         enabled: z.boolean().optional(),
-        canUserConfigure: z.boolean().optional(),
-        baseModel: z.string().optional(),
         advisorModel: z.string().optional(),
       })
       .optional()
       .describe(
-        'Configuration for the server-side advisor tool. Requires first-party API.',
+        'Advisor tool configuration. Set advisorModel to a provider-qualified model ID (e.g. "anthropic:claude-opus-4-6-20250820") and enabled to true.',
       ),
     memoryExtractionInterval: z
       .number()

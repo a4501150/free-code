@@ -51,13 +51,7 @@ import {
   isSyntheticOutputToolEnabled,
 } from './tools/SyntheticOutputTool/SyntheticOutputTool.js'
 import { getTools } from './tools.js'
-import {
-  canUserConfigureAdvisor,
-  getInitialAdvisorSetting,
-  isAdvisorEnabled,
-  isValidAdvisorModel,
-  modelSupportsAdvisor,
-} from './utils/advisor.js'
+import { isAdvisorEnabled } from './utils/advisor.js'
 import { isAgentSwarmsEnabled } from './utils/agentSwarmsEnabled.js'
 import { count, uniq } from './utils/array.js'
 import {
@@ -224,6 +218,7 @@ import {
   getInitialSettings,
   getSettingsForSource,
   getSettingsWithErrors,
+  updateSettingsForSource,
 } from './utils/settings/settings.js'
 import { resetSettingsCache } from './utils/settings/settingsCache.js'
 import type { ValidationError } from './utils/settings/validation.js'
@@ -2243,38 +2238,17 @@ async function run(): Promise<CommanderCommand> {
         initialMainLoopModel ?? getDefaultMainLoopModel(),
       )
 
-      let advisorModel: string | undefined
+      // Advisor: log if configured
       if (isAdvisorEnabled()) {
-        const advisorOption = canUserConfigureAdvisor()
-          ? (options as { advisor?: string }).advisor
-          : undefined
+        const advisorOption = (options as { advisor?: string }).advisor
         if (advisorOption) {
-          logForDebugging(`[AdvisorTool] --advisor ${advisorOption}`)
-          if (!modelSupportsAdvisor(resolvedInitialModel)) {
-            process.stderr.write(
-              chalk.red(
-                `Error: The model "${resolvedInitialModel}" does not support the advisor tool.\n`,
-              ),
-            )
-            process.exit(1)
-          }
-          const normalizedAdvisorModel = normalizeModelStringForAPI(
-            parseUserSpecifiedModel(advisorOption),
-          )
-          if (!isValidAdvisorModel(normalizedAdvisorModel)) {
-            process.stderr.write(
-              chalk.red(
-                `Error: The model "${advisorOption}" cannot be used as an advisor.\n`,
-              ),
-            )
-            process.exit(1)
-          }
-        }
-        advisorModel = canUserConfigureAdvisor()
-          ? (advisorOption ?? getInitialAdvisorSetting())
-          : advisorOption
-        if (advisorModel) {
-          logForDebugging(`[AdvisorTool] Advisor model: ${advisorModel}`)
+          const resolvedAdvisor = parseUserSpecifiedModel(advisorOption)
+          updateSettingsForSource('userSettings', {
+            advisorConfig: { enabled: true, advisorModel: resolvedAdvisor },
+          })
+          logForDebugging(`[AdvisorTool] Advisor model: ${resolvedAdvisor}`)
+        } else {
+          logForDebugging(`[AdvisorTool] Advisor enabled from settings`)
         }
       }
 
@@ -2786,7 +2760,6 @@ async function run(): Promise<CommanderCommand> {
           ...(isFastModeEnabled() && {
             fastMode: getInitialFastModeSetting(effectiveModel ?? null),
           }),
-          ...(isAdvisorEnabled() && advisorModel && { advisorModel }),
           // kairosEnabled gates the async fire-and-forget path in
           // executeForkedSlashCommand (processSlashCommand.tsx:132) and
           // AgentTool's shouldRunAsync. The REPL initialState sets this at
@@ -3172,7 +3145,6 @@ async function run(): Promise<CommanderCommand> {
           : null,
         activeOverlays: new Set<string>(),
         fastMode: getInitialFastModeSetting(resolvedInitialModel),
-        ...(isAdvisorEnabled() && advisorModel && { advisorModel }),
         // Compute teamContext synchronously to avoid useEffect setState during render.
         // KAIROS: assistantTeamContext takes precedence — set earlier in the
         // KAIROS block so Agent(name: "foo") can spawn in-process teammates
@@ -3510,14 +3482,12 @@ async function run(): Promise<CommanderCommand> {
     'Create a tmux session for the worktree (requires --worktree). Uses iTerm2 native panes when available; use --tmux=classic for traditional tmux.',
   )
 
-  if (canUserConfigureAdvisor()) {
-    program.addOption(
-      new Option(
-        '--advisor <model>',
-        'Enable the server-side advisor tool with the specified model (alias or full ID).',
-      ).hideHelp(),
-    )
-  }
+  program.addOption(
+    new Option(
+      '--advisor <model>',
+      'Enable the advisor tool with the specified model (e.g. "anthropic:claude-opus-4-6-20250820").',
+    ).hideHelp(),
+  )
 
   if (feature('COORDINATOR_MODE')) {
     program.addOption(
