@@ -4015,7 +4015,7 @@ You have exited auto mode. The user may now want to interact more directly. You 
       }
       if (attachment.isInitial && attachment.showConcurrencyNote) {
         parts.push(
-          `Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses.`,
+          `Launch multiple agents concurrently if task requires parallel agents; to do that, use a single message with multiple tool uses.`,
         )
       }
       return wrapMessagesInSystemReminder([

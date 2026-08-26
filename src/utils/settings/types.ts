@@ -1215,10 +1215,6 @@ const _settingsSchemaValue = z
         'When false, thinking is disabled. When absent or true, thinking is ' +
           'enabled automatically for supported models.',
       ),
-    planModeModel: z
-      .string()
-      .optional()
-      .describe('Model to use in plan mode. If not set, uses defaultModel.'),
     fastMode: z
       .boolean()
       .optional()
@@ -1548,6 +1544,15 @@ const _settingsSchemaValue = z
       .optional()
       .describe(
         'Advisor tool configuration. Set advisorModel to a provider-qualified model ID (e.g. "anthropic:claude-opus-4-6-20250820") and enabled to true.',
+      ),
+    planAgentConfig: z
+      .object({
+        enabled: z.boolean().optional(),
+        planModel: z.string().optional(),
+      })
+      .optional()
+      .describe(
+        'Plan agent configuration. Set enabled to true to make the Plan agent available. Set planModel to a provider-qualified model ID to override the default.',
       ),
     memoryExtractionInterval: z
       .number()

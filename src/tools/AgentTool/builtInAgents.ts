@@ -8,6 +8,7 @@ import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
 import { PLAN_AGENT } from './built-in/planAgent.js'
 import { ADVISOR_AGENT } from './built-in/advisorAgent.js'
 import { getAdvisorConfig } from '../../utils/advisor.js'
+import { getPlanAgentConfig } from '../../utils/planAgent.js'
 import { STATUSLINE_SETUP_AGENT } from './built-in/statuslineSetup.js'
 import { VERIFICATION_AGENT } from './built-in/verificationAgent.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
@@ -38,7 +39,14 @@ export function getBuiltInAgents(): AgentDefinition[] {
   ]
 
   if (areExplorePlanAgentsEnabled()) {
-    agents.push(EXPLORE_AGENT, PLAN_AGENT)
+    agents.push(EXPLORE_AGENT)
+    const planConfig = getPlanAgentConfig()
+    if (planConfig.enabled) {
+      agents.push({
+        ...PLAN_AGENT,
+        ...(planConfig.planModel ? { model: planConfig.planModel } : {}),
+      })
+    }
   }
 
   // Include Code Guide agent for regular CLI entrypoints

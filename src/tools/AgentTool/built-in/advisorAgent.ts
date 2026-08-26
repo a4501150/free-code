@@ -5,7 +5,7 @@ import { AGENT_TOOL_NAME } from '../constants.js'
 import type { BuiltInAgentDefinition } from '../loadAgentsDir.js'
 
 const ADVISOR_WHEN_TO_USE =
-  'Expert reviewer agent backed by a separate model. Call this agent to get independent advice on your approach before committing to it, when stuck on recurring errors, when considering a change of approach, or before declaring a task complete. Provide focused context in your prompt — describe the situation, relevant files, and your specific question. The advisor can read files to verify claims but cannot modify code. On tasks longer than a few steps, call advisor at least once before committing to an approach.'
+  'Expert reviewer agent backed by a separate model. Call this agent to get independent advice when stuck on recurring errors, when considering a change of approach, or before declaring a complex task complete. Provide focused context in your prompt — describe the situation, relevant files, and your specific question. The advisor can read files to verify claims but cannot modify code.'
 
 function getAdvisorSystemPrompt(): string {
   return `You are an expert technical advisor reviewing work done by another AI coding assistant.

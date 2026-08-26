@@ -12,7 +12,6 @@ import { getProviderRegistry } from './providerRegistry.js'
 import type { ModelName, ModelSetting } from './modelTypes.js'
 import { qualifyModel, stripContextSuffix } from './parseModelString.js'
 import { parseModelStringFromRegistry } from './parseModelStringWithRegistry.js'
-import { getInitialSettings } from '../settings/settings.js'
 
 // Re-export types from modelTypes for backward compat
 export type { ModelShortName, ModelName, ModelSetting } from './modelTypes.js'
@@ -98,25 +97,14 @@ function qualifyWithDefault(bareModelId: string): ModelName {
 }
 
 /**
- * Get the model to use for runtime, depending on the runtime context.
- * If planModeModel is configured, uses it in plan mode.
+ * Get the model to use for runtime.
  */
 export function getRuntimeMainLoopModel(params: {
   permissionMode: PermissionMode
   mainLoopModel: string
   exceeds200kTokens?: boolean
 }): ModelName {
-  const { permissionMode, mainLoopModel, exceeds200kTokens = false } = params
-
-  // If planModeModel is configured and we're in plan mode, use it
-  if (permissionMode === 'plan' && !exceeds200kTokens) {
-    const planModel = getInitialSettings().planModeModel
-    if (planModel) {
-      return parseUserSpecifiedModel(planModel)
-    }
-  }
-
-  return mainLoopModel
+  return params.mainLoopModel
 }
 
 /**

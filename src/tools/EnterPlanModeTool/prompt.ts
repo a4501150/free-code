@@ -27,9 +27,9 @@ function getEnterPlanModeToolPromptExternal(): string {
     ? ''
     : getWhatHappensSection()
 
-  return `Use this tool proactively when you're about to start a non-trivial implementation task. Getting user sign-off on your approach before writing code prevents wasted effort and ensures alignment. This tool transitions you into plan mode where you can explore the codebase and design an implementation approach for user approval.
+  return `Use this tool when the user asks you to plan, or when requirements are genuinely ambiguous and need clarification before any code can be written. This tool transitions you into plan mode where you can explore the codebase and design an implementation approach for user approval.
 
-Prefer using EnterPlanMode for implementation tasks with multiple valid approaches, unclear requirements, architectural choices, or multi-file changes; skip it for simple fixes, single-function additions with clear requirements. If you would use ${ASK_USER_QUESTION_TOOL_NAME} to clarify the approach, use EnterPlanMode and then use the ${ASK_USER_QUESTION_TOOL_NAME} to get clarification.
+Skip plan mode for simple fixes, single-function additions, clear requirements, or tasks where the approach is obvious. If you would use ${ASK_USER_QUESTION_TOOL_NAME} to clarify the approach, use EnterPlanMode and then use the ${ASK_USER_QUESTION_TOOL_NAME} to get clarification.
 
 ${whatHappens}## Important Notes
 
