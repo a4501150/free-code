@@ -385,24 +385,11 @@ function isPreToolHookSummary(
 
 /**
  * Check if a message should be skipped (not break the group, just passed through).
- * This includes thinking blocks, redacted thinking, attachments, etc.
  */
 function shouldSkipMessage(msg: RenderableMessage): boolean {
-  if (msg.type === 'assistant') {
-    const content = msg.message.content[0]
-    // Skip thinking blocks and other non-text, non-tool content
-    if (
-      content?.type === 'reasoning' ||
-      content?.type === 'redacted_reasoning'
-    ) {
-      return true
-    }
-  }
-  // Skip attachment messages
   if (msg.type === 'attachment') {
     return true
   }
-  // Skip system messages
   if (msg.type === 'system') {
     return true
   }
@@ -951,7 +938,7 @@ export function collapseReadSearchGroups(
       currentGroup.relevantMemories ??= []
       currentGroup.relevantMemories.push(...msg.attachment.memories)
     } else if (shouldSkipMessage(msg)) {
-      // Don't flush the group for skippable messages (thinking, attachments, system)
+      // Don't flush the group for skippable messages (attachments, system)
       // If a group is in progress, defer these messages to output after the collapsed group
       // This preserves the visual ordering where the collapsed badge appears at the position
       // of the first tool use, not displaced by intervening skippable messages.
