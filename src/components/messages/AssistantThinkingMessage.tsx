@@ -26,8 +26,26 @@ export function AssistantThinkingMessage({
   const thinking =
     'thinking' in param ? param.thinking : (param as { text: string }).text
 
+  const hasOpaqueReasoning =
+    'providerState' in param &&
+    !!(param.providerState?.openaiResponses?.encryptedContent ||
+      param.providerState?.bedrockConverse?.redactedContent)
+
   if (!thinking && !isStreaming) {
-    return null
+    if (!hasOpaqueReasoning) {
+      return null
+    }
+    const opaqueLabel =
+      durationMs !== undefined
+        ? `\u2234 thought for ${formatSecondsShort(durationMs)}`
+        : '\u2234 thought'
+    return (
+      <Box marginTop={addMargin ? 1 : 0}>
+        <Text dimColor italic>
+          {opaqueLabel}
+        </Text>
+      </Box>
+    )
   }
 
   const shouldShowFullThinking = isTranscriptMode || verbose
