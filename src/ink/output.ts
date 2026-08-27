@@ -14,6 +14,7 @@ import {
   CellWidth,
   extractHyperlinkFromStyles,
   filterOutHyperlinkStyles,
+  forceDiffRegion,
   markNoSelectRegion,
   OSC8_PREFIX,
   resetScreen,
@@ -57,6 +58,7 @@ type Options = {
    * For double-buffering, pass a reusable screen. Otherwise create a new one.
    */
   screen: Screen
+  previousScreen?: Screen
 }
 
 export type Operation =
@@ -66,6 +68,7 @@ export type Operation =
   | BlitOperation
   | ClearOperation
   | NoSelectOperation
+  | ForceRepaintOperation
   | ShiftOperation
 
 type WriteOperation = {
@@ -162,6 +165,12 @@ type ClearOperation = {
   fromAbsolute?: boolean
 }
 
+type ForceRepaintOperation = {
+  type: 'forceRepaint'
+  region: Rectangle
+  fromAbsolute?: boolean
+}
+
 type NoSelectOperation = {
   type: 'noSelect'
   region: Rectangle
@@ -172,6 +181,7 @@ export default class Output {
   height: number
   private readonly stylePool: StylePool
   private screen: Screen
+  private previousScreen: Screen | undefined
 
   private readonly operations: Operation[] = []
 
@@ -184,6 +194,7 @@ export default class Output {
     this.height = height
     this.stylePool = stylePool
     this.screen = screen
+    this.previousScreen = options.previousScreen
 
     resetScreen(screen, width, height)
   }
@@ -195,10 +206,16 @@ export default class Output {
    * lines don't change between renders, so tokenize + grapheme clustering
    * becomes a cache hit.
    */
-  reset(width: number, height: number, screen: Screen): void {
+  reset(
+    width: number,
+    height: number,
+    screen: Screen,
+    previousScreen?: Screen,
+  ): void {
     this.width = width
     this.height = height
     this.screen = screen
+    this.previousScreen = previousScreen
     this.operations.length = 0
     resetScreen(screen, width, height)
     if (this.charCache.size > 16384) this.charCache.clear()
@@ -226,6 +243,10 @@ export default class Output {
    */
   clear(region: Rectangle, fromAbsolute?: boolean): void {
     this.operations.push({ type: 'clear', region, fromAbsolute })
+  }
+
+  forceRepaint(region: Rectangle, fromAbsolute?: boolean): void {
+    this.operations.push({ type: 'forceRepaint', region, fromAbsolute })
   }
 
   /**
@@ -287,7 +308,8 @@ export default class Output {
     // can't have been painted on top of a sibling's current position.
     const absoluteClears: Rectangle[] = []
     for (const operation of this.operations) {
-      if (operation.type !== 'clear') continue
+      if (operation.type !== 'clear' && operation.type !== 'forceRepaint')
+        continue
       const { x, y, width, height } = operation.region
       const startX = Math.max(0, x)
       const startY = Math.max(0, y)
@@ -310,6 +332,9 @@ export default class Output {
       switch (operation.type) {
         case 'clear':
           // handled in pass 1
+          continue
+
+        case 'forceRepaint':
           continue
 
         case 'clip':
@@ -516,6 +541,14 @@ export default class Output {
       if (operation.type === 'noSelect') {
         const { x, y, width, height } = operation.region
         markNoSelectRegion(screen, x, y, width, height)
+      }
+    }
+
+    if (this.previousScreen) {
+      for (const operation of this.operations) {
+        if (operation.type === 'forceRepaint') {
+          forceDiffRegion(this.previousScreen, screen, operation.region)
+        }
       }
     }
 

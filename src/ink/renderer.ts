@@ -106,9 +106,15 @@ export default function createRenderer(
       backScreen ??
       createScreen(width, height, stylePool, charPool, hyperlinkPool)
     if (output) {
-      output.reset(width, height, screen)
+      output.reset(width, height, screen, prevScreen)
     } else {
-      output = new Output({ width, height, stylePool, screen })
+      output = new Output({
+        width,
+        height,
+        stylePool,
+        screen,
+        previousScreen: prevScreen,
+      })
     }
 
     resetLayoutShifted()

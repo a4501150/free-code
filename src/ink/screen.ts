@@ -1047,6 +1047,36 @@ export function clearRegion(
   }
 }
 
+export function forceDiffRegion(
+  prev: Screen,
+  next: Screen,
+  region: Rectangle,
+): void {
+  const startX = Math.max(0, region.x)
+  const startY = Math.max(0, region.y)
+  const maxX = Math.min(region.x + region.width, prev.width, next.width)
+  const maxY = Math.min(region.y + region.height, prev.height, next.height)
+  if (startX >= maxX || startY >= maxY) return
+
+  for (let y = startY; y < maxY; y++) {
+    let prevCI = (y * prev.width + startX) << 1
+    let nextCI = (y * next.width + startX) << 1
+    for (let x = startX; x < maxX; x++) {
+      prev.cells[prevCI] = next.cells[nextCI] === 0 ? 1 : 0
+      prevCI += 2
+      nextCI += 2
+    }
+  }
+
+  const rect = {
+    x: startX,
+    y: startY,
+    width: maxX - startX,
+    height: maxY - startY,
+  }
+  next.damage = next.damage ? unionRect(next.damage, rect) : rect
+}
+
 /**
  * Shift full-width rows within [top, bottom] (inclusive, 0-indexed) by n.
  * n > 0 shifts UP (simulating CSI n S); n < 0 shifts DOWN (CSI n T).

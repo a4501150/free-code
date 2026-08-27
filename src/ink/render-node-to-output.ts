@@ -505,14 +505,10 @@ function renderNodeToOutput(
         node.style.position === 'absolute',
       )
     }
-    // When a node has no cache (first render after mount/remount), the
-    // terminal may hold stale content at this position from a frame
-    // whose screen buffer has since been recycled. Neither prev nor
-    // next screen reflects that content, so diffEach sees matching
-    // empty cells and never clears it. Mark the current rect as
-    // damaged so the diff pass writes spaces over any ghost chars.
+    // A remounted node can cover terminal cells that are blank in both screen
+    // buffers. Force those cells through the diff so blank cells erase residue.
     if (node.dirty && !cached) {
-      output.clear(
+      output.forceRepaint(
         {
           x: Math.floor(x),
           y: Math.floor(y),

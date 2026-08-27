@@ -17,7 +17,12 @@ import {
 setDefaultTimeout(120_000)
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
+import {
+  TmuxSession,
+  sleep,
+  createLoggingTest,
+  findTextCell,
+} from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
@@ -115,6 +120,75 @@ describe('Edge Cases', () => {
       await session.submitAndApprove('Large output test', 30_000)
 
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(2)
+    })
+
+    test('repeated large Bash result expansion leaves no stale characters', async () => {
+      server.reset([
+        toolUseResponse([
+          {
+            name: 'Bash',
+            input: {
+              command:
+                'for i in $(seq 1 120); do printf "BASH_ROW_%03d_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\\n" "$i"; done',
+              description: 'Generate marker rows',
+            },
+          },
+        ]),
+        textResponse('Large output complete'),
+      ])
+
+      session = new TmuxSession({
+        serverUrl: server.url,
+        settings: { permissions: { allow: ['Bash'] } },
+      })
+      await session.start()
+      await session.sendLine('Generate large output')
+      await session.waitForText('Large output complete', 30_000)
+
+      for (let i = 0; i < 6; i++) {
+        const collapsed = await session.waitForScreen(
+          screen =>
+            screen.includes('Ran 1 bash command') &&
+            !screen.includes('BASH_ROW_120_'),
+          {
+            timeoutMs: 10_000,
+            intervalMs: 100,
+            description: 'collapsed Bash result',
+            currentPaneOnly: true,
+          },
+        )
+        const collapsedCell = findTextCell(collapsed, 'Ran 1 bash command')
+        expect(collapsedCell).not.toBeNull()
+        await session.sendMouseClick(collapsedCell!.col, collapsedCell!.row)
+
+        const expanded = await session.waitForScreen(
+          screen => screen.includes('BASH_ROW_120_'),
+          {
+            timeoutMs: 10_000,
+            intervalMs: 100,
+            description: 'expanded Bash result',
+            currentPaneOnly: true,
+          },
+        )
+        const expandedCell = findTextCell(expanded, 'BASH_ROW_120_')
+        expect(expandedCell).not.toBeNull()
+        await session.sendMouseClick(expandedCell!.col, expandedCell!.row)
+
+        await session.waitForScreen(
+          screen =>
+            screen.includes('Ran 1 bash command') &&
+            !screen.includes('BASH_ROW_120_'),
+          {
+            timeoutMs: 10_000,
+            intervalMs: 100,
+            description: 'clean collapsed Bash result',
+            currentPaneOnly: true,
+          },
+        )
+      }
+
+      const pane = await session.capturePane()
+      expect(pane).not.toContain('BASH_ROW_120_')
     })
   })
 
