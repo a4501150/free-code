@@ -291,6 +291,12 @@ export const ProviderModelSchema = z.object({
       'User-selected effort level. Persisted when user explicitly changes effort in model picker. ' +
         'Falls back to defaultEffort when absent.',
     ),
+  reasoningSummary: z
+    .enum(['auto', 'concise', 'detailed', 'none'])
+    .optional()
+    .describe(
+      'OpenAI Responses reasoning summary mode. Omit when the endpoint does not support the parameter.',
+    ),
   pricing: z
     .object({
       input: z

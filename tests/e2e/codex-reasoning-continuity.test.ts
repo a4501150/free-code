@@ -55,23 +55,32 @@ describe('Codex reasoning continuity E2E', () => {
     session = undefined
   })
 
-  test('turn 2 request input[] echoes turn 1 reasoning with encrypted_content', async () => {
-    // Prime turn 1 once; prime several identical turn-2 responses in case
-    // any transient retries happen (harmless — assertions use the first
-    // turn-2 request).
+  test('turn 2 replays separate summary, raw, and encrypted reasoning state', async () => {
     const primeTurn2 = () => ({
       kind: 'reasoning_text' as const,
       reasoningId: 'rs_turn2_XYZ',
       encryptedContent: 'ENC_BLOB_TURN2',
-      reasoningText: 'Building on prior thoughts.',
+      reasoningText: 'Turn two raw reasoning.',
+      reasoningSummary: ['Turn two summary.'],
       text: 'Turn2Answer',
     })
     codexServer.reset([
       {
         kind: 'reasoning_text' as const,
-        reasoningId: 'rs_turn1_ABC',
-        encryptedContent: 'ENC_BLOB_TURN1',
-        reasoningText: 'Reasoning aloud for turn one.',
+        reasoningItems: [
+          {
+            reasoningId: 'rs_turn1_ABC',
+            encryptedContent: 'ENC_BLOB_TURN1',
+            reasoningText: 'Turn one raw reasoning.',
+            reasoningSummary: ['Turn one summary.', 'Second summary part.'],
+          },
+          {
+            reasoningId: 'rs_turn1_OPAQUE',
+            encryptedContent: 'ENC_BLOB_OPAQUE',
+            reasoningText: '',
+            reasoningSummary: [],
+          },
+        ],
         text: 'Turn1Answer',
       },
       primeTurn2(),
@@ -93,7 +102,13 @@ describe('Codex reasoning continuity E2E', () => {
               active: 'bearer',
               bearer: { token: 'test-codex-bearer' },
             },
-            models: [{ id: 'gpt-5-codex', label: 'Codex' }],
+            models: [
+              {
+                id: 'gpt-5-codex',
+                label: 'Codex',
+                reasoningSummary: 'auto',
+              },
+            ],
           },
         },
       },
@@ -112,34 +127,33 @@ describe('Codex reasoning continuity E2E', () => {
     const requests = codexServer.getRequestLog()
     expect(requests.length).toBeGreaterThanOrEqual(turn1Count + 1)
 
-    // Every request must include reasoning.encrypted_content in `include`.
     for (const req of requests) {
-      expect(Array.isArray(req.body.include)).toBe(true)
       expect(req.body.include).toContain('reasoning.encrypted_content')
+      expect(req.body.reasoning).toMatchObject({ summary: 'auto' })
     }
 
-    // The first turn-2 request is at index turn1Count (0-based).
     const turn2First = requests[turn1Count]!
     const input = (turn2First.body.input || []) as Array<
       Record<string, unknown>
     >
-    const reasoningItem = input.find(i => i.type === 'reasoning')
-    expect(reasoningItem).toBeDefined()
-    expect(reasoningItem!.id).toBe('rs_turn1_ABC')
-    expect(reasoningItem!.encrypted_content).toBe('ENC_BLOB_TURN1')
-    const summary = reasoningItem!.summary as Array<Record<string, unknown>>
-    expect(Array.isArray(summary)).toBe(true)
-    expect(summary[0]?.type).toBe('summary_text')
-    expect(summary[0]?.text).toBe('Reasoning aloud for turn one.')
+    const reasoningItems = input.filter(i => i.type === 'reasoning')
+    expect(reasoningItems).toHaveLength(2)
+    expect(reasoningItems[0]).toMatchObject({
+      id: 'rs_turn1_ABC',
+      encrypted_content: 'ENC_BLOB_TURN1',
+      summary: [
+        { type: 'summary_text', text: 'Turn one summary.' },
+        { type: 'summary_text', text: 'Second summary part.' },
+      ],
+      content: [{ type: 'reasoning_text', text: 'Turn one raw reasoning.' }],
+    })
+    expect(reasoningItems[1]).toMatchObject({
+      id: 'rs_turn1_OPAQUE',
+      encrypted_content: 'ENC_BLOB_OPAQUE',
+      summary: [],
+    })
+    expect(reasoningItems[1]!.content).toBeUndefined()
 
-    // `content[]` accompanies summary per OpenAI spec.
-    const content = reasoningItem!.content as Array<Record<string, unknown>>
-    expect(content).toEqual([
-      { type: 'reasoning_text', text: 'Reasoning aloud for turn one.' },
-    ])
-
-    // The turn 1 reasoning item must appear BEFORE any assistant
-    // text-message item from turn 1 (in original block order).
     const reasoningIdx = input.findIndex(i => i.type === 'reasoning')
     const turn1MsgIdx = input.findIndex(
       i => i.type === 'message' && i.role === 'assistant',

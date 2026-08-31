@@ -32,11 +32,20 @@ export interface CodexTextResponse {
   model?: string
 }
 
-export interface CodexReasoningThenTextResponse {
-  kind: 'reasoning_text'
+export interface CodexReasoningItem {
   reasoningId: string
   encryptedContent: string
   reasoningText: string
+  reasoningSummary?: string[]
+}
+
+export interface CodexReasoningThenTextResponse {
+  kind: 'reasoning_text'
+  reasoningId?: string
+  encryptedContent?: string
+  reasoningText?: string
+  reasoningSummary?: string[]
+  reasoningItems?: CodexReasoningItem[]
   text: string
   model?: string
 }
@@ -62,35 +71,79 @@ function encodeResponsesSSE(
   const parts: string[] = []
 
   if (response.kind === 'reasoning_text') {
-    // 1. reasoning item added (no encrypted_content yet)
-    parts.push(
-      sseLines('response.output_item.added', {
-        item: {
-          type: 'reasoning',
-          id: response.reasoningId,
-          summary: [],
-        },
-      }),
-    )
-    // 2. reasoning text deltas (split to 40 char chunks)
-    for (let i = 0; i < response.reasoningText.length; i += 40) {
+    const reasoningItems = response.reasoningItems ?? [
+      {
+        reasoningId: response.reasoningId ?? 'rs_mock',
+        encryptedContent: response.encryptedContent ?? '',
+        reasoningText: response.reasoningText ?? '',
+        reasoningSummary: response.reasoningSummary ?? [
+          response.reasoningText ?? '',
+        ],
+      },
+    ]
+
+    for (const item of reasoningItems) {
+      const summary = item.reasoningSummary ?? [item.reasoningText]
       parts.push(
-        sseLines('response.reasoning_text.delta', {
-          delta: response.reasoningText.slice(i, i + 40),
+        sseLines('response.output_item.added', {
+          item: { type: 'reasoning', id: item.reasoningId, summary: [] },
+        }),
+      )
+      for (let i = 0; i < item.reasoningText.length; i += 40) {
+        parts.push(
+          sseLines('response.reasoning_text.delta', {
+            item_id: item.reasoningId,
+            content_index: 0,
+            delta: item.reasoningText.slice(i, i + 40),
+          }),
+        )
+      }
+      parts.push(
+        sseLines('response.reasoning_text.done', {
+          item_id: item.reasoningId,
+          content_index: 0,
+          text: item.reasoningText,
+        }),
+      )
+      for (const [summaryIndex, summaryText] of summary.entries()) {
+        parts.push(
+          sseLines('response.reasoning_summary_part.added', {
+            item_id: item.reasoningId,
+            summary_index: summaryIndex,
+            part: { type: 'summary_text', text: '' },
+          }),
+        )
+        for (let i = 0; i < summaryText.length; i += 40) {
+          parts.push(
+            sseLines('response.reasoning_summary_text.delta', {
+              item_id: item.reasoningId,
+              summary_index: summaryIndex,
+              delta: summaryText.slice(i, i + 40),
+            }),
+          )
+        }
+        parts.push(
+          sseLines('response.reasoning_summary_text.done', {
+            item_id: item.reasoningId,
+            summary_index: summaryIndex,
+            text: summaryText,
+          }),
+        )
+      }
+      parts.push(
+        sseLines('response.output_item.done', {
+          item: {
+            type: 'reasoning',
+            id: item.reasoningId,
+            encrypted_content: item.encryptedContent,
+            summary: summary.map(text => ({ type: 'summary_text', text })),
+            content: item.reasoningText
+              ? [{ type: 'reasoning_text', text: item.reasoningText }]
+              : [],
+          },
         }),
       )
     }
-    // 3. reasoning item done with encrypted_content
-    parts.push(
-      sseLines('response.output_item.done', {
-        item: {
-          type: 'reasoning',
-          id: response.reasoningId,
-          encrypted_content: response.encryptedContent,
-          summary: [{ type: 'summary_text', text: response.reasoningText }],
-        },
-      }),
-    )
   }
 
   // Message block for text

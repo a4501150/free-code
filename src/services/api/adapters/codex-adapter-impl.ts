@@ -38,8 +38,11 @@ import type {
 import type {
   DomainAssistantContent,
   DomainContentBlock,
+  DomainReasoningBlock,
   DomainStreamEvent,
   DomainStopReason,
+  OpenAIResponsesReasoningContentPart,
+  OpenAIResponsesReasoningSummaryPart,
 } from '../../../types/domain.js'
 import {
   DomainTransportError,
@@ -296,39 +299,31 @@ function domainMessagesToCodexInput(
             arguments: JSON.stringify(tb.input || {}),
           })
         } else if (block.type === 'reasoning') {
-          const rb = block as {
-            text: string
-            providerState?: {
-              openaiResponses?: {
-                reasoningId?: string
-                encryptedContent?: string
-              }
-            }
-          }
+          const rb = block as DomainReasoningBlock
           const oaiState = rb.providerState?.openaiResponses
           const reasoningId = oaiState?.reasoningId ?? ''
           if (!reasoningId) continue
 
-          const summaryText = typeof rb.text === 'string' ? rb.text : ''
-          const encryptedContent =
-            typeof oaiState?.encryptedContent === 'string'
-              ? oaiState.encryptedContent
-              : ''
+          const summary: OpenAIResponsesReasoningSummaryPart[] =
+            oaiState?.summary !== undefined
+              ? oaiState.summary
+              : rb.text
+                ? [{ type: 'summary_text', text: rb.text }]
+                : []
+          const encryptedContent = oaiState?.encryptedContent ?? ''
+          const rawContent = oaiState?.rawContent ?? []
 
-          if (!summaryText && !encryptedContent) continue
+          if (!summary.length && !rawContent.length && !encryptedContent)
+            continue
 
           const reasoningItem: Record<string, unknown> = {
             type: 'reasoning',
             id: reasoningId,
             encrypted_content: encryptedContent,
-            summary: summaryText
-              ? [{ type: 'summary_text', text: summaryText }]
-              : [],
+            summary,
           }
-          if (summaryText) {
-            reasoningItem.content = [
-              { type: 'reasoning_text', text: summaryText },
-            ]
+          if (rawContent.length > 0) {
+            reasoningItem.content = rawContent
           }
           codexInput.push(reasoningItem)
         }
@@ -377,10 +372,21 @@ function domainRequestToCodexBody(
     hasWebSearch,
   )
 
-  const outputConfig = request.outputConfig as { effort?: string } | undefined
-  if (outputConfig?.effort) {
-    codexBody.reasoning = { effort: outputConfig.effort }
+  const outputConfig = request.outputConfig as
+    | {
+        effort?: string
+        reasoningSummary?: 'auto' | 'concise' | 'detailed' | 'none'
+      }
+    | undefined
+  const reasoning: Record<string, string> = {}
+  if (outputConfig?.effort) reasoning.effort = outputConfig.effort
+  if (
+    outputConfig?.reasoningSummary &&
+    outputConfig.reasoningSummary !== 'none'
+  ) {
+    reasoning.summary = outputConfig.reasoningSummary
   }
+  if (Object.keys(reasoning).length > 0) codexBody.reasoning = reasoning
 
   return codexBody
 }
@@ -402,6 +408,9 @@ type StreamItemState = {
   argumentsDone?: string
   textStreamed: string
   reasoningText: string
+  reasoningSummaryParts: Map<number, string>
+  reasoningRawParts: Map<number, string>
+  lastSummaryIndex?: number
   reasoningId?: string
   encryptedContent?: string
   rendered: boolean
@@ -432,35 +441,44 @@ function extractMessageText(item: CodexStreamItem | undefined): string {
     .join('')
 }
 
-function extractReasoningText(item: CodexStreamItem | undefined): string {
+function extractReasoningSummary(
+  item: CodexStreamItem | undefined,
+): OpenAIResponsesReasoningSummaryPart[] {
   const summary = item?.summary
-  if (Array.isArray(summary)) {
-    const text = summary
-      .map(part => {
-        if (!part || typeof part !== 'object') return ''
-        const p = part as Record<string, unknown>
-        return p.type === 'summary_text' && typeof p.text === 'string'
-          ? p.text
-          : ''
-      })
-      .join('')
-    if (text) return text
-  }
+  if (!Array.isArray(summary)) return []
+  return summary.flatMap(part => {
+    if (!part || typeof part !== 'object') return []
+    const value = part as Record<string, unknown>
+    return value.type === 'summary_text' && typeof value.text === 'string'
+      ? [{ type: 'summary_text' as const, text: value.text }]
+      : []
+  })
+}
 
+function extractReasoningRawContent(
+  item: CodexStreamItem | undefined,
+): OpenAIResponsesReasoningContentPart[] {
   const content = item?.content
-  if (Array.isArray(content)) {
-    return content
-      .map(part => {
-        if (!part || typeof part !== 'object') return ''
-        const p = part as Record<string, unknown>
-        return p.type === 'reasoning_text' && typeof p.text === 'string'
-          ? p.text
-          : ''
-      })
-      .join('')
-  }
+  if (!Array.isArray(content)) return []
+  return content.flatMap(part => {
+    if (!part || typeof part !== 'object') return []
+    const value = part as Record<string, unknown>
+    return (value.type === 'reasoning_text' || value.type === 'text') &&
+      typeof value.text === 'string'
+      ? [
+          {
+            type: value.type as 'reasoning_text' | 'text',
+            text: value.text,
+          },
+        ]
+      : []
+  })
+}
 
-  return ''
+function orderedReasoningParts(
+  parts: Map<number, string>,
+): Array<[number, string]> {
+  return [...parts.entries()].sort(([a], [b]) => a - b)
 }
 
 function extractWebSearchResults(
@@ -589,6 +607,8 @@ async function* parseCodexStream(
         argumentDeltas: '',
         textStreamed: '',
         reasoningText: '',
+        reasoningSummaryParts: new Map(),
+        reasoningRawParts: new Map(),
         rendered: false,
         serverToolUseClosed: false,
         webSearchResultEmitted: false,
@@ -644,7 +664,22 @@ async function* parseCodexStream(
   ): void => {
     if (state.rendered) return
 
-    const fallbackText = extractReasoningText(finalItem)
+    const hasFinalSummary = !!finalItem && 'summary' in finalItem
+    const hasFinalRawContent = !!finalItem && 'content' in finalItem
+    const summary = hasFinalSummary
+      ? extractReasoningSummary(finalItem)
+      : orderedReasoningParts(state.reasoningSummaryParts).map(([, text]) => ({
+          type: 'summary_text' as const,
+          text,
+        }))
+    const rawContent = hasFinalRawContent
+      ? extractReasoningRawContent(finalItem)
+      : orderedReasoningParts(state.reasoningRawParts).map(([, text]) => ({
+          type: 'reasoning_text' as const,
+          text,
+        }))
+    const fallbackText = summary.map(part => part.text).join('\n\n')
+
     if (
       !openBlock ||
       openBlock.kind !== 'thinking' ||
@@ -654,7 +689,8 @@ async function* parseCodexStream(
         state.id ||
         readString(finalItem?.id) ||
         state.reasoningText ||
-        fallbackText ||
+        summary.length > 0 ||
+        rawContent.length > 0 ||
         readString(finalItem?.encrypted_content)
       if (!hasMeaningfulPayload) return
       closeOpenBlock()
@@ -668,21 +704,15 @@ async function* parseCodexStream(
         key: state.key,
         index: contentBlockIndex,
       }
-      if (!state.reasoningText && fallbackText) {
-        state.reasoningText = fallbackText
-        enqueue({
-          type: 'content_block_delta',
-          index: contentBlockIndex,
-          delta: { type: 'thinking_delta', thinking: fallbackText },
-        })
-      }
-    } else if (!state.reasoningText && fallbackText) {
-      state.reasoningText = fallbackText
-      enqueue({
-        type: 'content_block_delta',
-        index: openBlock.index,
-        delta: { type: 'thinking_delta', thinking: fallbackText },
-      })
+    }
+
+    if (fallbackText && !state.reasoningText) {
+      streamThinkingDelta(state, fallbackText)
+    } else if (
+      fallbackText.length > state.reasoningText.length &&
+      fallbackText.startsWith(state.reasoningText)
+    ) {
+      streamThinkingDelta(state, fallbackText.slice(state.reasoningText.length))
     }
 
     if (openBlock?.kind !== 'thinking' || openBlock.key !== state.key) return
@@ -692,15 +722,18 @@ async function* parseCodexStream(
     if (finalId) state.reasoningId = finalId
     if (finalEncrypted) state.encryptedContent = finalEncrypted
 
-    const openaiResponses: Record<string, string> = {}
-    if (state.reasoningId) openaiResponses.reasoningId = state.reasoningId
-    if (state.encryptedContent) {
-      openaiResponses.encryptedContent = state.encryptedContent
+    const openaiResponses = {
+      ...(state.reasoningId || state.id
+        ? { reasoningId: state.reasoningId ?? state.id }
+        : {}),
+      ...(state.encryptedContent
+        ? { encryptedContent: state.encryptedContent }
+        : {}),
+      summary,
+      rawContent,
     }
-    const providerState =
-      Object.keys(openaiResponses).length > 0 ? { openaiResponses } : undefined
 
-    emitBlockStop(openBlock.index, providerState, providerConfirmed)
+    emitBlockStop(openBlock.index, { openaiResponses }, providerConfirmed)
     contentBlockIndex++
     openBlock = null
     state.rendered = true
@@ -744,6 +777,53 @@ async function* parseCodexStream(
       index: openBlock.index,
       delta: { type: 'thinking_delta', thinking: text },
     })
+  }
+
+  const getPartIndex = (value: unknown): number =>
+    typeof value === 'number' && Number.isInteger(value) && value >= 0
+      ? value
+      : 0
+
+  const appendReasoningPart = (
+    parts: Map<number, string>,
+    index: number,
+    text: string,
+  ): void => {
+    parts.set(index, (parts.get(index) ?? '') + text)
+  }
+
+  const reconcileReasoningPart = (
+    parts: Map<number, string>,
+    index: number,
+    finalText: string,
+  ): string => {
+    const current = parts.get(index) ?? ''
+    parts.set(index, finalText)
+    return finalText.startsWith(current) ? finalText.slice(current.length) : ''
+  }
+
+  const displayReasoningSummaryDelta = (
+    state: StreamItemState,
+    index: number,
+    text: string,
+  ): void => {
+    if (!text) return
+    const separator =
+      state.lastSummaryIndex !== undefined && state.lastSummaryIndex !== index
+        ? '\n\n'
+        : ''
+    state.lastSummaryIndex = index
+    streamThinkingDelta(state, `${separator}${text}`)
+  }
+
+  const streamReasoningSummaryDelta = (
+    state: StreamItemState,
+    index: number,
+    text: string,
+  ): void => {
+    if (!text) return
+    appendReasoningPart(state.reasoningSummaryParts, index, text)
+    displayReasoningSummaryDelta(state, index, text)
   }
 
   const streamTextDelta = (state: StreamItemState, text: string): void => {
@@ -1038,42 +1118,100 @@ async function* parseCodexStream(
           currentMessageKey = state.key
           const text = readString(event.delta)
           if (text) streamTextDelta(state, text)
-        } else if (
-          eventType === 'response.reasoning_text.delta' ||
-          eventType === 'response.reasoning_summary_text.delta'
-        ) {
+        } else if (eventType === 'response.reasoning_summary_part.added') {
           const state = upsertItem(
             event,
             undefined,
             'reasoning',
             currentReasoningKey,
           )
-          currentReasoningKey = state.key
-          const text = readString(event.delta)
-          if (text) streamThinkingDelta(state, text)
-        } else if (
-          eventType === 'response.reasoning_text.done' ||
-          eventType === 'response.reasoning_summary_text.done'
-        ) {
+          if (!state.rendered) {
+            currentReasoningKey = state.key
+            startThinkingBlock(state)
+            const index = getPartIndex(event.summary_index)
+            if (!state.reasoningSummaryParts.has(index)) {
+              state.reasoningSummaryParts.set(index, '')
+            }
+            const part = event.part as Record<string, unknown> | undefined
+            const text =
+              part?.type === 'summary_text' ? readString(part.text) : undefined
+            if (text) streamReasoningSummaryDelta(state, index, text)
+          }
+        } else if (eventType === 'response.reasoning_summary_text.delta') {
           const state = upsertItem(
             event,
             undefined,
             'reasoning',
             currentReasoningKey,
           )
-          currentReasoningKey = state.key
-          const finalText = readString(event.text)
-          if (
-            finalText &&
-            finalText.length > state.reasoningText.length &&
-            finalText.startsWith(state.reasoningText)
-          ) {
-            streamThinkingDelta(
-              state,
-              finalText.slice(state.reasoningText.length),
-            )
-          } else if (finalText && state.reasoningText.length === 0) {
-            streamThinkingDelta(state, finalText)
+          if (!state.rendered) {
+            currentReasoningKey = state.key
+            const text = readString(event.delta)
+            if (text) {
+              streamReasoningSummaryDelta(
+                state,
+                getPartIndex(event.summary_index),
+                text,
+              )
+            }
+          }
+        } else if (eventType === 'response.reasoning_summary_text.done') {
+          const state = upsertItem(
+            event,
+            undefined,
+            'reasoning',
+            currentReasoningKey,
+          )
+          if (!state.rendered) {
+            currentReasoningKey = state.key
+            const finalText = readString(event.text)
+            if (finalText !== undefined) {
+              const index = getPartIndex(event.summary_index)
+              const missing = reconcileReasoningPart(
+                state.reasoningSummaryParts,
+                index,
+                finalText,
+              )
+              displayReasoningSummaryDelta(state, index, missing)
+            }
+          }
+        } else if (eventType === 'response.reasoning_text.delta') {
+          const state = upsertItem(
+            event,
+            undefined,
+            'reasoning',
+            currentReasoningKey,
+          )
+          if (!state.rendered) {
+            currentReasoningKey = state.key
+            startThinkingBlock(state)
+            const text = readString(event.delta)
+            if (text) {
+              appendReasoningPart(
+                state.reasoningRawParts,
+                getPartIndex(event.content_index),
+                text,
+              )
+            }
+          }
+        } else if (eventType === 'response.reasoning_text.done') {
+          const state = upsertItem(
+            event,
+            undefined,
+            'reasoning',
+            currentReasoningKey,
+          )
+          if (!state.rendered) {
+            currentReasoningKey = state.key
+            startThinkingBlock(state)
+            const finalText = readString(event.text)
+            if (finalText !== undefined) {
+              reconcileReasoningPart(
+                state.reasoningRawParts,
+                getPartIndex(event.content_index),
+                finalText,
+              )
+            }
           }
         } else if (eventType === 'response.function_call_arguments.delta') {
           const state = upsertItem(event, undefined, 'function_call')
@@ -1089,7 +1227,12 @@ async function* parseCodexStream(
         } else if (eventType === 'response.output_item.done') {
           const item = event.item as CodexStreamItem | undefined
           const type = readString(item?.type)
-          const fallbackKey = type === 'message' ? currentMessageKey : null
+          const fallbackKey =
+            type === 'message'
+              ? currentMessageKey
+              : type === 'reasoning'
+                ? currentReasoningKey
+                : null
           const state = upsertItem(event, item, type, fallbackKey)
           handleItemDone(state, item)
         } else if (eventType === 'response.completed') {
@@ -1533,15 +1676,25 @@ function parseCodexNonStreamingResponse(
         input,
       })
     } else if (type === 'reasoning') {
-      const text = extractReasoningText(item)
-      if (text) {
+      const summary = extractReasoningSummary(item)
+      const rawContent = extractReasoningRawContent(item)
+      const reasoningId = readString(item.id)
+      const encryptedContent = readString(item.encrypted_content)
+      if (
+        reasoningId ||
+        encryptedContent ||
+        summary.length > 0 ||
+        rawContent.length > 0
+      ) {
         content.push({
           type: 'reasoning',
-          text,
+          text: summary.map(part => part.text).join('\n\n'),
           providerState: {
             openaiResponses: {
-              reasoningId: (item.id as string) || undefined,
-              encryptedContent: readString(item.encrypted_content) || undefined,
+              reasoningId,
+              encryptedContent,
+              summary,
+              rawContent,
             },
           },
         })

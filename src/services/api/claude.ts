@@ -205,6 +205,7 @@ type JsonArray = JsonValue[]
 type OutputConfig = Record<string, unknown> & {
   effort?: string
   format?: Record<string, unknown>
+  reasoningSummary?: 'auto' | 'concise' | 'detailed' | 'none'
 }
 
 /**
@@ -1278,6 +1279,15 @@ async function* queryModel(
       betasParams,
       options.model,
     )
+
+    const resolvedProvider = registry.getProviderForModel(retryContext.model)
+    const reasoningSummary = resolvedProvider?.model.reasoningSummary
+    if (
+      resolvedProvider?.config.type === 'openai-responses' &&
+      reasoningSummary !== undefined
+    ) {
+      outputConfig.reasoningSummary = reasoningSummary
+    }
 
     configureTaskBudgetParams(
       options.taskBudget,

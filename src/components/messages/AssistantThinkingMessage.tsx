@@ -23,13 +23,23 @@ export function AssistantThinkingMessage({
   isStreaming = false,
   durationMs,
 }: Props): React.ReactNode {
-  const thinking =
+  const fallbackThinking =
     'thinking' in param ? param.thinking : (param as { text: string }).text
+  const openaiSummary =
+    'providerState' in param
+      ? param.providerState?.openaiResponses?.summary
+      : undefined
+  const thinking =
+    openaiSummary !== undefined
+      ? openaiSummary
+          .filter(part => part.text.trim().length > 0)
+          .map(part => part.text)
+          .join('\n\n')
+      : fallbackThinking
 
   const hasOpaqueReasoning =
     'providerState' in param &&
-    !!(param.providerState?.openaiResponses?.encryptedContent ||
-      param.providerState?.bedrockConverse?.redactedContent)
+    !!param.providerState?.bedrockConverse?.redactedContent
 
   if (!thinking && !isStreaming) {
     if (!hasOpaqueReasoning) {

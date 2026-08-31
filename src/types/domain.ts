@@ -17,9 +17,21 @@ export type AnthropicProviderState = {
   redactedData?: string
 }
 
+export type OpenAIResponsesReasoningSummaryPart = {
+  type: 'summary_text'
+  text: string
+}
+
+export type OpenAIResponsesReasoningContentPart = {
+  type: 'reasoning_text' | 'text'
+  text: string
+}
+
 export type OpenAIResponsesProviderState = {
   reasoningId?: string
   encryptedContent?: string
+  summary?: OpenAIResponsesReasoningSummaryPart[]
+  rawContent?: OpenAIResponsesReasoningContentPart[]
 }
 
 /**
