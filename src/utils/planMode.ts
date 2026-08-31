@@ -6,6 +6,7 @@ import { getCurrentProjectConfig } from './config.js'
 import { shouldPreferBashForSearch } from './embeddedTools.js'
 import { isEnvDefinedFalsy } from './envUtils.js'
 import { getInitialSettings } from './settings/settings.js'
+import { isBuiltInPlanAgentEnabled } from './planAgent.js'
 
 export function getPlanModeAgentCount(): number {
   // Environment variable override takes precedence
@@ -86,6 +87,7 @@ export type PlanModeRenderContext = {
   agentCount: number
   exploreAgentCount: number
   interviewPhase: boolean
+  planAgentEnabled?: boolean
   /** Comma-joined display string of read-only tools, e.g. "FileRead, `find`, `grep`". */
   readOnlyToolNames: string
 }
@@ -95,6 +97,7 @@ export function snapshotPlanModeRenderContext(): PlanModeRenderContext {
     agentCount: getPlanModeAgentCount(),
     exploreAgentCount: getPlanModeExploreAgentCount(),
     interviewPhase: isPlanModeInterviewPhaseEnabled(),
+    planAgentEnabled: isBuiltInPlanAgentEnabled(),
     readOnlyToolNames: getReadOnlyToolNames(),
   }
 }

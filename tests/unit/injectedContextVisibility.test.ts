@@ -160,6 +160,39 @@ describe('attachment reminder eligibility', () => {
   })
 })
 
+describe('plan mode design instructions', () => {
+  function getPlanModeReminder(planAgentEnabled?: boolean): string {
+    return getAttachmentSystemReminderBodies({
+      type: 'plan_mode',
+      reminderType: 'full',
+      planFilePath: '/plans/example.md',
+      planExists: false,
+      renderContext: {
+        agentCount: 1,
+        exploreAgentCount: 1,
+        interviewPhase: false,
+        planAgentEnabled,
+        readOnlyToolNames: 'FileRead',
+      },
+    })[0]!
+  }
+
+  test('requests a Plan agent when the built-in agent is enabled', () => {
+    expect(getPlanModeReminder(true)).toContain('Launch Plan agent(s)')
+  })
+
+  test('keeps design in the main model when the Plan agent is disabled', () => {
+    const reminder = getPlanModeReminder(false)
+
+    expect(reminder).toContain('Design the implementation approach yourself')
+    expect(reminder).not.toContain('Launch Plan agent(s)')
+  })
+
+  test('treats an older context without the availability flag as disabled', () => {
+    expect(getPlanModeReminder()).not.toContain('Launch Plan agent(s)')
+  })
+})
+
 describe('injected-context row spacing', () => {
   const reminderRow = () =>
     normalizedUser(wrapInSystemReminder('auto mode active'), { isMeta: true })
