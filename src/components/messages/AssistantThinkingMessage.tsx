@@ -1,4 +1,5 @@
 import type { DomainReasoningBlock } from '../../types/domain.js'
+import { hasOpaqueReasoning } from '../../types/domainGuards.js'
 import React from 'react'
 import { Box, Text, useAnimationFrame } from '../../ink.js'
 import { CtrlOToExpand } from '../CtrlOToExpand.js'
@@ -23,26 +24,14 @@ export function AssistantThinkingMessage({
   isStreaming = false,
   durationMs,
 }: Props): React.ReactNode {
-  const fallbackThinking =
-    'thinking' in param ? param.thinking : (param as { text: string }).text
-  const openaiSummary =
-    'providerState' in param
-      ? param.providerState?.openaiResponses?.summary
-      : undefined
   const thinking =
-    openaiSummary !== undefined
-      ? openaiSummary
-          .filter(part => part.text.trim().length > 0)
-          .map(part => part.text)
-          .join('\n\n')
-      : fallbackThinking
+    'thinking' in param ? param.thinking : param.text
 
-  const hasOpaqueReasoning =
-    'providerState' in param &&
-    !!param.providerState?.bedrockConverse?.redactedContent
+  const isOpaque =
+    !('thinking' in param) && hasOpaqueReasoning(param)
 
   if (!thinking && !isStreaming) {
-    if (!hasOpaqueReasoning) {
+    if (!isOpaque) {
       return null
     }
     const opaqueLabel =

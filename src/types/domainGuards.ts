@@ -43,3 +43,8 @@ export function isToolUseBlock(
 ): block is DomainToolUseBlock {
   return block.type === 'tool_use'
 }
+
+export function hasOpaqueReasoning(block: DomainReasoningBlock): boolean {
+  if (block.text) return false
+  return !!block.providerState?.bedrockConverse?.redactedContent
+}

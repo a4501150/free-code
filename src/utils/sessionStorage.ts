@@ -83,6 +83,7 @@ import { getSettings_DEPRECATED } from './settings/settings.js'
 import {
   migrateLegacyContent,
   needsLegacyMigration,
+  normalizeReasoningContent,
 } from '../types/domainConversion.js'
 import { jsonParse, jsonStringify } from './slowOperations.js'
 import type { ContentReplacementRecord } from './toolResultStorage.js'
@@ -3136,10 +3137,14 @@ export async function loadTranscriptFile(
         // Migrate legacy thinking/redacted_thinking blocks to domain reasoning format
         if (
           entry.type === 'assistant' &&
-          Array.isArray(entry.message?.content) &&
-          needsLegacyMigration(entry.message.content)
+          Array.isArray(entry.message?.content)
         ) {
-          entry.message.content = migrateLegacyContent(
+          if (needsLegacyMigration(entry.message.content)) {
+            entry.message.content = migrateLegacyContent(
+              entry.message.content,
+            ) as any
+          }
+          entry.message.content = normalizeReasoningContent(
             entry.message.content,
           ) as any
         }

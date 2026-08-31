@@ -292,6 +292,34 @@ export function needsLegacyMigration(content: unknown[]): boolean {
   )
 }
 
+/**
+ * Normalize reasoning block display text from structured summary.
+ *
+ * Persisted blocks from interrupted sessions may have stale `text` that
+ * does not match the authoritative `providerState.openaiResponses.summary`.
+ * This function derives `text` from the summary parts so downstream
+ * consumers (terminal UI, web UI) all read the same value.
+ */
+export function normalizeReasoningContent(
+  content: DomainContentBlock[],
+): DomainContentBlock[] {
+  let changed = false
+  const result = content.map(block => {
+    if (block.type !== 'reasoning') return block
+    const rb = block as DomainReasoningBlock
+    const summary = rb.providerState?.openaiResponses?.summary
+    if (!Array.isArray(summary) || summary.length === 0) return block
+    const derived = summary
+      .filter(p => p.text.trim().length > 0)
+      .map(p => p.text)
+      .join('\n\n')
+    if (!derived || derived === rb.text) return block
+    changed = true
+    return { ...block, text: derived }
+  })
+  return changed ? result : content
+}
+
 // ── User Content: Anthropic SDK → Domain ──────────────────────────
 
 export function anthropicUserBlockToDomain(

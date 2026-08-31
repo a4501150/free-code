@@ -49,7 +49,7 @@ describe('AssistantThinkingMessage OpenAI Responses display', () => {
     expect(rendered.trim()).toBe('')
   })
 
-  test('hides raw reasoning when no summary exists', async () => {
+  test('hides block with empty text and raw reasoning only', async () => {
     const rendered = await renderReasoning(
       {
         type: 'reasoning',
@@ -69,11 +69,11 @@ describe('AssistantThinkingMessage OpenAI Responses display', () => {
     expect(rendered).not.toContain('private raw text')
   })
 
-  test('shows stored summary parts in transcript mode', async () => {
+  test('shows normalized text in transcript mode', async () => {
     const rendered = await renderReasoning(
       {
         type: 'reasoning',
-        text: 'stale streamed summary',
+        text: 'First summary.\n\nSecond summary.',
         providerState: {
           openaiResponses: {
             reasoningId: 'rs_1',
@@ -90,7 +90,6 @@ describe('AssistantThinkingMessage OpenAI Responses display', () => {
 
     expect(rendered).toContain('First summary.')
     expect(rendered).toContain('Second summary.')
-    expect(rendered).not.toContain('stale streamed summary')
     expect(rendered).not.toContain('private raw text')
   })
 
