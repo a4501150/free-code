@@ -65,6 +65,17 @@ export async function registerSession(): Promise<boolean> {
     }
   })
 
+  // Install the listener BEFORE the initial write. registerSession() is not
+  // awaited by its caller, so --resume can fire switchSession() while the
+  // mkdir/write below is still pending. Without early installation the switch
+  // is missed and the PID file keeps the stale startup ID, which makes the
+  // WebUI descriptor/registry agreement check fail permanently.
+  let latestSessionId = getSessionId()
+  onSessionSwitch(id => {
+    latestSessionId = id
+    void updatePidFile({ sessionId: id })
+  })
+
   try {
     await mkdir(dir, { recursive: true, mode: 0o700 })
     await chmod(dir, 0o700)
@@ -72,18 +83,13 @@ export async function registerSession(): Promise<boolean> {
       pidFile,
       jsonStringify({
         pid: process.pid,
-        sessionId: getSessionId(),
+        sessionId: latestSessionId,
         cwd: getOriginalCwd(),
         startedAt: Date.now(),
         kind,
         entrypoint: process.env.CLAUDE_CODE_ENTRYPOINT,
       }),
     )
-    // --resume / /resume mutates getSessionId() via switchSession. Without
-    // this, the PID file's sessionId goes stale.
-    onSessionSwitch(id => {
-      void updatePidFile({ sessionId: id })
-    })
     return true
   } catch (e) {
     logForDebugging(`[concurrentSessions] register failed: ${errorMessage(e)}`)
