@@ -118,9 +118,7 @@ const AgentGroup = memo(function AgentGroup({
       item.toolUseId && inProgressToolUseIds?.includes(item.toolUseId),
   ).length
   const completed = group.items.filter(({ result }) => result).length
-  const errored = group.items.filter(
-    ({ result }) => result?.isError,
-  ).length
+  const errored = group.items.filter(({ result }) => result?.isError).length
   const total = group.items.length
 
   let header: string
@@ -175,6 +173,7 @@ export function Transcript({
   order,
   pendingCommands,
   inProgressToolUseIds,
+  activity,
   followSignal,
   onFetchImage,
 }: {
@@ -182,6 +181,7 @@ export function Transcript({
   order: string[]
   pendingCommands: WebPendingCommand[]
   inProgressToolUseIds?: string[]
+  activity?: string
   /**
    * Bumped when the reader does something that means "show me the newest",
    * which sending a message is. Without it, a reader who scrolled up to quote
@@ -334,7 +334,9 @@ export function Transcript({
       }}
     >
       <div className="transcript__content" ref={contentRef}>
-        {entries.length || pendingCommands.length ? (
+        {entries.length ||
+        pendingCommands.length ||
+        activity === 'compacting' ? (
           <>
             {entries.map(entry =>
               entry.kind === 'tool_group' ? (
@@ -359,6 +361,11 @@ export function Transcript({
                 <div className="row__body">{cmd.text}</div>
               </div>
             ))}
+            {activity === 'compacting' ? (
+              <div className="row row--system is-info">
+                <div className="row__body">Compacting…</div>
+              </div>
+            ) : null}
           </>
         ) : (
           <div className="transcript--empty">No messages yet.</div>

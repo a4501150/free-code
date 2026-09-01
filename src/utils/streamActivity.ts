@@ -27,13 +27,20 @@ export function clearStreamActivity(): void {
 }
 
 let compacting = false
+let onActivityChanged: (() => void) | undefined
+
+export function setStreamActivityListener(cb: (() => void) | undefined): void {
+  onActivityChanged = cb
+}
 
 export function getIsCompacting(): boolean {
   return compacting
 }
 
 export function setIsCompacting(value: boolean): void {
+  const changed = compacting !== value
   compacting = value
+  if (changed) onActivityChanged?.()
 }
 
 let inProgressToolUseIds: Set<string> = new Set()

@@ -370,6 +370,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
             order={view.order}
             pendingCommands={view.pendingCommands}
             inProgressToolUseIds={view.meta?.inProgressToolUseIds}
+            activity={view.meta?.activity}
             followSignal={followSignal}
             onFetchImage={fetchImage}
           />

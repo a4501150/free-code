@@ -1,9 +1,17 @@
 import { isWebuiManagedProcess } from '../../utils/webuiManagedProcess.js'
 import type { CanUseToolFn } from '../../Tool.js'
 import type { Message } from '../../types/message.js'
-import { enqueue, getCommandQueueSnapshot } from '../../utils/messageQueueManager.js'
+import {
+  enqueue,
+  getCommandQueueSnapshot,
+} from '../../utils/messageQueueManager.js'
 import type { UUID } from 'crypto'
-import { getStreamActivity, getIsCompacting, getInProgressToolUseIds as getGlobalInProgressIds } from '../../utils/streamActivity.js'
+import {
+  getStreamActivity,
+  getIsCompacting,
+  getInProgressToolUseIds as getGlobalInProgressIds,
+  setStreamActivityListener,
+} from '../../utils/streamActivity.js'
 import type {
   WebPendingCommand,
   WebPermissionMode,
@@ -79,8 +87,7 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
             ? cmd.value
             : cmd.value
                 .filter(
-                  (b): b is { type: 'text'; text: string } =>
-                    b.type === 'text',
+                  (b): b is { type: 'text'; text: string } => b.type === 'text',
                 )
                 .map(b => b.text)
                 .join('\n')
@@ -125,6 +132,10 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
     publishAttachPendingCommands()
   }, 400)
   timer.unref?.()
+
+  // Compacting state changes must reach the browser immediately, not on the
+  // next 400ms poll tick, or a fast compact is invisible.
+  setStreamActivityListener(() => publishAttachMeta())
 }
 
 /** Call after the message array changes so an attached browser sees it. */

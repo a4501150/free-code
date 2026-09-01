@@ -2369,6 +2369,7 @@ function runHeadlessStreaming(
         }
       }
       running = false
+      webuiHeadlessModule?.publishHeadlessTranscript()
       // Start idle timer when we finish processing and are waiting for input
       idleTimeout.start()
     }
