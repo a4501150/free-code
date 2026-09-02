@@ -1584,47 +1584,6 @@ export function stripToolReferenceBlocksFromUserMessage(
   }
 }
 
-/**
- * Strips the legacy 'caller' field from tool_use blocks in an assistant message.
- * The field is no longer valid in API-bound requests.
- *
- * NOTE: This function only strips the 'caller' field - it does NOT normalize
- * tool inputs (that's done by normalizeToolInputForAPI in normalizeMessagesForAPI).
- * This is intentional: this helper is used for model-specific post-processing
- * AFTER normalizeMessagesForAPI has already run, so inputs are already normalized.
- */
-export function stripCallerFieldFromAssistantMessage(
-  message: AssistantMessage,
-): AssistantMessage {
-  const hasCallerField = message.message.content.some(
-    block =>
-      block.type === 'tool_use' && 'caller' in block && block.caller !== null,
-  )
-
-  if (!hasCallerField) {
-    return message
-  }
-
-  return {
-    ...message,
-    message: {
-      ...message.message,
-      content: message.message.content.map(block => {
-        if (block.type !== 'tool_use') {
-          return block
-        }
-        // Explicitly construct with only standard API fields
-        return {
-          type: 'tool_use' as const,
-          id: block.id,
-          name: block.name,
-          input: block.input,
-        }
-      }),
-    },
-  }
-}
-
 function stripLegacyToolSearchExchanges(
   messages: (UserMessage | AssistantMessage)[],
 ): (UserMessage | AssistantMessage)[] {
@@ -2064,6 +2023,9 @@ export function normalizeMessagesForAPI(
                     id: block.id,
                     name: canonicalName,
                     input: normalizedInput,
+                    ...(block.providerState && {
+                      providerState: block.providerState,
+                    }),
                   }
                 }
                 return block
@@ -2737,9 +2699,10 @@ export function handleMessageFromStream(
     // Capture complete thinking blocks for real-time display in transcript mode
     if (message.type === 'assistant') {
       const thinkingBlock = message.message.content.find(
-        block => block.type === 'reasoning',
+        block =>
+          block.type === 'reasoning' || block.type === 'redacted_reasoning',
       )
-      if (thinkingBlock && thinkingBlock.type === 'reasoning') {
+      if (thinkingBlock) {
         onStreamingThinking?.(current => {
           const durationMs = current?.startedAt
             ? Date.now() - current.startedAt
@@ -2749,7 +2712,8 @@ export function handleMessageFromStream(
               durationMs
           }
           return {
-            thinking: thinkingBlock.text,
+            thinking:
+              thinkingBlock.type === 'reasoning' ? thinkingBlock.text : '',
             isStreaming: false,
             streamingEndedAt: Date.now(),
             durationMs,

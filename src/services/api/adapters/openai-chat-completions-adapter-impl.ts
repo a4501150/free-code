@@ -359,6 +359,28 @@ async function* parseOpenAIStream(
     }
   }
 
+  /**
+   * Flush any pending reasoning state. When a visible reasoning block is open,
+   * close it. When only opaque reasoning_details accumulated without visible
+   * text, emit a zero-text reasoning block so the details survive the round
+   * trip.
+   */
+  function* flushPendingReasoning(): Generator<DomainStreamEvent> {
+    if (inReasoningBlock) {
+      yield closeReasoningBlock(contentBlockIndex)
+      contentBlockIndex++
+      inReasoningBlock = false
+    } else if (observedReasoningDetails.length > 0) {
+      yield {
+        type: 'content_block_start',
+        index: contentBlockIndex,
+        content_block: { type: 'reasoning', text: '' },
+      }
+      yield closeReasoningBlock(contentBlockIndex)
+      contentBlockIndex++
+    }
+  }
+
   const reader = response.body?.getReader()
   if (!reader) {
     const normalized = normalizeError(
@@ -476,11 +498,7 @@ async function* parseOpenAIStream(
           if (delta.content) {
             const text = delta.content as string
             if (text.length > 0) {
-              if (inReasoningBlock) {
-                yield closeReasoningBlock(contentBlockIndex)
-                contentBlockIndex++
-                inReasoningBlock = false
-              }
+              yield* flushPendingReasoning()
               if (!currentTextBlockStarted) {
                 yield {
                   type: 'content_block_start',
@@ -512,10 +530,8 @@ async function* parseOpenAIStream(
                 contentBlockIndex++
                 currentTextBlockStarted = false
               }
-              if (inReasoningBlock && !toolCallIndexMap.has(tc.index)) {
-                yield closeReasoningBlock(contentBlockIndex)
-                contentBlockIndex++
-                inReasoningBlock = false
+              if (!toolCallIndexMap.has(tc.index)) {
+                yield* flushPendingReasoning()
               }
 
               if (!toolCallIndexMap.has(tc.index)) {
@@ -550,11 +566,7 @@ async function* parseOpenAIStream(
 
         if (finishReason) {
           lastFinishReason = finishReason
-          if (inReasoningBlock) {
-            yield closeReasoningBlock(contentBlockIndex)
-            contentBlockIndex++
-            inReasoningBlock = false
-          }
+          yield* flushPendingReasoning()
           if (currentTextBlockStarted) {
             yield { type: 'content_block_stop', index: contentBlockIndex }
             contentBlockIndex++
@@ -572,9 +584,7 @@ async function* parseOpenAIStream(
     if (currentTextBlockStarted) {
       yield { type: 'content_block_stop', index: contentBlockIndex }
     }
-    if (inReasoningBlock) {
-      yield closeReasoningBlock(contentBlockIndex)
-    }
+    yield* flushPendingReasoning()
     for (const [, blockIdx] of toolCallIndexMap) {
       yield { type: 'content_block_stop', index: blockIdx }
     }
@@ -593,9 +603,7 @@ async function* parseOpenAIStream(
   if (currentTextBlockStarted) {
     yield { type: 'content_block_stop', index: contentBlockIndex }
   }
-  if (inReasoningBlock) {
-    yield closeReasoningBlock(contentBlockIndex)
-  }
+  yield* flushPendingReasoning()
   for (const [, blockIdx] of toolCallIndexMap) {
     yield { type: 'content_block_stop', index: blockIdx }
   }
