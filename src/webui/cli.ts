@@ -414,9 +414,7 @@ async function printQr(url: string): Promise<void> {
   try {
     const qrcode = await import('qrcode')
     const qrPayload = url.toUpperCase()
-    const { size, data } = qrcode.default.create(qrPayload, {
-      errorCorrectionLevel: 'L',
-    }).modules
+    const { size, data } = qrcode.default.create(qrPayload).modules
     const width = size + QUIET_ZONE * 2
     const isDark = (x: number, y: number): boolean => {
       const col = x - QUIET_ZONE
