@@ -1811,29 +1811,21 @@ function PromptInput({
     { context: 'Help', isActive: helpOpen },
   )
 
-  // Quick Open / Global Search. Hook calls are unconditional (Rules of Hooks);
-  // the handler body is feature()-gated so the setState calls and component
-  // references get tree-shaken in external builds.
-  const quickSearchActive = feature('QUICK_SEARCH')
-    ? !isModalOverlayActive
-    : false
+  // Quick Open / Global Search.
+  const quickSearchActive = !isModalOverlayActive
   useKeybinding(
     'app:quickOpen',
     () => {
-      if (feature('QUICK_SEARCH')) {
-        setShowQuickOpen(true)
-        setHelpOpen(false)
-      }
+      setShowQuickOpen(true)
+      setHelpOpen(false)
     },
     { context: 'Global', isActive: quickSearchActive },
   )
   useKeybinding(
     'app:globalSearch',
     () => {
-      if (feature('QUICK_SEARCH')) {
-        setShowGlobalSearch(true)
-        setHelpOpen(false)
-      }
+      setShowGlobalSearch(true)
+      setHelpOpen(false)
     },
     { context: 'Global', isActive: quickSearchActive },
   )
@@ -2349,27 +2341,25 @@ function PromptInput({
     )
   }
 
-  if (feature('QUICK_SEARCH')) {
-    const insertWithSpacing = (text: string) => {
-      const cursorChar = input[cursorOffset - 1] ?? ' '
-      insertTextAtCursor(/\s/.test(cursorChar) ? text : ` ${text}`)
-    }
-    if (showQuickOpen) {
-      return (
-        <QuickOpenDialog
-          onDone={() => setShowQuickOpen(false)}
-          onInsert={insertWithSpacing}
-        />
-      )
-    }
-    if (showGlobalSearch) {
-      return (
-        <GlobalSearchDialog
-          onDone={() => setShowGlobalSearch(false)}
-          onInsert={insertWithSpacing}
-        />
-      )
-    }
+  const insertWithSpacing = (text: string) => {
+    const cursorChar = input[cursorOffset - 1] ?? ' '
+    insertTextAtCursor(/\s/.test(cursorChar) ? text : ` ${text}`)
+  }
+  if (showQuickOpen) {
+    return (
+      <QuickOpenDialog
+        onDone={() => setShowQuickOpen(false)}
+        onInsert={insertWithSpacing}
+      />
+    )
+  }
+  if (showGlobalSearch) {
+    return (
+      <GlobalSearchDialog
+        onDone={() => setShowGlobalSearch(false)}
+        onInsert={insertWithSpacing}
+      />
+    )
   }
 
   if (feature('HISTORY_PICKER') && showHistoryPicker) {

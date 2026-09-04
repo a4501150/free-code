@@ -16,10 +16,6 @@ import { STATUSLINE_SETUP_AGENT } from './built-in/statuslineSetup.js'
 import { VERIFICATION_AGENT } from './built-in/verificationAgent.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 
-export function areExplorePlanAgentsEnabled(): boolean {
-  return feature('BUILTIN_EXPLORE_PLAN_AGENTS') ? true : false
-}
-
 export function getBuiltInAgents(): AgentDefinition[] {
   // Allow disabling all built-in agents via env var (useful for SDK users who want a blank slate)
   // Only applies in noninteractive mode (SDK/API usage)
@@ -41,15 +37,13 @@ export function getBuiltInAgents(): AgentDefinition[] {
     STATUSLINE_SETUP_AGENT,
   ]
 
-  if (areExplorePlanAgentsEnabled()) {
-    agents.push(EXPLORE_AGENT)
-    if (isBuiltInPlanAgentEnabled()) {
-      const planConfig = getPlanAgentConfig()
-      agents.push({
-        ...PLAN_AGENT,
-        ...(planConfig.planModel ? { model: planConfig.planModel } : {}),
-      })
-    }
+  agents.push(EXPLORE_AGENT)
+  if (isBuiltInPlanAgentEnabled()) {
+    const planConfig = getPlanAgentConfig()
+    agents.push({
+      ...PLAN_AGENT,
+      ...(planConfig.planModel ? { model: planConfig.planModel } : {}),
+    })
   }
 
   // Include Code Guide agent for regular CLI entrypoints

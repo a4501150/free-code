@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { useEffect, useRef } from 'react'
 import {
   getTerminalFocusState,
@@ -44,8 +43,6 @@ export function useAwaySummary(
   isLoadingRef.current = isLoading
 
   useEffect(() => {
-    if (!feature('AWAY_SUMMARY')) return
-
     function clearTimer(): void {
       if (timerRef.current !== null) {
         clearTimeout(timerRef.current)

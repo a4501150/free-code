@@ -47,16 +47,13 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
         : {}),
       'ctrl+shift+o': 'app:toggleTeammatePreview',
       'ctrl+r': 'history:search',
-      // File navigation. cmd+ bindings only fire on kitty-protocol terminals;
-      // ctrl+shift is the portable fallback.
-      ...(feature('QUICK_SEARCH')
-        ? {
-            'ctrl+shift+f': 'app:globalSearch' as const,
-            'cmd+shift+f': 'app:globalSearch' as const,
-            'ctrl+shift+p': 'app:quickOpen' as const,
-            'cmd+shift+p': 'app:quickOpen' as const,
-          }
-        : {}),
+      // File navigation. Legacy terminals report ctrl+shift+<letter> without
+      // shift, so these chords only fire on kitty-protocol terminals
+      // (and iTerm2's CSI-u mode); rebind here for other terminals.
+      'ctrl+shift+f': 'app:globalSearch',
+      'cmd+shift+f': 'app:globalSearch',
+      'ctrl+shift+p': 'app:quickOpen',
+      'cmd+shift+p': 'app:quickOpen',
     },
   },
   {

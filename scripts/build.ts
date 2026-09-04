@@ -18,8 +18,6 @@ const useReactCompiler = args.includes('--react-compiler')
 const fullExperimentalFeatures = [
   'AGENT_MEMORY_SNAPSHOT',
   'AGENT_TRIGGERS',
-  'AWAY_SUMMARY',
-  'BUILTIN_EXPLORE_PLAN_AGENTS',
   'CONNECTOR_TEXT',
   'EXTRACT_MEMORIES',
   'HISTORY_PICKER',
@@ -28,7 +26,6 @@ const fullExperimentalFeatures = [
   'MESSAGE_ACTIONS',
   'POWERSHELL_AUTO_MODE',
   'PROMPT_CACHE_BREAK_DETECTION',
-  'QUICK_SEARCH',
   'TEAMMEM',
   'WEBUI',
 ] as const
@@ -77,7 +74,6 @@ function getGitHubRepo(): string {
 const defaultFeatures = [
   // Tier 1: CLI flag / subcommand gated
   'DAEMON',
-  'DUMP_SYSTEM_PROMPT',
   'HARD_FAIL',
   'STREAMLINED_OUTPUT',
   'UNATTENDED_RETRY',

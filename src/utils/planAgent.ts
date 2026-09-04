@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { getInitialSettings } from './settings/settings.js'
 
 type PlanAgentConfig = {
@@ -11,6 +10,5 @@ export function getPlanAgentConfig(): PlanAgentConfig {
 }
 
 export function isBuiltInPlanAgentEnabled(): boolean {
-  if (!feature('BUILTIN_EXPLORE_PLAN_AGENTS')) return false
   return getPlanAgentConfig().enabled === true
 }

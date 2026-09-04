@@ -957,10 +957,7 @@ export function REPL({
     viewingAgentTaskId,
     tools,
   })
-  if (feature('AWAY_SUMMARY')) {
-    // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-    useAwaySummary(messages, setMessages, isLoading)
-  }
+  useAwaySummary(messages, setMessages, isLoading)
   // ── Input state ──
   const {
     inputValue,

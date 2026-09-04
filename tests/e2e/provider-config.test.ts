@@ -513,8 +513,8 @@ describe('Provider Config E2E', () => {
   //      unset.
   //
   // Uses a user-defined markdown agent rather than the built-in Plan agent:
-  // Plan is gated behind `feature('BUILTIN_EXPLORE_PLAN_AGENTS')` which is
-  // dev-full only, so the stock ./cli build (used by e2e tests) doesn't
+  // Plan is gated behind the `planAgentConfig.enabled` setting, which is
+  // off by default, so the stock ./cli build (used by e2e tests) doesn't
   // include it. The markdown path exercises the identical resolution code
   // in getAgentModel().
 

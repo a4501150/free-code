@@ -12,7 +12,6 @@ const [, , model, toolName] = process.argv
 
 const defaultFeatures = [
   'DAEMON',
-  'DUMP_SYSTEM_PROMPT',
   'HARD_FAIL',
   'STREAMLINED_OUTPUT',
   'UNATTENDED_RETRY',

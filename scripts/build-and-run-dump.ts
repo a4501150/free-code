@@ -20,7 +20,6 @@ if (!jsonOut || !mdOut) {
 // Keep this list in sync with `defaultFeatures` in scripts/build.ts.
 const defaultFeatures = [
   'DAEMON',
-  'DUMP_SYSTEM_PROMPT',
   'HARD_FAIL',
   'STREAMLINED_OUTPUT',
   'UNATTENDED_RETRY',

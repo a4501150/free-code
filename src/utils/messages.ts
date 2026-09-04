@@ -85,7 +85,6 @@ import type {
 } from 'src/structuredProtocol/index.js'
 import { EXPLORE_AGENT } from 'src/tools/AgentTool/built-in/exploreAgent.js'
 import { PLAN_AGENT } from 'src/tools/AgentTool/built-in/planAgent.js'
-import { areExplorePlanAgentsEnabled } from 'src/tools/AgentTool/builtInAgents.js'
 import { AGENT_TOOL_NAME } from 'src/tools/AgentTool/constants.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from 'src/tools/AskUserQuestionTool/prompt.js'
 import { BashTool } from 'src/tools/BashTool/BashTool.js'
@@ -3174,7 +3173,7 @@ You are pair-planning with the user. Explore the code to build context, ask the 
 
 Repeat this cycle until the plan is complete:
 
-1. **Explore** — Use ${ctx.readOnlyToolNames} to read code. Look for existing functions, utilities, and patterns to reuse.${areExplorePlanAgentsEnabled() ? ` You can use the ${EXPLORE_AGENT.agentType} agent type to parallelize complex searches without filling your context, though for straightforward queries direct tools are simpler.` : ''}
+1. **Explore** — Use ${ctx.readOnlyToolNames} to read code. Look for existing functions, utilities, and patterns to reuse. You can use the ${EXPLORE_AGENT.agentType} agent type to parallelize complex searches without filling your context, though for straightforward queries direct tools are simpler.
 2. **Update the plan file** — After each discovery, immediately capture what you learned. Don't wait until the end.
 3. **Ask the user** — When you hit an ambiguity or decision you can't resolve from code alone, use ${ASK_USER_QUESTION_TOOL_NAME}. Then go back to step 1.
 
