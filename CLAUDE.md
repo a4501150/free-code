@@ -66,6 +66,7 @@ The prefix order is `tools`, then `system`, then `messages`.
 - For a once-per-window guard, test the transcript, not session state. Compaction replaces the history and re-arms the guard with no reset hook.
 - Never count `AssistantMessage` objects as turns. Streaming emits one per content block, so one response with three parallel tool calls advances such a counter by four. Count human turns, or responses keyed by `message.id`.
 - Prefer a trigger that decays. A gate a session satisfies forever fires forever.
+- `isLoggableMessage` in [src/utils/sessionStorage.ts](src/utils/sessionStorage.ts) drops all attachment messages from the JSONL transcript by default. Only `user_context_snapshot`, `user_context_delta`, and (when env-gated) `hook_additional_context` are persisted. Other delta types (`agent_listing_delta`, `mcp_instructions_delta`, `skill_listing`, `date_change`) reconstruct from current state on each turn and do not need persistence. A new attachment type that must survive resume needs an explicit allowlist entry in that function.
 
 ## Injected context in the UI
 
