@@ -50,6 +50,8 @@ const TYPES_WITHOUT_SUMMARY_LINE = [
   'current_session_memory',
   'companion_intro',
   'date_change',
+  'user_context_snapshot',
+  'user_context_delta',
   'terminal_focus',
   'auto_compact_imminent',
   'stale_task_list',

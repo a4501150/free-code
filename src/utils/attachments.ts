@@ -631,6 +631,16 @@ export type Attachment =
       newDate: string
     }
   | {
+      type: 'user_context_snapshot'
+      renderedContent: string
+      entries: Array<{ key: string; value: string }>
+    }
+  | {
+      type: 'user_context_delta'
+      replacements: Array<{ key: string; value: string }>
+      removals: string[]
+    }
+  | {
       type: 'terminal_focus'
       focused: boolean
     }
@@ -1554,6 +1564,92 @@ export function getAgentListingDeltaAttachment(
       showConcurrencyNote: true,
     },
   ]
+}
+
+/**
+ * Find the persisted user_context_snapshot in the message chain.
+ */
+export function getUserContextSnapshotFromMessages(
+  messages: readonly Message[],
+): {
+  renderedContent: string
+  entries: Array<{ key: string; value: string }>
+} | null {
+  for (const msg of messages) {
+    if (
+      msg.type === 'attachment' &&
+      msg.attachment.type === 'user_context_snapshot'
+    ) {
+      return {
+        renderedContent: msg.attachment.renderedContent,
+        entries: msg.attachment.entries,
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Convert a context object to ordered entries array.
+ * currentDate is excluded because date_change handles it.
+ */
+export function contextToOrderedEntries(context: {
+  [k: string]: string
+}): Array<{ key: string; value: string }> {
+  return Object.entries(context)
+    .filter(([key]) => key !== 'currentDate')
+    .map(([key, value]) => ({ key, value }))
+}
+
+/**
+ * Compute a user_context_delta by diffing fresh entries against the
+ * last-announced state (reconstructed from snapshot + prior deltas).
+ */
+export function getUserContextDeltaAttachment(
+  freshEntries: Array<{ key: string; value: string }>,
+  messages: readonly Message[],
+): Attachment[] {
+  // Reconstruct last-announced state
+  const announced = new Map<string, string>()
+  for (const msg of messages) {
+    if (msg.type !== 'attachment') continue
+    if (msg.attachment.type === 'user_context_snapshot') {
+      for (const { key, value } of msg.attachment.entries) {
+        announced.set(key, value)
+      }
+    } else if (msg.attachment.type === 'user_context_delta') {
+      for (const { key, value } of msg.attachment.replacements) {
+        announced.set(key, value)
+      }
+      for (const key of msg.attachment.removals) {
+        announced.delete(key)
+      }
+    }
+  }
+
+  const freshMap = new Map(freshEntries.map(e => [e.key, e.value]))
+
+  // Find replacements (changed or added)
+  const replacements: Array<{ key: string; value: string }> = []
+  for (const { key, value } of freshEntries) {
+    if (announced.get(key) !== value) {
+      replacements.push({ key, value })
+    }
+  }
+
+  // Find removals
+  const removals: string[] = []
+  for (const key of announced.keys()) {
+    if (!freshMap.has(key)) {
+      removals.push(key)
+    }
+  }
+
+  if (replacements.length === 0 && removals.length === 0) {
+    return []
+  }
+
+  return [{ type: 'user_context_delta', replacements, removals }]
 }
 
 // Exported for compact.ts — single source of truth for the gate.

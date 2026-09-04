@@ -17,9 +17,9 @@ Build, configuration, testing and layout live in [docs/](docs/).
 ## Providers
 
 A provider type does not imply an auth method. Bedrock and Gemini acquire
-credentials themselves, so no single boundary owns auth. Gate Anthropic-platform
-metadata and headers to Anthropic-type providers, because elsewhere they churn
-the cache key for nothing.
+credentials themselves, so no single boundary owns auth. The billing system
+block, `metadata.user_id`, CCH signing, and the CLI identity prefix are all
+gated on `isAnthropicType()`. Non-Anthropic providers receive none of these.
 
 ### External API behavior
 

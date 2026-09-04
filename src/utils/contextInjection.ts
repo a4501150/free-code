@@ -38,3 +38,17 @@ export function prependUserContext(
 
   return [createUserMessage({ content, isMeta: true }), ...messages]
 }
+
+export function prependUserContextFromSnapshot(
+  messages: Message[],
+  snapshotContent: string,
+): Message[] {
+  if (process.env.NODE_ENV === 'test') {
+    return messages
+  }
+
+  return [
+    createUserMessage({ content: snapshotContent, isMeta: true }),
+    ...messages,
+  ]
+}

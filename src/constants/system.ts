@@ -1,8 +1,6 @@
 // Critical system constants extracted to break circular dependencies
 
 import { logForDebugging } from '../utils/debug.js'
-import { isEnvDefinedFalsy } from '../utils/envUtils.js'
-import { getProviderRegistry } from '../utils/model/providerRegistry.js'
 import { getWorkload } from '../utils/workloadContext.js'
 
 const DEFAULT_PREFIX = `You are Claude Code, Anthropic's official CLI for Claude.`
@@ -24,20 +22,9 @@ export function getCLISyspromptPrefix(): CLISyspromptPrefix {
 }
 
 /**
- * Check if attribution header is enabled.
- * Enabled by default, can be disabled via env var.
- */
-function isAttributionHeaderEnabled(): boolean {
-  if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_ATTRIBUTION_HEADER)) {
-    return false
-  }
-  return true
-}
-
-/**
  * Get attribution header for API requests.
  * Returns a header string with cc_version (including fingerprint) and cc_entrypoint.
- * Enabled by default, can be disabled via env var.
+ * The caller gates on isAnthropicType() — this function always returns the block.
  *
  * Includes a `cch=00000` placeholder that is replaced with a computed
  * xxHash64-based integrity hash before the request is sent. The fetch
@@ -45,10 +32,6 @@ function isAttributionHeaderEnabled(): boolean {
  * this token to gate features like fast mode.
  */
 export function getAttributionHeader(fingerprint: string): string {
-  if (!isAttributionHeaderEnabled()) {
-    return ''
-  }
-
   const version = `${MACRO.VERSION}.${fingerprint}`
   const entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT ?? 'unknown'
 

@@ -153,10 +153,10 @@ export async function sideQuery(
 
   // Build system as array to keep attribution header in its own block
   // (prevents server-side parsing from including system content in cc_entrypoint)
+  const isAnthropic = getProviderRegistry().isAnthropicType(model)
   const systemBlocks: TextBlockParam[] = [
     attributionHeader ? { type: 'text', text: attributionHeader } : null,
-    // Skip CLI system prompt prefix for internal classifiers that provide their own prompt
-    ...(skipSystemPromptPrefix
+    ...(skipSystemPromptPrefix || !isAnthropic
       ? []
       : [
           {

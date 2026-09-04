@@ -3807,6 +3807,12 @@ export function isLoggableMessage(m: Message): boolean {
   // user-configured hook output that is useful for session context on resume.
   if (m.type === 'attachment') {
     if (
+      m.attachment.type === 'user_context_snapshot' ||
+      m.attachment.type === 'user_context_delta'
+    ) {
+      return true
+    }
+    if (
       m.attachment.type === 'hook_additional_context' &&
       isEnvTruthy(process.env.CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT)
     ) {

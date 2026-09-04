@@ -1146,12 +1146,11 @@ async function* queryModel(
     options.querySource,
   )
 
+  const isAnthropic = registry.isAnthropicType(options.model)
   systemPrompt = asSystemPrompt(
     [
-      registry.isAnthropicType(options.model)
-        ? getAttributionHeader(fingerprint)
-        : '',
-      getCLISyspromptPrefix(),
+      isAnthropic ? getAttributionHeader(fingerprint) : '',
+      isAnthropic ? getCLISyspromptPrefix() : '',
       ...systemPrompt,
     ].filter(Boolean),
   )

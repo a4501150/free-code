@@ -39,13 +39,21 @@ import {
   createToolUseSummaryMessage,
 } from './utils/messages.js'
 import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummaryGenerator.js'
-import { prependUserContext } from './utils/contextInjection.js'
+import {
+  formatUserContextMessageContent,
+  prependUserContext,
+  prependUserContextFromSnapshot,
+} from './utils/contextInjection.js'
 import { getEnvContext } from './context.js'
 import {
+  contextToOrderedEntries,
   createAttachmentMessage,
   filterDuplicateMemoryAttachments,
   getAttachmentMessages,
+  getUserContextDeltaAttachment,
+  getUserContextSnapshotFromMessages,
   startRelevantMemoryPrefetch,
+  type Attachment,
 } from './utils/attachments.js'
 import {
   remove as removeFromQueue,
@@ -433,6 +441,38 @@ async function* queryLoop(
       ),
     }
 
+    // Persist the original rendered context as the conversation baseline. Later
+    // requests reuse its bytes and announce only changes near the message tail.
+    const freshEntries = contextToOrderedEntries(effectiveUserContext)
+    const existingSnapshot =
+      getUserContextSnapshotFromMessages(messagesForQuery)
+
+    let prependContent: string | null = null
+    if (!existingSnapshot) {
+      const rendered = formatUserContextMessageContent(effectiveUserContext)
+      if (rendered) {
+        const snapshotAttachment: Attachment = {
+          type: 'user_context_snapshot',
+          renderedContent: rendered,
+          entries: freshEntries,
+        }
+        const snapshotMsg = createAttachmentMessage(snapshotAttachment)
+        messagesForQuery = [...messagesForQuery, snapshotMsg]
+        yield snapshotMsg
+      }
+    } else {
+      prependContent = existingSnapshot.renderedContent
+      const delta = getUserContextDeltaAttachment(
+        freshEntries,
+        messagesForQuery,
+      )
+      if (delta.length > 0) {
+        const deltaMsg = createAttachmentMessage(delta[0]!)
+        messagesForQuery = [...messagesForQuery, deltaMsg]
+        yield deltaMsg
+      }
+    }
+
     // Create fetch wrapper once per query session to avoid memory retention.
     // Each call to createDumpPromptsFetch creates a closure that captures the request body.
     // Creating it once means only the latest request body is retained (~700KB),
@@ -467,7 +507,9 @@ async function* queryLoop(
     try {
       queryCheckpoint('query_api_streaming_start')
       for await (const message of deps.callModel({
-        messages: prependUserContext(messagesForQuery, effectiveUserContext),
+        messages: prependContent
+          ? prependUserContextFromSnapshot(messagesForQuery, prependContent)
+          : prependUserContext(messagesForQuery, effectiveUserContext),
         systemPrompt: fullSystemPrompt,
         thinkingConfig: toolUseContext.options.thinkingConfig,
         tools: toolUseContext.options.tools,

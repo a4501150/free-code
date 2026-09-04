@@ -3951,6 +3951,29 @@ You have exited auto mode. The user may now want to interact more directly. You 
     }
     case 'deferred_tools_delta':
       return []
+    case 'user_context_snapshot': {
+      // Hidden — not sent to API
+      return []
+    }
+    case 'user_context_delta': {
+      const parts: string[] = []
+      if (attachment.replacements.length > 0) {
+        parts.push(
+          'The following session context has been updated since the start of this conversation:',
+        )
+        for (const { key, value } of attachment.replacements) {
+          parts.push(`# ${key}\n${value}`)
+        }
+      }
+      if (attachment.removals.length > 0) {
+        parts.push(
+          `The following session context sections no longer apply: ${attachment.removals.join(', ')}`,
+        )
+      }
+      return wrapMessagesInSystemReminder([
+        createUserMessage({ content: parts.join('\n\n'), isMeta: true }),
+      ])
+    }
     case 'mcp_tools_delta': {
       const parts: string[] = []
       if (attachment.addedNames.length > 0) {
