@@ -107,6 +107,7 @@ The prefix order is `tools`, then `system`, then `messages`.
 - Apple Terminal strips shift from arrow keys and splits `option+↑` into `escape` then `up`. Never put a required action behind a modified arrow key.
 - The keybinding emitter runs before `dispatchKeyboardEvent`, so a DOM `onKeyDown` cannot pre-empt a registered keybinding. `CancelRequestHandler` claims escape during a query. Build layered escape semantics in the emitter layer.
 - A click focuses the nearest ancestor with a numeric `tabIndex`, so keep one focusable root per dialog and track panel focus in state. A click that drags becomes a selection and never fires `onClick`.
+- A tool's `outputSchema` is trusted by [src/components/messages/UserToolResultMessage/UserToolSuccessMessage.tsx](src/components/messages/UserToolResultMessage/UserToolSuccessMessage.tsx) to validate `toolUseResult` before rendering. A schema narrower than what `call()` returns drops the whole result row in silence. `MCPTool.outputSchema` must admit content arrays, not just strings, or every MCP result renders empty.
 
 ## Tool arguments
 

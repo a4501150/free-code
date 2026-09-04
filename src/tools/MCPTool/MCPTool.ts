@@ -13,7 +13,13 @@ import {
 export const inputSchema = z.object({}).passthrough()
 type InputSchema = typeof inputSchema
 
-export const outputSchema = z.string().describe('MCP tool execution result')
+// Matches MCPToolResult: the client stores content arrays verbatim, and
+// renderToolResultMessage handles both shapes. A z.string()-only schema made
+// UserToolSuccessMessage's stale-transcript validation drop every array
+// result, hiding all MCP output.
+export const outputSchema = z
+  .union([z.string(), z.array(z.any())])
+  .describe('MCP tool execution result')
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
@@ -62,7 +68,14 @@ export const MCPTool = buildTool({
   renderToolUseProgressMessage,
   renderToolResultMessage,
   isResultTruncated(output: Output): boolean {
-    return isOutputLineTruncated(output)
+    if (typeof output === 'string') {
+      return isOutputLineTruncated(output)
+    }
+    const text = output
+      .filter(b => typeof b?.text === 'string')
+      .map(b => String(b.text))
+      .join('\n')
+    return isOutputLineTruncated(text)
   },
   mapToolResultToToolResultBlockParam(content, toolUseID) {
     return {
