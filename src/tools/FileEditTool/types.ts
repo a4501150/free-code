@@ -45,7 +45,9 @@ const editFields = {
   edits: z
     .array(editOp)
     .min(1)
-    .describe('Edits to apply, referenced by LINE:HASH anchors.'),
+    .describe(
+      'Edits to apply, referenced by LINE:HASH anchors. Put every change to this file into this array: one Edit call per file per response, then Read the file again before editing it.',
+    ),
 }
 
 // Model-facing schema. _overrideContent is intentionally absent so the model
@@ -103,22 +105,6 @@ const outputSchema = z.object({
     .boolean()
     .describe('Whether the user modified the proposed changes'),
   editCount: z.number().describe('Number of edits applied'),
-  lineDelta: z
-    .number()
-    .optional()
-    .describe(
-      'Net lines added minus removed; anchors below the edit shift by this amount',
-    ),
-  anchorsStale: z
-    .boolean()
-    .optional()
-    .describe(
-      'The edit changed the file line count past a hash-length boundary; all earlier anchors are stale',
-    ),
-  changedRegionAnchors: z
-    .string()
-    .optional()
-    .describe('Fresh LINE:HASH anchors for the lines the edit wrote'),
   gitDiff: gitDiffSchema.optional(),
 })
 type OutputSchema = typeof outputSchema

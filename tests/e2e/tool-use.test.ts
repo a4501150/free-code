@@ -212,17 +212,16 @@ describe('Tool Use E2E', () => {
       expect(fileContent).toContain('Second line.')
     })
 
-    test('an Edit returns anchors that the next Edit can use without a Read', async () => {
+    test('an Edit in a later response resolves anchors against current content', async () => {
       session = new TmuxSession({ serverUrl: server.url })
       await session.start()
 
       const filePath = join(session.cwd, 'anchor-chain.txt')
       await writeFile(filePath, 'one\ntwo\nthree')
-      // Edit #1's result quotes fresh anchors only for the lines it wrote.
-      // "three" moved to line 4; Edit #2 (next response) names that line by
-      // its current content, which Tier 1 resolves without a re-Read.
+      // The Edit result echoes no anchors: the follow-up (next response)
+      // names line 4 by its current content, which direct hash matching
+      // resolves without a re-Read.
       const movedAnchor = `4:${anchorAt('one\none-b\ntwo\nthree', 4)}`
-      const insertedAnchor = `2:${anchorAt('one\none-b\ntwo\nthree', 2)}`
 
       server.reset([
         toolUseResponse([{ name: 'Read', input: { file_path: filePath } }]),
@@ -259,23 +258,23 @@ describe('Tool Use E2E', () => {
       })
 
       const firstEdit = resultContentString(getToolResults(log, 2)[0])
-      expect(firstEdit).toContain('Anchors for the changed lines')
-      expect(firstEdit).toContain(`${insertedAnchor}|one-b`)
+      expect(firstEdit).toContain('updated successfully')
+      expect(firstEdit).not.toContain('Anchors')
 
       const secondEdit = getToolResults(log, 3)[0]
       expect(secondEdit.is_error).not.toBe(true)
       expect(await readFile(filePath, 'utf-8')).toBe('one\none-b\ntwo\nTHREE')
     })
 
-    test('a second Edit block in the same response remaps a stale anchor', async () => {
+    test('a second Edit of the same file in one response must Read again', async () => {
       session = new TmuxSession({ serverUrl: server.url })
       await session.start()
 
       const filePath = join(session.cwd, 'anchor-remap.txt')
       await writeFile(filePath, 'one\ntwo\nthree')
       // Both edits are written before either result is seen, so Edit #2's
-      // anchor is against the pre-edit file. Edit #1's insert pushes "three"
-      // to line 4; the harness knows that patch and remaps the anchor.
+      // anchor is against the pre-edit file. A file edited earlier in the
+      // same response is closed to further Edits: #2 fails until a Read.
       const staleAnchor = `3:${anchorAt('one\ntwo\nthree', 3)}`
 
       server.reset([
@@ -312,15 +311,12 @@ describe('Tool Use E2E', () => {
 
       const [edit1, edit2] = getToolResults(log, 2)
       expect(edit1.is_error).not.toBe(true)
-      expect(edit2.is_error).not.toBe(true)
-      expect(resultContentString(edit1)).toContain(
-        'Net line shift below the edited hunks: +1',
+      expect(resultContentString(edit1)).toContain('updated successfully')
+      expect(edit2.is_error).toBe(true)
+      expect(resultContentString(edit2)).toContain(
+        'already edited earlier in this response',
       )
-      expect(resultContentString(edit2)).toContain('updated successfully')
-      expect(resultContentString(edit2)).not.toContain(
-        'Anchor validation failed',
-      )
-      expect(await readFile(filePath, 'utf-8')).toBe('one\none-b\ntwo\nTHREE')
+      expect(await readFile(filePath, 'utf-8')).toBe('one\none-b\ntwo\nthree')
     })
   })
 

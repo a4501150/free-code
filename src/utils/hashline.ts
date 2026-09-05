@@ -1,11 +1,10 @@
-import type { AppliedPatch } from './editState.js'
 import { djb2Hash } from './hash.js'
 
 // Labels are `LINE:HASH|content`. HASH fingerprints the trimmed line together
 // with its line number: no neighbor context, no widening-by-window. An anchor
-// is an assertion "line LINE of the snapshot you were shown has this content",
-// and resolution either matches that assertion against the current content or
-// remaps it through the patches this response already applied.
+// is an assertion "line LINE of the file you were shown has this content".
+// Every Edits call resolves its anchors against one snapshot: the content
+// passed in. A failing edit is reported with fresh anchors, never relocated.
 
 const MIN_HASH_LEN = 3
 const MAX_HASH_LEN = 6
@@ -183,28 +182,8 @@ export type HashlineOp = {
   lines?: string
 }
 
-export type ResolutionContext = {
-  filePath?: string
-  /** The content the model's anchors were minted against, if known. */
-  baselineContent?: string
-  /** Patches this response already applied, in chronological order. */
-  patches?: readonly AppliedPatch[]
-  /** Set when remapping is unsafe (external change, bookkeeping cap). */
-  remapUnavailableReason?: string
-}
-
 export type ApplyResult =
-  | {
-      ok: true
-      updatedContent: string
-      editCount: number
-      /**
-       * Splices this call applied, in chronological order, each in the
-       * coordinate space of the document just before that splice.
-       */
-      appliedPatches: AppliedPatch[]
-      lineDelta: number
-    }
+  | { ok: true; updatedContent: string; editCount: number }
   | { ok: false; error: string }
 
 // Normalized op resolved against the current file, 1-based inclusive range.
@@ -240,13 +219,7 @@ function anchorText(anchor: Anchor): string {
     : `${anchor.line}:${anchor.hash}`
 }
 
-type StaleReason =
-  | 'content-mismatch'
-  | 'out-of-bounds'
-  | 'consumed'
-  | 'collision'
-  | 'baseline-mismatch'
-  | 'no-baseline'
+type StaleReason = 'content-mismatch' | 'out-of-bounds' | 'collision'
 
 type StaleAnchor = {
   anchor: Anchor
@@ -265,14 +238,8 @@ function staleReasonText(
       return `line ${anchor.line} content differs now`
     case 'out-of-bounds':
       return `that line is outside the current file (${fileLineCount} line(s))`
-    case 'consumed':
-      return "the anchor's line was rewritten by an earlier edit in this message"
     case 'collision':
       return 'label collision; this line cannot be verified safely'
-    case 'baseline-mismatch':
-      return 'this anchor does not match the snapshot used for this response'
-    case 'no-baseline':
-      return 'line content differs now and no snapshot is available to remap it'
   }
 }
 
@@ -312,70 +279,6 @@ function staleAnchorError(
   ].join('\n')
 }
 
-/**
- * Map one baseline line through chronological patches to the current document.
- * Returns the mapped line, or null when a positive-length patch consumed it.
- */
-function mapLine(
-  baselineLine: number,
-  patches: readonly AppliedPatch[],
-): number | null {
-  let line = baselineLine
-  for (const p of patches) {
-    if (p.oldLen === 0) {
-      if (line >= p.oldStart) line += p.newLen
-      continue
-    }
-    const oldEnd = p.oldStart + p.oldLen - 1
-    if (line < p.oldStart) continue
-    if (line <= oldEnd) return null
-    line += p.newLen - p.oldLen
-  }
-  return line
-}
-
-type RangeMap =
-  | { kind: 'ok'; startLine: number; endLine: number }
-  | { kind: 'consumed' }
-  | { kind: 'inside' }
-
-/**
- * Map a baseline range, rejecting any range an earlier patch consumed or
- * reached inside — the range's meaning dies if any line inside it moved.
- */
-function mapRange(
-  start: number,
-  end: number,
-  patches: readonly AppliedPatch[],
-): RangeMap {
-  let s = start
-  let e = end
-  for (const p of patches) {
-    if (p.oldLen === 0) {
-      if (p.oldStart <= s) {
-        s += p.newLen
-        e += p.newLen
-      } else if (p.oldStart <= e) {
-        return { kind: 'inside' }
-      }
-      continue
-    }
-    const patchEnd = p.oldStart + p.oldLen - 1
-    if (patchEnd < s) {
-      const d = p.newLen - p.oldLen
-      s += d
-      e += d
-    } else if (p.oldStart > e) {
-      continue
-    } else {
-      return s >= p.oldStart && e <= patchEnd
-        ? { kind: 'consumed' }
-        : { kind: 'inside' }
-    }
-  }
-  return { kind: 'ok', startLine: s, endLine: e }
-}
-
 type Placement = { line: number } | { reason: StaleReason; windowAt?: number }
 
 function isPlacementMoved(p: Placement): p is { line: number } {
@@ -383,88 +286,42 @@ function isPlacementMoved(p: Placement): p is { line: number } {
 }
 
 /**
- * Place one anchor: Tier 1 asserts against the current file directly; Tier 2
- * verifies the response baseline and maps through the applied patches. The
- * post-map check compares whole lines, because the anchor's hash covers the
- * baseline line number, which a shift necessarily changes.
+ * Place one anchor: the hash must match the line it names in the current
+ * content, or the placement fails with that line's fresh label in hand.
  */
 function placeAnchor(
   anchor: Anchor,
   currentLines: string[],
   currentLabels: string[],
-  baseline: { lines: string[]; labels: string[] } | null,
-  patches: readonly AppliedPatch[],
-  currentLabelCollisions: boolean[],
-  baselineCollisions: boolean[],
+  collisions: boolean[],
 ): Placement {
-  if (anchor.line >= 1 && anchor.line <= currentLines.length) {
-    if (
-      !currentLabelCollisions[anchor.line - 1] &&
-      currentLabels[anchor.line - 1] === anchor.hash
-    ) {
-      return { line: anchor.line }
-    }
-  }
-  if (!baseline) {
-    return {
-      reason:
-        anchor.line > currentLines.length ? 'out-of-bounds' : 'no-baseline',
-      windowAt: anchor.line,
-    }
-  }
-  if (anchor.line < 1 || anchor.line > baseline.lines.length) {
+  if (anchor.line < 1 || anchor.line > currentLines.length) {
     return { reason: 'out-of-bounds', windowAt: anchor.line }
   }
-  if (baselineCollisions[anchor.line - 1]) {
+  if (collisions[anchor.line - 1]) {
     return { reason: 'collision', windowAt: anchor.line }
   }
-  if (baseline.labels[anchor.line - 1] !== anchor.hash) {
-    return { reason: 'baseline-mismatch', windowAt: anchor.line }
+  if (currentLabels[anchor.line - 1] === anchor.hash) {
+    return { line: anchor.line }
   }
-  const mapped = mapLine(anchor.line, patches)
-  if (mapped === null) {
-    return { reason: 'consumed', windowAt: anchor.line }
-  }
-  if (mapped < 1 || mapped > currentLines.length) {
-    return { reason: 'out-of-bounds', windowAt: mapped }
-  }
-  if (currentLines[mapped - 1] !== baseline.lines[anchor.line - 1]) {
-    return { reason: 'content-mismatch', windowAt: mapped }
-  }
-  return { line: mapped }
+  return { reason: 'content-mismatch', windowAt: anchor.line }
 }
 
 /**
  * Apply hashline edits to file content. Pure: places each anchor against the
- * current content (or remaps it through the context's baseline + patches),
+ * one snapshot given (all edits of one call resolve against one file state),
  * rejects overlapping ranges, then applies edits by descending start line.
  * On failure the error names every stale anchor and quotes fresh ±1 windows.
  */
 export function applyHashlineEdits(
   fileContent: string,
   edits: HashlineOp[],
-  context?: ResolutionContext,
+  filePath?: string,
 ): ApplyResult {
   const fileLines = fileContent.split(/\r?\n/)
-  const currentLabelSet = computeHashlineLabels(fileContent)
-  const currentLabels = labelStrings(currentLabelSet)
-  const currentCollisions = currentLabelSet.labels.map(l => l.collision)
-
-  // Remap unavailable (external change, patch cap): exact anchors still
-  // resolve, but nothing below Tier 1 may be trusted.
-  const remapNote = context?.remapUnavailableReason
-  const baseline =
-    !remapNote && context?.baselineContent !== undefined
-      ? (() => {
-          const set = computeHashlineLabels(context.baselineContent!)
-          return {
-            lines: context.baselineContent!.split(/\r?\n/),
-            labels: labelStrings(set),
-            collisions: set.labels.map(l => l.collision),
-          }
-        })()
-      : null
-  const patches = remapNote ? [] : (context?.patches ?? [])
+  const labelSet = computeHashlineLabels(fileContent)
+  const currentLabels = labelStrings(labelSet)
+  const collisions = labelSet.labels.map(l => l.collision)
 
   const resolved: ResolvedOp[] = []
   const stale: StaleAnchor[] = []
@@ -483,7 +340,7 @@ export function applyHashlineEdits(
       return {
         ok: false,
         error: `Invalid start anchor ${JSON.stringify(edit.start)} in ${fileLabel(
-          context?.filePath,
+          filePath,
         )}. Anchors look like "LINE:HASH" (e.g. "12:a3f") or "0" for the top of the file.`,
       }
     }
@@ -496,7 +353,7 @@ export function applyHashlineEdits(
       return {
         ok: false,
         error: `Invalid end anchor ${JSON.stringify(endRaw)} in ${fileLabel(
-          context?.filePath,
+          filePath,
         )}. Anchors look like "LINE:HASH" (e.g. "12:a3f").`,
       }
     }
@@ -504,9 +361,7 @@ export function applyHashlineEdits(
     if (startAnchor.hash === null && startAnchor.line !== 0) {
       return {
         ok: false,
-        error: `Anchor "${edit.start}" has no hash. Anchors must be copied from Read output as "LINE:HASH" (only "0" may omit the hash, for inserting at the top).${
-          remapNote ? `\n${remapNote}` : ''
-        }`,
+        error: `Anchor "${edit.start}" has no hash. Anchors must be copied from Read output as "LINE:HASH" (only "0" may omit the hash, for inserting at the top).`,
       }
     }
 
@@ -518,7 +373,7 @@ export function applyHashlineEdits(
       return {
         ok: false,
         error: `The "${edit.op}" edit requires "lines" (the new text) in ${fileLabel(
-          context?.filePath,
+          filePath,
         )}.`,
       }
     }
@@ -528,7 +383,7 @@ export function applyHashlineEdits(
         return {
           ok: false,
           error: `Insert anchor "${edit.start}" refers to line ${startAnchor.line} in ${fileLabel(
-            context?.filePath,
+            filePath,
           )}. Use "0" to insert at the top.`,
         }
       }
@@ -537,7 +392,7 @@ export function applyHashlineEdits(
         return {
           ok: false,
           error: `Anchor range ${startAnchor.line}..${endAnchor.line} is invalid in ${fileLabel(
-            context?.filePath,
+            filePath,
           )}. Lines are 1-based; "0" is only valid for insert_after.`,
         }
       }
@@ -545,7 +400,7 @@ export function applyHashlineEdits(
         return {
           ok: false,
           error: `End anchor line ${endAnchor.line} is before start anchor line ${startAnchor.line} in ${fileLabel(
-            context?.filePath,
+            filePath,
           )}.`,
         }
       }
@@ -556,26 +411,16 @@ export function applyHashlineEdits(
       continue
     }
 
-    let startPlace = placeAnchor(
+    const startPlace = placeAnchor(
       startAnchor,
       fileLines,
       currentLabels,
-      baseline,
-      patches,
-      currentCollisions,
-      baseline ? baseline.collisions : [],
+      collisions,
     )
 
     if (isInsert || endAnchor === startAnchor) {
       if (!isPlacementMoved(startPlace)) {
         addStale(startAnchor, startPlace)
-        continue
-      }
-      if (startPlace.line > fileLines.length) {
-        addStale(startAnchor, {
-          reason: 'out-of-bounds',
-          windowAt: startPlace.line,
-        })
         continue
       }
       resolved.push({
@@ -591,10 +436,7 @@ export function applyHashlineEdits(
       endAnchor,
       fileLines,
       currentLabels,
-      baseline,
-      patches,
-      currentCollisions,
-      baseline ? baseline.collisions : [],
+      collisions,
     )
 
     if (!isPlacementMoved(startPlace) || !isPlacementMoved(endPlace)) {
@@ -607,41 +449,9 @@ export function applyHashlineEdits(
       extras.push(
         `Range "${anchorText(startAnchor)}".."${anchorText(
           endAnchor,
-        )}" ends before it starts after remapping.`,
+        )}" ends before it starts.`,
       )
       continue
-    }
-
-    // With patches in play, map the whole range: any earlier splice that fell
-    // inside (or consumed) it means the range no longer means one block.
-    if (patches.length > 0 && baseline) {
-      const mapped = mapRange(startAnchor.line, endAnchor.line, patches)
-      if (mapped.kind === 'consumed') {
-        addStale(startAnchor, {
-          reason: 'consumed',
-          windowAt: startAnchor.line,
-        })
-        continue
-      }
-      if (mapped.kind === 'inside') {
-        extras.push(
-          `Range "${anchorText(startAnchor)}".."${anchorText(
-            endAnchor,
-          )}" was changed by an earlier edit in this message.`,
-        )
-        continue
-      }
-      if (
-        mapped.startLine !== startPlace.line ||
-        mapped.endLine !== endPlace.line
-      ) {
-        extras.push(
-          `Range "${anchorText(startAnchor)}".."${anchorText(
-            endAnchor,
-          )}" no longer covers one block of lines.`,
-        )
-        continue
-      }
     }
 
     resolved.push({
@@ -653,7 +463,6 @@ export function applyHashlineEdits(
   }
 
   if (stale.length > 0 || extras.length > 0) {
-    if (remapNote) extras.unshift(remapNote)
     return { ok: false, error: staleAnchorError(stale, fileLines, extras) }
   }
 
@@ -669,7 +478,7 @@ export function applyHashlineEdits(
       return {
         ok: false,
         error: `Edits overlap: ranges ${prev.startLine}..${prev.endLine} and ${cur.startLine}..${cur.endLine} in ${fileLabel(
-          context?.filePath,
+          filePath,
         )} touch the same line(s). Split them so each line is edited at most once.`,
       }
     }
@@ -692,62 +501,11 @@ export function applyHashlineEdits(
     }
   }
 
-  const appliedPatches = coalescePatches(
-    resolved
-      .map(r => {
-        if (r.op === 'insert_after') {
-          return {
-            // Top-of-file insertion resolved at line 0 lands here as
-            // insert-after-line-0 below; both are insertions before oldStart.
-            oldStart: r.startLine + 1,
-            oldLen: 0,
-            newLen: (r.lines ?? '').split('\n').length,
-          }
-        }
-        return {
-          oldStart: r.startLine,
-          oldLen: r.endLine - r.startLine + 1,
-          newLen: r.op === 'delete' ? 0 : (r.lines ?? '').split('\n').length,
-        }
-      })
-      .sort((a, b) => a.oldStart - b.oldStart),
-  )
-
-  const lineDelta = appliedPatches.reduce(
-    (sum, p) => sum + p.newLen - p.oldLen,
-    0,
-  )
-
   return {
     ok: true,
     updatedContent: newLines.join('\n'),
     editCount: edits.length,
-    appliedPatches,
-    lineDelta,
   }
-}
-
-// Merge contiguous same-kind splices (same coordinate space: one apply run)
-// so the response patch list stays small. Never merge an insertion with a
-// positive-length range: that would mark untouched lines as consumed.
-function coalescePatches(patches: AppliedPatch[]): AppliedPatch[] {
-  const merged: AppliedPatch[] = []
-  for (const p of patches) {
-    const last = merged[merged.length - 1]
-    if (
-      last &&
-      ((last.oldLen === 0 && p.oldLen === 0 && p.oldStart === last.oldStart) ||
-        (last.oldLen > 0 &&
-          p.oldLen > 0 &&
-          p.oldStart === last.oldStart + last.oldLen))
-    ) {
-      last.newLen += p.newLen
-      last.oldLen += p.oldLen
-    } else {
-      merged.push({ ...p })
-    }
-  }
-  return merged
 }
 
 /**

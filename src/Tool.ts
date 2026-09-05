@@ -192,10 +192,10 @@ export type ToolUseContext = {
   abortController: AbortController
   readFileState: FileStateCache
   /**
-   * Per-assistant-response Edit bookkeeping (snapshot + applied patches) that
-   * lets later Edit calls in the same message remap anchors from the content
-   * the model saw. Created fresh per query-loop iteration; undefined for
-   * direct tool invocations outside the query loop.
+   * Per-assistant-response Edit bookkeeping: tracks which files this response
+   * has already edited so a second Edit of the same file is rejected until a
+   * Read. Created fresh per query-loop iteration; undefined for direct tool
+   * invocations outside the query loop.
    */
   editState?: ResponseEditState
   getAppState(): AppState

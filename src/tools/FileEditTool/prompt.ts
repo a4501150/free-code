@@ -19,8 +19,9 @@ Usage:${getPreReadInstruction()}
   {"op":"insert_after","start":"41:9k2","lines":"  const y = 3"}
   {"op":"delete","start":"41:9k2","end":"44:p0q"}
 - Provide only the content after the \`|\` in \`lines\` — never include the \`LINE:HASH|\` anchor prefix itself.
-- HASH fingerprints the trimmed line together with its line number, so repeated lines like \`}\` and blank lines get distinct anchors, and rewriting one line never changes another line's anchor. A successful edit returns fresh anchors for the lines it wrote; use them for follow-up edits there, and note the reported line shift for anchors you still hold below the edit.
-- An anchor asserts "line LINE of the file I was shown has this content". The tool resolves it against the current file, remapping past earlier edits from the SAME message (their line shifts are known). It rejects an anchor whose line an earlier same-message edit rewrote, or whose content changed since you read it — then it lists each failed anchor and quotes fresh anchors near the affected lines.
+- Batch every change to one file into a single call: all edits in a call resolve against the one Read output you were shown, and a successful edit retires every anchor you hold for that file — Read it again before editing it again, and issue at most one Edit per file per response.
+- HASH fingerprints the trimmed line together with its line number, so repeated lines like \`}\` and blank lines get distinct anchors, and rewriting one line never changes another line's anchor.
+- An anchor asserts "line LINE of the file I was shown has this content". The tool resolves it against the current file; an anchor whose content changed is rejected — the error lists each failed anchor and quotes fresh anchors near the affected lines.
 - Copy anchors verbatim from this file's Read output. A hash taken from grep output, another file, or memory never matches — Read the file again when unsure.
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.`
 }

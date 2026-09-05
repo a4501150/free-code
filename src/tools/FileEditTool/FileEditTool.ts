@@ -25,13 +25,7 @@ import {
   suggestPathUnderCwd,
   writeTextContent,
 } from '../../utils/file.js'
-import {
-  applyHashlineEdits,
-  formatAnchoredRegions,
-  hashLengthForLineCount,
-  type ResolutionContext,
-} from '../../utils/hashline.js'
-import type { AppliedPatch } from '../../utils/editState.js'
+import { applyHashlineEdits } from '../../utils/hashline.js'
 import {
   fileHistoryEnabled,
   fileHistoryTrackEdit,
@@ -54,6 +48,7 @@ import type { PermissionDecision } from '../../utils/permissions/PermissionResul
 import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
 import { validateInputForSettingsFileEdit } from '../../utils/settings/validateEditTool.js'
 import {
+  FILE_EDITED_THIS_RESPONSE_ERROR,
   FILE_EDIT_TOOL_NAME,
   FILE_UNEXPECTEDLY_MODIFIED_ERROR,
 } from './constants.js'
@@ -249,6 +244,17 @@ export const FileEditTool = buildTool({
       }
     }
 
+    // A file this response already edited is closed to further Edits: the
+    // model holds only anchors that predate that write.
+    if (toolUseContext.editState?.isEdited(fullFilePath)) {
+      return {
+        result: false,
+        behavior: 'ask',
+        message: FILE_EDITED_THIS_RESPONSE_ERROR,
+        errorCode: 9,
+      }
+    }
+
     // Check if file exists and get its last modified time
     if (readTimestamp) {
       const lastWriteTime = getFileModificationTime(fullFilePath)
@@ -262,10 +268,6 @@ export const FileEditTool = buildTool({
         if (isFullRead && fileContent === readTimestamp.content) {
           // Content unchanged, safe to proceed
         } else {
-          toolUseContext.editState?.invalidate(
-            fullFilePath,
-            'File has been modified since read.',
-          )
           return {
             result: false,
             behavior: 'ask',
@@ -279,18 +281,9 @@ export const FileEditTool = buildTool({
 
     const file = fileContent
 
-    // Materialize the response baseline: after the staleness checks the disk
-    // content still corresponds to what the model was shown, so it can anchor
-    // remaps for later edits of this file in the same response.
-    const editState = toolUseContext.editState
-    if (editState && !editState.get(fullFilePath)?.remapUnavailableReason) {
-      editState.beginBaseline(fullFilePath, file, readTimestamp)
-    }
-    const resolution = resolutionContext(editState, fullFilePath)
-
     // Dry-run the hashline edits to validate anchors against current content.
     // On failure the error already includes fresh anchors for the model.
-    const dryRun = applyHashlineEdits(file, edits, resolution)
+    const dryRun = applyHashlineEdits(file, edits, fullFilePath)
     if (!dryRun.ok) {
       return {
         result: false,
@@ -341,6 +334,10 @@ export const FileEditTool = buildTool({
     const fs = getFsImplementation()
     const absoluteFilePath = expandPath(file_path)
 
+    if (!input._overrideContent && editState?.isEdited(absoluteFilePath)) {
+      throw new Error(FILE_EDITED_THIS_RESPONSE_ERROR)
+    }
+
     // Discover skills from this file's path (fire-and-forget, non-blocking)
     // Skip in simple mode - no skills available
     const cwd = getCwd()
@@ -389,20 +386,8 @@ export const FileEditTool = buildTool({
     } = readFileForEdit(absoluteFilePath)
 
     if (fileExists) {
-      // Permission prompts can take minutes: confirm the file still matches
-      // what this response's own edits left on disk before applying more.
-      const st = editState?.get(absoluteFilePath)
-      if (
-        !input._overrideContent &&
-        st?.expectedCurrentContent !== undefined &&
-        st.expectedCurrentContent !== originalFileContents
-      ) {
-        editState?.invalidate(
-          absoluteFilePath,
-          FILE_UNEXPECTEDLY_MODIFIED_ERROR,
-        )
-        throw new Error(FILE_UNEXPECTEDLY_MODIFIED_ERROR)
-      }
+      // Permission prompts can take minutes: the mtime and content checks
+      // below confirm the file still matches what this response last saw.
       const lastWriteTime = getFileModificationTime(absoluteFilePath)
       const lastRead = readFileState.get(absoluteFilePath)
       if (!lastRead || lastWriteTime > lastRead.timestamp) {
@@ -416,23 +401,16 @@ export const FileEditTool = buildTool({
         const contentUnchanged =
           isFullRead && originalFileContents === lastRead.content
         if (!contentUnchanged) {
-          editState?.invalidate(
-            absoluteFilePath,
-            FILE_UNEXPECTEDLY_MODIFIED_ERROR,
-          )
           throw new Error(FILE_UNEXPECTEDLY_MODIFIED_ERROR)
         }
       }
     }
 
     // 3. Compute the updated content. The IDE-amend flow supplies the final
-    // content directly; otherwise apply the hashline edits by anchor, resolved
-    // against the response baseline plus this response's own patches.
-    editState?.beginBaseline(absoluteFilePath, originalFileContents)
+    // content directly; otherwise apply the hashline edits by anchor, all
+    // resolved against the file as it stands now.
     let updatedFile: string
     let editCount: number
-    let appliedPatches: AppliedPatch[] = []
-    let lineDelta = 0
     if (input._overrideContent) {
       updatedFile = input._overrideContent.newContent
       editCount = edits.length
@@ -440,15 +418,13 @@ export const FileEditTool = buildTool({
       const r = applyHashlineEdits(
         originalFileContents,
         edits,
-        resolutionContext(editState, absoluteFilePath),
+        absoluteFilePath,
       )
       if (!r.ok) {
         throw new Error(r.error)
       }
       updatedFile = r.updatedContent
       editCount = r.editCount
-      appliedPatches = r.appliedPatches
-      lineDelta = r.lineDelta
     }
 
     // 4. Generate the display patch. Leading tabs are rendered as spaces to
@@ -495,16 +471,10 @@ export const FileEditTool = buildTool({
       offset: undefined,
       limit: undefined,
     })
-    if (input._overrideContent) {
-      editState?.replaceSnapshot(absoluteFilePath, {
-        content: updatedFile,
-        timestamp: getFileModificationTime(absoluteFilePath),
-        offset: undefined,
-        limit: undefined,
-      })
-    } else {
-      editState?.recordEdit(absoluteFilePath, updatedFile, appliedPatches)
-    }
+
+    // Close the file to further Edits in this response: the model now holds
+    // only anchors that predate this write.
+    editState?.markEdited(absoluteFilePath)
 
     // 7. Log events
     countLinesChanged(patch)
@@ -517,34 +487,15 @@ export const FileEditTool = buildTool({
 
     let gitDiff: ToolUseDiff | undefined
 
-    // 8. Yield result
-    // Anchors for what was just written. Without them a follow-up edit to this
-    // file has to Read it again: every anchor the model still holds predates
-    // this write, and the ones below the edit have shifted. Sliced from the
-    // raw content, never the tab-converted display copy, or the hashes would
-    // not match what the next edit validates against.
-    const changedRegionAnchors = formatAnchoredRegions(
-      updatedFile,
-      patch.map(hunk => ({
-        start: Math.max(1, hunk.newStart),
-        count: hunk.newLines,
-      })),
-    )
-    // Label length is chosen from the whole-file line count; when an edit
-    // moves the count across a boundary, every held anchor is the wrong hash.
-    const anchorsStale =
-      hashLengthForLineCount(originalFileContents.split('\n').length) !==
-      hashLengthForLineCount(updatedFile.split('\n').length)
-
+    // 8. Yield result. No anchors are echoed back: every anchor the model
+    // holds for this file is dead until its next Read, and quoting the
+    // changed region again costs output tokens on every edit.
     const data = {
       filePath: file_path,
       originalFile: originalFileContents,
       structuredPatch: patch,
       userModified: userModified ?? false,
       editCount,
-      ...(lineDelta !== 0 && { lineDelta }),
-      ...(anchorsStale && { anchorsStale: true }),
-      ...(changedRegionAnchors && { changedRegionAnchors }),
       ...(gitDiff && { gitDiff }),
     }
     return {
@@ -552,28 +503,9 @@ export const FileEditTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(data: FileEditOutput, toolUseID) {
-    const {
-      filePath,
-      userModified,
-      changedRegionAnchors,
-      lineDelta,
-      anchorsStale,
-      structuredPatch,
-    } = data
+    const { filePath, userModified, structuredPatch } = data
     const modifiedNote = userModified
       ? '.  The user modified your proposed changes before accepting them. '
-      : ''
-    // Where the model's held anchors went, so a follow-up edit below the
-    // hunk is not a guess: the shift is uniform below the last hunk.
-    const shiftNote =
-      lineDelta !== undefined && lineDelta !== 0
-        ? `\n\nNet line shift below the edited hunks: ${lineDelta > 0 ? `+${lineDelta}` : lineDelta}. Anchors from your earlier copy of the file sit at different lines below the edit.`
-        : ''
-    const staleNote = anchorsStale
-      ? '\n\nThe file changed enough to change its anchor hash length: every anchor from your earlier copy is stale. Read the file again before editing it.'
-      : ''
-    const anchorNote = changedRegionAnchors
-      ? `\n\nAnchors for the changed lines. Use them to edit this file again without reading it first:\n${changedRegionAnchors}`
       : ''
     // The size of the change, so an anchor range that swallowed one line too
     // many is visible in the success message, not only when a lost line later
@@ -590,31 +522,16 @@ export const FileEditTool = buildTool({
       removed + added > 0
         ? `\n\nThe edit removed ${removed} line(s) and added ${added}.`
         : ''
+    const rereadNote =
+      '\n\nRead this file again before editing it: every anchor you hold for it predates this edit.'
 
     return {
       tool_use_id: toolUseID,
       type: 'tool_result',
-      content: `The file ${filePath} has been updated successfully${modifiedNote}.${deltaNote}${shiftNote}${staleNote}${anchorNote}`,
+      content: `The file ${filePath} has been updated successfully${modifiedNote}.${deltaNote}${rereadNote}`,
     }
   },
 } satisfies ToolDef<typeof inputSchema, FileEditOutput>)
-
-// --
-// What Edit resolution may consult for this file in this response: the
-// response baseline and the patches this response already applied, when the
-// file has one.
-function resolutionContext(
-  editState: ToolUseContext['editState'],
-  filePath: string,
-): ResolutionContext {
-  const st = editState?.get(filePath)
-  return {
-    filePath,
-    baselineContent: st?.baselineContent,
-    patches: st?.patches,
-    remapUnavailableReason: st?.remapUnavailableReason,
-  }
-}
 
 function readFileForEdit(absoluteFilePath: string): {
   content: string

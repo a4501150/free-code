@@ -339,14 +339,9 @@ export const FileWriteTool = buildTool({
       limit: undefined,
     })
 
-    // The model just authored this content: response anchor state restarts
-    // from it and earlier held anchors are gone.
-    editState?.replaceSnapshot(fullFilePath, {
-      content,
-      timestamp: getFileModificationTime(fullFilePath),
-      offset: undefined,
-      limit: undefined,
-    })
+    // The model just authored this content: anchors restart from it, and an
+    // earlier same-response Edit no longer blocks this file.
+    editState?.clearEdited(fullFilePath)
     // The result must carry the anchors this write just created: without
     // them a follow-up edit cites fabricated line hashes. No budget: the
     // whole written file is the changed region.

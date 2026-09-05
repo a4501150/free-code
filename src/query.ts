@@ -390,16 +390,15 @@ async function* queryLoop(
     }
 
     //TODO: no need to set toolUseContext.messages during set-up since it is updated here
-    // Fresh per-response Edit state: the model writes every tool call in one
-    // message before seeing any result, so same-message Edit calls share this
-    // snapshot + patch bookkeeping. Intentionally NOT carried to the next
-    // response — anchors a structural edit moved must fail there.
+    // Fresh per-response Edit state: a file edited in this response is
+    // closed to further Edits until a Read re-baselines it, because the
+    // model wrote every call before seeing any result. Intentionally NOT
+    // carried to the next response — anchors there resolve against the
+    // post-edit file by direct hash matching.
     toolUseContext = {
       ...toolUseContext,
       messages: messagesForQuery,
-      editState: ResponseEditState.fromReadFileState(
-        toolUseContext.readFileState,
-      ),
+      editState: new ResponseEditState(),
     }
 
     const assistantMessages: AssistantMessage[] = []

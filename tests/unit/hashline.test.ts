@@ -167,8 +167,6 @@ describe('applyHashlineEdits — ops', () => {
     if (r.ok) {
       expect(r.updatedContent).toBe(lines('one', 'TWO', 'three', 'four'))
       expect(r.editCount).toBe(1)
-      expect(r.appliedPatches).toEqual([{ oldStart: 2, oldLen: 1, newLen: 1 }])
-      expect(r.lineDelta).toBe(0)
     }
   })
 
@@ -184,8 +182,6 @@ describe('applyHashlineEdits — ops', () => {
     expect(r.ok).toBe(true)
     if (r.ok) {
       expect(r.updatedContent).toBe(lines('one', 'X', 'Y', 'Z', 'four'))
-      expect(r.appliedPatches).toEqual([{ oldStart: 2, oldLen: 2, newLen: 3 }])
-      expect(r.lineDelta).toBe(1)
     }
   })
 
@@ -198,8 +194,6 @@ describe('applyHashlineEdits — ops', () => {
       expect(r.updatedContent).toBe(
         lines('one', 'two', 'inserted', 'three', 'four'),
       )
-      expect(r.appliedPatches).toEqual([{ oldStart: 3, oldLen: 0, newLen: 1 }])
-      expect(r.lineDelta).toBe(1)
     }
   })
 
@@ -212,7 +206,6 @@ describe('applyHashlineEdits — ops', () => {
       expect(r.updatedContent).toBe(
         lines('header', 'one', 'two', 'three', 'four'),
       )
-      expect(r.appliedPatches).toEqual([{ oldStart: 1, oldLen: 0, newLen: 1 }])
     }
   })
 
@@ -223,8 +216,6 @@ describe('applyHashlineEdits — ops', () => {
     expect(r.ok).toBe(true)
     if (r.ok) {
       expect(r.updatedContent).toBe(lines('one', 'four'))
-      expect(r.appliedPatches).toEqual([{ oldStart: 2, oldLen: 2, newLen: 0 }])
-      expect(r.lineDelta).toBe(-2)
     }
   })
 
@@ -246,23 +237,17 @@ describe('applyHashlineEdits — ops', () => {
     expect(r.ok).toBe(true)
     if (r.ok) {
       expect(r.updatedContent).toBe(lines('ONE', 'two', 'mid', 'three'))
-      // Chronological order is splice-coordinate order, ascending.
-      expect(r.appliedPatches).toEqual([
-        { oldStart: 1, oldLen: 1, newLen: 1 },
-        { oldStart: 3, oldLen: 0, newLen: 1 },
-        { oldStart: 4, oldLen: 1, newLen: 0 },
-      ])
     }
   })
 
-  test('contiguous replacements coalesce into one patch', () => {
+  test('contiguous replacements both apply in one call', () => {
     const r = applyHashlineEdits(file, [
       { op: 'replace', start: anchor(file, 1), lines: 'ONE' },
       { op: 'replace', start: anchor(file, 2), lines: 'TWO' },
     ])
     expect(r.ok).toBe(true)
     if (r.ok)
-      expect(r.appliedPatches).toEqual([{ oldStart: 1, oldLen: 2, newLen: 2 }])
+      expect(r.updatedContent).toBe(lines('ONE', 'TWO', 'three', 'four'))
   })
 
   test('editing a line does not stale its neighbor (no window hashing)', () => {
@@ -352,197 +337,34 @@ describe('applyHashlineEdits — guards', () => {
   })
 })
 
-describe('applyHashlineEdits — same-response remap', () => {
+describe('applyHashlineEdits — one snapshot per call', () => {
   const before = lines('one', 'two', 'three', 'four')
 
-  test('an anchor below an insertion maps through the patch', () => {
-    // Edit #1 of this response inserted a line at the top; Edit #2 still
-    // holds anchors from the message-start snapshot.
+  test('an anchor shifted by an earlier edit fails plainly', () => {
+    // An earlier call inserted a line at the top; a held old anchor still
+    // names line 3, which now holds different content. No remap story:
+    // the error quotes the fresh anchors instead.
     const now = lines('ZERO', 'one', 'two', 'three', 'four')
-    const r = applyHashlineEdits(
-      now,
-      [{ op: 'replace', start: anchor(before, 3), lines: 'THREE' }],
-      {
-        baselineContent: before,
-        patches: [{ oldStart: 1, oldLen: 0, newLen: 1 }],
-      },
-    )
-    expect(r.ok).toBe(true)
-    if (r.ok)
-      expect(r.updatedContent).toBe(
-        lines('ZERO', 'one', 'two', 'THREE', 'four'),
-      )
-  })
-
-  test('an anchor below a deletion maps up', () => {
-    const now = lines('two', 'three', 'four')
-    const r = applyHashlineEdits(
-      now,
-      [{ op: 'replace', start: anchor(before, 4), lines: 'FOUR' }],
-      {
-        baselineContent: before,
-        patches: [{ oldStart: 1, oldLen: 1, newLen: 0 }],
-      },
-    )
-    expect(r.ok).toBe(true)
-    if (r.ok) expect(r.updatedContent).toBe(lines('two', 'three', 'FOUR'))
-  })
-
-  test('an anchor whose line was rewritten by an earlier patch is rejected', () => {
-    const now = lines('one', 'TWO_A', 'TWO_B', 'three', 'four')
-    const r = applyHashlineEdits(
-      now,
-      [{ op: 'replace', start: anchor(before, 2), lines: 'TWO' }],
-      {
-        baselineContent: before,
-        patches: [{ oldStart: 2, oldLen: 1, newLen: 2 }],
-      },
-    )
-    expect(r.ok).toBe(false)
-    if (!r.ok)
-      expect(r.error).toContain('rewritten by an earlier edit in this message')
-  })
-
-  test('a range maps when an insertion fell outside it', () => {
-    const now = lines('ZERO', 'one', 'two', 'three', 'four')
-    const r = applyHashlineEdits(
-      now,
-      [
-        {
-          op: 'delete',
-          start: anchor(before, 2),
-          end: anchor(before, 3),
-        },
-      ],
-      {
-        baselineContent: before,
-        patches: [{ oldStart: 1, oldLen: 0, newLen: 1 }],
-      },
-    )
-    expect(r.ok).toBe(true)
-    if (r.ok) expect(r.updatedContent).toBe(lines('ZERO', 'one', 'four'))
-  })
-
-  test('a range with a patch inside it is rejected', () => {
-    const base = lines('a1', 'a2', 'a3', 'a4', 'a5')
-    const now = lines('a1', 'a2', 'INS', 'a3', 'a4', 'a5')
-    const r = applyHashlineEdits(
-      now,
-      [
-        {
-          op: 'replace',
-          start: anchor(base, 1),
-          end: anchor(base, 5),
-          lines: 'X',
-        },
-      ],
-      {
-        baselineContent: base,
-        patches: [{ oldStart: 3, oldLen: 0, newLen: 1 }],
-      },
-    )
-    expect(r.ok).toBe(false)
-    if (!r.ok)
-      expect(r.error).toContain('changed by an earlier edit in this message')
-  })
-
-  test('a fully consumed range is rejected as consumed', () => {
-    const now = lines('REWRITTEN')
-    const r = applyHashlineEdits(
-      now,
-      [
-        {
-          op: 'delete',
-          start: anchor(before, 1),
-          end: anchor(before, 4),
-        },
-      ],
-      {
-        baselineContent: before,
-        patches: [{ oldStart: 1, oldLen: 4, newLen: 1 }],
-      },
-    )
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('rewritten by an earlier edit')
-  })
-
-  test('an anchor that does not match the baseline is rejected', () => {
-    const r = applyHashlineEdits(
-      before,
-      [{ op: 'replace', start: '2:zzz', lines: 'TWO' }],
-      { baselineContent: before, patches: [] },
-    )
-    expect(r.ok).toBe(false)
-    if (!r.ok)
-      expect(r.error).toContain(
-        'does not match the snapshot used for this response',
-      )
-  })
-
-  test('a mapped line whose content changed externally is rejected', () => {
-    // The patch says line 4 moved to 5, but line 5 no longer holds it.
-    const now = lines('ZERO', 'one', 'two', 'three', 'DIFFERENT')
-    const r = applyHashlineEdits(
-      now,
-      [{ op: 'replace', start: anchor(before, 4), lines: 'FOUR' }],
-      {
-        baselineContent: before,
-        patches: [{ oldStart: 1, oldLen: 0, newLen: 1 }],
-      },
-    )
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('content differs now')
-  })
-
-  test('exact anchors still resolve when remapping is unavailable', () => {
-    const r = applyHashlineEdits(
-      lines('one', 'TWO', 'three', 'four'),
-      [{ op: 'replace', start: anchor(before, 3), lines: 'THREE' }],
-      {
-        baselineContent: before,
-        remapUnavailableReason: 'too many edits',
-      },
-    )
-    expect(r.ok).toBe(true)
-  })
-
-  test('a shifted anchor fails with the invalidation reason when remap is unavailable', () => {
-    const now = lines('ZERO', 'one', 'two', 'three', 'four')
-    const r = applyHashlineEdits(
-      now,
-      [{ op: 'replace', start: anchor(before, 3), lines: 'THREE' }],
-      {
-        baselineContent: before,
-        patches: [{ oldStart: 1, oldLen: 0, newLen: 1 }],
-        remapUnavailableReason: 'Too many earlier edits in this response',
-      },
-    )
+    const r = applyHashlineEdits(now, [
+      { op: 'replace', start: anchor(before, 3), lines: 'THREE' },
+    ])
     expect(r.ok).toBe(false)
     if (!r.ok) {
-      expect(r.error).toContain('Too many earlier edits in this response')
-      expect(r.error).toContain('no snapshot is available to remap it')
+      expect(r.error).toContain('line 3 content differs now')
+      expect(r.error).toContain(`${anchor(now, 4)}|three`)
     }
   })
 
-  test('without a baseline, a shifted anchor reports no-baseline', () => {
-    // Cross-message anchor below a structural edit: no remap story exists.
+  test('anchors against the current content resolve without any context', () => {
     const now = lines('ZERO', 'one', 'two', 'three', 'four')
-    const r = applyHashlineEdits(
-      now,
-      [{ op: 'replace', start: anchor(before, 3), lines: 'THREE' }],
-      { filePath: '/tmp/x.ts' },
-    )
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('no snapshot is available to remap it')
-  })
-
-  test('baseline equal to current content needs no remap machinery', () => {
-    const r = applyHashlineEdits(
-      before,
-      [{ op: 'replace', start: anchor(before, 2), lines: 'TWO' }],
-      { baselineContent: before, patches: [] },
-    )
+    const r = applyHashlineEdits(now, [
+      { op: 'replace', start: anchor(now, 5), lines: 'FOUR' },
+    ])
     expect(r.ok).toBe(true)
+    if (r.ok)
+      expect(r.updatedContent).toBe(
+        lines('ZERO', 'one', 'two', 'three', 'FOUR'),
+      )
   })
 })
 

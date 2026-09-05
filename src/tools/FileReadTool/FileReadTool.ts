@@ -859,12 +859,7 @@ async function callInner(
       offset,
       limit,
     })
-    context.editState?.replaceSnapshot(fullFilePath, {
-      content: cellsJson,
-      timestamp: Math.floor(stats.mtimeMs),
-      offset,
-      limit,
-    })
+    context.editState?.clearEdited(fullFilePath)
     context.nestedMemoryAttachmentTriggers?.add(fullFilePath)
 
     const data = {
@@ -1065,12 +1060,7 @@ async function callInner(
   if (hashline) {
     hashlineLabelSets.set(data, hashline)
   }
-  context.editState?.replaceSnapshot(fullFilePath, {
-    content,
-    timestamp: Math.floor(mtimeMs),
-    offset,
-    limit,
-  })
+  context.editState?.clearEdited(fullFilePath)
   if (isAutoMemFile(fullFilePath)) {
     memoryFileMtimes.set(data, mtimeMs)
   }
