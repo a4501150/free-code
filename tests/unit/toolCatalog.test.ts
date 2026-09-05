@@ -111,13 +111,18 @@ describe('tool catalog writer', () => {
 })
 
 describe('mcp_tools_delta reminder', () => {
-  test('first announce is silent without forceInitial', async () => {
+  test('first announce persists a silent baseline snapshot', async () => {
     const dir = await freshDir()
     const ctx = makeContext([fakeMcpTool('mcp__srv__a', 'srv')])
     const atts = await getMcpToolsDeltaAttachment(ctx, [], {
       catalogDir: dir,
     })
-    expect(atts).toEqual([])
+    expect(atts.length).toBe(1)
+    const att = atts[0] as Extract<Attachment, { type: 'mcp_tools_delta' }>
+    expect(att.addedNames).toEqual([])
+    expect(att.changedNames).toEqual([])
+    expect(att.removedNames).toEqual([])
+    expect(att.servers.length).toBe(1)
   })
 
   test('forceInitial with no history announces every server', async () => {

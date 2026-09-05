@@ -4012,6 +4012,11 @@ You have exited auto mode. The user may now want to interact more directly. You 
           `These tools are now directly available again and left the catalog: ${attachment.builtinsRemoved.join(', ')}.`,
         )
       }
+      if (parts.length === 0) {
+        // Baseline announce: the snapshot persists for future diffs, but
+        // there is nothing to tell the model yet.
+        return []
+      }
       return wrapMessagesInSystemReminder([
         createUserMessage({ content: parts.join('\n\n'), isMeta: true }),
       ])

@@ -63,7 +63,7 @@ describe('MCP tools delta attachment', () => {
     catalogDir = await mkdtemp(join(tmpdir(), 'mcp-delta-test-'))
   })
 
-  test('suppresses initial MCP tool announcement (names already in tool definitions)', async () => {
+  test('initial announcement carries an empty diff (renders silent)', async () => {
     const result = await announce([
       mcpTool('mcp__server__read', 'Read from server', {
         type: 'object',
@@ -71,7 +71,11 @@ describe('MCP tools delta attachment', () => {
       }),
     ])
 
-    expect(result).toEqual([])
+    expect(result.length).toBe(1)
+    const att = result[0] as Record<string, unknown>
+    expect(att.addedNames).toEqual([])
+    expect(att.changedNames).toEqual([])
+    expect(att.removedNames).toEqual([])
   })
 
   test('does not announce identical MCP tool refreshes', async () => {

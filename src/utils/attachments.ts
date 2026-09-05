@@ -1450,7 +1450,23 @@ export async function getMcpToolsDeltaAttachment(
       builtins: msg.attachment.builtins,
     }
   }
-  if (last === null && !opts?.forceInitial) return []
+  // First announce: persist the baseline snapshot with an empty diff so the
+  // model sees no noise, but later server changes find a baseline to diff
+  // against. Returning nothing here would keep every future change silent.
+  if (last === null && !opts?.forceInitial)
+    return [
+      {
+        type: 'mcp_tools_delta',
+        generation: manifest.generation,
+        servers,
+        builtins: manifest.builtins,
+        addedNames: [],
+        changedNames: [],
+        removedNames: [],
+        builtinsAdded: [],
+        builtinsRemoved: [],
+      },
+    ]
 
   const prevServers = new Map((last?.servers ?? []).map(s => [s.name, s]))
   const prevBuiltins = new Set(last?.builtins ?? [])
