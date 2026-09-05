@@ -7,6 +7,10 @@ import { Box, Text } from '../../ink.js'
 import { useToggleAgentToolUseExpansion } from '../../state/agentExpansion.js'
 import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js'
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
+import {
+  INVOKE_TOOL_NAME,
+  isToolExposedToModel,
+} from '../../services/toolCatalog/exposure.js'
 import { renderAgentToolUseTag } from '../../tools/AgentTool/UI.js'
 import {
   findToolByName,
@@ -91,12 +95,42 @@ export function AssistantToolUseMessage({
     if (!tool) return null
     const input = tool.inputSchema.safeParse(param.input)
     const data = input.success ? input.data : undefined
+    let userFacingToolName = tool.userFacingName(data)
+    let userFacingToolNameBackgroundColor =
+      tool.userFacingNameBackgroundColor?.(data)
+    let displayInput: Record<string, unknown> | undefined
+    let displayCompactParamKeys: readonly string[] | undefined
+    // InvokeTool carries another tool's call: show the inner tool's card.
+    // A wrong inner name or unparseable args keeps the raw InvokeTool view.
+    if (tool.name === INVOKE_TOOL_NAME && input.success) {
+      const outer = input.data as { tool?: unknown; args?: unknown }
+      const inner =
+        typeof outer.tool === 'string'
+          ? findToolByName(tools, outer.tool)
+          : undefined
+      if (inner && !isToolExposedToModel(inner)) {
+        const innerInput = inner.inputSchema.safeParse(outer.args ?? {})
+        if (innerInput.success) {
+          userFacingToolName = `(Invoke) ${inner.userFacingName(
+            innerInput.data,
+          )}`
+          userFacingToolNameBackgroundColor =
+            inner.userFacingNameBackgroundColor?.(innerInput.data)
+          displayInput =
+            outer.args && typeof outer.args === 'object'
+              ? (outer.args as Record<string, unknown>)
+              : {}
+          displayCompactParamKeys = inner.compactParamKeys
+        }
+      }
+    }
     return {
       tool,
       input,
-      userFacingToolName: tool.userFacingName(data),
-      userFacingToolNameBackgroundColor:
-        tool.userFacingNameBackgroundColor?.(data),
+      userFacingToolName,
+      userFacingToolNameBackgroundColor,
+      displayInput,
+      displayCompactParamKeys,
       isTransparentWrapper: tool.isTransparentWrapper?.() ?? false,
     }
   }, [tools, param])
@@ -119,6 +153,8 @@ export function AssistantToolUseMessage({
     userFacingToolName,
     userFacingToolNameBackgroundColor,
     isTransparentWrapper,
+    displayInput,
+    displayCompactParamKeys,
   } = parsed
 
   const isResolved = lookups.resolvedToolUseIDs.has(param.id)
@@ -154,9 +190,9 @@ export function AssistantToolUseMessage({
       : null
   if (!rawInput) return null
   const renderedToolUseMessage = renderToolCallParams(
-    rawInput,
+    displayInput ?? rawInput,
     toolCallDisplay ?? 'compact',
-    tool.compactParamKeys,
+    displayCompactParamKeys ?? tool.compactParamKeys,
   )
   const isStreamingInput = isQueued && renderedToolUseMessage === ''
 
