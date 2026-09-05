@@ -550,6 +550,9 @@ async function* parseOpenAIStream(
                     input: {},
                   },
                 }
+                // Parallel calls need distinct block indices; reusing one
+                // makes the second tool_use clobber the first.
+                contentBlockIndex++
               }
 
               if (tc.function?.arguments) {
