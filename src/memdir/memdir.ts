@@ -282,7 +282,7 @@ export function buildMemoryLines(
 
 /**
  * Build the typed-memory prompt with MEMORY.md content included.
- * Used by agent memory (which has no getClaudeMds() equivalent).
+ * Used by agent memory (which has no getClaudeMdEntries() equivalent).
  */
 export function buildMemoryPrompt(params: {
   displayName: string

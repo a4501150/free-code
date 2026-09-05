@@ -1127,42 +1127,47 @@ export function filterInjectedMemoryFiles(
   return files.filter(f => f.type !== 'AutoMem' && f.type !== 'TeamMem')
 }
 
-export const getClaudeMds = (
+export type ClaudeMdEntry = { key: string; value: string }
+
+/**
+ * Renders each memory file as its own section. The key is the real file
+ * path, so the session context header shows the file name verbatim and a
+ * changed file re-announces only its own section in the context delta.
+ * The instruction preamble rides on the first entry.
+ */
+export const getClaudeMdEntries = (
   memoryFiles: MemoryFileInfo[],
   filter?: (type: MemoryType) => boolean,
-): string => {
-  const memories: string[] = []
+): ClaudeMdEntry[] => {
+  const entries: ClaudeMdEntry[] = []
 
   for (const file of memoryFiles) {
     if (filter && !filter(file.type)) continue
     if (file.content) {
       const description =
         file.type === 'Project'
-          ? ' (project instructions, checked into the codebase)'
+          ? 'project instructions, checked into the codebase'
           : file.type === 'Local'
-            ? " (user's private project instructions, not checked in)"
+            ? "user's private project instructions, not checked in"
             : feature('TEAMMEM') && file.type === 'TeamMem'
-              ? ' (shared team memory, synced across the organization)'
+              ? 'shared team memory, synced across the organization'
               : file.type === 'AutoMem'
-                ? " (user's auto-memory, persists across conversations)"
-                : " (user's private global instructions for all projects)"
+                ? "user's auto-memory, persists across conversations"
+                : "user's private global instructions for all projects"
 
       const content = file.content.trim()
+      let value = `${description}:\n\n${content}`
       if (feature('TEAMMEM') && file.type === 'TeamMem') {
-        memories.push(
-          `Contents of ${file.path}${description}:\n\n<team-memory-content source="shared">\n${content}\n</team-memory-content>`,
-        )
-      } else {
-        memories.push(`Contents of ${file.path}${description}:\n\n${content}`)
+        value = `${description}:\n\n<team-memory-content source="shared">\n${content}\n</team-memory-content>`
       }
+      if (entries.length === 0) {
+        value = `${MEMORY_INSTRUCTION_PROMPT}\n\n${value}`
+      }
+      entries.push({ key: file.path, value })
     }
   }
 
-  if (memories.length === 0) {
-    return ''
-  }
-
-  return `${MEMORY_INSTRUCTION_PROMPT}\n\n${memories.join('\n\n')}`
+  return entries
 }
 
 /**

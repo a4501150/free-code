@@ -62,7 +62,7 @@ describe('terminal focus is not part of the user context', () => {
     const { formatUserContextMessageContent } =
       await import('../../src/utils/contextInjection.js')
     const content = formatUserContextMessageContent({
-      claudeMd: 'memory',
+      'CLAUDE.md': 'memory',
       currentDate: 'Today is a day.',
     })
     expect(content).not.toMatch(/terminalFocus/i)

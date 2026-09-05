@@ -235,7 +235,7 @@ describe('injected-context row spacing', () => {
 
 describe('request-only user context', () => {
   const context = {
-    claudeMd: 'line one\nline two',
+    'CLAUDE.md': 'line one\nline two',
     currentDate: "Today's date is 2026-08-05.",
   }
 

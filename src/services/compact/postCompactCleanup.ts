@@ -36,7 +36,7 @@ export function runPostCompactCleanup(querySource?: QuerySource): void {
     querySource === 'sdk'
 
   if (isMainThreadCompact) {
-    // getUserContext is a memoized outer layer wrapping getClaudeMds() →
+    // getUserContext is a memoized outer layer wrapping getClaudeMdEntries() →
     // getMemoryFiles(). If only the inner getMemoryFiles cache is cleared,
     // the next turn hits the getUserContext cache and never reaches
     // getMemoryFiles(), so the armed InstructionsLoaded hook never fires.

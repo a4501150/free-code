@@ -14,13 +14,14 @@ export function formatUserContextMessageContent(context: {
     return null
   }
 
-  return `<system-reminder>\nAs you answer the user's questions, you can use the following context:\n${Object.entries(
+  return `<system-reminder>\n\nAs you answer the user's questions, you can use the following context:\n\n${Object.entries(
     context,
   )
     .map(([key, value]) => `# ${key}\n${value}`)
     .join('\n')}
 
-      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n`
+IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n`
+
 }
 
 export function prependUserContext(

@@ -10,7 +10,7 @@ import {
 } from './constants/prompts.js'
 import {
   filterInjectedMemoryFiles,
-  getClaudeMds,
+  getClaudeMdEntries,
   getMemoryFiles,
 } from './utils/claudemd.js'
 import { logForDiagnosticsNoPII } from './utils/diagLogs.js'
@@ -167,13 +167,17 @@ export const getUserContext = memoize(
       (isBareMode() && getAdditionalDirectoriesForClaudeMd().length === 0)
     // Await the async I/O (readFile/readdir directory walk) so the event
     // loop yields naturally at the first fs.readFile.
-    const claudeMd = shouldDisableClaudeMd
-      ? null
-      : getClaudeMds(filterInjectedMemoryFiles(await getMemoryFiles()))
+    const memoryEntries = shouldDisableClaudeMd
+      ? []
+      : getClaudeMdEntries(filterInjectedMemoryFiles(await getMemoryFiles()))
+    const claudeMd =
+      memoryEntries.length > 0
+        ? memoryEntries.map(e => e.value).join('\n\n')
+        : null
     // Cache for the auto-mode classifier (yoloClassifier.ts reads this
     // instead of importing claudemd.ts directly, which would create a
     // cycle through permissions/filesystem → permissions → yoloClassifier).
-    setCachedClaudeMdContent(claudeMd || null)
+    setCachedClaudeMdContent(claudeMd)
 
     logForDiagnosticsNoPII('info', 'user_context_completed', {
       duration_ms: Date.now() - startTime,
@@ -182,7 +186,9 @@ export const getUserContext = memoize(
     })
 
     return {
-      ...(claudeMd && { claudeMd }),
+      // Each key is a real memory file path and renders verbatim as the
+      // `# <path>` section header in the session context.
+      ...Object.fromEntries(memoryEntries.map(e => [e.key, e.value])),
       currentDate: `Today's date is ${getLocalISODate()}.`,
     }
   },
