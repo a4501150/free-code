@@ -93,7 +93,7 @@ export const InvokeTool = buildTool({
   },
   async prompt() {
     return [
-      `Call a tool that is not in your tool list. Look up the exact tool name and argument schema in the tool catalog first (${toolCatalogDir()}/manifest.json, then the referenced server files).`,
+      `Call a tool that is not in your tool list. Look up the exact tool name and argument schema in the tool catalog manifest from your environment context first (then the referenced server files).`,
       "The inner tool's own permission rules apply unchanged: an earlier rule that allowed or denied the inner tool still applies.",
     ].join('\n')
   },

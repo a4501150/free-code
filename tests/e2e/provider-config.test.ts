@@ -351,12 +351,15 @@ describe('Provider Config E2E', () => {
       expect(firstMessage).toContain('Primary working directory')
     })
 
-    test('two sessions in different projects send an identical system prefix', async () => {
+    test('two sessions in different projects send an identical cached prefix (tools + system)', async () => {
       // The payoff for keeping the system prompt static: a fresh session in a
       // different directory can *read* the cached system prefix instead of
       // writing it. Previously guaranteed to be a write, because cwd and the
       // per-session scratchpad path were both in the system prompt.
-      async function cachedSystemBlock(): Promise<string> {
+      async function cachedPrefixBlocks(): Promise<{
+        system: string
+        tools: string
+      }> {
         anthropicServer.reset([textResponse('Done.')])
         // No cwd option, so each session gets its own mkdtemp directory.
         const s = new TmuxSession({ serverUrl: anthropicServer.url })
@@ -366,23 +369,30 @@ describe('Provider Config E2E', () => {
           await s.waitForText('Done.', 15_000)
           const body = anthropicServer.getRequestLog()[0]!.body as {
             system: Array<{ text: string; cache_control?: unknown }>
+            tools?: unknown[]
           }
           const cached = body.system.filter(b => b.cache_control !== undefined)
           expect(cached).toHaveLength(1)
-          return cached[0]!.text
+          return {
+            system: cached[0]!.text,
+            tools: JSON.stringify(body.tools ?? []),
+          }
         } finally {
           await s.stop()
         }
       }
 
-      const first = await cachedSystemBlock()
-      const second = await cachedSystemBlock()
+      const first = await cachedPrefixBlocks()
+      const second = await cachedPrefixBlocks()
 
       // Byte-for-byte, with no normalization: any per-session or per-project
       // value that creeps back into a prompt section will fail here.
-      expect(second).toBe(first)
+      expect(second.system).toBe(first.system)
+      // The tools block precedes system in the same cached prefix, so a
+      // session-scoped value in any tool description fails reuse too.
+      expect(second.tools).toBe(first.tools)
       // Guard against the assertion passing on an empty or trivial block.
-      expect(first.length).toBeGreaterThan(2000)
+      expect(first.system.length).toBeGreaterThan(2000)
     })
   })
 

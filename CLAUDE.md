@@ -37,7 +37,7 @@ Build, configuration, testing and layout live in [docs/](docs/).
 - The prefix order is `tools`, then `system`, then `messages`. Keep the static system prompt byte-identical across sessions; session facts belong in the persisted `user_context_snapshot` and subsequent deltas.
 - Tool-derived variation is free because a tool change already invalidates everything after the tools block. Do not reintroduce global cache scope; this fork lacks the scale and byte-identical preambles needed to benefit.
 - Output-style bodies in the cached prefix must remain byte-stable; do not substitute `${CLAUDE_PLUGIN_ROOT}` or render a source path beside the style name.
-- The tool-catalog manifest path is config-home-specific: keep it in the InvokeTool description (tools block), never in a system prompt section, or cross-session prefix reuse silently dies.
+- The tool-catalog manifest path is config-home-specific: route it through the env-context attachment, never the tools or system blocks. Tool descriptions are inside the cached prefix too, so a session-varying path there kills prefix reuse just like one in a system section.
 
 ## Context attachments
 

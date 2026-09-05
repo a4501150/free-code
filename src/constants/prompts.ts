@@ -33,6 +33,7 @@ import {
   INVOKE_TOOL_NAME,
   mcpToolCatalogDisabled,
 } from '../services/toolCatalog/exposure.js'
+import { toolCatalogDir } from '../services/toolCatalog/writer.js'
 import { feature } from 'bun:bundle'
 import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
 import * as briefToolModuleNs from '../tools/BriefTool/BriefTool.js'
@@ -202,7 +203,7 @@ function getUsingYourToolsSection(enabledTools: Set<string>): string {
       : null,
     `You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between them, make all independent tool calls in parallel. Maximize use of parallel tool calls where possible to increase efficiency. However, if some tool calls depend on previous calls to inform dependent values, do NOT call these tools in parallel and instead call them sequentially.`,
     enabledTools.has(INVOKE_TOOL_NAME) && !mcpToolCatalogDisabled()
-      ? `Some tools are not in your tool list: every MCP tool and any built-in listed in the lazyTools setting. Look up their exact names and argument schemas in the tool catalog manifest named in the ${INVOKE_TOOL_NAME} tool description (then the referenced server files), then call them with ${INVOKE_TOOL_NAME}.`
+      ? `Some tools are not in your tool list: every MCP tool and any built-in listed in the lazyTools setting. Look up their exact names and argument schemas in the tool catalog manifest listed in your environment context (then the referenced server files), then call them with ${INVOKE_TOOL_NAME}.`
       : null,
   ].filter(item => item !== null)
 
@@ -464,13 +465,18 @@ export async function computeEnvInfo(
       ? `Additional working directories: ${additionalWorkingDirectories.join(', ')}\n`
       : ''
 
+  // Rides with the env facts so the config-home path never enters the tools or
+  // system blocks; see the catalog notes in CLAUDE.md.
+  const catalogLine = mcpToolCatalogDisabled()
+    ? ''
+    : `\nTool catalog manifest: ${toolCatalogDir()}/manifest.json`
   return `Here is useful information about the environment you are running in:
 <env>
 Working directory: ${getCwd()}
 Is directory a git repo: ${isGit ? 'Yes' : 'No'}
 ${additionalDirsInfo}Platform: ${env.platform}
 ${getShellInfoLine()}
-OS Version: ${unameSR}
+OS Version: ${unameSR}${catalogLine}
 </env>
 ${modelDescription}`
 }
@@ -507,6 +513,9 @@ export async function computeSimpleEnvInfo(
     modelDescription,
     `Settings file: ${getFreecodeSettingsFilePath()}`,
     `Model settings file: ${getModelSettingsFilePath()}`,
+    !mcpToolCatalogDisabled()
+      ? `Tool catalog manifest: ${toolCatalogDir()}/manifest.json`
+      : null,
     // The memory prompt names these instead of interpolating them, so the
     // system prefix stays byte-identical across projects.
     ...getMemoryEnvItems(),
