@@ -18,10 +18,10 @@ import {
   DEFAULT_MAX_AGE_DAYS,
   isDurableCronEnabled,
   isKairosCronEnabled,
+  MAX_JOBS,
 } from './prompt.js'
 import { renderCreateResultMessage, renderCreateToolUseMessage } from './UI.js'
 
-const MAX_JOBS = 50
 
 const inputSchema = z.strictObject({
   cron: z
@@ -31,10 +31,10 @@ const inputSchema = z.strictObject({
     ),
   prompt: z.string().describe('The prompt to enqueue at each fire time.'),
   recurring: semanticBoolean(z.boolean().optional()).describe(
-    `true (default) = fire on every cron match until deleted or auto-expired after ${DEFAULT_MAX_AGE_DAYS} days. false = fire once at the next match, then auto-delete. Use false for "remind me at X" one-shot requests with pinned minute/hour/dom/month.`,
+    `true (default) = fire on every cron match until deleted or auto-expired after ${DEFAULT_MAX_AGE_DAYS} days. false = fire once at the next match, then auto-delete.`,
   ),
   durable: semanticBoolean(z.boolean().optional()).describe(
-    'true = persist to .freecode/scheduled_tasks.json and survive restarts. false (default) = in-memory only, dies when this Claude session ends. Use true only when the user asks the task to survive across sessions.',
+    'true = persist to .freecode/scheduled_tasks.json and survive restarts. false (default) = in-memory only, dies when this Claude session ends.',
   ),
 })
 type InputSchema = typeof inputSchema

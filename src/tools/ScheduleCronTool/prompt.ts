@@ -22,6 +22,7 @@ export function isDurableCronEnabled(): boolean {
 }
 
 export const CRON_CREATE_TOOL_NAME = 'CronCreate'
+export const MAX_JOBS = 50
 export const CRON_DELETE_TOOL_NAME = 'CronDelete'
 export const CRON_LIST_TOOL_NAME = 'CronList'
 
@@ -73,7 +74,7 @@ ${durabilitySection}
 
 ## Runtime behavior
 
-Jobs only fire while the REPL is idle (not mid-query). ${durableRuntimeNote}The scheduler adds a small deterministic jitter on top of whatever you pick: recurring tasks fire up to 10% of their period late (max 15 min); one-shot tasks landing on :00 or :30 fire up to 90 s early. Picking an off-minute is still the bigger lever.
+Jobs only fire while the REPL is idle (not mid-query). ${durableRuntimeNote}You can have at most ${MAX_JOBS} jobs scheduled at once; the tool errors until you delete one. The scheduler adds a small deterministic jitter on top of whatever you pick: recurring tasks fire up to 10% of their period late (max 15 min); one-shot tasks landing on :00 or :30 fire up to 90 s early. Picking an off-minute is still the bigger lever.
 
 Recurring tasks auto-expire after ${DEFAULT_MAX_AGE_DAYS} days — they fire one final time, then are deleted. This bounds session lifetime. Tell the user about the ${DEFAULT_MAX_AGE_DAYS}-day limit when scheduling recurring jobs.
 

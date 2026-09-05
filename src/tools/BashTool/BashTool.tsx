@@ -340,7 +340,7 @@ For commands that are harder to parse at a glance (piped commands, obscure flags
 - git reset --hard origin/main → "Discard all local changes and match remote main"
 - curl -s url | jq '.data[]' → "Fetch JSON from URL and extract data array elements"`),
   run_in_background: semanticBoolean(z.boolean().optional()).describe(
-    `Run this command asynchronously for waits or polling. Returns immediately with a task ID and streamed output file path; inspect it with Read or BackgroundTaskOutput, and use BackgroundTaskStop to end a long-running task. Not a parallelism mechanism for independent commands whose results you need immediately.`,
+    `Run this command asynchronously for waits or polling. Returns immediately with a task ID and output file path. Not a parallelism mechanism for independent commands whose results you need immediately.`,
   ),
   _simulatedSedEdit: z
     .object({
