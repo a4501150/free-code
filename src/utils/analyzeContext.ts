@@ -41,7 +41,10 @@ import type {
   UserMessage,
 } from '../types/message.js'
 import { toolToAPISchema } from './toolSchemas.js'
-import { isToolExposedToModel } from '../services/toolCatalog/exposure.js'
+import {
+  isToolExposedToModel,
+  mcpToolCatalogDisabled,
+} from '../services/toolCatalog/exposure.js'
 import { filterInjectedMemoryFiles, getMemoryFiles } from './claudemd.js'
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
@@ -107,6 +110,13 @@ interface McpTool {
   tokens: number
 }
 
+interface DeferredTool {
+  name: string
+  /** MCP server name, or 'built-ins' for lazily-exposed built-ins */
+  group: string
+  tokens: number
+}
+
 export interface SystemToolDetail {
   name: string
   tokens: number
@@ -160,6 +170,10 @@ export interface ContextData {
   readonly model: string
   readonly memoryFiles: MemoryFile[]
   readonly mcpTools: McpTool[]
+  /** Cataloged tools not carried in the request, with the token cost they
+   * would have added. Estimate only: excluded from usage totals and the grid. */
+  readonly deferredToolTokens: number
+  readonly deferredTools: DeferredTool[]
   /** Per-tool breakdown of built-in tools */
   readonly systemTools?: SystemToolDetail[]
   /** Ant-only: per-section breakdown of system prompt */
@@ -550,6 +564,66 @@ export async function countMcpToolTokens(
   }
 }
 
+// Cataloged tools ride the filesystem catalog, not the request, so they cost
+// nothing now. Count what they would add so /context can show the deferred
+// cost as an estimate outside the usage totals.
+export async function countDeferredToolTokens(
+  tools: Tools,
+  getToolPermissionContext: () => Promise<ToolPermissionContext>,
+  agentInfo: AgentDefinitionsResult | null,
+  model: string,
+): Promise<{
+  deferredToolTokens: number
+  deferredToolDetails: DeferredTool[]
+}> {
+  if (mcpToolCatalogDisabled()) {
+    return { deferredToolTokens: 0, deferredToolDetails: [] }
+  }
+  const deferredTools = tools.filter(tool => !isToolExposedToModel(tool))
+  if (deferredTools.length === 0) {
+    return { deferredToolTokens: 0, deferredToolDetails: [] }
+  }
+  const totalTokensRaw = await countToolDefinitionTokens(
+    deferredTools,
+    getToolPermissionContext,
+    agentInfo,
+    model,
+  )
+  const totalTokens = Math.max(
+    0,
+    (totalTokensRaw || 0) - TOOL_TOKEN_COUNT_OVERHEAD,
+  )
+
+  // Per-tool proportions from local estimation (same approach as MCP tools).
+  const estimates = await Promise.all(
+    deferredTools.map(async t =>
+      roughTokenCountEstimation(
+        jsonStringify({
+          name: t.name,
+          description: await t.prompt({
+            getToolPermissionContext,
+            tools,
+            agents: agentInfo?.activeAgents ?? [],
+          }),
+          input_schema: t.inputJSONSchema ?? {},
+        }),
+      ),
+    ),
+  )
+  const estimateTotal = estimates.reduce((s, e) => s + e, 0) || 1
+  const tokensByTool = estimates.map(e =>
+    Math.round((e / estimateTotal) * totalTokens),
+  )
+
+  const deferredToolDetails: DeferredTool[] = deferredTools.map((tool, i) => ({
+    name: tool.name,
+    group: tool.isMcp ? tool.name.split('__')[1] || 'unknown' : 'built-ins',
+    tokens: tokensByTool[i]!,
+  }))
+
+  return { deferredToolTokens: totalTokens, deferredToolDetails }
+}
+
 async function countAgentTokens(agentDefinitions: {
   activeAgents: AgentDefinition[]
 }): Promise<{
@@ -772,6 +846,7 @@ export async function analyzeContextUsage(
     { claudeMdTokens, memoryFileDetails },
     { builtInToolTokens, systemToolDetails },
     { mcpToolTokens, mcpToolDetails },
+    { deferredToolTokens, deferredToolDetails },
     { agentTokens, agentDetails },
     { slashCommandTokens, commandInfo },
     messageBreakdown,
@@ -785,6 +860,12 @@ export async function analyzeContextUsage(
       runtimeModel,
     ),
     countMcpToolTokens(
+      tools,
+      getToolPermissionContext,
+      agentDefinitions,
+      runtimeModel,
+    ),
+    countDeferredToolTokens(
       tools,
       getToolPermissionContext,
       agentDefinitions,
@@ -1107,6 +1188,8 @@ export async function analyzeContextUsage(
     model: runtimeModel,
     memoryFiles: memoryFileDetails,
     mcpTools: mcpToolDetails,
+    deferredToolTokens,
+    deferredTools: deferredToolDetails,
     systemTools: systemToolDetails.length > 0 ? systemToolDetails : undefined,
     systemPromptSections: undefined,
     agents: agentDetails,

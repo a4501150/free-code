@@ -92,6 +92,8 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
     model,
     memoryFiles,
     mcpTools,
+    deferredToolTokens,
+    deferredTools,
     systemTools,
     systemPromptSections,
     agents,
@@ -200,6 +202,19 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
               </Text>
             </Box>
           )}
+          {deferredToolTokens > 0 && (
+            <Box>
+              <Text dimColor>⛶</Text>
+              <Text dimColor italic>
+                {' '}
+                Deferred (cataloged):{' '}
+              </Text>
+              <Text dimColor>
+                ~{formatTokens(deferredToolTokens)} tokens (est., not in
+                context)
+              </Text>
+            </Box>
+          )}
         </Box>
       </Box>
 
@@ -261,6 +276,54 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
                 )
               },
             )}
+          </Box>
+        )}
+
+        {deferredTools.length > 0 && (
+          <Box flexDirection="column" marginTop={1}>
+            <Box>
+              <Text bold>Deferred tools</Text>
+              <Text dimColor>
+                {' '}
+                (cataloged via InvokeTool · not in context · est.{' '}
+                {formatTokens(deferredToolTokens)} tokens)
+              </Text>
+            </Box>
+            {Array.from(
+              groupByServer(
+                deferredTools.map(t => ({ ...t, serverName: t.group })),
+              ).entries(),
+            ).map(([serverName, serverTools]) => {
+              const serverTotal = serverTools.reduce((s, t) => s + t.tokens, 0)
+              return (
+                <Box key={serverName} flexDirection="column" marginTop={1}>
+                  <Box>
+                    <Text dimColor>
+                      {serverName === 'built-ins'
+                        ? 'lazy built-ins'
+                        : `mcp__${serverName}`}
+                    </Text>
+                    <Text dimColor>
+                      {' '}
+                      ({serverTools.length} {plural(serverTools.length, 'tool')}
+                      , est. {formatTokens(serverTotal)} tokens)
+                    </Text>
+                  </Box>
+                  {serverTools.map((tool, i) => (
+                    <Box key={i}>
+                      <Text>
+                        └{' '}
+                        {serverName === 'built-ins'
+                          ? tool.name
+                          : stripToolPrefix(tool.name, serverName)}
+                        :{' '}
+                      </Text>
+                      <Text dimColor>~{formatTokens(tool.tokens)} tokens</Text>
+                    </Box>
+                  ))}
+                </Box>
+              )
+            })}
           </Box>
         )}
 

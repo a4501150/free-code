@@ -88,6 +88,8 @@ function formatContextAsMarkdownTable(data: ContextData): string {
     model,
     memoryFiles,
     mcpTools,
+    deferredToolTokens,
+    deferredTools,
     agents,
     skills,
     messageBreakdown,
@@ -138,6 +140,12 @@ function formatContextAsMarkdownTable(data: ContextData): string {
       output += `| Autocompact buffer | ${formatTokens(autocompactCategory.tokens)} | ${percentDisplay}% |\n`
     }
 
+    if (deferredToolTokens > 0) {
+      output += `| Deferred tools (cataloged, not in context) | ~${formatTokens(
+        deferredToolTokens,
+      )} | est. |\n`
+    }
+
     output += `\n`
   }
 
@@ -171,6 +179,43 @@ function formatContextAsMarkdownTable(data: ContextData): string {
           ? tool.name.slice(prefix.length)
           : tool.name
         output += `| ${shortName} | ${formatTokens(tool.tokens)} |\n`
+      }
+      output += `\n`
+    }
+  }
+
+  // Deferred tools — cataloged definitions not carried in the request.
+  if (deferredTools.length > 0) {
+    output += `### Deferred Tools (cataloged via InvokeTool · est. ${formatTokens(
+      deferredToolTokens,
+    )} tokens if sent)\n\n`
+    const defGroups = new Map<string, typeof deferredTools>()
+    for (const tool of deferredTools) {
+      const existing = defGroups.get(tool.group) || []
+      existing.push(tool)
+      defGroups.set(tool.group, existing)
+    }
+    const orderedDefGroups = Array.from(defGroups.entries()).sort(
+      (a, b) =>
+        b[1].reduce((s, t) => s + t.tokens, 0) -
+        a[1].reduce((s, t) => s + t.tokens, 0),
+    )
+    for (const [groupName, groupTools] of orderedDefGroups) {
+      const groupTotal = groupTools.reduce((s, t) => s + t.tokens, 0)
+      output += `#### ${
+        groupName === 'built-ins' ? 'lazy built-ins' : `mcp__${groupName}`
+      } (${groupTools.length} ${plural(
+        groupTools.length,
+        'tool',
+      )}, est. ${formatTokens(groupTotal)} tokens)\n\n`
+      output += `| Tool | Tokens |\n`
+      output += `|------|--------|\n`
+      const prefix = `mcp__${groupName}__`
+      for (const tool of groupTools) {
+        const shortName = tool.name.startsWith(prefix)
+          ? tool.name.slice(prefix.length)
+          : tool.name
+        output += `| ${shortName} | ~${formatTokens(tool.tokens)} |\n`
       }
       output += `\n`
     }
