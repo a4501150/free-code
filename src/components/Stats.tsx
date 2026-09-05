@@ -1,23 +1,14 @@
 import { plot as asciichart } from 'asciichart'
 import chalk from 'chalk'
 import figures from 'figures'
-import React, {
-  Suspense,
-  use,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react'
+import React, { Suspense, use, useEffect, useMemo, useState } from 'react'
 import stripAnsi from 'strip-ansi'
-import type { CommandResultDisplay } from '../commands.js'
 import { useTerminalSize } from '../hooks/useTerminalSize.js'
 import { applyColor } from '../ink/colorize.js'
 import { stringWidth as getStringWidth } from '../ink/stringWidth.js'
 import type { Color } from '../ink/styles.js'
 // eslint-disable-next-line custom-rules/prefer-use-keybindings -- raw j/k/arrow stats navigation
 import { Ansi, Box, Text, useInput } from '../ink.js'
-import { useKeybinding } from '../keybindings/useKeybinding.js'
 import { formatDuration, formatNumber } from '../utils/format.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import { generateHeatmap } from '../utils/heatmap.js'
@@ -28,11 +19,14 @@ import {
   type ClaudeCodeStats,
   type DailyModelTokens,
   type StatsDateRange,
+  safeUsage,
 } from '../utils/stats.js'
 import { resolveThemeSetting } from '../utils/systemTheme.js'
 import { getTheme, themeColorToAnsi } from '../utils/theme.js'
-import { Pane } from './design-system/Pane.js'
-import { Tab, Tabs, useTabHeaderFocus } from './design-system/Tabs.js'
+import { Byline } from './design-system/Byline.js'
+import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js'
+import { KeyboardShortcutHint } from './design-system/KeyboardShortcutHint.js'
+import { useTabHeaderFocus } from './design-system/Tabs.js'
 import { Spinner } from './Spinner.js'
 
 function formatPeakDay(dateStr: string): string {
@@ -43,12 +37,8 @@ function formatPeakDay(dateStr: string): string {
   })
 }
 
-type Props = {
-  onClose: (
-    result?: string,
-    options?: { display?: CommandResultDisplay },
-  ) => void
-}
+const SUB_TABS = ['Overview', 'Models'] as const
+type SubTab = (typeof SUB_TABS)[number]
 
 type StatsResult =
   | { type: 'success'; data: ClaudeCodeStats }
@@ -87,7 +77,7 @@ function createAllTimeStatsPromise(): Promise<StatsResult> {
     })
 }
 
-export function Stats({ onClose }: Props): React.ReactNode {
+export function Stats(): React.ReactNode {
   // Always load all-time stats first (for heatmap)
   const allTimePromise = useMemo(() => createAllTimeStatsPromise(), [])
 
@@ -100,31 +90,27 @@ export function Stats({ onClose }: Props): React.ReactNode {
         </Box>
       }
     >
-      <StatsContent allTimePromise={allTimePromise} onClose={onClose} />
+      <StatsContent allTimePromise={allTimePromise} />
     </Suspense>
   )
 }
 
 type StatsContentProps = {
   allTimePromise: Promise<StatsResult>
-  onClose: Props['onClose']
 }
 
 /**
  * Inner component that uses React 19's use() to read the stats promise.
  * Suspends while loading all-time stats, then handles date range changes without suspending.
  */
-function StatsContent({
-  allTimePromise,
-  onClose,
-}: StatsContentProps): React.ReactNode {
+function StatsContent({ allTimePromise }: StatsContentProps): React.ReactNode {
   const allTimeResult = use(allTimePromise)
   const [dateRange, setDateRange] = useState<StatsDateRange>('all')
   const [statsCache, setStatsCache] = useState<
     Partial<Record<StatsDateRange, ClaudeCodeStats>>
   >({})
   const [isLoadingFiltered, setIsLoadingFiltered] = useState(false)
-  const [activeTab, setActiveTab] = useState<'Overview' | 'Models'>('Overview')
+  const [activeTab, setActiveTab] = useState<SubTab>('Overview')
   const [copyStatus, setCopyStatus] = useState<string | null>(null)
 
   // Load filtered stats when date range changes (with caching)
@@ -172,20 +158,17 @@ function StatsContent({
   const allTimeStats =
     allTimeResult.type === 'success' ? allTimeResult.data : null
 
-  const handleClose = useCallback(() => {
-    onClose('Stats dialog dismissed', { display: 'system' })
-  }, [onClose])
-
-  useKeybinding('confirm:no', handleClose, { context: 'Confirmation' })
+  const { headerFocused, focusHeader } = useTabHeaderFocus()
 
   useInput((input, key) => {
-    // Handle ctrl+c and ctrl+d for closing
-    if (key.ctrl && (input === 'c' || input === 'd')) {
-      onClose('Stats dialog dismissed', { display: 'system' })
-    }
-    // Track tab changes
-    if (key.tab) {
-      setActiveTab(prev => (prev === 'Overview' ? 'Models' : 'Overview'))
+    if (!headerFocused) {
+      if (key.tab || key.rightArrow) {
+        setActiveTab('Models')
+      } else if (key.leftArrow) {
+        setActiveTab('Overview')
+      } else if (key.upArrow && activeTab === 'Overview') {
+        focusHeader()
+      }
     }
     // r to cycle date range
     if (input === 'r' && !key.ctrl && !key.meta) {
@@ -225,33 +208,61 @@ function StatsContent({
   }
 
   return (
-    <Pane color="claude">
-      <Box flexDirection="row" gap={1} marginBottom={1}>
-        <Tabs title="" color="claude" defaultTab="Overview">
-          <Tab title="Overview">
-            <OverviewTab
-              stats={displayStats}
-              allTimeStats={allTimeStats}
-              dateRange={dateRange}
-              isLoading={isLoadingFiltered}
-            />
-          </Tab>
-          <Tab title="Models">
-            <ModelsTab
-              stats={displayStats}
-              dateRange={dateRange}
-              isLoading={isLoadingFiltered}
-            />
-          </Tab>
-        </Tabs>
+    <Box flexDirection="column" paddingLeft={1}>
+      <Box gap={1}>
+        {SUB_TABS.map(tab => (
+          <Text key={tab}>
+            {' '}
+            {tab === activeTab ? (
+              <Text bold color="claude">
+                {tab}
+              </Text>
+            ) : (
+              <Text dimColor>{tab}</Text>
+            )}{' '}
+          </Text>
+        ))}
       </Box>
-      <Box paddingLeft={2}>
+      {activeTab === 'Overview' ? (
+        <OverviewTab
+          stats={displayStats}
+          allTimeStats={allTimeStats}
+          dateRange={dateRange}
+          isLoading={isLoadingFiltered}
+        />
+      ) : (
+        <ModelsTab
+          stats={displayStats}
+          dateRange={dateRange}
+          isLoading={isLoadingFiltered}
+        />
+      )}
+      <Box marginTop={1}>
         <Text dimColor>
-          Esc to cancel · r to cycle dates · ctrl+s to copy
-          {copyStatus ? ` · ${copyStatus}` : ''}
+          <Byline>
+            {headerFocused ? (
+              <KeyboardShortcutHint shortcut="←/→ tab" action="switch tabs" />
+            ) : (
+              <KeyboardShortcutHint shortcut="←/→ tab" action="switch views" />
+            )}
+            {headerFocused ? (
+              <KeyboardShortcutHint shortcut="↓" action="enter" />
+            ) : (
+              <KeyboardShortcutHint shortcut="↑" action="tabs" />
+            )}
+            <KeyboardShortcutHint shortcut="r" action="cycle dates" />
+            <KeyboardShortcutHint shortcut="ctrl+s" action="copy" />
+            <ConfigurableShortcutHint
+              action="confirm:no"
+              context="Settings"
+              fallback="Esc"
+              description="close"
+            />
+            {copyStatus ? <Text>{copyStatus}</Text> : null}
+          </Byline>
         </Text>
       </Box>
-    </Pane>
+    </Box>
   )
 }
 
@@ -305,6 +316,18 @@ function OverviewTab({
   const totalTokens = modelEntries.reduce(
     (sum, [, usage]) => sum + usage.inputTokens + usage.outputTokens,
     0,
+  )
+  const totals = modelEntries.reduce(
+    (acc, [, usage]) => {
+      const usageTotals = safeUsage(usage)
+      return {
+        input: acc.input + usageTotals.inputTokens,
+        output: acc.output + usageTotals.outputTokens,
+        cacheRead: acc.cacheRead + usageTotals.cacheReadInputTokens,
+        cacheWrite: acc.cacheWrite + usageTotals.cacheCreationInputTokens,
+      }
+    },
+    { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   )
 
   // Memoize the factoid so it doesn't change when switching tabs
@@ -409,6 +432,19 @@ function OverviewTab({
             {allTimeStats.streaks.currentStreak === 1 ? 'day' : 'days'}
           </Text>
         </Box>
+      </Box>
+
+      {/* Token breakdown */}
+      <Box marginTop={1}>
+        <Text wrap="truncate">
+          Input <Text color="claude">{formatNumber(totals.input)}</Text>
+          {' · '}Output{' '}
+          <Text color="claude">{formatNumber(totals.output)}</Text>
+          {' · '}Cache read{' '}
+          <Text color="claude">{formatNumber(totals.cacheRead)}</Text>
+          {' · '}Cache write{' '}
+          <Text color="claude">{formatNumber(totals.cacheWrite)}</Text>
+        </Text>
       </Box>
 
       {/* Fun factoid */}
@@ -918,6 +954,18 @@ function renderOverviewToAnsi(stats: ClaudeCodeStats): string[] {
     (sum, [, usage]) => sum + usage.inputTokens + usage.outputTokens,
     0,
   )
+  const totals = Object.values(stats.modelUsage).reduce(
+    (acc, usage) => {
+      const usageTotals = safeUsage(usage)
+      return {
+        input: acc.input + usageTotals.inputTokens,
+        output: acc.output + usageTotals.outputTokens,
+        cacheRead: acc.cacheRead + usageTotals.cacheReadInputTokens,
+        cacheWrite: acc.cacheWrite + usageTotals.cacheCreationInputTokens,
+      }
+    },
+    { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  )
 
   // Row 1: Favorite model | Total tokens
   if (favoriteModel) {
@@ -958,6 +1006,10 @@ function renderOverviewToAnsi(stats: ClaudeCodeStats): string[] {
       ? `${stats.peakActivityHour}:00-${stats.peakActivityHour + 1}:00`
       : 'N/A'
   lines.push(row('Active days', activeDaysVal, 'Peak hour', peakHourVal))
+
+  lines.push(
+    `Input ${h(formatNumber(totals.input))} · Output ${h(formatNumber(totals.output))} · Cache read ${h(formatNumber(totals.cacheRead))} · Cache write ${h(formatNumber(totals.cacheWrite))}`,
+  )
 
   lines.push('')
 
