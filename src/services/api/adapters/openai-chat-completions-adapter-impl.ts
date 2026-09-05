@@ -281,6 +281,9 @@ function domainRequestToOpenAIBody(
   if (request.tools && request.tools.length > 0) {
     body.tools = domainToolsToOpenAI(request.tools)
     body.tool_choice = 'auto'
+    // Some OpenAI-compatible stacks treat an absent flag as false and drop
+    // all but the first tool call in a turn.
+    body.parallel_tool_calls = true
   }
 
   if (request.maxTokens) body.max_tokens = request.maxTokens
