@@ -33,7 +33,6 @@ import {
   INVOKE_TOOL_NAME,
   mcpToolCatalogDisabled,
 } from '../services/toolCatalog/exposure.js'
-import { toolCatalogDir } from '../services/toolCatalog/writer.js'
 import { feature } from 'bun:bundle'
 import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
 import * as briefToolModuleNs from '../tools/BriefTool/BriefTool.js'
@@ -203,7 +202,7 @@ function getUsingYourToolsSection(enabledTools: Set<string>): string {
       : null,
     `You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between them, make all independent tool calls in parallel. Maximize use of parallel tool calls where possible to increase efficiency. However, if some tool calls depend on previous calls to inform dependent values, do NOT call these tools in parallel and instead call them sequentially.`,
     enabledTools.has(INVOKE_TOOL_NAME) && !mcpToolCatalogDisabled()
-      ? `Some tools are not in your tool list: every MCP tool and any built-in listed in the lazyTools setting. Look up their exact names and argument schemas in the tool catalog manifest at ${toolCatalogDir()}/manifest.json (then the referenced server files), then call them with ${INVOKE_TOOL_NAME}.`
+      ? `Some tools are not in your tool list: every MCP tool and any built-in listed in the lazyTools setting. Look up their exact names and argument schemas in the tool catalog manifest named in the ${INVOKE_TOOL_NAME} tool description (then the referenced server files), then call them with ${INVOKE_TOOL_NAME}.`
       : null,
   ].filter(item => item !== null)
 
