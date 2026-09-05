@@ -14,6 +14,7 @@ import {
 import type { ToolUseContext } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { getCwd } from '../../utils/cwd.js'
+import { formatAnchoredRegions } from '../../utils/hashline.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { countLinesChanged, getPatchFromContents } from '../../utils/diff.js'
 import { isENOENT } from '../../utils/errors.js'
@@ -77,6 +78,12 @@ const outputSchema = z.object({
       'The original file content before the write (null for new files)',
     ),
   gitDiff: gitDiffSchema.optional(),
+  changedRegionAnchors: z
+    .string()
+    .optional()
+    .describe(
+      'LINE:HASH anchors for the written lines, so a follow-up edit needs no re-Read',
+    ),
 })
 type OutputSchema = typeof outputSchema
 
@@ -340,6 +347,15 @@ export const FileWriteTool = buildTool({
       offset: undefined,
       limit: undefined,
     })
+    // The result must carry the anchors this write just created: without
+    // them a follow-up edit cites fabricated line hashes. No budget: the
+    // whole written file is the changed region.
+    const writtenLineCount = content.split(/\r?\n/).length
+    const changedRegionAnchors = formatAnchoredRegions(
+      content,
+      [{ start: 1, count: writtenLineCount }],
+      writtenLineCount,
+    )
 
     // Log when writing to CLAUDE.md
 
@@ -358,6 +374,7 @@ export const FileWriteTool = buildTool({
         content,
         structuredPatch: patch,
         originalFile: oldContent,
+        ...(changedRegionAnchors ? { changedRegionAnchors } : {}),
         ...(gitDiff && { gitDiff }),
       }
       // Track lines added and removed for file updates, right before yielding result
@@ -381,6 +398,7 @@ export const FileWriteTool = buildTool({
       content,
       structuredPatch: [],
       originalFile: null,
+      ...(changedRegionAnchors ? { changedRegionAnchors } : {}),
       ...(gitDiff && { gitDiff }),
     }
 
@@ -398,19 +416,25 @@ export const FileWriteTool = buildTool({
       data,
     }
   },
-  mapToolResultToToolResultBlockParam({ filePath, type }, toolUseID) {
+  mapToolResultToToolResultBlockParam(
+    { filePath, type, changedRegionAnchors },
+    toolUseID,
+  ) {
+    const anchorNote = changedRegionAnchors
+      ? `\n\nAnchors for the written lines. Use them to edit this file again without reading it first:\n${changedRegionAnchors}`
+      : ''
     switch (type) {
       case 'create':
         return {
           tool_use_id: toolUseID,
           type: 'tool_result',
-          content: `File created successfully at: ${filePath}`,
+          content: `File created successfully at: ${filePath}${anchorNote}`,
         }
       case 'update':
         return {
           tool_use_id: toolUseID,
           type: 'tool_result',
-          content: `The file ${filePath} has been updated successfully.`,
+          content: `The file ${filePath} has been updated successfully.${anchorNote}`,
         }
     }
   },

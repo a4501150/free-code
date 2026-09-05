@@ -758,12 +758,12 @@ function coalescePatches(patches: AppliedPatch[]): AppliedPatch[] {
 export function formatAnchoredRegions(
   content: string,
   regions: readonly { start: number; count: number }[],
+  budgetLines: number = 60,
 ): string {
   const fileLines = content.split(/\r?\n/)
   const labels = labelStrings(computeHashlineLabels(content))
   const blocks: string[] = []
-  const budgetMax = 60
-  let budget = budgetMax
+  let budget = budgetLines
   let truncated = false
   for (const region of regions) {
     if (budget <= 0) {
