@@ -18,10 +18,11 @@ export function getAttributionTexts(): AttributionTexts {
   const modelName = isKnownPublicModel
     ? getPublicModelName(model)
     : getPublicModelName(getDefaultMainLoopModelSetting())
-  const defaultAttribution = `🤖 Generated with [Claude Code](${PRODUCT_URL})`
-  const defaultCommit = `Co-Authored-By: ${modelName} <noreply@anthropic.com>`
-
   const settings = getInitialSettings()
+
+  const email = settings.attribution?.email ?? 'noreply@anthropic.com'
+  const defaultAttribution = `🤖 Generated with [Claude Code](${PRODUCT_URL})`
+  const defaultCommit = `Co-Authored-By: ${modelName} <${email}>`
 
   if (settings.attribution) {
     return {

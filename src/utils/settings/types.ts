@@ -917,6 +917,13 @@ const _settingsSchemaValue = z
             'Attribution text for git commits, including any trailers. ' +
               'Empty string hides attribution.',
           ),
+        email: z
+          .string()
+          .optional()
+          .describe(
+            'Email used in the default commit co-author trailer. ' +
+              'Defaults to noreply@anthropic.com.',
+          ),
         pr: z
           .string()
           .optional()

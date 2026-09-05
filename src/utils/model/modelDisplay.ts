@@ -11,7 +11,6 @@ import {
   parseUserSpecifiedModel,
 } from './modelResolution.js'
 import type { ModelName, ModelSetting } from './modelTypes.js'
-import { stripProviderPrefix } from './parseModelStringWithRegistry.js'
 
 // ── Display string generation ──────────────────────────────────────
 
@@ -36,17 +35,13 @@ export function renderModelName(model: ModelName): string {
 
 /**
  * Returns a safe author name for public display (e.g., in git commit trailers).
- * Returns "Claude {Label}" for models with labels, or "Claude ({model})"
- * for unknown models so the exact model name is preserved.
+ * Returns the model's registry label verbatim, or "Claude ({model})" for
+ * unknown models so the exact model name is preserved.
  */
 export function getPublicModelName(model: ModelName): string {
   const publicName = getPublicModelDisplayName(model)
   if (publicName) {
-    const stripped = stripProviderPrefix(model)
-    if (stripped.includes('gpt-') || stripped.includes('codex')) {
-      return publicName
-    }
-    return `Claude ${publicName}`
+    return publicName
   }
   return `Claude (${model})`
 }

@@ -6,6 +6,7 @@ type TestSettings = {
   attribution?: {
     commit?: string
     pr?: string
+    email?: string
   }
   includeCoAuthoredBy?: boolean
 }
@@ -57,6 +58,15 @@ describe('getAttributionTexts', () => {
       commit: 'Reviewed-by: Human <human@example.com>',
       pr: expect.stringContaining('Generated with [Claude Code]('),
     })
+  })
+
+  test('attribution.email replaces the default co-author email', () => {
+    resetAttributionMocks()
+    settings = { attribution: { email: 'bot@example.com' } }
+
+    expect(getAttributionTexts().commit).toBe(
+      'Co-Authored-By: Claude Sonnet 4.6 <bot@example.com>',
+    )
   })
 
   test('uses custom PR attribution', () => {
