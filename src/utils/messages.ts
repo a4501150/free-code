@@ -4,6 +4,7 @@ import isObject from 'lodash-es/isObject.js'
 import last from 'lodash-es/last.js'
 import type { AgentId } from 'src/types/ids.js'
 import { NO_CONTENT_MESSAGE } from '../constants/messages.js'
+import { toolCatalogDir } from '../services/toolCatalog/writer.js'
 import { isAutoMemoryEnabled } from '../memdir/paths.js'
 import { getInitialSettings } from './settings/settings.js'
 import {
@@ -3976,19 +3977,39 @@ You have exited auto mode. The user may now want to interact more directly. You 
     }
     case 'mcp_tools_delta': {
       const parts: string[] = []
+      const catalog = toolCatalogDir()
+      const byName = new Map(attachment.servers.map(s => [s.name, s]))
       if (attachment.addedNames.length > 0) {
+        const lines = attachment.addedNames.map(name => {
+          const s = byName.get(name)
+          return `- ${name}: ${s ? `${s.toolCount} tools (schema: ${catalog}/${s.file})` : 'no tools'}`
+        })
         parts.push(
-          `The following MCP tools are now available:\n${attachment.addedNames.join('\n')}`,
+          `New MCP servers are connected. Their tools are callable through InvokeTool; read the catalog files first for exact names and argument schemas:\n${lines.join('\n')}`,
         )
       }
       if (attachment.changedNames.length > 0) {
+        const lines = attachment.changedNames.map(name => {
+          const s = byName.get(name)
+          return `- ${name}${s ? ` (schema: ${catalog}/${s.file})` : ''}`
+        })
         parts.push(
-          `The schemas or descriptions for the following MCP tools have changed. Use the latest tool schema when calling them:\n${attachment.changedNames.join('\n')}`,
+          `The tool schemas for these MCP servers changed. Re-read their catalog files before calling them:\n${lines.join('\n')}`,
         )
       }
       if (attachment.removedNames.length > 0) {
         parts.push(
-          `The following MCP tools are no longer available:\n${attachment.removedNames.join('\n')}`,
+          `These MCP servers disconnected and their tools are no longer available: ${attachment.removedNames.join(', ')}.`,
+        )
+      }
+      if (attachment.builtinsAdded.length > 0) {
+        parts.push(
+          `These built-in tools moved out of your tool list; read ${catalog}/builtins.json for their schemas and call them through InvokeTool: ${attachment.builtinsAdded.join(', ')}.`,
+        )
+      }
+      if (attachment.builtinsRemoved.length > 0) {
+        parts.push(
+          `These tools are now directly available again and left the catalog: ${attachment.builtinsRemoved.join(', ')}.`,
         )
       }
       return wrapMessagesInSystemReminder([

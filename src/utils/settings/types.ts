@@ -1635,6 +1635,18 @@ const _settingsSchemaValue = z
       .describe(
         'Maximum characters preserved from user-prompt-submit hook stdout. Defaults to 100000.',
       ),
+    lazyTools: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Built-in tool names to remove from the API tools array and expose only through the tool catalog + InvokeTool. Applies at session start.',
+      ),
+    disableMcpToolCatalog: z
+      .boolean()
+      .optional()
+      .describe(
+        'Keep MCP tool schemas in the API tools array (pre-catalog behavior).',
+      ),
     maxMemoryEntrypointBytes: z
       .number()
       .int()

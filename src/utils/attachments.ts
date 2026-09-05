@@ -60,6 +60,10 @@ import {
 } from 'src/types/textInputTypes.js'
 import { createHash, randomUUID, type UUID } from 'crypto'
 import { getSettings_DEPRECATED } from './settings/settings.js'
+import {
+  writeToolCatalog,
+  type CatalogServerSnapshot,
+} from '../services/toolCatalog/writer.js'
 import { getSnippetForTwoFileDiff } from 'src/tools/FileEditTool/utils.js'
 import { maybeResizeAndDownsampleImageBlock } from './imageResizer.js'
 import type { PastedContent } from './config.js'
@@ -656,10 +660,15 @@ export type Attachment =
     }
   | {
       type: 'mcp_tools_delta'
+      generation: number
+      /** Catalog snapshot at announce time; scanned back to diff changes. */
+      servers: CatalogServerSnapshot[]
+      builtins: string[]
       addedNames: string[]
       changedNames: string[]
       removedNames: string[]
-      signatures: Array<{ name: string; signature: string }>
+      builtinsAdded: string[]
+      builtinsRemoved: string[]
     }
   | {
       type: 'agent_listing_delta'
@@ -784,7 +793,9 @@ export async function getAttachments(
     maybe('ultrathink_effort', () =>
       Promise.resolve(getUltrathinkEffortAttachment(input)),
     ),
-    maybe('mcp_tools_delta', () => getMcpToolsDeltaAttachment(toolUseContext)),
+    maybe('mcp_tools_delta', () =>
+      getMcpToolsDeltaAttachment(toolUseContext, messages),
+    ),
     maybe('agent_listing_delta', () =>
       Promise.resolve(getAgentListingDeltaAttachment(toolUseContext, messages)),
     ),
@@ -1380,107 +1391,108 @@ function getUltrathinkEffortAttachment(input: string | null): Attachment[] {
   return [{ type: 'ultrathink_effort', level: 'high' }]
 }
 
-function hashMcpToolSignature(value: unknown): string {
-  return createHash('sha256').update(jsonStringify(value)).digest('hex')
+export type AnnouncedToolCatalog = {
+  generation: number
+  servers: CatalogServerSnapshot[]
+  builtins: string[]
 }
 
-async function getMcpToolSignatures(
-  toolUseContext: ToolUseContext,
-): Promise<Array<{ name: string; signature: string }>> {
-  const tools = toolUseContext.options.tools.filter(
-    tool => tool.isMcp && tool.mcpInfo,
-  )
-  const signatures = await Promise.all(
-    tools.map(async tool => {
-      const description = await tool.prompt({
-        getToolPermissionContext: async () =>
-          toolUseContext.getAppState().toolPermissionContext,
-        tools: toolUseContext.options.tools,
-        agents: toolUseContext.options.agentDefinitions.activeAgents,
-        allowedAgentTypes:
-          toolUseContext.options.agentDefinitions.allowedAgentTypes,
-      })
-      return {
-        name: tool.name,
-        signature: hashMcpToolSignature({
-          name: tool.name,
-          serverName: tool.mcpInfo!.serverName,
-          toolName: tool.mcpInfo!.toolName,
-          description,
-          inputJSONSchema: tool.inputJSONSchema ?? null,
-        }),
-      }
-    }),
-  )
-  signatures.sort((a, b) => a.name.localeCompare(b.name))
-  return signatures
-}
-
-// Module-scoped baseline of announced MCP tool signatures. On the first
-// call the current tool set is recorded without emitting an attachment
-// (tool names are already in the API tools[] array). Subsequent calls
-// diff against this baseline and only emit when something actually changed.
-let announcedMcpToolSignatures: Map<string, string> | null = null
-
-export function resetAnnouncedMcpToolSignatures(): void {
-  announcedMcpToolSignatures = null
-}
-
+// Diff the rendered tool catalog against the last snapshot announced in
+// this transcript (stateless-scan pattern, like mcp_instructions_delta).
+// The first announce is silent: the initial system prompt already points at
+// the manifest, and a compaction re-arms the guard via forceInitial, so a
+// scan that finds nothing after /compact re-announces the full catalog.
 export async function getMcpToolsDeltaAttachment(
   toolUseContext: ToolUseContext,
+  messages: Message[] | undefined,
+  opts?: { forceInitial?: boolean; catalogDir?: string },
 ): Promise<Attachment[]> {
-  const signatures = await getMcpToolSignatures(toolUseContext)
-  const current = new Map(
-    signatures.map(({ name, signature }) => [name, signature]),
+  const lazyNames = new Set(getSettings_DEPRECATED()?.lazyTools ?? [])
+  const allTools = toolUseContext.options.tools
+  const mcpTools = allTools.filter(tool => tool.isMcp && tool.mcpInfo)
+  const lazyBuiltInTools = allTools.filter(
+    tool => !tool.isMcp && lazyNames.has(tool.name),
   )
+  const serverDescriptions = new Map<string, string>()
+  for (const c of toolUseContext.options.mcpClients) {
+    if (c.type === 'connected' && c.instructions) {
+      serverDescriptions.set(c.name, c.instructions)
+    }
+  }
 
-  // First call: record baseline without emitting. The model already has
-  // every MCP tool in the tools[] API parameter.
-  if (announcedMcpToolSignatures === null) {
-    announcedMcpToolSignatures = current
+  let manifest
+  try {
+    manifest = (
+      await writeToolCatalog({
+        mcpTools,
+        lazyBuiltInTools,
+        serverDescriptions,
+        catalogDir: opts?.catalogDir,
+      })
+    ).manifest
+  } catch {
     return []
   }
+  const servers: CatalogServerSnapshot[] = manifest.servers.map(
+    ({ description: _description, ...snap }) => snap,
+  )
 
-  const addedNames: string[] = []
-  const changedNames: string[] = []
-  const removedNames: string[] = []
-
-  for (const [name, signature] of current) {
-    const previous = announcedMcpToolSignatures.get(name)
-    if (previous === undefined) {
-      addedNames.push(name)
-    } else if (previous !== signature) {
-      changedNames.push(name)
+  let last: AnnouncedToolCatalog | null = null
+  for (const msg of messages ?? []) {
+    if (msg.type !== 'attachment') continue
+    if (msg.attachment.type !== 'mcp_tools_delta') continue
+    last = {
+      generation: msg.attachment.generation,
+      servers: msg.attachment.servers,
+      builtins: msg.attachment.builtins,
     }
   }
-  for (const name of announcedMcpToolSignatures.keys()) {
-    if (!current.has(name)) {
-      removedNames.push(name)
+  if (last === null && !opts?.forceInitial) return []
+
+  const prevServers = new Map((last?.servers ?? []).map(s => [s.name, s]))
+  const prevBuiltins = new Set(last?.builtins ?? [])
+  const addedNames: string[] = []
+  const changedNames: string[] = []
+  for (const s of servers) {
+    const prev = prevServers.get(s.name)
+    if (prev === undefined) {
+      addedNames.push(s.name)
+    } else if (prev.hash !== s.hash || prev.toolCount !== s.toolCount) {
+      changedNames.push(s.name)
     }
+  }
+  const removedNames = [...prevServers.keys()].filter(
+    name => !servers.some(s => s.name === name),
+  )
+  const builtinsAdded = manifest.builtins.filter(n => !prevBuiltins.has(n))
+  const builtinsRemoved = [...prevBuiltins].filter(
+    n => !manifest.builtins.includes(n),
+  )
+
+  if (
+    addedNames.length === 0 &&
+    changedNames.length === 0 &&
+    removedNames.length === 0 &&
+    builtinsAdded.length === 0 &&
+    builtinsRemoved.length === 0
+  ) {
+    return []
   }
 
   addedNames.sort()
   changedNames.sort()
   removedNames.sort()
-
-  if (
-    addedNames.length === 0 &&
-    changedNames.length === 0 &&
-    removedNames.length === 0
-  ) {
-    return []
-  }
-
-  // Update baseline to current state.
-  announcedMcpToolSignatures = current
-
   return [
     {
       type: 'mcp_tools_delta',
+      generation: manifest.generation,
+      servers,
+      builtins: manifest.builtins,
       addedNames,
       changedNames,
       removedNames,
-      signatures,
+      builtinsAdded,
+      builtinsRemoved,
     },
   ]
 }

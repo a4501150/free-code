@@ -3808,7 +3808,9 @@ export function isLoggableMessage(m: Message): boolean {
   if (m.type === 'attachment') {
     if (
       m.attachment.type === 'user_context_snapshot' ||
-      m.attachment.type === 'user_context_delta'
+      m.attachment.type === 'user_context_delta' ||
+      // Catalog snapshot + diff baseline; names, counts and paths only.
+      m.attachment.type === 'mcp_tools_delta'
     ) {
       return true
     }

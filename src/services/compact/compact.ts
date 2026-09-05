@@ -29,6 +29,7 @@ import {
   createAttachmentMessage,
   generateFileAttachment,
   getAgentListingDeltaAttachment,
+  getMcpToolsDeltaAttachment,
   getMcpInstructionsDeltaAttachment,
   getPostCompactSkillListingAttachment,
 } from '../../utils/attachments.js'
@@ -499,8 +500,8 @@ export async function compactConversation(
     // state so the model has tool/instruction context on the first
     // post-compact turn. Empty message history → diff against nothing →
     // announces the full set.
-    // mcp_tools_delta is not re-announced: tool names are already in the
-    // API tools[] array, and the module-scoped baseline tracks changes.
+    // mcp_tools_delta is re-announced: the catalog diff baseline lives
+    // inside these attachments, so post-compact history needs a fresh one.
     for (const att of getAgentListingDeltaAttachment(context, [])) {
       postCompactFileAttachments.push(createAttachmentMessage(att))
     }
@@ -510,6 +511,11 @@ export async function compactConversation(
       context.options.mainLoopModel,
       [],
     )) {
+      postCompactFileAttachments.push(createAttachmentMessage(att))
+    }
+    for (const att of await getMcpToolsDeltaAttachment(context, [], {
+      forceInitial: true,
+    })) {
       postCompactFileAttachments.push(createAttachmentMessage(att))
     }
 
@@ -810,8 +816,8 @@ export async function partialCompactConversation(
 
     // Re-announce only what was in the summarized portion — messagesToKeep
     // is scanned, so anything already announced there is skipped.
-    // mcp_tools_delta is not re-announced: tool names are already in the
-    // API tools[] array, and the module-scoped baseline tracks changes.
+    // mcp_tools_delta re-announces when the kept tail has no snapshot left;
+    // forceInitial is a no-op when a prior announcement survives.
     for (const att of getAgentListingDeltaAttachment(context, messagesToKeep)) {
       postCompactFileAttachments.push(createAttachmentMessage(att))
     }
@@ -820,6 +826,13 @@ export async function partialCompactConversation(
       context.options.tools,
       context.options.mainLoopModel,
       messagesToKeep,
+    )) {
+      postCompactFileAttachments.push(createAttachmentMessage(att))
+    }
+    for (const att of await getMcpToolsDeltaAttachment(
+      context,
+      messagesToKeep,
+      { forceInitial: true },
     )) {
       postCompactFileAttachments.push(createAttachmentMessage(att))
     }
