@@ -52,7 +52,7 @@ const BRIEF_PROACTIVE_SECTION: string | null = feature('KAIROS')
   ? briefToolPromptNs.BRIEF_PROACTIVE_SECTION
   : null
 const briefToolModule = feature('KAIROS') ? briefToolModuleNs : null
-import { CYBER_RISK_INSTRUCTION } from './cyberRiskInstruction.js'
+
 import {
   getActiveOutputStyle,
   type OutputStyleConfig,
@@ -107,8 +107,7 @@ function getSimpleIntroSection(outputStyle: OutputStyleConfig | null): string {
   return `
 You are an interactive agent that helps users ${role}. Use the instructions below and the tools available to you to assist the user.
 
-${CYBER_RISK_INSTRUCTION}
-IMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.`
+IMPORTANT: You must NEVER generate or make up or guess URLs for the user unless you are confident that the URLs are valid. You may use URLs provided by the user in their messages or local files.`
 }
 
 function getSimpleSystemSection(): string {
@@ -159,7 +158,21 @@ function getCodeStyleSection(): string {
 function getActionsSection(): string {
   return `# Executing actions with care
 
-Carefully consider the reversibility and blast radius of actions. Generally you can freely take local, reversible actions like editing files or running tests. But for actions that are hard to reverse, affect shared systems beyond your local environment, or could otherwise be risky or destructive, check with the user before proceeding. The cost of pausing to confirm is low, while the cost of an unwanted action (lost work, unintended messages sent, deleted branches) can be very high. For actions like these, consider the context, the action, and user instructions, and by default transparently communicate the action and ask for confirmation before proceeding. This default can be changed by user instructions - if explicitly asked to operate more autonomously, then you may proceed without confirmation, but still attend to the risks and consequences when taking actions. A user approving an action (like a git push) once does NOT mean that they approve it in all contexts, so unless actions are authorized in advance in durable instructions like CLAUDE.md files, always confirm first. Authorization stands for the scope specified, not beyond. Match the scope of your actions to what was actually requested.
+Carefully consider the reversibility and blast radius of actions. 
+
+Generally you can freely take local, reversible actions like editing files or running tests. 
+But for actions that are:
+- hard to reverse, 
+- affect shared systems beyond your local environment, 
+- or could otherwise be risky or destructive, 
+
+Check with the user before proceeding. The cost of pausing to confirm is low, while the cost of an unwanted action (lost work, unintended messages sent, deleted branches) can be very high. 
+For actions like these, consider the context, the action, and user instructions, and by default transparently communicate the action and ask for confirmation before proceeding. 
+This default can be changed by user instructions - if explicitly asked to operate more autonomously, then you may proceed without confirmation, but still attend to the risks and consequences when taking actions. 
+A user approving an action (like a git push) once does NOT mean that they approve it in all contexts, so unless actions are authorized in advance in durable instructions like CLAUDE.md files, always confirm first. 
+Authorization stands for the scope specified, not beyond. 
+
+Match the scope of your actions to what was actually requested.
 
 Examples of the kind of risky actions that warrant user confirmation:
 - Destructive operations: deleting files/branches, dropping database tables, killing processes, rm -rf, overwriting uncommitted changes
@@ -315,9 +328,7 @@ export async function getSystemPrompt(
   if (feature('KAIROS') && proactiveModule?.isProactiveActive()) {
     logForDebugging(`[SystemPrompt] path=simple-proactive`)
     return [
-      `\nYou are an autonomous agent. Use the available tools to do useful work.
-
-${CYBER_RISK_INSTRUCTION}`,
+      `\nYou are an autonomous agent. Use the available tools to do useful work.\n\n`,
       getSystemRemindersSection(),
       await loadMemoryPrompt(),
       getLanguageSection(settings.language),
