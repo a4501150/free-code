@@ -103,6 +103,7 @@ import type {
   AsyncHookJSONOutput,
 } from 'src/structuredProtocol/index.js'
 import type { StatusLineCommandInput } from '../types/statusLine.js'
+import { getDefaultStatusLineCommand } from '../statusline/defaultScript.js'
 import type { ElicitResult } from '@modelcontextprotocol/sdk/types.js'
 import type { FileSuggestionCommandInput } from '../types/fileSuggestion.js'
 import type { HookResultMessage } from 'src/types/message.js'
@@ -4520,18 +4521,26 @@ export async function executeStatusLineCommand(
     return undefined
   }
 
-  // SECURITY: ALL hooks require workspace trust in interactive mode
-  // This centralized check prevents RCE vulnerabilities for all current and future hooks
-  if (shouldSkipHookDueToTrust()) {
-    logForDebugging(
-      `Skipping StatusLine command execution - workspace trust not accepted`,
-    )
+  const statusLine = getSettings_DEPRECATED()?.statusLine
+  // SECURITY: ALL user-supplied hooks require workspace trust in interactive
+  // mode. This centralized check prevents RCE vulnerabilities for all current
+  // and future hooks. The embedded default script is exempt: its content ships
+  // inside the binary, so an untrusted workspace cannot tamper with it.
+  let hookCommand: { type: 'command'; command: string }
+  let isEmbeddedDefault = false
+  if (statusLine === undefined) {
+    hookCommand = { type: 'command', command: getDefaultStatusLineCommand() }
+    isEmbeddedDefault = true
+  } else if (statusLine.type === 'command') {
+    hookCommand = statusLine
+  } else {
     return undefined
   }
 
-  const statusLine = getSettings_DEPRECATED()?.statusLine
-
-  if (!statusLine || statusLine.type !== 'command') {
+  if (!isEmbeddedDefault && shouldSkipHookDueToTrust()) {
+    logForDebugging(
+      `Skipping StatusLine command execution - workspace trust not accepted`,
+    )
     return undefined
   }
 
@@ -4543,7 +4552,7 @@ export async function executeStatusLineCommand(
     const jsonInput = jsonStringify(statusLineInput)
 
     const result = await execCommandHook(
-      statusLine,
+      hookCommand,
       'StatusLine',
       'statusLine',
       jsonInput,
@@ -4567,14 +4576,14 @@ export async function executeStatusLineCommand(
       if (output) {
         if (logResult) {
           logForDebugging(
-            `StatusLine [${statusLine.command}] completed with status ${result.status}`,
+            `StatusLine [${hookCommand.command}] completed with status ${result.status}`,
           )
         }
         return output
       }
     } else if (logResult) {
       logForDebugging(
-        `StatusLine [${statusLine.command}] completed with status ${result.status}`,
+        `StatusLine [${hookCommand.command}] completed with status ${result.status}`,
         { level: 'warn' },
       )
     }

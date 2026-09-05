@@ -101,7 +101,12 @@ export class TmuxSession {
     this._height = options.height ?? 40
     this._additionalEnv = options.additionalEnv ?? {}
     this._additionalArgs = options.additionalArgs ?? []
-    this._settings = options.settings ?? {}
+    // Without an explicit statusLine, the embedded default script runs, which
+    // suppresses the `? for shortcuts` hint that readyText matches by default.
+    this._settings = {
+      statusLine: { type: 'off' },
+      ...options.settings,
+    }
     this._reuseConfigDir = options.reuseConfigDir
     this._reuseHomeDir = options.reuseHomeDir
     this._readyText = options.readyText ?? 'for shortcuts'

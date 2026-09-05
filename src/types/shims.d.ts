@@ -3,6 +3,11 @@
 
 declare module 'asciichart'
 declare module 'bidi-js'
+// Shell scripts imported with { type: 'text' } are inlined by the bundler.
+declare module '*.sh' {
+  const content: string
+  export default content
+}
 
 declare module 'proper-lockfile' {
   export type LockOptions = {

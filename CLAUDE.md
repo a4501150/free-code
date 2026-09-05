@@ -9,6 +9,7 @@ Build, configuration, testing and layout live in [docs/](docs/).
 - Unit files share one process, and `mock.module` is global and permanent for it. [tests/unit/autoCompactThreshold.test.ts](tests/unit/autoCompactThreshold.test.ts) stubs `getInitialSettings`, so a later file that writes `freecode.json` reads the stub and fails only in the suite. Gate such a test on an env var the code reads before settings. Module-level `memoize` leaks the same way.
 - Read the mock server's request log for bodies, ordering and tool results. Capture the tmux pane only for rendered output, because ANSI contaminates anything parsed from it.
 - `TmuxSession` disables prompt suggestions, whose hidden calls would consume mock responses. A test that re-enables them must queue the extra requests.
+- `TmuxSession` defaults settings to `statusLine: {type:'off'}`, because the embedded default statusline suppresses the `? for shortcuts` hint that its default readyText matches. A test exercising the default must pass `statusLine: undefined` and its own readyText.
 - Reset a mock server only after the previous turn is idle.
 
 ## Providers
@@ -66,6 +67,7 @@ Build, configuration, testing and layout live in [docs/](docs/).
 - `modelSettings.json` merges after `freecode.json`. Keep its raw-key filter before validation, or an unrelated key can silently override or invalidate provider configuration.
 - Disabling all hooks must gate settings-, plugin- and session-derived hooks separately; missing one channel silently re-enables it, including in worktree-hook detection.
 - Every hook execution path must independently re-check workspace trust. A new path without that gate is a silent security bypass.
+- An absent `statusLine` runs the embedded default script ([src/statusline/default-statusline.sh](src/statusline/default-statusline.sh), inlined at build and materialized to a PID-scoped tmp file); it skips the trust gate because its content ships in the binary. Only `statusLine: {"type":"off"}` hides the statusline.
 
 ## Terminal UI
 

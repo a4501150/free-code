@@ -1118,15 +1118,23 @@ const _settingsSchemaValue = z
           '"compact" truncates values at 80 chars and limits to 6 params. ' +
           '"full" shows all params with values truncated at 200 chars. Defaults to "compact".',
       ),
-    // Status line for custom status line display
+    // Status line for custom status line display. Absent = embedded default
+    // script (src/statusline/default-statusline.sh); "off" hides it.
     statusLine: z
-      .object({
-        type: z.literal('command'),
-        command: z.string(),
-        padding: z.number().optional(),
-      })
+      .discriminatedUnion('type', [
+        z.object({
+          type: z.literal('command'),
+          command: z.string(),
+          padding: z.number().optional(),
+        }),
+        z.object({
+          type: z.literal('off'),
+        }),
+      ])
       .optional()
-      .describe('Custom status line display configuration'),
+      .describe(
+        'Status line display configuration. Omit for the built-in default; {"type":"off"} hides it.',
+      ),
     // Enabled plugins using marketplace-first format
     enabledPlugins: z
       .record(

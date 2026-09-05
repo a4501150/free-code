@@ -125,4 +125,34 @@ describe('Statusline payload', () => {
 
     await session.stop()
   })
+
+  test('embedded default status line renders when none is configured', async () => {
+    cwd = await mkdtemp(join(tmpdir(), 'claude-e2e-statusline-default-cwd-'))
+
+    server.reset([
+      {
+        kind: 'success',
+        response: {
+          content: [{ type: 'text', text: 'Hi' }],
+          stop_reason: 'end_turn',
+        },
+      },
+    ])
+
+    // The default status line suppresses the `? for shortcuts` hint, so the
+    // idle marker is the token breakdown the default script prints.
+    const session = new TmuxSession({
+      serverUrl: server.url,
+      cwd,
+      // TmuxSession defaults statusLine to off for hint stability; undefined
+      // removes the key so the embedded default applies.
+      settings: { statusLine: undefined },
+      readyText: 'cw 0% ce',
+    })
+    await session.start()
+    await session.waitForText('#')
+    await session.sendLine('Hello')
+    await session.waitForText('Hi', 20_000)
+    await session.stop()
+  })
 })

@@ -62,7 +62,10 @@ export function statusLineShouldDisplay(settings: ReadonlySettings): boolean {
   // Assistant mode: statusline fields (model, permission mode, cwd) reflect the
   // REPL/daemon process, not what the agent child is actually running. Hide it.
   if (feature('KAIROS') && getKairosActive()) return false
-  return settings?.statusLine !== undefined
+  const statusLine = settings?.statusLine
+  if (statusLine) return statusLine.type !== 'off'
+  // No user config: the embedded default script runs, unless hooks are disabled.
+  return settings?.disableAllHooks !== true
 }
 
 function buildStatusLineCommandInput(
@@ -374,7 +377,11 @@ function StatusLineInner({
   }, [scheduleUpdate])
 
   // When the statusLine command changes (hot reload), log the next result
-  const statusLineCommand = settings?.statusLine?.command
+  const statusLineSettings = settings?.statusLine
+  const statusLineCommand =
+    statusLineSettings?.type === 'command'
+      ? statusLineSettings.command
+      : undefined
   const isFirstSettingsRender = useRef(true)
   useEffect(() => {
     if (isFirstSettingsRender.current) {
@@ -388,7 +395,7 @@ function StatusLineInner({
   // Separate effect for logging on mount
   useEffect(() => {
     const statusLine = settings?.statusLine
-    if (statusLine) {
+    if (statusLine?.type === 'command') {
       // Log if status line is configured but disabled by disableAllHooks
       if (settings.disableAllHooks === true) {
         logForDebugging(
@@ -431,7 +438,10 @@ function StatusLineInner({
   }, []) // Only run once on mount, not when doUpdate changes
 
   // Get padding from settings or default to 0
-  const paddingX = settings?.statusLine?.padding ?? 0
+  const paddingX =
+    settings?.statusLine?.type === 'command'
+      ? (settings.statusLine.padding ?? 0)
+      : 0
 
   // StatusLine must have stable height — the footer is flexShrink:0 so a
   // 0→1 row change when the command finishes steals a row from ScrollBox and
