@@ -440,27 +440,8 @@ const MessagesImpl = ({
 
   const isStreamingThinkingVisible = useMemo(() => {
     if (!streamingThinking) return false
-    if (streamingThinking.isStreaming) return true
-    // Swap in place: after the stream ends the row keeps showing the
-    // "thought for" label where the spinner was, and retires only once the
-    // committed transcript renders the same block. Unmounting on
-    // isStreaming=false first shifted every following row before the
-    // label arrived, which read as a full repaint.
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i]
-      if (msg?.type === 'user' && !msg.isMeta) return true
-      if (msg?.type !== 'assistant') continue
-      if (
-        msg.message.content.some(
-          (block: { type: string }) =>
-            block.type === 'reasoning' || block.type === 'thinking',
-        )
-      ) {
-        return false
-      }
-    }
-    return true
-  }, [streamingThinking, messages])
+    return streamingThinking.isStreaming
+  }, [streamingThinking])
 
   const [streamingThinkingExpanded, setStreamingThinkingExpanded] =
     useState(false)
