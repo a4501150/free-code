@@ -3,6 +3,7 @@ import { feature } from 'bun:bundle'
 import { toolMatchesName, type Tool, type Tools } from './Tool.js'
 import { AgentTool } from './tools/AgentTool/AgentTool.js'
 import { SkillTool } from './tools/SkillTool/SkillTool.js'
+import { InvokeTool } from './tools/InvokeToolTool/InvokeToolTool.js'
 import { BashTool } from './tools/BashTool/BashTool.js'
 import { FileEditTool } from './tools/FileEditTool/FileEditTool.js'
 import { FileReadTool } from './tools/FileReadTool/FileReadTool.js'
@@ -151,6 +152,7 @@ export function getAllBaseTools(): Tools {
     BackgroundTaskListTool,
     AskUserQuestionTool,
     SkillTool,
+    InvokeTool,
     EnterPlanModeTool,
     TaskCreateTool,
     TaskGetTool,
