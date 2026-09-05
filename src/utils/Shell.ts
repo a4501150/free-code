@@ -3,7 +3,6 @@ import { constants as fsConstants, readFileSync, unlinkSync } from 'fs'
 import { type FileHandle, mkdir, open, realpath } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { isAbsolute, resolve } from 'path'
-import { join as posixJoin } from 'path/posix'
 
 import {
   getOriginalCwd,
@@ -30,10 +29,8 @@ export type { ExecResult } from './ShellCommand.js'
 
 import { accessSync } from 'fs'
 import { onCwdChangedForHooks } from './hooks/fileChangedWatcher.js'
-import { getClaudeTempDirName } from './permissions/filesystem.js'
 import { getPlatform } from './platform.js'
 import { getInitialSettings } from './settings/settings.js'
-import { SandboxManager } from './sandbox/sandbox-adapter.js'
 import { invalidateSessionEnvCache } from './sessionEnvironment.js'
 import { createBashShellProvider } from './shell/bashProvider.js'
 import { getCachedPowerShellPath } from './shell/powershellDetection.js'
@@ -169,7 +166,6 @@ export type ExecOptions = {
     isIncomplete: boolean,
   ) => void
   preventCwdChanges?: boolean
-  shouldUseSandbox?: boolean
   shouldAutoBackground?: boolean
   /** When provided, stdout is piped (not sent to file) and this callback fires on each data chunk. */
   onStdout?: (data: string) => void
@@ -189,7 +185,6 @@ export async function exec(
     timeout,
     onProgress,
     preventCwdChanges,
-    shouldUseSandbox,
     shouldAutoBackground,
     onStdout,
   } = options ?? {}
@@ -201,18 +196,8 @@ export async function exec(
     .toString(16)
     .padStart(4, '0')
 
-  // Sandbox temp directory - use per-user directory name to prevent multi-user permission conflicts
-  const sandboxTmpDir = posixJoin(
-    process.env.CLAUDE_CODE_TMPDIR || '/tmp',
-    getClaudeTempDirName(),
-  )
-
   const { commandString: builtCommand, cwdFilePath } =
-    await provider.buildExecCommand(command, {
-      id,
-      sandboxTmpDir: shouldUseSandbox ? sandboxTmpDir : undefined,
-      useSandbox: shouldUseSandbox ?? false,
-    })
+    await provider.buildExecCommand(command, { id })
 
   let commandString = builtCommand
 
@@ -245,38 +230,7 @@ export async function exec(
 
   const binShell = provider.shellPath
 
-  // Sandboxed PowerShell: wrapWithSandbox hardcodes `<binShell> -c '<cmd>'` —
-  // using pwsh there would lose -NoProfile -NonInteractive (profile load
-  // inside sandbox → delays, stray output, may hang on prompts). Instead:
-  //   • powershellProvider.buildExecCommand (useSandbox) pre-wraps as
-  //     `pwsh -NoProfile -NonInteractive -EncodedCommand <base64>` — base64
-  //     survives the runtime's shellquote.quote() layer
-  //   • pass /bin/sh as the sandbox's inner shell to exec that invocation
-  //   • outer spawn is also /bin/sh -c to parse the runtime's POSIX output
-  // /bin/sh exists on every platform where sandbox is supported.
-  const isSandboxedPowerShell = shouldUseSandbox && shellType === 'powershell'
-  const sandboxBinShell = isSandboxedPowerShell ? '/bin/sh' : binShell
-
-  if (shouldUseSandbox) {
-    commandString = await SandboxManager.wrapWithSandbox(
-      commandString,
-      sandboxBinShell,
-      undefined,
-      abortSignal,
-    )
-    // Create sandbox temp directory for sandboxed processes with secure permissions
-    try {
-      const fs = getFsImplementation()
-      await fs.mkdir(sandboxTmpDir, { mode: 0o700 })
-    } catch (error) {
-      logForDebugging(`Failed to create ${sandboxTmpDir} directory: ${error}`)
-    }
-  }
-
-  const spawnBinary = isSandboxedPowerShell ? '/bin/sh' : binShell
-  const shellArgs = isSandboxedPowerShell
-    ? ['-c', commandString]
-    : provider.getSpawnArgs(commandString)
+  const shellArgs = provider.getSpawnArgs(commandString)
   const envOverrides = await provider.getEnvironmentOverrides(command)
 
   // When onStdout is provided, use pipe mode: stdout flows through
@@ -297,7 +251,7 @@ export async function exec(
   // grants FILE_GENERIC_WRITE. Atomicity is preserved because duplicated
   // handles share the same FILE_OBJECT with FILE_SYNCHRONOUS_IO_NONALERT,
   // which serializes all I/O through a single kernel lock.
-  // SECURITY: O_NOFOLLOW prevents symlink-following attacks from the sandbox.
+  // SECURITY: O_NOFOLLOW prevents symlink-following attacks on the output file.
   // On Windows, use string flags — numeric flags can produce EINVAL through libuv.
   let outputHandle: FileHandle | undefined
   if (!usePipeMode) {
@@ -314,7 +268,7 @@ export async function exec(
   }
 
   try {
-    const childProcess = spawn(spawnBinary, shellArgs, {
+    const childProcess = spawn(binShell, shellArgs, {
       env: {
         ...subprocessEnv(),
         SHELL: shellType === 'bash' ? binShell : undefined,
@@ -384,14 +338,6 @@ export async function exec(
         : cwdFilePath
 
     void shellCommand.result.then(async result => {
-      // On Linux, bwrap creates 0-byte mount-point files on the host to deny
-      // writes to non-existent paths (.bashrc, HEAD, etc.). These persist after
-      // bwrap exits as ghost dotfiles in cwd. Cleanup is synchronous and a no-op
-      // on macOS. Keep before any await so callers awaiting .result see a clean
-      // working tree in the same microtask.
-      if (shouldUseSandbox) {
-        SandboxManager.cleanupAfterCommand()
-      }
       // Only foreground tasks update the cwd
       if (result && !preventCwdChanges && !result.backgroundTaskId) {
         try {

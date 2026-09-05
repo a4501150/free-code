@@ -50,7 +50,6 @@ import {
   suggestionForPrefix as sharedSuggestionForPrefix,
 } from '../../utils/permissions/shellRuleMatching.js'
 import { getPlatform } from '../../utils/platform.js'
-import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { windowsPathToPosixPath } from '../../utils/windowsPaths.js'
 import { BashTool } from './BashTool.js'
@@ -58,7 +57,6 @@ import { checkCommandOperatorPermissions } from './bashCommandHelpers.js'
 import { checkPermissionMode } from './modeValidation.js'
 import { checkPathConstraints } from './pathValidation.js'
 import { checkSedConstraints } from './sedValidation.js'
-import { shouldUseSandbox } from './shouldUseSandbox.js'
 
 // Env-var assignment prefix (VAR=value). Shared across three while-loops that
 // skip safe env vars before extracting the command name.
@@ -486,9 +484,8 @@ export const BINARY_HIJACK_VARS = /^(LD_|DYLD_|PATH$)/
  * for allow rules (prevents `DOCKER_HOST=evil docker ps` from auto-matching
  * `Bash(docker ps:*)`), but deny rules must be harder to circumvent.
  *
- * Also used for sandbox.excludedCommands matching (not a security boundary —
- * permission prompts are), with BINARY_HIJACK_VARS as a blocklist.
- *
+ * Also used for excluded-command matching with BINARY_HIJACK_VARS as a
+ * blocklist (not a security boundary — permission prompts are).
  * SECURITY: Uses a broader value pattern than stripSafeWrappers. The value
  * pattern excludes only actual shell injection characters ($, backtick, ;, |,
  * &, parens, redirects, quotes, backslash) and whitespace. Characters like
@@ -1094,111 +1091,6 @@ export async function checkCommandAndSuggestRules(
 }
 
 /**
- * Checks if a command should be auto-allowed when sandboxed.
- * Returns early if there are explicit deny/ask rules that should be respected.
- *
- * NOTE: This function should only be called when sandboxing and auto-allow are enabled.
- *
- * @param input - The bash tool input
- * @param toolPermissionContext - The permission context
- * @returns PermissionResult with:
- *   - deny/ask if explicit rule exists (exact or prefix)
- *   - allow if no explicit rules (sandbox auto-allow applies)
- *   - passthrough should not occur since we're in auto-allow mode
- */
-function checkSandboxAutoAllow(
-  input: z.infer<typeof BashTool.inputSchema>,
-  toolPermissionContext: ToolPermissionContext,
-  astCommands: SimpleCommand[],
-): PermissionResult {
-  const command = input.command.trim()
-
-  // Check for explicit deny/ask rules on the full command (exact + prefix)
-  const { matchingDenyRules, matchingAskRules } = matchingRulesForInput(
-    input,
-    toolPermissionContext,
-    'prefix',
-  )
-
-  // Return immediately if there's an explicit deny rule on the full command
-  if (matchingDenyRules[0] !== undefined) {
-    return {
-      behavior: 'deny',
-      message: `Permission to use ${BashTool.name} with command ${command} has been denied.`,
-      decisionReason: {
-        type: 'rule',
-        rule: matchingDenyRules[0],
-      },
-    }
-  }
-
-  // SECURITY: For compound commands, check each subcommand against deny/ask
-  // rules. Prefix rules like Bash(rm:*) won't match the full compound command
-  // (e.g., "echo hello && rm -rf /" doesn't start with "rm"), so we must
-  // check each subcommand individually.
-  // IMPORTANT: Subcommand deny checks must run BEFORE full-command ask returns.
-  // Otherwise a wildcard ask rule matching the full command (e.g., Bash(*echo*))
-  // would return 'ask' before a prefix deny rule on a subcommand (e.g., Bash(rm:*))
-  // gets checked, downgrading a deny to an ask.
-  if (astCommands.length > 1) {
-    let firstAskRule: PermissionRule | undefined
-    for (const sub of astCommands) {
-      const subResult = matchingRulesForInput(
-        { command: sub.sourceText },
-        toolPermissionContext,
-        'prefix',
-        { astCommand: sub },
-      )
-      // Deny takes priority — return immediately
-      if (subResult.matchingDenyRules[0] !== undefined) {
-        return {
-          behavior: 'deny',
-          message: `Permission to use ${BashTool.name} with command ${command} has been denied.`,
-          decisionReason: {
-            type: 'rule',
-            rule: subResult.matchingDenyRules[0],
-          },
-        }
-      }
-      // Stash first ask match; don't return yet (deny across all subs takes priority)
-      firstAskRule ??= subResult.matchingAskRules[0]
-    }
-    if (firstAskRule) {
-      return {
-        behavior: 'ask',
-        message: createPermissionRequestMessage(BashTool.name),
-        decisionReason: {
-          type: 'rule',
-          rule: firstAskRule,
-        },
-      }
-    }
-  }
-
-  // Full-command ask check (after all deny sources have been exhausted)
-  if (matchingAskRules[0] !== undefined) {
-    return {
-      behavior: 'ask',
-      message: createPermissionRequestMessage(BashTool.name),
-      decisionReason: {
-        type: 'rule',
-        rule: matchingAskRules[0],
-      },
-    }
-  }
-  // No explicit rules, so auto-allow with sandbox
-
-  return {
-    behavior: 'allow',
-    updatedInput: input,
-    decisionReason: {
-      type: 'other',
-      reason: 'Auto-allowed with sandbox (autoAllowBashIfSandboxed enabled)',
-    },
-  }
-}
-
-/**
  * Drop the `cd ${cwd}` prefix subcommand that models like to prepend. It is a
  * no-op, and keeping it turns every command into a compound one.
  */
@@ -1361,23 +1253,6 @@ export async function bashToolHasPermission(
   // and redirects that security decisions are actually made from.
   const astCommands: SimpleCommand[] = astResult.commands
 
-  // Check sandbox auto-allow (which respects explicit deny/ask rules)
-  // Only call this if sandboxing and auto-allow are both enabled
-  if (
-    SandboxManager.isSandboxingEnabled() &&
-    SandboxManager.isAutoAllowBashIfSandboxedEnabled() &&
-    shouldUseSandbox(input)
-  ) {
-    const sandboxAutoAllowResult = checkSandboxAutoAllow(
-      input,
-      appState.toolPermissionContext,
-      astCommands,
-    )
-    if (sandboxAutoAllowResult.behavior !== 'passthrough') {
-      return sandboxAutoAllowResult
-    }
-  }
-
   // Check exact match first
   const exactMatchResult = bashToolCheckExactMatchPermission(
     input,
@@ -1468,7 +1343,7 @@ export async function bashToolHasPermission(
   const compoundCommandHasCd = cdCommandCount > 0
 
   // SECURITY: Block compound commands that have both cd AND git
-  // This prevents sandbox escape via: cd /malicious/dir && git status
+  // This prevents a git-hook attack via: cd /malicious/dir && git status
   // where the malicious directory contains a bare git repo with core.fsmonitor.
   // This check must happen HERE (before subcommand-level permission checks)
   // because bashToolCheckPermission checks each subcommand independently via
@@ -1645,7 +1520,6 @@ export async function bashToolHasPermission(
       cmd.sourceText,
       await checkCommandAndSuggestRules(
         {
-          // Pass through input params like `sandbox`
           ...input,
           command: cmd.sourceText,
         },

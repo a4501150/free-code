@@ -82,7 +82,7 @@ export function AssistantToolUseMessage({
 
   // Memoize on param identity (stable — from the persisted message object).
   // Zod safeParse allocates per call, and some tools' userFacingName()
-  // (BashTool → shouldUseSandbox → shell-quote parse) are expensive. Without
+  // (BashTool → shell-quote parse) are expensive. Without
   // this, ~50 bash messages × shell-quote-per-render pushed transition
   // render past the shimmer tick → abort → infinite retry (#21605).
   const parsed = useMemo(() => {

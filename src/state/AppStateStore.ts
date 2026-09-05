@@ -242,28 +242,11 @@ export type AppState = DeepImmutable<{
       summary?: string
     }>
   }
-  // Worker sandbox permission requests (leader side) - for network access approval
-  workerSandboxPermissions: {
-    queue: Array<{
-      requestId: string
-      workerId: string
-      workerName: string
-      workerColor?: string
-      host: string
-      createdAt: number
-    }>
-    selectedIndex: number
-  }
   // Pending permission request on worker side (shown while waiting for leader approval)
   pendingWorkerRequest: {
     toolName: string
     toolUseId: string
     description: string
-  } | null
-  // Pending sandbox permission request on worker side
-  pendingSandboxRequest: {
-    requestId: string
-    host: string
   } | null
   promptSuggestion: {
     text: string | null
@@ -383,12 +366,7 @@ export function getDefaultAppState(): AppState {
     inbox: {
       messages: [],
     },
-    workerSandboxPermissions: {
-      queue: [],
-      selectedIndex: 0,
-    },
     pendingWorkerRequest: null,
-    pendingSandboxRequest: null,
     promptSuggestion: {
       text: null,
       promptId: null,

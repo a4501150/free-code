@@ -4,38 +4,12 @@ import { createCombinedAbortSignal } from '../combinedAbortSignal.js'
 import { logForDebugging } from '../debug.js'
 import { errorMessage } from '../errors.js'
 import { getProxyUrl, shouldBypassProxy } from '../proxy.js'
-import { getSandboxProxyProvider } from '../sandbox/sandboxProxyState.js'
 // Import as namespace so spyOn works in tests (direct imports bypass spies)
 import * as settingsModule from '../settings/settings.js'
 import type { HttpHook } from '../settings/types.js'
 import { ssrfGuardedLookup } from './ssrfGuard.js'
 
 const DEFAULT_HTTP_HOOK_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes (matches TOOL_HOOK_EXECUTION_TIMEOUT_MS)
-
-/**
- * Get the sandbox proxy config for routing HTTP hook requests through the
- * sandbox network proxy when sandboxing is enabled.
- */
-async function getSandboxProxyConfig(): Promise<
-  { host: string; port: number; protocol: string } | undefined
-> {
-  const provider = getSandboxProxyProvider()
-  if (!provider || !provider.isSandboxingEnabled()) {
-    return undefined
-  }
-
-  // Wait for the sandbox network proxy to finish initializing. In REPL mode,
-  // SandboxManager.initialize() is fire-and-forget so the proxy may not be
-  // ready yet when the first hook fires.
-  await provider.waitForNetworkInitialization()
-
-  const proxyPort = provider.getProxyPort()
-  if (!proxyPort) {
-    return undefined
-  }
-
-  return { host: '127.0.0.1', port: proxyPort, protocol: 'http' }
-}
 
 /**
  * Read HTTP hook allowlist restrictions from merged settings (all sources).
@@ -106,9 +80,7 @@ function interpolateEnvVars(
  * Execute an HTTP hook by POSTing the hook input JSON to the configured URL.
  * Returns the raw response for the caller to interpret.
  *
- * When sandboxing is enabled, requests are routed through the sandbox network
- * proxy which enforces the domain allowlist. The proxy returns HTTP 403 for
- * blocked domains.
+ * Requests use the SSRF-guarded DNS lookup unless an env-var proxy is active.
  *
  * Header values support $VAR_NAME and ${VAR_NAME} env var interpolation so that
  * secrets (e.g. "Authorization: Bearer $MY_TOKEN") are not stored in freecode.json.
@@ -165,33 +137,19 @@ export async function execHttpHook(
         headers[name] = interpolateEnvVars(value, allowedEnvVars)
       }
     }
-
-    // Route through sandbox network proxy when available. The proxy enforces
-    // the domain allowlist and returns 403 for blocked domains.
-    const sandboxProxy = await getSandboxProxyConfig()
-
     // Detect env var proxy (HTTP_PROXY / HTTPS_PROXY, respecting NO_PROXY).
     // When set, configureGlobalAgents() has already installed a request
     // interceptor that sets httpsAgent to an HttpsProxyAgent — the proxy
-    // handles DNS for the target. Skip the SSRF guard in that case, same
-    // as we do for the sandbox proxy, so that we don't accidentally block
-    // a corporate proxy sitting on a private IP (e.g. 10.0.0.1:3128).
+    // handles DNS for the target. Skip the SSRF guard in that case, so that
+    // we don't accidentally block a corporate proxy on a private IP.
     const envProxyActive =
-      !sandboxProxy &&
-      getProxyUrl() !== undefined &&
-      !shouldBypassProxy(hook.url)
+      getProxyUrl() !== undefined && !shouldBypassProxy(hook.url)
 
-    if (sandboxProxy) {
-      logForDebugging(
-        `Hooks: HTTP hook POST to ${hook.url} (via sandbox proxy :${sandboxProxy.port})`,
-      )
-    } else if (envProxyActive) {
-      logForDebugging(
-        `Hooks: HTTP hook POST to ${hook.url} (via env-var proxy)`,
-      )
-    } else {
-      logForDebugging(`Hooks: HTTP hook POST to ${hook.url}`)
-    }
+    logForDebugging(
+      envProxyActive
+        ? `Hooks: HTTP hook POST to ${hook.url} (via env-var proxy)`
+        : `Hooks: HTTP hook POST to ${hook.url}`,
+    )
 
     const response = await axios.post<string>(hook.url, jsonInput, {
       headers,
@@ -202,13 +160,13 @@ export async function execHttpHook(
       // Explicit false prevents axios's own env-var proxy detection; when an
       // env-var proxy is configured, the global axios interceptor installed
       // by configureGlobalAgents() handles it via httpsAgent instead.
-      proxy: sandboxProxy ?? false,
+      proxy: false,
       // SSRF guard: validate resolved IPs, block private/link-local ranges
       // (but allow loopback for local dev). Skipped when any proxy is in
       // use — the proxy performs DNS for the target, and applying the
       // guard would instead validate the proxy's own IP, breaking
       // connections to corporate proxies on private networks.
-      lookup: sandboxProxy || envProxyActive ? undefined : ssrfGuardedLookup,
+      lookup: envProxyActive ? undefined : ssrfGuardedLookup,
     })
 
     cleanup()

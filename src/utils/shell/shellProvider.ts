@@ -15,8 +15,6 @@ export type ShellProvider = {
     command: string,
     opts: {
       id: number | string
-      sandboxTmpDir?: string
-      useSandbox: boolean
     },
   ): Promise<{ commandString: string; cwdFilePath: string }>
 

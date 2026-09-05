@@ -277,7 +277,6 @@ import {
   ResumeSessionInUseError,
   restoreSessionStateFromLog,
 } from 'src/utils/sessionRestore.js'
-import { SandboxManager } from 'src/utils/sandbox/sandbox-adapter.js'
 import {
   headlessProfilerStartTurn,
   headlessProfilerCheckpoint,
@@ -553,36 +552,6 @@ export async function runHeadless(
   // structuredIO.write below.
   if (options.outputFormat === 'stream-json') {
     installStreamJsonStdoutGuard()
-  }
-
-  // #34044: if user explicitly set sandbox.enabled=true but deps are missing,
-  // isSandboxingEnabled() returns false silently. Surface the reason so users
-  // know their security config isn't being enforced.
-  const sandboxUnavailableReason = SandboxManager.getSandboxUnavailableReason()
-  if (sandboxUnavailableReason) {
-    if (SandboxManager.isSandboxRequired()) {
-      process.stderr.write(
-        `\nError: sandbox required but unavailable: ${sandboxUnavailableReason}\n` +
-          `  sandbox.failIfUnavailable is set — refusing to start without a working sandbox.\n\n`,
-      )
-      gracefulShutdownSync(1)
-      return
-    }
-    process.stderr.write(
-      `\n⚠ Sandbox disabled: ${sandboxUnavailableReason}\n` +
-        `  Commands will run WITHOUT sandboxing. Network and filesystem restrictions will NOT be enforced.\n\n`,
-    )
-  } else if (SandboxManager.isSandboxingEnabled()) {
-    // Initialize sandbox with a callback that forwards network permission
-    // requests to the structured host via the can_use_tool control protocol.
-    // This must happen after structuredIO is created so we can send requests.
-    try {
-      await SandboxManager.initialize(structuredIO.createSandboxAskCallback())
-    } catch (err) {
-      process.stderr.write(`\n❌ Sandbox Error: ${errorMessage(err)}\n`)
-      gracefulShutdownSync(1, 'other')
-      return
-    }
   }
 
   if (options.outputFormat === 'stream-json' && options.verbose) {
@@ -3435,7 +3404,7 @@ function runHeadlessStreaming(
           // now that the reset is centralized in fanOut, a direct call here
           // would read stale cached settings and silently drop the update.
           // Bonus: going through notifyChange also tells the other subscribers
-          // (loadPluginHooks, sandbox-adapter) about the change, which the
+          // (loadPluginHooks) about the change, which the
           // previous direct call skipped.
           settingsChangeDetector.notifyChange('flagSettings')
 

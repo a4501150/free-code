@@ -54,8 +54,6 @@ import {
   isPermissionResponse,
   isPlanApprovalRequest,
   isPlanApprovalResponse,
-  isSandboxPermissionRequest,
-  isSandboxPermissionResponse,
   isShutdownApproved,
   isShutdownRequest,
   isTeamPermissionUpdate,
@@ -66,9 +64,7 @@ import {
 } from '../utils/teammateMailbox.js'
 import {
   hasPermissionCallback,
-  hasSandboxPermissionCallback,
   processMailboxPermissionResponse,
-  processSandboxPermissionResponse,
 } from './useSwarmPermissionPoller.js'
 
 /**
@@ -204,8 +200,6 @@ export function useInboxPoller({
     // Separate permission messages from regular teammate messages
     const permissionRequests: TeammateMessage[] = []
     const permissionResponses: TeammateMessage[] = []
-    const sandboxPermissionRequests: TeammateMessage[] = []
-    const sandboxPermissionResponses: TeammateMessage[] = []
     const shutdownRequests: TeammateMessage[] = []
     const shutdownApprovals: TeammateMessage[] = []
     const teamPermissionUpdates: TeammateMessage[] = []
@@ -216,8 +210,6 @@ export function useInboxPoller({
     for (const m of unread) {
       const permReq = isPermissionRequest(m.text)
       const permResp = isPermissionResponse(m.text)
-      const sandboxReq = isSandboxPermissionRequest(m.text)
-      const sandboxResp = isSandboxPermissionResponse(m.text)
       const shutdownReq = isShutdownRequest(m.text)
       const shutdownApproval = isShutdownApproved(m.text)
       const teamPermUpdate = isTeamPermissionUpdate(m.text)
@@ -228,10 +220,6 @@ export function useInboxPoller({
         permissionRequests.push(m)
       } else if (permResp) {
         permissionResponses.push(m)
-      } else if (sandboxReq) {
-        sandboxPermissionRequests.push(m)
-      } else if (sandboxResp) {
-        sandboxPermissionResponses.push(m)
       } else if (shutdownReq) {
         shutdownRequests.push(m)
       } else if (shutdownApproval) {
@@ -392,104 +380,6 @@ export function useInboxPoller({
               feedback: parsed.error,
             })
           }
-        }
-      }
-    }
-
-    // Handle sandbox permission requests (leader side) - add to workerSandboxPermissions queue
-    if (
-      sandboxPermissionRequests.length > 0 &&
-      isTeamLead(currentAppState.teamContext)
-    ) {
-      logForDebugging(
-        `[InboxPoller] Found ${sandboxPermissionRequests.length} sandbox permission request(s)`,
-      )
-
-      const newSandboxRequests: Array<{
-        requestId: string
-        workerId: string
-        workerName: string
-        workerColor?: string
-        host: string
-        createdAt: number
-      }> = []
-
-      for (const m of sandboxPermissionRequests) {
-        const parsed = isSandboxPermissionRequest(m.text)
-        if (!parsed) continue
-
-        // Validate required nested fields to prevent crashes from malformed messages
-        if (!parsed.hostPattern?.host) {
-          logForDebugging(
-            `[InboxPoller] Invalid sandbox permission request: missing hostPattern.host`,
-          )
-          continue
-        }
-
-        newSandboxRequests.push({
-          requestId: parsed.requestId,
-          workerId: parsed.workerId,
-          workerName: parsed.workerName,
-          workerColor: parsed.workerColor,
-          host: parsed.hostPattern.host,
-          createdAt: parsed.createdAt,
-        })
-      }
-
-      if (newSandboxRequests.length > 0) {
-        setAppState(prev => ({
-          ...prev,
-          workerSandboxPermissions: {
-            ...prev.workerSandboxPermissions,
-            queue: [
-              ...prev.workerSandboxPermissions.queue,
-              ...newSandboxRequests,
-            ],
-          },
-        }))
-
-        // Send desktop notification for the first new request
-        const firstRequest = newSandboxRequests[0]
-        if (firstRequest && !isLoading && !focusedInputDialog) {
-          void sendNotification(
-            {
-              message: `${firstRequest.workerName} needs network access to ${firstRequest.host}`,
-              notificationType: 'worker_permission_prompt',
-            },
-            terminal,
-          )
-        }
-      }
-    }
-
-    // Handle sandbox permission responses (worker side) - invoke registered callbacks
-    if (sandboxPermissionResponses.length > 0 && isTeammate()) {
-      logForDebugging(
-        `[InboxPoller] Found ${sandboxPermissionResponses.length} sandbox permission response(s)`,
-      )
-
-      for (const m of sandboxPermissionResponses) {
-        const parsed = isSandboxPermissionResponse(m.text)
-        if (!parsed) continue
-
-        // Check if we have a registered callback for this request
-        if (hasSandboxPermissionCallback(parsed.requestId)) {
-          logForDebugging(
-            `[InboxPoller] Processing sandbox permission response for ${parsed.requestId}: allow=${parsed.allow}`,
-          )
-
-          // Process the response using the exported function
-          processSandboxPermissionResponse({
-            requestId: parsed.requestId,
-            host: parsed.host,
-            allow: parsed.allow,
-          })
-
-          // Clear the pending sandbox request indicator
-          setAppState(prev => ({
-            ...prev,
-            pendingSandboxRequest: null,
-          }))
         }
       }
     }

@@ -1,5 +1,4 @@
 import React from 'react'
-import { removeSandboxViolationTags } from 'src/utils/sandbox/sandbox-ui-utils.js'
 import { KeyboardShortcutHint } from '../../components/design-system/KeyboardShortcutHint.js'
 import { MessageResponse } from '../../components/MessageResponse.js'
 import { OutputLine } from '../../components/shell/OutputLine.js'
@@ -16,29 +15,6 @@ type Props = {
 // Pattern to match "Shell cwd was reset to <path>" message
 // Use (?:^|\n) to match either start of string or after a newline
 const SHELL_CWD_RESET_PATTERN = /(?:^|\n)(Shell cwd was reset to .+)$/
-
-/**
- * Extracts sandbox violations from stderr if present
- * Returns both the cleaned stderr and the violations content
- */
-function extractSandboxViolations(stderr: string): {
-  cleanedStderr: string
-} {
-  const violationsMatch = stderr.match(
-    /<sandbox_violations>([\s\S]*?)<\/sandbox_violations>/,
-  )
-
-  if (!violationsMatch) {
-    return { cleanedStderr: stderr }
-  }
-
-  // Remove the sandbox violations section from stderr
-  const cleanedStderr = removeSandboxViolationTags(stderr).trim()
-
-  return {
-    cleanedStderr,
-  }
-}
 
 /**
  * Extracts the "Shell cwd was reset" warning message from stderr
@@ -64,7 +40,7 @@ function extractCwdResetWarning(stderr: string): {
 export default function BashToolResultMessage({
   content: {
     stdout = '',
-    stderr: stdErrWithViolations = '',
+    stderr: stderrProp = '',
     isImage,
     returnCodeInterpretation,
     noOutputExpected,
@@ -73,16 +49,9 @@ export default function BashToolResultMessage({
   verbose,
   timeoutMs,
 }: Props): React.ReactNode {
-  // Extract sandbox violations from stderr as it feels cleaner on the UI
-  // We want the model to see the violations, so it can explain what went wrong, and the
-  // user can access them in the violation logs
-  const { cleanedStderr: stderrWithoutViolations } =
-    extractSandboxViolations(stdErrWithViolations)
-
   // Extract "Shell cwd was reset" warning to render it with warning color instead of error
-  const { cleanedStderr: stderr, cwdResetWarning } = extractCwdResetWarning(
-    stderrWithoutViolations,
-  )
+  const { cleanedStderr: stderr, cwdResetWarning } =
+    extractCwdResetWarning(stderrProp)
 
   // If this is an image, we don't want to truncate it in the UI
   if (isImage) {

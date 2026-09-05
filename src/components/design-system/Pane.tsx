@@ -16,7 +16,7 @@ type PaneProps = {
  * A pane — a region of the terminal that appears below the REPL prompt,
  * bounded by a colored top line with a one-row gap above and horizontal
  * padding. Used by all slash-command screens: /config, /help, /plugins,
- * /sandbox, /stats, /permissions.
+ * /stats, /permissions.
  *
  * For confirm/cancel dialogs (Esc to dismiss, Enter to confirm), use
  * `<Dialog>` instead — it registers its own keybindings. For a full
@@ -27,7 +27,7 @@ type PaneProps = {
  *
  * @example
  * <Pane color="permission">
- *   <Tabs title="Sandbox:">...</Tabs>
+ *   <Tabs title="Settings:">...</Tabs>
  * </Pane>
  */
 export function Pane({ children, color }: PaneProps): React.ReactNode {

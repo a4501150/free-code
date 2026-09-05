@@ -92,26 +92,19 @@ export async function processBashCommand(
       })
     }
 
-    // User-initiated `!` commands run outside sandbox. Both shell tools honor
-    // dangerouslyDisableSandbox (checked against areUnsandboxedCommandsAllowed()
-    // in shouldUseSandbox.ts). PS sandbox is Linux/macOS/WSL2 only — on Windows
-    // native, shouldUseSandbox() returns false regardless (unsupported platform).
     const selectedPowerShell = usePowerShell ? PowerShellTool : null
     const shellTool = selectedPowerShell ?? BashTool
 
     const response = selectedPowerShell
       ? await selectedPowerShell.call(
-          { command: inputString, dangerouslyDisableSandbox: true },
+          { command: inputString },
           bashModeContext,
           undefined,
           undefined,
           onProgress,
         )
       : await BashTool.call(
-          {
-            command: inputString,
-            dangerouslyDisableSandbox: true,
-          },
+          { command: inputString },
           bashModeContext,
           undefined,
           undefined,

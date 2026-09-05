@@ -339,7 +339,7 @@ export function getClaudeTempDirName(): string {
  * in permission checks. On macOS, /tmp is a symlink to /private/tmp, so without
  * resolution, paths like /tmp/claude-{uid}/... wouldn't match /private/tmp/claude-{uid}/...
  */
-// Memoized: called per-tool from permission checks (yoloClassifier, sandbox-adapter)
+// Memoized: called per-tool from permission checks (yoloClassifier)
 // and per-turn from BashTool prompt. Inputs (CLAUDE_CODE_TMPDIR env + platform) are
 // fixed at startup, and the realpath of the system tmp dir does not change mid-session.
 export const getClaudeTempDir = memoize(function getClaudeTempDir(): string {
@@ -1268,8 +1268,8 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
   // accidentally permanently granting broad access to these folders.
   //
   // matchingRuleForInput returns the first match across all sources. If the user
-  // also has a broader Edit(.claude/.freecode) rule in userSettings (e.g. from sandbox
-  // write-allow conversion), that rule would be found first and its source check
+  // also has a broader Edit(.claude/.freecode) rule in userSettings, that rule
+  // would be found first and its source check
   // below would fail. Scope the search to session-only rules so the dialog's
   // "allow Claude to edit its own settings for this session" option actually works.
   const claudeFolderAllowRule = matchingRuleForInput(
@@ -1372,7 +1372,7 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
     }
   }
 
-  // 3. If in acceptEdits or sandboxBashMode mode, allow all writes in original cwd
+  // 3. If in acceptEdits mode, allow all writes in original cwd
   const isInWorkingDir = pathInAllowedWorkingPath(
     path,
     toolPermissionContext,

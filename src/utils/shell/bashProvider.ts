@@ -59,7 +59,6 @@ export async function createBashShellProvider(
   shellPath: string,
   options?: { skipSnapshot?: boolean },
 ): Promise<ShellProvider> {
-  let currentSandboxTmpDir: string | undefined
   const snapshotPromise: Promise<string | undefined> = options?.skipSnapshot
     ? Promise.resolve(undefined)
     : createAndSaveSnapshot(shellPath).catch(error => {
@@ -78,8 +77,6 @@ export async function createBashShellProvider(
       command: string,
       opts: {
         id: number | string
-        sandboxTmpDir?: string
-        useSandbox: boolean
       },
     ): Promise<{ commandString: string; cwdFilePath: string }> {
       let snapshotFilePath = await snapshotPromise
@@ -102,9 +99,6 @@ export async function createBashShellProvider(
       }
       lastSnapshotFilePath = snapshotFilePath
 
-      // Stash sandboxTmpDir for use in getEnvironmentOverrides
-      currentSandboxTmpDir = opts.sandboxTmpDir
-
       const tmpdir = osTmpdir()
       const isWindows = getPlatform() === 'windows'
       const shellTmpdir = isWindows ? windowsPathToPosixPath(tmpdir) : tmpdir
@@ -113,12 +107,8 @@ export async function createBashShellProvider(
       // cwdFilePath: native OS path used by Node.js for readFileSync/unlinkSync
       // On non-Windows these are identical; on Windows, Git Bash needs POSIX paths
       // but Node.js needs native Windows paths for file operations.
-      const shellCwdFilePath = opts.useSandbox
-        ? posixJoin(opts.sandboxTmpDir!, `cwd-${opts.id}`)
-        : posixJoin(shellTmpdir, `claude-${opts.id}-cwd`)
-      const cwdFilePath = opts.useSandbox
-        ? posixJoin(opts.sandboxTmpDir!, `cwd-${opts.id}`)
-        : nativeJoin(tmpdir, `claude-${opts.id}-cwd`)
+      const shellCwdFilePath = posixJoin(shellTmpdir, `claude-${opts.id}-cwd`)
+      const cwdFilePath = nativeJoin(tmpdir, `claude-${opts.id}-cwd`)
 
       // Defensive rewrite: the model sometimes emits Windows CMD-style `2>nul`
       // redirects. In POSIX bash (including Git Bash on Windows), this creates a
@@ -133,8 +123,6 @@ export async function createBashShellProvider(
       // Without this, `eval 'rg foo | wc -l' \< /dev/null` becomes
       // `rg foo | wc -l < /dev/null` — wc reads /dev/null and outputs 0, and
       // rg (with no path arg) waits on the open spawn stdin pipe forever.
-      // Applies to sandbox mode too: sandbox wraps the assembled commandString,
-      // not the raw command (since PR #9189).
       if (normalizedCommand.includes('|') && addStdinRedirect) {
         quotedCommand = rearrangePipeCommand(normalizedCommand)
       }
@@ -214,19 +202,6 @@ export async function createBashShellProvider(
       // When null (before socket initializes), user's TMUX is preserved.
       if (claudeTmuxEnv) {
         env.TMUX = claudeTmuxEnv
-      }
-      if (currentSandboxTmpDir) {
-        let posixTmpDir = currentSandboxTmpDir
-        if (getPlatform() === 'windows') {
-          posixTmpDir = windowsPathToPosixPath(posixTmpDir)
-        }
-        env.TMPDIR = posixTmpDir
-        env.CLAUDE_CODE_TMPDIR = posixTmpDir
-        // Zsh uses TMPPREFIX (default /tmp/zsh) for heredoc temp files,
-        // not TMPDIR. Set it to a path inside the sandbox tmp dir so
-        // heredocs work in sandboxed zsh commands.
-        // Safe to set unconditionally — non-zsh shells ignore TMPPREFIX.
-        env.TMPPREFIX = posixJoin(posixTmpDir, 'zsh')
       }
       // Apply session env vars set via /env (child processes only, not the REPL)
       for (const [key, value] of getSessionEnvVars()) {

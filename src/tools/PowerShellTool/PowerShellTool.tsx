@@ -37,10 +37,8 @@ import {
 import { truncate } from '../../utils/format.js'
 import { logError } from '../../utils/log.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
-import { getPlatform } from '../../utils/platform.js'
 import { exec } from '../../utils/Shell.js'
 import type { ExecResult } from '../../utils/ShellCommand.js'
-import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
 import { semanticNumber } from '../../utils/semanticNumber.js'
 import { getCachedPowerShellPath } from '../../utils/shell/powershellDetection.js'
@@ -55,7 +53,6 @@ import {
   getToolResultPath,
   PREVIEW_SIZE_BYTES,
 } from '../../utils/toolResultStorage.js'
-import { shouldUseSandbox } from '../BashTool/shouldUseSandbox.js'
 import { BackgroundHint } from '../BashTool/UI.js'
 import {
   buildImageToolResult,
@@ -241,28 +238,6 @@ export function detectBlockedSleepPattern(command: string): string | null {
     : `standalone Start-Sleep ${secs}`
 }
 
-/**
- * On Windows native, sandbox is unavailable (bwrap/sandbox-exec are
- * POSIX-only). If enterprise policy has sandbox.enabled AND forbids
- * unsandboxed commands, PowerShell cannot comply — refuse execution
- * rather than silently bypass the policy. On Linux/macOS/WSL2, pwsh
- * runs as a native binary under the sandbox same as bash, so this
- * gate does not apply.
- *
- * Checked in BOTH validateInput (clean tool-runner error) and call()
- * (covers direct callers like promptShellExecution.ts that skip
- * validateInput). The call() guard is the load-bearing one.
- */
-const WINDOWS_SANDBOX_POLICY_REFUSAL =
-  'Enterprise policy requires sandboxing, but sandboxing is not available on native Windows. Shell command execution is blocked on this platform by policy.'
-function isWindowsSandboxPolicyViolation(): boolean {
-  return (
-    getPlatform() === 'windows' &&
-    SandboxManager.isSandboxEnabledInSettings() &&
-    !SandboxManager.areUnsandboxedCommandsAllowed()
-  )
-}
-
 // Check if background tasks are disabled at module load time
 const isBackgroundTasksDisabled =
   // eslint-disable-next-line custom-rules/no-process-env-top-level -- Intentional: schema must be defined at module load
@@ -281,9 +256,6 @@ const fullInputSchema = z.strictObject({
     ),
   run_in_background: semanticBoolean(z.boolean().optional()).describe(
     `Run this command asynchronously. Control returns to you immediately with a task ID and the path of the file the command's output is being streamed to; when the command finishes, that same path is delivered back to you as a system notification in a later turn (Read the file to see the full output). The notification arrives when the command finishes — sleeping or polling on your end does not change when it arrives. Use this whenever you'd otherwise reach for \`Start-Sleep\` or a poll loop to wait for a command. NOT a parallelism mechanism — for independent commands whose results you need together right now, send multiple PowerShell tool uses in a single message; they run concurrently in the foreground and return together.`,
-  ),
-  dangerouslyDisableSandbox: semanticBoolean(z.boolean().optional()).describe(
-    'Set this to true to dangerously override sandbox mode and run commands without sandboxing.',
   ),
 })
 
@@ -471,18 +443,6 @@ export const PowerShellTool = buildTool({
     return true
   },
 
-  async validateInput(input: PowerShellToolInput): Promise<ValidationResult> {
-    // Defense-in-depth: also guarded in call() for direct callers.
-    if (isWindowsSandboxPolicyViolation()) {
-      return {
-        result: false,
-        message: WINDOWS_SANDBOX_POLICY_REFUSAL,
-        errorCode: 11,
-      }
-    }
-    return { result: true }
-  },
-
   async checkPermissions(
     input: PowerShellToolInput,
     context: Parameters<Tool['checkPermissions']>[1],
@@ -568,14 +528,6 @@ export const PowerShellTool = buildTool({
     _parentMessage?: AssistantMessage,
     onProgress?: ToolCallProgress<PowerShellProgress>,
   ): Promise<{ data: Out }> {
-    // Load-bearing guard: promptShellExecution.ts and processBashCommand.tsx
-    // call PowerShellTool.call() directly, bypassing validateInput. This is
-    // the check that covers ALL callers. See isWindowsSandboxPolicyViolation
-    // comment for the policy rationale.
-    if (isWindowsSandboxPolicyViolation()) {
-      throw new Error(WINDOWS_SANDBOX_POLICY_REFUSAL)
-    }
-
     const { abortController, setAppState, setToolJSX } = toolUseContext
 
     const isMainThread = !toolUseContext.agentId
@@ -830,13 +782,7 @@ async function* runPowerShellCommand({
   ExecResult,
   void
 > {
-  const {
-    command,
-    description,
-    timeout,
-    run_in_background,
-    dangerouslyDisableSandbox,
-  } = input
+  const { command, description, timeout, run_in_background } = input
   const timeoutMs = Math.min(
     timeout || getDefaultTimeoutMs(),
     getMaxTimeoutMs(),
@@ -887,16 +833,6 @@ async function* runPowerShellCommand({
         lastTotalBytes = isIncomplete ? totalBytes : 0
       },
       preventCwdChanges,
-      // Sandbox works on Linux/macOS/WSL2 — pwsh there is a native binary and
-      // SandboxManager.wrapWithSandbox wraps it same as bash (Shell.ts uses
-      // /bin/sh for the outer spawn to parse the POSIX-quoted bwrap/sandbox-exec
-      // string). On Windows native, sandbox is unsupported; shouldUseSandbox()
-      // returns false via isSandboxingEnabled() → isSupportedPlatform() → false.
-      // The explicit platform check is redundant-but-obvious.
-      shouldUseSandbox:
-        getPlatform() === 'windows'
-          ? false
-          : shouldUseSandbox({ command, dangerouslyDisableSandbox }),
       shouldAutoBackground,
     })
   } catch (e) {

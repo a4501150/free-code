@@ -15,9 +15,9 @@ import { logError } from '../log.js'
 import { getProjectTempDir } from '../permissions/filesystem.js'
 
 // SECURITY: O_NOFOLLOW prevents following symlinks when opening task output files.
-// Without this, an attacker in the sandbox could create symlinks in the tasks directory
+// Without this, a compromised command could create symlinks in the tasks directory
 // pointing to arbitrary files, causing Claude Code on the host to write to those files.
-// O_NOFOLLOW is not available on Windows, but the sandbox attack vector is Unix-only.
+// O_NOFOLLOW is not available on Windows, but the attack vector is Unix-only.
 const O_NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0
 
 const DEFAULT_MAX_READ_BYTES = 8 * 1024 * 1024 // 8MB
@@ -402,7 +402,7 @@ export function initTaskOutput(taskId: string): Promise<string> {
     (async () => {
       await ensureOutputDir()
       const outputPath = getTaskOutputPath(taskId)
-      // SECURITY: O_NOFOLLOW prevents symlink-following attacks from the sandbox.
+      // SECURITY: O_NOFOLLOW prevents symlink-following attacks on the output file.
       // O_EXCL ensures we create a new file and fail if something already exists at this path.
       // On Windows, use string flags — numeric O_EXCL can produce EINVAL through libuv.
       const fh = await open(

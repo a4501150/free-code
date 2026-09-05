@@ -17,7 +17,6 @@ import {
 import { updateTaskState } from './task/framework.js'
 import {
   isPermissionResponse,
-  isSandboxPermissionResponse,
   type PlanApprovalResponseMessage,
 } from './teammateMailbox.js'
 
@@ -89,14 +88,9 @@ export function handlePlanApprovalResponse(
  * Used by in-process teammate message handlers to detect and process
  * permission responses from the team leader.
  *
- * Handles both tool permissions and sandbox (network host) permissions.
- *
  * @param messageText - The raw message text to check
  * @returns true if the message is a permission response
  */
 export function isPermissionRelatedResponse(messageText: string): boolean {
-  return (
-    !!isPermissionResponse(messageText) ||
-    !!isSandboxPermissionResponse(messageText)
-  )
+  return !!isPermissionResponse(messageText)
 }

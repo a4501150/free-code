@@ -50,7 +50,6 @@ import { expandPath } from '../../utils/path.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import { exec } from '../../utils/Shell.js'
 import type { ExecResult } from '../../utils/ShellCommand.js'
-import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
 import { semanticNumber } from '../../utils/semanticNumber.js'
 import { EndTruncatingAccumulator } from '../../utils/stringUtils.js'
@@ -80,7 +79,6 @@ import {
 } from './prompt.js'
 import { checkReadOnlyConstraints } from './readOnlyValidation.js'
 import { parseSedEditCommand } from './sedEditParser.js'
-import { shouldUseSandbox } from './shouldUseSandbox.js'
 import { BASH_TOOL_NAME } from './toolName.js'
 import {
   BackgroundHint,
@@ -344,9 +342,6 @@ For commands that are harder to parse at a glance (piped commands, obscure flags
   run_in_background: semanticBoolean(z.boolean().optional()).describe(
     `Run this command asynchronously for waits or polling. Returns immediately with a task ID and streamed output file path; inspect it with Read or BackgroundTaskOutput, and use BackgroundTaskStop to end a long-running task. Not a parallelism mechanism for independent commands whose results you need immediately.`,
   ),
-  dangerouslyDisableSandbox: semanticBoolean(z.boolean().optional()).describe(
-    'Set this to true to dangerously override sandbox mode and run commands without sandboxing.',
-  ),
   _simulatedSedEdit: z
     .object({
       filePath: z.string(),
@@ -358,8 +353,8 @@ For commands that are harder to parse at a glance (piped commands, obscure flags
 
 // Always omit _simulatedSedEdit from the model-facing schema. It is an internal-only
 // field set by SedEditPermissionRequest after the user approves a sed edit preview.
-// Exposing it in the schema would let the model bypass permission checks and the
-// sandbox by pairing an innocuous command with an arbitrary file write.
+// Exposing it in the schema would let the model bypass permission checks by
+// pairing an innocuous command with an arbitrary file write.
 // Also conditionally remove run_in_background when background tasks are disabled.
 const inputSchema = isBackgroundTasksDisabled
   ? fullInputSchema.omit({
@@ -399,10 +394,6 @@ const outputSchema = z.object({
     .describe(
       'True if assistant-mode auto-backgrounded a long-running blocking command',
     ),
-  dangerouslyDisableSandbox: z
-    .boolean()
-    .optional()
-    .describe('Flag to indicate if sandbox mode was overridden'),
   returnCodeInterpretation: z
     .string()
     .optional()
@@ -455,16 +446,6 @@ function isAutobackgroundingAllowed(command: string): boolean {
 
   return !DISALLOWED_AUTO_BACKGROUND_COMMANDS.includes(baseCommand)
 }
-
-/**
- * Checks if a command contains tools that shouldn't run in sandbox
- * This includes:
- * - User-configured commands from freecode.json (sandbox.excludedCommands)
- *
- * User-configured commands support the same pattern syntax as permission rules:
- * - Exact matches: "npm run lint"
- * - Prefix patterns: "npm run test:*"
- */
 
 type SimulatedSedEditResult = {
   data: Out
@@ -610,14 +591,7 @@ export const BashTool = buildTool({
         })
       }
     }
-    // Env var FIRST: shouldUseSandbox parses the command, and userFacingName
-    // runs per-render for every bash message in history; with ~50 msgs + one
-    // slow-to-parse command this exceeds the shimmer tick → transition abort →
-    // infinite retry (#21605).
-    return isEnvTruthy(process.env.CLAUDE_CODE_BASH_SANDBOX_SHOW_INDICATOR) &&
-      shouldUseSandbox(input)
-      ? 'SandboxedBash'
-      : 'Bash'
+    return 'Bash'
   },
   getToolUseSummary(input) {
     if (!input?.command) {
@@ -836,23 +810,18 @@ export const BashTool = buildTool({
         }
       }
 
-      // Annotate output with sandbox violations if any (stderr is in stdout)
-      const outputWithSbFailures =
-        SandboxManager.annotateStderrWithSandboxFailures(
-          input.command,
-          result.stdout || '',
-        )
+      // stderr is merged into stdout (merged fd); the ShellError below
+      // carries the full output in its stderr field.
 
       if (result.preSpawnError) {
         throw new Error(result.preSpawnError)
       }
       if (interpretationResult.isError && !isInterrupt) {
-        // stderr is merged into stdout (merged fd); outputWithSbFailures
-        // already has the full output. Pass '' for stdout to avoid
-        // duplication in getErrorParts() and processBashCommand.
+        // Pass '' for stdout to avoid duplication in getErrorParts()
+        // and processBashCommand.
         throw new ShellError(
           '',
-          outputWithSbFailures,
+          result.stdout || '',
           result.code,
           result.interrupted,
         )
@@ -933,10 +902,6 @@ export const BashTool = buildTool({
       backgroundTaskId: result.backgroundTaskId,
       backgroundedByUser: result.backgroundedByUser,
       assistantAutoBackgrounded: result.assistantAutoBackgrounded,
-      dangerouslyDisableSandbox:
-        'dangerouslyDisableSandbox' in input
-          ? (input.dangerouslyDisableSandbox as boolean | undefined)
-          : undefined,
       persistedOutputPath,
       persistedOutputSize,
     }
@@ -1026,7 +991,6 @@ async function* runShellCommand({
       }
     },
     preventCwdChanges,
-    shouldUseSandbox: shouldUseSandbox(input),
     shouldAutoBackground,
   })
 

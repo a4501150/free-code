@@ -18,7 +18,6 @@ import {
   detectUnreachableRules,
   type UnreachableRule,
 } from '../../../utils/permissions/shadowedRuleDetection.js'
-import { SandboxManager } from '../../../utils/sandbox/sandbox-adapter.js'
 import {
   type EditableSettingSource,
   SOURCES,
@@ -105,12 +104,7 @@ export function AddPermissionRules({
         }))
 
         // Check for unreachable rules among the ones we just added
-        const sandboxAutoAllowEnabled =
-          SandboxManager.isSandboxingEnabled() &&
-          SandboxManager.isAutoAllowBashIfSandboxedEnabled()
-        const allUnreachable = detectUnreachableRules(updatedContext, {
-          sandboxAutoAllowEnabled,
-        })
+        const allUnreachable = detectUnreachableRules(updatedContext)
 
         // Filter to only rules we just added
         const newUnreachable = allUnreachable.filter(u =>

@@ -14,7 +14,6 @@ import {
   buildIDEProperties,
   buildMcpProperties,
   buildMemoryDiagnostics,
-  buildSandboxProperties,
   buildSettingSourcesProperties,
   type Diagnostic,
   getModelDisplayLabel,
@@ -64,7 +63,6 @@ function buildSecondarySection({
       theme,
     ),
     ...buildMcpProperties(mcp.clients, theme),
-    ...buildSandboxProperties(),
     ...buildSettingSourcesProperties(),
   ]
 }

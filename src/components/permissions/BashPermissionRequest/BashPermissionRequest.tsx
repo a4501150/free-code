@@ -9,11 +9,9 @@ import {
 } from '../../../tools/BashTool/bashPermissions.js'
 import { getDestructiveCommandWarning } from '../../../tools/BashTool/destructiveCommandWarning.js'
 import { parseSedEditCommand } from '../../../tools/BashTool/sedEditParser.js'
-import { shouldUseSandbox } from '../../../tools/BashTool/shouldUseSandbox.js'
 import { getCompoundCommandPrefixesStatic } from '../../../utils/bash/prefix.js'
 import { extractRules } from '../../../utils/permissions/PermissionUpdate.js'
 import type { PermissionUpdate } from '../../../utils/permissions/PermissionUpdateSchema.js'
-import { SandboxManager } from '../../../utils/sandbox/sandbox-adapter.js'
 import { Select } from '../../CustomSelect/select.js'
 import {
   type PermissionRequestEvent,
@@ -194,18 +192,15 @@ function BashPermissionRequestInner({
   // These derive solely from the tool input (fixed for the dialog lifetime).
   // React Compiler can't auto-memoize imported functions (can't prove
   // side-effect freedom), so this useMemo guards against re-render sources.
-  const { destructiveWarning, sandboxingEnabled, isSandboxed } = useMemo(() => {
-    const destructiveWarning =
-      (getInitialSettings()?.destructiveCommandWarning ?? true)
-        ? getDestructiveCommandWarning(command)
-        : null
-
-    const sandboxingEnabled = SandboxManager.isSandboxingEnabled()
-    const isSandboxed =
-      sandboxingEnabled && shouldUseSandbox(toolUseConfirm.input)
-
-    return { destructiveWarning, sandboxingEnabled, isSandboxed }
-  }, [command, toolUseConfirm.input])
+  const { destructiveWarning } = useMemo(
+    () => ({
+      destructiveWarning:
+        (getInitialSettings()?.destructiveCommandWarning ?? true)
+          ? getDestructiveCommandWarning(command)
+          : null,
+    }),
+    [command],
+  )
 
   const permissionEvent = useMemo<PermissionRequestEvent>(
     () => ({ completion_type: 'tool_use_single', language_name: 'none' }),
@@ -302,14 +297,7 @@ function BashPermissionRequestInner({
   }
 
   return (
-    <PermissionDialog
-      workerBadge={workerBadge}
-      title={
-        sandboxingEnabled && !isSandboxed
-          ? 'Bash command (unsandboxed)'
-          : 'Bash command'
-      }
-    >
+    <PermissionDialog workerBadge={workerBadge} title="Bash command">
       <Box flexDirection="column" paddingX={2} paddingY={1}>
         <Text dimColor={explainerState.visible}>
           {BashTool.renderToolUseMessage(

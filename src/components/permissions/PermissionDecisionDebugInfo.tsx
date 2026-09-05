@@ -13,7 +13,6 @@ import { extractRules } from '../../utils/permissions/PermissionUpdate.js'
 import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js'
 import { permissionRuleValueToString } from '../../utils/permissions/permissionRuleParser.js'
 import { detectUnreachableRules } from '../../utils/permissions/shadowedRuleDetection.js'
-import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 import { getSettingSourceDisplayNameLowercase } from '../../utils/settings/constants.js'
 
 type PermissionDecisionInfoItemProps = {
@@ -34,8 +33,6 @@ function decisionReasonDisplayString(
       return `${chalk.bold(permissionRuleValueToString(decisionReason.rule.ruleValue))} rule from ${getSettingSourceDisplayNameLowercase(decisionReason.rule.source)}`
     case 'mode':
       return `${permissionModeTitle(decisionReason.mode)} mode`
-    case 'sandboxOverride':
-      return 'Requires permission to bypass sandbox'
     case 'workingDir':
       return decisionReason.reason
     case 'safetyCheck':
@@ -261,12 +258,7 @@ export function PermissionDecisionDebugInfo({
     'suggestions' in permissionResult ? permissionResult.suggestions : undefined
 
   const unreachableRules = useMemo(() => {
-    const sandboxAutoAllowEnabled =
-      SandboxManager.isSandboxingEnabled() &&
-      SandboxManager.isAutoAllowBashIfSandboxedEnabled()
-    const all = detectUnreachableRules(toolPermissionContext, {
-      sandboxAutoAllowEnabled,
-    })
+    const all = detectUnreachableRules(toolPermissionContext)
 
     // Get the suggested rules from the permission result
     const suggestedRules = extractRules(suggestions)

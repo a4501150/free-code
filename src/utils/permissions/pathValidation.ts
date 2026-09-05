@@ -1,4 +1,3 @@
-import memoize from 'lodash-es/memoize.js'
 import { homedir } from 'os'
 import { dirname, isAbsolute, resolve } from 'path'
 import type { ToolPermissionContext } from '../../Tool.js'
@@ -9,7 +8,6 @@ import {
   safeResolvePath,
 } from '../fsOperations.js'
 import { containsPathTraversal } from '../path.js'
-import { SandboxManager } from '../sandbox/sandbox-adapter.js'
 import { containsVulnerableUncPath } from '../shell/readOnlyCommandValidation.js'
 import {
   checkEditableInternalPath,
@@ -87,45 +85,6 @@ export function expandTilde(path: string): string {
   }
   return path
 }
-
-/**
- * Checks if a resolved path is writable according to the sandbox write allowlist.
- * When the sandbox is enabled, the user has explicitly configured which directories
- * are writable. We treat these as additional allowed write directories for path
- * validation purposes, so commands like `echo foo > /tmp/claude/x.txt` don't
- * prompt for permission when /tmp/claude/ is already in the sandbox allowlist.
- *
- * Respects the deny-within-allow list: paths in denyWithinAllow (like
- * .claude/freecode.json or .freecode/freecode.json) are still blocked even if their parent is in allowOnly.
- */
-export function isPathInSandboxWriteAllowlist(resolvedPath: string): boolean {
-  if (!SandboxManager.isSandboxingEnabled()) {
-    return false
-  }
-  const { allowOnly, denyWithinAllow } = SandboxManager.getFsWriteConfig()
-  // Resolve symlinks on both sides so comparisons are symmetric (matching
-  // pathInAllowedWorkingPath). Without this, an allowlist entry that is a
-  // symlink (e.g. /home/user/proj -> /data/proj) would not match a write to
-  // its resolved target, causing an unnecessary prompt. Over-conservative,
-  // not a security issue. All resolved input representations must be allowed
-  // and none may be denied. Config paths are session-stable, so memoize
-  // their resolution to avoid N × config.length redundant syscalls per
-  // command with N write targets (matching getResolvedWorkingDirPaths).
-  const pathsToCheck = getPathsForPermissionCheck(resolvedPath)
-  const resolvedAllow = allowOnly.flatMap(getResolvedSandboxConfigPath)
-  const resolvedDeny = denyWithinAllow.flatMap(getResolvedSandboxConfigPath)
-  return pathsToCheck.every(p => {
-    for (const denyPath of resolvedDeny) {
-      if (pathInWorkingPath(p, denyPath)) return false
-    }
-    return resolvedAllow.some(allowPath => pathInWorkingPath(p, allowPath))
-  })
-}
-
-// Sandbox config paths are session-stable; memoize their resolved forms to
-// avoid repeated lstat/realpath syscalls on every write-target check.
-// Matches the getResolvedWorkingDirPaths pattern in filesystem.ts.
-const getResolvedSandboxConfigPath = memoize(getPathsForPermissionCheck)
 
 /**
  * Checks if a resolved path is allowed for the given operation type.
@@ -219,28 +178,6 @@ export function isPathAllowed(
         allowed: true,
         decisionReason: internalReadResult.decisionReason,
       }
-    }
-  }
-
-  // 3.7. For write/create operations to paths OUTSIDE the working directory,
-  // check the sandbox write allowlist. When the sandbox is enabled, users
-  // have explicitly configured writable directories (e.g. /tmp/claude/) —
-  // treat these as additional allowed write directories so redirects/touch/
-  // mkdir don't prompt unnecessarily. Safety checks (step 2) already ran.
-  // Paths IN the working directory are intentionally excluded: the sandbox
-  // allowlist always seeds '.' (cwd, see sandbox-adapter.ts), which would
-  // bypass the acceptEdits gate at step 3. Step 3 handles those.
-  if (
-    operationType !== 'read' &&
-    !isInWorkingDir &&
-    isPathInSandboxWriteAllowlist(resolvedPath)
-  ) {
-    return {
-      allowed: true,
-      decisionReason: {
-        type: 'other',
-        reason: 'Path is in sandbox write allowlist',
-      },
     }
   }
 

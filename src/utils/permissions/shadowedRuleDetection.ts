@@ -1,5 +1,4 @@
 import type { ToolPermissionContext } from '../../Tool.js'
-import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import type { PermissionRule, PermissionRuleSource } from './PermissionRule.js'
 import {
   getAllowRules,
@@ -27,15 +26,6 @@ export type UnreachableRule = {
 /**
  * Options for detecting unreachable rules
  */
-export type DetectUnreachableRulesOptions = {
-  /**
-   * Whether sandbox auto-allow is enabled for Bash commands.
-   * When true, tool-wide Bash ask rules from personal settings don't block
-   * specific Bash allow rules because sandboxed commands are auto-allowed.
-   */
-  sandboxAutoAllowEnabled: boolean
-}
-
 /**
  * Result of checking if a rule is shadowed.
  * Uses discriminated union for type safety.
@@ -43,23 +33,6 @@ export type DetectUnreachableRulesOptions = {
 type ShadowResult =
   | { shadowed: false }
   | { shadowed: true; shadowedBy: PermissionRule; shadowType: ShadowType }
-
-/**
- * Check if a permission rule source is shared (visible to other users).
- * Shared settings include:
- * - projectSettings: Committed to git, shared with team
- * - command: From slash command frontmatter, potentially shared
- *
- * Personal settings include:
- * - userSettings: User's global ~/.freecode settings
- * - localSettings: Gitignored per-project settings
- * - cliArg: Runtime CLI arguments
- * - session: In-memory session rules
- * - flagSettings: From --settings flag (runtime)
- */
-export function isSharedSettingSource(source: PermissionRuleSource): boolean {
-  return source === 'projectSettings' || source === 'command'
-}
 
 /**
  * Format a rule source for display in warning messages.
@@ -95,18 +68,10 @@ function generateFixSuggestion(
  *
  * The ask rule takes precedence, making the specific allow rule unreachable
  * because the user will always be prompted first.
- *
- * Exception: For Bash with sandbox auto-allow enabled, tool-wide ask rules
- * from PERSONAL settings don't shadow specific allow rules because:
- * - Sandboxed commands are auto-allowed regardless of ask rules
- * - This only applies to personal settings (userSettings, localSettings, etc.)
- * - Shared settings (projectSettings) always warn because other team members
- *   may not have sandbox enabled
- */
+ * */
 function isAllowRuleShadowedByAskRule(
   allowRule: PermissionRule,
   askRules: PermissionRule[],
-  options: DetectUnreachableRulesOptions,
 ): ShadowResult {
   const { toolName, ruleContent } = allowRule.ruleValue
 
@@ -125,17 +90,6 @@ function isAllowRuleShadowedByAskRule(
 
   if (!shadowingAskRule) {
     return { shadowed: false }
-  }
-
-  // Special case: Bash with sandbox auto-allow from personal settings
-  // The sandbox exception is based on the ASK rule's source, not the allow rule's source.
-  // If the ask rule is from personal settings, the user's own sandbox will auto-allow.
-  // If the ask rule is from shared settings, other team members may not have sandbox enabled.
-  if (toolName === BASH_TOOL_NAME && options.sandboxAutoAllowEnabled) {
-    if (!isSharedSettingSource(shadowingAskRule.source)) {
-      return { shadowed: false }
-    }
-    // Fall through to mark as shadowed - shared settings should always warn
   }
 
   return { shadowed: true, shadowedBy: shadowingAskRule, shadowType: 'ask' }
@@ -187,7 +141,6 @@ function isAllowRuleShadowedByDenyRule(
  */
 export function detectUnreachableRules(
   context: ToolPermissionContext,
-  options: DetectUnreachableRulesOptions,
 ): UnreachableRule[] {
   const unreachable: UnreachableRule[] = []
 
@@ -212,7 +165,7 @@ export function detectUnreachableRules(
     }
 
     // Check ask shadowing
-    const askResult = isAllowRuleShadowedByAskRule(allowRule, askRules, options)
+    const askResult = isAllowRuleShadowedByAskRule(allowRule, askRules)
     if (askResult.shadowed) {
       const shadowSource = formatSource(askResult.shadowedBy.source)
       unreachable.push({

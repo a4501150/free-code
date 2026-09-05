@@ -2,7 +2,6 @@ import { feature } from 'bun:bundle'
 import { stat } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { env, JETBRAINS_IDES } from './env.js'
-import { isEnvTruthy } from './envUtils.js'
 import { execFileNoThrow } from './execFileNoThrow.js'
 import { getAncestorCommandsAsync } from './genericProcessUtils.js'
 
@@ -14,13 +13,6 @@ const getIsDocker = memoize(async (): Promise<boolean> => {
   const { code } = await execFileNoThrow('test', ['-f', '/.dockerenv'])
   return code === 0
 })
-
-function getIsBubblewrapSandbox(): boolean {
-  return (
-    process.platform === 'linux' &&
-    isEnvTruthy(process.env.CLAUDE_CODE_BUBBLEWRAP)
-  )
-}
 
 // Cache for the runtime musl detection fallback (node/unbundled only).
 // In native linux builds, feature flags resolve this at compile time, so the
@@ -140,7 +132,6 @@ export const envDynamic = {
   ...env, // Include all properties from env
   terminal: getTerminalWithJetBrainsDetection(),
   getIsDocker,
-  getIsBubblewrapSandbox,
   isMuslEnvironment,
   getTerminalWithJetBrainsDetectionAsync,
   initJetBrainsDetection,

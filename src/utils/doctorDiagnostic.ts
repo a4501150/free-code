@@ -18,7 +18,6 @@ import {
 } from './localInstaller.js'
 import { getPlatform } from './platform.js'
 import { getRipgrepStatus } from './ripgrep.js'
-import { SandboxManager } from './sandbox/sandbox-adapter.js'
 import {
   findClaudeAlias,
   findValidClaudeAlias,
@@ -391,33 +390,6 @@ async function detectConfigurationIssues(
   return warnings
 }
 
-export function detectLinuxGlobPatternWarnings(): Array<{
-  issue: string
-  fix: string
-}> {
-  if (getPlatform() !== 'linux') {
-    return []
-  }
-
-  const warnings: Array<{ issue: string; fix: string }> = []
-  const globPatterns = SandboxManager.getLinuxGlobPatternWarnings()
-
-  if (globPatterns.length > 0) {
-    // Show first 3 patterns, then indicate if there are more
-    const displayPatterns = globPatterns.slice(0, 3).join(', ')
-    const remaining = globPatterns.length - 3
-    const patternList =
-      remaining > 0 ? `${displayPatterns} (${remaining} more)` : displayPatterns
-
-    warnings.push({
-      issue: `Glob patterns in sandbox permission rules are not fully supported on Linux`,
-      fix: `Found ${globPatterns.length} pattern(s): ${patternList}. On Linux, glob patterns in Edit/Read rules will be ignored.`,
-    })
-  }
-
-  return warnings
-}
-
 export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
   const installationType = await getCurrentInstallationType()
   const version =
@@ -426,9 +398,6 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
   const invokedBinary = getInvokedBinary()
   const multipleInstallations = await detectMultipleInstallations()
   const warnings = await detectConfigurationIssues(installationType)
-
-  // Add glob pattern warnings for Linux sandboxing
-  warnings.push(...detectLinuxGlobPatternWarnings())
 
   // Add warnings for leftover npm installations when running native
   if (installationType === 'native') {

@@ -15,7 +15,6 @@ import {
   persistPermissionUpdate,
 } from '../../utils/permissions/PermissionUpdate.js'
 import type { PermissionUpdateDestination } from '../../utils/permissions/PermissionUpdateSchema.js'
-import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 import {
   addDirHelpMessage,
   validateDirectoryForWorkspace,
@@ -81,15 +80,13 @@ export async function call(
       toolPermissionContext: updatedContext,
     }))
 
-    // Update sandbox config so Bash commands can access the new directory.
     // Bootstrap state is the source of truth for session-only dirs; persisted
-    // dirs are picked up via the settings subscription, but we refresh
-    // eagerly here to avoid a race when the user acts immediately.
+    // dirs are picked up via the settings subscription, but we set eagerly
+    // here to avoid a race when the user acts immediately.
     const currentDirs = getAdditionalDirectoriesForClaudeMd()
     if (!currentDirs.includes(path)) {
       setAdditionalDirectoriesForClaudeMd([...currentDirs, path])
     }
-    SandboxManager.refreshConfig()
 
     let message: string
 

@@ -1,6 +1,5 @@
 import { feature } from 'bun:bundle'
 import { z } from 'zod/v4'
-import { SandboxSettingsSchema } from '../../entrypoints/sandboxTypes.js'
 import { globalConfigDir, globalConfigFile, isEnvTruthy } from '../envUtils.js'
 import { PERMISSION_MODES } from '../permissions/PermissionMode.js'
 import { MarketplaceSourceSchema } from '../plugins/schemas.js'
@@ -1190,7 +1189,6 @@ const _settingsSchemaValue = z
       .describe(
         'Skip the WebFetch blocklist check for enterprise environments with restrictive security policies',
       ),
-    sandbox: SandboxSettingsSchema.optional(),
     spinnerTipsEnabled: z
       .boolean()
       .optional()

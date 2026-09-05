@@ -549,115 +549,6 @@ export function isPermissionResponse(
 }
 
 /**
- * Sandbox permission request message sent from worker to leader via mailbox
- * This is triggered when sandbox runtime detects a network access to a non-allowed host
- */
-export type SandboxPermissionRequestMessage = {
-  type: 'sandbox_permission_request'
-  /** Unique identifier for this request */
-  requestId: string
-  /** Worker's CLAUDE_CODE_AGENT_ID */
-  workerId: string
-  /** Worker's CLAUDE_CODE_AGENT_NAME */
-  workerName: string
-  /** Worker's CLAUDE_CODE_AGENT_COLOR */
-  workerColor?: string
-  /** The host pattern requesting network access */
-  hostPattern: {
-    host: string
-  }
-  /** Timestamp when request was created */
-  createdAt: number
-}
-
-/**
- * Sandbox permission response message sent from leader to worker via mailbox
- */
-export type SandboxPermissionResponseMessage = {
-  type: 'sandbox_permission_response'
-  /** ID of the request this responds to */
-  requestId: string
-  /** The host that was approved/denied */
-  host: string
-  /** Whether the connection is allowed */
-  allow: boolean
-  /** Timestamp when response was created */
-  timestamp: string
-}
-
-/**
- * Creates a sandbox permission request message to send to the team leader
- */
-export function createSandboxPermissionRequestMessage(params: {
-  requestId: string
-  workerId: string
-  workerName: string
-  workerColor?: string
-  host: string
-}): SandboxPermissionRequestMessage {
-  return {
-    type: 'sandbox_permission_request',
-    requestId: params.requestId,
-    workerId: params.workerId,
-    workerName: params.workerName,
-    workerColor: params.workerColor,
-    hostPattern: { host: params.host },
-    createdAt: Date.now(),
-  }
-}
-
-/**
- * Creates a sandbox permission response message to send back to a worker
- */
-export function createSandboxPermissionResponseMessage(params: {
-  requestId: string
-  host: string
-  allow: boolean
-}): SandboxPermissionResponseMessage {
-  return {
-    type: 'sandbox_permission_response',
-    requestId: params.requestId,
-    host: params.host,
-    allow: params.allow,
-    timestamp: new Date().toISOString(),
-  }
-}
-
-/**
- * Checks if a message text contains a sandbox permission request
- */
-export function isSandboxPermissionRequest(
-  messageText: string,
-): SandboxPermissionRequestMessage | null {
-  try {
-    const parsed = jsonParse(messageText)
-    if (parsed && parsed.type === 'sandbox_permission_request') {
-      return parsed as SandboxPermissionRequestMessage
-    }
-  } catch {
-    // Not JSON or not a valid sandbox permission request
-  }
-  return null
-}
-
-/**
- * Checks if a message text contains a sandbox permission response
- */
-export function isSandboxPermissionResponse(
-  messageText: string,
-): SandboxPermissionResponseMessage | null {
-  try {
-    const parsed = jsonParse(messageText)
-    if (parsed && parsed.type === 'sandbox_permission_response') {
-      return parsed as SandboxPermissionResponseMessage
-    }
-  } catch {
-    // Not JSON or not a valid sandbox permission response
-  }
-  return null
-}
-
-/**
  * Message sent when a teammate requests plan approval from the team leader
  */
 export const PlanApprovalRequestMessageSchema = z.object({
@@ -1029,7 +920,7 @@ export function isModeSetRequest(
  * routed by useInboxPoller rather than consumed as raw LLM context.
  *
  * These message types have specific handlers in useInboxPoller that route them
- * to the correct queues (workerPermissions, workerSandboxPermissions, etc.).
+ * to the correct queues (workerPermissions, etc.).
  * If getTeammateMailboxAttachments consumes them first, they get bundled as
  * raw text in attachments and never reach their intended handlers.
  */
@@ -1043,8 +934,6 @@ export function isStructuredProtocolMessage(messageText: string): boolean {
     return (
       type === 'permission_request' ||
       type === 'permission_response' ||
-      type === 'sandbox_permission_request' ||
-      type === 'sandbox_permission_response' ||
       type === 'shutdown_request' ||
       type === 'shutdown_approved' ||
       type === 'team_permission_update' ||

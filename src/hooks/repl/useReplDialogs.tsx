@@ -7,18 +7,7 @@ import {
   useLayoutEffect,
 } from 'react'
 import * as React from 'react'
-import { Text } from '../../ink.js'
 import { logForDebugging } from '../../utils/debug.js'
-import { errorMessage } from '../../utils/errors.js'
-import { gracefulShutdownSync } from '../../utils/gracefulShutdown.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
-import {
-  isSwarmWorker,
-  generateSandboxRequestId,
-  sendSandboxPermissionRequestViaMailbox,
-  sendSandboxPermissionResponseViaMailbox,
-} from '../../utils/swarm/permissionSync.js'
-import { registerSandboxPermissionCallback } from '../useSwarmPermissionPoller.js'
 import {
   registerLeaderToolUseConfirmQueue,
   unregisterLeaderToolUseConfirmQueue,
@@ -30,15 +19,10 @@ import {
   createAssistantMessage,
   createAgentsKilledMessage,
 } from '../../utils/messages.js'
-import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 import useCanUseTool from '../useCanUseTool.js'
 import type { ToolUseConfirm } from '../../components/permissions/PermissionRequest.js'
 import type { ToolPermissionContext } from '../../Tool.js'
 import type { PromptRequest, PromptResponse } from '../../types/hooks.js'
-import type {
-  SandboxAskCallback,
-  NetworkHostPattern,
-} from '../../utils/sandbox/sandbox-adapter.js'
 import type { Message as MessageType } from '../../types/message.js'
 import type { PastedContent } from '../../utils/config.js'
 import type { PromptInputMode } from '../../types/textInputTypes.js'
@@ -59,7 +43,6 @@ export function useReplDialogs({
   isMessageSelectorVisible,
   showIdeOnboarding,
   isPromptInputActive,
-  workerSandboxPermissions,
   elicitation,
   isLoading,
   focusedInputDialogRef,
@@ -75,7 +58,6 @@ export function useReplDialogs({
   abortController,
   setAbortController,
   setAppState,
-  store,
   addNotification,
   mrOnTurnComplete,
   inputValue,
@@ -92,7 +74,6 @@ export function useReplDialogs({
   inputMode,
   screen,
   pendingWorkerRequest,
-  pendingSandboxRequest,
 }: {
   toolJSX: any
   isShowingLocalJSXCommand: boolean
@@ -101,7 +82,6 @@ export function useReplDialogs({
   isMessageSelectorVisible: boolean
   showIdeOnboarding: boolean
   isPromptInputActive: boolean
-  workerSandboxPermissions: any
   elicitation: any
   isLoading: boolean
   focusedInputDialogRef: React.MutableRefObject<any>
@@ -117,7 +97,6 @@ export function useReplDialogs({
   abortController: AbortController | null
   setAbortController: (controller: AbortController | null) => void
   setAppState: (fn: (prev: any) => any) => void
-  store: any
   addNotification: (n: any) => void
   mrOnTurnComplete: (messages: MessageType[], aborted: boolean) => Promise<void>
   inputValue: string
@@ -136,7 +115,6 @@ export function useReplDialogs({
   inputMode: PromptInputMode
   screen: any
   pendingWorkerRequest: any
-  pendingSandboxRequest: any
 }) {
   // ── Permission queues ──
   const [toolUseConfirmQueue, setToolUseConfirmQueue] = useState<
@@ -144,13 +122,6 @@ export function useReplDialogs({
   >([])
   const [permissionStickyFooter, setPermissionStickyFooter] =
     useState<React.ReactNode | null>(null)
-  const [sandboxPermissionRequestQueue, setSandboxPermissionRequestQueue] =
-    useState<
-      Array<{
-        hostPattern: NetworkHostPattern
-        resolvePromise: (allowConnection: boolean) => void
-      }>
-    >([])
   const [promptQueue, setPromptQueue] = useState<
     Array<{
       request: PromptRequest
@@ -164,15 +135,12 @@ export function useReplDialogs({
   const isWaitingForApproval =
     toolUseConfirmQueue.length > 0 ||
     promptQueue.length > 0 ||
-    pendingWorkerRequest ||
-    pendingSandboxRequest
+    pendingWorkerRequest
 
   const hasActivePrompt =
     toolUseConfirmQueue.length > 0 ||
     promptQueue.length > 0 ||
-    sandboxPermissionRequestQueue.length > 0 ||
-    elicitation.queue.length > 0 ||
-    workerSandboxPermissions.queue.length > 0
+    elicitation.queue.length > 0
 
   // Register the leader's setToolUseConfirmQueue
   useEffect(() => {
@@ -183,10 +151,8 @@ export function useReplDialogs({
   // ── Dialog focus ──
   function getFocusedInputDialog():
     | 'message-selector'
-    | 'sandbox-permission'
     | 'tool-permission'
     | 'prompt'
-    | 'worker-sandbox-permission'
     | 'elicitation'
     | 'init-onboarding'
     | 'ide-onboarding'
@@ -197,14 +163,11 @@ export function useReplDialogs({
     | undefined {
     if (isExiting || exitFlow) return undefined
     if (isMessageSelectorVisible) return 'message-selector'
-    if (sandboxPermissionRequestQueue[0]) return 'sandbox-permission'
     const allowDialogsWithAnimation =
       !toolJSX || toolJSX.shouldContinueAnimation
     if (allowDialogsWithAnimation && toolUseConfirmQueue[0])
       return 'tool-permission'
     if (allowDialogsWithAnimation && promptQueue[0]) return 'prompt'
-    if (allowDialogsWithAnimation && workerSandboxPermissions.queue[0])
-      return 'worker-sandbox-permission'
     if (allowDialogsWithAnimation && elicitation.queue[0]) return 'elicitation'
     if (isPromptInputActive) return undefined
     if (allowDialogsWithAnimation && showIdeOnboarding) return 'ide-onboarding'
@@ -223,17 +186,8 @@ export function useReplDialogs({
 
     const isCritical = (
       d: typeof focusedInputDialog,
-    ): d is
-      | 'tool-permission'
-      | 'sandbox-permission'
-      | 'prompt'
-      | 'worker-sandbox-permission'
-      | 'elicitation' =>
-      d === 'tool-permission' ||
-      d === 'sandbox-permission' ||
-      d === 'prompt' ||
-      d === 'worker-sandbox-permission' ||
-      d === 'elicitation'
+    ): d is 'tool-permission' | 'prompt' | 'elicitation' =>
+      d === 'tool-permission' || d === 'prompt' || d === 'elicitation'
 
     if (
       !prev &&
@@ -366,87 +320,6 @@ export function useReplDialogs({
     streamMode,
   }
 
-  // ── Sandbox callback ──
-  const sandboxAskCallback: SandboxAskCallback = useCallback(
-    async (hostPattern: NetworkHostPattern) => {
-      if (isAgentSwarmsEnabled() && isSwarmWorker()) {
-        const requestId = generateSandboxRequestId()
-        const sent = await sendSandboxPermissionRequestViaMailbox(
-          hostPattern.host,
-          requestId,
-        )
-        return new Promise(resolveShouldAllowHost => {
-          if (!sent) {
-            setSandboxPermissionRequestQueue(prev => [
-              ...prev,
-              { hostPattern, resolvePromise: resolveShouldAllowHost },
-            ])
-            return
-          }
-          registerSandboxPermissionCallback({
-            requestId,
-            host: hostPattern.host,
-            resolve: resolveShouldAllowHost,
-          })
-          setAppState(prev => ({
-            ...prev,
-            pendingSandboxRequest: {
-              requestId,
-              host: hostPattern.host,
-            },
-          }))
-        })
-      }
-
-      return new Promise(resolveShouldAllowHost => {
-        let resolved = false
-        function resolveOnce(allow: boolean): void {
-          if (resolved) return
-          resolved = true
-          resolveShouldAllowHost(allow)
-        }
-        setSandboxPermissionRequestQueue(prev => [
-          ...prev,
-          { hostPattern, resolvePromise: resolveOnce },
-        ])
-      })
-    },
-    [setAppState, store],
-  )
-
-  // Sandbox unavailable notification
-  useEffect(() => {
-    const reason = SandboxManager.getSandboxUnavailableReason()
-    if (!reason) return
-    if (SandboxManager.isSandboxRequired()) {
-      process.stderr.write(
-        `\nError: sandbox required but unavailable: ${reason}\n` +
-          `  sandbox.failIfUnavailable is set — refusing to start without a working sandbox.\n\n`,
-      )
-      gracefulShutdownSync(1, 'other')
-      return
-    }
-    logForDebugging(`sandbox disabled: ${reason}`, { level: 'warn' })
-    addNotification({
-      key: 'sandbox-unavailable',
-      jsx: (
-        <>
-          <Text color="warning">sandbox disabled</Text>
-          <Text dimColor> · /sandbox</Text>
-        </>
-      ),
-      priority: 'medium',
-    })
-  }, [addNotification])
-
-  // Initialize sandbox
-  if (SandboxManager.isSandboxingEnabled()) {
-    SandboxManager.initialize(sandboxAskCallback).catch(err => {
-      process.stderr.write(`\nError: Sandbox Error: ${errorMessage(err)}\n`)
-      gracefulShutdownSync(1, 'other')
-    })
-  }
-
   // ── Permission context ──
   const setToolPermissionContext = useCallback(
     (context: ToolPermissionContext, options?: { preserveMode?: boolean }) => {
@@ -498,8 +371,6 @@ export function useReplDialogs({
     setToolUseConfirmQueue,
     permissionStickyFooter,
     setPermissionStickyFooter,
-    sandboxPermissionRequestQueue,
-    setSandboxPermissionRequestQueue,
     promptQueue,
     setPromptQueue,
     isWaitingForApproval,

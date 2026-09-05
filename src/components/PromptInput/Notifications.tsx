@@ -34,7 +34,6 @@ import { IdeStatusIndicator } from '../IdeStatusIndicator.js'
 import { MemoryUsageIndicator } from '../MemoryUsageIndicator.js'
 import { SentryErrorBoundary } from '../SentryErrorBoundary.js'
 import { TokenWarning } from '../TokenWarning.js'
-import { SandboxPromptFooterHint } from './SandboxPromptFooterHint.js'
 import * as voiceIndicatorNs from './VoiceIndicator.js'
 
 const VoiceIndicator: typeof import('./VoiceIndicator.js').VoiceIndicator =
@@ -311,7 +310,6 @@ function NotificationContent({
           )
         : null}
       <MemoryUsageIndicator />
-      <SandboxPromptFooterHint />
     </>
   )
 }

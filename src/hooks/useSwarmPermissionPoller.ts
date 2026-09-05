@@ -106,13 +106,12 @@ export function hasPermissionCallback(requestId: string): boolean {
 }
 
 /**
- * Clear all pending callbacks (both permission and sandbox).
+ * Clear all pending callbacks.
  * Called from clearSessionCaches() on /clear to reset stale state,
  * and also used in tests for isolation.
  */
 export function clearAllPendingCallbacks(): void {
   pendingCallbacks.clear()
-  pendingSandboxCallbacks.clear()
 }
 
 /**
@@ -154,77 +153,6 @@ export function processMailboxPermissionResponse(params: {
 
   return true
 }
-
-// ============================================================================
-// Sandbox Permission Callback Registry
-// ============================================================================
-
-/**
- * Callback signature for handling sandbox permission responses
- */
-export type SandboxPermissionResponseCallback = {
-  requestId: string
-  host: string
-  resolve: (allow: boolean) => void
-}
-
-// Module-level registry for sandbox permission callbacks
-const pendingSandboxCallbacks: Map<string, SandboxPermissionResponseCallback> =
-  new Map()
-
-/**
- * Register a callback for a pending sandbox permission request
- * Called when a worker sends a sandbox permission request to the leader
- */
-export function registerSandboxPermissionCallback(
-  callback: SandboxPermissionResponseCallback,
-): void {
-  pendingSandboxCallbacks.set(callback.requestId, callback)
-  logForDebugging(
-    `[SwarmPermissionPoller] Registered sandbox callback for request ${callback.requestId}`,
-  )
-}
-
-/**
- * Check if a sandbox request has a registered callback
- */
-export function hasSandboxPermissionCallback(requestId: string): boolean {
-  return pendingSandboxCallbacks.has(requestId)
-}
-
-/**
- * Process a sandbox permission response from a mailbox message.
- * Called by the inbox poller when it detects a sandbox_permission_response message.
- *
- * @returns true if the response was processed, false if no callback was registered
- */
-export function processSandboxPermissionResponse(params: {
-  requestId: string
-  host: string
-  allow: boolean
-}): boolean {
-  const callback = pendingSandboxCallbacks.get(params.requestId)
-
-  if (!callback) {
-    logForDebugging(
-      `[SwarmPermissionPoller] No sandbox callback registered for request ${params.requestId}`,
-    )
-    return false
-  }
-
-  logForDebugging(
-    `[SwarmPermissionPoller] Processing sandbox response for request ${params.requestId}: allow=${params.allow}`,
-  )
-
-  // Remove from registry before invoking callback
-  pendingSandboxCallbacks.delete(params.requestId)
-
-  // Resolve the promise with the allow decision
-  callback.resolve(params.allow)
-
-  return true
-}
-
 /**
  * Process a permission response by invoking the registered callback
  */

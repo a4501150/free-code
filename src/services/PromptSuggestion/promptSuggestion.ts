@@ -70,8 +70,7 @@ export function abortPromptSuggestion(): void {
  */
 export function getSuggestionSuppressReason(appState: AppState): string | null {
   if (!appState.promptSuggestionEnabled) return 'disabled'
-  if (appState.pendingWorkerRequest || appState.pendingSandboxRequest)
-    return 'pending_permission'
+  if (appState.pendingWorkerRequest) return 'pending_permission'
   if (appState.elicitation.queue.length > 0) return 'elicitation_active'
   if (appState.toolPermissionContext.mode === 'plan') return 'plan_mode'
   if (currentLimits.status !== 'allowed') return 'rate_limit'

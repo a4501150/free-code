@@ -52,13 +52,6 @@ import { jsonParse } from '../utils/slowOperations.js'
 import { Stream } from '../utils/stream.js'
 import { ndjsonSafeStringify } from './ndjsonSafeStringify.js'
 
-/**
- * Synthetic tool name used when forwarding sandbox network permission
- * requests via the can_use_tool control protocol. Structured hosts see this
- * as a normal tool permission prompt.
- */
-export const SANDBOX_NETWORK_ACCESS_TOOL_NAME = 'SandboxNetworkAccess'
-
 function serializeDecisionReason(
   reason: PermissionDecisionReason | undefined,
 ): string | undefined {
@@ -77,7 +70,6 @@ function serializeDecisionReason(
       return undefined
     case 'hook':
     case 'asyncAgent':
-    case 'sandboxOverride':
     case 'workingDir':
     case 'safetyCheck':
     case 'other':
@@ -712,38 +704,6 @@ export class StructuredIO {
       return result
     } catch {
       return { action: 'cancel' as const }
-    }
-  }
-
-  /**
-   * Creates a SandboxAskCallback that forwards sandbox network permission
-   * requests to the structured host as can_use_tool control_requests.
-   *
-   * This piggybacks on the existing can_use_tool protocol with a synthetic
-   * tool name so structured hosts can prompt the user for network access
-   * without requiring a new protocol subtype.
-   */
-  createSandboxAskCallback(): (hostPattern: {
-    host: string
-    port?: number
-  }) => Promise<boolean> {
-    return async (hostPattern): Promise<boolean> => {
-      try {
-        const result = await this.sendRequest<PermissionToolOutput>(
-          {
-            subtype: 'can_use_tool',
-            tool_name: SANDBOX_NETWORK_ACCESS_TOOL_NAME,
-            input: { host: hostPattern.host },
-            tool_use_id: randomUUID(),
-            description: `Allow network connection to ${hostPattern.host}?`,
-          },
-          permissionToolOutputSchema,
-        )
-        return result.behavior === 'allow'
-      } catch {
-        // If the request fails (stream closed, abort, etc.), deny the connection
-        return false
-      }
     }
   }
 

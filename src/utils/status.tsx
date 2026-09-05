@@ -30,7 +30,6 @@ import {
 import { getProviderRegistry } from './model/providerRegistry.js'
 import { getMTLSConfig } from './mtls.js'
 import { getProxyUrl } from './proxy.js'
-import { SandboxManager } from './sandbox/sandbox-adapter.js'
 import { getSettingsWithAllErrors } from './settings/allErrors.js'
 import {
   getEnabledSettingSources,
@@ -45,17 +44,6 @@ export type Property = {
 }
 
 export type Diagnostic = React.ReactNode
-
-export function buildSandboxProperties(): Property[] {
-  const isSandboxed = SandboxManager.isSandboxingEnabled()
-
-  return [
-    {
-      label: 'Bash Sandbox',
-      value: isSandboxed ? 'Enabled' : 'Disabled',
-    },
-  ]
-}
 
 export function buildIDEProperties(
   mcpClients: MCPServerConnection[],

@@ -62,7 +62,6 @@ import rewind from './commands/rewind/index.js'
 import heapDump from './commands/heapdump/index.js'
 import version from './commands/version.js'
 import summary from './commands/summary/index.js'
-import sandboxToggle from './commands/sandbox-toggle/index.js'
 import stickers from './commands/stickers/index.js'
 import advisor from './commands/advisor.js'
 import { logError } from './utils/log.js'
@@ -210,7 +209,6 @@ const COMMANDS = memoize((): Command[] => [
   privacySettings,
   hooks,
   exportCommand,
-  sandboxToggle,
   logout,
   login(),
   tasks,

@@ -620,7 +620,6 @@ function TaskOutputResultDisplay({
       stdout: task.output,
       stderr: '',
       isImage: false,
-      dangerouslyDisableSandbox: true,
       returnCodeInterpretation: task.error,
     }
     return <BashToolResultMessage content={bashOut} verbose={verbose} />

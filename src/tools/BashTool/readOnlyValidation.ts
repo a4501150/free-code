@@ -11,7 +11,6 @@ import { getCwd } from '../../utils/cwd.js'
 import { isCurrentDirectoryBareGitRepo } from '../../utils/git.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import { getPlatform } from '../../utils/platform.js'
-import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 import {
   containsVulnerableUncPath,
   DOCKER_READ_ONLY_COMMANDS,
@@ -1702,7 +1701,7 @@ function commandHasAnyGit(commands: SimpleCommand[]): boolean {
 }
 
 /**
- * Git-internal path patterns that can be exploited for sandbox escape.
+ * Git-internal path patterns that can be exploited for a read-only bypass.
  * If a command creates these files and then runs git, the git command
  * could execute malicious hooks from the created files.
  */
@@ -1755,7 +1754,7 @@ function extractWritePaths(cmd: SimpleCommand): string[] {
 
 /**
  * Checks if a compound command writes to any git-internal paths.
- * This is used to detect potential sandbox escape attacks where a command
+ * This is used to detect potential permission-bypass attacks where a command
  * creates git-internal files (HEAD, objects/, refs/, hooks/) and then runs git.
  *
  * SECURITY: A compound command could bypass the bare repo detection by:
@@ -1791,7 +1790,7 @@ function commandWritesToGitInternalPaths(commands: SimpleCommand[]): boolean {
 /**
  * Checks read-only constraints for bash commands.
  * This is the single exported function that validates whether a command is read-only.
- * It handles compound commands, sandbox mode, and safety checks.
+ * It handles compound commands and safety checks.
  *
  * @param input The bash command input to validate
  * @param compoundCommandHasCd Pre-computed flag indicating if any cd command exists in the compound command.
@@ -1836,7 +1835,7 @@ export function checkReadOnlyConstraints(
   const hasGitCommand = commandHasAnyGit(commands)
 
   // SECURITY: Block compound commands that have both cd AND git
-  // This prevents sandbox escape via: cd /malicious/dir && git status
+  // This prevents a permission bypass via: cd /malicious/dir && git status
   // where the malicious directory contains fake git hooks that execute arbitrary code.
   if (compoundCommandHasCd && hasGitCommand) {
     return {
@@ -1847,7 +1846,7 @@ export function checkReadOnlyConstraints(
   }
 
   // SECURITY: Block git commands if the current directory looks like a bare/exploited git repo
-  // This prevents sandbox escape when an attacker has:
+  // This prevents a permission bypass when an attacker has:
   // 1. Deleted .git/HEAD to invalidate the normal git directory
   // 2. Created hooks/pre-commit or other git-internal files in the current directory
   // Git would then treat the cwd as the git directory and execute malicious hooks.
@@ -1860,7 +1859,7 @@ export function checkReadOnlyConstraints(
   }
 
   // SECURITY: Block compound commands that write to git-internal paths AND run git
-  // This prevents sandbox escape where a command creates git-internal files
+  // This prevents a permission bypass where a command creates git-internal files
   // (HEAD, objects/, refs/, hooks/) and then runs git, which would execute
   // malicious hooks from the newly created files.
   // Example attack: mkdir -p hooks && echo 'malicious' > hooks/pre-commit && git status
@@ -1869,23 +1868,6 @@ export function checkReadOnlyConstraints(
       behavior: 'passthrough',
       message:
         'Compound commands that create git internal files and run git require permission checks for enhanced security',
-    }
-  }
-
-  // SECURITY: Only auto-allow git commands as read-only if we're in the original cwd
-  // (which is protected by sandbox denyWrite) or if sandbox is disabled (attack is moot).
-  // Race condition: a sandboxed command can create bare repo files in a subdirectory,
-  // and a backgrounded git command (e.g. sleep 10 && git status) would pass the
-  // isCurrentDirectoryBareGitRepo() check at evaluation time before the files exist.
-  if (
-    hasGitCommand &&
-    SandboxManager.isSandboxingEnabled() &&
-    getCwd() !== getOriginalCwd()
-  ) {
-    return {
-      behavior: 'passthrough',
-      message:
-        'Git commands outside the original working directory require permission checks when sandbox is enabled',
     }
   }
 

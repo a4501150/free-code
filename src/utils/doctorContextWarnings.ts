@@ -10,7 +10,6 @@ import {
 import { getMainLoopModel } from './model/model.js'
 import { permissionRuleValueToString } from './permissions/permissionRuleParser.js'
 import { detectUnreachableRules } from './permissions/shadowedRuleDetection.js'
-import { SandboxManager } from './sandbox/sandbox-adapter.js'
 import {
   AGENT_DESCRIPTIONS_THRESHOLD,
   getAgentDescriptionsTotalTokens,
@@ -230,13 +229,7 @@ async function checkUnreachableRules(
   getToolPermissionContext: () => Promise<ToolPermissionContext>,
 ): Promise<ContextWarning | null> {
   const context = await getToolPermissionContext()
-  const sandboxAutoAllowEnabled =
-    SandboxManager.isSandboxingEnabled() &&
-    SandboxManager.isAutoAllowBashIfSandboxedEnabled()
-
-  const unreachable = detectUnreachableRules(context, {
-    sandboxAutoAllowEnabled,
-  })
+  const unreachable = detectUnreachableRules(context)
 
   if (unreachable.length === 0) {
     return null

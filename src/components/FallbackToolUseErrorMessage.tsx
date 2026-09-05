@@ -2,7 +2,6 @@ import type { DomainToolResultBlockParam } from '../types/domain.js'
 import * as React from 'react'
 import { stripUnderlineAnsi } from 'src/components/shell/OutputLine.js'
 import { extractTag } from 'src/utils/messages.js'
-import { removeSandboxViolationTags } from 'src/utils/sandbox/sandbox-ui-utils.js'
 import { Box, Text } from '../ink.js'
 import { useShortcutDisplay } from '../keybindings/useShortcutDisplay.js'
 import { countCharInString } from '../utils/stringUtils.js'
@@ -36,10 +35,8 @@ export function FallbackToolUseErrorMessage({
     error = text || 'Tool execution failed'
   } else {
     const extractedError = extractTag(result, 'tool_use_error') ?? result
-    // Remove sandbox_violations tags from error display (Claude still sees them in the tool result)
-    const withoutSandboxViolations = removeSandboxViolationTags(extractedError)
     // Strip <error> tags but keep their content (tags are for the model, not the UI)
-    const withoutErrorTags = withoutSandboxViolations.replace(/<\/?error>/g, '')
+    const withoutErrorTags = extractedError.replace(/<\/?error>/g, '')
     const trimmed = withoutErrorTags.trim()
     if (!verbose && trimmed.includes('InputValidationError: ')) {
       error = 'Invalid tool parameters'

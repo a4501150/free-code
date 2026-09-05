@@ -42,13 +42,7 @@ import { isEnvTruthy } from '../utils/envUtils.js'
 import { truncateToWidth } from '../utils/format.js'
 
 import { setMemberActive } from '../utils/swarm/teamHelpers.js'
-import {
-  isSwarmWorker,
-  generateSandboxRequestId,
-  sendSandboxPermissionRequestViaMailbox,
-  sendSandboxPermissionResponseViaMailbox,
-} from '../utils/swarm/permissionSync.js'
-import { registerSandboxPermissionCallback } from '../hooks/useSwarmPermissionPoller.js'
+import { isSwarmWorker } from '../utils/swarm/permissionSync.js'
 import { getTeamName, getAgentName } from '../utils/teammate.js'
 import {
   injectUserMessageToTeammate,
@@ -342,10 +336,6 @@ const useScheduledTasks = feature('AGENT_TRIGGERS')
   : null
 import { isAgentSwarmsEnabled } from '../utils/agentSwarmsEnabled.js'
 import { useTaskListWatcher } from '../hooks/useTaskListWatcher.js'
-import type {
-  SandboxAskCallback,
-  NetworkHostPattern,
-} from '../utils/sandbox/sandbox-adapter.js'
 
 import {
   type IDEExtensionInstallationStatus,
@@ -387,11 +377,7 @@ import {
   useKickOffCheckAndDisableBypassPermissionsIfNeeded,
   useKickOffCheckAndDisableAutoModeIfNeeded,
 } from 'src/utils/permissions/bypassPermissionsKillswitch.js'
-import { SandboxManager } from 'src/utils/sandbox/sandbox-adapter.js'
-import { SANDBOX_NETWORK_ACCESS_TOOL_NAME } from 'src/cli/structuredIO.js'
 import { useFileHistorySnapshotInit } from 'src/hooks/useFileHistorySnapshotInit.js'
-import { SandboxPermissionRequest } from 'src/components/permissions/SandboxPermissionRequest.js'
-import { SandboxViolationExpandedView } from 'src/components/SandboxViolationExpandedView.js'
 import { useSettingsErrors } from 'src/hooks/notifs/useSettingsErrors.js'
 import { useMcpConnectivityStatus } from 'src/hooks/notifs/useMcpConnectivityStatus.js'
 import { useAutoModeUnavailableNotification } from 'src/hooks/notifs/useAutoModeUnavailableNotification.js'
@@ -562,10 +548,8 @@ export function REPL({
   const spinnerTip = useAppState(s => s.spinnerTip)
   const showExpandedTodos = useAppState(s => s.expandedView) === 'tasks'
   const pendingWorkerRequest = useAppState(s => s.pendingWorkerRequest)
-  const pendingSandboxRequest = useAppState(s => s.pendingSandboxRequest)
   const teamContext = useAppState(s => s.teamContext)
   const tasks = useAppState(s => s.tasks)
-  const workerSandboxPermissions = useAppState(s => s.workerSandboxPermissions)
   const elicitation = useAppState(s => s.elicitation)
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const setAppState = useSetAppState()
@@ -873,10 +857,8 @@ export function REPL({
 
   const focusedInputDialogRef = React.useRef<
     | 'message-selector'
-    | 'sandbox-permission'
     | 'tool-permission'
     | 'prompt'
-    | 'worker-sandbox-permission'
     | 'elicitation'
     | 'ide-onboarding'
     | undefined
@@ -1089,8 +1071,6 @@ export function REPL({
     setToolUseConfirmQueue,
     permissionStickyFooter,
     setPermissionStickyFooter,
-    sandboxPermissionRequestQueue,
-    setSandboxPermissionRequestQueue,
     promptQueue,
     setPromptQueue,
     isWaitingForApproval,
@@ -1111,7 +1091,6 @@ export function REPL({
     isMessageSelectorVisible,
     showIdeOnboarding,
     isPromptInputActive,
-    workerSandboxPermissions,
     elicitation,
     isLoading,
     focusedInputDialogRef,
@@ -1127,7 +1106,6 @@ export function REPL({
     abortController,
     setAbortController,
     setAppState,
-    store,
     addNotification,
     mrOnTurnComplete,
     inputValue,
@@ -1144,7 +1122,6 @@ export function REPL({
     inputMode,
     screen,
     pendingWorkerRequest,
-    pendingSandboxRequest,
   })
 
   // ── Terminal title (needs isWaitingForApproval from dialogs hook) ──
@@ -1266,7 +1243,7 @@ export function REPL({
 
   // exitFlow, isExiting, handleExit → useReplExit (called above)
 
-  // Dialog focus, cancel, sandbox, permission context, canUseTool, requestPrompt → useReplDialogs
+  // Dialog focus, cancel, permission context, canUseTool, requestPrompt → useReplDialogs
 
   const { getToolUseContext } = useReplToolUseContext({
     commands,
@@ -1971,7 +1948,6 @@ export function REPL({
             <>
               {transcriptMessagesElement}
               {transcriptToolJSX}
-              <SandboxViolationExpandedView />
             </>
           }
           bottom={
@@ -2260,21 +2236,14 @@ export function REPL({
               <Box flexDirection="column" flexGrow={1}>
                 <ReplDialogLayer
                   focusedInputDialog={focusedInputDialog}
-                  sandboxPermissionRequestQueue={sandboxPermissionRequestQueue}
-                  setSandboxPermissionRequestQueue={
-                    setSandboxPermissionRequestQueue
-                  }
                   setAppState={setAppState}
                   promptQueue={promptQueue}
                   setPromptQueue={setPromptQueue}
                   pendingWorkerRequest={pendingWorkerRequest}
-                  pendingSandboxRequest={pendingSandboxRequest}
-                  workerSandboxPermissions={workerSandboxPermissions}
                   elicitation={elicitation}
                   showIdeOnboarding={showIdeOnboarding}
                   setShowIdeOnboarding={setShowIdeOnboarding}
                   ideInstallationStatus={ideInstallationStatus}
-                  teamContext={teamContext}
                   exitFlow={exitFlow}
                   mrRender={mrRender}
                   permissionStickyFooter={permissionStickyFooter}

@@ -4,7 +4,6 @@
 import { getCodeEditToolDecisionCounter } from '../../bootstrap/state.js'
 import type { Tool as ToolType, ToolUseContext } from '../../Tool.js'
 import { getLanguageName } from '../../utils/cliHighlight.js'
-import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js'
 import { logOTelEvent } from '../../utils/telemetry/events.js'
 import type {
   PermissionApprovalSource,
@@ -87,7 +86,6 @@ function baseMetadata(
   return {
     messageID: messageId,
     toolName: toolName,
-    sandboxEnabled: SandboxManager.isSandboxingEnabled(),
     // Only include wait time when the user was actually prompted (not auto-approved)
     ...(waitMs !== undefined && { waiting_for_user_permission_ms: waitMs }),
   }

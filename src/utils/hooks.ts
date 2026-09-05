@@ -1839,7 +1839,7 @@ export async function getMatchingHooks(
     })
 
     // HTTP hooks are not supported for SessionStart/Setup events. In headless
-    // mode the sandbox ask callback deadlocks because the structuredInput
+    // mode the network permission ask flow deadlocks because the structuredInput
     // consumer hasn't started yet when these hooks fire.
     const filteredHooks =
       hookEvent === 'SessionStart' || hookEvent === 'Setup'

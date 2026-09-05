@@ -7,3 +7,4 @@ openclaw/
 scratchpad/
 vendor/search-tools/
 src/webui/generated/assets.ts
+.DS_Store

@@ -27,10 +27,7 @@ import {
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import { createReadRuleSuggestion } from '../../utils/permissions/PermissionUpdate.js'
 import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js'
-import {
-  isDangerousRemovalPath,
-  isPathInSandboxWriteAllowlist,
-} from '../../utils/permissions/pathValidation.js'
+import { isDangerousRemovalPath } from '../../utils/permissions/pathValidation.js'
 import { getPlatform } from '../../utils/platform.js'
 import type {
   ParsedCommandElement,
@@ -934,27 +931,6 @@ function isPathAllowed(
         allowed: true,
         decisionReason: internalReadResult.decisionReason,
       }
-    }
-  }
-
-  // 3.7. For write/create operations to paths OUTSIDE the working directory,
-  // check the sandbox write allowlist. When the sandbox is enabled, users
-  // have explicitly configured writable directories (e.g. /tmp/claude/) —
-  // treat these as additional allowed write directories so redirects/Out-File/
-  // New-Item don't prompt unnecessarily. Paths IN the working directory are
-  // excluded: the sandbox allowlist always seeds '.' (cwd), which would
-  // bypass the acceptEdits gate at step 3.
-  if (
-    operationType !== 'read' &&
-    !isInWorkingDir &&
-    isPathInSandboxWriteAllowlist(resolvedPath)
-  ) {
-    return {
-      allowed: true,
-      decisionReason: {
-        type: 'other',
-        reason: 'Path is in sandbox write allowlist',
-      },
     }
   }
 

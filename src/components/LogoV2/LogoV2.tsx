@@ -50,7 +50,6 @@ import { feature } from 'bun:bundle'
 // is external: true so it's moot there.
 import * as channelsNoticeNs from './ChannelsNotice.js'
 const ChannelsNoticeModule = feature('KAIROS') ? channelsNoticeNs : null
-import { SandboxManager } from 'src/utils/sandbox/sandbox-adapter.js'
 import { plural } from '../../utils/stringUtils.js'
 import { useAppState } from '../../state/AppState.js'
 import { getEffortSuffix } from '../../utils/effort.js'
@@ -65,7 +64,6 @@ export function LogoV2(): React.ReactNode {
 
   const { columns } = useTerminalSize()
   const showOnboarding = shouldShowProjectOnboarding()
-  const showSandboxStatus = SandboxManager.isSandboxingEnabled()
   const agent = useAppState(s => s.agent)
 
   let changelog: string[]
@@ -215,13 +213,6 @@ export function LogoV2(): React.ReactNode {
         </OffscreenFreeze>
         <VoiceModeNotice />
         {ChannelsNoticeModule && <ChannelsNoticeModule.ChannelsNotice />}
-        {showSandboxStatus && (
-          <Box marginTop={1} flexDirection="column">
-            <Text color="warning">
-              Your bash commands will be sandboxed. Disable with /sandbox.
-            </Text>
-          </Box>
-        )}
       </>
     )
   }
@@ -353,13 +344,6 @@ export function LogoV2(): React.ReactNode {
       {announcement && (
         <Box paddingLeft={2} flexDirection="column">
           <Text>{announcement}</Text>
-        </Box>
-      )}
-      {showSandboxStatus && (
-        <Box paddingLeft={2} flexDirection="column">
-          <Text color="warning">
-            Your bash commands will be sandboxed. Disable with /sandbox.
-          </Text>
         </Box>
       )}
     </>

@@ -47,7 +47,6 @@ function getClaudeCodeGuideBasePrompt(): string {
   - Settings files and configuration
   - Keyboard shortcuts and hotkeys
   - Subagents and plugins
-  - Sandboxing and security
 
 - **Claude API docs** (${CDP_DOCS_MAP_URL}): Fetch this for questions about the Claude API (formerly the Anthropic API), including:
   - Messages API and streaming

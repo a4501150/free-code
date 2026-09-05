@@ -11,7 +11,6 @@ import { getOriginalCwd } from '../bootstrap/state.js'
 import type { CommandResultDisplay } from '../commands.js'
 import { Pane } from '../components/design-system/Pane.js'
 import { PressEnterToContinue } from '../components/PressEnterToContinue.js'
-import { SandboxDoctorSection } from '../components/sandbox/SandboxDoctorSection.js'
 import { ValidationErrorsList } from '../components/ValidationErrorsList.js'
 import { useSettingsErrors } from '../hooks/notifs/useSettingsErrors.js'
 import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js'
@@ -207,8 +206,6 @@ export function Doctor({ onDone }: Props): React.ReactNode {
           </Box>
         )}
       </Box>
-
-      <SandboxDoctorSection />
 
       <McpParsingWarnings />
 

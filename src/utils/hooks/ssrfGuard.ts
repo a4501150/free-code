@@ -12,9 +12,8 @@ import { isIP } from 'net'
  * Loopback (127.0.0.0/8, ::1) is intentionally ALLOWED — local dev policy
  * servers are a primary HTTP hook use case.
  *
- * When a global proxy or the sandbox network proxy is in use, the guard is
- * effectively bypassed for the target host because the proxy performs DNS
- * resolution. The sandbox proxy enforces its own domain allowlist.
+ * When a global proxy is in use, the guard is effectively bypassed for the
+ * target host because the proxy performs DNS resolution.
  */
 
 /**

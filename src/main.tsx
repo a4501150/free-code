@@ -324,7 +324,6 @@ import {
   clearPluginCache,
   loadAllPluginsCacheOnly,
 } from './utils/plugins/pluginLoader.js'
-import { SandboxManager } from './utils/sandbox/sandbox-adapter.js'
 import {
   shouldEnableThinkingByDefault,
   type ThinkingConfig,
@@ -565,10 +564,9 @@ function loadSettingsFromFlag(settingsFile: string): void {
       // Create a temporary file and write the JSON to it.
       // Use a content-hash-based path instead of random UUID to avoid
       // busting the Anthropic API prompt cache. The settings path ends up
-      // in the Bash tool's sandbox denyWithinAllow list, which is part of
-      // the tool description sent to the API. A random UUID per subprocess
-      // changes the tool description on every query() call, invalidating
-      // the cache prefix and causing a 12x input token cost penalty.
+      // in prompt context sent to the API. A random UUID per subprocess
+      // changes that context on every query() call, invalidating the cache
+      // prefix and causing a large input token cost penalty.
       // The content hash ensures identical settings produce the same path
       // across process boundaries (each SDK query() spawns a new process).
       settingsPath = generateTempFilePath('claude-settings', '.json', {
@@ -3133,12 +3131,7 @@ async function run(): Promise<CommanderCommand> {
         skillImprovement: {
           suggestion: null,
         },
-        workerSandboxPermissions: {
-          queue: [],
-          selectedIndex: 0,
-        },
         pendingWorkerRequest: null,
-        pendingSandboxRequest: null,
         authVersion: 0,
         initialMessage: inputPrompt
           ? { message: createUserMessage({ content: String(inputPrompt) }) }
