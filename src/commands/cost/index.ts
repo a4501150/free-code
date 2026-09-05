@@ -1,18 +1,13 @@
 /**
  * Cost command - minimal metadata only.
- * Implementation is lazy-loaded from cost.ts to reduce startup time.
+ * Implementation is lazy-loaded from cost.tsx to reduce startup time.
  */
 import type { Command } from '../../commands.js'
-import { isClaudeAISubscriber } from '../../utils/auth.js'
 
 const cost = {
-  type: 'local',
+  type: 'local-jsx',
   name: 'cost',
-  description: 'Show the total cost and duration of the current session',
-  get isHidden() {
-    return isClaudeAISubscriber()
-  },
-  supportsNonInteractive: true,
+  description: 'Show session cost and usage',
   call: (...args) =>
     import('./cost.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command

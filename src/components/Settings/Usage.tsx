@@ -1,7 +1,19 @@
 import * as React from 'react'
 import { useEffect, useState } from 'react'
 import { extraUsage as extraUsageCommand } from 'src/commands/extra-usage/index.js'
-import { formatCost } from 'src/cost-tracker.js'
+import {
+  formatCost,
+  getTotalAPIDuration,
+  getTotalCacheCreationInputTokens,
+  getTotalCacheReadInputTokens,
+  getTotalCost,
+  getTotalDuration,
+  getTotalInputTokens,
+  getTotalLinesAdded,
+  getTotalLinesRemoved,
+  getTotalOutputTokens,
+  hasUnknownModelCost,
+} from 'src/cost-tracker.js'
 import { getSubscriptionType } from 'src/utils/auth.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { Box, Text } from '../../ink.js'
@@ -12,7 +24,11 @@ import {
   type RateLimit,
   type Utilization,
 } from '../../services/api/usage.js'
-import { formatResetText } from '../../utils/format.js'
+import {
+  formatDuration,
+  formatNumber,
+  formatResetText,
+} from '../../utils/format.js'
 import { logError } from '../../utils/log.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { ConfigurableShortcutHint } from '../ConfigurableShortcutHint.js'
@@ -97,6 +113,67 @@ function LimitBar({
   }
 }
 
+const SESSION_LABEL_WIDTH = 23
+
+function SessionRow({
+  label,
+  value,
+}: {
+  label: string
+  value: React.ReactNode
+}): React.ReactNode {
+  return (
+    <Text>
+      {(label + ':').padEnd(SESSION_LABEL_WIDTH)}
+      {value}
+    </Text>
+  )
+}
+
+function SessionSection(): React.ReactNode {
+  const linesAdded = getTotalLinesAdded()
+  const linesRemoved = getTotalLinesRemoved()
+  const costDisplay = (
+    <>
+      {formatCost(getTotalCost())}
+      {hasUnknownModelCost() ? (
+        <Text dimColor>
+          {' '}
+          (costs may be inaccurate due to usage of unknown models)
+        </Text>
+      ) : null}
+    </>
+  )
+
+  return (
+    <Box flexDirection="column">
+      <Text bold>Session</Text>
+      <SessionRow label="Total cost" value={costDisplay} />
+      <SessionRow
+        label="Total duration (API)"
+        value={formatDuration(getTotalAPIDuration())}
+      />
+      <SessionRow
+        label="Total duration (wall)"
+        value={formatDuration(getTotalDuration())}
+      />
+      <SessionRow
+        label="Total code changes"
+        value={`${linesAdded} ${linesAdded === 1 ? 'line' : 'lines'} added, ${linesRemoved} ${linesRemoved === 1 ? 'line' : 'lines'} removed`}
+      />
+      <SessionRow
+        label="Usage"
+        value={`${formatNumber(getTotalInputTokens())} input, ${formatNumber(
+          getTotalOutputTokens(),
+        )} output, ${formatNumber(
+          getTotalCacheReadInputTokens(),
+        )} cache read, ${formatNumber(
+          getTotalCacheCreationInputTokens(),
+        )} cache write`}
+      />
+    </Box>
+  )
+}
 export function Usage(): React.ReactNode {
   const [utilization, setUtilization] = useState<Utilization | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -140,8 +217,9 @@ export function Usage(): React.ReactNode {
     { context: 'Settings', isActive: !!error && !isLoading },
   )
 
+  let subscriptionContent: React.ReactNode = null
   if (error) {
-    return (
+    subscriptionContent = (
       <Box flexDirection="column" gap={1}>
         <Text color="error">Error: {error}</Text>
         <Text dimColor>
@@ -162,78 +240,70 @@ export function Usage(): React.ReactNode {
         </Text>
       </Box>
     )
-  }
+  } else if (!utilization) {
+    subscriptionContent = <Text dimColor>Loading usage data…</Text>
+  } else {
+    // Only Max and Team plans have a Sonnet limit that differs from the weekly
+    // limit (see rateLimitMessages.ts). For other plans the bar is redundant.
+    // Show for null (unknown plan) to stay consistent with rateLimitMessages.ts,
+    // which labels it "Sonnet limit" in that case.
+    const subscriptionType = getSubscriptionType()
+    const showSonnetBar =
+      subscriptionType === 'max' ||
+      subscriptionType === 'team' ||
+      subscriptionType === null
 
-  if (!utilization) {
-    return (
+    const limits = [
+      {
+        title: 'Current session',
+        limit: utilization.five_hour,
+      },
+      {
+        title: 'Current week (all models)',
+        limit: utilization.seven_day,
+      },
+      ...(showSonnetBar
+        ? [
+            {
+              title: 'Current week (Sonnet only)',
+              limit: utilization.seven_day_sonnet,
+            },
+          ]
+        : []),
+    ]
+
+    subscriptionContent = (
       <Box flexDirection="column" gap={1}>
-        <Text dimColor>Loading usage data…</Text>
-        <Text dimColor>
-          <ConfigurableShortcutHint
-            action="confirm:no"
-            context="Settings"
-            fallback="Esc"
-            description="cancel"
+        {limits.some(({ limit }) => limit) || (
+          <Text dimColor>/usage is only available for subscription plans.</Text>
+        )}
+
+        {limits.map(
+          ({ title, limit }) =>
+            limit && (
+              <LimitBar
+                key={title}
+                title={title}
+                limit={limit}
+                maxWidth={maxWidth}
+              />
+            ),
+        )}
+
+        {utilization.extra_usage && (
+          <ExtraUsageSection
+            extraUsage={utilization.extra_usage}
+            maxWidth={maxWidth}
           />
-        </Text>
+        )}
       </Box>
     )
   }
 
-  // Only Max and Team plans have a Sonnet limit that differs from the weekly
-  // limit (see rateLimitMessages.ts). For other plans the bar is redundant.
-  // Show for null (unknown plan) to stay consistent with rateLimitMessages.ts,
-  // which labels it "Sonnet limit" in that case.
-  const subscriptionType = getSubscriptionType()
-  const showSonnetBar =
-    subscriptionType === 'max' ||
-    subscriptionType === 'team' ||
-    subscriptionType === null
-
-  const limits = [
-    {
-      title: 'Current session',
-      limit: utilization.five_hour,
-    },
-    {
-      title: 'Current week (all models)',
-      limit: utilization.seven_day,
-    },
-    ...(showSonnetBar
-      ? [
-          {
-            title: 'Current week (Sonnet only)',
-            limit: utilization.seven_day_sonnet,
-          },
-        ]
-      : []),
-  ]
-
   return (
     <Box flexDirection="column" gap={1} width="100%">
-      {limits.some(({ limit }) => limit) || (
-        <Text dimColor>/usage is only available for subscription plans.</Text>
-      )}
-
-      {limits.map(
-        ({ title, limit }) =>
-          limit && (
-            <LimitBar
-              key={title}
-              title={title}
-              limit={limit}
-              maxWidth={maxWidth}
-            />
-          ),
-      )}
-
-      {utilization.extra_usage && (
-        <ExtraUsageSection
-          extraUsage={utilization.extra_usage}
-          maxWidth={maxWidth}
-        />
-      )}
-
+      <SessionSection />
+      {subscriptionContent}
       <Text dimColor>
         <ConfigurableShortcutHint
           action="confirm:no"
