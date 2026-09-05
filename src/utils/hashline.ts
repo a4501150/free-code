@@ -2,25 +2,101 @@ import { djb2Hash } from './hash.js'
 
 const HASH_LEN = 3
 
+// Label format: optional width digit, then a base36 hash of the trimmed
+// context window [line-width .. line+width]. No width digit means width 1, so
+// a line's hash covers the line and its two neighbors — that identifies a `}`
+// or a blank line by where it sits, which content alone cannot. Read widens a
+// colliding label to width 2 ("2" + hash), and width 2 is the cap: a repeated
+// 5-line window stays ambiguous and errors like any duplicate did, and the cap
+// bounds how far rewriting a line can invalidate anchors the model already
+// holds (its neighbors' only).
+const MAX_WIDTH = 2
+
 /**
- * Short, stable content fingerprint for a single line. Trimmed so anchors
- * survive whitespace-only reformatting; unsigned base36, fixed width. djb2 is
- * sync and stable across runtimes (unlike Bun.hash / async xxhash).
+ * Short, stable content fingerprint. Trimmed per line so anchors survive
+ * whitespace-only reformatting; unsigned base36, fixed width. djb2 is sync and
+ * stable across runtimes (unlike Bun.hash / async xxhash).
  */
-export function hashLine(line: string): string {
-  const h = (djb2Hash(line.trim()) >>> 0).toString(36)
+function shortHash(s: string): string {
+  const h = (djb2Hash(s) >>> 0).toString(36)
   return h.slice(-HASH_LEN).padStart(HASH_LEN, '0')
+}
+
+/**
+ * Neighbor lines outside a Read slice, needed because a slice-edge line's
+ * context reaches past the slice. Absent entries mean the file boundary, so
+ * labels computed from a slice match labels computed from the whole file.
+ */
+export type SliceContext = {
+  /** Up to MAX_WIDTH lines above the slice, ordered nearest-last. */
+  prevLines?: string[]
+  /** Up to MAX_WIDTH lines below the slice, ordered nearest-first. */
+  nextLines?: string[]
+}
+
+// Trimmed lines of the window around slice line i, clamped at the file
+// boundary and extended into ctx past the slice edges.
+function windowParts(
+  lines: string[],
+  i: number,
+  width: number,
+  ctx?: SliceContext,
+): string[] {
+  const parts: string[] = []
+  for (let k = i - width; k <= i + width; k++) {
+    let line: string | undefined
+    if (k < 0) {
+      line = ctx?.prevLines?.[(ctx?.prevLines?.length ?? 0) + k]
+    } else if (k >= lines.length) {
+      line = ctx?.nextLines?.[k - lines.length]
+    } else {
+      line = lines[k]
+    }
+    if (line !== undefined) parts.push(line.trim())
+  }
+  return parts
+}
+
+function windowHash(
+  lines: string[],
+  i: number,
+  width: number,
+  ctx?: SliceContext,
+): string {
+  return shortHash(windowParts(lines, i, width, ctx).join('\n'))
+}
+
+/**
+ * One label per line: width 1 unless the window repeats in scope, then width 2
+ * with "2" prefixed. Detection scope is the `lines` array (the whole file for
+ * engine paths, the visible slice for Read), so an off-scope twin can still
+ * surface later as an ambiguous-anchor error with candidates.
+ */
+function computeLabels(lines: string[], ctx?: SliceContext): string[] {
+  const primary = lines.map((_, i) => windowHash(lines, i, 1, ctx))
+  const seen = new Map<string, number>()
+  for (const label of primary) {
+    seen.set(label, (seen.get(label) ?? 0) + 1)
+  }
+  return primary.map((label, i) =>
+    (seen.get(label) ?? 0) > 1 ? '2' + windowHash(lines, i, 2, ctx) : label,
+  )
 }
 
 /**
  * Model-facing Read text format: one `LINE:HASH|content` per line. startLine is
  * 1-based. Mirrors addLineNumbers' line splitting so numbering stays aligned.
  */
-export function formatHashline(content: string, startLine: number): string {
+export function formatHashline(
+  content: string,
+  startLine: number,
+  ctx?: SliceContext,
+): string {
   if (!content) return ''
-  return content
-    .split(/\r?\n/)
-    .map((line, i) => `${i + startLine}:${hashLine(line)}|${line}`)
+  const lines = content.split(/\r?\n/)
+  const labels = computeLabels(lines, ctx)
+  return lines
+    .map((line, i) => `${i + startLine}:${labels[i]}|${line}`)
     .join('\n')
 }
 
@@ -34,6 +110,18 @@ export function stripHashlinePrefix(line: string): string {
 export type Anchor = { line: number; hash: string | null }
 
 /**
+ * Split a label into its search window width and hash. Null for malformed
+ * labels, which parseAnchor then rejects.
+ */
+function parseLabel(hash: string): { width: number; hash: string } | null {
+  if (hash.length === HASH_LEN) return { width: 1, hash }
+  if (hash.length === HASH_LEN + 1 && hash[0] === '2' && MAX_WIDTH >= 2) {
+    return { width: 2, hash: hash.slice(1) }
+  }
+  return null
+}
+
+/**
  * Parse a `LINE:HASH` anchor. "12:a3f" → {12,"a3f"}, "0" → {0,null},
  * "12" → {12,null}. Returns null for malformed input.
  */
@@ -41,6 +129,7 @@ export function parseAnchor(s: string): Anchor | null {
   const trimmed = s.trim()
   const m = trimmed.match(/^(\d+)(?::([0-9a-z]+))?$/)
   if (!m) return null
+  if (m[2] !== undefined && parseLabel(m[2]) === null) return null
   return { line: Number(m[1]), hash: m[2] ?? null }
 }
 
@@ -78,13 +167,15 @@ const WINDOW = 2
 // budgets bound what one tool result can add to the transcript.
 const MAX_STALE_WINDOWS = 3
 const MAX_REGION_ANCHOR_LINES = 60
+const MAX_CANDIDATES_SHOWN = 8
+const CANDIDATE_WINDOWS_PER_ANCHOR = 3
 
 function freshWindow(fileLines: string[], line: number): string {
   const lo = Math.max(1, line - WINDOW)
   const hi = Math.min(fileLines.length, line + WINDOW)
   const out: string[] = []
   for (let n = lo; n <= hi; n++) {
-    out.push(`${n}:${hashLine(fileLines[n - 1])}|${fileLines[n - 1]}`)
+    out.push(`${n}:${labelAt(fileLines, n)}|${fileLines[n - 1]}`)
   }
   return out.join('\n')
 }
@@ -99,6 +190,8 @@ type StaleAnchor = {
   anchor: Anchor
   actual: string | null
   ambiguous: boolean
+  /** Where the twins sit, for an ambiguous anchor. */
+  candidates?: number[]
 }
 
 // A single-line replace/delete resolves start and end to the same anchor, so
@@ -106,12 +199,16 @@ type StaleAnchor = {
 function addStale(
   stale: StaleAnchor[],
   anchor: Anchor,
-  actual: string | null,
-  ambiguous: boolean,
+  place: Exclude<Resolved, { kind: 'ok' }>,
 ): void {
   const text = anchorText(anchor)
   if (stale.some(s => anchorText(s.anchor) === text)) return
-  stale.push({ anchor, actual, ambiguous })
+  stale.push({
+    anchor,
+    actual: place.actual,
+    ambiguous: place.kind === 'ambiguous',
+    candidates: place.kind === 'ambiguous' ? place.candidates : undefined,
+  })
 }
 
 /**
@@ -131,17 +228,29 @@ function staleAnchorError(
   const detail = stale.map(s => {
     const name = anchorText(s.anchor)
     if (s.ambiguous) {
-      return `  "${name}" → several lines carry that hash, so it cannot be placed by content`
+      const where = s.candidates
+        ? ` — matching lines: ${s.candidates.slice(0, MAX_CANDIDATES_SHOWN).join(', ')}${s.candidates.length > MAX_CANDIDATES_SHOWN ? `, and ${s.candidates.length - MAX_CANDIDATES_SHOWN} more` : ''}`
+        : ''
+      return `  "${name}" → several lines carry that hash, so it cannot be placed by content${where}`
     }
     return s.actual === null
       ? `  "${name}" → the file now has ${fileLines.length} line(s)`
       : `  "${name}" → line ${s.anchor.line} is now "${s.anchor.line}:${s.actual}"`
   })
-  const inRange = stale
-    .filter(s => s.actual !== null)
-    .slice(0, MAX_STALE_WINDOWS)
-  const windows = inRange.map(s => freshWindow(fileLines, s.anchor.line))
-  const omitted = stale.filter(s => s.actual !== null).length - inRange.length
+  const windows: string[] = []
+  let omitted = 0
+  for (const s of stale) {
+    const at = s.ambiguous
+      ? (s.candidates ?? []).slice(0, CANDIDATE_WINDOWS_PER_ANCHOR)
+      : s.actual !== null
+        ? [s.anchor.line]
+        : []
+    for (const line of at) {
+      if (windows.length < MAX_STALE_WINDOWS)
+        windows.push(freshWindow(fileLines, line))
+      else omitted++
+    }
+  }
   return [
     `${head} The file changed since you read it.`,
     ...detail,
@@ -170,8 +279,10 @@ function anchorText(anchor: Anchor): string {
 export function formatAnchoredRegions(
   content: string,
   regions: { start: number; count: number }[],
+  ctx?: SliceContext,
 ): string {
   const fileLines = content.split('\n')
+  const labels = computeLabels(fileLines, ctx)
   const blocks: string[] = []
   let budget = MAX_REGION_ANCHOR_LINES
   let truncated = false
@@ -184,7 +295,7 @@ export function formatAnchoredRegions(
     const hi = Math.min(fileLines.length, region.start + region.count - 1)
     const out: string[] = []
     for (let n = lo; n <= hi && budget > 0; n++) {
-      out.push(`${n}:${hashLine(fileLines[n - 1])}|${fileLines[n - 1]}`)
+      out.push(`${n}:${labels[n - 1]}|${fileLines[n - 1]}`)
       budget--
     }
     if (hi - lo + 1 > out.length) truncated = true
@@ -197,29 +308,66 @@ export function formatAnchoredRegions(
 }
 
 /**
- * Where an anchor points in the current content. A hash names a line and the
+ * The best label for one 1-based line of the whole file: width 1, widened to
+ * width 2 when its window repeats. Same rules computeLabels applies to a whole
+ * file, for the small line sets error windows quote.
+ */
+function labelAt(fileLines: string[], line: number): string {
+  const primary = windowHash(fileLines, line - 1, 1)
+  for (let n = 0; n < fileLines.length; n++) {
+    if (n !== line - 1 && windowHash(fileLines, n, 1) === primary) {
+      return '2' + windowHash(fileLines, line - 1, 2)
+    }
+  }
+  return primary
+}
+
+/** The label Read would have shown for the given 1-based line, for tests and
+ * for callers that build anchors without formatting the whole file. */
+export function anchorAt(content: string, line: number): string {
+  return labelAt(content.split('\n'), line)
+}
+
+/** SliceContext for a slice starting at absolute startLine. Read plumbs the
+ * real neighbors through SliceContext instead, so edge labels match. */
+export function anchorContext(
+  fullContent: string,
+  sliceContent: string,
+  startLine: number,
+): SliceContext {
+  const full = fullContent.split('\n')
+  const sliceLines = sliceContent.split('\n')
+  const lo0 = startLine - 1
+  const ctx: SliceContext = {}
+  if (lo0 > 0) {
+    ctx.prevLines = full.slice(Math.max(0, lo0 - MAX_WIDTH), lo0)
+  }
+  if (lo0 + sliceLines.length < full.length) {
+    ctx.nextLines = full.slice(
+      lo0 + sliceLines.length,
+      lo0 + sliceLines.length + MAX_WIDTH,
+    )
+  }
+  return ctx
+}
+
+/**
+ * Where an anchor points in the current content. A label names a line and the
  * line number is only a hint, because an edit above an anchor shifts it without
- * touching its content.
+ * touching its content. A unique window is that line however far it moved, so
+ * an anchor held across an earlier edit still works. A window that occurs
+ * twice is no evidence at all, and no distance rule can make it so, so the
+ * caller either takes a shift from a sibling anchor or refuses.
  */
 type Resolved =
   | { kind: 'ok'; line: number; drifted: boolean }
   | { kind: 'missing'; actual: string | null }
-  | { kind: 'ambiguous'; actual: string | null }
+  | { kind: 'ambiguous'; actual: string | null; candidates: number[] }
 
-function hashAt(fileLines: string[], line: number): string | null {
-  return line >= 1 && line <= fileLines.length
-    ? hashLine(fileLines[line - 1])
-    : null
+function labelAtLine(fileLines: string[], line: number): string | null {
+  return line >= 1 && line <= fileLines.length ? labelAt(fileLines, line) : null
 }
 
-/**
- * Place an anchor: its own line first, then the whole file. A hash that occurs
- * once is that line however far it moved, so an anchor held across an earlier
- * edit still works. A hash that occurs twice is no evidence at all, and no
- * distance rule can make it so, so the caller either takes a shift from a
- * sibling anchor or refuses. A blank line is never a candidate, because its
- * hash identifies nothing.
- */
 function resolveAnchor(fileLines: string[], anchor: Anchor): Resolved {
   // An anchor with no hash asks for a line number and nothing else. There is no
   // content to search for, so the only thing to check is that the line exists.
@@ -228,20 +376,20 @@ function resolveAnchor(fileLines: string[], anchor: Anchor): Resolved {
       ? { kind: 'ok', line: anchor.line, drifted: false }
       : { kind: 'missing', actual: null }
   }
-  const actual = hashAt(fileLines, anchor.line)
+  const parsed = parseLabel(anchor.hash)!
+  const actual = labelAtLine(fileLines, anchor.line)
   if (actual === anchor.hash) {
     return { kind: 'ok', line: anchor.line, drifted: false }
   }
-  let found = 0
+  const candidates: number[] = []
   for (let n = 1; n <= fileLines.length; n++) {
-    const line = fileLines[n - 1]
-    if (line.trim() === '' || hashLine(line) !== anchor.hash) continue
-    if (found !== 0) return { kind: 'ambiguous', actual }
-    found = n
+    if (windowHash(fileLines, n - 1, parsed.width) !== parsed.hash) continue
+    candidates.push(n)
+    if (candidates.length > MAX_CANDIDATES_SHOWN * 2) break
   }
-  return found === 0
-    ? { kind: 'missing', actual }
-    : { kind: 'ok', line: found, drifted: true }
+  if (candidates.length === 0) return { kind: 'missing', actual }
+  if (candidates.length > 1) return { kind: 'ambiguous', actual, candidates }
+  return { kind: 'ok', line: candidates[0]!, drifted: true }
 }
 
 // Place an ambiguous anchor with the shift a sibling anchor already proved.
@@ -251,8 +399,14 @@ function shiftAnchor(
   delta: number,
 ): number | null {
   if (anchor.hash === null) return null
+  const parsed = parseLabel(anchor.hash)
+  if (!parsed) return null
   const line = anchor.line + delta
-  return hashAt(fileLines, line) === anchor.hash ? line : null
+  return line >= 1 &&
+    line <= fileLines.length &&
+    windowHash(fileLines, line - 1, parsed.width) === parsed.hash
+    ? line
+    : null
 }
 
 /**
@@ -358,8 +512,8 @@ export function applyHashlineEdits(
 
     // One end places the other. A block that moved moved whole, so a unique
     // start hands an ambiguous end its exact shift. This is what lets a range
-    // that ends on a line like "}" resolve at all, since such a line has twins
-    // everywhere and can never be placed on its own.
+    // that ends on a line with a repeated window resolve at all, since such a
+    // line can never be placed on its own.
     if (startPlace.kind === 'ok' && endPlace.kind === 'ambiguous') {
       const line = shiftAnchor(
         fileLines,
@@ -378,20 +532,10 @@ export function applyHashlineEdits(
 
     if (startPlace.kind !== 'ok' || endPlace.kind !== 'ok') {
       if (startPlace.kind !== 'ok') {
-        addStale(
-          stale,
-          startAnchor,
-          startPlace.actual,
-          startPlace.kind === 'ambiguous',
-        )
+        addStale(stale, startAnchor, startPlace)
       }
       if (endPlace.kind !== 'ok') {
-        addStale(
-          stale,
-          endAnchor,
-          endPlace.actual,
-          endPlace.kind === 'ambiguous',
-        )
+        addStale(stale, endAnchor, endPlace)
       }
       continue
     }

@@ -28,7 +28,7 @@ import {
 } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
-import { hashLine } from '../../src/utils/hashline.js'
+import { anchorAt } from '../../src/utils/hashline.js'
 import { TmuxSession, createLoggingTest } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
@@ -156,7 +156,7 @@ describe('Tool Use E2E', () => {
       await writeFile(editFilePath, editOriginal)
       // Anchor referencing line 1 (the test controls the file content, so the
       // hash is computed the same way the Read tool tags it).
-      const editAnchor = `1:${hashLine(editOriginal)}`
+      const editAnchor = `1:${anchorAt(editOriginal, 1)}`
       server.reset([
         toolUseResponse([{ name: 'Read', input: { file_path: editFilePath } }]),
         toolUseResponse([
@@ -220,7 +220,7 @@ describe('Tool Use E2E', () => {
       await writeFile(filePath, 'one\ntwo\nthree')
       // After the insert, "three" sits on line 4. The only way to know that
       // anchor without a second Read is the one the first Edit returns.
-      const shiftedAnchor = `4:${hashLine('three')}`
+      const shiftedAnchor = `4:${anchorAt('one\none-b\ntwo\nthree', 4)}`
 
       server.reset([
         toolUseResponse([{ name: 'Read', input: { file_path: filePath } }]),
@@ -232,7 +232,7 @@ describe('Tool Use E2E', () => {
               edits: [
                 {
                   op: 'insert_after',
-                  start: `1:${hashLine('one')}`,
+                  start: `1:${anchorAt('one\ntwo\nthree', 1)}`,
                   lines: 'one-b',
                 },
               ],
@@ -273,7 +273,7 @@ describe('Tool Use E2E', () => {
       await writeFile(filePath, 'one\ntwo\nthree')
       // The anchor the model holds from its Read. The insert below pushes
       // "three" to line 4, so this line number is wrong by the time it is used.
-      const staleAnchor = `3:${hashLine('three')}`
+      const staleAnchor = `3:${anchorAt('one\ntwo\nthree', 3)}`
 
       server.reset([
         toolUseResponse([{ name: 'Read', input: { file_path: filePath } }]),
@@ -285,7 +285,7 @@ describe('Tool Use E2E', () => {
               edits: [
                 {
                   op: 'insert_after',
-                  start: `1:${hashLine('one')}`,
+                  start: `1:${anchorAt('one\ntwo\nthree', 1)}`,
                   lines: 'one-b',
                 },
               ],
@@ -482,7 +482,7 @@ describe('Tool Use E2E', () => {
       const editFile = join(session.cwd, 'compact-edit.txt')
       const compactOriginal = 'alpha beta gamma'
       await writeFile(editFile, compactOriginal)
-      const compactAnchor = `1:${hashLine(compactOriginal)}`
+      const compactAnchor = `1:${anchorAt(compactOriginal, 1)}`
 
       // Read first (required before Edit), then Edit
       server.reset([

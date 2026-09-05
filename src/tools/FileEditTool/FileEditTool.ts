@@ -470,7 +470,7 @@ export const FileEditTool = buildTool({
     // match what the next edit validates against.
     const changedRegionAnchors = formatAnchoredRegions(
       updatedFile,
-      patch.map(hunk => ({ start: hunk.newStart, count: hunk.newLines })),
+      expandedAnchorRegions(patch),
     )
 
     const data = {
@@ -488,8 +488,13 @@ export const FileEditTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(data: FileEditOutput, toolUseID) {
-    const { filePath, userModified, changedRegionAnchors, driftedAnchors } =
-      data
+    const {
+      filePath,
+      userModified,
+      changedRegionAnchors,
+      driftedAnchors,
+      structuredPatch,
+    } = data
     const modifiedNote = userModified
       ? '.  The user modified your proposed changes before accepting them. '
       : ''
@@ -501,16 +506,54 @@ export const FileEditTool = buildTool({
     const anchorNote = changedRegionAnchors
       ? `\n\nAnchors for the changed lines. Use them to edit this file again without reading it first:\n${changedRegionAnchors}`
       : ''
+    // The size of the change, so an anchor range that swallowed one line too
+    // many is visible in the success message, not only when a lost line later
+    // breaks the typecheck.
+    let removed = 0
+    let added = 0
+    for (const hunk of structuredPatch) {
+      for (const line of hunk.lines) {
+        if (line.startsWith('+')) added++
+        else if (line.startsWith('-')) removed++
+      }
+    }
+    const deltaNote =
+      removed + added > 0
+        ? `\n\nThe edit removed ${removed} line(s) and added ${added}.`
+        : ''
 
     return {
       tool_use_id: toolUseID,
       type: 'tool_result',
-      content: `The file ${filePath} has been updated successfully${modifiedNote}.${driftNote}${anchorNote}`,
+      content: `The file ${filePath} has been updated successfully${modifiedNote}.${driftNote}${deltaNote}${anchorNote}`,
     }
   },
 } satisfies ToolDef<typeof inputSchema, FileEditOutput>)
 
 // --
+// Rewriting a line rehashes its two neighbors' anchors, whose context window
+// covers it, so changed hunks come back widened by the max anchor width on
+// each side. Adjacent expansions merge so no line is quoted twice.
+function expandedAnchorRegions(
+  patch: FileEditOutput['structuredPatch'],
+): { start: number; count: number }[] {
+  const regions = patch
+    .map(hunk => ({
+      start: Math.max(1, hunk.newStart - 2),
+      count: hunk.newLines + 4,
+    }))
+    .sort((a, b) => a.start - b.start)
+  const merged: { start: number; count: number }[] = []
+  for (const r of regions) {
+    const prev = merged[merged.length - 1]
+    if (prev && r.start <= prev.start + prev.count) {
+      prev.count = Math.max(prev.count, r.start + r.count - prev.start)
+    } else {
+      merged.push({ ...r })
+    }
+  }
+  return merged
+}
 
 function readFileForEdit(absoluteFilePath: string): {
   content: string

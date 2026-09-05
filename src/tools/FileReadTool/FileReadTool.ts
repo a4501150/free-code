@@ -257,6 +257,18 @@ const outputSchema = (() => {
           .describe('Number of lines in the returned content'),
         startLine: z.number().describe('The starting line number'),
         totalLines: z.number().describe('Total number of lines in the file'),
+        prevLines: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Up to 2 lines just before the returned slice, for anchor hashes',
+          ),
+        nextLines: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Up to 2 lines just after the returned slice, for anchor hashes',
+          ),
       }),
     }),
     z.object({
@@ -709,8 +721,16 @@ function pickLineFormatInstruction(): string {
 }
 
 /** Format file content as model-facing `LINE:HASH|content` hashlines. */
-function formatFileLines(file: { content: string; startLine: number }): string {
-  return formatHashline(file.content, file.startLine)
+function formatFileLines(file: {
+  content: string
+  startLine: number
+  prevLines?: string[]
+  nextLines?: string[]
+}): string {
+  return formatHashline(file.content, file.startLine, {
+    prevLines: file.prevLines,
+    nextLines: file.nextLines,
+  })
 }
 
 export const CYBER_RISK_MITIGATION_REMINDER =
@@ -993,14 +1013,22 @@ async function callInner(
 
   // --- Text file (single async read via readFileInRange) ---
   const lineOffset = offset === 0 ? 0 : offset - 1
-  const { content, lineCount, totalLines, totalBytes, readBytes, mtimeMs } =
-    await readFileInRange(
-      resolvedFilePath,
-      lineOffset,
-      limit,
-      limit === undefined ? maxSizeBytes : undefined,
-      context.abortController.signal,
-    )
+  const {
+    content,
+    lineCount,
+    totalLines,
+    totalBytes,
+    readBytes,
+    mtimeMs,
+    prevLines,
+    nextLines,
+  } = await readFileInRange(
+    resolvedFilePath,
+    lineOffset,
+    limit,
+    limit === undefined ? maxSizeBytes : undefined,
+    context.abortController.signal,
+  )
 
   await validateContentTokens(content, ext, maxTokens)
 
@@ -1026,6 +1054,8 @@ async function callInner(
       numLines: lineCount,
       startLine: offset,
       totalLines,
+      ...(prevLines ? { prevLines } : {}),
+      ...(nextLines ? { nextLines } : {}),
     },
   }
   if (isAutoMemFile(fullFilePath)) {

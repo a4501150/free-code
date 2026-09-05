@@ -49,6 +49,11 @@ export type ReadFileRangeResult = {
   totalLines: number
   totalBytes: number
   readBytes: number
+  /** Up to 2 lines just above the slice, ordered nearest-last, and up to 2
+   * just below it, ordered nearest-first. Read uses them as anchor-hash
+   * context for slice-edge lines; absent means file boundary in that direction. */
+  prevLines?: string[]
+  nextLines?: string[]
   mtimeMs: number
   /** true when output was clipped to maxBytes under truncate mode */
   truncatedByBytes?: boolean
@@ -159,13 +164,39 @@ function readFileInRangeFast(
     return true
   }
 
+  const prevLines: string[] = []
+  const nextLines: string[] = []
+
   while ((newlinePos = text.indexOf('\n', startPos)) !== -1) {
-    if (lineIndex >= offset && lineIndex < endLine && !truncatedByBytes) {
+    const inRange =
+      lineIndex >= offset && lineIndex < endLine && !truncatedByBytes
+    const isPrev =
+      !inRange &&
+      prevLines.length < 2 &&
+      lineIndex < offset &&
+      lineIndex >= offset - 2
+    const isNext =
+      !inRange &&
+      !isPrev &&
+      selectedLines.length > 0 &&
+      nextLines.length < 2 &&
+      lineIndex >= offset
+    if (inRange || isPrev || isNext) {
       let line = text.slice(startPos, newlinePos)
       if (line.endsWith('\r')) {
         line = line.slice(0, -1)
       }
-      tryPush(line)
+      if (inRange) {
+        // Under truncate mode the row that failed the byte cap is still the
+        // line just past what was kept — capture it as context.
+        if (!tryPush(line) && nextLines.length < 2) {
+          nextLines.push(line)
+        }
+      } else if (isPrev) {
+        prevLines.push(line)
+      } else {
+        nextLines.push(line)
+      }
     }
     lineIndex++
     startPos = newlinePos + 1
@@ -178,6 +209,16 @@ function readFileInRangeFast(
       line = line.slice(0, -1)
     }
     tryPush(line)
+  } else if (
+    lineIndex >= offset &&
+    selectedLines.length > 0 &&
+    nextLines.length < 2
+  ) {
+    let line = text.slice(startPos)
+    if (line.endsWith('\r')) {
+      line = line.slice(0, -1)
+    }
+    nextLines.push(line)
   }
   lineIndex++
 
@@ -189,6 +230,8 @@ function readFileInRangeFast(
     totalBytes: Buffer.byteLength(text, 'utf8'),
     readBytes: Buffer.byteLength(content, 'utf8'),
     mtimeMs,
+    ...(prevLines.length > 0 ? { prevLines } : {}),
+    ...(nextLines.length > 0 ? { nextLines } : {}),
     ...(truncatedByBytes ? { truncatedByBytes: true } : {}),
   }
 }
@@ -209,6 +252,8 @@ type StreamState = {
   truncatedByBytes: boolean
   currentLineIndex: number
   selectedLines: string[]
+  prevLines: string[]
+  nextLines: string[]
   partial: string
   isFirstChunk: boolean
   resolveMtime: (ms: number) => void
@@ -249,10 +294,10 @@ function streamOnData(this: StreamState, rawChunk: string | Buffer): void {
   let startPos = 0
   let newlinePos: number
   while ((newlinePos = data.indexOf('\n', startPos)) !== -1) {
-    if (
+    const inRange =
       this.currentLineIndex >= this.offset &&
       this.currentLineIndex < this.endLine
-    ) {
+    if (inRange) {
       let line = data.slice(startPos, newlinePos)
       if (line.endsWith('\r')) {
         line = line.slice(0, -1)
@@ -262,9 +307,13 @@ function streamOnData(this: StreamState, rawChunk: string | Buffer): void {
         const nextBytes = this.selectedBytes + sep + Buffer.byteLength(line)
         if (nextBytes > this.maxBytes) {
           // Cap hit — collapse the selection range so nothing more is
-          // accumulated.  Stream continues (to count totalLines).
+          // accumulated.  Stream continues (to count totalLines). The row
+          // that did not fit is still the line just past what was kept.
           this.truncatedByBytes = true
           this.endLine = this.currentLineIndex
+          if (this.nextLines.length < 2) {
+            this.nextLines.push(line)
+          }
         } else {
           this.selectedBytes = nextBytes
           this.selectedLines.push(line)
@@ -272,6 +321,22 @@ function streamOnData(this: StreamState, rawChunk: string | Buffer): void {
       } else {
         this.selectedLines.push(line)
       }
+    } else if (this.selectedLines.length > 0 && this.nextLines.length < 2) {
+      let line = data.slice(startPos, newlinePos)
+      if (line.endsWith('\r')) {
+        line = line.slice(0, -1)
+      }
+      this.nextLines.push(line)
+    } else if (
+      this.prevLines.length < 2 &&
+      this.currentLineIndex < this.offset &&
+      this.currentLineIndex >= this.offset - 2
+    ) {
+      let line = data.slice(startPos, newlinePos)
+      if (line.endsWith('\r')) {
+        line = line.slice(0, -1)
+      }
+      this.prevLines.push(line)
     }
     this.currentLineIndex++
     startPos = newlinePos + 1
@@ -310,10 +375,9 @@ function streamOnEnd(this: StreamState): void {
   if (line.endsWith('\r')) {
     line = line.slice(0, -1)
   }
-  if (
-    this.currentLineIndex >= this.offset &&
-    this.currentLineIndex < this.endLine
-  ) {
+  const inRange =
+    this.currentLineIndex >= this.offset && this.currentLineIndex < this.endLine
+  if (inRange) {
     if (this.truncateOnByteLimit && this.maxBytes !== undefined) {
       const sep = this.selectedLines.length > 0 ? 1 : 0
       const nextBytes = this.selectedBytes + sep + Buffer.byteLength(line)
@@ -325,6 +389,8 @@ function streamOnEnd(this: StreamState): void {
     } else {
       this.selectedLines.push(line)
     }
+  } else if (this.selectedLines.length > 0 && this.nextLines.length < 2) {
+    this.nextLines.push(line)
   }
   this.currentLineIndex++
 
@@ -338,6 +404,8 @@ function streamOnEnd(this: StreamState): void {
       totalBytes: this.totalBytesRead,
       readBytes: Buffer.byteLength(content, 'utf8'),
       mtimeMs,
+      ...(this.prevLines.length > 0 ? { prevLines: this.prevLines } : {}),
+      ...(this.nextLines.length > 0 ? { nextLines: this.nextLines } : {}),
       ...(truncated ? { truncatedByBytes: true } : {}),
     })
   })
@@ -369,6 +437,8 @@ function readFileInRangeStreaming(
       currentLineIndex: 0,
       selectedLines: [],
       partial: '',
+      prevLines: [],
+      nextLines: [],
       isFirstChunk: true,
       resolveMtime: () => {},
       mtimeReady: null as unknown as Promise<number>,

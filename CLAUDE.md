@@ -84,7 +84,9 @@ Build, configuration, testing and layout live in [docs/](docs/).
 ## Edit anchors
 
 - Anchors resolve by content, not position, and remain reusable after earlier edits to the file.
-- Do not widen `HASH_LEN`: measured duplicate-line rates are 38.5% at three characters and 37.7% at four, so failures come from duplicate text rather than hash collisions. The sibling-shift rule resolves ambiguous range endings without taxing every Read.
+- HASH fingerprints the line plus its two neighbors; Read widens to ±2 ("2"-prefixed label) when a window repeats. The cap is deliberate: it bounds how far rewriting one line invalidates held anchors (its two neighbors'), and fully duplicated windows must fail as ambiguous rather than guess. Do not widen `HASH_LEN` either: measured duplicate-line rates are 38.5% at three characters, so failures come from duplicate text, not collisions; the sibling-shift rule still resolves ambiguous range endings.
+- A stale anchor whose every window twin moved alike lands exactly where the anchor claimed and nothing flags it. Only edits that change a window's contents (vs. shifting it) are detectable as drift.
+- Success results re-quote anchors for changed hunks widened ±2 because the rewritten lines' neighbors have new hashes. A stale neighbor anchor after a nearby edit is expected, not a bug. Read slices get edge context via readFileInRange's prevLines/nextLines; a slice read without them would show edge labels that mismatch the engine.
 
 ## WebUI
 
