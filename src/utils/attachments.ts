@@ -64,6 +64,7 @@ import {
   writeToolCatalog,
   type CatalogServerSnapshot,
 } from '../services/toolCatalog/writer.js'
+import { mcpToolCatalogDisabled } from '../services/toolCatalog/exposure.js'
 import { getSnippetForTwoFileDiff } from 'src/tools/FileEditTool/utils.js'
 import { maybeResizeAndDownsampleImageBlock } from './imageResizer.js'
 import type { PastedContent } from './config.js'
@@ -1407,6 +1408,8 @@ export async function getMcpToolsDeltaAttachment(
   messages: Message[] | undefined,
   opts?: { forceInitial?: boolean; catalogDir?: string },
 ): Promise<Attachment[]> {
+  // Kill switch: MCP schemas ride the request again; no catalog to announce.
+  if (mcpToolCatalogDisabled()) return []
   const lazyNames = new Set(getSettings_DEPRECATED()?.lazyTools ?? [])
   const allTools = toolUseContext.options.tools
   const mcpTools = allTools.filter(tool => tool.isMcp && tool.mcpInfo)

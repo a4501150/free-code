@@ -554,10 +554,6 @@ async function* queryLoop(
           hasAppendSystemPrompt: !!toolUseContext.options.appendSystemPrompt,
           maxOutputTokensOverride: params.maxOutputTokensOverride,
           fetchOverride: dumpPromptsFetch,
-          mcpTools: appState.mcp.tools,
-          hasPendingMcpServers: appState.mcp.clients.some(
-            c => c.type === 'pending',
-          ),
           queryTracking,
           effortValue: toolUseContext.effortOverride,
           skipCacheWrite,

@@ -219,7 +219,6 @@ async function getCommandPrefixImpl(
         agents: [],
         isNonInteractiveSession,
         hasAppendSystemPrompt: false,
-        mcpTools: [],
       },
     })
 

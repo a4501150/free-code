@@ -719,7 +719,6 @@ async function summarizeTranscriptChunk(chunk: string): Promise<string> {
         agents: [],
         isNonInteractiveSession: true,
         hasAppendSystemPrompt: false,
-        mcpTools: [],
         maxOutputTokensOverride: 500,
       },
     })
@@ -862,7 +861,6 @@ RESPOND WITH ONLY A VALID JSON OBJECT matching this schema:
         agents: [],
         isNonInteractiveSession: true,
         hasAppendSystemPrompt: false,
-        mcpTools: [],
         maxOutputTokensOverride: 4096,
       },
     })
@@ -1381,7 +1379,6 @@ async function generateSectionInsight(
         agents: [],
         isNonInteractiveSession: true,
         hasAppendSystemPrompt: false,
-        mcpTools: [],
         maxOutputTokensOverride: section.maxTokens,
       },
     })

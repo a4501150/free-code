@@ -156,7 +156,6 @@ export async function generateAgent(
       isNonInteractiveSession: false,
       hasAppendSystemPrompt: false,
       querySource: 'agent_creation',
-      mcpTools: [],
     },
   })
 

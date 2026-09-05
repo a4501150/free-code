@@ -43,7 +43,6 @@ export async function generateSessionName(
         agents: [],
         isNonInteractiveSession: false,
         hasAppendSystemPrompt: false,
-        mcpTools: [],
       },
     })
 

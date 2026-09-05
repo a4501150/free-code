@@ -41,6 +41,7 @@ import type {
   UserMessage,
 } from '../types/message.js'
 import { toolToAPISchema } from './toolSchemas.js'
+import { isToolExposedToModel } from '../services/toolCatalog/exposure.js'
 import { filterInjectedMemoryFiles, getMemoryFiles } from './claudemd.js'
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
@@ -331,7 +332,10 @@ async function countBuiltInToolTokens(
   builtInToolTokens: number
   systemToolDetails: SystemToolDetail[]
 }> {
-  const builtInTools = tools.filter(tool => !tool.isMcp)
+  // Only tools the request actually carries count against the tools block.
+  const builtInTools = tools.filter(
+    tool => !tool.isMcp && isToolExposedToModel(tool),
+  )
   if (builtInTools.length < 1) {
     return {
       builtInToolTokens: 0,
@@ -486,7 +490,14 @@ export async function countMcpToolTokens(
   mcpToolTokens: number
   mcpToolDetails: McpTool[]
 }> {
-  const mcpTools = tools.filter(tool => tool.isMcp)
+  // Cataloged MCP tools are dispatched, not sent in the request, so only
+  // exposed ones cost tokens in the tools block.
+  const mcpTools = tools.filter(
+    tool => tool.isMcp && isToolExposedToModel(tool),
+  )
+  if (mcpTools.length === 0) {
+    return { mcpToolTokens: 0, mcpToolDetails: [] }
+  }
   const mcpToolDetails: McpTool[] = []
   // Single bulk API call for all MCP tools (instead of N individual calls)
   const totalTokensRaw = await countToolDefinitionTokens(

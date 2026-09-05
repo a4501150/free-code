@@ -591,7 +591,6 @@ async function generateTitle(
         isNonInteractiveSession: false,
         agents: [],
         querySource: 'feedback',
-        mcpTools: [],
       },
     })
 

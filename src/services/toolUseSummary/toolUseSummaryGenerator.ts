@@ -76,7 +76,6 @@ export async function generateToolUseSummary({
         agents: [],
         isNonInteractiveSession,
         hasAppendSystemPrompt: false,
-        mcpTools: [],
       },
     })
 

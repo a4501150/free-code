@@ -105,7 +105,6 @@ export async function generateSessionTitle(
         agents: [],
         isNonInteractiveSession: getIsNonInteractiveSession(),
         hasAppendSystemPrompt: false,
-        mcpTools: [],
       },
     })
 

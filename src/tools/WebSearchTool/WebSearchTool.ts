@@ -274,7 +274,6 @@ export const WebSearchTool = buildTool({
         extraToolSchemas: [toolSchema],
         querySource: 'web_search_tool',
         agents: context.options.agentDefinitions.activeAgents,
-        mcpTools: [],
         agentId: context.agentId,
         effortValue: context.effortOverride,
       },

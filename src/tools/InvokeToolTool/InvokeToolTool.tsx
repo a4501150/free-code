@@ -19,7 +19,11 @@ import {
   getDenyRuleForTool,
   toolAlwaysAllowedRule,
 } from '../../utils/permissions/permissions.js'
-import { getSettings_DEPRECATED } from '../../utils/settings/settings.js'
+import {
+  INVOKE_TOOL_NAME,
+  isToolExposedToModel,
+} from '../../services/toolCatalog/exposure.js'
+import { toolCatalogDir } from '../../services/toolCatalog/writer.js'
 import { zodToJsonSchema } from '../../utils/zodToJsonSchema.js'
 
 const inputSchema = z.object({
@@ -40,21 +44,6 @@ const outputSchema = z.union([z.string(), z.array(z.any())])
 type OutputSchema = typeof outputSchema
 type Output = z.infer<OutputSchema>
 
-export const INVOKE_TOOL_NAME = 'InvokeTool'
-
-function isLazyBuiltIn(name: string): boolean {
-  const lazy = getSettings_DEPRECATED()?.lazyTools
-  return Array.isArray(lazy) && lazy.includes(name)
-}
-
-// A tool is directly callable when the model can already see its schema in
-// the request: every built-in unless lazyTools names it. MCP tools are never
-// directly callable once the catalog switch is on, but dispatch to them is
-// always accepted so the dispatcher works before and after the switch.
-function isDirectlyCallable(tool: Tool): boolean {
-  return !tool.isMcp && !isLazyBuiltIn(tool.name)
-}
-
 type Target = { ok: true; tool: Tool } | { ok: false; error: string }
 
 function resolveTarget(context: ToolUseContext, name: string): Target {
@@ -62,10 +51,10 @@ function resolveTarget(context: ToolUseContext, name: string): Target {
   if (!tool) {
     return {
       ok: false,
-      error: `Unknown tool "${name}". Check the tool catalog manifest (${process.env.FREECODE_CONFIG_DIR ?? '~/.freecode'}/tool-catalog/manifest.json) for exact names.`,
+      error: `Unknown tool "${name}". Check the tool catalog manifest (${toolCatalogDir()}/manifest.json) for exact names.`,
     }
   }
-  if (isDirectlyCallable(tool)) {
+  if (isToolExposedToModel(tool)) {
     return {
       ok: false,
       error: `${name} is already directly available in your tool list.`,
@@ -104,7 +93,7 @@ export const InvokeTool = buildTool({
   },
   async prompt() {
     return [
-      'Call a tool that is not in your tool list. Look up the exact tool name and argument schema in the tool catalog first (~/.freecode/tool-catalog/manifest.json, then the referenced server files).',
+      `Call a tool that is not in your tool list. Look up the exact tool name and argument schema in the tool catalog first (${toolCatalogDir()}/manifest.json, then the referenced server files).`,
       "The inner tool's own permission rules apply unchanged: an earlier rule that allowed or denied the inner tool still applies.",
     ].join('\n')
   },

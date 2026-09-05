@@ -74,7 +74,6 @@ Parse the user's input into ISO 8601 format. Return ONLY the formatted string, o
         agents: [],
         isNonInteractiveSession: false,
         hasAppendSystemPrompt: false,
-        mcpTools: [],
         enablePromptCaching: false,
       },
     })

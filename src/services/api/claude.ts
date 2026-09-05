@@ -20,6 +20,7 @@ import {
 } from './adapters/index.js'
 import { randomUUID } from 'crypto'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
+import { isToolExposedToModel } from '../toolCatalog/exposure.js'
 import { stripProviderPrefix } from 'src/utils/model/parseModelStringWithRegistry.js'
 import {
   getAttributionHeader,
@@ -636,8 +637,6 @@ export type Options = {
   skipCacheWrite?: boolean
   temperatureOverride?: number
   effortValue?: EffortValue
-  mcpTools: Tools
-  hasPendingMcpServers?: boolean
   queryTracking?: QueryChainTracking
   agentId?: AgentId // Only set for subagents
   outputFormat?: Record<string, unknown>
@@ -1065,7 +1064,11 @@ async function* queryModel(
     betas.push(ADVISOR_BETA_HEADER)
   }
 
-  const filteredTools: Tools = tools
+  // Cataloged tools (MCP, plus built-ins named in lazyTools) stay in the
+  // caller's pool for dispatch and permissions but leave the request, so the
+  // tools block is frozen for the session and MCP connect/disconnect or
+  // tools/list_changed cannot invalidate the cache prefix behind it.
+  const filteredTools: Tools = tools.filter(isToolExposedToModel)
 
   // Three of the API's four cache breakpoints: the last tool (below), the
   // cached system block (buildSystemPromptBlocks) and the last message
@@ -1100,7 +1103,9 @@ async function* queryModel(
   // Instrumentation: Track message count before normalization
 
   queryCheckpoint('query_message_normalization_start')
-  let messagesForAPI = normalizeMessagesForAPI(messages, filteredTools)
+  // Full pool, not filteredTools: cataloged tools still have tool_use blocks
+  // in the history that must keep rendering.
+  let messagesForAPI = normalizeMessagesForAPI(messages, tools)
   queryCheckpoint('query_message_normalization_end')
 
   // Strip reasoning blocks that don't belong to the target provider.

@@ -499,7 +499,6 @@ export async function applyPromptToMarkdown(
       agents: [],
       isNonInteractiveSession,
       hasAppendSystemPrompt: false,
-      mcpTools: [],
     },
   })
 
