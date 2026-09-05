@@ -83,10 +83,12 @@ Build, configuration, testing and layout live in [docs/](docs/).
 ## Tool arguments
 
 - Strict schemas make models send `null` for omitted optionals. Strip only placeholder nulls, never a null the schema admits, and use `tool.inputJSONSchema ?? tool.inputSchema`; a Zod passthrough hides MCP arguments.
+- Models with the classic Edit in training emit a legacy hybrid (`edits[]` container with `old_string`/`new_string`-style payload) even in fresh sessions: history never carries the legacy shape anymore. Description text alone does not cure the prior, so FileEditTool's `coerceInput` resolves it pre-validation — unique matches convert, ambiguous/not-found throw teaching errors. `coerceInput` is a general `Tool` hook: throw `ToolInputCoercionError` to surface a targeted InputValidationError, never crash.
 
 ## Edit anchors
 
 - HASH fingerprints the trimmed line plus its line number; label length comes from the file line count via the birthday bound. Collision remedy is a longer label only: there are no neighbor windows to widen, and an anchor is an exact (line, content) assertion, so there is no relocation tier either.
+- Crossed anchor pairs (right hash, wrong line, off by one) are the dominant model error once format is handled: hashes are meaningless tokens that degrade with attention distance, so models reconstruct pairs from memory instead of looking them up. Error payloads that quote the fresh anchors recover in one retry; keep them.
 - Labels are computed over the whole file, then sliced for display, so slice and full-read labels always agree. The streaming read path re-hashes the file in a second pass that counts collisions only for the selected lines' suffixes.
 - Same-response remap depends on `ResponseEditState` patches being exactly the splices that applied: a failed, denied or superseded Edit must record nothing, or a later call in that response gets silently misplaced instead of rejected.
 - Cross-message anchors below a line-count-changing edit fail by design; the success result carries the ±N shift hint because the harness holds no pre-message snapshot to remap through. An edit that crosses the hash-length line-count boundary invalidates every held anchor, which the result flags too.

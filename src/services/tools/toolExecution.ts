@@ -78,6 +78,7 @@ import {
 import {
   formatError,
   formatZodValidationError,
+  ToolInputCoercionError,
 } from '../../utils/toolErrors.js'
 import {
   processPreMappedToolResultBlock,
@@ -480,13 +481,29 @@ async function checkPermissionsAndCallTool(
   // Strip `null` and `""` placeholders that models sometimes emit for
   // optional fields before Zod validation. An MCP tool's Zod schema is an
   // opaque passthrough, so pass the JSON Schema the model was actually shown.
+  let baseInput: unknown = input
+  let coercionError: string | null = null
+  if (tool.coerceInput) {
+    try {
+      baseInput = tool.coerceInput(input)
+    } catch (error) {
+      coercionError =
+        error instanceof ToolInputCoercionError
+          ? error.message
+          : `input coercion failed: ${formatError(error)}`
+    }
+  }
   const coercedInput = stripStrictNullInputs(
     tool.inputJSONSchema ?? tool.inputSchema,
-    input,
+    baseInput,
   )
   const parsedInput = tool.inputSchema.safeParse(coercedInput)
-  if (!parsedInput.success) {
-    let errorContent = formatZodValidationError(tool.name, parsedInput.error)
+  if (!parsedInput.success || coercionError !== null) {
+    let errorContent =
+      coercionError ??
+      (parsedInput.success
+        ? `${tool.name}: input rejected during coercion`
+        : formatZodValidationError(tool.name, parsedInput.error))
 
     logForDebugging(
       `${tool.name} tool input error: ${errorContent.slice(0, 200)}`,
@@ -502,7 +519,7 @@ async function checkPermissionsAndCallTool(
               tool_use_id: toolUseID,
             },
           ],
-          toolUseResult: `InputValidationError: ${parsedInput.error.message}`,
+          toolUseResult: `InputValidationError: ${errorContent}`,
           sourceToolAssistantUUID: assistantMessage.uuid,
         }),
       },

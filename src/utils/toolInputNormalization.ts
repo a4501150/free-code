@@ -145,10 +145,10 @@ export function normalizeToolInputForAPI<T extends Tool>(
     }
     case FileEditTool.name: {
       // Strip synthetic old_string/new_string/replace_all from OLD sessions
-      // that were resumed from transcripts written before PR #20357, where
-      // normalizeToolInput used to synthesize these. Needed so old --resume'd
-      // transcripts don't send whole-file copies to the API. New sessions
-      // don't need this (synthesis moved to emission time).
+      // resumed from transcripts written before the anchor-based Edit landed,
+      // where normalizeToolInput used to synthesize these. No live code
+      // re-injects them, so history never shows the legacy shape to the model;
+      // live legacy calls from model prior are handled by coerceLegacyEditInput.
       if (input && typeof input === 'object' && 'edits' in input) {
         const { old_string, new_string, replace_all, ...rest } =
           input as Record<string, unknown>

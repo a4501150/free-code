@@ -58,6 +58,7 @@ import {
   FILE_UNEXPECTEDLY_MODIFIED_ERROR,
 } from './constants.js'
 import { getEditToolDescription } from './prompt.js'
+import { coerceLegacyEditInput } from './legacyInput.js'
 import {
   type FileEditInput,
   type FileEditOutput,
@@ -89,6 +90,7 @@ export const FileEditTool = buildTool({
   async prompt() {
     return getEditToolDescription()
   },
+  coerceInput: coerceLegacyEditInput,
   userFacingName,
   compactParamKeys: ['file_path'],
   getToolUseSummary,

@@ -404,6 +404,12 @@ export type Tool<
   // Type for MCP tools that can specify their input schema directly in JSON Schema format
   // rather than converting from Zod schema
   readonly inputJSONSchema?: ToolInputJSONSchema
+  /**
+   * Optional pre-validation hook: transform raw model input before schema
+   * parsing (e.g. resolving a legacy input shape). Throw
+   * ToolInputCoercionError to reject the input with a targeted message.
+   */
+  coerceInput?(raw: unknown): unknown
   // TODO: Make this required and make it a bit more type-safe.
   outputSchema?: z.ZodType<unknown>
   inputsEquivalent?(a: z.infer<Input>, b: z.infer<Input>): boolean
