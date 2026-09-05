@@ -26,19 +26,31 @@
 //   On error (including maxBytes exceeded), stream.destroy(err) emits
 //   'error' → reject (passed directly to .once('error')).
 //
-// Both paths strip UTF-8 BOM and \r (CRLF → LF).
+// Both paths strip a leading BOM and \r (CRLF → LF).  Files whose first two
+// bytes are the UTF-16LE BOM are decoded as UTF-16LE so the returned lines
+// match what the Edit tool reads and re-writes.
+//
+// With options.includeHashlineLabels the result also carries hashline labels
+// computed over the WHOLE file (the displayed slice must show the same label
+// strings a full-file Read would show).  The fast path computes them from the
+// in-memory content; the streaming path re-reads the file in a second pass
+// that counts collisions only for the selected lines' hash suffixes, and
+// retries once when mtime moves between the passes.
 //
 // mtime comes from fstat/stat on the already-open fd — no extra open().
 //
 // maxBytes behavior depends on options.truncateOnByteLimit:
 //   false (default): legacy semantics — throws FileTooLargeError if the FILE
-//     size (fast path) or total streamed bytes (streaming) exceed maxBytes.
+//     size (fast path) or total streamed bytes (streaming) exceeds maxBytes.
 //   true: caps SELECTED OUTPUT at maxBytes.  Stops at the last complete line
 //     that fits; sets truncatedByBytes in the result.  Never throws.
 // ---------------------------------------------------------------------------
 
 import { createReadStream, fstat } from 'fs'
-import { stat as fsStat, readFile } from 'fs/promises'
+import { open as fsOpen, stat as fsStat, readFile } from 'fs/promises'
+import type { HashlineLabelSet } from './hashline.js'
+import { computeHashlineLabels, hashLengthForLineCount } from './hashline.js'
+import { djb2Hash } from './hash.js'
 import { formatFileSize } from './format.js'
 
 const FAST_PATH_MAX_SIZE = 10 * 1024 * 1024 // 10 MB
@@ -49,12 +61,9 @@ export type ReadFileRangeResult = {
   totalLines: number
   totalBytes: number
   readBytes: number
-  /** Up to 2 lines just above the slice, ordered nearest-last, and up to 2
-   * just below it, ordered nearest-first. Read uses them as anchor-hash
-   * context for slice-edge lines; absent means file boundary in that direction. */
-  prevLines?: string[]
-  nextLines?: string[]
   mtimeMs: number
+  /** Whole-file hashline labels; present when includeHashlineLabels was set. */
+  hashline?: HashlineLabelSet
   /** true when output was clipped to maxBytes under truncate mode */
   truncatedByBytes?: boolean
 }
@@ -81,10 +90,11 @@ export async function readFileInRange(
   maxLines?: number,
   maxBytes?: number,
   signal?: AbortSignal,
-  options?: { truncateOnByteLimit?: boolean },
+  options?: { truncateOnByteLimit?: boolean; includeHashlineLabels?: boolean },
 ): Promise<ReadFileRangeResult> {
   signal?.throwIfAborted()
   const truncateOnByteLimit = options?.truncateOnByteLimit ?? false
+  const includeHashlineLabels = options?.includeHashlineLabels ?? false
 
   // stat to decide the code path and guard against OOM.
   // For regular files under 10 MB: readFile + in-memory split (fast).
@@ -106,23 +116,69 @@ export async function readFileInRange(
       throw new FileTooLargeError(stats.size, maxBytes)
     }
 
-    const text = await readFile(filePath, { encoding: 'utf8', signal })
+    const buffer = await readFile(filePath, { signal })
     return readFileInRangeFast(
-      text,
+      decodeFileBuffer(buffer),
       stats.mtimeMs,
       offset,
       maxLines,
       truncateOnByteLimit ? maxBytes : undefined,
+      includeHashlineLabels,
     )
   }
 
-  return readFileInRangeStreaming(
+  const result = await readFileInRangeStreaming(
     filePath,
     offset,
     maxLines,
     maxBytes,
     truncateOnByteLimit,
     signal,
+  )
+  if (includeHashlineLabels) {
+    for (let attempt = 0; ; attempt++) {
+      const labels = await computeStreamingLabels(
+        filePath,
+        offset,
+        result.lineCount,
+        result.totalLines,
+        result.content,
+        signal,
+      )
+      result.hashline = labels.hashline
+      if (labels.mtimeMs === result.mtimeMs || attempt > 0) {
+        // mtime moved under the second pass; one restart, then accept the
+        // best-effort labels (only base length / collision counts can drift).
+        if (labels.mtimeMs !== result.mtimeMs) {
+          result.mtimeMs = labels.mtimeMs
+        }
+        break
+      }
+      const fresh = await readFileInRangeStreaming(
+        filePath,
+        offset,
+        maxLines,
+        maxBytes,
+        truncateOnByteLimit,
+        signal,
+      )
+      Object.assign(result, fresh)
+    }
+  }
+  return result
+}
+
+// Decode bytes the way the Edit tool does: UTF-16LE when the buffer opens
+// with its BOM, UTF-8 otherwise; then drop the BOM character and CRLF.
+function decodeFileBuffer(buffer: Buffer): string {
+  const isUtf16Le =
+    buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe
+  const text = isUtf16Le
+    ? buffer.toString('utf16le').slice(1)
+    : buffer.toString('utf8')
+  return (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text).replaceAll(
+    '\r\n',
+    '\n',
   )
 }
 
@@ -131,19 +187,18 @@ export async function readFileInRange(
 // ---------------------------------------------------------------------------
 
 function readFileInRangeFast(
-  raw: string,
+  text: string,
   mtimeMs: number,
   offset: number,
   maxLines: number | undefined,
   truncateAtBytes: number | undefined,
+  includeHashlineLabels: boolean,
 ): ReadFileRangeResult {
   const endLine = maxLines !== undefined ? offset + maxLines : Infinity
 
-  // Strip BOM.
-  const text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw
-
-  // Split lines, strip \r, select range.
+  // Split lines, select range. (\r already normalized by decodeFileBuffer.)
   const selectedLines: string[] = []
+
   let lineIndex = 0
   let startPos = 0
   let newlinePos: number
@@ -164,39 +219,9 @@ function readFileInRangeFast(
     return true
   }
 
-  const prevLines: string[] = []
-  const nextLines: string[] = []
-
   while ((newlinePos = text.indexOf('\n', startPos)) !== -1) {
-    const inRange =
-      lineIndex >= offset && lineIndex < endLine && !truncatedByBytes
-    const isPrev =
-      !inRange &&
-      prevLines.length < 2 &&
-      lineIndex < offset &&
-      lineIndex >= offset - 2
-    const isNext =
-      !inRange &&
-      !isPrev &&
-      selectedLines.length > 0 &&
-      nextLines.length < 2 &&
-      lineIndex >= offset
-    if (inRange || isPrev || isNext) {
-      let line = text.slice(startPos, newlinePos)
-      if (line.endsWith('\r')) {
-        line = line.slice(0, -1)
-      }
-      if (inRange) {
-        // Under truncate mode the row that failed the byte cap is still the
-        // line just past what was kept — capture it as context.
-        if (!tryPush(line) && nextLines.length < 2) {
-          nextLines.push(line)
-        }
-      } else if (isPrev) {
-        prevLines.push(line)
-      } else {
-        nextLines.push(line)
-      }
+    if (lineIndex >= offset && lineIndex < endLine && !truncatedByBytes) {
+      tryPush(text.slice(startPos, newlinePos))
     }
     lineIndex++
     startPos = newlinePos + 1
@@ -204,21 +229,7 @@ function readFileInRangeFast(
 
   // Final fragment (no trailing newline).
   if (lineIndex >= offset && lineIndex < endLine && !truncatedByBytes) {
-    let line = text.slice(startPos)
-    if (line.endsWith('\r')) {
-      line = line.slice(0, -1)
-    }
-    tryPush(line)
-  } else if (
-    lineIndex >= offset &&
-    selectedLines.length > 0 &&
-    nextLines.length < 2
-  ) {
-    let line = text.slice(startPos)
-    if (line.endsWith('\r')) {
-      line = line.slice(0, -1)
-    }
-    nextLines.push(line)
+    tryPush(text.slice(startPos))
   }
   lineIndex++
 
@@ -230,10 +241,152 @@ function readFileInRangeFast(
     totalBytes: Buffer.byteLength(text, 'utf8'),
     readBytes: Buffer.byteLength(content, 'utf8'),
     mtimeMs,
-    ...(prevLines.length > 0 ? { prevLines } : {}),
-    ...(nextLines.length > 0 ? { nextLines } : {}),
+    ...(includeHashlineLabels ? { hashline: computeHashlineLabels(text) } : {}),
     ...(truncatedByBytes ? { truncatedByBytes: true } : {}),
   }
+}
+
+// ---------------------------------------------------------------------------
+// Streaming labels — second streaming pass over the whole file
+// ---------------------------------------------------------------------------
+//
+// The selected lines' labels must be what a whole-file label computation
+// would produce: the base length comes from the full line count, and a label
+// widens only when another line shares its truncated hash. The second pass
+// therefore hashes every line and counts occurrences of the selected lines'
+// suffixes at each widening level. Only the counters are kept, so memory
+// stays bounded like the main streaming pass.
+
+async function computeStreamingLabels(
+  filePath: string,
+  offset: number,
+  selectedCount: number,
+  totalLines: number,
+  content: string,
+  signal?: AbortSignal,
+): Promise<{ hashline: HashlineLabelSet; mtimeMs: number }> {
+  const baseLength = hashLengthForLineCount(totalLines)
+  const levels = [...new Set([baseLength, Math.min(baseLength + 2, 8), 8])]
+
+  const selectedLines = content.split('\n')
+  const fps: string[] = []
+  // key = suffix at a given level; value = occurrence count across the file.
+  const counters: Map<string, number>[] = levels.map(() => new Map())
+  const keysPerLevel: Set<string>[] = levels.map(() => new Set())
+  for (let i = 0; i < selectedCount; i++) {
+    const fp = lineFingerprint(selectedLines[i] ?? '', offset + 1 + i)
+    fps.push(fp)
+    levels.forEach((len, li) => {
+      const key = fp.slice(-len)
+      keysPerLevel[li]!.add(key)
+      if (!counters[li]!.has(key)) counters[li]!.set(key, 0)
+    })
+  }
+
+  const mtimeMs = await hashCountPass(
+    filePath,
+    levels,
+    keysPerLevel,
+    counters,
+    signal,
+  )
+
+  const labels: HashlineLabelSet['labels'] = []
+  labels.length = totalLines
+  for (let i = 0; i < fps.length; i++) {
+    const fp = fps[i]!
+    let hash = fp.slice(-baseLength)
+    let collision = false
+    for (const [li, len] of levels.entries()) {
+      const count = counters[li]!.get(fp.slice(-len)) ?? 0
+      hash = fp.slice(-len)
+      collision = count > 1 && len >= 8
+      if (count <= 1 || len >= 8) break
+    }
+    labels[offset + i] = { hash, collision }
+  }
+  return { hashline: { length: baseLength, labels }, mtimeMs }
+}
+
+type HashPassState = {
+  levels: number[]
+  keysPerLevel: Set<string>[]
+  counters: Map<string, number>[]
+  lineNo: number
+  partial: string
+  isFirstChunk: boolean
+  bump: (line: string) => void
+}
+
+function hashPassOnData(this: HashPassState, rawChunk: string | Buffer): void {
+  let chunk: string =
+    typeof rawChunk === 'string' ? rawChunk : rawChunk.toString('utf8')
+  if (this.isFirstChunk) {
+    this.isFirstChunk = false
+    if (chunk.charCodeAt(0) === 0xfeff) {
+      chunk = chunk.slice(1)
+    }
+  }
+  const data = this.partial.length > 0 ? this.partial + chunk : chunk
+  this.partial = ''
+  let startPos = 0
+  let newlinePos: number
+  while ((newlinePos = data.indexOf('\n', startPos)) !== -1) {
+    this.bump(data.slice(startPos, newlinePos))
+    this.lineNo++
+    startPos = newlinePos + 1
+  }
+  this.partial = startPos < data.length ? data.slice(startPos) : ''
+}
+
+// Hash every line of the file, bumping counters for the selected keys only.
+async function hashCountPass(
+  filePath: string,
+  levels: number[],
+  keysPerLevel: Set<string>[],
+  counters: Map<string, number>[],
+  signal?: AbortSignal,
+): Promise<number> {
+  const state: HashPassState = {
+    levels,
+    keysPerLevel,
+    counters,
+    lineNo: 0,
+    partial: '',
+    isFirstChunk: true,
+    bump: () => {},
+  }
+  state.bump = line => {
+    if (line.endsWith('\r')) line = line.slice(0, -1)
+    const fp = lineFingerprint(line, state.lineNo + 1)
+    levels.forEach((len, li) => {
+      const key = fp.slice(-len)
+      if (keysPerLevel[li]!.has(key)) {
+        counters[li]!.set(key, (counters[li]!.get(key) ?? 0) + 1)
+      }
+    })
+  }
+  return new Promise((resolve, reject) => {
+    const stream = createReadStream(filePath, {
+      encoding: 'utf8',
+      highWaterMark: 512 * 1024,
+      ...(signal ? { signal } : undefined),
+    })
+    stream.on('data', hashPassOnData.bind(state))
+    stream.once('end', () => {
+      state.bump(state.partial)
+      // mtime AFTER hashing: the caller compares it against the main pass.
+      void fsStat(filePath)
+        .then(stats => resolve(stats.mtimeMs))
+        .catch(() => resolve(0))
+    })
+    stream.once('error', reject)
+  })
+}
+
+function lineFingerprint(line: string, lineNo: number): string {
+  const h = djb2Hash(`${line.trim()}\n${lineNo}`) >>> 0
+  return h.toString(36).padStart(8, '0').slice(-8)
 }
 
 // ---------------------------------------------------------------------------
@@ -252,8 +405,6 @@ type StreamState = {
   truncatedByBytes: boolean
   currentLineIndex: number
   selectedLines: string[]
-  prevLines: string[]
-  nextLines: string[]
   partial: string
   isFirstChunk: boolean
   resolveMtime: (ms: number) => void
@@ -307,13 +458,9 @@ function streamOnData(this: StreamState, rawChunk: string | Buffer): void {
         const nextBytes = this.selectedBytes + sep + Buffer.byteLength(line)
         if (nextBytes > this.maxBytes) {
           // Cap hit — collapse the selection range so nothing more is
-          // accumulated.  Stream continues (to count totalLines). The row
-          // that did not fit is still the line just past what was kept.
+          // accumulated.  Stream continues (to count totalLines).
           this.truncatedByBytes = true
           this.endLine = this.currentLineIndex
-          if (this.nextLines.length < 2) {
-            this.nextLines.push(line)
-          }
         } else {
           this.selectedBytes = nextBytes
           this.selectedLines.push(line)
@@ -321,22 +468,6 @@ function streamOnData(this: StreamState, rawChunk: string | Buffer): void {
       } else {
         this.selectedLines.push(line)
       }
-    } else if (this.selectedLines.length > 0 && this.nextLines.length < 2) {
-      let line = data.slice(startPos, newlinePos)
-      if (line.endsWith('\r')) {
-        line = line.slice(0, -1)
-      }
-      this.nextLines.push(line)
-    } else if (
-      this.prevLines.length < 2 &&
-      this.currentLineIndex < this.offset &&
-      this.currentLineIndex >= this.offset - 2
-    ) {
-      let line = data.slice(startPos, newlinePos)
-      if (line.endsWith('\r')) {
-        line = line.slice(0, -1)
-      }
-      this.prevLines.push(line)
     }
     this.currentLineIndex++
     startPos = newlinePos + 1
@@ -389,8 +520,6 @@ function streamOnEnd(this: StreamState): void {
     } else {
       this.selectedLines.push(line)
     }
-  } else if (this.selectedLines.length > 0 && this.nextLines.length < 2) {
-    this.nextLines.push(line)
   }
   this.currentLineIndex++
 
@@ -404,8 +533,6 @@ function streamOnEnd(this: StreamState): void {
       totalBytes: this.totalBytesRead,
       readBytes: Buffer.byteLength(content, 'utf8'),
       mtimeMs,
-      ...(this.prevLines.length > 0 ? { prevLines: this.prevLines } : {}),
-      ...(this.nextLines.length > 0 ? { nextLines: this.nextLines } : {}),
       ...(truncated ? { truncatedByBytes: true } : {}),
     })
   })
@@ -437,8 +564,6 @@ function readFileInRangeStreaming(
       currentLineIndex: 0,
       selectedLines: [],
       partial: '',
-      prevLines: [],
-      nextLines: [],
       isFirstChunk: true,
       resolveMtime: () => {},
       mtimeReady: null as unknown as Promise<number>,

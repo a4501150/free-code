@@ -83,10 +83,11 @@ Build, configuration, testing and layout live in [docs/](docs/).
 
 ## Edit anchors
 
-- Anchors resolve by content, not position, and remain reusable after earlier edits to the file.
-- HASH fingerprints the line plus its two neighbors; Read widens to ±2 ("2"-prefixed label) when a window repeats. The cap is deliberate: it bounds how far rewriting one line invalidates held anchors (its two neighbors'), and fully duplicated windows must fail as ambiguous rather than guess. Do not widen `HASH_LEN` either: measured duplicate-line rates are 38.5% at three characters, so failures come from duplicate text, not collisions; the sibling-shift rule still resolves ambiguous range endings.
-- A stale anchor whose every window twin moved alike lands exactly where the anchor claimed and nothing flags it. Only edits that change a window's contents (vs. shifting it) are detectable as drift.
-- Success results re-quote anchors for changed hunks widened ±2 because the rewritten lines' neighbors have new hashes. A stale neighbor anchor after a nearby edit is expected, not a bug. Read slices get edge context via readFileInRange's prevLines/nextLines; a slice read without them would show edge labels that mismatch the engine.
+- HASH fingerprints the trimmed line plus its line number; label length comes from the file line count via the birthday bound. Collision remedy is a longer label only: there are no neighbor windows to widen, and an anchor is an exact (line, content) assertion, so there is no relocation tier either.
+- Labels are computed over the whole file, then sliced for display, so slice and full-read labels always agree. The streaming read path re-hashes the file in a second pass that counts collisions only for the selected lines' suffixes.
+- Same-response remap depends on `ResponseEditState` patches being exactly the splices that applied: a failed, denied or superseded Edit must record nothing, or a later call in that response gets silently misplaced instead of rejected.
+- Cross-message anchors below a line-count-changing edit fail by design; the success result carries the ±N shift hint because the harness holds no pre-message snapshot to remap through. An edit that crosses the hash-length line-count boundary invalidates every held anchor, which the result flags too.
+- Read entries always store an explicit `offset` (whole-file reads: offset 1), so whole-file checks (editState seeding, Read dedup) must accept offset <= 1 with no limit; testing only `offset === undefined` silently disables baseline seeding for every Read.
 
 ## WebUI
 

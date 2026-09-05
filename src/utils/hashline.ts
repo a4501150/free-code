@@ -1,107 +1,155 @@
+import type { AppliedPatch } from './editState.js'
 import { djb2Hash } from './hash.js'
 
-const HASH_LEN = 3
+// Labels are `LINE:HASH|content`. HASH fingerprints the trimmed line together
+// with its line number: no neighbor context, no widening-by-window. An anchor
+// is an assertion "line LINE of the snapshot you were shown has this content",
+// and resolution either matches that assertion against the current content or
+// remaps it through the patches this response already applied.
 
-// Label format: optional width digit, then a base36 hash of the trimmed
-// context window [line-width .. line+width]. No width digit means width 1, so
-// a line's hash covers the line and its two neighbors — that identifies a `}`
-// or a blank line by where it sits, which content alone cannot. Read widens a
-// colliding label to width 2 ("2" + hash), and width 2 is the cap: a repeated
-// 5-line window stays ambiguous and errors like any duplicate did, and the cap
-// bounds how far rewriting a line can invalidate anchors the model already
-// holds (its neighbors' only).
-const MAX_WIDTH = 2
-
-/**
- * Short, stable content fingerprint. Trimmed per line so anchors survive
- * whitespace-only reformatting; unsigned base36, fixed width. djb2 is sync and
- * stable across runtimes (unlike Bun.hash / async xxhash).
- */
-function shortHash(s: string): string {
-  const h = (djb2Hash(s) >>> 0).toString(36)
-  return h.slice(-HASH_LEN).padStart(HASH_LEN, '0')
-}
+const MIN_HASH_LEN = 3
+const MAX_HASH_LEN = 6
+const FULL_HASH_LEN = 8
+const COLLISION_PROBABILITY = 0.01
 
 /**
- * Neighbor lines outside a Read slice, needed because a slice-edge line's
- * context reaches past the slice. Absent entries mean the file boundary, so
- * labels computed from a slice match labels computed from the whole file.
+ * Birthday-bound hash length: with one label per line, a truncated collision
+ * anywhere in an n-line file is expected once n²/(2·36^L) passes the budget.
+ * Pick the smallest length that stays under it.
  */
-export type SliceContext = {
-  /** Up to MAX_WIDTH lines above the slice, ordered nearest-last. */
-  prevLines?: string[]
-  /** Up to MAX_WIDTH lines below the slice, ordered nearest-first. */
-  nextLines?: string[]
-}
-
-// Trimmed lines of the window around slice line i, clamped at the file
-// boundary and extended into ctx past the slice edges.
-function windowParts(
-  lines: string[],
-  i: number,
-  width: number,
-  ctx?: SliceContext,
-): string[] {
-  const parts: string[] = []
-  for (let k = i - width; k <= i + width; k++) {
-    let line: string | undefined
-    if (k < 0) {
-      line = ctx?.prevLines?.[(ctx?.prevLines?.length ?? 0) + k]
-    } else if (k >= lines.length) {
-      line = ctx?.nextLines?.[k - lines.length]
-    } else {
-      line = lines[k]
+export function hashLengthForLineCount(
+  lineCount: number,
+  probability: number = COLLISION_PROBABILITY,
+): number {
+  for (let length = MIN_HASH_LEN; length <= MAX_HASH_LEN; length++) {
+    if (lineCount * lineCount < 2 * probability * 36 ** length) {
+      return length
     }
-    if (line !== undefined) parts.push(line.trim())
   }
-  return parts
+  return MAX_HASH_LEN
 }
 
-function windowHash(
-  lines: string[],
-  i: number,
-  width: number,
-  ctx?: SliceContext,
-): string {
-  return shortHash(windowParts(lines, i, width, ctx).join('\n'))
+/** Base-36 djb2 of trimmed content + line number, 8 chars, fixed width. */
+function fullFingerprint(line: string, lineNo: number): string {
+  const h = djb2Hash(`${line.trim()}\n${lineNo}`) >>> 0
+  return h.toString(36).padStart(FULL_HASH_LEN, '0').slice(-FULL_HASH_LEN)
+}
+
+export type HashlineLabel = {
+  hash: string
+  /**
+   * Lines whose full fingerprint still shares it with another line: their
+   * anchors cannot be verified safely and are rejected as `label collision`.
+   */
+  collision: boolean
+}
+
+export type HashlineLabelSet = {
+  /** The file-wide base length; most labels use it. */
+  length: number
+  labels: HashlineLabel[]
 }
 
 /**
- * One label per line: width 1 unless the window repeats in scope, then width 2
- * with "2" prefixed. Detection scope is the `lines` array (the whole file for
- * engine paths, the visible slice for Read), so an off-scope twin can still
- * surface later as an ambiguous-anchor error with candidates.
+ * One label per line of the whole file. Lines whose truncated hash collides
+ * with another line get a longer label (L+2, then the full fingerprint) — the
+ * only collision remedy; nothing about the line's neighbors is consulted.
  */
-function computeLabels(lines: string[], ctx?: SliceContext): string[] {
-  const primary = lines.map((_, i) => windowHash(lines, i, 1, ctx))
-  const seen = new Map<string, number>()
-  for (const label of primary) {
-    seen.set(label, (seen.get(label) ?? 0) + 1)
+export function computeHashlineLabels(content: string): HashlineLabelSet {
+  if (!content) return { length: hashLengthForLineCount(0), labels: [] }
+  const lines = content.split(/\r?\n/)
+  const baseLength = hashLengthForLineCount(lines.length)
+  const fps = lines.map((line, i) => fullFingerprint(line, i + 1))
+
+  const groupBy = (len: number, indices: number[]): Map<string, number[]> => {
+    const groups = new Map<string, number[]>()
+    for (const i of indices) {
+      const key = fps[i]!.slice(-len)
+      const group = groups.get(key)
+      if (group) group.push(i)
+      else groups.set(key, [i])
+    }
+    return groups
   }
-  return primary.map((label, i) =>
-    (seen.get(label) ?? 0) > 1 ? '2' + windowHash(lines, i, 2, ctx) : label,
-  )
+
+  const all = lines.map((_, i) => i)
+  const labels: HashlineLabel[] = fps.map(hash => ({
+    hash: hash.slice(-baseLength),
+    collision: false,
+  }))
+
+  for (const group of groupBy(baseLength, all).values()) {
+    if (group.length === 1) continue
+    resolveCollisionGroup(group, baseLength, fps, labels, groupBy)
+  }
+  return { length: baseLength, labels }
+}
+
+// Widening ladder for a group of lines sharing a truncated hash: L+2, then
+// the full fingerprint; only a full-fingerprint twin leaves lines unusable.
+function resolveCollisionGroup(
+  group: number[],
+  baseLength: number,
+  fps: string[],
+  labels: HashlineLabel[],
+  groupBy: (len: number, indices: number[]) => Map<string, number[]>,
+): void {
+  let pending: number[][] = [group]
+  let len = Math.min(baseLength + 2, FULL_HASH_LEN)
+  while (pending.length > 0) {
+    const next: number[][] = []
+    for (const cluster of pending) {
+      for (const sub of groupBy(len, cluster).values()) {
+        if (sub.length === 1) {
+          labels[sub[0]!] = {
+            hash: fps[sub[0]!]!.slice(-len),
+            collision: false,
+          }
+        } else if (len >= FULL_HASH_LEN) {
+          for (const i of sub) {
+            labels[i] = { hash: fps[i]!, collision: true }
+          }
+        } else {
+          next.push(sub)
+        }
+      }
+    }
+    if (len >= FULL_HASH_LEN) break
+    len = FULL_HASH_LEN
+    pending = next
+  }
+}
+
+// All line labels as display strings, whole-file scope.
+function labelStrings(labelSet: HashlineLabelSet): string[] {
+  return labelSet.labels.map(l => l.hash)
 }
 
 /**
- * Model-facing Read text format: one `LINE:HASH|content` per line. startLine is
- * 1-based. Mirrors addLineNumbers' line splitting so numbering stays aligned.
+ * Model-facing `LINE:HASH|content` lines. Labels always cover the whole file,
+ * then the optional range selects displayed rows, so a slice's labels are the
+ * same strings the full file shows for those lines.
  */
 export function formatHashline(
   content: string,
-  startLine: number,
-  ctx?: SliceContext,
+  range?: { startLine?: number; lineCount?: number },
 ): string {
   if (!content) return ''
   const lines = content.split(/\r?\n/)
-  const labels = computeLabels(lines, ctx)
-  return lines
-    .map((line, i) => `${i + startLine}:${labels[i]}|${line}`)
-    .join('\n')
+  const labels = labelStrings(computeHashlineLabels(content))
+  const start = Math.max(1, range?.startLine ?? 1)
+  const maxCount = Math.max(0, lines.length - start + 1)
+  const count = Math.min(range?.lineCount ?? maxCount, maxCount)
+  const out: string[] = []
+  for (let i = start - 1; i < start - 1 + count; i++) {
+    out.push(`${i + 1}:${labels[i]}|${lines[i]}`)
+  }
+  return out.join('\n')
 }
 
-// Strip a leading `N:hash|` anchor prefix from one line (inverse of formatHashline).
-const HASHLINE_PREFIX = /^\s*\d+:[0-9a-z]+\|(.*)$/
+// Strip a leading `LINE:HASH|` anchor prefix (inverse of formatHashline).
+// 3-8 char hashes: any length a label can use.
+const HASHLINE_PREFIX = /^\s*\d+:[0-9a-z]{3,8}\|(.*)$/
 export function stripHashlinePrefix(line: string): string {
   return line.match(HASHLINE_PREFIX)?.[1] ?? line
 }
@@ -110,32 +158,24 @@ export function stripHashlinePrefix(line: string): string {
 export type Anchor = { line: number; hash: string | null }
 
 /**
- * Split a label into its search window width and hash. Null for malformed
- * labels, which parseAnchor then rejects.
- */
-function parseLabel(hash: string): { width: number; hash: string } | null {
-  if (hash.length === HASH_LEN) return { width: 1, hash }
-  if (hash.length === HASH_LEN + 1 && hash[0] === '2' && MAX_WIDTH >= 2) {
-    return { width: 2, hash: hash.slice(1) }
-  }
-  return null
-}
-
-/**
  * Parse a `LINE:HASH` anchor. "12:a3f" → {12,"a3f"}, "0" → {0,null},
- * "12" → {12,null}. Returns null for malformed input.
+ * "12" → {12,null}. Returns null for malformed input. Hash lengths 3-8 are
+ * accepted; only "0" may omit the hash when applying (positive bare line
+ * numbers bypass the assertion model and are rejected at resolution).
  */
 export function parseAnchor(s: string): Anchor | null {
   const trimmed = s.trim()
-  const m = trimmed.match(/^(\d+)(?::([0-9a-z]+))?$/)
+  const m = trimmed.match(/^(\d+)(?::([0-9a-z]{3,8}))?$/)
   if (!m) return null
-  if (m[2] !== undefined && parseLabel(m[2]) === null) return null
   return { line: Number(m[1]), hash: m[2] ?? null }
 }
 
-// Flat shape matching the Edit tool's zod schema. The op-specific `lines`
-// requirement is enforced at runtime in applyHashlineEdits (and by the schema's
-// superRefine), so it stays optional here.
+/** The label a Read would show for one 1-based line of the whole file. */
+export function anchorAt(content: string, line: number): string {
+  const labelSet = computeHashlineLabels(content)
+  return labelSet.labels[line - 1]?.hash ?? ''
+}
+
 export type HashlineOp = {
   op: 'replace' | 'insert_after' | 'delete'
   start: string
@@ -143,17 +183,31 @@ export type HashlineOp = {
   lines?: string
 }
 
+export type ResolutionContext = {
+  filePath?: string
+  /** The content the model's anchors were minted against, if known. */
+  baselineContent?: string
+  /** Patches this response already applied, in chronological order. */
+  patches?: readonly AppliedPatch[]
+  /** Set when remapping is unsafe (external change, bookkeeping cap). */
+  remapUnavailableReason?: string
+}
+
 export type ApplyResult =
   | {
       ok: true
       updatedContent: string
       editCount: number
-      /** Anchors placed by content because their line number had moved. */
-      driftCount: number
+      /**
+       * Splices this call applied, in chronological order, each in the
+       * coordinate space of the document just before that splice.
+       */
+      appliedPatches: AppliedPatch[]
+      lineDelta: number
     }
   | { ok: false; error: string }
 
-// Normalized op resolved against the current file, with 1-based line range.
+// Normalized op resolved against the current file, 1-based inclusive range.
 type ResolvedOp = {
   op: HashlineOp['op']
   startLine: number
@@ -161,21 +215,17 @@ type ResolvedOp = {
   lines: string | undefined
 }
 
-const WINDOW = 2
+const WINDOW = 1
 
-// Fresh anchors are quoted back on failure and after a successful edit. Both
-// budgets bound what one tool result can add to the transcript.
 const MAX_STALE_WINDOWS = 3
-const MAX_REGION_ANCHOR_LINES = 60
-const MAX_CANDIDATES_SHOWN = 8
-const CANDIDATE_WINDOWS_PER_ANCHOR = 3
 
 function freshWindow(fileLines: string[], line: number): string {
+  const labels = labelStrings(computeHashlineLabels(fileLines.join('\n')))
   const lo = Math.max(1, line - WINDOW)
   const hi = Math.min(fileLines.length, line + WINDOW)
   const out: string[] = []
   for (let n = lo; n <= hi; n++) {
-    out.push(`${n}:${labelAt(fileLines, n)}|${fileLines[n - 1]}`)
+    out.push(`${n}:${labels[n - 1] ?? ''}|${fileLines[n - 1]}`)
   }
   return out.join('\n')
 }
@@ -184,250 +234,248 @@ function fileLabel(filePath?: string): string {
   return filePath ? `file ${filePath}` : 'the file'
 }
 
-// One anchor that cannot be placed in the current content: no line carries its
-// hash, or several lines do.
-type StaleAnchor = {
-  anchor: Anchor
-  actual: string | null
-  ambiguous: boolean
-  /** Where the twins sit, for an ambiguous anchor. */
-  candidates?: number[]
-}
-
-// A single-line replace/delete resolves start and end to the same anchor, so
-// the batch report has to collapse them or it counts every one twice.
-function addStale(
-  stale: StaleAnchor[],
-  anchor: Anchor,
-  place: Exclude<Resolved, { kind: 'ok' }>,
-): void {
-  const text = anchorText(anchor)
-  if (stale.some(s => anchorText(s.anchor) === text)) return
-  stale.push({
-    anchor,
-    actual: place.actual,
-    ambiguous: place.kind === 'ambiguous',
-    candidates: place.kind === 'ambiguous' ? place.candidates : undefined,
-  })
-}
-
-/**
- * One report for every stale anchor in the batch, so a re-anchored retry does
- * not have to discover them one rejection at a time.
- */
-function staleAnchorError(
-  stale: StaleAnchor[],
-  fileLines: string[],
-  filePath?: string,
-): string {
-  const label = fileLabel(filePath)
-  const head =
-    stale.length === 1
-      ? `Anchor "${anchorText(stale[0]!.anchor)}" no longer matches ${label}.`
-      : `${stale.length} anchors no longer match ${label}.`
-  const detail = stale.map(s => {
-    const name = anchorText(s.anchor)
-    if (s.ambiguous) {
-      const where = s.candidates
-        ? ` — matching lines: ${s.candidates.slice(0, MAX_CANDIDATES_SHOWN).join(', ')}${s.candidates.length > MAX_CANDIDATES_SHOWN ? `, and ${s.candidates.length - MAX_CANDIDATES_SHOWN} more` : ''}`
-        : ''
-      return `  "${name}" → several lines carry that hash, so it cannot be placed by content${where}`
-    }
-    return s.actual === null
-      ? `  "${name}" → the file now has ${fileLines.length} line(s)`
-      : `  "${name}" → line ${s.anchor.line} is now "${s.anchor.line}:${s.actual}"`
-  })
-  const windows: string[] = []
-  let omitted = 0
-  for (const s of stale) {
-    const at = s.ambiguous
-      ? (s.candidates ?? []).slice(0, CANDIDATE_WINDOWS_PER_ANCHOR)
-      : s.actual !== null
-        ? [s.anchor.line]
-        : []
-    for (const line of at) {
-      if (windows.length < MAX_STALE_WINDOWS)
-        windows.push(freshWindow(fileLines, line))
-      else omitted++
-    }
-  }
-  return [
-    `${head} The file changed since you read it.`,
-    ...detail,
-    ...(windows.length > 0
-      ? [
-          'Current content near the stale anchors:',
-          windows.join('\n...\n'),
-          ...(omitted > 0 ? [`... (${omitted} more not shown)`] : []),
-        ]
-      : []),
-    'Re-read the file or use these anchors and retry.',
-  ].join('\n')
-}
-
 function anchorText(anchor: Anchor): string {
   return anchor.hash === null
     ? String(anchor.line)
     : `${anchor.line}:${anchor.hash}`
 }
 
-/**
- * Anchored `LINE:HASH|content` blocks for 1-based line ranges of `content`,
- * separated by `...`. Used to hand back the anchors of the lines an edit just
- * wrote, so a follow-up edit needs no second Read.
- */
-export function formatAnchoredRegions(
-  content: string,
-  regions: { start: number; count: number }[],
-  ctx?: SliceContext,
-): string {
-  const fileLines = content.split('\n')
-  const labels = computeLabels(fileLines, ctx)
-  const blocks: string[] = []
-  let budget = MAX_REGION_ANCHOR_LINES
-  let truncated = false
-  for (const region of regions) {
-    if (budget <= 0) {
-      truncated = true
-      break
-    }
-    const lo = Math.max(1, region.start)
-    const hi = Math.min(fileLines.length, region.start + region.count - 1)
-    const out: string[] = []
-    for (let n = lo; n <= hi && budget > 0; n++) {
-      out.push(`${n}:${labels[n - 1]}|${fileLines[n - 1]}`)
-      budget--
-    }
-    if (hi - lo + 1 > out.length) truncated = true
-    if (out.length > 0) blocks.push(out.join('\n'))
-  }
-  if (blocks.length === 0) return ''
-  return truncated
-    ? `${blocks.join('\n...\n')}\n... (more changed lines not shown — Read the file for their anchors)`
-    : blocks.join('\n...\n')
+type StaleReason =
+  | 'content-mismatch'
+  | 'out-of-bounds'
+  | 'consumed'
+  | 'collision'
+  | 'baseline-mismatch'
+  | 'no-baseline'
+
+type StaleAnchor = {
+  anchor: Anchor
+  reason: StaleReason
+  /** Where to show a fresh ±1 window: anchor line clamped to current file. */
+  windowAt?: number
 }
 
-/**
- * The best label for one 1-based line of the whole file: width 1, widened to
- * width 2 when its window repeats. Same rules computeLabels applies to a whole
- * file, for the small line sets error windows quote.
- */
-function labelAt(fileLines: string[], line: number): string {
-  const primary = windowHash(fileLines, line - 1, 1)
-  for (let n = 0; n < fileLines.length; n++) {
-    if (n !== line - 1 && windowHash(fileLines, n, 1) === primary) {
-      return '2' + windowHash(fileLines, line - 1, 2)
-    }
-  }
-  return primary
-}
-
-/** The label Read would have shown for the given 1-based line, for tests and
- * for callers that build anchors without formatting the whole file. */
-export function anchorAt(content: string, line: number): string {
-  return labelAt(content.split('\n'), line)
-}
-
-/** SliceContext for a slice starting at absolute startLine. Read plumbs the
- * real neighbors through SliceContext instead, so edge labels match. */
-export function anchorContext(
-  fullContent: string,
-  sliceContent: string,
-  startLine: number,
-): SliceContext {
-  const full = fullContent.split('\n')
-  const sliceLines = sliceContent.split('\n')
-  const lo0 = startLine - 1
-  const ctx: SliceContext = {}
-  if (lo0 > 0) {
-    ctx.prevLines = full.slice(Math.max(0, lo0 - MAX_WIDTH), lo0)
-  }
-  if (lo0 + sliceLines.length < full.length) {
-    ctx.nextLines = full.slice(
-      lo0 + sliceLines.length,
-      lo0 + sliceLines.length + MAX_WIDTH,
-    )
-  }
-  return ctx
-}
-
-/**
- * Where an anchor points in the current content. A label names a line and the
- * line number is only a hint, because an edit above an anchor shifts it without
- * touching its content. A unique window is that line however far it moved, so
- * an anchor held across an earlier edit still works. A window that occurs
- * twice is no evidence at all, and no distance rule can make it so, so the
- * caller either takes a shift from a sibling anchor or refuses.
- */
-type Resolved =
-  | { kind: 'ok'; line: number; drifted: boolean }
-  | { kind: 'missing'; actual: string | null }
-  | { kind: 'ambiguous'; actual: string | null; candidates: number[] }
-
-function labelAtLine(fileLines: string[], line: number): string | null {
-  return line >= 1 && line <= fileLines.length ? labelAt(fileLines, line) : null
-}
-
-function resolveAnchor(fileLines: string[], anchor: Anchor): Resolved {
-  // An anchor with no hash asks for a line number and nothing else. There is no
-  // content to search for, so the only thing to check is that the line exists.
-  if (anchor.hash === null) {
-    return anchor.line >= 1 && anchor.line <= fileLines.length
-      ? { kind: 'ok', line: anchor.line, drifted: false }
-      : { kind: 'missing', actual: null }
-  }
-  const parsed = parseLabel(anchor.hash)!
-  const actual = labelAtLine(fileLines, anchor.line)
-  if (actual === anchor.hash) {
-    return { kind: 'ok', line: anchor.line, drifted: false }
-  }
-  const candidates: number[] = []
-  for (let n = 1; n <= fileLines.length; n++) {
-    if (windowHash(fileLines, n - 1, parsed.width) !== parsed.hash) continue
-    candidates.push(n)
-    if (candidates.length > MAX_CANDIDATES_SHOWN * 2) break
-  }
-  if (candidates.length === 0) return { kind: 'missing', actual }
-  if (candidates.length > 1) return { kind: 'ambiguous', actual, candidates }
-  return { kind: 'ok', line: candidates[0]!, drifted: true }
-}
-
-// Place an ambiguous anchor with the shift a sibling anchor already proved.
-function shiftAnchor(
-  fileLines: string[],
+function staleReasonText(
+  reason: StaleReason,
   anchor: Anchor,
-  delta: number,
-): number | null {
-  if (anchor.hash === null) return null
-  const parsed = parseLabel(anchor.hash)
-  if (!parsed) return null
-  const line = anchor.line + delta
-  return line >= 1 &&
-    line <= fileLines.length &&
-    windowHash(fileLines, line - 1, parsed.width) === parsed.hash
-    ? line
-    : null
+  fileLineCount: number,
+): string {
+  switch (reason) {
+    case 'content-mismatch':
+      return `line ${anchor.line} content differs now`
+    case 'out-of-bounds':
+      return `that line is outside the current file (${fileLineCount} line(s))`
+    case 'consumed':
+      return "the anchor's line was rewritten by an earlier edit in this message"
+    case 'collision':
+      return 'label collision; this line cannot be verified safely'
+    case 'baseline-mismatch':
+      return 'this anchor does not match the snapshot used for this response'
+    case 'no-baseline':
+      return 'line content differs now and no snapshot is available to remap it'
+  }
+}
+
+function staleAnchorError(
+  stale: StaleAnchor[],
+  fileLines: string[],
+  extra: string[] = [],
+): string {
+  const detail = stale.map(
+    s =>
+      `  "${anchorText(s.anchor)}" → ${staleReasonText(
+        s.reason,
+        s.anchor,
+        fileLines.length,
+      )}`,
+  )
+  const windows: string[] = []
+  let omitted = 0
+  for (const s of stale) {
+    if (s.windowAt === undefined) continue
+    if (windows.length < MAX_STALE_WINDOWS)
+      windows.push(freshWindow(fileLines, s.windowAt))
+    else omitted++
+  }
+  return [
+    'Anchor validation failed. The file no longer matches the snapshot these anchors were taken from.',
+    ...detail,
+    ...extra,
+    ...(windows.length > 0
+      ? [
+          'Current content near the affected lines:',
+          windows.join('\n...\n'),
+          ...(omitted > 0 ? [`... (${omitted} more not shown)`] : []),
+        ]
+      : []),
+    'Re-read the file or use the anchors above.',
+  ].join('\n')
 }
 
 /**
- * Apply hashline edits to file content. Pure: places each anchor in the current
- * content, rejects overlapping ranges, then applies edits by descending start
- * line so earlier splices don't shift later offsets. On any failure returns a
- * human-readable error that includes fresh `LINE:HASH|content` anchors so the
- * model can re-anchor.
+ * Map one baseline line through chronological patches to the current document.
+ * Returns the mapped line, or null when a positive-length patch consumed it.
+ */
+function mapLine(
+  baselineLine: number,
+  patches: readonly AppliedPatch[],
+): number | null {
+  let line = baselineLine
+  for (const p of patches) {
+    if (p.oldLen === 0) {
+      if (line >= p.oldStart) line += p.newLen
+      continue
+    }
+    const oldEnd = p.oldStart + p.oldLen - 1
+    if (line < p.oldStart) continue
+    if (line <= oldEnd) return null
+    line += p.newLen - p.oldLen
+  }
+  return line
+}
+
+type RangeMap =
+  | { kind: 'ok'; startLine: number; endLine: number }
+  | { kind: 'consumed' }
+  | { kind: 'inside' }
+
+/**
+ * Map a baseline range, rejecting any range an earlier patch consumed or
+ * reached inside — the range's meaning dies if any line inside it moved.
+ */
+function mapRange(
+  start: number,
+  end: number,
+  patches: readonly AppliedPatch[],
+): RangeMap {
+  let s = start
+  let e = end
+  for (const p of patches) {
+    if (p.oldLen === 0) {
+      if (p.oldStart <= s) {
+        s += p.newLen
+        e += p.newLen
+      } else if (p.oldStart <= e) {
+        return { kind: 'inside' }
+      }
+      continue
+    }
+    const patchEnd = p.oldStart + p.oldLen - 1
+    if (patchEnd < s) {
+      const d = p.newLen - p.oldLen
+      s += d
+      e += d
+    } else if (p.oldStart > e) {
+      continue
+    } else {
+      return s >= p.oldStart && e <= patchEnd
+        ? { kind: 'consumed' }
+        : { kind: 'inside' }
+    }
+  }
+  return { kind: 'ok', startLine: s, endLine: e }
+}
+
+type Placement = { line: number } | { reason: StaleReason; windowAt?: number }
+
+function isPlacementMoved(p: Placement): p is { line: number } {
+  return 'line' in p
+}
+
+/**
+ * Place one anchor: Tier 1 asserts against the current file directly; Tier 2
+ * verifies the response baseline and maps through the applied patches. The
+ * post-map check compares whole lines, because the anchor's hash covers the
+ * baseline line number, which a shift necessarily changes.
+ */
+function placeAnchor(
+  anchor: Anchor,
+  currentLines: string[],
+  currentLabels: string[],
+  baseline: { lines: string[]; labels: string[] } | null,
+  patches: readonly AppliedPatch[],
+  currentLabelCollisions: boolean[],
+  baselineCollisions: boolean[],
+): Placement {
+  if (anchor.line >= 1 && anchor.line <= currentLines.length) {
+    if (
+      !currentLabelCollisions[anchor.line - 1] &&
+      currentLabels[anchor.line - 1] === anchor.hash
+    ) {
+      return { line: anchor.line }
+    }
+  }
+  if (!baseline) {
+    return {
+      reason:
+        anchor.line > currentLines.length ? 'out-of-bounds' : 'no-baseline',
+      windowAt: anchor.line,
+    }
+  }
+  if (anchor.line < 1 || anchor.line > baseline.lines.length) {
+    return { reason: 'out-of-bounds', windowAt: anchor.line }
+  }
+  if (baselineCollisions[anchor.line - 1]) {
+    return { reason: 'collision', windowAt: anchor.line }
+  }
+  if (baseline.labels[anchor.line - 1] !== anchor.hash) {
+    return { reason: 'baseline-mismatch', windowAt: anchor.line }
+  }
+  const mapped = mapLine(anchor.line, patches)
+  if (mapped === null) {
+    return { reason: 'consumed', windowAt: anchor.line }
+  }
+  if (mapped < 1 || mapped > currentLines.length) {
+    return { reason: 'out-of-bounds', windowAt: mapped }
+  }
+  if (currentLines[mapped - 1] !== baseline.lines[anchor.line - 1]) {
+    return { reason: 'content-mismatch', windowAt: mapped }
+  }
+  return { line: mapped }
+}
+
+/**
+ * Apply hashline edits to file content. Pure: places each anchor against the
+ * current content (or remaps it through the context's baseline + patches),
+ * rejects overlapping ranges, then applies edits by descending start line.
+ * On failure the error names every stale anchor and quotes fresh ±1 windows.
  */
 export function applyHashlineEdits(
   fileContent: string,
   edits: HashlineOp[],
-  filePath?: string,
+  context?: ResolutionContext,
 ): ApplyResult {
-  const fileLines = fileContent.split('\n')
+  const fileLines = fileContent.split(/\r?\n/)
+  const currentLabelSet = computeHashlineLabels(fileContent)
+  const currentLabels = labelStrings(currentLabelSet)
+  const currentCollisions = currentLabelSet.labels.map(l => l.collision)
+
+  // Remap unavailable (external change, patch cap): exact anchors still
+  // resolve, but nothing below Tier 1 may be trusted.
+  const remapNote = context?.remapUnavailableReason
+  const baseline =
+    !remapNote && context?.baselineContent !== undefined
+      ? (() => {
+          const set = computeHashlineLabels(context.baselineContent!)
+          return {
+            lines: context.baselineContent!.split(/\r?\n/),
+            labels: labelStrings(set),
+            collisions: set.labels.map(l => l.collision),
+          }
+        })()
+      : null
+  const patches = remapNote ? [] : (context?.patches ?? [])
+
   const resolved: ResolvedOp[] = []
-  // Staleness is reported for the whole batch at once: a model that re-anchors
-  // one edit at a time pays a rejection per anchor.
   const stale: StaleAnchor[] = []
-  // Deduplicated, because a single-line op names the same anchor twice.
-  const drifted = new Set<string>()
+  const extras: string[] = []
+
+  const addStale = (anchor: Anchor, place: Placement): void => {
+    if (isPlacementMoved(place)) return
+    const text = anchorText(anchor)
+    if (stale.some(s => anchorText(s.anchor) === text)) return
+    stale.push({ anchor, reason: place.reason, windowAt: place.windowAt })
+  }
 
   for (const edit of edits) {
     const startAnchor = parseAnchor(edit.start)
@@ -435,7 +483,7 @@ export function applyHashlineEdits(
       return {
         ok: false,
         error: `Invalid start anchor ${JSON.stringify(edit.start)} in ${fileLabel(
-          filePath,
+          context?.filePath,
         )}. Anchors look like "LINE:HASH" (e.g. "12:a3f") or "0" for the top of the file.`,
       }
     }
@@ -448,12 +496,20 @@ export function applyHashlineEdits(
       return {
         ok: false,
         error: `Invalid end anchor ${JSON.stringify(endRaw)} in ${fileLabel(
-          filePath,
+          context?.filePath,
         )}. Anchors look like "LINE:HASH" (e.g. "12:a3f").`,
       }
     }
 
-    // lines requirement (defense-in-depth; the schema also enforces this).
+    if (startAnchor.hash === null && startAnchor.line !== 0) {
+      return {
+        ok: false,
+        error: `Anchor "${edit.start}" has no hash. Anchors must be copied from Read output as "LINE:HASH" (only "0" may omit the hash, for inserting at the top).${
+          remapNote ? `\n${remapNote}` : ''
+        }`,
+      }
+    }
+
     const lines = edit.lines
     if (
       (edit.op === 'replace' || edit.op === 'insert_after') &&
@@ -462,20 +518,17 @@ export function applyHashlineEdits(
       return {
         ok: false,
         error: `The "${edit.op}" edit requires "lines" (the new text) in ${fileLabel(
-          filePath,
+          context?.filePath,
         )}.`,
       }
     }
 
-    // A malformed range is rejected outright. A line past the end of the file is
-    // not one: the file may have shrunk under an anchor whose content only
-    // moved, which resolution below handles.
     if (isInsert) {
       if (startAnchor.line < 0) {
         return {
           ok: false,
           error: `Insert anchor "${edit.start}" refers to line ${startAnchor.line} in ${fileLabel(
-            filePath,
+            context?.filePath,
           )}. Use "0" to insert at the top.`,
         }
       }
@@ -484,7 +537,7 @@ export function applyHashlineEdits(
         return {
           ok: false,
           error: `Anchor range ${startAnchor.line}..${endAnchor.line} is invalid in ${fileLabel(
-            filePath,
+            context?.filePath,
           )}. Lines are 1-based; "0" is only valid for insert_after.`,
         }
       }
@@ -492,93 +545,119 @@ export function applyHashlineEdits(
         return {
           ok: false,
           error: `End anchor line ${endAnchor.line} is before start anchor line ${startAnchor.line} in ${fileLabel(
-            filePath,
+            context?.filePath,
           )}.`,
         }
       }
     }
 
-    // Top-of-file insertion has no line to place.
     if (isInsert && startAnchor.line === 0) {
       resolved.push({ op: edit.op, startLine: 0, endLine: 0, lines })
       continue
     }
 
-    let startPlace = resolveAnchor(fileLines, startAnchor)
-    let endPlace =
-      isInsert || endAnchor === startAnchor
-        ? startPlace
-        : resolveAnchor(fileLines, endAnchor)
+    let startPlace = placeAnchor(
+      startAnchor,
+      fileLines,
+      currentLabels,
+      baseline,
+      patches,
+      currentCollisions,
+      baseline ? baseline.collisions : [],
+    )
 
-    // One end places the other. A block that moved moved whole, so a unique
-    // start hands an ambiguous end its exact shift. This is what lets a range
-    // that ends on a line with a repeated window resolve at all, since such a
-    // line can never be placed on its own.
-    if (startPlace.kind === 'ok' && endPlace.kind === 'ambiguous') {
-      const line = shiftAnchor(
-        fileLines,
-        endAnchor,
-        startPlace.line - startAnchor.line,
-      )
-      if (line !== null) endPlace = { kind: 'ok', line, drifted: true }
-    } else if (endPlace.kind === 'ok' && startPlace.kind === 'ambiguous') {
-      const line = shiftAnchor(
-        fileLines,
-        startAnchor,
-        endPlace.line - endAnchor.line,
-      )
-      if (line !== null) startPlace = { kind: 'ok', line, drifted: true }
-    }
-
-    if (startPlace.kind !== 'ok' || endPlace.kind !== 'ok') {
-      if (startPlace.kind !== 'ok') {
-        addStale(stale, startAnchor, startPlace)
+    if (isInsert || endAnchor === startAnchor) {
+      if (!isPlacementMoved(startPlace)) {
+        addStale(startAnchor, startPlace)
+        continue
       }
-      if (endPlace.kind !== 'ok') {
-        addStale(stale, endAnchor, endPlace)
+      if (startPlace.line > fileLines.length) {
+        addStale(startAnchor, {
+          reason: 'out-of-bounds',
+          windowAt: startPlace.line,
+        })
+        continue
       }
+      resolved.push({
+        op: edit.op,
+        startLine: startPlace.line,
+        endLine: startPlace.line,
+        lines,
+      })
       continue
     }
 
-    // Both ends must have moved by the same amount. If they did not, lines were
-    // added or removed inside the range and it no longer means what it did.
-    if (!isInsert) {
-      const anchored = endAnchor.line - startAnchor.line
-      const placed = endPlace.line - startPlace.line
-      if (placed !== anchored) {
-        return {
-          ok: false,
-          error: [
-            `The range "${anchorText(startAnchor)}".."${anchorText(
-              endAnchor,
-            )}" covered ${anchored + 1} line(s), but its ends now sit at lines ${startPlace.line} and ${endPlace.line} in ${fileLabel(filePath)}.`,
-            'Lines were added or removed inside it.',
-            'Current content at each end:',
-            freshWindow(fileLines, startPlace.line),
-            '...',
-            freshWindow(fileLines, endPlace.line),
-            'Re-read the file or use these anchors and retry.',
-          ].join('\n'),
-        }
-      }
+    const endPlace = placeAnchor(
+      endAnchor,
+      fileLines,
+      currentLabels,
+      baseline,
+      patches,
+      currentCollisions,
+      baseline ? baseline.collisions : [],
+    )
+
+    if (!isPlacementMoved(startPlace) || !isPlacementMoved(endPlace)) {
+      addStale(startAnchor, startPlace)
+      addStale(endAnchor, endPlace)
+      continue
     }
 
-    if (startPlace.drifted) drifted.add(anchorText(startAnchor))
-    if (endPlace.drifted) drifted.add(anchorText(endAnchor))
+    if (endPlace.line < startPlace.line) {
+      extras.push(
+        `Range "${anchorText(startAnchor)}".."${anchorText(
+          endAnchor,
+        )}" ends before it starts after remapping.`,
+      )
+      continue
+    }
+
+    // With patches in play, map the whole range: any earlier splice that fell
+    // inside (or consumed) it means the range no longer means one block.
+    if (patches.length > 0 && baseline) {
+      const mapped = mapRange(startAnchor.line, endAnchor.line, patches)
+      if (mapped.kind === 'consumed') {
+        addStale(startAnchor, {
+          reason: 'consumed',
+          windowAt: startAnchor.line,
+        })
+        continue
+      }
+      if (mapped.kind === 'inside') {
+        extras.push(
+          `Range "${anchorText(startAnchor)}".."${anchorText(
+            endAnchor,
+          )}" was changed by an earlier edit in this message.`,
+        )
+        continue
+      }
+      if (
+        mapped.startLine !== startPlace.line ||
+        mapped.endLine !== endPlace.line
+      ) {
+        extras.push(
+          `Range "${anchorText(startAnchor)}".."${anchorText(
+            endAnchor,
+          )}" no longer covers one block of lines.`,
+        )
+        continue
+      }
+    }
 
     resolved.push({
       op: edit.op,
       startLine: startPlace.line,
-      endLine: isInsert ? startPlace.line : endPlace.line,
+      endLine: endPlace.line,
       lines,
     })
   }
 
-  if (stale.length > 0) {
-    return { ok: false, error: staleAnchorError(stale, fileLines, filePath) }
+  if (stale.length > 0 || extras.length > 0) {
+    if (remapNote) extras.unshift(remapNote)
+    return { ok: false, error: staleAnchorError(stale, fileLines, extras) }
   }
 
-  // Overlap detection. insert_after at line N is modeled as the point [N, N];
+  // Overlap detection. insert_after at line N is the point [N, N];
   // replace/delete cover [start, end]. Any shared line is a conflict.
   const sortedForOverlap = [...resolved].sort(
     (a, b) => a.startLine - b.startLine,
@@ -590,7 +669,7 @@ export function applyHashlineEdits(
       return {
         ok: false,
         error: `Edits overlap: ranges ${prev.startLine}..${prev.endLine} and ${cur.startLine}..${cur.endLine} in ${fileLabel(
-          filePath,
+          context?.filePath,
         )} touch the same line(s). Split them so each line is edited at most once.`,
       }
     }
@@ -613,12 +692,99 @@ export function applyHashlineEdits(
     }
   }
 
-  // split('\n')/join('\n') is its own inverse: a trailing newline survives as a
-  // trailing empty element, so it is preserved iff the original had one.
+  const appliedPatches = coalescePatches(
+    resolved
+      .map(r => {
+        if (r.op === 'insert_after') {
+          return {
+            // Top-of-file insertion resolved at line 0 lands here as
+            // insert-after-line-0 below; both are insertions before oldStart.
+            oldStart: r.startLine + 1,
+            oldLen: 0,
+            newLen: (r.lines ?? '').split('\n').length,
+          }
+        }
+        return {
+          oldStart: r.startLine,
+          oldLen: r.endLine - r.startLine + 1,
+          newLen: r.op === 'delete' ? 0 : (r.lines ?? '').split('\n').length,
+        }
+      })
+      .sort((a, b) => a.oldStart - b.oldStart),
+  )
+
+  const lineDelta = appliedPatches.reduce(
+    (sum, p) => sum + p.newLen - p.oldLen,
+    0,
+  )
+
   return {
     ok: true,
     updatedContent: newLines.join('\n'),
     editCount: edits.length,
-    driftCount: drifted.size,
+    appliedPatches,
+    lineDelta,
   }
 }
+
+// Merge contiguous same-kind splices (same coordinate space: one apply run)
+// so the response patch list stays small. Never merge an insertion with a
+// positive-length range: that would mark untouched lines as consumed.
+function coalescePatches(patches: AppliedPatch[]): AppliedPatch[] {
+  const merged: AppliedPatch[] = []
+  for (const p of patches) {
+    const last = merged[merged.length - 1]
+    if (
+      last &&
+      ((last.oldLen === 0 && p.oldLen === 0 && p.oldStart === last.oldStart) ||
+        (last.oldLen > 0 &&
+          p.oldLen > 0 &&
+          p.oldStart === last.oldStart + last.oldLen))
+    ) {
+      last.newLen += p.newLen
+      last.oldLen += p.oldLen
+    } else {
+      merged.push({ ...p })
+    }
+  }
+  return merged
+}
+
+/**
+ * Anchored `LINE:HASH|content` blocks for 1-based line ranges of `content`,
+ * separated by `...`. Hands back the anchors of the lines an edit just wrote,
+ * so a follow-up edit needs no second Read.
+ */
+export function formatAnchoredRegions(
+  content: string,
+  regions: readonly { start: number; count: number }[],
+): string {
+  const fileLines = content.split(/\r?\n/)
+  const labels = labelStrings(computeHashlineLabels(content))
+  const blocks: string[] = []
+  const budgetMax = 60
+  let budget = budgetMax
+  let truncated = false
+  for (const region of regions) {
+    if (budget <= 0) {
+      truncated = true
+      break
+    }
+    const lo = Math.max(1, region.start)
+    const hi = Math.min(fileLines.length, region.start + region.count - 1)
+    const out: string[] = []
+    for (let n = lo; n <= hi && budget > 0; n++) {
+      out.push(`${n}:${labels[n - 1] ?? ''}|${fileLines[n - 1]}`)
+      budget--
+    }
+    if (hi - lo + 1 > out.length) truncated = true
+    if (out.length > 0) blocks.push(out.join('\n'))
+  }
+  if (blocks.length === 0) return ''
+  return truncated
+    ? `${blocks.join('\n...\n')}\n... (more changed lines not shown — Read the file for their anchors)`
+    : blocks.join('\n...\n')
+}
+
+/** @deprecated Kept for existing imports; SliceContext no longer affects labels. */
+export type SliceContext = Record<string, never>

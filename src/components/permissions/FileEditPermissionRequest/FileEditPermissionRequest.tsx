@@ -31,7 +31,9 @@ function computeNewContent(input: FileEditInput): {
   newContent: string
 } {
   const oldContent = readOldContent(input.file_path)
-  const r = applyHashlineEdits(oldContent, input.edits, input.file_path)
+  const r = applyHashlineEdits(oldContent, input.edits, {
+    filePath: input.file_path,
+  })
   return { oldContent, newContent: r.ok ? r.updatedContent : oldContent }
 }
 

@@ -19,7 +19,7 @@ Usage:${getPreReadInstruction()}
   {"op":"insert_after","start":"41:9k2","lines":"  const y = 3"}
   {"op":"delete","start":"41:9k2","end":"44:p0q"}
 - Provide only the content after the \`|\` in \`lines\` — never include the \`LINE:HASH|\` anchor prefix itself.
-- HASH fingerprints the line together with its two neighbors, so repeated lines like \`}\` and blank lines get distinct anchors. That also means rewriting a line changes the anchors of its two neighbors: a successful edit returns fresh anchors covering the rewritten lines and their neighbors, so prefer them for any follow-up edit nearby.
-- An anchor is matched by content, not by position. If its window moved, the tool finds the line again and says so. If the file no longer holds that window, or holds it more than once, the edit is rejected and every unresolved anchor is listed with the lines that now carry its hash and fresh anchors to use instead.
+- HASH fingerprints the trimmed line together with its line number, so repeated lines like \`}\` and blank lines get distinct anchors, and rewriting one line never changes another line's anchor. A successful edit returns fresh anchors for the lines it wrote; use them for follow-up edits there, and note the reported line shift for anchors you still hold below the edit.
+- An anchor asserts "line LINE of the file I was shown has this content". The tool resolves it against the current file, remapping past earlier edits from the SAME message (their line shifts are known). It rejects an anchor whose line an earlier same-message edit rewrote, or whose content changed since you read it — then it lists each failed anchor and quotes fresh anchors near the affected lines.
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.`
 }

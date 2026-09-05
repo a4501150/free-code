@@ -83,6 +83,7 @@ import { buildQueryConfig } from './query/config.js'
 import { productionDeps, type QueryDeps } from './query/deps.js'
 import type { Terminal, Continue } from './query/transitions.js'
 import { count } from './utils/array.js'
+import { ResponseEditState } from './utils/editState.js'
 
 const STREAM_RECOVERY_MAX_ATTEMPTS = 25
 
@@ -389,9 +390,16 @@ async function* queryLoop(
     }
 
     //TODO: no need to set toolUseContext.messages during set-up since it is updated here
+    // Fresh per-response Edit state: the model writes every tool call in one
+    // message before seeing any result, so same-message Edit calls share this
+    // snapshot + patch bookkeeping. Intentionally NOT carried to the next
+    // response — anchors a structural edit moved must fail there.
     toolUseContext = {
       ...toolUseContext,
       messages: messagesForQuery,
+      editState: ResponseEditState.fromReadFileState(
+        toolUseContext.readFileState,
+      ),
     }
 
     const assistantMessages: AssistantMessage[] = []

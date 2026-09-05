@@ -103,10 +103,18 @@ const outputSchema = z.object({
     .boolean()
     .describe('Whether the user modified the proposed changes'),
   editCount: z.number().describe('Number of edits applied'),
-  driftedAnchors: z
+  lineDelta: z
     .number()
     .optional()
-    .describe('Anchors placed by content because their line number had moved'),
+    .describe(
+      'Net lines added minus removed; anchors below the edit shift by this amount',
+    ),
+  anchorsStale: z
+    .boolean()
+    .optional()
+    .describe(
+      'The edit changed the file line count past a hash-length boundary; all earlier anchors are stale',
+    ),
   changedRegionAnchors: z
     .string()
     .optional()

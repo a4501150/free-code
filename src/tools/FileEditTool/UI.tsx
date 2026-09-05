@@ -248,7 +248,7 @@ async function loadRejectionDiff(
       await handle.close()
     }
     if (oldContent === null) return empty
-    const r = applyHashlineEdits(oldContent, edits, filePath)
+    const r = applyHashlineEdits(oldContent, edits, { filePath })
     if (!r.ok) return empty
     const patch = getPatchFromContents({
       filePath,

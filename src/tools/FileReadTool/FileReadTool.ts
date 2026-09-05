@@ -30,7 +30,7 @@ import {
   getFileModificationTimeAsync,
   suggestPathUnderCwd,
 } from '../../utils/file.js'
-import { formatHashline } from '../../utils/hashline.js'
+import { formatHashline, type HashlineLabelSet } from '../../utils/hashline.js'
 import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
 import { formatFileSize } from '../../utils/format.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
@@ -257,18 +257,6 @@ const outputSchema = (() => {
           .describe('Number of lines in the returned content'),
         startLine: z.number().describe('The starting line number'),
         totalLines: z.number().describe('Total number of lines in the file'),
-        prevLines: z
-          .array(z.string())
-          .optional()
-          .describe(
-            'Up to 2 lines just before the returned slice, for anchor hashes',
-          ),
-        nextLines: z
-          .array(z.string())
-          .optional()
-          .describe(
-            'Up to 2 lines just after the returned slice, for anchor hashes',
-          ),
       }),
     }),
     z.object({
@@ -694,7 +682,7 @@ export const FileReadTool = buildTool({
         if (data.file.content) {
           content =
             memoryFileFreshnessPrefix(data) +
-            formatFileLines(data.file) +
+            formatFileLines(data.file, hashlineLabelSets.get(data)) +
             (shouldIncludeFileReadMitigation()
               ? CYBER_RISK_MITIGATION_REMINDER
               : '')
@@ -721,16 +709,20 @@ function pickLineFormatInstruction(): string {
 }
 
 /** Format file content as model-facing `LINE:HASH|content` hashlines. */
-function formatFileLines(file: {
-  content: string
-  startLine: number
-  prevLines?: string[]
-  nextLines?: string[]
-}): string {
-  return formatHashline(file.content, file.startLine, {
-    prevLines: file.prevLines,
-    nextLines: file.nextLines,
-  })
+function formatFileLines(
+  file: { content: string; startLine: number },
+  labelSet?: HashlineLabelSet,
+): string {
+  if (!labelSet)
+    return formatHashline(file.content, { startLine: file.startLine })
+  const lines = file.content.split('\n')
+  const out: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    out.push(
+      `${file.startLine + i}:${labelSet.labels[file.startLine - 1 + i]?.hash ?? ''}|${lines[i]}`,
+    )
+  }
+  return out.join('\n')
 }
 
 export const CYBER_RISK_MITIGATION_REMINDER =
@@ -757,6 +749,14 @@ function shouldIncludeFileReadMitigation(): boolean {
  * when the data object becomes unreachable after rendering.
  */
 const memoryFileMtimes = new WeakMap<object, number>()
+
+/**
+ * Whole-file hashline labels for a text Read result, keyed by the `data`
+ * object identity like memoryFileMtimes. The displayed slice must show the
+ * same label strings a full-file Read would show, and the schema carries no
+ * presentation-only fields, so the label set rides side-channel.
+ */
+const hashlineLabelSets = new WeakMap<object, HashlineLabelSet>()
 
 function memoryFileFreshnessPrefix(data: object): string {
   const mtimeMs = memoryFileMtimes.get(data)
@@ -854,6 +854,12 @@ async function callInner(
     // Get mtime via async stat (single call, no prior existence check)
     const stats = await getFsImplementation().stat(resolvedFilePath)
     readFileState.set(fullFilePath, {
+      content: cellsJson,
+      timestamp: Math.floor(stats.mtimeMs),
+      offset,
+      limit,
+    })
+    context.editState?.replaceSnapshot(fullFilePath, {
       content: cellsJson,
       timestamp: Math.floor(stats.mtimeMs),
       offset,
@@ -1020,14 +1026,14 @@ async function callInner(
     totalBytes,
     readBytes,
     mtimeMs,
-    prevLines,
-    nextLines,
+    hashline,
   } = await readFileInRange(
     resolvedFilePath,
     lineOffset,
     limit,
     limit === undefined ? maxSizeBytes : undefined,
     context.abortController.signal,
+    { includeHashlineLabels: true },
   )
 
   await validateContentTokens(content, ext, maxTokens)
@@ -1054,10 +1060,17 @@ async function callInner(
       numLines: lineCount,
       startLine: offset,
       totalLines,
-      ...(prevLines ? { prevLines } : {}),
-      ...(nextLines ? { nextLines } : {}),
     },
   }
+  if (hashline) {
+    hashlineLabelSets.set(data, hashline)
+  }
+  context.editState?.replaceSnapshot(fullFilePath, {
+    content,
+    timestamp: Math.floor(mtimeMs),
+    offset,
+    limit,
+  })
   if (isAutoMemFile(fullFilePath)) {
     memoryFileMtimes.set(data, mtimeMs)
   }

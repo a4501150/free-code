@@ -218,9 +218,11 @@ describe('Tool Use E2E', () => {
 
       const filePath = join(session.cwd, 'anchor-chain.txt')
       await writeFile(filePath, 'one\ntwo\nthree')
-      // After the insert, "three" sits on line 4. The only way to know that
-      // anchor without a second Read is the one the first Edit returns.
-      const shiftedAnchor = `4:${anchorAt('one\none-b\ntwo\nthree', 4)}`
+      // Edit #1's result quotes fresh anchors only for the lines it wrote.
+      // "three" moved to line 4; Edit #2 (next response) names that line by
+      // its current content, which Tier 1 resolves without a re-Read.
+      const movedAnchor = `4:${anchorAt('one\none-b\ntwo\nthree', 4)}`
+      const insertedAnchor = `2:${anchorAt('one\none-b\ntwo\nthree', 2)}`
 
       server.reset([
         toolUseResponse([{ name: 'Read', input: { file_path: filePath } }]),
@@ -244,7 +246,7 @@ describe('Tool Use E2E', () => {
             name: 'Edit',
             input: {
               file_path: filePath,
-              edits: [{ op: 'replace', start: shiftedAnchor, lines: 'THREE' }],
+              edits: [{ op: 'replace', start: movedAnchor, lines: 'THREE' }],
             },
           },
         ]),
@@ -258,21 +260,22 @@ describe('Tool Use E2E', () => {
 
       const firstEdit = resultContentString(getToolResults(log, 2)[0])
       expect(firstEdit).toContain('Anchors for the changed lines')
-      expect(firstEdit).toContain(`${shiftedAnchor}|three`)
+      expect(firstEdit).toContain(`${insertedAnchor}|one-b`)
 
       const secondEdit = getToolResults(log, 3)[0]
       expect(secondEdit.is_error).not.toBe(true)
       expect(await readFile(filePath, 'utf-8')).toBe('one\none-b\ntwo\nTHREE')
     })
 
-    test('a second Edit works from an anchor the first Edit made stale', async () => {
+    test('a second Edit block in the same response remaps a stale anchor', async () => {
       session = new TmuxSession({ serverUrl: server.url })
       await session.start()
 
-      const filePath = join(session.cwd, 'anchor-drift.txt')
+      const filePath = join(session.cwd, 'anchor-remap.txt')
       await writeFile(filePath, 'one\ntwo\nthree')
-      // The anchor the model holds from its Read. The insert below pushes
-      // "three" to line 4, so this line number is wrong by the time it is used.
+      // Both edits are written before either result is seen, so Edit #2's
+      // anchor is against the pre-edit file. Edit #1's insert pushes "three"
+      // to line 4; the harness knows that patch and remaps the anchor.
       const staleAnchor = `3:${anchorAt('one\ntwo\nthree', 3)}`
 
       server.reset([
@@ -291,8 +294,6 @@ describe('Tool Use E2E', () => {
               ],
             },
           },
-        ]),
-        toolUseResponse([
           {
             name: 'Edit',
             input: {
@@ -305,14 +306,19 @@ describe('Tool Use E2E', () => {
       ])
 
       await session.submitAndApprove('Edit the file twice')
-      const log = await waitForRequestCount(server, 4, {
+      const log = await waitForRequestCount(server, 3, {
         description: 'second Edit tool_result request',
       })
 
-      const secondEdit = getToolResults(log, 3)[0]
-      expect(secondEdit.is_error).not.toBe(true)
-      expect(resultContentString(secondEdit)).toContain(
-        'did not match the stated line number',
+      const [edit1, edit2] = getToolResults(log, 2)
+      expect(edit1.is_error).not.toBe(true)
+      expect(edit2.is_error).not.toBe(true)
+      expect(resultContentString(edit1)).toContain(
+        'Net line shift below the edited hunks: +1',
+      )
+      expect(resultContentString(edit2)).toContain('updated successfully')
+      expect(resultContentString(edit2)).not.toContain(
+        'Anchor validation failed',
       )
       expect(await readFile(filePath, 'utf-8')).toBe('one\none-b\ntwo\nTHREE')
     })

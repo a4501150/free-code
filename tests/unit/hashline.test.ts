@@ -2,30 +2,63 @@ import { describe, expect, test } from 'bun:test'
 import {
   anchorAt,
   applyHashlineEdits,
+  computeHashlineLabels,
   formatAnchoredRegions,
   formatHashline,
+  hashLengthForLineCount,
   parseAnchor,
   stripHashlinePrefix,
   type HashlineOp,
 } from '../../src/utils/hashline.js'
+import { djb2Hash } from '../../src/utils/hash.js'
 
 function lines(...ls: string[]): string {
   return ls.join('\n')
 }
 
-// The label Read would show for line n of `file` (context-hashed, widened if
-// the window repeats), as an Edit anchor.
+// The label Read would show for line n of `file`, as an Edit anchor.
 function anchor(file: string, n: number): string {
   return `${n}:${anchorAt(file, n)}`
 }
 
+function fp(line: string, lineNo: number): string {
+  return (djb2Hash(`${line.trim()}\n${lineNo}`) >>> 0)
+    .toString(36)
+    .padStart(8, '0')
+    .slice(-8)
+}
+
+describe('hashLengthForLineCount', () => {
+  test('birthday-bound boundaries', () => {
+    expect(hashLengthForLineCount(0)).toBe(3)
+    expect(hashLengthForLineCount(30)).toBe(3)
+    expect(hashLengthForLineCount(31)).toBe(4)
+    expect(hashLengthForLineCount(183)).toBe(4)
+    expect(hashLengthForLineCount(184)).toBe(5)
+    expect(hashLengthForLineCount(1099)).toBe(5)
+    expect(hashLengthForLineCount(1100)).toBe(6)
+    expect(hashLengthForLineCount(6599)).toBe(6)
+  })
+})
+
 describe('anchorAt / formatHashline', () => {
   test('labels are deterministic and match the formatted row', () => {
     const file = lines('alpha', 'beta', 'gamma')
-    const rows = formatHashline(file, 1).split('\n')
+    const rows = formatHashline(file).split('\n')
     expect(rows[0]).toBe(`1:${anchorAt(file, 1)}|alpha`)
     expect(rows[1]).toBe(`2:${anchorAt(file, 2)}|beta`)
     expect(rows[2]).toBe(`3:${anchorAt(file, 3)}|gamma`)
+  })
+
+  test('labels cover the base length for the file size', () => {
+    const file = lines(...Array.from({ length: 40 }, (_, i) => `l${i}`))
+    const label = anchorAt(file, 7)
+    expect(label).toHaveLength(hashLengthForLineCount(40))
+  })
+
+  test('the same line at different line numbers gets a different label', () => {
+    const file = lines('dup', 'x', 'dup')
+    expect(anchorAt(file, 1)).not.toBe(anchorAt(file, 3))
   })
 
   test('is invariant to leading/trailing whitespace on the line', () => {
@@ -37,78 +70,50 @@ describe('anchorAt / formatHashline', () => {
     )
   })
 
-  test('repeated lines get distinct labels when their neighbors differ', () => {
-    const file = lines('if (a) {', '}', 'if (b) {', '}')
-    const labels = new Set(
-      formatHashline(file, 1)
-        .split('\n')
-        .map(r => r.split(':')[1]!.split('|')[0]),
+  test('a slice shows the same labels as the whole file', () => {
+    const file = lines(...Array.from({ length: 50 }, (_, i) => `l${i}`))
+    const whole = formatHashline(file).split('\n')
+    expect(formatHashline(file, { startLine: 10, lineCount: 5 })).toBe(
+      whole.slice(9, 14).join('\n'),
     )
-    expect(labels.size).toBe(4)
-  })
-
-  test('blank lines get distinct labels when their neighbors differ', () => {
-    const file = lines('a', '', 'b', 'c', '', 'd')
-    const labels = formatHashline(file, 1)
-      .split('\n')
-      .map(r => r.split(':')[1]!.split('|')[0])
-    expect(new Set(labels).size).toBe(6)
-  })
-
-  test('a repeated 3-line window widens to a 4-char "2" label', () => {
-    // Lines 3 and 8 sit in identical ±1 windows, so ±1 cannot tell them apart.
-    const file = lines(
-      'r1',
-      'r2',
-      'dup',
-      'r4',
-      'r5',
-      'r1',
-      'r2',
-      'dup',
-      'r4',
-      'r5',
+    expect(formatHashline(file, { startLine: 48 })).toBe(
+      whole.slice(47).join('\n'),
     )
-    const rows = formatHashline(file, 1).split('\n')
-    const label3 = rows[2]!.split(':')[1]!.split('|')[0]!
-    const label8 = rows[7]!.split(':')[1]!.split('|')[0]!
-    expect(label3).toHaveLength(4)
-    expect(label3![0]).toBe('2')
-    // The ±2 windows differ (line 3 is preceded by 'r2' only within... both sit
-    // inside copies of the same 5-line block, so the widened labels collide
-    // too — same label on both rows, which the engine reports as ambiguous.
-    expect(label8).toBe(label3)
+    expect(formatHashline(file, { startLine: 50, lineCount: 9 })).toBe(
+      whole.slice(49).join('\n'),
+    )
   })
 
-  test('honors startLine offset', () => {
-    const file = lines('alpha', 'beta', 'gamma')
-    const slice = lines('beta', 'gamma')
-    // A slice's edge labels must match the whole file's labels exactly.
-    const out = formatHashline(slice, 2, {
-      prevLines: ['alpha'],
-    })
-    const wholeRows = formatHashline(file, 1).split('\n')
-    expect(out).toBe(wholeRows.slice(1).join('\n'))
-  })
-
-  test('slice context makes edge labels match whole-file labels', () => {
-    const file = lines('a', 'b', 'c', 'd', 'e')
-    const slice = lines('c', 'd')
-    const sliced = formatHashline(slice, 3, {
-      prevLines: ['a', 'b'],
-      nextLines: ['e'],
-    })
-    const whole = formatHashline(file, 1).split('\n').slice(2, 4).join('\n')
-    expect(sliced).toBe(whole)
+  test('colliding lines widen their labels, never the window', () => {
+    // Find content for line 4 whose 3-char truncated fingerprint equals
+    // line 1's, deterministically. Lines 2-3 are pads that must not join the
+    // collision group.
+    const target = fp('x0', 1).slice(-3)
+    expect(fp('pad1', 2).slice(-3)).not.toBe(target)
+    expect(fp('pad2', 3).slice(-3)).not.toBe(target)
+    let k = 0
+    let candidate = ''
+    for (; ; k++) {
+      candidate = `z${k}`
+      if (fp(candidate, 4).slice(-3) === target) break
+    }
+    const file = lines('x0', 'pad1', 'pad2', candidate)
+    const rows = formatHashline(file).split('\n')
+    const label1 = rows[0]!.split(':')[1]!.split('|')[0]!
+    const label4 = rows[3]!.split(':')[1]!.split('|')[0]!
+    // Lines 1 and 4 collided at 3 chars, so both widened to length 5.
+    expect(label1).toBe(fp('x0', 1).slice(-5))
+    expect(label4).toBe(fp(candidate, 4).slice(-5))
+    expect(parseAnchor(`1:${label1}`)).not.toBeNull()
   })
 
   test('empty content yields empty string', () => {
-    expect(formatHashline('', 1)).toBe('')
+    expect(formatHashline('')).toBe('')
   })
 
   test('stripHashlinePrefix recovers original content', () => {
     const original = lines('  indented', 'plain', '')
-    const formatted = formatHashline(original, 1)
+    const formatted = formatHashline(original)
     const recovered = formatted.split('\n').map(stripHashlinePrefix).join('\n')
     expect(recovered).toBe(original)
   })
@@ -123,8 +128,10 @@ describe('parseAnchor', () => {
     expect(parseAnchor('12:a3f')).toEqual({ line: 12, hash: 'a3f' })
   })
 
-  test('parses a widened label', () => {
+  test('parses any label length 3-8', () => {
     expect(parseAnchor('12:2a3f')).toEqual({ line: 12, hash: '2a3f' })
+    expect(parseAnchor('12:abcdef')).toEqual({ line: 12, hash: 'abcdef' })
+    expect(parseAnchor('12:abcdefab')).toEqual({ line: 12, hash: 'abcdefab' })
   })
 
   test('parses bare line number as null hash', () => {
@@ -145,8 +152,7 @@ describe('parseAnchor', () => {
     expect(parseAnchor(':abc')).toBeNull()
     expect(parseAnchor('12:')).toBeNull()
     expect(parseAnchor('12:ab')).toBeNull()
-    expect(parseAnchor('12:3abc')).toBeNull()
-    expect(parseAnchor('12:abcdef')).toBeNull()
+    expect(parseAnchor('12:abcdefabc')).toBeNull()
   })
 })
 
@@ -161,6 +167,8 @@ describe('applyHashlineEdits — ops', () => {
     if (r.ok) {
       expect(r.updatedContent).toBe(lines('one', 'TWO', 'three', 'four'))
       expect(r.editCount).toBe(1)
+      expect(r.appliedPatches).toEqual([{ oldStart: 2, oldLen: 1, newLen: 1 }])
+      expect(r.lineDelta).toBe(0)
     }
   })
 
@@ -174,7 +182,11 @@ describe('applyHashlineEdits — ops', () => {
       },
     ])
     expect(r.ok).toBe(true)
-    if (r.ok) expect(r.updatedContent).toBe(lines('one', 'X', 'Y', 'Z', 'four'))
+    if (r.ok) {
+      expect(r.updatedContent).toBe(lines('one', 'X', 'Y', 'Z', 'four'))
+      expect(r.appliedPatches).toEqual([{ oldStart: 2, oldLen: 2, newLen: 3 }])
+      expect(r.lineDelta).toBe(1)
+    }
   })
 
   test('insert_after a line', () => {
@@ -182,10 +194,13 @@ describe('applyHashlineEdits — ops', () => {
       { op: 'insert_after', start: anchor(file, 2), lines: 'inserted' },
     ])
     expect(r.ok).toBe(true)
-    if (r.ok)
+    if (r.ok) {
       expect(r.updatedContent).toBe(
         lines('one', 'two', 'inserted', 'three', 'four'),
       )
+      expect(r.appliedPatches).toEqual([{ oldStart: 3, oldLen: 0, newLen: 1 }])
+      expect(r.lineDelta).toBe(1)
+    }
   })
 
   test('insert at top with "0"', () => {
@@ -193,10 +208,12 @@ describe('applyHashlineEdits — ops', () => {
       { op: 'insert_after', start: '0', lines: 'header' },
     ])
     expect(r.ok).toBe(true)
-    if (r.ok)
+    if (r.ok) {
       expect(r.updatedContent).toBe(
         lines('header', 'one', 'two', 'three', 'four'),
       )
+      expect(r.appliedPatches).toEqual([{ oldStart: 1, oldLen: 0, newLen: 1 }])
+    }
   })
 
   test('delete a range', () => {
@@ -204,7 +221,11 @@ describe('applyHashlineEdits — ops', () => {
       { op: 'delete', start: anchor(file, 2), end: anchor(file, 3) },
     ])
     expect(r.ok).toBe(true)
-    if (r.ok) expect(r.updatedContent).toBe(lines('one', 'four'))
+    if (r.ok) {
+      expect(r.updatedContent).toBe(lines('one', 'four'))
+      expect(r.appliedPatches).toEqual([{ oldStart: 2, oldLen: 2, newLen: 0 }])
+      expect(r.lineDelta).toBe(-2)
+    }
   })
 
   test('delete an anchor on a blank line', () => {
@@ -223,7 +244,36 @@ describe('applyHashlineEdits — ops', () => {
       { op: 'insert_after', start: anchor(file, 2), lines: 'mid' },
     ])
     expect(r.ok).toBe(true)
-    if (r.ok) expect(r.updatedContent).toBe(lines('ONE', 'two', 'mid', 'three'))
+    if (r.ok) {
+      expect(r.updatedContent).toBe(lines('ONE', 'two', 'mid', 'three'))
+      // Chronological order is splice-coordinate order, ascending.
+      expect(r.appliedPatches).toEqual([
+        { oldStart: 1, oldLen: 1, newLen: 1 },
+        { oldStart: 3, oldLen: 0, newLen: 1 },
+        { oldStart: 4, oldLen: 1, newLen: 0 },
+      ])
+    }
+  })
+
+  test('contiguous replacements coalesce into one patch', () => {
+    const r = applyHashlineEdits(file, [
+      { op: 'replace', start: anchor(file, 1), lines: 'ONE' },
+      { op: 'replace', start: anchor(file, 2), lines: 'TWO' },
+    ])
+    expect(r.ok).toBe(true)
+    if (r.ok)
+      expect(r.appliedPatches).toEqual([{ oldStart: 1, oldLen: 2, newLen: 2 }])
+  })
+
+  test('editing a line does not stale its neighbor (no window hashing)', () => {
+    // The old engine's core complaint: line 3's rewrite changed line 2's
+    // label because the window covered it. Content+line hashing has no
+    // windows, so an untouched line keeps its anchor forever.
+    const now = lines('one', 'two', 'CHANGED', 'four')
+    const r = applyHashlineEdits(now, [
+      { op: 'replace', start: anchor(file, 2), lines: 'TWO' },
+    ])
+    expect(r.ok).toBe(true)
   })
 })
 
@@ -231,83 +281,39 @@ describe('applyHashlineEdits — guards', () => {
   const file = lines('one', 'two', 'three', 'four')
 
   test('stale anchor is rejected with fresh anchors', () => {
-    const r = applyHashlineEdits(
-      file,
-      [{ op: 'replace', start: '2:zzz', lines: 'TWO' }],
-      '/tmp/x.ts',
-    )
+    const r = applyHashlineEdits(file, [
+      { op: 'replace', start: '2:zzz', lines: 'TWO' },
+    ])
     expect(r.ok).toBe(false)
     if (!r.ok) {
-      expect(r.error).toContain('/tmp/x.ts')
+      expect(r.error).toContain('Anchor validation failed')
       expect(r.error).toContain(anchor(file, 2))
+      expect(r.error).toContain('Current content near the affected lines')
+      expect(r.error).toContain('Re-read the file or use the anchors above.')
     }
   })
 
   test('every stale anchor in the batch is reported at once', () => {
-    const r = applyHashlineEdits(
-      file,
-      [
-        { op: 'replace', start: '1:zzz', lines: 'ONE' },
-        { op: 'replace', start: '3:yyy', lines: 'THREE' },
-        { op: 'delete', start: '99:xxx' },
-      ],
-      '/tmp/x.ts',
-    )
+    const r = applyHashlineEdits(file, [
+      { op: 'replace', start: '1:zzz', lines: 'ONE' },
+      { op: 'replace', start: '3:yyy', lines: 'THREE' },
+      { op: 'delete', start: '99:xxx' },
+    ])
     expect(r.ok).toBe(false)
     if (!r.ok) {
-      expect(r.error).toContain('3 anchors no longer match')
-      expect(r.error).toContain(anchor(file, 1))
-      expect(r.error).toContain(anchor(file, 3))
-      // The file shrank below this anchor, so there is no line to quote.
-      expect(r.error).toContain('the file now has 4 line(s)')
+      expect(r.error).toContain(`${anchor(file, 1)}|one`)
+      expect(r.error).toContain(`${anchor(file, 3)}|three`)
+      expect(r.error).toContain('outside the current file (4 line(s))')
     }
   })
 
-  test('ambiguous anchor error names the lines that carry the hash', () => {
-    // 'dup' at lines 3 and 8 shares a ±2 window with its twin.
-    const dupFile = lines(
-      'r1',
-      'r2',
-      'dup',
-      'r4',
-      'r5',
-      'r1',
-      'r2',
-      'dup',
-      'r4',
-      'r5',
-    )
-    const label = anchorAt(dupFile, 3)
-    expect(label).toHaveLength(4) // widened by Read, still colliding
-    const r = applyHashlineEdits(
-      dupFile,
-      [{ op: 'replace', start: `5:${label}`, lines: 'X' }],
-      '/tmp/x.ts',
-    )
-    expect(r.ok).toBe(false)
-    if (!r.ok) {
-      expect(r.error).toContain('several lines carry that hash')
-      expect(r.error).toContain('matching lines: 3, 8')
-    }
-  })
-
-  test('a stale anchor is reported even when another edit is well formed', () => {
+  test('a mismatching anchor is reported even when another edit is well formed', () => {
     const r = applyHashlineEdits(file, [
       { op: 'replace', start: anchor(file, 1), lines: 'ONE' },
       { op: 'replace', start: '3:yyy', lines: 'THREE' },
     ])
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('Anchor "3:yyy" no longer matches')
-  })
-
-  test("editing a line makes its neighbor's old anchor stale", () => {
-    // Context hashing's cost: line 2's anchor covers line 3, so after line 3
-    // is rewritten, line 2's old label no longer names it.
-    const now = lines('one', 'two', 'CHANGED', 'four')
-    const r = applyHashlineEdits(now, [
-      { op: 'replace', start: anchor(file, 2), lines: 'TWO' },
-    ])
-    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('Anchor validation failed')
   })
 
   test('out-of-bounds anchor is rejected', () => {
@@ -315,6 +321,14 @@ describe('applyHashlineEdits — guards', () => {
       { op: 'replace', start: '99:abc', lines: 'x' },
     ])
     expect(r.ok).toBe(false)
+  })
+
+  test('positive anchors must carry a hash', () => {
+    const r = applyHashlineEdits(file, [
+      { op: 'replace', start: '2', lines: 'TWO' },
+    ])
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('only "0" may omit the hash')
   })
 
   test('overlapping ranges are rejected', () => {
@@ -336,184 +350,199 @@ describe('applyHashlineEdits — guards', () => {
     const r = applyHashlineEdits(file, edits)
     expect(r.ok).toBe(false)
   })
-
-  test('null-hash anchors skip the staleness check', () => {
-    const r = applyHashlineEdits(file, [
-      { op: 'replace', start: '2', lines: 'TWO' },
-    ])
-    expect(r.ok).toBe(true)
-    if (r.ok)
-      expect(r.updatedContent).toBe(lines('one', 'TWO', 'three', 'four'))
-  })
 })
 
-describe('applyHashlineEdits — anchors that moved', () => {
-  test('finds a line whose block moved down whole', () => {
-    const before = lines('alpha', 'beta', 'gamma', 'delta')
-    // Two lines went in above the block since the model read it. The anchor
-    // line's neighbors moved with it, so its label still names it.
-    const now = lines('alpha', 'NEW1', 'NEW2', 'beta', 'gamma', 'delta')
-    const r = applyHashlineEdits(now, [
-      { op: 'replace', start: anchor(before, 3), lines: 'GAMMA' },
-    ])
-    expect(r.ok).toBe(true)
-    if (r.ok) {
-      expect(r.updatedContent).toBe(
-        lines('alpha', 'NEW1', 'NEW2', 'beta', 'GAMMA', 'delta'),
-      )
-      expect(r.driftCount).toBe(1)
-    }
-  })
+describe('applyHashlineEdits — same-response remap', () => {
+  const before = lines('one', 'two', 'three', 'four')
 
-  test('finds a line that moved up', () => {
-    const before = lines('beta', 'x', 'y', 'gamma', 'delta')
-    const now = lines('beta', 'y', 'gamma', 'delta')
-    const r = applyHashlineEdits(now, [
-      { op: 'replace', start: anchor(before, 4), lines: 'GAMMA' },
-    ])
-    expect(r.ok).toBe(true)
-    if (r.ok) {
-      expect(r.updatedContent).toBe(lines('beta', 'y', 'GAMMA', 'delta'))
-      expect(r.driftCount).toBe(1)
-    }
-  })
-
-  test('finds a line that moved a long way, since there is no distance limit', () => {
-    const filler = Array.from({ length: 400 }, (_, i) => `filler ${i}`)
-    const before = lines(...filler, 'the target line')
-    const now = lines('top1', 'top2', ...filler, 'the target line')
-    const r = applyHashlineEdits(now, [
-      { op: 'delete', start: anchor(before, before.split('\n').length) },
-    ])
-    expect(r.ok).toBe(true)
-    if (r.ok) expect(r.updatedContent).toBe(lines('top1', 'top2', ...filler))
-  })
-
-  test('prefers an exact line match over a twin elsewhere', () => {
-    const file = lines('p', 'dup', 'q', 'r', 'p', 'dup', 'q')
-    const r = applyHashlineEdits(file, [
-      { op: 'replace', start: anchor(file, 6), lines: 'THREE' },
-    ])
-    expect(r.ok).toBe(true)
-    if (r.ok) {
-      expect(r.updatedContent).toBe(
-        lines('p', 'dup', 'q', 'r', 'p', 'THREE', 'q'),
-      )
-      expect(r.driftCount).toBe(0)
-    }
-  })
-
-  test('a unique start places an end whose window is generic', () => {
-    const before = lines(
-      'preamble',
-      'function a() {',
-      '  body',
-      '}',
-      'function b() {',
-      '  other',
-      '}',
-    )
-    const now = lines('new1', 'new2', 'new3', ...before.split('\n'))
-    const r = applyHashlineEdits(now, [
+  test('an anchor below an insertion maps through the patch', () => {
+    // Edit #1 of this response inserted a line at the top; Edit #2 still
+    // holds anchors from the message-start snapshot.
+    const now = lines('ZERO', 'one', 'two', 'three', 'four')
+    const r = applyHashlineEdits(
+      now,
+      [{ op: 'replace', start: anchor(before, 3), lines: 'THREE' }],
       {
-        op: 'replace',
-        start: anchor(before, 2),
-        end: anchor(before, 4),
-        lines: 'REPLACED',
+        baselineContent: before,
+        patches: [{ oldStart: 1, oldLen: 0, newLen: 1 }],
       },
-    ])
-    expect(r.ok).toBe(true)
-    if (r.ok) {
-      expect(r.updatedContent).toBe(
-        lines(
-          'new1',
-          'new2',
-          'new3',
-          'preamble',
-          'REPLACED',
-          'function b() {',
-          '  other',
-          '}',
-        ),
-      )
-    }
-  })
-
-  test('moves a whole range when both ends shifted alike', () => {
-    // The insert keeps each end's neighbors intact — the window moves whole.
-    const before = lines('w', 'alpha', 'beta', 'gamma')
-    const now = lines('x', 'y', 'w', 'alpha', 'beta', 'gamma')
-    const r = applyHashlineEdits(now, [
-      { op: 'delete', start: anchor(before, 2), end: anchor(before, 4) },
-    ])
-    expect(r.ok).toBe(true)
-    if (r.ok) {
-      expect(r.updatedContent).toBe(lines('x', 'y', 'w'))
-      expect(r.driftCount).toBe(2)
-    }
-  })
-
-  test('refuses a range whose ends shifted differently', () => {
-    const before = lines('alpha', 'beta', 'gamma', 'gamma2', 'delta')
-    const now = lines(
-      'alpha',
-      'beta',
-      'INS1',
-      'INS2',
-      'gamma',
-      'gamma2',
-      'delta',
     )
+    expect(r.ok).toBe(true)
+    if (r.ok)
+      expect(r.updatedContent).toBe(
+        lines('ZERO', 'one', 'two', 'THREE', 'four'),
+      )
+  })
+
+  test('an anchor below a deletion maps up', () => {
+    const now = lines('two', 'three', 'four')
+    const r = applyHashlineEdits(
+      now,
+      [{ op: 'replace', start: anchor(before, 4), lines: 'FOUR' }],
+      {
+        baselineContent: before,
+        patches: [{ oldStart: 1, oldLen: 1, newLen: 0 }],
+      },
+    )
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.updatedContent).toBe(lines('two', 'three', 'FOUR'))
+  })
+
+  test('an anchor whose line was rewritten by an earlier patch is rejected', () => {
+    const now = lines('one', 'TWO_A', 'TWO_B', 'three', 'four')
+    const r = applyHashlineEdits(
+      now,
+      [{ op: 'replace', start: anchor(before, 2), lines: 'TWO' }],
+      {
+        baselineContent: before,
+        patches: [{ oldStart: 2, oldLen: 1, newLen: 2 }],
+      },
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok)
+      expect(r.error).toContain('rewritten by an earlier edit in this message')
+  })
+
+  test('a range maps when an insertion fell outside it', () => {
+    const now = lines('ZERO', 'one', 'two', 'three', 'four')
+    const r = applyHashlineEdits(
+      now,
+      [
+        {
+          op: 'delete',
+          start: anchor(before, 2),
+          end: anchor(before, 3),
+        },
+      ],
+      {
+        baselineContent: before,
+        patches: [{ oldStart: 1, oldLen: 0, newLen: 1 }],
+      },
+    )
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.updatedContent).toBe(lines('ZERO', 'one', 'four'))
+  })
+
+  test('a range with a patch inside it is rejected', () => {
+    const base = lines('a1', 'a2', 'a3', 'a4', 'a5')
+    const now = lines('a1', 'a2', 'INS', 'a3', 'a4', 'a5')
     const r = applyHashlineEdits(
       now,
       [
         {
           op: 'replace',
-          start: anchor(before, 1),
-          end: anchor(before, 5),
+          start: anchor(base, 1),
+          end: anchor(base, 5),
           lines: 'X',
         },
       ],
-      '/tmp/x.ts',
+      {
+        baselineContent: base,
+        patches: [{ oldStart: 3, oldLen: 0, newLen: 1 }],
+      },
     )
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('added or removed inside it')
+    if (!r.ok)
+      expect(r.error).toContain('changed by an earlier edit in this message')
   })
 
-  test('places an anchor whose line moved after the file shrank above it', () => {
-    const before = lines('one', 'two', 'three', 'tail')
-    const now = lines('one', 'three', 'tail')
-    const r = applyHashlineEdits(now, [
-      { op: 'replace', start: anchor(before, 4), lines: 'TAIL' },
-    ])
-    expect(r.ok).toBe(true)
-    if (r.ok) expect(r.updatedContent).toBe(lines('one', 'three', 'TAIL'))
+  test('a fully consumed range is rejected as consumed', () => {
+    const now = lines('REWRITTEN')
+    const r = applyHashlineEdits(
+      now,
+      [
+        {
+          op: 'delete',
+          start: anchor(before, 1),
+          end: anchor(before, 4),
+        },
+      ],
+      {
+        baselineContent: before,
+        patches: [{ oldStart: 1, oldLen: 4, newLen: 1 }],
+      },
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('rewritten by an earlier edit')
   })
 
-  test('counts only the anchors it had to place by content', () => {
-    const before = lines('zero', 'one', 'three')
-    const now = lines('ZERO', 'zero', 'one', 'three')
-    const r = applyHashlineEdits(now, [
-      { op: 'replace', start: anchor(before, 2), lines: 'ONE' },
-      { op: 'replace', start: anchor(before, 3), lines: 'THREE' },
-    ])
+  test('an anchor that does not match the baseline is rejected', () => {
+    const r = applyHashlineEdits(
+      before,
+      [{ op: 'replace', start: '2:zzz', lines: 'TWO' }],
+      { baselineContent: before, patches: [] },
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok)
+      expect(r.error).toContain(
+        'does not match the snapshot used for this response',
+      )
+  })
+
+  test('a mapped line whose content changed externally is rejected', () => {
+    // The patch says line 4 moved to 5, but line 5 no longer holds it.
+    const now = lines('ZERO', 'one', 'two', 'three', 'DIFFERENT')
+    const r = applyHashlineEdits(
+      now,
+      [{ op: 'replace', start: anchor(before, 4), lines: 'FOUR' }],
+      {
+        baselineContent: before,
+        patches: [{ oldStart: 1, oldLen: 0, newLen: 1 }],
+      },
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('content differs now')
+  })
+
+  test('exact anchors still resolve when remapping is unavailable', () => {
+    const r = applyHashlineEdits(
+      lines('one', 'TWO', 'three', 'four'),
+      [{ op: 'replace', start: anchor(before, 3), lines: 'THREE' }],
+      {
+        baselineContent: before,
+        remapUnavailableReason: 'too many edits',
+      },
+    )
     expect(r.ok).toBe(true)
-    if (r.ok) {
-      expect(r.updatedContent).toBe(lines('ZERO', 'zero', 'ONE', 'THREE'))
-      expect(r.driftCount).toBe(2)
+  })
+
+  test('a shifted anchor fails with the invalidation reason when remap is unavailable', () => {
+    const now = lines('ZERO', 'one', 'two', 'three', 'four')
+    const r = applyHashlineEdits(
+      now,
+      [{ op: 'replace', start: anchor(before, 3), lines: 'THREE' }],
+      {
+        baselineContent: before,
+        patches: [{ oldStart: 1, oldLen: 0, newLen: 1 }],
+        remapUnavailableReason: 'Too many earlier edits in this response',
+      },
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error).toContain('Too many earlier edits in this response')
+      expect(r.error).toContain('no snapshot is available to remap it')
     }
   })
 
-  test('refuses a hashless anchor past the end of the file', () => {
-    // Nothing to search for, so it cannot be placed. Without this it would
-    // splice at the clamped end and append in silence.
+  test('without a baseline, a shifted anchor reports no-baseline', () => {
+    // Cross-message anchor below a structural edit: no remap story exists.
+    const now = lines('ZERO', 'one', 'two', 'three', 'four')
     const r = applyHashlineEdits(
-      lines('one', 'two', 'three', 'four'),
-      [{ op: 'replace', start: '99', lines: 'X' }],
-      '/tmp/x.ts',
+      now,
+      [{ op: 'replace', start: anchor(before, 3), lines: 'THREE' }],
+      { filePath: '/tmp/x.ts' },
     )
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('the file now has 4 line(s)')
+    if (!r.ok) expect(r.error).toContain('no snapshot is available to remap it')
+  })
+
+  test('baseline equal to current content needs no remap machinery', () => {
+    const r = applyHashlineEdits(
+      before,
+      [{ op: 'replace', start: anchor(before, 2), lines: 'TWO' }],
+      { baselineContent: before, patches: [] },
+    )
+    expect(r.ok).toBe(true)
   })
 })
 
@@ -534,6 +563,22 @@ describe('applyHashlineEdits — trailing newline', () => {
     ])
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.updatedContent).toBe('a\nB')
+  })
+})
+
+describe('computeHashlineLabels', () => {
+  test('empty content has no labels', () => {
+    const set = computeHashlineLabels('')
+    expect(set.labels).toEqual([])
+    expect(set.length).toBe(3)
+  })
+
+  test('CRLF and LF content label identically (hash trims)', () => {
+    const lf = lines('a', 'b', 'c')
+    const crlf = 'a\r\nb\r\nc'
+    expect(computeHashlineLabels(crlf).labels).toEqual(
+      computeHashlineLabels(lf).labels,
+    )
   })
 })
 

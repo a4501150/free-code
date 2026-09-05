@@ -213,7 +213,12 @@ export const FileWriteTool = buildTool({
   },
   async call(
     { file_path, content },
-    { readFileState, updateFileHistoryState, dynamicSkillDirTriggers },
+    {
+      readFileState,
+      editState,
+      updateFileHistoryState,
+      dynamicSkillDirTriggers,
+    },
     _,
     parentMessage,
   ) {
@@ -321,6 +326,15 @@ export const FileWriteTool = buildTool({
 
     // Update read timestamp, to invalidate stale writes
     readFileState.set(fullFilePath, {
+      content,
+      timestamp: getFileModificationTime(fullFilePath),
+      offset: undefined,
+      limit: undefined,
+    })
+
+    // The model just authored this content: response anchor state restarts
+    // from it and earlier held anchors are gone.
+    editState?.replaceSnapshot(fullFilePath, {
       content,
       timestamp: getFileModificationTime(fullFilePath),
       offset: undefined,
