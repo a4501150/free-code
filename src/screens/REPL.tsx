@@ -50,6 +50,7 @@ import {
 } from '../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
 import {
   isLocalAgentTask,
+  isPanelAgentTask,
   queuePendingMessage,
   appendMessageToLocalAgent,
   type LocalAgentTaskState,
@@ -986,6 +987,12 @@ export function REPL({
     [tasks],
   )
 
+  // The viewed subagent drives its own thinking/elapsed/tokens readout in
+  // SpinnerWithVerb, so keep the progress row visible while it runs even when
+  // the leader's turn has ended (agent backgrounded via ctrl+b, leader idle).
+  const viewedSubagentRunning =
+    isPanelAgentTask(viewedLocalAgent) && viewedLocalAgent.status === 'running'
+
   // Show deferred turn duration message once all swarm teammates finish
   useEffect(() => {
     if (!hasRunningTeammates && swarmStartTimeRef.current !== null) {
@@ -1157,7 +1164,8 @@ export function REPL({
       // Without this, the spinner briefly disappears between consecutive notifications
       // (e.g., multiple background agents completing in rapid succession) because
       // isLoading goes false momentarily between processing each one.
-      getCommandQueueLength() > 0) &&
+      getCommandQueueLength() > 0 ||
+      viewedSubagentRunning) &&
     // Hide spinner when waiting for leader to approve permission request
     !pendingWorkerRequest &&
     !onlySleepToolActive &&

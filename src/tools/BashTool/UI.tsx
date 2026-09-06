@@ -7,7 +7,11 @@ import { ShellProgressMessage } from '../../components/shell/ShellProgressMessag
 import { Box, Text } from '../../ink.js'
 import { useKeybinding } from '../../keybindings/useKeybinding.js'
 import { useShortcutDisplay } from '../../keybindings/useShortcutDisplay.js'
-import { useAppStateStore, useSetAppState } from '../../state/AppState.js'
+import {
+  useAppState,
+  useAppStateStore,
+  useSetAppState,
+} from '../../state/AppState.js'
 import type { Tool } from '../../Tool.js'
 import { backgroundAll } from '../../tasks/LocalShellTask/LocalShellTask.js'
 import type { ProgressMessage } from '../../types/message.js'
@@ -33,6 +37,7 @@ export function BackgroundHint({
 } = {}): React.ReactElement | null {
   const store = useAppStateStore()
   const setAppState = useSetAppState()
+  const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
 
   // Handler for task:background - background all foreground tasks
   const handleBackground = React.useCallback(() => {
@@ -53,6 +58,12 @@ export function BackgroundHint({
     env.terminal === 'tmux' && baseShortcut === 'ctrl+b'
       ? 'ctrl+b ctrl+b (twice)'
       : baseShortcut
+
+  // The hint explains how to background the leader's foreground tasks; it is
+  // noise inside an agent transcript drill-down.
+  if (viewingAgentTaskId) {
+    return null
+  }
 
   // Don't show background hint if background tasks are disabled
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {

@@ -274,11 +274,17 @@ function SpinnerWithVerbInner({
     currentTodo?.subject ??
     randomVerb
 
+  // A viewed subagent shows its own label (panel precedence: summary >
+  // description), not the leader's todo verb.
   const effectiveVerb =
     viewedLocalAgent?.compactStatus ??
-    (foregroundedTeammate && !foregroundedTeammate.isIdle
-      ? (foregroundedTeammate.spinnerVerb ?? randomVerb)
-      : leaderVerb)
+    (viewedLocalAgent
+      ? viewedLocalAgent.progress?.summary ||
+        viewedLocalAgent.description ||
+        leaderVerb
+      : foregroundedTeammate && !foregroundedTeammate.isIdle
+        ? (foregroundedTeammate.spinnerVerb ?? randomVerb)
+        : leaderVerb)
   const message = effectiveVerb + '…'
 
   // Track CLI activity when spinner is active
