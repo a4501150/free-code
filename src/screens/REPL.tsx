@@ -2183,7 +2183,14 @@ export function REPL({
                 }
                 isBriefOnly={viewedAgentTask ? false : isBriefOnly}
                 streamingThinking={
-                  isLoading && !viewedAgentTask ? streamingThinking : null
+                  viewedAgentTask
+                    ? (isLocalAgentTask(viewedTask) &&
+                        viewedTask.status === 'running' &&
+                        viewedTask.streamingThinking) ||
+                      null
+                    : isLoading
+                      ? streamingThinking
+                      : null
                 }
                 unseenDivider={viewedAgentTask ? undefined : unseenDivider}
                 scrollRef={scrollRef}

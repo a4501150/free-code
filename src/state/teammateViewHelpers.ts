@@ -21,6 +21,8 @@ function isLocalAgent(task: unknown): task is LocalAgentTaskState {
 
 /**
  * Return the task released back to stub form: retain dropped, messages
+ * and in-flight thinking buffer cleared, evictAfter set if terminal.
+ * Shared by exitTeammateView and the switch-away path in enterTeammateView.
  * cleared, evictAfter set if terminal. Shared by exitTeammateView and
  * the switch-away path in enterTeammateView.
  */
@@ -29,6 +31,7 @@ function release(task: LocalAgentTaskState): LocalAgentTaskState {
     ...task,
     retain: false,
     messages: undefined,
+    streamingThinking: undefined,
     diskLoaded: false,
     evictAfter: isTerminalTaskStatus(task.status)
       ? Date.now() + PANEL_GRACE_MS

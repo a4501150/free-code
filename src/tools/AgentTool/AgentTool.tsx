@@ -33,6 +33,7 @@ import {
   updateAgentProgress as updateAsyncAgentProgress,
   updateAgentCompactStatus,
   updateAgentThinking,
+  updateAgentStreamingThinking,
   updateProgressFromMessage,
   updateProgressFromUsage,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
@@ -816,6 +817,12 @@ export const AgentTool = buildTool({
                     isThinking,
                     rootSetAppState,
                   ),
+                onStreamingThinking: updater =>
+                  updateAgentStreamingThinking(
+                    agentBackgroundTask.agentId,
+                    updater,
+                    rootSetAppState,
+                  ),
                 onCompactProgress: event =>
                   updateAgentCompactStatus(
                     agentBackgroundTask.agentId,
@@ -966,6 +973,14 @@ export const AgentTool = buildTool({
                     rootSetAppState,
                   )
               : undefined,
+            onStreamingThinking: foregroundTaskId
+              ? updater =>
+                  updateAgentStreamingThinking(
+                    foregroundTaskId,
+                    updater,
+                    rootSetAppState,
+                  )
+              : undefined,
             onCompactProgress: foregroundTaskId
               ? event =>
                   updateAgentCompactStatus(
@@ -1086,6 +1101,12 @@ export const AgentTool = buildTool({
                           updateAgentThinking(
                             backgroundedTaskId,
                             isThinking,
+                            rootSetAppState,
+                          ),
+                        onStreamingThinking: updater =>
+                          updateAgentStreamingThinking(
+                            backgroundedTaskId,
+                            updater,
                             rootSetAppState,
                           ),
                         onCompactProgress: event =>

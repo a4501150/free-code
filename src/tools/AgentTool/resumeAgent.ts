@@ -2,7 +2,11 @@ import { promises as fsp } from 'fs'
 import { getSdkAgentProgressSummariesEnabled } from '../../bootstrap/state.js'
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import type { ToolUseContext, CanUseToolFn } from '../../Tool.js'
-import { registerAsyncAgent } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
+import {
+  registerAsyncAgent,
+  updateAgentStreamingThinking,
+  updateAgentThinking,
+} from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { assembleToolPool } from './assembleToolPool.js'
 import { asAgentId } from '../../types/ids.js'
 import { runWithAgentContext } from '../../utils/agentContext.js'
@@ -191,6 +195,18 @@ export async function resumeAgentBackground({
               abortController: agentBackgroundTask.abortController!,
             },
             onCacheSafeParams,
+            onStreamMode: (isThinking: boolean) =>
+              updateAgentThinking(
+                agentBackgroundTask.agentId,
+                isThinking,
+                rootSetAppState,
+              ),
+            onStreamingThinking: updater =>
+              updateAgentStreamingThinking(
+                agentBackgroundTask.agentId,
+                updater,
+                rootSetAppState,
+              ),
           }),
         metadata,
         description: uiDescription,

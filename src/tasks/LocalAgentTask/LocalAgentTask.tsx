@@ -28,6 +28,7 @@ import {
 import { registerCleanup } from '../../utils/cleanupRegistry.js'
 import { getSearchOrReadInfo } from '../../utils/collapseReadSearch.js'
 import { enqueuePendingNotification } from '../../utils/messageQueueManager.js'
+import type { StreamingThinking } from '../../utils/messages.js'
 import { getAgentTranscriptPath } from '../../utils/sessionStorage.js'
 import {
   evictTaskOutput,
@@ -242,6 +243,9 @@ export type LocalAgentTaskState = TaskStateBase & {
   evictAfter?: number
   /** Whether the sub-agent model is currently in a thinking block */
   isThinking?: boolean
+  /** Live thinking text of the sub-agent's current reasoning block, routed to
+   * the drill-down transcript. Mirrors the leader's streamingThinking UI state. */
+  streamingThinking?: StreamingThinking
   /** Spinner verb while the sub-agent compacts its own context (e.g.
    * "Compacting conversation"). undefined when not compacting. */
   compactStatus?: string
@@ -529,6 +533,22 @@ export function updateAgentThinking(
       return task
     }
     return { ...task, isThinking }
+  })
+}
+
+export function updateAgentStreamingThinking(
+  taskId: string,
+  updater: (current: StreamingThinking | null) => StreamingThinking | null,
+  setAppState: SetAppState,
+): void {
+  updateTaskState<LocalAgentTaskState>(taskId, setAppState, task => {
+    if (task.status !== 'running') {
+      return task
+    }
+    return {
+      ...task,
+      streamingThinking: updater(task.streamingThinking ?? null) ?? undefined,
+    }
   })
 }
 

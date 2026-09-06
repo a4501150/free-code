@@ -60,7 +60,10 @@ import {
 import { registerFrontmatterHooks } from '../../utils/hooks/registerFrontmatterHooks.js'
 import { clearSessionHooks } from '../../utils/hooks/sessionHooks.js'
 import { executeSubagentStartHooks } from '../../utils/hooks.js'
-import { createUserMessage } from '../../utils/messages.js'
+import {
+  createUserMessage,
+  type StreamingThinking,
+} from '../../utils/messages.js'
 import { getAgentModel } from '../../utils/model/agent.js'
 import { formatSkillLoadingMetadata } from '../../utils/processUserInput/processSlashCommand.js'
 import {
@@ -252,6 +255,7 @@ export async function* runAgent({
   transcriptSubdir,
   onQueryProgress,
   onStreamMode,
+  onStreamingThinking,
   onCompactProgress,
 }: {
   agentDefinition: AgentDefinition
@@ -309,6 +313,12 @@ export async function* runAgent({
   /** Optional callback fired when the sub-agent's stream mode changes
    * (e.g. entering/leaving a thinking block). Used to update the spinner. */
   onStreamMode?: (isThinking: boolean) => void
+  /** Optional callback receiving updater functions over the live thinking
+   * buffer, mirroring the leader's streamingThinking state. Lets the drill-down
+   * transcript show the sub-agent's thinking text as it streams. */
+  onStreamingThinking?: (
+    f: (current: StreamingThinking | null) => StreamingThinking | null,
+  ) => void
   /** Optional callback fired as the sub-agent compacts its own context.
    * createSubagentContext deliberately drops the parent's UI callbacks, so
    * this is the only channel by which subagent compaction reaches the UI. */
@@ -695,6 +705,10 @@ export async function* runAgent({
   // Track the last recorded message UUID for parent chain continuity
   let lastRecordedUuid: UUID | null = initialMessages.at(-1)?.uuid ?? null
 
+  // Anchor for thinkingDurationMs stamping, mirroring handleMessageFromStream
+  // (leader path). Set at reasoning content_block_start, consumed at assistant.
+  let thinkingStartedAt: number | null = null
+
   logForDebugging(
     `[Agent: ${agentDefinition.agentType}] Starting query | model=${resolvedAgentModel ?? 'default'} initialMessages=${initialMessages.length} systemPromptChars=${agentSystemPrompt.length} tools=${allTools.length}`,
   )
@@ -713,13 +727,38 @@ export async function* runAgent({
       onQueryProgress?.()
       // Track thinking state from stream events. content_block carries the
       // DOMAIN block type ('reasoning'), not the wire type ('thinking').
-      if (message.type === 'stream_event' && onStreamMode) {
+      if (message.type === 'stream_event') {
         if (message.event.type === 'content_block_start') {
-          onStreamMode(isAnyReasoningBlock(message.event.content_block))
+          const isReasoning = isAnyReasoningBlock(message.event.content_block)
+          onStreamMode?.(isReasoning)
+          if (isReasoning && thinkingStartedAt === null) {
+            const startedAt = Date.now()
+            thinkingStartedAt = startedAt
+            onStreamingThinking?.(current =>
+              current?.isStreaming
+                ? current
+                : { thinking: '', isStreaming: true, startedAt },
+            )
+          }
+        } else if (
+          message.event.type === 'content_block_delta' &&
+          message.event.delta.type === 'thinking_delta'
+        ) {
+          const deltaThinking =
+            typeof message.event.delta.thinking === 'string'
+              ? message.event.delta.thinking
+              : ''
+          if (deltaThinking) {
+            onStreamingThinking?.(current =>
+              current
+                ? { ...current, thinking: current.thinking + deltaThinking }
+                : null,
+            )
+          }
         } else if (message.event.type === 'message_stop') {
           // Otherwise 'thinking' sticks through the tool call that follows a
           // turn whose last block was a reasoning block.
-          onStreamMode(false)
+          onStreamMode?.(false)
         }
       }
       // Forward subagent API request starts to parent's metrics display
@@ -767,6 +806,30 @@ export async function* runAgent({
         }
         yield message
         continue
+      }
+
+      if (message.type === 'assistant' && thinkingStartedAt !== null) {
+        const thinkingDurationMs = Date.now() - thinkingStartedAt
+        thinkingStartedAt = null
+        if (
+          message.message.content.some(
+            block =>
+              block.type === 'reasoning' || block.type === 'redacted_reasoning',
+          )
+        ) {
+          ;(message as Record<string, unknown>).thinkingDurationMs =
+            thinkingDurationMs
+          onStreamingThinking?.(current =>
+            current
+              ? {
+                  ...current,
+                  isStreaming: false,
+                  streamingEndedAt: Date.now(),
+                  durationMs: thinkingDurationMs,
+                }
+              : null,
+          )
+        }
       }
 
       if (isRecordableMessage(message)) {
