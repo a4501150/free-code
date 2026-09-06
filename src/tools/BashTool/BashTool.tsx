@@ -323,7 +323,11 @@ const isBackgroundTasksDisabled =
   isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
 
 const fullInputSchema = z.strictObject({
-  command: z.string().describe('The command to execute'),
+  command: z
+    .string()
+    .describe(
+      'The command to execute. Run it bare: do not pipe through tail or head to cap output — large output is capped inline and the full result is saved to a file.',
+    ),
   timeout: semanticNumber(z.number().optional()).describe(
     `Optional timeout in milliseconds (max ${getMaxTimeoutMs()})`,
   ),
@@ -340,7 +344,7 @@ For commands that are harder to parse at a glance (piped commands, obscure flags
 - git reset --hard origin/main → "Discard all local changes and match remote main"
 - curl -s url | jq '.data[]' → "Fetch JSON from URL and extract data array elements"`),
   run_in_background: semanticBoolean(z.boolean().optional()).describe(
-    `Run this command asynchronously for waits or polling. Returns immediately with a task ID and output file path. Not a parallelism mechanism for independent commands whose results you need immediately.`,
+    `Run this command asynchronously instead of sleeping or polling. Returns at once with a task ID and output file path. Not for parallelizing independent commands. Run it bare — a pipe buffers all output until the command exits.`,
   ),
   _simulatedSedEdit: z
     .object({

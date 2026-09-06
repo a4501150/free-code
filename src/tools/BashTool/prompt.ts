@@ -19,7 +19,7 @@ function getBackgroundUsageNote(): string | null {
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
     return null
   }
-  return "If you're about to use `sleep` or a polling loop, use `run_in_background: true` instead. The tool returns immediately with a task ID and a file path that streams the command's stdout/stderr. Read that file as it accumulates, or use BackgroundTaskOutput for task status and output. When the command exits, a <task-notification> system message arrives as soon as possible — between tool rounds if a turn is active, or when idle; sleeping or polling on your end does not change when it arrives. To poll external state, wrap the polling in one backgrounded loop with an exit condition: `while ! check; do sleep 5; done`. For commands that never terminate (`tail -f`, dev servers, watchers), inspect the output as needed and stop the task via BackgroundTaskStop when it's no longer needed."
+  return "Use `run_in_background: true` instead of sleeping or polling. It returns at once with a task ID and an output file that streams while the command runs (see it with Read or BackgroundTaskOutput). A <task-notification> arrives the moment the command exits — nothing needs watching. To wait on external state, fold the polling into one backgrounded loop with an exit condition: `while ! check; do sleep 5; done`. Never pipe a backgrounded command: the filter buffers until the command exits, leaving the output file empty the whole run."
 }
 
 const BASH_MULTILINE_SYNTAX = {
@@ -38,7 +38,7 @@ export function getSimplePrompt(): string {
     'Always quote file paths that contain spaces with double quotes in your command (e.g., cd "path with spaces/file.txt")',
     'Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it.',
     `You may specify an optional timeout in milliseconds (up to ${getMaxTimeoutMs()}ms / ${getMaxTimeoutMs() / 60000} minutes). By default, your command will timeout after ${getDefaultTimeoutMs()}ms (${getDefaultTimeoutMs() / 60000} minutes).`,
-    'When a command streams progress — `gh run watch`, a build, a test run, anything backgrounded — run it bare. Do not pipe it through `tail`, `head`, `sort`, `wc`, `--limit` or any other filter or truncation: a filter reads to EOF, so nothing reaches the progress file until the command exits; piping makes many programs switch from line buffering to block buffering; truncated output is gone from the file too. The tool caps inline output and persists the full result to a file whose path comes back with the result, so large output costs no context. Read the persisted file with Read or BackgroundTaskOutput instead.',
+    'Run commands bare — never pipe through `| tail`, `| grep`, `wc` or any other filter. Never a pipe to cap output: the tool caps inline output and persists the full result to the file path it returns, so Read that file instead. And on a streaming or backgrounded command the pipe also hides live progress, because the filter buffers until the command exits.',
     ...(embedded
       ? [
           // bfs (which backs `find`) uses Oniguruma for -regex, which picks the
@@ -57,6 +57,7 @@ export function getSimplePrompt(): string {
     '',
     '# Instructions',
     ...prependBullets(instructionItems),
+    ...(backgroundNote ? ['', backgroundNote] : []),
     ...(gitInstructions ? ['', gitInstructions] : []),
   ].join('\n')
 }
