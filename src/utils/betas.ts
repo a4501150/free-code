@@ -173,7 +173,7 @@ export const getAllModelBetas = memoize((model: string): string[] => {
   // explicit beta header (vertex, foundry). 1P Anthropic handles web search
   // without a beta header. Native-translation providers (openai-responses)
   // don't need this header — the codex adapter swaps the Anthropic tool for
-  // OpenAI's native `web_search_preview` and synthesizes the Anthropic
+  // OpenAI's native `web_search` hosted tool and synthesizes the Anthropic
   // result blocks itself.
   if (
     providerSupportsWebSearch(model) &&

@@ -176,7 +176,7 @@ function isOfficialAnthropicBaseUrl(baseUrl: string | undefined): boolean {
  * Starts from type-based defaults, adjusts for Anthropic proxies,
  * then merges any explicit config.capabilities overrides.
  */
-function deriveCapabilities(
+export function deriveCapabilities(
   config: ProviderConfig,
 ): Required<ProviderCapabilities> {
   const defaults = PROVIDER_CAPABILITY_DEFAULTS[config.type] ?? {

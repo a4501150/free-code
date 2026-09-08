@@ -23,7 +23,7 @@ import {
   fromHttpStatus,
   type NormalizedApiError,
 } from '../../../utils/normalizedError.js'
-import { getProviderRegistry } from '../../../utils/model/providerRegistry.js'
+import { deriveCapabilities } from '../../../utils/model/providerRegistry.js'
 import { getCodexOAuthTokens } from '../../../utils/auth.js'
 import { getSessionId } from '../../../bootstrap/state.js'
 import { logForDebugging } from '../../../utils/debug.js'
@@ -168,17 +168,15 @@ function resolveCodexAuth(config: ProviderConfig): {
 
 function domainToolsToCodex(
   tools: DomainToolDefinition[],
-  model: string,
+  supportsWebSearch: boolean,
 ): { tools: Array<Record<string, unknown>>; hasWebSearch: boolean } {
-  const registry = getProviderRegistry()
-  const supportsWebSearch = registry.getCapability(model, 'webSearch')
   const result: Array<Record<string, unknown>> = []
   let hasWebSearch = false
 
   for (const tool of tools) {
     if (tool.type === 'web_search_20250305') {
       if (supportsWebSearch) {
-        result.push({ type: 'web_search_preview' })
+        result.push({ type: 'web_search', external_web_access: true })
         hasWebSearch = true
       }
       continue
@@ -198,14 +196,11 @@ function domainToolsToCodex(
 
 function domainToolChoiceToCodex(
   toolChoice: DomainMessageRequest['toolChoice'],
-  hasWebSearch: boolean,
-): Record<string, unknown> | string {
+): 'auto' | 'required' {
   if (!toolChoice) return 'auto'
-  if (toolChoice.type === 'tool' && toolChoice.name === 'web_search') {
-    if (hasWebSearch) return { type: 'web_search_preview' }
-    return 'auto'
-  }
   if (toolChoice.type === 'any') return 'required'
+  // Hosted tools (web_search) cannot be forced: the backend only accepts
+  // 'none', 'auto' and 'required' as tool_choice.
   return 'auto'
 }
 
@@ -337,6 +332,7 @@ function domainMessagesToCodexInput(
 function domainRequestToCodexBody(
   request: DomainMessageRequest,
   sessionId: string,
+  config: ProviderConfig,
 ): Record<string, unknown> {
   let instructions = ''
   if (request.system && request.system.length > 0) {
@@ -360,17 +356,14 @@ function domainRequestToCodexBody(
     include: ['reasoning.encrypted_content'],
   }
 
-  let hasWebSearch = false
   if (request.tools && request.tools.length > 0) {
-    const translated = domainToolsToCodex(request.tools, request.model)
-    codexBody.tools = translated.tools
-    hasWebSearch = translated.hasWebSearch
+    codexBody.tools = domainToolsToCodex(
+      request.tools,
+      deriveCapabilities(config).webSearch,
+    ).tools
   }
 
-  codexBody.tool_choice = domainToolChoiceToCodex(
-    request.toolChoice,
-    hasWebSearch,
-  )
+  codexBody.tool_choice = domainToolChoiceToCodex(request.toolChoice)
 
   const outputConfig = request.outputConfig as
     | {
@@ -562,6 +555,7 @@ async function* parseCodexStream(
   let currentMessageKey: string | null = null
   let currentReasoningKey: string | null = null
   const pendingCitations: Array<{ url: string; title: string }> = []
+  const pendingWebSearchCalls: StreamItemState[] = []
 
   type OpenBlock =
     | { kind: 'text'; key: string; index: number }
@@ -974,7 +968,14 @@ async function* parseCodexStream(
     } else if (state.type === 'message') {
       renderMessageDone(state, finalItem)
     } else if (state.type === 'web_search_call') {
-      renderWebSearchDone(state, finalItem)
+      if (extractWebSearchResults(finalItem).length > 0) {
+        renderWebSearchDone(state, finalItem)
+      } else {
+        // The hosted web_search_call item has no result list; the links only
+        // appear as url_citation annotations on the trailing message. Wait
+        // for the stream to finish before emitting the result block.
+        pendingWebSearchCalls.push(state)
+      }
     } else if (state.type === 'reasoning') {
       closeThinkingBlock(state, finalItem, true)
     }
@@ -1311,6 +1312,10 @@ async function* parseCodexStream(
     throw new DomainTransportError({ normalized, raw: error })
   }
 
+  for (const state of pendingWebSearchCalls) {
+    renderWebSearchDone(state, state.finalItem)
+  }
+
   // Flush final events
   while (yieldQueue.length > 0) {
     yield yieldQueue.shift()!
@@ -1384,7 +1389,7 @@ export const codexAdapter: ProviderAdapter = {
 
     const currentToken = auth.getRefreshedToken()
     const sessionId = getSessionId()
-    const codexBody = domainRequestToCodexBody(request, sessionId)
+    const codexBody = domainRequestToCodexBody(request, sessionId, config)
     const codexUrl = `${auth.baseUrl.replace(/\/$/, '')}/responses`
 
     const headers: Record<string, string> = {
@@ -1459,7 +1464,7 @@ export const codexAdapter: ProviderAdapter = {
 
     const currentToken = auth.getRefreshedToken()
     const sessionId = getSessionId()
-    const codexBody = domainRequestToCodexBody(request, sessionId)
+    const codexBody = domainRequestToCodexBody(request, sessionId, config)
     codexBody.stream = false
 
     const codexUrl = `${auth.baseUrl.replace(/\/$/, '')}/responses`
