@@ -14,7 +14,7 @@ RESET='\033[0m'
 
 REPO="https://github.com/paoloanzn/free-code.git"
 INSTALL_DIR="$HOME/free-code"
-BUN_MIN_VERSION="1.3.11"
+BUN_MIN_VERSION="1.4.2"
 
 info()  { printf "${CYAN}[*]${RESET} %s\n" "$*"; }
 ok()    { printf "${GREEN}[+]${RESET} %s\n" "$*"; }

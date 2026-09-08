@@ -5,7 +5,7 @@ source into one executable with `bun build --compile`.
 
 ## Requirements
 
-- [Bun](https://bun.sh) 1.3.11 or later. `package.json` pins the package manager and sets the engine minimum.
+- [Bun](https://bun.sh) 1.4.2 or later. `package.json` pins the package manager and sets the engine minimum.
 - macOS or Linux. Use WSL on Windows.
 
 ```bash

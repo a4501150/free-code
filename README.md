@@ -110,7 +110,7 @@ name them. [FEATURES.md](FEATURES.md) audits each one.
 
 ## Requirements
 
-- [Bun](https://bun.sh) 1.3.11 or later
+- [Bun](https://bun.sh) 1.4.2 or later
 - macOS or Linux. Use WSL on Windows.
 - An API key or an OAuth login for your provider
 
