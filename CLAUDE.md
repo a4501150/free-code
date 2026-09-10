@@ -84,6 +84,6 @@ Approval predicate and freshness contract: commented in [src/utils/editApproval.
 ## Bash permissions
 
 - There is one security parser and no fallback. `too-complex` must prompt; `shell-quote` is only for display, completion and quoting because its undetectable misparses can create bypasses.
-- Security decisions must resolve wrappers through [src/utils/bash/wrappers.ts](src/utils/bash/wrappers.ts), which fails closed on unknown flags. The regex stripper in `bashPermissions.ts` may widen rule matching but must never decide.
+- Security decisions must resolve wrappers through [src/utils/bash/wrappers.ts](src/utils/bash/wrappers.ts), which fails closed on unknown flags. The regex stripper in [src/tools/BashTool/bashPermissions.ts](src/tools/BashTool/bashPermissions.ts) may widen rule matching but must never decide.
 - `sourceText` excludes redirects, so checking it alone misses writes such as `> /tmp/evil`.
 - `BashTool.isReadOnly` is a positive auto-approval consumed by memory extraction and prompt speculation; false positives execute without a prompt.

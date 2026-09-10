@@ -1,7 +1,7 @@
 # Testing
 
 ```bash
-bun run test:unit    # 79 files
+bun run test:unit    # 92 files
 bun run test:e2e     # 28 files, needs a build and tmux
 bun run test         # unit, then e2e
 bun run typecheck    # tsc --noEmit
@@ -10,11 +10,15 @@ bun run format       # prettier --write .
 
 `bun run test` does not typecheck and does not format. Run those yourself.
 
+To run one file, pass its path: `bun test tests/unit/agentCompactStatus.test.ts`.
+To filter by test name, add `-t "<substring>"`. `bunfig.toml` applies the preload
+to single-file runs too, so no extra flags are needed.
+
 ## Layout
 
 | Path               | Holds                                                   |
 | ------------------ | ------------------------------------------------------- |
-| `tests/unit/`      | 79 test files that import source directly               |
+| `tests/unit/`      | 92 test files that import source directly               |
 | `tests/e2e/`       | 28 test files that drive a compiled binary through tmux |
 | `tests/helpers/`   | 7 modules: mock servers, fixture builders, wait helpers |
 | `tests/preload.ts` | Placeholder `MACRO.*` values                            |
