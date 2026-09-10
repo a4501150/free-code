@@ -55,11 +55,16 @@ hidden couplings, silent failures, and deliberate decisions.
 
 - Strict schemas make models send `null` for omitted optionals. Strip only placeholder nulls, never a null the schema admits, and use `tool.inputJSONSchema ?? tool.inputSchema`; a Zod passthrough hides MCP arguments.
 
-## Edit and Read anchors
+## Edit placement and the seen ledger
 
-Label format and resolution contract: commented in [src/utils/hashline.ts](src/utils/hashline.ts). Response-local edit poisoning: commented in [src/utils/editState.ts](src/utils/editState.ts).
+Approval predicate and freshness contract: commented in [src/utils/editApproval.ts](src/utils/editApproval.ts). Placement resolution (quote/escape/prefix repairs, start_line disambiguation): [src/utils/editMatch.ts](src/utils/editMatch.ts).
 
-- Crossed anchor pairs (right hash, wrong line) are the dominant model error once format is handled: models reconstruct pairs from memory instead of looking them up. Error payloads that quote the fresh anchors recover in one retry; keep them.
+- Approval is content logic, never timestamps: an edit lands when it verifies against current disk bytes and its placement is inside what the model was shown. `timestamp` is a re-validation hint only — touch with unchanged content must approve, and a formatter rewrite must still approve (recovered note) when the match sits inside the seen region.
+- Grep and Bash sightings re-verify every shown line against disk before marking it seen: ripgrep elides long lines (--max-columns) and bash output is truncated and blank-line-stripped. The Bash allowlist must fail closed — pipelines, redirects, extra flags or operands record nothing; a missing sighting only costs a Read, never a wrong edit.
+- Same-response Edits of one file serialize on the per-file lock in [src/utils/fileLock.ts](src/utils/fileLock.ts): re-plan and re-approve inside the lock, and keep async I/O out of the lock body or atomicity breaks.
+- Resume rebuilds Read/Write/Edit sightings only ([src/utils/queryHelpers.ts](src/utils/queryHelpers.ts)); Grep/Bash sightings are lost and the unique-match escape absorbs the gap. That file strips legacy Read row prefixes with a local regex — hashline.ts is gone.
+- Ambiguity errors must quote the candidate line numbers: models retry with `start_line` in one shot when the error names the lines.
+- The approvalNote disclosure rides the success message (fresh / recovered / blind-placement / blind); never drop it — it tells the model when the file holds changes outside its context.
 - Read entries always store an explicit `offset` (whole-file reads: offset 1), so whole-file checks (Read dedup) must accept offset <= 1 with no limit.
 
 ## WebUI

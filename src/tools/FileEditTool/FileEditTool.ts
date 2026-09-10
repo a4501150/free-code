@@ -15,6 +15,8 @@ import { buildTool, type ToolDef } from '../../Tool.js'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { countLinesChanged, getPatchFromContents } from '../../utils/diff.js'
+import { approveEdit, type ApprovalNote } from '../../utils/editApproval.js'
+import { planEdit } from '../../utils/editMatch.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { isENOENT } from '../../utils/errors.js'
 import {
@@ -25,7 +27,7 @@ import {
   suggestPathUnderCwd,
   writeTextContent,
 } from '../../utils/file.js'
-import { applyHashlineEdits } from '../../utils/hashline.js'
+import { withFileLock } from '../../utils/fileLock.js'
 import {
   fileHistoryEnabled,
   fileHistoryTrackEdit,
@@ -47,13 +49,9 @@ import {
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
 import { validateInputForSettingsFileEdit } from '../../utils/settings/validateEditTool.js'
-import {
-  FILE_EDITED_THIS_RESPONSE_ERROR,
-  FILE_EDIT_TOOL_NAME,
-  FILE_UNEXPECTEDLY_MODIFIED_ERROR,
-} from './constants.js'
+import { FILE_EDIT_TOOL_NAME } from './constants.js'
+import { coerceEditInput } from './legacyInput.js'
 import { getEditToolDescription } from './prompt.js'
-import { coerceLegacyEditInput } from './legacyInput.js'
 import {
   type FileEditInput,
   type FileEditOutput,
@@ -76,6 +74,48 @@ import {
 // that prevents OOM without being unnecessarily restrictive.
 const MAX_EDIT_FILE_SIZE = 1024 * 1024 * 1024 // 1 GiB (stat bytes)
 
+type EditRequest = {
+  oldString: string
+  newString: string
+  replaceAll: boolean
+  startLine?: number
+  endLine?: number
+}
+
+function requestFromInput(input: FileEditInput): EditRequest {
+  return {
+    oldString: input.old_string,
+    newString: input.new_string,
+    replaceAll: input.replace_all ?? false,
+    startLine: input.start_line,
+    endLine: input.end_line,
+  }
+}
+
+function fileDoesNotExistError(fullFilePath: string): {
+  result: false
+  behavior: 'ask'
+  message: string
+  errorCode: number
+} {
+  const similarFilename = findSimilarFile(fullFilePath)
+  const cwdSuggestion = suggestPathUnderCwdSync(fullFilePath)
+  let message = `File does not exist. ${FILE_NOT_FOUND_CWD_NOTE} ${getCwd()}.`
+  if (cwdSuggestion) {
+    message += ` Did you mean ${cwdSuggestion}?`
+  } else if (similarFilename) {
+    message += ` Did you mean ${similarFilename}?`
+  }
+  return { result: false, behavior: 'ask', message, errorCode: 4 }
+}
+
+function suggestPathUnderCwdSync(fullFilePath: string): string | null {
+  // suggestPathUnderCwd is async; validateInput awaits it separately when it
+  // can. This sync helper only handles the cheap already-under-cwd case.
+  const cwd = getCwd()
+  return fullFilePath.startsWith(cwd + sep) ? fullFilePath : null
+}
+
 export const FileEditTool = buildTool({
   name: FILE_EDIT_TOOL_NAME,
   maxResultSizeChars: 100_000,
@@ -85,7 +125,7 @@ export const FileEditTool = buildTool({
   async prompt() {
     return getEditToolDescription()
   },
-  coerceInput: coerceLegacyEditInput,
+  coerceInput: coerceEditInput,
   userFacingName,
   compactParamKeys: ['file_path'],
   getToolUseSummary,
@@ -100,7 +140,7 @@ export const FileEditTool = buildTool({
     return outputSchema
   },
   toAutoClassifierInput(input) {
-    return `${input.file_path}: ${JSON.stringify(input.edits)}`
+    return `${input.file_path}: ${JSON.stringify(input.old_string)} -> ${JSON.stringify(input.new_string)}`
   },
   getPath(input): string {
     return input.file_path
@@ -128,17 +168,16 @@ export const FileEditTool = buildTool({
   renderToolUseRejectedMessage,
   renderToolUseErrorMessage,
   async validateInput(input: FileEditInput, toolUseContext: ToolUseContext) {
-    const { file_path, edits } = input
+    const { old_string, new_string } = input
     // Use expandPath for consistent path normalization (especially on Windows
     // where "/" vs "\" can cause readFileState lookup mismatches)
-    const fullFilePath = expandPath(file_path)
+    const fullFilePath = expandPath(input.file_path)
 
-    // Reject edits to team memory files that introduce secrets. Scan the
-    // combined replacement text across all edits.
-    const replacementText = edits
-      .map(e => ('lines' in e ? (e.lines ?? '') : ''))
-      .join('\n')
-    const secretError = checkTeamMemSecrets(fullFilePath, replacementText)
+    // Reject edits to team memory files that introduce secrets.
+    const secretError = checkTeamMemSecrets(
+      fullFilePath,
+      old_string + '\n' + new_string,
+    )
     if (secretError) {
       return { result: false, message: secretError, errorCode: 0 }
     }
@@ -158,6 +197,16 @@ export const FileEditTool = buildTool({
         message:
           'File is in a directory that is denied by your permission settings.',
         errorCode: 2,
+      }
+    }
+
+    if (old_string === new_string) {
+      return {
+        result: false,
+        behavior: 'ask',
+        message:
+          'No changes to make: old_string and new_string are exactly the same.',
+        errorCode: 1,
       }
     }
 
@@ -208,91 +257,61 @@ export const FileEditTool = buildTool({
       }
     }
 
-    // File doesn't exist. Hashline edits reference existing lines, so the file
-    // must be read first — creation goes through the Write tool.
     if (fileContent === null) {
-      // Try to find a similar file with a different extension
+      // Creation mode: an empty old_string against a missing file writes
+      // new_string as the whole file (the Write tool is the other door).
+      if (old_string === '') {
+        return { result: true }
+      }
       const similarFilename = findSimilarFile(fullFilePath)
       const cwdSuggestion = await suggestPathUnderCwd(fullFilePath)
       let message = `File does not exist. ${FILE_NOT_FOUND_CWD_NOTE} ${getCwd()}.`
-
       if (cwdSuggestion) {
         message += ` Did you mean ${cwdSuggestion}?`
       } else if (similarFilename) {
         message += ` Did you mean ${similarFilename}?`
       }
+      return { result: false, behavior: 'ask', message, errorCode: 4 }
+    }
 
+    if (old_string === '') {
       return {
         result: false,
         behavior: 'ask',
-        message,
-        errorCode: 4,
+        message: 'Cannot create new file - file already exists.',
+        errorCode: 3,
       }
     }
 
-    const readTimestamp = toolUseContext.readFileState.get(fullFilePath)
-    if (!readTimestamp || readTimestamp.isPartialView) {
+    const planned = planEdit(fileContent, requestFromInput(input))
+    if (!planned.ok) {
       return {
         result: false,
         behavior: 'ask',
-        message:
-          'File has not been read yet. Read it first before writing to it.',
+        message: planned.failure.message,
         meta: {
-          isFilePathAbsolute: String(isAbsolute(file_path)),
+          isFilePathAbsolute: String(isAbsolute(input.file_path)),
         },
-        errorCode: 6,
+        errorCode: planned.failure.errorCode,
       }
     }
 
-    // A file this response already edited is closed to further Edits: the
-    // model holds only anchors that predate that write.
-    if (toolUseContext.editState?.isEdited(fullFilePath)) {
+    // Logic-based placement approval: what the model was shown (any source)
+    // and current disk content decide, never a bare timestamp.
+    const approval = approveEdit({
+      state: toolUseContext.readFileState.get(fullFilePath),
+      currentContent: fileContent,
+      plan: planned.plan,
+    })
+    if (!approval.ok) {
       return {
         result: false,
         behavior: 'ask',
-        message: FILE_EDITED_THIS_RESPONSE_ERROR,
-        errorCode: 9,
-      }
-    }
-
-    // Check if file exists and get its last modified time
-    if (readTimestamp) {
-      const lastWriteTime = getFileModificationTime(fullFilePath)
-      if (lastWriteTime > readTimestamp.timestamp) {
-        // Timestamp indicates modification, but on Windows timestamps can change
-        // without content changes (cloud sync, antivirus, etc.). For full reads,
-        // compare content as a fallback to avoid false positives.
-        const isFullRead =
-          readTimestamp.offset === undefined &&
-          readTimestamp.limit === undefined
-        if (isFullRead && fileContent === readTimestamp.content) {
-          // Content unchanged, safe to proceed
-        } else {
-          return {
-            result: false,
-            behavior: 'ask',
-            message:
-              'File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.',
-            errorCode: 7,
-          }
-        }
-      }
-    }
-
-    const file = fileContent
-
-    // Dry-run the hashline edits to validate anchors against current content.
-    // On failure the error already includes fresh anchors for the model.
-    const dryRun = applyHashlineEdits(file, edits, fullFilePath)
-    if (!dryRun.ok) {
-      return {
-        result: false,
-        behavior: 'ask',
-        message: dryRun.error,
+        message: approval.message,
         meta: {
-          isFilePathAbsolute: String(isAbsolute(file_path)),
+          isFilePathAbsolute: String(isAbsolute(input.file_path)),
         },
-        errorCode: 8,
+        errorCode: approval.errorCode,
       }
     }
 
@@ -300,8 +319,8 @@ export const FileEditTool = buildTool({
     // post-edit content.
     const settingsValidationResult = validateInputForSettingsFileEdit(
       fullFilePath,
-      file,
-      () => dryRun.updatedContent,
+      fileContent,
+      () => planned.plan.updatedContent,
     )
 
     if (settingsValidationResult !== null) {
@@ -313,14 +332,17 @@ export const FileEditTool = buildTool({
   inputsEquivalent(input1, input2) {
     return (
       input1.file_path === input2.file_path &&
-      JSON.stringify(input1.edits) === JSON.stringify(input2.edits)
+      input1.old_string === input2.old_string &&
+      input1.new_string === input2.new_string &&
+      (input1.replace_all ?? false) === (input2.replace_all ?? false) &&
+      input1.start_line === input2.start_line &&
+      input1.end_line === input2.end_line
     )
   },
   async call(
     input: FileEditInput,
     {
       readFileState,
-      editState,
       userModified,
       updateFileHistoryState,
       dynamicSkillDirTriggers,
@@ -328,15 +350,11 @@ export const FileEditTool = buildTool({
     _,
     parentMessage,
   ) {
-    const { file_path, edits } = input
+    const { file_path } = input
 
     // 1. Get current state
     const fs = getFsImplementation()
     const absoluteFilePath = expandPath(file_path)
-
-    if (!input._overrideContent && editState?.isEdited(absoluteFilePath)) {
-      throw new Error(FILE_EDITED_THIS_RESPONSE_ERROR)
-    }
 
     // Discover skills from this file's path (fire-and-forget, non-blocking)
     // Skip in simple mode - no skills available
@@ -376,138 +394,136 @@ export const FileEditTool = buildTool({
       )
     }
 
-    // 2. Load current state and confirm no changes since last read
-    // Please avoid async operations between here and writing to disk to preserve atomicity
-    const {
-      content: originalFileContents,
-      fileExists,
-      encoding,
-      lineEndings: endings,
-    } = readFileForEdit(absoluteFilePath)
+    // 2-6. Read, re-plan, approve, patch, write and re-record — inside the
+    // per-file lock so parallel Edits of one file in a single response
+    // serialize and each sees the previous edit's result.
+    const data = await withFileLock(absoluteFilePath, () => {
+      // 2. Load current state and approve placement against it.
+      // Please avoid async operations between here and writing to disk to preserve atomicity
+      const {
+        content: originalFileContents,
+        fileExists,
+        encoding,
+        lineEndings: endings,
+      } = readFileForEdit(absoluteFilePath)
 
-    if (fileExists) {
-      // Permission prompts can take minutes: the mtime and content checks
-      // below confirm the file still matches what this response last saw.
-      const lastWriteTime = getFileModificationTime(absoluteFilePath)
-      const lastRead = readFileState.get(absoluteFilePath)
-      if (!lastRead || lastWriteTime > lastRead.timestamp) {
-        // Timestamp indicates modification, but on Windows timestamps can change
-        // without content changes (cloud sync, antivirus, etc.). For full reads,
-        // compare content as a fallback to avoid false positives.
-        const isFullRead =
-          lastRead &&
-          lastRead.offset === undefined &&
-          lastRead.limit === undefined
-        const contentUnchanged =
-          isFullRead && originalFileContents === lastRead.content
-        if (!contentUnchanged) {
-          throw new Error(FILE_UNEXPECTEDLY_MODIFIED_ERROR)
+      // 3. Compute the updated content. The IDE-amend flow supplies the final
+      // content directly; otherwise plan the replacement against the file as
+      // it stands now (validateInput already planned against a pre-permission
+      // snapshot — re-planning covers edits that landed during the prompt).
+      let updatedFile: string
+      let editCount: number
+      let approvalNote: ApprovalNote
+      let gitDiff: ToolUseDiff | undefined
+      if (input._overrideContent) {
+        updatedFile = input._overrideContent.newContent
+        editCount = 1
+        approvalNote = 'fresh'
+      } else if (!fileExists) {
+        if (input.old_string !== '') {
+          throw new Error(
+            fileDoesNotExistError(absoluteFilePath).message,
+          )
         }
+        updatedFile = input.new_string
+        editCount = 1
+        approvalNote = 'fresh'
+      } else if (input.old_string === '') {
+        throw new Error('Cannot create new file - file already exists.')
+      } else {
+        const planned = planEdit(originalFileContents, requestFromInput(input))
+        if (!planned.ok) {
+          throw new Error(planned.failure.message)
+        }
+        const approval = approveEdit({
+          state: readFileState.get(absoluteFilePath),
+          currentContent: originalFileContents,
+          plan: planned.plan,
+        })
+        if (!approval.ok) {
+          throw new Error(approval.message)
+        }
+        updatedFile = planned.plan.updatedContent
+        editCount = planned.plan.spans.length
+        approvalNote = approval.note
       }
-    }
 
-    // 3. Compute the updated content. The IDE-amend flow supplies the final
-    // content directly; otherwise apply the hashline edits by anchor, all
-    // resolved against the file as it stands now.
-    let updatedFile: string
-    let editCount: number
-    if (input._overrideContent) {
-      updatedFile = input._overrideContent.newContent
-      editCount = edits.length
-    } else {
-      const r = applyHashlineEdits(
-        originalFileContents,
-        edits,
-        absoluteFilePath,
-      )
-      if (!r.ok) {
-        throw new Error(r.error)
-      }
-      updatedFile = r.updatedContent
-      editCount = r.editCount
-    }
+      // 4. Generate the display patch. Leading tabs are rendered as spaces to
+      // match the TUI's diff styling (display-only — disk gets the raw content).
+      const patch = getPatchFromContents({
+        filePath: absoluteFilePath,
+        oldContent: convertLeadingTabsToSpaces(originalFileContents),
+        newContent: convertLeadingTabsToSpaces(updatedFile),
+      })
 
-    // 4. Generate the display patch. Leading tabs are rendered as spaces to
-    // match the TUI's diff styling (display-only — disk gets the raw content).
-    const patch = getPatchFromContents({
-      filePath: absoluteFilePath,
-      oldContent: convertLeadingTabsToSpaces(originalFileContents),
-      newContent: convertLeadingTabsToSpaces(updatedFile),
-    })
+      // 5. Write to disk
+      writeTextContent(absoluteFilePath, updatedFile, encoding, endings)
 
-    // 5. Write to disk
-    writeTextContent(absoluteFilePath, updatedFile, encoding, endings)
-
-    // Notify LSP servers about file modification (didChange) and save (didSave)
-    const lspManager = getLspServerManager()
-    if (lspManager) {
-      // Clear previously delivered diagnostics so new ones will be shown
-      clearDeliveredDiagnosticsForFile(`file://${absoluteFilePath}`)
-      // didChange: Content has been modified
-      lspManager
-        .changeFile(absoluteFilePath, updatedFile)
-        .catch((err: Error) => {
+      // Notify LSP servers about file modification (didChange) and save (didSave)
+      const lspManager = getLspServerManager()
+      if (lspManager) {
+        // Clear previously delivered diagnostics so new ones will be shown
+        clearDeliveredDiagnosticsForFile(`file://${absoluteFilePath}`)
+        // didChange: Content has been modified
+        lspManager
+          .changeFile(absoluteFilePath, updatedFile)
+          .catch((err: Error) => {
+            logForDebugging(
+              `LSP: Failed to notify server of file change for ${absoluteFilePath}: ${err.message}`,
+            )
+            logError(err)
+          })
+        // didSave: File has been saved to disk (triggers diagnostics in TypeScript server)
+        lspManager.saveFile(absoluteFilePath).catch((err: Error) => {
           logForDebugging(
-            `LSP: Failed to notify server of file change for ${absoluteFilePath}: ${err.message}`,
+            `LSP: Failed to notify server of file save for ${absoluteFilePath}: ${err.message}`,
           )
           logError(err)
         })
-      // didSave: File has been saved to disk (triggers diagnostics in TypeScript server)
-      lspManager.saveFile(absoluteFilePath).catch((err: Error) => {
-        logForDebugging(
-          `LSP: Failed to notify server of file save for ${absoluteFilePath}: ${err.message}`,
-        )
-        logError(err)
+      }
+
+      // Notify VSCode about the file change for diff view
+      notifyVscodeFileUpdated(absoluteFilePath, originalFileContents, updatedFile)
+
+      // 6. Re-record the ledger: the model authored (or kept) this content, it
+      // is current in its context, so self-inflicted staleness never trips.
+      readFileState.set(absoluteFilePath, {
+        content: updatedFile,
+        timestamp: getFileModificationTime(absoluteFilePath),
+        offset: undefined,
+        limit: undefined,
+        source: 'edit',
       })
-    }
 
-    // Notify VSCode about the file change for diff view
-    notifyVscodeFileUpdated(absoluteFilePath, originalFileContents, updatedFile)
+      // 7. Log events
+      countLinesChanged(patch)
 
-    // 6. Update read timestamp, to invalidate stale writes
-    readFileState.set(absoluteFilePath, {
-      content: updatedFile,
-      timestamp: getFileModificationTime(absoluteFilePath),
-      offset: undefined,
-      limit: undefined,
+      logFileOperation({
+        operation: 'edit',
+        tool: 'FileEditTool',
+        filePath: absoluteFilePath,
+      })
+
+      // 8. Build the result.
+      return {
+        filePath: file_path,
+        originalFile: originalFileContents,
+        structuredPatch: patch,
+        userModified: userModified ?? false,
+        editCount,
+        approvalNote,
+        ...(gitDiff && { gitDiff }),
+      } satisfies FileEditOutput
     })
 
-    // Close the file to further Edits in this response: the model now holds
-    // only anchors that predate this write.
-    editState?.markEdited(absoluteFilePath)
-
-    // 7. Log events
-    countLinesChanged(patch)
-
-    logFileOperation({
-      operation: 'edit',
-      tool: 'FileEditTool',
-      filePath: absoluteFilePath,
-    })
-
-    let gitDiff: ToolUseDiff | undefined
-
-    // 8. Yield result. No anchors are echoed back: every anchor the model
-    // holds for this file is dead until its next Read, and quoting the
-    // changed region again costs output tokens on every edit.
-    const data = {
-      filePath: file_path,
-      originalFile: originalFileContents,
-      structuredPatch: patch,
-      userModified: userModified ?? false,
-      editCount,
-      ...(gitDiff && { gitDiff }),
-    }
-    return {
-      data,
-    }
+    return { data }
   },
   mapToolResultToToolResultBlockParam(data: FileEditOutput, toolUseID) {
-    const { filePath, userModified, structuredPatch } = data
+    const { filePath, userModified, structuredPatch, approvalNote } = data
     const modifiedNote = userModified
       ? '.  The user modified your proposed changes before accepting them. '
       : ''
-    // The size of the change, so an anchor range that swallowed one line too
+    // The size of the change, so an old_string that swallowed one line too
     // many is visible in the success message, not only when a lost line later
     // breaks the typecheck.
     let removed = 0
@@ -522,13 +538,21 @@ export const FileEditTool = buildTool({
       removed + added > 0
         ? `\n\nThe edit removed ${removed} line(s) and added ${added}.`
         : ''
-    const rereadNote =
-      '\n\nRead this file again before editing it: every anchor you hold for it predates this edit.'
+    const contextNote =
+      approvalNote === 'fresh'
+        ? ' (file state is current in your context — no need to Read it back)'
+        : approvalNote === 'recovered'
+          ? ' (note: the file had been modified on disk since you last saw it — the edit applied cleanly, but the file contains other changes not in your context)'
+          : approvalNote === 'blind-placement'
+            ? ' (note: the edited lines were outside the part of this file you have seen — the replacement was verified against current disk content)'
+            : approvalNote === 'blind'
+              ? ' (note: you had not opened this file — the edit was verified against current disk content and matched exactly once)'
+              : ''
 
     return {
       tool_use_id: toolUseID,
       type: 'tool_result',
-      content: `The file ${filePath} has been updated successfully${modifiedNote}.${deltaNote}${rereadNote}`,
+      content: `The file ${filePath} has been updated successfully${modifiedNote}.${deltaNote}${contextNote}`,
     }
   },
 } satisfies ToolDef<typeof inputSchema, FileEditOutput>)

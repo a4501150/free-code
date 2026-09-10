@@ -158,36 +158,35 @@ describe('LSP operation-specific contracts', () => {
   })
 })
 
-describe('FileEdit op-shape tolerance', () => {
-  test('tolerates a stray "lines" field on a delete op', () => {
+describe('FileEdit input schema', () => {
+  test('accepts string-replacement input with optional fields omitted', () => {
     expect(
       fileEditInputSchema.safeParse({
         file_path: '/repo/x.ts',
-        edits: [{ op: 'delete', start: '3:abc', lines: 'ignored' }],
+        old_string: 'const a = 1',
+        new_string: 'const a = 2',
       }).success,
     ).toBe(true)
   })
 
-  test('accepts a delete op with no lines field', () => {
+  test('coerces string booleans and numeric strings', () => {
+    const parsed = fileEditInputSchema.safeParse({
+      file_path: '/repo/x.ts',
+      old_string: 'a',
+      new_string: 'b',
+      replace_all: 'true',
+      start_line: '12',
+    })
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.replace_all).toBe(true)
+    expect(parsed.data?.start_line).toBe(12)
+  })
+
+  test('rejects the legacy edits array', () => {
     expect(
       fileEditInputSchema.safeParse({
         file_path: '/repo/x.ts',
         edits: [{ op: 'delete', start: '3:abc' }],
-      }).success,
-    ).toBe(true)
-  })
-
-  test('still requires lines for replace and insert_after', () => {
-    expect(
-      fileEditInputSchema.safeParse({
-        file_path: '/repo/x.ts',
-        edits: [{ op: 'replace', start: '3:abc' }],
-      }).success,
-    ).toBe(false)
-    expect(
-      fileEditInputSchema.safeParse({
-        file_path: '/repo/x.ts',
-        edits: [{ op: 'insert_after', start: '3:abc' }],
       }).success,
     ).toBe(false)
   })

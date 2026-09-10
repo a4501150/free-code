@@ -14,9 +14,9 @@ import {
 import type { ToolUseContext } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { getCwd } from '../../utils/cwd.js'
-import { formatAnchoredRegions } from '../../utils/hashline.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { countLinesChanged, getPatchFromContents } from '../../utils/diff.js'
+import { approveWrite } from '../../utils/editApproval.js'
 import { isENOENT } from '../../utils/errors.js'
 import {
   convertLeadingTabsToSpaces,
@@ -39,7 +39,6 @@ import {
 } from '../../utils/permissions/filesystem.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
-import { FILE_UNEXPECTEDLY_MODIFIED_ERROR } from '../FileEditTool/constants.js'
 import { gitDiffSchema, hunkSchema } from '../FileEditTool/types.js'
 import { FILE_WRITE_TOOL_NAME, getWriteToolDescription } from './prompt.js'
 import {
@@ -78,12 +77,6 @@ const outputSchema = z.object({
       'The original file content before the write (null for new files)',
     ),
   gitDiff: gitDiffSchema.optional(),
-  changedRegionAnchors: z
-    .string()
-    .optional()
-    .describe(
-      'LINE:HASH anchors for the written lines, so a follow-up edit needs no re-Read',
-    ),
 })
 type OutputSchema = typeof outputSchema
 
@@ -181,11 +174,9 @@ export const FileWriteTool = buildTool({
       return { result: true }
     }
 
-    const fs = getFsImplementation()
-    let fileMtimeMs: number
+    let currentContent: string
     try {
-      const fileStat = await fs.stat(fullFilePath)
-      fileMtimeMs = fileStat.mtimeMs
+      currentContent = readFileSyncWithMetadata(fullFilePath).content
     } catch (e) {
       if (isENOENT(e)) {
         return { result: true }
@@ -193,26 +184,18 @@ export const FileWriteTool = buildTool({
       throw e
     }
 
-    const readTimestamp = toolUseContext.readFileState.get(fullFilePath)
-    if (!readTimestamp || readTimestamp.isPartialView) {
+    // Ledger-based overwrite approval: the model may only overwrite a file
+    // whose whole current content it has been shown.
+    const approval = approveWrite({
+      state: toolUseContext.readFileState.get(fullFilePath),
+      fileExists: true,
+      currentContent,
+    })
+    if (!approval.ok) {
       return {
         result: false,
-        message:
-          'File has not been read yet. Read it first before writing to it.',
-        errorCode: 2,
-      }
-    }
-
-    // Reuse mtime from the stat above — avoids a redundant statSync via
-    // getFileModificationTime. The readTimestamp guard above ensures this
-    // block is always reached when the file exists.
-    const lastWriteTime = Math.floor(fileMtimeMs)
-    if (lastWriteTime > readTimestamp.timestamp) {
-      return {
-        result: false,
-        message:
-          'File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.',
-        errorCode: 3,
+        message: approval.message,
+        errorCode: approval.errorCode,
       }
     }
 
@@ -222,7 +205,6 @@ export const FileWriteTool = buildTool({
     { file_path, content },
     {
       readFileState,
-      editState,
       updateFileHistoryState,
       dynamicSkillDirTriggers,
     },
@@ -280,20 +262,13 @@ export const FileWriteTool = buildTool({
     }
 
     if (meta !== null) {
-      const lastWriteTime = getFileModificationTime(fullFilePath)
-      const lastRead = readFileState.get(fullFilePath)
-      if (!lastRead || lastWriteTime > lastRead.timestamp) {
-        // Timestamp indicates modification, but on Windows timestamps can change
-        // without content changes (cloud sync, antivirus, etc.). For full reads,
-        // compare content as a fallback to avoid false positives.
-        const isFullRead =
-          lastRead &&
-          lastRead.offset === undefined &&
-          lastRead.limit === undefined
-        // meta.content is CRLF-normalized — matches readFileState's normalized form.
-        if (!isFullRead || meta.content !== lastRead.content) {
-          throw new Error(FILE_UNEXPECTEDLY_MODIFIED_ERROR)
-        }
+      const approval = approveWrite({
+        state: readFileState.get(fullFilePath),
+        fileExists: true,
+        currentContent: meta.content,
+      })
+      if (!approval.ok) {
+        throw new Error(approval.message)
       }
     }
 
@@ -331,26 +306,16 @@ export const FileWriteTool = buildTool({
     // Notify VSCode about the file change for diff view
     notifyVscodeFileUpdated(fullFilePath, oldContent, content)
 
-    // Update read timestamp, to invalidate stale writes
+    // Record the ledger: the model authored this content and it is on disk,
+    // so self-inflicted staleness never trips.
     readFileState.set(fullFilePath, {
       content,
       timestamp: getFileModificationTime(fullFilePath),
       offset: undefined,
       limit: undefined,
+      source: 'write',
     })
 
-    // The model just authored this content: anchors restart from it, and an
-    // earlier same-response Edit no longer blocks this file.
-    editState?.clearEdited(fullFilePath)
-    // The result must carry the anchors this write just created: without
-    // them a follow-up edit cites fabricated line hashes. No budget: the
-    // whole written file is the changed region.
-    const writtenLineCount = content.split(/\r?\n/).length
-    const changedRegionAnchors = formatAnchoredRegions(
-      content,
-      [{ start: 1, count: writtenLineCount }],
-      writtenLineCount,
-    )
 
     // Log when writing to CLAUDE.md
 
@@ -369,7 +334,6 @@ export const FileWriteTool = buildTool({
         content,
         structuredPatch: patch,
         originalFile: oldContent,
-        ...(changedRegionAnchors ? { changedRegionAnchors } : {}),
         ...(gitDiff && { gitDiff }),
       }
       // Track lines added and removed for file updates, right before yielding result
@@ -393,7 +357,6 @@ export const FileWriteTool = buildTool({
       content,
       structuredPatch: [],
       originalFile: null,
-      ...(changedRegionAnchors ? { changedRegionAnchors } : {}),
       ...(gitDiff && { gitDiff }),
     }
 
@@ -411,25 +374,19 @@ export const FileWriteTool = buildTool({
       data,
     }
   },
-  mapToolResultToToolResultBlockParam(
-    { filePath, type, changedRegionAnchors },
-    toolUseID,
-  ) {
-    const anchorNote = changedRegionAnchors
-      ? `\n\nAnchors for the written lines. Use them to edit this file again without reading it first:\n${changedRegionAnchors}`
-      : ''
+  mapToolResultToToolResultBlockParam({ filePath, type }, toolUseID) {
     switch (type) {
       case 'create':
         return {
           tool_use_id: toolUseID,
           type: 'tool_result',
-          content: `File created successfully at: ${filePath}${anchorNote}`,
+          content: `File created successfully at: ${filePath}`,
         }
       case 'update':
         return {
           tool_use_id: toolUseID,
           type: 'tool_result',
-          content: `The file ${filePath} has been updated successfully.${anchorNote}`,
+          content: `The file ${filePath} has been updated successfully.`,
         }
     }
   },

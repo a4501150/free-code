@@ -57,7 +57,6 @@ import type {
 } from './types/tools.js'
 import type { EffortValue } from './utils/effort.js'
 import type { FileStateCache } from './utils/fileStateCache.js'
-import type { ResponseEditState } from './utils/editState.js'
 import type { DenialTrackingState } from './utils/permissions/denialTracking.js'
 import type { PermissionDecision } from './utils/permissions/PermissionResult.js'
 import type { SystemPrompt } from './utils/systemPromptType.js'
@@ -191,13 +190,6 @@ export type ToolUseContext = {
   }
   abortController: AbortController
   readFileState: FileStateCache
-  /**
-   * Per-assistant-response Edit bookkeeping: tracks which files this response
-   * has already edited so a second Edit of the same file is rejected until a
-   * Read. Created fresh per query-loop iteration; undefined for direct tool
-   * invocations outside the query loop.
-   */
-  editState?: ResponseEditState
   getAppState(): AppState
   setAppState(f: (prev: AppState) => AppState): void
   /** Per-execution-context effort override. Set by skills/agents with

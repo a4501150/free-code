@@ -25,7 +25,6 @@ import type { OrphanedPermission } from '../types/textInputTypes.js'
 import { logForDebugging } from './debug.js'
 import { isFsInaccessible } from './errors.js'
 import { getFileModificationTime, stripLineNumberPrefix } from './file.js'
-import { stripHashlinePrefix } from './hashline.js'
 import { readFileSyncWithMetadata } from './fileRead.js'
 import {
   createFileStateCacheWithSizeLimit,
@@ -353,7 +352,10 @@ export function extractReadFilesFromMessages(
   const cache = createFileStateCacheWithSizeLimit(maxSize)
 
   // First pass: find all FileReadTool/FileWriteTool/FileEditTool uses in assistant messages
-  const fileReadToolUseIds = new Map<string, string>() // toolUseId -> filePath
+  const fileReadToolUseIds = new Map<
+    string,
+    { filePath: string; offset?: number; limit?: number }
+  >() // toolUseId -> { filePath, offset, limit }
   const fileWriteToolUseIds = new Map<
     string,
     { filePath: string; content: string }
@@ -370,17 +372,16 @@ export function extractReadFilesFromMessages(
           content.type === 'tool_use' &&
           content.name === FILE_READ_TOOL_NAME
         ) {
-          // Extract file_path from the tool use input
+          // Extract file_path (and range) from the tool use input.
           const input = content.input as FileReadInput | undefined
-          // Ranged reads are not added to the cache.
-          if (
-            input?.file_path &&
-            input?.offset === undefined &&
-            input?.limit === undefined
-          ) {
+          if (input?.file_path) {
             // Normalize to absolute path for consistent cache lookups
             const absolutePath = expandPath(input.file_path, cwd)
-            fileReadToolUseIds.set(content.id, absolutePath)
+            fileReadToolUseIds.set(content.id, {
+              filePath: absolutePath,
+              offset: input.offset,
+              limit: input.limit,
+            })
           }
         } else if (
           content.type === 'tool_use' &&
@@ -420,7 +421,8 @@ export function extractReadFilesFromMessages(
       for (const content of message.message.content) {
         if (content.type === 'tool_result' && content.tool_use_id) {
           // Handle Read tool results
-          const readFilePath = fileReadToolUseIds.get(content.tool_use_id)
+          const readToolData = fileReadToolUseIds.get(content.tool_use_id)
+          const readFilePath = readToolData?.filePath
           if (
             readFilePath &&
             typeof content.content === 'string' &&
@@ -435,28 +437,44 @@ export function extractReadFilesFromMessages(
               '',
             )
 
-            // Extract the actual file content from the tool result. Current Read
-            // output is `LINE:HASH|content` (strip via stripHashlinePrefix); older
-            // transcripts used cat -n line numbers (fall back to stripLineNumberPrefix).
+            // Extract the actual file content from the tool result.
+            // Current Read output is `N:content`; hashline-era transcripts
+            // used `N:HASH|content` rows and older ones cat -n line numbers.
             const fileContent = processedContent
               .split('\n')
               .map(line => {
-                const stripped = stripHashlinePrefix(line)
-                return stripped === line
-                  ? stripLineNumberPrefix(line)
-                  : stripped
+                const hashline = line.match(/^\s*\d+:[0-9a-z]{3,8}\|(.*)$/)
+                if (hashline) return hashline[1]!
+                const numbered = line.match(/^\s*\d+:(.*)$/)
+                if (numbered) return numbered[1]!
+                return stripLineNumberPrefix(line)
               })
               .join('\n')
               .trim()
 
-            // Cache the file content with the message timestamp
+            // Cache the file content with the message timestamp. Grep and
+            // Bash sightings are intentionally not rebuilt on resume — edits
+            // that relied on them fall back to the unique-match escape.
             if (message.timestamp) {
               const timestamp = new Date(message.timestamp).getTime()
+              const wholeFile =
+                (readToolData.offset ?? 1) <= 1 &&
+                readToolData.limit === undefined
+              const startLine = readToolData.offset ?? 1
               cache.set(readFilePath, {
                 content: fileContent,
                 timestamp,
-                offset: undefined,
-                limit: undefined,
+                offset: readToolData.offset,
+                limit: readToolData.limit,
+                seenRanges: wholeFile
+                  ? undefined
+                  : [
+                      {
+                        start: startLine,
+                        end: startLine + fileContent.split('\n').length - 1,
+                      },
+                    ],
+                source: 'read',
               })
             }
           }
@@ -470,6 +488,7 @@ export function extractReadFilesFromMessages(
               timestamp,
               offset: undefined,
               limit: undefined,
+              source: 'write',
             })
           }
 
@@ -492,6 +511,7 @@ export function extractReadFilesFromMessages(
                 timestamp: getFileModificationTime(editFilePath),
                 offset: undefined,
                 limit: undefined,
+                source: 'edit',
               })
             } catch (e: unknown) {
               if (!isFsInaccessible(e)) {

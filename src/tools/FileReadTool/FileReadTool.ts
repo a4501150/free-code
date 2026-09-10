@@ -30,7 +30,6 @@ import {
   getFileModificationTimeAsync,
   suggestPathUnderCwd,
 } from '../../utils/file.js'
-import { formatHashline, type HashlineLabelSet } from '../../utils/hashline.js'
 import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
 import { formatFileSize } from '../../utils/format.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
@@ -682,7 +681,7 @@ export const FileReadTool = buildTool({
         if (data.file.content) {
           content =
             memoryFileFreshnessPrefix(data) +
-            formatFileLines(data.file, hashlineLabelSets.get(data)) +
+            formatFileLines(data.file) +
             (shouldIncludeFileReadMitigation()
               ? CYBER_RISK_MITIGATION_REMINDER
               : '')
@@ -708,19 +707,15 @@ function pickLineFormatInstruction(): string {
   return LINE_FORMAT_INSTRUCTION
 }
 
-/** Format file content as model-facing `LINE:HASH|content` hashlines. */
-function formatFileLines(
-  file: { content: string; startLine: number },
-  labelSet?: HashlineLabelSet,
-): string {
-  if (!labelSet)
-    return formatHashline(file.content, { startLine: file.startLine })
+/** Format file content as model-facing `N:content` rows. */
+function formatFileLines(file: {
+  content: string
+  startLine: number
+}): string {
   const lines = file.content.split('\n')
   const out: string[] = []
   for (let i = 0; i < lines.length; i++) {
-    out.push(
-      `${file.startLine + i}:${labelSet.labels[file.startLine - 1 + i]?.hash ?? ''}|${lines[i]}`,
-    )
+    out.push(`${file.startLine + i}:${lines[i]}`)
   }
   return out.join('\n')
 }
@@ -750,13 +745,6 @@ function shouldIncludeFileReadMitigation(): boolean {
  */
 const memoryFileMtimes = new WeakMap<object, number>()
 
-/**
- * Whole-file hashline labels for a text Read result, keyed by the `data`
- * object identity like memoryFileMtimes. The displayed slice must show the
- * same label strings a full-file Read would show, and the schema carries no
- * presentation-only fields, so the label set rides side-channel.
- */
-const hashlineLabelSets = new WeakMap<object, HashlineLabelSet>()
 
 function memoryFileFreshnessPrefix(data: object): string {
   const mtimeMs = memoryFileMtimes.get(data)
@@ -858,8 +846,10 @@ async function callInner(
       timestamp: Math.floor(stats.mtimeMs),
       offset,
       limit,
+      // Notebooks always render every cell, so the whole file is seen.
+      seenRanges: undefined,
+      source: 'read',
     })
-    context.editState?.clearEdited(fullFilePath)
     context.nestedMemoryAttachmentTriggers?.add(fullFilePath)
 
     const data = {
@@ -1021,23 +1011,28 @@ async function callInner(
     totalBytes,
     readBytes,
     mtimeMs,
-    hashline,
   } = await readFileInRange(
     resolvedFilePath,
     lineOffset,
     limit,
     limit === undefined ? maxSizeBytes : undefined,
     context.abortController.signal,
-    { includeHashlineLabels: true },
   )
 
   await validateContentTokens(content, ext, maxTokens)
 
+  const wholeFileRead = offset <= 1 && offset + lineCount - 1 >= totalLines
   readFileState.set(fullFilePath, {
     content,
     timestamp: Math.floor(mtimeMs),
     offset,
     limit,
+    seenRanges: wholeFileRead
+      ? undefined
+      : lineCount > 0
+        ? [{ start: offset, end: offset + lineCount - 1 }]
+        : [],
+    source: 'read',
   })
   context.nestedMemoryAttachmentTriggers?.add(fullFilePath)
 
@@ -1057,10 +1052,6 @@ async function callInner(
       totalLines,
     },
   }
-  if (hashline) {
-    hashlineLabelSets.set(data, hashline)
-  }
-  context.editState?.clearEdited(fullFilePath)
   if (isAutoMemFile(fullFilePath)) {
     memoryFileMtimes.set(data, mtimeMs)
   }

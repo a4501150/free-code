@@ -83,7 +83,6 @@ import { buildQueryConfig } from './query/config.js'
 import { productionDeps, type QueryDeps } from './query/deps.js'
 import type { Terminal, Continue } from './query/transitions.js'
 import { count } from './utils/array.js'
-import { ResponseEditState } from './utils/editState.js'
 
 const STREAM_RECOVERY_MAX_ATTEMPTS = 25
 
@@ -390,15 +389,9 @@ async function* queryLoop(
     }
 
     //TODO: no need to set toolUseContext.messages during set-up since it is updated here
-    // Fresh per-response Edit state: a file edited in this response is
-    // closed to further Edits until a Read re-baselines it, because the
-    // model wrote every call before seeing any result. Intentionally NOT
-    // carried to the next response — anchors there resolve against the
-    // post-edit file by direct hash matching.
     toolUseContext = {
       ...toolUseContext,
       messages: messagesForQuery,
-      editState: new ResponseEditState(),
     }
 
     const assistantMessages: AssistantMessage[] = []

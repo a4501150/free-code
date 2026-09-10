@@ -8,6 +8,7 @@ import {
   suggestPathUnderCwd,
 } from '../../utils/file.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
+import { recordGrepContentSightings } from '../../utils/fileSightings.js'
 import { expandPath, toRelativePath } from '../../utils/path.js'
 import {
   checkReadPermissionForTool,
@@ -319,7 +320,7 @@ export const GrepTool = buildTool({
       multiline = false,
       no_ignore = false,
     },
-    { abortController, getAppState },
+    { abortController, getAppState, readFileState },
   ) {
     const absolutePath = path ? expandPath(path) : getCwd()
     const args = ['--hidden']
@@ -452,6 +453,12 @@ export const GrepTool = buildTool({
         head_limit,
         offset,
       )
+      // Record which lines the model was actually shown, so a later Edit can
+      // be approved from this sighting. Raw (absolute-path) rows; verified
+      // per-line against disk inside the writer.
+      if (show_line_numbers) {
+        recordGrepContentSightings(readFileState, limitedResults, { multiline })
+      }
 
       const finalLines = limitedResults.map(line => {
         // Lines have format: /absolute/path:line_content or /absolute/path:num:content

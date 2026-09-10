@@ -379,9 +379,6 @@ export function createSubagentContext(
     readFileState: cloneFileStateCache(
       overrides?.readFileState ?? parentContext.readFileState,
     ),
-    // Response-local Edit bookkeeping does not cross agent boundaries; the
-    // child's own query loop creates a fresh one per response.
-    editState: undefined,
     nestedMemoryAttachmentTriggers: new Set<string>(),
     loadedNestedMemoryPaths: new Set<string>(),
     dynamicSkillDirTriggers: new Set<string>(),

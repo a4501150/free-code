@@ -1,21 +1,19 @@
 import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
 
-function getPreReadInstruction(): string {
-  return `\n- Before editing you must use your \`${FILE_READ_TOOL_NAME}\` tool to read that target file. The Read output shows each line as \`LINE:HASH|content\`; copy the \`LINE:HASH\` anchors into your edits. This tool will error if you attempt to edit a file without reading it first.`
-}
-
 export function getEditToolDescription(): string {
   return getDefaultEditDescription()
 }
 
 function getDefaultEditDescription(): string {
-  return `Edits a file by referencing LINE:HASH anchors from the Read tool output.
+  return `Performs exact string replacements in files.
 
-Usage:${getPreReadInstruction()}
-- Each edit has: op ("replace" | "insert_after" | "delete"), start (a "LINE:HASH" anchor), optional end (defaults to start; used for a multi-line replace/delete), and lines (the new text; omit for delete). replace overwrites lines start..end; insert_after inserts after the start line ("0" inserts at the top); delete removes start..end. Write only the content after the \`|\` in \`lines\`, never the anchor prefix.
-- Example, for a file whose Read output shows \`41:9k2|  const x = 1\` and \`44:p0q|  }\`:
-  {"op":"replace","start":"41:9k2","lines":"  const x = 2"}
-  {"op":"delete","start":"41:9k2","end":"44:p0q"}
-- An anchor asserts "line LINE of the file I was shown has this content". HASH covers the trimmed line and its number, so repeated lines like \`}\` and blank lines get distinct anchors and rewriting one line never shifts another anchor. All edits resolve against the one Read output you were shown; a failed call reports each rejected anchor and quotes fresh anchors near the affected lines.
-- Batch every change to one file into a single call; a success retires every anchor you hold for that file — Read it again before editing it again, and issue at most one Edit per file per response. Copy anchors verbatim; a hash taken from grep output, another file, or memory never matches — Read the file again when unsure.`
+Usage:
+- You must use your \`${FILE_READ_TOOL_NAME}\` tool, Grep (content mode), or a file-printing Bash command (cat/head/sed -n) at least once in the conversation before editing, or keep old_string uniquely identifying: an edit whose old_string matches exactly one place in the current file is applied even for files you have not opened. This tool errors when the placement is ambiguous and you have not read that target file.
+- Read and Grep output prefix each line with its line number as \`N:content\`. Strip the \`N:\` prefix (everything up to the first colon on that line) before copying text into old_string or new_string — the prefix is not file content.
+- \`old_string\` must match the file exactly, including indentation. When the exact match fails, the tool also retries with curly/straight quote swaps, \\uXXXX escape swaps, and with line-number prefixes removed.
+- \`old_string\` must be unique in the file, or you must disambiguate: set start_line (optionally with end_line) to the line range where that copy lives — line numbers come straight from Read/Grep output — or use replace_all to change every instance. A start_line range that does not cover the one match is reported as an error, so use it only where you actually saw the text.
+- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix.
+- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
+- An empty new_string deletes the matched text; when the match ends a line, the trailing line break is deleted too.
+- You may issue several Edit calls for the same file in one response; they apply sequentially, each against the previous edit's result.`
 }

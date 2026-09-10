@@ -28,7 +28,6 @@ import {
 } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
-import { anchorAt } from '../../src/utils/hashline.js'
 import { TmuxSession, createLoggingTest } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
@@ -154,9 +153,6 @@ describe('Tool Use E2E', () => {
       const editFilePath = join(session.cwd, 'test-edit.txt')
       const editOriginal = 'The quick brown fox jumps over the lazy dog.'
       await writeFile(editFilePath, editOriginal)
-      // Anchor referencing line 1 (the test controls the file content, so the
-      // hash is computed the same way the Read tool tags it).
-      const editAnchor = `1:${anchorAt(editOriginal, 1)}`
       server.reset([
         toolUseResponse([{ name: 'Read', input: { file_path: editFilePath } }]),
         toolUseResponse([
@@ -164,13 +160,8 @@ describe('Tool Use E2E', () => {
             name: 'Edit',
             input: {
               file_path: editFilePath,
-              edits: [
-                {
-                  op: 'replace',
-                  start: editAnchor,
-                  lines: 'The slow red turtle jumps over the lazy dog.',
-                },
-              ],
+              old_string: 'quick brown fox',
+              new_string: 'slow red turtle',
             },
           },
         ]),
@@ -212,16 +203,15 @@ describe('Tool Use E2E', () => {
       expect(fileContent).toContain('Second line.')
     })
 
-    test('an Edit in a later response resolves anchors against current content', async () => {
+    test('an Edit in a later response is approved by the ledger without a re-Read', async () => {
       session = new TmuxSession({ serverUrl: server.url })
       await session.start()
 
-      const filePath = join(session.cwd, 'anchor-chain.txt')
+      const filePath = join(session.cwd, 'edit-chain.txt')
       await writeFile(filePath, 'one\ntwo\nthree')
-      // The Edit result echoes no anchors: the follow-up (next response)
-      // names line 4 by its current content, which direct hash matching
-      // resolves without a re-Read.
-      const movedAnchor = `4:${anchorAt('one\none-b\ntwo\nthree', 4)}`
+      // The first Edit refreshes the ledger with its own content, so the
+      // follow-up in the next response verifies against the post-edit state
+      // without a re-Read.
 
       server.reset([
         toolUseResponse([{ name: 'Read', input: { file_path: filePath } }]),
@@ -230,13 +220,8 @@ describe('Tool Use E2E', () => {
             name: 'Edit',
             input: {
               file_path: filePath,
-              edits: [
-                {
-                  op: 'insert_after',
-                  start: `1:${anchorAt('one\ntwo\nthree', 1)}`,
-                  lines: 'one-b',
-                },
-              ],
+              old_string: 'two',
+              new_string: 'two-b',
             },
           },
         ]),
@@ -245,7 +230,8 @@ describe('Tool Use E2E', () => {
             name: 'Edit',
             input: {
               file_path: filePath,
-              edits: [{ op: 'replace', start: movedAnchor, lines: 'THREE' }],
+              old_string: 'three',
+              new_string: 'THREE',
             },
           },
         ]),
@@ -259,23 +245,22 @@ describe('Tool Use E2E', () => {
 
       const firstEdit = resultContentString(getToolResults(log, 2)[0])
       expect(firstEdit).toContain('updated successfully')
-      expect(firstEdit).not.toContain('Anchors')
+      expect(firstEdit).toContain('file state is current in your context')
 
       const secondEdit = getToolResults(log, 3)[0]
       expect(secondEdit.is_error).not.toBe(true)
-      expect(await readFile(filePath, 'utf-8')).toBe('one\none-b\ntwo\nTHREE')
+      expect(await readFile(filePath, 'utf-8')).toBe('one\ntwo-b\nTHREE')
     })
 
-    test('a second Edit of the same file in one response must Read again', async () => {
+    test('two Edits of the same file in one response serialize and both apply', async () => {
       session = new TmuxSession({ serverUrl: server.url })
       await session.start()
 
-      const filePath = join(session.cwd, 'anchor-remap.txt')
+      const filePath = join(session.cwd, 'edit-serialize.txt')
       await writeFile(filePath, 'one\ntwo\nthree')
-      // Both edits are written before either result is seen, so Edit #2's
-      // anchor is against the pre-edit file. A file edited earlier in the
-      // same response is closed to further Edits: #2 fails until a Read.
-      const staleAnchor = `3:${anchorAt('one\ntwo\nthree', 3)}`
+      // Both edits are issued in the same response before either result is
+      // seen. Edits to one file serialize on a per-file lock and each
+      // re-plans against the previous result, so both apply sequentially.
 
       server.reset([
         toolUseResponse([{ name: 'Read', input: { file_path: filePath } }]),
@@ -284,20 +269,16 @@ describe('Tool Use E2E', () => {
             name: 'Edit',
             input: {
               file_path: filePath,
-              edits: [
-                {
-                  op: 'insert_after',
-                  start: `1:${anchorAt('one\ntwo\nthree', 1)}`,
-                  lines: 'one-b',
-                },
-              ],
+              old_string: 'one',
+              new_string: 'one\none-b',
             },
           },
           {
             name: 'Edit',
             input: {
               file_path: filePath,
-              edits: [{ op: 'replace', start: staleAnchor, lines: 'THREE' }],
+              old_string: 'three',
+              new_string: 'THREE',
             },
           },
         ]),
@@ -306,17 +287,134 @@ describe('Tool Use E2E', () => {
 
       await session.submitAndApprove('Edit the file twice')
       const log = await waitForRequestCount(server, 3, {
-        description: 'second Edit tool_result request',
+        description: 'both Edit tool_results request',
       })
 
       const [edit1, edit2] = getToolResults(log, 2)
       expect(edit1.is_error).not.toBe(true)
       expect(resultContentString(edit1)).toContain('updated successfully')
-      expect(edit2.is_error).toBe(true)
-      expect(resultContentString(edit2)).toContain(
-        'already edited earlier in this response',
+      expect(edit2.is_error).not.toBe(true)
+      expect(resultContentString(edit2)).toContain('updated successfully')
+      expect(await readFile(filePath, 'utf-8')).toBe('one\none-b\ntwo\nTHREE')
+    })
+
+    test('an Edit of a never-read file applies when the match is unique', async () => {
+      session = new TmuxSession({ serverUrl: server.url })
+      await session.start()
+
+      const filePath = join(session.cwd, 'blind-edit.txt')
+      await writeFile(filePath, 'alpha beta gamma')
+
+      server.reset([
+        toolUseResponse([
+          {
+            name: 'Edit',
+            input: {
+              file_path: filePath,
+              old_string: 'beta',
+              new_string: 'BETA',
+            },
+          },
+        ]),
+        textResponse('Blind edit applied'),
+      ])
+
+      await session.submitAndApprove('Edit without reading')
+      const log = await waitForRequestCount(server, 2, {
+        description: 'blind Edit tool_result request',
+      })
+
+      const toolResults = getToolResults(log)
+      expect(toolResults[0].is_error).not.toBe(true)
+      expect(resultContentString(toolResults[0])).toContain(
+        'you had not opened this file',
       )
-      expect(await readFile(filePath, 'utf-8')).toBe('one\none-b\ntwo\nthree')
+      expect(await readFile(filePath, 'utf-8')).toBe('alpha BETA gamma')
+    })
+
+    test('an ambiguous Edit errors, and start_line disambiguates on retry', async () => {
+      session = new TmuxSession({ serverUrl: server.url })
+      await session.start()
+
+      const filePath = join(session.cwd, 'dup-edit.txt')
+      await writeFile(filePath, 'dup x\nkeep\ndup x')
+
+      server.reset([
+        toolUseResponse([{ name: 'Read', input: { file_path: filePath } }]),
+        toolUseResponse([
+          {
+            name: 'Edit',
+            input: {
+              file_path: filePath,
+              old_string: 'dup x',
+              new_string: 'mark',
+            },
+          },
+        ]),
+        toolUseResponse([
+          {
+            name: 'Edit',
+            input: {
+              file_path: filePath,
+              old_string: 'dup x',
+              new_string: 'mark',
+              start_line: 3,
+            },
+          },
+        ]),
+        textResponse('Disambiguated edit applied'),
+      ])
+
+      await session.submitAndApprove('Edit the duplicated line')
+      const log = await waitForRequestCount(server, 4, {
+        description: 'disambiguated Edit tool_result request',
+      })
+
+      const ambiguous = getToolResults(log, 2)[0]
+      expect(ambiguous.is_error).toBe(true)
+      expect(resultContentString(ambiguous)).toContain('Found 2 matches')
+      expect(resultContentString(ambiguous)).toContain('start_line')
+
+      const retry = getToolResults(log, 3)[0]
+      expect(retry.is_error).not.toBe(true)
+      expect(await readFile(filePath, 'utf-8')).toBe('dup x\nkeep\nmark')
+    })
+
+    test('a Bash cat of a file licenses an Edit without a Read', async () => {
+      session = new TmuxSession({ serverUrl: server.url })
+      await session.start()
+
+      const filePath = join(session.cwd, 'bash-seen-edit.txt')
+      await writeFile(filePath, 'visible from bash\nsecond line')
+
+      server.reset([
+        toolUseResponse([
+          { name: 'Bash', input: { command: `cat ${filePath}` } },
+        ]),
+        toolUseResponse([
+          {
+            name: 'Edit',
+            input: {
+              file_path: filePath,
+              old_string: 'visible from bash',
+              new_string: 'seen via bash',
+            },
+          },
+        ]),
+        textResponse('Bash-then-edit applied'),
+      ])
+
+      await session.submitAndApprove('Show then edit via bash')
+      const log = await waitForRequestCount(server, 3, {
+        description: 'Edit-after-Bash-cat tool_result request',
+      })
+
+      const edit = getToolResults(log, 2)[0]
+      expect(edit.is_error).not.toBe(true)
+      expect(resultContentString(edit)).toContain('updated successfully')
+      expect(await readFile(filePath, 'utf-8')).toBe(
+        'seen via bash\nsecond line',
+      )
     })
   })
 
@@ -484,7 +582,6 @@ describe('Tool Use E2E', () => {
       const editFile = join(session.cwd, 'compact-edit.txt')
       const compactOriginal = 'alpha beta gamma'
       await writeFile(editFile, compactOriginal)
-      const compactAnchor = `1:${anchorAt(compactOriginal, 1)}`
 
       // Read first (required before Edit), then Edit
       server.reset([
@@ -494,13 +591,8 @@ describe('Tool Use E2E', () => {
             name: 'Edit',
             input: {
               file_path: editFile,
-              edits: [
-                {
-                  op: 'replace',
-                  start: compactAnchor,
-                  lines: 'alpha BETA gamma',
-                },
-              ],
+              old_string: 'beta',
+              new_string: 'BETA',
             },
           },
         ]),
@@ -509,10 +601,10 @@ describe('Tool Use E2E', () => {
       const screen = await session.submitAndApprove('Edit the file', 60_000)
 
       // In compact mode (default), the header should show only file_path,
-      // NOT the edits payload (the diff body below the header still shows the
-      // changed content, which is expected).
-      expect(screen).not.toContain('edits')
-      expect(screen).not.toContain('op:')
+      // NOT the old_string/new_string payload (the diff body below the header
+      // still shows the changed content, which is expected).
+      expect(screen).not.toContain('old_string')
+      expect(screen).not.toContain('new_string')
       // The header should show "Update(file_path: ...)"
       expect(screen).toMatch(/Update\(file_path:/)
     })

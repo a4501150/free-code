@@ -8,9 +8,3 @@ export const CLAUDE_FOLDER_PERMISSION_PATTERN = '/.claude/**'
 
 // Permission pattern for granting session-level access to the global config folder
 export const GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN = `${globalConfigDir()}/**`
-
-export const FILE_UNEXPECTEDLY_MODIFIED_ERROR =
-  'File has been unexpectedly modified. Read it again before attempting to write it.'
-
-export const FILE_EDITED_THIS_RESPONSE_ERROR =
-  'This file was already edited earlier in this response. Batch all edits to one file into a single Edit call, then Read the file again before editing it further.'

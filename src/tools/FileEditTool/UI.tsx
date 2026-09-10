@@ -17,18 +17,18 @@ import {
   FILE_NOT_FOUND_CWD_NOTE,
   getDisplayPath,
 } from '../../utils/file.js'
-import { applyHashlineEdits } from '../../utils/hashline.js'
+import { planEdit } from '../../utils/editMatch.js'
 import { logError } from '../../utils/log.js'
 import { getPlansDirectory } from '../../utils/plans.js'
 import { openForScan, readCapped } from '../../utils/readEditContext.js'
 import { firstLineOf } from '../../utils/stringUtils.js'
 import type { ThemeName } from '../../utils/theme.js'
-import type { EditOp, FileEditOutput } from './types.js'
+import type { FileEditOutput } from './types.js'
 
 export function userFacingName(
-  input: Partial<{ file_path: string; edits: unknown[] }> | undefined,
+  input: Partial<{ file_path: string }> | undefined,
 ): string {
-  // Hashline edits always modify an existing file (line-ref based).
+  // Edit modifies an existing file except in creation mode (empty old_string).
   if (input?.file_path?.startsWith(getPlansDirectory())) {
     return 'Updated plan'
   }
@@ -86,7 +86,8 @@ export function renderToolResultMessage(
 export function renderToolUseRejectedMessage(
   input: {
     file_path: string
-    edits?: EditOp[]
+    old_string?: string
+    new_string?: string
   },
   options: {
     columns: number
@@ -100,9 +101,10 @@ export function renderToolUseRejectedMessage(
 ): React.ReactElement {
   const { style, verbose } = options
   const filePath = input.file_path
-  const edits = input.edits ?? []
+  const oldString = input.old_string
+  const newString = input.new_string ?? ''
 
-  if (edits.length === 0) {
+  if (!oldString) {
     return (
       <FileEditToolUseRejectedMessage
         file_path={filePath}
@@ -116,7 +118,8 @@ export function renderToolUseRejectedMessage(
   return (
     <EditRejectionDiff
       filePath={filePath}
-      edits={edits}
+      oldString={oldString}
+      newString={newString}
       style={style}
       verbose={verbose}
     />
@@ -170,16 +173,20 @@ type RejectionDiffData = {
 
 function EditRejectionDiff({
   filePath,
-  edits,
+  oldString,
+  newString,
   style,
   verbose,
 }: {
   filePath: string
-  edits: EditOp[]
+  oldString: string
+  newString: string
   style?: 'condensed'
   verbose: boolean
 }): React.ReactNode {
-  const [dataPromise] = useState(() => loadRejectionDiff(filePath, edits))
+  const [dataPromise] = useState(() =>
+    loadRejectionDiff(filePath, oldString, newString),
+  )
   return (
     <Suspense
       fallback={
@@ -228,7 +235,8 @@ function EditRejectionBody({
 
 async function loadRejectionDiff(
   filePath: string,
-  edits: EditOp[],
+  oldString: string,
+  newString: string,
 ): Promise<RejectionDiffData> {
   const empty: RejectionDiffData = {
     patch: [],
@@ -236,7 +244,7 @@ async function loadRejectionDiff(
     fileContent: undefined,
   }
   try {
-    // Hashline anchors are absolute line numbers, so applying them needs the
+    // The replacement is content-local, but the rendered patch covers the
     // whole file. readCapped bounds the read; the rendered hunks are bounded by
     // getPatchFromContents' context window.
     const handle = await openForScan(filePath)
@@ -248,12 +256,16 @@ async function loadRejectionDiff(
       await handle.close()
     }
     if (oldContent === null) return empty
-    const r = applyHashlineEdits(oldContent, edits, filePath)
+    const r = planEdit(oldContent, {
+      oldString,
+      newString,
+      replaceAll: false,
+    })
     if (!r.ok) return empty
     const patch = getPatchFromContents({
       filePath,
       oldContent: convertLeadingTabsToSpaces(oldContent),
-      newContent: convertLeadingTabsToSpaces(r.updatedContent),
+      newContent: convertLeadingTabsToSpaces(r.plan.updatedContent),
     })
     return {
       patch,

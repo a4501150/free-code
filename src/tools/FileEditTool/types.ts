@@ -1,71 +1,48 @@
 import { z } from 'zod/v4'
-
-const editOp = z.object({
-  op: z
-    .enum(['replace', 'insert_after', 'delete'])
-    .describe('The edit operation to perform.'),
-  start: z
-    .string()
-    .describe(
-      'Start anchor "LINE:HASH" copied from Read output (e.g. "12:a3f"). Use "0" to insert at the top.',
-    ),
-  end: z
-    .string()
-    .optional()
-    .describe(
-      'End anchor "LINE:HASH" for a multi-line replace/delete; defaults to start.',
-    ),
-  lines: z
-    .string()
-    .optional()
-    .describe(
-      'Replacement/inserted text (newline-separated). Required for replace/insert_after; omit for delete.',
-    ),
-})
-
-export type EditOp = z.output<typeof editOp>
-
-const refineEdits = (v: { edits: EditOp[] }, ctx: z.RefinementCtx): void => {
-  v.edits.forEach((e, i) => {
-    if (
-      (e.op === 'replace' || e.op === 'insert_after') &&
-      e.lines === undefined
-    ) {
-      ctx.addIssue({
-        code: 'custom',
-        message: `edits[${i}]: "${e.op}" requires "lines" (the new text).`,
-        path: ['edits', i, 'lines'],
-      })
-    }
-  })
-}
+import { semanticBoolean } from '../../utils/semanticBoolean.js'
+import { semanticNumber } from '../../utils/semanticNumber.js'
 
 const editFields = {
   file_path: z.string().describe('The absolute path to the file to modify'),
-  edits: z
-    .array(editOp)
-    .min(1)
+  old_string: z
+    .string()
     .describe(
-      'Edits to apply, referenced by LINE:HASH anchors. Put every change to this file into this array: one Edit call per file per response, then Read the file again before editing it.',
+      'The exact text to replace, matching the file content verbatim including indentation. Strip any Read/Grep line-number prefix (`N:`) from copied lines — never include the prefix in this string.',
     ),
+  new_string: z
+    .string()
+    .describe(
+      'The text to replace it with (must be different from old_string). An empty string deletes the matched text.',
+    ),
+  replace_all: semanticBoolean(z.boolean().optional()).describe(
+    'Replace all occurrences of old_string (default false)',
+  ),
+  start_line: semanticNumber(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+  ).describe(
+    'Optional 1-based line where old_string is expected. When old_string matches several places, the one intersecting this range is replaced; a range that excludes the single match is reported as an error.',
+  ),
+  end_line: semanticNumber(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+  ).describe(
+    'Optional inclusive end of the expected line range (defaults to start_line, i.e. a single line).',
+  ),
 }
 
 // Model-facing schema. _overrideContent is intentionally absent so the model
-// cannot bypass anchor validation by supplying raw file content.
-const inputSchema = z.strictObject(editFields).superRefine(refineEdits)
+// cannot bypass match validation by supplying raw file content.
+const inputSchema = z.strictObject(editFields)
 type InputSchema = typeof inputSchema
 
 // Full schema includes the internal _overrideContent field, set by the IDE-amend
 // flow after the user edits the proposed diff in their editor.
-const fullInputSchema = z
-  .strictObject({
-    ...editFields,
-    _overrideContent: z
-      .object({ newContent: z.string() })
-      .optional()
-      .describe('Internal: pre-computed full file content from an IDE amend.'),
-  })
-  .superRefine(refineEdits)
+const fullInputSchema = z.strictObject({
+  ...editFields,
+  _overrideContent: z
+    .object({ newContent: z.string() })
+    .optional()
+    .describe('Internal: pre-computed full file content from an IDE amend.'),
+})
 
 // Parsed output — what call()/validateInput receive (includes _overrideContent).
 export type FileEditInput = z.output<typeof fullInputSchema>
@@ -92,6 +69,14 @@ export const gitDiffSchema = z.object({
     .describe('GitHub owner/repo when available'),
 })
 
+export const approvalNoteSchema = z.enum([
+  'fresh',
+  'recovered',
+  'blind-placement',
+  'blind',
+])
+export type ApprovalNoteValue = z.infer<typeof approvalNoteSchema>
+
 // Output schema for FileEditTool
 const outputSchema = z.object({
   filePath: z.string().describe('The file path that was edited'),
@@ -104,7 +89,12 @@ const outputSchema = z.object({
   userModified: z
     .boolean()
     .describe('Whether the user modified the proposed changes'),
-  editCount: z.number().describe('Number of edits applied'),
+  editCount: z.number().describe('Number of replacements applied'),
+  approvalNote: approvalNoteSchema
+    .optional()
+    .describe(
+      'How placement was approved against the model\u2019s seen content',
+    ),
   gitDiff: gitDiffSchema.optional(),
 })
 type OutputSchema = typeof outputSchema

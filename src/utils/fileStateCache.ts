@@ -6,6 +6,16 @@ export type FileState = {
   timestamp: number
   offset: number | undefined
   limit: number | undefined
+  /**
+   * Line ranges (1-based, inclusive) of `content` that were actually shown to
+   * the model. Undefined means the whole file was seen (a full Read, or the
+   * content an Edit/Write just authored). Freshness is decided by comparing
+   * `content` with current disk bytes, never by `timestamp` alone — the
+   * timestamp only gates cheap re-validation.
+   */
+  seenRanges?: SeenRange[]
+  /** How this entry came to exist. Entries without the field predate the ledger. */
+  source?: SeenSource
   // True when this entry was populated by auto-injection (e.g. CLAUDE.md) and
   // the injected content did not match disk (stripped HTML comments, stripped
   // frontmatter, truncated MEMORY.md). The model has only seen a partial view;
@@ -13,6 +23,18 @@ export type FileState = {
   // RAW disk bytes (for getChangedFiles diffing), not what the model saw.
   isPartialView?: boolean
 }
+
+/** Inclusive 1-based line range of file content shown to the model. */
+export type SeenRange = { start: number; end: number }
+
+export type SeenSource =
+  | 'read'
+  | 'edit'
+  | 'write'
+  | 'grep'
+  | 'bash'
+  | 'injected'
+  | 'seeded'
 
 // Default max entries for read file state caches
 export const READ_FILE_STATE_CACHE_SIZE = 100

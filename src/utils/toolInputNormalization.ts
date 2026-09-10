@@ -2,7 +2,6 @@ import { BashTool } from 'src/tools/BashTool/BashTool.js'
 import { FileEditTool } from 'src/tools/FileEditTool/FileEditTool.js'
 import { stripTrailingWhitespace } from 'src/tools/FileEditTool/utils.js'
 import { FileWriteTool } from 'src/tools/FileWriteTool/FileWriteTool.js'
-import { stripHashlinePrefix } from './hashline.js'
 import type { AgentId } from 'src/types/ids.js'
 import type { z } from 'zod/v4'
 import type { Tool } from '../Tool.js'
@@ -69,22 +68,20 @@ export function normalizeToolInput<T extends Tool>(
     case FileEditTool.name: {
       // Validated upstream, won't throw
       const parsedInput = FileEditTool.inputSchema.parse(input)
-
-      // Defensive: strip any leaked `LINE:HASH|` anchor prefix the model copied
-      // into the replacement text of an edit.
-      const edits = parsedInput.edits.map(e =>
-        'lines' in e && e.lines !== undefined
-          ? {
-              ...e,
-              lines: e.lines.split('\n').map(stripHashlinePrefix).join('\n'),
-            }
-          : e,
-      )
-
       // SAFETY: See comment in BashTool case above
       return {
         file_path: parsedInput.file_path,
-        edits,
+        old_string: parsedInput.old_string,
+        new_string: parsedInput.new_string,
+        ...(parsedInput.replace_all !== undefined && {
+          replace_all: parsedInput.replace_all,
+        }),
+        ...(parsedInput.start_line !== undefined && {
+          start_line: parsedInput.start_line,
+        }),
+        ...(parsedInput.end_line !== undefined && {
+          end_line: parsedInput.end_line,
+        }),
       } as z.infer<T['inputSchema']>
     }
     case FileWriteTool.name: {
@@ -139,19 +136,6 @@ export function normalizeToolInputForAPI<T extends Tool>(
         ('plan' in input || 'planFilePath' in input)
       ) {
         const { plan, planFilePath, ...rest } = input as Record<string, unknown>
-        return rest as z.infer<T['inputSchema']>
-      }
-      return input
-    }
-    case FileEditTool.name: {
-      // Strip synthetic old_string/new_string/replace_all from OLD sessions
-      // resumed from transcripts written before the anchor-based Edit landed,
-      // where normalizeToolInput used to synthesize these. No live code
-      // re-injects them, so history never shows the legacy shape to the model;
-      // live legacy calls from model prior are handled by coerceLegacyEditInput.
-      if (input && typeof input === 'object' && 'edits' in input) {
-        const { old_string, new_string, replace_all, ...rest } =
-          input as Record<string, unknown>
         return rest as z.infer<T['inputSchema']>
       }
       return input

@@ -12,7 +12,7 @@ export const MAX_LINES_TO_READ = 2000
 export const DESCRIPTION = 'Read a file from the local filesystem.'
 
 export const LINE_FORMAT_INSTRUCTION =
-  "- Each line is returned as `LINE:HASH|content` (for example `12:a3f|  return x`). LINE is the 1-based line number, and HASH is that line's edit anchor. See the Edit tool for the anchor rules. The actual file content is everything after the `|`."
+  "- Each line is prefixed with its 1-based line number and a colon, then the verbatim line content (for example `12:  return x`). When copying text out of this output for the Edit tool's `old_string` or `new_string`, strip the `N:` prefix — it is not part of the file content."
 
 /**
  * Renders the Read tool prompt template.  The caller (FileReadTool) supplies
@@ -36,5 +36,6 @@ ${lineFormat}
   }
 - This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.
 - This tool can only read files, not directories. To list a directory, use an ls command via the ${BASH_TOOL_NAME} tool.
-- Reading a file that exists but has empty contents returns a system reminder warning in place of file contents.`
+- Reading a file that exists but has empty contents returns a system reminder warning in place of file contents.
+- After a successful Edit you do not need to re-read the file to verify the change; the edit result already reflects what is on disk.`
 }

@@ -32,6 +32,7 @@ import type { AssistantMessage } from '../../types/message.js'
 import { parseForSecurity } from '../../utils/bash/ast.js'
 import { splitCommandWithOperators } from '../../utils/bash/commands.js'
 import { detectCodeIndexingFromCommand } from '../../utils/codeIndexing.js'
+import { getCwd } from '../../utils/cwd.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { isENOENT, ShellError } from '../../utils/errors.js'
 import {
@@ -44,6 +45,7 @@ import {
   fileHistoryEnabled,
   fileHistoryTrackEdit,
 } from '../../utils/fileHistory.js'
+import { recordBashReadSighting } from '../../utils/fileSightings.js'
 import { truncate } from '../../utils/format.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
 import { expandPath } from '../../utils/path.js'
@@ -504,6 +506,7 @@ async function applySedEdit(
     timestamp: getFileModificationTime(absoluteFilePath),
     offset: undefined,
     limit: undefined,
+    source: 'edit',
   })
 
   // Return success result matching sed output format (sed produces no output on success)
@@ -886,6 +889,17 @@ export const BashTool = buildTool({
       }
     }
 
+    // Record a content sighting when the command was a recognized single-file
+    // read and we are showing the model its full text output (persisted/
+    // truncated output and image outputs record nothing).
+    if (!persistedOutputPath && !isImage) {
+      recordBashReadSighting(
+        toolUseContext.readFileState,
+        input.command,
+        compressedStdout,
+        getCwd(),
+      )
+    }
     const data: Out = {
       stdout: compressedStdout,
       stderr: stderrForShellReset,
