@@ -10,4 +10,5 @@ export const ONE_SHOT_BUILTIN_AGENT_TYPES: ReadonlySet<string> = new Set([
   'Explore',
   'Plan',
   'advisor',
+  'fork',
 ])

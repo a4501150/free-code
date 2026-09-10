@@ -7,6 +7,7 @@ import { EXPLORE_AGENT } from './built-in/exploreAgent.js'
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
 import { PLAN_AGENT } from './built-in/planAgent.js'
 import { ADVISOR_AGENT } from './built-in/advisorAgent.js'
+import { FORK_AGENT, isForkAgentEnabled } from './built-in/forkAgent.js'
 import { getAdvisorConfig } from '../../utils/advisor.js'
 import {
   getPlanAgentConfig,
@@ -38,6 +39,9 @@ export function getBuiltInAgents(): AgentDefinition[] {
   ]
 
   agents.push(EXPLORE_AGENT)
+  if (isForkAgentEnabled()) {
+    agents.push(FORK_AGENT)
+  }
   if (isBuiltInPlanAgentEnabled()) {
     const planConfig = getPlanAgentConfig()
     agents.push({

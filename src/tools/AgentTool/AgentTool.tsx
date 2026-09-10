@@ -93,6 +93,12 @@ import {
 import { withAgentStoppedStatus } from './agentToolResult.js'
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
 import {
+  buildForkDirective,
+  buildForkWorktreeNotice,
+  FORK_AGENT,
+} from './built-in/forkAgent.js'
+import { getCwd } from '../../utils/cwd.js'
+import {
   AGENT_TOOL_NAME,
   LEGACY_AGENT_TOOL_NAME,
   ONE_SHOT_BUILTIN_AGENT_TYPES,
@@ -366,7 +372,7 @@ export const AgentTool = buildTool({
     onProgress?,
   ) {
     const startTime = Date.now()
-    const model = isCoordinatorMode() ? undefined : modelParam
+    let model = isCoordinatorMode() ? undefined : modelParam
 
     // Get app state for permission mode and agent filtering
     const appState = toolUseContext.getAppState()
@@ -487,6 +493,12 @@ export const AgentTool = buildTool({
       throw new Error(
         `In-process teammates cannot spawn background agents. Agent '${selectedAgent.agentType}' has background: true in its definition.`,
       )
+    }
+
+    // Fork ignores a per-call model override: it must run on the parent's
+    // model to share the parent's prompt cache.
+    if (selectedAgent.agentType === FORK_AGENT.agentType) {
+      model = undefined
     }
 
     // Capture for type narrowing — `let selectedAgent` prevents TS from
@@ -685,6 +697,21 @@ export const AgentTool = buildTool({
       worktreeInfo = await createAgentWorktree(slug)
     }
 
+    // Fork: the prompt is a directive addressed to a worker that already has
+    // the parent's transcript, so wrap it with the fork role rules.
+    if (selectedAgent.agentType === FORK_AGENT.agentType) {
+      promptMessages = [
+        createUserMessage({
+          content: buildForkDirective(
+            prompt,
+            worktreeInfo
+              ? buildForkWorktreeNotice(getCwd(), worktreeInfo.worktreePath)
+              : undefined,
+          ),
+        }),
+      ]
+    }
+
     const runAgentParams: Parameters<typeof runAgent>[0] = {
       agentDefinition: selectedAgent,
       promptMessages,
@@ -707,6 +734,10 @@ export const AgentTool = buildTool({
           : undefined,
       availableTools: workerTools,
       worktreePath: worktreeInfo?.worktreePath,
+      forkContextMessages:
+        selectedAgent.agentType === FORK_AGENT.agentType
+          ? toolUseContext.messages
+          : undefined,
       description,
     }
 

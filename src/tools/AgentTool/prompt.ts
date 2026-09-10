@@ -7,6 +7,7 @@ import { isInProcessTeammate } from '../../utils/teammateContext.js'
 import { isWorktreeModeEnabled } from '../../utils/worktreeModeEnabled.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../SendMessageTool/constants.js'
 import { AGENT_TOOL_NAME } from './constants.js'
+import { isForkAgentEnabled } from './built-in/forkAgent.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 
 function getToolsDescription(agent: AgentDefinition): string {
@@ -86,11 +87,14 @@ export async function getPrompt(
     ? agentDefinitions.filter(a => allowedAgentTypes.includes(a.agentType))
     : agentDefinitions
 
+  const forkAvailable =
+    isForkAgentEnabled() && effectiveAgents.some(a => a.agentType === 'fork')
+
   const writingThePromptSection = `
 
 ## Writing the prompt
 
-Brief the agent like a smart colleague who just walked into the room — it hasn't seen this conversation, doesn't know what you've tried, doesn't understand why this task matters. Explain the goal, what you've ruled out, and enough surrounding context for the agent to make judgment calls.
+${forkAvailable ? 'Any agent other than a fork starts with zero context. ' : ''}Brief the agent like a smart colleague who just walked into the room — it hasn't seen this conversation, doesn't know what you've tried, doesn't understand why this task matters. Explain the goal, what you've ruled out, and enough surrounding context for the agent to make judgment calls.
 
 **Never delegate understanding.** Don't write "based on your findings, fix the bug" or "based on the research, implement it." Those phrases push synthesis onto the agent instead of doing it yourself. Write prompts that prove you understood: include file paths, line numbers, what specifically to change.
 `
@@ -123,6 +127,20 @@ When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to sel
 Don't use ${AGENT_TOOL_NAME} for tasks you can handle directly (reading specific files, targeted searches) or for tasks unrelated to the listed agent descriptions.
 `
 
+  const whenToForkSection = forkAvailable
+    ? `
+## When to fork
+
+Fork yourself (pass \`subagent_type: "fork"\`) when the intermediate tool output isn't worth keeping in your context. The criterion is qualitative — "will I need this output again" — not task size. Fork open-ended questions. If research can be broken into independent questions, launch parallel forks in one message. A fork beats a fresh subagent for this — it inherits context and shares your cache. Forks are cheap because they share your prompt cache.
+
+**Don't peek.** The tool result includes an \`output_file\` path — do not Read or tail it. You get a completion notification; trust it. Reading the fork's transcript mid-flight pulls its tool noise into your context, which defeats the point of forking.
+
+**Don't race.** After launching, you know nothing about what the fork found. Never fabricate or predict fork results in any format — the notification arrives as a later message and is never something you write yourself. If the user asks a follow-up before the notification lands, tell them the fork is still running — give status, not a guess.
+
+**Writing a fork prompt.** The fork inherits your context, so its prompt is a *directive* — what to do, not what the situation is. Be specific about scope: what's in, what's out, what another agent is handling. Don't re-explain background.
+`
+    : ''
+
   // When listing via attachment, the "launch multiple agents" note is in the
   // attachment message. When inline, include it here.
   const concurrencyNote = !listViaAttachment
@@ -132,7 +150,7 @@ Don't use ${AGENT_TOOL_NAME} for tasks you can handle directly (reading specific
 
   // Non-coordinator gets the full prompt with all sections
   return `${shared}
-${whenNotToUseSection}
+${whenNotToUseSection}${whenToForkSection}
 
 Usage notes:
 - Always include a short description (3-5 words) summarizing what the agent will do${concurrencyNote}
