@@ -23,12 +23,12 @@ const questionOptionSchema = z.object({
   label: z
     .string()
     .describe(
-      'The display text for this option that the user will see and select. Should be concise (1-5 words) and clearly describe the choice.',
+      'The display text for this option that the user will see and select. Keep it concise (1-5 words).',
     ),
   description: z
     .string()
     .describe(
-      'Explanation of what this option means or what will happen if chosen. Useful for providing context about trade-offs or implications.',
+      'What this option means or what happens if chosen, including trade-offs.',
     ),
   preview: z
     .string()
@@ -42,7 +42,7 @@ const questionSchema = z.object({
   question: z
     .string()
     .describe(
-      'The complete question to ask the user. Should be clear, specific, and end with a question mark. Example: "Which library should we use for date formatting?" If multiSelect is true, phrase it accordingly, e.g. "Which features do you want to enable?"',
+      'The complete question to ask the user, ending with a question mark. Example: "Which library should we use for date formatting?" Phrase it accordingly when multiSelect is true, e.g. "Which features do you want to enable?"',
     ),
   header: z
     .string()
@@ -54,13 +54,13 @@ const questionSchema = z.object({
     .min(2)
     .max(4)
     .describe(
-      `The available choices for this question. Must have 2-4 options. Each option should be a distinct, mutually exclusive choice (unless multiSelect is enabled). There should be no 'Other' option, that will be provided automatically.`,
+      "The available choices. Each option is a distinct choice (unless multiSelect is true). No 'Other' option — it is added automatically.",
     ),
   multiSelect: z
     .boolean()
     .default(false)
     .describe(
-      'Set to true to allow the user to select multiple options instead of just one. Use when choices are not mutually exclusive.',
+      'Allow selecting multiple options. Use when the choices are not mutually exclusive.',
     ),
 })
 

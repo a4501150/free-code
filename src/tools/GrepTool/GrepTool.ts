@@ -74,7 +74,7 @@ const inputSchema = z.strictObject({
       'File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types.',
     ),
   head_limit: semanticNumber(z.number().optional()).describe(
-    'Limit output to first N lines/entries, equivalent to "| head -N". Works across all output modes: content (limits output lines), files_with_matches (limits file paths), count (limits count entries). Defaults to 250 when unspecified. Pass 0 for unlimited (use sparingly — large result sets waste context).',
+    'Limit output to first N lines/entries, equivalent to "| head -N". Works across all output modes: content (limits output lines), files_with_matches (limits file paths), count (limits count entries). Defaults to 250 when unspecified. Pass 0 for unlimited.',
   ),
   offset: semanticNumber(z.number().optional()).describe(
     'Skip first N lines/entries before applying head_limit, equivalent to "| tail -n +N | head -N". Works across all output modes. Defaults to 0.',

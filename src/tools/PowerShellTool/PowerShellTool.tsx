@@ -255,7 +255,7 @@ const fullInputSchema = z.strictObject({
       'Clear, concise description of what this command does in active voice.',
     ),
   run_in_background: semanticBoolean(z.boolean().optional()).describe(
-    `Run this command asynchronously. Control returns to you immediately with a task ID and the path of the file the command's output is being streamed to; when the command finishes, that same path is delivered back to you as a system notification in a later turn (Read the file to see the full output). The notification arrives when the command finishes — sleeping or polling on your end does not change when it arrives. Use this whenever you'd otherwise reach for \`Start-Sleep\` or a poll loop to wait for a command. NOT a parallelism mechanism — for independent commands whose results you need together right now, send multiple PowerShell tool uses in a single message; they run concurrently in the foreground and return together.`,
+    'Run the command asynchronously instead of sleeping or polling. Returns at once with a task ID and the path of the file the output is streamed to; a completion notification with that path arrives when the command exits. NOT a parallelism mechanism — for independent commands whose results you need together, send multiple PowerShell tool uses in a single message.',
   ),
 })
 

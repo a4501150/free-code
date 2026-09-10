@@ -161,7 +161,7 @@ describe('conditional mode prompt alignment', () => {
     )
     expect(agentSchema).toContain('NOT a parallelism mechanism')
     expect(agentSchema).toContain(
-      'Use this instead of sleeping or repeatedly checking on the agent',
+      'its final report is delivered as a system notification',
     )
   })
 })
