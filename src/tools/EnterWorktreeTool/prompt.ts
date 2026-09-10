@@ -3,7 +3,7 @@ export function getEnterWorktreeToolPrompt(): string {
 
 ## When to Use
 
-- The user explicitly says "worktree" (e.g., "start a worktree", "work in a worktree", "create a worktree", "use a worktree")
+- The user explicitly says "worktree" (for example, "start a worktree", "work in a worktree", "create a worktree", "use a worktree")
 
 ## When NOT to Use
 

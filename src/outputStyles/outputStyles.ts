@@ -21,9 +21,9 @@ export type OutputStyleConfig = {
   description: string
   prompt: string
   source: OutputStyleSource
-  /** Keep the `# Doing tasks` and `# Code style` prompt sections. */
+  /** Use the style as the agent role instead of the coding intro phrase. */
   keepCodingInstructions: boolean
-  /** Keep the `# Response style` prompt section. */
+  /** Keep the `# Communicating with the user` prompt section. */
   keepResponseStyle: boolean
   /** Plugin styles only: apply this style regardless of the settings key. */
   forceForPlugin?: boolean

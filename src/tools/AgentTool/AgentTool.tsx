@@ -160,7 +160,7 @@ const baseInputSchema = z.object({
     .string()
     .optional()
     .describe(
-      "Optional model override for this agent. Use a provider-qualified model ID (e.g. 'anthropic:claude-sonnet-4-6'). " +
+      "Optional model override for this agent. Use a provider-qualified model ID (for example 'anthropic:claude-sonnet-4-6'). " +
         "Takes precedence over the agent definition's model frontmatter. " +
         "If omitted, uses the agent definition's model, or inherits from the parent.",
     ),
@@ -190,7 +190,7 @@ const fullInputSchema = (() => {
     mode: permissionModeSchema
       .optional()
       .describe(
-        'Permission mode for spawned teammate (e.g., "plan" to require plan approval).',
+        'Permission mode for spawned teammate (for example, "plan" to require plan approval).',
       ),
   })
 

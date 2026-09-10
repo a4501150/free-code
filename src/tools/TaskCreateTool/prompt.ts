@@ -20,27 +20,23 @@ export function getPrompt(): string {
 Once a list exists, keep it accurate as you work — a list that lags behind the work is worse than no list:
 
 - Mark a task \`in_progress\` BEFORE you start it, and keep exactly one of your own tasks \`in_progress\` at a time.
-- Mark a task \`completed\` as soon as you finish it. Do not batch up completions to do at the end.
+- Mark a task \`completed\` as soon as you finish it. Do not save the completion reports for the end.
 - Add follow-up tasks as you discover them, and delete tasks that are no longer relevant.
 
 ## When to Use This Tool
 
-
-- Complex multi-step tasks - When a task requires 3 or more distinct steps or actions
-- Non-trivial and complex tasks - Tasks that require careful planning or multiple operations${teammateContext}
-- Plan mode - When using plan mode, create a task list to track the work
-- User explicitly requests todo list - When the user directly asks you to use the todo list
-- User provides multiple tasks - When users provide a list of things to be done (numbered or comma-separated)
-- After receiving new instructions - Immediately capture user requirements as tasks
+- Complex multi-step tasks: 3 or more distinct steps or operations${teammateContext}
+- Plan mode: create a task list to track the work
+- The user explicitly requests a todo list, or provides multiple tasks to do
+- New instructions arrive: capture the requirements as tasks immediately
 
 ## When NOT to Use This Tool
 
-Skip it for a single straightforward task, or for purely conversational or informational requests - just do the work directly.
+Skip it for a single straightforward task, or for purely conversational or informational requests - do the work directly.
 
-All tasks are created with status \`pending\`.
-
-- Create tasks with clear, specific subjects that describe the outcome
+All tasks are created with status \`pending\` and no owner.
+${teammateTips}- Create tasks with clear, specific subjects that describe the outcome
 - After creating tasks, use TaskUpdate to set up dependencies (blocks/blockedBy) if needed
-${teammateTips}- Check TaskList first to avoid creating duplicate tasks
+- Check TaskList first to avoid creating duplicate tasks
 `
 }

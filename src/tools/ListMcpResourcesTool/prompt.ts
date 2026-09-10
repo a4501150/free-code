@@ -2,7 +2,7 @@ export const LIST_MCP_RESOURCES_TOOL_NAME = 'ListMcpResourcesTool'
 
 export const DESCRIPTION = `
 Lists available resources from configured MCP servers.
-Each resource object includes a 'server' field indicating which server it's from.
+Each resource object includes a 'server' field indicating which server it comes from.
 
 Usage examples:
 - List all resources from all servers: \`listMcpResources\`

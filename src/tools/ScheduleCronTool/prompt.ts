@@ -36,13 +36,13 @@ export function buildCronCreatePrompt(durableEnabled: boolean): string {
   const durabilitySection = durableEnabled
     ? `## Durability
 
-By default (durable: false) the job lives only in this Claude session — nothing is written to disk, and the job is gone when Claude exits. Pass durable: true to write to .freecode/scheduled_tasks.json so the job survives restarts. Only use durable: true when the user explicitly asks for the task to persist ("keep doing this every day", "set this up permanently"). Most "remind me in 5 minutes" / "check back in an hour" requests should stay session-only.`
+By default (durable: false) the job lives only in this Claude session — nothing is written to disk, and the job is gone when Claude exits. Pass durable: true to write to .freecode/scheduled_tasks.json so the job survives restarts. Only use durable: true when the user explicitly asks for the task to persist ("keep doing this every day", "set this up permanently"). Most "remind me in 5 minutes" / "check back in an hour" requests must stay session-only.`
     : `## Session-only
 
 Jobs live only in this Claude session — nothing is written to disk, and the job is gone when Claude exits.`
 
   const durableRuntimeNote = durableEnabled
-    ? 'Durable jobs resume automatically on next launch; missed one-shots are surfaced for catch-up. Session-only jobs die with the process. '
+    ? 'Durable jobs resume automatically on next launch. One-shot jobs whose time passed are queued for a late run. Session-only jobs end with the process. '
     : ''
 
   return `Schedule a prompt to be enqueued at a future time. Use for both recurring schedules and one-shot reminders.
@@ -51,10 +51,10 @@ Uses standard 5-field cron in the user's local timezone: minute hour day-of-mont
 
 ## One-shot tasks (recurring: false)
 
-For "remind me at X" or "at <time>, do Y" requests — fire once then auto-delete.
+For "remind me at X" or "at <time>, do Y" requests. The job fires once, then deletes itself.
 Pin minute/hour/day-of-month/month to specific values:
   "remind me at 2:30pm today to check the deploy" → cron: "30 14 <today_dom> <today_month> *", recurring: false
-  "tomorrow morning, run the smoke test" → cron: "57 8 <tomorrow_dom> <tomorrow_month> *", recurring: false
+  "tomorrow morning, run the deploy check" → cron: "57 8 <tomorrow_dom> <tomorrow_month> *", recurring: false
 
 ## Recurring jobs (recurring: true, the default)
 
@@ -66,9 +66,9 @@ ${durabilitySection}
 
 ## Runtime behavior
 
-Jobs only fire while the REPL is idle (not mid-query). ${durableRuntimeNote}At most ${MAX_JOBS} jobs at once; the tool errors until you delete one. The scheduler jitters recurring tasks up to 10% of their period late (max 15 min).
+Jobs only fire while the REPL is idle (not mid-query). ${durableRuntimeNote}At most ${MAX_JOBS} jobs at once; the tool returns an error until you delete one. The scheduler delays recurring tasks by up to 10% of their period (max 15 min).
 
-Recurring tasks auto-expire after ${DEFAULT_MAX_AGE_DAYS} days — they fire one final time, then are deleted. Tell the user about the ${DEFAULT_MAX_AGE_DAYS}-day limit when scheduling recurring jobs.
+Recurring tasks auto-expire after ${DEFAULT_MAX_AGE_DAYS} days — they fire one final time, then the scheduler removes them. Tell the user about the ${DEFAULT_MAX_AGE_DAYS}-day limit when scheduling recurring jobs.
 
 Returns a job ID you can pass to ${CRON_DELETE_TOOL_NAME}.`
 }

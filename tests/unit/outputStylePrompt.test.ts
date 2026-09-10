@@ -1,8 +1,8 @@
 /**
- * An output style replaces parts of the system prompt: the coding group
- * (`# Doing tasks`, `# Code style`) and the response group (`# Response style`)
- * are dropped unless the style opts to keep them, and the intro says the style
- * is the role when the style drops the coding instructions.
+ * An output style replaces parts of the system prompt: the response group
+ * (`# Communicating with the user`) is dropped unless the style opts to keep
+ * it, and the intro says the style is the role when the style drops the
+ * coding instructions.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
@@ -28,8 +28,7 @@ import type { ProviderConfig } from '../../src/utils/settings/types.js'
   FEEDBACK_CHANNEL: '',
 }
 
-const CODING_SECTIONS = ['# Doing tasks', '# Code style']
-const RESPONSE_SECTION = '# Response style'
+const RESPONSE_SECTION = '# Communicating with the user'
 const STYLE_ROLE_INTRO = 'according to your "Output Style" below'
 
 let configDir: string
@@ -100,9 +99,8 @@ describe('the default session', () => {
     const prompt = await systemPromptText()
     expect(prompt).toContain('# Output Style: simple-english')
     expect(prompt).toContain('Simplified Technical English')
-    for (const section of [...CODING_SECTIONS, RESPONSE_SECTION]) {
-      expect(prompt).toContain(section)
-    }
+    expect(prompt).toContain(RESPONSE_SECTION)
+    expect(prompt).toContain('# Harness')
     expect(prompt).toContain('with software engineering tasks')
     expect(prompt).not.toContain(STYLE_ROLE_INTRO)
   })
@@ -121,9 +119,8 @@ describe('outputStyle: none', () => {
     await writeSettings('none')
     const prompt = await systemPromptText()
     expect(prompt).not.toContain('# Output Style')
-    for (const section of [...CODING_SECTIONS, RESPONSE_SECTION]) {
-      expect(prompt).toContain(section)
-    }
+    expect(prompt).toContain(RESPONSE_SECTION)
+    expect(prompt).toContain('# Harness')
     expect(prompt).toContain('with software engineering tasks')
   })
 })
@@ -135,9 +132,7 @@ describe('section gating', () => {
     const prompt = await systemPromptText()
 
     expect(prompt).toContain('# Output Style: novelist')
-    for (const section of [...CODING_SECTIONS, RESPONSE_SECTION]) {
-      expect(prompt).not.toContain(section)
-    }
+    expect(prompt).not.toContain(RESPONSE_SECTION)
     expect(prompt).toContain(STYLE_ROLE_INTRO)
     expect(prompt).not.toContain('with software engineering tasks')
   })
@@ -147,9 +142,7 @@ describe('section gating', () => {
     await writeSettings('coder')
     const prompt = await systemPromptText()
 
-    for (const section of CODING_SECTIONS) {
-      expect(prompt).toContain(section)
-    }
+    expect(prompt).toContain('# Harness')
     expect(prompt).not.toContain(RESPONSE_SECTION)
     expect(prompt).toContain('with software engineering tasks')
   })
@@ -159,36 +152,38 @@ describe('section gating', () => {
     await writeSettings('chatty')
     const prompt = await systemPromptText()
 
-    for (const section of CODING_SECTIONS) {
-      expect(prompt).not.toContain(section)
-    }
+    expect(prompt).not.toContain('# Doing tasks')
     expect(prompt).toContain(RESPONSE_SECTION)
     expect(prompt).toContain(STYLE_ROLE_INTRO)
   })
 
-  test('# Text output survives every combination', async () => {
+  test('action caution survives every combination', async () => {
     await writeStyle('novelist', '')
     await writeSettings('novelist')
     const prompt = await systemPromptText()
-    expect(prompt).toContain('# Text output')
     expect(prompt).toContain('Report outcomes faithfully')
   })
 })
 
 describe('section layout', () => {
-  test('the comment policy moved into # Code style, once', async () => {
+  test('the comment policy sits in the response section, once', async () => {
     const prompt = await systemPromptText()
-    const marker = 'Default to writing no comments'
+    const marker = 'Write a comment only for a constraint'
     expect(prompt.split(marker)).toHaveLength(2)
-    expect(prompt.indexOf('# Code style')).toBeLessThan(prompt.indexOf(marker))
+    expect(prompt.indexOf(RESPONSE_SECTION)).toBeLessThan(
+      prompt.indexOf(marker),
+    )
     expect(prompt.indexOf(marker)).toBeLessThan(
-      prompt.indexOf('# Executing actions with care'),
+      prompt.indexOf('# Context management'),
     )
   })
 
-  test('groups run text output, response style, then the style', async () => {
+  test('groups run harness, caution, response, then the style', async () => {
     const prompt = await systemPromptText()
-    expect(prompt.indexOf('# Text output')).toBeLessThan(
+    expect(prompt.indexOf('# Harness')).toBeLessThan(
+      prompt.indexOf('For actions that are hard to reverse'),
+    )
+    expect(prompt.indexOf('For actions that are hard to reverse')).toBeLessThan(
       prompt.indexOf(RESPONSE_SECTION),
     )
     expect(prompt.indexOf(RESPONSE_SECTION)).toBeLessThan(

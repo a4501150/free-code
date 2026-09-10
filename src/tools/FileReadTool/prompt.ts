@@ -12,7 +12,7 @@ export const MAX_LINES_TO_READ = 2000
 export const DESCRIPTION = 'Read a file from the local filesystem.'
 
 export const LINE_FORMAT_INSTRUCTION =
-  "- Each line is returned as `LINE:HASH|content` (e.g. `12:a3f|  return x`). LINE is the 1-based line number, HASH is that line's edit anchor — see the Edit tool for the anchor rules. The actual file content is everything after the `|`."
+  "- Each line is returned as `LINE:HASH|content` (for example `12:a3f|  return x`). LINE is the 1-based line number, and HASH is that line's edit anchor. See the Edit tool for the anchor rules. The actual file content is everything after the `|`."
 
 /**
  * Renders the Read tool prompt template.  The caller (FileReadTool) supplies
@@ -22,17 +22,16 @@ export function renderPromptTemplate(
   lineFormat: string,
   maxSizeInstruction: string,
 ): string {
-  return `Reads a file from the local filesystem. You can access any file directly by using this tool.
-Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
+  return `Reads a file from the local filesystem.
 
 Usage:
 - The file_path parameter must be an absolute path, not a relative path
 ${maxSizeInstruction ? `- ${maxSizeInstruction}` : ''}
 - For text and source files, provide only \`file_path\` to read the full file. To read a portion, provide \`offset\`, \`limit\`, or both.
 ${lineFormat}
-- This tool can read images (eg PNG, JPG), which come back as visual content.${
+- This tool can read images (for example PNG, JPG), which come back as visual content.${
     isPDFSupported()
-      ? '\n- This tool can read PDF files (.pdf); use the `pages` parameter for large PDFs. Do not pass `pages` when reading non-PDF files.'
+      ? '\n- This tool can read PDF files (.pdf). Use the `pages` parameter for large PDFs. Do not pass `pages` when reading non-PDF files.'
       : ''
   }
 - This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.

@@ -8,7 +8,7 @@ Skip plan mode for simple fixes, single-function additions, clear requirements, 
 ## Important Notes
 
 - This tool REQUIRES user approval - they must consent to entering plan mode
-- If unsure whether to use it, err on the side of planning - it's better to get alignment upfront than to redo work
+- If you are unsure whether to use it, choose planning - getting agreement before coding is better than redoing work
 `
 }
 

@@ -13,12 +13,12 @@ Send a message to another agent.
 | \`to\` | |
 |---|---|
 | \`"researcher"\` | Teammate by name |
-| \`"*"\` | Broadcast to all teammates — expensive (linear in team size), use only when everyone genuinely needs it |
+| \`"*"\` | Broadcast to all teammates — the cost grows with the team size, so use it only when everyone truly needs the message |
 
-Your plain text output is NOT visible to other agents — to communicate, you MUST call this tool. Messages from teammates are delivered automatically; you don't check an inbox. Refer to teammates by name, never by UUID. When relaying, don't quote the original — it's already rendered to the user.
+Your plain text output is NOT visible to other agents. To communicate, you MUST call this tool. Messages from teammates arrive automatically; you do not need to check an inbox. Refer to teammates by name, never by UUID. When you relay a message, do not quote the original. The original is already shown to the user.
 
 ## Protocol responses (legacy)
 
-If you receive a JSON message with \`type: "shutdown_request"\` or \`type: "plan_approval_request"\`, respond via this tool with the matching \`_response\` type — echo the \`request_id\`, set \`approve\` true/false. Approving shutdown terminates your process; rejecting a plan sends the teammate back to revise. Don't originate \`shutdown_request\` unless asked. Don't send structured JSON status messages — use TaskUpdate.
+If you receive a JSON message with \`type: "shutdown_request"\` or \`type: "plan_approval_request"\`, respond with this tool using the matching \`_response\` type. Echo the \`request_id\` and set \`approve\` to true or false. Approving shutdown ends your process. Rejecting a plan sends the teammate back to revise. Do not send \`shutdown_request\` unless the user asks. Do not send structured JSON status messages. Use TaskUpdate instead.
 `.trim()
 }

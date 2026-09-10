@@ -55,9 +55,8 @@ describe('Output styles', () => {
 
     const system = systemText(server)
     expect(system).toContain('# Output Style: simple-english')
-    expect(system).toContain('# Doing tasks')
-    expect(system).toContain('# Code style')
-    expect(system).toContain('# Response style')
+    expect(system).toContain('# Harness')
+    expect(system).toContain('# Communicating with the user')
   })
 
   test('outputStyle none removes the section and keeps the rest', async () => {
@@ -73,8 +72,8 @@ describe('Output styles', () => {
 
     const system = systemText(server)
     expect(system).not.toContain('# Output Style')
-    expect(system).toContain('# Doing tasks')
-    expect(system).toContain('# Response style')
+    expect(system).toContain('# Harness')
+    expect(system).toContain('# Communicating with the user')
   })
 
   test('/output-style picks a style and defers it to the next session', async () => {

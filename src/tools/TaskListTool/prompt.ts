@@ -4,7 +4,7 @@ export const DESCRIPTION = 'List all tasks in the task list'
 
 export function getPrompt(): string {
   const teammateUseCase = isAgentSwarmsEnabled()
-    ? `- Before assigning tasks to teammates, to see what's available
+    ? `- Before assigning tasks to teammates, to see which tasks are available
 `
     : ''
 
@@ -17,7 +17,7 @@ When working as a teammate:
 2. Look for tasks with status 'pending', no owner, and empty blockedBy
 3. **Prefer tasks in ID order** (lowest ID first) when multiple tasks are available, as earlier tasks often set up context for later ones
 4. Claim an available task using TaskUpdate (set \`owner\` to your name), or wait for leader assignment
-5. If blocked, focus on unblocking tasks or notify the team lead
+5. If a task is blocked, work on the tasks that remove the block, or notify the team lead
 `
     : ''
 
@@ -33,6 +33,6 @@ ${teammateUseCase}- After completing a task, to check for newly unblocked work o
 
 ## Output
 
-Returns one row per task: id, subject, status, owner, and open blockedBy IDs (a task with open blockedBy cannot be claimed until its blockers are resolved).
+Returns one row per task: id, subject, status, owner, and open blockedBy IDs (a task with open blockedBy cannot start until the tasks blocking it are completed).
 ${teammateWorkflow}`
 }

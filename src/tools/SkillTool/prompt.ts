@@ -149,7 +149,7 @@ export function formatCommandsWithinBudget(
 export const getPrompt = memoize(async (_cwd: string): Promise<string> => {
   return `Execute a skill within the main conversation
 
-When users ask you to perform tasks, check if any of the available skills match. Skills provide specialized capabilities and domain knowledge.
+When users ask you to perform tasks, check whether any of the available skills match. Skills provide specialized capabilities and domain knowledge.
 
 When users reference a "slash command" or "/<something>", invoke this tool only if the referenced name appears in the available skills listing.
 
@@ -160,11 +160,11 @@ How to invoke:
 Important:
 - Available skills are listed in system-reminder messages in the conversation
 - When a listed skill matches the user's request, this is a BLOCKING REQUIREMENT: after any brief acknowledgment, invoke the relevant Skill tool BEFORE performing substantive work or giving a substantive response about the task
-- NEVER mention a skill without actually calling this tool
+- NEVER mention a skill without calling this tool
 - Do not invoke a skill that is already running
 - Do not infer skill names from examples, common workflows, or built-in CLI commands
-- Do not use this tool for built-in CLI commands (like /help, /clear, etc.)
-- If you see a <${COMMAND_NAME_TAG}> tag in the current conversation turn, the skill has ALREADY been loaded - follow the instructions directly instead of calling this tool again
+- Do not use this tool for built-in CLI commands (for example /help or /clear)
+- If you see a <${COMMAND_NAME_TAG}> tag in the current conversation turn, the skill is ALREADY loaded - follow the instructions directly instead of calling this tool again
 `
 })
 

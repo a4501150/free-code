@@ -11,7 +11,7 @@ export function getWebSearchPrompt(): string {
 CRITICAL REQUIREMENT: End your response with a "Sources:" section listing the relevant result URLs as markdown hyperlinks: [Title](URL). Never skip it.
 
 Usage notes:
-  - IMPORTANT: If an MCP-provided web search tool is available, prefer using that tool instead of this one, as it may have fewer restrictions.
+  - IMPORTANT: If an MCP-provided web search tool is available, prefer using that tool instead of this one, because it can have fewer restrictions.
   - Domain filtering is supported to include or block specific websites
   - Web search is only available in the US
   - Use the current year (${currentMonthYear}) in queries for recent information, NOT last year

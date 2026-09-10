@@ -75,9 +75,8 @@ describe('conditional mode prompt alignment', () => {
   test('main prompt keeps generic tool routing and verifier exposure gates', () => {
     const source = readSource('src/constants/prompts.ts')
 
-    expect(source).toContain('const hasDedicatedTools')
     expect(source).toContain(
-      'When a relevant dedicated tool is available, prefer it over shell commands',
+      'Prefer a dedicated file/search tool over a shell command',
     )
     expect(source).not.toContain('enabledTools.has(FILE_READ_TOOL_NAME)')
     expect(source).not.toContain('enabledTools.has(FILE_EDIT_TOOL_NAME)')

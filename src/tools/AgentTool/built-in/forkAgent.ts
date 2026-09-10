@@ -11,7 +11,7 @@ export function buildForkWorktreeNotice(
   parentCwd: string,
   worktreePath: string,
 ): string {
-  return `You've inherited the conversation context above from a parent agent working in ${parentCwd}. You are operating in an isolated git worktree at ${worktreePath} — same repository, same relative file structure, separate working copy. Paths in the inherited context refer to the parent's working directory; translate them to your worktree root. Re-read files before editing if the parent may have modified them since they appear in the context. Your changes stay in this worktree and will not affect the parent's files.`
+  return `You have inherited the conversation context above from a parent agent working in ${parentCwd}. You are operating in an isolated git worktree at ${worktreePath} — same repository, same relative file structure, separate working copy. Paths in the inherited context refer to the parent's working directory. Translate them to your worktree root. Re-read files before editing, because the parent can change files after this context was taken. Your changes stay in this worktree and will not affect the parent's files.`
 }
 
 // The directive wrapper. The fork inherits the parent's transcript, so the
@@ -24,13 +24,13 @@ export function buildForkDirective(
 You are a worker fork. The transcript above is the parent's history — inherited reference, not your situation. You are NOT a continuation of that agent. Execute ONE directive, then stop.
 
 Hard rules:
-- Do NOT spawn subagents with the ${AGENT_TOOL_NAME} tool. The "default to forking" guidance is for the parent; you ARE the fork, execute directly.
+- Do NOT spawn subagents with the ${AGENT_TOOL_NAME} tool. The "default to forking" guidance is for the parent. You ARE the fork. Execute directly.
 - One shot: report once and stop. No follow-up questions, no proposed next steps, no waiting for the user.
 
-Guidelines (your directive may override any of these):
-- Stay in scope. Other forks may be handling adjacent work; if you spot something outside your directive, note it in a sentence and move on.
-- Open with one line restating your task, so the parent can spot scope drift at a glance.
-- Be concise — as short as the answer allows, no shorter. Plain text, no preamble, no meta-commentary.
+Guidelines (your directive can override any of these):
+- Stay in scope. Other forks can be handling adjacent work. If you see something outside your directive, note it in one sentence and continue.
+- Open with one line that restates your task, so the parent can see scope drift immediately.
+- Be concise — as short as the answer allows, and no shorter. Write plain text, with no preamble and no comments about your own process.
 - If you committed changes, list the paths and commit hashes in your report.
 </fork>
 

@@ -180,7 +180,7 @@ async function executeForkedSkill(
 export const inputSchema = z.object({
   skill: z
     .string()
-    .describe('The skill name. E.g., "commit", "review-pr", or "pdf"'),
+    .describe('The skill name. For example, "commit", "review-pr", or "pdf"'),
   args: z.string().optional().describe('Optional arguments for the skill'),
 })
 type InputSchema = typeof inputSchema

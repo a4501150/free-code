@@ -12,15 +12,10 @@ function getDefaultEditDescription(): string {
   return `Edits a file by referencing LINE:HASH anchors from the Read tool output.
 
 Usage:${getPreReadInstruction()}
-- Each edit has: op ("replace" | "insert_after" | "delete"), start (a "LINE:HASH" anchor), optional end (a "LINE:HASH" anchor for a multi-line replace/delete; defaults to start), and lines (the new text for replace/insert_after; omit for delete).
-- replace: replaces lines start..end with \`lines\`. insert_after: inserts \`lines\` after the \`start\` line (use "0" to insert at the top of the file). delete: removes lines start..end.
-- Examples, for a file whose Read output shows \`41:9k2|  const x = 1\` and \`44:p0q|  }\`:
+- Each edit has: op ("replace" | "insert_after" | "delete"), start (a "LINE:HASH" anchor), optional end (defaults to start; used for a multi-line replace/delete), and lines (the new text; omit for delete). replace overwrites lines start..end; insert_after inserts after the start line ("0" inserts at the top); delete removes start..end. Write only the content after the \`|\` in \`lines\`, never the anchor prefix.
+- Example, for a file whose Read output shows \`41:9k2|  const x = 1\` and \`44:p0q|  }\`:
   {"op":"replace","start":"41:9k2","lines":"  const x = 2"}
-  {"op":"insert_after","start":"41:9k2","lines":"  const y = 3"}
   {"op":"delete","start":"41:9k2","end":"44:p0q"}
-- Provide only the content after the \`|\` in \`lines\` — never include the \`LINE:HASH|\` anchor prefix itself.
-- Batch every change to one file into a single call: all edits in a call resolve against the one Read output you were shown, and a successful edit retires every anchor you hold for that file — Read it again before editing it again, and issue at most one Edit per file per response.
-- HASH fingerprints the trimmed line together with its line number, so repeated lines like \`}\` and blank lines get distinct anchors, and rewriting one line never changes another line's anchor.
-- An anchor asserts "line LINE of the file I was shown has this content". The tool resolves it against the current file; an anchor whose content changed is rejected — the error lists each failed anchor and quotes fresh anchors near the affected lines.
-- Copy anchors verbatim from this file's Read output. A hash taken from grep output, another file, or memory never matches — Read the file again when unsure.`
+- An anchor asserts "line LINE of the file I was shown has this content". HASH covers the trimmed line and its number, so repeated lines like \`}\` and blank lines get distinct anchors and rewriting one line never shifts another anchor. All edits resolve against the one Read output you were shown; a failed call reports each rejected anchor and quotes fresh anchors near the affected lines.
+- Batch every change to one file into a single call; a success retires every anchor you hold for that file — Read it again before editing it again, and issue at most one Edit per file per response. Copy anchors verbatim; a hash taken from grep output, another file, or memory never matches — Read the file again when unsure.`
 }

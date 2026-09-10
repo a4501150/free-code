@@ -90,15 +90,6 @@ export async function getPrompt(
   const forkAvailable =
     isForkAgentEnabled() && effectiveAgents.some(a => a.agentType === 'fork')
 
-  const writingThePromptSection = `
-
-## Writing the prompt
-
-${forkAvailable ? 'Any agent other than a fork starts with zero context. ' : ''}Brief the agent like a smart colleague who just walked into the room — it hasn't seen this conversation, doesn't know what you've tried, doesn't understand why this task matters. Explain the goal, what you've ruled out, and enough surrounding context for the agent to make judgment calls.
-
-**Never delegate understanding.** Don't write "based on your findings, fix the bug" or "based on the research, implement it." Those phrases push synthesis onto the agent instead of doing it yourself. Write prompts that prove you understood: include file paths, line numbers, what specifically to change.
-`
-
   // When the gate is on, the agent list lives in an agent_listing_delta
   // attachment (see attachments.ts) instead of inline here. This keeps the
   // tool description static across MCP/plugin/permission changes so the
@@ -123,49 +114,43 @@ When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to sel
     return shared
   }
 
-  const whenNotToUseSection = `
-Don't use ${AGENT_TOOL_NAME} for tasks you can handle directly (reading specific files, targeted searches) or for tasks unrelated to the listed agent descriptions.
-`
+  const whenNotToUse = `Do not use ${AGENT_TOOL_NAME} for tasks you can handle directly (reading specific files, targeted searches) or for tasks unrelated to the listed agent descriptions.`
 
   const whenToForkSection = forkAvailable
     ? `
+
 ## When to fork
-
-Fork yourself (pass \`subagent_type: "fork"\`) when the intermediate tool output isn't worth keeping in your context. The criterion is qualitative — "will I need this output again" — not task size. Fork open-ended questions. If research can be broken into independent questions, launch parallel forks in one message. A fork beats a fresh subagent for this — it inherits context and shares your cache. Forks are cheap because they share your prompt cache.
-
-**Don't peek.** The tool result includes an \`output_file\` path — do not Read or tail it. You get a completion notification; trust it. Reading the fork's transcript mid-flight pulls its tool noise into your context, which defeats the point of forking.
-
-**Don't race.** After launching, you know nothing about what the fork found. Never fabricate or predict fork results in any format — the notification arrives as a later message and is never something you write yourself. If the user asks a follow-up before the notification lands, tell them the fork is still running — give status, not a guess.
-
-**Writing a fork prompt.** The fork inherits your context, so its prompt is a *directive* — what to do, not what the situation is. Be specific about scope: what's in, what's out, what another agent is handling. Don't re-explain background.
-`
+Fork yourself (pass \`subagent_type: "fork"\`) when the intermediate tool output is not worth keeping in your context — a fork inherits your transcript and shares your prompt cache. Open-ended questions and independent research questions are good fork tasks. Launch parallel forks in one message.
+- Write the fork prompt as a directive (what to do), not a briefing — it already has your context. State what is in scope and what is out.
+- Do not Read or tail the \`output_file\` while the fork runs. That brings the fork's tool output into your context and defeats the purpose.
+- After you launch a fork, you know nothing about what it found. Never fabricate or predict its result. Until the completion notification arrives, report "still running", not a guess.`
     : ''
 
-  // When listing via attachment, the "launch multiple agents" note is in the
+  const promptingSection = `
+
+## Prompting
+${forkAvailable ? 'Any agent other than a fork starts with zero context. ' : ''}Brief the agent like a colleague who just entered the room — it has not seen this conversation. Explain the goal, what you already ruled out, and enough surrounding context for it to make judgment calls. Never delegate understanding: "based on your findings, fix the bug" pushes the reasoning onto the agent. Write a prompt that shows you understood the task — name file paths and what specifically to change — and say clearly whether to write code or only research.`
+
+  // When listing via attachment, the parallel-launch note is in the
   // attachment message. When inline, include it here.
   const concurrencyNote = !listViaAttachment
-    ? `
-- Launch multiple agents concurrently if task requires parallel agents; to do that, use a single message with multiple tool uses`
+    ? `; to run agents in parallel, use a single message with multiple tool uses`
     : ''
 
-  // Non-coordinator gets the full prompt with all sections
+  // Non-coordinator gets the lean worker contract: handoff facts, no examples.
   return `${shared}
-${whenNotToUseSection}${whenToForkSection}
+${whenNotToUse}${whenToForkSection}
 
-Usage notes:
-- Always include a short description (3-5 words) summarizing what the agent will do${concurrencyNote}
-- The agent returns a single message back to you; the result is not visible to the user, so send a concise summary yourself. Agents are NOT suitable for retrieving full file contents — file data read by the agent is summarized or lost in the single-message handoff. To get full file content, use the Read tool directly instead of delegating to an agent.${
+- The agent returns a single message back to you and the result is not visible to the user, so send a concise summary yourself. Agents are not suitable for retrieving full file contents — file data read by the agent is summarized or lost in the single-message handoff; use the Read tool directly for full content${concurrencyNote}.
+- Avoid duplicating work that active agents are already doing. If you delegate research, do not perform the same searches yourself.${
     isAgentSwarmsEnabled()
       ? `
-- To continue a previously spawned agent, use ${SEND_MESSAGE_TOOL_NAME} with the agent's ID or name as the \`to\` field. The agent resumes with its full context preserved. Each Agent invocation starts fresh — provide a complete task description.`
+- To continue a previously spawned agent, use ${SEND_MESSAGE_TOOL_NAME} with the agent's ID or name as the \`to\` field; it resumes with its full context. Each Agent invocation starts fresh — provide a complete task description.`
       : ''
-  }
-- Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent
-- Avoid duplicating work that active agents are already doing. If you delegate research, do not perform the same searches yourself.
-- If the user asks for parallel agents, send all the Agent tool uses in a single message.${
+  }${
     isWorktreeModeEnabled()
       ? `
-- You can optionally set \`isolation: "worktree"\` to run the agent in a temporary git worktree, giving it an isolated copy of the repository. The worktree is automatically cleaned up if the agent makes no changes; if changes are made, the worktree path and branch are returned in the result.`
+- Set \`isolation: "worktree"\` to run the agent in a temporary git worktree — an isolated copy of the repository. It is cleaned up automatically if the agent makes no changes; otherwise the worktree path and branch are returned in the result.`
       : ''
   }${
     isInProcessTeammate()
@@ -175,5 +160,5 @@ Usage notes:
         ? `
 - The name, team_name, and mode parameters are not available in this context — teammates cannot spawn other teammates. Omit them to spawn a subagent.`
         : ''
-  }${writingThePromptSection}`
+  }${promptingSection}`
 }

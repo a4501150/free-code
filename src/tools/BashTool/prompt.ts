@@ -18,7 +18,7 @@ function getBackgroundUsageNote(): string | null {
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
     return null
   }
-  return 'Use `run_in_background: true` to start a long-running command without holding the turn open. It returns at once with a task ID and an output file path, and a completion notification arrives on its own. To wait on external state, fold the polling into one backgrounded loop with an exit condition: `while ! check; do sleep 5; done`.'
+  return 'Use `run_in_background: true` to start a long-running command without holding the turn open. It returns at once with a task ID and an output file path, and a completion notification arrives on its own. To wait on external state, put the polling in one backgrounded loop with an exit condition: `while ! check; do sleep 5; done`.'
 }
 
 export function getSimplePrompt(): string {
@@ -29,7 +29,7 @@ export function getSimplePrompt(): string {
   const backgroundNote = getBackgroundUsageNote()
 
   const instructionItems: Array<string | string[]> = [
-    'The user reads every tool result in the session, and output is auto-saved to a file (referenced in the result) when it grows — run the command bare: a pipe through `tail`, `head`, or `grep` truncates what the user gets to see.',
+    'Run the command without a pipe. Do not append `| tail`, `| head`, or `| grep` to cap the output. The user reads every tool result, and a pipe truncates what the user sees. Large output needs no cap from you: it is saved to a file and the result names the path.',
     'Make commands and scripts print something. A silent run leaves the user with nothing to watch, and a failing script that never says where it stopped is hard to debug. For long-running work, prefer progress output (verbose flags, per-step echoes). Do not suppress output to save tokens: large output is stored in a file, not pasted into the context.',
     'Do not prepend `cd <current-directory> &&` to a `git` command — you are already there, and the compound needs a permission rule for both parts. To work in another directory, `cd` there first (the working directory persists) or run `git -C <dir>`.',
     ...(embedded
@@ -38,7 +38,7 @@ export function getSimplePrompt(): string {
           // FIRST matching alternative (leftmost-first), unlike GNU find's
           // POSIX leftmost-longest. This silently drops matches when a shorter
           // alternative is a prefix of a longer one.
-          "When using `find -regex` with alternation, put the longest alternative first. Example: use `'.*\\.\\(tsx\\|ts\\)'` not `'.*\\.\\(ts\\|tsx\\)'` — the second form silently skips `.tsx` files.",
+          "When using `find -regex` with alternation, put the longest alternative first. Example: use `'.*\\.\\(tsx\\|ts\\)'` not `'.*\\.\\(ts\\|tsx\\)'` — the second form skips `.tsx` files without an error.",
         ]
       : []),
   ]

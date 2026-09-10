@@ -6,7 +6,7 @@ export function getExitWorktreeToolPrompt(): string {
 This tool ONLY operates on worktrees created by EnterWorktree in this session. It will NOT touch:
 - Worktrees you created manually with \`git worktree add\`
 - Worktrees from a previous session (even if created by EnterWorktree then)
-- The directory you're in if EnterWorktree was never called
+- The directory you are in if EnterWorktree was never called
 
 If called outside an EnterWorktree session, the tool is a **no-op**: it reports that no worktree session is active and takes no action. Filesystem state is unchanged.
 

@@ -30,6 +30,7 @@ Preview content must be a self-contained HTML fragment (no <html>/<body> wrapper
 } as const
 
 export const ASK_USER_QUESTION_TOOL_PROMPT = `Use this tool to ask the user multiple-choice questions during execution: gather preferences or requirements, clarify ambiguous instructions, get decisions on implementation choices, or offer choices about direction.
+Reserve it for decisions where the user's answer changes what you do next; for choices with a conventional default or facts you can verify in the codebase yourself, pick the obvious option, mention it in your response, and proceed.
 
 Usage notes:
 - Users will always be able to select "Other" to provide custom text input

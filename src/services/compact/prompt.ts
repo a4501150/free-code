@@ -27,7 +27,7 @@ const NO_TOOLS_PREAMBLE = `CRITICAL: Respond with TEXT ONLY. Do NOT call any too
 // Two variants: BASE scopes to "the conversation", PARTIAL scopes to "the
 // recent messages". The <analysis> block is a drafting scratchpad that
 // formatCompactSummary() strips before the summary reaches context.
-const DETAILED_ANALYSIS_INSTRUCTION_BASE = `Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:
+const DETAILED_ANALYSIS_INSTRUCTION_BASE = `Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you covered all necessary points. In your analysis process:
 
 1. Chronologically analyze each message and section of the conversation. For each section thoroughly identify:
    - The user's explicit requests and intents
@@ -42,7 +42,7 @@ const DETAILED_ANALYSIS_INSTRUCTION_BASE = `Before providing your final summary,
    - Pay special attention to specific user feedback that you received, especially if the user told you to do something differently.
 2. Double-check for technical accuracy and completeness, addressing each required element thoroughly.`
 
-const DETAILED_ANALYSIS_INSTRUCTION_PARTIAL = `Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:
+const DETAILED_ANALYSIS_INSTRUCTION_PARTIAL = `Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you covered all necessary points. In your analysis process:
 
 1. Analyze the recent messages chronologically. For each section thoroughly identify:
    - The user's explicit requests and intents
@@ -58,11 +58,11 @@ const DETAILED_ANALYSIS_INSTRUCTION_PARTIAL = `Before providing your final summa
 2. Double-check for technical accuracy and completeness, addressing each required element thoroughly.`
 
 const BASE_COMPACT_PROMPT = `Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.
-This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing development work without losing context.
+This summary must thoroughly capture technical details, code patterns, and architectural decisions that are essential for continuing development work without losing context.
 
 ${DETAILED_ANALYSIS_INSTRUCTION_BASE}
 
-Your summary should include the following sections:
+Your summary must include the following sections:
 
 1. Primary Request and Intent: Capture all of the user's explicit requests and intents in detail
 2. Key Technical Concepts: List all important technical concepts, technologies, and frameworks discussed.
@@ -73,9 +73,9 @@ Your summary should include the following sections:
 7. Pending Tasks: Outline any pending tasks that you have explicitly been asked to work on.
 8. Current Work: Describe in detail precisely what was being worked on immediately before this summary request, paying special attention to the most recent messages from both user and assistant. Include file names and code snippets where applicable.
 9. Optional Next Step: List the next step that you will take that is related to the most recent work you were doing. IMPORTANT: ensure that this step is DIRECTLY in line with the user's most recent explicit requests, and the task you were working on immediately before this summary request. If your last task was concluded, then only list next steps if they are explicitly in line with the users request. Do not start on tangential requests or really old requests that were already completed without confirming with the user first.
-                       If there is a next step, include direct quotes from the most recent conversation showing exactly what task you were working on and where you left off. This should be verbatim to ensure there's no drift in task interpretation.
+                       If there is a next step, include direct quotes from the most recent conversation showing exactly what task you were working on and where you left off. Quote verbatim, so the task interpretation does not drift.
 
-Here's an example of how your output should be structured:
+The following example shows how to structure your output:
 
 <example>
 <analysis>
@@ -129,7 +129,7 @@ Here's an example of how your output should be structured:
 
 Please provide your summary based on the conversation so far, following this structure and ensuring precision and thoroughness in your response. 
 
-There may be additional summarization instructions provided in the included context. If so, remember to follow these instructions when creating the above summary. Examples of instructions include:
+The included context can contain additional summarization instructions. If it does, follow these instructions when creating the above summary. Examples of instructions include:
 <example>
 ## Compact Instructions
 When summarizing the conversation focus on typescript code changes and also remember the mistakes you made and how you fixed them.
@@ -145,7 +145,7 @@ const PARTIAL_COMPACT_PROMPT = `Your task is to create a detailed summary of the
 
 ${DETAILED_ANALYSIS_INSTRUCTION_PARTIAL}
 
-Your summary should include the following sections:
+Your summary must include the following sections:
 
 1. Primary Request and Intent: Capture the user's explicit requests and intents from the recent messages
 2. Key Technical Concepts: List important technical concepts, technologies, and frameworks discussed recently.
@@ -157,7 +157,7 @@ Your summary should include the following sections:
 8. Current Work: Describe precisely what was being worked on immediately before this summary request.
 9. Optional Next Step: List the next step related to the most recent work. Include direct quotes from the most recent conversation.
 
-Here's an example of how your output should be structured:
+The following example shows how to structure your output:
 
 <example>
 <analysis>
@@ -208,7 +208,7 @@ const PARTIAL_COMPACT_UP_TO_PROMPT = `Your task is to create a detailed summary 
 
 ${DETAILED_ANALYSIS_INSTRUCTION_BASE}
 
-Your summary should include the following sections:
+Your summary must include the following sections:
 
 1. Primary Request and Intent: Capture the user's explicit requests and intents in detail
 2. Key Technical Concepts: List important technical concepts, technologies, and frameworks discussed.
@@ -220,7 +220,7 @@ Your summary should include the following sections:
 8. Work Completed: Describe what was accomplished by the end of this portion.
 9. Context for Continuing Work: Summarize any context, decisions, or state that would be needed to understand and continue the work in subsequent messages.
 
-Here's an example of how your output should be structured:
+The following example shows how to structure your output:
 
 <example>
 <analysis>
@@ -360,7 +360,7 @@ Continue the conversation from where it left off without asking the user any fur
     if (feature('KAIROS') && proactiveModule?.isProactiveActive()) {
       continuation += `
 
-You are running in autonomous/proactive mode. This is NOT a first wake-up — you were already working autonomously before compaction. Continue your work loop: pick up where you left off based on the summary above. Do not greet the user or ask what to work on.`
+You are running in autonomous/proactive mode. This is NOT a first wake-up — you already worked autonomously before compaction. Continue your work loop: pick up where you left off based on the summary above. Do not greet the user or ask what to work on.`
     }
 
     return continuation

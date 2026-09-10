@@ -10,5 +10,5 @@ export const EXIT_PLAN_MODE_TOOL_PROMPT = `Use this tool when you are in plan mo
 - The user cannot see the plan until this tool is called, so resolve open questions with ${ASK_USER_QUESTION_TOOL_NAME} first, then call this tool
 
 ## When to Use This Tool
-IMPORTANT: Only use this tool when the task requires planning the implementation steps of a task that requires writing code. For research tasks where you're gathering information, searching files, reading files or in general trying to understand the codebase - do NOT use this tool.
+IMPORTANT: Only use this tool when the task requires planning the implementation steps of a task that requires writing code. For research tasks where you are gathering information, searching files, reading files or in general trying to understand the codebase - do NOT use this tool.
 `
