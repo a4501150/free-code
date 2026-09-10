@@ -14,6 +14,13 @@ import {
 import { VERIFY_PLAN_EXECUTION_TOOL_NAME } from '../tools/VerifyPlanExecutionTool/constants.js'
 import type { Tools } from '../Tool.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
+import {
+  getCommitAndPRInstructions,
+  BASH_MULTILINE_SYNTAX,
+  POWERSHELL_MULTILINE_SYNTAX,
+  type MultiLineSyntax,
+} from '../tools/shared/gitInstructions.js'
+import { isPowerShellToolEnabled } from '../utils/shell/shellToolUtils.js'
 import { getPublicModelDisplayName } from '../utils/model/model.js'
 import type {
   MCPServerConnection,
@@ -68,6 +75,12 @@ export const CLAUDE_CODE_DOCS_MAP_URL =
 
 function getHooksSection(): string {
   return `Users may configure 'hooks', shell commands that execute in response to events like tool calls, in settings. Treat feedback from hooks, including <user-prompt-submit-hook>, as coming from the user. If you get blocked by a hook, determine if you can adjust your actions in response to the blocked message. If not, ask the user to check their hooks configuration.`
+}
+function getGitInstructionsSection(
+  syntax: MultiLineSyntax | null,
+): string | null {
+  const section = getCommitAndPRInstructions(syntax ?? BASH_MULTILINE_SYNTAX)
+  return section === '' ? null : section
 }
 
 function getSystemRemindersSection(): string {
@@ -569,8 +582,21 @@ export async function enhanceSystemPromptWithEnvDetails(
 - Agent threads always have their cwd reset between bash calls, as a result please only use absolute file paths.
 - In your final response, share file paths (always absolute, never relative) that are relevant to the task. Include code snippets only when the exact text is load-bearing (e.g., a bug you found, a function signature the caller asked for) — do not recap code you merely read.
 - Do not use a colon before tool calls. Text like "Let me read the file:" followed by a read tool call should just be "Let me read the file." with a period.`
+  // Git guidance lives in the system prompt, not the shell tool prompts.
+  // Shell tools are not visible here, so pick the multi-line syntax by
+  // platform: PowerShell only runs where isPowerShellToolEnabled() can be true.
+  const gitSection = getGitInstructionsSection(
+    isPowerShellToolEnabled()
+      ? POWERSHELL_MULTILINE_SYNTAX
+      : BASH_MULTILINE_SYNTAX,
+  )
   const envInfo = await computeEnvInfo(model, additionalWorkingDirectories)
-  return [...existingSystemPrompt, notes, envInfo]
+  return [
+    ...existingSystemPrompt,
+    notes,
+    ...(gitSection !== null ? [gitSection] : []),
+    envInfo,
+  ]
 }
 
 /**

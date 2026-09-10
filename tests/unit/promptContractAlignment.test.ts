@@ -63,7 +63,7 @@ describe('tool prompt contracts', () => {
       'Retrieve output from a running or completed background task',
     )
     expect(output).not.toContain('[Deprecated]')
-    expect(update).toContain('Mark tasks as completed')
+    expect(update).toContain('as soon as you finish it')
     expect(update).not.toContain('Mark tasks as resolved')
   })
 })

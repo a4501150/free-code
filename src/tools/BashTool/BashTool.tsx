@@ -323,28 +323,18 @@ const isBackgroundTasksDisabled =
   isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
 
 const fullInputSchema = z.strictObject({
-  command: z
-    .string()
-    .describe(
-      'The command to execute. Run it bare: do not pipe through tail or head to cap output — large output is capped inline and the full result is saved to a file.',
-    ),
+  command: z.string().describe('The command to execute.'),
   timeout: semanticNumber(z.number().optional()).describe(
-    `Optional timeout in milliseconds (max ${getMaxTimeoutMs()})`,
+    `Optional timeout in milliseconds. Max ${getMaxTimeoutMs()}; default ${getDefaultTimeoutMs()}.`,
   ),
-  description: z.string().optional()
-    .describe(`Clear, concise description of what this command does in active voice. Never use words like "complex" or "risk" in the description - just describe what it does.
-
-For simple commands (git, npm, standard CLI tools), keep it brief (5-10 words):
-- ls → "List files in current directory"
-- git status → "Show working tree status"
-- npm install → "Install package dependencies"
-
-For commands that are harder to parse at a glance (piped commands, obscure flags, etc.), add enough context to clarify what it does:
-- find . -name "*.tmp" -exec rm {} \\; → "Find and delete all .tmp files recursively"
-- git reset --hard origin/main → "Discard all local changes and match remote main"
-- curl -s url | jq '.data[]' → "Fetch JSON from URL and extract data array elements"`),
+  description: z
+    .string()
+    .optional()
+    .describe(
+      `Short description of what the command does, in active voice. Simple commands get a brief one (5-10 words): ls → "List files in current directory". Commands that are hard to parse at a glance state the effect: git reset --hard origin/main → "Discard all local changes and match remote main"; find . -name "*.tmp" -exec rm {} \\; → "Find and delete all .tmp files recursively".`,
+    ),
   run_in_background: semanticBoolean(z.boolean().optional()).describe(
-    `Run this command asynchronously instead of sleeping or polling. Returns at once with a task ID and output file path. Not for parallelizing independent commands. Run it bare — a pipe buffers all output until the command exits.`,
+    `Run the command asynchronously instead of sleeping or polling. Returns at once with a task ID and output file path; a completion notification arrives when it exits. A pipe buffers all output until the command exits.`,
   ),
   _simulatedSedEdit: z
     .object({

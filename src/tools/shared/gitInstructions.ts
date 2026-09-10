@@ -8,6 +8,16 @@ export type MultiLineSyntax = {
   pr: string
 }
 
+export const BASH_MULTILINE_SYNTAX: MultiLineSyntax = {
+  commit: `a HEREDOC (\`git commit -m "$(cat <<'EOF' ... EOF\\n)"\`)`,
+  pr: 'a HEREDOC',
+}
+
+export const POWERSHELL_MULTILINE_SYNTAX: MultiLineSyntax = {
+  commit: "a single-quoted here-string (`@'...'@`)",
+  pr: 'a here-string',
+}
+
 export function getCommitAndPRInstructions(syntax: MultiLineSyntax): string {
   if (!shouldIncludeGitInstructions()) return ''
 

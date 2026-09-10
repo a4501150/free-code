@@ -13,13 +13,7 @@ import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../FileWriteTool/prompt.js'
 import { GLOB_TOOL_NAME } from '../GlobTool/prompt.js'
 import { GREP_TOOL_NAME } from '../GrepTool/prompt.js'
-import { getCommitAndPRInstructions } from '../shared/gitInstructions.js'
 import { POWERSHELL_TOOL_NAME } from './toolName.js'
-
-const POWERSHELL_MULTILINE_SYNTAX = {
-  commit: 'a single-quoted here-string (see "Passing multiline strings" above)',
-  pr: 'a here-string',
-}
 
 export function getDefaultTimeoutMs(): number {
   return getDefaultBashTimeoutMs()
@@ -33,7 +27,7 @@ function getBackgroundUsageNote(): string | null {
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
     return null
   }
-  return `  - If you find yourself reaching for \`Start-Sleep\` or a poll loop to wait for a command — whether about to run it, or one you have already started — use \`run_in_background: true\` instead. Control returns immediately and the full output arrives in a later turn as a system notification.`
+  return `  - Use \`run_in_background: true\` to start a long-running command without holding the turn open. It returns at once with a task ID and output file path, and a completion notification arrives on its own.`
 }
 
 /**
@@ -66,24 +60,12 @@ function getEditionSection(edition: PowerShellEdition | null): string {
 export async function getPrompt(): Promise<string> {
   const backgroundNote = getBackgroundUsageNote()
   const edition = await getPowerShellEdition()
-  const gitInstructions = getCommitAndPRInstructions(
-    POWERSHELL_MULTILINE_SYNTAX,
-  )
 
-  return `Executes a given PowerShell command with optional timeout. Working directory persists between commands; shell state (variables, functions) does not.
+  return `Executes a given PowerShell command and returns its output. Working directory persists between commands; shell state (variables, functions) does not.
 
-IMPORTANT: This tool is for terminal operations via PowerShell: git, npm, docker, and PS cmdlets. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.
+The user reads every tool result in the session, and output is auto-saved to a file (referenced in the result) when it grows — run the command bare: a pipe through \`Select-Object\` or \`Select-String\` truncates what the user gets to see.
 
 ${getEditionSection(edition)}
-
-Before executing the command, please follow these steps:
-
-1. Directory Verification:
-   - If the command will create new directories or files, first use \`Get-ChildItem\` (or \`ls\`) to verify the parent directory exists and is the correct location
-
-2. Command Execution:
-   - Always quote file paths that contain spaces with double quotes
-   - Capture the output of the command.
 
 PowerShell Syntax Notes:
    - Variables use $ prefix: $myVar = "value"
@@ -114,22 +96,12 @@ Second line with $literal dollar signs.
    - For arguments containing \`-\`, \`@\`, or other characters PowerShell parses as operators, use the stop-parsing token: \`git log --% --format=%H\`
 
 Usage notes:
-  - The command argument is required.
-  - You can specify an optional timeout in milliseconds (up to ${getMaxTimeoutMs()}ms / ${getMaxTimeoutMs() / 60000} minutes). If not specified, commands will timeout after ${getDefaultTimeoutMs()}ms (${getDefaultTimeoutMs() / 60000} minutes).
-  - It is very helpful if you write a clear, concise description of what this command does.
-  - If the output exceeds ${getMaxOutputLength()} characters, output will be truncated before being returned to you.
-${backgroundNote ? backgroundNote + '\n' : ''}\
-  - Avoid using PowerShell to run commands that have dedicated tools, unless explicitly instructed:
-    - File search: Use ${GLOB_TOOL_NAME} (NOT Get-ChildItem -Recurse)
-    - Content search: Use ${GREP_TOOL_NAME} (NOT Select-String)
-    - Read files: Use ${FILE_READ_TOOL_NAME} (NOT Get-Content)
-    - Edit files: Use ${FILE_EDIT_TOOL_NAME}
-    - Write files: Use ${FILE_WRITE_TOOL_NAME} (NOT Set-Content/Out-File)
-    - Communication: Output text directly (NOT Write-Output/Write-Host)
-  - When issuing multiple commands:
-    - If the commands are independent and can run in parallel, make multiple ${POWERSHELL_TOOL_NAME} tool calls in a single message.
-    - If the commands depend on each other and must run sequentially, chain them in a single ${POWERSHELL_TOOL_NAME} call (see edition-specific chaining syntax above).
-    - Use \`;\` only when you need to run commands sequentially but don't care if earlier commands fail.
-    - DO NOT use newlines to separate commands (newlines are ok in quoted strings and here-strings)
-  - Do NOT prefix commands with \`cd\` or \`Set-Location\` -- the working directory is already set to the correct project directory automatically.${gitInstructions ? `\n\n${gitInstructions}` : ''}`
+   - Timeout in milliseconds, up to ${getMaxTimeoutMs()}ms; default ${getDefaultTimeoutMs()}ms.
+   - Output over ${getMaxOutputLength()} characters is truncated before being returned to you.${backgroundNote ? '\n' + backgroundNote : ''}
+   - Prefer the dedicated tools over PowerShell for file operations: ${GLOB_TOOL_NAME} for file search, ${GREP_TOOL_NAME} for content search, ${FILE_READ_TOOL_NAME} to read, ${FILE_EDIT_TOOL_NAME} to edit, ${FILE_WRITE_TOOL_NAME} to write.
+   - When issuing multiple commands:
+   - Independent commands: make multiple ${POWERSHELL_TOOL_NAME} tool calls in a single message.
+   - Dependent commands: chain them in a single ${POWERSHELL_TOOL_NAME} call (see edition-specific chaining syntax above).
+   - \`;\` runs commands sequentially regardless of earlier failure. DO NOT use newlines to separate commands (newlines are ok in quoted strings and here-strings).
+   - Do NOT prefix commands with \`cd\` or \`Set-Location\` — the working directory is already set to the correct project directory automatically.`
 }

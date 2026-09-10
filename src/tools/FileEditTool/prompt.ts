@@ -22,6 +22,5 @@ Usage:${getPreReadInstruction()}
 - Batch every change to one file into a single call: all edits in a call resolve against the one Read output you were shown, and a successful edit retires every anchor you hold for that file — Read it again before editing it again, and issue at most one Edit per file per response.
 - HASH fingerprints the trimmed line together with its line number, so repeated lines like \`}\` and blank lines get distinct anchors, and rewriting one line never changes another line's anchor.
 - An anchor asserts "line LINE of the file I was shown has this content". The tool resolves it against the current file; an anchor whose content changed is rejected — the error lists each failed anchor and quotes fresh anchors near the affected lines.
-- Copy anchors verbatim from this file's Read output. A hash taken from grep output, another file, or memory never matches — Read the file again when unsure.
-- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.`
+- Copy anchors verbatim from this file's Read output. A hash taken from grep output, another file, or memory never matches — Read the file again when unsure.`
 }

@@ -106,13 +106,15 @@ describe('getAttributionTexts', () => {
 describe('shared git instructions', () => {
   const repoRoot = process.cwd()
 
-  test('both shell prompts build the section from the shared helper', () => {
+  test('git guidance rides the session context, not the shell tool prompts', () => {
+    const contextSource = readFileSync(join(repoRoot, 'src/context.ts'), 'utf8')
+    expect(contextSource).toContain('getCommitAndPRInstructions')
     for (const file of [
       'src/tools/BashTool/prompt.ts',
       'src/tools/PowerShellTool/prompt.ts',
     ]) {
       const source = readFileSync(join(repoRoot, file), 'utf8')
-      expect(source).toContain('getCommitAndPRInstructions')
+      expect(source).not.toContain('getCommitAndPRInstructions')
     }
   })
 
