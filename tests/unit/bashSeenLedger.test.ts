@@ -46,9 +46,9 @@ describe('classifyBashReadCommand', () => {
     expect(
       classifyBashReadCommand(['head', '-n', '3', '/x/f.ts'], '/x'),
     ).toMatchObject({ expectedLineNos: [1, 2, 3] })
-    expect(classifyBashReadCommand(['head', '-5', '/x/f.ts'], '/x')).toMatchObject(
-      { expectedLineNos: [1, 2, 3, 4, 5] },
-    )
+    expect(
+      classifyBashReadCommand(['head', '-5', '/x/f.ts'], '/x'),
+    ).toMatchObject({ expectedLineNos: [1, 2, 3, 4, 5] })
     expect(
       classifyBashReadCommand(['head', '-n3', '/x/f.ts'], '/x'),
     ).toMatchObject({ expectedLineNos: [1, 2, 3] })
@@ -73,12 +73,43 @@ describe('classifyBashReadCommand', () => {
       classifyBashReadCommand(['grep', '-n', 'pat', '/x/f.ts'], '/x'),
     ).toMatchObject({ kind: 'sparse', path: '/x/f.ts' })
     expect(classifyBashReadCommand(['grep', 'pat', '/x/f.ts'], '/x')).toBe(null)
+    expect(classifyBashReadCommand(['grep', '-n', 'pat', 'a', 'b'], '/x')).toBe(
+      null,
+    )
     expect(
-      classifyBashReadCommand(['grep', '-n', 'pat', 'a', 'b'], '/x'),
+      classifyBashReadCommand(
+        ['grep', '-n', '--color', 'pat', '/x/f.ts'],
+        '/x',
+      ),
+    ).toBe(null)
+  })
+
+  test('rg needs -n and exactly pattern + one file', () => {
+    expect(
+      classifyBashReadCommand(['rg', '-n', 'pat', '/x/f.ts'], '/x'),
+    ).toMatchObject({ kind: 'sparse', path: '/x/f.ts' })
+    expect(classifyBashReadCommand(['rg', 'pat', '/x/f.ts'], '/x')).toBe(null)
+    // Bundled single-char flags are allowed when every letter is allowlisted
+    // and one of them is -n.
+    expect(
+      classifyBashReadCommand(['rg', '-in', 'pat', '/x/f.ts'], '/x'),
+    ).toMatchObject({ kind: 'sparse' })
+    expect(classifyBashReadCommand(['rg', '-i', 'pat', '/x/f.ts'], '/x')).toBe(
+      null,
+    )
+    // Long flags change the rows or mean something else: fail closed.
+    expect(
+      classifyBashReadCommand(['rg', '-n', '-A', '2', 'pat', '/x/f.ts'], '/x'),
     ).toBe(null)
     expect(
-      classifyBashReadCommand(['grep', '-n', '--color', 'pat', '/x/f.ts'], '/x'),
+      classifyBashReadCommand(
+        ['rg', '--no-line-number', 'pat', '/x/f.ts'],
+        '/x',
+      ),
     ).toBe(null)
+    expect(classifyBashReadCommand(['rg', '-n', 'pat', 'a', 'b'], '/x')).toBe(
+      null,
+    )
   })
 
   test('unknown readers fail closed', () => {
@@ -141,6 +172,28 @@ describe('recordBashReadSighting', () => {
     }
   })
 
+  test('rg -n rows are verified against disk', async () => {
+    const file = await tempFile('f.txt', 'a\nb\nc')
+    try {
+      const cache = newCache()
+      recordBashReadSighting(cache, `rg -n b ${file}`, '2:b', '/x')
+      expect(cache.get(file)?.seenRanges).toEqual([{ start: 2, end: 2 }])
+
+      // Elided rows (e.g. --max-columns) are not `num:content` anymore,
+      // which aborts the whole sighting.
+      const cache2 = newCache()
+      recordBashReadSighting(
+        cache2,
+        `rg -n b ${file}`,
+        '2:b\n[Omitted long matching line]',
+        '/x',
+      )
+      expect(cache2.get(file)).toBeUndefined()
+    } finally {
+      await rm(file, { recursive: true, force: true })
+    }
+  })
+
   test('pipelines and redirects record nothing', async () => {
     const file = await tempFile('f.txt', 'a\nb\nc')
     try {
@@ -159,11 +212,9 @@ describe('recordGrepContentSightings', () => {
     const file = await tempFile('f.txt', 'one\ntwo\nthree')
     try {
       const cache = newCache()
-      recordGrepContentSightings(
-        cache,
-        [`${file}:2:two`, `${file}-3-three`],
-        { multiline: false },
-      )
+      recordGrepContentSightings(cache, [`${file}:2:two`, `${file}-3-three`], {
+        multiline: false,
+      })
       const entry = cache.get(file)
       expect(entry?.source).toBe('grep')
       // Adjacent rows merge into one range.
@@ -178,9 +229,13 @@ describe('recordGrepContentSightings', () => {
     try {
       const cache = newCache()
       // ripgrep showed line 2 truncated on disk and line 3 verbatim.
-      recordGrepContentSightings(cache, [`${file}:2:tw…[truncated]`, `${file}:3:three`], {
-        multiline: false,
-      })
+      recordGrepContentSightings(
+        cache,
+        [`${file}:2:tw…[truncated]`, `${file}:3:three`],
+        {
+          multiline: false,
+        },
+      )
       expect(cache.get(file)?.seenRanges).toEqual([{ start: 3, end: 3 }])
     } finally {
       await rm(file, { recursive: true, force: true })

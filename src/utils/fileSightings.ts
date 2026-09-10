@@ -7,7 +7,8 @@
  *   is re-verified against the file before being marked seen (ripgrep elides
  *   lines over --max-columns, so a shown row can differ from disk).
  * - BashTool: a small allowlist of single-file read commands (cat, head, nl,
- *   sed -n 'A,Bp', grep -n) whose output we can map back to exact line ranges
+ *   sed -n 'A,Bp', grep -n, rg -n) whose output we can map back to exact line
+ *   ranges
  *   through the security AST. Everything outside the allowlist — pipelines,
  *   redirects, multiple operands, unrecognized flags — records nothing (fail
  *   closed): no sighting just means the model must Read before editing
@@ -65,7 +66,10 @@ function recordSighting(
 ): void {
   const ranges = normalizeSeenRanges(seenRanges)
   if (ranges.length === 0) return
-  const wholeFile = ranges.length === 1 && ranges[0]!.start <= 1 && ranges[0]!.end >= snap.totalLines
+  const wholeFile =
+    ranges.length === 1 &&
+    ranges[0]!.start <= 1 &&
+    ranges[0]!.end >= snap.totalLines
   readFileState.set(filePath, {
     content: snap.content,
     timestamp: Math.floor(snap.mtimeMs),
@@ -77,7 +81,6 @@ function recordSighting(
 }
 
 // --- GrepTool content mode ----------------------------------------------------
-
 
 /**
  * Parse raw ripgrep content-mode output lines into per-file shown rows.
@@ -201,9 +204,50 @@ export function classifyBashReadCommand(
         kind: 'contiguous-from',
       }
     }
+    case 'rg': {
+      // ripgrep shows matched lines only; with -n every row is
+      // `num:content` (a directory operand adds a file prefix that the
+      // sparse verifier rejects, so that fails closed too). Only
+      // single-char flags, bundled ones included; context, replace and
+      // glob flags alter the rows and stay out of the allowlist.
+      const LETTERS = new Set('niFwxv')
+      const positional: string[] = []
+      let sawLineNo = false
+      for (const a of args) {
+        if (a.startsWith('-')) {
+          const letters = a.slice(1)
+          if (
+            letters.length === 0 ||
+            !letters.split('').every(c => LETTERS.has(c))
+          )
+            return null
+          sawLineNo ||= letters.includes('n')
+        } else {
+          positional.push(a)
+        }
+      }
+      if (!sawLineNo || positional.length !== 2) return null
+      return {
+        path: fileArg(positional[1]!),
+        expectedLineNos: [],
+        kind: 'sparse',
+      }
+    }
     case 'grep': {
       if (!args.includes('-n')) return null
-      const flags = new Set(['-n', '-i', '-E', '-F', '-s', '-w', '-x', '-c', '-r', '-l', '-v'])
+      const flags = new Set([
+        '-n',
+        '-i',
+        '-E',
+        '-F',
+        '-s',
+        '-w',
+        '-x',
+        '-c',
+        '-r',
+        '-l',
+        '-v',
+      ])
       const positional: string[] = []
       for (const a of args) {
         if (a.startsWith('-') && flags.has(a)) continue
@@ -232,7 +276,10 @@ function rangeToArray(start: number, end: number): number[] {
 // (stripEmptyLines), so expected output is compared with blank lines removed;
 // the model still infers their position from the gap, so a matched prefix
 // marks a contiguous range.
-function shownLinesOf(snap: Snapshot, numbered: boolean): { lineNo: number; text: string }[] {
+function shownLinesOf(
+  snap: Snapshot,
+  numbered: boolean,
+): { lineNo: number; text: string }[] {
   const out: { lineNo: number; text: string }[] = []
   snap.lineArray.forEach((line, i) => {
     if (line.trim() === '') return
@@ -301,7 +348,13 @@ function markBashSighting(
   // start..lastLine (blank lines were stripped from the output but remain
   // inferable from their gaps, so the range is contiguous).
   const start = expected[0]!.lineNo
-  recordSighting(readFileState, classified.path, snap, [{ start, end: lastLine }], 'bash')
+  recordSighting(
+    readFileState,
+    classified.path,
+    snap,
+    [{ start, end: lastLine }],
+    'bash',
+  )
 }
 
 /**
