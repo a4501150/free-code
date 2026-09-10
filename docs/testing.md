@@ -62,6 +62,11 @@ live turn races the requests still in flight.
 otherwise consume queued mock responses invisibly. A test that turns them back on
 must queue the extra responses.
 
+`TmuxSession` also defaults settings to `statusLine: {type:'off'}`, because the
+embedded default statusline suppresses the `? for shortcuts` hint that its
+default readyText matches. A test exercising the default statusline must pass
+`statusLine: undefined` and its own readyText.
+
 ## Unit tests
 
 Unit tests are fast and need no build.

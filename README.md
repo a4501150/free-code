@@ -13,7 +13,7 @@
   <a href="#quick-install"><img src="https://img.shields.io/badge/install-one--liner-blue?style=flat-square" alt="Install" /></a>
   <a href="https://github.com/paoloanzn/free-code/stargazers"><img src="https://img.shields.io/github/stars/paoloanzn/free-code?style=flat-square" alt="Stars" /></a>
   <a href="https://github.com/paoloanzn/free-code/issues"><img src="https://img.shields.io/github/issues/paoloanzn/free-code?style=flat-square" alt="Issues" /></a>
-  <a href="FEATURES.md"><img src="https://img.shields.io/badge/features-29%20flags-orange?style=flat-square" alt="Feature Flags" /></a>
+  <a href="FEATURES.md"><img src="https://img.shields.io/badge/features-25%20flags-orange?style=flat-square" alt="Feature Flags" /></a>
   <a href="#ipfs-mirror"><img src="https://img.shields.io/badge/IPFS-mirrored-teal?style=flat-square" alt="IPFS" /></a>
 </p>
 
@@ -71,7 +71,7 @@ Anthropic injects instructions that constrain the model beyond its own training:
 hardcoded refusal patterns, a cyber-risk instruction block and a
 managed-settings security overlay pushed from their servers.
 
-- `CYBER_RISK_INSTRUCTION` is now an empty string.
+- The cyber-risk instruction block is deleted from the prompt path.
 - The managed-settings, MDM and remote-policy code is deleted, so no server can push a rule into your session.
 
 One reminder still fires after some file reads, and it is worth knowing that it
@@ -89,20 +89,21 @@ The snapshot shipped React Compiler output baked into every `.tsx` file:
 was close to unreadable.
 
 This fork recovered the original source from the inline base64 source maps in
-each file. The 515 `.tsx` files in `src/` are clean, human-readable TSX. The
+each file. The `.tsx` files in `src/` are clean, human-readable TSX. The
 React Compiler is now an optional build step and is off by default.
 
 ### Experimental features are unlocked
 
-The source gates 29 features behind `bun:bundle` compile-time switches.
+The source gates 25 features behind `bun:bundle` compile-time switches.
 
 | Set                  | Flags  | Build                    |
 | -------------------- | ------ | ------------------------ |
-| Default              | 10     | `bun run build`          |
-| Default and dev-full | 25     | `bun run build:dev:full` |
+| Default              | 9      | `bun run build`          |
+| Default and dev-full | 21     | `bun run build:dev:full` |
 | Manual-only          | 4 more | `--feature=NAME`         |
 
-No single build enables all 29. The four manual-only flags stay off unless you
+No single build enables all 25. The four manual-only flags (`BUDDY`,
+`DEDICATED_SEARCH_TOOLS`, `VERIFY_PLAN`, `WORKTREE_MODE`) stay off unless you
 name them. [FEATURES.md](FEATURES.md) audits each one.
 
 ---
