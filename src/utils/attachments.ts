@@ -64,7 +64,10 @@ import {
   writeToolCatalog,
   type CatalogServerSnapshot,
 } from '../services/toolCatalog/writer.js'
-import { mcpToolCatalogDisabled } from '../services/toolCatalog/exposure.js'
+import {
+  isToolExposedToModel,
+  mcpToolCatalogDisabled,
+} from '../services/toolCatalog/exposure.js'
 import { getSnippetForTwoFileDiff } from 'src/tools/FileEditTool/utils.js'
 import { maybeResizeAndDownsampleImageBlock } from './imageResizer.js'
 import type { PastedContent } from './config.js'
@@ -1412,7 +1415,9 @@ export async function getMcpToolsDeltaAttachment(
   if (mcpToolCatalogDisabled()) return []
   const lazyNames = new Set(getSettings_DEPRECATED()?.lazyTools ?? [])
   const allTools = toolUseContext.options.tools
-  const mcpTools = allTools.filter(tool => tool.isMcp && tool.mcpInfo)
+  const mcpTools = allTools.filter(
+    tool => tool.isMcp && tool.mcpInfo && !isToolExposedToModel(tool),
+  )
   const lazyBuiltInTools = allTools.filter(
     tool => !tool.isMcp && lazyNames.has(tool.name),
   )

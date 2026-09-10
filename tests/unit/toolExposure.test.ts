@@ -35,6 +35,29 @@ describe('tool exposure', () => {
     )
   })
 
+  test('mcpServers entry with alwaysLoad skips the catalog', async () => {
+    await useSettings({
+      mcpServers: {
+        srv: { command: 'x', alwaysLoad: true },
+        other: { command: 'y' },
+      },
+    })
+    expect(
+      isToolExposedToModel({
+        name: 'mcp__srv__a',
+        isMcp: true,
+        mcpInfo: { serverName: 'srv', toolName: 'a' },
+      }),
+    ).toBe(true)
+    expect(
+      isToolExposedToModel({
+        name: 'mcp__other__b',
+        isMcp: true,
+        mcpInfo: { serverName: 'other', toolName: 'b' },
+      }),
+    ).toBe(false)
+  })
+
   test('lazyTools hides named built-ins but never the dispatcher', async () => {
     await useSettings({ lazyTools: ['Bash', INVOKE_TOOL_NAME] })
     expect(isToolExposedToModel({ name: 'Bash', isMcp: false })).toBe(false)

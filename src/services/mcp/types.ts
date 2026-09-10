@@ -31,6 +31,7 @@ export const McpStdioServerConfigSchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
   includeTools: z.array(z.string()).optional(),
   excludeTools: z.array(z.string()).optional(),
+  alwaysLoad: z.boolean().optional(),
 })
 
 // Cross-App Access (XAA / SEP-990): just a per-server flag. IdP connection
@@ -60,6 +61,7 @@ export const McpSSEServerConfigSchema = z.object({
   oauth: McpOAuthConfigSchema.optional(),
   includeTools: z.array(z.string()).optional(),
   excludeTools: z.array(z.string()).optional(),
+  alwaysLoad: z.boolean().optional(),
 })
 
 // Internal-only server type for IDE extensions
@@ -70,6 +72,7 @@ export const McpSSEIDEServerConfigSchema = z.object({
   ideRunningInWindows: z.boolean().optional(),
   includeTools: z.array(z.string()).optional(),
   excludeTools: z.array(z.string()).optional(),
+  alwaysLoad: z.boolean().optional(),
 })
 
 // Internal-only server type for IDE extensions
@@ -81,6 +84,7 @@ export const McpWebSocketIDEServerConfigSchema = z.object({
   ideRunningInWindows: z.boolean().optional(),
   includeTools: z.array(z.string()).optional(),
   excludeTools: z.array(z.string()).optional(),
+  alwaysLoad: z.boolean().optional(),
 })
 
 export const McpHTTPServerConfigSchema = z.object({
@@ -91,6 +95,7 @@ export const McpHTTPServerConfigSchema = z.object({
   oauth: McpOAuthConfigSchema.optional(),
   includeTools: z.array(z.string()).optional(),
   excludeTools: z.array(z.string()).optional(),
+  alwaysLoad: z.boolean().optional(),
 })
 
 export const McpWebSocketServerConfigSchema = z.object({
@@ -100,6 +105,7 @@ export const McpWebSocketServerConfigSchema = z.object({
   headersHelper: z.string().optional(),
   includeTools: z.array(z.string()).optional(),
   excludeTools: z.array(z.string()).optional(),
+  alwaysLoad: z.boolean().optional(),
 })
 
 export const McpSdkServerConfigSchema = z.object({
@@ -107,6 +113,7 @@ export const McpSdkServerConfigSchema = z.object({
   name: z.string(),
   includeTools: z.array(z.string()).optional(),
   excludeTools: z.array(z.string()).optional(),
+  alwaysLoad: z.boolean().optional(),
 })
 
 // Config type for Claude.ai proxy servers
@@ -116,6 +123,7 @@ export const McpClaudeAIProxyServerConfigSchema = z.object({
   id: z.string(),
   includeTools: z.array(z.string()).optional(),
   excludeTools: z.array(z.string()).optional(),
+  alwaysLoad: z.boolean().optional(),
 })
 
 export const McpServerConfigSchema = z.union([
