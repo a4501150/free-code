@@ -20,6 +20,10 @@ type DumpState = {
   // Cheap proxy for change detection — skips the expensive stringify+hash
   // when model/tools/system are structurally identical to the last call.
   lastInitFingerprint: string
+  // Chat-completions wires carry the system prompt as a role:'system' entry
+  // inside messages, where the append-only messageCountSeen slice can never
+  // re-see it. Hash it separately so content changes still land in the dump.
+  lastSystemMsgHash: string
 }
 
 // Track state per session to avoid duplicating data
@@ -124,12 +128,23 @@ function dumpRequest(
       }
     }
 
-    // Write only new user messages (assistant messages captured in response)
+    // Write new user messages (assistant messages captured in response) and
+    // any in-messages system prompt (chat-completions style — Anthropic-style
+    // requests carry it top-level, already covered by the init entry).
     for (const msg of messages.slice(state.messageCountSeen)) {
       if (msg.role === 'user') {
         entries.push(
           jsonStringify({ type: 'message', timestamp: ts, data: msg }),
         )
+      }
+    }
+    const sysMsg = messages.find(m => m.role === 'system')
+    if (sysMsg !== undefined) {
+      const sysStr = jsonStringify(sysMsg)
+      const sysHash = hashString(sysStr)
+      if (sysHash !== state.lastSystemMsgHash) {
+        state.lastSystemMsgHash = sysHash
+        entries.push(`{"type":"message","timestamp":"${ts}","data":${sysStr}}`)
       }
     }
     state.messageCountSeen = messages.length
@@ -151,6 +166,7 @@ export function createDumpPromptsFetch(
       messageCountSeen: 0,
       lastInitDataHash: '',
       lastInitFingerprint: '',
+      lastSystemMsgHash: '',
     }
     dumpState.set(agentIdOrSessionId, state)
 
