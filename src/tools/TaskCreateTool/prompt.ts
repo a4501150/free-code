@@ -13,8 +13,7 @@ export function getPrompt(): string {
 `
     : ''
 
-  return `Use this tool to create a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.
-It also helps the user understand the progress of the task and overall progress of their requests.
+  return `Use this tool to create a structured task list for your current coding session. It tracks progress for you and shows the user how the work is unfolding.
 
 ## Lifecycle
 
@@ -26,7 +25,6 @@ Once a list exists, keep it accurate as you work — a list that lags behind the
 
 ## When to Use This Tool
 
-Use this tool proactively in these scenarios:
 
 - Complex multi-step tasks - When a task requires 3 or more distinct steps or actions
 - Non-trivial and complex tasks - Tasks that require careful planning or multiple operations${teammateContext}
@@ -40,8 +38,6 @@ Use this tool proactively in these scenarios:
 Skip it for a single straightforward task, or for purely conversational or informational requests - just do the work directly.
 
 All tasks are created with status \`pending\`.
-
-## Tips
 
 - Create tasks with clear, specific subjects that describe the outcome
 - After creating tasks, use TaskUpdate to set up dependencies (blocks/blockedBy) if needed

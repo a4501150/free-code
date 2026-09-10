@@ -42,7 +42,7 @@ By default (durable: false) the job lives only in this Claude session — nothin
 Jobs live only in this Claude session — nothing is written to disk, and the job is gone when Claude exits.`
 
   const durableRuntimeNote = durableEnabled
-    ? 'Durable jobs persist to .freecode/scheduled_tasks.json and survive session restarts — on next launch they resume automatically. One-shot durable tasks that were missed while the REPL was closed are surfaced for catch-up. Session-only jobs die with the process. '
+    ? 'Durable jobs resume automatically on next launch; missed one-shots are surfaced for catch-up. Session-only jobs die with the process. '
     : ''
 
   return `Schedule a prompt to be enqueued at a future time. Use for both recurring schedules and one-shot reminders.
@@ -61,22 +61,14 @@ Pin minute/hour/day-of-month/month to specific values:
 For "every N minutes" / "every hour" / "weekdays at 9am" requests:
   "*/5 * * * *" (every 5 min), "0 * * * *" (hourly), "0 9 * * 1-5" (weekdays at 9am local)
 
-## Avoid the :00 and :30 minute marks when the task allows it
-
-Every user who asks for "9am" gets \`0 9\`, and every user who asks for "hourly" gets \`0 *\` — which means requests from across the planet land on the API at the same instant. When the user's request is approximate, pick a minute that is NOT 0 or 30:
-  "every morning around 9" → "57 8 * * *" or "3 9 * * *" (not "0 9 * * *")
-  "hourly" → "7 * * * *" (not "0 * * * *")
-  "in an hour or so, remind me to..." → pick whatever minute you land on, don't round
-
-Only use minute 0 or 30 when the user names that exact time and clearly means it ("at 9:00 sharp", "at half past", coordinating with a meeting). When in doubt, nudge a few minutes early or late — the user will not notice, and the fleet will.
 
 ${durabilitySection}
 
 ## Runtime behavior
 
-Jobs only fire while the REPL is idle (not mid-query). ${durableRuntimeNote}You can have at most ${MAX_JOBS} jobs scheduled at once; the tool errors until you delete one. The scheduler adds a small deterministic jitter on top of whatever you pick: recurring tasks fire up to 10% of their period late (max 15 min); one-shot tasks landing on :00 or :30 fire up to 90 s early. Picking an off-minute is still the bigger lever.
+Jobs only fire while the REPL is idle (not mid-query). ${durableRuntimeNote}At most ${MAX_JOBS} jobs at once; the tool errors until you delete one. The scheduler jitters recurring tasks up to 10% of their period late (max 15 min).
 
-Recurring tasks auto-expire after ${DEFAULT_MAX_AGE_DAYS} days — they fire one final time, then are deleted. This bounds session lifetime. Tell the user about the ${DEFAULT_MAX_AGE_DAYS}-day limit when scheduling recurring jobs.
+Recurring tasks auto-expire after ${DEFAULT_MAX_AGE_DAYS} days — they fire one final time, then are deleted. Tell the user about the ${DEFAULT_MAX_AGE_DAYS}-day limit when scheduling recurring jobs.
 
 Returns a job ID you can pass to ${CRON_DELETE_TOOL_NAME}.`
 }

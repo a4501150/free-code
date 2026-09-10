@@ -8,10 +8,6 @@ export function getPrompt(): string {
 `
     : ''
 
-  const idDescription = isAgentSwarmsEnabled()
-    ? '- **id**: Task identifier (use with TaskGet, TaskUpdate)'
-    : '- **id**: Task identifier (use with TaskGet, TaskUpdate)'
-
   const teammateWorkflow = isAgentSwarmsEnabled()
     ? `
 ## Teammate Workflow
@@ -37,13 +33,6 @@ ${teammateUseCase}- After completing a task, to check for newly unblocked work o
 
 ## Output
 
-Returns a summary of each task:
-${idDescription}
-- **subject**: Brief description of the task
-- **status**: 'pending', 'in_progress', or 'completed'
-- **owner**: Agent ID if assigned, empty if available
-- **blockedBy**: List of open task IDs that must be resolved first (tasks with blockedBy cannot be claimed until dependencies resolve)
-
-Use TaskGet with a specific task ID to view full details including description and comments.
+Returns one row per task: id, subject, status, owner, and open blockedBy IDs (a task with open blockedBy cannot be claimed until its blockers are resolved).
 ${teammateWorkflow}`
 }

@@ -12,7 +12,7 @@ export const MAX_LINES_TO_READ = 2000
 export const DESCRIPTION = 'Read a file from the local filesystem.'
 
 export const LINE_FORMAT_INSTRUCTION =
-  '- Each line is returned as `LINE:HASH|content` (e.g. `12:a3f|  return x`). LINE is the 1-based line number, HASH is a fingerprint of that line together with its line number (so repeated lines like `}` still get distinct anchors), and the actual file content is everything after the `|`. The Edit tool references these `LINE:HASH` anchors.'
+  "- Each line is returned as `LINE:HASH|content` (e.g. `12:a3f|  return x`). LINE is the 1-based line number, HASH is that line's edit anchor — see the Edit tool for the anchor rules. The actual file content is everything after the `|`."
 
 /**
  * Renders the Read tool prompt template.  The caller (FileReadTool) supplies
@@ -30,7 +30,7 @@ Usage:
 ${maxSizeInstruction ? `- ${maxSizeInstruction}` : ''}
 - For text and source files, provide only \`file_path\` to read the full file. To read a portion, provide \`offset\`, \`limit\`, or both.
 ${lineFormat}
-- This tool allows Claude Code to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as Claude Code is a multimodal LLM.${
+- This tool can read images (eg PNG, JPG), which come back as visual content.${
     isPDFSupported()
       ? '\n- This tool can read PDF files (.pdf); use the `pages` parameter for large PDFs. Do not pass `pages` when reading non-PDF files.'
       : ''

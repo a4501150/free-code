@@ -21,12 +21,13 @@ describe('tool prompt contracts', () => {
     expect(source).toContain('Do not infer skill names from examples')
   })
 
-  test('EnterPlanMode selects search instructions from available search mode', () => {
-    const source = readSource('src/tools/EnterPlanModeTool/prompt.ts')
+  test('plan-mode pair keeps the plan-visibility contract in ExitPlanMode', () => {
+    const enter = readSource('src/tools/EnterPlanModeTool/prompt.ts')
+    const exit = readSource('src/tools/ExitPlanModeTool/prompt.ts')
 
-    expect(source).toContain('shouldPreferBashForSearch()')
-    expect(source).toContain("? '`find`, `grep`, and Read'")
-    expect(source).toContain(": 'Glob, Grep, and Read'")
+    expect(exit).toContain('cannot see the plan until this tool is called')
+    expect(enter).toContain('REQUIRES user approval')
+    expect(enter).not.toContain('What Happens in Plan Mode')
   })
 
   test('optional and destructive tool guidance matches runtime contracts', () => {
@@ -56,6 +57,7 @@ describe('tool prompt contracts', () => {
   test('Edit requires reading the existing target and task wording is supported', () => {
     const edit = readSource('src/tools/FileEditTool/prompt.ts')
     const output = readSource('src/tools/TaskOutputTool/TaskOutputTool.tsx')
+    const create = readSource('src/tools/TaskCreateTool/prompt.ts')
     const update = readSource('src/tools/TaskUpdateTool/prompt.ts')
 
     expect(edit).toContain('read that target file')
@@ -63,7 +65,8 @@ describe('tool prompt contracts', () => {
       'Retrieve output from a running or completed background task',
     )
     expect(output).not.toContain('[Deprecated]')
-    expect(update).toContain('as soon as you finish it')
+    expect(create).toContain('as soon as you finish it')
+    expect(update).toContain('only when the task is fully accomplished')
     expect(update).not.toContain('Mark tasks as resolved')
   })
 })

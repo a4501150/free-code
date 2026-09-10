@@ -155,10 +155,7 @@ When users reference a "slash command" or "/<something>", invoke this tool only 
 
 How to invoke:
 - Use this tool with the exact skill name from the available skills listing and optional arguments
-- Examples:
-  - \`skill: "lorem-ipsum"\` - invoke the lorem-ipsum skill if it is listed
-  - \`skill: "lorem-ipsum", args: "50000"\` - invoke a listed skill with arguments
-  - \`skill: "ms-office-suite:pdf"\` - invoke a listed fully qualified skill name
+- Examples: \`skill: "lorem-ipsum", args: "50000"\` (arguments optional); fully qualified plugin names work too: \`skill: "ms-office-suite:pdf"\`
 
 Important:
 - Available skills are listed in system-reminder messages in the conversation
