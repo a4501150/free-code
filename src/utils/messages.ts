@@ -84,7 +84,6 @@ import type {
   HookEvent,
   SDKAssistantErrorReason,
 } from 'src/structuredProtocol/index.js'
-import { EXPLORE_AGENT } from 'src/tools/AgentTool/built-in/exploreAgent.js'
 import { PLAN_AGENT } from 'src/tools/AgentTool/built-in/planAgent.js'
 import { AGENT_TOOL_NAME } from 'src/tools/AgentTool/constants.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from 'src/tools/AskUserQuestionTool/prompt.js'
@@ -3107,11 +3106,11 @@ You should build your plan incrementally by writing to or editing this file. NOT
 ## Plan Workflow
 
 ### Phase 1: Initial Understanding
-Goal: Gain a comprehensive understanding of the user's request by reading through code and asking them questions. Critical: In this phase you should only use the ${EXPLORE_AGENT.agentType} subagent type.
+Goal: Gain a comprehensive understanding of the user's request by reading through code and asking them questions. Critical: In this phase you should only use the general-purpose subagent type.
 
 1. Focus on understanding the user's request and the code associated with their request. Actively search for existing functions, utilities, and patterns that can be reused — avoid proposing new code when suitable implementations already exist.
 
-2. **Launch up to ${exploreAgentCount} ${EXPLORE_AGENT.agentType} agents IN PARALLEL** (single message, multiple tool calls) to efficiently explore the codebase.
+2. **Launch up to ${exploreAgentCount} general-purpose agents IN PARALLEL** (single message, multiple tool calls) to efficiently explore the codebase.
    - Use 1 agent when the task is isolated to known files, the user provided specific file paths, or you're making a small targeted change.
    - Use multiple agents when: the scope is uncertain, multiple areas of the codebase are involved, or you need to understand existing patterns before planning.
    - Quality over quantity - ${exploreAgentCount} agents maximum, but you should try to use the minimum number of agents necessary (usually just 1)
@@ -3174,7 +3173,7 @@ You are pair-planning with the user. Explore the code to build context, ask the 
 
 Repeat this cycle until the plan is complete:
 
-1. **Explore** — Use ${ctx.readOnlyToolNames} to read code. Look for existing functions, utilities, and patterns to reuse. You can use the ${EXPLORE_AGENT.agentType} agent type to parallelize complex searches without filling your context, though for straightforward queries direct tools are simpler.
+1. **Explore** — Use ${ctx.readOnlyToolNames} to read code. Look for existing functions, utilities, and patterns to reuse. You can spawn general-purpose agents to parallelize complex searches without filling your context, though for straightforward queries direct tools are simpler.
 2. **Update the plan file** — After each discovery, immediately capture what you learned. Don't wait until the end.
 3. **Ask the user** — When you hit an ambiguity or decision you can't resolve from code alone, use ${ASK_USER_QUESTION_TOOL_NAME}. Then go back to step 1.
 

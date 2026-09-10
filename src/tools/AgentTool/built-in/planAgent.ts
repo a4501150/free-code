@@ -9,7 +9,6 @@ import { shouldPreferBashForSearch } from 'src/utils/embeddedTools.js'
 import { MOST_POWERFUL_MODEL_SENTINEL } from 'src/utils/model/agent.js'
 import { AGENT_TOOL_NAME } from '../constants.js'
 import type { BuiltInAgentDefinition } from '../loadAgentsDir.js'
-import { EXPLORE_AGENT } from './exploreAgent.js'
 
 function getPlanV2SystemPrompt(): string {
   // When Glob/Grep are stripped from the registry, point at find/grep instead.
@@ -80,7 +79,6 @@ export const PLAN_AGENT: BuiltInAgentDefinition = {
     FILE_WRITE_TOOL_NAME,
   ],
   source: 'built-in',
-  tools: EXPLORE_AGENT.tools,
   baseDir: 'built-in',
   model: MOST_POWERFUL_MODEL_SENTINEL,
   // Plan is read-only and can Read CLAUDE.md directly if it needs conventions.

@@ -1,6 +1,7 @@
 import type { DomainUserContentBlock } from '../types/domain.js'
 import type { Command } from '../commands.js'
 import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js'
+import { getStatuslineSetupPrompt } from './statuslineSetupPrompt.js'
 import { globalConfigFile } from '../utils/envUtils.js'
 
 const statusline = {
@@ -19,7 +20,7 @@ const statusline = {
     return [
       {
         type: 'text',
-        text: `Create an ${AGENT_TOOL_NAME} with subagent_type "statusline-setup" and the prompt "${prompt}"`,
+        text: `Launch an ${AGENT_TOOL_NAME} with subagent_type "general-purpose" and this task:\n\n${getStatuslineSetupPrompt()}\n\nThe user's request: ${prompt}`,
       },
     ]
   },

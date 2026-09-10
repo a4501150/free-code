@@ -2,8 +2,6 @@ import { feature } from 'bun:bundle'
 import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
 import { getCoordinatorAgents } from '../../coordinator/coordinatorAgentRegistry.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
-import { CLAUDE_CODE_GUIDE_AGENT } from './built-in/claudeCodeGuideAgent.js'
-import { EXPLORE_AGENT } from './built-in/exploreAgent.js'
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
 import { PLAN_AGENT } from './built-in/planAgent.js'
 import { ADVISOR_AGENT } from './built-in/advisorAgent.js'
@@ -13,7 +11,6 @@ import {
   getPlanAgentConfig,
   isBuiltInPlanAgentEnabled,
 } from '../../utils/planAgent.js'
-import { STATUSLINE_SETUP_AGENT } from './built-in/statuslineSetup.js'
 import { VERIFICATION_AGENT } from './built-in/verificationAgent.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 
@@ -33,31 +30,20 @@ export function getBuiltInAgents(): AgentDefinition[] {
     }
   }
 
-  const agents: AgentDefinition[] = [
-    GENERAL_PURPOSE_AGENT,
-    STATUSLINE_SETUP_AGENT,
-  ]
+  // One built-in by default. Helper personas (Explore, statusline-setup,
+  // claude-code-guide) were cut: general-purpose carries their guidance.
+  const agents: AgentDefinition[] = [GENERAL_PURPOSE_AGENT]
 
-  agents.push(EXPLORE_AGENT)
   if (isForkAgentEnabled()) {
     agents.push(FORK_AGENT)
   }
+
   if (isBuiltInPlanAgentEnabled()) {
     const planConfig = getPlanAgentConfig()
     agents.push({
       ...PLAN_AGENT,
       ...(planConfig.planModel ? { model: planConfig.planModel } : {}),
     })
-  }
-
-  // Include Code Guide agent for regular CLI entrypoints
-  const isNonSdkEntrypoint =
-    process.env.CLAUDE_CODE_ENTRYPOINT !== 'sdk-ts' &&
-    process.env.CLAUDE_CODE_ENTRYPOINT !== 'sdk-py' &&
-    process.env.CLAUDE_CODE_ENTRYPOINT !== 'sdk-cli'
-
-  if (isNonSdkEntrypoint) {
-    agents.push(CLAUDE_CODE_GUIDE_AGENT)
   }
 
   if (feature('VERIFY_PLAN')) {

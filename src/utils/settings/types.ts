@@ -980,7 +980,7 @@ const _settingsSchemaValue = z
       .optional()
       .describe(
         'Provider-qualified model for built-in agents that need balanced capability ' +
-          '(e.g. statusline-setup, magicDocs). Falls back to inherit (main model) if not set.',
+          '(e.g. magicDocs). Falls back to inherit (main model) if not set.',
       ),
     defaultMostPowerfulModel: z
       .string()

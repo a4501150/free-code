@@ -877,7 +877,9 @@ export const SlashCommandSchema = z
 
 export const AgentInfoSchema = z
   .object({
-    name: z.string().describe('Agent type identifier (e.g., "Explore")'),
+    name: z
+      .string()
+      .describe('Agent type identifier (e.g., "general-purpose")'),
     description: z.string().describe('Description of when to use this agent'),
     model: z
       .string()

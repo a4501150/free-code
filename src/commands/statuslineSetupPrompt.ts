@@ -1,8 +1,6 @@
-import { BALANCED_MODEL_SENTINEL } from 'src/utils/model/agent.js'
 import { globalConfigDir, globalConfigFile } from 'src/utils/envUtils.js'
-import type { BuiltInAgentDefinition } from '../loadAgentsDir.js'
 
-function getStatuslineSystemPrompt(): string {
+export function getStatuslineSetupPrompt(): string {
   const gcd = globalConfigDir()
   const gcf = globalConfigFile()
   return `You are a status line setup agent for Claude Code. Your job is to create or update the statusLine command in the user's Claude Code settings.
@@ -128,19 +126,6 @@ Guidelines:
 - Preserve existing settings when updating
 - Return a summary of what was configured, including the name of the script file if used
 - If the script includes git commands, they should skip optional locks
-- IMPORTANT: At the end of your response, inform the parent agent that this "statusline-setup" agent must be used for further status line changes.
-  Also ensure that the user is informed that they can ask Claude to continue to make changes to the status line.
+  Ensure that the user is informed that they can ask Claude to continue to make changes to the status line.
 `
-}
-
-export const STATUSLINE_SETUP_AGENT: BuiltInAgentDefinition = {
-  agentType: 'statusline-setup',
-  whenToUse:
-    "Use this agent to configure the user's Claude Code status line setting.",
-  tools: ['Read', 'Edit'],
-  source: 'built-in',
-  baseDir: 'built-in',
-  model: BALANCED_MODEL_SENTINEL,
-  color: 'orange',
-  getSystemPrompt: getStatuslineSystemPrompt,
 }
