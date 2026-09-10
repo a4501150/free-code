@@ -528,6 +528,17 @@ export type Tool<
    */
   isTransparentWrapper?(): boolean
   /**
+   * For dispatcher/wrapper tools: resolve the inner tool call this
+   * invocation stands for. When this returns non-null and the inner tool
+   * defines the relevant optional renderer, the render pipeline calls the
+   * inner renderer with `input` replaced by the inner args; otherwise the
+   * wrapper's own renderers run. Return null to render the wrapper itself.
+   */
+  unwrapInnerCall?(
+    input: Partial<z.infer<Input>> | undefined,
+    tools: Tools,
+  ): { tool: Tool; input: unknown; label?: string } | null
+  /**
    * In compact display mode, show only these input keys (in this order).
    * Keys whose values are null/undefined are skipped. Omit to show all params.
    */
@@ -645,6 +656,8 @@ export type Tool<
       /** The tool_use ID of the in-progress call. Optional; consumed by the
        * Agent tool for click-to-expand state keying. */
       toolUseId?: string
+      /** Raw tool_use input, for wrapper tools that delegate rendering. */
+      input?: unknown
     },
   ): React.ReactNode
   renderToolUseQueuedMessage?(): React.ReactNode
@@ -678,6 +691,8 @@ export type Tool<
       tools: Tools
       verbose: boolean
       isTranscriptMode?: boolean
+      /** Raw tool_use input, for wrapper tools that delegate rendering. */
+      input?: unknown
     },
   ): React.ReactNode
 

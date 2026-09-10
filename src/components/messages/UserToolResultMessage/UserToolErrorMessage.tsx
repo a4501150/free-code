@@ -25,6 +25,8 @@ type Props = {
   tool?: Tool // undefined when resuming an old conversation that uses an old tool
   tools: Tools
   param: DomainToolResultBlockParam
+  /** Raw tool_use input; lets wrapper tools name the inner call on failure. */
+  input?: unknown
   verbose: boolean
   isTranscriptMode?: boolean
 }
@@ -34,6 +36,7 @@ export function UserToolErrorMessage({
   tool,
   tools,
   param,
+  input,
   verbose,
   isTranscriptMode,
 }: Props): React.ReactNode {
@@ -79,14 +82,21 @@ export function UserToolErrorMessage({
     NonNullable<Tool['renderToolUseErrorMessage']>
   >[0]
 
+  const inner = tool?.unwrapInnerCall?.(input as never, tools)
+  // Swap in the inner args only when the inner tool is the render target; a
+  // wrapper fallback renderer must still see the raw tool_use input.
+  const useInner = Boolean(inner?.tool.renderToolUseErrorMessage)
+  const renderTarget = useInner ? inner!.tool : tool
+
   return (
-    tool?.renderToolUseErrorMessage?.(legacyContent, {
+    renderTarget?.renderToolUseErrorMessage?.(legacyContent, {
       progressMessagesForMessage: filterToolProgressMessages(
         progressMessagesForMessage,
       ),
       tools,
       verbose,
       isTranscriptMode,
+      input: useInner ? inner!.input : input,
     }) ?? (
       <FallbackToolUseErrorMessage result={legacyContent} verbose={verbose} />
     )

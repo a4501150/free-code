@@ -7,10 +7,6 @@ import { Box, Text } from '../../ink.js'
 import { useToggleAgentToolUseExpansion } from '../../state/agentExpansion.js'
 import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js'
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
-import {
-  INVOKE_TOOL_NAME,
-  isToolExposedToModel,
-} from '../../services/toolCatalog/exposure.js'
 import { renderAgentToolUseTag } from '../../tools/AgentTool/UI.js'
 import {
   findToolByName,
@@ -100,29 +96,21 @@ export function AssistantToolUseMessage({
       tool.userFacingNameBackgroundColor?.(data)
     let displayInput: Record<string, unknown> | undefined
     let displayCompactParamKeys: readonly string[] | undefined
-    // InvokeTool carries another tool's call: show the inner tool's card.
-    // A wrong inner name or unparseable args keeps the raw InvokeTool view.
-    if (tool.name === INVOKE_TOOL_NAME && input.success) {
-      const outer = input.data as { tool?: unknown; args?: unknown }
-      const inner =
-        typeof outer.tool === 'string'
-          ? findToolByName(tools, outer.tool)
-          : undefined
-      if (inner && !isToolExposedToModel(inner)) {
-        const innerInput = inner.inputSchema.safeParse(outer.args ?? {})
-        if (innerInput.success) {
-          userFacingToolName = `(Invoke) ${inner.userFacingName(
-            innerInput.data,
-          )}`
-          userFacingToolNameBackgroundColor =
-            inner.userFacingNameBackgroundColor?.(innerInput.data)
-          displayInput =
-            outer.args && typeof outer.args === 'object'
-              ? (outer.args as Record<string, unknown>)
-              : {}
-          displayCompactParamKeys = inner.compactParamKeys
-        }
-      }
+    // Wrapper tools (InvokeTool) render the inner tool's card. A wrong
+    // inner name or unparseable args keeps the raw wrapper view.
+    const unwrapped = input.success ? tool.unwrapInnerCall?.(data, tools) : null
+    if (unwrapped) {
+      const innerName = unwrapped.tool.userFacingName(unwrapped.input as never)
+      userFacingToolName = unwrapped.label
+        ? `${unwrapped.label} ${innerName}`
+        : innerName
+      userFacingToolNameBackgroundColor =
+        unwrapped.tool.userFacingNameBackgroundColor?.(unwrapped.input as never)
+      displayInput =
+        unwrapped.input && typeof unwrapped.input === 'object'
+          ? (unwrapped.input as Record<string, unknown>)
+          : {}
+      displayCompactParamKeys = unwrapped.tool.compactParamKeys
     }
     return {
       tool,
@@ -171,7 +159,12 @@ export function AssistantToolUseMessage({
           lookups,
           param.id,
           progressMessagesForMessage,
-          { verbose, inProgressToolCallCount, isTranscriptMode },
+          {
+            verbose,
+            inProgressToolCallCount,
+            isTranscriptMode,
+            input: param.input,
+          },
           terminalSize,
         )}
       </Box>
@@ -261,6 +254,7 @@ export function AssistantToolUseMessage({
                 verbose,
                 inProgressToolCallCount,
                 isTranscriptMode,
+                input: param.input,
               },
               terminalSize,
             )
@@ -281,10 +275,12 @@ function renderToolUseProgressMessage(
     verbose,
     inProgressToolCallCount,
     isTranscriptMode,
+    input,
   }: {
     verbose: boolean
     inProgressToolCallCount?: number
     isTranscriptMode?: boolean
+    input?: unknown
   },
   terminalSize: { columns: number; rows: number },
 ): React.ReactNode {
@@ -293,14 +289,20 @@ function renderToolUseProgressMessage(
       msg.data.type !== 'hook_progress',
   )
   try {
+    const inner = tool.unwrapInnerCall?.(input as never, tools)
+    // Swap in the inner args only when the inner tool is the render target;
+    // a wrapper fallback renderer must still see the raw tool_use input.
+    const useInner = Boolean(inner?.tool.renderToolUseProgressMessage)
+    const renderTarget = useInner ? inner!.tool : tool
     const toolMessages =
-      tool.renderToolUseProgressMessage?.(toolProgressMessages, {
+      renderTarget.renderToolUseProgressMessage?.(toolProgressMessages, {
         tools,
         verbose,
         terminalSize,
         inProgressToolCallCount: inProgressToolCallCount ?? 1,
         isTranscriptMode,
         toolUseId: toolUseID,
+        input: useInner ? inner!.input : input,
       }) ?? null
     return (
       <>

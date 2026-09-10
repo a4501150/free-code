@@ -78,6 +78,7 @@ export function UserToolResultMessage({
         tool={toolUse.tool}
         tools={tools}
         param={param}
+        input={toolUse.toolUse.input}
         verbose={verbose}
         isTranscriptMode={isTranscriptMode}
       />

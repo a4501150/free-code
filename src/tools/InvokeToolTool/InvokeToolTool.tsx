@@ -25,6 +25,13 @@ import {
 } from '../../services/toolCatalog/exposure.js'
 import { toolCatalogDir } from '../../services/toolCatalog/writer.js'
 import { zodToJsonSchema } from '../../utils/zodToJsonSchema.js'
+import {
+  extractSearchText,
+  isResultTruncated,
+  renderToolResultMessage,
+  renderToolUseErrorMessage,
+  unwrapInnerCall,
+} from './UI.js'
 
 const inputSchema = z.object({
   tool: z
@@ -206,6 +213,11 @@ export const InvokeTool = buildTool({
   userFacingName() {
     return INVOKE_TOOL_NAME
   },
+  unwrapInnerCall,
+  renderToolResultMessage,
+  renderToolUseErrorMessage,
+  isResultTruncated,
+  extractSearchText,
   renderToolUseMessage(input: Partial<InvokeInput>) {
     if (!input.tool) return ''
     const args = input.args

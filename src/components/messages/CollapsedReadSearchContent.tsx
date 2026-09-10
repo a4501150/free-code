@@ -159,6 +159,7 @@ function VerboseToolUse({
               tool={tool}
               tools={tools}
               param={errorBlock}
+              input={content.input}
               verbose={true}
             />
           )

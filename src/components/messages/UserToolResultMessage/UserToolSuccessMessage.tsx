@@ -77,8 +77,16 @@ export function UserToolSuccessMessage({
   }
   const toolResult = parsedOutput?.data ?? message.toolUseResult
 
+  // Wrapper tools (InvokeTool) hand the result to the inner tool's renderer
+  // with the inner args, so inner output renders as if called directly.
+  const rawInput = lookups.toolUseByToolUseID.get(toolUseID)?.input
+  const inner = tool.unwrapInnerCall?.(rawInput as never, tools)
+  // Swap in the inner args only when the inner tool is the render target; a
+  // wrapper fallback renderer must still see the raw tool_use input.
+  const useInner = Boolean(inner?.tool.renderToolResultMessage)
+  const renderTarget = useInner ? inner!.tool : tool
   const renderedMessage =
-    tool.renderToolResultMessage?.(
+    renderTarget.renderToolResultMessage?.(
       toolResult as never,
       filterToolProgressMessages(progressMessagesForMessage),
       {
@@ -88,7 +96,7 @@ export function UserToolSuccessMessage({
         verbose,
         isTranscriptMode,
         isBriefOnly,
-        input: lookups.toolUseByToolUseID.get(toolUseID)?.input,
+        input: useInner ? inner!.input : rawInput,
         toolUseId: toolUseID,
       },
     ) ?? null
