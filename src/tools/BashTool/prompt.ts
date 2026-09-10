@@ -30,6 +30,7 @@ export function getSimplePrompt(): string {
 
   const instructionItems: Array<string | string[]> = [
     'The user reads every tool result in the session, and output is auto-saved to a file (referenced in the result) when it grows — run the command bare: a pipe through `tail`, `head`, or `grep` truncates what the user gets to see.',
+    'Make commands and scripts print something. A silent run leaves the user with nothing to watch, and a failing script that never says where it stopped is hard to debug. For long-running work, prefer progress output (verbose flags, per-step echoes). Do not suppress output to save tokens: large output is stored in a file, not pasted into the context.',
     'Never prepend `cd <current-directory>` to a `git` command — `git` already operates on the current working tree, and the compound triggers a permission prompt.',
     ...(embedded
       ? [
