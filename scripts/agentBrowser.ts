@@ -11,11 +11,12 @@ import { dirname, join, resolve } from 'path'
 import { tmpdir } from 'os'
 
 // The bundled agent-browser MCP server (web_search/web_fetch/browser_*).
-// Assets come from the agent-browser repo's server-<version> release tag;
-// see that repo's scripts/package-server-binary.mjs for how they are built.
+// Assets come from the agent-browser repo's v<version> release tag (the
+// browser binary assets there use a separate chromium-<ver>-<rev> tag); see
+// that repo's scripts/package-server-binary.mjs for how they are built.
 const AGENT_BROWSER_VERSION = '0.1.0'
 const AGENT_BROWSER_VENDOR_DIR = 'vendor/agent-browser'
-const DEFAULT_AGENT_BROWSER_BASE_URL = `https://github.com/a4501150/agent-browser/releases/download/server-${AGENT_BROWSER_VERSION}`
+const DEFAULT_AGENT_BROWSER_BASE_URL = `https://github.com/a4501150/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}`
 
 /** Vendor layout matches ripgrep/search-tools: <arch>-<platform>/<exe>. */
 function platformDir(): string {
