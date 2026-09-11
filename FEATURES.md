@@ -16,7 +16,7 @@ only ever on in a hand-rolled `--feature=NAME` build.
 - `bun run build:dev:full` builds `./cli-dev` with default plus dev-full flags.
 - `--compile --dev` together build `./dist/cli-dev`.
 
-See [docs/building.md](docs/building.md) for the full build reference.
+See [scripts/build.ts](scripts/build.ts) for the full build reference.
 
 ## Default build flags
 

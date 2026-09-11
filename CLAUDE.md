@@ -1,8 +1,44 @@
 # CLAUDE.md
 
-Architecture, build, configuration and testing live in [docs/](docs/).
 Only knowledge the code cannot state belongs below: external API behavior,
-hidden couplings, silent failures, and deliberate decisions.
+hidden couplings, silent failures, and deliberate decisions. Do not add
+architecture tours, tool inventories, or facts a file grep recovers — they go
+stale and they mislead. A pointer to a file beats restating what the file says.
+
+## Daily commands and build traps
+
+- `bun run build` writes `./cli`; `bun run build:dev:full` writes `./cli-dev` (the dev-full flag set — `WEBUI` among them). The `--compile` flag name is misleading: every build calls `bun build --compile`, the flag only moves output into `dist/`. See [scripts/build.ts](scripts/build.ts); [FEATURES.md](FEATURES.md) is the only authority on what each flag does.
+- A feature name passed to the build is not validated: a typo becomes a dead flag, and unknown args are ignored without a message. `dev-full` is the only named feature set.
+- `bun run dev` runs `src/entrypoints/cli.tsx` with NONE of the build's default feature defines — flag-gated behavior differs from every built binary. Build to test anything a flag gates.
+- The binary is not self-contained: the build copies `vendor/ripgrep/` and `vendor/search-tools/` sidecars beside it, and they must move with it. A system `rg` is preferred at runtime unless `USE_BUILTIN_RIPGREP=1`.
+- `src/webui/generated/assets.ts` is git-ignored; the build writes an empty stub when `WEBUI` is off so a fresh clone still compiles. Never commit the generated copy.
+- `bun run test` neither typechecks nor formats. Run `bun run typecheck`, `bun run test:unit` and `bun run format` (prettier) yourself; keep fmt clean.
+- e2e drives the COMPILED binary in tmux, not `src/`: run `bun run build:dev:full` first (default target `./cli-dev`; a stale build passes tests against old code). Each test runs `env -i` with a temporary HOME/config — no real credential or setting reaches a test. Read assertions from the mock provider's request log, not the tmux pane (ANSI contaminates it), and reset a mock only after the previous turn goes idle.
+- Unit tests share one process: `mock.module` is global and permanent, so a stub of `getInitialSettings` (or module-level `memoize`) in one file leaks into every later file. Passes alone, fails in the suite.
+
+## Where to look
+
+| Area                                    | Entry                                                                                                                                                                                                 |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Process entry, flags, startup order     | [src/entrypoints/cli.tsx](src/entrypoints/cli.tsx) → [src/main.tsx](src/main.tsx) — the first imports (startup profile mark, keychain prefetch) are side effects that must stay first; do not reorder |
+| Agent loop                              | [src/query.ts](src/query.ts), [src/QueryEngine.ts](src/QueryEngine.ts)                                                                                                                                |
+| Tool registry / slash-command registry  | [src/tools.ts](src/tools.ts), [src/commands.ts](src/commands.ts)                                                                                                                                      |
+| Wire adapters (one per provider format) | [src/services/api/adapters/](src/services/api/adapters/)                                                                                                                                              |
+| Provider-neutral domain types           | [src/types/domain.ts](src/types/domain.ts)                                                                                                                                                            |
+| Settings schema and the two-file split  | [src/utils/settings/](src/utils/settings/)                                                                                                                                                            |
+| Edit placement, seen ledger, sightings  | [src/utils/editApproval.ts](src/utils/editApproval.ts), [src/utils/editMatch.ts](src/utils/editMatch.ts), [src/utils/fileSightings.ts](src/utils/fileSightings.ts)                                    |
+| Tool permission decision                | [src/utils/permissions/permissions.ts](src/utils/permissions/permissions.ts)                                                                                                                          |
+| Terminal renderer                       | [src/ink/](src/ink/) — NOT the npm `ink` package; it is the local `react-reconciler` implementation reached through [src/ink.ts](src/ink.ts). Change the tree, not the (declared, unused) dependency  |
+| Native-module replacements              | [src/native-ts/](src/native-ts/) — Yoga-compatible layout, fuzzy index, color diff, all TypeScript, no native build step                                                                              |
+| Browser session UI                      | `src/webui/`: `attach/` per-process socket, `gateway/` HTTP inside the daemon, `client/` React app, `protocol/` shared schemas, `tunnel/` public-URL providers                                        |
+| Import-cycle breakers                   | [src/schemas/](src/schemas/) — shared Zod schemas live here precisely because importing them from elsewhere cycles                                                                                    |
+
+## Configuration
+
+- Config home is `~/.freecode` (`FREECODE_CONFIG_DIR` overrides, `CLAUDE_CONFIG_DIR` accepted as fallback). Provider and model-routing keys live ONLY in `modelSettings.json` — the exact key list is [src/utils/settings/modelSettingsKeys.ts](src/utils/settings/modelSettingsKeys.ts); a key outside it is dropped before validation, so one bad key cannot take the provider config down. Everything else belongs in `freecode.json`.
+- Disabling all hooks must gate settings-, plugin- and session-derived hooks separately; missing one channel silently re-enables it, including in worktree-hook detection.
+- Every hook execution path must independently re-check workspace trust. A new path without that gate is a silent security bypass.
+- An absent `statusLine` runs the embedded default script ([src/statusline/default-statusline.sh](src/statusline/default-statusline.sh), inlined at build and materialized to a PID-scoped tmp file); it skips the trust gate because its content ships in the binary. Only `statusLine: {"type":"off"}` hides the statusline.
 
 ## Providers
 
@@ -39,12 +75,6 @@ hidden couplings, silent failures, and deliberate decisions.
 - `gracefulShutdownSync` only schedules exit. Throw `ResumeCancelledError` afterward, or the process can adopt a session it just refused.
 - Mid-session transfer uses `ownership_fork`, not `fork`; the latter skips cross-session reconstruction. Forks do not write transcripts themselves, so preserve the first-message UUID change that triggers re-recording.
 
-## Config and hooks
-
-- Disabling all hooks must gate settings-, plugin- and session-derived hooks separately; missing one channel silently re-enables it, including in worktree-hook detection.
-- Every hook execution path must independently re-check workspace trust. A new path without that gate is a silent security bypass.
-- An absent `statusLine` runs the embedded default script ([src/statusline/default-statusline.sh](src/statusline/default-statusline.sh), inlined at build and materialized to a PID-scoped tmp file); it skips the trust gate because its content ships in the binary. Only `statusLine: {"type":"off"}` hides the statusline.
-
 ## Terminal UI
 
 - The `<tool_use_error>` body is the single source of truth for a failed tool call, for the model and the terminal alike. Tool `UI.tsx` error renderers must pass it to `FallbackToolUseErrorMessage` verbatim (tag-stripped); substituting static per-case strings (or collapsing `InputValidationError` to a generic line) re-introduces a second story that diverges from what the model was told.
@@ -71,7 +101,7 @@ Approval predicate and freshness contract: commented in [src/utils/editApproval.
 - Resume rebuilds Read/Write/Edit sightings only ([src/utils/queryHelpers.ts](src/utils/queryHelpers.ts)), marked `contentVerified: false`: unverified entries approve only unique-match placements and never license a Write. Grep/Bash sightings are lost and the unique-match escape absorbs the gap.
 - Edit has no line-range parameters: ambiguity is resolved by extending `old_string`, and the error must quote the candidate line numbers so one retry suffices. Repair ladder beyond exact: curly quotes, \uXXXX escapes, pasted-row prefixes, then a whole-line trim() pass for multi-line copies (single-line copies already match as substrings).
 - Scratchpad files are exempt from both layers: the write permission matches ANY `<projectTemp>/<uuid>/scratchpad` (session IDs drift across /clear, resume, gateway children), and approveEdit/approveWrite skip the ledger there.
-- The Edit tool description is the only place that tells the model Grep content mode and cat/head/sed -n count as seen (partially) — keep it in sync with the fileSightings allowlist.
+- The Edit tool description is the only place that tells the model Grep content mode and cat/head/nl/sed -n/grep -n/rg -n count as seen (partially) — keep it in sync with the fileSightings allowlist.
 - Same-response Edits of one file serialize on the per-file lock in [src/utils/fileLock.ts](src/utils/fileLock.ts): re-plan and re-approve inside the lock, and keep async I/O out of the lock body or atomicity breaks.
 - The approvalNote disclosure rides the success message (fresh / recovered / blind-placement / blind); never drop it — it tells the model when the file holds changes outside its context.
 - Read entries always store an explicit `offset` (whole-file reads: offset 1), so whole-file checks (Read dedup) must accept offset <= 1 with no limit.
