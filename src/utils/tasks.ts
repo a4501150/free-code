@@ -292,6 +292,14 @@ export function getTaskListId(): string {
 }
 
 /**
+ * True when running inside a subagent, whose task tools resolve to the
+ * subagent's isolated list instead of the main session's.
+ */
+export function isInSubagentContext(): boolean {
+  return isSubagentContext(getAgentContext())
+}
+
+/**
  * Returns the main loop's task list ID, bypassing subagent isolation.
  * Useful when a subagent needs to explicitly read the parent's task list.
  * Uses the same resolution as getTaskListId() minus the subagent check.

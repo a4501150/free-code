@@ -34,5 +34,7 @@ ${teammateUseCase}- After completing a task, to check for newly unblocked work o
 ## Output
 
 Returns one row per task: id, subject, status, owner, and open blockedBy IDs (a task with open blockedBy cannot start until the tasks blocking it are completed).
+
+Subagents work on their own isolated task list. When a subagent calls this tool, the parent session's list is appended as a separate read-only section: the subagent can read those tasks but TaskCreate and TaskUpdate only affect its own list.
 ${teammateWorkflow}`
 }

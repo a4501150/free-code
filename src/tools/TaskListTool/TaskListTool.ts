@@ -1,9 +1,12 @@
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import {
+  getMainTaskListId,
   getTaskListId,
+  isInSubagentContext,
   listTasks,
   TaskStatusSchema,
+  type Task,
 } from '../../utils/tasks.js'
 import { TASK_LIST_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, getPrompt } from './prompt.js'
@@ -19,12 +22,36 @@ const outputSchema = z.object({
       status: TaskStatusSchema,
       owner: z.string().optional(),
       blockedBy: z.array(z.string()),
+      // Set on rows from the parent session's list shown to a subagent.
+      fromParent: z.boolean().optional(),
     }),
   ),
 })
 type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
+
+type TaskRow = Output['tasks'][number]
+
+/**
+ * Drop `_internal` tasks upstream; resolve blockedBy against the completed
+ * tasks of the same list only. fromParent marks rows read from the parent
+ * session's list (subagent view).
+ */
+function summarizeTasks(tasks: Task[], fromParent?: boolean): TaskRow[] {
+  const resolvedTaskIds = new Set(
+    tasks.filter(t => t.status === 'completed').map(t => t.id),
+  )
+
+  return tasks.map(task => ({
+    id: task.id,
+    subject: task.subject,
+    status: task.status,
+    owner: task.owner,
+    blockedBy: task.blockedBy.filter(id => !resolvedTaskIds.has(id)),
+    ...(fromParent ? { fromParent: true } : {}),
+  }))
+}
 
 export const TaskListTool = buildTool({
   name: TASK_LIST_TOOL_NAME,
@@ -63,18 +90,17 @@ export const TaskListTool = buildTool({
       t => !t.metadata?._internal,
     )
 
-    // Build a set of resolved task IDs for filtering
-    const resolvedTaskIds = new Set(
-      allTasks.filter(t => t.status === 'completed').map(t => t.id),
-    )
+    const tasks = summarizeTasks(allTasks)
 
-    const tasks = allTasks.map(task => ({
-      id: task.id,
-      subject: task.subject,
-      status: task.status,
-      owner: task.owner,
-      blockedBy: task.blockedBy.filter(id => !resolvedTaskIds.has(id)),
-    }))
+    // Subagents see their own list plus a read-only view of the parent
+    // session's list. blockedBy is resolved per list: task IDs are only
+    // unique within one list.
+    if (isInSubagentContext()) {
+      const parentTasks = (await listTasks(getMainTaskListId())).filter(
+        t => !t.metadata?._internal,
+      )
+      tasks.push(...summarizeTasks(parentTasks, true))
+    }
 
     return {
       data: {
@@ -84,27 +110,42 @@ export const TaskListTool = buildTool({
   },
   mapToolResultToToolResultBlockParam(content, toolUseID) {
     const { tasks } = content as Output
-    if (tasks.length === 0) {
-      return {
-        tool_use_id: toolUseID,
-        type: 'tool_result',
-        content: 'No tasks found',
-      }
-    }
 
-    const lines = tasks.map(task => {
-      const owner = task.owner ? ` (${task.owner})` : ''
-      const blocked =
-        task.blockedBy.length > 0
-          ? ` [blocked by ${task.blockedBy.map(id => `#${id}`).join(', ')}]`
-          : ''
-      return `#${task.id} [${task.status}] ${task.subject}${owner}${blocked}`
-    })
+    const renderRows = (rows: TaskRow[]) =>
+      rows.map(task => {
+        const owner = task.owner ? ` (${task.owner})` : ''
+        const blocked =
+          task.blockedBy.length > 0
+            ? ` [blocked by ${task.blockedBy.map(id => `#${id}`).join(', ')}]`
+            : ''
+        return `#${task.id} [${task.status}] ${task.subject}${owner}${blocked}`
+      })
+
+    const ownRows = tasks.filter(t => !t.fromParent)
+    const parentRows = tasks.filter(t => t.fromParent)
+
+    let text: string
+    if (parentRows.length === 0) {
+      // Single-list view (main session, or subagent with empty parent list).
+      text =
+        ownRows.length === 0 ? 'No tasks found' : renderRows(ownRows).join('\n')
+    } else {
+      const sections: string[] = []
+      sections.push(
+        ownRows.length > 0
+          ? `Your task list:\n${renderRows(ownRows).join('\n')}`
+          : 'Your task list is empty.',
+      )
+      sections.push(
+        `Parent session's task list (read-only — you cannot update these tasks; use TaskGet to read one in full):\n${renderRows(parentRows).join('\n')}`,
+      )
+      text = sections.join('\n\n')
+    }
 
     return {
       tool_use_id: toolUseID,
       type: 'tool_result',
-      content: lines.join('\n'),
+      content: text,
     }
   },
 } satisfies ToolDef<InputSchema, Output>)

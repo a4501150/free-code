@@ -12,4 +12,5 @@ export const PROMPT = `Use this tool to retrieve a task by its ID from the task 
 
 - After fetching a task, verify its blockedBy list is empty before beginning work.
 - Use TaskList to see all tasks in summary form.
+- A subagent also reads the parent session's task list when the ID is not in its own list; such tasks are marked read-only and cannot be updated by the subagent.
 `

@@ -1,6 +1,12 @@
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { getTask, getTaskListId, TaskStatusSchema } from '../../utils/tasks.js'
+import {
+  getMainTaskListId,
+  getTask,
+  getTaskListId,
+  isInSubagentContext,
+  TaskStatusSchema,
+} from '../../utils/tasks.js'
 import { TASK_GET_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, PROMPT } from './prompt.js'
 
@@ -18,6 +24,8 @@ const outputSchema = z.object({
       status: TaskStatusSchema,
       blocks: z.array(z.string()),
       blockedBy: z.array(z.string()),
+      // Set when a subagent read the task from the parent session's list.
+      fromParent: z.boolean().optional(),
     })
     .nullable(),
 })
@@ -61,7 +69,15 @@ export const TaskGetTool = buildTool({
   async call({ taskId }) {
     const taskListId = getTaskListId()
 
-    const task = await getTask(taskListId, taskId)
+    let task = await getTask(taskListId, taskId)
+    let fromParent = false
+
+    // Subagents also read the parent session's list (read-only fallback):
+    // TaskList shows those rows, and TaskGet must be able to open them.
+    if (!task && isInSubagentContext()) {
+      task = await getTask(getMainTaskListId(), taskId)
+      fromParent = task !== null
+    }
 
     if (!task) {
       return {
@@ -80,6 +96,7 @@ export const TaskGetTool = buildTool({
           status: task.status,
           blocks: task.blocks,
           blockedBy: task.blockedBy,
+          ...(fromParent ? { fromParent: true } : {}),
         },
       },
     }
@@ -95,7 +112,9 @@ export const TaskGetTool = buildTool({
     }
 
     const lines = [
-      `Task #${task.id}: ${task.subject}`,
+      `Task #${task.id}: ${task.subject}${
+        task.fromParent ? " (from the parent session's list — read-only)" : ''
+      }`,
       `Status: ${task.status}`,
       `Description: ${task.description}`,
     ]
