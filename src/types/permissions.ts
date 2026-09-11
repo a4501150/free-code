@@ -404,6 +404,9 @@ export type ToolPermissionContext = {
   /** Subagent flag: Edit/Write asks auto-allow (full edit permission for
    * subagents; deny rules and classifier blocks still win). */
   readonly subagentAutoApproveEdits?: boolean
+  /** Subagent flag (no prompt UI): rule-unobjected asks auto-approve instead
+   * of auto-denying. See src/Tool.ts for the full contract. */
+  readonly subagentAutoApproveAsks?: boolean
   readonly awaitAutomatedChecksBeforeDialog?: boolean
   readonly prePlanMode?: PermissionMode
 }

@@ -6,6 +6,7 @@
  * generation (that lives in modelDisplay.ts).
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { getMainLoopModelOverride } from '../../bootstrap/state.js'
 import type { PermissionMode } from '../permissions/PermissionMode.js'
 import { getProviderRegistry } from './providerRegistry.js'
@@ -76,7 +77,25 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
  *
  * @returns The resolved model name to use
  */
+// Subagent capability scope: tools whose isEnabled() consults
+// getMainLoopModel() must evaluate against the model that will actually run
+// them, not the session's main loop model. runAgent opens this scope around
+// the subagent tool-capability re-filter; nested agents naturally replace the
+// store with their own model.
+const mainLoopModelScope = new AsyncLocalStorage<ModelSetting>()
+
+export function runWithMainLoopModelScope<T>(
+  model: ModelSetting,
+  fn: () => T,
+): T {
+  return mainLoopModelScope.run(model, fn)
+}
+
 export function getMainLoopModel(): ModelName {
+  const scoped = mainLoopModelScope.getStore()
+  if (scoped !== undefined && scoped !== null) {
+    return parseUserSpecifiedModel(scoped)
+  }
   const model = getUserSpecifiedModelSetting()
   if (model !== undefined && model !== null) {
     return parseUserSpecifiedModel(model)

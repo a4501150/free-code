@@ -8,6 +8,7 @@ import { getCommand, getSkillToolCommands, hasCommand } from '../../commands.js'
 import {
   DEFAULT_AGENT_PROMPT,
   enhanceSystemPromptWithEnvDetails,
+  getMcpInstructions,
 } from '../../constants/prompts.js'
 import type { QuerySource } from '../../constants/querySource.js'
 import { getSystemContext, getUserContext } from '../../context.js'
@@ -65,6 +66,7 @@ import {
   type StreamingThinking,
 } from '../../utils/messages.js'
 import { getAgentModel } from '../../utils/model/agent.js'
+import { runWithMainLoopModelScope } from '../../utils/model/modelResolution.js'
 import { formatSkillLoadingMetadata } from '../../utils/processUserInput/processSlashCommand.js'
 import {
   clearAgentTranscriptSubdir,
@@ -444,6 +446,9 @@ export async function* runAgent({
       toolPermissionContext = {
         ...toolPermissionContext,
         shouldAvoidPermissionPrompts: true,
+        // No human can answer this agent's asks: rule-unobjected asks
+        // auto-approve (deny/ask rules, plan mode and safety checks win).
+        subagentAutoApproveAsks: true,
       }
     }
 
@@ -484,9 +489,18 @@ export async function* runAgent({
     }
   }
 
+  // Capability-gated tools (e.g. WebSearch) were enabled when the parent
+  // assembled its pool, against the parent's model. This agent may run a
+  // different model, so re-check isEnabled() under the agent's own model —
+  // getMainLoopModel() resolves to the scoped model inside the scope.
+  const modelCapableTools = runWithMainLoopModelScope(
+    resolvedAgentModel,
+    () => availableTools.filter(tool => tool.isEnabled()),
+  )
+
   const resolvedTools = resolveAgentTools(
     agentDefinition,
-    availableTools,
+    modelCapableTools,
     isAsync,
   ).resolvedTools
 
@@ -494,7 +508,7 @@ export async function* runAgent({
     appState.toolPermissionContext.additionalWorkingDirectories.keys(),
   )
 
-  const agentSystemPrompt = override?.systemPrompt
+  const baseAgentSystemPrompt = override?.systemPrompt
     ? override.systemPrompt
     : asSystemPrompt(
         await getAgentSystemPrompt(
@@ -640,6 +654,18 @@ export async function* runAgent({
     agentMcpTools.length > 0
       ? uniqBy([...resolvedTools, ...agentMcpTools], 'name')
       : resolvedTools
+
+  // Advertise connected servers' instructions (parent + agent-specific),
+  // scoped to servers whose tools this agent actually has. The main session
+  // gets this from getSystemPrompt(); it's appended here so the override
+  // prompt path benefits too. Appended even when the instructions-delta
+  // attachment is enabled: those attachments land in the main transcript,
+  // never in an agent query.
+  const mcpInstructions = getMcpInstructions(mergedMcpClients, allTools)
+  const agentSystemPrompt = asSystemPrompt([
+    ...baseAgentSystemPrompt,
+    ...(mcpInstructions ? [mcpInstructions] : []),
+  ])
 
   // Build agent-specific options
   const agentOptions: ToolUseContext['options'] = {

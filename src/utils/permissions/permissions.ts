@@ -802,6 +802,25 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
       if (hookDecision) {
         return hookDecision
       }
+      // Subagent policy: an ask that survived deny rules, ask rules, the
+      // tool's own objection and hooks has no human to answer it headlessly,
+      // so approve it on the parent's inherited rules instead of denying.
+      if (
+        appState.toolPermissionContext.subagentAutoApproveAsks &&
+        appState.toolPermissionContext.mode !== 'plan' &&
+        result.decisionReason?.type !== 'safetyCheck' &&
+        !tool.requiresUserInteraction?.()
+      ) {
+        return {
+          behavior: 'allow',
+          updatedInput: input,
+          decisionReason: {
+            type: 'asyncAgent',
+            reason:
+              'Subagent policy: auto-approved — permission prompts unavailable and no rule objected',
+          },
+        }
+      }
       return {
         behavior: 'deny',
         decisionReason: {

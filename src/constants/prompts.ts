@@ -316,7 +316,7 @@ export async function getSystemPrompt(
   ].filter(s => s !== null)
 }
 
-function getMcpInstructions(
+export function getMcpInstructions(
   mcpClients: MCPServerConnection[],
   exposedTools?: Tools,
 ): string | null {

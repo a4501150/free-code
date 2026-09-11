@@ -146,6 +146,12 @@ export type ToolPermissionContext = DeepImmutable<{
    * edit permission, since no human can answer a subagent's prompt. Deny
    * rules and classifier blocks still win. */
   subagentAutoApproveEdits?: boolean
+  /** When true (subagents without a prompt UI), asks that no rule, safety
+   * check, or hook objected to are auto-approved instead of auto-denied:
+   * the agent inherits the configured rules and a headless agent has no
+   * human to answer the ask. Deny/ask rules, plan mode, safety checks and
+   * user-interaction-required tools still keep their semantics. */
+  subagentAutoApproveAsks?: boolean
   /** When true, automated checks (classifier, hooks) are awaited before showing the permission dialog (coordinator workers) */
   awaitAutomatedChecksBeforeDialog?: boolean
   /** Stores the permission mode before model-initiated plan mode entry, so it can be restored on exit */
