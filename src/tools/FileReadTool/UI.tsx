@@ -1,12 +1,11 @@
 import type { DomainToolResultBlockParam } from '../../types/domain.js'
 import * as React from 'react'
-import { extractTag } from 'src/utils/messages.js'
 import { FallbackToolUseErrorMessage } from '../../components/FallbackToolUseErrorMessage.js'
 import { HighlightedCode } from '../../components/HighlightedCode.js'
 import { FilePathLink } from '../../components/FilePathLink.js'
 import { MessageResponse } from '../../components/MessageResponse.js'
 import { Box, Text } from '../../ink.js'
-import { FILE_NOT_FOUND_CWD_NOTE, getDisplayPath } from '../../utils/file.js'
+import { getDisplayPath } from '../../utils/file.js'
 import { formatFileSize } from '../../utils/format.js'
 import { getPlansDirectory } from '../../utils/plans.js'
 import { getTaskOutputDir } from '../../utils/task/diskOutput.js'
@@ -178,24 +177,6 @@ export function renderToolUseErrorMessage(
   result: DomainToolResultBlockParam['content'],
   { verbose }: { verbose: boolean },
 ): React.ReactNode {
-  if (!verbose && typeof result === 'string') {
-    // FileReadTool throws from call() so errors lack <tool_use_error> wrapping —
-    // check the raw string directly for the cwd note marker.
-    if (result.includes(FILE_NOT_FOUND_CWD_NOTE)) {
-      return (
-        <MessageResponse>
-          <Text color="error">File not found</Text>
-        </MessageResponse>
-      )
-    }
-    if (extractTag(result, 'tool_use_error')) {
-      return (
-        <MessageResponse>
-          <Text color="error">Error reading file</Text>
-        </MessageResponse>
-      )
-    }
-  }
   return <FallbackToolUseErrorMessage result={result} verbose={verbose} />
 }
 

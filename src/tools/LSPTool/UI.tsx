@@ -5,7 +5,6 @@ import { FallbackToolUseErrorMessage } from '../../components/FallbackToolUseErr
 import { MessageResponse } from '../../components/MessageResponse.js'
 import { Box, Text } from '../../ink.js'
 import { getDisplayPath } from '../../utils/file.js'
-import { extractTag } from '../../utils/messages.js'
 import type { Input, Output } from './LSPTool.js'
 import { getSymbolAtPosition } from './symbolContext.js'
 
@@ -161,17 +160,6 @@ export function renderToolUseErrorMessage(
   result: DomainToolResultBlockParam['content'],
   { verbose }: { verbose: boolean },
 ): React.ReactNode {
-  if (
-    !verbose &&
-    typeof result === 'string' &&
-    extractTag(result, 'tool_use_error')
-  ) {
-    return (
-      <MessageResponse>
-        <Text color="error">LSP operation failed</Text>
-      </MessageResponse>
-    )
-  }
   return <FallbackToolUseErrorMessage result={result} verbose={verbose} />
 }
 

@@ -47,6 +47,7 @@ hidden couplings, silent failures, and deliberate decisions.
 
 ## Terminal UI
 
+- The `<tool_use_error>` body is the single source of truth for a failed tool call, for the model and the terminal alike. Tool `UI.tsx` error renderers must pass it to `FallbackToolUseErrorMessage` verbatim (tag-stripped); substituting static per-case strings (or collapsing `InputValidationError` to a generic line) re-introduces a second story that diverges from what the model was told.
 - A ScrollBox child cannot derive height from its parent: percentage height or empty stretch collapses to `minHeight` after culling and re-entry. Give dividers real content or use a neighbor border.
 - REPL scroll bindings register before modals and own wheel, PgUp/PgDn and ctrl+home/end. Modals must publish `ModalContext.scrollRef`; `useInput` cannot claim those keys.
 - Re-pin after a `conversationId` change or an async intermediate empty range, and clear `scrollFollowBaseline` when restoring sticky scroll. Do not key another re-pin on message count because streaming also changes it.

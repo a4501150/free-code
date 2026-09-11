@@ -3,8 +3,6 @@ import type { StructuredPatchHunk } from 'diff'
 import * as React from 'react'
 import { Suspense, use, useState } from 'react'
 import { FileEditToolUseRejectedMessage } from 'src/components/FileEditToolUseRejectedMessage.js'
-import { MessageResponse } from 'src/components/MessageResponse.js'
-import { extractTag } from 'src/utils/messages.js'
 import { FallbackToolUseErrorMessage } from '../../components/FallbackToolUseErrorMessage.js'
 import { FileEditToolUpdatedMessage } from '../../components/FileEditToolUpdatedMessage.js'
 import { FilePathLink } from '../../components/FilePathLink.js'
@@ -12,11 +10,7 @@ import { Text } from '../../ink.js'
 import type { Tools } from '../../Tool.js'
 import type { Message, ProgressMessage } from '../../types/message.js'
 import { getPatchFromContents } from '../../utils/diff.js'
-import {
-  convertLeadingTabsToSpaces,
-  FILE_NOT_FOUND_CWD_NOTE,
-  getDisplayPath,
-} from '../../utils/file.js'
+import { convertLeadingTabsToSpaces, getDisplayPath } from '../../utils/file.js'
 import { planEdit } from '../../utils/editMatch.js'
 import { logError } from '../../utils/log.js'
 import { getPlansDirectory } from '../../utils/plans.js'
@@ -134,35 +128,10 @@ export function renderToolUseErrorMessage(
     verbose: boolean
   },
 ): React.ReactElement {
-  const { verbose } = options
-  if (
-    !verbose &&
-    typeof result === 'string' &&
-    extractTag(result, 'tool_use_error')
-  ) {
-    const errorMessage = extractTag(result, 'tool_use_error')
-    // Show a less scary message for intended behavior
-    if (errorMessage?.includes('File has not been read yet')) {
-      return (
-        <MessageResponse>
-          <Text dimColor>File must be read first</Text>
-        </MessageResponse>
-      )
-    }
-    if (errorMessage?.includes(FILE_NOT_FOUND_CWD_NOTE)) {
-      return (
-        <MessageResponse>
-          <Text color="error">File not found</Text>
-        </MessageResponse>
-      )
-    }
-    return (
-      <MessageResponse>
-        <Text color="error">Error editing file</Text>
-      </MessageResponse>
-    )
-  }
-  return <FallbackToolUseErrorMessage result={result} verbose={verbose} />
+  // The model-facing <tool_use_error> message is the source of truth for what
+  // went wrong (every variant names its remedy), so the UI renders it as-is
+  // instead of substituting static per-case strings.
+  return <FallbackToolUseErrorMessage result={result} verbose={options.verbose} />
 }
 
 type RejectionDiffData = {

@@ -37,17 +37,16 @@ export function FallbackToolUseErrorMessage({
     const extractedError = extractTag(result, 'tool_use_error') ?? result
     // Strip <error> tags but keep their content (tags are for the model, not the UI)
     const withoutErrorTags = extractedError.replace(/<\/?error>/g, '')
+    // The <tool_use_error> body is the source of truth shown to the model —
+    // every variant names its remedy — so render it verbatim and only add the
+    // "Error: " frame when the message does not carry one.
     const trimmed = withoutErrorTags.trim()
-    if (!verbose && trimmed.includes('InputValidationError: ')) {
-      error = 'Invalid tool parameters'
-    } else if (
+    error =
       trimmed.startsWith('Error: ') ||
-      trimmed.startsWith('Cancelled: ')
-    ) {
-      error = trimmed
-    } else {
-      error = `Error: ${trimmed}`
-    }
+      trimmed.startsWith('Cancelled: ') ||
+      trimmed.startsWith('Error calling tool')
+        ? trimmed
+        : `Error: ${trimmed}`
   }
 
   const plusLines = countCharInString(error, '\n') + 1 - MAX_RENDERED_LINES
