@@ -38,6 +38,15 @@ export const BALANCED_MODEL_SENTINEL = 'balanced'
 export const MOST_POWERFUL_MODEL_SENTINEL = 'mostPowerful'
 
 /**
+ * Keywords the Agent tool's `model` param accepts as an explicit
+ * "run on the parent's model" (instead of a model ID). Checked BEFORE any
+ * registry lookup so these never look like unknown models.
+ */
+export function isModelInheritKeyword(model: string): boolean {
+  return /^(inherit|default|parent)$/i.test(model.trim())
+}
+
+/**
  * Get the default subagent model. Returns 'inherit' so subagents inherit
  * the model from the parent thread.
  */
@@ -83,6 +92,17 @@ export function getAgentModel(
     )
     if (prefixed === parsed.modelId) return resolvedModel
     return qualifyModel(parsed.provider, prefixed)
+  }
+
+  // Keyword aliases for an explicit "no override" from the Agent tool:
+  // resolve like the agent-definition 'inherit' sentinel — i.e. the parent's
+  // runtime model, overriding even a model set in the agent definition.
+  if (toolSpecifiedModel && isModelInheritKeyword(toolSpecifiedModel)) {
+    return getRuntimeMainLoopModel({
+      permissionMode: permissionMode ?? 'default',
+      mainLoopModel: parentModel,
+      exceeds200kTokens: false,
+    })
   }
 
   // Prioritize tool-specified model if provided

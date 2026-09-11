@@ -32,7 +32,6 @@ import {
   unregisterAgentForeground,
   updateAgentProgress as updateAsyncAgentProgress,
   updateAgentCompactStatus,
-  updateAgentThinking,
   updateAgentStreamingThinking,
   updateProgressFromMessage,
   updateProgressFromUsage,
@@ -52,7 +51,10 @@ import {
   isSyntheticMessage,
   normalizeMessages,
 } from '../../utils/messages.js'
-import { getAgentModel } from '../../utils/model/agent.js'
+import {
+  getAgentModel,
+  isModelInheritKeyword,
+} from '../../utils/model/agent.js'
 import { parseUserSpecifiedModel } from '../../utils/model/model.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 import { permissionModeSchema } from '../../utils/permissions/PermissionMode.js'
@@ -162,6 +164,7 @@ const baseInputSchema = z.object({
     .describe(
       "Optional model override for this agent. Use a provider-qualified model ID (for example 'anthropic:claude-sonnet-4-6'). " +
         "Takes precedence over the agent definition's model frontmatter. " +
+        "Pass 'inherit' to explicitly run the agent on the parent's model. " +
         "If omitted, uses the agent definition's model, or inherits from the parent.",
     ),
   run_in_background: z
@@ -584,15 +587,17 @@ export const AgentTool = buildTool({
       setAgentColor(selectedAgent.agentType, selectedAgent.color)
     }
 
-    // Validate model if specified — fail early if it doesn't resolve in the registry
-    if (model) {
+    // Validate model if specified — fail early if it doesn't resolve in the
+    // registry. The inherit keywords are not model IDs: getAgentModel
+    // resolves them to the parent's runtime model, so skip the lookup.
+    if (model && !isModelInheritKeyword(model)) {
       const parsed = parseUserSpecifiedModel(model)
       const resolved = getProviderRegistry().getProviderForModel(parsed)
       if (!resolved) {
         const available = getProviderRegistry().getAvailableSubagentModels()
         const hint =
           available.length > 0
-            ? ` Available models: ${available.join(', ')}`
+            ? ` Available models: ${available.join(', ')}. Pass 'inherit' to run on the parent's model.`
             : ''
         throw new Error(`Unknown model "${model}".${hint}`)
       }
@@ -842,12 +847,6 @@ export const AgentTool = buildTool({
                   abortController: agentBackgroundTask.abortController!,
                 },
                 onCacheSafeParams,
-                onStreamMode: (isThinking: boolean) =>
-                  updateAgentThinking(
-                    agentBackgroundTask.agentId,
-                    isThinking,
-                    rootSetAppState,
-                  ),
                 onStreamingThinking: updater =>
                   updateAgentStreamingThinking(
                     agentBackgroundTask.agentId,
@@ -996,14 +995,6 @@ export const AgentTool = buildTool({
                     stopForegroundSummarization = stop
                   }
                 : undefined,
-            onStreamMode: foregroundTaskId
-              ? (isThinking: boolean) =>
-                  updateAgentThinking(
-                    foregroundTaskId,
-                    isThinking,
-                    rootSetAppState,
-                  )
-              : undefined,
             onStreamingThinking: foregroundTaskId
               ? updater =>
                   updateAgentStreamingThinking(
@@ -1128,12 +1119,6 @@ export const AgentTool = buildTool({
                               stopBackgroundedSummarization = stop
                             }
                           : undefined,
-                        onStreamMode: (isThinking: boolean) =>
-                          updateAgentThinking(
-                            backgroundedTaskId,
-                            isThinking,
-                            rootSetAppState,
-                          ),
                         onStreamingThinking: updater =>
                           updateAgentStreamingThinking(
                             backgroundedTaskId,
