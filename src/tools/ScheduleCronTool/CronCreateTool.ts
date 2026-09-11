@@ -22,7 +22,6 @@ import {
 } from './prompt.js'
 import { renderCreateResultMessage, renderCreateToolUseMessage } from './UI.js'
 
-
 const inputSchema = z.strictObject({
   cron: z
     .string()

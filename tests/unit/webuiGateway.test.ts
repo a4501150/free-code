@@ -902,7 +902,10 @@ describe('restart redirect', () => {
   test('chooses localUrl when browser is on localhost', () => {
     const loc = fakeLoc('localhost', 'http://localhost:3000')
     redirectAfterRestart(
-      { publicUrl: 'https://abc.trycloudflare.com', localUrl: 'http://localhost:4000' },
+      {
+        publicUrl: 'https://abc.trycloudflare.com',
+        localUrl: 'http://localhost:4000',
+      },
       loc,
     )
     expect(loc.calls).toEqual(['http://localhost:4000'])
@@ -911,23 +914,35 @@ describe('restart redirect', () => {
   test('chooses localUrl when browser is on 127.0.0.1', () => {
     const loc = fakeLoc('127.0.0.1', 'http://127.0.0.1:3000')
     redirectAfterRestart(
-      { publicUrl: 'https://abc.trycloudflare.com', localUrl: 'http://127.0.0.1:4000' },
+      {
+        publicUrl: 'https://abc.trycloudflare.com',
+        localUrl: 'http://127.0.0.1:4000',
+      },
       loc,
     )
     expect(loc.calls).toEqual(['http://127.0.0.1:4000'])
   })
 
   test('chooses publicUrl when browser is on a tunnel hostname', () => {
-    const loc = fakeLoc('old.trycloudflare.com', 'https://old.trycloudflare.com')
+    const loc = fakeLoc(
+      'old.trycloudflare.com',
+      'https://old.trycloudflare.com',
+    )
     redirectAfterRestart(
-      { publicUrl: 'https://new.trycloudflare.com', localUrl: 'http://127.0.0.1:4000' },
+      {
+        publicUrl: 'https://new.trycloudflare.com',
+        localUrl: 'http://127.0.0.1:4000',
+      },
       loc,
     )
     expect(loc.calls).toEqual(['https://new.trycloudflare.com'])
   })
 
   test('does not redirect a remote browser to loopback', () => {
-    const loc = fakeLoc('old.trycloudflare.com', 'https://old.trycloudflare.com')
+    const loc = fakeLoc(
+      'old.trycloudflare.com',
+      'https://old.trycloudflare.com',
+    )
     redirectAfterRestart(
       { publicUrl: null, localUrl: 'http://127.0.0.1:4000' },
       loc,

@@ -30,7 +30,9 @@ const baseRequest: DomainMessageRequest = {
 function sse(chunks: unknown[]): Response {
   const body =
     chunks
-      .map(c => `data: ${JSON.stringify({ choices: [{ delta: {}, ...c }] })}\n\n`)
+      .map(
+        c => `data: ${JSON.stringify({ choices: [{ delta: {}, ...c }] })}\n\n`,
+      )
       .join('') + 'data: [DONE]\n\n'
   return new Response(body, {
     status: 200,
@@ -38,7 +40,10 @@ function sse(chunks: unknown[]): Response {
   })
 }
 
-async function collectEvents(request: DomainMessageRequest, response: Response) {
+async function collectEvents(
+  request: DomainMessageRequest,
+  response: Response,
+) {
   const events: any[] = []
   const res = await openaiChatCompletionsAdapter.createStream(
     testConfig,
@@ -55,41 +60,44 @@ async function collectEvents(request: DomainMessageRequest, response: Response) 
 
 describe('chat-completions stream: parallel tool call assembly', () => {
   test('two tool_calls get distinct block indices and routed deltas', async () => {
-    const events = await collectEvents(baseRequest, sse([
-      {
-        delta: {
-          tool_calls: [
-            {
-              index: 0,
-              id: 'call_a',
-              function: { name: 'get_weather', arguments: '{"ci' },
-            },
-          ],
+    const events = await collectEvents(
+      baseRequest,
+      sse([
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: 'call_a',
+                function: { name: 'get_weather', arguments: '{"ci' },
+              },
+            ],
+          },
         },
-      },
-      {
-        delta: {
-          tool_calls: [{ index: 0, function: { arguments: 'ty":"Paris"}' } }],
+        {
+          delta: {
+            tool_calls: [{ index: 0, function: { arguments: 'ty":"Paris"}' } }],
+          },
         },
-      },
-      {
-        delta: {
-          tool_calls: [
-            {
-              index: 1,
-              id: 'call_b',
-              function: { name: 'get_time', arguments: '{"zon' },
-            },
-          ],
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 1,
+                id: 'call_b',
+                function: { name: 'get_time', arguments: '{"zon' },
+              },
+            ],
+          },
         },
-      },
-      {
-        delta: {
-          tool_calls: [{ index: 1, function: { arguments: 'e":"Paris"}' } }],
+        {
+          delta: {
+            tool_calls: [{ index: 1, function: { arguments: 'e":"Paris"}' } }],
+          },
         },
-      },
-      { delta: {}, finish_reason: 'tool_calls' },
-    ]))
+        { delta: {}, finish_reason: 'tool_calls' },
+      ]),
+    )
 
     const starts = events.filter(e => e.type === 'content_block_start')
     expect(starts.length).toBe(2)
@@ -99,7 +107,10 @@ describe('chat-completions stream: parallel tool call assembly', () => {
 
     const jsonByBlock = new Map<number, string>()
     for (const e of events) {
-      if (e.type === 'content_block_delta' && e.delta?.type === 'input_json_delta') {
+      if (
+        e.type === 'content_block_delta' &&
+        e.delta?.type === 'input_json_delta'
+      ) {
         jsonByBlock.set(
           e.index,
           (jsonByBlock.get(e.index) ?? '') + e.delta.partial_json,
@@ -115,32 +126,41 @@ describe('chat-completions stream: parallel tool call assembly', () => {
   })
 
   test('text followed by two tool calls keeps blocks separate', async () => {
-    const events = await collectEvents(baseRequest, sse([
-      { delta: { content: 'Calling both now.' } },
-      {
-        delta: {
-          tool_calls: [
-            { index: 0, id: 'call_a', function: { name: 'get_weather', arguments: '{}' } },
-          ],
+    const events = await collectEvents(
+      baseRequest,
+      sse([
+        { delta: { content: 'Calling both now.' } },
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: 'call_a',
+                function: { name: 'get_weather', arguments: '{}' },
+              },
+            ],
+          },
         },
-      },
-      {
-        delta: {
-          tool_calls: [
-            { index: 1, id: 'call_b', function: { name: 'get_time', arguments: '{}' } },
-          ],
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 1,
+                id: 'call_b',
+                function: { name: 'get_time', arguments: '{}' },
+              },
+            ],
+          },
         },
-      },
-      { delta: {}, finish_reason: 'tool_calls' },
-    ]))
+        { delta: {}, finish_reason: 'tool_calls' },
+      ]),
+    )
     const starts = events.filter(e => e.type === 'content_block_start')
     const toolStarts = starts.filter(s => s.content_block.type === 'tool_use')
     expect(toolStarts.length).toBe(2)
     expect(new Set(toolStarts.map(s => s.index)).size).toBe(2)
     const textStart = starts.find(s => s.content_block.type === 'text')
     expect(textStart).toBeDefined()
-    expect(
-      new Set(starts.map(s => s.index)).size,
-    ).toBe(starts.length)
+    expect(new Set(starts.map(s => s.index)).size).toBe(starts.length)
   })
 })

@@ -1,9 +1,7 @@
 import type { Command } from '../commands.js'
 import type { LocalCommandCall } from '../types/command.js'
 import { isAdvisorEnabled } from '../utils/advisor.js'
-import {
-  parseUserSpecifiedModel,
-} from '../utils/model/model.js'
+import { parseUserSpecifiedModel } from '../utils/model/model.js'
 import { getProviderRegistry } from '../utils/model/providerRegistry.js'
 import { validateModel } from '../utils/model/validateModel.js'
 import { updateSettingsForSource } from '../utils/settings/settings.js'

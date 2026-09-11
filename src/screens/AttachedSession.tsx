@@ -1,15 +1,7 @@
-import React, {
-  useState,
-  useEffect,
-  useRef,
-  useMemo,
-  useCallback,
-} from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { randomUUID } from 'crypto'
 import { Box, Text, useInput, useApp } from '../ink.js'
-import ScrollBox, {
-  type ScrollBoxHandle,
-} from '../ink/components/ScrollBox.js'
+import ScrollBox, { type ScrollBoxHandle } from '../ink/components/ScrollBox.js'
 import { ScrollKeybindingHandler } from '../components/ScrollKeybindingHandler.js'
 import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js'
 import {
@@ -163,45 +155,37 @@ export function AttachedSession({
   const pendingPermission = view.permissions[0] ?? null
   const composerActive = isConnected && !pendingPermission
 
-  useInput(
-    (input, key) => {
-      if (!composerActive) return
+  useInput((input, key) => {
+    if (!composerActive) return
 
-      if (key.return) {
-        const trimmed = inputText.trim()
-        if (trimmed) {
-          void handleSubmit(trimmed)
-          setInputText('')
-        }
-        return
+    if (key.return) {
+      const trimmed = inputText.trim()
+      if (trimmed) {
+        void handleSubmit(trimmed)
+        setInputText('')
       }
+      return
+    }
 
-      if (key.backspace || key.delete) {
-        setInputText(prev => prev.slice(0, -1))
-        return
+    if (key.backspace || key.delete) {
+      setInputText(prev => prev.slice(0, -1))
+      return
+    }
+
+    if (key.escape) {
+      if (isRunning) {
+        void clientRef.current?.request({ kind: 'interrupt' })
       }
+      return
+    }
 
-      if (key.escape) {
-        if (isRunning) {
-          void clientRef.current?.request({ kind: 'interrupt' })
-        }
-        return
-      }
+    if (key.ctrl || key.meta) return
+    if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) return
+    if (key.pageUp || key.pageDown) return
+    if (key.tab) return
 
-      if (key.ctrl || key.meta) return
-      if (
-        key.upArrow ||
-        key.downArrow ||
-        key.leftArrow ||
-        key.rightArrow
-      )
-        return
-      if (key.pageUp || key.pageDown) return
-      if (key.tab) return
-
-      if (input) setInputText(prev => prev + input)
-    },
-  )
+    if (input) setInputText(prev => prev + input)
+  })
 
   return (
     <Box flexDirection="column" flexGrow={1} overflow="hidden">
@@ -227,9 +211,7 @@ export function AttachedSession({
 
         {connection.status === 'error' && (
           <Box paddingX={2}>
-            <Text color="error">
-              Connection failed: {connection.message}
-            </Text>
+            <Text color="error">Connection failed: {connection.message}</Text>
           </Box>
         )}
 
@@ -251,12 +233,7 @@ export function AttachedSession({
 
       {/* Disconnected banner */}
       {connection.status === 'disconnected' && (
-        <Box
-          flexShrink={0}
-          flexDirection="column"
-          paddingX={2}
-          paddingY={1}
-        >
+        <Box flexShrink={0} flexDirection="column" paddingX={2} paddingY={1}>
           <Text color="warning" bold>
             Session engine exited
           </Text>
@@ -286,13 +263,11 @@ export function AttachedSession({
           )}
           <Box paddingX={2} height={1}>
             <Text dimColor>
-              {exitState.pending ? (
-                `Press ${exitState.keyName} again to exit`
-              ) : isRunning ? (
-                'Esc to interrupt · Enter to queue'
-              ) : (
-                'Enter to send'
-              )}
+              {exitState.pending
+                ? `Press ${exitState.keyName} again to exit`
+                : isRunning
+                  ? 'Esc to interrupt · Enter to queue'
+                  : 'Enter to send'}
             </Text>
           </Box>
         </Box>
@@ -337,9 +312,7 @@ function TranscriptItemRow({
             <Text color="claude" bold>
               ❯{' '}
             </Text>
-            <Text dimColor>
-              [image {item.image.mediaType}]
-            </Text>
+            <Text dimColor>[image {item.image.mediaType}]</Text>
           </Box>
         )
       }
@@ -461,21 +434,15 @@ function AttachedPermissionOverlay({
           <Text color="warning">Path: {permission.blockedPath}</Text>
         )}
         <Box maxHeight={8} overflow="hidden">
-          <Text dimColor>
-            {formatToolInput(permission.input)}
-          </Text>
+          <Text dimColor>{formatToolInput(permission.input)}</Text>
         </Box>
         <Select
           options={[
             { label: 'Allow', value: 'allow' },
             { label: 'Deny', value: 'deny' },
           ]}
-          onChange={value =>
-            onDecision(permission.requestId, value)
-          }
-          onCancel={() =>
-            onDecision(permission.requestId, 'deny')
-          }
+          onChange={value => onDecision(permission.requestId, value)}
+          onCancel={() => onDecision(permission.requestId, 'deny')}
         />
       </Box>
     </PermissionDialog>

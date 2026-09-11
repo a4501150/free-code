@@ -142,6 +142,10 @@ export type ToolPermissionContext = DeepImmutable<{
   strippedDangerousRules?: ToolPermissionRulesBySource
   /** When true, permission prompts are auto-denied (e.g., background agents that can't show UI) */
   shouldAvoidPermissionPrompts?: boolean
+  /** When true (subagents), Edit/Write asks auto-allow: the agent has full
+   * edit permission, since no human can answer a subagent's prompt. Deny
+   * rules and classifier blocks still win. */
+  subagentAutoApproveEdits?: boolean
   /** When true, automated checks (classifier, hooks) are awaited before showing the permission dialog (coordinator workers) */
   awaitAutomatedChecksBeforeDialog?: boolean
   /** Stores the permission mode before model-initiated plan mode entry, so it can be restored on exit */

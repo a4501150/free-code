@@ -25,7 +25,7 @@ import type { OrphanedPermission } from '../types/textInputTypes.js'
 import { logForDebugging } from './debug.js'
 import { isFsInaccessible } from './errors.js'
 import { getFileModificationTime, stripLineNumberPrefix } from './file.js'
-import { readFileSyncWithMetadata } from './fileRead.js'
+import { readFileSyncWithMetadata, stripBom } from './fileRead.js'
 import {
   createFileStateCacheWithSizeLimit,
   type FileStateCache,
@@ -475,6 +475,11 @@ export function extractReadFilesFromMessages(
                       },
                     ],
                 source: 'read',
+                // Rebuilt rows went through reminder-stripping, prefix
+                // stripping and trimming — the bytes may not be what the
+                // model was shown, so never trust them for freshness.
+                contentVerified: false,
+                contentFirstLine: wholeFile ? undefined : startLine,
               })
             }
           }
@@ -484,11 +489,12 @@ export function extractReadFilesFromMessages(
           if (writeToolData && message.timestamp) {
             const timestamp = new Date(message.timestamp).getTime()
             cache.set(writeToolData.filePath, {
-              content: writeToolData.content,
+              content: stripBom(writeToolData.content),
               timestamp,
               offset: undefined,
               limit: undefined,
               source: 'write',
+              contentVerified: false,
             })
           }
 
@@ -507,11 +513,12 @@ export function extractReadFilesFromMessages(
               const { content: diskContent } =
                 readFileSyncWithMetadata(editFilePath)
               cache.set(editFilePath, {
-                content: diskContent,
+                content: stripBom(diskContent),
                 timestamp: getFileModificationTime(editFilePath),
                 offset: undefined,
                 limit: undefined,
                 source: 'edit',
+                contentVerified: false,
               })
             } catch (e: unknown) {
               if (!isFsInaccessible(e)) {

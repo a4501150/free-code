@@ -9,7 +9,9 @@ import { startGatewayServer, type GatewayServer } from './gatewayServer.js'
 
 export const WebStartOptionsSchema = z.object({
   port: z.number().int().min(0).max(65535).optional(),
-  tunnel: z.enum(['cloudflared', 'localtunnel', 'command', 'none']).default('cloudflared'),
+  tunnel: z
+    .enum(['cloudflared', 'localtunnel', 'command', 'none'])
+    .default('cloudflared'),
   tunnelCommand: z.string().optional(),
   tunnelHost: z.string().optional(),
   subdomain: z.string().optional(),

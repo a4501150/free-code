@@ -9,7 +9,10 @@
 
 const chains = new Map<string, Promise<unknown>>()
 
-export function withFileLock<T>(key: string, fn: () => Promise<T> | T): Promise<T> {
+export function withFileLock<T>(
+  key: string,
+  fn: () => Promise<T> | T,
+): Promise<T> {
   const prev = chains.get(key) ?? Promise.resolve()
   const run = prev.then(fn, fn)
   // Keep the chain alive regardless of this call's outcome, but let the

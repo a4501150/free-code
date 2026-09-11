@@ -420,20 +420,35 @@ export async function ensureScratchpadDir(): Promise<string> {
   return scratchpadDir
 }
 
-// Check if file is within the scratchpad directory
-function isScratchpadPath(absolutePath: string): boolean {
+// Session-id path segment shape (see getSessionId).
+const SESSION_UUID_SEGMENT =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/**
+ * Check if file is within a session scratchpad directory of this project.
+ *
+ * Matches ANY session-UUID directory under the project temp root, not just
+ * the process-global current session id: the path the model was told may
+ * belong to a session that predates /clear, a resume, a gateway child, or a
+ * sub-agent sharing this process. Re-deriving from STATE.sessionId turned
+ * legitimate scratchpad writes into out-of-working-dir asks.
+ */
+export function isScratchpadPath(absolutePath: string): boolean {
   if (!isScratchpadEnabled()) {
     return false
   }
-  const scratchpadDir = getScratchpadDir()
   // SECURITY: Normalize the path to resolve .. segments before checking
   // This prevents path traversal bypasses like:
   //   echo "malicious" > /tmp/claude-0/proj/session/scratchpad/../../../etc/passwd
   // Without normalization, the path would pass the startsWith check but write to /etc/passwd
   const normalizedPath = normalize(absolutePath)
+  const projectTempDir = getProjectTempDir()
+  if (!normalizedPath.startsWith(projectTempDir)) {
+    return false
+  }
+  const segments = normalizedPath.slice(projectTempDir.length).split(sep)
   return (
-    normalizedPath === scratchpadDir ||
-    normalizedPath.startsWith(scratchpadDir + sep)
+    SESSION_UUID_SEGMENT.test(segments[0] ?? '') && segments[1] === 'scratchpad'
   )
 }
 

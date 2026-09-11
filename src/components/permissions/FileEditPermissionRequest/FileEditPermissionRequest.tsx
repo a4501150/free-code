@@ -35,8 +35,6 @@ function computeNewContent(input: FileEditInput): {
     oldString: input.old_string,
     newString: input.new_string,
     replaceAll: input.replace_all ?? false,
-    startLine: input.start_line,
-    endLine: input.end_line,
   })
   return { oldContent, newContent: r.ok ? r.plan.updatedContent : oldContent }
 }

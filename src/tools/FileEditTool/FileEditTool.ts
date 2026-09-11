@@ -15,7 +15,11 @@ import { buildTool, type ToolDef } from '../../Tool.js'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { countLinesChanged, getPatchFromContents } from '../../utils/diff.js'
-import { approveEdit, type ApprovalNote } from '../../utils/editApproval.js'
+import {
+  approveEdit,
+  type ApprovalNote,
+  type ApprovalResult,
+} from '../../utils/editApproval.js'
 import { planEdit } from '../../utils/editMatch.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { isENOENT } from '../../utils/errors.js'
@@ -36,6 +40,7 @@ import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
 import {
   type LineEndingType,
   readFileSyncWithMetadata,
+  stripBom,
 } from '../../utils/fileRead.js'
 import { formatFileSize } from '../../utils/format.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
@@ -44,6 +49,7 @@ import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
 import {
   checkWritePermissionForTool,
+  isScratchpadPath,
   matchingRuleForInput,
 } from '../../utils/permissions/filesystem.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
@@ -78,8 +84,6 @@ type EditRequest = {
   oldString: string
   newString: string
   replaceAll: boolean
-  startLine?: number
-  endLine?: number
 }
 
 function requestFromInput(input: FileEditInput): EditRequest {
@@ -87,8 +91,6 @@ function requestFromInput(input: FileEditInput): EditRequest {
     oldString: input.old_string,
     newString: input.new_string,
     replaceAll: input.replace_all ?? false,
-    startLine: input.start_line,
-    endLine: input.end_line,
   }
 }
 
@@ -297,12 +299,18 @@ export const FileEditTool = buildTool({
     }
 
     // Logic-based placement approval: what the model was shown (any source)
-    // and current disk content decide, never a bare timestamp.
-    const approval = approveEdit({
-      state: toolUseContext.readFileState.get(fullFilePath),
-      currentContent: fileContent,
-      plan: planned.plan,
-    })
+    // and current disk content decide, never a bare timestamp. Scratchpad
+    // files are exempt: session temp notes have no meaningful seen-claim
+    // and multiple agents (subagents, prior sessions) write them freely.
+    const approval: ApprovalResult = isScratchpadPath(fullFilePath)
+      ? { ok: true, note: 'fresh' }
+      : approveEdit({
+          state: toolUseContext.readFileState.get(fullFilePath),
+          // Ledger contents are BOM-free; the plan still runs against the raw
+          // bytes so the write-back keeps the BOM.
+          currentContent: stripBom(fileContent),
+          plan: planned.plan,
+        })
     if (!approval.ok) {
       return {
         result: false,
@@ -334,9 +342,7 @@ export const FileEditTool = buildTool({
       input1.file_path === input2.file_path &&
       input1.old_string === input2.old_string &&
       input1.new_string === input2.new_string &&
-      (input1.replace_all ?? false) === (input2.replace_all ?? false) &&
-      input1.start_line === input2.start_line &&
-      input1.end_line === input2.end_line
+      (input1.replace_all ?? false) === (input2.replace_all ?? false)
     )
   },
   async call(
@@ -421,9 +427,7 @@ export const FileEditTool = buildTool({
         approvalNote = 'fresh'
       } else if (!fileExists) {
         if (input.old_string !== '') {
-          throw new Error(
-            fileDoesNotExistError(absoluteFilePath).message,
-          )
+          throw new Error(fileDoesNotExistError(absoluteFilePath).message)
         }
         updatedFile = input.new_string
         editCount = 1
@@ -435,11 +439,13 @@ export const FileEditTool = buildTool({
         if (!planned.ok) {
           throw new Error(planned.failure.message)
         }
-        const approval = approveEdit({
-          state: readFileState.get(absoluteFilePath),
-          currentContent: originalFileContents,
-          plan: planned.plan,
-        })
+        const approval: ApprovalResult = isScratchpadPath(absoluteFilePath)
+          ? { ok: true, note: 'fresh' }
+          : approveEdit({
+              state: readFileState.get(absoluteFilePath),
+              currentContent: stripBom(originalFileContents),
+              plan: planned.plan,
+            })
         if (!approval.ok) {
           throw new Error(approval.message)
         }
@@ -483,12 +489,17 @@ export const FileEditTool = buildTool({
       }
 
       // Notify VSCode about the file change for diff view
-      notifyVscodeFileUpdated(absoluteFilePath, originalFileContents, updatedFile)
+      notifyVscodeFileUpdated(
+        absoluteFilePath,
+        originalFileContents,
+        updatedFile,
+      )
 
       // 6. Re-record the ledger: the model authored (or kept) this content, it
       // is current in its context, so self-inflicted staleness never trips.
+      // BOM-free to match how approvals compare disk bytes.
       readFileState.set(absoluteFilePath, {
-        content: updatedFile,
+        content: stripBom(updatedFile),
         timestamp: getFileModificationTime(absoluteFilePath),
         offset: undefined,
         limit: undefined,

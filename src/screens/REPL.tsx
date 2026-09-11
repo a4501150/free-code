@@ -1990,6 +1990,15 @@ export function REPL({
                     ? { current: searchCurrent, count: searchCount }
                     : undefined
                 }
+                // The permission dialog lives in the main screen; a queued
+                // ask while drilling into an agent would otherwise wait
+                // invisibly (subagents never queue Edit/Write asks — those
+                // auto-allow).
+                permissionNotice={
+                  toolUseConfirmQueue.length > 0
+                    ? 'a tool is waiting for permission — toggle back to answer'
+                    : undefined
+                }
               />
             )
           }

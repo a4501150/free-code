@@ -401,6 +401,9 @@ export type ToolPermissionContext = {
   readonly isBypassPermissionsModeAvailable: boolean
   readonly strippedDangerousRules?: ToolPermissionRulesBySource
   readonly shouldAvoidPermissionPrompts?: boolean
+  /** Subagent flag: Edit/Write asks auto-allow (full edit permission for
+   * subagents; deny rules and classifier blocks still win). */
+  readonly subagentAutoApproveEdits?: boolean
   readonly awaitAutomatedChecksBeforeDialog?: boolean
   readonly prePlanMode?: PermissionMode
 }

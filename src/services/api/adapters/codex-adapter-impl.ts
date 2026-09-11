@@ -164,6 +164,8 @@ function resolveCodexAuth(config: ProviderConfig): {
   }
 }
 
+import { toPresentedToolSchema } from './strictPresentedSchema.js'
+
 // ── Domain → Codex request translation ─────────────────────────────
 
 function domainToolsToCodex(
@@ -187,7 +189,7 @@ function domainToolsToCodex(
       type: 'function',
       name: tool.name,
       description: tool.description || '',
-      parameters: tool.input_schema || { type: 'object', properties: {} },
+      parameters: toPresentedToolSchema(tool.input_schema),
     })
   }
 

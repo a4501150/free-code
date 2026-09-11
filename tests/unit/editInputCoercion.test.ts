@@ -12,7 +12,7 @@ describe('coerceEditInput', () => {
     expect(coerceEditInput(input)).toBe(input)
   })
 
-  test('renames known aliases', () => {
+  test('renames known aliases and drops legacy placement hints', () => {
     expect(
       coerceEditInput({
         path: '/x/f.ts',
@@ -20,13 +20,13 @@ describe('coerceEditInput', () => {
         new_str: 'b',
         replaceAll: true,
         startLine: 3,
+        end_line: 9,
       }),
     ).toEqual({
       file_path: '/x/f.ts',
       old_string: 'a',
       new_string: 'b',
       replace_all: true,
-      start_line: 3,
     })
   })
 

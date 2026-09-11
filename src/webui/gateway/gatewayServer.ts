@@ -75,7 +75,6 @@ const JS_PATH = `/assets/app.${WEBUI_JS_HASH}.js`
 const CSS_PATH = `/assets/app.${WEBUI_CSS_HASH}.css`
 const MAX_BODY_BYTES = 256 * 1024
 
-
 /**
  * The socket carries prompts, and a prompt can carry images. Kept separate from
  * the REST body limit, which has no reason to grow.

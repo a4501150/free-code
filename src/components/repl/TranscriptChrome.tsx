@@ -13,6 +13,7 @@ import figures from 'figures'
 export function TranscriptModeFooter({
   searchBadge,
   status,
+  permissionNotice,
 }: {
   /** Minimap while navigating a closed-bar search. Shows n/N hints +
    *  right-aligned count instead of scroll hints. */
@@ -21,6 +22,10 @@ export function TranscriptModeFooter({
    *  PromptInput which isn't mounted in transcript — addNotification queues
    *  but nothing draws it. */
   status?: string
+  /** A permission request is queued while the transcript renders no dialog
+   *  (the dialog lives in the main screen). Without this the request waits
+   *  invisibly. */
+  permissionNotice?: string
 }): React.ReactNode {
   const toggleShortcut = useShortcutDisplay(
     'app:toggleTranscript',
@@ -47,7 +52,12 @@ export function TranscriptModeFooter({
           ? ' · n/N to navigate'
           : ` · ${figures.arrowUp}${figures.arrowDown} scroll · home/end top/bottom`}
       </Text>
-      {status ? (
+      {permissionNotice ? (
+        <>
+          <Box flexGrow={1} />
+          <Text color="warning">{permissionNotice} </Text>
+        </>
+      ) : status ? (
         <>
           <Box flexGrow={1} />
           <Text>{status} </Text>

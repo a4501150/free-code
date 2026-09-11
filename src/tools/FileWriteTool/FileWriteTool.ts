@@ -16,7 +16,7 @@ import { buildTool, type ToolDef } from '../../Tool.js'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { countLinesChanged, getPatchFromContents } from '../../utils/diff.js'
-import { approveWrite } from '../../utils/editApproval.js'
+import { approveWrite, type ApprovalResult } from '../../utils/editApproval.js'
 import { isENOENT } from '../../utils/errors.js'
 import {
   convertLeadingTabsToSpaces,
@@ -28,13 +28,14 @@ import {
   fileHistoryTrackEdit,
 } from '../../utils/fileHistory.js'
 import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
-import { readFileSyncWithMetadata } from '../../utils/fileRead.js'
+import { readFileSyncWithMetadata, stripBom } from '../../utils/fileRead.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
 import { type ToolUseDiff } from '../../utils/gitDiff.js'
 import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
 import {
   checkWritePermissionForTool,
+  isScratchpadPath,
   matchingRuleForInput,
 } from '../../utils/permissions/filesystem.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
@@ -176,7 +177,8 @@ export const FileWriteTool = buildTool({
 
     let currentContent: string
     try {
-      currentContent = readFileSyncWithMetadata(fullFilePath).content
+      // Ledger contents are BOM-free; compare against the same bytes.
+      currentContent = stripBom(readFileSyncWithMetadata(fullFilePath).content)
     } catch (e) {
       if (isENOENT(e)) {
         return { result: true }
@@ -185,12 +187,15 @@ export const FileWriteTool = buildTool({
     }
 
     // Ledger-based overwrite approval: the model may only overwrite a file
-    // whose whole current content it has been shown.
-    const approval = approveWrite({
-      state: toolUseContext.readFileState.get(fullFilePath),
-      fileExists: true,
-      currentContent,
-    })
+    // whose whole current content it has been shown. Scratchpad files are
+    // exempt — session temp notes have no meaningful seen-claim.
+    const approval: ApprovalResult = isScratchpadPath(fullFilePath)
+      ? { ok: true, note: 'fresh' }
+      : approveWrite({
+          state: toolUseContext.readFileState.get(fullFilePath),
+          fileExists: true,
+          currentContent,
+        })
     if (!approval.ok) {
       return {
         result: false,
@@ -203,11 +208,7 @@ export const FileWriteTool = buildTool({
   },
   async call(
     { file_path, content },
-    {
-      readFileState,
-      updateFileHistoryState,
-      dynamicSkillDirTriggers,
-    },
+    { readFileState, updateFileHistoryState, dynamicSkillDirTriggers },
     _,
     parentMessage,
   ) {
@@ -262,11 +263,13 @@ export const FileWriteTool = buildTool({
     }
 
     if (meta !== null) {
-      const approval = approveWrite({
-        state: readFileState.get(fullFilePath),
-        fileExists: true,
-        currentContent: meta.content,
-      })
+      const approval: ApprovalResult = isScratchpadPath(fullFilePath)
+        ? { ok: true, note: 'fresh' }
+        : approveWrite({
+            state: readFileState.get(fullFilePath),
+            fileExists: true,
+            currentContent: stripBom(meta.content),
+          })
       if (!approval.ok) {
         throw new Error(approval.message)
       }
@@ -307,15 +310,14 @@ export const FileWriteTool = buildTool({
     notifyVscodeFileUpdated(fullFilePath, oldContent, content)
 
     // Record the ledger: the model authored this content and it is on disk,
-    // so self-inflicted staleness never trips.
+    // so self-inflicted staleness never trips. BOM-free to match approvals.
     readFileState.set(fullFilePath, {
-      content,
+      content: stripBom(content),
       timestamp: getFileModificationTime(fullFilePath),
       offset: undefined,
       limit: undefined,
       source: 'write',
     })
-
 
     // Log when writing to CLAUDE.md
 

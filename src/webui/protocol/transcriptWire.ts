@@ -126,10 +126,7 @@ function stripSyntheticTags(text: string): string {
 
   let result = text
   for (const tag of stripTags) {
-    result = result.replace(
-      new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`, 'g'),
-      '',
-    )
+    result = result.replace(new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`, 'g'), '')
   }
   for (const tag of unwrapTags) {
     result = result.replace(
@@ -190,9 +187,7 @@ function userBlockItems(
       case 'text': {
         const cleaned = stripSyntheticTags(block.text)
         if (!cleaned) break
-        items.push(
-          finish({ ...base, id, kind: 'user', text: clip(cleaned) }),
-        )
+        items.push(finish({ ...base, id, kind: 'user', text: clip(cleaned) }))
         break
       }
       case 'tool_result': {

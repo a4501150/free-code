@@ -77,8 +77,7 @@ function MobileQRCode({ onDone }: Props): React.ReactNode {
           return
         }
 
-        const webUrl =
-          startResult.status.publicUrl ?? startResult.status.url
+        const webUrl = startResult.status.publicUrl ?? startResult.status.url
         if (!webUrl) {
           setErrorMsg('The web server started but returned no URL.')
           setStatus('error')

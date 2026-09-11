@@ -1,16 +1,20 @@
 /**
  * Content-matching engine for the Edit tool's (old_string → new_string)
  * replacement. Matches against the LF-normalized file text and enumerates
- * every occurrence so the caller can enforce single-match placement (with the
- * start_line/end_line range as a tiebreaker) or apply replace_all.
+ * every occurrence so the caller can enforce single-match placement (by
+ * content alone — there are no line-range parameters; ambiguity is resolved
+ * by extending old_string's context) or apply replace_all.
  *
  * Failed exact matches get failure-driven repair retries, in order:
  * curly-quote normalization (length-preserving, so match offsets transfer to
- * the original text), \uXXXX-escape ↔ character normalization, and line
+ * the original text), \uXXXX-escape ↔ character normalization, line
  * prefix repair (the model pasted Read/Grep rows — every old_string line
  * starts with `N:` / `N→` / `N\t` / legacy `N:hash|` — with ascending line
- * numbers). Repairs transform new_string too, so the written text matches the
- * file's encoding of quotes/escapes and doesn't carry line-number garbage.
+ * numbers), and a whole-line whitespace-tolerant pass for multi-line
+ * old_string (per-line trim comparison, mirroring codex's seek_sequence
+ * ladder, absorbing copied-with-drifted-indentation or trailing-whitespace).
+ * Repairs transform new_string too, so the written text matches the file's
+ * encoding of quotes/escapes and doesn't carry line-number garbage.
  */
 
 export type MatchSpan = {
@@ -23,15 +27,17 @@ export type MatchSpan = {
   endLine: number
 }
 
-export type MatchStrategy = 'exact' | 'quotes' | 'escapes' | 'line-prefix'
+export type MatchStrategy =
+  | 'exact'
+  | 'quotes'
+  | 'escapes'
+  | 'line-prefix'
+  | 'whitespace'
 
 export type EditPlanRequest = {
   oldString: string
   newString: string
   replaceAll: boolean
-  /** Optional 1-based disambiguation range (end defaults to start). */
-  startLine?: number
-  endLine?: number
 }
 
 export type EditPlan = {
@@ -282,6 +288,55 @@ function spansFromOffsets(
   }))
 }
 
+// --- Whitespace-tolerant whole-line matching --------------------------------
+
+/**
+ * Whole-line, whitespace-tolerant pass for multi-line old_string: matches
+ * when each old_string line equals a consecutive run of file lines under
+ * trim(). Spans cover the WHOLE file lines (indentation and trailing
+ * whitespace included), so a drifted copy still replaces exactly the lines
+ * the model meant. Single-line old_string never uses this pass — a trimmed
+ * substring match would clobber unrelated surrounding text on the line.
+ * Returns non-overlapping spans ascending, or null when not applicable.
+ */
+function findWhitespaceSpans(
+  fileText: string,
+  oldString: string,
+  lineOffsets: number[],
+): MatchSpan[] | null {
+  const want = oldString.split('\n')
+  if (want.length < 2) return null
+  const wantTrim = want.map(l => l.trim())
+  const fileLines = fileText.split('\n')
+  const spans: MatchSpan[] = []
+  let i = 0
+  while (i + want.length <= fileLines.length) {
+    let ok = true
+    for (let j = 0; j < want.length; j++) {
+      if (fileLines[i + j]!.trim() !== wantTrim[j]) {
+        ok = false
+        break
+      }
+    }
+    if (ok) {
+      const offset = lineOffsets[i]!
+      const end =
+        i + want.length < fileLines.length
+          ? lineOffsets[i + want.length]! - 1
+          : fileText.length
+      spans.push({
+        offset,
+        length: end - offset,
+        startLine: i + 1,
+        endLine: i + want.length,
+      })
+      i += want.length
+    } else {
+      i++
+    }
+  }
+  return spans.length > 0 ? spans : null
+}
 
 // --- Plan ---------------------------------------------------------------------
 
@@ -291,7 +346,7 @@ function matchLineList(spans: MatchSpan[]): string {
 
 /**
  * Resolve one Edit request against the current (LF-normalized) file content:
- * repair retries, all-match enumeration, start_line/end_line disambiguation,
+ * repair retries, all-match enumeration, content-only disambiguation,
  * the delete-trailing-newline heuristic, and application. Pure — no I/O, no
  * state. Placement approval against the seen ledger is a separate step
  * (editApproval.ts); this only guarantees the replacement is well-defined
@@ -301,10 +356,10 @@ export function planEdit(
   fileText: string,
   req: EditPlanRequest,
 ): EditPlanResult {
-  const { oldString, newString, replaceAll, startLine, endLine } = req
+  const { oldString, newString, replaceAll } = req
 
-  const resolved = resolveSearch(fileText, oldString)
-  if (resolved === null) {
+  const lineOffsets = buildLineOffsets(fileText)
+  const notFound = (): EditPlanResult => {
     let message = `String to replace not found in file.\nString: ${oldString}`
     if (
       containsUnicodeEscapes(oldString) ||
@@ -317,81 +372,59 @@ export function planEdit(
     return { ok: false, failure: { message, errorCode: 8 } }
   }
 
-  let { searchText, strategy, transformNew } = resolved
-  const searchInQuotes = strategy === 'quotes'
-  const haystack = searchInQuotes
-    ? normalizeCurlyQuotes(fileText)
-    : fileText
+  const resolved = resolveSearch(fileText, oldString)
+  let spans: MatchSpan[]
+  let searchText: string
+  let strategy: MatchStrategy
+  let transformNew: (newString: string) => string
 
-  // Delete-newline heuristic: deleting text usually means deleting its
-  // line break too. Widens whenever a trailing break is present, so the
-  // emptied line disappears instead of leaving a blank.
-  if (newString === '' && haystack.includes(searchText + '\n')) {
-    searchText = searchText + '\n'
+  if (resolved !== null) {
+    searchText = resolved.searchText
+    strategy = resolved.strategy
+    transformNew = resolved.transformNew
+    const haystack =
+      strategy === 'quotes' ? normalizeCurlyQuotes(fileText) : fileText
+
+    // Delete-newline heuristic: deleting text usually means deleting its
+    // line break too. Widens whenever a trailing break is present, so the
+    // emptied line disappears instead of leaving a blank.
+    if (newString === '' && haystack.includes(searchText + '\n')) {
+      searchText = searchText + '\n'
+    }
+
+    const offsets = findAllOffsets(haystack, searchText)
+    if (offsets.length === 0) {
+      // The quote-normalized haystack can contain a match the raw text
+      // lacks only via widening; belt-and-braces not-found guard.
+      return notFound()
+    }
+    spans = spansFromOffsets(searchText, offsets, lineOffsets)
+  } else {
+    // Last repair: whole-line whitespace tolerance for multi-line copies.
+    const wsSpans = findWhitespaceSpans(fileText, oldString, lineOffsets)
+    if (wsSpans === null) return notFound()
+    if (newString === '') {
+      // Same delete-newline heuristic, applied per span.
+      for (const s of wsSpans) {
+        if (fileText[s.offset + s.length] === '\n') s.length += 1
+      }
+    }
+    spans = wsSpans
+    strategy = 'whitespace'
+    // Seen-content checks reference one representative text: the first
+    // span's exact bytes from disk.
+    const first = spans[0]!
+    searchText = fileText.slice(first.offset, first.offset + first.length)
+    transformNew = n => n
   }
 
-  let offsets = findAllOffsets(haystack, searchText)
-  const lineOffsets = buildLineOffsets(fileText)
-
-  if (offsets.length === 0) {
+  if (!replaceAll && spans.length > 1) {
     return {
       ok: false,
       failure: {
-        message: `String to replace not found in file.\nString: ${oldString}`,
-        errorCode: 8,
+        message: `Found ${spans.length} matches of the string to replace, but replace_all is false. Matches start at lines: ${matchLineList(spans)}. To replace only one occurrence, extend old_string with more surrounding lines until exactly one copy matches (line numbers above tell you where the copies are). To replace all occurrences, set replace_all to true.\nString: ${oldString}`,
+        errorCode: 9,
       },
-    }
-  }
-
-  let spans = spansFromOffsets(searchText, offsets, lineOffsets)
-
-  if (!replaceAll && spans.length > 1) {
-    if (startLine !== undefined) {
-      const hi = endLine ?? startLine
-      const inRange = spans.filter(s => s.startLine <= hi && s.endLine >= startLine)
-      if (inRange.length === 1) {
-        spans = inRange
-      } else if (inRange.length === 0) {
-        return {
-          ok: false,
-          failure: {
-            message: `Found ${spans.length} matches of the string to replace, but none within lines ${startLine}-${hi}. Matches start at lines: ${matchLineList(spans)}. Adjust start_line/end_line, provide more surrounding text, or set replace_all to true.`,
-            errorCode: 9,
-          },
-        }
-      } else {
-        return {
-          ok: false,
-          failure: {
-            message: `Found ${inRange.length} matches of the string to replace within lines ${startLine}-${hi}, so the placement is still ambiguous. Extend old_string to uniquely identify the instance, or widen the line range to cover exactly one match.`,
-            errorCode: 9,
-          },
-        }
-      }
-    } else {
-      return {
-        ok: false,
-        failure: {
-          message: `Found ${spans.length} matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance, or set start_line/end_line to the range where the edit belongs.\nString: ${oldString}`,
-          errorCode: 9,
-        },
-      }
-    }
-  } else if (!replaceAll) {
-    // Single match: a provided range that excludes it is a hallucination
-    // signal worth reporting instead of silently replacing.
-    if (startLine !== undefined) {
-      const hi = endLine ?? startLine
-      const s = spans[0]!
-      if (!(s.startLine <= hi && s.endLine >= startLine)) {
-        return {
-          ok: false,
-          failure: {
-            message: `old_string matches exactly once in the file, at line ${s.startLine}, which is outside the claimed lines ${startLine}-${hi}. Fix the range or drop start_line/end_line.`,
-            errorCode: 9,
-          },
-        }
-      }
     }
   }
 

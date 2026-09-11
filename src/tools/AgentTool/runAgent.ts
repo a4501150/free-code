@@ -406,6 +406,17 @@ export async function* runAgent({
     const state = toolUseContext.getAppState()
     let toolPermissionContext = state.toolPermissionContext
 
+    // Subagents have full edit permission: Edit/Write asks auto-allow, sync
+    // or async alike — a subagent's permission prompt has no reliably
+    // available human (and the parent delegated expecting file edits).
+    // Deny rules and classifier blocks are evaluated before this and win.
+    if (!toolPermissionContext.subagentAutoApproveEdits) {
+      toolPermissionContext = {
+        ...toolPermissionContext,
+        subagentAutoApproveEdits: true,
+      }
+    }
+
     // Override permission mode if agent defines one (unless parent is bypassPermissions, acceptEdits, or auto)
     if (
       agentPermissionMode &&

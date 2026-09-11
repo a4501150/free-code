@@ -76,12 +76,6 @@ export function normalizeToolInput<T extends Tool>(
         ...(parsedInput.replace_all !== undefined && {
           replace_all: parsedInput.replace_all,
         }),
-        ...(parsedInput.start_line !== undefined && {
-          start_line: parsedInput.start_line,
-        }),
-        ...(parsedInput.end_line !== undefined && {
-          end_line: parsedInput.end_line,
-        }),
       } as z.infer<T['inputSchema']>
     }
     case FileWriteTool.name: {

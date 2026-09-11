@@ -17,6 +17,17 @@ import { getFsImplementation, safeResolvePath } from './fsOperations.js'
 
 export type LineEndingType = 'CRLF' | 'LF'
 
+/**
+ * Drop a leading BOM character. Node's readFileSync keeps it (as U+FEFF for
+ * both utf8 and utf16le); readFileInRange strips it. The read-state ledger
+ * stores BOM-free content everywhere so freshness compares are consistent —
+ * call this wherever content enters the ledger or is compared against it.
+ * Write-back paths must NOT strip: the encoding round-trip keeps the BOM.
+ */
+export function stripBom(content: string): string {
+  return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content
+}
+
 export function detectEncodingForResolvedPath(
   resolvedPath: string,
 ): BufferEncoding {

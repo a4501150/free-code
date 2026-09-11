@@ -76,7 +76,10 @@ async function waitForExit(pid: number, timeoutMs = 5000): Promise<void> {
 
 async function captureDaemonPid(dirs: Dirs): Promise<number | undefined> {
   try {
-    return parseInt(await readFile(join(dirs.config, 'daemon.pid'), 'utf-8'), 10)
+    return parseInt(
+      await readFile(join(dirs.config, 'daemon.pid'), 'utf-8'),
+      10,
+    )
   } catch {
     return undefined
   }
@@ -231,7 +234,10 @@ describe('WebUI gateway', () => {
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(output)
     if (!match) throw new Error(`no gateway URL in output:\n${output}`)
     baseUrl = match[0]
-    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
+    {
+      const p = await captureDaemonPid(dirs)
+      if (p) daemonPids.push(p)
+    }
   }
 
   test('survives the terminal that started it and refuses bad credentials', async () => {
@@ -492,7 +498,10 @@ describe('WebUI gateway', () => {
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
     if (!match) throw new Error(`no gateway URL:\n${started}`)
     baseUrl = match[0]
-    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
+    {
+      const p = await captureDaemonPid(dirs)
+      if (p) daemonPids.push(p)
+    }
 
     const client = new GatewayClient(baseUrl)
     expect(await client.login(PASSWORD)).toBe(200)
@@ -638,7 +647,10 @@ describe('WebUI gateway', () => {
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
     if (!match) throw new Error(`no gateway URL:\n${started}`)
     baseUrl = match[0]
-    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
+    {
+      const p = await captureDaemonPid(dirs)
+      if (p) daemonPids.push(p)
+    }
 
     const client = new GatewayClient(baseUrl)
     expect(await client.login(PASSWORD)).toBe(200)
@@ -800,7 +812,10 @@ describe('WebUI gateway', () => {
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
     if (!match) throw new Error(`no gateway URL:\n${started}`)
     baseUrl = match[0]
-    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
+    {
+      const p = await captureDaemonPid(dirs)
+      if (p) daemonPids.push(p)
+    }
 
     const client = new GatewayClient(baseUrl)
     expect(await client.login(PASSWORD)).toBe(200)
@@ -868,9 +883,7 @@ describe('WebUI gateway', () => {
 
   test('terminal joins a web session and sees engine exit when the child is stopped', async () => {
     dirs = await makeDirs()
-    server.reset([
-      textResponse('An answer from the web session.'),
-    ])
+    server.reset([textResponse('An answer from the web session.')])
 
     // The tmux harness is the only thing that writes provider settings, trust
     // and API-key approval, and a spawned child needs all three.
@@ -890,7 +903,10 @@ describe('WebUI gateway', () => {
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
     if (!match) throw new Error(`no gateway URL:\n${started}`)
     baseUrl = match[0]
-    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
+    {
+      const p = await captureDaemonPid(dirs)
+      if (p) daemonPids.push(p)
+    }
 
     const client = new GatewayClient(baseUrl)
     expect(await client.login(PASSWORD)).toBe(200)
@@ -990,9 +1006,7 @@ describe('WebUI gateway', () => {
       // Joining does not create a second holder. The web child remains the
       // sole session engine; the terminal is a pure attach client.
       const listing = await client.sessions()
-      const rows = listing.sessions.filter(
-        s => s.sessionId === child.sessionId,
-      )
+      const rows = listing.sessions.filter(s => s.sessionId === child.sessionId)
       expect(rows).toHaveLength(1)
       expect(rows[0]!.holders).toBe(1)
       expect(rows[0]!.owned).toBe(true)
@@ -1038,7 +1052,10 @@ describe('WebUI gateway', () => {
       PASSWORD,
     )
     expect(output).toContain('https://fake-tunnel.example')
-    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
+    {
+      const p = await captureDaemonPid(dirs)
+      if (p) daemonPids.push(p)
+    }
 
     const status = await runCli(dirs, ['web', 'status'])
     expect(status).toContain('https://fake-tunnel.example')
@@ -1060,7 +1077,10 @@ describe('WebUI gateway', () => {
       PASSWORD,
     )
     expect(started).toContain('https://kept-name.example')
-    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
+    {
+      const p = await captureDaemonPid(dirs)
+      if (p) daemonPids.push(p)
+    }
     const firstPid = (
       await readFile(join(dirs.config, 'daemon.pid'), 'utf-8')
     ).trim()
@@ -1095,7 +1115,10 @@ describe('WebUI gateway', () => {
       ],
       PASSWORD,
     )
-    { const p = await captureDaemonPid(dirs); if (p) daemonPids.push(p) }
+    {
+      const p = await captureDaemonPid(dirs)
+      if (p) daemonPids.push(p)
+    }
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(output)
     if (!match) throw new Error(`no gateway URL in output:\n${output}`)
     const client = new GatewayClient(match[0])

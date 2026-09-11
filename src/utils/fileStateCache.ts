@@ -16,6 +16,20 @@ export type FileState = {
   seenRanges?: SeenRange[]
   /** How this entry came to exist. Entries without the field predate the ledger. */
   source?: SeenSource
+  /**
+   * False when `content` was rebuilt from transcript text (resume) and may
+   * differ from the exact bytes that were shown (system-reminder stripping,
+   * trimming). Unverified entries never satisfy the freshness check: Edit
+   * falls back to blind unique-match placement, Write requires a fresh Read.
+   */
+  contentVerified?: boolean
+  /**
+   * 1-based FILE line that corresponds to line 1 of `content`. Normally 1 (the
+   * entry stores the whole file); ranged Reads of files too large to snapshot
+   * store the shown slice and record its start line here, so seen-line math
+   * stays file-absolute.
+   */
+  contentFirstLine?: number
   // True when this entry was populated by auto-injection (e.g. CLAUDE.md) and
   // the injected content did not match disk (stripped HTML comments, stripped
   // frontmatter, truncated MEMORY.md). The model has only seen a partial view;

@@ -12,7 +12,11 @@
  */
 
 import type { EditPlan, MatchSpan } from './editMatch.js'
-import { buildLineOffsets, lineForOffset, normalizeCurlyQuotes } from './editMatch.js'
+import {
+  buildLineOffsets,
+  lineForOffset,
+  normalizeCurlyQuotes,
+} from './editMatch.js'
 import type { FileState, SeenRange } from './fileStateCache.js'
 
 export type ApprovalNote =
@@ -35,6 +39,15 @@ export const FILE_NOT_READ_YET_MESSAGE =
   'File has not been read yet. Read it first before writing to it.'
 export const FILE_MODIFIED_SINCE_READ_MESSAGE =
   'File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.'
+export const FILE_PARTIALLY_READ_MESSAGE =
+  'File has only been partially read so far. Use the Read tool on the whole file (no offset/limit) before writing to it.'
+export const FILE_STALE_VIEW_MESSAGE =
+  'The recorded view of this file was rebuilt from an earlier session and cannot be verified against its current bytes. Read it again with the Read tool before writing to it.'
+
+/** True when the entry's content may differ from the exact bytes shown. */
+export function isUnverifiedState(state: FileState | undefined): boolean {
+  return state !== undefined && state.contentVerified === false
+}
 
 /** True when every line in [startLine, endLine] is inside one seen range. */
 export function seenCoversLines(
@@ -56,21 +69,21 @@ function spansSeen(state: FileState, spans: MatchSpan[]): boolean {
  * only when it occurs exactly once — an ambiguous sighting says nothing about
  * which copy the model means.
  */
-function findSeenSpan(
-  state: FileState,
-  searchText: string,
-): MatchSpan | null {
+function findSeenSpan(state: FileState, searchText: string): MatchSpan | null {
   const haystack = normalizeCurlyQuotes(state.content)
   const needle = normalizeCurlyQuotes(searchText)
   const first = haystack.indexOf(needle)
   if (first === -1) return null
   if (haystack.indexOf(needle, first + needle.length) !== -1) return null
   const lineOffsets = buildLineOffsets(state.content)
+  // Slice entries (files too large for a whole-file snapshot) index from
+  // contentFirstLine, not from file line 1.
+  const base = (state.contentFirstLine ?? 1) - 1
   return {
     offset: first,
     length: needle.length,
-    startLine: lineForOffset(lineOffsets, first),
-    endLine: lineForOffset(lineOffsets, first + needle.length - 1),
+    startLine: base + lineForOffset(lineOffsets, first),
+    endLine: base + lineForOffset(lineOffsets, first + needle.length - 1),
   }
 }
 
@@ -86,11 +99,17 @@ export function approveEdit(args: {
 }): ApprovalResult {
   const { state, currentContent, plan } = args
 
-  if (!state || state.isPartialView) {
+  // No usable claim about the bytes: blind unique-match placement only.
+  // Unverified entries (resume rebuilds) count as no claim — their content
+  // text may differ from what was shown, so neither the fresh check nor the
+  // recovery path can trust it.
+  if (!state || state.isPartialView || isUnverifiedState(state)) {
     if (plan.spans.length === 1) return { ok: true, note: 'blind' }
     return {
       ok: false,
-      message: FILE_NOT_READ_YET_MESSAGE,
+      message: isUnverifiedState(state)
+        ? FILE_STALE_VIEW_MESSAGE
+        : FILE_NOT_READ_YET_MESSAGE,
       errorCode: 6,
     }
   }
@@ -107,11 +126,22 @@ export function approveEdit(args: {
   // model is pointing at content it actually looked at), and the current-disk
   // match already unique (spans.length === 1).
   if (plan.spans.length !== 1) {
-    return { ok: false, message: FILE_MODIFIED_SINCE_READ_MESSAGE, errorCode: 7 }
+    return {
+      ok: false,
+      message: FILE_MODIFIED_SINCE_READ_MESSAGE,
+      errorCode: 7,
+    }
   }
   const seenSpan = findSeenSpan(state, plan.searchText)
-  if (!seenSpan || !seenCoversLines(state, seenSpan.startLine, seenSpan.endLine)) {
-    return { ok: false, message: FILE_MODIFIED_SINCE_READ_MESSAGE, errorCode: 7 }
+  if (
+    !seenSpan ||
+    !seenCoversLines(state, seenSpan.startLine, seenSpan.endLine)
+  ) {
+    return {
+      ok: false,
+      message: FILE_MODIFIED_SINCE_READ_MESSAGE,
+      errorCode: 7,
+    }
   }
   return { ok: true, note: 'recovered' }
 }
@@ -121,7 +151,10 @@ export function wholeFileSeen(
   state: FileState | undefined,
   currentContent: string,
 ): boolean {
-  if (!state || state.isPartialView) return false
+  if (!state || state.isPartialView || isUnverifiedState(state)) return false
+  // Slice entries only ever claim the shown window, never the whole file.
+  if (state.contentFirstLine !== undefined && state.contentFirstLine !== 1)
+    return false
   if (state.content !== currentContent) return false
   if (state.seenRanges === undefined) return true
   const totalLines = buildLineOffsets(currentContent).length
@@ -141,13 +174,18 @@ export function approveWrite(args: {
   const { state, fileExists, currentContent } = args
   if (!fileExists) return { ok: true, note: 'fresh' }
   if (wholeFileSeen(state, currentContent)) return { ok: true, note: 'fresh' }
+  if (isUnverifiedState(state)) {
+    return { ok: false, message: FILE_STALE_VIEW_MESSAGE, errorCode: 4 }
+  }
   if (state && !state.isPartialView) {
     // A whole-file sighting of content that is no longer on disk (the model
-    // saw the complete file; a linter or the user moved it afterwards). Only
-    // an omitted seenRanges claims wholeness — a ranged Read captured a
-    // slice, and covering every line of that slice proves nothing about the
-    // rest of the file.
-    const wholeSighting = state.seenRanges === undefined
+    // saw the complete file; a linter or the user moved it afterwards). A
+    // whole claim is only an omitted seenRanges on verified content — a
+    // ranged Read captured a window, and covering every line of that window
+    // proves nothing about the rest of the file.
+    const wholeSighting =
+      state.seenRanges === undefined &&
+      (state.contentFirstLine === undefined || state.contentFirstLine === 1)
     if (wholeSighting) {
       return {
         ok: false,
@@ -155,6 +193,7 @@ export function approveWrite(args: {
         errorCode: 3,
       }
     }
+    return { ok: false, message: FILE_PARTIALLY_READ_MESSAGE, errorCode: 2 }
   }
   return { ok: false, message: FILE_NOT_READ_YET_MESSAGE, errorCode: 2 }
 }

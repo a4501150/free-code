@@ -30,6 +30,7 @@ hidden couplings, silent failures, and deliberate decisions.
 
 - `TasksV2Store` must use the main task-list ID. Timers inherit a subagent's `AsyncLocalStorage` scope, so the ambient ID can point at another agent's directory.
 - Parent UI callbacks are intentionally removed from subagent context. UI-visible output must be routed through retained `LocalAgentTaskState`, or drill-down transcripts render empty.
+- Subagents have full edit permission: `subagentAutoApproveEdits` on their permission context auto-allows Edit/Write `ask` decisions (deny rules, allow rules, plan mode and safety-check asks still win). A subagent permission prompt has no reliably available human, so edits must not wait for one.
 - A session ID is not exclusive. Two live processes can interleave writes into one transcript and share `~/.freecode/tasks/<sessionId>/`.
 - Live-holder checks fail open intentionally when a PID cannot be probed. Every session-adoption path needs the ownership check; protecting one resume path protects none of the others.
 - `gracefulShutdownSync` only schedules exit. Throw `ResumeCancelledError` afterward, or the process can adopt a session it just refused.
@@ -53,17 +54,21 @@ hidden couplings, silent failures, and deliberate decisions.
 
 ## Tool arguments
 
-- Strict schemas make models send `null` for omitted optionals. Strip only placeholder nulls, never a null the schema admits, and use `tool.inputJSONSchema ?? tool.inputSchema`; a Zod passthrough hides MCP arguments.
+- Strict schemas make models send `null` for omitted optionals. Strip only placeholder nulls, never a null the schema admits, and use `tool.inputJSONSchema ?? tool.inputSchema`; a Zod passthrough hides MCP arguments. Stripping must keep running against the Zod schema for built-ins — the presented (strict-shaped) schema marks those nulls as admitted.
+- OpenAI-compatible adapters present every tool schema strict-shaped without setting `strict`: all properties required and nullable, `additionalProperties: false`, draft keywords stripped ([src/services/api/adapters/strictPresentedSchema.ts](src/services/api/adapters/strictPresentedSchema.ts)). Strict-enforcing servers otherwise reject or silently drop tools whose optionals sit outside `required`; schemas with `$ref` are presented unmodified.
 
 ## Edit placement and the seen ledger
 
-Approval predicate and freshness contract: commented in [src/utils/editApproval.ts](src/utils/editApproval.ts). Placement resolution (quote/escape/prefix repairs, start_line disambiguation): [src/utils/editMatch.ts](src/utils/editMatch.ts).
+Approval predicate and freshness contract: commented in [src/utils/editApproval.ts](src/utils/editApproval.ts). Placement resolution (quote/escape/prefix repairs, whitespace-tolerant whole-line pass, content-only disambiguation): [src/utils/editMatch.ts](src/utils/editMatch.ts).
 
 - Approval is content logic, never timestamps: an edit lands when it verifies against current disk bytes and its placement is inside what the model was shown. `timestamp` is a re-validation hint only — touch with unchanged content must approve, and a formatter rewrite must still approve (recovered note) when the match sits inside the seen region.
-- Grep and Bash sightings re-verify every shown line against disk before marking it seen: ripgrep elides long lines (--max-columns) and bash output is truncated and blank-line-stripped. The Bash allowlist must fail closed — pipelines, redirects, extra flags or operands record nothing; a missing sighting only costs a Read, never a wrong edit.
+- Every ledger entry stores the WHOLE current file bytes (BOM-stripped; slice entries for oversized files record `contentFirstLine` so seen-line math stays file-absolute). A ranged Read that stored only its slice made every later edit a failed recovery and replace_all impossible. Sightings merge into an existing entry (union of seen ranges on identical bytes) instead of overwriting it.
+- Ledger bytes must match the bytes approvals compare: Edit/Write pass `stripBom` of the current file to approve\*; write-back keeps the BOM.
+- Resume rebuilds Read/Write/Edit sightings only ([src/utils/queryHelpers.ts](src/utils/queryHelpers.ts)), marked `contentVerified: false`: unverified entries approve only unique-match placements and never license a Write. Grep/Bash sightings are lost and the unique-match escape absorbs the gap.
+- Edit has no line-range parameters: ambiguity is resolved by extending `old_string`, and the error must quote the candidate line numbers so one retry suffices. Repair ladder beyond exact: curly quotes, \uXXXX escapes, pasted-row prefixes, then a whole-line trim() pass for multi-line copies (single-line copies already match as substrings).
+- Scratchpad files are exempt from both layers: the write permission matches ANY `<projectTemp>/<uuid>/scratchpad` (session IDs drift across /clear, resume, gateway children), and approveEdit/approveWrite skip the ledger there.
+- The Edit tool description is the only place that tells the model Grep content mode and cat/head/sed -n count as seen (partially) — keep it in sync with the fileSightings allowlist.
 - Same-response Edits of one file serialize on the per-file lock in [src/utils/fileLock.ts](src/utils/fileLock.ts): re-plan and re-approve inside the lock, and keep async I/O out of the lock body or atomicity breaks.
-- Resume rebuilds Read/Write/Edit sightings only ([src/utils/queryHelpers.ts](src/utils/queryHelpers.ts)); Grep/Bash sightings are lost and the unique-match escape absorbs the gap. That file strips legacy Read row prefixes with a local regex — hashline.ts is gone.
-- Ambiguity errors must quote the candidate line numbers: models retry with `start_line` in one shot when the error names the lines.
 - The approvalNote disclosure rides the success message (fresh / recovered / blind-placement / blind); never drop it — it tells the model when the file holds changes outside its context.
 - Read entries always store an explicit `offset` (whole-file reads: offset 1), so whole-file checks (Read dedup) must accept offset <= 1 with no limit.
 

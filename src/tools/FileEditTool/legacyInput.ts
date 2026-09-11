@@ -14,9 +14,12 @@ const ALIASES: Record<string, string> = {
   newText: 'new_string',
   replace_name: 'replace_all',
   replaceAll: 'replace_all',
-  startLine: 'start_line',
-  endLine: 'end_line',
 }
+
+// Dropped silently: placement hints from earlier schema shapes. They were
+// advisory (a re-plan against disk always ran), so dropping them keeps the
+// call working instead of tripping the strict schema.
+const DROPPED = new Set(['start_line', 'end_line', 'startLine', 'endLine'])
 
 export function coerceEditInput(raw: unknown): unknown {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -26,20 +29,24 @@ export function coerceEditInput(raw: unknown): unknown {
 
   if (Array.isArray(obj.edits)) {
     throw new ToolInputCoercionError(
-      `The Edit tool no longer takes an "edits" array of LINE:HASH anchors. Call it with {file_path, old_string, new_string, replace_all?, start_line?, end_line?}: Read or Grep the file, copy the exact text to replace into old_string (strip the "N:" line-number prefix), and put the new text in new_string.`,
+      `The Edit tool no longer takes an "edits" array of LINE:HASH anchors. Call it with {file_path, old_string, new_string, replace_all?}: Read or Grep the file, copy the exact text to replace into old_string (strip the "N:" line-number prefix), and put the new text in new_string.`,
     )
   }
 
-  let renamed = false
+  let changed = false
   const out: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(obj)) {
+    if (DROPPED.has(key)) {
+      changed = true
+      continue
+    }
     const canonical = ALIASES[key]
     if (canonical !== undefined && !(canonical in obj)) {
       out[canonical] = value
-      renamed = true
+      changed = true
     } else {
       out[key] = value
     }
   }
-  return renamed ? out : raw
+  return changed ? out : raw
 }

@@ -38,7 +38,10 @@ export function useGateway({
   /** The gateway could not reach the process, so no snapshot is coming. */
   onAttachFailed(): void
   /** The old gateway completed a restart and is handing off to a new one. */
-  onRestartReady(info: { publicUrl: string | null; localUrl: string | null }): void
+  onRestartReady(info: {
+    publicUrl: string | null
+    localUrl: string | null
+  }): void
 }): Gateway {
   const [connected, setConnected] = useState(false)
   const socketRef = useRef<GatewaySocket | null>(null)

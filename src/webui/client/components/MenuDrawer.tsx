@@ -41,11 +41,7 @@ export function MenuDrawer({
   const liveCount = sessions.filter(s => s.live).length
 
   return (
-    <nav
-      className={`rail is-${level}`}
-      id="session-rail"
-      aria-label="Menu"
-    >
+    <nav className={`rail is-${level}`} id="session-rail" aria-label="Menu">
       <div className="rail__header">
         {level === 'sessions' ? (
           <button
@@ -131,7 +127,8 @@ function GatewayActions({
     }
   }
 
-  const hasNewUrl = restartInfo && (restartInfo.publicUrl || restartInfo.localUrl)
+  const hasNewUrl =
+    restartInfo && (restartInfo.publicUrl || restartInfo.localUrl)
 
   return (
     <div className="menu__actions">
@@ -151,9 +148,7 @@ function GatewayActions({
           <p className="menu__note">Redirecting...</p>
         </div>
       ) : restarting ? (
-        <p className="menu__note">
-          Restarting. Waiting for the new gateway...
-        </p>
+        <p className="menu__note">Restarting. Waiting for the new gateway...</p>
       ) : confirming ? (
         <>
           <p className="menu__note">

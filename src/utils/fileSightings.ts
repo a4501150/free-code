@@ -20,7 +20,7 @@ import { normalizeSeenRanges } from './editApproval.js'
 import { isENOENT } from './errors.js'
 import { expandPath } from './path.js'
 import { getFileModificationTime } from './file.js'
-import { readFileSyncWithMetadata } from './fileRead.js'
+import { readFileSyncWithMetadata, stripBom } from './fileRead.js'
 import type { FileStateCache, SeenRange } from './fileStateCache.js'
 
 /** Files larger than this are not snapshotted as sightings (memory bound). */
@@ -38,7 +38,9 @@ function snapshotFile(
 ): { ok: true; snap: Snapshot } | { ok: false } {
   try {
     const meta = readFileSyncWithMetadata(filePath)
-    const content = meta.content
+    // Ledger contents are BOM-free everywhere; the Read path shows BOM-free
+    // text too, so sightings must not resurrect the BOM.
+    const content = stripBom(meta.content)
     if (Buffer.byteLength(content, 'utf8') > SIGHTING_MAX_BYTES)
       return { ok: false }
     const lineArray = content.split('\n')
@@ -70,6 +72,28 @@ function recordSighting(
     ranges.length === 1 &&
     ranges[0]!.start <= 1 &&
     ranges[0]!.end >= snap.totalLines
+  // Merge with an existing sighting instead of overwriting it: one rg after
+  // a whole-file Read must not narrow what the model saw down to the matched
+  // lines. Both claims refer to the same bytes only when the snapshots are
+  // identical, so the seen ranges (always file-absolute) are unioned exactly
+  // in that case; a changed file falls back to this sighting alone.
+  const prev = readFileState.get(filePath)
+  if (
+    prev &&
+    !prev.isPartialView &&
+    prev.content === snap.content &&
+    (prev.contentFirstLine === undefined || prev.contentFirstLine === 1)
+  ) {
+    readFileState.set(filePath, {
+      ...prev,
+      seenRanges:
+        prev.seenRanges === undefined
+          ? undefined
+          : normalizeSeenRanges([...prev.seenRanges, ...ranges]),
+      source: prev.source ?? source,
+    })
+    return
+  }
   readFileState.set(filePath, {
     content: snap.content,
     timestamp: Math.floor(snap.mtimeMs),

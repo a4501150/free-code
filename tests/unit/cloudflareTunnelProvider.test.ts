@@ -36,9 +36,7 @@ function emitUrl(
 function emitRegistered(child: ChildProcess): void {
   child.stderr!.emit(
     'data',
-    Buffer.from(
-      'INF Registered tunnel connection connIndex=0 ip=1.2.3.4\n',
-    ),
+    Buffer.from('INF Registered tunnel connection connIndex=0 ip=1.2.3.4\n'),
   )
 }
 

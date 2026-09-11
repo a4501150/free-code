@@ -9,9 +9,7 @@ function edit(
   fileText: string,
   oldString: string,
   newString: string,
-  extra: Partial<
-    Pick<EditPlanRequest, 'replaceAll' | 'startLine' | 'endLine'>
-  > = {},
+  extra: Partial<Pick<EditPlanRequest, 'replaceAll'>> = {},
 ) {
   return planEdit(fileText, {
     oldString,
@@ -23,7 +21,11 @@ function edit(
 
 describe('planEdit — exact matches', () => {
   test('replaces a unique match and reports its span', () => {
-    const r = edit('line one\nconst a = 1\nline three', 'const a = 1', 'const a = 2')
+    const r = edit(
+      'line one\nconst a = 1\nline three',
+      'const a = 1',
+      'const a = 2',
+    )
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.plan.updatedContent).toBe('line one\nconst a = 2\nline three')
@@ -52,44 +54,63 @@ describe('planEdit — exact matches', () => {
 describe('planEdit — multi-match and disambiguation', () => {
   const dup = 'dup x\nkeep\ndup x\ndrop\ndup x'
 
-  test('multiple matches without replace_all fail with the count', () => {
+  test('multiple matches without replace_all fail with the count and candidate lines', () => {
     const r = edit(dup, 'dup x', 'mark')
     expect(!r.ok && r.failure.errorCode).toBe(9)
     expect(!r.ok && r.failure.message).toContain('3 matches')
+    // Line numbers of every candidate so the retry can widen context once.
+    expect(!r.ok && r.failure.message).toContain(
+      'Matches start at lines: 1, 3, 5',
+    )
+  })
+
+  test('multi-match ambiguity is resolved by extending old_string', () => {
+    const r = edit(dup, 'keep\ndup x', 'keep\nmark')
+    expect(r.ok && r.plan.updatedContent).toBe('dup x\nkeep\nmark\ndrop\ndup x')
   })
 
   test('replace_all replaces every occurrence', () => {
     const r = edit(dup, 'dup x', 'mark', { replaceAll: true })
-    expect(r.ok && r.plan.updatedContent).toBe(
-      'mark\nkeep\nmark\ndrop\nmark',
-    )
+    expect(r.ok && r.plan.updatedContent).toBe('mark\nkeep\nmark\ndrop\nmark')
     expect(r.ok && r.plan.spans).toHaveLength(3)
   })
+})
 
-  test('start_line covering exactly one match disambiguates', () => {
-    const r = edit(dup, 'dup x', 'mark', { startLine: 3 })
-    expect(r.ok && r.plan.updatedContent).toBe(
-      'dup x\nkeep\nmark\ndrop\ndup x',
-    )
+describe('planEdit — whitespace-tolerant whole-line pass', () => {
+  test('multi-line copy with drifted indentation matches whole lines', () => {
+    const file = 'function f() {\n    const a = 1;\n    const b = 2;\n}'
+    const r = edit(file, 'const a = 1;\nconst b = 2;', 'const c = 3;')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.plan.strategy).toBe('whitespace')
+    expect(r.plan.updatedContent).toBe('function f() {\nconst c = 3;\n}')
+    expect(r.plan.spans[0]!.startLine).toBe(2)
+    expect(r.plan.spans[0]!.endLine).toBe(3)
   })
 
-  test('a range covering no match errors and quotes the candidate lines', () => {
-    const r = edit(dup, 'dup x', 'mark', { startLine: 2, endLine: 2 })
-    expect(!r.ok && r.failure.errorCode).toBe(9)
-    expect(!r.ok && r.failure.message).toContain('none within lines 2-2')
-    expect(!r.ok && r.failure.message).toContain('1, 3, 5')
+  test('trailing-whitespace drift matches and leaves the rest of the line intact', () => {
+    const file = 'one\nalpha\nbeta\nthree'
+    const r = edit(file, 'alpha  \nbeta', 'ALPHA\nBETA')
+    expect(r.ok && r.plan.strategy).toBe('whitespace')
+    expect(r.ok && r.plan.updatedContent).toBe('one\nALPHA\nBETA\nthree')
   })
 
-  test('a range covering two matches stays ambiguous', () => {
-    const r = edit(dup, 'dup x', 'mark', { startLine: 1, endLine: 4 })
-    expect(!r.ok && r.failure.errorCode).toBe(9)
-    expect(!r.ok && r.failure.message).toContain('still ambiguous')
+  test('single-line substring match stays an exact match, not the whitespace pass', () => {
+    const r = edit('leading  indented line', 'indented line', 'x')
+    expect(r.ok && r.plan.strategy).toBe('exact')
   })
 
-  test('a range excluding the single match is reported, not ignored', () => {
-    const r = edit('only\nline', 'only', 'first', { startLine: 7 })
+  test('a whitespace-matching multi-line copy spanning different content still needs uniqueness', () => {
+    const file = 'a\nx\ny\nb\nx\ny\nc'
+    const r = edit(file, ' x\n y', 'z')
     expect(!r.ok && r.failure.errorCode).toBe(9)
-    expect(!r.ok && r.failure.message).toContain('at line 1')
+    expect(!r.ok && r.failure.message).toContain('Matches start at lines: 2, 5')
+  })
+
+  test('empty new_string deletes the whole whitespace-matched lines', () => {
+    const file = 'keep\n  drop me\n  me too\nkeep2'
+    const r = edit(file, 'drop me\nme too', '')
+    expect(r.ok && r.plan.updatedContent).toBe('keep\nkeep2')
   })
 })
 

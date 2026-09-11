@@ -1,9 +1,4 @@
-import {
-  spawn,
-  execFileSync,
-  execSync,
-  type ChildProcess,
-} from 'child_process'
+import { spawn, execFileSync, execSync, type ChildProcess } from 'child_process'
 import {
   chmodSync,
   createWriteStream,
@@ -239,10 +234,7 @@ export function createCloudflareTunnelProvider(
             new Error(`cloudflared failed to start: ${err.message}`),
           )
       }
-      const onChildExit = (
-        code: number | null,
-        sig: string | null,
-      ): void => {
+      const onChildExit = (code: number | null, sig: string | null): void => {
         if (!startup.signal.aborted) {
           const detail = sig ? `signal ${sig}` : `code ${code}`
           startup.abort(

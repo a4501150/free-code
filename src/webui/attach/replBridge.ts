@@ -2,7 +2,10 @@ import { useEffect, useRef } from 'react'
 import type { UUID } from 'crypto'
 import type { Message } from '../../types/message.js'
 import type { Task } from '../../utils/taskSchemas.js'
-import { enqueue, getCommandQueueSnapshot } from '../../utils/messageQueueManager.js'
+import {
+  enqueue,
+  getCommandQueueSnapshot,
+} from '../../utils/messageQueueManager.js'
 import type {
   WebPendingCommand,
   WebPermissionMode,
@@ -77,8 +80,7 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
         }
         return commands
       },
-      getInProgressToolUseIds: () =>
-        latest.current.getInProgressToolUseIds(),
+      getInProgressToolUseIds: () => latest.current.getInProgressToolUseIds(),
 
       submit(content, delivery, commandId, images) {
         enqueue({

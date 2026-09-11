@@ -24,11 +24,9 @@ export function AssistantThinkingMessage({
   isStreaming = false,
   durationMs,
 }: Props): React.ReactNode {
-  const thinking =
-    'thinking' in param ? param.thinking : param.text
+  const thinking = 'thinking' in param ? param.thinking : param.text
 
-  const isOpaque =
-    !('thinking' in param) && hasOpaqueReasoning(param)
+  const isOpaque = !('thinking' in param) && hasOpaqueReasoning(param)
 
   if (!thinking && !isStreaming) {
     if (!isOpaque) {

@@ -255,3 +255,78 @@ describe('recordGrepContentSightings', () => {
     }
   })
 })
+
+describe('recordSighting merging with prior entries', () => {
+  test('a grep after a whole-file sighting does not narrow it', async () => {
+    const file = await tempFile('f.txt', 'one\ntwo\nthree')
+    try {
+      const cache = newCache()
+      // Prior whole-file Read of the same bytes.
+      cache.set(file, {
+        content: 'one\ntwo\nthree',
+        timestamp: 0,
+        offset: 1,
+        limit: undefined,
+        seenRanges: undefined,
+        source: 'read',
+      })
+      recordGrepContentSightings(cache, [`${file}:2:two`], {
+        multiline: false,
+      })
+      const entry = cache.get(file)
+      // Still whole-file seen — the smaller sighting merges in, it does not
+      // overwrite.
+      expect(entry?.seenRanges).toBeUndefined()
+      expect(entry?.source).toBe('read')
+    } finally {
+      await rm(file, { recursive: true, force: true })
+    }
+  })
+
+  test('sightings on the same bytes union their seen ranges', async () => {
+    const file = await tempFile('f.txt', 'one\ntwo\nthree\nfour')
+    try {
+      const cache = newCache()
+      cache.set(file, {
+        content: 'one\ntwo\nthree\nfour',
+        timestamp: 0,
+        offset: 3,
+        limit: 1,
+        seenRanges: [{ start: 3, end: 3 }],
+        source: 'read',
+      })
+      recordGrepContentSightings(cache, [`${file}:1:one`], {
+        multiline: false,
+      })
+      expect(cache.get(file)?.seenRanges).toEqual([
+        { start: 1, end: 1 },
+        { start: 3, end: 3 },
+      ])
+    } finally {
+      await rm(file, { recursive: true, force: true })
+    }
+  })
+
+  test('a changed file records only the fresh sighting', async () => {
+    const file = await tempFile('f.txt', 'one\ntwo\nthree')
+    try {
+      const cache = newCache()
+      cache.set(file, {
+        content: 'DIFFERENT bytes',
+        timestamp: 0,
+        offset: 1,
+        limit: undefined,
+        seenRanges: undefined,
+        source: 'read',
+      })
+      recordGrepContentSightings(cache, [`${file}:2:two`], {
+        multiline: false,
+      })
+      const entry = cache.get(file)
+      expect(entry?.source).toBe('grep')
+      expect(entry?.seenRanges).toEqual([{ start: 2, end: 2 }])
+    } finally {
+      await rm(file, { recursive: true, force: true })
+    }
+  })
+})

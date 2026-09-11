@@ -14,6 +14,8 @@ import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import { POWERSHELL_TOOL_NAME } from '../../tools/PowerShellTool/toolName.js'
 import { REPL_TOOL_NAME } from '../../tools/REPLTool/constants.js'
+import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
+import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
 import type { AssistantMessage } from '../../types/message.js'
 import { commandWithoutRedirects } from '../bash/ast.js'
 import { logForDebugging } from '../debug.js'
@@ -475,6 +477,27 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
   // This is done at the end so it can't be bypassed by early returns
   if (result.behavior === 'ask') {
     const appState = context.getAppState()
+
+    // Subagents have full edit permission: an Edit/Write ask auto-allows,
+    // sync or async alike — a subagent's permission prompt has no reliably
+    // available human, and the parent delegated expecting file edits.
+    // Deny/allow rules were decided earlier and win; plan mode and
+    // safety-check asks keep their semantics.
+    if (
+      appState.toolPermissionContext.subagentAutoApproveEdits &&
+      appState.toolPermissionContext.mode !== 'plan' &&
+      result.decisionReason?.type !== 'safetyCheck' &&
+      (tool.name === FILE_EDIT_TOOL_NAME || tool.name === FILE_WRITE_TOOL_NAME)
+    ) {
+      return {
+        behavior: 'allow',
+        updatedInput: input,
+        decisionReason: {
+          type: 'mode',
+          mode: 'acceptEdits',
+        },
+      }
+    }
 
     if (appState.toolPermissionContext.mode === 'dontAsk') {
       return {

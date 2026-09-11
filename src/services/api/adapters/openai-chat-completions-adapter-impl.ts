@@ -118,6 +118,8 @@ interface OpenAIChatMessage {
   reasoning_details?: unknown[]
 }
 
+import { toPresentedToolSchema } from './strictPresentedSchema.js'
+
 interface OpenAIChatTool {
   type: 'function'
   function: {
@@ -135,7 +137,7 @@ function domainToolsToOpenAI(tools: DomainToolDefinition[]): OpenAIChatTool[] {
     function: {
       name: tool.name,
       ...(tool.description ? { description: tool.description } : {}),
-      parameters: tool.input_schema || { type: 'object', properties: {} },
+      parameters: toPresentedToolSchema(tool.input_schema),
     },
   }))
 }

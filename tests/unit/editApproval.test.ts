@@ -19,7 +19,12 @@ function state(over: Partial<FileState>): FileState {
   }
 }
 
-function planFor(content: string, oldString: string, newString: string, replaceAll = false) {
+function planFor(
+  content: string,
+  oldString: string,
+  newString: string,
+  replaceAll = false,
+) {
   const r = planEdit(content, {
     oldString,
     newString,
@@ -97,7 +102,10 @@ describe('approveEdit', () => {
 
     const dup = 'dup\ndup'
     const r2 = approveEdit({
-      state: state({ content: 'a\ndup\ndup', seenRanges: [{ start: 1, end: 3 }] }),
+      state: state({
+        content: 'a\ndup\ndup',
+        seenRanges: [{ start: 1, end: 3 }],
+      }),
       currentContent: dup,
       plan: planFor(dup, 'dup', 'x', true),
     })
@@ -129,6 +137,58 @@ describe('approveEdit', () => {
       plan: planFor(FILE, 'core line', 'fixed line'),
     })
     expect(r.ok && r.note).toBe('blind')
+  })
+
+  test('ranged Read over an unchanged file approves replace_all (whole-content entry)', () => {
+    // The flood regression: a ranged Read stores the WHOLE current content,
+    // so replace_all on an untouched file never falls into the recovery
+    // path that always rejects it.
+    const r = approveEdit({
+      state: state({ content: FILE, seenRanges: [{ start: 2, end: 2 }] }),
+      currentContent: FILE,
+      plan: planFor(FILE, 'e', '3', true),
+    })
+    expect(r.ok && (r.note === 'fresh' || r.note === 'blind-placement')).toBe(
+      true,
+    )
+  })
+
+  test('slice entries resolve seen lines against contentFirstLine', () => {
+    // Entry stores the shown window (lines 2-3 of the file) for a file too
+    // large to snapshot. Seen-line math must add the window's start line.
+    const now = 'HEAD\ncore line\nTAIL'
+    const r = approveEdit({
+      state: state({
+        content: 'core line\ntail',
+        seenRanges: [{ start: 2, end: 3 }],
+        contentFirstLine: 2,
+      }),
+      currentContent: now,
+      plan: planFor(now, 'core line', 'fixed line'),
+    })
+    expect(r.ok && r.note).toBe('recovered')
+  })
+
+  test('unverified (resume-rebuilt) entries approve only unique-match placements', () => {
+    const unverified = state({
+      content: FILE,
+      seenRanges: undefined,
+      contentVerified: false,
+    })
+    const r = approveEdit({
+      state: unverified,
+      currentContent: FILE,
+      plan: planFor(FILE, 'core line', 'fixed line'),
+    })
+    expect(r.ok && r.note).toBe('blind')
+
+    const r2 = approveEdit({
+      state: unverified,
+      currentContent: FILE,
+      plan: planFor(FILE, 'e', '3', true),
+    })
+    expect(!r2.ok && r2.errorCode).toBe(6)
+    expect(!r2.ok && r2.message).toContain('cannot be verified')
   })
 })
 
@@ -190,6 +250,27 @@ describe('approveWrite', () => {
     expect(!r.ok && r.errorCode).toBe(2)
     expect(!r.ok && r.message).toContain('not been read yet')
   })
+
+  test('a ranged sighting of current content asks for a whole-file Read', () => {
+    const r = approveWrite({
+      state: state({ content: FILE, seenRanges: [{ start: 2, end: 2 }] }),
+      fileExists: true,
+      currentContent: FILE,
+    })
+    expect(!r.ok && r.errorCode).toBe(2)
+    expect(!r.ok && r.message).toContain('partially read')
+    expect(!r.ok && r.message).toContain('Read tool')
+  })
+
+  test('unverified (resume-rebuilt) entries never license an overwrite', () => {
+    const r = approveWrite({
+      state: state({ content: FILE, contentVerified: false }),
+      fileExists: true,
+      currentContent: FILE,
+    })
+    expect(!r.ok && r.errorCode).toBe(4)
+    expect(!r.ok && r.message).toContain('cannot be verified')
+  })
 })
 
 describe('helpers', () => {
@@ -234,8 +315,6 @@ describe('helpers', () => {
         { start: 3, end: 4 },
         { start: 6, end: 8 },
       ]),
-    ).toEqual([
-      { start: 1, end: 8 },
-    ])
+    ).toEqual([{ start: 1, end: 8 }])
   })
 })

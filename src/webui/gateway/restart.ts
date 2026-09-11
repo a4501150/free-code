@@ -82,13 +82,10 @@ export async function gracefulRestart(ctx: {
   }
 
   // Tell the new daemon to start its gateway and tunnel.
-  const result = await sendDaemonControl(
-    { kind: 'web.start', options },
-    60_000,
-  )
+  const result = await sendDaemonControl({ kind: 'web.start', options }, 60_000)
 
-  const publicUrl = result?.ok ? result.status.publicUrl ?? null : null
-  const localUrl = result?.ok ? result.status.url ?? null : null
+  const publicUrl = result?.ok ? (result.status.publicUrl ?? null) : null
+  const localUrl = result?.ok ? (result.status.url ?? null) : null
 
   if (publicUrl) await waitForTunnelReachable(publicUrl)
 

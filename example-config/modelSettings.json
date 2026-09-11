@@ -1,8 +1,5 @@
 {
-  "availableSubagentModels": [
-    "openai:gpt-5.6-sol",
-    "openai:gpt-5.6-terre"
-  ],
+  "availableSubagentModels": ["openai:gpt-5.6-sol", "openai:gpt-5.6-terre"],
 
   "defaultModel": "anthropic:claude-opus-4-6",
   "defaultSubagentModel": "openai:gpt-5.6-sol",
@@ -38,13 +35,7 @@
             "cacheRead": 0.5,
             "webSearch": 0.01
           },
-          "effortLevels": [
-            "low",
-            "medium",
-            "high",
-            "xhigh",
-            "max"
-          ],
+          "effortLevels": ["low", "medium", "high", "xhigh", "max"],
           "defaultEffort": "high",
           "thinking": true,
           "adaptiveThinking": true,
@@ -65,12 +56,7 @@
             "cacheRead": 0.5,
             "webSearch": 0.01
           },
-          "effortLevels": [
-            "low",
-            "medium",
-            "high",
-            "max"
-          ],
+          "effortLevels": ["low", "medium", "high", "max"],
           "defaultEffort": "high",
           "thinking": true,
           "adaptiveThinking": true,
@@ -91,12 +77,7 @@
             "cacheRead": 0.3,
             "webSearch": 0.01
           },
-          "effortLevels": [
-            "low",
-            "medium",
-            "high",
-            "max"
-          ],
+          "effortLevels": ["low", "medium", "high", "max"],
           "defaultEffort": "high",
           "thinking": true,
           "adaptiveThinking": true,
@@ -128,13 +109,7 @@
           "description": "OpenAI most capable",
           "contextWindow": 272000,
           "maxOutputTokens": 128000,
-          "effortLevels": [
-            "low",
-            "medium",
-            "high",
-            "xhigh",
-            "max"
-          ],
+          "effortLevels": ["low", "medium", "high", "xhigh", "max"],
           "defaultEffort": "high",
           "pricing": {
             "input": 5,
@@ -154,13 +129,7 @@
           "description": "OpenAI balanced",
           "contextWindow": 272000,
           "maxOutputTokens": 128000,
-          "effortLevels": [
-            "low",
-            "medium",
-            "high",
-            "xhigh",
-            "max"
-          ],
+          "effortLevels": ["low", "medium", "high", "xhigh", "max"],
           "defaultEffort": "xhigh",
           "pricing": {
             "input": 2,
@@ -198,12 +167,7 @@
           "description": "qwen3.6 most capable",
           "contextWindow": 512000,
           "maxOutputTokens": 128000,
-          "effortLevels": [
-            "low",
-            "medium",
-            "high",
-            "xhigh"
-          ],
+          "effortLevels": ["low", "medium", "high", "xhigh"],
           "defaultEffort": "high",
           "pricing": {
             "input": 0,

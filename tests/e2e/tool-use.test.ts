@@ -332,7 +332,7 @@ describe('Tool Use E2E', () => {
       expect(await readFile(filePath, 'utf-8')).toBe('alpha BETA gamma')
     })
 
-    test('an ambiguous Edit errors, and start_line disambiguates on retry', async () => {
+    test('an ambiguous Edit errors, and extended context disambiguates on retry', async () => {
       session = new TmuxSession({ serverUrl: server.url })
       await session.start()
 
@@ -356,9 +356,8 @@ describe('Tool Use E2E', () => {
             name: 'Edit',
             input: {
               file_path: filePath,
-              old_string: 'dup x',
-              new_string: 'mark',
-              start_line: 3,
+              old_string: 'keep\ndup x',
+              new_string: 'keep\nmark',
             },
           },
         ]),
@@ -373,7 +372,10 @@ describe('Tool Use E2E', () => {
       const ambiguous = getToolResults(log, 2)[0]
       expect(ambiguous.is_error).toBe(true)
       expect(resultContentString(ambiguous)).toContain('Found 2 matches')
-      expect(resultContentString(ambiguous)).toContain('start_line')
+      // The error names the candidate lines so one retry can widen context.
+      expect(resultContentString(ambiguous)).toContain(
+        'Matches start at lines: 1, 3',
+      )
 
       const retry = getToolResults(log, 3)[0]
       expect(retry.is_error).not.toBe(true)

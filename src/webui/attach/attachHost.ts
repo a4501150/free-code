@@ -188,7 +188,9 @@ export function startAttachHost(
    * guard as `listModels` for the same reason. This one runs on every publish,
    * so a throw here would break the metadata stream rather than one control.
    */
-  function buildContext(model: string | undefined): WebSessionContext | undefined {
+  function buildContext(
+    model: string | undefined,
+  ): WebSessionContext | undefined {
     if (!runtime) return undefined
     try {
       return buildContextMeter(runtime.getMessages(), model)
@@ -213,9 +215,7 @@ export function startAttachHost(
       model,
       permissionMode: runtime?.getPermissionMode(),
       state: runtime?.getState() ?? 'idle',
-      activity: isCompacting
-        ? 'compacting'
-        : runtime?.getActivity(),
+      activity: isCompacting ? 'compacting' : runtime?.getActivity(),
       context: buildContext(model),
       costUsd: cost?.costUsd,
       linesAdded: cost?.linesAdded,

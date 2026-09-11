@@ -169,17 +169,26 @@ describe('FileEdit input schema', () => {
     ).toBe(true)
   })
 
-  test('coerces string booleans and numeric strings', () => {
+  test('coerces string booleans', () => {
     const parsed = fileEditInputSchema.safeParse({
       file_path: '/repo/x.ts',
       old_string: 'a',
       new_string: 'b',
       replace_all: 'true',
-      start_line: '12',
     })
     expect(parsed.success).toBe(true)
     expect(parsed.data?.replace_all).toBe(true)
-    expect(parsed.data?.start_line).toBe(12)
+  })
+
+  test('placement line-range params are gone from the schema', () => {
+    expect(
+      fileEditInputSchema.safeParse({
+        file_path: '/repo/x.ts',
+        old_string: 'a',
+        new_string: 'b',
+        start_line: 12,
+      }).success,
+    ).toBe(false)
   })
 
   test('rejects the legacy edits array', () => {

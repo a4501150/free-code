@@ -1,6 +1,5 @@
 import { z } from 'zod/v4'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
-import { semanticNumber } from '../../utils/semanticNumber.js'
 
 const editFields = {
   file_path: z.string().describe('The absolute path to the file to modify'),
@@ -17,20 +16,13 @@ const editFields = {
   replace_all: semanticBoolean(z.boolean().optional()).describe(
     'Replace all occurrences of old_string (default false)',
   ),
-  start_line: semanticNumber(
-    z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
-  ).describe(
-    'Optional 1-based line where old_string is expected. When old_string matches several places, the one intersecting this range is replaced; a range that excludes the single match is reported as an error.',
-  ),
-  end_line: semanticNumber(
-    z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
-  ).describe(
-    'Optional inclusive end of the expected line range (defaults to start_line, i.e. a single line).',
-  ),
 }
 
 // Model-facing schema. _overrideContent is intentionally absent so the model
 // cannot bypass match validation by supplying raw file content.
+// Placement is content-anchored: there are deliberately no line-range
+// parameters — disambiguation happens by extending old_string's context,
+// which keeps the call shape minimal for structured-output models.
 const inputSchema = z.strictObject(editFields)
 type InputSchema = typeof inputSchema
 

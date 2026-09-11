@@ -31,6 +31,7 @@ import {
   suggestPathUnderCwd,
 } from '../../utils/file.js'
 import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
+import { readFileSyncWithMetadata, stripBom } from '../../utils/fileRead.js'
 import { formatFileSize } from '../../utils/format.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
 import {
@@ -118,6 +119,11 @@ function isBlockedDevicePath(filePath: string): boolean {
 
 // Narrow no-break space (U+202F) used by some macOS versions in screenshot filenames
 const THIN_SPACE = String.fromCharCode(8239)
+
+// Upper bound for the whole-file snapshot a ranged Read stores in the
+// read-state ledger (mirrors the sightings cap in fileSightings.ts). Larger
+// files record only the shown slice.
+const LEDGER_CONTENT_MAX_BYTES = 1024 * 1024
 
 /**
  * Resolves macOS screenshot paths that may have different space characters.
@@ -708,10 +714,7 @@ function pickLineFormatInstruction(): string {
 }
 
 /** Format file content as model-facing `N:content` rows. */
-function formatFileLines(file: {
-  content: string
-  startLine: number
-}): string {
+function formatFileLines(file: { content: string; startLine: number }): string {
   const lines = file.content.split('\n')
   const out: string[] = []
   for (let i = 0; i < lines.length; i++) {
@@ -744,7 +747,6 @@ function shouldIncludeFileReadMitigation(): boolean {
  * when the data object becomes unreachable after rendering.
  */
 const memoryFileMtimes = new WeakMap<object, number>()
-
 
 function memoryFileFreshnessPrefix(data: object): string {
   const mtimeMs = memoryFileMtimes.get(data)
@@ -1004,26 +1006,40 @@ async function callInner(
 
   // --- Text file (single async read via readFileInRange) ---
   const lineOffset = offset === 0 ? 0 : offset - 1
-  const {
-    content,
-    lineCount,
-    totalLines,
-    totalBytes,
-    readBytes,
-    mtimeMs,
-  } = await readFileInRange(
-    resolvedFilePath,
-    lineOffset,
-    limit,
-    limit === undefined ? maxSizeBytes : undefined,
-    context.abortController.signal,
-  )
+  const { content, lineCount, totalLines, totalBytes, readBytes, mtimeMs } =
+    await readFileInRange(
+      resolvedFilePath,
+      lineOffset,
+      limit,
+      limit === undefined ? maxSizeBytes : undefined,
+      context.abortController.signal,
+    )
 
   await validateContentTokens(content, ext, maxTokens)
 
   const wholeFileRead = offset <= 1 && offset + lineCount - 1 >= totalLines
+  // The entry's content holds the WHOLE current file even for a ranged read:
+  // editApproval's freshness check compares it against disk bytes, and a
+  // displayed slice would make every later edit look like a stale-view
+  // recovery (replace_all always failing among others). Files too large to
+  // snapshot keep the shown slice and record its start line so seen-line math
+  // stays file-absolute. BOM is dropped to match what the model was shown.
+  let ledgerContent = content
+  let contentFirstLine: number | undefined
+  if (!wholeFileRead && totalBytes > LEDGER_CONTENT_MAX_BYTES) {
+    contentFirstLine = offset
+  } else if (!wholeFileRead) {
+    try {
+      ledgerContent = stripBom(
+        readFileSyncWithMetadata(resolvedFilePath).content,
+      )
+    } catch {
+      // raced with deletion or unreadable: keep the shown slice
+      contentFirstLine = offset
+    }
+  }
   readFileState.set(fullFilePath, {
-    content,
+    content: ledgerContent,
     timestamp: Math.floor(mtimeMs),
     offset,
     limit,
@@ -1033,6 +1049,7 @@ async function callInner(
         ? [{ start: offset, end: offset + lineCount - 1 }]
         : [],
     source: 'read',
+    contentFirstLine,
   })
   context.nestedMemoryAttachmentTriggers?.add(fullFilePath)
 

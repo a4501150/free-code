@@ -5,7 +5,6 @@ import {
   type PendingImage,
 } from '../imageUpload.js'
 
-
 /** Mirrors `MAX_SUBMIT_IMAGES`, which the host enforces. */
 const MAX_IMAGES = 4
 
