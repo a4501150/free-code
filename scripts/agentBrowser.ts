@@ -1,11 +1,14 @@
 import { createHash } from 'crypto'
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
+  writeFileSync,
 } from 'fs'
 import { dirname, join, resolve } from 'path'
 import { tmpdir } from 'os'
@@ -14,12 +17,12 @@ import { tmpdir } from 'os'
 // Assets come from the agent-browser repo's v<version> release tag (the
 // browser binary assets there use a separate chromium-<ver>-<rev> tag); see
 // that repo's scripts/package-server-binary.mjs for how they are built.
-const AGENT_BROWSER_VERSION = '0.1.0'
+export const AGENT_BROWSER_VERSION = '0.1.1'
 const AGENT_BROWSER_VENDOR_DIR = 'vendor/agent-browser'
 const DEFAULT_AGENT_BROWSER_BASE_URL = `https://github.com/a4501150/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}`
 
 /** Vendor layout matches ripgrep/search-tools: <arch>-<platform>/<exe>. */
-function platformDir(): string {
+export function platformDir(): string {
   return `${process.arch}-${process.platform}`
 }
 
@@ -32,17 +35,29 @@ function binaryName(): string {
   return process.platform === 'win32' ? 'agent-browser.exe' : 'agent-browser'
 }
 
-function currentBinaryPath(): string {
-  return resolve(
-    process.cwd(),
-    AGENT_BROWSER_VENDOR_DIR,
-    platformDir(),
-    binaryName(),
-  )
+export function agentBrowserPaths(cwd: string) {
+  const binDir = resolve(cwd, AGENT_BROWSER_VENDOR_DIR, platformDir())
+  return {
+    binDir,
+    binPath: join(binDir, binaryName()),
+    markerPath: join(binDir, `${binaryName()}.version`),
+  }
 }
 
-function hasCurrentAgentBrowser(): boolean {
-  return existsSync(currentBinaryPath())
+/**
+ * Version recorded for the vendored executable, or null when the executable
+ * or a readable, non-empty marker is absent (unmarked/older layout, partial
+ * update, or tampered marker).
+ */
+export function readInstalledAgentBrowserVersion(cwd: string): string | null {
+  const { binPath, markerPath } = agentBrowserPaths(cwd)
+  if (!existsSync(binPath)) return null
+  try {
+    const version = readFileSync(markerPath, 'utf8').trim()
+    return version.length > 0 ? version : null
+  } catch {
+    return null
+  }
 }
 
 function assetBaseUrl(): string {
@@ -99,21 +114,14 @@ async function verifyChecksum(
   }
 }
 
-function extractArchive(archivePath: string): void {
-  const binDir = resolve(process.cwd(), AGENT_BROWSER_VENDOR_DIR, platformDir())
-  mkdirSync(binDir, { recursive: true })
-  // The archive holds the executable at its root (single-file bun binary).
-  const proc = Bun.spawnSync({
-    cmd: ['tar', '-xzf', archivePath, '-C', binDir],
-    cwd: process.cwd(),
-    stdout: 'inherit',
-    stderr: 'inherit',
-  })
-
-  if (proc.exitCode !== 0) throw new Error(`Failed to extract ${archivePath}`)
-}
-
-async function downloadCurrentAgentBrowser(): Promise<boolean> {
+/**
+ * Download, verify and extract entirely inside a temp dir, validate the
+ * expected executable, then swap it into vendor and write the marker. The
+ * vendor executable is replaced via a same-directory rename and the marker
+ * is written only after that, so any download/checksum/extract failure
+ * leaves the previous executable and marker untouched.
+ */
+async function downloadCurrentAgentBrowser(cwd: string): Promise<boolean> {
   const archiveName = `agent-browser_${AGENT_BROWSER_VERSION}_${platformKey()}.tar.gz`
   const baseUrl = assetBaseUrl()
   const archiveUrl = `${baseUrl}/${archiveName}`
@@ -124,15 +132,42 @@ async function downloadCurrentAgentBrowser(): Promise<boolean> {
     const archivePath = join(tmpRoot, archiveName)
     if (!(await downloadFile(archiveUrl, archivePath))) return false
     await verifyChecksum(archivePath, checksumUrl)
-    extractArchive(archivePath)
 
-    const binPath = currentBinaryPath()
-    if (!existsSync(binPath)) {
+    const extractDir = join(tmpRoot, 'extract')
+    mkdirSync(extractDir, { recursive: true })
+    // The archive holds the executable at its root (single-file bun binary).
+    const proc = Bun.spawnSync({
+      cmd: ['tar', '-xzf', archivePath, '-C', extractDir],
+      cwd,
+      stdout: 'inherit',
+      stderr: 'inherit',
+    })
+    if (proc.exitCode !== 0) throw new Error(`Failed to extract ${archivePath}`)
+
+    const extracted = join(extractDir, binaryName())
+    if (!existsSync(extracted)) {
       throw new Error(
         `${archiveName} did not contain ${binaryName()} at its root`,
       )
     }
-    chmodSync(binPath, 0o755)
+    const { binDir, binPath, markerPath } = agentBrowserPaths(cwd)
+    mkdirSync(binDir, { recursive: true })
+    // Stage on the target filesystem so each rename is atomic. A unique
+    // directory also keeps concurrent builds from sharing partial files.
+    const stagingDir = mkdtempSync(join(binDir, '.agent-browser-update-'))
+    try {
+      const stagedBin = join(stagingDir, binaryName())
+      copyFileSync(extracted, stagedBin)
+      chmodSync(stagedBin, 0o755)
+      renameSync(stagedBin, binPath)
+
+      // Marker last: its content is the completeness signal for later runs.
+      const stagedMarker = join(stagingDir, `${binaryName()}.version`)
+      writeFileSync(stagedMarker, `${AGENT_BROWSER_VERSION}\n`)
+      renameSync(stagedMarker, markerPath)
+    } finally {
+      rmSync(stagingDir, { recursive: true, force: true })
+    }
 
     return true
   } finally {
@@ -140,26 +175,37 @@ async function downloadCurrentAgentBrowser(): Promise<boolean> {
   }
 }
 
-export async function ensureCurrentAgentBrowser(): Promise<void> {
-  if (hasCurrentAgentBrowser()) return
-  if (process.env.SKIP_AGENT_BROWSER_DOWNLOAD === '1') return
+export async function ensureCurrentAgentBrowser(options?: {
+  cwd?: string
+}): Promise<void> {
+  const cwd = options?.cwd ?? process.cwd()
+  const installed = readInstalledAgentBrowserVersion(cwd)
+  if (installed === AGENT_BROWSER_VERSION) return
+  if (process.env.SKIP_AGENT_BROWSER_DOWNLOAD === '1') {
+    if (installed) {
+      console.warn(
+        `Vendored agent-browser is v${installed}, expected v${AGENT_BROWSER_VERSION}; keeping the existing binary (SKIP_AGENT_BROWSER_DOWNLOAD).`,
+      )
+    }
+    return
+  }
 
   console.log(
-    `agent-browser server missing for ${platformDir()}, downloading...`,
+    `Vendored agent-browser is ${installed ? `v${installed}` : 'missing or unmarked'}, expected v${AGENT_BROWSER_VERSION} for ${platformDir()}; downloading...`,
   )
   try {
-    if (await downloadCurrentAgentBrowser()) {
+    if (await downloadCurrentAgentBrowser(cwd)) {
       console.log(
-        `Downloaded ${AGENT_BROWSER_VENDOR_DIR}/${platformDir()}/${binaryName()}`,
+        `Downloaded ${AGENT_BROWSER_VENDOR_DIR}/${platformDir()}/${binaryName()} v${AGENT_BROWSER_VERSION}`,
       )
       return
     }
   } catch (error) {
-    console.warn(`Failed to download agent-browser server: ${error}`)
+    console.warn(`Failed to update agent-browser server: ${error}`)
     return
   }
 
   console.warn(
-    `agent-browser server is not published for ${platformDir()}; the built-in web tools MCP will stay unregistered until ${AGENT_BROWSER_VENDOR_DIR} is populated manually.`,
+    `agent-browser server v${AGENT_BROWSER_VERSION} is not published for ${platformDir()}; the built-in web tools MCP will stay unregistered until ${AGENT_BROWSER_VENDOR_DIR} is populated manually.`,
   )
 }
