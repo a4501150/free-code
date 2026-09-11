@@ -9,3 +9,6 @@ vendor/search-tools/
 src/webui/generated/assets.ts
 .DS_Store
 vendor/agent-browser/
+
+# local runtime state (cron/scheduled tasks)
+.freecode/
