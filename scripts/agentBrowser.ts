@@ -114,7 +114,7 @@ function extractArchive(archivePath: string): void {
 }
 
 async function downloadCurrentAgentBrowser(): Promise<boolean> {
-  const archiveName = `agent-browser-server-${AGENT_BROWSER_VERSION}-${platformKey()}.tar.gz`
+  const archiveName = `agent-browser_${AGENT_BROWSER_VERSION}_${platformKey()}.tar.gz`
   const baseUrl = assetBaseUrl()
   const archiveUrl = `${baseUrl}/${archiveName}`
   const checksumUrl = `${baseUrl}/${archiveName}.sha256`
