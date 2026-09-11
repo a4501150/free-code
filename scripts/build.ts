@@ -1,6 +1,7 @@
 import { chmodSync, cpSync, existsSync, mkdirSync, rmSync } from 'fs'
 import { dirname, resolve } from 'path'
 
+import { ensureCurrentAgentBrowser } from './agentBrowser.js'
 import { ensureCurrentSearchTools } from './searchTools.js'
 
 const pkg = (await Bun.file(
@@ -261,9 +262,10 @@ if (existsSync(outfile)) {
 }
 
 await ensureCurrentSearchTools()
+await ensureCurrentAgentBrowser()
 
 // Copy vendored native tools next to the compiled binary
-const vendorDirs = ['ripgrep', 'search-tools']
+const vendorDirs = ['ripgrep', 'search-tools', 'agent-browser']
 for (const vendorDir of vendorDirs) {
   const vendorSrc = resolve(process.cwd(), 'vendor', vendorDir)
   const vendorDst = resolve(dirname(outfile), 'vendor', vendorDir)

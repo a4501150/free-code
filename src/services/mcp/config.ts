@@ -32,6 +32,7 @@ import {
 } from '../../utils/settings/types.js'
 import type { ValidationError } from '../../utils/settings/validation.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
+import { getBundledMcpServers } from './bundledServers.js'
 import { fetchClaudeAIMcpConfigsIfEligible } from './claudeai.js'
 import { expandEnvVarsInString } from './envExpansion.js'
 import {
@@ -1082,9 +1083,21 @@ export async function getClaudeCodeMcpConfigs(
     })
   }
 
-  // Merge in order of precedence: plugin < user < project < local
+  // The vendored agent-browser server (built-in web tools) sits at LOWEST
+  // precedence — a manual 'agent-browser' entry replaces it. See
+  // bundledServers.ts for the full policy.
+  const bundledServers = await getBundledMcpServers(
+    new Set([
+      ...Object.keys(userServers),
+      ...Object.keys(localServers),
+      ...Object.keys(approvedProjectServers),
+    ]),
+  )
+
+  // Merge in order of precedence: bundled < plugin < user < project < local
   const configs = Object.assign(
     {},
+    bundledServers,
     dedupedPluginServers,
     userServers,
     approvedProjectServers,

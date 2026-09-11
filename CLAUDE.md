@@ -9,7 +9,7 @@ Re-adding subsystem bullet lists here is how documentation rots.
 
 - `bun run build` → `./cli` (10 flags); `bun run build:dev:full` → `./cli-dev` (dev-full set, incl. `WEBUI`). `--compile` is a misnomer: every build runs `bun build --compile`; the flag only relocates output to `dist/`. Feature names are not validated and unknown args are ignored — typos become dead flags. [FEATURES.md](FEATURES.md) is the sole authority per flag; [scripts/build.ts](scripts/build.ts) per behavior.
 - `bun run dev` runs `src/entrypoints/cli.tsx` with NONE of the default feature defines. Build to test anything a flag gates.
-- The binary is not self-contained: `vendor/ripgrep/` and `vendor/search-tools/` sidecars must move with it; system `rg` wins unless `USE_BUILTIN_RIPGREP=1`. `src/webui/generated/assets.ts` is git-ignored (stubbed when `WEBUI` off) — never commit it.
+- The binary is not self-contained: `vendor/ripgrep/`, `vendor/search-tools/`, and `vendor/agent-browser/` sidecars must move with it; system `rg` wins unless `USE_BUILTIN_RIPGREP=1`. `vendor/agent-browser/` (built-in web tools MCP) is downloaded at build time and auto-registered at lowest precedence — a manual `agent-browser` config entry replaces it; opt out per-project via `/mcp disable`. `src/webui/generated/assets.ts` is git-ignored (stubbed when `WEBUI` off) — never commit it.
 - `bun run test` neither typechecks nor formats; run `typecheck`, `test:unit`, `format` yourself. e2e drives the COMPILED `./cli-dev` in tmux (`build:dev:full` first — a stale build tests old code); each test gets `env -i` + temp HOME, asserts via the mock provider's request log, not the pane. Unit tests share one process: `mock.module` and module-level `memoize` leak across files.
 
 ## Where to look
