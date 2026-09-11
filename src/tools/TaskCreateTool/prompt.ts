@@ -9,7 +9,7 @@ export function getPrompt(): string {
 
   const teammateTips = isAgentSwarmsEnabled()
     ? `- Include enough detail in the description for another agent to understand and complete the task
-- New tasks are created with status 'pending' and no owner - use TaskUpdate with the \`owner\` parameter to assign them
+- New tasks are created with status 'pending' and no owner - a task becomes owned by whichever agent marks it \`in_progress\`
 `
     : ''
 

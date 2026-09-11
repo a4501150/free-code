@@ -12,6 +12,7 @@ import {
 } from '../services/policyLimits/index.js'
 import { preconnectAnthropicApi } from '../utils/apiPreconnect.js'
 import { cleanupSessionTeams } from '../utils/swarm/teamHelpers.js'
+import { cleanupSessionTaskList, gcStaleTaskLists } from '../utils/tasks.js'
 import { applyExtraCACertsFromConfig } from '../utils/caCertsConfig.js'
 import { registerCleanup } from '../utils/cleanupRegistry.js'
 import { enableConfigs, recordFirstStartTime } from '../utils/config.js'
@@ -126,6 +127,14 @@ export const init = memoize(async (): Promise<void> => {
     registerCleanup(async () => {
       await cleanupSessionTeams()
     })
+
+    // Task lists are session-scoped scratch: remove this session's list on
+    // exit (a resume starts a new session and must not inherit old tasks),
+    // and sweep lists a crashed session left behind.
+    registerCleanup(async () => {
+      await cleanupSessionTaskList()
+    })
+    void gcStaleTaskLists()
 
     // Initialize scratchpad directory if enabled
     if (isScratchpadEnabled()) {

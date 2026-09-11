@@ -1,4 +1,13 @@
-import { mkdir, readdir, readFile, rmdir, unlink, writeFile } from 'fs/promises'
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  rmdir,
+  stat,
+  unlink,
+  writeFile,
+} from 'fs/promises'
 import { join } from 'path'
 import { getSessionId } from '../bootstrap/state.js'
 import { getAgentContext, isSubagentContext } from './agentContext.js'
@@ -8,6 +17,7 @@ import { getClaudeConfigHomeDir, getTeamsDir } from './envUtils.js'
 import { errorMessage, getErrnoCode } from './errors.js'
 import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
+import { getLiveSessionHolders } from './concurrentSessions.js'
 import { createSignal } from './signal.js'
 import { jsonParse, jsonStringify } from './slowOperations.js'
 import { getTeamName } from './teammate.js'
@@ -166,6 +176,79 @@ export async function resetTaskList(taskListId: string): Promise<void> {
 }
 
 /**
+ * Session-scoped list IDs this process has owned. Registered lazily by
+ * getMainTaskListId() whenever it falls back to the session ID, so the set
+ * covers every ID even when switchSession (/resume) or regenerateSessionId
+ * (/clear) rotates the session mid-process. Removed on exit by
+ * cleanupSessionTaskList.
+ */
+const ownedSessionScopedListIds = new Set<string>()
+
+/**
+ * Remove the session-scoped task lists this process owned. A list named
+ * after a session ID is dead data once its last owning process exits — a
+ * resume or a fresh start must not inherit a previous run's tasks. Guards
+ * for the sharing cases (session IDs are not exclusive — see
+ * concurrentSessions.ts):
+ * - a stable-name list (team name, tasks-mode queue, CLAUDE_CODE_TASK_LIST_ID)
+ *   is never registered here, so it is never touched;
+ * - a list still held by another live CLI process (concurrent resume, or a
+ *   webui-attached child that outlives this process) is skipped;
+ * - after a crash the exit cleanup never runs — gcStaleTaskLists sweeps it.
+ */
+export async function cleanupSessionTaskList(): Promise<void> {
+  for (const id of [...ownedSessionScopedListIds]) {
+    ownedSessionScopedListIds.delete(id)
+    try {
+      if ((await getLiveSessionHolders(id)).length > 0) continue
+      await rm(getTasksDir(id), { recursive: true, force: true })
+    } catch {
+      // Best-effort hygiene; a leftover directory is not a failure mode.
+    }
+  }
+}
+
+// Stale-task-list GC window. Crash/SIGKILL exits skip cleanupSessionTaskList,
+// so startup sweeps directories untouched for this long. Directory mtime
+// refreshes on every task mutation, so a session's list is only collected
+// once its process is gone AND its last write is >1 week old.
+const STALE_TASK_LIST_MS = 7 * 24 * 3600_000
+
+/**
+ * Delete task-list directories untouched for STALE_TASK_LIST_MS (excluding
+ * the current session's). Fire-and-forget at startup — the gateway daemon
+ * runs it too, which is safe because long-idle-but-live sessions are
+ * protected by the PID-registry holder check, not just mtime.
+ */
+export async function gcStaleTaskLists(): Promise<void> {
+  const base = join(getClaudeConfigHomeDir(), 'tasks')
+  let names: string[]
+  try {
+    names = await readdir(base)
+  } catch {
+    return
+  }
+  const now = Date.now()
+  const keep = sanitizePathComponent(getSessionId())
+  await Promise.allSettled(
+    names.map(async name => {
+      if (name === keep) return
+      const path = join(base, name)
+      try {
+        const s = await stat(path)
+        if (!s.isDirectory() || now - s.mtimeMs < STALE_TASK_LIST_MS) return
+        // Long-idle live session (in_progress left open for a week): the
+        // mtime went stale but the owning process is still alive.
+        if ((await getLiveSessionHolders(name)).length > 0) return
+        await rm(path, { recursive: true, force: true })
+      } catch {
+        // Race with another process's cleanup, or dir vanished — fine.
+      }
+    }),
+  )
+}
+
+/**
  * Removes all task files and the directory for a subagent's isolated task list.
  * Called when a subagent finishes to prevent accumulation of ephemeral task data.
  */
@@ -223,7 +306,13 @@ export function getMainTaskListId(): string {
   if (teammateCtx) {
     return teammateCtx.teamName
   }
-  return getTeamName() || leaderTeamName || getSessionId()
+  const teamOrLeader = getTeamName() || leaderTeamName
+  if (teamOrLeader) return teamOrLeader
+  // Session-scoped fallback: track ownership so exit cleanup covers this ID
+  // and IDs rotated away from by /resume or /clear.
+  const sessionId = getSessionId()
+  ownedSessionScopedListIds.add(sessionId)
+  return sessionId
 }
 
 /**

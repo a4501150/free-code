@@ -196,7 +196,13 @@ function SpinnerWithVerbInner({
   const { columns } = useTerminalSize()
   const mainTasksV2 = useTasksV2()
   const subagentTasksV2 = useSubagentTasksV2(viewingAgentTaskId)
-  const tasksV2 = subagentTasksV2 ?? mainTasksV2
+  // Viewing a local agent shows that agent's own list — a viewing context
+  // must never borrow the main session's list (the main session's todos would
+  // render as the agent's). Teammates are different: they legitimately share
+  // the leader's list, so the fallback stays for non-local-agent views.
+  const tasksV2 = viewedLocalAgent
+    ? subagentTasksV2
+    : (subagentTasksV2 ?? mainTasksV2)
 
   // Thinking status for the byline: 'thinking' | number (duration in ms) | null.
   // Derived from the same StreamingThinking state that drives the transcript

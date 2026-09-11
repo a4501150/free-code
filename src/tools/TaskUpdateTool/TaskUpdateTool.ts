@@ -56,7 +56,6 @@ const inputSchema = (() => {
       .array(z.string())
       .optional()
       .describe('Task IDs that block this task'),
-    owner: z.string().optional().describe('New owner for the task'),
     metadata: z
       .record(z.string(), z.unknown())
       .optional()
@@ -124,7 +123,6 @@ export const TaskUpdateTool = buildTool({
       description,
       activeForm,
       status,
-      owner,
       addBlocks,
       addBlockedBy,
       metadata,
@@ -175,17 +173,12 @@ export const TaskUpdateTool = buildTool({
       updates.activeForm = activeForm
       updatedFields.push('activeForm')
     }
-    if (owner !== undefined && owner !== existingTask.owner) {
-      updates.owner = owner
-      updatedFields.push('owner')
-    }
-    // Auto-set owner when a teammate marks a task as in_progress without
-    // explicitly providing an owner. This ensures the task list can match
-    // todo items to teammates for showing activity status.
+    // Ownership is harness-managed: the model never names an owner. A task
+    // becomes owned by whoever marks it in_progress first, which is what the
+    // task list uses to match todo items to teammates for activity status.
     if (
       isAgentSwarmsEnabled() &&
       status === 'in_progress' &&
-      owner === undefined &&
       !existingTask.owner
     ) {
       const agentName = getAgentName()
