@@ -1,3 +1,13 @@
+// Transcript scroll contract: REPL scroll bindings register before modals and
+// own wheel, PgUp/PgDn and ctrl+home/end — modals must publish
+// ModalContext.scrollRef because useInput cannot claim those keys. Re-pin after
+// a conversationId change or an async intermediate empty range, clear
+// scrollFollowBaseline when restoring sticky scroll, and apply the follow
+// threshold only on DOWNWARD scrolls: the rendered list is not append-only
+// (tool results reorder; collapsed/streaming rows are replaced in place).
+// Keybinding emitters run before DOM onKeyDown, so layered escape behavior
+// lives in the emitter layer. Never require modified arrows: Apple Terminal
+// strips shift from arrows and splits option+up into escape then up.
 import figures from 'figures'
 import React, {
   createContext,

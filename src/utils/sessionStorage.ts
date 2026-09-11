@@ -3799,6 +3799,9 @@ export async function loadAllSubagentTranscriptsFromDisk(): Promise<{
 
 // Exported so useLogMessages can sync-compute the last loggable uuid
 // without awaiting recordTranscript's return value (race-free hint tracking).
+// Session logging drops attachments unless isLoggableMessage explicitly allows
+// their type. Any new attachment that must survive resume needs an allowlist
+// entry here, or it is silently lost.
 export function isLoggableMessage(m: Message): boolean {
   if (m.type === 'progress') return false
   // IMPORTANT: We deliberately filter out most attachments for non-ants because

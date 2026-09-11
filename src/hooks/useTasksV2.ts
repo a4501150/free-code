@@ -25,6 +25,9 @@ const FALLBACK_POLL_MS = 5000 // Fallback in case fs.watch misses events
  *
  * Implements the useSyncExternalStore contract: subscribe/getSnapshot.
  */
+// Must use the MAIN task-list ID: timers inherit a subagent's
+// AsyncLocalStorage scope, so the ambient agent ID can point at another
+// agent's directory.
 class TasksV2Store {
   /** Stable array reference; replaced only on fetch. undefined until started. */
   #tasks: Task[] | undefined = undefined

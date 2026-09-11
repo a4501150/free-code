@@ -1,3 +1,6 @@
+// A ScrollBox child cannot derive height from its parent: percentage height or
+// empty stretch collapses to minHeight after culling and re-entry. Give
+// children real content or use a neighbor border.
 import React, {
   type PropsWithChildren,
   type Ref,

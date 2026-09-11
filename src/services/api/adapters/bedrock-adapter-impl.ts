@@ -923,6 +923,10 @@ async function countTokensViaBedrock({
 
 // ── Adapter ────────────────────────────────────────────────────────
 
+// Bedrock rejects an assistant turn whose signed blocks were edited or
+// reordered — removing an intervening toolUse alone breaks the conversation.
+// Converse also rejects header-only claude-code-* betas: only documented
+// Converse beta identifiers may travel in the body.
 export const bedrockAdapter: ProviderAdapter = {
   providerType: 'bedrock-converse',
 

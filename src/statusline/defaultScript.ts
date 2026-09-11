@@ -1,3 +1,7 @@
+// The embedded default statusline skips the workspace-trust gate on purpose:
+// its content ships inside the binary. An absent statusLine setting still runs
+// it (materialized to a PID-scoped tmp file); only an explicit
+// statusLine: {"type":"off"} hides the statusline.
 import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

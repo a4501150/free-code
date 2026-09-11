@@ -1,3 +1,7 @@
+// A session ID is not exclusive: two live processes can interleave writes into
+// one transcript and share ~/.freecode/tasks/<sessionId>/. Every
+// session-adoption path needs the ownership check below — protecting one resume
+// path protects none of the others.
 import { chmod, mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import {

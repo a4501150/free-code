@@ -1,3 +1,6 @@
+// shouldHideAttachmentInUI and the unseen-divider filter in
+// FullscreenLayout.tsx must agree about which rows are hidden, or the divider
+// anchors to a row the transcript skips.
 import { feature } from 'bun:bundle'
 import type { Attachment } from 'src/utils/attachments.js'
 import type {
