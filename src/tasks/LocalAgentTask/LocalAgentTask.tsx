@@ -241,10 +241,9 @@ export type LocalAgentTaskState = TaskStateBase & {
   // timestamp = hide + GC-eligible after this time. Set at terminal transition
   // and on unselect; cleared on retain.
   evictAfter?: number
-  /** Whether the sub-agent model is currently in a thinking block */
-  isThinking?: boolean
   /** Live thinking text of the sub-agent's current reasoning block, routed to
-   * the drill-down transcript. Mirrors the leader's streamingThinking UI state. */
+   * the drill-down transcript. Mirrors the leader's streamingThinking UI state,
+   * including the duration the drill-down spinner byline reads. */
   streamingThinking?: StreamingThinking
   /** Spinner verb while the sub-agent compacts its own context (e.g.
    * "Compacting conversation"). undefined when not compacting. */
@@ -520,19 +519,6 @@ export function updateAgentProgress(
         ? { ...progress, summary: existingSummary }
         : progress,
     }
-  })
-}
-
-export function updateAgentThinking(
-  taskId: string,
-  isThinking: boolean,
-  setAppState: SetAppState,
-): void {
-  updateTaskState<LocalAgentTaskState>(taskId, setAppState, task => {
-    if (task.status !== 'running' || task.isThinking === isThinking) {
-      return task
-    }
-    return { ...task, isThinking }
   })
 }
 

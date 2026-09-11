@@ -5,7 +5,11 @@ import { stringWidth } from '../../ink/stringWidth.js'
 import { Box, Text, useAnimationFrame } from '../../ink.js'
 import type { InProcessTeammateTaskState } from '../../tasks/InProcessTeammateTask/types.js'
 import type { LocalAgentTaskState } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
-import { formatDuration, formatNumber } from '../../utils/format.js'
+import {
+  formatDuration,
+  formatNumber,
+  formatSecondsShort,
+} from '../../utils/format.js'
 import { toInkColor } from '../../utils/ink.js'
 import type { Theme } from '../../utils/theme.js'
 import { Byline } from '../design-system/Byline.js'
@@ -210,7 +214,7 @@ export function SpinnerAnimationRow({
     thinkingStatus === 'thinking'
       ? `thinking${effortSuffix}`
       : typeof thinkingStatus === 'number'
-        ? `thought for ${Math.max(1, Math.round(thinkingStatus / 1000))}s`
+        ? `thought for ${formatSecondsShort(thinkingStatus)}`
         : null
   let thinkingWidthValue = thinkingText ? stringWidth(thinkingText) : 0
 

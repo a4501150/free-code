@@ -5,7 +5,6 @@ import type { ToolUseContext, CanUseToolFn } from '../../Tool.js'
 import {
   registerAsyncAgent,
   updateAgentStreamingThinking,
-  updateAgentThinking,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { assembleToolPool } from './assembleToolPool.js'
 import { asAgentId } from '../../types/ids.js'
@@ -195,12 +194,6 @@ export async function resumeAgentBackground({
               abortController: agentBackgroundTask.abortController!,
             },
             onCacheSafeParams,
-            onStreamMode: (isThinking: boolean) =>
-              updateAgentThinking(
-                agentBackgroundTask.agentId,
-                isThinking,
-                rootSetAppState,
-              ),
             onStreamingThinking: updater =>
               updateAgentStreamingThinking(
                 agentBackgroundTask.agentId,

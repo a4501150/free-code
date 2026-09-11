@@ -2244,6 +2244,7 @@ export function REPL({
                   compactingStartTime={compactingStartTime}
                   hasActiveTools={inProgressToolUseIDs.size > 0}
                   leaderIsIdle={!isLoading}
+                  streamingThinking={streamingThinking}
                 />
               )}
               {!showSpinner &&

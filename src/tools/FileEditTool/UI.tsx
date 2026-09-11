@@ -131,7 +131,9 @@ export function renderToolUseErrorMessage(
   // The model-facing <tool_use_error> message is the source of truth for what
   // went wrong (every variant names its remedy), so the UI renders it as-is
   // instead of substituting static per-case strings.
-  return <FallbackToolUseErrorMessage result={result} verbose={options.verbose} />
+  return (
+    <FallbackToolUseErrorMessage result={result} verbose={options.verbose} />
+  )
 }
 
 type RejectionDiffData = {

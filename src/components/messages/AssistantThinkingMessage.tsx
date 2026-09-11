@@ -47,7 +47,12 @@ export function AssistantThinkingMessage({
 
   const shouldShowFullThinking = isTranscriptMode || verbose
 
-  const label = isStreaming
+  // durationMs is recorded at reasoning content_block_stop, so it is the
+  // authoritative "thinking ended" marker — earlier than isStreaming flipping
+  // (which waits for the finalized message so the overlay swap stays batched).
+  const thinkingOpen = isStreaming && durationMs === undefined
+
+  const label = thinkingOpen
     ? '∴ thinking'
     : durationMs !== undefined
       ? `∴ thought for ${formatSecondsShort(durationMs)}`
@@ -56,7 +61,7 @@ export function AssistantThinkingMessage({
   if (!shouldShowFullThinking) {
     return (
       <Box marginTop={addMargin ? 1 : 0}>
-        {isStreaming ? (
+        {thinkingOpen ? (
           <ThinkingAnimation />
         ) : (
           <Text dimColor italic>
@@ -74,7 +79,7 @@ export function AssistantThinkingMessage({
       marginTop={addMargin ? 1 : 0}
       width="100%"
     >
-      {isStreaming ? (
+      {thinkingOpen ? (
         <ThinkingAnimation />
       ) : (
         <Text dimColor italic>

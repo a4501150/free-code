@@ -256,7 +256,6 @@ export async function* runAgent({
   description,
   transcriptSubdir,
   onQueryProgress,
-  onStreamMode,
   onStreamingThinking,
   onCompactProgress,
 }: {
@@ -312,9 +311,6 @@ export async function* runAgent({
    * during long single-block streams (e.g. thinking) where no assistant
    * message is yielded for >60s. */
   onQueryProgress?: () => void
-  /** Optional callback fired when the sub-agent's stream mode changes
-   * (e.g. entering/leaving a thinking block). Used to update the spinner. */
-  onStreamMode?: (isThinking: boolean) => void
   /** Optional callback receiving updater functions over the live thinking
    * buffer, mirroring the leader's streamingThinking state. Lets the drill-down
    * transcript show the sub-agent's thinking text as it streams. */
@@ -493,9 +489,8 @@ export async function* runAgent({
   // assembled its pool, against the parent's model. This agent may run a
   // different model, so re-check isEnabled() under the agent's own model —
   // getMainLoopModel() resolves to the scoped model inside the scope.
-  const modelCapableTools = runWithMainLoopModelScope(
-    resolvedAgentModel,
-    () => availableTools.filter(tool => tool.isEnabled()),
+  const modelCapableTools = runWithMainLoopModelScope(resolvedAgentModel, () =>
+    availableTools.filter(tool => tool.isEnabled()),
   )
 
   const resolvedTools = resolveAgentTools(
@@ -743,8 +738,11 @@ export async function* runAgent({
   let lastRecordedUuid: UUID | null = initialMessages.at(-1)?.uuid ?? null
 
   // Anchor for thinkingDurationMs stamping, mirroring handleMessageFromStream
-  // (leader path). Set at reasoning content_block_start, consumed at assistant.
+  // (leader path). Set at reasoning content_block_start, consumed at assistant;
+  // the authoritative duration is finalized at that block's content_block_stop.
   let thinkingStartedAt: number | null = null
+  let thinkingBlockIndex: number | null = null
+  let thinkingDurationMs: number | undefined
 
   logForDebugging(
     `[Agent: ${agentDefinition.agentType}] Starting query | model=${resolvedAgentModel ?? 'default'} initialMessages=${initialMessages.length} systemPromptChars=${agentSystemPrompt.length} tools=${allTools.length}`,
@@ -764,16 +762,29 @@ export async function* runAgent({
       onQueryProgress?.()
       // Track thinking state from stream events. content_block carries the
       // DOMAIN block type ('reasoning'), not the wire type ('thinking').
+      if (message.type === 'stream_request_start') {
+        // Drop the previous request's completed thinking readout (mirrors the
+        // leader path in handleMessageFromStream). A still-streaming block
+        // carries over — it lands in this request's assistant message.
+        onStreamingThinking?.(current =>
+          current && !current.isStreaming ? null : current,
+        )
+      }
       if (message.type === 'stream_event') {
         if (message.event.type === 'content_block_start') {
           const isReasoning = isAnyReasoningBlock(message.event.content_block)
-          onStreamMode?.(isReasoning)
-          if (isReasoning && thinkingStartedAt === null) {
-            const startedAt = Date.now()
-            thinkingStartedAt = startedAt
+          if (isReasoning) {
+            if (thinkingStartedAt === null) {
+              thinkingStartedAt = Date.now()
+            }
+            const startedAt = thinkingStartedAt
+            // Re-arm on each reasoning block; a second block extends the
+            // same duration rather than starting an independent one.
+            thinkingBlockIndex = message.event.index
+            thinkingDurationMs = undefined
             onStreamingThinking?.(current =>
               current?.isStreaming
-                ? current
+                ? { ...current, durationMs: undefined }
                 : { thinking: '', isStreaming: true, startedAt },
             )
           }
@@ -792,10 +803,34 @@ export async function* runAgent({
                 : null,
             )
           }
+        } else if (message.event.type === 'content_block_stop') {
+          // Record the authoritative thinking duration when the open
+          // reasoning block stops (mirrors the leader path in
+          // handleMessageFromStream). isStreaming stays true until the
+          // assistant message lands.
+          if (
+            thinkingBlockIndex !== null &&
+            message.event.index === thinkingBlockIndex &&
+            thinkingStartedAt !== null
+          ) {
+            thinkingBlockIndex = null
+            const stopAt = Date.now()
+            const blockDurationMs = stopAt - thinkingStartedAt
+            thinkingDurationMs = blockDurationMs
+            onStreamingThinking?.(current =>
+              current
+                ? {
+                    ...current,
+                    streamingEndedAt: stopAt,
+                    durationMs: blockDurationMs,
+                  }
+                : current,
+            )
+          }
         } else if (message.event.type === 'message_stop') {
-          // Otherwise 'thinking' sticks through the tool call that follows a
-          // turn whose last block was a reasoning block.
-          onStreamMode?.(false)
+          // A stopped reasoning block must not finalize against the next
+          // request's block indices.
+          thinkingBlockIndex = null
         }
       }
       // Forward subagent API request starts to parent's metrics display
@@ -846,23 +881,26 @@ export async function* runAgent({
       }
 
       if (message.type === 'assistant' && thinkingStartedAt !== null) {
-        const thinkingDurationMs = Date.now() - thinkingStartedAt
+        // Prefer the duration recorded at content_block_stop; providers that
+        // omit block-stop events fall back to message arrival.
+        const durationMs = thinkingDurationMs ?? Date.now() - thinkingStartedAt
         thinkingStartedAt = null
+        thinkingBlockIndex = null
+        thinkingDurationMs = undefined
         if (
           message.message.content.some(
             block =>
               block.type === 'reasoning' || block.type === 'redacted_reasoning',
           )
         ) {
-          ;(message as Record<string, unknown>).thinkingDurationMs =
-            thinkingDurationMs
+          ;(message as Record<string, unknown>).thinkingDurationMs = durationMs
           onStreamingThinking?.(current =>
             current
               ? {
                   ...current,
                   isStreaming: false,
                   streamingEndedAt: Date.now(),
-                  durationMs: thinkingDurationMs,
+                  durationMs,
                 }
               : null,
           )

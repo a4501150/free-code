@@ -2651,10 +2651,20 @@ export type StreamingToolUse = {
 
 export type StreamingThinking = {
   thinking: string
+  /** True from reasoning content_block_start until the finalized assistant
+   * message lands — NOT until the block stops. The transcript overlay stays
+   * mounted on this flag so its removal batches with the committed thinking
+   * row. Use `durationMs !== undefined` to tell whether thinking has ended. */
   isStreaming: boolean
   streamingEndedAt?: number
   startedAt?: number
+  /** Measured at reasoning content_block_stop — the only authoritative
+   * thinking duration. Surfaces (spinner byline, message row) must not keep
+   * their own clocks. */
   durationMs?: number
+  /** Content-block index of the open reasoning block; content_block_stop
+   * finalizes the duration only for this index. */
+  blockIndex?: number
 }
 
 const SUBAGENT_TYPE_RE = /"subagent_type"\s*:\s*"([^"]+)"/
@@ -2703,9 +2713,14 @@ export function handleMessageFromStream(
       )
       if (thinkingBlock) {
         onStreamingThinking?.(current => {
-          const durationMs = current?.startedAt
-            ? Date.now() - current.startedAt
-            : undefined
+          // Prefer the duration recorded at content_block_stop; providers
+          // that omit block-stop events fall back to message arrival (which
+          // overstates thinking time by the trailing text/tool generation).
+          const durationMs =
+            current?.durationMs ??
+            (current?.startedAt !== undefined
+              ? Date.now() - current.startedAt
+              : undefined)
           if (durationMs !== undefined) {
             ;(message as Record<string, unknown>).thinkingDurationMs =
               durationMs
@@ -2730,6 +2745,12 @@ export function handleMessageFromStream(
 
   if (message.type === 'stream_request_start') {
     onSetStreamMode('requesting')
+    // A finished thinking readout belongs to the previous request; drop it at
+    // the next request start. A block still streaming carries over (it will
+    // land in this request's assistant message).
+    onStreamingThinking?.(current =>
+      current && !current.isStreaming ? null : current,
+    )
     return
   }
 
@@ -2757,14 +2778,23 @@ export function handleMessageFromStream(
       }
       switch (message.event.content_block.type) {
         case 'reasoning':
-        case 'redacted_reasoning':
+        case 'redacted_reasoning': {
           onSetStreamMode('thinking')
+          const openIndex = message.event.index
           onStreamingThinking?.(current =>
+            // A second reasoning block in the same message re-arms the
+            // readout: keep the anchor so the duration spans both blocks.
             current?.isStreaming
-              ? current
-              : { thinking: '', isStreaming: true, startedAt: Date.now() },
+              ? { ...current, blockIndex: openIndex, durationMs: undefined }
+              : {
+                  thinking: '',
+                  isStreaming: true,
+                  startedAt: Date.now(),
+                  blockIndex: openIndex,
+                },
           )
           return
+        }
         case 'text':
           onSetStreamMode('responding')
           return
@@ -2866,8 +2896,28 @@ export function handleMessageFromStream(
         default:
           return
       }
-    case 'content_block_stop':
+    case 'content_block_stop': {
+      // Record the authoritative thinking duration when the open reasoning
+      // block stops. isStreaming stays true until the assistant message
+      // lands, so the overlay-to-committed-row swap stays batched.
+      const stopIndex = message.event.index
+      const stopAt = Date.now()
+      onStreamingThinking?.(current => {
+        if (
+          !current?.isStreaming ||
+          current.blockIndex !== stopIndex ||
+          current.startedAt === undefined
+        ) {
+          return current
+        }
+        return {
+          ...current,
+          streamingEndedAt: stopAt,
+          durationMs: stopAt - current.startedAt,
+        }
+      })
       return
+    }
     case 'message_delta':
       onSetStreamMode('responding')
       return

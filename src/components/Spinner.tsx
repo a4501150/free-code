@@ -1,7 +1,7 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { Box, Text } from '../ink.js'
 import * as React from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { feature } from 'bun:bundle'
 import { stringWidth } from '../ink/stringWidth.js'
 import { getGraphemeSegmenter } from '../utils/intl.js'
@@ -72,6 +72,7 @@ import { isBackgroundTask } from '../tasks/types.js'
 import { getAllInProcessTeammateTasks } from '../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
 import { getEffortSuffix } from '../utils/effort.js'
 import { getMainLoopModel } from '../utils/model/model.js'
+import type { StreamingThinking } from '../utils/messages.js'
 import { getViewedTeammateTask } from '../state/selectors.js'
 import { TEARDROP_ASTERISK } from '../constants/figures.js'
 
@@ -105,6 +106,12 @@ type Props = {
   leaderIsIdle?: boolean
   /** When compaction is in flight, the ms timestamp it began. Drives the progress bar. */
   compactingStartTime?: number | null
+  /** Leader's live thinking state. The byline shows thinking status from this
+   * same source that drives the transcript overlay and the stamped message
+   * duration — one measurement (recorded at reasoning content_block_stop),
+   * one formatter, no private timers. Viewing a local agent swaps in that
+   * agent's own streamingThinking instead. */
+  streamingThinking?: StreamingThinking | null
 }
 
 // Thin wrapper: branches on isBriefOnly so the two variants have independent
@@ -155,6 +162,7 @@ function SpinnerWithVerbInner({
   hasActiveTools = false,
   leaderIsIdle = false,
   compactingStartTime = null,
+  streamingThinking = null,
 }: Props): React.ReactNode {
   const settings = useSettings()
   const reducedMotion = settings.prefersReducedMotion ?? false
@@ -190,73 +198,24 @@ function SpinnerWithVerbInner({
   const subagentTasksV2 = useSubagentTasksV2(viewingAgentTaskId)
   const tasksV2 = subagentTasksV2 ?? mainTasksV2
 
-  // Track thinking status: 'thinking' | number (duration in ms) | null
-  // Shows each state for minimum 2s to avoid UI jank
-  const [thinkingStatus, setThinkingStatus] = useState<
-    'thinking' | number | null
-  >(null)
-  const thinkingStartRef = useRef<number | null>(null)
-
-  // When viewing a subagent the leader's stream mode describes the leader, not
-  // the agent on screen. Drive the same state machine from the agent's own flag
-  // so the drill-down gets the min-display and "thought for Ns" readout too.
-  const thinkingMode = viewedLocalAgent
-    ? viewedLocalAgent.isThinking
-      ? 'thinking'
-      : 'responding'
-    : mode
-  const thinkingSourceId = viewedLocalAgent?.id
-  const thinkingSourceRef = useRef(thinkingSourceId)
-
-  useEffect(() => {
-    let showDurationTimer: ReturnType<typeof setTimeout> | null = null
-    let clearStatusTimer: ReturnType<typeof setTimeout> | null = null
-
-    // Entering or leaving a subagent view swaps the thinking source. Drop the
-    // in-flight timing so the new source doesn't inherit a "thought for Ns"
-    // that belongs to the one we just navigated away from.
-    if (thinkingSourceRef.current !== thinkingSourceId) {
-      thinkingSourceRef.current = thinkingSourceId
-      thinkingStartRef.current = null
-      setThinkingStatus(null)
-    }
-
-    if (thinkingMode === 'requesting') {
-      thinkingStartRef.current = null
-      setThinkingStatus(null)
-    } else if (thinkingMode === 'thinking') {
-      // Started thinking
-      if (thinkingStartRef.current === null) {
-        thinkingStartRef.current = Date.now()
-        setThinkingStatus('thinking')
-      }
-    } else if (thinkingStartRef.current !== null) {
-      // Stopped thinking - calculate duration and ensure 2s minimum display
-      const duration = Date.now() - thinkingStartRef.current
-      const elapsed = Date.now() - thinkingStartRef.current
-      const remainingThinkingTime = Math.max(0, 2000 - elapsed)
-
-      thinkingStartRef.current = null
-
-      // Show "thinking..." for remaining time if < 2s elapsed, then show duration
-      const showDuration = (): void => {
-        setThinkingStatus(duration)
-        // Clear after 2s
-        clearStatusTimer = setTimeout(setThinkingStatus, 2000, null)
-      }
-
-      if (remainingThinkingTime > 0) {
-        showDurationTimer = setTimeout(showDuration, remainingThinkingTime)
-      } else {
-        showDuration()
-      }
-    }
-
-    return () => {
-      if (showDurationTimer) clearTimeout(showDurationTimer)
-      if (clearStatusTimer) clearTimeout(clearStatusTimer)
-    }
-  }, [thinkingMode, thinkingSourceId])
+  // Thinking status for the byline: 'thinking' | number (duration in ms) | null.
+  // Derived from the same StreamingThinking state that drives the transcript
+  // overlay and the stamped message duration — no private clock or timers.
+  // durationMs wins over isStreaming: it is recorded at reasoning
+  // content_block_stop, so the byline can show the true duration while the
+  // overlay still waits for the finalized message (keeps their swap batched).
+  // Viewing a subagent swaps in that agent's own state (the leader's describes
+  // the leader, not the agent on screen).
+  const thinkingSource: StreamingThinking | null | undefined = viewedLocalAgent
+    ? viewedLocalAgent.streamingThinking
+    : streamingThinking
+  const thinkingStatus: 'thinking' | number | null = !thinkingSource
+    ? null
+    : typeof thinkingSource.durationMs === 'number'
+      ? thinkingSource.durationMs
+      : thinkingSource.isStreaming
+        ? 'thinking'
+        : null
 
   // Find the current in-progress task and next pending task
   const currentTodo = tasksV2?.find(
