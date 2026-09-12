@@ -288,6 +288,23 @@
   color: var(--text-faint);
 }
 
+/* The gateway-hosted assistant chat, pinned to its rail row like a
+   hand-addressed label on an envelope. Signal amber, sunk plate, so it reads
+   as a standing state rather than an alert. */
+.rail__badge {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 0 3px;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1.5;
+  letter-spacing: 0.14em;
+  color: var(--signal);
+  background: var(--signal-sunk);
+  border: 1px solid var(--rule-bright);
+  border-radius: 2px;
+}
+
 /* ── row actions: stop, confirm, resume ────────────────────────── */
 
 .rail__confirm {

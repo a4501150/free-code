@@ -151,9 +151,29 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     (entry: SessionListEntry) => {
       if (!entry.processKey) return
       adopt(entry.processKey, entry.sessionId)
+      autoSelected.current = true
     },
     [adopt],
   )
+
+  // The gateway's assistant chat is the main chat: open it on first load,
+  // before the user has picked anything. The ref makes it a one-shot — after
+  // the user navigates anywhere, later polls must not steal the view back.
+  const autoSelected = useRef(false)
+  useEffect(() => {
+    if (autoSelected.current) return
+    if (activeKey !== null || activeSessionId !== null) return
+    const assistant = sessions.entries.find(
+      entry =>
+        entry.role === 'assistant' &&
+        entry.live &&
+        entry.attachable &&
+        entry.processKey,
+    )
+    if (!assistant?.processKey) return
+    autoSelected.current = true
+    adopt(assistant.processKey, assistant.sessionId)
+  }, [sessions.entries, activeKey, activeSessionId, adopt])
 
   const create = useCallback(
     async (cwd: string): Promise<string | null> => {

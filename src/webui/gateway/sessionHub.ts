@@ -30,6 +30,11 @@ export type SessionListEntry = {
   /** How many live processes claim this session ID. Above one needs a choice. */
   holders: number
   state?: string
+  /**
+   * The gateway-hosted assistant chat. Set by the gateway on its own
+   * assistant row; the browser opens that session as the main chat.
+   */
+  role?: 'assistant'
 }
 
 export type HubSubscriber = {

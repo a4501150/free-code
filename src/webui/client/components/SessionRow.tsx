@@ -17,7 +17,12 @@ function shortenPath(path?: string): string {
 function Label({ entry }: { entry: SessionListEntry }): React.ReactElement {
   return (
     <span className="rail__label">
-      <span className="rail__name">{entry.title}</span>
+      <span className="rail__name">
+        {entry.role === 'assistant' ? (
+          <span className="rail__badge">asst</span>
+        ) : null}
+        {entry.title}
+      </span>
       <span className="rail__meta">
         {shortenPath(entry.cwd)}
         {entry.holders > 1 ? ` · ${entry.holders} holders` : ''}

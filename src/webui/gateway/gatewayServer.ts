@@ -27,6 +27,10 @@ import {
   type AuthFile,
 } from './auth.js'
 import {
+  bootstrapAssistantSession,
+  writeAssistantResumeId,
+} from './assistantSession.js'
+import {
   createChildSessions,
   type ChildSessionDefaults,
 } from './childSessions.js'
@@ -162,6 +166,16 @@ export function startGatewayServer(
 ): GatewayServer {
   const hub: SessionHub = createSessionHub()
   const children = createChildSessions(options.sessionDefaults)
+  // The assistant main chat, when `assistant.enabled` is set. Bootstrapping is
+  // fire-and-forget: a slow or failed assistant spawn must not delay the
+  // loopback server the tunnel health-checks.
+  let assistantSessionId: string | null = null
+  void bootstrapAssistantSession(children).then(
+    session => {
+      if (session) assistantSessionId = session.sessionId
+    },
+    () => {},
+  )
   const throttle = createLoginThrottle({
     perAddress: 5,
     global: 60,
@@ -401,7 +415,16 @@ export function startGatewayServer(
       if (url.pathname === '/api/sessions') {
         const session = authenticate(request)
         if (!session) return json({ error: 'unauthorized' }, 401)
-        return json({ sessions: await hub.list({ owns: children.owns }) })
+        const entries = await hub.list({ owns: children.owns })
+        return json({
+          sessions: assistantSessionId
+            ? entries.map(entry =>
+                entry.sessionId === assistantSessionId
+                  ? { ...entry, role: 'assistant' as const }
+                  : entry,
+              )
+            : entries,
+        })
       }
 
       // Read-only, so authentication is the whole gate, as it is for the
@@ -579,6 +602,9 @@ export function startGatewayServer(
     },
     async stop() {
       hub.stop()
+      // The assistant chat survives the restart: record where it was before
+      // the child dies, so the next boot resumes the same conversation.
+      if (assistantSessionId) await writeAssistantResumeId(assistantSessionId)
       // Gateway-owned sessions belong to the gateway. Terminal-owned ones are
       // the user's and are deliberately left running.
       children.stopAll()

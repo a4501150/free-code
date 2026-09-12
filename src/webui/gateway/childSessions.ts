@@ -63,6 +63,8 @@ export function createChildSessions(defaults?: ChildSessionDefaults) {
      * ID, so readiness is gated on the descriptor reporting it.
      */
     resumeSessionId?: string
+    /** CLI flags for this one session, e.g. --assistant for the main chat. */
+    extraArgs?: string[]
   }): Promise<ChildSession> {
     // Before spawn, because spawn reports a bare errno the browser cannot
     // turn into advice. Every caller gets the check, not just the HTTP route.
@@ -83,6 +85,7 @@ export function createChildSessions(defaults?: ChildSessionDefaults) {
           ? ['--resume', options.resumeSessionId]
           : []),
         ...defaultArgs(defaults),
+        ...(options.extraArgs ?? []),
       ],
       {
         cwd: options.cwd,

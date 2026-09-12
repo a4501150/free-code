@@ -1192,4 +1192,69 @@ describe('WebUI gateway', () => {
       ),
     ).toContain('https://browser-restart.example')
   })
+
+  test('hosts an assistant main chat when assistant.enabled is set', async () => {
+    dirs = await makeDirs()
+    server.reset([textResponse('Assistant standing by.')])
+
+    // Seed provider settings, trust and API-key approval the same way, then
+    // enable the assistant BEFORE `web start` — the gateway reads the setting
+    // once, when it bootstraps the chat.
+    session = new TmuxSession({
+      serverUrl: server.url,
+      reuseConfigDir: dirs.config,
+      reuseHomeDir: dirs.home,
+    })
+    await session.start()
+    const settingsPath = join(dirs.config, 'freecode.json')
+    const seeded = JSON.parse(await readFile(settingsPath, 'utf-8'))
+    await writeFile(
+      settingsPath,
+      JSON.stringify({ ...seeded, assistant: { enabled: true } }),
+    )
+
+    const started = await runCli(
+      dirs,
+      ['web', 'start', '--tunnel', 'none', '--password-stdin'],
+      PASSWORD,
+    )
+    const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
+    if (!match) throw new Error(`no gateway URL:\n${started}`)
+    baseUrl = match[0]
+    {
+      const p = await captureDaemonPid(dirs)
+      if (p) daemonPids.push(p)
+    }
+    const client = new GatewayClient(baseUrl)
+    expect(await client.login(PASSWORD)).toBe(200)
+
+    const assistantRow = await waitFor(
+      async () => {
+        const res = await fetch(`${baseUrl}/api/sessions`, {
+          headers: { cookie: client.cookie },
+        })
+        const body = (await res.json()) as {
+          sessions: { role?: string; live?: boolean; cwd?: string }[]
+        }
+        return body.sessions.find(s => s.role === 'assistant')
+      },
+      row => row?.live === true,
+      {
+        description: 'the assistant row to go live',
+        timeoutMs: 60_000,
+      },
+    )
+    // The chat runs in the gateway's own workspace, not a terminal directory.
+    expect(assistantRow.cwd).toEndWith(join('webui', 'assistant'))
+
+    // A gateway restart must carry the chat forward, not orphan it.
+    await runCli(dirs, ['web', 'stop'])
+    const pointer = JSON.parse(
+      await readFile(
+        join(dirs.config, 'webui', 'assistant-session.json'),
+        'utf-8',
+      ),
+    ) as { sessionId?: unknown }
+    expect(typeof pointer.sessionId).toBe('string')
+  })
 })
