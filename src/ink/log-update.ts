@@ -21,6 +21,7 @@ import {
 } from './screen.js'
 import {
   CURSOR_HOME,
+  eraseToEndOfLine,
   scrollDown as csiScrollDown,
   scrollUp as csiScrollUp,
   RESET_SCROLL_REGION,
@@ -39,6 +40,12 @@ type Options = {
 
 const CARRIAGE_RETURN = { type: 'carriageReturn' } as const
 const NEWLINE = { type: 'stdout', content: '\n' } as const
+
+// Changed cells in a row before it's rewritten wholesale (column-0, EL, row).
+// Below this, per-cell patching writes fewer bytes; above it, the zigzag
+// cursor moves cost more than the clean row pass AND render as a visible
+// sweep on terminals that paint partial frames.
+const ROW_COALESCE_MIN_CELLS = 12
 
 export class LogUpdate {
   private state: State
@@ -302,6 +309,35 @@ export class LogUpdate {
     let currentStyleId = stylePool.none
     let currentHyperlink: Hyperlink = undefined
 
+    // Row coalescing: a row whose content shifted wholesale (content inserted
+    // or removed elsewhere in the frame — transcript scroll-follow, a block
+    // swap) differs across most of its width. Emitting that as per-cell
+    // writes is a cursor zigzag of hundreds of small patches; terminals that
+    // parse partial frames (Apple Terminal, tmux) render it as a visible
+    // sweep. Pre-count changed cells per existing row and rewrite heavy rows
+    // in one pass instead (column-0 + EL + full row) — same final pixels,
+    // one clean pass per row. Also applies in alt-screen: the DECSTBM scroll
+    // fast path needs synchronized output, and terminals without it (Apple
+    // Terminal, tmux) land on this diff loop for every scroll-follow frame.
+    const coalesceRows = new Set<number>()
+    {
+      const counts = new Map<number, number>()
+      diffEach(prev.screen, next.screen, (_x, y) => {
+        if (
+          y >= prev.screen.height ||
+          y >= next.screen.height ||
+          y < viewportY
+        ) {
+          return
+        }
+        const count = (counts.get(y) ?? 0) + 1
+        counts.set(y, count)
+        if (count === ROW_COALESCE_MIN_CELLS) {
+          coalesceRows.add(y)
+        }
+      })
+    }
+
     // Debug: dump status line row content from both screens
     {
       const slY = next.screen.height - 2
@@ -319,13 +355,22 @@ export class LogUpdate {
     // First pass: render changes to existing rows (rows < prev.screen.height)
     let needsFullReset = false
     let resetTriggerY = -1
+    const rewrittenRows = new Set<number>()
     const statusRowY = next.screen.height - 2
     const statusDiffCells: string[] = []
+    // Debug: track which existing rows get rewritten this frame. A wide span
+    // at a moment when only one row should have changed means something above
+    // shifted (or was force-cleared) and the terminal is repainting content
+    // below it.
+    const touchedRows = new Set<number>()
     diffEach(prev.screen, next.screen, (x, y, removed, added) => {
       if (y === statusRowY) {
         statusDiffCells.push(
           `x=${x}:${removed?.char ?? '∅'}→${added?.char ?? '∅'}`,
         )
+      }
+      if (removed || added) {
+        touchedRows.add(y)
       }
       // Skip new rows - we'll render them directly after
       if (growing && y >= prev.screen.height) {
@@ -369,6 +414,25 @@ export class LogUpdate {
         return true // early exit
       }
 
+      if (coalesceRows.has(y)) {
+        if (!rewrittenRows.has(y)) {
+          rewrittenRows.add(y)
+          currentStyleId = transitionStyle(
+            screen.diff,
+            stylePool,
+            currentStyleId,
+            stylePool.none,
+          )
+          currentHyperlink = transitionHyperlink(
+            screen.diff,
+            currentHyperlink,
+            undefined,
+          )
+          writeRowCoalesced(screen, next, y, stylePool)
+        }
+        return
+      }
+
       moveCursorTo(screen, x, y)
 
       if (added) {
@@ -403,6 +467,23 @@ export class LogUpdate {
     if (statusDiffCells.length > 0) {
       logForDebugging(
         `diff-cells y=${statusRowY}: ${statusDiffCells.join(' ')}`,
+      )
+    }
+    if (touchedRows.size >= 4) {
+      const ys = [...touchedRows].sort((a, b) => a - b)
+      const topY = ys[0]
+      const shiftSignature =
+        topY + 1 < prev.screen.height
+          ? ` firstPrev="${readLine(prev.screen, topY).slice(0, 60)}" firstNext="${readLine(next.screen, topY).slice(0, 60)}" belowNext="${readLine(next.screen, topY + 1).slice(0, 60)}"`
+          : ''
+      let emittedBytes = 0
+      for (const patch of screen.diff) {
+        if (patch.type === 'stdout') {
+          emittedBytes += patch.content.length
+        }
+      }
+      logForDebugging(
+        `repaint-frame rows=${ys.length} span=[${topY}..${ys[ys.length - 1]}] coalesced=${rewrittenRows.size} candidates=${coalesceRows.size} prevH=${prev.screen.height} nextH=${next.screen.height} grow=${growing} shrink=${shrinking} diffs=${screen.diff.length} bytes=${emittedBytes}${shiftSignature}`,
       )
     }
     if (needsFullReset) {
@@ -649,6 +730,57 @@ function renderFrameSlice(
 }
 
 type Delta = { dx: number; dy: number }
+
+/**
+ * Rewrite one existing row in a single pass: move to column 0, erase to end
+ * of line, then write every visible cell the next frame has on that row.
+ * Used by the diff loop for rows whose content shifted wholesale (insert or
+ * remove above); the per-cell path would produce the same result as
+ * hundreds of cursor round-trips, which terminals that paint partial frames
+ * show as a sweep across the row. Caller must close any open style/hyperlink
+ * first — the erase uses the active style for the cleared cells.
+ */
+function writeRowCoalesced(
+  screen: VirtualScreen,
+  frame: Frame,
+  y: number,
+  stylePool: StylePool,
+): void {
+  moveCursorTo(screen, 0, y)
+  screen.diff.push({ type: 'stdout', content: eraseToEndOfLine() })
+
+  let currentStyleId = stylePool.none
+  let currentHyperlink: Hyperlink = undefined
+  let lastRenderedStyleId = -1
+
+  const { width: screenWidth, cells, charPool, hyperlinkPool } = frame.screen
+  const rowStart = y * screenWidth
+  for (let x = 0; x < screenWidth; x++) {
+    const cell = visibleCellAtIndex(
+      cells,
+      charPool,
+      hyperlinkPool,
+      rowStart + x,
+      lastRenderedStyleId,
+    )
+    if (!cell) {
+      continue
+    }
+    moveCursorTo(screen, x, y)
+    currentHyperlink = transitionHyperlink(
+      screen.diff,
+      currentHyperlink,
+      cell.hyperlink,
+    )
+    const styleStr = stylePool.transition(currentStyleId, cell.styleId)
+    if (writeCellWithStyleStr(screen, cell, styleStr)) {
+      currentStyleId = cell.styleId
+      lastRenderedStyleId = cell.styleId
+    }
+  }
+  transitionStyle(screen.diff, stylePool, currentStyleId, stylePool.none)
+  transitionHyperlink(screen.diff, currentHyperlink, undefined)
+}
 
 /**
  * Write a cell with a pre-serialized style transition string (from
