@@ -47,6 +47,7 @@ import type {
 } from '../../types/message.js'
 import {
   createAttachmentMessage,
+  getMcpToolsDeltaAttachment,
   getSkillListingAttachments,
 } from '../../utils/attachments.js'
 import { isMemoryFilePath } from '../../utils/claudemd.js'
@@ -721,6 +722,17 @@ export async function* runAgent({
   if (forkContextMessages === undefined) {
     for (const attachment of await getSkillListingAttachments(
       agentToolUseContext,
+    )) {
+      initialMessages.push(createAttachmentMessage(attachment))
+    }
+    // Turn-0 MCP catalog announce: forceInitial makes the first delta
+    // non-empty so the worker sees the connected servers and their schema
+    // file paths up front (the unforced first call is a silent baseline).
+    // The tool loop's own delta diffs against this snapshot and stays quiet.
+    for (const attachment of await getMcpToolsDeltaAttachment(
+      agentToolUseContext,
+      initialMessages,
+      { forceInitial: true },
     )) {
       initialMessages.push(createAttachmentMessage(attachment))
     }
