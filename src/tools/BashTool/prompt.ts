@@ -25,6 +25,7 @@ export function getSimplePrompt(): string {
 
   const instructionItems: Array<string | string[]> = [
     'Run the command without a pipe. Do not append `| tail`, `| head`, or `| grep` to cap the output. The user reads every tool result, and a pipe truncates what the user sees. Large output needs no cap from you: it is saved to a file and the result names the path.',
+    'A trailing pipe on a long-running command does worse than truncate: the pipe buffers ALL output until the command exits, so a watcher, dev server, or `tail -f` piped into anything streams nothing and dies on the timeout. Run monitoring commands unpiped.',
     'Make commands and scripts print something. A silent run leaves the user with nothing to watch, and a failing script that never says where it stopped is hard to debug. For long-running work, prefer progress output (verbose flags, per-step echoes). Do not suppress output to save tokens: large output is stored in a file, not pasted into the context.',
     'Do not prepend `cd <current-directory> &&` to a `git` command — you are already there, and the compound needs a permission rule for both parts. To work in another directory, `cd` there first (the working directory persists) or run `git -C <dir>`.',
     ...(embedded

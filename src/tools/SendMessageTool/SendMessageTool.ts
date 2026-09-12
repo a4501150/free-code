@@ -8,6 +8,7 @@ import {
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { isMainSessionTask } from '../../tasks/LocalMainSessionTask.js'
 import { toAgentId } from '../../types/ids.js'
+import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
 import { generateRequestId } from '../../utils/agentId.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { logForDebugging } from '../../utils/debug.js'
@@ -519,7 +520,9 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
     },
 
     isEnabled() {
-      return isAgentSwarmsEnabled()
+      // Coordinator mode must see SendMessage: the coordinator system prompt
+      // instructs it to continue workers by agent ID unconditionally.
+      return isAgentSwarmsEnabled() || isCoordinatorMode()
     },
 
     isReadOnly(input) {

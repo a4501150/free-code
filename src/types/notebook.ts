@@ -1,7 +1,7 @@
 /**
- * Subset of the Jupyter `.ipynb` notebook schema that the NotebookEdit /
- * notebook-reading code path cares about. Shapes are derived from the
- * consumer at src/utils/notebook.ts.
+ * Subset of the Jupyter `.ipynb` notebook schema that the notebook-reading
+ * code path cares about. Shapes are derived from the consumer at
+ * src/utils/notebook.ts.
  */
 
 export type NotebookCellType = 'code' | 'markdown' | 'raw'

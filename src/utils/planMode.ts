@@ -1,6 +1,8 @@
+import { feature } from 'bun:bundle'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { GLOB_TOOL_NAME } from '../tools/GlobTool/prompt.js'
 import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
+import { getAllowedChannels } from '../bootstrap/state.js'
 import { getRateLimitTier, getSubscriptionType } from './auth.js'
 import { getCurrentProjectConfig } from './config.js'
 import { shouldPreferBashForSearch } from './embeddedTools.js'
@@ -90,6 +92,21 @@ export type PlanModeRenderContext = {
   planAgentEnabled?: boolean
   /** Comma-joined display string of read-only tools, e.g. "FileRead, `find`, `grep`". */
   readOnlyToolNames: string
+  /**
+   * False when AskUserQuestion/ExitPlanMode are unregistered (KAIROS +
+   * --channels: their dialogs hang with nobody at the TUI; same predicate as
+   * both tools' isEnabled()). Plan-mode prose must not instruct tools that
+   * aren't registered.
+   */
+  interactiveToolsEnabled: boolean
+}
+
+export function isInteractivePlanToolEnabled(): boolean {
+  // bun:bundle feature() must appear directly in an if/ternary condition.
+  if (feature('KAIROS') && getAllowedChannels().length > 0) {
+    return false
+  }
+  return true
 }
 
 export function snapshotPlanModeRenderContext(): PlanModeRenderContext {
@@ -99,5 +116,6 @@ export function snapshotPlanModeRenderContext(): PlanModeRenderContext {
     interviewPhase: isPlanModeInterviewPhaseEnabled(),
     planAgentEnabled: isBuiltInPlanAgentEnabled(),
     readOnlyToolNames: getReadOnlyToolNames(),
+    interactiveToolsEnabled: isInteractivePlanToolEnabled(),
   }
 }

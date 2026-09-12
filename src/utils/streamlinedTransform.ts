@@ -42,7 +42,7 @@ const SEARCH_TOOLS = [
 ]
 const READ_TOOLS = [FILE_READ_TOOL_NAME, LIST_MCP_RESOURCES_TOOL_NAME]
 const WRITE_TOOLS = [FILE_WRITE_TOOL_NAME, FILE_EDIT_TOOL_NAME]
-const COMMAND_TOOLS = [...SHELL_TOOL_NAMES, 'Tmux', TASK_STOP_TOOL_NAME]
+const COMMAND_TOOLS = [...SHELL_TOOL_NAMES, TASK_STOP_TOOL_NAME]
 
 function categorizeToolName(toolName: string): keyof ToolCounts {
   if (SEARCH_TOOLS.some(t => toolName.startsWith(t))) return 'searches'

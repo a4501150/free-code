@@ -6,6 +6,7 @@ import { isTeammate } from '../../utils/teammate.js'
 import { isInProcessTeammate } from '../../utils/teammateContext.js'
 import { isWorktreeModeEnabled } from '../../utils/worktreeModeEnabled.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../SendMessageTool/constants.js'
+import { TASK_LIST_TOOL_NAME } from '../TaskListTool/constants.js'
 import { AGENT_TOOL_NAME } from './constants.js'
 import { isForkAgentEnabled } from './built-in/forkAgent.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
@@ -142,7 +143,7 @@ ${forkAvailable ? 'Any agent other than a fork starts with zero context. ' : ''}
 ${whenNotToUse}${whenToForkSection}
 
 - The agent returns a single message back to you and the result is not visible to the user, so send a concise summary yourself. Agents are not suitable for retrieving full file contents — file data read by the agent is summarized or lost in the single-message handoff; use the Read tool directly for full content${concurrencyNote}.
-- The agent works on its own task list and cannot change yours: TaskList inside the agent shows your list as read-only context. Put everything the agent must act on in the prompt, not in a task description it has to look up.
+- The agent works on its own task list and cannot change yours: ${TASK_LIST_TOOL_NAME} inside the agent shows your list as read-only context. Put everything the agent must act on in the prompt, not in a task description it has to look up.
 - Avoid duplicating work that active agents are already doing. If you delegate research, do not perform the same searches yourself.${
     isAgentSwarmsEnabled()
       ? `

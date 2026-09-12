@@ -306,6 +306,47 @@ function getMcpServerBaseUrlFromToolName(
   return getLoggingSafeMcpBaseUrl(serverConnection.config)
 }
 
+// The model occasionally emits a tool name from muscle memory — an old
+// renamed name not covered by the alias table, or a tool from another build.
+// Offering the closest registered names turns the error turn into a one-turn
+// self-correction instead of another guess.
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(
+        prev[j] + 1,
+        cur[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      )
+    }
+    prev = cur
+  }
+  return prev[b.length]
+}
+
+export function formatToolNameSuggestion(
+  toolName: string,
+  tools: readonly Tool[],
+): string {
+  const names = new Set<string>()
+  for (const t of [...tools, ...getAllBaseTools()]) {
+    names.add(t.name)
+    for (const alias of t.aliases ?? []) names.add(alias)
+  }
+  const maxDistance = Math.max(2, Math.ceil(toolName.length / 3))
+  const target = toolName.toLowerCase()
+  const scored = [...names]
+    .map(name => ({ name, distance: editDistance(target, name.toLowerCase()) }))
+    .filter(entry => entry.distance <= maxDistance)
+    .sort((a, b) => a.distance - b.distance || a.name.localeCompare(b.name))
+    .slice(0, 3)
+  return scored.length
+    ? ` Did you mean ${scored.map(entry => entry.name).join(', ')}?`
+    : ''
+}
+
 export async function* runToolUse(
   toolUse: DomainToolUseBlock,
   assistantMessage: AssistantMessage,
@@ -341,17 +382,21 @@ export async function* runToolUse(
   // Check if the tool exists
   if (!tool) {
     logForDebugging(`Unknown tool ${toolName}: ${toolUse.id}`)
+    const unknownToolError = `Error: No such tool available: ${toolName}${formatToolNameSuggestion(
+      toolName,
+      toolUseContext.options.tools,
+    )}`
     yield {
       message: createUserMessage({
         content: [
           {
             type: 'tool_result',
-            content: `<tool_use_error>Error: No such tool available: ${toolName}</tool_use_error>`,
+            content: `<tool_use_error>${unknownToolError}</tool_use_error>`,
             is_error: true,
             tool_use_id: toolUse.id,
           },
         ],
-        toolUseResult: `Error: No such tool available: ${toolName}`,
+        toolUseResult: unknownToolError,
         sourceToolAssistantUUID: assistantMessage.uuid,
       }),
     }

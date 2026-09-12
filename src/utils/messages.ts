@@ -132,6 +132,7 @@ import { validateImagesForAPI } from './imageValidation.js'
 import { safeParseJSON } from './json.js'
 import { logError, logMCPDebug } from './log.js'
 import {
+  isInteractivePlanToolEnabled,
   type PlanModeRenderContext,
   snapshotPlanModeRenderContext,
 } from './planMode.js'
@@ -3196,18 +3197,27 @@ ${designInstructions}
 ### Phase 3: Review
 Goal: Review the plan(s) from Phase 2 and ensure alignment with the user's intentions.
 1. Read the critical files identified by agents to deepen your understanding
-2. Ensure that the plans align with the user's original request
-3. Use ${ASK_USER_QUESTION_TOOL_NAME} to clarify any remaining questions with the user
+2. Ensure that the plans align with the user's original request${
+    ctx.interactiveToolsEnabled
+      ? `
+3. Use ${ASK_USER_QUESTION_TOOL_NAME} to clarify any remaining questions with the user`
+      : ''
+  }
 
 ${PLAN_PHASE4_SECTION}
 
-### Phase 5: Call ${ExitPlanModeTool.name}
+${
+  ctx.interactiveToolsEnabled
+    ? `### Phase 5: Call ${ExitPlanModeTool.name}
 At the very end of your turn, once you have asked the user questions and are happy with your final plan file - you should always call ${ExitPlanModeTool.name} to indicate to the user that you are done planning.
 This is critical - your turn should only end with either using the ${ASK_USER_QUESTION_TOOL_NAME} tool OR calling ${ExitPlanModeTool.name}. Do not stop unless it's for these 2 reasons
 
-**Important:** Use ${ASK_USER_QUESTION_TOOL_NAME} ONLY to clarify requirements or choose between approaches. Use ${ExitPlanModeTool.name} to request plan approval. Do NOT ask about plan approval in any other way - no text questions, no AskUserQuestion. Phrases like "Is this plan okay?", "Should I proceed?", "How does this plan look?", "Any changes before we start?", or similar MUST use ${ExitPlanModeTool.name}.
+**Important:** Use ${ASK_USER_QUESTION_TOOL_NAME} ONLY to clarify requirements or choose between approaches. Use ${ExitPlanModeTool.name} to request plan approval. Do NOT ask about plan approval in any other way - no text questions, no ${ASK_USER_QUESTION_TOOL_NAME}. Phrases like "Is this plan okay?", "Should I proceed?", "How does this plan look?", "Any changes before we start?", or similar MUST use ${ExitPlanModeTool.name}.
 
 NOTE: At any point in time through this workflow you should feel free to ask the user questions or clarifications using the ${ASK_USER_QUESTION_TOOL_NAME} tool. Don't make large assumptions about user intent. The goal is to present a well researched plan to the user, and tie any loose ends before implementation begins.`
+    : `### Phase 5: End Your Turn
+The plan file is the deliverable — once it is complete, end your turn. The user reviews the plan file and replies in chat; no question or plan-approval tool is registered in this session, so do not invoke one and do not pose approval questions expecting an interactive reply. State any open questions in the plan file instead.`
+}`
 
   return wrapMessagesInSystemReminder([
     createUserMessage({ content, isMeta: true }),
@@ -3247,7 +3257,11 @@ Repeat this cycle until the plan is complete:
 
 1. **Explore** — Use ${ctx.readOnlyToolNames} to read code. Look for existing functions, utilities, and patterns to reuse. You can spawn general-purpose agents to parallelize complex searches without filling your context, though for straightforward queries direct tools are simpler.
 2. **Update the plan file** — After each discovery, immediately capture what you learned. Don't wait until the end.
-3. **Ask the user** — When you hit an ambiguity or decision you can't resolve from code alone, use ${ASK_USER_QUESTION_TOOL_NAME}. Then go back to step 1.
+3. **Ask the user** — When you hit an ambiguity or decision you can't resolve from code alone, ${
+    ctx.interactiveToolsEnabled
+      ? `use ${ASK_USER_QUESTION_TOOL_NAME}`
+      : 'ask in plain chat text and end your turn for a reply'
+  }. Then go back to step 1.
 
 ### First Turn
 
@@ -3256,7 +3270,11 @@ Start by quickly scanning a few key files to form an initial understanding of th
 ### Asking Good Questions
 
 - Never ask what you could find out by reading the code
-- Batch related questions together (use multi-question ${ASK_USER_QUESTION_TOOL_NAME} calls)
+- Batch related questions together ${
+    ctx.interactiveToolsEnabled
+      ? `(use multi-question ${ASK_USER_QUESTION_TOOL_NAME} calls)`
+      : '(batch them into one chat message)'
+  }
 - Focus on things only the user can answer: requirements, preferences, tradeoffs, edge case priorities
 - Scale depth to the task — a vague feature request needs many rounds; a focused bug fix may need one or none
 
@@ -3271,7 +3289,9 @@ Your plan file should be divided into clear sections using markdown headers, bas
 
 ### When to Converge
 
-Your plan is ready when you've addressed all ambiguities and it covers: what to change, which files to modify, what existing code to reuse (with file paths), and how to verify the changes. Call ${ExitPlanModeTool.name} when the plan is ready for approval.
+Your plan is ready when you've addressed all ambiguities and it covers: what to change, which files to modify, what existing code to reuse (with file paths), and how to verify the changes. ${
+    ctx.interactiveToolsEnabled
+      ? `Call ${ExitPlanModeTool.name} when the plan is ready for approval.
 
 ### Ending Your Turn
 
@@ -3279,7 +3299,9 @@ Your turn should only end by either:
 - Using ${ASK_USER_QUESTION_TOOL_NAME} to gather more information
 - Calling ${ExitPlanModeTool.name} when the plan is ready for approval
 
-**Important:** Use ${ExitPlanModeTool.name} to request plan approval. Do NOT ask about plan approval via text or AskUserQuestion.`
+**Important:** Use ${ExitPlanModeTool.name} to request plan approval. Do NOT ask about plan approval via text or ${ASK_USER_QUESTION_TOOL_NAME}.`
+      : `End your turn when the plan is complete; the user reviews the plan file and replies in chat (no question or plan-approval tool is registered in this session).`
+  }`
 
   return wrapMessagesInSystemReminder([
     createUserMessage({ content, isMeta: true }),
@@ -3294,7 +3316,11 @@ function getPlanModeSparseInstructions(
     ? 'Follow iterative workflow: explore codebase, interview user, write to plan incrementally.'
     : 'Follow 5-phase workflow.'
 
-  const content = `Plan mode still active (see full instructions earlier in conversation). Read-only except plan file (${attachment.planFilePath}). ${workflowDescription} End turns with ${ASK_USER_QUESTION_TOOL_NAME} (for clarifications) or ${ExitPlanModeTool.name} (for plan approval). Never ask about plan approval via text or AskUserQuestion.`
+  const endTurnRule = ctx.interactiveToolsEnabled
+    ? `End turns with ${ASK_USER_QUESTION_TOOL_NAME} (for clarifications) or ${ExitPlanModeTool.name} (for plan approval). Never ask about plan approval via text or ${ASK_USER_QUESTION_TOOL_NAME}.`
+    : `End the turn when the plan file is complete — the user reviews it and replies in chat (no question or plan-approval tool is registered).`
+
+  const content = `Plan mode still active (see full instructions earlier in conversation). Read-only except plan file (${attachment.planFilePath}). ${workflowDescription} ${endTurnRule}`
 
   return wrapMessagesInSystemReminder([
     createUserMessage({ content, isMeta: true }),
@@ -3314,7 +3340,11 @@ function getPlanModeSubAgentInstructions(attachment: {
 ## Plan File Info:
 ${planFileInfo}
 You should build your plan incrementally by writing to or editing this file. NOTE that this is the only file you are allowed to edit - other than this you are only allowed to take READ-ONLY actions.
-Answer the user's query comprehensively, using the ${ASK_USER_QUESTION_TOOL_NAME} tool if you need to ask the user clarifying questions. If you do use the ${ASK_USER_QUESTION_TOOL_NAME}, make sure to ask all clarifying questions you need to fully understand the user's intent before proceeding.`
+${
+  isInteractivePlanToolEnabled()
+    ? `Answer the user's query comprehensively, using the ${ASK_USER_QUESTION_TOOL_NAME} tool if you need to ask the user clarifying questions. If you do use the ${ASK_USER_QUESTION_TOOL_NAME}, make sure to ask all clarifying questions you need to fully understand the user's intent before proceeding.`
+    : `Answer the user's query comprehensively. The question tool is not registered in this session, so state any open questions in the plan file instead.`
+}`
 
   return wrapMessagesInSystemReminder([
     createUserMessage({ content, isMeta: true }),
