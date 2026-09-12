@@ -448,6 +448,12 @@ export type CollapsedReadSearchGroup = {
   teamMemorySearchCount?: number
   teamMemoryReadCount?: number
   teamMemoryWriteCount?: number
+  /**
+   * Formatted memory-search targets (quoted pattern/glob, or the command for
+   * shell searches) so "Searched memories" rows show what was looked for.
+   */
+  memorySearchArgs?: string[]
+  teamMemorySearchArgs?: string[]
   taskCreateCount?: number
   taskUpdateCount?: number
   mcpCallCount?: number

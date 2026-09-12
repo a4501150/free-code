@@ -137,6 +137,22 @@ function commandAsHint(command: string): string {
 }
 
 /**
+ * A searchable thing to show for a memory search: the quoted pattern or glob,
+ * or the command for shell searches. Memory-search rows say only "Searched
+ * memories" otherwise, so a misclassified or empty search shows nothing the
+ * user can check.
+ */
+function searchArgsAsHint(input: unknown): string | undefined {
+  const i = input as
+    | { pattern?: string; glob?: string; command?: string }
+    | undefined
+  if (i?.pattern) return `"${i.pattern}"`
+  if (i?.glob) return `"${i.glob}"`
+  if (i?.command) return commandAsHint(i.command)
+  return undefined
+}
+
+/**
  * Checks if a tool is a search/read operation using the tool's isSearchOrReadCommand method.
  * Also treats Write/Edit of memory files as collapsible.
  * Returns detailed information about whether it's a search or read operation.
@@ -601,6 +617,12 @@ type GroupAccumulator = {
   teamMemoryWriteCount: number
   // Non-memory search patterns for display beneath the collapsed summary
   nonMemSearchArgs: string[]
+  /**
+   * Formatted search targets for memory rows ("Searched memories for
+   * "pattern""): quoted pattern/glob, or the command for shell searches.
+   */
+  memorySearchArgs: string[]
+  teamMemorySearchArgs: string[]
   /** Most recently added non-memory operation, pre-formatted for display */
   latestDisplayHint: string | undefined
   // MCP tool calls (tracked separately so display says "Queried slack" not "Read N files")
@@ -643,6 +665,8 @@ function createEmptyGroup(): GroupAccumulator {
     taskCreateCount: 0,
     taskUpdateCount: 0,
     nonMemSearchArgs: [],
+    memorySearchArgs: [],
+    teamMemorySearchArgs: [],
     latestDisplayHint: undefined,
     hookTotalMs: 0,
     hookCount: 0,
@@ -722,6 +746,12 @@ function createCollapsedGroup(
   result.teamMemorySearchCount = teamMemSearchCount
   result.teamMemoryReadCount = teamMemReadCount
   result.teamMemoryWriteCount = teamMemWriteCount
+  if (group.memorySearchArgs.length > 0) {
+    result.memorySearchArgs = group.memorySearchArgs
+  }
+  if (group.teamMemorySearchArgs.length > 0) {
+    result.teamMemorySearchArgs = group.teamMemorySearchArgs
+  }
   if (group.taskCreateCount > 0) {
     result.taskCreateCount = group.taskCreateCount
   }
@@ -846,8 +876,18 @@ export function collapseReadSearchGroups(
         // Check if the search targets memory files (via path or glob pattern)
         if (teamMemOps.isTeamMemorySearch(toolInfo.input)) {
           currentGroup.teamMemorySearchCount += count
+          const hint = searchArgsAsHint(toolInfo.input)
+          if (hint !== undefined) {
+            currentGroup.teamMemorySearchArgs.push(hint)
+            currentGroup.latestDisplayHint = hint
+          }
         } else if (isMemorySearch(toolInfo.input)) {
           currentGroup.memorySearchCount += count
+          const hint = searchArgsAsHint(toolInfo.input)
+          if (hint !== undefined) {
+            currentGroup.memorySearchArgs.push(hint)
+            currentGroup.latestDisplayHint = hint
+          }
         } else {
           // Regular (non-memory) search — collect pattern for display
           const input = toolInfo.input as { pattern?: string } | undefined
@@ -966,9 +1006,11 @@ export function getSearchReadSummaryText(
     memorySearchCount: number
     memoryReadCount: number
     memoryWriteCount: number
+    memorySearchArgs?: string[]
     teamMemorySearchCount?: number
     teamMemoryReadCount?: number
     teamMemoryWriteCount?: number
+    teamMemorySearchArgs?: string[]
   },
   listCount: number = 0,
 ): string {
@@ -998,7 +1040,14 @@ export function getSearchReadSummaryText(
         : parts.length === 0
           ? 'Searched'
           : 'searched'
-      parts.push(`${verb} memories`)
+      const args = memoryCounts.memorySearchArgs ?? []
+      const forWhat =
+        args.length === 1
+          ? ` for ${args[0]}`
+          : args.length > 1
+            ? ` for ${args.length} patterns`
+            : ''
+      parts.push(`${verb} memories${forWhat}`)
     }
     if (memoryWriteCount > 0) {
       const verb = isActive

@@ -68,7 +68,23 @@ export function TeamMemCountParts({
     if (count > 0) {
       nodes.push(<Text key="comma-tms">, </Text>)
     }
-    nodes.push(<Text key="team-mem-search">{`${verb} team memories`}</Text>)
+    const tmArgs = message.teamMemorySearchArgs ?? []
+    nodes.push(
+      <Text key="team-mem-search">
+        {`${verb} team memories`}
+        {tmArgs.length === 1 ? (
+          <>
+            {' '}
+            for <Text bold>{tmArgs[0]}</Text>
+          </>
+        ) : tmArgs.length > 1 ? (
+          <>
+            {' '}
+            for <Text bold>{tmArgs.length}</Text> patterns
+          </>
+        ) : null}
+      </Text>,
+    )
     count++
   }
 

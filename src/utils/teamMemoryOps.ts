@@ -44,6 +44,7 @@ export function appendTeamMemorySummaryParts(
     teamMemoryReadCount?: number
     teamMemorySearchCount?: number
     teamMemoryWriteCount?: number
+    teamMemorySearchArgs?: string[]
   },
   isActive: boolean,
   parts: string[],
@@ -71,7 +72,14 @@ export function appendTeamMemorySummaryParts(
       : parts.length === 0
         ? 'Searched'
         : 'searched'
-    parts.push(`${verb} team memories`)
+    const args = memoryCounts.teamMemorySearchArgs ?? []
+    const forWhat =
+      args.length === 1
+        ? ` for ${args[0]}`
+        : args.length > 1
+          ? ` for ${args.length} patterns`
+          : ''
+    parts.push(`${verb} team memories${forWhat}`)
   }
   if (teamWriteCount > 0) {
     const verb = isActive

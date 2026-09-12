@@ -651,7 +651,25 @@ export function CollapsedReadSearchContent({
     if (!isFirst) {
       memParts.push(<Text key="comma-ms">, </Text>)
     }
-    memParts.push(<Text key="mem-search">{`${verb} memories`}</Text>)
+    // Name the target so an empty or misclassified memory search is
+    // debuggable from the collapsed row itself.
+    const memArgs = message.memorySearchArgs ?? []
+    memParts.push(
+      <Text key="mem-search">
+        {`${verb} memories`}
+        {memArgs.length === 1 ? (
+          <>
+            {' '}
+            for <Text bold>{memArgs[0]}</Text>
+          </>
+        ) : memArgs.length > 1 ? (
+          <>
+            {' '}
+            for <Text bold>{memArgs.length}</Text> patterns
+          </>
+        ) : null}
+      </Text>,
+    )
   }
 
   if (memoryWriteCount > 0) {
