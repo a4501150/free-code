@@ -207,15 +207,32 @@ export class MockAnthropicServer {
           })
         }
         const sseBody = encodeSuccessSSE(mockResponse.response)
-        return new Response(sseBody, {
-          status: 200,
-          headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
-            'request-id': requestId,
+        const sseHeaders = {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+          'request-id': requestId,
+        }
+        const delayMs = mockResponse.response.sseEventDelayMs
+        if (!delayMs) {
+          return new Response(sseBody, { status: 200, headers: sseHeaders })
+        }
+        // Split at event boundaries and drip events out so stream phases
+        // (deltas, block stop, message commit) land at distinct wall times.
+        const events = sseBody
+          .split('\n\n')
+          .filter(part => part.trim().length > 0)
+          .map(part => part + '\n\n')
+        const stream = new ReadableStream<string>({
+          async start(controller) {
+            for (const event of events) {
+              controller.enqueue(event)
+              await new Promise(r => setTimeout(r, delayMs))
+            }
+            controller.close()
           },
         })
+        return new Response(stream, { status: 200, headers: sseHeaders })
       }
 
       case 'error': {

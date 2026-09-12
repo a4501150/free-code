@@ -47,6 +47,15 @@ const NEWLINE = { type: 'stdout', content: '\n' } as const
 // sweep on terminals that paint partial frames.
 const ROW_COALESCE_MIN_CELLS = 12
 
+// Shift fast path: max rows a frame may deviate from a pure
+// upward shift and still be emitted as one DECSTBM scroll. The deviating
+// rows are repainted by the normal diff; past this many, the frame is
+// layout churn, not a scroll, and the coalesced row pass is the better
+// emission.
+const SHIFT_MAX_MISMATCH_RATIO = 0.35
+const SHIFT_MAX_MISMATCH_CAP = 12
+const SHIFT_MAX_DELTA = 4
+
 export class LogUpdate {
   private state: State
 
@@ -191,6 +200,65 @@ export class LogUpdate {
       }
     }
 
+    // Shift fast path. A full-height layout pinned at the bottom
+    // (FullscreenLayout) shifts every rendered row up whenever a row is
+    // inserted above the bottom block — thinking overlay, task-list update,
+    // scroll-follow. The diff then sees the whole screen changed and the
+    // coalesced pass rewrites every visible row, which terminals that paint
+    // partial writes render as a sweep across the screen. The shift itself
+    // is one DECSTBM operation: scroll the region up by k, then let the
+    // normal diff repaint only the rows that entered the bottom and the few
+    // rows that deviated from the shift. The scroll is a single parser
+    // action on the shifted rows, so the visible intermediate state is
+    // limited to the new bottom rows — strictly less churn than rewriting
+    // every row, and it holds without DEC 2026. (The scrollHint path above
+    // still wins when a ScrollBox supplied an explicit hint and the
+    // terminal syncs atomically.)
+    //
+    // Applies when: the frame is a dominant uniform shift; screen rows map
+    // 1:1 onto terminal rows (alt-screen: content at or below the viewport,
+    // caller anchors the cursor with CSI H before the diff; main-screen:
+    // content exactly fills the viewport AND the cursor sits inside the
+    // screen, otherwise a bottom-parked cursor's restore-LF scrolled a row
+    // into scrollback and the region scroll can't reach it).
+    let shiftScrollPatch: Diff = []
+    if (
+      scrollPatch.length === 0 &&
+      prev.screen.height === next.screen.height &&
+      (altScreen
+        ? prev.screen.height <= prev.viewport.height
+        : prev.screen.height === prev.viewport.height) &&
+      prev.screen.height > 4 &&
+      prev.cursor.y < prev.screen.height
+    ) {
+      const h = next.screen.height
+      const budget = Math.min(
+        SHIFT_MAX_MISMATCH_CAP,
+        Math.max(2, Math.ceil(h * SHIFT_MAX_MISMATCH_RATIO)),
+      )
+      for (let k = 1; k <= SHIFT_MAX_DELTA && k < h; k++) {
+        if (!screenMatchesShiftUp(prev.screen, next.screen, k, budget)) {
+          continue
+        }
+        // Mutate prev to simulate the scroll so the diff loop below only
+        // sees the rows that entered at the bottom and the deviating rows.
+        // prev.screen is about to become backFrame, mutation is safe.
+        shiftRows(prev.screen, 0, h - 1, k)
+        shiftScrollPatch = [
+          {
+            type: 'stdout',
+            content:
+              setScrollRegion(1, h) +
+              csiScrollUp(k) +
+              RESET_SCROLL_REGION +
+              CURSOR_HOME,
+          },
+        ]
+        logForDebugging(`shift-scroll k=${k} rows=${h} budget=${budget}`)
+        break
+      }
+    }
+
     // We have to use purely relative operations to manipulate the cursor since
     // we don't know its starting point.
     //
@@ -254,7 +322,12 @@ export class LogUpdate {
       }
     }
 
-    const screen = new VirtualScreen(prev.cursor, next.viewport.width)
+    // After a region scroll the physical cursor is home
+    // (RESET_SCROLL_REGION + CURSOR_HOME), not at prev.cursor.
+    const screen = new VirtualScreen(
+      shiftScrollPatch.length > 0 ? { x: 0, y: 0 } : prev.cursor,
+      next.viewport.width,
+    )
 
     // Treat empty screen as height 1 to avoid spurious adjustments on first render
     const heightDelta =
@@ -568,8 +641,8 @@ export class LogUpdate {
       )
     }
 
-    return scrollPatch.length > 0
-      ? [...scrollPatch, ...screen.diff]
+    return scrollPatch.length > 0 || shiftScrollPatch.length > 0
+      ? [...scrollPatch, ...shiftScrollPatch, ...screen.diff]
       : screen.diff
   }
 }
@@ -597,6 +670,59 @@ function transitionStyle(
     diff.push({ type: 'styleStr', str })
   }
   return targetId
+}
+
+/**
+ * True when `next` looks like `prev` scrolled up by `k` rows: most rows of
+ * next equal the rows k below them in prev. Rows may deviate for at most
+ * `mismatchBudget` of them (the diff loop repaints those after the scroll).
+ * At least one row must be both shift-matched AND changed from its prev
+ * position — otherwise the scroll explains none of the frame and a plain
+ * diff would emit fewer bytes (idle frames, local edits on sparse screens).
+ */
+function screenMatchesShiftUp(
+  prev: Screen,
+  next: Screen,
+  k: number,
+  mismatchBudget: number,
+): boolean {
+  if (prev.width !== next.width || prev.height !== next.height) return false
+  const w = next.width
+  const h = next.height
+  const pv = prev.cells64
+  const nv = next.cells64
+  const psw = prev.softWrap
+  const nsw = next.softWrap
+  let mismatches = 0
+  let explained = 0
+  for (let y = 0; y < h - k; y++) {
+    const baseN = y * w
+    const baseP = (y + k) * w
+    let shiftMatches = nsw[y] === psw[y + k]
+    let changed = nsw[y] !== psw[y]
+    // Scan while the outcome is still open: shiftMatches can still die, and
+    // changed can still flip. Once both are decided, stop.
+    for (let x = 0; x < w && (shiftMatches || !changed); x++) {
+      if (shiftMatches && pv[baseP + x] !== nv[baseN + x]) {
+        shiftMatches = false
+      }
+      if (!changed && pv[baseN + x] !== nv[baseN + x]) {
+        changed = true
+      }
+    }
+    if (!shiftMatches) {
+      // The scroll would clobber this row (or it already differs); the diff
+      // repaints it. Rows identical in prev at both y and y+k count as
+      // shift-matched (scrolling them is a visual no-op) and are skipped
+      // above via shiftMatches — a row that neither shifted nor changed
+      // lands here only when prev-y+k != prev-y == next-y, a deviating row.
+      mismatches++
+      if (mismatches > mismatchBudget) return false
+    } else if (changed) {
+      explained++
+    }
+  }
+  return explained > 0
 }
 
 function readLine(screen: Screen, y: number): string {

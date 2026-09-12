@@ -35,6 +35,13 @@ export type MockSuccessResponse = {
   model?: string
   content: MockContentBlock[]
   stop_reason: 'end_turn' | 'tool_use' | 'max_tokens'
+  /**
+   * Optional: when set, the mock server streams the encoded SSE events with
+   * this many ms between events instead of writing the whole body at once.
+   * Lets render-timing tests separate stream phases (deltas vs block stop
+   * vs message commit) on the wall clock.
+   */
+  sseEventDelayMs?: number
   usage?: {
     input_tokens: number
     output_tokens: number
