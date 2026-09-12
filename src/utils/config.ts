@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { randomBytes } from 'crypto'
 import { unwatchFile, watchFile } from 'fs'
 import memoize from 'lodash-es/memoize.js'
@@ -24,9 +23,7 @@ import type { MemoryType } from './memory/types.js'
 import { normalizePathForConfigKey } from './path.js'
 import { getEssentialTrafficOnlyReason } from './privacyLevel.js'
 
-import * as teamMemPathsNs from '../memdir/teamMemPaths.js'
-
-const teamMemPaths = feature('TEAMMEM') ? teamMemPathsNs : null
+import * as teamMemPaths from '../memdir/teamMemPaths.js'
 import type { ImageDimensions } from './imageResizer.js'
 import { jsonParse, jsonStringify } from './slowOperations.js'
 
@@ -989,11 +986,8 @@ export function getMemoryPath(memoryType: MemoryType): string {
     case 'AutoMem':
       return getAutoMemEntrypoint()
   }
-  // TeamMem is only a valid MemoryType when feature('TEAMMEM') is true
-  if (feature('TEAMMEM')) {
-    return teamMemPaths!.getTeamMemEntrypoint()
-  }
-  return '' // unreachable in external builds where TeamMem is not in MemoryType
+  // The only MemoryType not covered by the switch above.
+  return teamMemPaths.getTeamMemEntrypoint()
 }
 
 export function getUserClaudeRulesDir(): string {

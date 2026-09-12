@@ -1,7 +1,5 @@
-import { feature } from 'bun:bundle'
 import type { UUID } from 'crypto'
-import * as sessionTranscriptNs from '../sessionTranscript/sessionTranscript.js'
-const sessionTranscriptModule = feature('KAIROS') ? sessionTranscriptNs : null
+import { writeSessionTranscriptSegment } from '../sessionTranscript/sessionTranscript.js'
 
 import { DomainUserAbortError } from '../api/domain-errors.js'
 import { markPostCompaction } from 'src/bootstrap/state.js'
@@ -573,12 +571,7 @@ export async function compactConversation(
       recompactionInfo?.querySource ?? context.options.querySource ?? 'unknown'
 
     // Reset cache read baseline so the post-compact drop isn't flagged as a break
-    if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
-      notifyCompaction(
-        context.options.querySource ?? 'compact',
-        context.agentId,
-      )
-    }
+    notifyCompaction(context.options.querySource ?? 'compact', context.agentId)
     markPostCompaction()
 
     // Re-append session metadata (custom title, tag) so it stays within
@@ -590,9 +583,7 @@ export async function compactConversation(
 
     // Write a reduced transcript segment for the pre-compaction messages
     // (assistant mode only). Fire-and-forget — errors are logged internally.
-    if (feature('KAIROS')) {
-      void sessionTranscriptModule?.writeSessionTranscriptSegment(messages)
-    }
+    void writeSessionTranscriptSegment(messages)
 
     context.onCompactProgress?.({
       type: 'hooks_start',
@@ -881,23 +872,14 @@ export async function partialCompactConversation(
       }),
     ]
 
-    if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
-      notifyCompaction(
-        context.options.querySource ?? 'compact',
-        context.agentId,
-      )
-    }
+    notifyCompaction(context.options.querySource ?? 'compact', context.agentId)
     markPostCompaction()
 
     // Re-append session metadata (custom title, tag) so it stays within
     // the 16KB tail window that readLiteMetadata reads for --resume display.
     reAppendSessionMetadata()
 
-    if (feature('KAIROS')) {
-      void sessionTranscriptModule?.writeSessionTranscriptSegment(
-        messagesToSummarize,
-      )
-    }
+    void writeSessionTranscriptSegment(messagesToSummarize)
 
     context.onCompactProgress?.({
       type: 'hooks_start',

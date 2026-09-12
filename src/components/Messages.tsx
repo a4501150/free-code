@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { diagRenderedList } from '../utils/diag.js'
 import chalk from 'chalk'
 import type { UUID } from 'crypto'
@@ -102,20 +101,9 @@ const LogoHeader = React.memo(function LogoHeader({
   )
 })
 
-// Dead code elimination: conditional import for proactive mode
-/* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule = feature('KAIROS')
-  ? require('../proactive/index.js')
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
-import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
-import * as sendUserFileToolPromptNs from '../tools/SendUserFileTool/prompt.js'
-const BRIEF_TOOL_NAME: string | null = feature('KAIROS')
-  ? briefToolPromptNs.BRIEF_TOOL_NAME
-  : null
-const SEND_USER_FILE_TOOL_NAME: string | null = feature('KAIROS')
-  ? sendUserFileToolPromptNs.SEND_USER_FILE_TOOL_NAME
-  : null
+import { BRIEF_TOOL_NAME } from '../tools/BriefTool/prompt.js'
+import { SEND_USER_FILE_TOOL_NAME } from '../tools/SendUserFileTool/prompt.js'
+import { isProactiveActive } from '../proactive/index.js'
 import { VirtualMessageList } from './VirtualMessageList.js'
 
 /**
@@ -551,15 +539,11 @@ const MessagesImpl = ({
       // Brief-only: SendUserMessage + user input only. Default: drop redundant
       // assistant text in turns where SendUserMessage was called (the model's
       // text is working-notes that duplicate the SendUserMessage content).
-      const briefToolNames = [BRIEF_TOOL_NAME, SEND_USER_FILE_TOOL_NAME].filter(
-        (n): n is string => n !== null,
-      )
+      const briefToolNames = [BRIEF_TOOL_NAME, SEND_USER_FILE_TOOL_NAME]
       // dropTextInBriefTurns should only trigger on SendUserMessage turns —
       // SendUserFile delivers a file without replacement text, so dropping
       // assistant text for file-only turns would leave the user with no context.
-      const dropTextToolNames = [BRIEF_TOOL_NAME].filter(
-        (n): n is string => n !== null,
-      )
+      const dropTextToolNames = [BRIEF_TOOL_NAME]
       const briefFiltered =
         briefToolNames.length > 0 && !isTranscriptMode
           ? isBriefOnly
@@ -791,7 +775,7 @@ const MessagesImpl = ({
   const prevProgressState = useRef<string | null>(null)
   const progressEnabled =
     (getInitialSettings().terminalProgressBarEnabled ?? true) &&
-    !(proactiveModule?.isProactiveActive() ?? false)
+    !isProactiveActive()
   useEffect(() => {
     const state = progressEnabled
       ? hasToolsInProgress

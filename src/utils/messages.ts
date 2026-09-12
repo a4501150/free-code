@@ -2792,10 +2792,7 @@ export function handleMessageFromStream(
   switch (message.event.type) {
     case 'content_block_start':
       onStreamingText?.(() => null)
-      if (
-        feature('CONNECTOR_TEXT') &&
-        isConnectorTextBlock(message.event.content_block)
-      ) {
+      if (isConnectorTextBlock(message.event.content_block)) {
         onSetStreamMode('responding')
         return
       }
@@ -4544,7 +4541,7 @@ export function shouldShowUserMessage(
     // Channel messages stay isMeta for turn-boundary/brief-mode semantics but render in the default transcript — the keyboard user
     // should see what arrived. The <channel> tag in UserTextMessage handles
     // the actual rendering.
-    if (feature('KAIROS') && message.origin?.kind === 'channel') return true
+    if (message.origin?.kind === 'channel') return true
     if (showInjectedContext && isInjectedContextText(message)) return true
     return false
   }
@@ -4928,9 +4925,7 @@ export function stripSignatureBlocks(messages: Message[]): Message[] {
 
     const filtered = content.filter(block => {
       if (isThinkingBlock(block)) return false
-      if (feature('CONNECTOR_TEXT')) {
-        if (isConnectorTextBlock(block)) return false
-      }
+      if (isConnectorTextBlock(block)) return false
       return true
     })
     if (filtered.length === content.length) return msg

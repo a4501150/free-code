@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type { DomainUserTextBlock } from '../../types/domain.js'
 import React, { useContext, useMemo } from 'react'
 import { getKairosActive, getUserMsgOptIn } from '../../bootstrap/state.js'
@@ -42,30 +41,20 @@ export function UserPromptMessage({
   // child renders a label-style layout, and Box backgroundColor paints
   // behind children unconditionally (they can't opt out).
   //
-  // Hooks stay INSIDE feature() ternaries so external builds don't pay
-  // the per-scrollback-message store subscription (useSyncExternalStore
-  // bypasses React.memo). Runtime-gated like isBriefEnabled() but inlined
-  // to avoid pulling BriefTool.ts → prompt.ts tool-name strings into
-  // external builds.
-  const isBriefOnly = feature('KAIROS')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useAppState(s => s.isBriefOnly)
-    : false
-  const viewingAgentTaskId = feature('KAIROS')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useAppState(s => s.viewingAgentTaskId)
-    : null
+  // Runtime-gated like isBriefEnabled() but inlined to avoid pulling
+  // BriefTool.ts → prompt.ts tool-name strings into the import graph.
+  const isBriefOnly = useAppState(s => s.isBriefOnly)
+  const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   // Hoisted to mount-time — per-message component, re-renders on every scroll.
-  const briefEnvEnabled = feature('KAIROS')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useMemo(() => isEnvTruthy(process.env.CLAUDE_CODE_BRIEF), [])
-    : false
-  const useBriefLayout = feature('KAIROS')
-    ? (getKairosActive() || getUserMsgOptIn()) &&
-      isBriefOnly &&
-      !isTranscriptMode &&
-      !viewingAgentTaskId
-    : false
+  const briefEnvEnabled = useMemo(
+    () => isEnvTruthy(process.env.CLAUDE_CODE_BRIEF),
+    [],
+  )
+  const useBriefLayout =
+    (getKairosActive() || getUserMsgOptIn()) &&
+    isBriefOnly &&
+    !isTranscriptMode &&
+    !viewingAgentTaskId
 
   // Truncate before the early return so the hook order is stable.
   const displayText = useMemo(() => {

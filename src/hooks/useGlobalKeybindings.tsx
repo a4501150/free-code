@@ -4,7 +4,6 @@
  * Must be rendered inside KeybindingSetup to have access to the keybinding context.
  * This component renders nothing - it just registers the keybinding handlers.
  */
-import { feature } from 'bun:bundle'
 import { useCallback } from 'react'
 import instances from '../ink/instances.js'
 import { useKeybinding } from '../keybindings/useKeybinding.js'
@@ -73,25 +72,20 @@ export function GlobalKeybindingHandlers({
 
   // Toggle transcript mode (ctrl+o). Two-way prompt ↔ transcript.
   // Brief view has its own dedicated toggle on ctrl+shift+b.
-  const isBriefOnly = feature('KAIROS')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useAppState(s => s.isBriefOnly)
-    : false
+  const isBriefOnly = useAppState(s => s.isBriefOnly)
   const handleToggleTranscript = useCallback(() => {
-    if (feature('KAIROS')) {
-      // Escape hatch: GB kill-switch while defaultView=chat was persisted
-      // can leave isBriefOnly stuck on, showing a blank filterForBriefTool
-      // view. Users will reach for ctrl+o — clear the stuck state first.
-      // Only needed in the prompt screen — transcript mode already ignores
-      // isBriefOnly (Messages.tsx filter is gated on !isTranscriptMode).
-      const { isBriefEnabled } = briefToolNs
-      if (!isBriefEnabled() && isBriefOnly && screen !== 'transcript') {
-        setAppState(prev => {
-          if (!prev.isBriefOnly) return prev
-          return { ...prev, isBriefOnly: false }
-        })
-        return
-      }
+    // Escape hatch: GB kill-switch while defaultView=chat was persisted
+    // can leave isBriefOnly stuck on, showing a blank filterForBriefTool
+    // view. Users will reach for ctrl+o — clear the stuck state first.
+    // Only needed in the prompt screen — transcript mode already ignores
+    // isBriefOnly (Messages.tsx filter is gated on !isTranscriptMode).
+    const { isBriefEnabled } = briefToolNs
+    if (!isBriefEnabled() && isBriefOnly && screen !== 'transcript') {
+      setAppState(prev => {
+        if (!prev.isBriefOnly) return prev
+        return { ...prev, isBriefOnly: false }
+      })
+      return
     }
 
     const isEnteringTranscript = screen !== 'transcript'
@@ -125,15 +119,13 @@ export function GlobalKeybindingHandlers({
   // transition always allowed so the same key that got you in gets you
   // out even if the GB kill-switch fires mid-session.
   const handleToggleBrief = useCallback(() => {
-    if (feature('KAIROS')) {
-      const { isBriefEnabled } = briefToolNs
-      if (!isBriefEnabled() && !isBriefOnly) return
-      const next = !isBriefOnly
-      setAppState(prev => {
-        if (prev.isBriefOnly === next) return prev
-        return { ...prev, isBriefOnly: next }
-      })
-    }
+    const { isBriefEnabled } = briefToolNs
+    if (!isBriefEnabled() && !isBriefOnly) return
+    const next = !isBriefOnly
+    setAppState(prev => {
+      if (prev.isBriefOnly === next) return prev
+      return { ...prev, isBriefOnly: next }
+    })
   }, [isBriefOnly, setAppState])
 
   // Register keybinding handlers
@@ -143,12 +135,9 @@ export function GlobalKeybindingHandlers({
   useKeybinding('app:toggleTranscript', handleToggleTranscript, {
     context: 'Global',
   })
-  if (feature('KAIROS')) {
-    // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-    useKeybinding('app:toggleBrief', handleToggleBrief, {
-      context: 'Global',
-    })
-  }
+  useKeybinding('app:toggleBrief', handleToggleBrief, {
+    context: 'Global',
+  })
 
   // Register teammate keybinding
   useKeybinding(

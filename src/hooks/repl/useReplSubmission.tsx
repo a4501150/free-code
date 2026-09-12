@@ -66,12 +66,7 @@ import type { SetAppState } from '../../utils/messageQueueManager.js'
 import type { LocalAgentTaskState } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import type { InProcessTeammateTaskState } from '../../tasks/InProcessTeammateTask/types.js'
 
-// Dead code elimination
-/* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule = feature('KAIROS')
-  ? require('../../proactive/index.js')
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as proactiveModule from '../../proactive/index.js'
 
 export function useReplSubmission(deps: {
   // All dependencies from REPL closure
@@ -290,9 +285,7 @@ export function useReplSubmission(deps: {
     ) => {
       repinScroll()
 
-      if (feature('KAIROS')) {
-        proactiveModule?.resumeProactive()
-      }
+      proactiveModule.resumeProactive()
 
       if (!speculationAccept && input.trim().startsWith('/')) {
         const trimmedInput = expandPastedTextRefs(

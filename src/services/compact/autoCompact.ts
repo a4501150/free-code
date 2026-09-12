@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { markPostCompaction } from 'src/bootstrap/state.js'
 import type { QuerySource } from '../../constants/querySource.js'
 import type { ToolUseContext } from '../../Tool.js'
@@ -208,9 +207,7 @@ export async function autoCompactIfNeeded(
     // break. compactConversation does this internally; SM-compact doesn't.
     // BQ 2026-03-01: missing this made 20% of tengu_prompt_cache_break events
     // false positives (systemPromptChanged=true, timeSinceLastAssistantMsg=-1).
-    if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
-      notifyCompaction(querySource ?? 'compact', toolUseContext.agentId)
-    }
+    notifyCompaction(querySource ?? 'compact', toolUseContext.agentId)
     markPostCompaction()
     return {
       wasCompacted: true,

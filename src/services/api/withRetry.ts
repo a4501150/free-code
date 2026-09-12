@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type { QuerySource } from 'src/constants/querySource.js'
 import type { SystemAPIErrorMessage } from 'src/types/message.js'
 import { isAwsCredentialsProviderError } from 'src/utils/aws.js'
@@ -75,9 +74,7 @@ const PERSISTENT_RESET_CAP_MS = 6 * 60 * 60 * 1000
 const HEARTBEAT_INTERVAL_MS = 30_000
 
 function isPersistentRetryEnabled(): boolean {
-  return feature('UNATTENDED_RETRY')
-    ? isEnvTruthy(process.env.CLAUDE_CODE_UNATTENDED_RETRY)
-    : false
+  return isEnvTruthy(process.env.CLAUDE_CODE_UNATTENDED_RETRY)
 }
 
 function isTransientCapacityError(error: unknown): boolean {

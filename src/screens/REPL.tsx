@@ -1,5 +1,4 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
-import { feature } from 'bun:bundle'
 import type { Screen } from '../types/repl.js'
 import { count } from '../utils/array.js'
 import { Box, Text, useStdin, useTheme } from '../ink.js'
@@ -127,30 +126,7 @@ import { useSwarmInitialization } from '../hooks/useSwarmInitialization.js'
 import { useTeammateViewAutoExit } from '../hooks/useTeammateViewAutoExit.js'
 import { errorMessage } from '../utils/errors.js'
 import { logError } from '../utils/log.js'
-import * as voiceIntegrationNs from '../hooks/useVoiceIntegration.js'
-// Dead code elimination: conditional imports
-const useVoiceIntegration: typeof import('../hooks/useVoiceIntegration.js').useVoiceIntegration =
-  feature('VOICE_MODE')
-    ? voiceIntegrationNs.useVoiceIntegration
-    : () => ({
-        stripTrailing: () => 0,
-        handleKeyEvent: () => {},
-        resetAnchor: () => {},
-        interimRange: null,
-      })
-const VoiceKeybindingHandler: typeof import('../hooks/useVoiceIntegration.js').VoiceKeybindingHandler =
-  feature('VOICE_MODE') ? voiceIntegrationNs.VoiceKeybindingHandler : () => null
-// Dead code elimination: conditional import for coordinator mode
-/* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
-const coordinatorModeModule = feature('COORDINATOR_MODE')
-  ? (require('../coordinator/coordinatorMode.js') as typeof import('../coordinator/coordinatorMode.js'))
-  : null
-const getCoordinatorUserContext: (
-  mcpClients: ReadonlyArray<{ name: string }>,
-  scratchpadDir?: string,
-) => { [k: string]: string } =
-  coordinatorModeModule?.getCoordinatorUserContext ?? (() => ({}))
-/* eslint-enable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
+import { useVoiceIntegration } from '../hooks/useVoiceIntegration.js'
 import useCanUseTool from '../hooks/useCanUseTool.js'
 import type { ToolPermissionContext, Tool } from '../Tool.js'
 import {
@@ -309,32 +285,12 @@ import {
   type InProcessTeammateTaskState,
 } from '../tasks/InProcessTeammateTask/types.js'
 import { useInboxPoller } from '../hooks/useInboxPoller.js'
-import * as useProactiveNs from '../proactive/useProactive.js'
-import * as useScheduledTasksNs from '../hooks/useScheduledTasks.js'
-// Dead code elimination: conditional import for loop mode
-/* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule = feature('KAIROS')
-  ? require('../proactive/index.js')
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
-// Dead code elimination: conditional import for the WebUI attach host
-/* eslint-disable @typescript-eslint/no-require-imports */
-const webuiAttachModule = feature('WEBUI')
-  ? (require('../webui/attach/hostSingleton.js') as typeof import('../webui/attach/hostSingleton.js'))
-  : null
-const useReplAttachBridge = feature('WEBUI')
-  ? (
-      require('../webui/attach/replBridge.js') as typeof import('../webui/attach/replBridge.js')
-    ).useReplAttachBridge
-  : () => {}
-/* eslint-enable @typescript-eslint/no-require-imports */
-const PROACTIVE_NO_OP_SUBSCRIBE = (_cb: () => void) => () => {}
-const PROACTIVE_FALSE = () => false
+import * as proactiveModule from '../proactive/index.js'
+import { useProactive } from '../proactive/useProactive.js'
+import { useScheduledTasks } from '../hooks/useScheduledTasks.js'
+import * as webuiAttachModule from '../webui/attach/hostSingleton.js'
+import { useReplAttachBridge } from '../webui/attach/replBridge.js'
 const SUGGEST_BG_PR_NOOP = (_p: string, _n: string): boolean => false
-const useProactive = feature('KAIROS') ? useProactiveNs.useProactive : null
-const useScheduledTasks = feature('AGENT_TRIGGERS')
-  ? useScheduledTasksNs.useScheduledTasks
-  : null
 import { isAgentSwarmsEnabled } from '../utils/agentSwarmsEnabled.js'
 import { useTaskListWatcher } from '../hooks/useTaskListWatcher.js'
 
@@ -519,13 +475,10 @@ export function REPL({
     () => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE),
     [],
   )
-  const disableMessageActions = feature('MESSAGE_ACTIONS')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useMemo(
-        () => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_MESSAGE_ACTIONS),
-        [],
-      )
-    : false
+  const disableMessageActions = useMemo(
+    () => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_MESSAGE_ACTIONS),
+    [],
+  )
 
   // Log REPL mount/unmount lifecycle
   useEffect(() => {
@@ -613,8 +566,8 @@ export function REPL({
 
   // Track proactive mode for tools dependency - SleepTool filters by proactive state
   const proactiveActive = React.useSyncExternalStore(
-    proactiveModule?.subscribeToProactiveChanges ?? PROACTIVE_NO_OP_SUBSCRIBE,
-    proactiveModule?.isProactiveActive ?? PROACTIVE_FALSE,
+    proactiveModule.subscribeToProactiveChanges,
+    proactiveModule.isProactiveActive,
   )
 
   // BriefTool.isEnabled() reads getUserMsgOptIn() from bootstrap state, which
@@ -773,9 +726,7 @@ export function REPL({
     initialMessages,
     initialContentReplacements,
     pendingHookMessages,
-    publishTranscript: feature('WEBUI')
-      ? () => webuiAttachModule?.publishAttachTranscript()
-      : undefined,
+    publishTranscript: () => webuiAttachModule.publishAttachTranscript(),
   })
 
   // ── Streaming state ──
@@ -1270,7 +1221,7 @@ export function REPL({
     setMessages,
     onChangeDynamicMcpConfig,
     resume,
-    requestPrompt: feature('HOOK_PROMPTS') ? requestPrompt : undefined,
+    requestPrompt,
     disabled,
     customSystemPrompt,
     appendSystemPrompt,
@@ -1740,16 +1691,12 @@ export function REPL({
 
   // handleIncomingPrompt → useReplQueryExecution hook
 
-  // Voice input integration (VOICE_MODE builds only)
-  const voice = feature('VOICE_MODE')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useVoiceIntegration({ setInputValueRaw, inputValueRef, insertTextRef })
-    : {
-        stripTrailing: () => 0,
-        handleKeyEvent: () => {},
-        resetAnchor: () => {},
-        interimRange: null,
-      }
+  // Voice input integration
+  const voice = useVoiceIntegration({
+    setInputValueRaw,
+    inputValueRef,
+    insertTextRef,
+  })
 
   useInboxPoller({
     enabled: isAgentSwarmsEnabled(),
@@ -1761,7 +1708,7 @@ export function REPL({
   useMailboxBridge({ isLoading, onSubmitMessage: handleIncomingPrompt })
 
   // Mirror this session onto its attach socket so a browser can watch and
-  // drive it. Every callback is a no-op when the WebUI is compiled out.
+  // drive it.
   useReplAttachBridge({
     messagesRef,
     getState: () =>
@@ -1797,49 +1744,40 @@ export function REPL({
   })
 
   // Scheduled tasks from .freecode/scheduled_tasks.json (CronCreate/Delete/List)
-  if (feature('AGENT_TRIGGERS')) {
-    // Assistant mode bypasses the isLoading gate (the proactive tick →
-    // Sleep → tick loop would otherwise starve the scheduler).
-    // kairosEnabled is set once in initialState (main.tsx) and never mutated — no
-    // subscription needed. The isKairosCronEnabled() runtime gate is checked
-    // inside useScheduledTasks's effect (not here) since wrapping a hook call
-    // in a dynamic condition would break rules-of-hooks.
-    const assistantMode = store.getState().kairosEnabled
-    // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-    useScheduledTasks!({ isLoading, assistantMode, setMessages })
-  }
+  // Assistant mode bypasses the isLoading gate (the proactive tick →
+  // Sleep → tick loop would otherwise starve the scheduler).
+  // kairosEnabled is set once in initialState (main.tsx) and never mutated — no
+  // subscription needed. The isKairosCronEnabled() runtime gate is checked
+  // inside useScheduledTasks's effect (not here) since wrapping a hook call
+  // in a dynamic condition would break rules-of-hooks.
+  const assistantMode = store.getState().kairosEnabled
+  useScheduledTasks({ isLoading, assistantMode, setMessages })
 
   // Note: Permission polling is now handled by useInboxPoller
   // - Workers receive permission responses via mailbox messages
   // - Leaders receive permission requests via mailbox messages
 
-  if (feature('COORDINATOR_MODE')) {
-    // Tasks mode: watch for tasks and auto-process them
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    // biome-ignore lint/correctness/useHookAtTopLevel: conditional for dead code elimination when COORDINATOR_MODE is off
-    useTaskListWatcher({
-      taskListId,
-      isLoading,
-      onSubmitTask: handleIncomingPrompt,
-    })
+  // Tasks mode: watch for tasks and auto-process them
+  useTaskListWatcher({
+    taskListId,
+    isLoading,
+    onSubmitTask: handleIncomingPrompt,
+  })
 
-    // Loop mode: auto-tick when enabled (via /job command)
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    // biome-ignore lint/correctness/useHookAtTopLevel: conditional for dead code elimination when COORDINATOR_MODE is off
-    useProactive?.({
-      // Suppress ticks while an initial message is pending — the initial
-      // message will be processed asynchronously and a premature tick would
-      // race with it, causing concurrent-query enqueue of expanded skill text.
-      isLoading: isLoading || initialMessage !== null,
-      queuedCommandsLength: queuedCommands.length,
-      hasActiveLocalJsxUI: isShowingLocalJSXCommand,
-      isInPlanMode: toolPermissionContext.mode === 'plan',
-      onSubmitTick: (prompt: string) =>
-        handleIncomingPrompt(prompt, { isMeta: true }),
-      onQueueTick: (prompt: string) =>
-        enqueue({ mode: 'prompt', value: prompt, isMeta: true }),
-    })
-  }
+  // Loop mode: auto-tick when enabled (via /job command)
+  useProactive({
+    // Suppress ticks while an initial message is pending — the initial
+    // message will be processed asynchronously and a premature tick would
+    // race with it, causing concurrent-query enqueue of expanded skill text.
+    isLoading: isLoading || initialMessage !== null,
+    queuedCommandsLength: queuedCommands.length,
+    hasActiveLocalJsxUI: isShowingLocalJSXCommand,
+    isInPlanMode: toolPermissionContext.mode === 'plan',
+    onSubmitTick: (prompt: string) =>
+      handleIncomingPrompt(prompt, { isMeta: true }),
+    onQueueTick: (prompt: string) =>
+      enqueue({ mode: 'prompt', value: prompt, isMeta: true }),
+  })
 
   // Abort the current operation when a 'now' priority message arrives
   // (e.g. from a chat UI client via UDS).
@@ -2309,9 +2247,9 @@ export function REPL({
                         submitCount={submitCount}
                         onShowMessageSelector={handleShowMessageSelector}
                         onMessageActionsEnter={
-                          feature('MESSAGE_ACTIONS') && !disableMessageActions
-                            ? enterMessageActions
-                            : undefined
+                          disableMessageActions
+                            ? undefined
+                            : enterMessageActions
                         }
                         mcpClients={mcpClients}
                         pastedContents={pastedContents}
@@ -2326,9 +2264,7 @@ export function REPL({
                         setIsSearchingHistory={setIsSearchingHistory}
                         helpOpen={isHelpOpen}
                         setHelpOpen={setIsHelpOpen}
-                        insertTextRef={
-                          feature('VOICE_MODE') ? insertTextRef : undefined
-                        }
+                        insertTextRef={insertTextRef}
                         voiceInterimRange={voice.interimRange}
                         conversationId={conversationId}
                       />
@@ -2445,9 +2381,7 @@ export function REPL({
                       } else {
                         setMessages(postCompact)
                       }
-                      if (feature('KAIROS')) {
-                        proactiveModule?.setContextBlocked(false)
-                      }
+                      proactiveModule.setContextBlocked(false)
                       setConversationId(randomUUID())
                       runPostCompactCleanup(context.options.querySource)
 

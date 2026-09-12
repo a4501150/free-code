@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { SentryErrorBoundary } from 'src/components/SentryErrorBoundary.js'
 import { Box, Text, useTheme } from '../../../ink.js'
@@ -46,13 +45,7 @@ export function UserToolSuccessMessage({
   isTranscriptMode,
 }: Props): React.ReactNode {
   const [theme] = useTheme()
-  // Hook stays inside feature() ternary so external builds don't pay a
-  // per-scrollback-message store subscription — same pattern as
-  // UserPromptMessage.tsx.
-  const isBriefOnly = feature('KAIROS')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useAppState(s => s.isBriefOnly)
-    : false
+  const isBriefOnly = useAppState(s => s.isBriefOnly)
 
   // Capture classifier approval once on mount, then delete from Map to prevent linear growth.
   // useState lazy initializer ensures the value persists across re-renders.

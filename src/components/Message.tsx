@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type {
   DomainContentBlock,
   DomainReasoningBlock,
@@ -410,19 +409,17 @@ function AssistantMessageBlock({
   advisorModel?: string
   thinkingDurationMs?: number
 }): React.ReactNode {
-  if (feature('CONNECTOR_TEXT')) {
-    if (isConnectorTextBlock(param)) {
-      return (
-        <AssistantTextMessage
-          param={{ type: 'text', text: param.connector_text }}
-          addMargin={addMargin}
-          shouldShowDot={shouldShowDot}
-          verbose={verbose}
-          width={width}
-          onOpenRateLimitOptions={onOpenRateLimitOptions}
-        />
-      )
-    }
+  if (isConnectorTextBlock(param)) {
+    return (
+      <AssistantTextMessage
+        param={{ type: 'text', text: param.connector_text }}
+        addMargin={addMargin}
+        shouldShowDot={shouldShowDot}
+        verbose={verbose}
+        width={width}
+        onOpenRateLimitOptions={onOpenRateLimitOptions}
+      />
+    )
   }
   switch (param.type) {
     case 'tool_use':

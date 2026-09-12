@@ -54,14 +54,10 @@ import { getMemoryEnvItems, loadMemoryPrompt } from '../memdir/memdir.js'
 import { isMcpInstructionsDeltaEnabled } from '../utils/mcpInstructionsDelta.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule = feature('KAIROS')
-  ? require('../proactive/index.js')
-  : null
+const proactiveModule: typeof import('../proactive/index.js') = require('../proactive/index.js')
 /* eslint-enable @typescript-eslint/no-require-imports */
-const BRIEF_PROACTIVE_SECTION: string | null = feature('KAIROS')
-  ? briefToolPromptNs.BRIEF_PROACTIVE_SECTION
-  : null
-const briefToolModule = feature('KAIROS') ? briefToolModuleNs : null
+const BRIEF_PROACTIVE_SECTION = briefToolPromptNs.BRIEF_PROACTIVE_SECTION
+const briefToolModule = briefToolModuleNs
 
 import {
   getActiveOutputStyle,
@@ -242,7 +238,7 @@ export async function getSystemPrompt(
   const settings = getInitialSettings()
   const enabledTools = new Set(tools.map(_ => _.name))
 
-  if (feature('KAIROS') && proactiveModule?.isProactiveActive()) {
+  if (proactiveModule.isProactiveActive()) {
     logForDebugging(`[SystemPrompt] path=simple-proactive`)
     return [
       `\nYou are an autonomous agent. Use the available tools to do useful work.\n\n`,
@@ -290,9 +286,7 @@ export async function getSystemPrompt(
       'summarize_tool_results',
       () => SUMMARIZE_TOOL_RESULTS_SECTION,
     ),
-    ...(feature('KAIROS')
-      ? [systemPromptSection('brief', () => getBriefSection())]
-      : []),
+    systemPromptSection('brief', () => getBriefSection()),
   ]
 
   const resolvedDynamicSections =
@@ -511,21 +505,18 @@ The scratchpad directory is isolated from the user's project and can normally be
 const SUMMARIZE_TOOL_RESULTS_SECTION = `When working with tool results, write down any important information you need later in your response, as the original tool result can be cleared later.`
 
 function getBriefSection(): string | null {
-  if (!feature('KAIROS')) return null
-  if (!BRIEF_PROACTIVE_SECTION) return null
   // Whenever the tool is available, the model is told to use it. The
   // /brief toggle and --brief flag now only control the isBriefOnly
   // display filter — they no longer gate model-facing behavior.
-  if (!briefToolModule?.isBriefEnabled()) return null
+  if (!briefToolModule.isBriefEnabled()) return null
   // When proactive is active, getProactiveSection() already appends the
   // section inline. Skip here to avoid duplicating it in the system prompt.
-  if (feature('KAIROS') && proactiveModule?.isProactiveActive()) return null
+  if (proactiveModule.isProactiveActive()) return null
   return BRIEF_PROACTIVE_SECTION
 }
 
 function getProactiveSection(): string | null {
-  if (!feature('KAIROS')) return null
-  if (!proactiveModule?.isProactiveActive()) return null
+  if (!proactiveModule.isProactiveActive()) return null
 
   return `# Autonomous work
 
@@ -576,5 +567,5 @@ Do not narrate each step, list every file you read, or explain routine actions. 
 
 You will be notified when the user focuses or unfocuses their terminal. Use the most recent notification to calibrate how autonomous you are:
 - **Unfocused**: The user is away. Act autonomously: make decisions, explore, commit, push. Only pause for actions that are truly irreversible or high-risk.
-- **Focused**: The user is watching. Be more collaborative. Show choices, ask before you commit large changes, and keep your output concise, so it is easy to follow in real time.${BRIEF_PROACTIVE_SECTION && briefToolModule?.isBriefEnabled() ? `\n\n${BRIEF_PROACTIVE_SECTION}` : ''}`
+- **Focused**: The user is watching. Be more collaborative. Show choices, ask before you commit large changes, and keep your output concise, so it is easy to follow in real time.${briefToolModule.isBriefEnabled() ? `\n\n${BRIEF_PROACTIVE_SECTION}` : ''}`
 }

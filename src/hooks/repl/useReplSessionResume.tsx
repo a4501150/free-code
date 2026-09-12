@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { useCallback } from 'react'
 import type { UUID } from 'crypto'
 import { randomUUID } from 'crypto'
@@ -58,12 +57,7 @@ import {
 import * as React from 'react'
 import * as loadAgentsDirNs from '../../tools/AgentTool/loadAgentsDir.js'
 
-// Dead code elimination: conditional import for coordinator mode
-/* eslint-disable @typescript-eslint/no-require-imports */
-const coordinatorModeModule = feature('COORDINATOR_MODE')
-  ? (require('../../coordinator/coordinatorMode.js') as typeof import('../../coordinator/coordinatorMode.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as coordinatorModeModule from '../../coordinator/coordinatorMode.js'
 
 export function useReplSessionResume({
   setToolJSX,
@@ -149,27 +143,23 @@ export function useReplSessionResume({
 
         const messages = deserializeMessages(log.messages)
 
-        if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
-          const warning = coordinatorModeModule.matchSessionMode(log.mode)
-          if (warning) {
-            const {
-              getAgentDefinitionsWithOverrides,
-              getActiveAgentsFromList,
-            } = loadAgentsDirNs
-            getAgentDefinitionsWithOverrides.cache.clear?.()
-            const freshAgentDefs =
-              await getAgentDefinitionsWithOverrides(getOriginalCwd())
+        const warning = coordinatorModeModule.matchSessionMode(log.mode)
+        if (warning) {
+          const { getAgentDefinitionsWithOverrides, getActiveAgentsFromList } =
+            loadAgentsDirNs
+          getAgentDefinitionsWithOverrides.cache.clear?.()
+          const freshAgentDefs =
+            await getAgentDefinitionsWithOverrides(getOriginalCwd())
 
-            setAppState(prev => ({
-              ...prev,
-              agentDefinitions: {
-                ...freshAgentDefs,
-                allAgents: freshAgentDefs.allAgents,
-                activeAgents: getActiveAgentsFromList(freshAgentDefs.allAgents),
-              },
-            }))
-            messages.push(createSystemMessage(warning, 'warning'))
-          }
+          setAppState(prev => ({
+            ...prev,
+            agentDefinitions: {
+              ...freshAgentDefs,
+              allAgents: freshAgentDefs.allAgents,
+              activeAgents: getActiveAgentsFromList(freshAgentDefs.allAgents),
+            },
+          }))
+          messages.push(createSystemMessage(warning, 'warning'))
         }
 
         const sessionEndTimeoutMs = getSessionEndHookTimeoutMs()
@@ -248,13 +238,9 @@ export function useReplSessionResume({
           if (ws) saveWorktreeState(ws)
         }
 
-        if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
-          saveMode(
-            coordinatorModeModule.isCoordinatorMode()
-              ? 'coordinator'
-              : 'normal',
-          )
-        }
+        saveMode(
+          coordinatorModeModule.isCoordinatorMode() ? 'coordinator' : 'normal',
+        )
 
         if (targetSessionCosts) {
           setCostStateForRestore(targetSessionCosts)

@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { useCallback } from 'react'
 import { mergeClients } from '../useMergedClients.js'
 import { assembleToolPool } from '../../tools.js'
@@ -205,7 +204,7 @@ export function useReplToolUseContext({
         resume,
         setConversationId,
         scrollToBottom: () => scrollRef.current?.scrollToBottom(),
-        requestPrompt: feature('HOOK_PROMPTS') ? requestPrompt : undefined,
+        requestPrompt,
         contentReplacementState: contentReplacementStateRef.current,
       }
     },

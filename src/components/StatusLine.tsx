@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { memo, useCallback, useEffect, useRef } from 'react'
 
@@ -61,7 +60,7 @@ import { isVimModeEnabled } from './PromptInput/utils.js'
 export function statusLineShouldDisplay(settings: ReadonlySettings): boolean {
   // Assistant mode: statusline fields (model, permission mode, cwd) reflect the
   // REPL/daemon process, not what the agent child is actually running. Hide it.
-  if (feature('KAIROS') && getKairosActive()) return false
+  if (getKairosActive()) return false
   const statusLine = settings?.statusLine
   if (statusLine) return statusLine.type !== 'off'
   // No user config: the embedded default script runs, unless hooks are disabled.

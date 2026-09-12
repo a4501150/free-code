@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type { UUID } from 'crypto'
 import { relative } from 'path'
 import { getCwd } from 'src/utils/cwd.js'
@@ -46,20 +45,13 @@ import {
 } from './sessionStorage.js'
 import type { ContentReplacementRecord } from './toolResultStorage.js'
 
-// Dead code elimination: ant-only tool names are conditionally referenced so
-// their strings don't leak into external builds.
 import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
 import * as sendUserFileToolPromptNs from '../tools/SendUserFileTool/prompt.js'
 
-const BRIEF_TOOL_NAME: string | null = feature('KAIROS')
-  ? briefToolPromptNs.BRIEF_TOOL_NAME
-  : null
-const LEGACY_BRIEF_TOOL_NAME: string | null = feature('KAIROS')
-  ? briefToolPromptNs.LEGACY_BRIEF_TOOL_NAME
-  : null
-const SEND_USER_FILE_TOOL_NAME: string | null = feature('KAIROS')
-  ? sendUserFileToolPromptNs.SEND_USER_FILE_TOOL_NAME
-  : null
+const BRIEF_TOOL_NAME = briefToolPromptNs.BRIEF_TOOL_NAME
+const LEGACY_BRIEF_TOOL_NAME = briefToolPromptNs.LEGACY_BRIEF_TOOL_NAME
+const SEND_USER_FILE_TOOL_NAME =
+  sendUserFileToolPromptNs.SEND_USER_FILE_TOOL_NAME
 
 /**
  * Transforms legacy attachment types to current types for backward compatibility

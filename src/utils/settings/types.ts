@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { z } from 'zod/v4'
 import { globalConfigDir, globalConfigFile, isEnvTruthy } from '../envUtils.js'
 import { PERMISSION_MODES } from '../permissions/PermissionMode.js'
@@ -1330,53 +1329,29 @@ const _settingsSchemaValue = z
         'Custom directory for plan files, relative to project root. ' +
           `If not set, defaults to ${globalConfigDir()}/plans/`,
       ),
-    ...(feature('KAIROS')
-      ? {
-          minSleepDurationMs: z
-            .number()
-            .nonnegative()
-            .int()
-            .optional()
-            .describe(
-              'Minimum duration in milliseconds that the Sleep tool must sleep for. ' +
-                'Useful for throttling proactive tick frequency.',
-            ),
-          maxSleepDurationMs: z
-            .number()
-            .int()
-            .min(-1)
-            .optional()
-            .describe(
-              'Maximum duration in milliseconds that the Sleep tool can sleep for. ' +
-                'Set to -1 for indefinite sleep (waits for user input). ' +
-                'Useful for limiting idle time in remote/managed environments.',
-            ),
-        }
-      : {}),
-    ...(feature('VOICE_MODE')
-      ? {
-          voiceEnabled: z
-            .boolean()
-            .optional()
-            .describe('Enable voice mode (hold-to-talk dictation)'),
-        }
-      : {}),
-    ...(feature('KAIROS')
-      ? {
-          assistant: z
-            .boolean()
-            .optional()
-            .describe(
-              'Start Claude in assistant mode (custom system prompt, brief view, scheduled check-in skills)',
-            ),
-          assistantName: z
-            .string()
-            .optional()
-            .describe(
-              'Display name for the assistant, shown in the claude.ai session list',
-            ),
-        }
-      : {}),
+    minSleepDurationMs: z
+      .number()
+      .nonnegative()
+      .int()
+      .optional()
+      .describe(
+        'Minimum duration in milliseconds that the Sleep tool must sleep for. ' +
+          'Useful for throttling proactive tick frequency.',
+      ),
+    maxSleepDurationMs: z
+      .number()
+      .int()
+      .min(-1)
+      .optional()
+      .describe(
+        'Maximum duration in milliseconds that the Sleep tool can sleep for. ' +
+          'Set to -1 for indefinite sleep (waits for user input). ' +
+          'Useful for limiting idle time in remote/managed environments.',
+      ),
+    voiceEnabled: z
+      .boolean()
+      .optional()
+      .describe('Enable voice mode (hold-to-talk dictation)'),
     prefersReducedMotion: z
       .boolean()
       .optional()

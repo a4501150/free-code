@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { useState, useRef, useCallback, useDeferredValue } from 'react'
 import type {
   Message as MessageType,
@@ -63,9 +62,7 @@ export function useReplMessages({
         }
       }
       rawSetMessages(next)
-      if (feature('WEBUI')) {
-        publishTranscript?.()
-      }
+      publishTranscript?.()
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],

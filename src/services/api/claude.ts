@@ -92,7 +92,6 @@ import {
 import { getAPIContextManagement } from '../compact/apiMicrocompact.js'
 import { isAutoModeActive } from '../../utils/permissions/autoModeState.js'
 
-import { feature } from 'bun:bundle'
 import {
   DomainTransportError,
   DomainConnectionError,
@@ -597,7 +596,7 @@ export function assistantMessageToMessageParam(
         block =>
           block.type !== 'reasoning' &&
           block.type !== 'redacted_reasoning' &&
-          (feature('CONNECTOR_TEXT') ? !isConnectorTextBlock(block) : true),
+          !isConnectorTextBlock(block),
       )
       return {
         role: 'assistant',
@@ -1204,24 +1203,22 @@ async function* queryModel(
 
   const effort = resolveAppliedEffort(options.model, options.effortValue)
 
-  if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
-    // Capture everything that could affect the server-side cache key.
-    // Pass latched header values (not live state) so break detection
-    // reflects what we actually send, not what the user toggled.
-    recordPromptState({
-      system,
-      toolSchemas: allTools,
-      querySource: options.querySource,
-      model: options.model,
-      agentId: options.agentId,
-      fastMode: fastModeHeaderLatched,
-      betas,
-      autoModeActive: afkHeaderLatched,
-      isUsingOverage: currentLimits.isUsingOverage ?? false,
-      effortValue: effort,
-      extraBodyParams: getExtraBodyParams(),
-    })
-  }
+  // Capture everything that could affect the server-side cache key.
+  // Pass latched header values (not live state) so break detection
+  // reflects what we actually send, not what the user toggled.
+  recordPromptState({
+    system,
+    toolSchemas: allTools,
+    querySource: options.querySource,
+    model: options.model,
+    agentId: options.agentId,
+    fastMode: fastModeHeaderLatched,
+    betas,
+    autoModeActive: afkHeaderLatched,
+    isUsingOverage: currentLimits.isUsingOverage ?? false,
+    effortValue: effort,
+    extraBodyParams: getExtraBodyParams(),
+  })
 
   const newContext: LLMRequestNewContext | undefined = isBetaTracingEnabled()
     ? {
@@ -1711,10 +1708,7 @@ async function* queryModel(
               if (!contentBlock) {
                 throw new RangeError('Content block not found')
               }
-              if (
-                feature('CONNECTOR_TEXT') &&
-                delta.type === 'connector_text_delta'
-              ) {
+              if (delta.type === 'connector_text_delta') {
                 if (contentBlock.type !== 'connector_text') {
                   throw new Error('Content block is not a connector_text block')
                 }
@@ -1909,16 +1903,14 @@ async function* queryModel(
         }
 
         // Check if the cache actually broke based on response tokens
-        if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
-          void checkResponseForCacheBreak(
-            options.querySource,
-            usage.cache_read_input_tokens,
-            usage.cache_creation_input_tokens,
-            messages,
-            options.agentId,
-            streamRequestId,
-          )
-        }
+        void checkResponseForCacheBreak(
+          options.querySource,
+          usage.cache_read_input_tokens,
+          usage.cache_creation_input_tokens,
+          messages,
+          options.agentId,
+          streamRequestId,
+        )
 
         // Process headers from the domain streaming response
         const dsr = domainStreamResponse as DomainStreamingResponse | undefined

@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { memo, type ReactNode, useMemo, useRef } from 'react'
 import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
@@ -163,8 +162,7 @@ function PromptInputFooter({
           />
         </Box>
       </Box>
-      {(feature('COORDINATOR_MODE') && isCoordinatorMode()) ||
-      settings.showAgentPanel ? (
+      {isCoordinatorMode() || settings.showAgentPanel ? (
         <CoordinatorTaskPanel />
       ) : null}
     </>

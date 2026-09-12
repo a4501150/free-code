@@ -1,8 +1,3 @@
-// Conditionally require()'d in LogoV2.tsx behind feature('KAIROS'). No
-// feature() guard here — the whole file tree-shakes via the require pattern
-// when the flag is false (see docs/feature-gating.md). Do NOT import this
-// module statically from unguarded code.
-
 import * as React from 'react'
 import { useState } from 'react'
 import {

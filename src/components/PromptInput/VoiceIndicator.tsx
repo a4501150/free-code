@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { useSettings } from '../../hooks/useSettings.js'
 import { Box, Text, useAnimationFrame } from '../../ink.js'
@@ -15,7 +14,6 @@ const PROCESSING_BRIGHT = { r: 185, g: 185, b: 185 }
 const PULSE_PERIOD_S = 2 // 2 second period for all pulsing animations
 
 export function VoiceIndicator(props: Props): React.ReactNode {
-  if (!feature('VOICE_MODE')) return null
   return <VoiceIndicatorImpl {...props} />
 }
 
@@ -35,7 +33,6 @@ function VoiceIndicatorImpl({ voiceState }: Props): React.ReactNode {
 // timer here runs concurrently with auto-repeat spaces arriving every
 // 30-80ms, compounding re-renders during an already-busy window.
 export function VoiceWarmupHint(): React.ReactNode {
-  if (!feature('VOICE_MODE')) return null
   return <Text dimColor>keep holding…</Text>
 }
 

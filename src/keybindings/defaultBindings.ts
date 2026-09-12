@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { satisfies } from 'src/utils/semver.js'
 import { isRunningWithBun } from '../utils/bundledMode.js'
 import { getPlatform } from '../utils/platform.js'
@@ -42,9 +41,7 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
       'ctrl+l': 'app:redraw',
       'ctrl+t': 'app:toggleTodos',
       'ctrl+o': 'app:toggleTranscript',
-      ...(feature('KAIROS')
-        ? { 'ctrl+shift+b': 'app:toggleBrief' as const }
-        : {}),
+      'ctrl+shift+b': 'app:toggleBrief',
       'ctrl+shift+o': 'app:toggleTeammatePreview',
       'ctrl+r': 'history:search',
       // File navigation. Legacy terminals report ctrl+shift+<letter> without
@@ -81,15 +78,13 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
       'ctrl+s': 'chat:stash',
       // Image paste shortcut (platform-specific key defined above)
       [IMAGE_PASTE_KEY]: 'chat:imagePaste',
-      ...(feature('MESSAGE_ACTIONS')
-        ? { 'shift+up': 'chat:messageActions' as const }
-        : {}),
+      'shift+up': 'chat:messageActions',
       // Voice activation (hold-to-talk). Registered so getShortcutDisplay
       // finds it without hitting the fallback analytics log. To rebind,
       // add a voice:pushToTalk entry (last wins); to disable, use /voice
       // — null-unbinding space hits a pre-existing useKeybinding.ts trap
       // where 'unbound' swallows the event (space dead for typing).
-      ...(feature('VOICE_MODE') ? { space: 'voice:pushToTalk' } : {}),
+      space: 'voice:pushToTalk',
     },
   },
   {
@@ -261,34 +256,30 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
     },
   },
   // PromptInput unmounts while cursor active — no key conflict.
-  ...(feature('MESSAGE_ACTIONS')
-    ? [
-        {
-          context: 'MessageActions' as const,
-          bindings: {
-            up: 'messageActions:prev' as const,
-            down: 'messageActions:next' as const,
-            k: 'messageActions:prev' as const,
-            j: 'messageActions:next' as const,
-            // meta = cmd on macOS; super for kitty keyboard-protocol — bind both.
-            'meta+up': 'messageActions:top' as const,
-            'meta+down': 'messageActions:bottom' as const,
-            'super+up': 'messageActions:top' as const,
-            'super+down': 'messageActions:bottom' as const,
-            // Mouse selection extends on shift+arrow (ScrollKeybindingHandler:573) when present —
-            // correct layered UX: esc clears selection, then shift+↑ jumps.
-            'shift+up': 'messageActions:prevUser' as const,
-            'shift+down': 'messageActions:nextUser' as const,
-            escape: 'messageActions:escape' as const,
-            'ctrl+c': 'messageActions:ctrlc' as const,
-            // Mirror MESSAGE_ACTIONS. Not imported — would pull React/ink into this config module.
-            enter: 'messageActions:enter' as const,
-            c: 'messageActions:c' as const,
-            p: 'messageActions:p' as const,
-          },
-        },
-      ]
-    : []),
+  {
+    context: 'MessageActions',
+    bindings: {
+      up: 'messageActions:prev',
+      down: 'messageActions:next',
+      k: 'messageActions:prev',
+      j: 'messageActions:next',
+      // meta = cmd on macOS; super for kitty keyboard-protocol — bind both.
+      'meta+up': 'messageActions:top',
+      'meta+down': 'messageActions:bottom',
+      'super+up': 'messageActions:top',
+      'super+down': 'messageActions:bottom',
+      // Mouse selection extends on shift+arrow (ScrollKeybindingHandler:573) when present —
+      // correct layered UX: esc clears selection, then shift+↑ jumps.
+      'shift+up': 'messageActions:prevUser',
+      'shift+down': 'messageActions:nextUser',
+      escape: 'messageActions:escape',
+      'ctrl+c': 'messageActions:ctrlc',
+      // Mirror the messageActions action ids. Not imported — would pull React/ink into this config module.
+      enter: 'messageActions:enter',
+      c: 'messageActions:c',
+      p: 'messageActions:p',
+    },
+  },
   // Diff dialog navigation
   {
     context: 'DiffDialog',

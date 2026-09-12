@@ -74,8 +74,9 @@ describe('InvokeTool result rendering', () => {
     const frame = await renderToString(
       <AppStateProvider>{node}</AppStateProvider>,
     )
-    expect(frame).toContain('"ok"')
+    expect(frame).toContain('ok')
     expect(frame).toContain('true')
+    expect(frame).toContain('count')
   })
 
   test('fallback renders content arrays, images as [Image]', async () => {

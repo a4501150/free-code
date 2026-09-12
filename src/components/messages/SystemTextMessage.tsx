@@ -1,6 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { Box, Text, type TextProps } from '../../ink.js'
-import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { useState } from 'react'
 import sample from 'lodash-es/sample.js'
@@ -13,8 +12,7 @@ import { basename } from 'path'
 import { MessageResponse } from '../MessageResponse.js'
 import { FilePathLink } from '../FilePathLink.js'
 import { openPath } from '../../utils/browser.js'
-import * as teamMemSavedNs from './teamMemSaved.js'
-const teamMemSaved = feature('TEAMMEM') ? teamMemSavedNs : null
+import * as teamMemSaved from './teamMemSaved.js'
 import { TURN_COMPLETION_VERBS } from '../../constants/turnCompletionVerbs.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import type {
@@ -342,9 +340,7 @@ function MemorySavedMessage({
 }): React.ReactNode {
   const bg = useSelectedMessageBg()
   const { writtenPaths } = message
-  const team = feature('TEAMMEM')
-    ? teamMemSaved!.teamMemSavedPart(message)
-    : null
+  const team = teamMemSaved.teamMemSavedPart(message)
   const privateCount = writtenPaths.length - (team?.count ?? 0)
   const parts = [
     privateCount > 0

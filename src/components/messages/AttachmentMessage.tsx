@@ -34,7 +34,6 @@ import { TeammateMessageContent } from './UserTeammateMessage.js'
 import { isShutdownApproved } from '../../utils/teammateMailbox.js'
 import { CtrlOToExpand } from '../CtrlOToExpand.js'
 import { FilePathLink } from '../FilePathLink.js'
-import { feature } from 'bun:bundle'
 import { useSelectedMessageBg } from '../messageActions.js'
 
 type Props = {
@@ -482,12 +481,10 @@ function TaskStatusMessage({
 }: {
   attachment: TaskStatusAttachment
 }): React.ReactNode {
-  // When coordinator mode is built in, killed task status is shown in the
-  // CoordinatorTaskPanel. Don't render it again in the chat.
-  if (feature('COORDINATOR_MODE')) {
-    if (attachment.status === 'killed') {
-      return null
-    }
+  // Killed task status is shown in the CoordinatorTaskPanel.
+  // Don't render it again in the chat.
+  if (attachment.status === 'killed') {
+    return null
   }
 
   // Only access teammate-specific code when swarms are enabled.

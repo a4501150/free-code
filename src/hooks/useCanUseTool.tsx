@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { useCallback } from 'react'
 import type { ToolUseConfirm } from '../components/permissions/PermissionRequest.js'
@@ -189,9 +188,7 @@ function useCanUseTool(
                     awaitAutomatedChecksBeforeDialog:
                       appState.toolPermissionContext
                         .awaitAutomatedChecksBeforeDialog,
-                    channelCallbacks: feature('KAIROS')
-                      ? appState.channelPermissionCallbacks
-                      : undefined,
+                    channelCallbacks: appState.channelPermissionCallbacks,
                   },
                   resolve,
                 )

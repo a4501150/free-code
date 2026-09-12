@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type { UUID } from 'crypto'
 import { randomUUID } from 'crypto'
 import uniqBy from 'lodash-es/uniqBy.js'
@@ -970,9 +969,7 @@ export async function* runAgent({
       clearSessionHooks(rootSetAppState, agentId)
     }
     // Clean up prompt cache tracking state for this agent
-    if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
-      cleanupAgentTracking(agentId)
-    }
+    cleanupAgentTracking(agentId)
     // Release cloned file state cache memory
     agentToolUseContext.readFileState.clear()
     initialMessages.length = 0

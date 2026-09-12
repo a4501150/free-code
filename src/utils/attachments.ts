@@ -159,12 +159,9 @@ import { extractTextContent, getUserMessageText } from './messages.js'
 import { isHumanTurn } from './messagePredicates.js'
 import { isEnvTruthy, getClaudeConfigHomeDir } from './envUtils.js'
 import { feature } from 'bun:bundle'
-import * as sessionTranscriptNs from '../services/sessionTranscript/sessionTranscript.js'
-import * as proactiveNs from '../proactive/index.js'
+import { flushOnDateChange } from '../services/sessionTranscript/sessionTranscript.js'
+import { isProactiveActive } from '../proactive/index.js'
 import { getTerminalFocused } from '../ink/terminal-focus-state.js'
-
-const sessionTranscriptModule = feature('KAIROS') ? sessionTranscriptNs : null
-const proactiveModule = feature('KAIROS') ? proactiveNs : null
 import { hasUltrathinkKeyword, isUltrathinkEnabled } from './thinking.js'
 import {
   tokenCountFromLastAPIResponse,
@@ -1345,10 +1342,8 @@ export function getDateChangeAttachments(
   // the /dream skill (1–5am local) finds it even if no compaction fires
   // today. Fire-and-forget; writeSessionTranscriptSegment buckets by
   // message timestamp so a multi-day gap flushes each day correctly.
-  if (feature('KAIROS')) {
-    if (getKairosActive() && messages !== undefined) {
-      sessionTranscriptModule?.flushOnDateChange(messages, currentDate)
-    }
+  if (getKairosActive() && messages !== undefined) {
+    flushOnDateChange(messages, currentDate)
   }
 
   return [{ type: 'date_change', newDate: currentDate }]
@@ -1367,7 +1362,7 @@ export function getDateChangeAttachments(
  * Exported for testing.
  */
 export function getTerminalFocusAttachments(): Attachment[] {
-  if (!feature('KAIROS') || !proactiveModule?.isProactiveActive()) {
+  if (!isProactiveActive()) {
     return []
   }
 

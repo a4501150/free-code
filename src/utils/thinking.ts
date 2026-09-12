@@ -1,6 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import type { Theme } from './theme.js'
-import { feature } from 'bun:bundle'
 
 import { getProviderRegistry } from './model/providerRegistry.js'
 import { getSettingsWithErrors } from './settings/settings.js'
@@ -10,11 +9,8 @@ export type ThinkingConfig =
   | { type: 'enabled'; budgetTokens: number }
   | { type: 'disabled' }
 
-/**
- * Build-time gate for ultrathink.
- */
 export function isUltrathinkEnabled(): boolean {
-  return feature('ULTRATHINK') ? true : false
+  return true
 }
 
 /**

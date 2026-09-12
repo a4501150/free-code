@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type { DomainUserContentBlock } from '../../../types/domain.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { getAllowedChannels } from '../../../bootstrap/state.js'
@@ -20,12 +19,7 @@ import { createSessionToolAllowUpdate } from '../../../utils/permissions/Permiss
 import { hasPermissionsToUseTool } from '../../../utils/permissions/permissions.js'
 import type { PermissionContext } from '../PermissionContext.js'
 import { createResolveOnce } from '../PermissionContext.js'
-// Dead code elimination: conditional import for the WebUI attach host
-/* eslint-disable @typescript-eslint/no-require-imports */
-const webuiAttachModule = feature('WEBUI')
-  ? (require('../../../webui/attach/hostSingleton.js') as typeof import('../../../webui/attach/hostSingleton.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as webuiAttachModule from '../../../webui/attach/hostSingleton.js'
 
 type InteractivePermissionParams = {
   ctx: PermissionContext
@@ -167,11 +161,7 @@ function handleInteractivePermission(
   // Fire-and-forget send: if callTool fails (channel down, tool missing),
   // the subscription never fires and another racer wins. Graceful degradation
   // — the local dialog is always there as the floor.
-  if (
-    feature('KAIROS') &&
-    channelCallbacks &&
-    !ctx.tool.requiresUserInteraction?.()
-  ) {
+  if (channelCallbacks && !ctx.tool.requiresUserInteraction?.()) {
     const channelRequestId = shortRequestId(ctx.toolUseID)
     const allowedChannels = getAllowedChannels()
     const channelClients = filterPermissionRelayClients(
@@ -256,85 +246,83 @@ function handleInteractivePermission(
   // WebUI relay — a fourth racer. A browser attached over the session's Unix
   // socket sees the same prompt and can answer it. Whoever answers first wins
   // through the same claim(); the others are torn down.
-  if (feature('WEBUI')) {
-    const host = webuiAttachModule?.getAttachHost()
-    if (host) {
-      const broker = host.permissions
-      const webRequestId = broker.newRequestId()
-      const webSignal = ctx.toolUseContext.abortController.signal
+  const host = webuiAttachModule.getAttachHost()
+  if (host) {
+    const broker = host.permissions
+    const webRequestId = broker.newRequestId()
+    const webSignal = ctx.toolUseContext.abortController.signal
 
-      const brokerUnsub = broker.open(
-        {
-          requestId: webRequestId,
-          toolName: ctx.tool.name,
-          toolUseId: ctx.toolUseID,
-          description,
-          input: displayInput as Record<string, unknown>,
-          blockedPath: result.blockedPath,
-          agentId: ctx.assistantMessage.agentId,
-          openedAt: permissionPromptStartTimeMs,
-        },
-        async decision => {
-          if (!claim()) return // atomic check-and-mark before await
-          cleanupRemoteRacers()
-          ctx.removeFromQueue()
+    const brokerUnsub = broker.open(
+      {
+        requestId: webRequestId,
+        toolName: ctx.tool.name,
+        toolUseId: ctx.toolUseID,
+        description,
+        input: displayInput as Record<string, unknown>,
+        blockedPath: result.blockedPath,
+        agentId: ctx.assistantMessage.agentId,
+        openedAt: permissionPromptStartTimeMs,
+      },
+      async decision => {
+        if (!claim()) return // atomic check-and-mark before await
+        cleanupRemoteRacers()
+        ctx.removeFromQueue()
 
-          if (decision.behavior === 'allow') {
-            // An empty updatedInput means "use the original", which is what a
-            // client too small to reconstruct the input sends.
-            const updated =
-              decision.updatedInput && Object.keys(decision.updatedInput).length
-                ? decision.updatedInput
-                : displayInput
+        if (decision.behavior === 'allow') {
+          // An empty updatedInput means "use the original", which is what a
+          // client too small to reconstruct the input sends.
+          const updated =
+            decision.updatedInput && Object.keys(decision.updatedInput).length
+              ? decision.updatedInput
+              : displayInput
 
-            if (decision.persist) {
-              // Session scope only. The terminal's equivalent writes a durable
-              // rule to project-local settings, which a surface reachable from
-              // the internet behind one password must not do.
-              // `handleUserAllow` logs the decision itself.
-              resolveOnce(
-                await ctx.handleUserAllow(
-                  updated,
-                  [createSessionToolAllowUpdate(ctx.tool.name)],
-                  undefined,
-                  permissionPromptStartTimeMs,
-                ),
-              )
-              return
-            }
-
-            ctx.logDecision(
-              {
-                decision: 'accept',
-                source: { type: 'user', permanent: false },
-              },
-              { permissionPromptStartTimeMs },
-            )
-            resolveOnce(ctx.buildAllow(updated))
-          } else {
-            ctx.logDecision(
-              {
-                decision: 'reject',
-                source: {
-                  type: 'user_reject',
-                  hasFeedback: !!decision.message,
-                },
-              },
-              { permissionPromptStartTimeMs },
-            )
+          if (decision.persist) {
+            // Session scope only. The terminal's equivalent writes a durable
+            // rule to project-local settings, which a surface reachable from
+            // the internet behind one password must not do.
+            // `handleUserAllow` logs the decision itself.
             resolveOnce(
-              ctx.cancelAndAbort(decision.message ?? 'Denied from the WebUI'),
+              await ctx.handleUserAllow(
+                updated,
+                [createSessionToolAllowUpdate(ctx.tool.name)],
+                undefined,
+                permissionPromptStartTimeMs,
+              ),
             )
+            return
           }
-        },
-      )
 
-      webUnsubscribe = () => {
-        brokerUnsub()
-        webSignal.removeEventListener('abort', webUnsubscribe!)
-      }
-      webSignal.addEventListener('abort', webUnsubscribe, { once: true })
+          ctx.logDecision(
+            {
+              decision: 'accept',
+              source: { type: 'user', permanent: false },
+            },
+            { permissionPromptStartTimeMs },
+          )
+          resolveOnce(ctx.buildAllow(updated))
+        } else {
+          ctx.logDecision(
+            {
+              decision: 'reject',
+              source: {
+                type: 'user_reject',
+                hasFeedback: !!decision.message,
+              },
+            },
+            { permissionPromptStartTimeMs },
+          )
+          resolveOnce(
+            ctx.cancelAndAbort(decision.message ?? 'Denied from the WebUI'),
+          )
+        }
+      },
+    )
+
+    webUnsubscribe = () => {
+      brokerUnsub()
+      webSignal.removeEventListener('abort', webUnsubscribe!)
     }
+    webSignal.addEventListener('abort', webUnsubscribe, { once: true })
   }
 
   // Skip hooks if they were already awaited in the coordinator branch above

@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import chalk from 'chalk'
 import { markPostCompaction } from 'src/bootstrap/state.js'
 import { getSystemPrompt } from '../../constants/prompts.js'
@@ -56,12 +55,10 @@ export const call: LocalCommandCall = async (args, context) => {
         runPostCompactCleanup()
         // Reset cache read baseline so the post-compact drop isn't flagged
         // as a break. compactConversation does this internally; SM-compact doesn't.
-        if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
-          notifyCompaction(
-            context.options.querySource ?? 'compact',
-            context.agentId,
-          )
-        }
+        notifyCompaction(
+          context.options.querySource ?? 'compact',
+          context.agentId,
+        )
         markPostCompaction()
         // Suppress warning immediately after successful compaction
         suppressCompactWarning()

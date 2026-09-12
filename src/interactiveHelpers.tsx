@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { appendFileSync } from 'fs'
 import React from 'react'
 
@@ -320,45 +319,43 @@ export async function showSetupScreens(
   // dev channels to any --channels list already set in main.tsx. Org policy
   // is NOT bypassed — gateChannelServer() still runs; this flag only exists
   // to sidestep the --channels approved-server allowlist.
-  if (feature('KAIROS')) {
-    // gateChannelServer and ChannelsNotice read tengu_harbor after this
-    // function returns. A cold disk cache (fresh install, or first run after
-    // the flag was added server-side) defaults to false and silently drops
-    // channel notifications for the whole session — gh#37026.
-    // checkGate_CACHED_OR_BLOCKING returns immediately if disk already says
-    // true; only blocks on a cold/stale-false cache (awaits the same memoized
-    // gate check promise fired earlier).
+  // gateChannelServer and ChannelsNotice read tengu_harbor after this
+  // function returns. A cold disk cache (fresh install, or first run after
+  // the flag was added server-side) defaults to false and silently drops
+  // channel notifications for the whole session — gh#37026.
+  // checkGate_CACHED_OR_BLOCKING returns immediately if disk already says
+  // true; only blocks on a cold/stale-false cache (awaits the same memoized
+  // gate check promise fired earlier).
 
-    if (devChannels && devChannels.length > 0) {
-      // Skip the dialog when channels are blocked (no OAuth) — accepting then
-      // immediately seeing "not available" in ChannelsNotice is worse than no
-      // dialog. Append entries anyway so ChannelsNotice renders the blocked
-      // branch with the dev entries named. dev:true here is for the flag label
-      // in ChannelsNotice (hasNonDev check); the allowlist bypass it also
-      // grants is moot since the gate blocks upstream.
-      if (!getClaudeAIOAuthTokens()?.accessToken) {
-        setAllowedChannels([
-          ...getAllowedChannels(),
-          ...devChannels.map(c => ({ ...c, dev: true })),
-        ])
-        setHasDevChannels(true)
-      } else {
-        await showSetupDialog(root, done => (
-          <DevChannelsDialog
-            channels={devChannels}
-            onAccept={() => {
-              // Mark dev entries per-entry so the allowlist bypass doesn't leak
-              // to --channels entries when both flags are passed.
-              setAllowedChannels([
-                ...getAllowedChannels(),
-                ...devChannels.map(c => ({ ...c, dev: true })),
-              ])
-              setHasDevChannels(true)
-              void done()
-            }}
-          />
-        ))
-      }
+  if (devChannels && devChannels.length > 0) {
+    // Skip the dialog when channels are blocked (no OAuth) — accepting then
+    // immediately seeing "not available" in ChannelsNotice is worse than no
+    // dialog. Append entries anyway so ChannelsNotice renders the blocked
+    // branch with the dev entries named. dev:true here is for the flag label
+    // in ChannelsNotice (hasNonDev check); the allowlist bypass it also
+    // grants is moot since the gate blocks upstream.
+    if (!getClaudeAIOAuthTokens()?.accessToken) {
+      setAllowedChannels([
+        ...getAllowedChannels(),
+        ...devChannels.map(c => ({ ...c, dev: true })),
+      ])
+      setHasDevChannels(true)
+    } else {
+      await showSetupDialog(root, done => (
+        <DevChannelsDialog
+          channels={devChannels}
+          onAccept={() => {
+            // Mark dev entries per-entry so the allowlist bypass doesn't leak
+            // to --channels entries when both flags are passed.
+            setAllowedChannels([
+              ...getAllowedChannels(),
+              ...devChannels.map(c => ({ ...c, dev: true })),
+            ])
+            setHasDevChannels(true)
+            void done()
+          }}
+        />
+      ))
     }
   }
 

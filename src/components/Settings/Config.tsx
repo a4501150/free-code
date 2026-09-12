@@ -1,5 +1,4 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
-import { feature } from 'bun:bundle'
 import {
   Box,
   Text,
@@ -206,11 +205,9 @@ export function Config({
   // opt-in. 'chat' written here is read at next startup by main.tsx which
   // sets userMsgOptIn if still entitled.
   /* eslint-disable @typescript-eslint/no-require-imports */
-  const showDefaultViewPicker = feature('KAIROS')
-    ? (
-        require('../../tools/BriefTool/BriefTool.js') as typeof import('../../tools/BriefTool/BriefTool.js')
-      ).isBriefEntitled()
-    : false
+  const showDefaultViewPicker = (
+    require('../../tools/BriefTool/BriefTool.js') as typeof import('../../tools/BriefTool/BriefTool.js')
+  ).isBriefEntitled()
   /* eslint-enable @typescript-eslint/no-require-imports */
   const setAppState = useSetAppState()
   const [changes, setChanges] = useState<{ [key: string]: unknown }>({})
@@ -1008,7 +1005,7 @@ export function Config({
     },
     {
       id: 'notifChannel',
-      label: feature('KAIROS') ? 'Local notifications' : 'Notifications',
+      label: 'Local notifications',
       value: settingsData?.preferredNotifChannel ?? 'auto',
       options: [
         'auto',
@@ -1027,37 +1024,33 @@ export function Config({
         })
       },
     },
-    ...(feature('KAIROS')
-      ? [
-          {
-            id: 'taskCompleteNotifEnabled',
-            label: 'Push when idle',
-            value: settingsData?.taskCompleteNotifEnabled ?? false,
-            type: 'boolean' as const,
-            onChange(taskCompleteNotifEnabled: boolean) {
-              updateUserSettings({ taskCompleteNotifEnabled })
-            },
-          },
-          {
-            id: 'inputNeededNotifEnabled',
-            label: 'Push when input needed',
-            value: settingsData?.inputNeededNotifEnabled ?? false,
-            type: 'boolean' as const,
-            onChange(inputNeededNotifEnabled: boolean) {
-              updateUserSettings({ inputNeededNotifEnabled })
-            },
-          },
-          {
-            id: 'agentPushNotifEnabled',
-            label: 'Push when Claude decides',
-            value: settingsData?.agentPushNotifEnabled ?? false,
-            type: 'boolean' as const,
-            onChange(agentPushNotifEnabled: boolean) {
-              updateUserSettings({ agentPushNotifEnabled })
-            },
-          },
-        ]
-      : []),
+    {
+      id: 'taskCompleteNotifEnabled',
+      label: 'Push when idle',
+      value: settingsData?.taskCompleteNotifEnabled ?? false,
+      type: 'boolean' as const,
+      onChange(taskCompleteNotifEnabled: boolean) {
+        updateUserSettings({ taskCompleteNotifEnabled })
+      },
+    },
+    {
+      id: 'inputNeededNotifEnabled',
+      label: 'Push when input needed',
+      value: settingsData?.inputNeededNotifEnabled ?? false,
+      type: 'boolean' as const,
+      onChange(inputNeededNotifEnabled: boolean) {
+        updateUserSettings({ inputNeededNotifEnabled })
+      },
+    },
+    {
+      id: 'agentPushNotifEnabled',
+      label: 'Push when Claude decides',
+      value: settingsData?.agentPushNotifEnabled ?? false,
+      type: 'boolean' as const,
+      onChange(agentPushNotifEnabled: boolean) {
+        updateUserSettings({ agentPushNotifEnabled })
+      },
+    },
     ...(showDefaultViewPicker
       ? [
           {
@@ -1572,7 +1565,7 @@ export function Config({
       toolPermissionContext: transitionPlanAutoMode(prev.toolPermissionContext),
     }))
     // Bootstrap state: restore userMsgOptIn. Only touched by the defaultView
-    // onChange above, so no feature() guard needed here (that path only
+    // onChange above, so no additional gate needed here (that path only
     // exists when showDefaultViewPicker is true).
     if (getUserMsgOptIn() !== initialUserMsgOptIn) {
       setUserMsgOptIn(initialUserMsgOptIn)

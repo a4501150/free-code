@@ -13,7 +13,6 @@
  * initExtractMemories() in beforeEach to get a fresh closure.
  */
 
-import { feature } from 'bun:bundle'
 import { basename } from 'path'
 import { ENTRYPOINT_NAME } from '../../memdir/memdir.js'
 import {
@@ -58,8 +57,7 @@ import {
   buildExtractCombinedPrompt,
 } from './prompts.js'
 
-import * as teamMemPathsNs from '../../memdir/teamMemPaths.js'
-const teamMemPaths = feature('TEAMMEM') ? teamMemPathsNs : null
+import * as teamMemPaths from '../../memdir/teamMemPaths.js'
 
 // ============================================================================
 // Helpers
@@ -344,9 +342,7 @@ export function initExtractMemories(): void {
       return
     }
 
-    const teamMemoryEnabled = feature('TEAMMEM')
-      ? teamMemPaths!.isTeamMemoryEnabled()
-      : false
+    const teamMemoryEnabled = teamMemPaths.isTeamMemoryEnabled()
 
     const skipIndex = true
 
@@ -381,18 +377,17 @@ export function initExtractMemories(): void {
         await scanMemoryFiles(memoryDir, createAbortController().signal),
       )
 
-      const userPrompt =
-        feature('TEAMMEM') && teamMemoryEnabled
-          ? buildExtractCombinedPrompt(
-              newMessageCount,
-              existingMemories,
-              skipIndex,
-            )
-          : buildExtractAutoOnlyPrompt(
-              newMessageCount,
-              existingMemories,
-              skipIndex,
-            )
+      const userPrompt = teamMemoryEnabled
+        ? buildExtractCombinedPrompt(
+            newMessageCount,
+            existingMemories,
+            skipIndex,
+          )
+        : buildExtractAutoOnlyPrompt(
+            newMessageCount,
+            existingMemories,
+            skipIndex,
+          )
 
       const result = await runForkedAgent({
         promptMessages: [createUserMessage({ content: userPrompt })],
@@ -447,9 +442,7 @@ export function initExtractMemories(): void {
       const memoryPaths = writtenPaths.filter(
         p => basename(p) !== ENTRYPOINT_NAME,
       )
-      const teamCount = feature('TEAMMEM')
-        ? count(memoryPaths, teamMemPaths!.isTeamMemPath)
-        : 0
+      const teamCount = count(memoryPaths, teamMemPaths.isTeamMemPath)
 
       // Log extraction event with usage from the forked agent
 
@@ -458,9 +451,7 @@ export function initExtractMemories(): void {
       )
       if (memoryPaths.length > 0) {
         const msg = createMemorySavedMessage(memoryPaths)
-        if (feature('TEAMMEM')) {
-          msg.teamCount = teamCount
-        }
+        msg.teamCount = teamCount
         appendSystemMessage?.(msg)
       }
     } catch (error) {

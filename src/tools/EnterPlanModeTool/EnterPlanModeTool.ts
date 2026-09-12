@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { z } from 'zod/v4'
 import {
   getAllowedChannels,
@@ -50,7 +49,7 @@ export const EnterPlanModeTool: Tool<InputSchema, Output> = buildTool({
     // When --channels is active, ExitPlanMode is disabled (its approval
     // dialog needs the terminal). Disable entry too so plan mode isn't a
     // trap the model can enter but never leave.
-    if (feature('KAIROS') && getAllowedChannels().length > 0) {
+    if (getAllowedChannels().length > 0) {
       return false
     }
     return true

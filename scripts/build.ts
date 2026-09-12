@@ -16,20 +16,11 @@ const compile = args.includes('--compile')
 const dev = args.includes('--dev')
 const useReactCompiler = args.includes('--react-compiler')
 
-const fullExperimentalFeatures = [
-  'AGENT_MEMORY_SNAPSHOT',
-  'AGENT_TRIGGERS',
-  'CONNECTOR_TEXT',
-  'EXTRACT_MEMORIES',
-  'HISTORY_PICKER',
-  'HOOK_PROMPTS',
-  'MCP_RICH_OUTPUT',
-  'MESSAGE_ACTIONS',
-  'POWERSHELL_AUTO_MODE',
-  'PROMPT_CACHE_BREAK_DETECTION',
-  'TEAMMEM',
-  'WEBUI',
-] as const
+// All formerly feature-gated subsystems are compiled in unconditionally.
+// The remaining feature flags are opt-in only (see FEATURES.md): BUDDY,
+// VERIFY_PLAN, WORKTREE_MODE, DEDICATED_SEARCH_TOOLS — enable with
+// --feature=NAME. `--feature-set=dev-full` is still accepted but adds
+// nothing.
 
 function runCommand(cmd: string[]): string | null {
   const proc = Bun.spawnSync({
@@ -72,37 +63,15 @@ function getGitHubRepo(): string {
   return ''
 }
 
-const defaultFeatures = [
-  // Tier 1: CLI flag / subcommand gated
-  'DAEMON',
-  'HARD_FAIL',
-  'STREAMLINED_OUTPUT',
-  'UNATTENDED_RETRY',
-  // Tier 3: Settings / env var / file gated
-  'COORDINATOR_MODE',
-  'KAIROS',
-  'NEW_INIT',
-  // Tier 4: Active but benign (user keyword / prompt nudge)
-  'ULTRATHINK',
-  // Always on
-  'VOICE_MODE',
-]
-const featureSet = new Set(defaultFeatures)
+const featureSet = new Set<string>()
 for (let i = 0; i < args.length; i += 1) {
   const arg = args[i]
   if (arg === '--feature-set' && args[i + 1]) {
-    if (args[i + 1] === 'dev-full') {
-      for (const feature of fullExperimentalFeatures) {
-        featureSet.add(feature)
-      }
-    }
+    // Accepted for compatibility; every former feature set is now compiled in.
     i += 1
     continue
   }
-  if (arg === '--feature-set=dev-full') {
-    for (const feature of fullExperimentalFeatures) {
-      featureSet.add(feature)
-    }
+  if (arg.startsWith('--feature-set=')) {
     continue
   }
   if (arg === '--feature' && args[i + 1]) {
@@ -159,13 +128,10 @@ const defines = {
 // WebUI browser bundle. Must run before the React Compiler staging copy, so
 // the generated asset module is picked up by whichever source tree the main
 // build points at. Only the clean pre-compilation client source is bundled.
-if (featureSet.has('WEBUI')) {
+{
   const { buildWebuiAssets } = await import('./build-webui-assets.js')
   const sizes = await buildWebuiAssets({ minify: !dev })
   console.log(`WebUI assets: ${sizes.jsBytes} B js, ${sizes.cssBytes} B css`)
-} else {
-  const { writeStubWebuiAssets } = await import('./build-webui-assets.js')
-  writeStubWebuiAssets()
 }
 
 // Optional React Compiler pre-build step: transforms .tsx files with

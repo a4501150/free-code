@@ -36,15 +36,12 @@ import usage from './commands/usage/index.js'
 import theme from './commands/theme/index.js'
 import vim from './commands/vim/index.js'
 import { feature } from 'bun:bundle'
-// Feature-gated command modules. `feature()` is a Bun build-time macro,
-// so namespaces referenced only under a disabled flag are DCE'd.
-import * as proactiveMod from './commands/proactive.js'
-import * as briefCmdMod from './commands/brief.js'
-import * as voiceCmdMod from './commands/voice/index.js'
+import proactive from './commands/proactive.js'
+import briefCommand from './commands/brief.js'
+import voiceCommand from './commands/voice/index.js'
+// Feature-gated command module. `feature()` is a Bun build-time macro, so
+// namespaces referenced only under a disabled flag are DCE'd.
 import * as initVerifiersMod from './commands/init-verifiers.js'
-const proactive = feature('KAIROS') ? proactiveMod.default : null
-const briefCommand = feature('KAIROS') ? briefCmdMod.default : null
-const voiceCommand = feature('VOICE_MODE') ? voiceCmdMod.default : null
 const initVerifiers = feature('VERIFY_PLAN') ? initVerifiersMod.default : null
 import thinkback from './commands/thinkback/index.js'
 import thinkbackPlay from './commands/thinkback-play/index.js'
@@ -199,9 +196,9 @@ const COMMANDS = memoize((): Command[] => [
   usageReport,
   version,
   vim,
-  ...(proactive ? [proactive] : []),
-  ...(briefCommand ? [briefCommand] : []),
-  ...(voiceCommand ? [voiceCommand] : []),
+  proactive,
+  briefCommand,
+  voiceCommand,
   thinkback,
   thinkbackPlay,
   permissions,

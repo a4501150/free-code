@@ -33,10 +33,8 @@ export function initBundledSkills(): void {
     registerBatchSkill()
   }
   dreamNs.registerDreamSkill()
-  if (feature('AGENT_TRIGGERS')) {
-    // /loop's isEnabled delegates to isKairosCronEnabled() — same lazy
-    // per-invocation pattern as the cron tools. Registered unconditionally;
-    // the skill's own isEnabled callback decides visibility.
-    loopNs.registerLoopSkill()
-  }
+  // /loop's isEnabled delegates to isKairosCronEnabled() — same lazy
+  // per-invocation pattern as the cron tools. Registered unconditionally;
+  // the skill's own isEnabled callback decides visibility.
+  loopNs.registerLoopSkill()
 }

@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import chalk from 'chalk'
 import { mkdir } from 'fs/promises'
 import { join } from 'path'
@@ -30,11 +29,7 @@ import {
 import { Select } from '../CustomSelect/index.js'
 import { ListItem } from '../design-system/ListItem.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const teamMemPaths = feature('TEAMMEM')
-  ? (require('../../memdir/teamMemPaths.js') as typeof import('../../memdir/teamMemPaths.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as teamMemPaths from '../../memdir/teamMemPaths.js'
 
 interface ExtendedMemoryFileInfo extends MemoryFileInfo {
   isNested?: boolean
@@ -178,10 +173,10 @@ export function MemoryFileSelector({
     })
 
     // Team memory directly below auto-memory (team dir is a subdir of auto dir)
-    if (feature('TEAMMEM') && teamMemPaths!.isTeamMemoryEnabled()) {
+    if (teamMemPaths.isTeamMemoryEnabled()) {
       folderOptions.push({
         label: 'Open team memory folder',
-        value: `${OPEN_FOLDER_PREFIX}${teamMemPaths!.getTeamMemPath()}`,
+        value: `${OPEN_FOLDER_PREFIX}${teamMemPaths.getTeamMemPath()}`,
         description: '',
       })
     }

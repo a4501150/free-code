@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { KeybindingSetup } from '../../keybindings/KeybindingProviderSetup.js'
 import { AnimatedTerminalTitle } from './AnimatedTerminalTitle.js'
@@ -8,11 +7,7 @@ import { ScrollKeybindingHandler } from '../ScrollKeybindingHandler.js'
 import { CancelRequestHandler } from '../../hooks/useCancelRequest.js'
 import { MessageActionsKeybindings } from '../messageActions.js'
 import type { ScrollBoxHandle } from '../../ink/components/ScrollBox.js'
-
-const VoiceKeybindingHandler: typeof import('../../hooks/useVoiceIntegration.js').VoiceKeybindingHandler =
-  feature('VOICE_MODE')
-    ? require('../../hooks/useVoiceIntegration.js').VoiceKeybindingHandler
-    : () => null
+import { VoiceKeybindingHandler } from '../../hooks/useVoiceIntegration.js'
 
 export function ReplKeybindingShell({
   titleIsAnimating,
@@ -62,14 +57,12 @@ export function ReplKeybindingShell({
         noPrefix={showStatusInTerminalTab}
       />
       <GlobalKeybindingHandlers {...globalKeybindingProps} />
-      {feature('VOICE_MODE') ? (
-        <VoiceKeybindingHandler
-          voiceHandleKeyEvent={voice.handleKeyEvent}
-          stripTrailing={voice.stripTrailing}
-          resetAnchor={voice.resetAnchor}
-          isActive={!toolJSX?.isLocalJSXCommand}
-        />
-      ) : null}
+      <VoiceKeybindingHandler
+        voiceHandleKeyEvent={voice.handleKeyEvent}
+        stripTrailing={voice.stripTrailing}
+        resetAnchor={voice.resetAnchor}
+        isActive={!toolJSX?.isLocalJSXCommand}
+      />
       <CommandKeybindingHandlers
         onSubmit={onSubmit}
         isActive={!toolJSX?.isLocalJSXCommand}
@@ -80,9 +73,7 @@ export function ReplKeybindingShell({
         isModal={scrollIsModal}
         onScroll={scrollOnScroll}
       />
-      {feature('MESSAGE_ACTIONS') &&
-      !disableMessageActions &&
-      messageActionHandlers ? (
+      {!disableMessageActions && messageActionHandlers ? (
         <MessageActionsKeybindings
           handlers={messageActionHandlers}
           isActive={cursor !== null}

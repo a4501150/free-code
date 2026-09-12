@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import figures from 'figures'
 import * as React from 'react'
 import { useMemo, useState } from 'react'
@@ -53,9 +52,7 @@ export function BackgroundTaskStatus({
       (Object.values(tasks ?? {}) as TaskState[]).filter(
         t =>
           isBackgroundTask(t) &&
-          !(feature('COORDINATOR_MODE') && isCoordinatorMode()
-            ? isPanelAgentTask(t)
-            : false),
+          !(isCoordinatorMode() ? isPanelAgentTask(t) : false),
       ),
     [tasks],
   )

@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type { DomainUserTextBlock } from '../../types/domain.js'
 import * as React from 'react'
 import { NO_CONTENT_MESSAGE } from '../../constants/messages.js'
@@ -172,11 +171,9 @@ export function UserTextMessage({
   }
 
   // Inbound channel message (MCP server push).
-  if (feature('KAIROS')) {
-    if (param.text.startsWith('<channel source="')) {
-      const { UserChannelMessage } = userChannelNs
-      return <UserChannelMessage addMargin={addMargin} param={param} />
-    }
+  if (param.text.startsWith('<channel source="')) {
+    const { UserChannelMessage } = userChannelNs
+    return <UserChannelMessage addMargin={addMargin} param={param} />
   }
 
   // Model-facing context the user does not normally see. Gated on isMeta so a

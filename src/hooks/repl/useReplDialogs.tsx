@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import {
   useState,
   useRef,
@@ -28,12 +27,7 @@ import type { PastedContent } from '../../utils/config.js'
 import type { PromptInputMode } from '../../types/textInputTypes.js'
 import type { SpinnerMode } from '../../components/Spinner.js'
 
-// Dead code elimination: conditional import for proactive
-/* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule = feature('KAIROS')
-  ? require('../../proactive/index.js')
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as proactiveModule from '../../proactive/index.js'
 
 export function useReplDialogs({
   toolJSX,
@@ -254,9 +248,7 @@ export function useReplDialogs({
       `[onCancel] focusedInputDialog=${focusedInputDialog} streamMode=${streamMode}`,
     )
 
-    if (feature('KAIROS')) {
-      proactiveModule?.pauseProactive()
-    }
+    proactiveModule.pauseProactive()
 
     queryGuard.forceEnd()
 

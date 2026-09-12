@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type { DomainToolResultBlockParam } from '../../types/domain.js'
 import type { QuerySource } from '../../constants/querySource.js'
 import type { ToolUseContext } from '../../Tool.js'
@@ -237,7 +236,7 @@ function maybeTimeBasedMicrocompact(
   // notifyCacheDeletion (not notifyCompaction) because it's already imported
   // here and achieves the same false-positive suppression — adding the second
   // symbol to the import was flagged by the circular-deps check.
-  if (feature('PROMPT_CACHE_BREAK_DETECTION') && querySource) {
+  if (querySource) {
     notifyCacheDeletion(querySource)
   }
 

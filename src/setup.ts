@@ -1,6 +1,5 @@
 /* eslint-disable custom-rules/no-process-exit */
 
-import { feature } from 'bun:bundle'
 import chalk from 'chalk'
 import { getCwd } from 'src/utils/cwd.js'
 import { checkForReleaseNotes } from 'src/utils/releaseNotes.js'
@@ -244,9 +243,7 @@ export async function setup(
   }
   if (!isBareMode()) {
     registerSessionFileAccessHooks()
-    if (feature('TEAMMEM')) {
-      startTeamMemoryWatcher()
-    }
+    startTeamMemoryWatcher()
   }
   initSinks() // Attach error log + analytics sinks and drain queued events
 

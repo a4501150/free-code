@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type { DomainToolResultBlockParam } from '../../types/domain.js'
 import {
   copyFile,
@@ -932,7 +931,6 @@ async function* runPowerShellCommand({
   // blocking commands after ASSISTANT_BLOCKING_BUDGET_MS so the agent can keep
   // coordinating instead of waiting. The command keeps running — no state loss.
   if (
-    feature('KAIROS') &&
     getKairosActive() &&
     isMainThread &&
     !isBackgroundTasksDisabled &&

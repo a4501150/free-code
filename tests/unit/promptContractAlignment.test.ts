@@ -111,7 +111,7 @@ describe('conditional mode prompt alignment', () => {
   test('headless coordinator prompt follows the live coordinator gate', () => {
     const source = readSource('src/QueryEngine.ts')
 
-    expect(source).toContain('coordinatorModeModule?.isCoordinatorMode()')
+    expect(source).toContain('coordinatorModeModule.isCoordinatorMode()')
     expect(source).toContain(
       'coordinatorModeModule.getCoordinatorSystemPrompt()',
     )

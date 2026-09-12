@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { useMemo } from 'react'
 import { Box } from 'src/ink.js'
@@ -98,10 +97,7 @@ function PromptInputQueuedCommandsImpl(): React.ReactNode {
   // already indent themselves). Gate mirrors the brief-spinner/message
   // check elsewhere — no teammate-view override needed since this
   // component early-returns when viewing a teammate.
-  const useBriefLayout = feature('KAIROS')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useAppState(s => s.isBriefOnly)
-    : false
+  const useBriefLayout = useAppState(s => s.isBriefOnly)
 
   // createUserMessage mints a fresh UUID per call; without memoization, streaming
   // re-renders defeat Message's areMessagePropsEqual (compares uuid) → flicker.

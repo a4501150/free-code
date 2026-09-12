@@ -24,10 +24,8 @@ export function getBuiltInAgents(): AgentDefinition[] {
     return []
   }
 
-  if (feature('COORDINATOR_MODE')) {
-    if (isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE)) {
-      return getCoordinatorAgents()
-    }
+  if (isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE)) {
+    return getCoordinatorAgents()
   }
 
   // One built-in by default. Helper personas (Explore, statusline-setup,

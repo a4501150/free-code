@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type { DomainUserContentBlock } from './types/domain.js'
 import { randomUUID } from 'crypto'
 import last from 'lodash-es/last.js'
@@ -106,22 +105,15 @@ import {
   normalizeMessage,
 } from './utils/queryHelpers.js'
 
-// Dead code elimination: conditional import for coordinator mode
-/* eslint-disable @typescript-eslint/no-require-imports */
-const coordinatorModeModule = feature('COORDINATOR_MODE')
-  ? (require('./coordinator/coordinatorMode.js') as typeof import('./coordinator/coordinatorMode.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as coordinatorModeModule from './coordinator/coordinatorMode.js'
 
 function getCoordinatorUserContext(
   mcpClients: ReadonlyArray<{ name: string }>,
   scratchpadDir?: string,
 ): { [k: string]: string } {
-  return (
-    coordinatorModeModule?.getCoordinatorUserContext(
-      mcpClients,
-      scratchpadDir,
-    ) ?? {}
+  return coordinatorModeModule.getCoordinatorUserContext(
+    mcpClients,
+    scratchpadDir,
   )
 }
 
@@ -299,7 +291,7 @@ export class QueryEngine {
         : null
 
     const coordinatorPrompt =
-      customPrompt === undefined && coordinatorModeModule?.isCoordinatorMode()
+      customPrompt === undefined && coordinatorModeModule.isCoordinatorMode()
         ? coordinatorModeModule.getCoordinatorSystemPrompt()
         : null
     const systemPrompt = asSystemPrompt([

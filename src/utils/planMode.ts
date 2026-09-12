@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { GLOB_TOOL_NAME } from '../tools/GlobTool/prompt.js'
 import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
@@ -102,8 +101,7 @@ export type PlanModeRenderContext = {
 }
 
 export function isInteractivePlanToolEnabled(): boolean {
-  // bun:bundle feature() must appear directly in an if/ternary condition.
-  if (feature('KAIROS') && getAllowedChannels().length > 0) {
+  if (getAllowedChannels().length > 0) {
     return false
   }
   return true

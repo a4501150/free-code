@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import chalk from 'chalk'
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import * as path from 'path'
@@ -398,10 +397,7 @@ function PromptInput({
   // the input bar. viewingAgentTaskId mirrors the gate on both (Spinner.tsx,
   // REPL.tsx) — teammate view falls back to SpinnerWithVerbInner which has
   // its own marginTop, so the gap stays even without ours.
-  const briefOwnsGap = feature('KAIROS')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useAppState(s => s.isBriefOnly) && !viewingAgentTaskId
-    : false
+  const briefOwnsGap = useAppState(s => s.isBriefOnly) && !viewingAgentTaskId
   const mainLoopModel_ = useAppState(s => s.mainLoopModel)
   const mainLoopModelForSession = useAppState(s => s.mainLoopModelForSession)
   const thinkingEnabled = useAppState(s => s.thinkingEnabled)
@@ -489,9 +485,7 @@ function PromptInput({
   // exist. When only local_agent tasks are running (coordinator/fork mode), the
   // pill is absent, so the -1 sentinel would leave nothing visually selected.
   // In that case, skip -1 and treat 0 as the minimum selectable index.
-  const isCoordinatorModeActive = feature('COORDINATOR_MODE')
-    ? isCoordinatorMode()
-    : false
+  const isCoordinatorModeActive = isCoordinatorMode()
   const hasBgTaskPill = useMemo(
     () =>
       Object.values(tasks).some(
@@ -573,8 +567,7 @@ function PromptInput({
   // pill must stay navigable whenever the panel has rows — not just when
   // something is running.
   const tasksFooterVisible =
-    (runningTaskCount > 0 ||
-      (feature('COORDINATOR_MODE') ? coordinatorTaskCount > 0 : false)) &&
+    (runningTaskCount > 0 || coordinatorTaskCount > 0) &&
     !shouldHideTasksFooter(tasks, showSpinnerTree)
   const teamsFooterVisible = cachedTeams.length > 0
 
@@ -1833,14 +1826,12 @@ function PromptInput({
   useKeybinding(
     'history:search',
     () => {
-      if (feature('HISTORY_PICKER')) {
-        setShowHistoryPicker(true)
-        setHelpOpen(false)
-      }
+      setShowHistoryPicker(true)
+      setHelpOpen(false)
     },
     {
       context: 'Global',
-      isActive: feature('HISTORY_PICKER') ? !isModalOverlayActive : false,
+      isActive: !isModalOverlayActive,
     },
   )
 
@@ -1864,27 +1855,23 @@ function PromptInput({
     {
       'footer:up': () => {
         // ↑ scrolls within the coordinator task list before leaving the pill
-        if (feature('COORDINATOR_MODE')) {
-          if (
-            tasksSelected &&
-            coordinatorTaskCount > 0 &&
-            coordinatorTaskIndex > minCoordinatorIndex
-          ) {
-            setCoordinatorTaskIndex(prev => prev - 1)
-            return
-          }
+        if (
+          tasksSelected &&
+          coordinatorTaskCount > 0 &&
+          coordinatorTaskIndex > minCoordinatorIndex
+        ) {
+          setCoordinatorTaskIndex(prev => prev - 1)
+          return
         }
         navigateFooter(-1, true)
       },
       'footer:down': () => {
         // ↓ scrolls within the coordinator task list, never leaves the pill
-        if (feature('COORDINATOR_MODE')) {
-          if (tasksSelected && coordinatorTaskCount > 0) {
-            if (coordinatorTaskIndex < coordinatorTaskCount - 1) {
-              setCoordinatorTaskIndex(prev => prev + 1)
-            }
-            return
+        if (tasksSelected && coordinatorTaskCount > 0) {
+          if (coordinatorTaskIndex < coordinatorTaskCount - 1) {
+            setCoordinatorTaskIndex(prev => prev + 1)
           }
+          return
         }
         if (tasksSelected && !isTeammateMode) {
           setShowBashesDialog(true)
@@ -2362,7 +2349,7 @@ function PromptInput({
     )
   }
 
-  if (feature('HISTORY_PICKER') && showHistoryPicker) {
+  if (showHistoryPicker) {
     return (
       <HistorySearchDialog
         initialQuery={input}

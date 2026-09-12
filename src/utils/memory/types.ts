@@ -1,11 +1,9 @@
-import { feature } from 'bun:bundle'
-
 export const MEMORY_TYPE_VALUES = [
   'User',
   'Project',
   'Local',
   'AutoMem',
-  ...(feature('TEAMMEM') ? (['TeamMem'] as const) : []),
+  'TeamMem',
 ] as const
 
 export type MemoryType = (typeof MEMORY_TYPE_VALUES)[number]

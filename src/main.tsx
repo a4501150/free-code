@@ -15,7 +15,6 @@ import {
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
 startKeychainPrefetch()
 
-import { feature } from 'bun:bundle'
 import {
   Command as CommanderCommand,
   Option,
@@ -84,21 +83,8 @@ import { TEAMMATE_SYSTEM_PROMPT_ADDENDUM } from './utils/swarm/teammatePromptAdd
 import { isPlanModeRequired, setDynamicTeamContext } from './utils/teammate.js'
 import { initializeWarningHandler } from './utils/warningHandler.js'
 import { isWorktreeModeEnabled } from './utils/worktreeModeEnabled.js'
-// Dead code elimination: conditional imports for KAIROS assistant module
-/* eslint-disable @typescript-eslint/no-require-imports */
-const assistantModule = feature('KAIROS')
-  ? (require('./assistant/index.js') as typeof import('./assistant/index.js'))
-  : null
-const kairosGate = feature('KAIROS')
-  ? (require('./services/kairosGate.js') as typeof import('./services/kairosGate.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
-// Dead code elimination: conditional import for COORDINATOR_MODE
-/* eslint-disable @typescript-eslint/no-require-imports */
-const coordinatorModeModule = feature('COORDINATOR_MODE')
-  ? (require('./coordinator/coordinatorMode.js') as typeof import('./coordinator/coordinatorMode.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as assistantModule from './assistant/index.js'
+import * as coordinatorModeModule from './coordinator/coordinatorMode.js'
 
 import { relative, resolve } from 'path'
 import {
@@ -1281,32 +1267,21 @@ async function run(): Promise<CommanderCommand> {
       // until the directory has been explicitly trusted.
       let kairosEnabled = false
       let assistantTeamContext:
-        | Awaited<
-            ReturnType<
-              NonNullable<typeof assistantModule>['initializeAssistantTeam']
-            >
-          >
+        | Awaited<ReturnType<typeof assistantModule.initializeAssistantTeam>>
         | undefined
-      if (
-        feature('KAIROS') &&
-        (options as { assistant?: boolean }).assistant &&
-        assistantModule
-      ) {
+      if ((options as { assistant?: boolean }).assistant) {
         // --assistant daemon mode: force the latch before isAssistantMode()
-        // runs below. The daemon has already checked entitlement — don't make
-        // the child re-check tengu_kairos.
+        // runs below. The daemon has already checked entitlement.
         assistantModule.markAssistantForced()
       }
       if (
-        feature('KAIROS') &&
-        assistantModule?.isAssistantMode() &&
+        assistantModule.isAssistantMode() &&
         // Spawned teammates share the leader's cwd + freecode.json, so
         // isAssistantMode() is true for them too. --agent-id being set
         // means we ARE a spawned teammate (extractTeammateOptions runs
         // ~170 lines later so check the raw commander option) — don't
         // re-init the team or override teammateMode/proactive/brief.
-        !(options as { agentId?: unknown }).agentId &&
-        kairosGate
+        !(options as { agentId?: unknown }).agentId
       ) {
         if (!checkHasTrustDialogAccepted()) {
           // biome-ignore lint/suspicious/noConsole:: intentional console output
@@ -1316,13 +1291,10 @@ async function run(): Promise<CommanderCommand> {
             ),
           )
         } else {
-          // Blocking gate check — returns cached `true` instantly; if disk
-          // cache is false/missing, lazily inits gate check and fetches fresh
-          // (max ~5s). --assistant skips the gate entirely (daemon is
-          // pre-entitled).
-          kairosEnabled =
-            assistantModule.isAssistantForced() ||
-            (await kairosGate.isKairosEnabled())
+          // Assistant mode is enabled unconditionally once the module's own
+          // mode check passes (trust dialog accepted, not a spawned
+          // teammate).
+          kairosEnabled = true
           if (kairosEnabled) {
             const opts = options as { brief?: boolean }
             opts.brief = true
@@ -1378,19 +1350,15 @@ async function run(): Promise<CommanderCommand> {
       // Extract disable slash commands flag
       const disableSlashCommands = options.disableSlashCommands || false
 
-      // Extract tasks mode options (gated on COORDINATOR_MODE build feature)
-      const tasksOption = feature('COORDINATOR_MODE')
-        ? (options as { tasks?: boolean | string }).tasks
-        : undefined
+      // Extract tasks mode options
+      const tasksOption = (options as { tasks?: boolean | string }).tasks
       const taskListId = tasksOption
         ? typeof tasksOption === 'string'
           ? tasksOption
           : DEFAULT_TASKS_MODE_TASK_LIST_ID
         : undefined
-      if (feature('COORDINATOR_MODE')) {
-        if (taskListId) {
-          process.env.CLAUDE_CODE_TASK_LIST_ID = taskListId
-        }
+      if (taskListId) {
+        process.env.CLAUDE_CODE_TASK_LIST_ID = taskListId
       }
 
       // Extract worktree option
@@ -1750,94 +1718,92 @@ async function run(): Promise<CommanderCommand> {
 
       // Channel server allowlist from --channels flag — servers whose
       // inbound push notifications should register this session. The option
-      // is added inside a feature() block so TS doesn't know about it
-      // on the options type — same pattern as --assistant at main.tsx:1824.
+      // is read via a cast since it isn't on the options type — same pattern
+      // as --assistant.
       // devChannels is deferred: showSetupScreens shows a confirmation dialog
       // and only appends to allowedChannels on accept.
       let devChannels: ChannelEntry[] | undefined
-      if (feature('KAIROS')) {
-        // Parse plugin:name@marketplace / server:Y tags into typed entries.
-        // Tag decides trust model downstream: plugin-kind hits marketplace
-        // verification + allowlist, server-kind always fails
-        // allowlist (schema is plugin-only) unless dev flag is set.
-        // Untagged or marketplace-less plugin entries are hard errors —
-        // silently not-matching in the gate would look like channels are
-        // "on" but nothing ever fires.
-        const parseChannelEntries = (
-          raw: string[],
-          flag: string,
-        ): ChannelEntry[] => {
-          const entries: ChannelEntry[] = []
-          const bad: string[] = []
-          for (const c of raw) {
-            if (c.startsWith('plugin:')) {
-              const rest = c.slice(7)
-              const at = rest.indexOf('@')
-              if (at <= 0 || at === rest.length - 1) {
-                bad.push(c)
-              } else {
-                entries.push({
-                  kind: 'plugin',
-                  name: rest.slice(0, at),
-                  marketplace: rest.slice(at + 1),
-                })
-              }
-            } else if (c.startsWith('server:') && c.length > 7) {
-              entries.push({ kind: 'server', name: c.slice(7) })
-            } else {
+      // Parse plugin:name@marketplace / server:Y tags into typed entries.
+      // Tag decides trust model downstream: plugin-kind hits marketplace
+      // verification + allowlist, server-kind always fails
+      // allowlist (schema is plugin-only) unless dev flag is set.
+      // Untagged or marketplace-less plugin entries are hard errors —
+      // silently not-matching in the gate would look like channels are
+      // "on" but nothing ever fires.
+      const parseChannelEntries = (
+        raw: string[],
+        flag: string,
+      ): ChannelEntry[] => {
+        const entries: ChannelEntry[] = []
+        const bad: string[] = []
+        for (const c of raw) {
+          if (c.startsWith('plugin:')) {
+            const rest = c.slice(7)
+            const at = rest.indexOf('@')
+            if (at <= 0 || at === rest.length - 1) {
               bad.push(c)
+            } else {
+              entries.push({
+                kind: 'plugin',
+                name: rest.slice(0, at),
+                marketplace: rest.slice(at + 1),
+              })
             }
+          } else if (c.startsWith('server:') && c.length > 7) {
+            entries.push({ kind: 'server', name: c.slice(7) })
+          } else {
+            bad.push(c)
           }
-          if (bad.length > 0) {
-            process.stderr.write(
-              chalk.red(
-                `${flag} entries must be tagged: ${bad.join(', ')}\n` +
-                  `  plugin:<name>@<marketplace>  — plugin-provided channel (allowlist enforced)\n` +
-                  `  server:<name>                — manually configured MCP server\n`,
-              ),
-            )
-            process.exit(1)
-          }
-          return entries
         }
+        if (bad.length > 0) {
+          process.stderr.write(
+            chalk.red(
+              `${flag} entries must be tagged: ${bad.join(', ')}\n` +
+                `  plugin:<name>@<marketplace>  — plugin-provided channel (allowlist enforced)\n` +
+                `  server:<name>                — manually configured MCP server\n`,
+            ),
+          )
+          process.exit(1)
+        }
+        return entries
+      }
 
-        const channelOpts = options as {
-          channels?: string[]
-          dangerouslyLoadDevelopmentChannels?: string[]
+      const channelOpts = options as {
+        channels?: string[]
+        dangerouslyLoadDevelopmentChannels?: string[]
+      }
+      const rawChannels = channelOpts.channels
+      const rawDev = channelOpts.dangerouslyLoadDevelopmentChannels
+      // Always parse + set. ChannelsNotice reads getAllowedChannels() and
+      // renders the appropriate branch (disabled/noAuth/policyBlocked/
+      // listening) in the startup screen. gateChannelServer() enforces.
+      // --channels works in both interactive and print/SDK modes; dev-channels
+      // stays interactive-only (requires a confirmation dialog).
+      let channelEntries: ChannelEntry[] = []
+      if (rawChannels && rawChannels.length > 0) {
+        channelEntries = parseChannelEntries(rawChannels, '--channels')
+        setAllowedChannels(channelEntries)
+      }
+      if (!isNonInteractiveSession) {
+        if (rawDev && rawDev.length > 0) {
+          devChannels = parseChannelEntries(
+            rawDev,
+            '--dangerously-load-development-channels',
+          )
         }
-        const rawChannels = channelOpts.channels
-        const rawDev = channelOpts.dangerouslyLoadDevelopmentChannels
-        // Always parse + set. ChannelsNotice reads getAllowedChannels() and
-        // renders the appropriate branch (disabled/noAuth/policyBlocked/
-        // listening) in the startup screen. gateChannelServer() enforces.
-        // --channels works in both interactive and print/SDK modes; dev-channels
-        // stays interactive-only (requires a confirmation dialog).
-        let channelEntries: ChannelEntry[] = []
-        if (rawChannels && rawChannels.length > 0) {
-          channelEntries = parseChannelEntries(rawChannels, '--channels')
-          setAllowedChannels(channelEntries)
-        }
-        if (!isNonInteractiveSession) {
-          if (rawDev && rawDev.length > 0) {
-            devChannels = parseChannelEntries(
-              rawDev,
-              '--dangerously-load-development-channels',
-            )
-          }
-        }
-        // Flag-usage telemetry. Plugin identifiers are logged (same tier as
-        // tengu_plugin_installed — public-registry-style names); server-kind
-        // names are not (MCP-server-name tier, opt-in-only elsewhere).
-        // Per-server gate outcomes land in tengu_mcp_channel_gate once
-        // servers connect. Dev entries go through a confirmation dialog after
-        // this — dev_plugins captures what was typed, not what was accepted.
-        if (channelEntries.length > 0 || (devChannels?.length ?? 0) > 0) {
-          const joinPluginIds = (entries: ChannelEntry[]) => {
-            const ids = entries.flatMap(e =>
-              e.kind === 'plugin' ? [`${e.name}@${e.marketplace}`] : [],
-            )
-            return ids.length > 0 ? ids.sort().join(',') : undefined
-          }
+      }
+      // Flag-usage telemetry. Plugin identifiers are logged (same tier as
+      // tengu_plugin_installed — public-registry-style names); server-kind
+      // names are not (MCP-server-name tier, opt-in-only elsewhere).
+      // Per-server gate outcomes land in tengu_mcp_channel_gate once
+      // servers connect. Dev entries go through a confirmation dialog after
+      // this — dev_plugins captures what was typed, not what was accepted.
+      if (channelEntries.length > 0 || (devChannels?.length ?? 0) > 0) {
+        const joinPluginIds = (entries: ChannelEntry[]) => {
+          const ids = entries.flatMap(e =>
+            e.kind === 'plugin' ? [`${e.name}@${e.marketplace}`] : [],
+          )
+          return ids.length > 0 ? ids.sort().join(',') : undefined
         }
       }
 
@@ -1847,7 +1813,7 @@ async function run(): Promise<CommanderCommand> {
       // the tool as enabled when computing the base-tools disallow filter.
       // Conditional require avoids leaking the tool-name string into
       // external builds.
-      if (feature('KAIROS') && baseTools.length > 0) {
+      if (baseTools.length > 0) {
         /* eslint-disable @typescript-eslint/no-require-imports */
         const { BRIEF_TOOL_NAME, LEGACY_BRIEF_TOOL_NAME } =
           require('./tools/BriefTool/prompt.js') as typeof import('./tools/BriefTool/prompt.js')
@@ -2000,10 +1966,7 @@ async function run(): Promise<CommanderCommand> {
 
       // Apply coordinator mode tool filtering for headless path
       // (mirrors useMergedTools.ts filtering for REPL/interactive path)
-      if (
-        feature('COORDINATOR_MODE') &&
-        isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE)
-      ) {
+      if (isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE)) {
         tools = applyCoordinatorToolFilter(tools)
       }
 
@@ -2299,10 +2262,9 @@ async function run(): Promise<CommanderCommand> {
       // which would otherwise leak into --print sessions in the same directory.
       // Runs right after maybeActivateBrief() so all startup opt-in paths fire
       // BEFORE any isBriefEnabled() read below (proactive prompt's
-      // briefVisibility). A persisted 'chat' after a GB kill-switch falls
-      // through (entitlement fails).
+      // briefVisibility). A persisted 'chat' falls through when entitlement
+      // fails.
       if (
-        feature('KAIROS') &&
         !getIsNonInteractiveSession() &&
         !getUserMsgOptIn() &&
         getInitialSettings().defaultView === 'chat'
@@ -2319,18 +2281,15 @@ async function run(): Promise<CommanderCommand> {
       // the generic proactive prompt would tell it to call a tool it can't
       // access and conflict with delegation instructions.
       if (
-        feature('KAIROS') &&
         ((options as { proactive?: boolean }).proactive ||
           isEnvTruthy(process.env.CLAUDE_CODE_PROACTIVE)) &&
-        !coordinatorModeModule?.isCoordinatorMode()
+        !coordinatorModeModule.isCoordinatorMode()
       ) {
         /* eslint-disable @typescript-eslint/no-require-imports */
-        const briefVisibility = feature('KAIROS')
-          ? (
-              require('./tools/BriefTool/BriefTool.js') as typeof import('./tools/BriefTool/BriefTool.js')
-            ).isBriefEnabled()
-            ? 'Call SendUserMessage at checkpoints to mark where things stand.'
-            : 'The user will see any text you output.'
+        const briefVisibility = (
+          require('./tools/BriefTool/BriefTool.js') as typeof import('./tools/BriefTool/BriefTool.js')
+        ).isBriefEnabled()
+          ? 'Call SendUserMessage at checkpoints to mark where things stand.'
           : 'The user will see any text you output.'
         /* eslint-enable @typescript-eslint/no-require-imports */
         const proactivePrompt = `\n# Proactive Mode\n\nYou are in proactive mode. On your first wake-up, briefly greet the user and ask what they would like to work on; do not begin work until they provide direction. Once a task exists, take initiative — explore, act, and make progress without waiting for further instructions.\n\nYou will receive periodic <tick> prompts. These are check-ins. Do whatever seems most useful for the active task, or call Sleep if there's nothing to do. ${briefVisibility}`
@@ -2339,7 +2298,7 @@ async function run(): Promise<CommanderCommand> {
           : proactivePrompt
       }
 
-      if (feature('KAIROS') && kairosEnabled && assistantModule) {
+      if (kairosEnabled) {
         const assistantAddendum =
           assistantModule.getAssistantSystemPromptAddendum()
         appendSystemPrompt = appendSystemPrompt
@@ -2380,7 +2339,6 @@ async function run(): Promise<CommanderCommand> {
 
         // Check for pending agent memory snapshot updates (only for --agent mode, ant-only)
         if (
-          feature('AGENT_MEMORY_SNAPSHOT') &&
           mainThreadAgentDefinition &&
           isCustomAgent(mainThreadAgentDefinition) &&
           mainThreadAgentDefinition.memory &&
@@ -2638,10 +2596,9 @@ async function run(): Promise<CommanderCommand> {
             : 'flag'
           : undefined,
         thinkingConfig,
-        assistantActivationPath:
-          feature('KAIROS') && kairosEnabled
-            ? assistantModule?.getAssistantActivationPath()
-            : undefined,
+        assistantActivationPath: kairosEnabled
+          ? assistantModule.getAssistantActivationPath()
+          : undefined,
       })
 
       // Register PID file for concurrent-session detection (~/.freecode/sessions/)
@@ -2656,14 +2613,12 @@ async function run(): Promise<CommanderCommand> {
         // Gate on registration: a subagent or a subcommand does not own a
         // top-level session and must not publish an attach socket. Not
         // awaited, so a slow listener never delays first render.
-        if (feature('WEBUI')) {
-          const { startProcessAttachHost } =
-            await import('./webui/attach/hostSingleton.js')
-          startProcessAttachHost({
-            cwd: getOriginalCwd(),
-            entrypoint: 'repl',
-          })
-        }
+        const { startProcessAttachHost } =
+          await import('./webui/attach/hostSingleton.js')
+        startProcessAttachHost({
+          cwd: getOriginalCwd(),
+          entrypoint: 'repl',
+        })
         void countConcurrentSessions().then(count => {})
       })
 
@@ -2765,7 +2720,7 @@ async function run(): Promise<CommanderCommand> {
           // scheduled tasks and Agent-tool calls ran synchronously — N
           // overdue cron tasks on spawn = N serial subagent turns blocking
           // user input. Computed at :1620, well before this branch.
-          ...(feature('KAIROS') ? { kairosEnabled } : {}),
+          kairosEnabled,
         }
 
         // Init app state
@@ -3051,7 +3006,7 @@ async function run(): Promise<CommanderCommand> {
       }
       // All startup opt-in paths (--tools, --brief, defaultView) have fired
       // above; initialIsBriefOnly just reads the resulting state.
-      const initialIsBriefOnly = feature('KAIROS') ? getUserMsgOptIn() : false
+      const initialIsBriefOnly = getUserMsgOptIn()
       const initialSettings = getInitialSettings()
       const initialState: AppState = {
         settings: initialSettings,
@@ -3139,13 +3094,12 @@ async function run(): Promise<CommanderCommand> {
         activeOverlays: new Set<string>(),
         fastMode: getInitialFastModeSetting(resolvedInitialModel),
         // Compute teamContext synchronously to avoid useEffect setState during render.
-        // KAIROS: assistantTeamContext takes precedence — set earlier in the
-        // KAIROS block so Agent(name: "foo") can spawn in-process teammates
+        // assistantTeamContext takes precedence — set earlier in the assistant
+        // startup block so Agent(name: "foo") can spawn in-process teammates
         // without TeamCreate. computeInitialTeamContext() is for tmux-spawned
         // teammates reading their own identity, not the assistant-mode leader.
-        teamContext: (feature('KAIROS')
-          ? (assistantTeamContext ?? computeInitialTeamContext?.())
-          : computeInitialTeamContext?.()) as any,
+        teamContext: (assistantTeamContext ??
+          computeInitialTeamContext?.()) as any,
       }
 
       // Add CLI initial prompt to history
@@ -3436,13 +3390,9 @@ async function run(): Promise<CommanderCommand> {
         maybeActivateProactive(options)
         maybeActivateBrief(options)
         // Persist the current mode for fresh sessions so future resumes know what mode was used
-        if (feature('COORDINATOR_MODE')) {
-          saveMode(
-            coordinatorModeModule?.isCoordinatorMode()
-              ? 'coordinator'
-              : 'normal',
-          )
-        }
+        saveMode(
+          coordinatorModeModule.isCoordinatorMode() ? 'coordinator' : 'normal',
+        )
 
         const initialMessages =
           hookMessages.length > 0 ? hookMessages : undefined
@@ -3482,59 +3432,49 @@ async function run(): Promise<CommanderCommand> {
     ).hideHelp(),
   )
 
-  if (feature('COORDINATOR_MODE')) {
-    program.addOption(
-      new Option(
-        '--tasks [id]',
-        'Tasks mode: watch for tasks and auto-process them. Optional id is used as both the task list ID and agent ID (defaults to "tasklist").',
-      )
-        .argParser(String)
-        .hideHelp(),
+  program.addOption(
+    new Option(
+      '--tasks [id]',
+      'Tasks mode: watch for tasks and auto-process them. Optional id is used as both the task list ID and agent ID (defaults to "tasklist").',
     )
-    program.option(
-      '--agent-teams',
-      'Force Claude to use multi-agent mode for solving problems',
-      () => true,
-    )
-  }
+      .argParser(String)
+      .hideHelp(),
+  )
+  program.option(
+    '--agent-teams',
+    'Force Claude to use multi-agent mode for solving problems',
+    () => true,
+  )
 
   program.addOption(
     new Option('--enable-auto-mode', 'Opt in to auto mode').hideHelp(),
   )
 
-  if (feature('KAIROS')) {
-    program.addOption(
-      new Option('--proactive', 'Start in proactive autonomous mode'),
-    )
-  }
+  program.addOption(
+    new Option('--proactive', 'Start in proactive autonomous mode'),
+  )
 
-  if (feature('KAIROS')) {
-    program.addOption(
-      new Option(
-        '--brief',
-        'Enable SendUserMessage tool for agent-to-user communication',
-      ),
-    )
-  }
-  if (feature('KAIROS')) {
-    program.addOption(
-      new Option('--assistant', 'Force assistant daemon mode').hideHelp(),
-    )
-  }
-  if (feature('KAIROS')) {
-    program.addOption(
-      new Option(
-        '--channels <servers...>',
-        'MCP servers whose channel notifications (inbound push) should register this session. Space-separated server names.',
-      ).hideHelp(),
-    )
-    program.addOption(
-      new Option(
-        '--dangerously-load-development-channels <servers...>',
-        'Load channel servers not on the approved allowlist. For local channel development only. Shows a confirmation dialog at startup.',
-      ).hideHelp(),
-    )
-  }
+  program.addOption(
+    new Option(
+      '--brief',
+      'Enable SendUserMessage tool for agent-to-user communication',
+    ),
+  )
+  program.addOption(
+    new Option('--assistant', 'Force assistant daemon mode').hideHelp(),
+  )
+  program.addOption(
+    new Option(
+      '--channels <servers...>',
+      'MCP servers whose channel notifications (inbound push) should register this session. Space-separated server names.',
+    ).hideHelp(),
+  )
+  program.addOption(
+    new Option(
+      '--dangerously-load-development-channels <servers...>',
+      'Load channel servers not on the approved allowlist. For local channel development only. Shows a confirmation dialog at startup.',
+    ).hideHelp(),
+  )
 
   // Teammate identity options (set by leader when spawning tmux teammates)
   // These replace the CLAUDE_CODE_* environment variables
@@ -3580,14 +3520,12 @@ async function run(): Promise<CommanderCommand> {
     ).hideHelp(),
   )
 
-  if (feature('HARD_FAIL')) {
-    program.addOption(
-      new Option(
-        '--hard-fail',
-        'Crash on logError calls instead of silently logging',
-      ).hideHelp(),
-    )
-  }
+  program.addOption(
+    new Option(
+      '--hard-fail',
+      'Crash on logError calls instead of silently logging',
+    ).hideHelp(),
+  )
 
   profileCheckpoint('run_main_options_built')
 
@@ -4306,9 +4244,8 @@ async function logTenguInit({
 
 function maybeActivateProactive(options: unknown): void {
   if (
-    feature('KAIROS') &&
-    ((options as { proactive?: boolean }).proactive ||
-      isEnvTruthy(process.env.CLAUDE_CODE_PROACTIVE))
+    (options as { proactive?: boolean }).proactive ||
+    isEnvTruthy(process.env.CLAUDE_CODE_PROACTIVE)
   ) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const proactiveModule = require('./proactive/index.js')
@@ -4319,7 +4256,6 @@ function maybeActivateProactive(options: unknown): void {
 }
 
 function maybeActivateBrief(options: unknown): void {
-  if (!feature('KAIROS')) return
   const briefFlag = (options as { brief?: boolean }).brief
   const briefEnv = isEnvTruthy(process.env.CLAUDE_CODE_BRIEF)
   if (!briefFlag && !briefEnv) return

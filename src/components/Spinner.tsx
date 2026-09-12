@@ -2,7 +2,6 @@
 import { Box, Text } from '../ink.js'
 import * as React from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { feature } from 'bun:bundle'
 import { stringWidth } from '../ink/stringWidth.js'
 import { getGraphemeSegmenter } from '../utils/intl.js'
 
@@ -125,16 +124,15 @@ export function SpinnerWithVerb(props: Props): React.ReactNode {
   // teammate view needs the real spinner (which shows teammate status).
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   // Hoisted to mount-time — this component re-renders at animation framerate.
-  const briefEnvEnabled = feature('KAIROS')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useMemo(() => isEnvTruthy(process.env.CLAUDE_CODE_BRIEF), [])
-    : false
+  const briefEnvEnabled = useMemo(
+    () => isEnvTruthy(process.env.CLAUDE_CODE_BRIEF),
+    [],
+  )
 
   // Runtime gate mirrors isBriefEnabled() but inlined — importing from
   // BriefTool.ts would leak tool-name strings into external builds. Single
   // spinner instance → hooks stay unconditional (two subs, negligible).
   if (
-    feature('KAIROS') &&
     (getKairosActive() || getUserMsgOptIn()) &&
     isBriefOnly &&
     !viewingAgentTaskId

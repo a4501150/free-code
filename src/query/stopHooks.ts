@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { getShortcutDisplay } from '../keybindings/shortcutFormat.js'
 import { isExtractModeActive } from '../memdir/paths.js'
 import type { ToolUseContext } from '../Tool.js'
@@ -33,10 +32,7 @@ import type { SystemPrompt } from '../utils/systemPromptType.js'
 import { getTaskListId, listTasks } from '../utils/tasks.js'
 import { getAgentName, getTeamName, isTeammate } from '../utils/teammate.js'
 
-import * as extractMemoriesNs from '../services/extractMemories/extractMemories.js'
-const extractMemoriesModule = feature('EXTRACT_MEMORIES')
-  ? extractMemoriesNs
-  : null
+import { executeExtractMemories } from '../services/extractMemories/extractMemories.js'
 import type { QuerySource } from '../constants/querySource.js'
 import { executeAutoDream } from '../services/autoDream/autoDream.js'
 import { executePromptSuggestion } from '../services/PromptSuggestion/promptSuggestion.js'
@@ -94,15 +90,11 @@ export async function* handleStopHooks(
     if (!isEnvDefinedFalsy(process.env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION)) {
       void executePromptSuggestion(stopHookContext)
     }
-    if (
-      feature('EXTRACT_MEMORIES') &&
-      !toolUseContext.agentId &&
-      isExtractModeActive()
-    ) {
+    if (!toolUseContext.agentId && isExtractModeActive()) {
       // Fire-and-forget in both interactive and non-interactive. For -p/SDK,
       // print.ts drains the in-flight promise after flushing the response
       // but before gracefulShutdownSync (see drainPendingExtraction).
-      void extractMemoriesModule!.executeExtractMemories(
+      void executeExtractMemories(
         stopHookContext,
         toolUseContext.appendSystemMessage,
       )

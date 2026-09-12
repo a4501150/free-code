@@ -1,10 +1,4 @@
-import { feature } from 'bun:bundle'
-// Dead code elimination: conditional import for coordinator mode
-/* eslint-disable @typescript-eslint/no-require-imports */
-const coordinatorModeModule = feature('COORDINATOR_MODE')
-  ? (require('../coordinator/coordinatorMode.js') as typeof import('../coordinator/coordinatorMode.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as coordinatorModeModule from '../coordinator/coordinatorMode.js'
 import React from 'react'
 import { useTerminalSize } from 'src/hooks/useTerminalSize.js'
 import { getOriginalCwd } from '../bootstrap/state.js'
@@ -275,24 +269,22 @@ export function ResumeConversation({
         throw new Error('Failed to load conversation')
       }
 
-      if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
-        const warning = coordinatorModeModule.matchSessionMode(result.mode)
-        if (warning) {
-          const { getAgentDefinitionsWithOverrides, getActiveAgentsFromList } =
-            loadAgentsDirNs
-          getAgentDefinitionsWithOverrides.cache.clear?.()
-          const freshAgentDefs =
-            await getAgentDefinitionsWithOverrides(getOriginalCwd())
-          setAppState(prev => ({
-            ...prev,
-            agentDefinitions: {
-              ...freshAgentDefs,
-              allAgents: freshAgentDefs.allAgents,
-              activeAgents: getActiveAgentsFromList(freshAgentDefs.allAgents),
-            },
-          }))
-          result.messages.push(createSystemMessage(warning, 'warning'))
-        }
+      const warning = coordinatorModeModule.matchSessionMode(result.mode)
+      if (warning) {
+        const { getAgentDefinitionsWithOverrides, getActiveAgentsFromList } =
+          loadAgentsDirNs
+        getAgentDefinitionsWithOverrides.cache.clear?.()
+        const freshAgentDefs =
+          await getAgentDefinitionsWithOverrides(getOriginalCwd())
+        setAppState(prev => ({
+          ...prev,
+          agentDefinitions: {
+            ...freshAgentDefs,
+            allAgents: freshAgentDefs.allAgents,
+            activeAgents: getActiveAgentsFromList(freshAgentDefs.allAgents),
+          },
+        }))
+        result.messages.push(createSystemMessage(warning, 'warning'))
       }
 
       await adoptResumedSessionAtStartup(result, {
@@ -307,11 +299,9 @@ export function ResumeConversation({
       )
       setAppState(prev => ({ ...prev, agent: resolvedAgentDef?.agentType }))
 
-      if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
-        saveMode(
-          coordinatorModeModule.isCoordinatorMode() ? 'coordinator' : 'normal',
-        )
-      }
+      saveMode(
+        coordinatorModeModule.isCoordinatorMode() ? 'coordinator' : 'normal',
+      )
 
       const standaloneAgentContext = computeStandaloneAgentContext(
         result.agentName,

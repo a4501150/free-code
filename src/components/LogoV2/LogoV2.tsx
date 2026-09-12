@@ -41,15 +41,7 @@ import { checkForReleaseNotesSync } from '../../utils/releaseNotes.js'
 import { isEnvTruthy } from 'src/utils/envUtils.js'
 import { EmergencyTip } from './EmergencyTip.js'
 import { VoiceModeNotice } from './VoiceModeNotice.js'
-import { feature } from 'bun:bundle'
-
-// Conditional import so ChannelsNotice.tsx tree-shakes when KAIROS is false.
-// A module-scope helper component inside a feature() ternary does NOT
-// tree-shake (docs/feature-gating.md); the namespace import + DCE eliminates
-// the whole file. VoiceModeNotice uses the unsafe helper pattern but VOICE_MODE
-// is external: true so it's moot there.
-import * as channelsNoticeNs from './ChannelsNotice.js'
-const ChannelsNoticeModule = feature('KAIROS') ? channelsNoticeNs : null
+import { ChannelsNotice } from './ChannelsNotice.js'
 import { plural } from '../../utils/stringUtils.js'
 import { useAppState } from '../../state/AppState.js'
 import { getEffortSuffix } from '../../utils/effort.js'
@@ -122,7 +114,7 @@ export function LogoV2(): React.ReactNode {
       <>
         <CondensedLogo />
         <VoiceModeNotice />
-        {ChannelsNoticeModule && <ChannelsNoticeModule.ChannelsNotice />}
+        <ChannelsNotice />
         {isDebugMode() && (
           <Box paddingLeft={2} flexDirection="column">
             <Text color="warning">Debug mode enabled</Text>
@@ -212,7 +204,7 @@ export function LogoV2(): React.ReactNode {
           </Box>
         </OffscreenFreeze>
         <VoiceModeNotice />
-        {ChannelsNoticeModule && <ChannelsNoticeModule.ChannelsNotice />}
+        <ChannelsNotice />
       </>
     )
   }
@@ -319,7 +311,7 @@ export function LogoV2(): React.ReactNode {
         </Box>
       </OffscreenFreeze>
       <VoiceModeNotice />
-      {ChannelsNoticeModule && <ChannelsNoticeModule.ChannelsNotice />}
+      <ChannelsNotice />
       {isDebugMode() && (
         <Box paddingLeft={2} flexDirection="column">
           <Text color="warning">Debug mode enabled</Text>

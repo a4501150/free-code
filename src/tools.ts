@@ -13,15 +13,12 @@ import { WebFetchTool } from './tools/WebFetchTool/WebFetchTool.js'
 import { TaskStopTool } from './tools/TaskStopTool/TaskStopTool.js'
 import { BackgroundTaskListTool } from './tools/BackgroundTaskListTool/BackgroundTaskListTool.js'
 import { BriefTool } from './tools/BriefTool/BriefTool.js'
-// Feature-gated tool imports. `feature()` is a Bun build-time macro, so any
-// namespace not reached under a disabled flag is DCE'd along with its
-// transitive imports.
-import * as sleepToolMod from './tools/SleepTool/SleepTool.js'
-import * as cronCreateMod from './tools/ScheduleCronTool/CronCreateTool.js'
-import * as cronDeleteMod from './tools/ScheduleCronTool/CronDeleteTool.js'
-import * as cronListMod from './tools/ScheduleCronTool/CronListTool.js'
-import * as sendUserFileMod from './tools/SendUserFileTool/SendUserFileTool.js'
-import * as pushNotificationMod from './tools/PushNotificationTool/PushNotificationTool.js'
+import { SleepTool } from './tools/SleepTool/SleepTool.js'
+import { CronCreateTool } from './tools/ScheduleCronTool/CronCreateTool.js'
+import { CronDeleteTool } from './tools/ScheduleCronTool/CronDeleteTool.js'
+import { CronListTool } from './tools/ScheduleCronTool/CronListTool.js'
+import { SendUserFileTool } from './tools/SendUserFileTool/SendUserFileTool.js'
+import { PushNotificationTool } from './tools/PushNotificationTool/PushNotificationTool.js'
 // REPLTool is not shipped in the OSS source snapshot but may be
 // supplied by downstream builds via this path. Keep a try/catch require
 // so its absence is tolerated silently.
@@ -33,20 +30,7 @@ try {
   /* REPLTool not available */
 }
 /* eslint-enable @typescript-eslint/no-require-imports */
-const SleepTool = feature('KAIROS') ? sleepToolMod.SleepTool : null
-const cronTools = feature('AGENT_TRIGGERS')
-  ? [
-      cronCreateMod.CronCreateTool,
-      cronDeleteMod.CronDeleteTool,
-      cronListMod.CronListTool,
-    ]
-  : []
-const SendUserFileTool = feature('KAIROS')
-  ? sendUserFileMod.SendUserFileTool
-  : null
-const PushNotificationTool = feature('KAIROS')
-  ? pushNotificationMod.PushNotificationTool
-  : null
+const cronTools = [CronCreateTool, CronDeleteTool, CronListTool]
 import { TaskOutputTool } from './tools/TaskOutputTool/TaskOutputTool.js'
 import { WebSearchTool } from './tools/WebSearchTool/WebSearchTool.js'
 import { ExitPlanModeTool } from './tools/ExitPlanModeTool/ExitPlanModeTool.js'
@@ -80,9 +64,6 @@ export {
 } from './constants/tools.js'
 import * as coordinatorModeMod from './coordinator/coordinatorMode.js'
 import * as powerShellMod from './tools/PowerShellTool/PowerShellTool.js'
-const coordinatorModeModule = feature('COORDINATOR_MODE')
-  ? coordinatorModeMod
-  : null
 import type { ToolPermissionContext } from './Tool.js'
 import { shouldPreferBashForSearch } from './utils/embeddedTools.js'
 import { isEnvTruthy } from './utils/envUtils.js'
@@ -164,11 +145,11 @@ export function getAllBaseTools(): Tools {
     ...(isAgentSwarmsEnabled() ? [TeamCreateTool, TeamDeleteTool] : []),
     ...(VerifyPlanExecutionTool ? [VerifyPlanExecutionTool] : []),
     ...(isReplModeEnabled() && REPLTool ? [REPLTool] : []),
-    ...(SleepTool ? [SleepTool] : []),
+    SleepTool,
     ...cronTools,
     BriefTool,
-    ...(SendUserFileTool ? [SendUserFileTool] : []),
-    ...(PushNotificationTool ? [PushNotificationTool] : []),
+    SendUserFileTool,
+    PushNotificationTool,
     ...(getPowerShellTool() ? [getPowerShellTool()] : []),
     ListMcpResourcesTool,
     ReadMcpResourceTool,
@@ -189,10 +170,7 @@ export const getTools = (permissionContext: ToolPermissionContext): Tools => {
     // below which also hides REPL_ONLY_TOOLS when REPL is enabled.
     if (isReplModeEnabled() && REPLTool) {
       const replSimple: Tool[] = [REPLTool]
-      if (
-        feature('COORDINATOR_MODE') &&
-        coordinatorModeModule?.isCoordinatorMode()
-      ) {
+      if (coordinatorModeMod.isCoordinatorMode()) {
         replSimple.push(TaskStopTool, SendMessageTool)
       }
       return filterToolsByDenyRules(replSimple, permissionContext)
@@ -201,10 +179,7 @@ export const getTools = (permissionContext: ToolPermissionContext): Tools => {
     // When coordinator mode is also active, include AgentTool and TaskStopTool
     // so the coordinator gets Task+TaskStop (via useMergedTools filtering) and
     // workers get Bash/Read/Edit (via filterToolsForAgent filtering).
-    if (
-      feature('COORDINATOR_MODE') &&
-      coordinatorModeModule?.isCoordinatorMode()
-    ) {
+    if (coordinatorModeMod.isCoordinatorMode()) {
       simpleTools.push(AgentTool, TaskStopTool, SendMessageTool)
     }
     return filterToolsByDenyRules(simpleTools, permissionContext)

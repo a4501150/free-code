@@ -1,16 +1,9 @@
-import { feature } from 'bun:bundle'
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
 import { TASK_OUTPUT_TOOL_NAME } from '../../tools/TaskOutputTool/constants.js'
 import { TASK_STOP_TOOL_NAME } from '../../tools/TaskStopTool/prompt.js'
 import type { PermissionRuleValue } from './PermissionRule.js'
 
-// Dead code elimination: ant-only tool names are conditionally referenced so
-// their strings don't leak into external builds.
-import * as briefToolPromptNs from '../../tools/BriefTool/prompt.js'
-
-const BRIEF_TOOL_NAME: string | null = feature('KAIROS')
-  ? briefToolPromptNs.BRIEF_TOOL_NAME
-  : null
+import { BRIEF_TOOL_NAME } from '../../tools/BriefTool/prompt.js'
 
 // Maps legacy tool names to their current canonical names.
 // When a tool is renamed, add old → new here so permission rules,
@@ -22,7 +15,7 @@ const LEGACY_TOOL_NAME_ALIASES: Record<string, string> = {
   TaskOutput: TASK_OUTPUT_TOOL_NAME,
   AgentOutputTool: TASK_OUTPUT_TOOL_NAME,
   BashOutputTool: TASK_OUTPUT_TOOL_NAME,
-  ...(feature('KAIROS') && BRIEF_TOOL_NAME ? { Brief: BRIEF_TOOL_NAME } : {}),
+  Brief: BRIEF_TOOL_NAME,
 }
 
 export function normalizeLegacyToolName(name: string): string {

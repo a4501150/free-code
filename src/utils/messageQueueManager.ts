@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type { DomainUserContentBlock } from '../types/domain.js'
 import type { Permutations } from 'src/types/utils.js'
 import { getSessionId } from '../bootstrap/state.js'
@@ -366,7 +365,7 @@ export function isQueuedCommandEditable(cmd: QueuedCommand): boolean {
  * sees what arrived) but stay non-editable (raw XML).
  */
 export function isQueuedCommandVisible(cmd: QueuedCommand): boolean {
-  if (feature('KAIROS') && cmd.origin?.kind === 'channel') return true
+  if (cmd.origin?.kind === 'channel') return true
   return isQueuedCommandEditable(cmd)
 }
 

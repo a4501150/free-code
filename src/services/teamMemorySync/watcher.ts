@@ -7,7 +7,6 @@
  * fs.watch so first-time writes to a fresh repo get picked up.
  */
 
-import { feature } from 'bun:bundle'
 import { type FSWatcher, watch } from 'fs'
 import { mkdir, stat } from 'fs/promises'
 import { join } from 'path'
@@ -241,9 +240,6 @@ async function startFileWatcher(teamDir: string): Promise<void> {
  * a fresh partner can sit in the bootstrap dead zone for days.
  */
 export async function startTeamMemoryWatcher(): Promise<void> {
-  if (!feature('TEAMMEM')) {
-    return
-  }
   if (!isTeamMemoryEnabled() || !isTeamMemorySyncAvailable()) {
     return
   }
@@ -336,9 +332,9 @@ export async function stopTeamMemoryWatcher(): Promise<void> {
 
 /**
  * Test-only: reset module state and optionally seed syncState.
- * The feature('TEAMMEM') gate at the top of startTeamMemoryWatcher() is
- * always false in bun test, so tests can't set syncState through the normal
- * path. This helper lets tests drive notifyTeamMemoryWrite() /
+ * startTeamMemoryWatcher() performs a real sync (network + fs.watch), so
+ * tests can't set syncState through the normal path.
+ * This helper lets tests drive notifyTeamMemoryWrite() /
  * stopTeamMemoryWatcher() directly.
  *
  * `skipWatcher: true` marks the watcher as already-started without actually
@@ -362,8 +358,8 @@ export function _resetWatcherStateForTesting(opts?: {
 
 /**
  * Test-only: start the real fs.watch on a specified directory.
- * Used by the fd-count regression test — startTeamMemoryWatcher() is gated
- * by feature('TEAMMEM') which is false under bun test.
+ * Used by the fd-count regression test — startTeamMemoryWatcher() performs a
+ * real sync first, which bun test can't do.
  */
 export function _startFileWatcherForTesting(dir: string): Promise<void> {
   return startFileWatcher(dir)

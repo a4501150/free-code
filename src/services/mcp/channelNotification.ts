@@ -10,7 +10,7 @@
  * The model sees where the message came from and decides which tool to reply
  * with (the channel's MCP tool, SendUserMessage, or both).
  *
- * feature('KAIROS'). Runtime gate tengu_harbor.
+ * Runtime gate tengu_harbor.
  */
 
 import type { ServerCapabilities } from '@modelcontextprotocol/sdk/types.js'
@@ -131,8 +131,7 @@ export function findChannelEntry(
 }
 
 /**
- * Gate an MCP server's channel-notification path. Caller checks
- * feature('KAIROS') first (build-time elimination). Gate order: capability
+ * Gate an MCP server's channel-notification path. Gate order: capability
  * → runtime gate (tengu_harbor) → session --channels → marketplace →
  * allowlist.
  *

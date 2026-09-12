@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import React, {
   useContext,
   useEffect,
@@ -16,11 +15,7 @@ import {
 import { applySettingsChange } from '../utils/settings/applySettingsChange.js'
 import type { SettingSource } from '../utils/settings/constants.js'
 import { createStore } from './store.js'
-import * as voiceNs from '../context/voice.js'
-
-// DCE: voice context is ant-only. External builds get a passthrough.
-const VoiceProvider: (props: { children: React.ReactNode }) => React.ReactNode =
-  feature('VOICE_MODE') ? voiceNs.VoiceProvider : ({ children }) => children
+import { VoiceProvider } from '../context/voice.js'
 import {
   type AppState,
   type AppStateStore,

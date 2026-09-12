@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import type { DomainStopReason, DomainUsage } from '../../types/domain.js'
 import { DomainTransportError } from './domain-errors.js'
 import {
@@ -413,7 +412,7 @@ export function logAPISuccessAndDuration({
       for (const block of msg.message.content) {
         if (block.type === 'text') {
           textLen += block.text.length
-        } else if (feature('CONNECTOR_TEXT') && isConnectorTextBlock(block)) {
+        } else if (isConnectorTextBlock(block)) {
           connectorCount++
         } else if (block.type === 'reasoning') {
           thinkingLen += block.text.length

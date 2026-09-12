@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { readdir, readFile, stat } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
@@ -157,7 +156,7 @@ const isHardFailMode = memoize((): boolean => {
 
 export function logError(error: unknown): void {
   const err = toError(error)
-  if (feature('HARD_FAIL') && isHardFailMode()) {
+  if (isHardFailMode()) {
     // biome-ignore lint/suspicious/noConsole:: intentional crash output
     console.error('[HARD FAIL] logError called with:', err.stack || err.message)
     // eslint-disable-next-line custom-rules/no-process-exit

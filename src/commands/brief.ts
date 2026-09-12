@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { getKairosActive, setUserMsgOptIn } from '../bootstrap/state.js'
 import type { ToolUseContext } from '../Tool.js'
 import { isBriefEntitled } from '../tools/BriefTool/BriefTool.js'
@@ -14,12 +13,7 @@ const brief = {
   type: 'local-jsx',
   name: 'brief',
   description: 'Toggle brief-only mode',
-  isEnabled: () => {
-    if (feature('KAIROS')) {
-      return getInitialSettings()?.briefSlashCommand ?? true
-    }
-    return false
-  },
+  isEnabled: () => getInitialSettings()?.briefSlashCommand ?? true,
   immediate: true,
   async call(
     onDone: LocalJSXCommandOnDone,

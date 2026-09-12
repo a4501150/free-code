@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { useCallback } from 'react'
 import { randomUUID } from 'crypto'
 import { count } from '../../utils/array.js'
@@ -86,24 +85,18 @@ import type {
   StreamingThinking,
 } from '../../utils/messages.js'
 
-// Dead code elimination: conditional import for coordinator mode
-/* eslint-disable @typescript-eslint/no-require-imports */
-const coordinatorModeModule = feature('COORDINATOR_MODE')
-  ? (require('../../coordinator/coordinatorMode.js') as typeof import('../../coordinator/coordinatorMode.js'))
-  : null
-const getCoordinatorUserContext: (
+import * as coordinatorModeModule from '../../coordinator/coordinatorMode.js'
+import * as proactiveModule from '../../proactive/index.js'
+
+function getCoordinatorUserContext(
   mcpClients: ReadonlyArray<{ name: string }>,
   scratchpadDir?: string,
-) => { [k: string]: string } =
-  coordinatorModeModule?.getCoordinatorUserContext ?? (() => ({}))
-/* eslint-enable @typescript-eslint/no-require-imports */
-
-// Dead code elimination: conditional import for loop mode
-/* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule = feature('KAIROS')
-  ? require('../../proactive/index.js')
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+): { [k: string]: string } {
+  return coordinatorModeModule.getCoordinatorUserContext(
+    mcpClients,
+    scratchpadDir,
+  )
+}
 
 export function useReplQueryExecution({
   messagesRef,
@@ -224,9 +217,7 @@ export function useReplQueryExecution({
             ])
             setConversationId(randomUUID())
             scrollRef.current?.scrollToBottom()
-            if (feature('KAIROS')) {
-              proactiveModule?.setContextBlocked(false)
-            }
+            proactiveModule.setContextBlocked(false)
           } else if (
             newMessage.type === 'progress' &&
             isEphemeralToolProgress(newMessage.data.type)
@@ -247,16 +238,14 @@ export function useReplQueryExecution({
           } else {
             setMessages(oldMessages => [...oldMessages, newMessage])
           }
-          if (feature('KAIROS')) {
-            if (
-              newMessage.type === 'assistant' &&
-              'isApiErrorMessage' in newMessage &&
-              newMessage.isApiErrorMessage
-            ) {
-              proactiveModule?.setContextBlocked(true)
-            } else if (newMessage.type === 'assistant') {
-              proactiveModule?.setContextBlocked(false)
-            }
+          if (
+            newMessage.type === 'assistant' &&
+            'isApiErrorMessage' in newMessage &&
+            newMessage.isApiErrorMessage
+          ) {
+            proactiveModule.setContextBlocked(true)
+          } else if (newMessage.type === 'assistant') {
+            proactiveModule.setContextBlocked(false)
           }
         },
         newContent => {
@@ -372,9 +361,7 @@ export function useReplQueryExecution({
       if (!shouldQuery) {
         if (newMessages.some(isCompactBoundaryMessage)) {
           setConversationId(randomUUID())
-          if (feature('KAIROS')) {
-            proactiveModule?.setContextBlocked(false)
-          }
+          proactiveModule.setContextBlocked(false)
         }
         resetLoadingState()
         setAbortController(null)

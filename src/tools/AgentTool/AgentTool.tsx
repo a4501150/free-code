@@ -125,11 +125,7 @@ import {
   userFacingNameBackgroundColor,
 } from './UI.js'
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule = feature('KAIROS')
-  ? (require('../../proactive/index.js') as typeof import('../../proactive/index.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import * as proactiveModule from '../../proactive/index.js'
 
 // Progress display constants (for showing background hint)
 const PROGRESS_THRESHOLD_MS = 2000 // Show background hint after 2 seconds
@@ -227,12 +223,9 @@ export const inputSchema = (() => {
   // optional fields the build doesn't support keeps them out of the JSON
   // schema the model sees. Use ternaries (const) instead of `let` reassignment
   // so the union return type is preserved through each step.
-  const afterKairosGate = !feature('KAIROS')
-    ? fullInputSchema.omit({ cwd: true })
-    : fullInputSchema
   const afterWorktreeGate = !feature('WORKTREE_MODE')
-    ? afterKairosGate.omit({ isolation: true })
-    : afterKairosGate
+    ? fullInputSchema.omit({ isolation: true })
+    : fullInputSchema
 
   // isAgentSwarmsEnabled() / isBackgroundTasksDisabled can read from disk and
   // flip mid-session. The optional-only fields stripped here (name, team_name,
@@ -252,7 +245,8 @@ export const inputSchema = (() => {
 type InputSchema = typeof inputSchema
 
 // Explicit type widens the schema inference to always include all optional
-// fields even when .omit() strips them for gating (cwd, run_in_background).
+// fields even when .omit() strips them for gating (run_in_background,
+// isolation).
 // subagent_type is optional; call() defaults it to general-purpose.
 type AgentToolInput = z.infer<typeof baseInputSchema> & {
   name?: string
@@ -664,16 +658,14 @@ export const AgentTool = buildTool({
     // main loop's turn open until they complete — the daemon's inputQueue
     // backs up, and the first overdue cron catch-up on spawn becomes N
     // serial subagent turns blocking all user input.
-    const assistantForceAsync = feature('KAIROS')
-      ? appState.kairosEnabled
-      : false
+    const assistantForceAsync = appState.kairosEnabled
 
     const shouldRunAsync =
       (run_in_background === true ||
         selectedAgent.background === true ||
         isCoordinator ||
         assistantForceAsync ||
-        (proactiveModule?.isProactiveActive() ?? false)) &&
+        proactiveModule.isProactiveActive()) &&
       !isBackgroundTasksDisabled
     // Assemble the worker's tool pool independently of the parent's.
     // Workers always get their tools from assembleToolPool with their own

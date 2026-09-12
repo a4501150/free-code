@@ -1,10 +1,7 @@
-import { feature } from 'bun:bundle'
-
 // Bugfix for corepack auto-pinning, which adds yarnpkg to peoples' package.jsons
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
 process.env.COREPACK_ENABLE_AUTO_PIN = '0'
 
-import { daemonMain } from '../daemon/main.js'
 import { runDaemonWorker } from '../daemon/workerRegistry.js'
 import { main as cliMain } from '../main.js'
 import { setIsInteractive } from '../bootstrap/state.js'
@@ -67,33 +64,27 @@ async function main(): Promise<void> {
   // perf-sensitive. No enableConfigs(), no analytics sinks at this layer —
   // workers are lean. If a worker kind needs configs/auth (assistant will),
   // it calls them inside its run() fn.
-  if (feature('DAEMON') && args[0] === '--daemon-worker') {
+  if (args[0] === '--daemon-worker') {
     await runDaemonWorker(args[1])
     return
   }
 
-  // `claude daemon` and `claude web` are one command when the WebUI is in the
-  // build: the supervisor exists to host the server, so starting one without
-  // the other is never what anyone wants. A WEBUI-off build has no gateway to
-  // run, so `daemon` keeps its own bare lifecycle there.
-  if (feature('DAEMON') && args[0] === 'daemon') {
+  // `claude daemon` and `claude web` are one command: the supervisor exists
+  // to host the WebUI server, so starting one without the other is never what
+  // anyone wants.
+  if (args[0] === 'daemon') {
     profileCheckpoint('cli_daemon_path')
     enableConfigs()
     initSinks()
-    if (feature('WEBUI')) {
-      const { webMain } = await import('../webui/cli.js')
-      await webMain(args.slice(1))
-    } else {
-      await daemonMain(args.slice(1))
-    }
+    const { webMain } = await import('../webui/cli.js')
+    await webMain(args.slice(1))
     return
   }
 
   // Phase 0 gate for the WebUI: verifies the embedded client, the loopback
   // server, the WebSocket upgrade and the attach socket inside the compiled
-  // binary. Dynamically imported so a WEBUI-off build never pulls the server
-  // graph in.
-  if (feature('WEBUI') && args[0] === '--webui-smoke') {
+  // binary. Dynamically imported to keep this entrypoint's startup graph lean.
+  if (args[0] === '--webui-smoke') {
     const { runWebuiSmoke } = await import('../webui/smoke.js')
     process.exitCode = await runWebuiSmoke()
     return
@@ -101,7 +92,7 @@ async function main(): Promise<void> {
 
   // Fast-path for `claude web [subcommand]`: talks to the daemon supervisor,
   // which hosts the server so it outlives this terminal.
-  if (feature('WEBUI') && args[0] === 'web') {
+  if (args[0] === 'web') {
     profileCheckpoint('cli_web_path')
     enableConfigs()
     const { webMain } = await import('../webui/cli.js')

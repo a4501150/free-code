@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { DEFAULT_CRON_JITTER_CONFIG } from '../../utils/cronTasks.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 
@@ -6,14 +5,11 @@ export const DEFAULT_MAX_AGE_DAYS =
   DEFAULT_CRON_JITTER_CONFIG.recurringMaxAgeMs / (24 * 60 * 60 * 1000)
 
 /**
- * Unified gate for the cron scheduling system. Combines the build-time
- * `feature('AGENT_TRIGGERS')` flag (dead code elimination) with the runtime
+ * Runtime gate for the cron scheduling system: the
  * `CLAUDE_CODE_DISABLE_CRON` env var override.
  */
 export function isKairosCronEnabled(): boolean {
-  return feature('AGENT_TRIGGERS')
-    ? !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_CRON)
-    : false
+  return !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_CRON)
 }
 
 /** Durable (disk-persistent) cron tasks are always enabled. */

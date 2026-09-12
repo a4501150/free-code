@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { randomUUID } from 'crypto'
 import { setPromptId } from 'src/bootstrap/state.js'
 import type {
@@ -133,7 +132,7 @@ async function executeForkedSlashCommand(
   // isMeta prompts are hidden. Outside assistant mode, context:fork commands
   // are user-invoked skills that should run synchronously
   // with the progress UI.
-  if (feature('KAIROS') && (await context.getAppState()).kairosEnabled) {
+  if ((await context.getAppState()).kairosEnabled) {
     // Standalone abortController — background subagents survive main-thread
     // ESC (same policy as AgentTool's async path). They're cron-driven; if
     // killed mid-run they just re-fire on the next schedule.
@@ -1019,7 +1018,6 @@ async function getMessagesForPromptSlashCommand(
   // subagents, letting workers fall through to getPromptForCommand and receive
   // the real skill content when they invoke the Skill tool.
   if (
-    feature('COORDINATOR_MODE') &&
     isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE) &&
     !context.agentId
   ) {

@@ -1,14 +1,15 @@
-import { feature } from 'bun:bundle'
 import {
   getClaudeAIOAuthTokens,
   isAnthropicAuthEnabled,
 } from '../utils/auth.js'
 
 /**
- * Build-time gate for voice mode visibility (command registration, config UI).
+ * Voice mode is compiled in unconditionally now — this gate always passes.
+ * Kept for call sites that still consult a feature gate (command
+ * registration, config UI).
  */
 export function isVoiceModeFeatureEnabled(): boolean {
-  return feature('VOICE_MODE') ? true : false
+  return true
 }
 
 /**
@@ -33,8 +34,9 @@ export function hasVoiceAuth(): boolean {
 }
 
 /**
- * Full runtime check: auth + build-time feature gate. Callers: `/voice`
- * (voice.ts, voice/index.ts), VoiceModeNotice — command-time
+ * Full runtime check for voice mode: auth (the build-time gate is gone —
+ * voice mode is always compiled in). Callers: `/voice` (voice.ts,
+ * voice/index.ts), VoiceModeNotice — command-time
  * paths where a fresh keychain read is acceptable. For React render
  * paths use useVoiceEnabled() instead (memoizes the auth half).
  */

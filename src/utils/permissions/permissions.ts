@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import { isAbortError } from '../errors.js'
 import {
   getToolNameForPermissionCheck,
@@ -12,7 +11,6 @@ import type {
 } from '../../Tool.js'
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
-import { POWERSHELL_TOOL_NAME } from '../../tools/PowerShellTool/toolName.js'
 import { REPL_TOOL_NAME } from '../../tools/REPLTool/constants.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
@@ -550,42 +548,12 @@ export const hasPermissionsToUseTool: CanUseToolFn = async (
         appState.denialTracking ??
         createDenialTrackingState()
 
-      // PowerShell requires explicit user permission in auto mode unless
-      // POWERSHELL_AUTO_MODE is on. When disabled, this guard keeps PS out of
-      // the classifier and skips the acceptEdits fast-path below. When enabled,
-      // PS flows through to the classifier like Bash.
+      // PowerShell flows through to the auto mode classifier like Bash.
       //
       // KNOWN GAP: POWERSHELL_DENY_GUIDANCE in yoloClassifier.ts is meant to be
       // appended to the classifier's deny list so it maps PS idioms
       // (`iex (iwr ...)`, `Remove-Item -Recurse -Force`) onto the existing block
       // categories, but nothing appends it — see the comment on that constant.
-      //
-      // Note: this runs inside the behavior === 'ask' branch, so allow rules
-      // that fire earlier (step 2b toolAlwaysAllowedRule, PS prefix allow)
-      // return before reaching here. Allow-rule protection is handled by
-      // isDangerousPowerShellPermission in permissionSetup.ts, which strips
-      // both PowerShell(*) and iex/pwsh/Start-Process prefix rules on auto mode
-      // entry.
-      if (
-        tool.name === POWERSHELL_TOOL_NAME &&
-        !feature('POWERSHELL_AUTO_MODE')
-      ) {
-        if (appState.toolPermissionContext.shouldAvoidPermissionPrompts) {
-          return {
-            behavior: 'deny',
-            message: 'PowerShell tool requires interactive approval',
-            decisionReason: {
-              type: 'asyncAgent',
-              reason:
-                'PowerShell tool requires interactive approval and permission prompts are not available in this context',
-            },
-          }
-        }
-        logForDebugging(
-          `Skipping auto mode classifier for ${tool.name}: tool requires explicit user permission`,
-        )
-        return result
-      }
 
       // Before running the auto mode classifier, check if acceptEdits mode would
       // allow this action. This avoids expensive classifier API calls for safe

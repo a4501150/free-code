@@ -1,6 +1,6 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
-import { feature } from 'bun:bundle'
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
+import { subscribeToProactiveChanges } from '../../proactive/index.js'
 import { Box, Text } from '../../ink.js'
 import * as React from 'react'
 import figures from 'figures'
@@ -42,13 +42,6 @@ import { getInitialSettings } from '../../utils/settings/settings.js'
 import { getPlatform } from '../../utils/platform.js'
 import { PrBadge } from '../PrBadge.js'
 
-// Dead code elimination: conditional import for proactive mode
-/* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule = feature('KAIROS')
-  ? require('../../proactive/index.js')
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
-const NO_OP_SUBSCRIBE = (_cb: () => void) => () => {}
 const NULL = () => null
 type Props = {
   exitMessage: {
@@ -73,9 +66,12 @@ type Props = {
 }
 
 function ProactiveCountdown(): React.ReactNode {
+  // proactive/index.js has no getNextTickAt export yet — the snapshot stays
+  // null (matching the old `proactiveModule?.getNextTickAt ?? NULL`
+  // evaluation), so this countdown never renders.
   const nextTickAt = useSyncExternalStore(
-    proactiveModule?.subscribeToProactiveChanges ?? NO_OP_SUBSCRIBE,
-    proactiveModule?.getNextTickAt ?? NULL,
+    subscribeToProactiveChanges,
+    NULL,
     NULL,
   )
 
@@ -208,26 +204,17 @@ function ModeIndicator({
   const prStatus = usePrStatus(isLoading, isPrStatusEnabled())
 
   const nextTickAt = useSyncExternalStore(
-    proactiveModule?.subscribeToProactiveChanges ?? NO_OP_SUBSCRIBE,
-    proactiveModule?.getNextTickAt ?? NULL,
+    subscribeToProactiveChanges,
+    NULL,
     NULL,
   )
-  // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-  const voiceEnabled = feature('VOICE_MODE') ? useVoiceEnabled() : false
-  const voiceState = feature('VOICE_MODE')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useVoiceState(s => s.voiceState)
-    : ('idle' as const)
-  const voiceWarmingUp = feature('VOICE_MODE')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useVoiceState(s => s.voiceWarmingUp)
-    : false
+  const voiceEnabled = useVoiceEnabled()
+  const voiceState = useVoiceState(s => s.voiceState)
+  const voiceWarmingUp = useVoiceState(s => s.voiceWarmingUp)
   const hasSelection = useHasSelection()
   const selGetState = useSelection().getState
   const hasNextTick = nextTickAt !== null
-  const isCoordinator = feature('COORDINATOR_MODE')
-    ? isCoordinatorMode()
-    : false
+  const isCoordinator = isCoordinatorMode()
   const runningTaskCount = useMemo(
     () =>
       count(
@@ -254,10 +241,11 @@ function ModeIndicator({
     'Chat',
     'ctrl+x ctrl+k',
   )
-  const voiceKeyShortcut = feature('VOICE_MODE')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useShortcutDisplay('voice:pushToTalk', 'Chat', 'Space')
-    : ''
+  const voiceKeyShortcut = useShortcutDisplay(
+    'voice:pushToTalk',
+    'Chat',
+    'Space',
+  )
   const isKillAgentsConfirmShowing = useAppState(
     s => s.notifications.current?.key === 'kill-agents-confirm',
   )
@@ -400,7 +388,7 @@ function ModeIndicator({
         />
       </Text>,
     )
-  } else if (feature('KAIROS') && hasNextTick) {
+  } else if (hasNextTick) {
     parts.push(<ProactiveCountdown key="proactive" />)
   } else if (!hasTeammatePills && showHint) {
     parts.push(...hintParts)
@@ -436,9 +424,7 @@ function ModeIndicator({
   }
 
   // Add "↓ to manage tasks" hint when panel has visible rows
-  const hasCoordinatorTasks = feature('COORDINATOR_MODE')
-    ? getVisibleAgentTasks(tasks).length > 0
-    : false
+  const hasCoordinatorTasks = getVisibleAgentTasks(tasks).length > 0
 
   // Tasks pill renders as a Box sibling (not a parts entry) so its
   // click-target Box isn't nested inside <Text wrap="truncate"> — the
@@ -481,7 +467,7 @@ function ModeIndicator({
 
   // Warmup hint takes priority — when the user is actively holding
   // the activation key, show feedback regardless of other hints.
-  if (feature('VOICE_MODE') && voiceEnabled && voiceWarmingUp) {
+  if (voiceEnabled && voiceWarmingUp) {
     parts.push(<VoiceWarmupHint key="voice-warmup" />)
   } else if (selectionHintHasContent) {
     // xterm.js (VS Code/Cursor/Windsurf) force-selection modifier is
@@ -515,7 +501,6 @@ function ModeIndicator({
       </Text>,
     )
   } else if (
-    feature('VOICE_MODE') &&
     parts.length > 0 &&
     showHint &&
     voiceEnabled &&

@@ -24,7 +24,6 @@
  * - Non-existent files are silently ignored
  */
 
-import { feature } from 'bun:bundle'
 import ignore from 'ignore'
 import memoize from 'lodash-es/memoize.js'
 import { Lexer } from 'marked'
@@ -80,9 +79,7 @@ import {
 import { isSettingSourceEnabled } from './settings/constants.js'
 import { getInitialSettings } from './settings/settings.js'
 
-import * as teamMemPathsNs from '../memdir/teamMemPaths.js'
-
-const teamMemPaths = feature('TEAMMEM') ? teamMemPathsNs : null
+import * as teamMemPaths from '../memdir/teamMemPaths.js'
 
 let hasLoggedInitialLoad = false
 
@@ -989,10 +986,10 @@ export const getMemoryFiles = memoize(
       }
     }
 
-    // Team memory entrypoint - only if feature is on and file exists
-    if (feature('TEAMMEM') && teamMemPaths!.isTeamMemoryEnabled()) {
+    // Team memory entrypoint - only if team memory is enabled and the file exists
+    if (teamMemPaths.isTeamMemoryEnabled()) {
       const { info: teamMemEntry } = await safelyReadMemoryFileAsync(
-        teamMemPaths!.getTeamMemEntrypoint(),
+        teamMemPaths.getTeamMemEntrypoint(),
         'TeamMem',
       )
       if (teamMemEntry) {
@@ -1149,7 +1146,7 @@ export const getClaudeMdEntries = (
           ? 'project instructions, checked into the codebase'
           : file.type === 'Local'
             ? "user's private project instructions, not checked in"
-            : feature('TEAMMEM') && file.type === 'TeamMem'
+            : file.type === 'TeamMem'
               ? 'shared team memory, synced across the organization'
               : file.type === 'AutoMem'
                 ? "user's auto-memory, persists across conversations"
@@ -1157,7 +1154,7 @@ export const getClaudeMdEntries = (
 
       const content = file.content.trim()
       let value = `${description}:\n\n${content}`
-      if (feature('TEAMMEM') && file.type === 'TeamMem') {
+      if (file.type === 'TeamMem') {
         value = `${description}:\n\n<team-memory-content source="shared">\n${content}\n</team-memory-content>`
       }
       if (entries.length === 0) {

@@ -1,5 +1,4 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
-import { feature } from 'bun:bundle'
 import { readFile, stat } from 'fs/promises'
 import { dirname } from 'path'
 import { StructuredIO } from 'src/cli/structuredIO.js'
@@ -320,30 +319,26 @@ import { sleep } from '../utils/sleep.js'
 import { isExtractModeActive } from '../memdir/paths.js'
 import { setupPluginHookHotReload } from '../utils/plugins/loadPluginHooks.js'
 
-// Dead code elimination: conditional imports
-/* eslint-disable @typescript-eslint/no-require-imports */
-const coordinatorModeModule = feature('COORDINATOR_MODE')
-  ? (require('../coordinator/coordinatorMode.js') as typeof import('../coordinator/coordinatorMode.js'))
-  : null
-const proactiveModule = feature('KAIROS')
-  ? (require('../proactive/index.js') as typeof import('../proactive/index.js'))
-  : null
-const webuiHeadlessModule = feature('WEBUI')
-  ? (require('../webui/attach/headlessBridge.js') as typeof import('../webui/attach/headlessBridge.js'))
-  : null
-const cronSchedulerModule = feature('AGENT_TRIGGERS')
-  ? (require('../utils/cronScheduler.js') as typeof import('../utils/cronScheduler.js'))
-  : null
-const cronJitterConfigModule = feature('AGENT_TRIGGERS')
-  ? (require('../utils/cronJitterConfig.js') as typeof import('../utils/cronJitterConfig.js'))
-  : null
-const cronGate = feature('AGENT_TRIGGERS')
-  ? (require('../tools/ScheduleCronTool/prompt.js') as typeof import('../tools/ScheduleCronTool/prompt.js'))
-  : null
-const extractMemoriesModule = feature('EXTRACT_MEMORIES')
-  ? (require('../services/extractMemories/extractMemories.js') as typeof import('../services/extractMemories/extractMemories.js'))
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
+import {
+  isCoordinatorMode,
+  matchSessionMode,
+} from '../coordinator/coordinatorMode.js'
+import {
+  activateProactive,
+  deactivateProactive,
+  isProactiveActive,
+  isProactivePaused,
+} from '../proactive/index.js'
+import {
+  publishHeadlessTranscript,
+  shouldAttachHeadless,
+  startHeadlessAttach,
+  wrapCanUseToolWithWebUI,
+} from '../webui/attach/headlessBridge.js'
+import { createCronScheduler } from '../utils/cronScheduler.js'
+import { getCronJitterConfig } from '../utils/cronJitterConfig.js'
+import { isKairosCronEnabled } from '../tools/ScheduleCronTool/prompt.js'
+import { drainPendingExtraction } from '../services/extractMemories/extractMemories.js'
 
 const SHUTDOWN_TEAM_PROMPT = `<system-reminder>
 You are running in non-interactive mode and cannot return a response to the user until your team is shut down.
@@ -498,13 +493,8 @@ export async function runHeadless(
   // SleepTool passes isEnabled() filtering. This fallback covers the case
   // where CLAUDE_CODE_PROACTIVE is set but main.tsx's check didn't fire
   // (e.g. env was injected by the SDK transport after argv parsing).
-  if (
-    feature('KAIROS') &&
-    proactiveModule &&
-    !proactiveModule.isProactiveActive() &&
-    isEnvTruthy(process.env.CLAUDE_CODE_PROACTIVE)
-  ) {
-    proactiveModule.activateProactive('command')
+  if (!isProactiveActive() && isEnvTruthy(process.env.CLAUDE_CODE_PROACTIVE)) {
+    activateProactive('command')
   }
 
   // Periodically force a full GC to keep memory usage in check
@@ -739,8 +729,8 @@ export async function runHeadless(
   )
   // A gateway-owned session has no terminal and no SDK host, so an 'ask'
   // decision would otherwise be a silent denial. Route it to the browser.
-  if (feature('WEBUI') && webuiHeadlessModule?.shouldAttachHeadless()) {
-    canUseTool = webuiHeadlessModule.wrapCanUseToolWithWebUI(canUseTool)
+  if (shouldAttachHeadless()) {
+    canUseTool = wrapCanUseToolWithWebUI(canUseTool)
   }
   if (options.permissionPromptToolName) {
     // Remove the permission prompt tool from the list of available tools.
@@ -767,9 +757,8 @@ export async function runHeadless(
   const messages: SDKMessage[] = []
   let lastMessage: SDKMessage | undefined
   // Streamlined mode transforms messages when CLAUDE_CODE_STREAMLINED_OUTPUT=true and using stream-json
-  // Build flag gates this out of external builds; env var is the runtime opt-in for ant builds
+  // Env var is the runtime opt-in.
   const transformToStreamlined =
-    feature('STREAMLINED_OUTPUT') &&
     isEnvTruthy(process.env.CLAUDE_CODE_STREAMLINED_OUTPUT) &&
     options.outputFormat === 'stream-json'
       ? createStreamlinedTransformer()
@@ -879,8 +868,8 @@ export async function runHeadless(
   // delays process exit so gracefulShutdownSync's 5s failsafe doesn't kill
   // the forked agent mid-flight. Gated by isExtractModeActive so the
   // isExtractModeActive controls non-interactive extraction end-to-end.
-  if (feature('EXTRACT_MEMORIES') && isExtractModeActive()) {
-    await extractMemoriesModule!.drainPendingExtraction()
+  if (isExtractModeActive()) {
+    await drainPendingExtraction()
   }
 
   gracefulShutdownSync(
@@ -1178,8 +1167,8 @@ function runHeadlessStreaming(
   // declaration throws a temporal-dead-zone error inside the socket handler,
   // which leaves the connection accepted but never answered.
   let headlessCommandNames = commandsToNames(commands)
-  if (feature('WEBUI') && webuiHeadlessModule?.shouldAttachHeadless()) {
-    webuiHeadlessModule.startHeadlessAttach({
+  if (shouldAttachHeadless()) {
+    startHeadlessAttach({
       cwd: cwd(),
       getMessages: () => mutableMessages,
       // `running` spans the whole drain loop and is cleared in its finally.
@@ -1599,7 +1588,6 @@ function runHeadlessStreaming(
       // handler re-runs the full gate); just avoids dead buttons.
       let capabilities: { experimental?: Record<string, unknown> } | undefined
       if (
-        feature('KAIROS') &&
         connection.type === 'connected' &&
         connection.capabilities.experimental
       ) {
@@ -1746,28 +1734,22 @@ function runHeadlessStreaming(
   // Proactive mode: schedule a tick to keep the model looping autonomously.
   // setTimeout(0) yields to the event loop so pending stdin messages
   // (interrupts, user messages) are processed before the tick fires.
-  const scheduleProactiveTick = feature('KAIROS')
-    ? () => {
-        setTimeout(() => {
-          if (
-            !proactiveModule?.isProactiveActive() ||
-            proactiveModule.isProactivePaused() ||
-            inputClosed
-          ) {
-            return
-          }
-          const tickContent = `<${TICK_TAG}>${new Date().toLocaleTimeString()}</${TICK_TAG}>`
-          enqueue({
-            mode: 'prompt' as const,
-            value: tickContent,
-            uuid: randomUUID(),
-            priority: 'later',
-            isMeta: true,
-          })
-          void run()
-        }, 0)
+  const scheduleProactiveTick = () => {
+    setTimeout(() => {
+      if (!isProactiveActive() || isProactivePaused() || inputClosed) {
+        return
       }
-    : undefined
+      const tickContent = `<${TICK_TAG}>${new Date().toLocaleTimeString()}</${TICK_TAG}>`
+      enqueue({
+        mode: 'prompt' as const,
+        value: tickContent,
+        uuid: randomUUID(),
+        priority: 'later',
+        isMeta: true,
+      })
+      void run()
+    }, 0)
+  }
 
   // Abort the current operation when a 'now' priority message arrives.
   subscribeToCommandQueue(() => {
@@ -1906,7 +1888,7 @@ function runHeadlessStreaming(
           // construction time (or enableChannel() mid-session). Runs every
           // turn like registerElicitationHandlers — idempotent per-client
           // (setNotificationHandler replaces, not stacks) and no-ops for
-          // non-allowlisted servers (one feature-flag check).
+          // non-allowlisted servers (one cheap gate check).
           for (const client of allMcpClients) {
             reregisterChannelHandlerAfterReconnect(client)
           }
@@ -2338,19 +2320,15 @@ function runHeadlessStreaming(
         }
       }
       running = false
-      webuiHeadlessModule?.publishHeadlessTranscript()
+      publishHeadlessTranscript()
       // Start idle timer when we finish processing and are waiting for input
       idleTimeout.start()
     }
 
     // Proactive tick: if proactive is active and queue is empty, inject a tick
-    if (
-      feature('KAIROS') &&
-      proactiveModule?.isProactiveActive() &&
-      !proactiveModule.isProactivePaused()
-    ) {
+    if (isProactiveActive() && !isProactivePaused()) {
       if (peek(isMainThread) === undefined && !inputClosed) {
-        scheduleProactiveTick!()
+        scheduleProactiveTick()
         return
       }
     }
@@ -2559,12 +2537,8 @@ function runHeadlessStreaming(
   // the end of run() picks up the queued command.
   let cronScheduler: import('../utils/cronScheduler.js').CronScheduler | null =
     null
-  if (
-    feature('AGENT_TRIGGERS') &&
-    cronSchedulerModule &&
-    cronGate?.isKairosCronEnabled()
-  ) {
-    cronScheduler = cronSchedulerModule.createCronScheduler({
+  if (isKairosCronEnabled()) {
+    cronScheduler = createCronScheduler({
       onFire: prompt => {
         if (inputClosed) return
         enqueue({
@@ -2585,8 +2559,8 @@ function runHeadlessStreaming(
         void run()
       },
       isLoading: () => running || inputClosed,
-      getJitterConfig: cronJitterConfigModule?.getCronJitterConfig,
-      isKilled: () => !cronGate?.isKairosCronEnabled(),
+      getJitterConfig: getCronJitterConfig,
+      isKilled: () => !isKairosCronEnabled(),
     })
     cronScheduler.start()
   }
@@ -3552,7 +3526,6 @@ function runHeadlessStreaming(
             }
           })()
         } else if (
-          feature('KAIROS') &&
           (message.request as { subtype: string }).subtype === 'set_proactive'
         ) {
           const req = message.request as unknown as {
@@ -3560,12 +3533,12 @@ function runHeadlessStreaming(
             enabled: boolean
           }
           if (req.enabled) {
-            if (!proactiveModule!.isProactiveActive()) {
-              proactiveModule!.activateProactive('command')
-              scheduleProactiveTick!()
+            if (!isProactiveActive()) {
+              activateProactive('command')
+              scheduleProactiveTick()
             }
           } else {
-            proactiveModule!.deactivateProactive()
+            deactivateProactive()
           }
           sendControlResponseSuccess(message)
         } else {
@@ -4208,10 +4181,6 @@ function handleChannelEnable(
       response: { subtype: 'error', request_id: requestId, error },
     })
 
-  if (!feature('KAIROS')) {
-    return respondError('channels feature not available in this build')
-  }
-
   // Only a 'connected' client has .capabilities and .client to register the
   // handler on. The pool spread at the call site matches mcp_status.
   const connection = connectionPool.find(
@@ -4307,13 +4276,11 @@ function handleChannelEnable(
  *
  * No-op if the server was never channel-enabled: gateChannelServer calls
  * findChannelEntry internally and returns skip/session for an unlisted
- * server, so reconnecting a non-channel MCP server costs one feature-flag
- * check.
+ * server, so reconnecting a non-channel MCP server costs one gate check.
  */
 function reregisterChannelHandlerAfterReconnect(
   connection: MCPServerConnection,
 ): void {
-  if (!feature('KAIROS')) return
   if (connection.type !== 'connected') return
 
   const gate = gateChannelServer(
@@ -4440,8 +4407,8 @@ async function loadInitialMessages(
       )
       if (result) {
         // Match coordinator mode to the resumed session's mode
-        if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
-          const warning = coordinatorModeModule.matchSessionMode(result.mode)
+        {
+          const warning = matchSessionMode(result.mode)
           if (warning) {
             process.stderr.write(warning + '\n')
             // Refresh agent definitions to reflect the mode switch
@@ -4488,13 +4455,7 @@ async function loadInitialMessages(
         )
 
         // Write mode entry for the resumed session
-        if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
-          saveMode(
-            coordinatorModeModule.isCoordinatorMode()
-              ? 'coordinator'
-              : 'normal',
-          )
-        }
+        saveMode(isCoordinatorMode() ? 'coordinator' : 'normal')
 
         return {
           messages: result.messages,
@@ -4574,8 +4535,8 @@ async function loadInitialMessages(
       }
 
       // Match coordinator mode to the resumed session's mode
-      if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
-        const warning = coordinatorModeModule.matchSessionMode(result.mode)
+      {
+        const warning = matchSessionMode(result.mode)
         if (warning) {
           process.stderr.write(warning + '\n')
           // Refresh agent definitions to reflect the mode switch
@@ -4617,11 +4578,7 @@ async function loadInitialMessages(
       )
 
       // Write mode entry for the resumed session
-      if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
-        saveMode(
-          coordinatorModeModule.isCoordinatorMode() ? 'coordinator' : 'normal',
-        )
-      }
+      saveMode(isCoordinatorMode() ? 'coordinator' : 'normal')
 
       return {
         messages: result.messages,

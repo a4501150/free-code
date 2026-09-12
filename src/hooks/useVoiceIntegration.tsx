@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useNotifications } from '../context/notifications.js'
@@ -20,22 +19,7 @@ import { useVoiceEnabled } from './useVoiceEnabled.js'
 // Capture the module namespace, not the function: spyOn() mutates the module
 // object, so `voiceNs.useVoice(...)` resolves to the spy even if this module
 // was loaded before the spy was installed (test ordering independence).
-import * as useVoiceNsRaw from './useVoice.js'
-const voiceNs: { useVoice: typeof import('./useVoice.js').useVoice } = feature(
-  'VOICE_MODE',
-)
-  ? useVoiceNsRaw
-  : {
-      useVoice: ({
-        enabled: _e,
-      }: {
-        onTranscript: (t: string) => void
-        enabled: boolean
-      }) => ({
-        state: 'idle' as const,
-        handleKeyEvent: (_fallbackMs?: number) => {},
-      }),
-    }
+import * as voiceNs from './useVoice.js'
 
 // Maximum gap (ms) between key presses to count as held (auto-repeat).
 // Terminal auto-repeat fires every 30-80ms; 120ms covers jitter while
@@ -235,21 +219,13 @@ export function useVoiceIntegration({
   // Voice state selectors. useVoiceEnabled = user intent (settings) +
   // auth + GB kill-switch, with the auth half memoized on authVersion so
   // render loops never hit a cold keychain spawn.
-  // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-  const voiceEnabled = feature('VOICE_MODE') ? useVoiceEnabled() : false
-  const voiceState = feature('VOICE_MODE')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useVoiceState(s => s.voiceState)
-    : ('idle' as const)
-  const voiceInterimTranscript = feature('VOICE_MODE')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useVoiceState(s => s.voiceInterimTranscript)
-    : ''
+  const voiceEnabled = useVoiceEnabled()
+  const voiceState = useVoiceState(s => s.voiceState)
+  const voiceInterimTranscript = useVoiceState(s => s.voiceInterimTranscript)
 
   // Set the voice anchor for focus mode (where recording starts via terminal
   // focus, not key hold). Key-hold sets the anchor in stripTrailing.
   useEffect(() => {
-    if (!feature('VOICE_MODE')) return
     if (voiceState === 'recording' && voicePrefixRef.current === null) {
       const input = inputValueRef.current
       const offset = insertTextRef.current?.cursorOffset ?? input.length
@@ -268,7 +244,6 @@ export function useVoiceIntegration({
   // transcribes speech. The prefix (user-typed text before the cursor) is
   // preserved and the transcript is inserted between prefix and suffix.
   useEffect(() => {
-    if (!feature('VOICE_MODE')) return
     if (voicePrefixRef.current === null) return
     const prefix = voicePrefixRef.current
     const suffix = voiceSuffixRef.current
@@ -303,7 +278,6 @@ export function useVoiceIntegration({
 
   const handleVoiceTranscript = useCallback(
     (text: string) => {
-      if (!feature('VOICE_MODE')) return
       const prefix = voicePrefixRef.current
       // No voice anchor — voice was reset (or never started). Nothing to do.
       if (prefix === null) return
@@ -355,7 +329,6 @@ export function useVoiceIntegration({
   // Compute the character range of interim (not-yet-finalized) transcript
   // text in the input value, so the UI can dim it.
   const interimRange = useMemo((): InterimRange | null => {
-    if (!feature('VOICE_MODE')) return null
     if (voicePrefixRef.current === null) return null
     if (voiceInterimTranscript.length === 0) return null
     const prefix = voicePrefixRef.current
@@ -415,12 +388,8 @@ export function useVoiceKeybindingHandler({
   const setVoiceState = useSetVoiceState()
   const keybindingContext = useOptionalKeybindingContext()
   const isModalOverlayActive = useIsModalOverlayActive()
-  // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-  const voiceEnabled = feature('VOICE_MODE') ? useVoiceEnabled() : false
-  const voiceState = feature('VOICE_MODE')
-    ? // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
-      useVoiceState(s => s.voiceState)
-    : 'idle'
+  const voiceEnabled = useVoiceEnabled()
+  const voiceState = useVoiceState(s => s.voiceState)
 
   // Find the configured key for voice:pushToTalk from keybinding context.
   // Forward iteration with last-wins (matching the resolver): if a later
