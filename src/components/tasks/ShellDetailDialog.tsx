@@ -74,11 +74,11 @@ const SCROLLBOX_BORDER_ROWS = 2
 // both ScrollBox borders, both position labels, input guide). Subtracted
 // from `rows` so the messages area above retains some breathing room.
 const VIEWPORT_CHROME_ROWS = 22
-// Columns the command ScrollBox spends on its own border and padding, on
-// top of the dialog's own inset. The command is pre-wrapped to what's left
+// Columns each ScrollBox spends on its own border and padding, on top of
+// the dialog's own inset. Command and output are pre-wrapped to what's left
 // so the rendered line count matches the position label and the scroll
 // arithmetic; wrapping inside the Text would make both guesses.
-const COMMAND_WRAP_INSET = 12
+const PANEL_WRAP_INSET = 12
 
 type TaskOutputResult = {
   content: string
@@ -120,7 +120,7 @@ export function ShellDetailDialog({
   // the post-wrap line count. hard/trim match Ink's own `wrap` behavior.
   const commandLines = useMemo(
     () =>
-      wrapAnsi(shell.command, Math.max(10, columns - COMMAND_WRAP_INSET), {
+      wrapAnsi(shell.command, Math.max(10, columns - PANEL_WRAP_INSET), {
         trim: false,
         hard: true,
       }).split('\n'),
@@ -434,10 +434,23 @@ function ShellOutputContent({
 }: ShellOutputContentProps): React.ReactNode {
   const { content, bytesTotal } = use(outputPromise)
 
-  // Trim trailing newline so the last visible line isn't a blank row.
-  const trimmedContent = content.replace(/\n+$/, '')
-  const lines = trimmedContent ? trimmedContent.split('\n') : []
   const isIncomplete = bytesTotal > content.length
+
+  // Trim trailing newline so the last visible line isn't a blank row, then
+  // pre-wrap like the command panel: the ScrollBox scrolls in rendered rows,
+  // so long lines must break before rendering or they run past the box to the
+  // right, and the position label needs the post-wrap line count.
+  const lines = useMemo(() => {
+    const trimmed = content.replace(/\n+$/, '')
+    const width = Math.max(10, columns - PANEL_WRAP_INSET)
+    const wrapped: string[] = []
+    for (const line of trimmed ? trimmed.split('\n') : []) {
+      wrapped.push(
+        ...wrapAnsi(line, width, { trim: false, hard: true }).split('\n'),
+      )
+    }
+    return wrapped
+  }, [content, columns])
 
   if (!content) {
     return <Text dimColor>No output available</Text>

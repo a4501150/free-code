@@ -8,10 +8,18 @@ import {
 } from '../../../Tool.js'
 import type { ProgressMessage } from '../../../types/message.js'
 import type { buildMessageLookups } from '../../../utils/messages.js'
+import { Box, Text } from '../../../ink.js'
 import { FallbackToolUseRejectedMessage } from '../../FallbackToolUseRejectedMessage.js'
+import { MessageResponse } from '../../MessageResponse.js'
 
 type Props = {
   input: { [key: string]: unknown }
+  /**
+   * The user's rejection feedback — exactly what the model sees after the
+   * reject prefix (see userRejectReasonFromContent). Shown below the
+   * tool-specific reject UI so the user sees what went back to the model.
+   */
+  reason?: string
   progressMessagesForMessage: ProgressMessage[]
   style?: 'condensed'
   tool?: Tool
@@ -23,6 +31,7 @@ type Props = {
 
 export function UserToolRejectMessage({
   input,
+  reason,
   progressMessagesForMessage,
   style,
   tool,
@@ -33,27 +42,42 @@ export function UserToolRejectMessage({
   const { columns } = useTerminalSize()
   const [theme] = useTheme()
 
-  if (!tool || !tool.renderToolUseRejectedMessage) {
-    return <FallbackToolUseRejectedMessage />
+  const rejectUI = () => {
+    if (!tool || !tool.renderToolUseRejectedMessage) {
+      return <FallbackToolUseRejectedMessage />
+    }
+    const parsedInput = tool.inputSchema.safeParse(input)
+    if (!parsedInput.success) {
+      return <FallbackToolUseRejectedMessage />
+    }
+    return (
+      tool.renderToolUseRejectedMessage(parsedInput.data, {
+        columns,
+        messages: [],
+        tools,
+        verbose,
+        progressMessagesForMessage: filterToolProgressMessages(
+          progressMessagesForMessage,
+        ),
+        style,
+        theme,
+        isTranscriptMode,
+      }) ?? <FallbackToolUseRejectedMessage />
+    )
   }
 
-  const parsedInput = tool.inputSchema.safeParse(input)
-  if (!parsedInput.success) {
-    return <FallbackToolUseRejectedMessage />
+  if (!reason) {
+    return rejectUI()
   }
 
   return (
-    tool.renderToolUseRejectedMessage(parsedInput.data, {
-      columns,
-      messages: [],
-      tools,
-      verbose,
-      progressMessagesForMessage: filterToolProgressMessages(
-        progressMessagesForMessage,
-      ),
-      style,
-      theme,
-      isTranscriptMode,
-    }) ?? <FallbackToolUseRejectedMessage />
+    <Box flexDirection="column">
+      {rejectUI()}
+      <MessageResponse>
+        <Text dimColor italic>
+          User said: {reason}
+        </Text>
+      </MessageResponse>
+    </Box>
   )
 }

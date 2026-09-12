@@ -12,7 +12,7 @@ import {
   INTERRUPT_MESSAGE_FOR_TOOL_USE,
   isClassifierDenial,
   PLAN_REJECTION_PREFIX,
-  REJECT_MESSAGE_WITH_REASON_PREFIX,
+  userRejectReasonFromContent,
 } from '../../../utils/messages.js'
 import { FallbackToolUseErrorMessage } from '../../FallbackToolUseErrorMessage.js'
 import { InterruptedByUser } from '../../InterruptedByUser.js'
@@ -60,11 +60,12 @@ export function UserToolErrorMessage({
     return <RejectedPlanMessage plan={planContent} />
   }
 
-  if (
-    typeof param.content === 'string' &&
-    param.content.startsWith(REJECT_MESSAGE_WITH_REASON_PREFIX)
-  ) {
-    return <RejectedToolUseMessage />
+  const rejectReason = userRejectReasonFromContent(param.content)
+  if (rejectReason !== undefined) {
+    // Reached via callers that pass tool_results straight here (collapsed
+    // groups); the main path routes with-reason rejects through
+    // UserToolRejectMessage instead.
+    return <RejectedToolUseMessage reason={rejectReason} />
   }
 
   if (typeof param.content === 'string' && isClassifierDenial(param.content)) {

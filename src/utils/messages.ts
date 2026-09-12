@@ -183,6 +183,28 @@ export const PLAN_REJECTION_PREFIX =
   'The agent proposed a plan that was rejected by the user. The user chose to stay in plan mode rather than proceed with implementation.\n\nRejected plan:\n'
 
 /**
+ * Extracts the user's rejection feedback out of a tool_result produced by a
+ * rejection that carried feedback (see REJECT_MESSAGE_WITH_REASON_PREFIX),
+ * stripping the memory-correction hint suffix. Returns undefined for any
+ * other content so callers can use it as a rejection-with-reason predicate.
+ */
+export function userRejectReasonFromContent(
+  content: unknown,
+): string | undefined {
+  if (
+    typeof content !== 'string' ||
+    !content.startsWith(REJECT_MESSAGE_WITH_REASON_PREFIX)
+  ) {
+    return undefined
+  }
+  let reason = content.slice(REJECT_MESSAGE_WITH_REASON_PREFIX.length)
+  if (reason.endsWith(MEMORY_CORRECTION_HINT)) {
+    reason = reason.slice(0, -MEMORY_CORRECTION_HINT.length)
+  }
+  return reason
+}
+
+/**
  * Shared guidance for permission denials, instructing the model on appropriate workarounds.
  */
 export const DENIAL_WORKAROUND_GUIDANCE =

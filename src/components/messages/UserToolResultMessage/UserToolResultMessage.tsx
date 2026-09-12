@@ -10,6 +10,7 @@ import {
   CANCEL_MESSAGE,
   INTERRUPT_MESSAGE_FOR_TOOL_USE,
   REJECT_MESSAGE,
+  userRejectReasonFromContent,
 } from '../../../utils/messages.js'
 import { UserToolCanceledMessage } from './UserToolCanceledMessage.js'
 import { UserToolErrorMessage } from './UserToolErrorMessage.js'
@@ -52,7 +53,12 @@ export function UserToolResultMessage({
     return <UserToolCanceledMessage />
   }
 
+  // A rejection with feedback carries the user's reason after a distinct
+  // prefix (so startsWith(REJECT_MESSAGE) misses it). Route it to the same
+  // tool-specific reject UI and show the reason the model gets to see.
+  const rejectReason = userRejectReasonFromContent(param.content)
   if (
+    rejectReason !== undefined ||
     (typeof param.content === 'string' &&
       param.content.startsWith(REJECT_MESSAGE)) ||
     param.content === INTERRUPT_MESSAGE_FOR_TOOL_USE
@@ -60,6 +66,7 @@ export function UserToolResultMessage({
     return (
       <UserToolRejectMessage
         input={toolUse.toolUse.input as { [key: string]: unknown }}
+        reason={rejectReason}
         progressMessagesForMessage={progressMessagesForMessage}
         tool={toolUse.tool}
         tools={tools}

@@ -33,7 +33,6 @@ import { AgentPromptDisplay, AgentResponseDisplay } from '../AgentTool/UI.js'
 import BashToolResultMessage from '../BashTool/BashToolResultMessage.js'
 import { TASK_OUTPUT_TOOL_NAME } from './constants.js'
 
-const PROGRESS_COMPACT_TAIL_LINES = 4
 const PROGRESS_EXPANDED_HEIGHT = 20
 
 const inputSchema = z.strictObject({
@@ -424,10 +423,10 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> =
       )
     },
     isProgressTruncated(): boolean {
-      // The compact in-progress row only shows the last few lines of live
-      // output; the expanded row shows the full polled tail in a ScrollBox.
-      // Always advertise as truncated so the click-to-expand affordance is
-      // available while the tool is blocking on the task.
+      // The output container always renders (bordered ScrollBox); expanding
+      // only hands the box the scroll keys. Always advertise as truncated so
+      // the click-to-expand affordance is available while the tool is
+      // blocking on the task.
       return true
     },
   } satisfies ToolDef<InputSchema, TaskOutputToolOutput>)
@@ -501,56 +500,38 @@ function TaskOutputProgressDisplay({
         ? trimmed.split('\n')
         : []
 
-  if (verbose) {
-    return (
-      <ExpandedTaskOutputProgress
-        taskDescription={taskDescription}
-        lines={lines}
-      />
-    )
-  }
-
-  const tail = lines.slice(-PROGRESS_COMPACT_TAIL_LINES)
-
+  // The output container is always the bordered ScrollBox: the unexpanded
+  // rows used to render as bare lines that grew past the row's bounds. The
+  // click-to-expand toggle only flips the hint text and scroll wiring now.
   return (
-    <Box flexDirection="column">
-      {taskDescription && <Text>&nbsp;&nbsp;{taskDescription}</Text>}
-      <Text>
-        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Waiting for task{' '}
-        <Text dimColor>
-          (esc to give additional instructions, click to expand)
-        </Text>
-      </Text>
-      {tail.length > 0 && (
-        <Box flexDirection="column" paddingLeft={5}>
-          {tail.map((line, i) => (
-            <Text key={i} dimColor wrap="truncate-end">
-              {line || ' '}
-            </Text>
-          ))}
-        </Box>
-      )}
-    </Box>
+    <ExpandedTaskOutputProgress
+      taskDescription={taskDescription}
+      lines={lines}
+      expanded={verbose}
+    />
   )
 }
 
 function ExpandedTaskOutputProgress({
   taskDescription,
   lines,
+  expanded,
 }: {
   taskDescription?: string
   lines: string[]
+  expanded: boolean
 }): React.ReactNode {
   const scrollRef = useRef<ScrollBoxHandle | null>(null)
 
   // Wire ↑/↓/j/k/PgUp/PgDn/Ctrl-U/Ctrl-D/g/G/Home/End against the ScrollBox.
-  // useInput is naturally scoped to the lifetime of this mounted component —
-  // unmounts when the row collapses. stickyScroll keeps newest output in
-  // view by default; manual scroll breaks the pin so the view stays put as
-  // new content streams in.
+  // useInput is naturally scoped to the lifetime of this mounted component.
+  // Keys drive the box only while expanded — while collapsed they fall
+  // through to the transcript's own scroll handler. stickyScroll keeps newest
+  // output in view by default; manual scroll breaks the pin so the view stays
+  // put as new content streams in.
   useInput((input, key, event) => {
     const s = scrollRef.current
-    if (!s) return
+    if (!s || !expanded) return
     const sticky = applyModalPagerAction(
       s,
       modalPagerAction(input, key),
@@ -565,7 +546,11 @@ function ExpandedTaskOutputProgress({
       {taskDescription && <Text>&nbsp;&nbsp;{taskDescription}</Text>}
       <Text>
         &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Waiting for task{' '}
-        <Text dimColor>(↑↓/PgUp/PgDn scroll, click to collapse)</Text>
+        <Text dimColor>
+          {expanded
+            ? '(↑↓/PgUp/PgDn scroll, click to collapse)'
+            : '(esc to give additional instructions, click to expand)'}
+        </Text>
       </Text>
       <Box paddingLeft={5}>
         {lines.length === 0 ? (
