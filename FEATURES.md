@@ -1,10 +1,10 @@
 # Feature Flags Audit
 
-Audit date: 2026-08-15
+Audit date: 2026-09-12
 
-This repository references 29 active compile-time flags through `feature(...)`.
-The default build enables the 10 production-supported flags listed in
-`scripts/build.ts`; `--feature-set=dev-full` additionally enables the 15
+This repository references 25 active compile-time flags through `feature(...)`.
+The default build enables the 9 production-supported flags listed in
+`scripts/build.ts`; `--feature-set=dev-full` additionally enables the 12
 experimental flags in the same file. The remaining 4 are in neither list and are
 only ever on in a hand-rolled `--feature=NAME` build.
 
@@ -25,7 +25,6 @@ These are included in the default feature list.
 ### CLI and output behavior
 
 - `DAEMON` — enables daemon-related command and process plumbing that remains in this snapshot.
-- `DUMP_SYSTEM_PROMPT` — enables system-prompt dump support.
 - `HARD_FAIL` — enables stricter failure/logging behavior.
 - `STREAMLINED_OUTPUT` — enables streamlined output formatting.
 - `UNATTENDED_RETRY` — enables unattended retry behavior in API retry flows.
@@ -50,8 +49,6 @@ These are in the dev-full list but not the default list.
 
 - `AGENT_MEMORY_SNAPSHOT` — stores extra custom-agent memory snapshot state in the app.
 - `AGENT_TRIGGERS` — enables local cron/trigger tools and trigger-related skills.
-- `AWAY_SUMMARY` — adds away-from-keyboard summary behavior in the REPL.
-- `BUILTIN_EXPLORE_PLAN_AGENTS` — enables built-in explore/plan agent presets.
 - `CONNECTOR_TEXT` — enables connector-text block handling in API/logging/UI paths.
 - `EXTRACT_MEMORIES` — enables post-query memory extraction hooks.
 - `HISTORY_PICKER` — enables the interactive prompt history picker.
@@ -60,7 +57,6 @@ These are in the dev-full list but not the default list.
 - `MESSAGE_ACTIONS` — enables message action entrypoints in the interactive UI.
 - `POWERSHELL_AUTO_MODE` — enables PowerShell-specific auto-mode permission handling.
 - `PROMPT_CACHE_BREAK_DETECTION` — enables cache-break detection around compaction/query/API flow.
-- `QUICK_SEARCH` — enables prompt quick-search behavior.
 - `TEAMMEM` — enables team-memory files, watcher hooks, and related UI messages.
 - `WEBUI` — enables the browser session UI: a per-process attach socket, the `claude web` command, the gateway hosted by the daemon supervisor, and the tunnel providers.
 
