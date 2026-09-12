@@ -4,6 +4,7 @@ import {
   DISCLOSURE_EXPANDED,
 } from '../../constants/figures.js'
 import { Box, NoSelect, Text, type TextProps } from '../../ink.js'
+import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
 import { countCharInString, plural } from '../../utils/stringUtils.js'
 import { useSelectedMessageBg } from '../messageActions.js'
 
@@ -37,6 +38,14 @@ export function InjectedContextMessage({
   if (!body) return null
 
   const lineCount = countCharInString(body, '\n') + 1
+  // Collapsed rows otherwise advertise no way in: name the exact key so the
+  // raw model-facing bytes are reachable without mouse or lore. Respects a
+  // rebound transcript toggle.
+  const expandHint = verbose
+    ? ''
+    : lineCount > 1
+      ? ` (${getShortcutDisplay('app:toggleTranscript', 'Global', 'ctrl+o')} to expand)`
+      : ''
 
   return (
     <Box
@@ -55,7 +64,7 @@ export function InjectedContextMessage({
           <Text color={color} dimColor={color === undefined} wrap="wrap">
             {label}{' '}
             <Text dimColor>
-              ({lineCount} {plural(lineCount, 'line')})
+              ({lineCount} {plural(lineCount, 'line')}){expandHint}
             </Text>
           </Text>
         </Box>
