@@ -17,7 +17,7 @@ import {
   CRON_CREATE_TOOL_NAME,
   DEFAULT_MAX_AGE_DAYS,
   isDurableCronEnabled,
-  isKairosCronEnabled,
+  isAssistantCronEnabled,
   MAX_JOBS,
 } from './prompt.js'
 import { renderCreateResultMessage, renderCreateToolUseMessage } from './UI.js'
@@ -57,7 +57,7 @@ export const CronCreateTool = buildTool({
     return outputSchema
   },
   isEnabled() {
-    return isKairosCronEnabled()
+    return isAssistantCronEnabled()
   },
   toAutoClassifierInput(input) {
     return `${input.cron}: ${input.prompt}`

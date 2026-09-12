@@ -70,7 +70,7 @@ type State = {
   mainLoopModelOverride: ModelSetting | undefined
   initialMainLoopModel: ModelSetting
   isInteractive: boolean
-  kairosActive: boolean
+  assistantActive: boolean
   // When true, ensureToolResultPairing throws on mismatch instead of
   // repairing with synthetic placeholders. HFI opts in at startup so
   // trajectories fail fast rather than conditioning the model on fake
@@ -270,7 +270,7 @@ function getInitialState(): State {
     mainLoopModelOverride: undefined,
     initialMainLoopModel: null,
     isInteractive: false,
-    kairosActive: false,
+    assistantActive: false,
     strictToolResultPairing: false,
     sdkAgentProgressSummariesEnabled: false,
     userMsgOptIn: false,
@@ -1001,12 +1001,12 @@ export function setSdkAgentProgressSummariesEnabled(value: boolean): void {
   STATE.sdkAgentProgressSummariesEnabled = value
 }
 
-export function getKairosActive(): boolean {
-  return STATE.kairosActive
+export function getAssistantActive(): boolean {
+  return STATE.assistantActive
 }
 
-export function setKairosActive(value: boolean): void {
-  STATE.kairosActive = value
+export function setAssistantActive(value: boolean): void {
+  STATE.assistantActive = value
 }
 
 export function getStrictToolResultPairing(): boolean {
@@ -1019,7 +1019,7 @@ export function setStrictToolResultPairing(value: boolean): void {
 
 // Field name 'userMsgOptIn' avoids excluded-string substrings ('BriefTool',
 // 'SendUserMessage' — case-insensitive). All callers are inside feature()
-// guards so these accessors don't need their own (matches getKairosActive).
+// guards so these accessors don't need their own (matches getAssistantActive).
 export function getUserMsgOptIn(): boolean {
   return STATE.userMsgOptIn
 }

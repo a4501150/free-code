@@ -2,7 +2,7 @@ import axios from 'axios'
 import { getOauthConfig, OAUTH_BETA_HEADER } from 'src/constants/oauth.js'
 import {
   getIsNonInteractiveSession,
-  getKairosActive,
+  getAssistantActive,
   preferThirdPartyAuthentication,
 } from '../bootstrap/state.js'
 import {
@@ -74,11 +74,11 @@ export function getFastModeUnavailableReason(): string | null {
 
   // Not available in generic headless sessions unless explicitly opted in via
   // --settings. Assistant daemon mode is exempt — it's first-party
-  // orchestration, and kairosActive is set before this check runs.
+  // orchestration, and assistantActive is set before this check runs.
   if (
     getIsNonInteractiveSession() &&
     preferThirdPartyAuthentication() &&
-    !getKairosActive()
+    !getAssistantActive()
   ) {
     const flagFastMode = getSettingsForSource('flagSettings')?.fastMode
     if (!flagFastMode) {

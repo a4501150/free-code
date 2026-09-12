@@ -3,7 +3,7 @@
  *
  * Validates file existence, reads metadata, and presents the file to the
  * user via the tool result. Works alongside BriefTool for file delivery
- * in KAIROS assistant mode.
+ * in assistant mode.
  */
 
 import { existsSync, statSync } from 'fs'

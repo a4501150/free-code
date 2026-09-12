@@ -1,5 +1,5 @@
 import { z } from 'zod/v4'
-import { getKairosActive, getUserMsgOptIn } from '../../bootstrap/state.js'
+import { getAssistantActive, getUserMsgOptIn } from '../../bootstrap/state.js'
 
 import type { ValidationResult } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
@@ -82,7 +82,7 @@ export function isBriefEntitled(): boolean {
  *   - `/brief` slash command (brief.ts)
  *   - `/config` defaultView picker (Config.tsx)
  *   - SendUserMessage in `--tools` / SDK `tools` option (main.tsx)
- * Assistant mode (kairosActive) bypasses opt-in since its system prompt
+ * Assistant mode (assistantActive) bypasses opt-in since its system prompt
  * hard-codes "you MUST use SendUserMessage" (systemPrompt.md:14).
  *
  * The GB gate is re-checked here as a kill-switch AND — flipping
@@ -91,11 +91,11 @@ export function isBriefEntitled(): boolean {
  * of GB (this is the fix for "brief defaults on for enrolled ants").
  *
  * Called from Tool.isEnabled() (lazy, post-init), never at module scope.
- * getKairosActive() and getUserMsgOptIn() are set in main.tsx before any
+ * getAssistantActive() and getUserMsgOptIn() are set in main.tsx before any
  * caller reaches here.
  */
 export function isBriefEnabled(): boolean {
-  return (getKairosActive() || getUserMsgOptIn()) && isBriefEntitled()
+  return (getAssistantActive() || getUserMsgOptIn()) && isBriefEntitled()
 }
 
 export const BriefTool = buildTool({

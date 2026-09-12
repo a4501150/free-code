@@ -8,7 +8,7 @@ import {
 import * as React from 'react'
 import type { AppState } from 'src/state/AppState.js'
 import { z } from 'zod/v4'
-import { getKairosActive } from '../../bootstrap/state.js'
+import { getAssistantActive } from '../../bootstrap/state.js'
 import { TOOL_SUMMARY_MAX_LENGTH } from '../../constants/toolLimits.js'
 import { notifyVscodeFileUpdated } from '../../services/mcp/vscodeSdkMcp.js'
 import type {
@@ -1087,7 +1087,7 @@ async function* runShellCommand({
   // blocking commands after ASSISTANT_BLOCKING_BUDGET_MS so the agent can keep
   // coordinating instead of waiting. The command keeps running — no state loss.
   if (
-    getKairosActive() &&
+    getAssistantActive() &&
     isMainThread &&
     !isBackgroundTasksDisabled &&
     run_in_background !== true

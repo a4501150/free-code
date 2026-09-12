@@ -28,7 +28,7 @@ import { isAutoDreamEnabled } from './config.js'
 import { getProjectDir } from '../../utils/sessionStorage.js'
 import {
   getOriginalCwd,
-  getKairosActive,
+  getAssistantActive,
   getSessionId,
 } from '../../bootstrap/state.js'
 import { createAutoMemCanUseTool } from '../extractMemories/extractMemories.js'
@@ -72,7 +72,7 @@ function getConfig(): AutoDreamConfig {
 }
 
 function isGateOpen(): boolean {
-  if (getKairosActive()) return false // KAIROS mode uses disk-skill dream
+  if (getAssistantActive()) return false // assistant mode uses disk-skill dream
   if (!isAutoMemoryEnabled()) return false
   return isAutoDreamEnabled()
 }

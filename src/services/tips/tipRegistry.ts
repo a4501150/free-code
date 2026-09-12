@@ -8,7 +8,7 @@ import {
 import { shouldOfferTerminalSetup } from '../../commands/terminalSetup/terminalSetup.js'
 import { color } from '../../components/design-system/color.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
-import { isKairosCronEnabled } from '../../tools/ScheduleCronTool/prompt.js'
+import { isAssistantCronEnabled } from '../../tools/ScheduleCronTool/prompt.js'
 import { is1PApiCustomer } from '../../utils/auth.js'
 import { countConcurrentSessions } from '../../utils/concurrentSessions.js'
 import {
@@ -375,7 +375,7 @@ const externalTips: Tip[] = [
     },
     isRelevant: async () => {
       if (!is1PApiCustomer()) return false
-      if (!isKairosCronEnabled()) return false
+      if (!isAssistantCronEnabled()) return false
       return true
     },
   },

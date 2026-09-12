@@ -1,5 +1,5 @@
 /**
- * Session transcript persistence for KAIROS assistant mode.
+ * Session transcript persistence for assistant mode.
  *
  * Writes conversation transcript segments as JSONL files, organized by date.
  * Transcripts are written during compaction and on date boundaries so the
@@ -12,7 +12,7 @@
 import { appendFileSync, existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { getSessionId } from '../../bootstrap/state.js'
-import { getKairosActive } from '../../bootstrap/state.js'
+import { getAssistantActive } from '../../bootstrap/state.js'
 import { logError } from '../../utils/log.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 
@@ -78,7 +78,7 @@ function extractTranscriptEntry(msg: unknown): Record<string, unknown> | null {
  * Fire-and-forget — errors are logged internally.
  */
 export function writeSessionTranscriptSegment(messages: unknown[]): void {
-  if (!getKairosActive()) return
+  if (!getAssistantActive()) return
   try {
     const dir = getTranscriptDir()
     ensureDir(dir)
@@ -110,7 +110,7 @@ export function flushOnDateChange(
   messages: unknown[],
   currentDate: string,
 ): void {
-  if (!getKairosActive()) return
+  if (!getAssistantActive()) return
   try {
     const dir = getTranscriptDir()
     ensureDir(dir)

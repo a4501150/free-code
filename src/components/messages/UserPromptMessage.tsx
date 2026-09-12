@@ -1,6 +1,6 @@
 import type { DomainUserTextBlock } from '../../types/domain.js'
 import React, { useContext, useMemo } from 'react'
-import { getKairosActive, getUserMsgOptIn } from '../../bootstrap/state.js'
+import { getAssistantActive, getUserMsgOptIn } from '../../bootstrap/state.js'
 import { Box } from '../../ink.js'
 import { useAppState } from '../../state/AppState.js'
 import { logError } from '../../utils/log.js'
@@ -45,7 +45,7 @@ export function UserPromptMessage({
   const isBriefOnly = useAppState(s => s.isBriefOnly)
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const useBriefLayout =
-    (getKairosActive() || getUserMsgOptIn()) &&
+    (getAssistantActive() || getUserMsgOptIn()) &&
     isBriefOnly &&
     !isTranscriptMode &&
     !viewingAgentTaskId

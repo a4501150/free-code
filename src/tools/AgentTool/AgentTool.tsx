@@ -658,7 +658,7 @@ export const AgentTool = buildTool({
     // main loop's turn open until they complete — the daemon's inputQueue
     // backs up, and the first overdue cron catch-up on spawn becomes N
     // serial subagent turns blocking all user input.
-    const assistantForceAsync = appState.kairosEnabled
+    const assistantForceAsync = appState.assistantEnabled
 
     const shouldRunAsync =
       (run_in_background === true ||
@@ -742,7 +742,7 @@ export const AgentTool = buildTool({
       description,
     }
 
-    // Helper to wrap execution with a cwd override: explicit cwd arg (KAIROS)
+    // Helper to wrap execution with a cwd override: explicit cwd arg (assistant mode)
     // takes precedence over worktree isolation path.
     const cwdOverridePath = cwd ?? worktreeInfo?.worktreePath
     const wrapWithCwd = <T,>(fn: () => T): T =>

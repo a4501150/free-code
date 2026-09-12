@@ -126,13 +126,13 @@ async function executeForkedSlashCommand(
   // agent turn) cycles blocking user input. With this, N subagents run in
   // parallel and results trickle into the queue as they finish.
   //
-  // Gated on kairosEnabled (not brief activation) because the closed loop
+  // Gated on assistantEnabled (not brief activation) because the closed loop
   // depends on assistant-mode invariants: scheduled_tasks.json exists,
   // the main agent knows to pipe results through SendUserMessage, and
   // isMeta prompts are hidden. Outside assistant mode, context:fork commands
   // are user-invoked skills that should run synchronously
   // with the progress UI.
-  if ((await context.getAppState()).kairosEnabled) {
+  if ((await context.getAppState()).assistantEnabled) {
     // Standalone abortController — background subagents survive main-thread
     // ESC (same policy as AgentTool's async path). They're cron-driven; if
     // killed mid-run they just re-fire on the next schedule.

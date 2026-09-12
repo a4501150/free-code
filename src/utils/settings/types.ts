@@ -1364,12 +1364,27 @@ const _settingsSchemaValue = z
       .describe(
         'Start in coordinator mode (delegation to worker subagents, task-list automation). Sessions started with --tasks set this for the running session regardless.',
       ),
-    proactiveMode: z
-      .boolean()
+    assistant: z
+      .object({
+        enabled: z
+          .boolean()
+          .optional()
+          .describe(
+            'Start the assistant persona in every interactive session (the /init-able assistant.md file and --assistant remain independent opt-ins).',
+          ),
+        name: z
+          .string()
+          .optional()
+          .describe('Display name for the assistant persona.'),
+        proactive: z
+          .boolean()
+          .optional()
+          .describe(
+            'Proactive mode: the assistant begins work on its own between turns, driven by the Sleep tool. Equivalent to --proactive.',
+          ),
+      })
       .optional()
-      .describe(
-        'Enable proactive mode: the assistant begins work on its own between turns, driven by the Sleep tool. Equivalent to the --proactive flag.',
-      ),
+      .describe('Assistant persona settings.'),
     messageActionsEnabled: z
       .boolean()
       .optional()

@@ -2,7 +2,7 @@ import {
   CRON_CREATE_TOOL_NAME,
   CRON_DELETE_TOOL_NAME,
   DEFAULT_MAX_AGE_DAYS,
-  isKairosCronEnabled,
+  isAssistantCronEnabled,
 } from '../../tools/ScheduleCronTool/prompt.js'
 import { registerBundledSkill } from '../bundledSkills.js'
 
@@ -80,7 +80,7 @@ export function registerLoopSkill(): void {
       'When the user wants to set up a recurring task, poll for status, or run something repeatedly on an interval (e.g. "check the deploy every 5 minutes", "keep running /babysit-prs"). Do NOT invoke for one-off tasks.',
     argumentHint: '[interval] <prompt>',
     userInvocable: true,
-    isEnabled: isKairosCronEnabled,
+    isEnabled: isAssistantCronEnabled,
     async getPromptForCommand(args) {
       const trimmed = args.trim()
       if (!trimmed) {

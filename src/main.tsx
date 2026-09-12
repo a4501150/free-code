@@ -288,7 +288,7 @@ import {
   setInitialMainLoopModel,
   setInlinePlugins,
   setIsInteractive,
-  setKairosActive,
+  setAssistantActive,
   setOriginalCwd,
   setQuestionPreviewFormat,
   setSdkBetas,
@@ -1261,7 +1261,7 @@ async function run(): Promise<CommanderCommand> {
       // priority (messageQueueManager.enqueue) so they drain mid-turn between
       // tool calls. SendUserMessage (BriefTool) is enabled via the brief env
       // var. SleepTool stays disabled (its isEnabled() gates on proactive).
-      // kairosEnabled is computed once here and reused at the
+      // assistantEnabled is computed once here and reused at the
       // getAssistantSystemPromptAddendum() call site further down.
       //
       // Trust gate: .freecode/freecode.json is attacker-controllable in an
@@ -1269,7 +1269,7 @@ async function run(): Promise<CommanderCommand> {
       // the trust dialog, and by then we've already appended
       // .freecode/agents/assistant.md to the system prompt. Refuse to activate
       // until the directory has been explicitly trusted.
-      let kairosEnabled = false
+      let assistantEnabled = false
       let assistantTeamContext:
         | Awaited<ReturnType<typeof assistantModule.initializeAssistantTeam>>
         | undefined
@@ -1298,11 +1298,11 @@ async function run(): Promise<CommanderCommand> {
           // Assistant mode is enabled unconditionally once the module's own
           // mode check passes (trust dialog accepted, not a spawned
           // teammate).
-          kairosEnabled = true
-          if (kairosEnabled) {
+          assistantEnabled = true
+          if (assistantEnabled) {
             const opts = options as { brief?: boolean }
             opts.brief = true
-            setKairosActive(true)
+            setAssistantActive(true)
             // Pre-seed an in-process team so Agent(name: "foo") spawns
             // teammates without TeamCreate. Must run BEFORE setup() captures
             // the teammateMode snapshot (initializeAssistantTeam calls
@@ -2288,7 +2288,7 @@ async function run(): Promise<CommanderCommand> {
       // access and conflict with delegation instructions.
       if (
         ((options as { proactive?: boolean }).proactive ||
-          getInitialSettings().proactiveMode === true) &&
+          assistantModule.isAssistantProactiveRequested()) &&
         !coordinatorModeModule.isCoordinatorMode()
       ) {
         /* eslint-disable @typescript-eslint/no-require-imports */
@@ -2304,7 +2304,7 @@ async function run(): Promise<CommanderCommand> {
           : proactivePrompt
       }
 
-      if (kairosEnabled) {
+      if (assistantEnabled) {
         const assistantAddendum =
           assistantModule.getAssistantSystemPromptAddendum()
         appendSystemPrompt = appendSystemPrompt
@@ -2602,7 +2602,7 @@ async function run(): Promise<CommanderCommand> {
             : 'flag'
           : undefined,
         thinkingConfig,
-        assistantActivationPath: kairosEnabled
+        assistantActivationPath: assistantEnabled
           ? assistantModule.getAssistantActivationPath()
           : undefined,
       })
@@ -2719,14 +2719,14 @@ async function run(): Promise<CommanderCommand> {
           ...(isFastModeEnabled() && {
             fastMode: getInitialFastModeSetting(effectiveModel ?? null),
           }),
-          // kairosEnabled gates the async fire-and-forget path in
+          // assistantEnabled gates the async fire-and-forget path in
           // executeForkedSlashCommand (processSlashCommand.tsx:132) and
           // AgentTool's shouldRunAsync. The REPL initialState sets this at
           // ~3459; headless was defaulting to false, so the daemon child's
           // scheduled tasks and Agent-tool calls ran synchronously — N
           // overdue cron tasks on spawn = N serial subagent turns blocking
           // user input. Computed at :1620, well before this branch.
-          kairosEnabled,
+          assistantEnabled,
         }
 
         // Init app state
@@ -3057,7 +3057,7 @@ async function run(): Promise<CommanderCommand> {
           needsRefresh: false,
         },
         statusLineText: undefined,
-        kairosEnabled,
+        assistantEnabled,
         remoteSessionUrl: undefined,
         remoteConnectionStatus: 'connecting',
         remoteBackgroundTaskCount: 0,
@@ -4251,7 +4251,7 @@ async function logTenguInit({
 function maybeActivateProactive(options: unknown): void {
   if (
     (options as { proactive?: boolean }).proactive ||
-    getInitialSettings().proactiveMode === true
+    assistantModule.isAssistantProactiveRequested()
   ) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const proactiveModule = require('./proactive/index.js')

@@ -102,7 +102,7 @@ export type AppState = DeepImmutable<{
   // Assistant mode fully enabled (settings + gate check + trust).
   // Single source of truth - computed once in main.tsx before option
   // mutation, consumers read this instead of re-calling isAssistantMode().
-  kairosEnabled: boolean
+  assistantEnabled: boolean
 }> & {
   // Unified task state - excluded from DeepImmutable because TaskState contains function types
   tasks: { [taskId: string]: TaskState }
@@ -323,7 +323,7 @@ export function getDefaultAppState(): AppState {
     coordinatorTaskIndex: -1,
     viewSelectionMode: 'none',
     footerSelection: null,
-    kairosEnabled: false,
+    assistantEnabled: false,
     toolPermissionContext: {
       ...getEmptyToolPermissionContext(),
       mode: initialMode,

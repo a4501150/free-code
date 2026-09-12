@@ -8,7 +8,7 @@ export const DEFAULT_MAX_AGE_DAYS =
  * Runtime gate for the cron scheduling system: the `scheduledTasksEnabled`
  * settings key (defaults to enabled).
  */
-export function isKairosCronEnabled(): boolean {
+export function isAssistantCronEnabled(): boolean {
   return getInitialSettings().scheduledTasksEnabled ?? true
 }
 

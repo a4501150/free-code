@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useRef } from 'react'
 import { useAppState, useSetAppState } from 'src/state/AppState.js'
 import type { PermissionMode } from 'src/utils/permissions/PermissionMode.js'
 import {
-  getKairosActive,
+  getAssistantActive,
   getMainThreadAgentType,
   getOriginalCwd,
   getSdkBetas,
@@ -60,7 +60,7 @@ import { isVimModeEnabled } from './PromptInput/utils.js'
 export function statusLineShouldDisplay(settings: ReadonlySettings): boolean {
   // Assistant mode: statusline fields (model, permission mode, cwd) reflect the
   // REPL/daemon process, not what the agent child is actually running. Hide it.
-  if (getKairosActive()) return false
+  if (getAssistantActive()) return false
   const statusLine = settings?.statusLine
   if (statusLine) return statusLine.type !== 'off'
   // No user config: the embedded default script runs, unless hooks are disabled.

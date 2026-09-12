@@ -1,18 +1,19 @@
 /**
- * Assistant mode lifecycle for KAIROS.
+ * Assistant mode lifecycle.
  *
  * Manages the "always-on assistant" mode where Claude Code operates as a
  * persistent assistant with team context, proactive behavior, and daily logs.
  *
  * Activation: .freecode/agents/assistant.md or .claude/agents/assistant.md
- * must exist in the project root, or --assistant CLI flag must be passed
- * (daemon mode).
+ * must exist in the project root, the assistant.enabled setting must be on,
+ * or --assistant CLI flag must be passed (daemon mode).
  */
 
 import { existsSync, readFileSync } from 'fs'
 import { getProjectRoot } from '../bootstrap/state.js'
 import { logError } from '../utils/log.js'
 import { getExistingOrPreferredProjectConfigPath } from '../utils/projectConfigPaths.js'
+import { getInitialSettings } from '../utils/settings/settings.js'
 import { setCliTeammateModeOverride } from '../utils/swarm/backends/teammateModeSnapshot.js'
 
 let forced = false
@@ -29,15 +30,31 @@ function getAssistantMdPath(): string {
 
 /**
  * Check if assistant mode should be activated.
- * True if .freecode/agents/assistant.md or .claude/agents/assistant.md exists OR --assistant was passed.
+ * True if .freecode/agents/assistant.md or .claude/agents/assistant.md exists,
+ * the assistant.enabled setting is on, OR --assistant was passed.
  */
 export function isAssistantMode(): boolean {
   if (forced) return true
+  if (getInitialSettings().assistant?.enabled === true) return true
   try {
     return existsSync(getAssistantMdPath())
   } catch {
     return false
   }
+}
+
+/**
+ * Whether the assistant settings (or --proactive) request proactive mode.
+ */
+export function isAssistantProactiveRequested(): boolean {
+  return getInitialSettings().assistant?.proactive === true
+}
+
+/**
+ * Display name for the assistant persona, if the user configured one.
+ */
+export function getAssistantName(): string | undefined {
+  return getInitialSettings().assistant?.name
 }
 
 /**
@@ -103,16 +120,20 @@ export async function initializeAssistantTeam(): Promise<
  * assistant-mode section.
  */
 export function getAssistantSystemPromptAddendum(): string {
+  const name = getAssistantName()
+  const identity = name
+    ? `You are running in assistant mode as ${name}.`
+    : 'You are running in assistant mode.'
   try {
     const mdPath = getAssistantMdPath()
     if (!existsSync(mdPath)) {
-      return '# Assistant Mode\n\nYou are running in assistant mode.'
+      return `# Assistant Mode\n\n${identity}`
     }
 
     const content = readFileSync(mdPath, 'utf-8')
     return `# Assistant Mode\n\n${content}`
   } catch {
-    return '# Assistant Mode\n\nYou are running in assistant mode.'
+    return `# Assistant Mode\n\n${identity}`
   }
 }
 

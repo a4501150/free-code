@@ -4,7 +4,7 @@ import { getAutoMemPath, isAutoMemoryEnabled } from './paths.js'
 
 import * as teamMemPaths from './teamMemPaths.js'
 import * as teamMemPrompts from './teamMemPrompts.js'
-import { getKairosActive, getOriginalCwd } from '../bootstrap/state.js'
+import { getAssistantActive, getOriginalCwd } from '../bootstrap/state.js'
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../services/analytics/index.js'
 import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
 import { isReplModeEnabled } from '../tools/REPLTool/constants.js'
@@ -465,12 +465,12 @@ export async function loadMemoryPrompt(): Promise<string | null> {
 
   const skipIndex = true
 
-  // KAIROS daily-log mode takes precedence over TEAMMEM: the append-only
+  // Assistant-mode daily-log takes precedence over TEAMMEM: the append-only
   // log paradigm does not compose with team sync (which expects a shared
   // MEMORY.md that both sides read + write). Gating on `autoEnabled` here
   // means the !autoEnabled case falls through to the tengu_memdir_disabled
-  // telemetry block below, matching the non-KAIROS path.
-  if (autoEnabled && getKairosActive()) {
+  // telemetry block below, matching the non-assistant path.
+  if (autoEnabled && getAssistantActive()) {
     logMemoryDirCounts(getAutoMemPath(), {
       memory_type: 'auto',
     })

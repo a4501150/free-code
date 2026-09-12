@@ -1,4 +1,4 @@
-import { getKairosActive, setUserMsgOptIn } from '../bootstrap/state.js'
+import { getAssistantActive, setUserMsgOptIn } from '../bootstrap/state.js'
 import type { ToolUseContext } from '../Tool.js'
 import { isBriefEntitled } from '../tools/BriefTool/BriefTool.js'
 import { BRIEF_TOOL_NAME } from '../tools/BriefTool/prompt.js'
@@ -47,13 +47,13 @@ const brief = {
     // (model may keep emitting plain text from inertia, or keep calling a
     // tool that just vanished). Inject an explicit reminder into the next
     // turn's context so the transition is unambiguous.
-    // Skip when Kairos is active: isBriefEnabled() short-circuits on
-    // getKairosActive() so the tool never actually leaves the list, and
-    // the Kairos system prompt already mandates SendUserMessage.
+    // Skip when the assistant is active: isBriefEnabled() short-circuits on
+    // getAssistantActive() so the tool never actually leaves the list, and
+    // the assistant system prompt already mandates SendUserMessage.
     // Inline <system-reminder> wrap — importing wrapInSystemReminder from
     // utils/messages.ts pulls constants/xml.ts into the SDK bundle
     // via this module's import chain, tripping the excluded-strings check.
-    const metaMessages = getKairosActive()
+    const metaMessages = getAssistantActive()
       ? undefined
       : [
           `<system-reminder>\n${

@@ -1746,11 +1746,11 @@ export function REPL({
   // Scheduled tasks from .freecode/scheduled_tasks.json (CronCreate/Delete/List)
   // Assistant mode bypasses the isLoading gate (the proactive tick →
   // Sleep → tick loop would otherwise starve the scheduler).
-  // kairosEnabled is set once in initialState (main.tsx) and never mutated — no
-  // subscription needed. The isKairosCronEnabled() runtime gate is checked
+  // assistantEnabled is set once in initialState (main.tsx) and never mutated — no
+  // subscription needed. The isAssistantCronEnabled() runtime gate is checked
   // inside useScheduledTasks's effect (not here) since wrapping a hook call
   // in a dynamic condition would break rules-of-hooks.
-  const assistantMode = store.getState().kairosEnabled
+  const assistantMode = store.getState().assistantEnabled
   useScheduledTasks({ isLoading, assistantMode, setMessages })
 
   // Note: Permission polling is now handled by useInboxPoller

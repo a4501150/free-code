@@ -92,7 +92,7 @@ export type PlanModeRenderContext = {
   /** Comma-joined display string of read-only tools, e.g. "FileRead, `find`, `grep`". */
   readOnlyToolNames: string
   /**
-   * False when AskUserQuestion/ExitPlanMode are unregistered (KAIROS +
+   * False when AskUserQuestion/ExitPlanMode are unregistered (assistant mode +
    * --channels: their dialogs hang with nobody at the TUI; same predicate as
    * both tools' isEnabled()). Plan-mode prose must not instruct tools that
    * aren't registered.

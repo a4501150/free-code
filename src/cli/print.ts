@@ -287,6 +287,7 @@ import {
   logQueryProfileReport,
 } from 'src/utils/queryProfiler.js'
 import { asSessionId } from 'src/types/ids.js'
+import { isAssistantProactiveRequested } from '../assistant/index.js'
 import { jsonStringify } from '../utils/slowOperations.js'
 import { skillChangeDetector } from '../utils/skills/skillChangeDetector.js'
 import { getCommands, clearCommandsCache } from '../commands.js'
@@ -338,7 +339,7 @@ import {
 } from '../webui/attach/headlessBridge.js'
 import { createCronScheduler } from '../utils/cronScheduler.js'
 import { getCronJitterConfig } from '../utils/cronJitterConfig.js'
-import { isKairosCronEnabled } from '../tools/ScheduleCronTool/prompt.js'
+import { isAssistantCronEnabled } from '../tools/ScheduleCronTool/prompt.js'
 import { drainPendingExtraction } from '../services/extractMemories/extractMemories.js'
 
 const SHUTDOWN_TEAM_PROMPT = `<system-reminder>
@@ -492,9 +493,9 @@ export async function runHeadless(
 
   // Proactive activation is now handled in main.tsx before getTools() so
   // SleepTool passes isEnabled() filtering. This fallback covers the case
-  // where the proactiveMode setting is on but main.tsx's check didn't fire
+  // where the assistant.proactive setting is on but main.tsx's check didn't fire
   // (e.g. settings were loaded after argv parsing).
-  if (!isProactiveActive() && getInitialSettings().proactiveMode === true) {
+  if (!isProactiveActive() && isAssistantProactiveRequested()) {
     activateProactive('command')
   }
 
@@ -2538,7 +2539,7 @@ function runHeadlessStreaming(
   // the end of run() picks up the queued command.
   let cronScheduler: import('../utils/cronScheduler.js').CronScheduler | null =
     null
-  if (isKairosCronEnabled()) {
+  if (isAssistantCronEnabled()) {
     cronScheduler = createCronScheduler({
       onFire: prompt => {
         if (inputClosed) return
@@ -2561,7 +2562,7 @@ function runHeadlessStreaming(
       },
       isLoading: () => running || inputClosed,
       getJitterConfig: getCronJitterConfig,
-      isKilled: () => !isKairosCronEnabled(),
+      isKilled: () => !isAssistantCronEnabled(),
     })
     cronScheduler.start()
   }

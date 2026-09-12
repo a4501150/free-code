@@ -48,7 +48,7 @@ function computeShimmerSegments(
 
   return { before, shimmer, after }
 }
-import { getKairosActive, getUserMsgOptIn } from '../bootstrap/state.js'
+import { getAssistantActive, getUserMsgOptIn } from '../bootstrap/state.js'
 import { count } from '../utils/array.js'
 import sample from 'lodash-es/sample.js'
 import { formatDuration, formatSecondsShort } from '../utils/format.js'
@@ -127,7 +127,7 @@ export function SpinnerWithVerb(props: Props): React.ReactNode {
   // BriefTool.ts would leak tool-name strings into external builds. Single
   // spinner instance → hooks stay unconditional (two subs, negligible).
   if (
-    (getKairosActive() || getUserMsgOptIn()) &&
+    (getAssistantActive() || getUserMsgOptIn()) &&
     isBriefOnly &&
     !viewingAgentTaskId
   ) {

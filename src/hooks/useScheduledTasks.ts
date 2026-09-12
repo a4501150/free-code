@@ -5,7 +5,7 @@ import {
   findTeammateTaskByAgentId,
   injectUserMessageToTeammate,
 } from '../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
-import { isKairosCronEnabled } from '../tools/ScheduleCronTool/prompt.js'
+import { isAssistantCronEnabled } from '../tools/ScheduleCronTool/prompt.js'
 import type { Message } from '../types/message.js'
 import { getCronJitterConfig } from '../utils/cronJitterConfig.js'
 import { createCronScheduler } from '../utils/cronScheduler.js'
@@ -58,7 +58,7 @@ export function useScheduledTasks({
     // effect won't re-run on value flip (assistantMode is the only dep),
     // so this guard alone is launch-grain. The mid-session killswitch is
     // the isKilled option below — check() polls it every tick.
-    if (!isKairosCronEnabled()) return
+    if (!isAssistantCronEnabled()) return
 
     // System-generated — hidden from queue preview and transcript UI.
     // In brief mode, executeForkedSlashCommand runs as a background
@@ -116,7 +116,7 @@ export function useScheduledTasks({
       isLoading: () => isLoadingRef.current,
       assistantMode,
       getJitterConfig: getCronJitterConfig,
-      isKilled: () => !isKairosCronEnabled(),
+      isKilled: () => !isAssistantCronEnabled(),
     })
     scheduler.start()
     return () => scheduler.stop()

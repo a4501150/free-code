@@ -30,7 +30,7 @@ export type WebPermissionBrokerHooks = {
  * which do not belong in serializable state.
  *
  * A request stays open when no browser is attached. The terminal dialog, a
- * KAIROS channel and a permission hook are all still racing for it, and a
+ * assistant channel and a permission hook are all still racing for it, and a
  * disconnected browser must not deny by omission.
  */
 export function createWebPermissionBroker(

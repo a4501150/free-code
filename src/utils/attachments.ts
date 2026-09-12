@@ -133,7 +133,7 @@ import {
   setLastEmittedDate,
   getLastEmittedTerminalFocus,
   setLastEmittedTerminalFocus,
-  getKairosActive,
+  getAssistantActive,
 } from '../bootstrap/state.js'
 import type { QuerySource } from '../constants/querySource.js'
 import {
@@ -1342,7 +1342,7 @@ export function getDateChangeAttachments(
   // the /dream skill (1–5am local) finds it even if no compaction fires
   // today. Fire-and-forget; writeSessionTranscriptSegment buckets by
   // message timestamp so a multi-day gap flushes each day correctly.
-  if (getKairosActive() && messages !== undefined) {
+  if (getAssistantActive() && messages !== undefined) {
     flushOnDateChange(messages, currentDate)
   }
 

@@ -1070,12 +1070,25 @@ export function Config({
       },
     },
     {
-      id: 'proactiveMode',
-      label: 'Proactive mode',
-      value: settingsData?.proactiveMode ?? false,
+      id: 'assistantEnabled',
+      label: 'Assistant mode',
+      value: settingsData?.assistant?.enabled ?? false,
       type: 'boolean' as const,
-      onChange(proactiveMode: boolean) {
-        updateUserSettings({ proactiveMode })
+      onChange(enabled: boolean) {
+        updateUserSettings({
+          assistant: { ...settingsData?.assistant, enabled },
+        })
+      },
+    },
+    {
+      id: 'assistantProactive',
+      label: 'Proactive mode',
+      value: settingsData?.assistant?.proactive ?? false,
+      type: 'boolean' as const,
+      onChange(proactive: boolean) {
+        updateUserSettings({
+          assistant: { ...settingsData?.assistant, proactive },
+        })
       },
     },
     {
