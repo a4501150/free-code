@@ -2719,7 +2719,7 @@ export async function getPostCompactSkillListingAttachment(
   }
 }
 
-async function getSkillListingAttachments(
+export async function getSkillListingAttachments(
   toolUseContext: ToolUseContext,
 ): Promise<Attachment[]> {
   if (process.env.NODE_ENV === 'test') {

@@ -45,7 +45,10 @@ import type {
   ToolUseSummaryMessage,
   UserMessage,
 } from '../../types/message.js'
-import { createAttachmentMessage } from '../../utils/attachments.js'
+import {
+  createAttachmentMessage,
+  getSkillListingAttachments,
+} from '../../utils/attachments.js'
 import { isMemoryFilePath } from '../../utils/claudemd.js'
 import { parseEffortValue } from '../../utils/effort.js'
 import { AbortError } from '../../utils/errors.js'
@@ -705,6 +708,22 @@ export async function* runAgent({
   // Preserve tool use results for subagents with viewable transcripts (in-process teammates)
   if (preserveToolUseResults) {
     agentToolUseContext.preserveToolUseResults = true
+  }
+
+  // Turn-0 skill listing: the Skill tool is in the worker's pool, but the
+  // listing normally only rides tool-loop attachments — after the first tool
+  // batch, too late for the worker to *choose* a skill on its opening
+  // completion, and never at all if it finishes without calling tools. The
+  // main thread gets the listing from processUserInput; subagents have no
+  // input-processing pass, so announce it here. sentSkillNames is keyed by
+  // agentId, so the tool loop's own listing becomes a delta-only no-op.
+  // Skipped for forks: they inherit the parent transcript, listing included.
+  if (forkContextMessages === undefined) {
+    for (const attachment of await getSkillListingAttachments(
+      agentToolUseContext,
+    )) {
+      initialMessages.push(createAttachmentMessage(attachment))
+    }
   }
 
   if (onCompactProgress) {
