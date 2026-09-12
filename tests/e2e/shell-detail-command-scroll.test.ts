@@ -15,8 +15,7 @@ import {
   describe,
   test as bunTest,
   expect,
-  beforeAll,
-  afterAll,
+  beforeEach,
   afterEach,
   setDefaultTimeout,
 } from 'bun:test'
@@ -46,17 +45,18 @@ describe('Shell detail command panel', () => {
   let server: MockAnthropicServer
   let session: TmuxSession
 
-  beforeAll(async () => {
+  // One server per test: a killed session's in-flight teardown request lands
+  // on the (closed) previous server instead of consuming the next test's
+  // queued response, which made the shared-server version flake by opening
+  // /tasks with no task ever started.
+  beforeEach(async () => {
     server = new MockAnthropicServer()
     await server.start()
   })
 
-  afterAll(() => {
-    server.stop()
-  })
-
   afterEach(async () => {
     if (session) await session.stop()
+    server.stop()
   })
 
   test('long command is scrollable and Tab-focusable', async () => {

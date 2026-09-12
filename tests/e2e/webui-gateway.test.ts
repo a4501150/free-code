@@ -171,6 +171,37 @@ class GatewayClient {
   }
 }
 
+/**
+ * Wait until a freshly spawned child has registered its REPL runtime. The
+ * attach snapshot arrives as soon as the host publishes a session, which is
+ * before the child's REPL mounts, and a submit landing before registration
+ * is refused once with runtime_not_ready. Only a registered runtime can put
+ * permissionMode in a meta event (registerRuntime fires publishMeta), so
+ * that field is the readiness signal — without it these tests win the race
+ * against the child's boot every time.
+ */
+async function waitForRuntimeReady(
+  frames: Record<string, unknown>[],
+  description: string,
+): Promise<void> {
+  await waitFor(
+    () => frames,
+    list =>
+      list.some(f => {
+        const event = f.event as
+          | { kind?: string; meta?: { permissionMode?: string } }
+          | undefined
+        return (
+          event?.kind === 'meta' && event.meta?.permissionMode !== undefined
+        )
+      }),
+    {
+      description: `${description} to register its runtime`,
+      timeoutMs: 30_000,
+    },
+  )
+}
+
 async function waitForAttachablePid(configDir: string): Promise<number> {
   return waitFor(
     async () => {
@@ -555,6 +586,7 @@ describe('WebUI gateway', () => {
         )!.event as { meta: { sessionEpoch: number } }
       ).meta
 
+      await waitForRuntimeReady(frames, 'the owned session')
       socket.send(
         JSON.stringify({
           type: 'command',
@@ -707,6 +739,7 @@ describe('WebUI gateway', () => {
         )!.event as { meta: { sessionEpoch: number } }
       ).meta
 
+      await waitForRuntimeReady(first.frames, 'the resumed session')
       first.socket.send(
         JSON.stringify({
           type: 'command',
@@ -953,6 +986,7 @@ describe('WebUI gateway', () => {
       ).meta
 
       // Drive one turn so the transcript has content for the terminal to see.
+      await waitForRuntimeReady(browser.frames, 'the web session')
       browser.socket.send(
         JSON.stringify({
           type: 'command',
