@@ -33,9 +33,6 @@ const outputSchema = z.object({
   result: z
     .string()
     .describe('Processed result from applying the prompt to the content'),
-  durationMs: z
-    .number()
-    .describe('Time taken to fetch and process the content'),
   url: z.string().describe('The URL that was fetched'),
 })
 type OutputSchema = typeof outputSchema
@@ -197,8 +194,6 @@ ${DESCRIPTION}`
     { url, prompt },
     { abortController, options: { isNonInteractiveSession } },
   ) {
-    const start = Date.now()
-
     const response = await getURLMarkdownContent(url, abortController)
 
     // Check if we got a redirect to a different host
@@ -227,7 +222,6 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
         code: response.statusCode,
         codeText: statusText,
         result: message,
-        durationMs: Date.now() - start,
         url,
       }
 
@@ -277,7 +271,6 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
       code,
       codeText,
       result,
-      durationMs: Date.now() - start,
       url,
     }
 

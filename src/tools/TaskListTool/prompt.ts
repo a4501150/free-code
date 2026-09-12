@@ -15,9 +15,8 @@ export function getPrompt(): string {
 When working as a teammate:
 1. After completing your current task, call TaskList to find available work
 2. Look for tasks with status 'pending', no owner, and empty blockedBy
-3. **Prefer tasks in ID order** (lowest ID first) when multiple tasks are available, as earlier tasks often set up context for later ones
-4. Claim an available task by marking it \`in_progress\` with TaskUpdate (you become its owner automatically)
-5. If a task is blocked, work on the tasks that remove the block, or notify the team lead
+3. Claim an available task by marking it \`in_progress\` with TaskUpdate (you become its owner automatically)
+4. If a task is blocked, work on the tasks that remove the block, or notify the team lead
 `
     : ''
 

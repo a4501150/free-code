@@ -34,7 +34,6 @@ Once a list exists, keep it accurate as you work — a list that lags behind the
 
 Skip it for a single straightforward task, or for purely conversational or informational requests - do the work directly.
 
-All tasks are created with status \`pending\` and no owner.
 ${teammateTips}- Create tasks with clear, specific subjects that describe the outcome
 - After creating tasks, use TaskUpdate to set up dependencies (blocks/blockedBy) if needed
 - Check TaskList first to avoid creating duplicate tasks

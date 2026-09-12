@@ -30,7 +30,6 @@ import {
 import { logFileOperation } from '../../utils/fileOperationAnalytics.js'
 import { readFileSyncWithMetadata, stripBom } from '../../utils/fileRead.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
-import { type ToolUseDiff } from '../../utils/gitDiff.js'
 import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
 import {
@@ -40,7 +39,7 @@ import {
 } from '../../utils/permissions/filesystem.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
-import { gitDiffSchema, hunkSchema } from '../FileEditTool/types.js'
+import { hunkSchema } from '../FileEditTool/types.js'
 import { FILE_WRITE_TOOL_NAME, getWriteToolDescription } from './prompt.js'
 import {
   getToolUseSummary,
@@ -77,7 +76,6 @@ const outputSchema = z.object({
     .describe(
       'The original file content before the write (null for new files)',
     ),
-  gitDiff: gitDiffSchema.optional(),
 })
 type OutputSchema = typeof outputSchema
 
@@ -321,8 +319,6 @@ export const FileWriteTool = buildTool({
 
     // Log when writing to CLAUDE.md
 
-    let gitDiff: ToolUseDiff | undefined
-
     if (oldContent) {
       const patch = getPatchFromContents({
         filePath: file_path,
@@ -336,7 +332,6 @@ export const FileWriteTool = buildTool({
         content,
         structuredPatch: patch,
         originalFile: oldContent,
-        ...(gitDiff && { gitDiff }),
       }
       // Track lines added and removed for file updates, right before yielding result
       countLinesChanged(patch)
@@ -359,7 +354,6 @@ export const FileWriteTool = buildTool({
       content,
       structuredPatch: [],
       originalFile: null,
-      ...(gitDiff && { gitDiff }),
     }
 
     // For creation of new files, count all lines as additions, right before yielding the result

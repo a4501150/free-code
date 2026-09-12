@@ -17,7 +17,7 @@ type OutputSchema = typeof outputSchema
 
 type Output = z.infer<OutputSchema>
 
-const TOOL_DESCRIPTION = `Verify that the approved plan from plan mode has been fully implemented. Spawns a background verification subagent that reads the codebase and runs adversarial checks (builds, tests, boundary inputs) against the plan, then returns a PASS/FAIL/PARTIAL verdict.
+const TOOL_DESCRIPTION = `Verify that the approved plan from plan mode has been fully implemented. Runs a blocking verification pass that reads the codebase and runs adversarial checks (builds, tests, boundary inputs) against the plan, then returns a PASS/FAIL/PARTIAL verdict. The call waits for the verdict before returning — it can take several minutes, so budget for the wait.
 
 Call this exactly once after you believe you have finished implementing the plan. The tool is only available when VERIFY_PLAN is compiled in and CLAUDE_CODE_VERIFY_PLAN is truthy — otherwise it is hidden from the model.`
 

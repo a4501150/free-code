@@ -30,10 +30,10 @@ const inputSchema = z.strictObject({
     ),
   prompt: z.string().describe('The prompt to enqueue at each fire time.'),
   recurring: semanticBoolean(z.boolean().optional()).describe(
-    `true (default) = fire on every cron match until deleted or auto-expired after ${DEFAULT_MAX_AGE_DAYS} days. false = fire once at the next match, then auto-delete.`,
+    'true (default) = fire on every cron match until deleted. false = fire once at the next match, then auto-delete.',
   ),
   durable: semanticBoolean(z.boolean().optional()).describe(
-    'true = persist to .freecode/scheduled_tasks.json and survive restarts. false (default) = in-memory only, dies when this Claude session ends.',
+    'true = persist to disk and survive restarts; false (default) = this session only.',
   ),
 })
 type InputSchema = typeof inputSchema

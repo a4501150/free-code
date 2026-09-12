@@ -44,7 +44,6 @@ import {
 } from '../../utils/fileRead.js'
 import { formatFileSize } from '../../utils/format.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
-import { type ToolUseDiff } from '../../utils/gitDiff.js'
 import { logError } from '../../utils/log.js'
 import { expandPath } from '../../utils/path.js'
 import {
@@ -420,7 +419,6 @@ export const FileEditTool = buildTool({
       let updatedFile: string
       let editCount: number
       let approvalNote: ApprovalNote
-      let gitDiff: ToolUseDiff | undefined
       if (input._overrideContent) {
         updatedFile = input._overrideContent.newContent
         editCount = 1
@@ -523,7 +521,6 @@ export const FileEditTool = buildTool({
         userModified: userModified ?? false,
         editCount,
         approvalNote,
-        ...(gitDiff && { gitDiff }),
       } satisfies FileEditOutput
     })
 

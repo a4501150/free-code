@@ -20,7 +20,6 @@ const outputSchema = z.object({
   jobs: z.array(
     z.object({
       id: z.string(),
-      cron: z.string(),
       humanSchedule: z.string(),
       prompt: z.string(),
       recurring: z.boolean().optional(),
@@ -64,7 +63,6 @@ export const CronListTool = buildTool({
       : allTasks
     const jobs = tasks.map(t => ({
       id: t.id,
-      cron: t.cron,
       humanSchedule: cronToHuman(t.cron),
       prompt: t.prompt,
       ...(t.recurring ? { recurring: true } : {}),

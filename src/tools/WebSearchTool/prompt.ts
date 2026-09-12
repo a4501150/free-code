@@ -5,7 +5,7 @@ export const WEB_SEARCH_TOOL_NAME = 'WebSearch'
 export function getWebSearchPrompt(): string {
   const currentMonthYear = getLocalMonthYear()
   return `
-- Searches the web and uses the results to inform your response; results arrive as search result blocks with links as markdown hyperlinks
+- Searches the web and uses the results to inform your response; results arrive as search result blocks containing title/URL pairs
 - Use for information beyond your knowledge cutoff; searches run within a single API call
 
 CRITICAL REQUIREMENT: End your response with a "Sources:" section listing the relevant result URLs as markdown hyperlinks: [Title](URL). Never skip it.

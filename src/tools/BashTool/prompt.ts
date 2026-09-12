@@ -1,6 +1,5 @@
 import { prependBullets } from '../../constants/prompts.js'
-import { shouldPreferBashForSearch } from '../../utils/embeddedTools.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import { hasEmbeddedSearchTools } from '../../utils/embeddedTools.js'
 import {
   getDefaultBashTimeoutMs,
   getMaxBashTimeoutMs,
@@ -14,19 +13,15 @@ export function getMaxTimeoutMs(): number {
   return getMaxBashTimeoutMs()
 }
 
-function getBackgroundUsageNote(): string | null {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
-    return null
-  }
-  return 'Use `run_in_background: true` to start a long-running command without holding the turn open. It returns at once with a task ID and an output file path, and a completion notification arrives on its own. To wait on external state, put the polling in one backgrounded loop with an exit condition: `while ! check; do sleep 5; done`.'
-}
+// Background-task guidance lives on the `run_in_background` schema description
+// (BashTool.tsx), which is removed from the schema together with the param
+// under CLAUDE_CODE_DISABLE_BACKGROUND_TASKS — no prompt-side gating needed.
 
 export function getSimplePrompt(): string {
-  // When Glob/Grep are stripped from the registry, we don't steer away from
-  // find/grep in Bash.
-  const embedded = shouldPreferBashForSearch()
-
-  const backgroundNote = getBackgroundUsageNote()
+  // The -regex quirk below is a bfs (embedded search sidecar) behavior; on a
+  // system find it does not apply, so gate on the sidecars being available,
+  // not on Glob/Grep being stripped.
+  const embedded = hasEmbeddedSearchTools()
 
   const instructionItems: Array<string | string[]> = [
     'Run the command without a pipe. Do not append `| tail`, `| head`, or `| grep` to cap the output. The user reads every tool result, and a pipe truncates what the user sees. Large output needs no cap from you: it is saved to a file and the result names the path.',
@@ -48,6 +43,5 @@ export function getSimplePrompt(): string {
     '',
     '# Instructions',
     ...prependBullets(instructionItems),
-    ...(backgroundNote ? ['', backgroundNote] : []),
   ].join('\n')
 }

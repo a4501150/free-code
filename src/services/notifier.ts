@@ -12,15 +12,20 @@ export type NotificationOptions = {
   notificationType: string
 }
 
+/**
+ * Dispatches a notification and resolves with the channel method that was
+ * used: a delivery method name, or 'disabled' / 'no_method_available' /
+ * 'none' / 'error' when nothing was actually delivered. Never throws.
+ */
 export async function sendNotification(
   notif: NotificationOptions,
   terminal: TerminalNotification,
-): Promise<void> {
+): Promise<string> {
   const channel = getInitialSettings().preferredNotifChannel ?? 'auto'
 
   await executeNotificationHooks(notif)
 
-  const methodUsed = await sendToChannel(channel, notif, terminal)
+  return sendToChannel(channel, notif, terminal)
 }
 
 const DEFAULT_TITLE = 'Claude Code'

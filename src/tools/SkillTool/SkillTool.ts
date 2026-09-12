@@ -195,7 +195,6 @@ export const outputSchema = (() => {
       .optional()
       .describe('Tools allowed by this skill'),
     model: z.string().optional().describe('Model override if specified'),
-    status: z.literal('inline').optional().describe('Execution status'),
   })
 
   // Output schema for forked skills

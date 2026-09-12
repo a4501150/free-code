@@ -80,7 +80,9 @@ export const outputSchema = z.object({
   hasTaskTool: z
     .boolean()
     .optional()
-    .describe('Whether the Agent tool is available in the current context'),
+    .describe(
+      'Whether Agent Teams spawning is available (Agent tool present and Agent Teams enabled)',
+    ),
   planWasEdited: z
     .boolean()
     .optional()

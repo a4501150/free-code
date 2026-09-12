@@ -30,10 +30,6 @@ export const outputSchema = z.object({
       uri: z.string().describe('Resource URI'),
       mimeType: z.string().optional().describe('MIME type of the content'),
       text: z.string().optional().describe('Text content of the resource'),
-      blobSavedTo: z
-        .string()
-        .optional()
-        .describe('Path where binary blob content was saved'),
     }),
   ),
 })
@@ -120,7 +116,6 @@ export const ReadMcpResourceTool = buildTool({
         return {
           uri: c.uri,
           mimeType: c.mimeType,
-          blobSavedTo: persisted.filepath,
           text: getBinaryBlobSavedMessage(
             persisted.filepath,
             c.mimeType,

@@ -5,8 +5,8 @@ Lists available resources from configured MCP servers.
 Each resource object includes a 'server' field indicating which server it comes from.
 
 Usage examples:
-- List all resources from all servers: \`listMcpResources\`
-- List resources from a specific server: \`listMcpResources({ server: "myserver" })\`
+- List all resources from all servers: call \`ListMcpResourcesTool\` with \`{}\`
+- List resources from a specific server: call \`ListMcpResourcesTool\` with \`{ "server": "myserver" }\`
 `
 
 export const PROMPT = `

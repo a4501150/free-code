@@ -42,14 +42,14 @@ This creates:
 1. **Create a team** with TeamCreate - this creates both the team and its task list
 2. **Create tasks** using the Task tools (TaskCreate, TaskList, and TaskUpdate) - they automatically use the team's task list
 3. **Spawn teammates** using the Agent tool with \`team_name\` and \`name\` parameters to create teammates that join the team
-4. **Assign tasks** using TaskUpdate with \`owner\` to give tasks to idle teammates
+4. **Teammates claim tasks** by marking them \`in_progress\` with TaskUpdate - this sets the task's owner to the acting agent
 5. **Teammates work on assigned tasks** and mark them completed via TaskUpdate
 6. **Teammates go idle between turns** - after each turn, teammates automatically go idle and send a notification. IMPORTANT: Wait patiently for idle teammates. Do not comment on their idle state until it affects your work.
 7. **Shutdown your team** - when the task is completed, gracefully shut down your teammates via SendMessage with \`message: {type: "shutdown_request"}\`.
 
 ## Task Ownership
 
-Tasks are assigned using TaskUpdate with the \`owner\` parameter. Any agent can set or change task ownership via TaskUpdate.
+Ownership is harness-managed: a task becomes owned by whichever agent claims it by marking it \`in_progress\` via TaskUpdate. The model never sets an \`owner\` directly.
 
 ## Automatic Message Delivery
 
@@ -99,7 +99,7 @@ Teams share a task list that all teammates can access at \`${gcd}/tasks/{team-na
 
 Teammates:
 1. Check TaskList periodically, **especially after completing each task**, to find available work or see newly unblocked tasks
-2. Claim unassigned, unblocked tasks with TaskUpdate (set \`owner\` to your name). **Prefer tasks in ID order** (lowest ID first) when multiple tasks are available, as earlier tasks often set up context for later ones
+2. Claim unassigned, unblocked tasks by marking them \`in_progress\` with TaskUpdate (you become their owner automatically). **Prefer tasks in ID order** (lowest ID first) when multiple tasks are available, as earlier tasks often set up context for later ones
 3. Create new tasks with \`TaskCreate\` when identifying additional work
 4. Mark tasks as completed with \`TaskUpdate\` when done, then check TaskList for next work
 5. Coordinate with other teammates by reading the task list status

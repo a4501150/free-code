@@ -25,6 +25,5 @@ Position-based operations also require \`line\` and \`character\` (both 1-based)
 - outgoingCalls
 
 \`documentSymbol\` requires only \`filePath\`.
-\`workspaceSymbol\` accepts an optional \`query\`; omit it to request all symbols.
 
 Note: LSP servers must be configured for the file type. If no server is available, an error will be returned.`

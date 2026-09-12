@@ -246,7 +246,7 @@ const isBackgroundTasksDisabled =
 const fullInputSchema = z.strictObject({
   command: z.string().describe('The PowerShell command to execute'),
   timeout: semanticNumber(z.number().optional()).describe(
-    `Optional timeout in milliseconds (max ${getMaxTimeoutMs()})`,
+    `Optional timeout in milliseconds. Max ${getMaxTimeoutMs()}; default ${getDefaultTimeoutMs()}.`,
   ),
   description: z
     .string()

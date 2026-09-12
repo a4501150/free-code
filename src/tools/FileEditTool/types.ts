@@ -47,20 +47,6 @@ export const hunkSchema = z.object({
   lines: z.array(z.string()),
 })
 
-export const gitDiffSchema = z.object({
-  filename: z.string(),
-  status: z.enum(['modified', 'added']),
-  additions: z.number(),
-  deletions: z.number(),
-  changes: z.number(),
-  patch: z.string(),
-  repository: z
-    .string()
-    .nullable()
-    .optional()
-    .describe('GitHub owner/repo when available'),
-})
-
 export const approvalNoteSchema = z.enum([
   'fresh',
   'recovered',
@@ -87,7 +73,6 @@ const outputSchema = z.object({
     .describe(
       'How placement was approved against the model\u2019s seen content',
     ),
-  gitDiff: gitDiffSchema.optional(),
 })
 type OutputSchema = typeof outputSchema
 

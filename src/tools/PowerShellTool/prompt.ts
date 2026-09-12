@@ -1,4 +1,3 @@
-import { isEnvTruthy } from '../../utils/envUtils.js'
 import { getMaxOutputLength } from '../../utils/shell/outputLimits.js'
 import {
   getPowerShellEdition,
@@ -21,13 +20,6 @@ export function getDefaultTimeoutMs(): number {
 
 export function getMaxTimeoutMs(): number {
   return getMaxBashTimeoutMs()
-}
-
-function getBackgroundUsageNote(): string | null {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
-    return null
-  }
-  return `  - Use \`run_in_background: true\` to start a long-running command without holding the turn open. It returns at once with a task ID and output file path, and a completion notification arrives on its own.`
 }
 
 /**
@@ -58,7 +50,6 @@ function getEditionSection(edition: PowerShellEdition | null): string {
 }
 
 export async function getPrompt(): Promise<string> {
-  const backgroundNote = getBackgroundUsageNote()
   const edition = await getPowerShellEdition()
 
   return `Executes a given PowerShell command and returns its output. Working directory persists between commands; shell state (variables, functions) does not.
@@ -96,8 +87,7 @@ Second line with $literal dollar signs.
    - For arguments containing \`-\`, \`@\`, or other characters PowerShell parses as operators, use the stop-parsing token: \`git log --% --format=%H\`
 
 Usage notes:
-   - Timeout in milliseconds, up to ${getMaxTimeoutMs()}ms; default ${getDefaultTimeoutMs()}ms.
-   - Output over ${getMaxOutputLength()} characters is truncated before being returned to you.${backgroundNote ? '\n' + backgroundNote : ''}
+   - Output over ${getMaxOutputLength()} characters is truncated before being returned to you.
    - Prefer the dedicated tools over PowerShell for file operations: ${GLOB_TOOL_NAME} for file search, ${GREP_TOOL_NAME} for content search, ${FILE_READ_TOOL_NAME} to read, ${FILE_EDIT_TOOL_NAME} to edit, ${FILE_WRITE_TOOL_NAME} to write.
    - When issuing multiple commands:
    - Independent commands: make multiple ${POWERSHELL_TOOL_NAME} tool calls in a single message.

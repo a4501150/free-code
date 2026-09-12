@@ -87,7 +87,7 @@ export const TeamDeleteTool: Tool<InputSchema, Output> = buildTool({
           return {
             data: {
               success: false,
-              message: `Cannot cleanup team with ${activeMembers.length} active member(s): ${memberNames}. Use requestShutdown to gracefully terminate teammates first.`,
+              message: `Cannot cleanup team with ${activeMembers.length} active member(s): ${memberNames}. Send a shutdown_request via SendMessage to gracefully terminate teammates first.`,
               team_name: teamName,
             },
           }

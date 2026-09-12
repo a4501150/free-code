@@ -236,11 +236,15 @@ export const inputSchema = (() => {
 
   // isAgentSwarmsEnabled() / isBackgroundTasksDisabled can read from disk and
   // flip mid-session. The optional-only fields stripped here (name, team_name,
-  // run_in_background) are widened back via the explicit AgentToolInput type so
-  // call() destructuring is unaffected by the gate flip.
+  // mode, run_in_background) are widened back via the explicit AgentToolInput
+  // type so call() destructuring is unaffected by the gate flip.
   const swarmsSchema = isAgentSwarmsEnabled()
     ? afterWorktreeGate
-    : afterWorktreeGate.omit({ name: true, team_name: true })
+    : afterWorktreeGate.omit({
+        name: true,
+        team_name: true,
+        mode: true,
+      })
   return isBackgroundTasksDisabled
     ? swarmsSchema.omit({ run_in_background: true })
     : swarmsSchema
