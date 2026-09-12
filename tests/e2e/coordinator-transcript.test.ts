@@ -97,10 +97,10 @@ describe('Coordinator worker transcript view', () => {
         },
         defaultModel: 'test-anthropic:main-model',
         defaultSubagentModel: 'test-anthropic:worker-model',
-      },
-      additionalEnv: {
-        CLAUDE_CODE_COORDINATOR_MODE: '1',
-        CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '0',
+        // Harness default is false; coordinator transcripts need real
+        // background tasks.
+        coordinatorMode: true,
+        backgroundTasksEnabled: true,
       },
     })
     await session.start()
@@ -191,10 +191,8 @@ describe('Coordinator worker transcript view', () => {
         },
         defaultModel: 'test-anthropic:main-model',
         defaultSubagentModel: 'test-anthropic:worker-model',
-      },
-      additionalEnv: {
-        CLAUDE_CODE_COORDINATOR_MODE: '1',
-        CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '0',
+        coordinatorMode: true,
+        backgroundTasksEnabled: true,
       },
     })
     await session.start()

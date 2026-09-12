@@ -12,8 +12,8 @@ import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
 import { getPluginErrorMessage } from '../../types/plugin.js'
 import { logForDebugging } from '../debug.js'
+import { isBackgroundTasksEnabled } from '../backgroundTasks.js'
 import { EFFORT_LEVELS, parseEffortValue } from '../effort.js'
-import { isEnvTruthy } from '../envUtils.js'
 import {
   coerceDescriptionToString,
   parseFrontmatter,
@@ -109,12 +109,9 @@ async function loadAgentFromFile(
     const backgroundRaw = frontmatter.background
     let background: true | undefined =
       backgroundRaw === 'true' || backgroundRaw === true ? true : undefined
-    if (
-      background &&
-      isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
-    ) {
+    if (background && !isBackgroundTasksEnabled()) {
       logForDebugging(
-        `Plugin agent file ${filePath} sets background: true but background tasks are disabled (CLAUDE_CODE_DISABLE_BACKGROUND_TASKS). Stripping field.`,
+        `Plugin agent file ${filePath} sets background: true but background tasks are disabled (backgroundTasksEnabled setting). Stripping field.`,
         { level: 'warn' },
       )
       background = undefined

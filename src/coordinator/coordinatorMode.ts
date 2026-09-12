@@ -9,7 +9,10 @@ import { TASK_STOP_TOOL_NAME } from '../tools/TaskStopTool/prompt.js'
 import { TEAM_CREATE_TOOL_NAME } from '../tools/TeamCreateTool/constants.js'
 import { TEAM_DELETE_TOOL_NAME } from '../tools/TeamDeleteTool/constants.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
-import { isCoordinatorMode } from './coordinatorModeGate.js'
+import {
+  isCoordinatorMode,
+  setCoordinatorModeOverride,
+} from './coordinatorModeGate.js'
 // Side-effect import: workerAgent registers its coordinator-agent provider at
 // module init so getCoordinatorAgents() returns the real list when this module
 // is loaded.
@@ -36,7 +39,7 @@ const INTERNAL_WORKER_TOOLS = new Set([
 
 /**
  * Checks if the current coordinator mode matches the session's stored mode.
- * If mismatched, flips the environment variable so isCoordinatorMode() returns
+ * If mismatched, sets the in-process override so isCoordinatorMode() returns
  * the correct value for the resumed session. Returns a warning message if
  * the mode was switched, or undefined if no switch was needed.
  */
@@ -55,12 +58,8 @@ export function matchSessionMode(
     return undefined
   }
 
-  // Flip the env var — isCoordinatorMode() reads it live, no caching
-  if (sessionIsCoordinator) {
-    process.env.CLAUDE_CODE_COORDINATOR_MODE = '1'
-  } else {
-    delete process.env.CLAUDE_CODE_COORDINATOR_MODE
-  }
+  // Set the in-process override — isCoordinatorMode() reads it live, no caching
+  setCoordinatorModeOverride(sessionIsCoordinator)
 
   return sessionIsCoordinator
     ? 'Entered coordinator mode to match resumed session.'

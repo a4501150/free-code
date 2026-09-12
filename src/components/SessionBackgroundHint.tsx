@@ -13,6 +13,7 @@ import {
   backgroundAll,
   hasForegroundTasks,
 } from '../tasks/LocalShellTask/LocalShellTask.js'
+import { isBackgroundTasksEnabled } from '../utils/backgroundTasks.js'
 import { env } from '../utils/env.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
 import { KeyboardShortcutHint } from './design-system/KeyboardShortcutHint.js'
@@ -48,7 +49,7 @@ export function SessionBackgroundHint({
   // Handler for task:background - prioritizes foreground tasks, falls back to session backgrounding
   // Skip all background functionality if background tasks are disabled
   const handleBackground = useCallback(() => {
-    if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
+    if (!isBackgroundTasksEnabled()) {
       return
     }
     const state = appStateStore.getState()

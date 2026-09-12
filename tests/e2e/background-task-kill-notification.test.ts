@@ -107,12 +107,11 @@ describe('Background task kill notification', () => {
 
     session = new TmuxSession({
       serverUrl: server.url,
-      additionalEnv: {
-        // The default test env disables background tasks via
-        // CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1, which strips
+      settings: {
+        // The harness seeds backgroundTasksEnabled: false, which strips
         // run_in_background from the Bash schema. Override so the model can
         // actually background the sleep.
-        CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '0',
+        backgroundTasksEnabled: true,
       },
     })
     await session.start()

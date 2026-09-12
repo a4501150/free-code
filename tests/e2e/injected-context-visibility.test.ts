@@ -57,11 +57,9 @@ function backgroundBashResponses() {
   ]
 }
 
-const BACKGROUND_TASK_ENV = {
-  // The default test env sets CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1, which
-  // strips run_in_background from the Bash schema.
-  CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '0',
-}
+// The harness seeds backgroundTasksEnabled: false, which strips
+// run_in_background from the Bash schema; opt back in via settings.
+const BACKGROUND_TASK_SETTINGS = { backgroundTasksEnabled: true }
 
 describe('Injected context visibility', () => {
   let server: MockAnthropicServer
@@ -85,8 +83,10 @@ describe('Injected context visibility', () => {
 
     session = new TmuxSession({
       serverUrl: server.url,
-      additionalEnv: BACKGROUND_TASK_ENV,
-      settings: { permissions: { allow: ['Bash'] } },
+      settings: {
+        ...BACKGROUND_TASK_SETTINGS,
+        permissions: { allow: ['Bash'] },
+      },
     })
     await session.start()
 
@@ -178,8 +178,8 @@ describe('Injected context visibility', () => {
 
     session = new TmuxSession({
       serverUrl: server.url,
-      additionalEnv: BACKGROUND_TASK_ENV,
       settings: {
+        ...BACKGROUND_TASK_SETTINGS,
         permissions: { allow: ['Bash'] },
         showInjectedContext: false,
       },

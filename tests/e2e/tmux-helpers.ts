@@ -9,7 +9,8 @@
  * No special permission flags — uses the real default permission mode.
  * Test isolation is achieved through env variables:
  * - Temp FREECODE_CONFIG_DIR/CLAUDE_CONFIG_DIR and HOME (no real user config)
- * - CLAUDE_CODE_DISABLE_* flags (no background tasks, memory, etc.)
+ * - CLAUDE_CODE_DISABLE_* flags (no memory, file checkpointing, etc.)
+ * - Seeded freecode.json (background tasks off by default here)
  *
  * Tmux pane output is piped to a log file and dumped on timeout for debugging.
  */
@@ -103,8 +104,10 @@ export class TmuxSession {
     this._additionalArgs = options.additionalArgs ?? []
     // Without an explicit statusLine, the embedded default script runs, which
     // suppresses the `? for shortcuts` hint that readyText matches by default.
+    // Default-seeded settings; caller options.settings wins (spread after).
     this._settings = {
       statusLine: { type: 'off' },
+      backgroundTasksEnabled: false,
       ...options.settings,
     }
     this._reuseConfigDir = options.reuseConfigDir
@@ -243,7 +246,6 @@ export class TmuxSession {
       CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING: '1',
       CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
       CLAUDE_CODE_DISABLE_THINKING: '1',
-      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
       CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
       NO_COLOR: '1',
       DO_NOT_TRACK: '1',

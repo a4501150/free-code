@@ -1,34 +1,6 @@
 import type { Command } from '../commands.js'
 import { maybeMarkProjectOnboardingComplete } from '../projectOnboardingState.js'
-import { globalConfigDir, isEnvTruthy } from '../utils/envUtils.js'
-
-const OLD_INIT_PROMPT = `Analyze this codebase and write a CLAUDE.md file that future instances of Claude Code working in this repository will read. The file is injected into every session, so keep it lean: include only what is not discoverable from the code, and cut anything a future instance can figure out on its own — it goes stale and wastes context.
-
-What to add:
-1. Commands used more than once, such as how to build, lint, and run tests. Include how to run a single test.
-2. High-level architecture that requires reading multiple files to understand — the "big picture" a future instance cannot get from one file.
-
-Usage notes:
-- If a CLAUDE.md already exists, suggest improvements to it.
-- If CLAUDE.md is just a stub pointing at other files, only improve those target files.
-- Map each package manager or tool to its corresponding commands (npm, pnpm, yarn, bun, cargo, make, etc.).
-- Read the CI configuration and note the commands it runs — those are authoritative.
-- For monorepos, note the workspace layout and per-package commands.
-- Fill in the missing pieces; do not repeat what is already here.
-- List every Makefile target, not just the obvious ones.
-- Mention real-world use cases only when genuinely non-obvious.
-- Do not include obvious instructions like "Provide helpful error messages to users", "Write unit tests for all new utilities", or "Never include sensitive information (API keys, tokens) in code or commits".
-- Avoid listing every component or file structure that can be easily discovered.
-- Avoid generic development practices.
-- If there are Cursor rules (in .cursor/rules/ or .cursorrules), GitHub Copilot rules (in .github/copilot-instructions.md), or similar from other assistants, include the important parts.
-- Do not make up sections such as "Project Overview", "Project Administration", "Testing Procedures", "Tips for Development", "Support and Documentation" unless expressly present in another file you read.
-- Be sure to prefix the file with the following text:
-
-\`\`\`
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-\`\`\``
+import { globalConfigDir } from '../utils/envUtils.js'
 
 const NEW_INIT_PROMPT = `Set up a minimal CLAUDE.md (and optionally skills and hooks) for this repo. CLAUDE.md is loaded into every Claude Code session, so it must be concise — only include what Claude would get wrong without it.
 
@@ -459,9 +431,7 @@ const command = {
   type: 'prompt',
   name: 'init',
   get description() {
-    return isEnvTruthy(process.env.CLAUDE_CODE_NEW_INIT)
-      ? 'Initialize new CLAUDE.md file(s) and optional skills/hooks with codebase documentation'
-      : 'Initialize a new CLAUDE.md file with codebase documentation'
+    return 'Initialize new CLAUDE.md file(s) and optional skills/hooks with codebase documentation'
   },
   contentLength: 0, // Dynamic content
   progressMessage: 'analyzing your codebase',
@@ -472,9 +442,7 @@ const command = {
     return [
       {
         type: 'text',
-        text: isEnvTruthy(process.env.CLAUDE_CODE_NEW_INIT)
-          ? NEW_INIT_PROMPT
-          : OLD_INIT_PROMPT,
+        text: NEW_INIT_PROMPT,
       },
     ]
   },

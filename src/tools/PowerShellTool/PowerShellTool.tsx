@@ -28,7 +28,7 @@ import {
 } from '../../tasks/LocalShellTask/LocalShellTask.js'
 import type { AgentId } from '../../types/ids.js'
 import type { AssistantMessage } from '../../types/message.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import {
   errorMessage as getErrorMessage,
   ShellError,
@@ -237,10 +237,9 @@ export function detectBlockedSleepPattern(command: string): string | null {
     : `standalone Start-Sleep ${secs}`
 }
 
-// Check if background tasks are disabled at module load time
-const isBackgroundTasksDisabled =
-  // eslint-disable-next-line custom-rules/no-process-env-top-level -- Intentional: schema must be defined at module load
-  isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
+// Check if background tasks are disabled at module load time (settings are
+// snapshot-cached; the schema must be defined at module load)
+const isBackgroundTasksDisabled = !isBackgroundTasksEnabled()
 
 const fullInputSchema = z.strictObject({
   command: z.string().describe('The PowerShell command to execute'),

@@ -1,15 +1,15 @@
 import { DEFAULT_CRON_JITTER_CONFIG } from '../../utils/cronTasks.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 
 export const DEFAULT_MAX_AGE_DAYS =
   DEFAULT_CRON_JITTER_CONFIG.recurringMaxAgeMs / (24 * 60 * 60 * 1000)
 
 /**
- * Runtime gate for the cron scheduling system: the
- * `CLAUDE_CODE_DISABLE_CRON` env var override.
+ * Runtime gate for the cron scheduling system: the `scheduledTasksEnabled`
+ * settings key (defaults to enabled).
  */
 export function isKairosCronEnabled(): boolean {
-  return !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_CRON)
+  return getInitialSettings().scheduledTasksEnabled ?? true
 }
 
 /** Durable (disk-persistent) cron tasks are always enabled. */

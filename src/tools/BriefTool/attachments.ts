@@ -8,10 +8,10 @@ import { stat } from 'fs/promises'
 import type { ValidationResult } from '../../Tool.js'
 
 import { getCwd } from '../../utils/cwd.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
 import { getErrnoCode } from '../../utils/errors.js'
 import { IMAGE_EXTENSION_REGEX } from '../../utils/imagePaste.js'
 import { expandPath } from '../../utils/path.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import { uploadBriefAttachment } from './upload.js'
 
 export type ResolvedAttachment = {
@@ -78,9 +78,9 @@ export async function resolveAttachments(
       isImage: IMAGE_EXTENSION_REGEX.test(fullPath),
     })
   }
-  // Upload when CLAUDE_CODE_BRIEF_UPLOAD is set (e.g. cowork desktop,
-  // which already passes CLAUDE_CODE_OAUTH_TOKEN for auth).
-  if (isEnvTruthy(process.env.CLAUDE_CODE_BRIEF_UPLOAD)) {
+  // Upload when the briefAttachmentUpload setting is on (e.g. cowork
+  // desktop, which already passes CLAUDE_CODE_OAUTH_TOKEN for auth).
+  if (getInitialSettings().briefAttachmentUpload === true) {
     const uuids = await Promise.all(
       stated.map(a =>
         uploadBriefAttachment(a.path, a.size, {

@@ -14,6 +14,7 @@ import {
   type EffortValue,
   parseEffortValue,
 } from '../../utils/effort.js'
+import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { parsePositiveIntFromFrontmatter } from '../../utils/frontmatterParser.js'
 import { logError } from '../../utils/log.js'
@@ -432,12 +433,9 @@ export function parseAgentFromJson(
     // Each emits one warn-level log so the user can see why their declaration
     // had no effect; the resolved values feed the agent definition below.
     let background = parsed.background
-    if (
-      background &&
-      isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
-    ) {
+    if (background && !isBackgroundTasksEnabled()) {
       logForDebugging(
-        `Agent '${name}' sets background: true but background tasks are disabled (CLAUDE_CODE_DISABLE_BACKGROUND_TASKS). Stripping field.`,
+        `Agent '${name}' sets background: true but background tasks are disabled (backgroundTasksEnabled setting). Stripping field.`,
         { level: 'warn' },
       )
       background = undefined
@@ -598,12 +596,9 @@ export function parseAgentFromMarkdown(
 
     let background: true | undefined =
       backgroundRaw === 'true' || backgroundRaw === true ? true : undefined
-    if (
-      background &&
-      isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
-    ) {
+    if (background && !isBackgroundTasksEnabled()) {
       logForDebugging(
-        `Agent file ${filePath} sets background: true but background tasks are disabled (CLAUDE_CODE_DISABLE_BACKGROUND_TASKS). Stripping field.`,
+        `Agent file ${filePath} sets background: true but background tasks are disabled (backgroundTasksEnabled setting). Stripping field.`,
         { level: 'warn' },
       )
       background = undefined

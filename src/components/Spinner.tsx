@@ -49,7 +49,6 @@ function computeShimmerSegments(
   return { before, shimmer, after }
 }
 import { getKairosActive, getUserMsgOptIn } from '../bootstrap/state.js'
-import { isEnvTruthy } from '../utils/envUtils.js'
 import { count } from '../utils/array.js'
 import sample from 'lodash-es/sample.js'
 import { formatDuration, formatSecondsShort } from '../utils/format.js'
@@ -123,11 +122,6 @@ export function SpinnerWithVerb(props: Props): React.ReactNode {
   // prop isn't threaded here, so replicate the gate from the store —
   // teammate view needs the real spinner (which shows teammate status).
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
-  // Hoisted to mount-time — this component re-renders at animation framerate.
-  const briefEnvEnabled = useMemo(
-    () => isEnvTruthy(process.env.CLAUDE_CODE_BRIEF),
-    [],
-  )
 
   // Runtime gate mirrors isBriefEnabled() but inlined — importing from
   // BriefTool.ts would leak tool-name strings into external builds. Single

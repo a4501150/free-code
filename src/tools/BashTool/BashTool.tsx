@@ -32,7 +32,7 @@ import { parseForSecurity } from '../../utils/bash/ast.js'
 import { splitCommandWithOperators } from '../../utils/bash/commands.js'
 import { detectCodeIndexingFromCommand } from '../../utils/codeIndexing.js'
 import { getCwd } from '../../utils/cwd.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import { isENOENT, ShellError } from '../../utils/errors.js'
 import {
   detectFileEncoding,
@@ -318,10 +318,9 @@ const DISALLOWED_AUTO_BACKGROUND_COMMANDS = [
   'sleep', // Sleep should run in foreground unless explicitly backgrounded by user
 ]
 
-// Check if background tasks are disabled at module load time
-const isBackgroundTasksDisabled =
-  // eslint-disable-next-line custom-rules/no-process-env-top-level -- Intentional: schema must be defined at module load
-  isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
+// Check if background tasks are disabled at module load time (settings are
+// snapshot-cached; the schema must be defined at module load)
+const isBackgroundTasksDisabled = !isBackgroundTasksEnabled()
 
 const fullInputSchema = z.strictObject({
   command: z.string().describe('The command to execute.'),

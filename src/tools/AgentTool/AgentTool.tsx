@@ -40,6 +40,7 @@ import { assembleToolPool } from './assembleToolPool.js'
 import { asAgentId } from '../../types/ids.js'
 import { runWithAgentContext } from '../../utils/agentContext.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
+import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import { runWithCwdOverride } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
@@ -130,10 +131,9 @@ import * as proactiveModule from '../../proactive/index.js'
 // Progress display constants (for showing background hint)
 const PROGRESS_THRESHOLD_MS = 2000 // Show background hint after 2 seconds
 
-// Check if background tasks are disabled at module load time
-const isBackgroundTasksDisabled =
-  // eslint-disable-next-line custom-rules/no-process-env-top-level -- Intentional: schema must be defined at module load
-  isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)
+// Check if background tasks are disabled at module load time (settings are
+// snapshot-cached; the schema must be defined at module load)
+const isBackgroundTasksDisabled = !isBackgroundTasksEnabled()
 
 // Auto-background agent tasks after this many ms (0 = disabled)
 function getAutoBackgroundMs(): number {

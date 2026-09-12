@@ -136,6 +136,7 @@ import {
 } from 'src/utils/sessionStart.js'
 import { TEAMMATE_MESSAGE_TAG, TICK_TAG } from 'src/constants/xml.js'
 import {
+  getInitialSettings,
   getSettings_DEPRECATED,
   getSettingsWithSources,
 } from 'src/utils/settings/settings.js'
@@ -491,9 +492,9 @@ export async function runHeadless(
 
   // Proactive activation is now handled in main.tsx before getTools() so
   // SleepTool passes isEnabled() filtering. This fallback covers the case
-  // where CLAUDE_CODE_PROACTIVE is set but main.tsx's check didn't fire
-  // (e.g. env was injected by the SDK transport after argv parsing).
-  if (!isProactiveActive() && isEnvTruthy(process.env.CLAUDE_CODE_PROACTIVE)) {
+  // where the proactiveMode setting is on but main.tsx's check didn't fire
+  // (e.g. settings were loaded after argv parsing).
+  if (!isProactiveActive() && getInitialSettings().proactiveMode === true) {
     activateProactive('command')
   }
 
@@ -756,10 +757,10 @@ export async function runHeadless(
   const needsFullArray = options.outputFormat === 'json' && options.verbose
   const messages: SDKMessage[] = []
   let lastMessage: SDKMessage | undefined
-  // Streamlined mode transforms messages when CLAUDE_CODE_STREAMLINED_OUTPUT=true and using stream-json
-  // Env var is the runtime opt-in.
+  // Streamlined mode transforms messages when the streamlinedOutput setting
+  // is true and using stream-json. The setting is the runtime opt-in.
   const transformToStreamlined =
-    isEnvTruthy(process.env.CLAUDE_CODE_STREAMLINED_OUTPUT) &&
+    getInitialSettings().streamlinedOutput === true &&
     options.outputFormat === 'stream-json'
       ? createStreamlinedTransformer()
       : null

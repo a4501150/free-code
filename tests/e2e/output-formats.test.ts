@@ -55,9 +55,14 @@ async function runHeadless(options: HeadlessOptions): Promise<HeadlessResult> {
 
   try {
     // Seed settings: freecode.json (general + migration marker) and
-    // modelSettings.json (provider/model config).
+    // modelSettings.json (provider/model config). backgroundTasksEnabled
+    // defaults to true in the CLI, so disable it here for deterministic
+    // headless output.
     const apiKey = 'test-key-headless-12345'
-    await writeFile(join(tempConfig, 'freecode.json'), JSON.stringify({}))
+    await writeFile(
+      join(tempConfig, 'freecode.json'),
+      JSON.stringify({ backgroundTasksEnabled: false }),
+    )
     await writeFile(
       join(tempConfig, 'modelSettings.json'),
       JSON.stringify({
@@ -106,7 +111,6 @@ async function runHeadless(options: HeadlessOptions): Promise<HeadlessResult> {
       CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING: '1',
       CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
       CLAUDE_CODE_DISABLE_THINKING: '1',
-      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
       NODE_ENV: 'test',
       NO_COLOR: '1',
       DO_NOT_TRACK: '1',

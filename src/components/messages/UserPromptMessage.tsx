@@ -3,7 +3,6 @@ import React, { useContext, useMemo } from 'react'
 import { getKairosActive, getUserMsgOptIn } from '../../bootstrap/state.js'
 import { Box } from '../../ink.js'
 import { useAppState } from '../../state/AppState.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
 import { logError } from '../../utils/log.js'
 import { countCharInString } from '../../utils/stringUtils.js'
 import { MessageActionsSelectedContext } from '../messageActions.js'
@@ -45,11 +44,6 @@ export function UserPromptMessage({
   // BriefTool.ts → prompt.ts tool-name strings into the import graph.
   const isBriefOnly = useAppState(s => s.isBriefOnly)
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
-  // Hoisted to mount-time — per-message component, re-renders on every scroll.
-  const briefEnvEnabled = useMemo(
-    () => isEnvTruthy(process.env.CLAUDE_CODE_BRIEF),
-    [],
-  )
   const useBriefLayout =
     (getKairosActive() || getUserMsgOptIn()) &&
     isBriefOnly &&

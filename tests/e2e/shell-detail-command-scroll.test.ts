@@ -76,10 +76,11 @@ describe('Shell detail command panel', () => {
 
     session = new TmuxSession({
       serverUrl: server.url,
-      additionalEnv: {
-        // The default test env strips run_in_background from the Bash
-        // schema; override so the model can actually background this.
-        CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '0',
+      settings: {
+        // The harness seeds backgroundTasksEnabled: false, which strips
+        // run_in_background from the Bash schema; override so the model can
+        // actually background this.
+        backgroundTasksEnabled: true,
       },
     })
     await session.start()
@@ -167,9 +168,8 @@ describe('Shell detail command panel', () => {
 
     session = new TmuxSession({
       serverUrl: server.url,
-      additionalEnv: {
-        CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '0',
-      },
+      // Harness default disables background tasks.
+      settings: { backgroundTasksEnabled: true },
     })
     await session.start()
 

@@ -342,7 +342,13 @@ describe('Resume session ownership', () => {
     const headlessConfig = await mkdtemp(join(tmpdir(), 'claude-e2e-own-hcfg-'))
     const headlessHome = await mkdtemp(join(tmpdir(), 'claude-e2e-own-hhome-'))
     headlessDirs.push(headlessConfig, headlessHome)
-    await writeFile(join(headlessConfig, 'freecode.json'), JSON.stringify({}))
+    // backgroundTasksEnabled defaults to true in the CLI; keep background
+    // tasks off for these deterministic headless runs (the tmux-seeded dir
+    // already disables it).
+    await writeFile(
+      join(headlessConfig, 'freecode.json'),
+      JSON.stringify({ backgroundTasksEnabled: false }),
+    )
     await writeFile(
       join(headlessConfig, 'modelSettings.json'),
       JSON.stringify({
@@ -391,7 +397,6 @@ describe('Resume session ownership', () => {
       CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING: '1',
       CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
       CLAUDE_CODE_DISABLE_THINKING: '1',
-      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
       NODE_ENV: 'test',
       NO_COLOR: '1',
       DO_NOT_TRACK: '1',

@@ -15,8 +15,8 @@ import {
 import type { Tool } from '../../Tool.js'
 import { backgroundAll } from '../../tasks/LocalShellTask/LocalShellTask.js'
 import type { ProgressMessage } from '../../types/message.js'
+import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import { env } from '../../utils/env.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
 import { getDisplayPath } from '../../utils/file.js'
 import type { ThemeName } from '../../utils/theme.js'
 import type { BashProgress, BashToolInput, Out } from './BashTool.js'
@@ -66,7 +66,7 @@ export function BackgroundHint({
   }
 
   // Don't show background hint if background tasks are disabled
-  if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS)) {
+  if (!isBackgroundTasksEnabled()) {
     return null
   }
 

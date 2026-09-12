@@ -469,14 +469,14 @@ export function REPL({
   taskListId,
   thinkingConfig,
 }: Props): React.ReactNode {
-  // Env-var gates hoisted to mount-time — isEnvTruthy does toLowerCase+trim+
-  // includes, and these were on the render path (hot during PageUp spam).
+  // Env-var/settings gates hoisted to mount-time — these were on the render
+  // path (hot during PageUp spam).
   const titleDisabled = useMemo(
     () => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE),
     [],
   )
   const disableMessageActions = useMemo(
-    () => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_MESSAGE_ACTIONS),
+    () => !(getInitialSettings().messageActionsEnabled ?? true),
     [],
   )
 

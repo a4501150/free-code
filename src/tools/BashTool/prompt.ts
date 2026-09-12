@@ -15,7 +15,7 @@ export function getMaxTimeoutMs(): number {
 
 // Background-task guidance lives on the `run_in_background` schema description
 // (BashTool.tsx), which is removed from the schema together with the param
-// under CLAUDE_CODE_DISABLE_BACKGROUND_TASKS — no prompt-side gating needed.
+// under the backgroundTasksEnabled: false setting — no prompt-side gating needed.
 
 export function getSimplePrompt(): string {
   // The -regex quirk below is a bfs (embedded search sidecar) behavior; on a

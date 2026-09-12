@@ -1051,6 +1051,78 @@ export function Config({
         updateUserSettings({ agentPushNotifEnabled })
       },
     },
+    {
+      id: 'scheduledTasksEnabled',
+      label: 'Scheduled tasks',
+      value: settingsData?.scheduledTasksEnabled ?? true,
+      type: 'boolean' as const,
+      onChange(scheduledTasksEnabled: boolean) {
+        updateUserSettings({ scheduledTasksEnabled })
+      },
+    },
+    {
+      id: 'coordinatorMode',
+      label: 'Coordinator mode',
+      value: settingsData?.coordinatorMode ?? false,
+      type: 'boolean' as const,
+      onChange(coordinatorMode: boolean) {
+        updateUserSettings({ coordinatorMode })
+      },
+    },
+    {
+      id: 'proactiveMode',
+      label: 'Proactive mode',
+      value: settingsData?.proactiveMode ?? false,
+      type: 'boolean' as const,
+      onChange(proactiveMode: boolean) {
+        updateUserSettings({ proactiveMode })
+      },
+    },
+    {
+      id: 'messageActionsEnabled',
+      label: 'Message actions',
+      value: settingsData?.messageActionsEnabled ?? true,
+      type: 'boolean' as const,
+      onChange(messageActionsEnabled: boolean) {
+        updateUserSettings({ messageActionsEnabled })
+      },
+    },
+    {
+      id: 'backgroundTasksEnabled',
+      label: 'Background tasks',
+      value: settingsData?.backgroundTasksEnabled ?? true,
+      type: 'boolean' as const,
+      onChange(backgroundTasksEnabled: boolean) {
+        updateUserSettings({ backgroundTasksEnabled })
+      },
+    },
+    {
+      id: 'unattendedRetry',
+      label: 'Unattended retry',
+      value: settingsData?.unattendedRetry ?? false,
+      type: 'boolean' as const,
+      onChange(unattendedRetry: boolean) {
+        updateUserSettings({ unattendedRetry })
+      },
+    },
+    {
+      id: 'streamlinedOutput',
+      label: 'Streamlined output',
+      value: settingsData?.streamlinedOutput ?? false,
+      type: 'boolean' as const,
+      onChange(streamlinedOutput: boolean) {
+        updateUserSettings({ streamlinedOutput })
+      },
+    },
+    {
+      id: 'briefAttachmentUpload',
+      label: 'Brief attachment upload',
+      value: settingsData?.briefAttachmentUpload ?? false,
+      type: 'boolean' as const,
+      onChange(briefAttachmentUpload: boolean) {
+        updateUserSettings({ briefAttachmentUpload })
+      },
+    },
     ...(showDefaultViewPicker
       ? [
           {

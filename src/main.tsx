@@ -85,6 +85,10 @@ import { initializeWarningHandler } from './utils/warningHandler.js'
 import { isWorktreeModeEnabled } from './utils/worktreeModeEnabled.js'
 import * as assistantModule from './assistant/index.js'
 import * as coordinatorModeModule from './coordinator/coordinatorMode.js'
+import {
+  isCoordinatorMode,
+  setCoordinatorModeOverride,
+} from './coordinator/coordinatorModeGate.js'
 
 import { relative, resolve } from 'path'
 import {
@@ -1359,6 +1363,8 @@ async function run(): Promise<CommanderCommand> {
         : undefined
       if (taskListId) {
         process.env.CLAUDE_CODE_TASK_LIST_ID = taskListId
+        // Tasks mode runs the main loop as a coordinator watching the task list.
+        setCoordinatorModeOverride(true)
       }
 
       // Extract worktree option
@@ -1966,7 +1972,7 @@ async function run(): Promise<CommanderCommand> {
 
       // Apply coordinator mode tool filtering for headless path
       // (mirrors useMergedTools.ts filtering for REPL/interactive path)
-      if (isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE)) {
+      if (isCoordinatorMode()) {
         tools = applyCoordinatorToolFilter(tools)
       }
 
@@ -2282,7 +2288,7 @@ async function run(): Promise<CommanderCommand> {
       // access and conflict with delegation instructions.
       if (
         ((options as { proactive?: boolean }).proactive ||
-          isEnvTruthy(process.env.CLAUDE_CODE_PROACTIVE)) &&
+          getInitialSettings().proactiveMode === true) &&
         !coordinatorModeModule.isCoordinatorMode()
       ) {
         /* eslint-disable @typescript-eslint/no-require-imports */
@@ -4245,7 +4251,7 @@ async function logTenguInit({
 function maybeActivateProactive(options: unknown): void {
   if (
     (options as { proactive?: boolean }).proactive ||
-    isEnvTruthy(process.env.CLAUDE_CODE_PROACTIVE)
+    getInitialSettings().proactiveMode === true
   ) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const proactiveModule = require('./proactive/index.js')
@@ -4257,13 +4263,10 @@ function maybeActivateProactive(options: unknown): void {
 
 function maybeActivateBrief(options: unknown): void {
   const briefFlag = (options as { brief?: boolean }).brief
-  const briefEnv = isEnvTruthy(process.env.CLAUDE_CODE_BRIEF)
-  if (!briefFlag && !briefEnv) return
-  // --brief / CLAUDE_CODE_BRIEF are explicit opt-ins: check entitlement,
-  // then set userMsgOptIn to activate the tool + prompt section. The env
-  // var also grants entitlement (isBriefEntitled() reads it), so setting
-  // CLAUDE_CODE_BRIEF=1 alone force-enables for dev/testing — no GB gate
-  // needed. initialIsBriefOnly reads getUserMsgOptIn() directly.
+  if (!briefFlag) return
+  // --brief is an explicit opt-in: check entitlement, then set userMsgOptIn
+  // to activate the tool + prompt section.
+  // initialIsBriefOnly reads getUserMsgOptIn() directly.
   // Conditional require: static import would leak the tool name string
   // into external builds via BriefTool.ts → prompt.ts.
   /* eslint-disable @typescript-eslint/no-require-imports */

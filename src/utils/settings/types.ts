@@ -1352,6 +1352,54 @@ const _settingsSchemaValue = z
       .boolean()
       .optional()
       .describe('Enable voice mode (hold-to-talk dictation)'),
+    scheduledTasksEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Enable the scheduled-task tools (CronCreate/CronDelete/CronList, /loop). Defaults to enabled.',
+      ),
+    coordinatorMode: z
+      .boolean()
+      .optional()
+      .describe(
+        'Start in coordinator mode (delegation to worker subagents, task-list automation). Sessions started with --tasks set this for the running session regardless.',
+      ),
+    proactiveMode: z
+      .boolean()
+      .optional()
+      .describe(
+        'Enable proactive mode: the assistant begins work on its own between turns, driven by the Sleep tool. Equivalent to the --proactive flag.',
+      ),
+    messageActionsEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Enable message actions (shift+up cursor over past messages). Defaults to enabled.',
+      ),
+    backgroundTasksEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Allow background tasks (background bash, async agents). Defaults to enabled.',
+      ),
+    unattendedRetry: z
+      .boolean()
+      .optional()
+      .describe(
+        'Retry 429/529 and overload errors indefinitely in unattended sessions.',
+      ),
+    streamlinedOutput: z
+      .boolean()
+      .optional()
+      .describe(
+        'Streamlined output formatting for headless stream-json sessions.',
+      ),
+    briefAttachmentUpload: z
+      .boolean()
+      .optional()
+      .describe(
+        'Upload brief-mode attachments to the transcript endpoint (managed/desktop integrations).',
+      ),
     prefersReducedMotion: z
       .boolean()
       .optional()

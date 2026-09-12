@@ -50,7 +50,7 @@ export function normalizeToolInput<T extends Tool>(
 
       // Logging for commands that are only echoing a string. This is to help us understand how often  Claude talks via bash
 
-      // Check for run_in_background (may not exist in schema if CLAUDE_CODE_DISABLE_BACKGROUND_TASKS is set)
+      // Check for run_in_background (may not exist in schema if the backgroundTasksEnabled setting is off)
       const run_in_background =
         'run_in_background' in parsed ? parsed.run_in_background : undefined
 

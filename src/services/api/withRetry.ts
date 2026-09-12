@@ -8,7 +8,6 @@ import {
   isClaudeAISubscriber,
   isEnterpriseSubscriber,
 } from '../../utils/auth.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
 import { errorMessage } from '../../utils/errors.js'
 import {
   type CooldownReason,
@@ -19,6 +18,7 @@ import {
   triggerFastModeCooldown,
 } from '../../utils/fastMode.js'
 import { disableKeepAlive } from '../../utils/proxy.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import { sleep } from '../../utils/sleep.js'
 import type { ThinkingConfig } from '../../utils/thinking.js'
 import { isMockRateLimitError } from '../rateLimits/mocking.js'
@@ -64,7 +64,7 @@ function shouldRetry529(querySource: QuerySource | undefined): boolean {
   )
 }
 
-// CLAUDE_CODE_UNATTENDED_RETRY: for unattended sessions (ant-only). Retries 429/529
+// unattendedRetry setting: for unattended sessions. Retries 429/529
 // indefinitely with higher backoff and periodic keep-alive yields so the host
 // environment does not mark the session idle mid-wait.
 // TODO(ANT-344): the keep-alive via SystemAPIErrorMessage yields is a stopgap
@@ -74,7 +74,7 @@ const PERSISTENT_RESET_CAP_MS = 6 * 60 * 60 * 1000
 const HEARTBEAT_INTERVAL_MS = 30_000
 
 function isPersistentRetryEnabled(): boolean {
-  return isEnvTruthy(process.env.CLAUDE_CODE_UNATTENDED_RETRY)
+  return getInitialSettings().unattendedRetry === true
 }
 
 function isTransientCapacityError(error: unknown): boolean {

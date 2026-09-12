@@ -1,6 +1,7 @@
 import { feature } from 'bun:bundle'
 import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
 import { getCoordinatorAgents } from '../../coordinator/coordinatorAgentRegistry.js'
+import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
 import { PLAN_AGENT } from './built-in/planAgent.js'
@@ -24,7 +25,7 @@ export function getBuiltInAgents(): AgentDefinition[] {
     return []
   }
 
-  if (isEnvTruthy(process.env.CLAUDE_CODE_COORDINATOR_MODE)) {
+  if (isCoordinatorMode()) {
     return getCoordinatorAgents()
   }
 
