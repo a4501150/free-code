@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Default status line, embedded in the binary and used when settings.statusLine
 # is not configured. Reads the StatusLineCommandInput JSON on stdin.
-# Marks use plain ASCII (# % = ~ |) so every terminal and font renders them.
+# Marks use plain ASCII (# % = @ |) so every terminal and font renders them.
+# The cwd mark is @ (location, as in user@host:path), not ~: the path itself is
+# home-abbreviated to ~/..., so a ~ mark would read as a doubled path prefix.
 # Parses the JSON with awk (no jq). Key extraction relies on first-match
 # order: context_window precedes rate_limits, so "used_percentage" resolves
 # to the context_window field. See src/components/StatusLine.tsx for the
@@ -91,7 +93,7 @@ fi
 tok_part="${in_fmt} in ${out_fmt} out ${cache_rd_fmt} cr ${cache_wr_fmt} cw ${ce_pct}% ce"
 
 C_RESET='\033[0m'
-C_TEXT='\033[37m'
+C_TEXT='\033[2m'
 C_SEP='\033[90m'
 C_MODEL='\033[36m'
 C_CTX='\033[35m'
@@ -99,5 +101,5 @@ C_TOK='\033[33m'
 C_CWD='\033[34m'
 sep=" ${C_SEP}|${C_RESET} "
 
-printf "${C_MODEL}#${C_TEXT} %s${sep}${C_CTX}%%${C_TEXT} %s${sep}${C_TOK}=${C_TEXT} %s${sep}${C_CWD}~${C_TEXT} %s${C_RESET}" \
+printf "${C_MODEL}#${C_TEXT} %s${sep}${C_CTX}%%${C_TEXT} %s${sep}${C_TOK}=${C_TEXT} %s${sep}${C_CWD}@${C_TEXT} %s${C_RESET}" \
   "$model" "$ctx_part" "$tok_part" "$cwd"
