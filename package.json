@@ -83,7 +83,6 @@
     "https-proxy-agent": "^8.0.0",
     "ignore": "^7.0.5",
     "indent-string": "^5.0.0",
-    "ink": "^6.8.0",
     "jimp": "^1.6.0",
     "jsonc-parser": "^3.3.1",
     "localtunnel": "^2.0.2",
