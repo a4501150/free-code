@@ -449,7 +449,7 @@ function StatusLineInner({
   return (
     <Box paddingX={paddingX} gap={2}>
       {statusLineText ? (
-        <Text dimColor wrap="truncate">
+        <Text wrap="truncate">
           <Ansi>{statusLineText}</Ansi>
         </Text>
       ) : (

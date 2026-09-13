@@ -93,13 +93,15 @@ fi
 tok_part="${in_fmt} in ${out_fmt} out ${cache_rd_fmt} cr ${cache_wr_fmt} cw ${ce_pct}% ce"
 
 C_RESET='\033[0m'
-C_TEXT='\033[2m'
 C_SEP='\033[90m'
+C_TEXT='\033[2m'
 C_MODEL='\033[36m'
 C_CTX='\033[35m'
 C_TOK='\033[33m'
 C_CWD='\033[34m'
 sep=" ${C_SEP}|${C_RESET} "
 
-printf "${C_MODEL}#${C_TEXT} %s${sep}${C_CTX}%%${C_TEXT} %s${sep}${C_TOK}=${C_TEXT} %s${sep}${C_CWD}@${C_TEXT} %s${C_RESET}" \
+# Icons carry the color at full intensity; segment text is dimmed (the sep's
+# color escape ends the dim, so it never leaks onto the next icon).
+printf "${C_MODEL}#${C_RESET}${C_TEXT} %s${sep}${C_CTX}%%${C_RESET}${C_TEXT} %s${sep}${C_TOK}=${C_RESET}${C_TEXT} %s${sep}${C_CWD}@${C_RESET}${C_TEXT} %s${C_RESET}" \
   "$model" "$ctx_part" "$tok_part" "$cwd"
