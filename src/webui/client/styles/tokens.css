@@ -16,6 +16,10 @@
   --rail-w: 15rem;
   --instruments-w: 16rem;
   --topbar-h: 2.25rem;
+  /* Anything fixed below the top bar must clear the notch as well: with
+     viewport-fit=cover the bar extends under it, and `env()` is 0 wherever
+     there is no inset. */
+  --topbar-block: calc(var(--topbar-h) + env(safe-area-inset-top));
 }
 
 /* Shared by the top bar and the session rail, so it cannot live in either. */

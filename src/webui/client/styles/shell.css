@@ -10,7 +10,7 @@
 .shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: var(--topbar-h) minmax(0, 1fr);
+  grid-template-rows: var(--topbar-block) minmax(0, 1fr);
   grid-template-areas:
     'top'
     'main';
@@ -44,6 +44,9 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0 0.75rem;
+  /* The grid row already reserves the inset; this pushes the bar's own
+     content below the notch rather than into it. */
+  padding-top: env(safe-area-inset-top);
   padding-left: max(0.75rem, env(safe-area-inset-left));
   padding-right: max(0.75rem, env(safe-area-inset-right));
   border-bottom: 1px solid var(--rule);
@@ -57,6 +60,9 @@
   background: none;
   border: 1px solid var(--rule-bright);
   padding: 0.2rem 0.5rem;
+  /* The 11px label would otherwise leave a tap target a thumb cannot hit
+     reliably. */
+  min-height: 2rem;
   cursor: pointer;
   color: var(--text-dim);
   font-size: 11px;

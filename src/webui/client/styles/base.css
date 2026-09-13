@@ -27,6 +27,15 @@ button {
   color: inherit;
 }
 
+/* One keyboard-focus ring for the whole surface, so a keyboard or DPad user
+   can see where they are without the per-component outline soup. Touch taps
+   are excluded, because `:focus-visible` only matches where focus came from
+   the keyboard. */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 1px solid var(--signal);
+  outline-offset: 1px;
+}
+
 /**
  * Mobile-first form sizing.
  *
@@ -100,7 +109,7 @@ textarea {
    closes it. Never rendered on the pinned-rail layouts. */
 .scrim {
   position: fixed;
-  inset: var(--topbar-h) 0 0;
+  inset: var(--topbar-block) 0 0;
   z-index: 1;
   background: rgba(8, 9, 11, 0.6);
   border: 0;

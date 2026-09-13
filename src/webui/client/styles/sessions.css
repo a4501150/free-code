@@ -8,7 +8,7 @@
 .rail {
   grid-area: rail;
   position: fixed;
-  top: var(--topbar-h);
+  top: var(--topbar-block);
   bottom: 0;
   left: 0;
   z-index: 2;

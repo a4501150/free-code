@@ -113,6 +113,8 @@ function htmlShell(): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0d0f">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230b0d0f'/%3E%3Ctext x='8' y='12.5' font-family='monospace' font-size='13' fill='%23f0a35e' text-anchor='middle'%3E%E2%9C%B3%3C/text%3E%3C/svg%3E">
 <title>claude web</title>
 <link rel="stylesheet" href="${CSS_PATH}">
 </head>
