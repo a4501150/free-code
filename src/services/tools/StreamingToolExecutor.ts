@@ -371,7 +371,7 @@ export class StreamingToolExecutor {
           thisToolErrored = true
           // Only Bash errors cancel siblings. Bash commands often have implicit
           // dependency chains (e.g. mkdir fails → subsequent commands pointless).
-          // Read/WebFetch/etc are independent — one failure shouldn't nuke the rest.
+          // Read/web_fetch/etc are independent — one failure shouldn't nuke the rest.
           if (tool.block.name === BASH_TOOL_NAME) {
             this.hasErrored = true
             this.erroredToolDescription = this.getToolDescription(tool)

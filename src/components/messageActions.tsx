@@ -93,8 +93,12 @@ const PRIMARY_INPUT: Record<string, PrimaryInput> = {
   Bash: { label: 'command', extract: str('command') },
   Grep: { label: 'pattern', extract: str('pattern') },
   Glob: { label: 'pattern', extract: str('pattern') },
+  // Legacy built-in web tools (pre agent-browser MCP); rows from old
+  // transcripts still need label extraction.
   WebFetch: { label: 'url', extract: str('url') },
   WebSearch: { label: 'query', extract: str('query') },
+  'mcp__agent-browser__web_fetch': { label: 'url', extract: str('url') },
+  'mcp__agent-browser__web_search': { label: 'query', extract: str('query') },
   Task: { label: 'prompt', extract: str('prompt') },
   Agent: { label: 'prompt', extract: str('prompt') },
   Tmux: {
