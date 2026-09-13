@@ -501,6 +501,94 @@ export function hasAnyToolInProgress(
   )
 }
 
+/** Verb sections in a collapsed group, keyed like the builder's counters. */
+export type CollapsedCategory =
+  | 'search'
+  | 'read'
+  | 'list'
+  | 'repl'
+  | 'mcp'
+  | 'bash'
+  | 'taskCreate'
+  | 'taskUpdate'
+  | 'memSearch'
+  | 'memRead'
+  | 'memWrite'
+  | 'teamMemSearch'
+  | 'teamMemRead'
+  | 'teamMemWrite'
+
+/**
+ * Which verb sections still have an unresolved tool call, classified with the
+ * same rules the builder used to count them. The renderer uses this to pick
+ * tense per section ("searched for 1 pattern, running 2 bash commands") so a
+ * finished call never rides another call's pending state. Auto-injected
+ * relevant_memories are not tool calls and are never pending here.
+ */
+export function getPendingCollapsedCategories(
+  message: CollapsedReadSearchGroup,
+  tools: Tools,
+  resolvedToolUseIDs: Set<string>,
+): Set<CollapsedCategory> {
+  const pending = new Set<CollapsedCategory>()
+  for (const msg of message.messages) {
+    // The group stores CollapsibleMessage under a NormalizedMessage cast
+    // (same reason the verbose renderer re-checks the raw type tag).
+    const typeTag = (msg as { type: string }).type
+    if (typeTag !== 'assistant' && typeTag !== 'grouped_tool_use') continue
+    const ids = getToolUseIdsFromMessage(msg as RenderableMessage)
+    if (ids.length === 0) continue
+    if (ids.every(id => resolvedToolUseIDs.has(id))) continue
+    const toolInfo = getCollapsibleToolInfo(msg as RenderableMessage, tools)
+    if (!toolInfo) continue
+    if (toolInfo.isMemoryWrite) {
+      pending.add(
+        teamMemOps.isTeamMemoryWriteOrEdit(toolInfo.name, toolInfo.input)
+          ? 'teamMemWrite'
+          : 'memWrite',
+      )
+    } else if (toolInfo.isTaskManagement) {
+      pending.add(
+        toolInfo.name === TASK_CREATE_TOOL_NAME ? 'taskCreate' : 'taskUpdate',
+      )
+    } else if (toolInfo.isAbsorbedSilently) {
+      // No verb section to keep in present tense.
+    } else if (toolInfo.mcpServerName) {
+      pending.add('mcp')
+    } else if (toolInfo.isBash) {
+      pending.add('bash')
+    } else if (toolInfo.isList) {
+      pending.add('list')
+    } else if (toolInfo.isSearch) {
+      pending.add(
+        teamMemOps.isTeamMemorySearch(toolInfo.input)
+          ? 'teamMemSearch'
+          : isMemorySearch(toolInfo.input)
+            ? 'memSearch'
+            : 'search',
+      )
+    } else if (toolInfo.isREPL) {
+      pending.add('repl')
+    } else {
+      // Read — split by path exactly like the builder's readFilePaths loop
+      const filePaths = getFilePathsFromReadMessage(msg as RenderableMessage)
+      if (filePaths.length === 0) {
+        pending.add('read')
+      }
+      for (const filePath of filePaths) {
+        if (teamMemOps.isTeamMemFile(filePath)) {
+          pending.add('teamMemRead')
+        } else if (isAutoManagedMemoryFile(filePath)) {
+          pending.add('memRead')
+        } else {
+          pending.add('read')
+        }
+      }
+    }
+  }
+  return pending
+}
+
 /**
  * Get the underlying NormalizedMessage for display (timestamp/model).
  * Handles nested GroupedToolUseMessage within collapsed groups.

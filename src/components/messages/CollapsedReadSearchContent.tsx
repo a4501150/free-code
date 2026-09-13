@@ -11,7 +11,11 @@ import type {
   NormalizedAssistantMessage,
 } from '../../types/message.js'
 import { uniq } from '../../utils/array.js'
-import { getToolUseIdsFromCollapsedGroup } from '../../utils/collapseReadSearch.js'
+import {
+  type CollapsedCategory,
+  getPendingCollapsedCategories,
+  getToolUseIdsFromCollapsedGroup,
+} from '../../utils/collapseReadSearch.js'
 import { getDisplayPath } from '../../utils/file.js'
 import { formatDuration, formatSecondsShort } from '../../utils/format.js'
 import type { buildMessageLookups } from '../../utils/messages.js'
@@ -189,6 +193,15 @@ export function CollapsedReadSearchContent({
   const [theme] = useTheme()
   const toolUseIds = getToolUseIdsFromCollapsedGroup(message)
   const anyError = toolUseIds.some(id => lookups.erroredToolUseIDs.has(id))
+  // Per-section tense: a finished call renders past tense even while a
+  // sibling call in the same group is still running.
+  const pendingCategories = getPendingCollapsedCategories(
+    message,
+    tools,
+    lookups.resolvedToolUseIDs,
+  )
+  const catActive = (category: CollapsedCategory): boolean =>
+    isActiveGroup === true && pendingCategories.has(category)
   const hasMemoryOps =
     memorySearchCount > 0 || memoryReadCount > 0 || memoryWriteCount > 0
   const hasTeamMemoryOps = teamMemCollapsed.checkHasTeamMemOps(message)
@@ -455,7 +468,7 @@ export function CollapsedReadSearchContent({
 
   if (searchCount > 0) {
     const isFirst = nonMemParts.length === 0
-    const searchVerb = isActiveGroup
+    const searchVerb = catActive('search')
       ? isFirst
         ? 'Searching for'
         : 'searching for'
@@ -475,7 +488,7 @@ export function CollapsedReadSearchContent({
 
   if (readCount > 0) {
     const isFirst = nonMemParts.length === 0
-    const readVerb = isActiveGroup
+    const readVerb = catActive('read')
       ? isFirst
         ? 'Reading'
         : 'reading'
@@ -495,7 +508,7 @@ export function CollapsedReadSearchContent({
 
   if (listCount > 0) {
     const isFirst = nonMemParts.length === 0
-    const listVerb = isActiveGroup
+    const listVerb = catActive('list')
       ? isFirst
         ? 'Listing'
         : 'listing'
@@ -514,7 +527,7 @@ export function CollapsedReadSearchContent({
   }
 
   if (replCount > 0) {
-    const replVerb = isActiveGroup ? "REPL'ing" : "REPL'd"
+    const replVerb = catActive('repl') ? "REPL'ing" : "REPL'd"
     if (nonMemParts.length > 0) {
       nonMemParts.push(<Text key="comma-repl">, </Text>)
     }
@@ -532,7 +545,7 @@ export function CollapsedReadSearchContent({
         ?.map(n => n.replace(/^claude\.ai /, ''))
         .join(', ') || 'MCP'
     const isFirst = nonMemParts.length === 0
-    const verb = isActiveGroup
+    const verb = catActive('mcp')
       ? isFirst
         ? 'Querying'
         : 'querying'
@@ -557,7 +570,7 @@ export function CollapsedReadSearchContent({
 
   if (bashCount > 0) {
     const isFirst = nonMemParts.length === 0
-    const verb = isActiveGroup
+    const verb = catActive('bash')
       ? isFirst
         ? 'Running'
         : 'running'
@@ -577,7 +590,7 @@ export function CollapsedReadSearchContent({
 
   if (taskCreateCount > 0) {
     const isFirst = nonMemParts.length === 0
-    const verb = isActiveGroup
+    const verb = catActive('taskCreate')
       ? isFirst
         ? 'Creating'
         : 'creating'
@@ -597,7 +610,7 @@ export function CollapsedReadSearchContent({
 
   if (taskUpdateCount > 0) {
     const isFirst = nonMemParts.length === 0
-    const verb = isActiveGroup
+    const verb = catActive('taskUpdate')
       ? isFirst
         ? 'Updating'
         : 'updating'
@@ -621,7 +634,7 @@ export function CollapsedReadSearchContent({
 
   if (memoryReadCount > 0) {
     const isFirst = !hasPrecedingNonMem && memParts.length === 0
-    const verb = isActiveGroup
+    const verb = catActive('memRead')
       ? isFirst
         ? 'Recalling'
         : 'recalling'
@@ -641,7 +654,7 @@ export function CollapsedReadSearchContent({
 
   if (memorySearchCount > 0) {
     const isFirst = !hasPrecedingNonMem && memParts.length === 0
-    const verb = isActiveGroup
+    const verb = catActive('memSearch')
       ? isFirst
         ? 'Searching'
         : 'searching'
@@ -674,7 +687,7 @@ export function CollapsedReadSearchContent({
 
   if (memoryWriteCount > 0) {
     const isFirst = !hasPrecedingNonMem && memParts.length === 0
-    const verb = isActiveGroup
+    const verb = catActive('memWrite')
       ? isFirst
         ? 'Writing'
         : 'writing'
@@ -712,6 +725,7 @@ export function CollapsedReadSearchContent({
           {teamMemCollapsed.TeamMemCountParts({
             message,
             isActiveGroup,
+            catActive: (cat: CollapsedCategory) => catActive(cat),
             hasPrecedingParts: hasPrecedingNonMem || memParts.length > 0,
           })}
           {isActiveGroup && <Text key="ellipsis">…</Text>} <CtrlOToExpand />

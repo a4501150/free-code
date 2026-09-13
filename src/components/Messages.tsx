@@ -53,7 +53,7 @@ import { Divider } from './design-system/Divider.js'
 import type { UnseenDivider } from './FullscreenLayout.js'
 import { LogoV2 } from './LogoV2/LogoV2.js'
 import { StreamingMarkdown } from './Markdown.js'
-import { hasContentAfterIndex, MessageRow } from './MessageRow.js'
+import { MessageRow } from './MessageRow.js'
 import {
   InVirtualListContext,
   type MessageActionsNav,
@@ -799,15 +799,6 @@ const MessagesImpl = ({
   const renderMessageRow = (msg: RenderableMessage, index: number) => {
     const previous = index > 0 ? renderableMessages[index - 1] : undefined
     const isUserContinuation = msg.type === 'user' && previous?.type === 'user'
-    const hasContentAfter =
-      msg.type === 'collapsed_read_search' &&
-      (!!streamingText ||
-        hasContentAfterIndex(
-          renderableMessages,
-          index,
-          tools,
-          streamingToolUseIDs,
-        ))
     const k = messageKey(msg)
     const row = (
       <MessageRow
@@ -819,7 +810,6 @@ const MessagesImpl = ({
           previous,
           showInjectedContext,
         )}
-        hasContentAfter={hasContentAfter}
         tools={tools}
         commands={commands}
         verbose={

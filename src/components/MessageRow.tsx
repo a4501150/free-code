@@ -29,7 +29,6 @@ export type Props = {
   isUserContinuation: boolean
   /** Whether this row and the one before it are both injected-context rows. */
   isInjectedContextContinuation: boolean
-  hasContentAfter: boolean
   tools: Tools
   commands: Command[]
   verbose: boolean
@@ -45,61 +44,10 @@ export type Props = {
   showInjectedContext: boolean
 }
 
-export function hasContentAfterIndex(
-  messages: RenderableMessage[],
-  index: number,
-  tools: Tools,
-  streamingToolUseIDs: Set<string>,
-): boolean {
-  for (let i = index + 1; i < messages.length; i++) {
-    const msg = messages[i]
-    if (msg?.type === 'assistant') {
-      const content = msg.message.content[0]
-      if (
-        content?.type === 'reasoning' ||
-        content?.type === 'redacted_reasoning'
-      ) {
-        continue
-      }
-      if (content?.type === 'tool_use') {
-        if (
-          getSearchOrReadInfo(content.name, content.input, tools).isCollapsible
-        ) {
-          continue
-        }
-        if (streamingToolUseIDs.has(content.id)) {
-          continue
-        }
-      }
-      return true
-    }
-    if (msg?.type === 'system' || msg?.type === 'attachment') {
-      continue
-    }
-    if (msg?.type === 'user') {
-      const content = msg.message.content[0]
-      if (content?.type === 'tool_result') {
-        continue
-      }
-    }
-    if (msg?.type === 'grouped_tool_use') {
-      const firstBlock = msg.messages[0]?.message.content[0]
-      const firstInput =
-        firstBlock && 'input' in firstBlock ? firstBlock.input : undefined
-      if (getSearchOrReadInfo(msg.toolName, firstInput, tools).isCollapsible) {
-        continue
-      }
-    }
-    return true
-  }
-  return false
-}
-
 function MessageRowImpl({
   message: msg,
   isUserContinuation,
   isInjectedContextContinuation,
-  hasContentAfter,
   tools,
   commands,
   verbose,
@@ -125,11 +73,14 @@ function MessageRowImpl({
       id => !lookups.resolvedToolUseIDs.has(id),
     )
 
+  // Active only while a tool call inside this group itself is unresolved.
+  // The surrounding turn's loading state must not keep a finished group in
+  // the present-tense "still running" render (that made a completed search
+  // wait on unrelated siblings to settle before flipping to past tense).
   const isActiveCollapsedGroup =
     isCollapsed &&
     (hasAnyToolInProgress(msg, inProgressToolUseIDs) ||
-      hasUnresolvedCollapsedGroupTool ||
-      (isLoading && !hasContentAfter))
+      hasUnresolvedCollapsedGroupTool)
 
   const displayMsg = isGrouped
     ? msg.displayMessage
@@ -312,8 +263,6 @@ export function areMessageRowPropsEqual(prev: Props, next: Props): boolean {
 
   // Width change affects Box layout
   if (prev.columns !== next.columns) return false
-
-  if (prev.hasContentAfter !== next.hasContentAfter) return false
 
   if (
     prev.isInjectedContextContinuation !== next.isInjectedContextContinuation

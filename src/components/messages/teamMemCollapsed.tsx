@@ -20,10 +20,15 @@ export function checkHasTeamMemOps(message: CollapsedReadSearchGroup): boolean {
 export function TeamMemCountParts({
   message,
   isActiveGroup,
+  catActive,
   hasPrecedingParts,
 }: {
   message: CollapsedReadSearchGroup
   isActiveGroup: boolean | undefined
+  /** Per-category activity; falls back to isActiveGroup when omitted. */
+  catActive?: (
+    category: 'teamMemSearch' | 'teamMemRead' | 'teamMemWrite',
+  ) => boolean
   hasPrecedingParts: boolean
 }): React.ReactNode {
   const tmReadCount = message.teamMemoryReadCount ?? 0
@@ -38,7 +43,8 @@ export function TeamMemCountParts({
   let count = hasPrecedingParts ? 1 : 0
 
   if (tmReadCount > 0) {
-    const verb = isActiveGroup
+    const active = catActive ? catActive('teamMemRead') : isActiveGroup === true
+    const verb = active
       ? count === 0
         ? 'Recalling'
         : 'recalling'
@@ -58,7 +64,10 @@ export function TeamMemCountParts({
   }
 
   if (tmSearchCount > 0) {
-    const verb = isActiveGroup
+    const active = catActive
+      ? catActive('teamMemSearch')
+      : isActiveGroup === true
+    const verb = active
       ? count === 0
         ? 'Searching'
         : 'searching'
@@ -89,7 +98,10 @@ export function TeamMemCountParts({
   }
 
   if (tmWriteCount > 0) {
-    const verb = isActiveGroup
+    const active = catActive
+      ? catActive('teamMemWrite')
+      : isActiveGroup === true
+    const verb = active
       ? count === 0
         ? 'Writing'
         : 'writing'
