@@ -404,25 +404,29 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
 
         {pending ? renderTray(pending) : null}
 
-        {/* Before the composer in the DOM as well as above it on screen, so
-            the tab order matches what the eye sees. Inside `main`, so nothing
-            has to track the composer's changing height. */}
-        <InstrumentSheet
-          meta={meta}
-          todos={view.todos}
-          open={sheetOpen}
-          onToggle={setSheetOpen}
-        >
-          <Instruments
+        {/* Only while attached: with no session behind it the sheet is a
+            handle over an empty panel. Before the composer in the DOM as well
+            as above it on screen, so the tab order matches what the eye sees.
+            Inside `main`, so nothing has to track the composer's changing
+            height. */}
+        {activeKey ? (
+          <InstrumentSheet
             meta={meta}
             todos={view.todos}
-            models={view.models}
-            onSetMode={mode =>
-              gateway.send({ kind: 'set_permission_mode', mode })
-            }
-            onSetModel={model => gateway.send({ kind: 'set_model', model })}
-          />
-        </InstrumentSheet>
+            open={sheetOpen}
+            onToggle={setSheetOpen}
+          >
+            <Instruments
+              meta={meta}
+              todos={view.todos}
+              models={view.models}
+              onSetMode={mode =>
+                gateway.send({ kind: 'set_permission_mode', mode })
+              }
+              onSetModel={model => gateway.send({ kind: 'set_model', model })}
+            />
+          </InstrumentSheet>
+        ) : null}
 
         {activeKey ? (
           <Composer
