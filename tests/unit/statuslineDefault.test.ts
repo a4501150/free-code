@@ -54,4 +54,31 @@ describe('embedded default statusline script', () => {
     // The rendered marks must be plain ASCII for cross-terminal support.
     expect(content).toMatch(/#\$\{C_TEXT\}|C_MODEL\}#/)
   })
+
+  test('renders explicit zero when used_percentage is null', async () => {
+    const command = getDefaultStatusLineCommand()
+    const path = command.slice('bash '.length).replace(/^'|'$/g, '')
+    const payload = JSON.stringify({
+      model: { id: 'test:model' },
+      cwd: '/tmp',
+      context_window: {
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cache_creation_input_tokens: 0,
+        total_cache_read_input_tokens: 0,
+        context_window_size: 262144,
+        current_usage: null,
+        used_percentage: null,
+        remaining_percentage: null,
+      },
+    })
+    const proc = Bun.spawn(['bash', path], {
+      stdin: 'pipe',
+      stdout: 'pipe',
+    })
+    proc.stdin.write(payload)
+    proc.stdin.end()
+    const output = await new Response(proc.stdout).text()
+    expect(output).toContain('0.0k/262.1k (0%)')
+  })
 })

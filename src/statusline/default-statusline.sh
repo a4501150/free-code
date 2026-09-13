@@ -87,7 +87,9 @@ if [ -n "$used" ]; then
   used_pct=$(awk "BEGIN { printf \"%.0f\", $used }")
   ctx_part="${ctx_used_fmt}/${ctx_size_fmt} (${used_pct}%)"
 else
-  ctx_part="$ctx_size_fmt"
+  # No usage data (fresh session, post-compact): show an explicit zero rather
+  # than a bare size. 0.0k is literal — fmt_num would print "0".
+  ctx_part="0.0k/${ctx_size_fmt} (0%)"
 fi
 
 tok_part="${in_fmt} in ${out_fmt} out ${cache_rd_fmt} cr ${cache_wr_fmt} cw ${ce_pct}% ce"

@@ -4,18 +4,32 @@ import { Box, Text } from '../ink.js'
 import type { Screen } from '../types/repl.js'
 import type { NormalizedUserMessage } from '../types/message.js'
 import { getUserMessageText } from '../utils/messages.js'
-import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js'
 import { MessageResponse } from './MessageResponse.js'
 
 type Props = {
   message: NormalizedUserMessage
   screen: Screen
+  /** Per-message click-to-expand (see expandedKeys in Messages.tsx). */
+  verbose: boolean
 }
 
-export function CompactSummary({ message, screen }: Props): React.ReactNode {
+export function CompactSummary({
+  message,
+  screen,
+  verbose,
+}: Props): React.ReactNode {
   const isTranscriptMode = screen === 'transcript'
   const textContent = getUserMessageText(message) || ''
   const metadata = message.summarizeMetadata
+  // Body shows in transcript mode or when the row was clicked to expand;
+  // the click hint only applies to the collapsible (non-transcript) view.
+  const showBody = isTranscriptMode || verbose
+  const expandHint = (
+    <Text dimColor>
+      {' '}
+      {verbose ? '(click to collapse)' : '(click to expand)'}
+    </Text>
+  )
 
   // "Summarize from here" with metadata
   if (metadata) {
@@ -26,8 +40,11 @@ export function CompactSummary({ message, screen }: Props): React.ReactNode {
             <Text color="text">{BLACK_CIRCLE}</Text>
           </Box>
           <Box flexDirection="column">
-            <Text bold>Summarized conversation</Text>
-            {!isTranscriptMode && (
+            <Text bold>
+              Summarized conversation
+              {!showBody && expandHint}
+            </Text>
+            {!showBody && (
               <MessageResponse>
                 <Box flexDirection="column">
                   <Text dimColor>
@@ -43,19 +60,10 @@ export function CompactSummary({ message, screen }: Props): React.ReactNode {
                       {'\u201d'}
                     </Text>
                   )}
-                  <Text dimColor>
-                    <ConfigurableShortcutHint
-                      action="app:toggleTranscript"
-                      context="Global"
-                      fallback="ctrl+o"
-                      description="expand history"
-                      parens
-                    />
-                  </Text>
                 </Box>
               </MessageResponse>
             )}
-            {isTranscriptMode && (
+            {showBody && (
               <MessageResponse>
                 <Text>{textContent}</Text>
               </MessageResponse>
@@ -76,22 +84,11 @@ export function CompactSummary({ message, screen }: Props): React.ReactNode {
         <Box flexDirection="column">
           <Text bold>
             Compact summary
-            {!isTranscriptMode && (
-              <Text dimColor>
-                {' '}
-                <ConfigurableShortcutHint
-                  action="app:toggleTranscript"
-                  context="Global"
-                  fallback="ctrl+o"
-                  description="expand"
-                  parens
-                />
-              </Text>
-            )}
+            {!showBody && expandHint}
           </Text>
         </Box>
       </Box>
-      {isTranscriptMode && (
+      {showBody && (
         <MessageResponse>
           <Text>{textContent}</Text>
         </MessageResponse>

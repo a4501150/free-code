@@ -164,6 +164,7 @@ function MessageImpl({
           <CompactSummary
             message={message}
             screen={isTranscriptMode ? 'transcript' : 'prompt'}
+            verbose={verbose}
           />
         )
       }

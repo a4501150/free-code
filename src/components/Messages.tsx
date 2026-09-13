@@ -718,6 +718,7 @@ const MessagesImpl = ({
   const isItemClickable = useCallback(
     (msg: RenderableMessage): boolean => {
       if (msg.type === 'collapsed_read_search') return true
+      if (msg.type === 'user' && msg.isCompactSummary) return true
       if (showInjectedContext) {
         if (msg.type === 'attachment') {
           return attachmentHasSystemReminder(msg.attachment)
