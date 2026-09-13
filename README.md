@@ -130,6 +130,30 @@ public path. After a rebuild, `web restart` keeps the hostname the tunnel handed
 out before, so a URL already open on a phone keeps working. A terminal session
 is attachable only if its process came from a build with the webui compiled in.
 
+By default the cloudflared tunnel is a quick tunnel: no account, a random
+`*.trycloudflare.com` URL per start. To pin a hostname on your own zone, add a
+`tunnel` block to `~/.freecode/freecode.json`:
+
+```json
+{
+  "tunnel": {
+    "provider": "cloudflare",
+    "config": {
+      "url": "https://code.example.com",
+      "apikey": "<Cloudflare API token>",
+      "accountTag": "<account id>",
+      "zoneTag": "<optional; looked up from the hostname when absent>"
+    }
+  }
+}
+```
+
+`apikey` is an API token (Bearer), not the global API key: it needs
+"Cloudflare Tunnel: Edit" on the account and "DNS: Edit" on the zone (plus
+"Zone: Read" if `zoneTag` is omitted). The tunnel, its DNS record and its
+ingress are created or refreshed through the API on every start, and
+`cloudflared tunnel run --token` serves the static URL from then on.
+
 ## Tech stack
 
 Bun, TypeScript, React 19 on a repository-local terminal renderer

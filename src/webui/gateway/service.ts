@@ -1,7 +1,9 @@
 import { z } from 'zod'
+import { createCloudflareNamedTunnelProvider } from '../tunnel/cloudflareNamedTunnelProvider.js'
 import { createCloudflareTunnelProvider } from '../tunnel/cloudflareTunnelProvider.js'
 import { createCommandTunnelProvider } from '../tunnel/commandTunnelProvider.js'
 import { createLocalTunnelProvider } from '../tunnel/localTunnelProvider.js'
+import { readTunnelSettings } from '../tunnel/tunnelConfig.js'
 import type { TunnelHandle, TunnelProvider } from '../tunnel/types.js'
 import { startGatewayServer, type GatewayServer } from './gatewayServer.js'
 // webState imports WebStartOptionsSchema from this module, so importing it
@@ -51,8 +53,15 @@ function providerFor(options: WebStartOptions): TunnelProvider | null {
         throw new Error('--tunnel command requires --tunnel-command')
       }
       return createCommandTunnelProvider(options.tunnelCommand)
-    case 'cloudflared':
+    case 'cloudflared': {
+      // A configured `tunnel` block switches to a named tunnel with a static
+      // hostname; without one, the account-free quick tunnel is used.
+      const settings = readTunnelSettings()
+      if (settings?.provider === 'cloudflare') {
+        return createCloudflareNamedTunnelProvider(settings)
+      }
       return createCloudflareTunnelProvider()
+    }
     case 'localtunnel':
       return createLocalTunnelProvider({
         subdomain: options.subdomain,
@@ -89,11 +98,14 @@ export function createWebService() {
     })
     status = { running: true, url: server.url, startedAt: Date.now() }
 
-    const provider = providerFor(options)
-    if (provider) {
-      status.tunnel = provider.name
-      tunnelAbort = new AbortController()
-      try {
+    // Provider construction can fail too (an invalid `tunnel` settings
+    // block), so it sits inside the same guard: a broken tunnel config
+    // must still leave the loopback server serving.
+    try {
+      const provider = providerFor(options)
+      if (provider) {
+        status.tunnel = provider.name
+        tunnelAbort = new AbortController()
         // Start the tunnel only after the loopback server answers, so it never
         // publishes a URL that 502s.
         const health = await fetch(`${server.url}/`, {
@@ -110,9 +122,9 @@ export function createWebService() {
         // Teach the origin check about the public URL, or every browser request
         // through the tunnel fails the Origin comparison.
         server.setPublicUrl(tunnel.publicUrl)
-      } catch (err) {
-        status.tunnelError = err instanceof Error ? err.message : String(err)
       }
+    } catch (err) {
+      status.tunnelError = err instanceof Error ? err.message : String(err)
     }
 
     // Remember how this was started, so `web restart` can ask the tunnel for
