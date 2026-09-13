@@ -3812,7 +3812,12 @@ export function isLoggableMessage(m: Message): boolean {
       m.attachment.type === 'user_context_snapshot' ||
       m.attachment.type === 'user_context_delta' ||
       // Catalog snapshot + diff baseline; names, counts and paths only.
-      m.attachment.type === 'mcp_tools_delta'
+      m.attachment.type === 'mcp_tools_delta' ||
+      // Mid-turn drained commands exist ONLY as attachments — a prompt
+      // queued while the model was running never becomes a logged user
+      // message, so without this the human turn vanishes on resume while
+      // the model's reply to it stays.
+      m.attachment.type === 'queued_command'
     ) {
       return true
     }
