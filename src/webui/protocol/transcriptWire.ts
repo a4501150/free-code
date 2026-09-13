@@ -1,4 +1,8 @@
 /**
+ * A live transcript comes wholly through its socket. Never splice a disk
+ * snapshot to a socket tail — queued writes, mutable assistant messages, DAG
+ * branches and UI reordering make the merge lossy.
+ *
  * The browser-facing transcript model.
  *
  * Internal `Message` objects carry live tools, process-local metadata and

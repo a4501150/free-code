@@ -1,3 +1,12 @@
+/**
+ * A browser permission disconnect must not deny by omission: keep the
+ * terminal dialog answerable while the broker retains the request.
+ *
+ * Permission-mode changes must be sent before `allow` on the same socket so
+ * the mode lands before tool execution. Browser `persist` is deliberately
+ * session-scoped; never turn an internet-facing approval into the terminal's
+ * durable on-disk rule.
+ */
 import { randomBytes } from 'crypto'
 import type {
   WebPermissionDecision,

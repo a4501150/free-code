@@ -1,3 +1,9 @@
+/**
+ * The client follows sessions across processes: exclude known-dead process
+ * keys despite the polling lag, and call gateway `detach()` rather than
+ * clearing React state, or reconnect strands the view on an empty dead
+ * process.
+ */
 import { useCallback, useRef, useSyncExternalStore } from 'react'
 import type {
   AttachEventBody,

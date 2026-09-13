@@ -1,3 +1,12 @@
+/**
+ * "Interrupt and send" is one priority enqueue, not cancel then submit; in
+ * headless mode every non-stdin producer must call `run()` after `enqueue()`
+ * or the turn never starts.
+ *
+ * `AskUserQuestion` and `ExitPlanMode` require an enriched `updatedInput` —
+ * a bare allow silently submits empty answers. Exit-plan approval must also
+ * drop `plan`, or it falsely reports a user edit.
+ */
 import { isWebuiManagedProcess } from '../../utils/webuiManagedProcess.js'
 import type { CanUseToolFn } from '../../Tool.js'
 import type { Message } from '../../types/message.js'

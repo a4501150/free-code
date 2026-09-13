@@ -1,3 +1,13 @@
+/**
+ * Gateway children require a configured config home with provider settings,
+ * trust and API-key approval. A source rebuild does not update a running
+ * gateway; restart it, preserving the tunnel hostname when needed
+ * (`web restart` does).
+ *
+ * Browser resume must wait for the requested session's descriptor and use the
+ * recorded working directory. Do not pass `--fork-session`, which leaves a
+ * duplicate history row.
+ */
 import { spawn, type ChildProcess } from 'child_process'
 import { validateSessionCwd } from './directories.js'
 import { readAttachDescriptor } from '../attach/attachDescriptor.js'

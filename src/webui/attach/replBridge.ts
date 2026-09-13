@@ -1,3 +1,7 @@
+/**
+ * `sessionSwitched` also fires for `/clear`; consumers must not assume it
+ * means resume.
+ */
 import { useEffect, useRef } from 'react'
 import type { UUID } from 'crypto'
 import type { Message } from '../../types/message.js'

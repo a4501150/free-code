@@ -1,3 +1,9 @@
+/**
+ * A process socket is identified by PID plus nonce, never session ID. Attach
+ * only when registry and descriptor agree on both: descriptor rewrites are
+ * asynchronous, so an early or stale descriptor can attach to the wrong
+ * session.
+ */
 import { chmodSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { z } from 'zod'
 import { ATTACH_PROTOCOL_VERSION } from '../protocol/attachSchemas.js'
