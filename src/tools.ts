@@ -9,7 +9,6 @@ import { FileEditTool } from './tools/FileEditTool/FileEditTool.js'
 import { FileReadTool } from './tools/FileReadTool/FileReadTool.js'
 import { FileWriteTool } from './tools/FileWriteTool/FileWriteTool.js'
 import { GlobTool } from './tools/GlobTool/GlobTool.js'
-import { WebFetchTool } from './tools/WebFetchTool/WebFetchTool.js'
 import { TaskStopTool } from './tools/TaskStopTool/TaskStopTool.js'
 import { BackgroundTaskListTool } from './tools/BackgroundTaskListTool/BackgroundTaskListTool.js'
 import { BriefTool } from './tools/BriefTool/BriefTool.js'
@@ -32,7 +31,6 @@ try {
 /* eslint-enable @typescript-eslint/no-require-imports */
 const cronTools = [CronCreateTool, CronDeleteTool, CronListTool]
 import { TaskOutputTool } from './tools/TaskOutputTool/TaskOutputTool.js'
-import { WebSearchTool } from './tools/WebSearchTool/WebSearchTool.js'
 import { ExitPlanModeTool } from './tools/ExitPlanModeTool/ExitPlanModeTool.js'
 import { GrepTool } from './tools/GrepTool/GrepTool.js'
 import { SendMessageTool } from './tools/SendMessageTool/SendMessageTool.js'
@@ -127,8 +125,6 @@ export function getAllBaseTools(): Tools {
     FileReadTool,
     FileEditTool,
     FileWriteTool,
-    WebFetchTool,
-    WebSearchTool,
     TaskStopTool,
     BackgroundTaskListTool,
     AskUserQuestionTool,

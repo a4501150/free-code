@@ -10,7 +10,6 @@ import {
 import { clearCommandsCache } from '../../commands.js'
 import { clearAgentDefinitionsCache } from '../../tools/AgentTool/loadAgentsDir.js'
 import { clearPromptCache } from '../../tools/SkillTool/prompt.js'
-import { clearWebFetchCache } from '../../tools/WebFetchTool/utils.js'
 import { getSessionStartDate } from '../../constants/common.js'
 import {
   getGitStatus,
@@ -112,7 +111,6 @@ export function clearSessionCaches(
   clearTrackedMagicDocs()
   // Clear session environment variables
   clearSessionEnvVars()
-  clearWebFetchCache()
   clearAgentDefinitionsCache()
   clearPromptCache()
   // Output styles: /clear starts a fresh conversation, which is the one

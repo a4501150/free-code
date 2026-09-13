@@ -1,7 +1,6 @@
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
-import { WEB_FETCH_TOOL_NAME } from '../tools/WebFetchTool/prompt.js'
 import type { ContextData } from './analyzeContext.js'
 import { getDisplayPath } from './file.js'
 import { formatTokens } from './format.js'
@@ -127,10 +126,14 @@ function getLargeToolSuggestion(
           'Add more specific patterns or use the glob or type parameter to narrow file types. Consider Glob for file discovery instead of Grep.',
         savingsTokens: Math.floor(tokens * 0.3),
       }
-    case WEB_FETCH_TOOL_NAME:
+    // Legacy built-in name from pre-MCP transcripts; the MCP replacement is
+    // the agent-browser web_fetch case below.
+    case 'WebFetch':
+    case 'mcp__agent-browser__web_fetch':
+    case 'mcp__agent-browser__web_extract':
       return {
         severity: 'info',
-        title: `WebFetch results using ${tokenStr} tokens (${percent.toFixed(0)}%)`,
+        title: `Web page fetches using ${tokenStr} tokens (${percent.toFixed(0)}%)`,
         detail:
           'Web page content can be very large. Consider extracting only the specific information needed.',
         savingsTokens: Math.floor(tokens * 0.4),

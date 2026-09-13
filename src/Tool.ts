@@ -53,7 +53,6 @@ import type {
   SkillToolProgress,
   TaskOutputProgress,
   ToolProgressData,
-  WebSearchProgress,
 } from './types/tools.js'
 import type { EffortValue } from './utils/effort.js'
 import type { FileStateCache } from './utils/fileStateCache.js'
@@ -70,7 +69,6 @@ export type {
   REPLToolProgress,
   SkillToolProgress,
   TaskOutputProgress,
-  WebSearchProgress,
 }
 
 import type { SpinnerMode } from './components/Spinner.js'

@@ -7,7 +7,6 @@ import { useTerminalSize } from '../../../hooks/useTerminalSize.js'
 import { Box, Newline, Text } from '../../../ink.js'
 import { useKeybinding } from '../../../keybindings/useKeybinding.js'
 import { BashTool } from '../../../tools/BashTool/BashTool.js'
-import { WebFetchTool } from '../../../tools/WebFetchTool/WebFetchTool.js'
 import type {
   PermissionBehavior,
   PermissionRuleValue,
@@ -71,7 +70,9 @@ export function PermissionRuleInput({
             <Newline />
             e.g.,{' '}
             <Text bold>
-              {permissionRuleValueToString({ toolName: WebFetchTool.name })}
+              {permissionRuleValueToString({
+                toolName: 'mcp__agent-browser__web_fetch',
+              })}
             </Text>
             <Text bold={false}> or </Text>
             <Text bold>

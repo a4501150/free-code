@@ -32,8 +32,6 @@ const WATCHLIST = [
   'SendMessage',
   'Skill',
   'TaskList',
-  'WebFetch',
-  'WebSearch',
   'Write',
   // historical names that must never resurface un-gated
   'BashOutput',
@@ -45,6 +43,10 @@ const WATCHLIST = [
   'TaskStop',
   'TodoWrite',
   'Tmux',
+  // built-in web tools removed in favor of the bundled agent-browser MCP
+  // server; a stale mention of either name in prompt prose is a phantom
+  'WebFetch',
+  'WebSearch',
 ]
 
 function toolMentions(text: string): string[] {

@@ -38,17 +38,6 @@ export type PowerShellProgress = {
   timeoutMs?: number
 }
 
-export type WebSearchProgress =
-  | {
-      type: 'query_update'
-      query: string
-    }
-  | {
-      type: 'search_results_received'
-      resultCount: number
-      query: string
-    }
-
 export type SkillToolProgress = {
   type: 'skill_progress'
   /** Normalized forked-agent message that triggered the progress. */
@@ -109,7 +98,6 @@ export type REPLToolProgress = {
 export type ToolProgressData =
   | BashProgress
   | PowerShellProgress
-  | WebSearchProgress
   | SkillToolProgress
   | AgentToolProgress
   | MCPProgress

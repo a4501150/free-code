@@ -361,8 +361,22 @@ function extractToolStats(log: LogOption): {
             )
               usesTaskAgent = true
             if (toolName.startsWith('mcp__')) usesMcp = true
-            if (toolName === 'WebSearch') usesWebSearch = true
-            if (toolName === 'WebFetch') usesWebFetch = true
+            // Legacy built-in names plus the MCP agent-browser replacements;
+            // old transcripts still contain the built-in names.
+            if (
+              toolName === 'WebSearch' ||
+              toolName === 'mcp__agent-browser__web_search' ||
+              toolName === 'mcp__agent-browser__web_crawl'
+            ) {
+              usesWebSearch = true
+            }
+            if (
+              toolName === 'WebFetch' ||
+              toolName === 'mcp__agent-browser__web_fetch' ||
+              toolName === 'mcp__agent-browser__web_extract'
+            ) {
+              usesWebFetch = true
+            }
 
             const input = (block as { input?: Record<string, unknown> }).input
 

@@ -136,6 +136,10 @@ const SEARCH_TOOLS = new Set([
   'search_modules',
   'search_providers',
   'search_policies',
+  // agent-browser (bundled web_search/web_crawl — the built-in
+  // WebSearch/WebFetch tools were removed in favor of these)
+  'web_search',
+  'web_crawl',
 ])
 
 // prettier-ignore
@@ -583,6 +587,9 @@ const READ_TOOLS = new Set([
   'pods_top',
   'resources_get',
   'resources_list',
+  // agent-browser (bundled web_fetch/web_extract)
+  'web_fetch',
+  'web_extract',
 ])
 
 function normalize(name: string): string {

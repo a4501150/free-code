@@ -1190,12 +1190,6 @@ const _settingsSchemaValue = z
       .describe(
         'Output style controlling how Claude responds: a built-in name ("simple-english", or "none" to disable styling), a markdown style in an output-styles config directory, or a plugin style ("plugin:style"). Unset and "default" both select "simple-english". Applies to the next session.',
       ),
-    skipWebFetchPreflight: z
-      .boolean()
-      .optional()
-      .describe(
-        'Skip the WebFetch blocklist check for enterprise environments with restrictive security policies',
-      ),
     spinnerTipsEnabled: z
       .boolean()
       .optional()

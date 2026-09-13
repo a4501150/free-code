@@ -13,7 +13,6 @@ import { GlobTool } from '../../tools/GlobTool/GlobTool.js'
 import { GrepTool } from '../../tools/GrepTool/GrepTool.js'
 import { PowerShellTool } from '../../tools/PowerShellTool/PowerShellTool.js'
 import { SkillTool } from '../../tools/SkillTool/SkillTool.js'
-import { WebFetchTool } from '../../tools/WebFetchTool/WebFetchTool.js'
 import type { AssistantMessage } from '../../types/message.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
 import { AskUserQuestionPermissionRequest } from './AskUserQuestionPermissionRequest/AskUserQuestionPermissionRequest.js'
@@ -26,7 +25,6 @@ import { FilesystemPermissionRequest } from './FilesystemPermissionRequest/Files
 import { FileWritePermissionRequest } from './FileWritePermissionRequest/FileWritePermissionRequest.js'
 import { PowerShellPermissionRequest } from './PowerShellPermissionRequest/PowerShellPermissionRequest.js'
 import { SkillPermissionRequest } from './SkillPermissionRequest/SkillPermissionRequest.js'
-import { WebFetchPermissionRequest } from './WebFetchPermissionRequest/WebFetchPermissionRequest.js'
 
 import type { DomainUserContentBlock } from '../../types/domain.js'
 import type { z } from 'zod/v4'
@@ -45,8 +43,6 @@ function permissionComponentForTool(
       return BashPermissionRequest
     case PowerShellTool:
       return PowerShellPermissionRequest
-    case WebFetchTool:
-      return WebFetchPermissionRequest
     case ExitPlanModeTool:
       return ExitPlanModePermissionRequest
     case EnterPlanModeTool:

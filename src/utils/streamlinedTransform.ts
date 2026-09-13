@@ -18,7 +18,6 @@ import { GREP_TOOL_NAME } from 'src/tools/GrepTool/prompt.js'
 import { LIST_MCP_RESOURCES_TOOL_NAME } from 'src/tools/ListMcpResourcesTool/prompt.js'
 import { LSP_TOOL_NAME } from 'src/tools/LSPTool/prompt.js'
 import { TASK_STOP_TOOL_NAME } from 'src/tools/TaskStopTool/prompt.js'
-import { WEB_SEARCH_TOOL_NAME } from 'src/tools/WebSearchTool/prompt.js'
 import { extractTextContent } from 'src/utils/messages.js'
 import { SHELL_TOOL_NAMES } from 'src/utils/shell/shellToolUtils.js'
 import { capitalize } from 'src/utils/stringUtils.js'
@@ -37,10 +36,18 @@ type ToolCounts = {
 const SEARCH_TOOLS = [
   GREP_TOOL_NAME,
   GLOB_TOOL_NAME,
-  WEB_SEARCH_TOOL_NAME,
+  // Bundled agent-browser web tools (MCP replacement for built-in WebSearch)
+  'mcp__agent-browser__web_search',
+  'mcp__agent-browser__web_crawl',
   LSP_TOOL_NAME,
 ]
-const READ_TOOLS = [FILE_READ_TOOL_NAME, LIST_MCP_RESOURCES_TOOL_NAME]
+const READ_TOOLS = [
+  FILE_READ_TOOL_NAME,
+  LIST_MCP_RESOURCES_TOOL_NAME,
+  // Bundled agent-browser web tools (MCP replacement for built-in WebFetch)
+  'mcp__agent-browser__web_fetch',
+  'mcp__agent-browser__web_extract',
+]
 const WRITE_TOOLS = [FILE_WRITE_TOOL_NAME, FILE_EDIT_TOOL_NAME]
 const COMMAND_TOOLS = [...SHELL_TOOL_NAMES, TASK_STOP_TOOL_NAME]
 

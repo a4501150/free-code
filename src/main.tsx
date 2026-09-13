@@ -2585,7 +2585,6 @@ async function run(): Promise<CommanderCommand> {
         numDisallowedTools: disallowedTools.length,
         mcpClientCount: Object.keys(allMcpConfigs).length,
         worktreeEnabled,
-        skipWebFetchPreflight: getInitialSettings().skipWebFetchPreflight,
         githubActionInputs: process.env.GITHUB_ACTION_INPUTS,
         dangerouslySkipPermissionsPassed: dangerouslySkipPermissions ?? false,
         permissionMode,
@@ -4208,7 +4207,6 @@ async function logTenguInit({
   numDisallowedTools,
   mcpClientCount,
   worktreeEnabled,
-  skipWebFetchPreflight,
   githubActionInputs,
   dangerouslySkipPermissionsPassed,
   permissionMode,
@@ -4231,7 +4229,6 @@ async function logTenguInit({
   numDisallowedTools: number
   mcpClientCount: number
   worktreeEnabled: boolean
-  skipWebFetchPreflight: boolean | undefined
   githubActionInputs: string | undefined
   dangerouslySkipPermissionsPassed: boolean
   permissionMode: string

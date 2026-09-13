@@ -143,7 +143,6 @@ import {
   getScratchpadDir,
   isScratchpadEnabled,
 } from '../utils/permissions/filesystem.js'
-import { WEB_FETCH_TOOL_NAME } from '../tools/WebFetchTool/prompt.js'
 import { SLEEP_TOOL_NAME } from '../tools/SleepTool/prompt.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import {

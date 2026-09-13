@@ -488,8 +488,8 @@ export async function* runAgent({
     }
   }
 
-  // Capability-gated tools (e.g. WebSearch) were enabled when the parent
-  // assembled its pool, against the parent's model. This agent may run a
+  // Capability-gated tools were enabled when the parent assembled its pool,
+  // against the parent's model. This agent may run a
   // different model, so re-check isEnabled() under the agent's own model —
   // getMainLoopModel() resolves to the scoped model inside the scope.
   const modelCapableTools = runWithMainLoopModelScope(resolvedAgentModel, () =>

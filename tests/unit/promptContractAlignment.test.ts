@@ -32,12 +32,9 @@ describe('tool prompt contracts', () => {
 
   test('optional and destructive tool guidance matches runtime contracts', () => {
     const read = readSource('src/tools/FileReadTool/prompt.ts')
-    const search = readSource('src/tools/WebSearchTool/WebSearchTool.ts')
     const exitWorktree = readSource('src/tools/ExitWorktreeTool/prompt.ts')
 
     expect(read).toContain('provide only \\`file_path\\` to read the full file')
-    expect(search).toContain('Mutually exclusive with blocked_domains')
-    expect(search).toContain('Mutually exclusive with allowed_domains')
     expect(exitWorktree).toContain(
       'after the user explicitly confirms destructive removal',
     )

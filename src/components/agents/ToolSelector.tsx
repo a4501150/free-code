@@ -20,8 +20,6 @@ import { TaskListTool } from 'src/tools/TaskListTool/TaskListTool.js'
 import { TaskOutputTool } from 'src/tools/TaskOutputTool/TaskOutputTool.js'
 import { TaskStopTool } from 'src/tools/TaskStopTool/TaskStopTool.js'
 import { TaskUpdateTool } from 'src/tools/TaskUpdateTool/TaskUpdateTool.js'
-import { WebFetchTool } from 'src/tools/WebFetchTool/WebFetchTool.js'
-import { WebSearchTool } from 'src/tools/WebSearchTool/WebSearchTool.js'
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
 import { Box, Text } from '../../ink.js'
 import { useKeybinding } from '../../keybindings/useKeybinding.js'
@@ -59,12 +57,10 @@ function getToolBuckets(): ToolBuckets {
         GrepTool.name,
         ExitPlanModeTool.name,
         FileReadTool.name,
-        WebFetchTool.name,
         TaskCreateTool.name,
         TaskGetTool.name,
         TaskListTool.name,
         TaskUpdateTool.name,
-        WebSearchTool.name,
         TaskStopTool.name,
         TaskOutputTool.name,
         ListMcpResourcesTool.name,

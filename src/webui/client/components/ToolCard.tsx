@@ -22,7 +22,9 @@ function summarizeInput(item: WebTranscriptItem): string {
     case 'Glob':
     case 'Grep':
       return first('pattern', 'query') ?? ''
+    // Legacy built-in name; MCP agent-browser web_fetch replaced it.
     case 'WebFetch':
+    case 'mcp__agent-browser__web_fetch':
       return first('url') ?? ''
     case 'Task':
     case 'Agent':
