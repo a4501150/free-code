@@ -84,10 +84,9 @@ export function createCloudflareNamedTunnelProvider(
   }
 
   async function findOrCreateTunnel(): Promise<string> {
-    const listed = await api(
-      'GET',
-      `/accounts/${config.accountTag}/cfd_tunnels`,
-    )
+    // Singular `cfd_tunnel`, matching the API's account-resource path; the
+    // plural form the docs sometimes show is rejected as an unknown variant.
+    const listed = await api('GET', `/accounts/${config.accountTag}/cfd_tunnel`)
     const entries: any[] = Array.isArray(listed) ? listed : []
     const existing = entries
       .map(e => e?.tunnel ?? e)
@@ -95,7 +94,7 @@ export function createCloudflareNamedTunnelProvider(
     if (existing?.id) return existing.id
     const created = await api(
       'POST',
-      `/accounts/${config.accountTag}/cfd_tunnels`,
+      `/accounts/${config.accountTag}/cfd_tunnel`,
       {
         name: tunnelName,
         tunnel_type: 'generic',

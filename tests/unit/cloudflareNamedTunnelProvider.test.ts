@@ -81,9 +81,9 @@ describe('cloudflare named tunnel provider', () => {
   test('creates tunnel, DNS record and ingress, then runs with the token', async () => {
     const child = fakeChild()
     const { deps, calls, spawned } = namedDeps(child, call => {
-      if (call.method === 'GET' && call.path === '/accounts/acct1/cfd_tunnels')
+      if (call.method === 'GET' && call.path === '/accounts/acct1/cfd_tunnel')
         return []
-      if (call.method === 'POST' && call.path === '/accounts/acct1/cfd_tunnels')
+      if (call.method === 'POST' && call.path === '/accounts/acct1/cfd_tunnel')
         return { id: 'tun-1' }
       if (call.path === '/zones?name=example.com')
         return [{ id: 'zone-1', name: 'example.com' }]
@@ -110,7 +110,7 @@ describe('cloudflare named tunnel provider', () => {
     expect(spawned[0]).toEqual(['tunnel', 'run', '--token', 'jwt-abc'])
 
     const created = calls.find(
-      c => c.method === 'POST' && c.path === '/accounts/acct1/cfd_tunnels',
+      c => c.method === 'POST' && c.path === '/accounts/acct1/cfd_tunnel',
     )
     expect(created?.body).toMatchObject({
       name: 'free-code-code.example.com',
@@ -141,7 +141,7 @@ describe('cloudflare named tunnel provider', () => {
   test('reuses an existing tunnel and skips creation', async () => {
     const child = fakeChild()
     const { deps, calls } = namedDeps(child, call => {
-      if (call.method === 'GET' && call.path === '/accounts/acct1/cfd_tunnels')
+      if (call.method === 'GET' && call.path === '/accounts/acct1/cfd_tunnel')
         return [{ tunnel: { id: 'tun-9', name: 'free-code-code.example.com' } }]
       if (call.path === '/zones?name=example.com')
         return [{ id: 'zone-1', name: 'example.com' }]
@@ -174,7 +174,7 @@ describe('cloudflare named tunnel provider', () => {
     // No tunnel created, no DNS record written: everything already matched.
     expect(
       calls.some(
-        c => c.method === 'POST' && c.path === '/accounts/acct1/cfd_tunnels',
+        c => c.method === 'POST' && c.path === '/accounts/acct1/cfd_tunnel',
       ),
     ).toBe(false)
     expect(calls.some(c => c.method === 'POST')).toBe(false)
@@ -186,7 +186,7 @@ describe('cloudflare named tunnel provider', () => {
   test('missing zone fails with a hint about zoneTag', async () => {
     const child = fakeChild()
     const { deps } = namedDeps(child, call =>
-      call.method === 'POST' && call.path === '/accounts/acct1/cfd_tunnels'
+      call.method === 'POST' && call.path === '/accounts/acct1/cfd_tunnel'
         ? { id: 'tun-1' }
         : [],
     )
