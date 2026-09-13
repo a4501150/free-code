@@ -187,8 +187,6 @@ export function AssistantToolUseMessage({
     toolCallDisplay ?? 'compact',
     displayCompactParamKeys ?? tool.compactParamKeys,
   )
-  const isStreamingInput = isQueued && renderedToolUseMessage === ''
-
   return (
     <Box
       flexDirection="row"
@@ -205,7 +203,9 @@ export function AssistantToolUseMessage({
           onClick={isAgentTool ? toggleAgentExpansion : undefined}
         >
           {shouldShowDot &&
-            (isQueued && !isStreamingInput ? (
+            (isQueued ? (
+              // Queued (input still streaming or awaiting dispatch): a static
+              // dot. Blinking is reserved for actual execution below.
               <Box minWidth={2}>
                 <Text dimColor>{BLACK_CIRCLE}</Text>
               </Box>
@@ -213,8 +213,10 @@ export function AssistantToolUseMessage({
               // WARNING: The code here and in ToolUseLoader is particularly
               // sensitive to what *should* just be trivial refactorings. See
               // the comment in ToolUseLoader for more details.
+              // shouldAnimate is sourced from inProgressToolUseIDs upstream,
+              // so the blink tracks real execution, not model streaming.
               <ToolUseLoader
-                shouldAnimate={isStreamingInput || shouldAnimate}
+                shouldAnimate={shouldAnimate}
                 isUnresolved={!isResolved}
                 isError={lookups.erroredToolUseIDs.has(param.id)}
               />

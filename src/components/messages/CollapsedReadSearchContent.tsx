@@ -696,7 +696,13 @@ export function CollapsedReadSearchContent({
     <Box flexDirection="column" marginTop={1} backgroundColor={bg}>
       <Box flexDirection="row">
         {isActiveGroup ? (
-          <ToolUseLoader shouldAnimate isUnresolved isError={anyError} />
+          // shouldAnimate is inProgress-scoped upstream, so the blink tracks
+          // real tool execution, not the surrounding model streaming.
+          <ToolUseLoader
+            shouldAnimate={shouldAnimate}
+            isUnresolved
+            isError={anyError}
+          />
         ) : (
           <Box minWidth={2} />
         )}
