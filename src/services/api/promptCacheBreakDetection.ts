@@ -9,9 +9,11 @@ import type { Message } from 'src/types/message.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { djb2Hash } from 'src/utils/hash.js'
 import { logError } from 'src/utils/log.js'
+import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import { getClaudeTempDir } from 'src/utils/permissions/filesystem.js'
 import { jsonStringify } from 'src/utils/slowOperations.js'
 import type { QuerySource } from '../../constants/querySource.js'
+import type { ProviderCacheType } from '../../utils/settings/types.js'
 
 function getCacheBreakDiffPath(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -53,12 +55,10 @@ type PreviousState = {
   callCount: number
   pendingChanges: PendingChanges | null
   prevCacheReadTokens: number | null
-  /** Set when cached microcompact sends cache_edits deletions. Cache reads
-   *  will legitimately drop — this is expected, not a break. */
   buildDiffableContent: () => string
 }
 
-type PendingChanges = {
+export type PendingChanges = {
   systemPromptChanged: boolean
   toolSchemasChanged: boolean
   modelChanged: boolean
@@ -398,6 +398,122 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
 }
 
 /**
+ * Build the human-readable explanation for a confirmed cache break.
+ *
+ * Attribution is filtered by the provider's cache model. Explicit-breakpoint
+ * (Anthropic-family) providers act on cache_control markers, beta headers and
+ * the 5min/1h TTLs, so those are legitimate causes and the TTL time-gaps
+ * explain an otherwise-unattributed break. Automatic-prefix providers have
+ * the markers stripped by the adapter and eviction timing that is entirely
+ * provider-dependent (vLLM: memory pressure only; OpenAI: its own idle
+ * window), so marker changes cannot cause a break there and Anthropic TTL
+ * wording would mislead — an unattributed break is labeled server-side
+ * eviction with the observed gap as context.
+ *
+ * Exported pure for testing; callers confirm the break before asking why.
+ */
+export function explainCacheBreak(input: {
+  changes: PendingChanges | null
+  gapMsSinceLastAssistant: number | null
+  cacheType: ProviderCacheType
+}): string {
+  const { changes, gapMsSinceLastAssistant, cacheType } = input
+  const anthropicCache = cacheType === 'explicit-breakpoint'
+  const parts: string[] = []
+  if (changes) {
+    if (changes.modelChanged) {
+      parts.push(
+        `model changed (${changes.previousModel} → ${changes.newModel})`,
+      )
+    }
+    if (changes.systemPromptChanged) {
+      const charDelta = changes.systemCharDelta
+      const charInfo =
+        charDelta === 0
+          ? ''
+          : charDelta > 0
+            ? ` (+${charDelta} chars)`
+            : ` (${charDelta} chars)`
+      parts.push(`system prompt changed${charInfo}`)
+    }
+    if (changes.toolSchemasChanged) {
+      const toolDiff =
+        changes.addedToolCount > 0 || changes.removedToolCount > 0
+          ? ` (+${changes.addedToolCount}/-${changes.removedToolCount} tools)`
+          : ' (tool prompt/schema changed, same tool set)'
+      parts.push(`tools changed${toolDiff}`)
+    }
+    // Anthropic-wire-only causes: the adapter drops these for
+    // automatic-prefix providers, so they cannot break that cache.
+    if (anthropicCache && changes.fastModeChanged) {
+      parts.push('fast mode toggled')
+    }
+    if (
+      anthropicCache &&
+      changes.cacheControlChanged &&
+      !changes.systemPromptChanged
+    ) {
+      // Only report as standalone cause if nothing else explains it —
+      // otherwise the scope/TTL flip is a consequence, not the root cause.
+      parts.push('cache_control changed (scope or TTL)')
+    }
+    if (anthropicCache && changes.betasChanged) {
+      const added = changes.addedBetas.length
+        ? `+${changes.addedBetas.join(',')}`
+        : ''
+      const removed = changes.removedBetas.length
+        ? `-${changes.removedBetas.join(',')}`
+        : ''
+      const diff = [added, removed].filter(Boolean).join(' ')
+      parts.push(`betas changed${diff ? ` (${diff})` : ''}`)
+    }
+    if (changes.autoModeChanged) {
+      parts.push('auto mode toggled')
+    }
+    if (anthropicCache && changes.overageChanged) {
+      parts.push('overage state changed (TTL latched, no flip)')
+    }
+    if (changes.effortChanged) {
+      parts.push(
+        `effort changed (${changes.prevEffortValue || 'default'} → ${changes.newEffortValue || 'default'})`,
+      )
+    }
+    if (changes.extraBodyChanged) {
+      parts.push('extra body params changed')
+    }
+  }
+
+  // Post PR #19823 BQ analysis (bq-queries/prompt-caching/cache_break_pr19823_analysis.sql):
+  // when all client-side flags are false and the gap is under TTL, ~90% of breaks
+  // are server-side routing/eviction or billed/inference disagreement. Label
+  // accordingly instead of implying a CC bug hunt.
+  if (parts.length > 0) return parts.join(', ')
+  if (!anthropicCache) {
+    const gapInfo =
+      gapMsSinceLastAssistant !== null
+        ? `, ${Math.round(gapMsSinceLastAssistant / 60_000)}min idle gap`
+        : ''
+    return `server-side eviction/routing (automatic-prefix cache; expiry is provider-dependent${gapInfo})`
+  }
+  if (
+    gapMsSinceLastAssistant !== null &&
+    gapMsSinceLastAssistant > CACHE_TTL_1HOUR_MS
+  ) {
+    return 'possible 1h TTL expiry (prompt unchanged)'
+  }
+  if (
+    gapMsSinceLastAssistant !== null &&
+    gapMsSinceLastAssistant > CACHE_TTL_5MIN_MS
+  ) {
+    return 'possible 5min TTL expiry (prompt unchanged)'
+  }
+  if (gapMsSinceLastAssistant !== null) {
+    return 'likely server-side (prompt unchanged, <5min gap)'
+  }
+  return 'unknown cause'
+}
+
+/**
  * Phase 2 (post-call): Check the API response's cache tokens to determine
  * if a cache break actually occurred. If it did, use the pending changes
  * from phase 1 to explain why.
@@ -446,89 +562,11 @@ export async function checkResponseForCacheBreak(
       return
     }
 
-    // Build explanation from pending changes (if any)
-    const parts: string[] = []
-    if (changes) {
-      if (changes.modelChanged) {
-        parts.push(
-          `model changed (${changes.previousModel} → ${changes.newModel})`,
-        )
-      }
-      if (changes.systemPromptChanged) {
-        const charDelta = changes.systemCharDelta
-        const charInfo =
-          charDelta === 0
-            ? ''
-            : charDelta > 0
-              ? ` (+${charDelta} chars)`
-              : ` (${charDelta} chars)`
-        parts.push(`system prompt changed${charInfo}`)
-      }
-      if (changes.toolSchemasChanged) {
-        const toolDiff =
-          changes.addedToolCount > 0 || changes.removedToolCount > 0
-            ? ` (+${changes.addedToolCount}/-${changes.removedToolCount} tools)`
-            : ' (tool prompt/schema changed, same tool set)'
-        parts.push(`tools changed${toolDiff}`)
-      }
-      if (changes.fastModeChanged) {
-        parts.push('fast mode toggled')
-      }
-      if (changes.cacheControlChanged && !changes.systemPromptChanged) {
-        // Only report as standalone cause if nothing else explains it —
-        // otherwise the scope/TTL flip is a consequence, not the root cause.
-        parts.push('cache_control changed (scope or TTL)')
-      }
-      if (changes.betasChanged) {
-        const added = changes.addedBetas.length
-          ? `+${changes.addedBetas.join(',')}`
-          : ''
-        const removed = changes.removedBetas.length
-          ? `-${changes.removedBetas.join(',')}`
-          : ''
-        const diff = [added, removed].filter(Boolean).join(' ')
-        parts.push(`betas changed${diff ? ` (${diff})` : ''}`)
-      }
-      if (changes.autoModeChanged) {
-        parts.push('auto mode toggled')
-      }
-      if (changes.overageChanged) {
-        parts.push('overage state changed (TTL latched, no flip)')
-      }
-      if (changes.effortChanged) {
-        parts.push(
-          `effort changed (${changes.prevEffortValue || 'default'} → ${changes.newEffortValue || 'default'})`,
-        )
-      }
-      if (changes.extraBodyChanged) {
-        parts.push('extra body params changed')
-      }
-    }
-
-    // Check if time gap suggests TTL expiration
-    const lastAssistantMsgOver5minAgo =
-      timeSinceLastAssistantMsg !== null &&
-      timeSinceLastAssistantMsg > CACHE_TTL_5MIN_MS
-    const lastAssistantMsgOver1hAgo =
-      timeSinceLastAssistantMsg !== null &&
-      timeSinceLastAssistantMsg > CACHE_TTL_1HOUR_MS
-
-    // Post PR #19823 BQ analysis (bq-queries/prompt-caching/cache_break_pr19823_analysis.sql):
-    // when all client-side flags are false and the gap is under TTL, ~90% of breaks
-    // are server-side routing/eviction or billed/inference disagreement. Label
-    // accordingly instead of implying a CC bug hunt.
-    let reason: string
-    if (parts.length > 0) {
-      reason = parts.join(', ')
-    } else if (lastAssistantMsgOver1hAgo) {
-      reason = 'possible 1h TTL expiry (prompt unchanged)'
-    } else if (lastAssistantMsgOver5minAgo) {
-      reason = 'possible 5min TTL expiry (prompt unchanged)'
-    } else if (timeSinceLastAssistantMsg !== null) {
-      reason = 'likely server-side (prompt unchanged, <5min gap)'
-    } else {
-      reason = 'unknown cause'
-    }
+    const reason = explainCacheBreak({
+      changes,
+      gapMsSinceLastAssistant: timeSinceLastAssistantMsg,
+      cacheType: getProviderRegistry().getProviderCacheType(state.model),
+    })
 
     // Write diff file for ant debugging via --debug. The path is included in
     // the summary log so ants can find it (DevBar UI removed — event data
