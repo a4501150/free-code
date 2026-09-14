@@ -1003,8 +1003,18 @@ export function collapseReadSearchGroups(
             currentGroup.latestDisplayHint = getDisplayPath(filePath)
           }
         }
-        // If no file paths found (e.g., Bash read commands like ls, cat), count the operations
-        if (filePaths.length === 0) {
+        // No paths found. Two cases reach here:
+        // - Bash read commands (cat, wc) — legitimately pathless, counted as
+        //   operations; this is the fallback's original purpose.
+        // - A Read-tool call still mid-stream (synthetic streaming message):
+        //   its file_path hasn't reached the partially parsed input yet. Do
+        //   NOT count these — two calls on one file would show "Reading 2
+        //   files…" and then tick DOWN to "Read 1 file" once the committed
+        //   messages dedupe by path (the group remounts when its first
+        //   message goes synthetic → real, so maxReadCountRef cannot pin the
+        //   count). The call lands in readFilePaths as soon as its input
+        //   completes; the count only ever grows.
+        if (filePaths.length === 0 && toolInfo.name === BASH_TOOL_NAME) {
           currentGroup.readOperationCount += countToolUses(msg)
           // Use the Bash command as the display hint (truncated for readability)
           const input = toolInfo.input as { command?: string } | undefined
