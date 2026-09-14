@@ -717,13 +717,10 @@ export function CollapsedReadSearchContent({
             isError={anyError}
           />
         ) : (
-          // Settled group: show the same solid green (or error-red) bullet
-          // as any other finalized tool row, not an empty gutter.
-          <ToolUseLoader
-            shouldAnimate={false}
-            isUnresolved={false}
-            isError={anyError}
-          />
+          // Settled group: the bullet only marks active work, so once every
+          // tool in the group is resolved the gutter goes empty. The
+          // finalized green dot is for standalone tool rows only.
+          <Box minWidth={2} />
         )}
         <Text dimColor={!isActiveGroup}>
           {nonMemParts}
