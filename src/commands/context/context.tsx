@@ -1,7 +1,6 @@
 import * as React from 'react'
 import type { LocalJSXCommandContext } from '../../commands.js'
 import { ContextVisualization } from '../../components/ContextVisualization.js'
-import { microcompactMessages } from '../../services/compact/microCompact.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
 import type { Message } from '../../types/message.js'
 import { analyzeContextUsage } from '../../utils/analyzeContext.js'
@@ -29,18 +28,14 @@ export async function call(
 
   const apiView = toApiView(messages)
 
-  // Apply microcompact to get accurate representation of messages sent to API
-  const { messages: compactedMessages } = await microcompactMessages(apiView)
-
   // Get terminal width for responsive sizing
   const terminalWidth = process.stdout.columns || 80
 
   const appState = getAppState()
 
-  // Analyze context with compacted messages
   // Pass original messages as last parameter for accurate API usage extraction
   const data = await analyzeContextUsage(
-    compactedMessages,
+    apiView,
     mainLoopModel,
     async () => appState.toolPermissionContext,
     tools,

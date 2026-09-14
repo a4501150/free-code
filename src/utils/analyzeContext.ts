@@ -1,5 +1,4 @@
 import { getSystemPrompt } from 'src/constants/prompts.js'
-import { microcompactMessages } from 'src/services/compact/microCompact.js'
 import { getCommandName } from '../commands.js'
 import { getEnvContext, getSystemContext } from '../context.js'
 import {
@@ -748,8 +747,6 @@ function processAttachment(
 async function approximateMessageTokens(
   messages: Message[],
 ): Promise<MessageBreakdown> {
-  const microcompactResult = await microcompactMessages(messages)
-
   // Initialize tracking
   const breakdown: MessageBreakdown = {
     totalTokens: 0,
@@ -765,7 +762,7 @@ async function approximateMessageTokens(
 
   // Build a map of tool_use_id to tool_name for easier lookup
   const toolUseIdToName = new Map<string, string>()
-  for (const msg of microcompactResult.messages) {
+  for (const msg of messages) {
     if (msg.type === 'assistant') {
       for (const block of msg.message.content) {
         if ('type' in block && block.type === 'tool_use') {
@@ -781,7 +778,7 @@ async function approximateMessageTokens(
   }
 
   // Process each message for detailed breakdown
-  for (const msg of microcompactResult.messages) {
+  for (const msg of messages) {
     if (msg.type === 'assistant') {
       processAssistantMessage(msg, breakdown)
     } else if (msg.type === 'user') {
@@ -793,7 +790,7 @@ async function approximateMessageTokens(
 
   // Calculate total tokens using the API for accuracy
   const approximateMessageTokens = await countTokensWithFallback(
-    normalizeMessagesForAPI(microcompactResult.messages).map(_ => {
+    normalizeMessagesForAPI(messages).map(_ => {
       if (_.type === 'assistant') {
         return {
           role: 'assistant' as const,
@@ -818,7 +815,7 @@ export async function analyzeContextUsage(
   terminalWidth?: number,
   toolUseContext?: Pick<ToolUseContext, 'options'>,
   mainThreadAgentDefinition?: AgentDefinition,
-  /** Original messages before microcompact, used to extract API usage */
+  /** Original messages, used to extract API usage */
   originalMessages?: Message[],
 ): Promise<ContextData> {
   const runtimeModel = getRuntimeMainLoopModel({

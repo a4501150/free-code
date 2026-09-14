@@ -1,4 +1,3 @@
-import { microcompactMessages } from '../../services/compact/microCompact.js'
 import type { AppState } from '../../state/AppStateStore.js'
 import type { Tools, ToolUseContext } from '../../Tool.js'
 import type { AgentDefinitionsResult } from '../../tools/AgentTool/loadAgentsDir.js'
@@ -15,8 +14,8 @@ import { plural } from '../../utils/stringUtils.js'
 /**
  * Shared data-collection path for `/context` (slash command) and the SDK
  * `get_context_usage` control request. Mirrors query.ts's pre-API transforms
- * (compact boundary, projectView, microcompact) so the token count reflects
- * what the model actually sees.
+ * (compact boundary, projectView) so the token count reflects what the model
+ * actually sees.
  */
 type CollectContextDataInput = {
   messages: Message[]
@@ -47,11 +46,10 @@ export async function collectContextData(
 
   const apiView = getMessagesAfterCompactBoundary(messages)
 
-  const { messages: compactedMessages } = await microcompactMessages(apiView)
   const appState = getAppState()
 
   return analyzeContextUsage(
-    compactedMessages,
+    apiView,
     mainLoopModel,
     async () => appState.toolPermissionContext,
     tools,

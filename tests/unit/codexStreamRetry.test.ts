@@ -371,7 +371,6 @@ describe('Codex stream retry', () => {
             }
             yield final
           },
-          microcompact: async messages => ({ messages }),
           autocompact: async () => ({ compactionResult: null }),
           uuid: () => 'test-query-chain-id',
         },
@@ -466,7 +465,6 @@ describe('Codex stream retry', () => {
             }
             yield final
           },
-          microcompact: async messages => ({ messages }),
           autocompact: async () => ({ compactionResult: null }),
           uuid: () => 'test-query-chain-id',
         },
@@ -840,7 +838,6 @@ describe('Codex stream retry', () => {
             }
             yield final
           },
-          microcompact: async messages => ({ messages }),
           autocompact: async () => ({ compactionResult: null }),
           uuid: () => 'test-query-chain-id',
         },

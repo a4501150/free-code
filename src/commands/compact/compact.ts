@@ -10,7 +10,6 @@ import {
   ERROR_MESSAGE_NOT_ENOUGH_MESSAGES,
 } from '../../services/compact/compact.js'
 import { suppressCompactWarning } from '../../services/compact/compactWarningState.js'
-import { microcompactMessages } from '../../services/compact/microCompact.js'
 import { runPostCompactCleanup } from '../../services/compact/postCompactCleanup.js'
 import { trySessionMemoryCompaction } from '../../services/compact/sessionMemoryCompact.js'
 import { setLastSummarizedMessageId } from '../../services/SessionMemory/sessionMemoryUtils.js'
@@ -72,14 +71,10 @@ export const call: LocalCommandCall = async (args, context) => {
     }
 
     // Fall back to traditional compaction
-    // Run microcompact first to reduce tokens before summarization
-    const microcompactResult = await microcompactMessages(messages, context)
-    const messagesForCompact = microcompactResult.messages
-
     const result = await compactConversation(
-      messagesForCompact,
+      messages,
       context,
-      await getCacheSharingParams(context, messagesForCompact),
+      await getCacheSharingParams(context, messages),
       false,
       customInstructions,
       false,

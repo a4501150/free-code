@@ -4,7 +4,6 @@ import {
   createCompactCanUseTool,
   stripImagesFromMessages,
 } from '../../services/compact/compact.js'
-import { microcompactMessages } from '../../services/compact/microCompact.js'
 import {
   formatCompactSummary,
   getCompactPrompt,
@@ -65,12 +64,7 @@ export const call: LocalCommandCall = async (args, context) => {
 
   const customInstructions = args.trim() || undefined
 
-  // Microcompact first so the summary reflects what the API actually sees.
-  const { messages: compactReadyMessages } = await microcompactMessages(
-    messagesInScope,
-    context,
-  )
-  const forkContextMessages = stripImagesFromMessages(compactReadyMessages)
+  const forkContextMessages = stripImagesFromMessages(messagesInScope)
 
   const cacheSafeParams = await buildCacheSafeParams(
     context,

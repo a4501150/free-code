@@ -10,7 +10,6 @@
  * - query_context_loading_start/end: Loading system prompts and contexts
  * - query_query_start: Entry to query call from REPL
  * - query_fn_entry: Entry to query() function
- * - query_microcompact_start/end: Microcompaction of messages
  * - query_autocompact_start/end: Autocompaction check
  * - query_setup_start/end: StreamingToolExecutor and model setup
  * - query_api_loop_start: Start of API retry loop
@@ -218,11 +217,6 @@ function getPhaseSummary(
       name: 'Context loading',
       start: 'query_context_loading_start',
       end: 'query_context_loading_end',
-    },
-    {
-      name: 'Microcompact',
-      start: 'query_microcompact_start',
-      end: 'query_microcompact_end',
     },
     {
       name: 'Autocompact',

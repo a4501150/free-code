@@ -133,8 +133,8 @@ export async function persistToolResult(
 
   // tool_use_id is unique per invocation and content is deterministic for a
   // given id, so skip if the file already exists. This prevents re-writing
-  // the same content on every API turn when microcompact replays the
-  // original messages. Use 'wx' instead of a stat-then-write race.
+  // the same content on every API turn when a persisted content replacement
+  // replays the original messages. Use 'wx' instead of a stat-then-write race.
   try {
     await writeFile(filepath, contentStr, { encoding: 'utf-8', flag: 'wx' })
     logForDebugging(
@@ -636,8 +636,8 @@ function partitionByPriorDecision(
 /**
  * Pick the largest fresh results to replace until the model-visible total
  * (frozen + remaining fresh) is at or under budget, or fresh is exhausted.
- * If frozen results alone exceed budget we accept the overage — microcompact
- * will eventually clear them.
+ * If frozen results alone exceed budget we accept the overage — auto-compact
+ * eventually replaces them with a summary.
  */
 function selectFreshToReplace(
   fresh: ToolResultCandidate[],

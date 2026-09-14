@@ -1370,7 +1370,7 @@ export function REPL({
   }, [])
 
   // Rewind conversation state to just before `message`: slice messages,
-  // reset conversation ID, microcompact state, permission mode, prompt suggestion.
+  // reset conversation ID, permission mode, prompt suggestion.
   // Does NOT touch the prompt input. Index is computed from messagesRef (always
   // fresh via the setMessages wrapper) so callers don't need to worry about
   // stale closures.

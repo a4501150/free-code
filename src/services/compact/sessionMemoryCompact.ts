@@ -16,6 +16,7 @@ import { getSessionMemoryPath } from '../../utils/permissions/filesystem.js'
 import { processSessionStartHooks } from '../../utils/sessionStart.js'
 import { getTranscriptPath } from '../../utils/sessionStorage.js'
 import { tokenCountFromLastAPIResponse } from '../../utils/tokens.js'
+import { roughTokenCountEstimationForMessages } from '../tokenEstimation.js'
 import {
   isSessionMemoryEmpty,
   truncateSessionMemoryForCompact,
@@ -31,8 +32,15 @@ import {
   type CompactionResult,
   createPlanAttachmentIfNeeded,
 } from './compact.js'
-import { estimateMessageTokens } from './microCompact.js'
 import { getCompactUserSummaryMessage } from './prompt.js'
+
+/**
+ * Rough message token estimate with a 33% safety pad. Moved here from the
+ * removed microcompact module; only session-memory thresholds consume it.
+ */
+export function estimateMessageTokens(messages: Message[]): number {
+  return Math.ceil(roughTokenCountEstimationForMessages(messages) * (4 / 3))
+}
 
 /**
  * Configuration for session memory compaction thresholds

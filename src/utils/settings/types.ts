@@ -1719,22 +1719,6 @@ const _settingsSchemaValue = z
       .describe(
         'Enable the /brief slash command for toggling brief-only mode.',
       ),
-    timeBasedMicrocompactConfig: z
-      .object({
-        enabled: z.boolean(),
-        gapThresholdMinutes: z.number().positive(),
-        keepRecent: z.number().int().nonnegative(),
-        clearOnAutomaticPrefixCache: z
-          .boolean()
-          .optional()
-          .describe(
-            'Also clear after idle gaps when the provider caches prefixes automatically (local servers, OpenAI-compatible endpoints). Off by default: there the warm prefix survives the gap, so clearing is a real cache miss, not a free shrink.',
-          ),
-      })
-      .optional()
-      .describe(
-        'Configuration for time-based microcompact that clears old tool results after idle gaps. Applies to idle-expiring (Anthropic-family) and uncached providers; automatic-prefix providers (local servers, OpenAI-compatible endpoints) need clearOnAutomaticPrefixCache because their warm prefix survives the gap.',
-      ),
     alwaysDebugLog: z
       .boolean()
       .optional()

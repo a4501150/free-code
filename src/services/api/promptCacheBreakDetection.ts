@@ -55,7 +55,6 @@ type PreviousState = {
   prevCacheReadTokens: number | null
   /** Set when cached microcompact sends cache_edits deletions. Cache reads
    *  will legitimately drop — this is expected, not a break. */
-  cacheDeletionsPending: boolean
   buildDiffableContent: () => string
 }
 
@@ -301,7 +300,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
         callCount: 1,
         pendingChanges: null,
         prevCacheReadTokens: null,
-        cacheDeletionsPending: false,
         buildDiffableContent: lazyDiffableContent,
         perToolHashes: computeToolHashes(),
       })
@@ -437,19 +435,6 @@ export async function checkResponseForCacheBreak(
 
     const changes = state.pendingChanges
 
-    // Cache deletions via cached microcompact intentionally reduce the cached
-    // prefix. The drop in cache read tokens is expected — reset the baseline
-    // so we don't false-positive on the next call.
-    if (state.cacheDeletionsPending) {
-      state.cacheDeletionsPending = false
-      logForDebugging(
-        `[PROMPT CACHE] cache deletion applied, cache read: ${prevCacheRead} → ${cacheReadTokens} (expected drop)`,
-      )
-      // Don't flag as a break — the remaining state is still valid
-      state.pendingChanges = null
-      return
-    }
-
     // Detect a cache break: cache read dropped >5% from previous AND
     // the absolute drop exceeds the minimum threshold.
     const tokenDrop = prevCacheRead - cacheReadTokens
@@ -564,22 +549,6 @@ export async function checkResponseForCacheBreak(
     state.pendingChanges = null
   } catch (e: unknown) {
     logError(e)
-  }
-}
-
-/**
- * Call when cached microcompact sends cache_edits deletions.
- * The next API response will have lower cache read tokens — that's
- * expected, not a cache break.
- */
-export function notifyCacheDeletion(
-  querySource: QuerySource,
-  agentId?: AgentId,
-): void {
-  const key = getTrackingKey(querySource, agentId)
-  const state = key ? previousStateBySource.get(key) : undefined
-  if (state) {
-    state.cacheDeletionsPending = true
   }
 }
 

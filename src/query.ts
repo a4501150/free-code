@@ -291,10 +291,10 @@ async function* queryLoop(
 
     let tracking = autoCompactTracking
 
-    // Enforce per-message budget on aggregate tool result size. Runs BEFORE
-    // microcompact — cached MC operates purely by tool_use_id (never inspects
-    // content), so content replacement is invisible to it and the two compose
-    // cleanly. No-ops when contentReplacementState is undefined (feature off).
+    // Enforce per-message budget on aggregate tool result size. Operates
+    // purely by tool_use_id (never inspects content), so replacement is
+    // invisible downstream and byte-stable on replay. No-ops when
+    // contentReplacementState is undefined (feature off).
     // Persist only for querySources that read records back on resume: agentId
     // routes to sidechain file (AgentTool resume) or session file (/resume).
     // Ephemeral runForkedAgent callers (agent_summary etc.) don't persist.
@@ -317,16 +317,6 @@ async function* queryLoop(
           .map(t => t.name),
       ),
     )
-
-    // Apply microcompact before autocompact
-    queryCheckpoint('query_microcompact_start')
-    const microcompactResult = await deps.microcompact(
-      messagesForQuery,
-      toolUseContext,
-      querySource,
-    )
-    messagesForQuery = microcompactResult.messages
-    queryCheckpoint('query_microcompact_end')
 
     const fullSystemPrompt = asSystemPrompt(systemPrompt)
 

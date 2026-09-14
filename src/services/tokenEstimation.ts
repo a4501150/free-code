@@ -224,13 +224,12 @@ function roughTokenCountEstimationForBlock(
     // https://platform.claude.com/docs/en/build-with-claude/vision#calculate-image-costs
     // tokens = (width px * height px)/750
     // Images are resized to max 2000x2000 (5333 tokens). Use a conservative
-    // estimate that matches microCompact's IMAGE_MAX_TOKEN_SIZE to avoid
-    // underestimating and triggering auto-compact too late.
+    // estimate to avoid underestimating and triggering auto-compact too
+    // late.
     //
     // document: base64 PDF in source.data.  Must NOT reach the
     // jsonStringify catch-all — a 1MB PDF is ~1.33M base64 chars →
     // ~325k estimated tokens, vs the ~2000 the API actually charges.
-    // Same constant as microCompact's calculateToolResultTokens.
     return 2000
   }
   if (block.type === 'tool_result') {

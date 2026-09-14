@@ -1,7 +1,6 @@
 import { randomUUID } from 'crypto'
 import { queryModelWithStreaming } from '../services/api/claude.js'
 import { autoCompactIfNeeded } from '../services/compact/autoCompact.js'
-import { microcompactMessages } from '../services/compact/microCompact.js'
 
 // -- deps
 
@@ -23,7 +22,6 @@ export type QueryDeps = {
   callModel: typeof queryModelWithStreaming
 
   // -- compaction
-  microcompact: typeof microcompactMessages
   autocompact: typeof autoCompactIfNeeded
 
   // -- platform
@@ -33,7 +31,6 @@ export type QueryDeps = {
 export function productionDeps(): QueryDeps {
   return {
     callModel: queryModelWithStreaming,
-    microcompact: microcompactMessages,
     autocompact: autoCompactIfNeeded,
     uuid: randomUUID,
   }
