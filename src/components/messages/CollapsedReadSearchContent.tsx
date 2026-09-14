@@ -717,7 +717,13 @@ export function CollapsedReadSearchContent({
             isError={anyError}
           />
         ) : (
-          <Box minWidth={2} />
+          // Settled group: show the same solid green (or error-red) bullet
+          // as any other finalized tool row, not an empty gutter.
+          <ToolUseLoader
+            shouldAnimate={false}
+            isUnresolved={false}
+            isError={anyError}
+          />
         )}
         <Text dimColor={!isActiveGroup}>
           {nonMemParts}
