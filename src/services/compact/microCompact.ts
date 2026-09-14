@@ -7,8 +7,11 @@ import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
 import { GLOB_TOOL_NAME } from '../../tools/GlobTool/prompt.js'
 import { GREP_TOOL_NAME } from '../../tools/GrepTool/prompt.js'
+import type { ProviderCacheType } from '../../utils/settings/types.js'
 import type { Message } from '../../types/message.js'
 import { logForDebugging } from '../../utils/debug.js'
+import { getMainLoopModel } from '../../utils/model/model.js'
+import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 import { SHELL_TOOL_NAMES } from '../../utils/shell/shellToolUtils.js'
 import { notifyCacheDeletion } from '../api/promptCacheBreakDetection.js'
 import {
@@ -148,6 +151,27 @@ export async function microcompactMessages(
  * Extracted so other pre-request paths can consult the same predicate without
  * coupling to the tool-result clearing action.
  */
+/**
+ * The gap premise — "idle long enough ⇒ the prefix rewrites anyway" — holds
+ * where the cache expires on idle (explicit-breakpoint providers) and is
+ * moot where there is no cache at all (every request ships the full prompt,
+ * so clearing only shrinks it). Automatic-prefix caches (local servers,
+ * OpenAI-compatible endpoints) are the exception: they stay warm until
+ * eviction, so clearing there costs a real miss from the first cleared
+ * block onward, and only an explicit opt-in accepts that trade.
+ * Exported pure for testing; evaluateTimeBasedTrigger resolves the inputs.
+ */
+export function timeBasedClearAllowedForCacheType(
+  cacheType: ProviderCacheType,
+  config: Pick<TimeBasedMCConfig, 'enabled' | 'clearOnAutomaticPrefixCache'>,
+): boolean {
+  if (!config.enabled) return false
+  return (
+    cacheType !== 'automatic-prefix' ||
+    config.clearOnAutomaticPrefixCache === true
+  )
+}
+
 export function evaluateTimeBasedTrigger(
   messages: Message[],
   querySource: QuerySource | undefined,
@@ -160,6 +184,15 @@ export function evaluateTimeBasedTrigger(
     !config.enabled ||
     !querySource ||
     !querySource.startsWith('repl_main_thread')
+  ) {
+    return null
+  }
+  // Provider cache model gate: see timeBasedClearAllowedForCacheType.
+  if (
+    !timeBasedClearAllowedForCacheType(
+      getProviderRegistry().getProviderCacheType(getMainLoopModel()),
+      config,
+    )
   ) {
     return null
   }
