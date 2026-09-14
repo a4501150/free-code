@@ -105,12 +105,6 @@ const TRACKED_SOURCE_PREFIXES = [
 // and aren't worth alerting on.
 const MIN_CACHE_MISS_TOKENS = 2_000
 
-// Anthropic's server-side prompt cache TTL thresholds to test.
-// Cache breaks after these durations are likely due to TTL expiration
-// rather than client-side changes.
-const CACHE_TTL_5MIN_MS = 5 * 60 * 1000
-export const CACHE_TTL_1HOUR_MS = 60 * 60 * 1000
-
 // No model exclusions — all models go through cache break detection
 function isExcludedModel(_model: string): boolean {
   return false
@@ -416,8 +410,13 @@ export function explainCacheBreak(input: {
   changes: PendingChanges | null
   gapMsSinceLastAssistant: number | null
   cacheType: ProviderCacheType
+  /** Idle-expiry tiers (minutes) the provider declares; see
+   *  ProviderCacheSchema.idleTtlMinutes. Anthropic-family providers get
+   *  [5, 60] from the registry; an empty list means the provider does not
+   *  document expiry, so an unattributed break gets the eviction label. */
+  idleTtlMinutes: number[]
 }): string {
-  const { changes, gapMsSinceLastAssistant, cacheType } = input
+  const { changes, gapMsSinceLastAssistant, cacheType, idleTtlMinutes } = input
   const anthropicCache = cacheType === 'explicit-breakpoint'
   const parts: string[] = []
   if (changes) {
@@ -488,27 +487,31 @@ export function explainCacheBreak(input: {
   // are server-side routing/eviction or billed/inference disagreement. Label
   // accordingly instead of implying a CC bug hunt.
   if (parts.length > 0) return parts.join(', ')
-  if (!anthropicCache) {
-    const gapInfo =
+  const gapInfo =
+    gapMsSinceLastAssistant !== null
+      ? `prompt unchanged, ${Math.round(gapMsSinceLastAssistant / 60_000)}min gap`
+      : 'unknown cause'
+  const tierLabel = (min: number): string =>
+    min >= 60 && min % 60 === 0 ? `${min / 60}h` : `${min}min`
+  const expiredTier = [...idleTtlMinutes]
+    .sort((a, b) => a - b)
+    .findLast(
+      tier =>
+        gapMsSinceLastAssistant !== null &&
+        gapMsSinceLastAssistant > tier * 60_000,
+    )
+  if (expiredTier !== undefined) {
+    return `possible ${tierLabel(expiredTier)} TTL expiry (prompt unchanged)`
+  }
+  if (idleTtlMinutes.length === 0 && !anthropicCache) {
+    return `server-side eviction/routing (automatic-prefix cache; expiry is provider-dependent${
       gapMsSinceLastAssistant !== null
         ? `, ${Math.round(gapMsSinceLastAssistant / 60_000)}min idle gap`
         : ''
-    return `server-side eviction/routing (automatic-prefix cache; expiry is provider-dependent${gapInfo})`
-  }
-  if (
-    gapMsSinceLastAssistant !== null &&
-    gapMsSinceLastAssistant > CACHE_TTL_1HOUR_MS
-  ) {
-    return 'possible 1h TTL expiry (prompt unchanged)'
-  }
-  if (
-    gapMsSinceLastAssistant !== null &&
-    gapMsSinceLastAssistant > CACHE_TTL_5MIN_MS
-  ) {
-    return 'possible 5min TTL expiry (prompt unchanged)'
+    })`
   }
   if (gapMsSinceLastAssistant !== null) {
-    return 'likely server-side (prompt unchanged, <5min gap)'
+    return `likely server-side (${gapInfo})`
   }
   return 'unknown cause'
 }
@@ -566,6 +569,9 @@ export async function checkResponseForCacheBreak(
       changes,
       gapMsSinceLastAssistant: timeSinceLastAssistantMsg,
       cacheType: getProviderRegistry().getProviderCacheType(state.model),
+      idleTtlMinutes: getProviderRegistry().getProviderCacheIdleTtlMinutes(
+        state.model,
+      ),
     })
 
     // Write diff file for ant debugging via --debug. The path is included in

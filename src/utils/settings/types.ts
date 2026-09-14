@@ -362,6 +362,17 @@ export const ProviderCacheSchema = z.object({
         'automatic-prefix (strip markers, provider caches automatically), ' +
         'none (strip markers, no caching)',
     ),
+  idleTtlMinutes: z
+    .array(z.number().positive())
+    .optional()
+    .describe(
+      'Idle-expiry tiers (minutes, any order) at which this provider is ' +
+        'documented to evict cached prefixes. Cache-break attribution ' +
+        'names a tier when the idle gap passes it. Defaults: [5, 60] for ' +
+        'explicit-breakpoint providers (the Anthropic cache tiers), [] for ' +
+        'automatic-prefix and none — they get a provider-dependent ' +
+        'eviction label instead.',
+    ),
 })
 
 export const PROVIDER_CREDENTIAL_REFRESH_TYPES = ['none', 'aws', 'gcp'] as const

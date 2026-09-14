@@ -387,6 +387,23 @@ export class ProviderRegistry {
       : 'explicit-breakpoint'
   }
 
+  /**
+   * Idle-expiry tiers (minutes, ascending) the provider documents for its
+   * prompt cache, used by cache-break attribution. Explicit override via
+   * provider config `cache.idleTtlMinutes`. Default: Anthropic's [5, 60]
+   * wherever the explicit-breakpoint cache model implies the Anthropic
+   * cache service; empty elsewhere so attribution says "expiry is
+   * provider-dependent" rather than inventing a TTL.
+   */
+  getProviderCacheIdleTtlMinutes(model: string): number[] {
+    const provider = this.getProviderForModel(model)
+    const declared = provider?.config.cache?.idleTtlMinutes
+    if (declared) return [...declared].sort((a, b) => a - b)
+    return this.getProviderCacheType(model) === 'explicit-breakpoint'
+      ? [5, 60]
+      : []
+  }
+
   getProviderType(model: string): ProviderType | null {
     const provider = this.getProviderForModel(model)
     return provider?.config.type ?? null

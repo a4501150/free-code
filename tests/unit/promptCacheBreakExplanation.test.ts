@@ -40,6 +40,7 @@ describe('explainCacheBreak provider-aware attribution', () => {
         changes: changes({ cacheControlChanged: true }),
         gapMsSinceLastAssistant: null,
         cacheType: 'explicit-breakpoint',
+        idleTtlMinutes: [5, 60],
       }),
     ).toContain('cache_control changed')
     expect(
@@ -47,6 +48,7 @@ describe('explainCacheBreak provider-aware attribution', () => {
         changes: null,
         gapMsSinceLastAssistant: 10 * MIN,
         cacheType: 'explicit-breakpoint',
+        idleTtlMinutes: [5, 60],
       }),
     ).toBe('possible 5min TTL expiry (prompt unchanged)')
     expect(
@@ -54,6 +56,7 @@ describe('explainCacheBreak provider-aware attribution', () => {
         changes: null,
         gapMsSinceLastAssistant: 2 * 60 * MIN,
         cacheType: 'explicit-breakpoint',
+        idleTtlMinutes: [5, 60],
       }),
     ).toBe('possible 1h TTL expiry (prompt unchanged)')
   })
@@ -63,6 +66,7 @@ describe('explainCacheBreak provider-aware attribution', () => {
       changes: changes({ cacheControlChanged: true, betasChanged: true }),
       gapMsSinceLastAssistant: 10 * MIN,
       cacheType: 'automatic-prefix',
+      idleTtlMinutes: [],
     })
     expect(reason).toContain('automatic-prefix')
     expect(reason).not.toContain('cache_control')
@@ -71,11 +75,32 @@ describe('explainCacheBreak provider-aware attribution', () => {
     expect(reason).toContain('10min idle gap')
   })
 
+  test('declared idle TTL tiers attribute expiry on any provider', () => {
+    expect(
+      explainCacheBreak({
+        changes: null,
+        gapMsSinceLastAssistant: 15 * MIN,
+        cacheType: 'automatic-prefix',
+        idleTtlMinutes: [10],
+      }),
+    ).toBe('possible 10min TTL expiry (prompt unchanged)')
+    // A gap under every declared tier does NOT claim expiry.
+    expect(
+      explainCacheBreak({
+        changes: null,
+        gapMsSinceLastAssistant: 5 * MIN,
+        cacheType: 'automatic-prefix',
+        idleTtlMinutes: [10],
+      }),
+    ).toContain('likely server-side')
+  })
+
   test('generic causes survive on automatic-prefix providers', () => {
     const reason = explainCacheBreak({
       changes: changes({ systemPromptChanged: true, systemCharDelta: 40 }),
       gapMsSinceLastAssistant: 0,
       cacheType: 'automatic-prefix',
+      idleTtlMinutes: [],
     })
     expect(reason).toContain('system prompt changed (+40 chars)')
   })
