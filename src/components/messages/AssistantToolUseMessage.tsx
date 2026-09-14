@@ -202,25 +202,27 @@ export function AssistantToolUseMessage({
           minWidth={stringWidth(userFacingToolName) + (shouldShowDot ? 2 : 0)}
           onClick={isAgentTool ? toggleAgentExpansion : undefined}
         >
-          {shouldShowDot &&
-            (isQueued ? (
-              // Queued (input still streaming or awaiting dispatch): a static
-              // dot. Blinking is reserved for actual execution below.
-              <Box minWidth={2}>
-                <Text dimColor>{BLACK_CIRCLE}</Text>
-              </Box>
-            ) : (
-              // WARNING: The code here and in ToolUseLoader is particularly
-              // sensitive to what *should* just be trivial refactorings. See
-              // the comment in ToolUseLoader for more details.
-              // shouldAnimate is sourced from inProgressToolUseIDs upstream,
-              // so the blink tracks real execution, not model streaming.
-              <ToolUseLoader
-                shouldAnimate={shouldAnimate}
-                isUnresolved={!isResolved}
-                isError={lookups.erroredToolUseIDs.has(param.id)}
-              />
-            ))}
+          {shouldShowDot && isQueued && !shouldAnimate ? (
+            // Queued with the input stream finished (awaiting dispatch) or
+            // animation disabled: a static dot. While the input JSON is
+            // still streaming shouldAnimate is true — see MessageRow's
+            // active() — so the call below blinks through parameter
+            // streaming too, not just execution.
+            <Box minWidth={2}>
+              <Text dimColor>{BLACK_CIRCLE}</Text>
+            </Box>
+          ) : (
+            // WARNING: The code here and in ToolUseLoader is particularly
+            // sensitive to what *should* just be trivial refactorings. See
+            // the comment in ToolUseLoader for more details.
+            // shouldAnimate is in-progress-or-streaming upstream, so the
+            // blink covers parameter streaming and execution alike.
+            <ToolUseLoader
+              shouldAnimate={shouldAnimate}
+              isUnresolved={!isResolved}
+              isError={lookups.erroredToolUseIDs.has(param.id)}
+            />
+          )}
           <Text wrap="truncate-end">
             <Text
               bold

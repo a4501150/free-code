@@ -37,6 +37,8 @@ const MIN_HINT_DISPLAY_MS = 700
 type Props = {
   message: CollapsedReadSearchGroup
   inProgressToolUseIDs: Set<string>
+  /** Tool uses whose input JSON is still streaming — blink their dot too. */
+  streamingToolUseIDs?: Set<string>
   shouldAnimate: boolean
   verbose: boolean
   tools: Tools
@@ -51,6 +53,7 @@ function VerboseToolUse({
   tools,
   lookups,
   inProgressToolUseIDs,
+  streamingToolUseIDs,
   shouldAnimate,
   theme,
 }: {
@@ -58,6 +61,7 @@ function VerboseToolUse({
   tools: Tools
   lookups: ReturnType<typeof buildMessageLookups>
   inProgressToolUseIDs: Set<string>
+  streamingToolUseIDs?: Set<string>
   shouldAnimate: boolean
   theme: ThemeName
 }): React.ReactNode {
@@ -76,6 +80,8 @@ function VerboseToolUse({
   const isResolved = lookups.resolvedToolUseIDs.has(content.id)
   const isError = lookups.erroredToolUseIDs.has(content.id)
   const isInProgress = inProgressToolUseIDs.has(content.id)
+  // Blink while the input JSON streams too, not just during execution.
+  const isInputStreaming = streamingToolUseIDs?.has(content.id) ?? false
 
   const resultMsg = lookups.toolResultByToolUseID.get(content.id)
   const rawToolResult =
@@ -109,7 +115,7 @@ function VerboseToolUse({
     >
       <Box flexDirection="row">
         <ToolUseLoader
-          shouldAnimate={shouldAnimate && isInProgress}
+          shouldAnimate={shouldAnimate && (isInProgress || isInputStreaming)}
           isUnresolved={!isResolved}
           isError={isError}
         />
@@ -173,6 +179,7 @@ function VerboseToolUse({
 export function CollapsedReadSearchContent({
   message,
   inProgressToolUseIDs,
+  streamingToolUseIDs,
   shouldAnimate,
   verbose,
   tools,
@@ -324,6 +331,7 @@ export function CollapsedReadSearchContent({
               tools={tools}
               lookups={lookups}
               inProgressToolUseIDs={inProgressToolUseIDs}
+              streamingToolUseIDs={streamingToolUseIDs}
               shouldAnimate={shouldAnimate}
               theme={theme}
             />
@@ -709,8 +717,9 @@ export function CollapsedReadSearchContent({
     <Box flexDirection="column" marginTop={1} backgroundColor={bg}>
       <Box flexDirection="row">
         {isActiveGroup ? (
-          // shouldAnimate is inProgress-scoped upstream, so the blink tracks
-          // real tool execution, not the surrounding model streaming.
+          // shouldAnimate is scoped to this group's calls upstream, so the
+          // blink tracks real execution or input streaming of the group's
+          // own tool calls, not the surrounding turn's loading state.
           <ToolUseLoader
             shouldAnimate={shouldAnimate}
             isUnresolved

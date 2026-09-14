@@ -63,6 +63,8 @@ export type Props = {
   commands: Command[]
   verbose: boolean
   inProgressToolUseIDs: Set<string>
+  /** Tool uses whose input JSON is still streaming — blink their dot too. */
+  streamingToolUseIDs?: Set<string>
   progressMessagesForMessage: ProgressMessage[]
   shouldAnimate: boolean
   shouldShowDot: boolean
@@ -90,6 +92,7 @@ function MessageImpl({
   commands,
   verbose,
   inProgressToolUseIDs,
+  streamingToolUseIDs,
   progressMessagesForMessage,
   shouldAnimate,
   shouldShowDot,
@@ -257,6 +260,7 @@ function MessageImpl({
           tools={tools}
           lookups={lookups}
           inProgressToolUseIDs={inProgressToolUseIDs}
+          streamingToolUseIDs={streamingToolUseIDs}
           shouldAnimate={shouldAnimate}
         />
       )
@@ -272,6 +276,7 @@ function MessageImpl({
           <CollapsedReadSearchContent
             message={message}
             inProgressToolUseIDs={inProgressToolUseIDs}
+            streamingToolUseIDs={streamingToolUseIDs}
             shouldAnimate={shouldAnimate}
             // ctrl+o transcript mode should expand the group the same way
             // --verbose does, so recalled memories + tool details are visible.

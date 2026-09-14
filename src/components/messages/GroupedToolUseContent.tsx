@@ -16,6 +16,8 @@ type Props = {
   tools: Tools
   lookups: ReturnType<typeof buildMessageLookups>
   inProgressToolUseIDs: Set<string>
+  /** Tool uses whose input JSON is still streaming — blink their dot too. */
+  streamingToolUseIDs?: Set<string>
   shouldAnimate: boolean
 }
 
@@ -24,6 +26,7 @@ export function GroupedToolUseContent({
   tools,
   lookups,
   inProgressToolUseIDs,
+  streamingToolUseIDs,
   shouldAnimate,
 }: Props): React.ReactNode {
   const tool = findToolByName(tools, message.toolName)
@@ -67,14 +70,21 @@ export function GroupedToolUseContent({
     }
   })
 
-  const anyInProgress = toolUsesData.some(d => d.isInProgress)
+  // Blink while any call is executing OR while any call's input JSON is
+  // still streaming (streaming ids join inProgressToolUseIDs only when
+  // execution starts, so the streaming set must be checked too).
+  const anyActive = toolUsesData.some(
+    d =>
+      inProgressToolUseIDs.has((d.param as { id: string }).id) ||
+      (streamingToolUseIDs?.has((d.param as { id: string }).id) ?? false),
+  )
 
   return tool.renderGroupedToolUse(
     toolUsesData as Parameters<
       NonNullable<typeof tool.renderGroupedToolUse>
     >[0],
     {
-      shouldAnimate: shouldAnimate && anyInProgress,
+      shouldAnimate: shouldAnimate && anyActive,
       tools,
     },
   )

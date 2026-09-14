@@ -146,6 +146,7 @@ function MessageRowImpl({
       commands={commands}
       verbose={verbose}
       inProgressToolUseIDs={inProgressToolUseIDs}
+      streamingToolUseIDs={streamingToolUseIDs}
       progressMessagesForMessage={progressMessagesForMessage}
       shouldAnimate={shouldAnimate}
       shouldShowDot={true}
