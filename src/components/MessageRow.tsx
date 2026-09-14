@@ -107,18 +107,26 @@ function MessageRowImpl({
 
   let shouldAnimate = false
   if (canAnimate) {
+    // A tool counts as active both while it executes and while its input JSON
+    // is still streaming: streaming ids enter inProgressToolUseIDs only when
+    // execution starts, so without the streaming set the dot would sit static
+    // grey through the whole parameter stream.
+    const active = (id: string) =>
+      inProgressToolUseIDs.has(id) || streamingToolUseIDs.has(id)
     if (isGrouped) {
       shouldAnimate = msg.messages.some(m => {
         const content = m.message.content[0]
-        return (
-          content?.type === 'tool_use' && inProgressToolUseIDs.has(content.id)
-        )
+        return content?.type === 'tool_use' && active(content.id)
       })
     } else if (isCollapsed) {
-      shouldAnimate = hasAnyToolInProgress(msg, inProgressToolUseIDs)
+      shouldAnimate = hasAnyToolInProgress(
+        msg,
+        inProgressToolUseIDs,
+        streamingToolUseIDs,
+      )
     } else {
       const toolUseID = getToolUseID(msg)
-      shouldAnimate = !toolUseID || inProgressToolUseIDs.has(toolUseID)
+      shouldAnimate = !toolUseID || active(toolUseID)
     }
   }
 

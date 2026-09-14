@@ -490,14 +490,19 @@ export function getToolUseIdsFromCollapsedGroup(
 }
 
 /**
- * Check if any tool in a collapsed group is in progress.
+ * Check if any tool in a collapsed group is in progress. Pass
+ * `streamingToolUseIDs` too so a tool whose input JSON is still streaming
+ * (execution has not started, so it is not in `inProgressToolUseIDs` yet)
+ * counts as in progress.
  */
 export function hasAnyToolInProgress(
   message: CollapsedReadSearchGroup,
   inProgressToolUseIDs: Set<string>,
+  streamingToolUseIDs?: Set<string>,
 ): boolean {
-  return getToolUseIdsFromCollapsedGroup(message).some(id =>
-    inProgressToolUseIDs.has(id),
+  return getToolUseIdsFromCollapsedGroup(message).some(
+    id =>
+      inProgressToolUseIDs.has(id) || (streamingToolUseIDs?.has(id) ?? false),
   )
 }
 
