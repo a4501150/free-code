@@ -86,6 +86,7 @@ export function renderToolUseErrorMessage(
 
 function textOf(output: string | unknown[]): string {
   if (typeof output === 'string') return output
+  if (!Array.isArray(output)) return ''
   return output
     .filter(
       (b): b is { type: 'text'; text: string } =>
