@@ -124,20 +124,20 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
                 if (square.categoryName === 'Free space') {
                   return (
                     <Text key={colIndex} dimColor>
-                      {'□ '}
+                      {'⛶ '}
                     </Text>
                   )
                 }
                 if (square.categoryName === RESERVED_CATEGORY_NAME) {
                   return (
                     <Text key={colIndex} color={square.color}>
-                      {'■ '}
+                      {'⛝ '}
                     </Text>
                   )
                 }
                 return (
                   <Text key={colIndex} color={square.color}>
-                    {square.squareFullness >= 0.7 ? '▓ ' : '▒ '}
+                    {square.squareFullness >= 0.7 ? '⛁ ' : '⛀ '}
                   </Text>
                 )
               })}
@@ -160,7 +160,7 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
             const percentDisplay = `${((cat.tokens / rawMaxTokens) * 100).toFixed(1)}%`
             const isReserved = cat.name === RESERVED_CATEGORY_NAME
             const displayName = cat.name
-            const symbol = isReserved ? '■' : '▓'
+            const symbol = isReserved ? '⛝' : '⛁'
 
             return (
               <Box key={index}>
@@ -174,7 +174,7 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
           })}
           {(categories.find(c => c.name === 'Free space')?.tokens ?? 0) > 0 && (
             <Box>
-              <Text dimColor>□</Text>
+              <Text dimColor>⛶</Text>
               <Text> Free space: </Text>
               <Text dimColor>
                 {formatTokens(
@@ -193,7 +193,7 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
           )}
           {autocompactCategory && autocompactCategory.tokens > 0 && (
             <Box>
-              <Text color={autocompactCategory.color}>■</Text>
+              <Text color={autocompactCategory.color}>⛝</Text>
               <Text dimColor> {autocompactCategory.name}: </Text>
               <Text dimColor>
                 {formatTokens(autocompactCategory.tokens)} tokens (
@@ -204,7 +204,7 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
           )}
           {deferredToolTokens > 0 && (
             <Box>
-              <Text dimColor>□</Text>
+              <Text dimColor>⛶</Text>
               <Text dimColor italic>
                 {' '}
                 Deferred (cataloged):{' '}

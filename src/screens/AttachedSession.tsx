@@ -252,7 +252,7 @@ export function AttachedSession({
         <Box flexShrink={0} flexDirection="column">
           <AttachedStatusBar meta={view.meta} />
           <Box paddingX={2}>
-            <Text color="claude">{isRunning ? ': ' : '❯ '}</Text>
+            <Text color="claude">{isRunning ? '⏳ ' : '❯ '}</Text>
             <Text>{inputText}</Text>
             <Text inverse> </Text>
           </Box>
@@ -347,7 +347,7 @@ function TranscriptItemRow({
       return (
         <Box paddingX={4}>
           <Text dimColor>
-            * {item.toolName}
+            ⚡ {item.toolName}
             {item.toolInput ? ` ${formatToolInput(item.toolInput)}` : ''}
           </Text>
         </Box>

@@ -84,7 +84,7 @@ describe('Auto Mode Classifier Deny E2E', () => {
       width: 140,
       height: 50,
       // Auto mode replaces the standard "? for shortcuts" footer with the
-      // mode-name banner ("> auto mode on …"), so the default readyText
+      // mode-name banner ("⏵⏵ auto mode on …"), so the default readyText
       // never matches.
       readyText: 'shift+tab to cycle',
       // Mark this session as auto mode.
