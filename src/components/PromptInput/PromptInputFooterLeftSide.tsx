@@ -323,7 +323,7 @@ function ModeIndicator({
       // Manual mode's label lives here rather than in PERMISSION_MODE_CONFIG: the
       // shared symbol/title also feed TeamsDialog (which gates a glyph on the
       // symbol being non-empty) and the permission debug readout (which appends
-      // its own " mode"), and both read wrong with a pause glyph or "Manual mode".
+      // its own " mode"), and both read wrong with a pause symbol or "Manual mode".
       <Text dimColor key="mode">
         {PAUSE_ICON} manual mode on
       </Text>

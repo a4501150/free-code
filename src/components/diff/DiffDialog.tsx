@@ -1,6 +1,7 @@
 import type { StructuredPatchHunk } from 'diff'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { CommandResultDisplay } from '../../commands.js'
+import { DISCLOSURE_COLLAPSED } from '../../constants/figures.js'
 import { useRegisterOverlay } from '../../context/overlayContext.js'
 import { type DiffData, useDiffData } from '../../hooks/useDiffData.js'
 import { type TurnDiff, useTurnDiffs } from '../../hooks/useTurnDiffs.js'
@@ -194,7 +195,9 @@ export function DiffDialog({ messages, onDone }: Props): React.ReactNode {
             </Text>
           )
         })}
-        {sourceIndex < sources.length - 1 && <Text dimColor> ▶</Text>}
+        {sourceIndex < sources.length - 1 && (
+          <Text dimColor> {DISCLOSURE_COLLAPSED}</Text>
+        )}
       </Box>
     ) : null
 

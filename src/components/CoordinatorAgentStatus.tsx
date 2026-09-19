@@ -8,7 +8,7 @@
 
 import figures from 'figures'
 import * as React from 'react'
-import { BLACK_CIRCLE, PAUSE_ICON, PLAY_ICON } from '../constants/figures.js'
+import { BLACK_CIRCLE, FF_ICON, PAUSE_ICON } from '../constants/figures.js'
 import { useTerminalSize } from '../hooks/useTerminalSize.js'
 import { stringWidth } from '../ink/stringWidth.js'
 import { Box, Text, wrapText } from '../ink.js'
@@ -204,7 +204,7 @@ function AgentLine({
   const bullet = isViewed ? BLACK_CIRCLE : figures.circle
   const dim = !highlighted && !isViewed
 
-  const sep = isRunning ? PLAY_ICON : PAUSE_ICON
+  const sep = isRunning ? FF_ICON : PAUSE_ICON
   // Name is the steering handle — kept out of truncation and undimmed so it
   // stays readable even when the row is inactive. Short by convention (the
   // Agent tool prompt asks for "one or two words, lowercase").

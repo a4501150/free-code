@@ -1,5 +1,5 @@
 import z from 'zod/v4'
-import { PAUSE_ICON } from '../../constants/figures.js'
+import { FF_ICON, PAUSE_ICON } from '../../constants/figures.js'
 // Types extracted to src/types/permissions.ts to break import cycles
 import {
   EXTERNAL_PERMISSION_MODES,
@@ -54,28 +54,28 @@ const PERMISSION_MODE_CONFIG: Partial<
   acceptEdits: {
     title: 'Accept edits',
     shortTitle: 'Accept',
-    symbol: '⏵⏵',
+    symbol: FF_ICON,
     color: 'autoAccept',
     external: 'acceptEdits',
   },
   bypassPermissions: {
     title: 'Bypass Permissions',
     shortTitle: 'Bypass',
-    symbol: '⏵⏵',
+    symbol: FF_ICON,
     color: 'error',
     external: 'bypassPermissions',
   },
   dontAsk: {
     title: "Don't Ask",
     shortTitle: 'DontAsk',
-    symbol: '⏵⏵',
+    symbol: FF_ICON,
     color: 'error',
     external: 'dontAsk',
   },
   auto: {
     title: 'Auto mode',
     shortTitle: 'Auto',
-    symbol: '⏵⏵',
+    symbol: FF_ICON,
     color: 'warning',
     external: 'default',
   },

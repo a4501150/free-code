@@ -67,7 +67,7 @@ function normalizeAndTruncateToWidth(text: string, maxWidth: number): string {
 }
 
 // Width of prefixes that TreeSelect will add
-const PARENT_PREFIX_WIDTH = 2 // '▼ ' or '▶ '
+const PARENT_PREFIX_WIDTH = 2 // '▾ ' or '▸ '
 const CHILD_PREFIX_WIDTH = 4 // '  ▸ '
 
 const SNIPPET_CONTEXT_CHARS = 50 // Characters to show before/after match

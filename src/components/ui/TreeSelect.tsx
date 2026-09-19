@@ -1,5 +1,9 @@
 import React from 'react'
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
+import {
+  DISCLOSURE_COLLAPSED,
+  DISCLOSURE_EXPANDED,
+} from '../../constants/figures.js'
 import { Box } from '../../ink.js'
 import { type OptionWithDescription, Select } from '../CustomSelect/select.js'
 
@@ -86,7 +90,7 @@ export type TreeSelectProps<T> = {
   /**
    * Custom prefix function for parent nodes
    * @param isExpanded - Whether the parent node is currently expanded
-   * @returns The prefix string to display (default: '▼ ' when expanded, '▶ ' when collapsed)
+   * @returns The prefix string to display (default: '▾ ' when expanded, '▸ ' when collapsed)
    */
   readonly getParentPrefix?: (isExpanded: boolean) => string
 
@@ -185,7 +189,8 @@ export function TreeSelect<T>({
 
   // Default prefix functions
   const defaultGetParentPrefix = React.useCallback(
-    (isExpanded: boolean): string => (isExpanded ? '▼ ' : '▶ '),
+    (isExpanded: boolean): string =>
+      isExpanded ? `${DISCLOSURE_EXPANDED} ` : `${DISCLOSURE_COLLAPSED} `,
     [],
   )
   const defaultGetChildPrefix = React.useCallback(
