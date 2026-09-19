@@ -29,6 +29,7 @@ import {
   getAgentListingDeltaAttachment,
   getMcpToolsDeltaAttachment,
   getMcpInstructionsDeltaAttachment,
+  getSessionGuidanceAttachment,
   getPostCompactSkillListingAttachment,
 } from '../../utils/attachments.js'
 import { snapshotPlanModeRenderContext } from '../../utils/planMode.js'
@@ -346,6 +347,35 @@ export function mergeHookInstructions(
 }
 
 /**
+ * Every stateless-scan carrier re-announces itself after compaction, diffed
+ * against `scanMessages` ([] for a full compact, the kept tail for a partial
+ * one). Each attachment type owns its own diff and re-arm; this keeps the two
+ * compaction paths from drifting apart.
+ */
+async function pushReAnnounceAttachments(
+  target: AttachmentMessage[],
+  context: ToolUseContext,
+  scanMessages: Message[],
+): Promise<void> {
+  for (const att of getAgentListingDeltaAttachment(context, scanMessages)) {
+    target.push(createAttachmentMessage(att))
+  }
+  for (const att of getMcpInstructionsDeltaAttachment(
+    context.options.mcpClients,
+    context.options.tools,
+    scanMessages,
+  )) {
+    target.push(createAttachmentMessage(att))
+  }
+  for (const att of await getMcpToolsDeltaAttachment(context, scanMessages)) {
+    target.push(createAttachmentMessage(att))
+  }
+  for (const att of getSessionGuidanceAttachment(context, scanMessages)) {
+    target.push(createAttachmentMessage(att))
+  }
+}
+
+/**
  * Creates a compact version of a conversation by summarizing older messages
  * and preserving recent conversation history.
  */
@@ -496,26 +526,10 @@ export async function compactConversation(
 
     // Compaction ate prior delta attachments. Re-announce from the current
     // state so the model has tool/instruction context on the first
-    // post-compact turn. Empty message history → diff against nothing →
-    // announces the full set.
-    // mcp_tools_delta is re-announced: the catalog diff baseline lives
-    // inside these attachments, so post-compact history needs a fresh one.
-    for (const att of getAgentListingDeltaAttachment(context, [])) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
-    for (const att of getMcpInstructionsDeltaAttachment(
-      context.options.mcpClients,
-      context.options.tools,
-      context.options.mainLoopModel,
-      [],
-    )) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
-    for (const att of await getMcpToolsDeltaAttachment(context, [], {
-      forceInitial: true,
-    })) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
+    // post-compact turn. Scanning [] means every carrier diffs against
+    // nothing and announces its full set; the catalog baseline especially
+    // needs a fresh home in post-compact history.
+    await pushReAnnounceAttachments(postCompactFileAttachments, context, [])
 
     context.onCompactProgress?.({
       type: 'hooks_start',
@@ -805,28 +819,13 @@ export async function partialCompactConversation(
       )
     }
 
-    // Re-announce only what was in the summarized portion — messagesToKeep
-    // is scanned, so anything already announced there is skipped.
-    // mcp_tools_delta re-announces when the kept tail has no snapshot left;
-    // forceInitial is a no-op when a prior announcement survives.
-    for (const att of getAgentListingDeltaAttachment(context, messagesToKeep)) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
-    for (const att of getMcpInstructionsDeltaAttachment(
-      context.options.mcpClients,
-      context.options.tools,
-      context.options.mainLoopModel,
-      messagesToKeep,
-    )) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
-    for (const att of await getMcpToolsDeltaAttachment(
+    // Re-announce only what was in the summarized portion — the kept tail is
+    // scanned, so anything already announced there is skipped.
+    await pushReAnnounceAttachments(
+      postCompactFileAttachments,
       context,
       messagesToKeep,
-      { forceInitial: true },
-    )) {
-      postCompactFileAttachments.push(createAttachmentMessage(att))
-    }
+    )
 
     context.onCompactProgress?.({
       type: 'hooks_start',

@@ -7,7 +7,6 @@ import { getCommand, getSkillToolCommands, hasCommand } from '../../commands.js'
 import {
   DEFAULT_AGENT_PROMPT,
   enhanceSystemPromptWithEnvDetails,
-  getMcpInstructions,
 } from '../../constants/prompts.js'
 import type { QuerySource } from '../../constants/querySource.js'
 import { getSystemContext, getUserContext } from '../../context.js'
@@ -46,6 +45,7 @@ import type {
 } from '../../types/message.js'
 import {
   createAttachmentMessage,
+  getMcpInstructionsDeltaAttachment,
   getMcpToolsDeltaAttachment,
   getSkillListingAttachments,
 } from '../../utils/attachments.js'
@@ -653,17 +653,12 @@ export async function* runAgent({
       ? uniqBy([...resolvedTools, ...agentMcpTools], 'name')
       : resolvedTools
 
-  // Advertise connected servers' instructions (parent + agent-specific),
-  // scoped to servers whose tools this agent actually has. The main session
-  // gets this from getSystemPrompt(); it's appended here so the override
-  // prompt path benefits too. Appended even when the instructions-delta
-  // attachment is enabled: those attachments land in the main transcript,
-  // never in an agent query.
-  const mcpInstructions = getMcpInstructions(mergedMcpClients, allTools)
-  const agentSystemPrompt = asSystemPrompt([
-    ...baseAgentSystemPrompt,
-    ...(mcpInstructions ? [mcpInstructions] : []),
-  ])
+  // MCP server instructions arrive as a turn-0 delta attachment (below),
+  // not in the system prompt: the agent's query runs the same attachment
+  // pipeline as the main thread, so a prompt append would be duplicated by
+  // the pipeline's own first announce. Seeding the attachment keeps both
+  // copies — there's exactly one.
+  const agentSystemPrompt = asSystemPrompt(baseAgentSystemPrompt)
 
   // Build agent-specific options
   const agentOptions: ToolUseContext['options'] = {
@@ -724,17 +719,26 @@ export async function* runAgent({
     )) {
       initialMessages.push(createAttachmentMessage(attachment))
     }
-    // Turn-0 MCP catalog announce: forceInitial makes the first delta
-    // non-empty so the worker sees the connected servers and their schema
-    // file paths up front (the unforced first call is a silent baseline).
+    // Turn-0 MCP catalog announce: the worker sees the connected servers and
+    // their schema file paths up front (before its first tool iteration).
     // The tool loop's own delta diffs against this snapshot and stays quiet.
     for (const attachment of await getMcpToolsDeltaAttachment(
       agentToolUseContext,
       initialMessages,
-      { forceInitial: true },
     )) {
       initialMessages.push(createAttachmentMessage(attachment))
     }
+  }
+
+  // Turn-0 MCP instructions seed, unscoped by fork status: the delta scans
+  // initialMessages, so a fork's inherited transcript already announces the
+  // parent's servers and only agent-specific servers get announced here.
+  for (const attachment of getMcpInstructionsDeltaAttachment(
+    mergedMcpClients,
+    allTools,
+    initialMessages,
+  )) {
+    initialMessages.push(createAttachmentMessage(attachment))
   }
 
   if (onCompactProgress) {

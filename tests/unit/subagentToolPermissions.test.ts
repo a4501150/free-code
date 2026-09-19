@@ -6,7 +6,7 @@ import {
   getMainLoopModel,
   runWithMainLoopModelScope,
 } from '../../src/utils/model/modelResolution.js'
-import { getMcpInstructions } from '../../src/constants/prompts.js'
+import { getMcpInstructionsDeltaAttachment } from '../../src/utils/attachments.js'
 import type { MCPServerConnection } from '../../src/services/mcp/types.js'
 
 function makeTool(name: string, askReason?: string): Tool {
@@ -124,22 +124,25 @@ describe('main loop model scope', () => {
   })
 })
 
-describe('getMcpInstructions exposure filter', () => {
+describe('mcp_instructions_delta exposure filter', () => {
   const clients = [
     { type: 'connected', name: 'alpha', instructions: 'alpha rules' },
     { type: 'connected', name: 'beta', instructions: 'beta rules' },
   ] as unknown as MCPServerConnection[]
 
-  test('only servers whose tools are exposed get a section', () => {
+  test('only servers whose tools are exposed get a block', () => {
     const tools = [
       { name: 'mcp__alpha__x', mcpInfo: { serverName: 'alpha' } },
     ] as unknown as Tools
-    const section = getMcpInstructions(clients, tools)
-    expect(section).toContain('## alpha')
-    expect(section).not.toContain('## beta')
+    const atts = getMcpInstructionsDeltaAttachment(clients, tools, [])
+    const blocks = atts.flatMap(a =>
+      a.type === 'mcp_instructions_delta' ? a.addedBlocks : [],
+    )
+    expect(blocks.join('\n')).toContain('## alpha')
+    expect(blocks.join('\n')).not.toContain('## beta')
   })
 
-  test('no exposed MCP tools yields no section', () => {
-    expect(getMcpInstructions(clients, [])).toBeNull()
+  test('no exposed MCP tools yields no announce', () => {
+    expect(getMcpInstructionsDeltaAttachment(clients, [], [])).toEqual([])
   })
 })

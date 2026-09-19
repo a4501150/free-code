@@ -71,11 +71,9 @@ export function useReplBackgrounding({
         await Promise.all([
           getSystemPrompt(
             toolUseContext.options.tools,
-            mainLoopModel,
             Array.from(
               toolPermissionContext.additionalWorkingDirectories.keys(),
             ),
-            toolUseContext.options.mcpClients,
           ),
           getUserContext(),
           getSystemContext(),

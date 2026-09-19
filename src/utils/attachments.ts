@@ -59,7 +59,10 @@ import {
   isValidImagePaste,
 } from 'src/types/textInputTypes.js'
 import { createHash, randomUUID, type UUID } from 'crypto'
-import { getSettings_DEPRECATED } from './settings/settings.js'
+import {
+  getSettings_DEPRECATED,
+  getInitialSettings,
+} from './settings/settings.js'
 import {
   writeToolCatalog,
   type CatalogServerSnapshot,
@@ -68,6 +71,7 @@ import {
   isToolExposedToModel,
   mcpToolCatalogDisabled,
 } from '../services/toolCatalog/exposure.js'
+import { prependBullets } from '../constants/prompts.js'
 import { getSnippetForTwoFileDiff } from 'src/tools/FileEditTool/utils.js'
 import { maybeResizeAndDownsampleImageBlock } from './imageResizer.js'
 import type { PastedContent } from './config.js'
@@ -75,7 +79,10 @@ import { getGlobalConfig } from './config.js'
 import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js'
 import { getSkillToolCommands } from '../commands.js'
 import type { Command } from '../types/command.js'
-import { getProjectRoot } from '../bootstrap/state.js'
+import {
+  getProjectRoot,
+  getIsNonInteractiveSession,
+} from '../bootstrap/state.js'
 import {
   formatCommandsWithinBudget,
   formatSkillNamesOnly,
@@ -99,7 +106,12 @@ import {
 } from './file.js'
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
 import { filterAgentsByMcpRequirements } from '../tools/AgentTool/loadAgentsDir.js'
-import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js'
+import {
+  AGENT_TOOL_NAME,
+  VERIFICATION_AGENT_TYPE,
+} from '../tools/AgentTool/constants.js'
+import { VERIFY_PLAN_EXECUTION_TOOL_NAME } from '../tools/VerifyPlanExecutionTool/constants.js'
+import { ASK_USER_QUESTION_TOOL_NAME } from '../tools/AskUserQuestionTool/prompt.js'
 import {
   formatAgentLine,
   shouldInjectAgentListInMessages,
@@ -136,11 +148,8 @@ import {
   getAssistantActive,
 } from '../bootstrap/state.js'
 import type { QuerySource } from '../constants/querySource.js'
-import {
-  getMcpInstructionsDelta,
-  isMcpInstructionsDeltaEnabled,
-  type ClientSideInstruction,
-} from './mcpInstructionsDelta.js'
+import { getMcpInstructionsDelta } from './mcpInstructionsDelta.js'
+import { SYSTEM_CONTEXT_KEYS } from '../context.js'
 import type { MCPServerConnection } from '../services/mcp/types.js'
 import type {
   HookEvent,
@@ -639,9 +648,12 @@ export type Attachment =
       type: 'user_context_snapshot'
       renderedContent: string
       entries: Array<{ key: string; value: string }>
+      domain?: UserContextDomain
     }
   | {
       type: 'user_context_delta'
+      /** Absent on pre-domain attachments read from old transcripts. */
+      domain?: UserContextDomain
       replacements: Array<{ key: string; value: string }>
       removals: string[]
     }
@@ -686,6 +698,11 @@ export type Attachment =
       addedNames: string[]
       addedBlocks: string[]
       removedNames: string[]
+    }
+  | {
+      type: 'session_guidance'
+      /** Fully rendered block; replaced wholesale when tool gating changes. */
+      text: string
     }
   | {
       type: 'bagel_console'
@@ -797,6 +814,9 @@ export async function getAttachments(
     maybe('mcp_tools_delta', () =>
       getMcpToolsDeltaAttachment(toolUseContext, messages),
     ),
+    maybe('session_guidance', () =>
+      Promise.resolve(getSessionGuidanceAttachment(toolUseContext, messages)),
+    ),
     maybe('agent_listing_delta', () =>
       Promise.resolve(getAgentListingDeltaAttachment(toolUseContext, messages)),
     ),
@@ -805,7 +825,6 @@ export async function getAttachments(
         getMcpInstructionsDeltaAttachment(
           toolUseContext.options.mcpClients,
           toolUseContext.options.tools,
-          toolUseContext.options.mainLoopModel,
           messages,
         ),
       ),
@@ -1398,13 +1417,14 @@ export type AnnouncedToolCatalog = {
 
 // Diff the rendered tool catalog against the last snapshot announced in
 // this transcript (stateless-scan pattern, like mcp_instructions_delta).
-// The first announce is silent: the initial system prompt already points at
-// the manifest, and a compaction re-arms the guard via forceInitial, so a
-// scan that finds nothing after /compact re-announces the full catalog.
+// A scan that finds nothing diffs against nothing, so the first announce is
+// the full catalog — at session start, after /compact ate prior announcements,
+// or in a subagent whose transcript has none. An empty catalog diffs to
+// nothing and announces nothing, so the full announce costs no noise.
 export async function getMcpToolsDeltaAttachment(
   toolUseContext: ToolUseContext,
   messages: Message[] | undefined,
-  opts?: { forceInitial?: boolean; catalogDir?: string },
+  opts?: { catalogDir?: string },
 ): Promise<Attachment[]> {
   // Kill switch: MCP schemas ride the request again; no catalog to announce.
   if (mcpToolCatalogDisabled()) return []
@@ -1450,24 +1470,6 @@ export async function getMcpToolsDeltaAttachment(
       builtins: msg.attachment.builtins,
     }
   }
-  // First announce: persist the baseline snapshot with an empty diff so the
-  // model sees no noise, but later server changes find a baseline to diff
-  // against. Returning nothing here would keep every future change silent.
-  if (last === null && !opts?.forceInitial)
-    return [
-      {
-        type: 'mcp_tools_delta',
-        generation: manifest.generation,
-        servers,
-        builtins: manifest.builtins,
-        addedNames: [],
-        changedNames: [],
-        removedNames: [],
-        builtinsAdded: [],
-        builtinsRemoved: [],
-      },
-    ]
-
   const prevServers = new Map((last?.servers ?? []).map(s => [s.name, s]))
   const prevBuiltins = new Set(last?.builtins ?? [])
   const addedNames: string[] = []
@@ -1514,6 +1516,60 @@ export async function getMcpToolsDeltaAttachment(
       builtinsRemoved,
     },
   ]
+}
+
+/**
+ * Guidance conditional on which tools are enabled. Lives here, not in the
+ * system prompt, so the cached system block stays byte-stable for the
+ * session. Stateless-scan pattern with wholesale replacement: the scan keeps
+ * the LAST announcement in this transcript; a text difference means tool
+ * availability changed between turns, and the new full block replaces the
+ * old. A turn with no applicable bullets announces nothing and leaves prior
+ * guidance standing.
+ */
+export function getSessionGuidanceAttachment(
+  toolUseContext: ToolUseContext,
+  messages: Message[] | undefined,
+): Attachment[] {
+  const enabledTools = new Set(
+    toolUseContext.options.tools.map(tool => tool.name),
+  )
+  const hasAskUserQuestionTool = enabledTools.has(ASK_USER_QUESTION_TOOL_NAME)
+  const hasAgentTool = enabledTools.has(AGENT_TOOL_NAME)
+  const hasPlanVerifier = enabledTools.has(VERIFY_PLAN_EXECUTION_TOOL_NAME)
+  const verificationGuidance = feature('VERIFY_PLAN')
+    ? (hasAgentTool || hasPlanVerifier) &&
+      (getInitialSettings()?.verificationNudge ?? true)
+      ? hasPlanVerifier
+        ? `For implementation from an approved plan, use ${VERIFY_PLAN_EXECUTION_TOOL_NAME} as the independent final verifier. It satisfies this verification requirement, so do not also start a separate verification agent for the same plan.${hasAgentTool ? ` For other non-trivial implementation on your turn, independent verification must happen before you report completion. Non-trivial means: 3+ file edits, backend/API changes, or infrastructure changes. Use the ${AGENT_TOOL_NAME} tool with subagent_type="${VERIFICATION_AGENT_TYPE}". On FAIL, fix and resume the verifier until it passes. On PASS, check 2-3 commands from its report. On PARTIAL, report what was and was not verified.` : ''}`
+        : `When non-trivial implementation happens on your turn, independent verification must happen before you report completion. Non-trivial means: 3+ file edits, backend/API changes, or infrastructure changes. Use the ${AGENT_TOOL_NAME} tool with subagent_type="${VERIFICATION_AGENT_TYPE}". On FAIL, fix and resume the verifier until it passes. On PASS, check 2-3 commands from its report. On PARTIAL, report what was and was not verified.`
+      : null
+    : null
+
+  const items = [
+    hasAskUserQuestionTool
+      ? `If you do not understand why the user denied a tool call, use the ${ASK_USER_QUESTION_TOOL_NAME} to ask them.`
+      : null,
+    getIsNonInteractiveSession()
+      ? null
+      : `If you need the user to run a shell command themselves (for example, an interactive login like \`gcloud auth login\`), suggest they type \`! <command>\` in the prompt — the \`!\` prefix runs the command in this session so its output lands directly in the conversation.`,
+
+    verificationGuidance,
+  ].filter(item => item !== null)
+
+  if (items.length === 0) return []
+  const text = ['# Session-specific guidance', ...prependBullets(items)].join(
+    '\n',
+  )
+
+  let lastText: string | null = null
+  for (const msg of messages ?? []) {
+    if (msg.type !== 'attachment') continue
+    if (msg.attachment.type !== 'session_guidance') continue
+    lastText = msg.attachment.text
+  }
+  if (lastText === text) return []
+  return [{ type: 'session_guidance', text }]
 }
 
 /**
@@ -1598,26 +1654,82 @@ export function getAgentListingDeltaAttachment(
 }
 
 /**
- * Find the persisted user_context_snapshot in the message chain.
+ * User-context attachment domains. One snapshot/delta pair per domain, so a
+ * change in one domain never re-sends another's bytes. Order is the prepend
+ * order in the request's leading context message.
+ * `system` owns the getSystemContext() keys; `env` owns the env block;
+ * `memories` owns everything else (CLAUDE.md/memory file paths).
  */
-export function getUserContextSnapshotFromMessages(
-  messages: readonly Message[],
-): {
+export type UserContextDomain = 'memories' | 'system' | 'env'
+
+// Ownership is decided by key name alone (no domain tag needed), so a
+// pre-domain merged snapshot from an old transcript decomposes cleanly.
+function userContextKeyOwnedBy(
+  domain: UserContextDomain,
+  key: string,
+): boolean {
+  if (key === 'env') return domain === 'env'
+  if (SYSTEM_CONTEXT_KEYS.has(key)) return domain === 'system'
+  return domain === 'memories'
+}
+
+export type UserContextSnapshotView = {
   renderedContent: string
   entries: Array<{ key: string; value: string }>
-} | null {
+  /** undefined on a pre-domain merged snapshot. */
+  domain: UserContextDomain | undefined
+}
+
+export type UserContextScan = {
+  /**
+   * The last snapshot covering the domain. An untagged merged snapshot from
+   * an old transcript covers all three domains so resume never re-baselines;
+   * a domain-tagged snapshot found later in the transcript replaces it.
+   */
+  snapshotFor(domain: UserContextDomain): UserContextSnapshotView | null
+  /** Latest announced value per key, across all snapshots and deltas. */
+  announced: Map<string, string>
+}
+
+/** One transcript pass serves every domain's snapshot and diff lookups. */
+export function scanUserContextAttachments(
+  messages: readonly Message[],
+): UserContextScan {
+  const covering: Partial<Record<UserContextDomain, UserContextSnapshotView>> =
+    {}
+  const announced = new Map<string, string>()
   for (const msg of messages) {
-    if (
-      msg.type === 'attachment' &&
-      msg.attachment.type === 'user_context_snapshot'
-    ) {
-      return {
-        renderedContent: msg.attachment.renderedContent,
-        entries: msg.attachment.entries,
+    if (msg.type !== 'attachment') continue
+    const attachment = msg.attachment
+    if (attachment.type === 'user_context_snapshot') {
+      const view: UserContextSnapshotView = {
+        renderedContent: attachment.renderedContent,
+        entries: attachment.entries,
+        domain: attachment.domain,
+      }
+      for (const { key, value } of attachment.entries) {
+        announced.set(key, value)
+      }
+      if (attachment.domain === undefined) {
+        covering.memories = view
+        covering.system = view
+        covering.env = view
+      } else {
+        covering[attachment.domain] = view
+      }
+    } else if (attachment.type === 'user_context_delta') {
+      for (const { key, value } of attachment.replacements) {
+        announced.set(key, value)
+      }
+      for (const key of attachment.removals) {
+        announced.delete(key)
       }
     }
   }
-  return null
+  return {
+    snapshotFor: domain => covering[domain] ?? null,
+    announced,
+  }
 }
 
 /**
@@ -1633,67 +1745,48 @@ export function contextToOrderedEntries(context: {
 }
 
 /**
- * Compute a user_context_delta by diffing fresh entries against the
- * last-announced state (reconstructed from snapshot + prior deltas).
+ * Compute one domain's user_context_delta from a scan: replacements are fresh
+ * entries whose value differs from the last announced one; removals are keys
+ * this domain owns that are announced but no longer present. The ownership
+ * filter keeps other domains' keys from falsely announcing as removals.
  */
 export function getUserContextDeltaAttachment(
+  scan: UserContextScan,
   freshEntries: Array<{ key: string; value: string }>,
-  messages: readonly Message[],
+  domain: UserContextDomain,
 ): Attachment[] {
-  // Reconstruct last-announced state
-  const announced = new Map<string, string>()
-  for (const msg of messages) {
-    if (msg.type !== 'attachment') continue
-    if (msg.attachment.type === 'user_context_snapshot') {
-      for (const { key, value } of msg.attachment.entries) {
-        announced.set(key, value)
-      }
-    } else if (msg.attachment.type === 'user_context_delta') {
-      for (const { key, value } of msg.attachment.replacements) {
-        announced.set(key, value)
-      }
-      for (const key of msg.attachment.removals) {
-        announced.delete(key)
-      }
-    }
-  }
-
-  const freshMap = new Map(freshEntries.map(e => [e.key, e.value]))
-
-  // Find replacements (changed or added)
-  const replacements: Array<{ key: string; value: string }> = []
-  for (const { key, value } of freshEntries) {
-    if (announced.get(key) !== value) {
-      replacements.push({ key, value })
-    }
-  }
-
-  // Find removals
+  const replacements = freshEntries.filter(
+    ({ key, value }) => scan.announced.get(key) !== value,
+  )
+  const freshKeys = new Set(freshEntries.map(entry => entry.key))
   const removals: string[] = []
-  for (const key of announced.keys()) {
-    if (!freshMap.has(key)) {
+  for (const key of scan.announced.keys()) {
+    if (!freshKeys.has(key) && userContextKeyOwnedBy(domain, key)) {
       removals.push(key)
     }
   }
-
   if (replacements.length === 0 && removals.length === 0) {
     return []
   }
-
-  return [{ type: 'user_context_delta', replacements, removals }]
+  return [{ type: 'user_context_delta', domain, replacements, removals }]
 }
 
-// Exported for compact.ts — single source of truth for the gate.
+// The only carrier of server instructions (no system-prompt fallback exists).
 export function getMcpInstructionsDeltaAttachment(
   mcpClients: MCPServerConnection[],
   tools: Tools,
-  model: string,
   messages: Message[] | undefined,
 ): Attachment[] {
-  if (!isMcpInstructionsDeltaEnabled()) return []
-
-  const clientSide: ClientSideInstruction[] = []
-  const delta = getMcpInstructionsDelta(mcpClients, messages ?? [], clientSide)
+  // Scope to servers whose tools this thread actually has, mirroring the
+  // exposure scoping the removed system-prompt section had. A server that
+  // loses its tools reads as disconnected: its instructions stop applying.
+  const exposedServers = new Set(
+    tools.flatMap(tool => (tool.mcpInfo ? [tool.mcpInfo.serverName] : [])),
+  )
+  const scopedClients = mcpClients.filter(
+    client => client.type !== 'connected' || exposedServers.has(client.name),
+  )
+  const delta = getMcpInstructionsDelta(scopedClients, messages ?? [])
   if (!delta) return []
   return [{ type: 'mcp_instructions_delta', ...delta }]
 }

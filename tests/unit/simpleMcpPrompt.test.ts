@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import type { MCPServerConnection } from '../../src/services/mcp/types.js'
 import type { Tool } from '../../src/Tool.js'
 import { getSystemPrompt } from '../../src/constants/prompts.js'
+import { getMcpInstructionsDeltaAttachment } from '../../src/utils/attachments.js'
+import type { Attachment } from '../../src/utils/attachments.js'
 
 function mcpTool(serverName: string): Tool {
   return {
@@ -38,10 +40,17 @@ async function inSimpleMode<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-describe('simple-mode MCP prompt instructions', () => {
-  test('does not advertise servers without exposed MCP tools', async () => {
+function renderedInstructions(atts: Attachment[]): string {
+  return atts
+    .filter(a => a.type === 'mcp_instructions_delta')
+    .flatMap(a => (a.type === 'mcp_instructions_delta' ? a.addedBlocks : []))
+    .join('\n')
+}
+
+describe('MCP instructions ride attachments, not the system prompt', () => {
+  test('simple-mode system prompt carries no server instructions', async () => {
     const prompt = await inSimpleMode(() =>
-      getSystemPrompt([], 'test-model', undefined, clients),
+      getSystemPrompt([mcpTool('visible-server')]),
     )
     const rendered = prompt.join('\n')
 
@@ -49,18 +58,20 @@ describe('simple-mode MCP prompt instructions', () => {
     expect(rendered).not.toContain('HIDDEN MCP INSTRUCTIONS')
   })
 
-  test('includes instructions only for exposed MCP tool servers', async () => {
-    const prompt = await inSimpleMode(() =>
-      getSystemPrompt(
-        [mcpTool('visible-server')],
-        'test-model',
-        undefined,
+  test('delta announce includes instructions only for exposed MCP tool servers', () => {
+    const rendered = renderedInstructions(
+      getMcpInstructionsDeltaAttachment(
         clients,
+        [mcpTool('visible-server')],
+        [],
       ),
     )
-    const rendered = prompt.join('\n')
 
     expect(rendered).toContain('VISIBLE MCP INSTRUCTIONS')
     expect(rendered).not.toContain('HIDDEN MCP INSTRUCTIONS')
+  })
+
+  test('delta announce is empty when no MCP tools are exposed', () => {
+    expect(getMcpInstructionsDeltaAttachment(clients, [], [])).toEqual([])
   })
 })

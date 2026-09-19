@@ -47,14 +47,9 @@ function attachMessage(attachment: Attachment): Message {
   } as Message
 }
 
-async function announce(
-  tools: Tool[],
-  messages: Message[] = [],
-  forceInitial = false,
-) {
+async function announce(tools: Tool[], messages: Message[] = []) {
   return getMcpToolsDeltaAttachment(contextWithTools(tools), messages, {
     catalogDir,
-    ...(forceInitial ? { forceInitial: true } : {}),
   })
 }
 
@@ -63,7 +58,7 @@ describe('MCP tools delta attachment', () => {
     catalogDir = await mkdtemp(join(tmpdir(), 'mcp-delta-test-'))
   })
 
-  test('initial announcement carries an empty diff (renders silent)', async () => {
+  test('initial announcement is the full catalog', async () => {
     const result = await announce([
       mcpTool('mcp__server__read', 'Read from server', {
         type: 'object',
@@ -73,7 +68,7 @@ describe('MCP tools delta attachment', () => {
 
     expect(result.length).toBe(1)
     const att = result[0] as Record<string, unknown>
-    expect(att.addedNames).toEqual([])
+    expect(att.addedNames).toEqual(['server'])
     expect(att.changedNames).toEqual([])
     expect(att.removedNames).toEqual([])
   })
@@ -83,8 +78,8 @@ describe('MCP tools delta attachment', () => {
       type: 'object',
       properties: { path: { type: 'string' } },
     })
-    // First call: records baseline
-    const [baseline] = await announce([tool], [], true)
+    // First call: full announce becomes the diff baseline
+    const [baseline] = await announce([tool])
     // Second call: same tools, no delta
     const second = await announce([tool], [attachMessage(baseline!)])
 
@@ -92,17 +87,13 @@ describe('MCP tools delta attachment', () => {
   })
 
   test('announces same-server schema changes', async () => {
-    // First call: records baseline
-    const [baseline] = await announce(
-      [
-        mcpTool('mcp__server__read', 'Read from server', {
-          type: 'object',
-          properties: { path: { type: 'string' } },
-        }),
-      ],
-      [],
-      true,
-    )
+    // First call: full announce becomes the diff baseline
+    const [baseline] = await announce([
+      mcpTool('mcp__server__read', 'Read from server', {
+        type: 'object',
+        properties: { path: { type: 'string' } },
+      }),
+    ])
 
     const changedTool = mcpTool('mcp__server__read', 'Read from server', {
       type: 'object',
@@ -126,8 +117,8 @@ describe('MCP tools delta attachment', () => {
       type: 'object',
       properties: { path: { type: 'string' } },
     })
-    // First call: records baseline
-    const [baseline] = await announce([tool], [], true)
+    // First call: full announce becomes the diff baseline
+    const [baseline] = await announce([tool])
 
     const [removed] = await announce([], [attachMessage(baseline!)])
 
@@ -144,8 +135,8 @@ describe('MCP tools delta attachment', () => {
       type: 'object',
       properties: { path: { type: 'string' } },
     })
-    // First call: records baseline with tool1
-    const [baseline] = await announce([tool1], [], true)
+    // First call: full announce with tool1 becomes the diff baseline
+    const [baseline] = await announce([tool1])
 
     const tool2: Tool = {
       ...mcpTool('mcp__other__write', 'Write to other', {

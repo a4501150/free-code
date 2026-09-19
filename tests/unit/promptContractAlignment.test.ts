@@ -71,6 +71,7 @@ describe('tool prompt contracts', () => {
 describe('conditional mode prompt alignment', () => {
   test('main prompt keeps generic tool routing and verifier exposure gates', () => {
     const source = readSource('src/constants/prompts.ts')
+    const attachments = readSource('src/utils/attachments.ts')
 
     expect(source).toContain(
       'Prefer a dedicated file/search tool over a shell command',
@@ -79,9 +80,11 @@ describe('conditional mode prompt alignment', () => {
     expect(source).not.toContain('enabledTools.has(FILE_EDIT_TOOL_NAME)')
     expect(source).not.toContain('enabledTools.has(FILE_WRITE_TOOL_NAME)')
     expect(source).not.toContain('For multi-step work, use')
-    expect(source).toContain('hasPlanVerifier')
-    expect(source).toContain('DANGEROUS_uncachedSystemPromptSection')
-    expect(source).toContain('Tool availability can change between turns')
+    // Verifier guidance rides the session_guidance attachment now; no
+    // per-turn-recomputed section may remain in the system prompt.
+    expect(attachments).toContain('hasPlanVerifier')
+    expect(source).not.toContain('DANGEROUS_uncachedSystemPromptSection')
+    expect(source).not.toContain('# Session-specific guidance')
   })
 
   test('Brief mode explicitly owns visible user replies', () => {

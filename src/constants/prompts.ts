@@ -3,15 +3,9 @@ import { type as osType, version as osVersion, release as osRelease } from 'os'
 import { env } from '../utils/env.js'
 import { getIsGit } from '../utils/git.js'
 import { getCwd } from '../utils/cwd.js'
-import { getIsNonInteractiveSession } from '../bootstrap/state.js'
 import { getCurrentWorktreeSession } from '../utils/worktree.js'
 import { getSessionStartDate } from './common.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
-import {
-  AGENT_TOOL_NAME,
-  VERIFICATION_AGENT_TYPE,
-} from '../tools/AgentTool/constants.js'
-import { VERIFY_PLAN_EXECUTION_TOOL_NAME } from '../tools/VerifyPlanExecutionTool/constants.js'
 import type { Tools } from '../Tool.js'
 import {
   getCommitAndPRInstructions,
@@ -21,11 +15,6 @@ import {
 } from '../tools/shared/gitInstructions.js'
 import { isPowerShellToolEnabled } from '../utils/shell/shellToolUtils.js'
 import { getPublicModelDisplayName } from '../utils/model/model.js'
-import type {
-  MCPServerConnection,
-  ConnectedMCPServer,
-} from '../services/mcp/types.js'
-import { ASK_USER_QUESTION_TOOL_NAME } from '../tools/AskUserQuestionTool/prompt.js'
 
 import {
   isScratchpadEnabled,
@@ -39,19 +28,16 @@ import {
   mcpToolCatalogDisabled,
 } from '../services/toolCatalog/exposure.js'
 import { toolCatalogDir } from '../services/toolCatalog/writer.js'
-import { feature } from 'bun:bundle'
 import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
 import * as briefToolModuleNs from '../tools/BriefTool/BriefTool.js'
 import {
   systemPromptSection,
-  DANGEROUS_uncachedSystemPromptSection,
   resolveSystemPromptSections,
 } from './systemPromptSections.js'
 import { SLEEP_TOOL_NAME } from '../tools/SleepTool/prompt.js'
 import { TICK_TAG } from './xml.js'
 import { logForDebugging } from '../utils/debug.js'
 import { getMemoryEnvItems, loadMemoryPrompt } from '../memdir/memdir.js'
-import { isMcpInstructionsDeltaEnabled } from '../utils/mcpInstructionsDelta.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const proactiveModule: typeof import('../proactive/index.js') = require('../proactive/index.js')
@@ -86,13 +72,6 @@ function getLanguageSection(
 
   return `# Language
 Always respond in ${languagePreference}. Use ${languagePreference} for all explanations, comments, and communications with the user. Technical terms and code identifiers remain in their original form.`
-}
-
-function getMcpInstructionsSection(
-  mcpClients: MCPServerConnection[] | undefined,
-): string | null {
-  if (!mcpClients || mcpClients.length === 0) return null
-  return getMcpInstructions(mcpClients)
 }
 
 export function prependBullets(items: Array<string | string[]>): string[] {
@@ -146,41 +125,6 @@ function getActionCautionSection(): string {
 }
 
 /**
- * Guidance conditional on which tools are enabled. Free with respect to the
- * prompt cache: the tools array precedes the system prompt in the cache
- * prefix, so any change to `enabledTools` has already invalidated this block.
- */
-function getSessionSpecificGuidanceSection(
-  enabledTools: Set<string>,
-): string | null {
-  const hasAskUserQuestionTool = enabledTools.has(ASK_USER_QUESTION_TOOL_NAME)
-  const hasAgentTool = enabledTools.has(AGENT_TOOL_NAME)
-  const hasPlanVerifier = enabledTools.has(VERIFY_PLAN_EXECUTION_TOOL_NAME)
-  const verificationGuidance = feature('VERIFY_PLAN')
-    ? (hasAgentTool || hasPlanVerifier) &&
-      (getInitialSettings()?.verificationNudge ?? true)
-      ? hasPlanVerifier
-        ? `For implementation from an approved plan, use ${VERIFY_PLAN_EXECUTION_TOOL_NAME} as the independent final verifier. It satisfies this verification requirement, so do not also start a separate verification agent for the same plan.${hasAgentTool ? ` For other non-trivial implementation on your turn, independent verification must happen before you report completion. Non-trivial means: 3+ file edits, backend/API changes, or infrastructure changes. Use the ${AGENT_TOOL_NAME} tool with subagent_type="${VERIFICATION_AGENT_TYPE}". On FAIL, fix and resume the verifier until it passes. On PASS, check 2-3 commands from its report. On PARTIAL, report what was and was not verified.` : ''}`
-        : `When non-trivial implementation happens on your turn, independent verification must happen before you report completion. Non-trivial means: 3+ file edits, backend/API changes, or infrastructure changes. Use the ${AGENT_TOOL_NAME} tool with subagent_type="${VERIFICATION_AGENT_TYPE}". On FAIL, fix and resume the verifier until it passes. On PASS, check 2-3 commands from its report. On PARTIAL, report what was and was not verified.`
-      : null
-    : null
-
-  const items = [
-    hasAskUserQuestionTool
-      ? `If you do not understand why the user denied a tool call, use the ${ASK_USER_QUESTION_TOOL_NAME} to ask them.`
-      : null,
-    getIsNonInteractiveSession()
-      ? null
-      : `If you need the user to run a shell command themselves (for example, an interactive login like \`gcloud auth login\`), suggest they type \`! <command>\` in the prompt — the \`!\` prefix runs the command in this session so its output lands directly in the conversation.`,
-
-    verificationGuidance,
-  ].filter(item => item !== null)
-
-  if (items.length === 0) return null
-  return ['# Session-specific guidance', ...prependBullets(items)].join('\n')
-}
-
-/**
  * How much to say and how to shape it — the consolidation of the former Text
  * output, Response style, and Formatting sections. Replaced wholesale by an
  * output style unless the style opts to keep it.
@@ -220,17 +164,22 @@ function getOutputStyleSection(
 ${outputStyle.prompt}`
 }
 
+/**
+ * Everything here is byte-stable for the session's lifetime: the static
+ * sections never vary, and the memoized sections clear only on /clear,
+ * /compact and worktree switches. Mid-session-dynamic content — MCP server
+ * instructions, the tool catalog, tool-gated guidance, session facts — rides
+ * its own persisted attachment types (src/utils/attachments.ts), each with a
+ * stateless-scan diff and a post-compaction re-announce.
+ */
 export async function getSystemPrompt(
   tools: Tools,
-  model: string,
   additionalWorkingDirectories?: string[],
-  mcpClients?: MCPServerConnection[],
 ): Promise<string[]> {
   if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
     return [
       `You are Claude Code, Anthropic's official CLI for Claude.\n\nCWD: ${getCwd()}\nDate: ${getSessionStartDate()}`,
-      ...(mcpClients ? [getMcpInstructions(mcpClients, tools)] : []),
-    ].filter(s => s !== null)
+    ]
   }
 
   const settings = getInitialSettings()
@@ -243,11 +192,6 @@ export async function getSystemPrompt(
       getSystemRemindersSection(),
       await loadMemoryPrompt(),
       getLanguageSection(settings.language),
-      // When delta enabled, instructions are announced via persisted
-      // mcp_instructions_delta attachments (attachments.ts) instead.
-      isMcpInstructionsDeltaEnabled()
-        ? null
-        : getMcpInstructionsSection(mcpClients),
       SUMMARIZE_TOOL_RESULTS_SECTION,
       getProactiveSection(),
     ].filter(s => s !== null)
@@ -258,27 +202,9 @@ export async function getSystemPrompt(
     outputStyle === null || outputStyle.keepResponseStyle
 
   const dynamicSections = [
-    DANGEROUS_uncachedSystemPromptSection(
-      'session_guidance',
-      () => getSessionSpecificGuidanceSection(enabledTools),
-      'Tool availability can change between turns',
-    ),
     systemPromptSection('memory', () => loadMemoryPrompt()),
     systemPromptSection('language', () =>
       getLanguageSection(settings.language),
-    ),
-    // When delta enabled, instructions are announced via persisted
-    // mcp_instructions_delta attachments (attachments.ts) instead of this
-    // per-turn recompute, which busts the prompt cache on late MCP connect.
-    // Gate check inside compute (not selecting between section variants)
-    // so a mid-session gate flip doesn't read a stale cached value.
-    DANGEROUS_uncachedSystemPromptSection(
-      'mcp_instructions',
-      () =>
-        isMcpInstructionsDeltaEnabled()
-          ? null
-          : getMcpInstructionsSection(mcpClients),
-      'MCP servers connect/disconnect between turns',
     ),
     systemPromptSection(
       'summarize_tool_results',
@@ -306,45 +232,6 @@ export async function getSystemPrompt(
     // change has already invalidated this block.
     ...resolvedDynamicSections,
   ].filter(s => s !== null)
-}
-
-export function getMcpInstructions(
-  mcpClients: MCPServerConnection[],
-  exposedTools?: Tools,
-): string | null {
-  const exposedServers = exposedTools
-    ? new Set(
-        exposedTools.flatMap(tool =>
-          tool.mcpInfo ? [tool.mcpInfo.serverName] : [],
-        ),
-      )
-    : null
-  const connectedClients = mcpClients.filter(
-    (client): client is ConnectedMCPServer =>
-      client.type === 'connected' &&
-      (exposedServers === null || exposedServers.has(client.name)),
-  )
-
-  const clientsWithInstructions = connectedClients.filter(
-    client => client.instructions,
-  )
-
-  if (clientsWithInstructions.length === 0) {
-    return null
-  }
-
-  const instructionBlocks = clientsWithInstructions
-    .map(client => {
-      return `## ${client.name}
-${client.instructions}`
-    })
-    .join('\n\n')
-
-  return `# MCP Server Instructions
-
-The following MCP servers have provided instructions for how to use their tools and resources:
-
-${instructionBlocks}`
 }
 
 export async function computeEnvInfo(

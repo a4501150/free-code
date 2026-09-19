@@ -68,6 +68,13 @@ const VISIBLE_FIXTURES: Array<[Attachment, string]> = [
   ],
   [
     {
+      type: 'session_guidance',
+      text: '# Session-specific guidance\n - use the ! prefix',
+    },
+    'Session-specific guidance',
+  ],
+  [
+    {
       type: 'edited_text_file',
       filename: '/p/a.ts',
       snippet: 'x',

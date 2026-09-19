@@ -122,6 +122,18 @@ export const getEnvContext = memoize(
 )
 
 /**
+ * The keys getSystemContext() can emit. The user-context `system` domain
+ * claims exactly these keys (see scanUserContextAttachments in attachments.ts)
+ * — a key returned below without appearing here would be owned by the
+ * `memories` domain and re-announced on every turn.
+ */
+export const SYSTEM_CONTEXT_KEYS: ReadonlySet<string> = new Set([
+  'gitStatus',
+  'gitInstructions',
+  'scratchpad',
+])
+
+/**
  * Session-scoped project context. Rides in the prepended user-context message
  * (assembled in query.ts), never the system prompt: the system prompt has to
  * stay byte-identical across sessions and projects for its cached prefix to be

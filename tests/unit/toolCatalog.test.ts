@@ -111,31 +111,18 @@ describe('tool catalog writer', () => {
 })
 
 describe('mcp_tools_delta reminder', () => {
-  test('first announce persists a silent baseline snapshot', async () => {
+  test('first announce with no history is the full catalog', async () => {
     const dir = await freshDir()
     const ctx = makeContext([fakeMcpTool('mcp__srv__a', 'srv')])
     const atts = await getMcpToolsDeltaAttachment(ctx, [], {
-      catalogDir: dir,
-    })
-    expect(atts.length).toBe(1)
-    const att = atts[0] as Extract<Attachment, { type: 'mcp_tools_delta' }>
-    expect(att.addedNames).toEqual([])
-    expect(att.changedNames).toEqual([])
-    expect(att.removedNames).toEqual([])
-    expect(att.servers.length).toBe(1)
-  })
-
-  test('forceInitial with no history announces every server', async () => {
-    const dir = await freshDir()
-    const ctx = makeContext([fakeMcpTool('mcp__srv__a', 'srv')])
-    const atts = await getMcpToolsDeltaAttachment(ctx, [], {
-      forceInitial: true,
       catalogDir: dir,
     })
     expect(atts.length).toBe(1)
     const att = atts[0] as Extract<Attachment, { type: 'mcp_tools_delta' }>
     expect(att.addedNames).toEqual(['srv'])
     expect(att.changedNames).toEqual([])
+    expect(att.removedNames).toEqual([])
+    expect(att.servers.length).toBe(1)
     expect(att.servers[0]!.toolCount).toBe(1)
   })
 
@@ -144,7 +131,7 @@ describe('mcp_tools_delta reminder', () => {
     const announced = await getMcpToolsDeltaAttachment(
       makeContext([fakeMcpTool('mcp__srv__a', 'srv')]),
       [],
-      { forceInitial: true, catalogDir: dir },
+      { catalogDir: dir },
     )
     const messages = [attachMessage(announced[0] as Attachment)]
 

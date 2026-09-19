@@ -378,7 +378,7 @@ export async function manuallyExtractSessionMemory(
     // Get system prompt for cache-safe params
     const { tools, mainLoopModel } = toolUseContext.options
     const [rawSystemPrompt, userContext, systemContext] = await Promise.all([
-      getSystemPrompt(tools, mainLoopModel),
+      getSystemPrompt(tools),
       getUserContext(),
       getSystemContext(),
     ])

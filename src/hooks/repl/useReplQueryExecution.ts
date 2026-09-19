@@ -395,11 +395,9 @@ export function useReplQueryExecution({
           ),
           getSystemPrompt(
             freshTools,
-            mainLoopModelParam,
             Array.from(
               toolPermissionContext.additionalWorkingDirectories.keys(),
             ),
-            freshMcpClients,
           ),
           getUserContext(),
           getSystemContext(),

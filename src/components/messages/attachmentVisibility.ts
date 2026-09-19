@@ -45,6 +45,7 @@ const TYPES_WITHOUT_SUMMARY_LINE = [
   'deferred_tools_delta',
   'mcp_tools_delta',
   'mcp_instructions_delta',
+  'session_guidance',
   'token_usage',
   'ultrathink_effort',
   'max_turns_reached',

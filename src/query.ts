@@ -41,7 +41,6 @@ import {
 import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummaryGenerator.js'
 import {
   formatUserContextMessageContent,
-  prependUserContext,
   prependUserContextFromSnapshot,
 } from './utils/contextInjection.js'
 import { getEnvContext } from './context.js'
@@ -51,9 +50,10 @@ import {
   filterDuplicateMemoryAttachments,
   getAttachmentMessages,
   getUserContextDeltaAttachment,
-  getUserContextSnapshotFromMessages,
+  scanUserContextAttachments,
   startRelevantMemoryPrefetch,
   type Attachment,
+  type UserContextDomain,
 } from './utils/attachments.js'
 import {
   remove as removeFromQueue,
@@ -420,48 +420,69 @@ async function* queryLoop(
     // the system prompt free of session-scoped bytes is what lets it stay
     // byte-identical across sessions and projects, so a new session reads the
     // cached prefix instead of writing it. See the caching notes in CLAUDE.md.
-    const effectiveUserContext = {
-      ...userContext,
-      ...systemContext,
-      env: await getEnvContext(
-        currentModel,
-        Array.from(
-          appState.toolPermissionContext.additionalWorkingDirectories.keys(),
-        ),
+    //
+    // One snapshot/delta pair per domain, so a change in one domain never
+    // re-announces another's bytes. Canonical domain order: memories, system,
+    // env.
+    const envValue = await getEnvContext(
+      currentModel,
+      Array.from(
+        appState.toolPermissionContext.additionalWorkingDirectories.keys(),
       ),
-    }
+    )
+    const contextDomains: Array<{
+      domain: UserContextDomain
+      context: { [k: string]: string }
+    }> = [
+      { domain: 'memories', context: userContext },
+      { domain: 'system', context: systemContext },
+      { domain: 'env', context: { env: envValue } },
+    ]
 
-    // Persist the original rendered context as the conversation baseline. Later
-    // requests reuse its bytes and announce only changes near the message tail.
-    const freshEntries = contextToOrderedEntries(effectiveUserContext)
-    const existingSnapshot =
-      getUserContextSnapshotFromMessages(messagesForQuery)
-
-    let prependContent: string | null = null
-    if (!existingSnapshot) {
-      const rendered = formatUserContextMessageContent(effectiveUserContext)
+    // Persist each domain's rendered context as the conversation baseline.
+    // Later requests reuse its bytes and announce only changes near the
+    // message tail. One transcript scan serves all domains; a pre-domain
+    // merged snapshot (--resume of an old transcript) covers every domain
+    // and is replayed verbatim exactly once.
+    const scan = scanUserContextAttachments(messagesForQuery)
+    const prependBlocks: string[] = []
+    let legacyReplayed = false
+    for (const { domain, context } of contextDomains) {
+      const existing = scan.snapshotFor(domain)
+      if (existing) {
+        if (existing.domain !== undefined || !legacyReplayed) {
+          prependBlocks.push(existing.renderedContent)
+          legacyReplayed = legacyReplayed || existing.domain === undefined
+        }
+        const delta = getUserContextDeltaAttachment(
+          scan,
+          contextToOrderedEntries(context),
+          domain,
+        )
+        if (delta.length > 0) {
+          const deltaMsg = createAttachmentMessage(delta[0]!)
+          messagesForQuery = [...messagesForQuery, deltaMsg]
+          yield deltaMsg
+        }
+        continue
+      }
+      const freshEntries = contextToOrderedEntries(context)
+      const rendered = formatUserContextMessageContent(context)
       if (rendered) {
         const snapshotAttachment: Attachment = {
           type: 'user_context_snapshot',
+          domain,
           renderedContent: rendered,
           entries: freshEntries,
         }
         const snapshotMsg = createAttachmentMessage(snapshotAttachment)
         messagesForQuery = [...messagesForQuery, snapshotMsg]
         yield snapshotMsg
-      }
-    } else {
-      prependContent = existingSnapshot.renderedContent
-      const delta = getUserContextDeltaAttachment(
-        freshEntries,
-        messagesForQuery,
-      )
-      if (delta.length > 0) {
-        const deltaMsg = createAttachmentMessage(delta[0]!)
-        messagesForQuery = [...messagesForQuery, deltaMsg]
-        yield deltaMsg
+        prependBlocks.push(rendered)
       }
     }
+    const prependContent =
+      prependBlocks.length > 0 ? prependBlocks.join('\n') : null
 
     // Create fetch wrapper once per query session to avoid memory retention.
     // Each call to createDumpPromptsFetch creates a closure that captures the request body.
@@ -499,7 +520,7 @@ async function* queryLoop(
       for await (const message of deps.callModel({
         messages: prependContent
           ? prependUserContextFromSnapshot(messagesForQuery, prependContent)
-          : prependUserContext(messagesForQuery, effectiveUserContext),
+          : messagesForQuery,
         systemPrompt: fullSystemPrompt,
         thinkingConfig: toolUseContext.options.thinkingConfig,
         tools: toolUseContext.options.tools,

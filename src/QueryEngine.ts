@@ -263,11 +263,9 @@ export class QueryEngine {
       systemContext,
     } = await fetchSystemPromptParts({
       tools,
-      mainLoopModel: initialMainLoopModel,
       additionalWorkingDirectories: Array.from(
         initialAppState.toolPermissionContext.additionalWorkingDirectories.keys(),
       ),
-      mcpClients,
       customSystemPrompt: customPrompt,
     })
     headlessProfilerCheckpoint('after_getSystemPrompt')

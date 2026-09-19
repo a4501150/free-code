@@ -51,7 +51,7 @@ async function main(): Promise<void> {
     setIsInteractive(true)
     const modelIdx = args.indexOf('--model')
     const model = (modelIdx !== -1 && args[modelIdx + 1]) || getMainLoopModel()
-    const prompt = await getSystemPrompt(getAllBaseTools(), model)
+    const prompt = await getSystemPrompt(getAllBaseTools())
     // biome-ignore lint/suspicious/noConsole:: intentional console output
     console.log(
       withAgenticSystemPromptInvariants(asSystemPrompt(prompt)).join('\n'),

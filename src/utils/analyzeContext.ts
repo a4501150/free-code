@@ -826,7 +826,7 @@ export async function analyzeContextUsage(
   const contextWindow = getConfiguredContextWindowSize(runtimeModel)
 
   // Build the effective system prompt using the shared utility
-  const defaultSystemPrompt = await getSystemPrompt(tools, runtimeModel)
+  const defaultSystemPrompt = await getSystemPrompt(tools)
   const effectiveSystemPrompt = buildEffectiveSystemPrompt({
     mainThreadAgentDefinition,
     toolUseContext: toolUseContext ?? {

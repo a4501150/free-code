@@ -4111,8 +4111,8 @@ You have exited auto mode. The user may now want to interact more directly. You 
         )
       }
       if (parts.length === 0) {
-        // Baseline announce: the snapshot persists for future diffs, but
-        // there is nothing to tell the model yet.
+        // Defensive: the emitter never announces an empty diff. Render
+        // nothing rather than an empty system-reminder.
         return []
       }
       return wrapMessagesInSystemReminder([
@@ -4139,6 +4139,11 @@ You have exited auto mode. The user may now want to interact more directly. You 
       }
       return wrapMessagesInSystemReminder([
         createUserMessage({ content: parts.join('\n\n'), isMeta: true }),
+      ])
+    }
+    case 'session_guidance': {
+      return wrapMessagesInSystemReminder([
+        createUserMessage({ content: attachment.text, isMeta: true }),
       ])
     }
     case 'mcp_instructions_delta': {

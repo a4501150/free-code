@@ -10,31 +10,19 @@ type ComputeFn = () => string | null | Promise<string | null>
 type SystemPromptSection = {
   name: string
   compute: ComputeFn
-  cacheBreak: boolean
 }
 
 /**
  * Create a memoized system prompt section.
- * Computed once, cached until /clear or /compact.
+ * Computed once, cached until /clear or /compact. Every section must be
+ * byte-stable for the session's lifetime; mid-session-dynamic content rides
+ * attachments instead (src/utils/attachments.ts).
  */
 export function systemPromptSection(
   name: string,
   compute: ComputeFn,
 ): SystemPromptSection {
-  return { name, compute, cacheBreak: false }
-}
-
-/**
- * Create a volatile system prompt section that recomputes every turn.
- * This WILL break the prompt cache when the value changes.
- * Requires a reason explaining why cache-breaking is necessary.
- */
-export function DANGEROUS_uncachedSystemPromptSection(
-  name: string,
-  compute: ComputeFn,
-  _reason: string,
-): SystemPromptSection {
-  return { name, compute, cacheBreak: true }
+  return { name, compute }
 }
 
 /**
@@ -47,7 +35,7 @@ export async function resolveSystemPromptSections(
 
   return Promise.all(
     sections.map(async s => {
-      if (!s.cacheBreak && cache.has(s.name)) {
+      if (cache.has(s.name)) {
         return cache.get(s.name) ?? null
       }
       const value = await s.compute()

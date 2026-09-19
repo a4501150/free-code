@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { getEmptyToolPermissionContext } from '../../src/Tool.js'
+import { getSystemPrompt } from '../../src/constants/prompts.js'
 import type { QuerySource } from '../../src/constants/querySource.js'
 import { queryModelWithStreaming } from '../../src/services/api/claude.js'
 import {
@@ -82,10 +83,10 @@ function countInvariant(text: string): number {
   return text.split(AGENTIC_SYSTEM_PROMPT_INVARIANTS).length - 1
 }
 
-async function captureRequest(
+async function captureBody(
   systemPrompt: SystemPrompt,
   querySource: QuerySource,
-): Promise<string> {
+): Promise<Record<string, unknown>> {
   let requestBody: unknown
   globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
     if (typeof init?.body !== 'string') {
@@ -121,7 +122,14 @@ async function captureRequest(
   }
 
   expect(requestBody).toBeDefined()
-  return collectStrings(requestBody).join('\n')
+  return requestBody as Record<string, unknown>
+}
+
+async function captureRequestText(
+  systemPrompt: SystemPrompt,
+  querySource: QuerySource,
+): Promise<string> {
+  return collectStrings(await captureBody(systemPrompt, querySource)).join('\n')
 }
 
 afterEach(() => {
@@ -142,7 +150,7 @@ afterEach(() => {
 describe('agentic system prompt request assembly', () => {
   test('agentic custom prompts receive exactly one invariant after replacement', async () => {
     setupProvider()
-    const rendered = await captureRequest(
+    const rendered = await captureRequestText(
       asSystemPrompt(['CUSTOM REPLACEMENT PROMPT']),
       'sdk',
     )
@@ -160,7 +168,7 @@ describe('agentic system prompt request assembly', () => {
       'side_question',
       'generate_session_title',
     ] satisfies QuerySource[]) {
-      const rendered = await captureRequest(
+      const rendered = await captureRequestText(
         asSystemPrompt(['AUXILIARY PROMPT']),
         source,
       )
@@ -175,9 +183,33 @@ describe('agentic system prompt request assembly', () => {
     )
 
     for (const source of ['compact', 'side_question'] satisfies QuerySource[]) {
-      const rendered = await captureRequest(parentPrompt, source)
+      const rendered = await captureRequestText(parentPrompt, source)
       expect(rendered).toContain('PARENT PROMPT')
       expect(countInvariant(rendered)).toBe(1)
     }
+  })
+
+  test('default prompt rebuilds byte-identically across per-turn re-invocations', async () => {
+    setupProvider()
+    // openai-responses carries the system block as one `instructions`
+    // string. The varying attribution header is Anthropic-type-only, so
+    // it must not appear here at all.
+    const wireInstructions = async (): Promise<string> => {
+      const prompt = await getSystemPrompt([])
+      const body = await captureBody(asSystemPrompt(prompt), 'sdk')
+      expect(typeof body.instructions).toBe('string')
+      return body.instructions as string
+    }
+
+    const firstWire = await wireInstructions()
+    const secondWire = await wireInstructions()
+
+    // The system block is one cache unit; any per-turn recompute that
+    // produces new bytes churns the whole prefix.
+    expect(secondWire).toBe(firstWire)
+    expect(firstWire).not.toContain('x-anthropic-billing-header')
+    // Mid-session-dynamic content must ride attachments, never this block.
+    expect(firstWire).not.toContain('# Session-specific guidance')
+    expect(firstWire).not.toContain('# MCP Server Instructions')
   })
 })

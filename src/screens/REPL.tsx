@@ -2323,11 +2323,9 @@ export function REPL({
                       const appState = context.getAppState()
                       const defaultSysPrompt = await getSystemPrompt(
                         context.options.tools,
-                        context.options.mainLoopModel,
                         Array.from(
                           appState.toolPermissionContext.additionalWorkingDirectories.keys(),
                         ),
-                        context.options.mcpClients,
                       )
                       const systemPrompt = buildEffectiveSystemPrompt({
                         mainThreadAgentDefinition: undefined,

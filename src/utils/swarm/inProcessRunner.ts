@@ -900,9 +900,6 @@ export async function runInProcessTeammate(
   } else {
     const fullSystemPromptParts = await getSystemPrompt(
       toolUseContext.options.tools,
-      toolUseContext.options.mainLoopModel,
-      undefined,
-      toolUseContext.options.mcpClients,
     )
 
     const systemPromptParts = [
