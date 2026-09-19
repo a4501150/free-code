@@ -91,7 +91,7 @@ export type DOMElement = {
   // el.yogaNode.getComputedTop() (FRESH — same Yoga pass as scrollHeight)
   // and sets scrollTop = top + offset, then clears this. Unlike an
   // imperative scrollTo(N) which bakes in a number that's stale by the
-  // time the throttled render fires, the element ref defers the position
+  // time the paced render fires, the element ref defers the position
   // read to paint time. One-shot.
   scrollAnchor?: { el: DOMElement; offset: number }
   // Only set on ink-root. The document owns focus — any node can
@@ -426,7 +426,7 @@ export const markDirty = (node?: DOMNode): void => {
   }
 }
 
-// Walk to root and call its onRender (the throttled scheduleRender). Use for
+// Walk to root and call its onRender (the paced scheduleRender). Use for
 // DOM-level mutations (scrollTop changes) that should trigger an Ink frame
 // without going through React's reconciler. Pair with markDirty() so the
 // renderer knows which subtree to re-evaluate.

@@ -102,6 +102,11 @@ export type LayoutNode = {
   setMeasureFunc(fn: LayoutMeasureFunc): void
   unsetMeasureFunc(): void
   markDirty(): void
+  // Fault recovery: wipe cached layout results in this node's subtree and
+  // re-mark every node dirty, forcing a full recompute on the next
+  // calculateLayout. Used when a pass throws — a corrupt cache entry, not
+  // a freed pointer (the TS yoga port has no use-after-free).
+  clearLayoutCacheRecursive(): void
 
   // Layout reading (post-layout)
   getComputedLeft(): number

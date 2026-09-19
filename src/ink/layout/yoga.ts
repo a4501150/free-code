@@ -102,6 +102,9 @@ export class YogaLayoutNode implements LayoutNode {
   markDirty(): void {
     this.yoga.markDirty()
   }
+  clearLayoutCacheRecursive(): void {
+    this.yoga.clearLayoutCacheRecursive()
+  }
 
   // Computed layout
 

@@ -7,7 +7,6 @@ import {
   writeSync,
 } from 'fs'
 import noop from 'lodash-es/noop.js'
-import throttle from 'lodash-es/throttle.js'
 import React, { type ReactNode } from 'react'
 import type { FiberRoot } from 'react-reconciler'
 import { ConcurrentRoot } from 'react-reconciler/constants.js'
@@ -23,7 +22,11 @@ import type {
   CursorDeclaration,
   CursorDeclarationSetter,
 } from './components/CursorDeclarationContext.js'
-import { FRAME_INTERVAL_MS } from './constants.js'
+import {
+  FRAME_INTERVAL_MS,
+  INPUT_PRIORITY_FRAME_MS,
+  INPUT_PRIORITY_WINDOW_MS,
+} from './constants.js'
 import * as dom from './dom.js'
 import { KeyboardEvent } from './events/keyboard-event.js'
 import { FocusManager } from './focus.js'
@@ -159,7 +162,12 @@ export type Options = {
 export default class Ink {
   private readonly log: LogUpdate
   private readonly terminal: Terminal
-  private scheduleRender: (() => void) & { cancel?: () => void }
+  // Frame pacer entry point (rootNode.onRender). Replaces a lodash
+  // throttle: scheduleRender() either queues an end-of-tick microtask
+  // frame (leading edge) or arms a single exact-deadline timer (trailing
+  // edge); while one is in flight further calls are no-ops, so N commits
+  // in one frame window paint once. See queuePacedFrame.
+  private scheduleRender: () => void
   // Ignore last render after unmounting a tree to prevent empty output before exit
   private isUnmounted = false
   private isPaused = false
@@ -181,13 +189,38 @@ export default class Ink {
   private backFrame: Frame
   private lastPoolResetTime = performance.now()
   private drainTimer: ReturnType<typeof setTimeout> | null = null
+  // --- Frame pacer (replaces the lodash-throttled scheduleRender) --------
+  // Single exact-deadline trailing timer; null when nothing is armed.
+  private frameTimer: ReturnType<typeof setTimeout> | null = null
+  // True from the moment a frame is queued (microtask OR timer) until it
+  // actually runs — coalesces every commit in the window into one paint,
+  // and lets cancelScheduledRender() veto a queued frame before it fires.
+  private frameQueued = false
+  // performance.now() at the start of the last onRender — the pacer's
+  // "last leading edge" against which the next frame's interval is measured.
+  private lastFrameAt = 0
+  // performance.now() deadline until which frames may run at
+  // INPUT_PRIORITY_FRAME_MS; pushed forward by dispatchKeyboardEvent.
+  private inputPriorityUntil = 0
+  // Set by the onComputeLayout commit hook instead of computing yoga
+  // synchronously; onRender computes once per frame when true. Multiple
+  // commits in one frame window collapse to one calculateLayout pass.
+  private layoutStale = false
   private lastYogaCounters: {
     ms: number
     visited: number
     measured: number
+    measureCacheHits: number
     cacheHits: number
     live: number
-  } = { ms: 0, visited: 0, measured: 0, cacheHits: 0, live: 0 }
+  } = {
+    ms: 0,
+    visited: 0,
+    measured: 0,
+    measureCacheHits: 0,
+    cacheHits: 0,
+    live: 0,
+  }
   private altScreenParkPatch: Readonly<{ type: 'stdout'; content: string }>
   // Text selection state (alt-screen only). Owned here so the overlay
   // pass in onRender can read it and App.tsx can update it from mouse
@@ -248,6 +281,13 @@ export default class Ink {
   // one full-render frame; steady-state frames after clear it and regain
   // the blit + narrow-damage fast path.
   private prevFrameContaminated = false
+  // Signature of the selection/search overlay painted into the previous
+  // frame (endpoints + query + positioned-highlight placement). The
+  // overlay is repainted onto every fresh screen, so when the signature
+  // is unchanged between frames both buffers agree on every overlaid
+  // cell and per-node damage suffices; full damage is only needed on the
+  // frame where the overlay appears, moves, or clears. '' = no overlay.
+  private prevOverlaySig = ''
   // Set by handleResize: prepend ERASE_SCREEN to the next onRender's patches
   // INSIDE the BSU/ESU block so clear+paint is atomic. Writing ERASE_SCREEN
   // synchronously in handleResize would leave the screen blank for the ~80ms
@@ -316,16 +356,10 @@ export default class Ink {
     // runs BEFORE React's layout phase (ref attach + useLayoutEffect). Any
     // state set in layout effects — notably the cursorDeclaration from
     // useDeclaredCursor — would lag one commit behind if we rendered
-    // synchronously. Deferring to a microtask runs onRender after layout
-    // effects have committed, so the native cursor tracks the caret without
-    // a one-keystroke lag. Same event-loop tick, so throughput is unchanged.
-    // Test env uses onImmediateRender (direct onRender, no throttle) so
-    // existing synchronous lastFrame() tests are unaffected.
-    const deferredRender = (): void => queueMicrotask(this.onRender)
-    this.scheduleRender = throttle(deferredRender, FRAME_INTERVAL_MS, {
-      leading: true,
-      trailing: true,
-    })
+    // synchronously, so the leading frame is deferred to a microtask (see
+    // queuePacedFrame). Test env uses onImmediateRender (direct onRender,
+    // no pacer) so existing synchronous lastFrame() tests are unaffected.
+    this.scheduleRender = this.queuePacedFrame
 
     // Ignore last render after unmounting a tree to prevent empty output before exit
     this.isUnmounted = false
@@ -352,22 +386,13 @@ export default class Ink {
     this.rootNode.onRender = this.scheduleRender
     this.rootNode.onImmediateRender = this.onRender
     this.rootNode.onComputeLayout = () => {
-      // Calculate layout during React's commit phase so useLayoutEffect hooks
-      // have access to fresh layout data
-      // Guard against accessing freed Yoga nodes after unmount
-      if (this.isUnmounted) {
-        return
-      }
-
-      if (this.rootNode.yogaNode) {
-        const t0 = performance.now()
-        this.rootNode.yogaNode.setWidth(this.terminalColumns)
-        this.rootNode.yogaNode.calculateLayout(this.terminalColumns)
-        const ms = performance.now() - t0
-        recordYogaMs(ms)
-        const c = getYogaCounters()
-        this.lastYogaCounters = { ms, ...c }
-      }
+      // React's commit phase marks layout stale instead of running
+      // calculateLayout synchronously; onRender computes once at the top
+      // of the frame. Commits coalesced into one frame window pay for ONE
+      // yoga pass instead of N. useLayoutEffect hooks reading geometry
+      // during commit see the previous frame's layout — onRender still
+      // runs same-tick, so every render-time consumer sees fresh values.
+      this.layoutStale = true
     }
 
     this.container = reconciler.createContainer(
@@ -391,6 +416,86 @@ export default class Ink {
         version: '16.13.1',
         rendererPackageName: 'ink',
       })
+    }
+  }
+
+  /**
+   * Frame pacer entry point (rootNode.onRender). Leading edge: enough
+   * time has elapsed since the last frame, so queue an end-of-tick
+   * microtask — paints after this tick's layout effects, same as the old
+   * lodash leading call. Trailing edge: inside the interval, arm ONE
+   * exact-deadline timer. While a frame is queued every further call is
+   * a no-op, so N commits in one window collapse into one paint. Inside
+   * the input-priority window (INPUT_PRIORITY_WINDOW_MS after a keypress
+   * reaches dispatchKeyboardEvent) the interval drops to
+   * INPUT_PRIORITY_FRAME_MS so typed echoes paint at ~250fps.
+   */
+  private queuePacedFrame(): void {
+    if (this.frameQueued) {
+      return
+    }
+    this.frameQueued = true
+    const interval =
+      performance.now() < this.inputPriorityUntil
+        ? INPUT_PRIORITY_FRAME_MS
+        : FRAME_INTERVAL_MS
+    const deadline = this.lastFrameAt + interval - performance.now()
+    if (deadline <= 0) {
+      queueMicrotask(this.runPacedFrame)
+    } else {
+      this.frameTimer = setTimeout(this.runPacedFrame, deadline)
+    }
+  }
+
+  private runPacedFrame(): void {
+    // frameQueued false = vetoed by cancelScheduledRender() (unmount /
+    // detachForShutdown) or already consumed by a drain/immediate render.
+    if (this.frameQueued) {
+      this.onRender()
+    }
+  }
+
+  /**
+   * Drop a queued frame (microtask OR timer) without painting. The
+   * microtask may still run but runPacedFrame's frameQueued check no-ops
+   * it. Replaces lodash throttle's .cancel().
+   */
+  private cancelScheduledRender(): void {
+    this.frameQueued = false
+    if (this.frameTimer !== null) {
+      clearTimeout(this.frameTimer)
+      this.frameTimer = null
+    }
+  }
+
+  /**
+   * One yoga pass at the current terminal width, run from onRender when
+   * onComputeLayout marked layout stale. A throwing calculateLayout in
+   * the pure-TS yoga port means an inconsistent cached result — there
+   * are no freed pointers to trip on — so wipe the subtree's caches
+   * (clearLayoutCacheRecursive) and retry once before giving up.
+   */
+  private computeLayout(): void {
+    this.layoutStale = false
+    // Guard against accessing freed Yoga nodes after unmount
+    if (this.isUnmounted || !this.rootNode.yogaNode) {
+      return
+    }
+    const root = this.rootNode.yogaNode
+    const layout = () => {
+      const t0 = performance.now()
+      root.setWidth(this.terminalColumns)
+      root.calculateLayout(this.terminalColumns)
+      const ms = performance.now() - t0
+      recordYogaMs(ms)
+      this.lastYogaCounters = { ms, ...getYogaCounters() }
+    }
+    try {
+      layout()
+    } catch (err) {
+      logError(err)
+      root.clearLayoutCacheRecursive()
+      layout()
     }
   }
 
@@ -450,10 +555,11 @@ export default class Ink {
     }
 
     // Re-render the React tree with updated props so the context value changes.
-    // React's commit phase will call onComputeLayout() to recalculate yoga layout
-    // with the new dimensions, then call onRender() to render the updated frame.
-    // We don't call scheduleRender() here because that would render before the
-    // layout is updated, causing a mismatch between viewport and content dimensions.
+    // React's commit phase will call onComputeLayout() (marks layout stale),
+    // then onRender() recomputes yoga with the new dimensions before painting
+    // the updated frame. We don't call scheduleRender() here because that
+    // could paint before the commit marks layout stale, causing a mismatch
+    // between viewport and content dimensions.
     if (this.currentNode !== null) {
       this.render(this.currentNode)
     }
@@ -529,6 +635,19 @@ export default class Ink {
   }
 
   onRender() {
+    // Entering a render — from ANY path (paced microtask/timer, the drain
+    // timer, the test immediate path, unmount's synchronous call) —
+    // consumes the queued frame slot and refreshes the pacing clock: this
+    // render covers whatever dirty state the queued frame stood for, and
+    // a scheduleRender() during this frame re-arms for the next window.
+    // Consumed before the early return so a frame dropped while paused
+    // can't wedge frameQueued and mute every later frame.
+    this.frameQueued = false
+    if (this.frameTimer !== null) {
+      clearTimeout(this.frameTimer)
+      this.frameTimer = null
+    }
+    this.lastFrameAt = performance.now()
     if (this.isUnmounted || this.isPaused) {
       return
     }
@@ -545,6 +664,12 @@ export default class Ink {
     // Done before the render to avoid dirtying state that would trigger
     // an extra React re-render cycle.
     flushInteractionTime()
+
+    // One yoga pass per frame, even when several commits marked layout
+    // stale since the last paint. try/catch + cache wipe + retry inside.
+    if (this.layoutStale) {
+      this.computeLayout()
+    }
 
     const renderStart = performance.now()
     const terminalWidth = this.options.stdout.columns || 80
@@ -694,17 +819,34 @@ export default class Ink {
       }
     }
 
+    // Overlay-change detection, replacing always-contaminate `selActive ||
+    // hlActive`. The overlay is repainted onto every frame's fresh screen,
+    // so when the signature (selection ends, query, positioned-highlight
+    // placement) is UNCHANGED between frames, prev and current buffers
+    // agree on every overlaid cell and per-node damage diffs them fine.
+    // Full damage is only needed on the frame the overlay appears, moves,
+    // scrolls (rowOffset rides in the signature), or clears.
+    let overlaySig = ''
+    if (selActive || hlActive) {
+      const a = this.selection.anchor
+      const f = this.selection.focus
+      const sp = this.searchPositions
+      overlaySig =
+        `${a ? `${a.col},${a.row}` : '-'}>` +
+        `${f ? `${f.col},${f.row}` : '-'}|` +
+        `${this.searchHighlightQuery}|` +
+        `${sp ? `${sp.positions.length}:${sp.rowOffset}:${sp.currentIdx}` : '-'}`
+    }
+    const overlayChanged = overlaySig !== this.prevOverlaySig
+    this.prevOverlaySig = overlaySig
+
     // Full-damage backstop: applies on BOTH alt-screen and main-screen.
     // Layout shifts (spinner appears, status line resizes) can leave stale
     // cells at sibling boundaries that per-node damage tracking misses.
     // Selection/highlight overlays write via setCellStyleId which doesn't
-    // track damage. prevFrameContaminated covers the cleanup frame.
-    if (
-      didLayoutShift() ||
-      selActive ||
-      hlActive ||
-      this.prevFrameContaminated
-    ) {
+    // track damage. prevFrameContaminated covers invalidatePrevFrame() and
+    // the frame after an external buffer kick.
+    if (didLayoutShift() || overlayChanged || this.prevFrameContaminated) {
       frame.screen.damage = {
         x: 0,
         y: 0,
@@ -892,23 +1034,24 @@ export default class Ink {
     const writeMs = performance.now() - tWrite
 
     // Update blit safety for the NEXT frame. The frame just rendered
-    // becomes frontFrame (= next frame's prevScreen). If we applied the
-    // selection overlay, that buffer has inverted cells. selActive/hlActive
-    // are only ever true in alt-screen; in main-screen this is false→false.
-    this.prevFrameContaminated = selActive || hlActive
+    // becomes frontFrame (= next frame's prevScreen). Only an overlay
+    // that CHANGED this frame leaves cells in that buffer whose current
+    // counterpart differs — an unchanged overlay sits identically in both
+    // buffers and diffs clean. Assigning here also consumes flags set by
+    // invalidatePrevFrame()/resize kicks, keeping them one-shot.
+    this.prevFrameContaminated = overlayChanged
 
     // A ScrollBox has pendingScrollDelta left to drain — schedule the next
-    // frame. MUST NOT call this.scheduleRender() here: we're inside a
-    // trailing-edge throttle invocation, timerId is undefined, and lodash's
-    // debounce sees timeSinceLastCall >= wait (last call was at the start
-    // of this window) → leadingEdge fires IMMEDIATELY → double render ~0.1ms
-    // apart → jank. Use a plain timeout. If a wheel event arrives first,
-    // its scheduleRender path fires a render which clears this timer at
-    // the top of onRender — no double.
+    // frame. Plain timeout, NOT scheduleRender(): the pacer measures from
+    // lastFrameAt, which this frame just stamped, so it would arm a
+    // full-interval trailing timer and slow drain frames to 60fps. The
+    // timeout below keeps drain at its own faster cadence. If a wheel
+    // event arrives first, its scheduleRender path fires a render which
+    // clears this timer at the top of onRender — no double.
     //
     // Drain frames are cheap (DECSTBM + ~10 patches, ~200 bytes) so run at
     // quarter interval (~250fps, setTimeout practical floor) for max scroll
-    // speed. Regular renders stay at FRAME_INTERVAL_MS via the throttle.
+    // speed. Regular renders stay at FRAME_INTERVAL_MS via the pacer.
     if (frame.scrollDrainPending) {
       this.drainTimer = setTimeout(
         () => this.onRender(),
@@ -925,6 +1068,7 @@ export default class Ink {
       ms: 0,
       visited: 0,
       measured: 0,
+      measureCacheHits: 0,
       cacheHits: 0,
       live: 0,
     }
@@ -1153,9 +1297,9 @@ export default class Ink {
    */
   detachForShutdown(): void {
     this.isUnmounted = true
-    // Cancel any pending throttled render so it doesn't fire between
+    // Cancel any pending paced render so it doesn't fire between
     // cleanupTerminalModes() and process.exit() and write to main screen.
-    this.scheduleRender.cancel?.()
+    this.cancelScheduledRender()
     // Restore stdin from raw mode. unmount() used to do this via React
     // unmount (App.componentWillUnmount → handleSetRawMode(false)) but we're
     // short-circuiting that path. Must use this.options.stdin — NOT
@@ -1542,6 +1686,9 @@ export default class Ink {
   }
 
   dispatchKeyboardEvent(parsedKey: ParsedKey): void {
+    // Keystrokes open the input-priority window: the frame pacer may paint
+    // the resulting echo at INPUT_PRIORITY_FRAME_MS for a few frames.
+    this.inputPriorityUntil = performance.now() + INPUT_PRIORITY_WINDOW_MS
     const target = this.focusManager.activeElement ?? this.rootNode
     const event = new KeyboardEvent(parsedKey)
     dispatcher.dispatchDiscrete(target, event)
@@ -1833,8 +1980,8 @@ export default class Ink {
 
     this.isUnmounted = true
 
-    // Cancel any pending throttled renders to prevent accessing freed Yoga nodes
-    this.scheduleRender.cancel?.()
+    // Cancel any pending paced renders to prevent accessing freed Yoga nodes
+    this.cancelScheduledRender()
     if (this.drainTimer !== null) {
       clearTimeout(this.drainTimer)
       this.drainTimer = null

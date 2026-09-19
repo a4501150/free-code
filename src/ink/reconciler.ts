@@ -198,7 +198,8 @@ let _prepareAt = 0
 // --- END ---
 
 // --- SCROLL PROFILING (bench/scroll-e2e.sh reads via getLastYogaMs) ---
-// Set by onComputeLayout wrapper in ink.tsx; read by onRender for phases.
+// Set by Ink.computeLayout (invoked from the stale-layout check in onRender);
+// read by onRender for phases.
 let _lastYogaMs = 0
 let _lastCommitMs = 0
 let _commitStart = 0
