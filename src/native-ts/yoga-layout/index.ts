@@ -164,7 +164,10 @@ function measureRingCovers(
   cInner: number,
   cOut: number,
 ): boolean {
-  if (cMode === qMode && cInner === qInner) return true
+  // sameFloat, not ===: Undefined-mode axes carry NaN bounds, and an
+  // identical repeat query must hit — every other key compare here is
+  // NaN-aware for exactly this reason.
+  if (cMode === qMode && sameFloat(cInner, qInner)) return true
   if (cMode === MeasureMode.Exactly) return false
   if (qMode === MeasureMode.Exactly)
     return (
@@ -647,12 +650,22 @@ export class Node {
     this._hasMargin = false
     this._readsOwnerWidth = false
     this._readsOwnerHeight = false
+    this.clearCacheBookkeeping()
+  }
+
+  // Wipe every layout/measure cache field: ring counters, validity flags,
+  // and generation stamps. Entries are only ever *read* behind
+  // `!isDirty_ && gen === _generation` gates, so callers pair this with
+  // isDirty_ = true (reset) or set it themselves (recovery walk).
+  private clearCacheBookkeeping(): void {
     this._hasL = false
     this._hasM = false
     this._cN = 0
     this._cWr = 0
+    this._cGen = -1
     this._mfN = 0
     this._mfWr = 0
+    this._fbGen = -1
     this._fbBasis = NaN
   }
 
@@ -669,14 +682,7 @@ export class Node {
       if (!(n instanceof Node) || seen.has(n)) continue
       seen.add(n)
       n.isDirty_ = true
-      n._hasL = false
-      n._hasM = false
-      n._cN = 0
-      n._cWr = 0
-      n._cGen = -1
-      n._mfN = 0
-      n._mfWr = 0
-      n._fbGen = -1
+      n.clearCacheBookkeeping()
       const kids = n.children
       if (Array.isArray(kids))
         for (let i = 0; i < kids.length && i < budget; i++) stack.push(kids[i]!)

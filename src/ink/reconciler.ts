@@ -206,6 +206,18 @@ let _commitStart = 0
 export function recordYogaMs(ms: number): void {
   _lastYogaMs = ms
 }
+// Called by Ink.computeLayout with the measured pass time — the yoga pass
+// runs at the top of onRender (commit phase only marks layout stale), so
+// the slow-yoga probe lives here, not around onComputeLayout.
+export function logSlowYoga(ms: number, at: number): void {
+  if (!COMMIT_LOG || ms <= 20) return
+  const c = getYogaCounters()
+  // eslint-disable-next-line custom-rules/no-sync-fs -- debug instrumentation
+  appendFileSync(
+    COMMIT_LOG,
+    `${at.toFixed(1)} SLOW_YOGA ${ms.toFixed(1)}ms visited=${c.visited} measured=${c.measured} measureHits=${c.measureCacheHits} hits=${c.cacheHits} live=${c.live}\n`,
+  )
+}
 export function getLastYogaMs(): number {
   return _lastYogaMs
 }
@@ -274,20 +286,8 @@ const reconciler = createReconciler<
         _lastLog = now
       }
     }
-    const _t0 = COMMIT_LOG ? performance.now() : 0
     if (typeof rootNode.onComputeLayout === 'function') {
       rootNode.onComputeLayout()
-    }
-    if (COMMIT_LOG) {
-      const layoutMs = performance.now() - _t0
-      if (layoutMs > 20) {
-        const c = getYogaCounters()
-        // eslint-disable-next-line custom-rules/no-sync-fs -- debug instrumentation
-        appendFileSync(
-          COMMIT_LOG,
-          `${_t0.toFixed(1)} SLOW_YOGA ${layoutMs.toFixed(1)}ms visited=${c.visited} measured=${c.measured} hits=${c.cacheHits} live=${c.live}\n`,
-        )
-      }
     }
 
     if (process.env.NODE_ENV === 'test') {

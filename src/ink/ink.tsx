@@ -41,6 +41,7 @@ import type { ParsedKey, TerminalResponse } from './parse-keypress.js'
 import reconciler, {
   dispatcher,
   getLastCommitMs,
+  logSlowYoga,
   getLastYogaMs,
   isDebugRepaintsEnabled,
   recordYogaMs,
@@ -60,7 +61,6 @@ import {
   CellWidth,
   CharPool,
   cellAt,
-  countDistinctStyleIds,
   createScreen,
   HyperlinkPool,
   isEmptyCellAt,
@@ -84,6 +84,7 @@ import {
   type SelectionState,
   selectLineAt,
   selectWordAt,
+  selectionBounds,
   shiftAnchor,
   shiftSelection,
   shiftSelectionForFollow,
@@ -163,11 +164,10 @@ export type Options = {
 export default class Ink {
   private readonly log: LogUpdate
   private readonly terminal: Terminal
-  // Frame pacer entry point (rootNode.onRender). Replaces a lodash
-  // throttle: scheduleRender() either queues an end-of-tick microtask
-  // frame (leading edge) or arms a single exact-deadline timer (trailing
-  // edge); while one is in flight further calls are no-ops, so N commits
-  // in one frame window paint once. See queuePacedFrame.
+  // Frame pacer entry point (rootNode.onRender): leading frames queue an
+  // end-of-tick microtask, trailing frames arm one exact-deadline timer;
+  // while a frame is queued further calls are no-ops, so N commits in one
+  // frame window paint once. See queuePacedFrame.
   private scheduleRender: () => void
   // Ignore last render after unmounting a tree to prevent empty output before exit
   private isUnmounted = false
@@ -190,7 +190,7 @@ export default class Ink {
   private backFrame: Frame
   private lastPoolResetTime = performance.now()
   private drainTimer: ReturnType<typeof setTimeout> | null = null
-  // --- Frame pacer (replaces the lodash-throttled scheduleRender) --------
+  // --- Frame pacer -------------------------------------------------------
   // Single exact-deadline trailing timer; null when nothing is armed.
   private frameTimer: ReturnType<typeof setTimeout> | null = null
   // True from the moment a frame is queued (microtask OR timer) until it
@@ -423,24 +423,24 @@ export default class Ink {
   /**
    * Frame pacer entry point (rootNode.onRender). Leading edge: enough
    * time has elapsed since the last frame, so queue an end-of-tick
-   * microtask — paints after this tick's layout effects, same as the old
-   * lodash leading call. Trailing edge: inside the interval, arm ONE
-   * exact-deadline timer. While a frame is queued every further call is
-   * a no-op, so N commits in one window collapse into one paint. Inside
-   * the input-priority window (INPUT_PRIORITY_WINDOW_MS after a keypress
-   * reaches dispatchKeyboardEvent) the interval drops to
-   * INPUT_PRIORITY_FRAME_MS so typed echoes paint at ~250fps.
+   * microtask — paints after this tick's layout effects. Trailing edge:
+   * inside the interval, arm ONE exact-deadline timer. While a frame is
+   * queued every further call is a no-op, so N commits in one window
+   * collapse into one paint. Inside the input-priority window
+   * (INPUT_PRIORITY_WINDOW_MS after a keypress reaches
+   * dispatchKeyboardEvent) the interval drops to INPUT_PRIORITY_FRAME_MS.
    */
   private queuePacedFrame(): void {
     if (this.frameQueued) {
       return
     }
     this.frameQueued = true
+    const now = performance.now()
     const interval =
-      performance.now() < this.inputPriorityUntil
+      now < this.inputPriorityUntil
         ? INPUT_PRIORITY_FRAME_MS
         : FRAME_INTERVAL_MS
-    const deadline = this.lastFrameAt + interval - performance.now()
+    const deadline = this.lastFrameAt + interval - now
     if (deadline <= 0) {
       queueMicrotask(this.runPacedFrame)
     } else {
@@ -459,7 +459,7 @@ export default class Ink {
   /**
    * Drop a queued frame (microtask OR timer) without painting. The
    * microtask may still run but runPacedFrame's frameQueued check no-ops
-   * it. Replaces lodash throttle's .cancel().
+   * it.
    */
   private cancelScheduledRender(): void {
     this.frameQueued = false
@@ -490,6 +490,7 @@ export default class Ink {
       const ms = performance.now() - t0
       recordYogaMs(ms)
       this.lastYogaCounters = { ms, ...getYogaCounters() }
+      logSlowYoga(ms, t0)
     }
     try {
       layout()
@@ -643,11 +644,7 @@ export default class Ink {
     // a scheduleRender() during this frame re-arms for the next window.
     // Consumed before the early return so a frame dropped while paused
     // can't wedge frameQueued and mute every later frame.
-    this.frameQueued = false
-    if (this.frameTimer !== null) {
-      clearTimeout(this.frameTimer)
-      this.frameTimer = null
-    }
+    this.cancelScheduledRender()
     this.lastFrameAt = performance.now()
     if (this.isUnmounted || this.isPaused) {
       return
@@ -820,21 +817,21 @@ export default class Ink {
       }
     }
 
-    // Overlay-change detection, replacing always-contaminate `selActive ||
-    // hlActive`. The overlay is repainted onto every frame's fresh screen,
-    // so when the signature (selection ends, query, positioned-highlight
+    // The overlay is repainted onto every frame's fresh screen, so when
+    // the signature (selection bounds, query, positioned-highlight
     // placement) is UNCHANGED between frames, prev and current buffers
     // agree on every overlaid cell and per-node damage diffs them fine.
     // Full damage is only needed on the frame the overlay appears, moves,
     // scrolls (rowOffset rides in the signature), or clears.
     let overlaySig = ''
     if (selActive || hlActive) {
-      const a = this.selection.anchor
-      const f = this.selection.focus
+      // Normalized bounds, not raw anchor/focus: a drag-direction reversal
+      // swaps the endpoints but paints the identical overlay, and the sig
+      // must only change when the rendered overlay can change.
+      const b = selectionBounds(this.selection)
       const sp = this.searchPositions
       overlaySig =
-        `${a ? `${a.col},${a.row}` : '-'}>` +
-        `${f ? `${f.col},${f.row}` : '-'}|` +
+        `${b ? `${b.start.col},${b.start.row}>${b.end.col},${b.end.row}` : '-'}|` +
         `${this.searchHighlightQuery}|` +
         `${sp ? `${sp.positions.length}:${sp.rowOffset}:${sp.currentIdx}` : '-'}`
     }
@@ -887,8 +884,7 @@ export default class Ink {
     this.backFrame = this.frontFrame
     this.frontFrame = frame
 
-    // Pool lifecycle (cadence policy ported from official 277). Reuses
-    // renderStart to avoid extra clock call.
+    // Pool lifecycle — reuses renderStart to avoid an extra clock call.
     this.maybeResetPools(renderStart)
 
     const flickers: FrameEvent['flickers'] = []
@@ -1081,6 +1077,7 @@ export default class Ink {
         commit: commitMs,
         yogaVisited: yc.visited,
         yogaMeasured: yc.measured,
+        yogaMeasureCacheHits: yc.measureCacheHits,
         yogaCacheHits: yc.cacheHits,
         yogaLive: yc.live,
       },
@@ -1294,9 +1291,13 @@ export default class Ink {
    */
   detachForShutdown(): void {
     this.isUnmounted = true
-    // Cancel any pending paced render so it doesn't fire between
-    // cleanupTerminalModes() and process.exit() and write to main screen.
+    // Cancel any pending paced/drain render so nothing fires between
+    // cleanupTerminalModes() and process.exit() writing to main screen.
     this.cancelScheduledRender()
+    if (this.drainTimer !== null) {
+      clearTimeout(this.drainTimer)
+      this.drainTimer = null
+    }
     // Restore stdin from raw mode. unmount() used to do this via React
     // unmount (App.componentWillUnmount → handleSetRawMode(false)) but we're
     // short-circuiting that path. Must use this.options.stdin — NOT
@@ -2006,10 +2007,9 @@ export default class Ink {
   }
 
   /**
-   * Pool lifecycle check, run once per painted frame. Cadence (ported from
-   * official 277): 30s normally, 1s once the style pool is near its
-   * hard-capped capacity. Past the gate, reset only when the session is
-   * old (the previous unconditional 5-minute cadence) or the style pool
+   * Pool lifecycle check, run once per painted frame. Cadence: 30s
+   * normally, 1s once the style pool is near its hard-capped capacity.
+   * Past the gate, reset only when the session is old or the style pool
    * holds more than 2x what is actually on screen — a healthy small pool
    * isn't worth the migration walk.
    */
@@ -2020,9 +2020,7 @@ export default class Ink {
     }
     if (
       elapsed > 300_000 ||
-      this.stylePool.needsCompaction(
-        countDistinctStyleIds(this.frontFrame.screen),
-      )
+      this.stylePool.needsCompactionFor(this.frontFrame.screen)
     ) {
       this.resetPools()
     }
@@ -2036,7 +2034,7 @@ export default class Ink {
    * pools so diffing remains correct. The back frame doesn't need
    * migration — resetScreen zeros it before any reads.
    */
-  resetPools(): void {
+  private resetPools(): void {
     this.charPool = new CharPool()
     this.hyperlinkPool = new HyperlinkPool()
     // Styles still on screen are lazily re-interned through this remap

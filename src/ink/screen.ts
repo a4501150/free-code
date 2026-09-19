@@ -127,9 +127,6 @@ export class StylePool {
   private ids = new Map<string, number>()
   private styles: AnsiCode[][] = []
   private transitionCache = new Map<number, string>()
-  // Bumped by compact(). Callers that cache pool state across frames
-  // (none today) use it to detect that their ids were remapped.
-  private generation = 0
   private overflowWarned = false
   readonly none: number
 
@@ -294,11 +291,6 @@ export class StylePool {
     return id
   }
 
-  /** Unique styles interned so far (including the unstyled slot). */
-  size(): number {
-    return this.styles.length
-  }
-
   /** True when the pool is large enough that the next reset shouldn't
    *  wait out the relaxed cadence (or already had to degrade to unstyled
    *  interning). Drives the 30s-vs-1s pool-reset cadence. */
@@ -306,11 +298,15 @@ export class StylePool {
     return this.overflowWarned || this.styles.length > NEAR_CAPACITY
   }
 
-  /** True when the pool holds more than 2x the styles currently visible
-   *  on screen (floored at COMPACTION_MIN) — accumulating dead entries
-   *  from styles that scrolled out of history. */
-  needsCompaction(liveStyleCount: number): boolean {
-    return this.styles.length > Math.max(COMPACTION_MIN, 2 * liveStyleCount)
+  /** True when the pool holds more than 2x the styles the screen actually
+   *  displays — accumulating dead entries from styles that scrolled out
+   *  of history. Small pools skip the O(cells) live count entirely. */
+  needsCompactionFor(screen: Screen): boolean {
+    return (
+      this.styles.length > COMPACTION_MIN &&
+      this.styles.length >
+        2 * countDistinctStyleIds(screen, this.styles.length >>> 1)
+    )
   }
 
   /**
@@ -331,7 +327,6 @@ export class StylePool {
     this.inverseCache.clear()
     this.currentMatchCache.clear()
     this.selectionBgCache.clear()
-    this.generation++
     this.overflowWarned = false
     const remap = new Int32Array(oldStyles.length).fill(-1)
     remap[0] = 0 // unstyled slot keeps its index — none stays 0
@@ -693,15 +688,23 @@ export function migrateScreenPools(
 /**
  * Count the distinct non-zero style IDs a screen actually displays. Cheap
  * enough to call at pool-reset cadence (≥1s), not per frame — used by
- * StylePool.needsCompaction to compare pool size against real usage.
+ * StylePool.needsCompactionFor to compare pool size against real usage.
+ * `stopAbove`: once more than this many distinct ids are seen, stop
+ * scanning (callers only care about a threshold, not the exact count).
  */
-export function countDistinctStyleIds(screen: Screen): number {
+export function countDistinctStyleIds(
+  screen: Screen,
+  stopAbove?: number,
+): number {
   const cells = screen.cells
   const ids = new Set<number>()
   const end = (screen.width * screen.height) << 1
   for (let ci = 1; ci < end; ci += 2) {
     const styleId = cells[ci]! >>> STYLE_SHIFT
-    if (styleId !== 0) ids.add(styleId)
+    if (styleId !== 0 && !ids.has(styleId)) {
+      ids.add(styleId)
+      if (stopAbove !== undefined && ids.size > stopAbove) break
+    }
   }
   return ids.size
 }

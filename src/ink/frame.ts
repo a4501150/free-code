@@ -50,7 +50,7 @@ export type FrameEvent = {
     write: number
     /** Pre-optimize patch count (proxy for how much changed this frame) */
     patches: number
-    /** yoga calculateLayout() time (runs in resetAfterCommit, before onRender) */
+    /** yoga calculateLayout() time (runs at the top of onRender when layout is stale) */
     yoga: number
     /** React reconcile time: scrollMutated → resetAfterCommit. 0 if no commit. */
     commit: number
@@ -58,6 +58,8 @@ export type FrameEvent = {
     yogaVisited: number
     /** measureFunc (text wrap/width) calls — the expensive part */
     yogaMeasured: number
+    /** measure ring hits — measureFunc calls avoided by cached results */
+    yogaMeasureCacheHits: number
     /** early returns via _hasL single-slot cache */
     yogaCacheHits: number
     /** total yoga Node instances alive (create - free). Growth = leak. */
