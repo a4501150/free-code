@@ -9,6 +9,7 @@ import {
   type Size,
   unionRect,
 } from './layout/geometry.js'
+import { logForDebugging } from '../utils/debug.js'
 import { BEL, ESC, SEP } from './termio/ansi.js'
 import * as warn from './warn.js'
 
@@ -109,10 +110,27 @@ const YELLOW_FG_CODE: AnsiCode = {
   endCode: '\x1b[39m',
 }
 
+// styleId is packed into bits [31:17] of word1 and carries a parity bit, so
+// raw indices above MAX_STYLES would overflow the field and silently alias
+// onto earlier styles. Past the cap new styles render UNSTYLED instead.
+const MAX_STYLES = 16383
+// Bound on the (from,to) transition string cache; full-clear on overflow —
+// steady-state frames reuse a tiny subset of pairs.
+const MAX_TRANSITIONS = 8192
+// Compaction floor: a pool smaller than this is cheap to keep whole even
+// when nothing on screen uses most of it.
+const COMPACTION_MIN = 512
+// Reset urgency flips from 30s to 1s once the pool passes this size.
+const NEAR_CAPACITY = 8191
+
 export class StylePool {
   private ids = new Map<string, number>()
   private styles: AnsiCode[][] = []
   private transitionCache = new Map<number, string>()
+  // Bumped by compact(). Callers that cache pool state across frames
+  // (none today) use it to detect that their ids were remapped.
+  private generation = 0
+  private overflowWarned = false
   readonly none: number
 
   constructor() {
@@ -125,12 +143,27 @@ export class StylePool {
    * underline, etc.). Foreground-only styles get even IDs; styles visible
    * on spaces get odd IDs. This lets the renderer skip invisible spaces
    * with a single bitmask check on the packed word.
+   *
+   * Past MAX_STYLES unique styles, new interning returns `none` (render
+   * unstyled) rather than overflow the 15-bit packed field — silent
+   * aliasing would paint arbitrary colors, unstyled is honest. compact()
+   * or a fresh pool restores interning.
    */
   intern(styles: AnsiCode[]): number {
     const key = styles.length === 0 ? '' : styles.map(s => s.code).join('\0')
     let id = this.ids.get(key)
     if (id === undefined) {
       const rawId = this.styles.length
+      if (rawId > MAX_STYLES) {
+        if (!this.overflowWarned) {
+          this.overflowWarned = true
+          logForDebugging(
+            `StylePool at ${MAX_STYLES} unique styles — new styles will render unstyled until pool compaction`,
+            { level: 'warn' },
+          )
+        }
+        return this.none
+      }
       this.styles.push(styles.length === 0 ? [] : styles)
       id =
         (rawId << 1) |
@@ -156,6 +189,9 @@ export class StylePool {
     let str = this.transitionCache.get(key)
     if (str === undefined) {
       str = ansiCodesToString(diffAnsiCodes(this.get(fromId), this.get(toId)))
+      if (this.transitionCache.size >= MAX_TRANSITIONS) {
+        this.transitionCache.clear()
+      }
       this.transitionCache.set(key, str)
     }
     return str
@@ -256,6 +292,59 @@ export class StylePool {
       this.selectionBgCache.set(baseId, id)
     }
     return id
+  }
+
+  /** Unique styles interned so far (including the unstyled slot). */
+  size(): number {
+    return this.styles.length
+  }
+
+  /** True when the pool is large enough that the next reset shouldn't
+   *  wait out the relaxed cadence (or already had to degrade to unstyled
+   *  interning). Drives the 30s-vs-1s pool-reset cadence. */
+  isNearCapacity(): boolean {
+    return this.overflowWarned || this.styles.length > NEAR_CAPACITY
+  }
+
+  /** True when the pool holds more than 2x the styles currently visible
+   *  on screen (floored at COMPACTION_MIN) — accumulating dead entries
+   *  from styles that scrolled out of history. */
+  needsCompaction(liveStyleCount: number): boolean {
+    return this.styles.length > Math.max(COMPACTION_MIN, 2 * liveStyleCount)
+  }
+
+  /**
+   * Rebuild the pool so only styles still referenced by the returned
+   * remap survive. The caller MUST migrate every live id holder (screen
+   * cell packs) through the remap before the next frame: it maps an old
+   * id to its fresh id, re-interning the underlying AnsiCode[] lazily on
+   * first touch — entries never touched are simply dropped. The pool
+   * instance identity is unchanged (transition/overlay caches are keyed
+   * by id and all cleared), so holders of the pool reference keep
+   * working. Returns the remap function.
+   */
+  compact(): (id: number) => number {
+    const oldStyles = this.styles
+    this.styles = [[]]
+    this.ids = new Map([['', 0]])
+    this.transitionCache.clear()
+    this.inverseCache.clear()
+    this.currentMatchCache.clear()
+    this.selectionBgCache.clear()
+    this.generation++
+    this.overflowWarned = false
+    const remap = new Int32Array(oldStyles.length).fill(-1)
+    remap[0] = 0 // unstyled slot keeps its index — none stays 0
+    return (id: number): number => {
+      const raw = id >>> 1
+      if (raw >= oldStyles.length) return this.none
+      let next = remap[raw]!
+      if (next === -1) {
+        next = this.intern(oldStyles[raw]!)
+        remap[raw] = next
+      }
+      return next
+    }
   }
 }
 
@@ -555,35 +644,66 @@ export function migrateScreenPools(
   screen: Screen,
   charPool: CharPool,
   hyperlinkPool: HyperlinkPool,
+  styleRemap?: (id: number) => number,
 ): void {
   const oldCharPool = screen.charPool
   const oldHyperlinkPool = screen.hyperlinkPool
-  if (oldCharPool === charPool && oldHyperlinkPool === hyperlinkPool) return
+  if (
+    oldCharPool === charPool &&
+    oldHyperlinkPool === hyperlinkPool &&
+    !styleRemap
+  )
+    return
 
   const size = screen.width * screen.height
   const cells = screen.cells
 
-  // Re-intern chars and hyperlinks in a single pass, stride by 2
+  // Re-intern chars, styles and hyperlinks in a single pass, stride by 2
   for (let ci = 0; ci < size << 1; ci += 2) {
     // Re-intern charId (word0)
     const oldCharId = cells[ci]!
     cells[ci] = charPool.intern(oldCharPool.get(oldCharId))
 
-    // Re-intern hyperlinkId (packed in word1)
+    // Re-pack word1: styleId (bits [31:17]) and hyperlinkId (mid-bits).
+    // Unstyled/unlinked cells stay byte-identical — the repack is only
+    // written when either id actually changed, so unwritten cells keep
+    // their all-zero form (indistinguishable-from-blank invariant holds).
     const word1 = cells[ci + 1]!
     const oldHyperlinkId = (word1 >>> HYPERLINK_SHIFT) & HYPERLINK_MASK
-    if (oldHyperlinkId !== 0) {
-      const oldStr = oldHyperlinkPool.get(oldHyperlinkId)
-      const newHyperlinkId = hyperlinkPool.intern(oldStr)
-      // Repack word1 with new hyperlinkId, preserving styleId and width
-      const styleId = word1 >>> STYLE_SHIFT
-      const width = word1 & WIDTH_MASK
-      cells[ci + 1] = packWord1(styleId, newHyperlinkId, width)
+    let styleId = word1 >>> STYLE_SHIFT
+    const newHyperlinkId =
+      oldHyperlinkId === 0
+        ? 0
+        : hyperlinkPool.intern(oldHyperlinkPool.get(oldHyperlinkId))
+    if (styleRemap && styleId !== 0) {
+      styleId = styleRemap(styleId)
+    }
+    if (
+      newHyperlinkId !== oldHyperlinkId ||
+      styleId !== word1 >>> STYLE_SHIFT
+    ) {
+      cells[ci + 1] = packWord1(styleId, newHyperlinkId, word1 & WIDTH_MASK)
     }
   }
 
   screen.charPool = charPool
   screen.hyperlinkPool = hyperlinkPool
+}
+
+/**
+ * Count the distinct non-zero style IDs a screen actually displays. Cheap
+ * enough to call at pool-reset cadence (≥1s), not per frame — used by
+ * StylePool.needsCompaction to compare pool size against real usage.
+ */
+export function countDistinctStyleIds(screen: Screen): number {
+  const cells = screen.cells
+  const ids = new Set<number>()
+  const end = (screen.width * screen.height) << 1
+  for (let ci = 1; ci < end; ci += 2) {
+    const styleId = cells[ci]! >>> STYLE_SHIFT
+    if (styleId !== 0) ids.add(styleId)
+  }
+  return ids.size
 }
 
 /**
