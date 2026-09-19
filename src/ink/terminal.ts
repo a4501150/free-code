@@ -205,6 +205,18 @@ export function writeDiffToTerminal(
   // Buffer all writes into a single string to avoid multiple write calls
   let buffer = useSync ? BSU : ''
 
+  // Writer-side clamp for relative cursor moves. Terminals cap CUF/CUB/
+  // CUD/CUU at their own margin (viewport edge), so a delta larger than
+  // the screen silently lands somewhere else — silently desyncing the
+  // diff's cursor model from the physical cursor. Clamping to ±(rows-1)
+  // keeps the emitted move exactly representable. Callers still clamp at
+  // the emit sites; this is the last-line guarantee (official 2.1.277
+  // clamps here, in the writer).
+  // The Terminal type widens stdout to Writable (diff writing doesn't
+  // need dimensions); read `.rows` through a cast when it is a WriteStream.
+  const stdoutRows = (terminal.stdout as Partial<NodeJS.WriteStream>).rows
+  const maxY = Math.max((stdoutRows ?? 24) - 1, 1)
+
   for (const patch of diff) {
     switch (patch.type) {
       case 'stdout':
@@ -225,7 +237,10 @@ export function writeDiffToTerminal(
         buffer += SHOW_CURSOR
         break
       case 'cursorMove':
-        buffer += cursorMove(patch.x, patch.y)
+        buffer += cursorMove(
+          patch.x,
+          patch.y > 0 ? Math.min(patch.y, maxY) : Math.max(patch.y, -maxY),
+        )
         break
       case 'cursorTo':
         buffer += cursorTo(patch.col)

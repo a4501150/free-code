@@ -29,10 +29,6 @@ import {
 } from './termio/csi.js'
 import { LINK_END, link as oscLink } from './termio/osc.js'
 
-type State = {
-  previousOutput: string
-}
-
 type Options = {
   isTTY: boolean
   stylePool: StylePool
@@ -57,26 +53,7 @@ const SHIFT_MAX_MISMATCH_CAP = 12
 const SHIFT_MAX_DELTA = 4
 
 export class LogUpdate {
-  private state: State
-
-  constructor(private readonly options: Options) {
-    this.state = {
-      previousOutput: '',
-    }
-  }
-
-  renderPreviousOutput_DEPRECATED(prevFrame: Frame): Diff {
-    if (!this.options.isTTY) {
-      // Non-TTY output is no longer supported (string output was removed)
-      return [NEWLINE]
-    }
-    return this.getRenderOpsForDone(prevFrame)
-  }
-
-  // Called when process resumes from suspension (SIGCONT) to prevent clobbering terminal content
-  reset(): void {
-    this.state.previousOutput = ''
-  }
+  constructor(private readonly options: Options) {}
 
   private renderFullFrame(frame: Frame): Diff {
     const { screen } = frame
@@ -125,15 +102,6 @@ export class LogUpdate {
       return []
     }
     return [{ type: 'stdout', content: lines.join('\n') }]
-  }
-
-  private getRenderOpsForDone(prev: Frame): Diff {
-    this.state.previousOutput = ''
-
-    if (!prev.cursor.visible) {
-      return [{ type: 'cursorShow' }]
-    }
-    return []
   }
 
   render(

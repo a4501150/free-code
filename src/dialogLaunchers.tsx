@@ -16,6 +16,7 @@ import {
 import { SnapshotUpdateDialog } from './components/agents/SnapshotUpdateDialog.js'
 import type { StatsStore } from './context/stats.js'
 import type { Root } from './ink.js'
+import { AlternateScreen } from './ink/components/AlternateScreen.js'
 import { renderAndRun, showSetupDialog } from './interactiveHelpers.js'
 import { KeybindingSetup } from './keybindings/KeybindingProviderSetup.js'
 import { readAttachDescriptor } from './webui/attach/attachDescriptor.js'
@@ -111,14 +112,20 @@ export async function launchResumeChooser(
   const worktreePaths = await worktreePathsPromise
   await renderAndRun(
     root,
-    <App
-      getFpsMetrics={appProps.getFpsMetrics}
-      stats={appProps.stats}
-      initialState={appProps.initialState}
-    >
-      <KeybindingSetup>
-        <ResumeConversation {...resumeProps} worktreePaths={worktreePaths} />
-      </KeybindingSetup>
-    </App>,
+    // Alt-screen is the only TUI render mode. When the picker swaps to the
+    // REPL in-tree, the REPL's own <AlternateScreen> mounts nested here —
+    // re-entering DEC 1049 is a terminal-side no-op, and the nested notify
+    // resets frames, which the REPL's first frame wants anyway.
+    <AlternateScreen>
+      <App
+        getFpsMetrics={appProps.getFpsMetrics}
+        stats={appProps.stats}
+        initialState={appProps.initialState}
+      >
+        <KeybindingSetup>
+          <ResumeConversation {...resumeProps} worktreePaths={worktreePaths} />
+        </KeybindingSetup>
+      </App>
+    </AlternateScreen>,
   )
 }

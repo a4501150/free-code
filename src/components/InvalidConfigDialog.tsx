@@ -1,5 +1,6 @@
 import React from 'react'
 import { Box, render, Text } from '../ink.js'
+import { AlternateScreen } from '../ink/components/AlternateScreen.js'
 import { KeybindingSetup } from '../keybindings/KeybindingProviderSetup.js'
 import { AppStateProvider } from '../state/AppState.js'
 import type { ConfigParseError } from '../utils/errors.js'
@@ -86,29 +87,33 @@ export async function showInvalidConfigDialog({
 
   await new Promise<void>(async resolve => {
     const { unmount } = await render(
-      <AppStateProvider>
-        <KeybindingSetup>
-          <InvalidConfigDialog
-            filePath={error.filePath}
-            errorDescription={error.message}
-            onExit={() => {
-              unmount()
-              void resolve()
-              process.exit(1)
-            }}
-            onReset={() => {
-              writeFileSync_DEPRECATED(
-                error.filePath,
-                jsonStringify(error.defaultConfig, null, 2),
-                { flush: false, encoding: 'utf8' },
-              )
-              unmount()
-              void resolve()
-              process.exit(0)
-            }}
-          />
-        </KeybindingSetup>
-      </AppStateProvider>,
+      // Alt-screen is the only TUI render mode — error dialogs mount inside
+      // the same provider the REPL uses.
+      <AlternateScreen>
+        <AppStateProvider>
+          <KeybindingSetup>
+            <InvalidConfigDialog
+              filePath={error.filePath}
+              errorDescription={error.message}
+              onExit={() => {
+                unmount()
+                void resolve()
+                process.exit(1)
+              }}
+              onReset={() => {
+                writeFileSync_DEPRECATED(
+                  error.filePath,
+                  jsonStringify(error.defaultConfig, null, 2),
+                  { flush: false, encoding: 'utf8' },
+                )
+                unmount()
+                void resolve()
+                process.exit(0)
+              }}
+            />
+          </KeybindingSetup>
+        </AppStateProvider>
+      </AlternateScreen>,
       renderOptions,
     )
   })

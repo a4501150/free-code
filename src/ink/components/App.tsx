@@ -13,6 +13,7 @@ import {
   type ParsedKey,
   type ParsedMouse,
   parseMultipleKeypresses,
+  type TerminalResponse,
 } from '../parse-keypress.js'
 import reconciler from '../reconciler.js'
 import {
@@ -117,6 +118,10 @@ type Props = {
   // Enables IME composition at the input caret and lets screen readers /
   // magnifiers track the input. Optional so testing.tsx doesn't stub it.
   readonly onCursorDeclaration?: CursorDeclarationSetter
+  // Fed every terminal response parsed off stdin (in addition to App's
+  // own querier). Lets ink.tsx's private querier resolve its CPR wipe
+  // probe. Optional so testing.tsx doesn't need to stub it.
+  readonly onTerminalResponse?: (response: TerminalResponse) => void
   // Dispatch a keyboard event through the DOM tree. Called for each
   // parsed key alongside the legacy EventEmitter path.
   readonly dispatchKeyboardEvent: (parsedKey: ParsedKey) => void
@@ -587,8 +592,11 @@ function processKeysInBatch(
   for (const item of items) {
     // Terminal responses (DECRPM, DA1, OSC replies, etc.) are not user
     // input — route them to the querier to resolve pending promises.
+    // Ink owns a second querier (CPR wipe probe); both see every response
+    // — matchers are per-query, so each resolves only what it asked for.
     if (item.kind === 'response') {
       app.querier.onResponse(item.response)
+      app.props.onTerminalResponse?.(item.response)
       continue
     }
 

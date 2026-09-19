@@ -10,6 +10,7 @@ import { WelcomeV2 } from '../../components/LogoV2/WelcomeV2.js'
 import { useManagePlugins } from '../../hooks/useManagePlugins.js'
 import type { Root } from '../../ink.js'
 import { Box, Text } from '../../ink.js'
+import { AlternateScreen } from '../../ink/components/AlternateScreen.js'
 import { KeybindingSetup } from '../../keybindings/KeybindingProviderSetup.js'
 
 import { MCPConnectionManager } from '../../services/mcp/MCPConnectionManager.js'
@@ -23,32 +24,36 @@ export async function setupTokenHandler(root: Root): Promise<void> {
   const showAuthWarning = !isAnthropicAuthEnabled()
   await new Promise<void>(resolve => {
     root.render(
-      <AppStateProvider onChangeAppState={onChangeAppState}>
-        <KeybindingSetup>
-          <Box flexDirection="column" gap={1}>
-            <WelcomeV2 />
-            {showAuthWarning && (
-              <Box flexDirection="column">
-                <Text color="warning">
-                  Warning: You already have authentication configured via
-                  environment variable or API key helper.
-                </Text>
-                <Text color="warning">
-                  The setup-token command will create a new OAuth token which
-                  you can use instead.
-                </Text>
-              </Box>
-            )}
-            <ConsoleOAuthFlow
-              onDone={() => {
-                void resolve()
-              }}
-              mode="setup-token"
-              startingMessage="This will guide you through long-lived (1-year) auth token setup for your Claude account. Claude subscription required."
-            />
-          </Box>
-        </KeybindingSetup>
-      </AppStateProvider>,
+      // Alt-screen is the only TUI render mode — command UIs mount inside
+      // the same provider the REPL uses.
+      <AlternateScreen>
+        <AppStateProvider onChangeAppState={onChangeAppState}>
+          <KeybindingSetup>
+            <Box flexDirection="column" gap={1}>
+              <WelcomeV2 />
+              {showAuthWarning && (
+                <Box flexDirection="column">
+                  <Text color="warning">
+                    Warning: You already have authentication configured via
+                    environment variable or API key helper.
+                  </Text>
+                  <Text color="warning">
+                    The setup-token command will create a new OAuth token which
+                    you can use instead.
+                  </Text>
+                </Box>
+              )}
+              <ConsoleOAuthFlow
+                onDone={() => {
+                  void resolve()
+                }}
+                mode="setup-token"
+                startingMessage="This will guide you through long-lived (1-year) auth token setup for your Claude account. Claude subscription required."
+              />
+            </Box>
+          </KeybindingSetup>
+        </AppStateProvider>
+      </AlternateScreen>,
     )
   })
   root.unmount()
@@ -67,20 +72,24 @@ function DoctorWithPlugins({
 export async function doctorHandler(root: Root): Promise<void> {
   await new Promise<void>(resolve => {
     root.render(
-      <AppStateProvider>
-        <KeybindingSetup>
-          <MCPConnectionManager
-            dynamicMcpConfig={undefined}
-            isStrictMcpConfig={false}
-          >
-            <DoctorWithPlugins
-              onDone={() => {
-                void resolve()
-              }}
-            />
-          </MCPConnectionManager>
-        </KeybindingSetup>
-      </AppStateProvider>,
+      // Alt-screen is the only TUI render mode — command UIs mount inside
+      // the same provider the REPL uses.
+      <AlternateScreen>
+        <AppStateProvider>
+          <KeybindingSetup>
+            <MCPConnectionManager
+              dynamicMcpConfig={undefined}
+              isStrictMcpConfig={false}
+            >
+              <DoctorWithPlugins
+                onDone={() => {
+                  void resolve()
+                }}
+              />
+            </MCPConnectionManager>
+          </KeybindingSetup>
+        </AppStateProvider>
+      </AlternateScreen>,
     )
   })
   root.unmount()

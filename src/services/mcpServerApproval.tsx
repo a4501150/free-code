@@ -2,6 +2,7 @@ import React from 'react'
 import { MCPServerApprovalDialog } from '../components/MCPServerApprovalDialog.js'
 import { MCPServerMultiselectDialog } from '../components/MCPServerMultiselectDialog.js'
 import type { Root } from '../ink.js'
+import { AlternateScreen } from '../ink/components/AlternateScreen.js'
 import { KeybindingSetup } from '../keybindings/KeybindingProviderSetup.js'
 import { AppStateProvider } from '../state/AppState.js'
 import { getMcpConfigsByScope } from './mcp/config.js'
@@ -26,23 +27,29 @@ export async function handleMcpjsonServerApprovals(root: Root): Promise<void> {
     const done = (): void => void resolve()
     if (pendingServers.length === 1 && pendingServers[0] !== undefined) {
       const serverName = pendingServers[0]
+      // Alt-screen is the only TUI render mode — approval dialogs mount
+      // inside the same provider the REPL uses.
       root.render(
-        <AppStateProvider>
-          <KeybindingSetup>
-            <MCPServerApprovalDialog serverName={serverName} onDone={done} />
-          </KeybindingSetup>
-        </AppStateProvider>,
+        <AlternateScreen>
+          <AppStateProvider>
+            <KeybindingSetup>
+              <MCPServerApprovalDialog serverName={serverName} onDone={done} />
+            </KeybindingSetup>
+          </AppStateProvider>
+        </AlternateScreen>,
       )
     } else {
       root.render(
-        <AppStateProvider>
-          <KeybindingSetup>
-            <MCPServerMultiselectDialog
-              serverNames={pendingServers}
-              onDone={done}
-            />
-          </KeybindingSetup>
-        </AppStateProvider>,
+        <AlternateScreen>
+          <AppStateProvider>
+            <KeybindingSetup>
+              <MCPServerMultiselectDialog
+                serverNames={pendingServers}
+                onDone={done}
+              />
+            </KeybindingSetup>
+          </AppStateProvider>
+        </AlternateScreen>,
       )
     }
   })

@@ -21,7 +21,8 @@ type Props = PropsWithChildren<{
 
 /**
  * Run children in the terminal's alternate screen buffer, constrained to
- * the viewport height. While mounted:
+ * the viewport height. Alt-screen is the app's ONLY TUI render mode, so
+ * every interactive tree mounts inside this provider. While mounted:
  *
  * - Enters the alt screen (DEC 1049), clears it, homes the cursor
  * - Constrains its own height to the terminal row count, so overflow must
@@ -31,10 +32,11 @@ type Props = PropsWithChildren<{
  *   selection state (click/drag)
  *
  * On unmount, disables mouse tracking and exits the alt screen, restoring
- * the main screen's content. Safe for use in ctrl-o transcript overlays
- * and similar temporary fullscreen views — the main screen is preserved.
+ * the main screen's content — that's the terminal-side half of a handoff
+ * (sequential setup dialogs, process exit), not a mode switch: the engine
+ * stays in alt-screen mode (notifyAltScreenActive is one-way).
  *
- * Notifies the Ink instance via `setAltScreenActive()` so the renderer
+ * Notifies the Ink instance via `notifyAltScreenActive()` so the renderer
  * keeps the cursor inside the viewport (preventing the cursor-restore LF
  * from scrolling content) and so signal-exit cleanup can exit the alt
  * screen if the component's own unmount doesn't run.
@@ -65,10 +67,13 @@ export function AlternateScreen({
         '\x1b[2J\x1b[H' +
         (mouseTracking ? ENABLE_MOUSE_TRACKING : ''),
     )
-    ink?.setAltScreenActive(true, mouseTracking)
+    ink?.notifyAltScreenActive(mouseTracking)
 
     return () => {
-      ink?.setAltScreenActive(false)
+      // Terminal-side restore only: the engine's alt-screen mode is
+      // one-way (there is no "main-screen mode" to fall back into), so no
+      // ink-side call here — a tree that mounts after this one re-enters
+      // alt through its own notifyAltScreenActive.
       ink?.clearTextSelection()
       writeRaw((mouseTracking ? DISABLE_MOUSE_TRACKING : '') + EXIT_ALT_SCREEN)
     }

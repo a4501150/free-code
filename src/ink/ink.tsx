@@ -34,7 +34,7 @@ import { LogUpdate } from './log-update.js'
 import { nodeCache } from './node-cache.js'
 import { optimize } from './optimizer.js'
 import Output from './output.js'
-import type { ParsedKey } from './parse-keypress.js'
+import type { ParsedKey, TerminalResponse } from './parse-keypress.js'
 import reconciler, {
   dispatcher,
   getLastCommitMs,
@@ -61,6 +61,8 @@ import {
   HyperlinkPool,
   isEmptyCellAt,
   migrateScreenPools,
+  resetScreen,
+  type Screen,
   StylePool,
 } from './screen.js'
 import { applySearchHighlight } from './searchHighlight.js'
@@ -90,6 +92,10 @@ import {
   type Terminal,
   writeDiffToTerminal,
 } from './terminal.js'
+import {
+  TerminalQuerier,
+  cursorPosition as requestCursorPosition,
+} from './terminal-querier.js'
 import {
   CURSOR_HOME,
   cursorMove,
@@ -209,14 +215,33 @@ export default class Ink {
   // so App.tsx's handleMouseEvent is stateless — dispatchHover diffs
   // against this set and mutates it in place.
   private readonly hoveredNodes = new Set<dom.DOMElement>()
-  // Set by <AlternateScreen> via setAltScreenActive(). Controls the
-  // renderer's cursor.y clamping (keeps cursor in-viewport to avoid
-  // LF-induced scroll when screen.height === terminalRows) and gates
-  // alt-screen-aware SIGCONT/resize/unmount handling.
+  // Set by <AlternateScreen> via notifyAltScreenActive() when its root
+  // mounts. Alt-screen is the engine's only TUI render mode: this flips to
+  // true on the first AlternateScreen mount and never returns to false —
+  // the terminal can be TEMPORARILY kicked out of alt (an editor's rmcup,
+  // tmux detach, sleep/wake) and the re-assert machinery below repairs it,
+  // but there is no "main-screen mode" to switch back into. False only
+  // marks the pre-entry startup phase: one-shot main-screen renders
+  // (exitWithMessage) that deliberately stay on the main buffer so their
+  // text lands in the user's scrollback. Controls the renderer's cursor.y
+  // clamping (keeps cursor in-viewport to avoid LF-induced scroll when
+  // screen.height === terminalRows) and gates alt-screen-aware
+  // SIGCONT/resize/unmount handling.
   private altScreenActive = false
   // Set alongside altScreenActive so SIGCONT resume knows whether to
   // re-enable mouse tracking (not all <AlternateScreen> uses want it).
   private altScreenMouseTracking = false
+  // Ink-owned terminal query channel (CPR wipe probe below). App.tsx
+  // routes every parsed TerminalResponse to this querier in addition to
+  // its own; the probe's flush() DA1 sentinel bounds the round-trip so a
+  // terminal that ignores the query can't leave the promise dangling.
+  private readonly querier: TerminalQuerier
+  // Persistent blank screen reused as the diff's "prev" on full repaints
+  // (resetFramesForAltScreen). Re-zeroed with resetScreen() in place
+  // instead of allocating fresh rows×cols typed arrays per repaint. It
+  // alternates with the live frame buffer between repaints, so the diff's
+  // prev is never also the current paint target.
+  private fullRepaintSentinel: Screen | null = null
   // True when the previous frame's screen buffer cannot be trusted for
   // blit — selection overlay mutated it, resetFramesForAltScreen()
   // replaced it with blanks, or forceRedraw() reset it to 0×0. Forces
@@ -259,6 +284,7 @@ export default class Ink {
       stdout: options.stdout,
       stderr: options.stderr,
     }
+    this.querier = new TerminalQuerier(options.stdout)
 
     this.terminalColumns = options.stdout.columns || 80
     this.terminalRows = options.stdout.rows || 24
@@ -375,32 +401,17 @@ export default class Ink {
 
     // Alt screen: after SIGCONT, content is stale (shell may have written
     // to main screen, switching focus away) and mouse tracking was
-    // disabled by handleSuspend.
+    // disabled by handleSuspend. Alt-screen is the steady-state mode, so
+    // this is the normal resume path.
     if (this.altScreenActive) {
       this.reenterAltScreen()
       return
     }
 
-    // Main screen: start fresh to prevent clobbering terminal content
-    this.frontFrame = emptyFrame(
-      this.frontFrame.viewport.height,
-      this.frontFrame.viewport.width,
-      this.stylePool,
-      this.charPool,
-      this.hyperlinkPool,
-    )
-    this.backFrame = emptyFrame(
-      this.backFrame.viewport.height,
-      this.backFrame.viewport.width,
-      this.stylePool,
-      this.charPool,
-      this.hyperlinkPool,
-    )
-    this.log.reset()
-    // Physical cursor position is unknown after the shell took over during
-    // suspend. Clear displayCursor so the next frame's cursor preamble
-    // doesn't emit a relative move from a stale park position.
-    this.displayCursor = null
+    // Pre-entry phase (SIGCONT before any <AlternateScreen> mounted —
+    // e.g. ^Z on a startup error message): start fresh to prevent
+    // clobbering terminal content.
+    this.repaint()
   }
 
   // NOT debounced. A debounce opens a window where stdout.columns is NEW
@@ -454,9 +465,11 @@ export default class Ink {
 
   /**
    * Pause Ink and hand the terminal over to an external TUI (e.g. git
-   * commit editor). In non-fullscreen mode this enters the alt screen;
-   * in fullscreen mode we're already in alt so we just clear it.
-   * Call `exitAlternateScreen()` when done to restore Ink.
+   * commit editor). This is a TEMPORARY suspension of an alt-screen-only
+   * app, not a mode switch: every caller renders inside an
+   * <AlternateScreen> root, so we are already in the alt buffer — just
+   * clear it for the editor. Call `exitAlternateScreen()` when done to
+   * restore Ink.
    */
   enterAlternateScreen(): void {
     this.pause()
@@ -468,7 +481,6 @@ export default class Ink {
       DISABLE_KITTY_KEYBOARD +
         DISABLE_MODIFY_OTHER_KEYS +
         (this.altScreenMouseTracking ? DISABLE_MOUSE_TRACKING : '') + // disable mouse (no-op if off)
-        (this.altScreenActive ? '' : '\x1b[?1049h') + // enter alt (already in alt if fullscreen)
         '\x1b[?1004l' + // disable focus reporting
         '\x1b[0m' + // reset attributes
         '\x1b[?25h' + // show cursor
@@ -478,32 +490,27 @@ export default class Ink {
   }
 
   /**
-   * Resume Ink after an external TUI handoff with a full repaint.
-   * In non-fullscreen mode this exits the alt screen back to main;
-   * in fullscreen mode we re-enter alt and clear + repaint.
+   * Resume Ink after an external TUI handoff with a full repaint, back in
+   * the alt buffer.
    *
    * The re-enter matters: terminal editors (vim, nano, less) write
    * smcup/rmcup (?1049h/?1049l), so even though we started in alt,
    * the editor's rmcup on exit drops us to main screen. Without
    * re-entering, the 2J below wipes the user's main-screen scrollback
    * and subsequent renders land in main — native terminal scroll
-   * returns, fullscreen scroll is dead.
+   * returns, fullscreen scroll is dead. There is no "we never entered
+   * alt" branch anymore: handoff callers are all inside <AlternateScreen>.
    */
   exitAlternateScreen(): void {
     this.options.stdout.write(
-      (this.altScreenActive ? ENTER_ALT_SCREEN : '') + // re-enter alt — vim's rmcup dropped us to main
-        '\x1b[2J' + // clear screen (now alt if fullscreen)
+      ENTER_ALT_SCREEN + // re-enter alt — vim's rmcup dropped us to main
+        '\x1b[2J' + // clear screen (now alt again)
         '\x1b[H' + // cursor home
         (this.altScreenMouseTracking ? ENABLE_MOUSE_TRACKING : '') + // re-enable mouse (skip if CLAUDE_CODE_DISABLE_MOUSE)
-        (this.altScreenActive ? '' : '\x1b[?1049l') + // exit alt (non-fullscreen only)
         '\x1b[?25l', // hide cursor (Ink manages)
     )
     this.resumeStdin()
-    if (this.altScreenActive) {
-      this.resetFramesForAltScreen()
-    } else {
-      this.repaint()
-    }
+    this.resetFramesForAltScreen()
     this.resume()
     // Re-enable focus reporting and extended key reporting — terminal
     // editors (vim, nano, etc.) write their own modifyOtherKeys level on
@@ -954,11 +961,13 @@ export default class Ink {
   }
 
   /**
-   * Reset frame buffers so the next render writes the full screen from scratch.
-   * Call this before resume() when the terminal content has been corrupted by
-   * an external process (e.g. tmux, shell, full-screen TUI).
+   * Reset frame buffers so the next render writes the full screen from
+   * scratch (main-screen style: prev 0×0, so everything paints as new).
+   * Only reachable in the pre-alt-screen-entry phase (handleResume before
+   * any <AlternateScreen> mounted); once alt-screen is the mode, recovery
+   * goes through resetFramesForAltScreen() instead.
    */
-  repaint(): void {
+  private repaint(): void {
     this.frontFrame = emptyFrame(
       this.frontFrame.viewport.height,
       this.frontFrame.viewport.width,
@@ -973,7 +982,6 @@ export default class Ink {
       this.charPool,
       this.hyperlinkPool,
     )
-    this.log.reset()
     // Physical cursor position is unknown after external terminal corruption.
     // Clear displayCursor so the cursor preamble doesn't emit a stale
     // relative move from where we last parked it.
@@ -987,19 +995,13 @@ export default class Ink {
    * redraws the current content. Also the recovery path when the terminal
    * was cleared externally (macOS Cmd+K) and Ink's diff engine thinks
    * unchanged cells don't need repainting. Scrollback is preserved.
+   * Only wired from inside <AlternateScreen> (useGlobalKeybindings), so
+   * alt-screen recovery is always the right path here.
    */
   forceRedraw(): void {
     if (!this.options.stdout.isTTY || this.isUnmounted || this.isPaused) return
     this.options.stdout.write(ERASE_SCREEN + CURSOR_HOME)
-    if (this.altScreenActive) {
-      this.resetFramesForAltScreen()
-    } else {
-      this.repaint()
-      // repaint() resets frontFrame to 0×0. Without this flag the next
-      // frame's blit optimization copies from that empty screen and the
-      // diff sees no content. onRender resets the flag at frame end.
-      this.prevFrameContaminated = true
-    }
+    this.resetFramesForAltScreen()
     this.onRender()
   }
 
@@ -1018,21 +1020,23 @@ export default class Ink {
   }
 
   /**
-   * Called by the <AlternateScreen> component on mount/unmount.
-   * Controls cursor.y clamping in the renderer and gates alt-screen-aware
-   * behavior in SIGCONT/resize/unmount handlers. Repaints on change so
-   * the first alt-screen frame (and first main-screen frame on exit) is
-   * a full redraw with no stale diff state.
+   * Called by the <AlternateScreen> component on mount. Alt-screen is the
+   * engine's only TUI render mode, so this is a ONE-WAY transition: the
+   * flag never returns to false afterwards. The component's unmount
+   * cleanup still restores the terminal (mouse off + EXIT_ALT_SCREEN) for
+   * handoffs and shutdown, but it never puts the engine back into a
+   * "main-screen mode" — there is none.
+   *
+   * Always resets frames, even if already active: sequential
+   * <AlternateScreen> trees (setup dialogs swapping) each write
+   * ENTER_ALT_SCREEN, and some terminals (iTerm2) clear the alt buffer on
+   * a re-enter even when already in alt — the next frame must repaint from
+   * scratch with no stale diff state.
    */
-  setAltScreenActive(active: boolean, mouseTracking = false): void {
-    if (this.altScreenActive === active) return
-    this.altScreenActive = active
-    this.altScreenMouseTracking = active && mouseTracking
-    if (active) {
-      this.resetFramesForAltScreen()
-    } else {
-      this.repaint()
-    }
+  notifyAltScreenActive(mouseTracking = false): void {
+    this.altScreenActive = true
+    this.altScreenMouseTracking = mouseTracking
+    this.resetFramesForAltScreen()
   }
 
   get isAltScreenActive(): boolean {
@@ -1087,6 +1091,53 @@ export default class Ink {
     if (includeAltScreen) {
       this.reenterAltScreen()
     }
+    // External-wipe probe: a re-assert is the resume/reentry signal, but
+    // only the includeAltScreen path above forces a repaint. For the
+    // plain stdin-gap re-assert (the common case) the diff engine still
+    // believes its unchanged cells are on screen — true unless something
+    // cleared the buffer out from under us (macOS Cmd+K, tmux clear)
+    // while we were idle. probeExternalClear() checks that; it's a
+    // no-op after the re-entry above (displayCursor is reset with the
+    // frames, so nothing is parked to compare against).
+    this.probeExternalClear()
+  }
+
+  /**
+   * CPR-based external-wipe probe: ask the terminal where the cursor
+   * actually is (DECXCPR, CSI ? 6 n) and compare against where the last
+   * frame parked it. We park the declared cursor below row 1 (the input
+   * caret); if the terminal reports row 1, the buffer was wiped
+   * externally and the diff's "unchanged" cells are gone — forceRedraw().
+   * Cheap and reentry-only: one query round-trip per re-assert, skipped
+   * entirely when no cursor is parked or the park is already on row 1.
+   * Terminals that ignore the query resolve undefined via the querier's
+   * DA1 sentinel and nothing happens.
+   */
+  private probeExternalClear(): void {
+    if (!this.altScreenActive || this.isPaused || this.isUnmounted) return
+    const parked = this.displayCursor
+    if (parked === null) return
+    const parkedRow = Math.min(Math.max(parked.y + 1, 1), this.terminalRows)
+    if (parkedRow <= 1) return
+    void Promise.all([
+      this.querier.send(requestCursorPosition()),
+      this.querier.flush(),
+    ]).then(([response]) => {
+      if (response === undefined || response.row !== 1) return
+      // Re-read the park position: a frame may have rendered (and
+      // re-declared, or dropped) the cursor while the query round-tripped.
+      const current = this.displayCursor
+      const currentRow =
+        current === null
+          ? 0
+          : Math.min(Math.max(current.y + 1, 1), this.terminalRows)
+      if (currentRow <= 1) return
+      logForDebugging(
+        `probeExternalClear: detected wipe (parked row ${currentRow}, queried row ${parkedRow}, terminal reports row 1) — full redraw`,
+        { level: 'warn' },
+      )
+      this.forceRedraw()
+    })
   }
 
   /**
@@ -1156,24 +1207,44 @@ export default class Ink {
    * viewport.height = rows + 1 matches the renderer's alt-screen output,
    * preventing a spurious resize trigger on the first frame. cursor.y = 0
    * matches the physical cursor after ENTER_ALT_SCREEN + CSI H (home).
+   *
+   * Buffers are reused, not reallocated: the diff's prev is the persistent
+   * blank full-repaint sentinel (resetScreen re-zeroes its typed arrays in
+   * place — one fill, no per-repaint allocations), and the next paint
+   * target is the screen the previous frame rendered into (Output.reset
+   * zeroes it before painting anyway).
    */
   private resetFramesForAltScreen(): void {
     const rows = this.terminalRows
     const cols = this.terminalColumns
-    const blank = (): Frame => ({
-      screen: createScreen(
+    let sentinel = this.fullRepaintSentinel
+    if (sentinel === null) {
+      sentinel = createScreen(
         cols,
         rows,
         this.stylePool,
         this.charPool,
         this.hyperlinkPool,
-      ),
+      )
+      this.fullRepaintSentinel = sentinel
+    }
+    resetScreen(sentinel, cols, rows)
+    // Pick the OTHER live screen as the paint target. If the front frame
+    // already IS the sentinel (two resets with no render between them),
+    // take the back frame's screen instead — a frame can never diff a
+    // screen against itself, or the repaint would emit an empty diff onto
+    // the just-cleared alt buffer.
+    const paintScreen =
+      this.frontFrame.screen !== sentinel
+        ? this.frontFrame.screen
+        : this.backFrame.screen
+    const frame = (screen: Screen): Frame => ({
+      screen,
       viewport: { width: cols, height: rows + 1 },
       cursor: { x: 0, y: 0, visible: true },
     })
-    this.frontFrame = blank()
-    this.backFrame = blank()
-    this.log.reset()
+    this.frontFrame = frame(sentinel)
+    this.backFrame = frame(paintScreen)
     // Defense-in-depth: alt-screen skips the cursor preamble anyway (CSI H
     // resets), but a stale displayCursor would be misleading if we later
     // exit to main-screen without an intervening render.
@@ -1646,6 +1717,14 @@ export default class Ink {
     this.options.stdout.write(data)
   }
 
+  // Fed every terminal response App.tsx parses off stdin, in addition to
+  // App's own querier. Resolves pending CPR probes (probeExternalClear).
+  private readonly routeTerminalResponse = (
+    response: TerminalResponse,
+  ): void => {
+    this.querier.onResponse(response)
+  }
+
   private setCursorDeclaration: CursorDeclarationSetter = (
     decl,
     clearIfNode,
@@ -1682,6 +1761,7 @@ export default class Ink {
         onSelectionDrag={this.handleSelectionDrag}
         onStdinResume={this.reassertTerminalModes}
         onCursorDeclaration={this.setCursorDeclaration}
+        onTerminalResponse={this.routeTerminalResponse}
         dispatchKeyboardEvent={this.dispatchKeyboardEvent}
       >
         <TerminalWriteProvider value={this.writeRaw}>
@@ -1709,10 +1789,10 @@ export default class Ink {
 
     this.unsubscribeTTYHandlers?.()
 
-    // Non-TTY environments don't handle erasing ansi escapes well, so it's better to
-    // only render last frame of non-static output
-    const diff = this.log.renderPreviousOutput_DEPRECATED(this.frontFrame)
-    writeDiffToTerminal(this.terminal, optimize(diff))
+    // No final-frame write here: the onRender() above flushed any pending
+    // diff, and the deprecated "render previous output" pass only ever
+    // emitted cursorShow — the SHOW_CURSOR writeSync below covers cursor
+    // restoration on both TTY and non-TTY.
 
     // Clean up terminal modes synchronously before process exit.
     // React's componentWillUnmount won't run in time when process.exit() is called,
@@ -1728,8 +1808,8 @@ export default class Ink {
         // Exit alt screen FIRST so other cleanup sequences go to the main screen.
         writeSync(1, EXIT_ALT_SCREEN)
       }
-      // Disable mouse tracking — unconditional because altScreenActive can be
-      // stale if AlternateScreen's unmount (which flips the flag) raced a
+      // Disable mouse tracking — unconditional because altScreenMouseTracking
+      // may never have been set (pre-entry exit) and the flag can race a
       // blocked event loop + SIGINT. No-op if tracking was never enabled.
       writeSync(1, DISABLE_MOUSE_TRACKING)
       // Drain stdin so in-flight mouse events don't leak to the shell
@@ -1779,24 +1859,6 @@ export default class Ink {
 
   async waitUntilExit(): Promise<void> {
     return this.exitPromise
-  }
-
-  resetLineCount(): void {
-    if (this.options.stdout.isTTY) {
-      // Swap so old front becomes back (for screen reuse), then reset front
-      this.backFrame = this.frontFrame
-      this.frontFrame = emptyFrame(
-        this.frontFrame.viewport.height,
-        this.frontFrame.viewport.width,
-        this.stylePool,
-        this.charPool,
-        this.hyperlinkPool,
-      )
-      this.log.reset()
-      // frontFrame is reset, so frame.cursor on the next render is (0,0).
-      // Clear displayCursor so the preamble doesn't compute a stale delta.
-      this.displayCursor = null
-    }
   }
 
   /**

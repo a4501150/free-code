@@ -18,6 +18,7 @@ import { createStatsStore, type StatsStore } from './context/stats.js'
 import { getSystemContext } from './context.js'
 import { isSynchronizedOutputSupported } from './ink/terminal.js'
 import type { RenderOptions, Root, TextProps } from './ink.js'
+import { AlternateScreen } from './ink/components/AlternateScreen.js'
 import { KeybindingSetup } from './keybindings/KeybindingProviderSetup.js'
 import { startDeferredPrefetches } from './main.js'
 import { isQualifiedForGrove } from './services/api/grove.js'
@@ -80,7 +81,12 @@ export function showDialog<T = void>(
 ): Promise<T> {
   return new Promise<T>(resolve => {
     const done = (result: T): void => void resolve(result)
-    root.render(renderer(done))
+    // Alt-screen is the app's only TUI render mode — setup dialogs mount
+    // inside the same <AlternateScreen> provider the REPL uses, so no
+    // dialog ever renders as a main-screen TUI. (Sequential dialogs pay
+    // an EXIT+ENTER pair at the swap; React runs the outgoing cleanup
+    // before the incoming insertion effect, so ordering stays correct.)
+    root.render(<AlternateScreen>{renderer(done)}</AlternateScreen>)
   })
 }
 
@@ -115,6 +121,11 @@ export async function exitWithMessage(
 ): Promise<never> {
   const color = options?.color
   const exitCode = options?.exitCode ?? 1
+  // Deliberately NOT wrapped in <AlternateScreen>: this is the one-shot
+  // main-screen exception to the alt-only rule. The message must survive
+  // unmount + process exit in the user's scrollback; rendering it in the
+  // alt buffer would destroy it on exit. The engine keeps its pre-entry
+  // main-screen diff path exactly for renders like this one.
   root.render(
     color ? <Text color={color}>{message}</Text> : <Text>{message}</Text>,
   )

@@ -9,6 +9,7 @@ import { cwd } from 'process'
 import React from 'react'
 import { MCPServerDesktopImportDialog } from '../../components/MCPServerDesktopImportDialog.js'
 import { render } from '../../ink.js'
+import { AlternateScreen } from '../../ink/components/AlternateScreen.js'
 import { KeybindingSetup } from '../../keybindings/KeybindingProviderSetup.js'
 import {
   clearMcpClientConfig,
@@ -383,17 +384,21 @@ export async function mcpAddFromDesktopHandler(options: {
     }
 
     const { unmount } = await render(
-      <AppStateProvider>
-        <KeybindingSetup>
-          <MCPServerDesktopImportDialog
-            servers={servers}
-            scope={scope}
-            onDone={() => {
-              unmount()
-            }}
-          />
-        </KeybindingSetup>
-      </AppStateProvider>,
+      // Alt-screen is the only TUI render mode — command UIs mount inside
+      // the same provider the REPL uses.
+      <AlternateScreen>
+        <AppStateProvider>
+          <KeybindingSetup>
+            <MCPServerDesktopImportDialog
+              servers={servers}
+              scope={scope}
+              onDone={() => {
+                unmount()
+              }}
+            />
+          </KeybindingSetup>
+        </AppStateProvider>
+      </AlternateScreen>,
       { exitOnCtrlC: true },
     )
   } catch (error) {
