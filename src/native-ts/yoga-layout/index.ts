@@ -114,6 +114,69 @@ function sameFloat(a: number, b: number): boolean {
   return a === b || (a !== a && b !== b)
 }
 
+function hasAnyPercentEdge(edges: Value[]): boolean {
+  for (let i = 0; i < edges.length; i++)
+    if (edges[i]!.unit === Unit.Percent) return true
+  return false
+}
+
+// -- Owner-size dependency mask (official 2.1.277 _readsOwnerWidth/_readsOwnerHeight).
+// A node's layout cache keys include the owner dimensions because percent
+// values resolve against them. When NONE of the node's own style reads the
+// owner (no percent width/min/max — percent margins/paddings resolve against
+// the owner WIDTH per yoga semantics), the key substitutes NaN instead, so
+// an owner relayout with different available sizes no longer evicts this
+// node's entries. Without it, a scrolling container churns every leaf's
+// cache on each viewport size tweak.
+
+function styleReadsOwnerWidth(style: Style): boolean {
+  return (
+    style.width.unit === Unit.Percent ||
+    style.minWidth.unit === Unit.Percent ||
+    style.maxWidth.unit === Unit.Percent ||
+    hasAnyPercentEdge(style.margin) ||
+    hasAnyPercentEdge(style.padding)
+  )
+}
+
+function styleReadsOwnerHeight(style: Style): boolean {
+  return (
+    style.height.unit === Unit.Percent ||
+    style.minHeight.unit === Unit.Percent ||
+    style.maxHeight.unit === Unit.Percent
+  )
+}
+
+// -- Measure-ring comparator (official 2.1.277 Kp). Answers: does a cached
+// measure of (cInner, cMode) legitimately answer the query (qInner, qMode)?
+//   - identical inputs: yes
+//   - cached Exactly: only the identical Exactly (it measured a fixed box)
+//   - query Exactly(q): a cached Undefined measured exactly q (content is
+//     narrower than any bound), or a cached AtMost(b≥q) that measured q —
+//     the wrap result can't change when the bound tightens to exactly q
+//   - query AtMost(q): any cached result m≤q fits (cached Undefined, or an
+//     AtMost whose bound was looser); cached AtMost(b<q) measured under a
+//     tighter wrap than the query asks for — no
+function measureRingCovers(
+  qMode: MeasureMode,
+  qInner: number,
+  cMode: MeasureMode,
+  cInner: number,
+  cOut: number,
+): boolean {
+  if (cMode === qMode && cInner === qInner) return true
+  if (cMode === MeasureMode.Exactly) return false
+  if (qMode === MeasureMode.Exactly)
+    return (
+      cOut === qInner && (cMode === MeasureMode.Undefined || cOut <= cInner)
+    )
+  return (
+    qMode === MeasureMode.AtMost &&
+    cOut <= qInner &&
+    (cMode === MeasureMode.Undefined || cInner > qInner)
+  )
+}
+
 // --
 // Layout result (computed values)
 
@@ -494,6 +557,21 @@ export class Node {
   _cGen = -1
   _cN = 0
   _cWr = 0
+  // Owner-size dependency mask — see styleReadsOwnerWidth/Height above.
+  // Maintained by the style setters that can introduce/remove percent values.
+  _readsOwnerWidth = false
+  _readsOwnerHeight = false
+  // Per-node measure-function result ring (official 2.1.277 Pc/_mfC). The
+  // flex algorithm calls a leaf's measure callback several times per pass
+  // (AtMost/AtLeast re-measures at different bounds); after the first call
+  // the ring answers the rest without re-entering measureTextNode and its
+  // line-width cache. Slot i packs 6 floats at i*6: wMode, hMode, innerW,
+  // innerH, outW, outH. Cleared by markDirty — entries are only trusted on
+  // clean nodes, so a text change (which dirties the node) invalidates them
+  // without needing a generation stamp.
+  _mfC: Float64Array | null = null
+  _mfN = 0
+  _mfWr = 0
 
   constructor(config?: Config) {
     this.style = defaultStyle()
@@ -548,6 +626,8 @@ export class Node {
     this.measureFunc = null
     this._cIn = null
     this._cOut = null
+    this._mfC = null
+    this._mfN = 0
     _yogaLiveNodes--
   }
   freeRecursive(): void {
@@ -565,17 +645,52 @@ export class Node {
     this._hasPadding = false
     this._hasBorder = false
     this._hasMargin = false
+    this._readsOwnerWidth = false
+    this._readsOwnerHeight = false
     this._hasL = false
     this._hasM = false
     this._cN = 0
     this._cWr = 0
+    this._mfN = 0
+    this._mfWr = 0
     this._fbBasis = NaN
+  }
+
+  // Recovery primitive (official 2.1.277): wipe every cache field across the
+  // subtree and re-dirty it, so the next calculateLayout computes from
+  // scratch with no cached state that a failed pass could have half-written.
+  // Budget-bounded (liveNodes×4+1024) so a corrupted child cycle can't spin.
+  clearLayoutCacheRecursive(): void {
+    const seen = new Set<Node>()
+    const stack: Node[] = [this]
+    let budget = (_yogaLiveNodes | 0) * 4 + 1024
+    while (stack.length > 0 && budget-- >= 0) {
+      const n = stack.pop()!
+      if (!(n instanceof Node) || seen.has(n)) continue
+      seen.add(n)
+      n.isDirty_ = true
+      n._hasL = false
+      n._hasM = false
+      n._cN = 0
+      n._cWr = 0
+      n._cGen = -1
+      n._mfN = 0
+      n._mfWr = 0
+      n._fbGen = -1
+      const kids = n.children
+      if (Array.isArray(kids))
+        for (let i = 0; i < kids.length && i < budget; i++) stack.push(kids[i]!)
+    }
   }
 
   // -- Dirty tracking
 
   markDirty(): void {
     this.isDirty_ = true
+    // Measure-ring entries are only trusted on clean nodes — drop them here
+    // so the next clean pass re-measures and refills.
+    this._mfN = 0
+    this._mfWr = 0
     if (this.parent && !this.parent.isDirty_) this.parent.markDirty()
   }
   isDirty(): boolean {
@@ -647,61 +762,84 @@ export class Node {
   }
 
   // -- Style setters: dimensions
+  //
+  // Every setter that can introduce or remove a percent value refreshes the
+  // owner-size dependency flags (see styleReadsOwnerWidth above) — percent
+  // is exactly what makes a cache key owner-dependent.
+
+  private refreshOwnerDepFlags(): void {
+    this._readsOwnerWidth = styleReadsOwnerWidth(this.style)
+    this._readsOwnerHeight = styleReadsOwnerHeight(this.style)
+  }
 
   setWidth(v: number | 'auto' | string | undefined): void {
     this.style.width = parseDimension(v)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setWidthPercent(v: number): void {
     this.style.width = percentValue(v)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setWidthAuto(): void {
     this.style.width = AUTO_VALUE
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setHeight(v: number | 'auto' | string | undefined): void {
     this.style.height = parseDimension(v)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setHeightPercent(v: number): void {
     this.style.height = percentValue(v)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setHeightAuto(): void {
     this.style.height = AUTO_VALUE
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setMinWidth(v: number | string | undefined): void {
     this.style.minWidth = parseDimension(v)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setMinWidthPercent(v: number): void {
     this.style.minWidth = percentValue(v)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setMinHeight(v: number | string | undefined): void {
     this.style.minHeight = parseDimension(v)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setMinHeightPercent(v: number): void {
     this.style.minHeight = percentValue(v)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setMaxWidth(v: number | string | undefined): void {
     this.style.maxWidth = parseDimension(v)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setMaxWidthPercent(v: number): void {
     this.style.maxWidth = percentValue(v)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setMaxHeight(v: number | string | undefined): void {
     this.style.maxHeight = parseDimension(v)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setMaxHeightPercent(v: number): void {
     this.style.maxHeight = percentValue(v)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
 
@@ -821,28 +959,33 @@ export class Node {
     else this._hasAutoMargin = hasAnyAutoEdge(this.style.margin)
     this._hasMargin =
       this._hasAutoMargin || hasAnyDefinedEdge(this.style.margin)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setMarginPercent(edge: Edge, v: number): void {
     this.style.margin[edge] = percentValue(v)
     this._hasAutoMargin = hasAnyAutoEdge(this.style.margin)
     this._hasMargin = true
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setMarginAuto(edge: Edge): void {
     this.style.margin[edge] = AUTO_VALUE
     this._hasAutoMargin = true
     this._hasMargin = true
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setPadding(edge: Edge, v: number | string | undefined): void {
     this.style.padding[edge] = parseDimension(v)
     this._hasPadding = hasAnyDefinedEdge(this.style.padding)
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setPaddingPercent(edge: Edge, v: number): void {
     this.style.padding[edge] = percentValue(v)
     this._hasPadding = true
+    this.refreshOwnerDepFlags()
     this.markDirty()
   }
   setBorder(edge: Edge, v: number | undefined): void {
@@ -966,6 +1109,9 @@ export class Node {
 const DEFAULT_CONFIG = createConfig()
 
 const CACHE_SLOTS = 4
+// Measure-ring slots (official 277 Pc): one flex pass re-measures a leaf at a
+// handful of bounds per axis pair; 4 covers it without eviction pressure.
+const MF_SLOTS = 4
 function cacheWrite(
   node: Node,
   aW: number,
@@ -1039,17 +1185,20 @@ function commitCacheOutputs(node: Node, performLayout: boolean): void {
 let _generation = 0
 let _yogaNodesVisited = 0
 let _yogaMeasureCalls = 0
+let _yogaMeasureCacheHits = 0
 let _yogaCacheHits = 0
 let _yogaLiveNodes = 0
 export function getYogaCounters(): {
   visited: number
   measured: number
+  measureCacheHits: number
   cacheHits: number
   live: number
 } {
   return {
     visited: _yogaNodesVisited,
     measured: _yogaMeasureCalls,
+    measureCacheHits: _yogaMeasureCacheHits,
     cacheHits: _yogaCacheHits,
     live: _yogaLiveNodes,
   }
@@ -1072,6 +1221,11 @@ function layoutNode(
   _yogaNodesVisited++
   const style = node.style
   const layout = node.layout
+  // Cache-key owner dims: NaN-masked when this node's style can't observe
+  // the owner size, so owner churn doesn't evict our entries. The REAL
+  // ownerWidth/ownerHeight are still used below for percent resolution.
+  const keyOW = node._readsOwnerWidth ? ownerWidth : NaN
+  const keyOH = node._readsOwnerHeight ? ownerHeight : NaN
 
   // Dirty-flag skip: clean subtree + matching inputs → layout object already
   // holds the answer. A cached layout result also satisfies a measure request
@@ -1094,8 +1248,8 @@ function layoutNode(
       node._lFH === forceHeight &&
       sameFloat(node._lW, availableWidth) &&
       sameFloat(node._lH, availableHeight) &&
-      sameFloat(node._lOW, ownerWidth) &&
-      sameFloat(node._lOH, ownerHeight)
+      sameFloat(node._lOW, keyOW) &&
+      sameFloat(node._lOH, keyOH)
     ) {
       _yogaCacheHits++
       layout.width = node._lOutW
@@ -1122,8 +1276,8 @@ function layoutNode(
           cIn[o + 7] === (forceHeight ? 1 : 0) &&
           sameFloat(cIn[o]!, availableWidth) &&
           sameFloat(cIn[o + 1]!, availableHeight) &&
-          sameFloat(cIn[o + 4]!, ownerWidth) &&
-          sameFloat(cIn[o + 5]!, ownerHeight)
+          sameFloat(cIn[o + 4]!, keyOW) &&
+          sameFloat(cIn[o + 5]!, keyOH)
         ) {
           layout.width = node._cOut![i * 2]!
           layout.height = node._cOut![i * 2 + 1]!
@@ -1140,8 +1294,8 @@ function layoutNode(
       node._mHM === heightMode &&
       sameFloat(node._mW, availableWidth) &&
       sameFloat(node._mH, availableHeight) &&
-      sameFloat(node._mOW, ownerWidth) &&
-      sameFloat(node._mOH, ownerHeight)
+      sameFloat(node._mOW, keyOW) &&
+      sameFloat(node._mOH, keyOH)
     ) {
       layout.width = node._mOutW
       layout.height = node._mOutH
@@ -1163,8 +1317,8 @@ function layoutNode(
     node._lH = availableHeight
     node._lWM = widthMode
     node._lHM = heightMode
-    node._lOW = ownerWidth
-    node._lOH = ownerHeight
+    node._lOW = keyOW
+    node._lOH = keyOH
     node._lFW = forceWidth
     node._lFH = forceHeight
     node._hasL = true
@@ -1181,8 +1335,8 @@ function layoutNode(
     node._mH = availableHeight
     node._mWM = widthMode
     node._mHM = heightMode
-    node._mOW = ownerWidth
-    node._mOH = ownerHeight
+    node._mOW = keyOW
+    node._mOH = keyOH
     node._hasM = true
     // Don't clear isDirty_. For DIRTY nodes, invalidate _hasL so the upcoming
     // performLayout=true call recomputes with the new child set (otherwise
@@ -1237,23 +1391,99 @@ function layoutNode(
 
   // Measure-func leaf node
   if (node.measureFunc && node.children.length === 0) {
+    // Inner sizes are clamped and floored to integers for the key (official
+    // 277): fractional available widths from flex math wrap identically once
+    // floored, and the rounding keeps ring hits stable across passes.
     const innerW =
       wMode === MeasureMode.Undefined
         ? NaN
-        : Math.max(0, width - paddingBorderWidth)
+        : Math.max(0, width - paddingBorderWidth) | 0
     const innerH =
       hMode === MeasureMode.Undefined
         ? NaN
-        : Math.max(0, height - paddingBorderHeight)
+        : Math.max(0, height - paddingBorderHeight) | 0
+    // Measure-result ring: the flex pass re-enters this leaf at several
+    // bounds per call stack (AtMost/Exactly pairs). One scan first.
+    const ring = node._mfC
+    for (let i = 0; i < node._mfN; i++) {
+      const o = i * 6
+      const cW = ring![o + 4]!
+      if (
+        measureRingCovers(
+          wMode,
+          innerW,
+          ring![o]! as MeasureMode,
+          ring![o + 2]!,
+          cW,
+        ) &&
+        measureRingCovers(
+          hMode,
+          innerH,
+          ring![o + 1]! as MeasureMode,
+          ring![o + 3]!,
+          ring![o + 5]!,
+        )
+      ) {
+        _yogaMeasureCacheHits++
+        node.layout.width =
+          wMode === MeasureMode.Exactly
+            ? width
+            : boundAxis(
+                style,
+                true,
+                cW + paddingBorderWidth,
+                ownerWidth,
+                ownerHeight,
+              )
+        node.layout.height =
+          hMode === MeasureMode.Exactly
+            ? height
+            : boundAxis(
+                style,
+                false,
+                ring![o + 5]! + paddingBorderHeight,
+                ownerWidth,
+                ownerHeight,
+              )
+        commitCacheOutputs(node, performLayout)
+        cacheWrite(
+          node,
+          availableWidth,
+          availableHeight,
+          widthMode,
+          heightMode,
+          keyOW,
+          keyOH,
+          forceWidth,
+          forceHeight,
+          wasDirty,
+        )
+        return
+      }
+    }
     _yogaMeasureCalls++
     const measured = node.measureFunc(innerW, wMode, innerH, hMode)
+    const measW = measured.width ?? 0
+    const measH = measured.height ?? 0
+    // Refill the ring (LRU by MF_SLOTS). Only once: entries pair (key →
+    // this exact measure result), the covers-check does the cross-mode reuse.
+    if (!node._mfC) node._mfC = new Float64Array(MF_SLOTS * 6)
+    const slot = (node._mfWr++ % MF_SLOTS) * 6
+    if (node._mfN < MF_SLOTS) node._mfN++
+    const mf = node._mfC
+    mf[slot] = wMode
+    mf[slot + 1] = hMode
+    mf[slot + 2] = innerW
+    mf[slot + 3] = innerH
+    mf[slot + 4] = measW
+    mf[slot + 5] = measH
     node.layout.width =
       wMode === MeasureMode.Exactly
         ? width
         : boundAxis(
             style,
             true,
-            (measured.width ?? 0) + paddingBorderWidth,
+            measW + paddingBorderWidth,
             ownerWidth,
             ownerHeight,
           )
@@ -1263,7 +1493,7 @@ function layoutNode(
         : boundAxis(
             style,
             false,
-            (measured.height ?? 0) + paddingBorderHeight,
+            measH + paddingBorderHeight,
             ownerWidth,
             ownerHeight,
           )
@@ -1279,8 +1509,8 @@ function layoutNode(
       availableHeight,
       widthMode,
       heightMode,
-      ownerWidth,
-      ownerHeight,
+      keyOW,
+      keyOH,
       forceWidth,
       forceHeight,
       wasDirty,
@@ -1310,8 +1540,8 @@ function layoutNode(
       availableHeight,
       widthMode,
       heightMode,
-      ownerWidth,
-      ownerHeight,
+      keyOW,
+      keyOH,
       forceWidth,
       forceHeight,
       wasDirty,
@@ -1589,8 +1819,8 @@ function layoutNode(
     availableHeight,
     widthMode,
     heightMode,
-    ownerWidth,
-    ownerHeight,
+    keyOW,
+    keyOH,
     forceWidth,
     forceHeight,
     wasDirty,
