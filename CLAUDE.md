@@ -30,6 +30,7 @@ commented IN the file that governs them.
 - A `stream_event` leaving `src/services/api/claude.ts` carries domain types: extended thinking is `reasoning`, not `thinking`; use `src/types/domainGuards.ts` — raw `content_block` comparisons typecheck and silently never match.
 - OpenAI-compatible adapters present every tool schema strict-shaped without setting `strict` (`src/services/api/adapters/strictPresentedSchema.ts`); `$ref` schemas go unmodified. Input null-stripping (`src/services/tools/toolExecution.ts`) removes only placeholder nulls — never one the schema admits.
 - Sessions are shared: session IDs are not exclusive and live-holder checks fail open deliberately (`src/utils/concurrentSessions.ts`).
+- Incremental sidechain writes must take their `startingParentUuid` from what actually persisted (the logging allowlist drops turn-0 skill/agent-listing seeds): a parent hint pointing at a filtered-out message truncates the chain on load and silently blanks the drill-down's prompt + seed rows.
 - Every hook path re-checks workspace trust; disabling all hooks must gate settings-, plugin- and session-derived hooks separately.
 
 ## Bash security

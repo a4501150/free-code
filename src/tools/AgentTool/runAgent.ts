@@ -73,6 +73,7 @@ import { runWithMainLoopModelScope } from '../../utils/model/modelResolution.js'
 import { formatSkillLoadingMetadata } from '../../utils/processUserInput/processSlashCommand.js'
 import {
   clearAgentTranscriptSubdir,
+  getLastLoggedMessageUuid,
   recordSidechainTranscript,
   setAgentTranscriptSubdir,
   writeAgentMetadata,
@@ -770,8 +771,11 @@ export async function* runAgent({
     ...(description && { description }),
   }).catch(_err => logForDebugging(`Failed to write agent metadata: ${_err}`))
 
-  // Track the last recorded message UUID for parent chain continuity
-  let lastRecordedUuid: UUID | null = initialMessages.at(-1)?.uuid ?? null
+  // Track the last recorded message UUID for parent chain continuity. Must
+  // come from the persisted set: the raw tail here is the turn-0 skill_listing
+  // seed, which isLoggableMessage drops — pointing the next write's parent at
+  // it would break the on-disk chain right after the seed block.
+  let lastRecordedUuid: UUID | null = getLastLoggedMessageUuid(initialMessages)
 
   // Anchor for thinkingDurationMs stamping, mirroring handleMessageFromStream
   // (leader path). Set at reasoning content_block_start, consumed at assistant;

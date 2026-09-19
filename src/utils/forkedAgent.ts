@@ -31,7 +31,10 @@ import {
 } from './messages.js'
 import { createDenialTrackingState } from './permissions/denialTracking.js'
 import { parseToolListFromCLI } from './permissions/permissionSetup.js'
-import { recordSidechainTranscript } from './sessionStorage.js'
+import {
+  getLastLoggedMessageUuid,
+  recordSidechainTranscript,
+} from './sessionStorage.js'
 import type { SystemPrompt } from './systemPromptType.js'
 import {
   type ContentReplacementState,
@@ -530,11 +533,10 @@ export async function runForkedAgent({
         `Forked agent [${forkLabel}] failed to record initial transcript: ${err}`,
       ),
     )
-    // Track the last recorded message UUID for parent chain continuity
-    lastRecordedUuid =
-      initialMessages.length > 0
-        ? initialMessages[initialMessages.length - 1]!.uuid
-        : null
+    // Track the last recorded message UUID for parent chain continuity.
+    // Derived from what actually persisted — the raw tail can be an
+    // attachment the logging allowlist drops (see getLastLoggedMessageUuid).
+    lastRecordedUuid = getLastLoggedMessageUuid(initialMessages)
   }
 
   // Run the query loop with isolated context (cache-safe params preserved)

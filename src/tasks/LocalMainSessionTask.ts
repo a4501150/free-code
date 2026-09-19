@@ -41,6 +41,7 @@ import { enqueuePendingNotification } from '../utils/messageQueueManager.js'
 import { emitTaskTerminatedStructured } from '../utils/structuredEventQueue.js'
 import {
   getAgentTranscriptPath,
+  getLastLoggedMessageUuid,
   recordSidechainTranscript,
 } from '../utils/sessionStorage.js'
 import {
@@ -378,7 +379,10 @@ export function startBackgroundSession({
       const recentActivities: ToolActivity[] = []
       let toolCount = 0
       let tokenCount = 0
-      let lastRecordedUuid: UUID | null = messages.at(-1)?.uuid ?? null
+      // Parent hint must be a message that actually persisted — the raw tail
+      // can be an attachment the logging allowlist drops (see
+      // getLastLoggedMessageUuid).
+      let lastRecordedUuid: UUID | null = getLastLoggedMessageUuid(messages)
 
       for await (const event of query({
         messages: bgMessages,

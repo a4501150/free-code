@@ -1310,6 +1310,22 @@ export async function recordSidechainTranscript(
   )
 }
 
+/**
+ * The UUID the NEXT recordSidechainTranscript call must pass as
+ * startingParentUuid. Derived from what cleanMessagesForLogging actually
+ * persists, not the raw array tail: the in-memory tail is often an attachment
+ * the logging allowlist drops (skill_listing, agent_listing_delta, …). A hint
+ * pointing at a dropped message gives the next on-disk record a parentUuid
+ * that exists nowhere in the file, buildConversationChain truncates there on
+ * load, and the whole prefix (agent prompt, turn-0 seeds) silently vanishes
+ * from the drill-down transcript.
+ */
+export function getLastLoggedMessageUuid(
+  messages: readonly Message[],
+): UUID | null {
+  return cleanMessagesForLogging([...messages]).at(-1)?.uuid ?? null
+}
+
 export async function recordQueueOperation(queueOp: QueueOperationMessage) {
   await getProject().insertQueueOperation(queueOp)
 }
