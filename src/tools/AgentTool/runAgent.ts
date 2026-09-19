@@ -705,20 +705,20 @@ export async function* runAgent({
     agentToolUseContext.preserveToolUseResults = true
   }
 
-  // Turn-0 skill listing: the Skill tool is in the worker's pool, but the
-  // listing normally only rides tool-loop attachments — after the first tool
-  // batch, too late for the worker to *choose* a skill on its opening
-  // completion, and never at all if it finishes without calling tools. The
-  // main thread gets the listing from processUserInput; subagents have no
-  // input-processing pass, so announce it here. sentSkillNames is keyed by
-  // agentId, so the tool loop's own listing becomes a delta-only no-op.
-  // Skipped for forks: they inherit the parent transcript, listing included.
+  // Turn-0 MCP instructions seed, unscoped by fork status: the delta scans
+  // initialMessages, so a fork's inherited transcript already announces the
+  // parent's servers and only agent-specific servers get announced here.
+  // Context-group ordering (same in attachments.ts and compact.ts
+  // re-announce): instructions before tools, skills last.
+  for (const attachment of getMcpInstructionsDeltaAttachment(
+    mergedMcpClients,
+    allTools,
+    initialMessages,
+  )) {
+    initialMessages.push(createAttachmentMessage(attachment))
+  }
+
   if (forkContextMessages === undefined) {
-    for (const attachment of await getSkillListingAttachments(
-      agentToolUseContext,
-    )) {
-      initialMessages.push(createAttachmentMessage(attachment))
-    }
     // Turn-0 MCP catalog announce: the worker sees the connected servers and
     // their schema file paths up front (before its first tool iteration).
     // The tool loop's own delta diffs against this snapshot and stays quiet.
@@ -728,17 +728,19 @@ export async function* runAgent({
     )) {
       initialMessages.push(createAttachmentMessage(attachment))
     }
-  }
-
-  // Turn-0 MCP instructions seed, unscoped by fork status: the delta scans
-  // initialMessages, so a fork's inherited transcript already announces the
-  // parent's servers and only agent-specific servers get announced here.
-  for (const attachment of getMcpInstructionsDeltaAttachment(
-    mergedMcpClients,
-    allTools,
-    initialMessages,
-  )) {
-    initialMessages.push(createAttachmentMessage(attachment))
+    // Turn-0 skill listing: the Skill tool is in the worker's pool, but the
+    // listing normally only rides tool-loop attachments — after the first tool
+    // batch, too late for the worker to *choose* a skill on its opening
+    // completion, and never at all if it finishes without calling tools. The
+    // main thread gets the listing from processUserInput; subagents have no
+    // input-processing pass, so announce it here. sentSkillNames is keyed by
+    // agentId, so the tool loop's own listing becomes a delta-only no-op.
+    // Skipped for forks: they inherit the parent transcript, listing included.
+    for (const attachment of await getSkillListingAttachments(
+      agentToolUseContext,
+    )) {
+      initialMessages.push(createAttachmentMessage(attachment))
+    }
   }
 
   if (onCompactProgress) {

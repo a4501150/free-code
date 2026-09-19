@@ -357,7 +357,9 @@ async function pushReAnnounceAttachments(
   context: ToolUseContext,
   scanMessages: Message[],
 ): Promise<void> {
-  for (const att of getAgentListingDeltaAttachment(context, scanMessages)) {
+  // Context-group ordering (same in attachments.ts and the runAgent.ts
+  // turn-0 seed).
+  for (const att of getSessionGuidanceAttachment(context, scanMessages)) {
     target.push(createAttachmentMessage(att))
   }
   for (const att of getMcpInstructionsDeltaAttachment(
@@ -370,7 +372,7 @@ async function pushReAnnounceAttachments(
   for (const att of await getMcpToolsDeltaAttachment(context, scanMessages)) {
     target.push(createAttachmentMessage(att))
   }
-  for (const att of getSessionGuidanceAttachment(context, scanMessages)) {
+  for (const att of getAgentListingDeltaAttachment(context, scanMessages)) {
     target.push(createAttachmentMessage(att))
   }
 }

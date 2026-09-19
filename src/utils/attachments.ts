@@ -811,14 +811,11 @@ export async function getAttachments(
     maybe('ultrathink_effort', () =>
       Promise.resolve(getUltrathinkEffortAttachment(input)),
     ),
-    maybe('mcp_tools_delta', () =>
-      getMcpToolsDeltaAttachment(toolUseContext, messages),
-    ),
+    // Context-group ordering (same in compact.ts re-announce and the
+    // runAgent.ts turn-0 seed): session_guidance, mcp_instructions_delta,
+    // mcp_tools_delta, agent_listing_delta, then skill_listing below.
     maybe('session_guidance', () =>
       Promise.resolve(getSessionGuidanceAttachment(toolUseContext, messages)),
-    ),
-    maybe('agent_listing_delta', () =>
-      Promise.resolve(getAgentListingDeltaAttachment(toolUseContext, messages)),
     ),
     maybe('mcp_instructions_delta', () =>
       Promise.resolve(
@@ -828,6 +825,12 @@ export async function getAttachments(
           messages,
         ),
       ),
+    ),
+    maybe('mcp_tools_delta', () =>
+      getMcpToolsDeltaAttachment(toolUseContext, messages),
+    ),
+    maybe('agent_listing_delta', () =>
+      Promise.resolve(getAgentListingDeltaAttachment(toolUseContext, messages)),
     ),
     maybe('changed_files', () => getChangedFiles(context)),
     maybe('nested_memory', () => getNestedMemoryAttachments(context)),
@@ -1531,6 +1534,11 @@ export function getSessionGuidanceAttachment(
   toolUseContext: ToolUseContext,
   messages: Message[] | undefined,
 ): Attachment[] {
+  // Main thread only: every bullet is gated on tools excluded from subagent
+  // pools (AskUserQuestion, Agent, VerifyPlanExecution) or on prompting the
+  // human (`!` hint, gated on the process-wide interactive flag), which only
+  // the main thread can do.
+  if (toolUseContext.agentId) return []
   const enabledTools = new Set(
     toolUseContext.options.tools.map(tool => tool.name),
   )
