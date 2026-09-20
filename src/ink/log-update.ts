@@ -43,14 +43,26 @@ const NEWLINE = { type: 'stdout', content: '\n' } as const
 // sweep on terminals that paint partial frames.
 const ROW_COALESCE_MIN_CELLS = 12
 
-// Shift fast path: max rows a frame may deviate from a pure
-// upward shift and still be emitted as one DECSTBM scroll. The deviating
-// rows are repainted by the normal diff; past this many, the frame is
-// layout churn, not a scroll, and the coalesced row pass is the better
-// emission.
-const SHIFT_MAX_MISMATCH_RATIO = 0.35
-const SHIFT_MAX_MISMATCH_CAP = 12
-const SHIFT_MAX_DELTA = 4
+// Shift fast path: ceiling on rows a frame may deviate from a pure
+// upward shift. Deviating rows are repainted by the normal diff either
+// way, so this only guards against coincidental shift matches on churn
+// frames — it is deliberately loose; SHIFT_MIN_EXPLAINED_RATIO does the
+// real work of separating scrolls from churn.
+const SHIFT_MAX_MISMATCH_RATIO = 0.75
+const SHIFT_MAX_MISMATCH_CAP = 24
+// Shift fast path: the scroll must save at least this fraction of the
+// region's rows (floor 2) to beat the coalesced pass. A commit block
+// landing at the transcript tail deviates a block-tall run of rows but
+// scrolls everything above it — explained, not mismatches, is the number
+// that measures the win.
+const SHIFT_MIN_EXPLAINED_RATIO = 0.15
+// Largest scroll the fast path will emit. A commit block appearing at the
+// transcript tail scrolls the whole visible history by however many rows
+// the block is tall — tool-result diffs are routinely 5-15 rows, and the
+// mismatch budget (not the delta cap) is what separates real scrolls from
+// layout churn. Past half the screen the scroll repaints more rows than
+// the coalesced pass anyway.
+const SHIFT_MAX_DELTA = 16
 
 export class LogUpdate {
   constructor(private readonly options: Options) {}
@@ -173,15 +185,30 @@ export class LogUpdate {
     // inserted above the bottom block — thinking overlay, task-list update,
     // scroll-follow. The diff then sees the whole screen changed and the
     // coalesced pass rewrites every visible row, which terminals that paint
-    // partial writes render as a sweep across the screen. The shift itself
-    // is one DECSTBM operation: scroll the region up by k, then let the
-    // normal diff repaint only the rows that entered the bottom and the few
-    // rows that deviated from the shift. The scroll is a single parser
+    // partial writes render as a sweep across the screen (a commit block
+    // landing during a streaming tool turn rewrites the full screen once
+    // per block — the "blinking" users report around the task panel).
+    // The shift itself is one DECSTBM operation: scroll the region up by
+    // k, then let the normal diff repaint only the rows that entered the
+    // bottom and the rows that deviated from the shift. The deviating rows
+    // cost writes either way (they must be painted in both paths); the
+    // scroll saves the shifted rows, so the emission is chosen by net
+    // gain, not by a tight deviation budget. The scroll is a single parser
     // action on the shifted rows, so the visible intermediate state is
     // limited to the new bottom rows — strictly less churn than rewriting
     // every row, and it holds without DEC 2026. (The scrollHint path above
     // still wins when a ScrollBox supplied an explicit hint and the
     // terminal syncs atomically.)
+    //
+    // The scroll region stops at the bottom-pinned block: FullscreenLayout
+    // keeps the spinner/task-panel/dialog/input rows at fixed screen y
+    // while the transcript above scrolls, so the frame is a uniform shift
+    // in the top region plus a byte-identical tail; a full-height shift
+    // classification would count the tail as deviations and bail (observed:
+    // 14 deviating rows vs a budget of 12 on every streaming-tool turn).
+    // pinnedBottomSplit finds the tail — the longest run of bottom rows
+    // identical between prev and next. Rows past it are excluded from the
+    // classification and untouched by the scroll.
     //
     // Applies when: the frame is a dominant uniform shift; screen rows map
     // 1:1 onto terminal rows (alt-screen: content at or below the viewport,
@@ -200,30 +227,47 @@ export class LogUpdate {
       prev.cursor.y < prev.screen.height
     ) {
       const h = next.screen.height
+      const split = pinnedBottomSplit(prev.screen, next.screen)
       const budget = Math.min(
         SHIFT_MAX_MISMATCH_CAP,
-        Math.max(2, Math.ceil(h * SHIFT_MAX_MISMATCH_RATIO)),
+        Math.max(2, Math.ceil(split * SHIFT_MAX_MISMATCH_RATIO)),
       )
-      for (let k = 1; k <= SHIFT_MAX_DELTA && k < h; k++) {
-        if (!screenMatchesShiftUp(prev.screen, next.screen, k, budget)) {
-          continue
+      // Minimum rows the scroll must save to be worth emitting. Below
+      // this the frame is local edits or churn the plain diff handles.
+      const minGain = Math.max(2, Math.ceil(split * SHIFT_MIN_EXPLAINED_RATIO))
+      let bestK = 0
+      let bestExplained = 0
+      for (let k = 1; k <= SHIFT_MAX_DELTA && k < split; k++) {
+        const st = screenMatchesShiftUp(
+          prev.screen,
+          next.screen,
+          k,
+          split,
+          budget,
+        )
+        if (st.explained >= minGain && st.explained > bestExplained) {
+          bestK = k
+          bestExplained = st.explained
         }
+      }
+      if (bestK > 0) {
         // Mutate prev to simulate the scroll so the diff loop below only
         // sees the rows that entered at the bottom and the deviating rows.
         // prev.screen is about to become backFrame, mutation is safe.
-        shiftRows(prev.screen, 0, h - 1, k)
+        shiftRows(prev.screen, 0, split - 1, bestK)
         shiftScrollPatch = [
           {
             type: 'stdout',
             content:
-              setScrollRegion(1, h) +
-              csiScrollUp(k) +
+              setScrollRegion(1, split) +
+              csiScrollUp(bestK) +
               RESET_SCROLL_REGION +
               CURSOR_HOME,
           },
         ]
-        logForDebugging(`shift-scroll k=${k} rows=${h} budget=${budget}`)
-        break
+        logForDebugging(
+          `shift-scroll k=${bestK} region=${split} rows=${h} explained=${bestExplained} budget=${budget}`,
+        )
       }
     }
 
@@ -641,29 +685,60 @@ function transitionStyle(
 }
 
 /**
- * True when `next` looks like `prev` scrolled up by `k` rows: most rows of
- * next equal the rows k below them in prev. Rows may deviate for at most
- * `mismatchBudget` of them (the diff loop repaints those after the scroll).
- * At least one row must be both shift-matched AND changed from its prev
- * position — otherwise the scroll explains none of the frame and a plain
- * diff would emit fewer bytes (idle frames, local edits on sparse screens).
+ * First row of the longest run of bottom rows that are byte-identical
+ * between prev and next — the bottom-pinned block (spinner, task panel,
+ * dialogs, input). Returns h when the bottom row itself differs (no tail;
+ * the shift classification degrades to full-height), 0 when every row is
+ * identical (no scroll could explain anything).
+ */
+function pinnedBottomSplit(prev: Screen, next: Screen): number {
+  const w = next.width
+  const pv = prev.cells64
+  const nv = next.cells64
+  const psw = prev.softWrap
+  const nsw = next.softWrap
+  let split = next.height
+  outer: for (let y = next.height - 1; y >= 0; y--) {
+    if (psw[y] !== nsw[y]) break
+    const base = y * w
+    for (let x = 0; x < w; x++) {
+      if (pv[base + x] !== nv[base + x]) break outer
+    }
+    split = y
+  }
+  return split
+}
+
+/**
+ * Classify rows [0, split) of `next` against `prev` scrolled up by `k`.
+ * Returns how many region rows shift-match AND changed from their prev
+ * position (`explained` — the rows the scroll saves from being rewritten)
+ * and how many deviate (`mismatches` — rows the diff repaints either
+ * way). Rows [split, h) are byte-identical by construction (see
+ * pinnedBottomSplit): the scroll region excludes them and they are never
+ * counted. Once mismatches pass maxMismatch the scan stops — the k is
+ * already rejected and counting the rest cannot change the verdict.
+ * Rows identical in prev at both y and y+k count as shift-matched
+ * (scrolling them is a visual no-op): they neither explain nor deviate.
  */
 function screenMatchesShiftUp(
   prev: Screen,
   next: Screen,
   k: number,
-  mismatchBudget: number,
-): boolean {
-  if (prev.width !== next.width || prev.height !== next.height) return false
+  split: number,
+  maxMismatch: number,
+): { mismatches: number; explained: number } {
+  const rejected = { mismatches: Infinity, explained: 0 }
+  if (prev.width !== next.width || prev.height !== next.height) return rejected
+  if (split <= k) return rejected
   const w = next.width
-  const h = next.height
   const pv = prev.cells64
   const nv = next.cells64
   const psw = prev.softWrap
   const nsw = next.softWrap
   let mismatches = 0
   let explained = 0
-  for (let y = 0; y < h - k; y++) {
+  for (let y = 0; y < split; y++) {
     const baseN = y * w
     const baseP = (y + k) * w
     let shiftMatches = nsw[y] === psw[y + k]
@@ -680,17 +755,14 @@ function screenMatchesShiftUp(
     }
     if (!shiftMatches) {
       // The scroll would clobber this row (or it already differs); the diff
-      // repaints it. Rows identical in prev at both y and y+k count as
-      // shift-matched (scrolling them is a visual no-op) and are skipped
-      // above via shiftMatches — a row that neither shifted nor changed
-      // lands here only when prev-y+k != prev-y == next-y, a deviating row.
-      mismatches++
-      if (mismatches > mismatchBudget) return false
+      // repaints it. A row that neither shifted nor changed lands here
+      // only when prev-y+k != prev-y == next-y, a deviating row.
+      if (++mismatches > maxMismatch) return rejected
     } else if (changed) {
       explained++
     }
   }
-  return explained > 0
+  return { mismatches, explained }
 }
 
 function readLine(screen: Screen, y: number): string {

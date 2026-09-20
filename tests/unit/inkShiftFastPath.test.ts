@@ -174,4 +174,27 @@ describe('shift fast path', () => {
     const diff = lu.render(frame(prev, H), frame(next, H), false, false)
     expect(serialize(diff)).toContain(setScrollRegion(1, H))
   })
+
+  test('shift below a bottom-pinned block scrolls only the region above it', () => {
+    const p = pools()
+    // Bottom two rows are the pinned block (spinner/input): they stay at
+    // the same y in both frames while the transcript above scrolls up by
+    // one. The scroll region must stop above the pinned rows, and the
+    // pinned rows must not be rewritten.
+    const prevLines = [...ROWS, 'pin A', 'pin B']
+    const nextLines = [...ROWS.slice(1), 'new bottom', 'pin A', 'pin B']
+    const prev = textScreen(prevLines, p)
+    const next = textScreen(nextLines, p)
+    const lu = new LogUpdate({ isTTY: true, stylePool: p.styles })
+    const diff = lu.render(frame(prev, H + 2), frame(next, H + 2), true, false)
+    const out = serialize(diff)
+    // Region ends at row 6 (the first pinned row), not the screen bottom.
+    expect(out).toContain(setScrollRegion(1, H))
+    expect(out).not.toContain(setScrollRegion(1, H + 2))
+    expect(out).toContain(csiScrollUp(1))
+    const written = writtenText(diff).replace(/\s+/g, '')
+    expect(written).toContain('newbottom')
+    expect(written).not.toContain('pinA')
+    expect(written).not.toContain('pinB')
+  })
 })
