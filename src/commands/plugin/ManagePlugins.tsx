@@ -243,7 +243,6 @@ function PluginComponentsDisplay({
     commands?: string | string[] | Record<string, unknown> | null
     agents?: string | string[] | Record<string, unknown> | null
     skills?: string | string[] | Record<string, unknown> | null
-    outputStyles?: string | string[] | Record<string, unknown> | null
     hooks?: unknown
     mcpServers?: unknown
   } | null>(null)
@@ -269,7 +268,6 @@ function PluginComponentsDisplay({
               commands: null,
               agents: null,
               skills: skillNames.length > 0 ? skillNames : null,
-              outputStyles: null,
               hooks: hookEvents.length > 0 ? hookEvents : null,
               mcpServers: mcpServerNames.length > 0 ? mcpServerNames : null,
             })
@@ -344,21 +342,6 @@ function PluginComponentsDisplay({
             }
           }
 
-          // Combine output styles from both sources
-          const outputStylePathList = []
-          if (plugin.outputStylesPath) {
-            outputStylePathList.push(plugin.outputStylesPath)
-          }
-          if (plugin.outputStylesPaths) {
-            outputStylePathList.push(...plugin.outputStylesPaths)
-          }
-
-          const outputStyleList: string[] = []
-          for (const outputStylePath of outputStylePathList) {
-            const baseNames = await getBaseFileNames(outputStylePath)
-            outputStyleList.push(...baseNames)
-          }
-
           // Combine hooks from both sources
           const hooksList = []
           if (plugin.hooksConfig) {
@@ -381,7 +364,6 @@ function PluginComponentsDisplay({
             commands: commandList.length > 0 ? commandList : null,
             agents: agentList.length > 0 ? agentList : null,
             skills: skillList.length > 0 ? skillList : null,
-            outputStyles: outputStyleList.length > 0 ? outputStyleList : null,
             hooks: hooksList.length > 0 ? hooksList : null,
             mcpServers: mcpServersList.length > 0 ? mcpServersList : null,
           })
@@ -405,8 +387,6 @@ function PluginComponentsDisplay({
     plugin.agentsPaths,
     plugin.skillsPath,
     plugin.skillsPaths,
-    plugin.outputStylesPath,
-    plugin.outputStylesPaths,
     plugin.hooksConfig,
     plugin.mcpServers,
     marketplace,
@@ -433,7 +413,6 @@ function PluginComponentsDisplay({
     components.commands ||
     components.agents ||
     components.skills ||
-    components.outputStyles ||
     components.hooks ||
     components.mcpServers
 
@@ -472,16 +451,6 @@ function PluginComponentsDisplay({
             : Array.isArray(components.skills)
               ? components.skills.join(', ')
               : Object.keys(components.skills).join(', ')}
-        </Text>
-      ) : null}
-      {components.outputStyles ? (
-        <Text dimColor>
-          • Output styles:{' '}
-          {typeof components.outputStyles === 'string'
-            ? components.outputStyles
-            : Array.isArray(components.outputStyles)
-              ? components.outputStyles.join(', ')
-              : Object.keys(components.outputStyles).join(', ')}
         </Text>
       ) : null}
       {components.hooks ? (

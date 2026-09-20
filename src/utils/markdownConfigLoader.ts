@@ -23,7 +23,6 @@ import {
 export const CLAUDE_CONFIG_DIRECTORIES = [
   'commands',
   'agents',
-  'output-styles',
   'skills',
   'workflows',
 ] as const

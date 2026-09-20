@@ -34,14 +34,7 @@ export type ValidationResult = {
   errors: ValidationError[]
   warnings: ValidationWarning[]
   filePath: string
-  fileType:
-    | 'plugin'
-    | 'marketplace'
-    | 'skill'
-    | 'agent'
-    | 'command'
-    | 'output-style'
-    | 'hooks'
+  fileType: 'plugin' | 'marketplace' | 'skill' | 'agent' | 'command' | 'hooks'
 }
 
 export type ValidationError = {
@@ -522,7 +515,7 @@ export async function validateMarketplaceManifest(
 function validateComponentFile(
   filePath: string,
   content: string,
-  fileType: 'skill' | 'agent' | 'command' | 'output-style',
+  fileType: 'skill' | 'agent' | 'command',
 ): ValidationResult {
   const errors: ValidationError[] = []
   const warnings: ValidationWarning[] = []
@@ -635,30 +628,6 @@ function validateComponentFile(
         errors.push({
           path: 'shell',
           message: `shell must be 'bash' or 'powershell', got '${sh}'.`,
-        })
-      }
-    }
-  }
-
-  // Output styles gate prompt sections with boolean flags; a non-boolean is
-  // parsed as false at runtime, silently dropping the sections it meant to keep.
-  if (fileType === 'output-style') {
-    for (const flag of [
-      'keep-coding-instructions',
-      'keep-response-style',
-      'force-for-plugin',
-    ]) {
-      const value = fm[flag]
-      if (
-        value !== undefined &&
-        value !== null &&
-        typeof value !== 'boolean' &&
-        value !== 'true' &&
-        value !== 'false'
-      ) {
-        errors.push({
-          path: flag,
-          message: `${flag} must be a boolean, got ${typeof value}. At runtime a non-boolean is treated as false.`,
         })
       }
     }
@@ -782,7 +751,7 @@ async function collectMarkdown(
 
 /**
  * Validate the content files inside a plugin directory — skills, agents,
- * commands, output styles, and hooks.json. Scans the default component
+ * commands, and hooks.json. Scans the default component
  * directories (the manifest can declare custom paths but the default layout
  * covers the vast majority of plugins; this is a linter, not a loader).
  *
@@ -794,13 +763,11 @@ export async function validatePluginContents(
 ): Promise<ValidationResult[]> {
   const results: ValidationResult[] = []
 
-  const dirs: Array<['skill' | 'agent' | 'command' | 'output-style', string]> =
-    [
-      ['skill', path.join(pluginDir, 'skills')],
-      ['agent', path.join(pluginDir, 'agents')],
-      ['command', path.join(pluginDir, 'commands')],
-      ['output-style', path.join(pluginDir, 'output-styles')],
-    ]
+  const dirs: Array<['skill' | 'agent' | 'command', string]> = [
+    ['skill', path.join(pluginDir, 'skills')],
+    ['agent', path.join(pluginDir, 'agents')],
+    ['command', path.join(pluginDir, 'commands')],
+  ]
 
   for (const [fileType, dir] of dirs) {
     const files = await collectMarkdown(dir, fileType === 'skill')

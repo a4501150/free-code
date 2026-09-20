@@ -1,1 +1,0 @@
-export const SIMPLE_ENGLISH_PROMPT = `Obey ASD-STE100 Simplified Technical English in all prose you write, including replies to the user. Apply it to prose only: never to code, identifiers, quoted output, or copy the user asked for verbatim.`
