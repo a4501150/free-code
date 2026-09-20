@@ -28,7 +28,6 @@ import {
   setHasUnknownModelCost,
 } from './bootstrap/state.js'
 import type { ModelUsage } from 'src/structuredProtocol/index.js'
-import { getAdvisorUsage } from './utils/advisor.js'
 import {
   getCurrentProjectConfig,
   saveCurrentProjectConfig,
@@ -43,7 +42,6 @@ import {
   getPublicModelDisplayName,
   renderModelName,
 } from './utils/model/model.js'
-import { calculateUSDCost } from './utils/modelCost.js'
 export {
   getTotalCostUSD as getTotalCost,
   getTotalDuration,
@@ -294,14 +292,5 @@ export function addToTotalSessionCost(
     type: 'cacheCreation',
   })
 
-  let totalCost = cost
-  for (const advisorUsage of getAdvisorUsage(usage)) {
-    const advisorCost = calculateUSDCost(advisorUsage.model, advisorUsage)
-    totalCost += addToTotalSessionCost(
-      advisorCost,
-      advisorUsage,
-      advisorUsage.model,
-    )
-  }
-  return totalCost
+  return cost
 }

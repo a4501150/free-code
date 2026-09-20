@@ -150,64 +150,6 @@ async function maybeDumpAutoMode(
   // No-op in external builds
 }
 
-/**
- * Session-scoped dump file for auto mode classifier error prompts. Written on API
- * error so users can share via /share without needing to repro with env var.
- */
-export function getAutoModeClassifierErrorDumpPath(): string {
-  return join(
-    getClaudeTempDir(),
-    'auto-mode-classifier-errors',
-    `${getSessionId()}.txt`,
-  )
-}
-
-/**
- * Dump classifier input prompts + context-comparison diagnostics on API error.
- * Written to a session-scoped file in the claude temp dir so /share can collect
- * it (replaces the old Desktop dump). Includes context numbers to help diagnose
- * projection divergence (classifier tokens >> main loop tokens).
- * Returns the dump path on success, null on failure.
- */
-async function dumpErrorPrompts(
-  systemPrompt: string,
-  userPrompt: string,
-  error: unknown,
-  contextInfo: {
-    mainLoopTokens: number
-    classifierChars: number
-    classifierTokensEst: number
-    transcriptEntries: number
-    messages: number
-    action: string
-    model: string
-  },
-): Promise<string | null> {
-  try {
-    const path = getAutoModeClassifierErrorDumpPath()
-    await mkdir(dirname(path), { recursive: true })
-    const content =
-      `=== ERROR ===\n${errorMessage(error)}\n\n` +
-      `=== CONTEXT COMPARISON ===\n` +
-      `timestamp: ${new Date().toISOString()}\n` +
-      `model: ${contextInfo.model}\n` +
-      `mainLoopTokens: ${contextInfo.mainLoopTokens}\n` +
-      `classifierChars: ${contextInfo.classifierChars}\n` +
-      `classifierTokensEst: ${contextInfo.classifierTokensEst}\n` +
-      `transcriptEntries: ${contextInfo.transcriptEntries}\n` +
-      `messages: ${contextInfo.messages}\n` +
-      `delta (classifierEst - mainLoop): ${contextInfo.classifierTokensEst - contextInfo.mainLoopTokens}\n\n` +
-      `=== ACTION BEING CLASSIFIED ===\n${contextInfo.action}\n\n` +
-      `=== SYSTEM PROMPT ===\n${systemPrompt}\n\n` +
-      `=== USER PROMPT (transcript) ===\n${userPrompt}\n`
-    await writeFile(path, content, 'utf-8')
-    logForDebugging(`Dumped auto mode classifier error prompts to ${path}`)
-    return path
-  } catch {
-    return null
-  }
-}
-
 const yoloClassifierResponseSchema = z.object({
   thinking: z.string(),
   shouldBlock: z.boolean(),
@@ -1271,11 +1213,6 @@ async function classifyYoloActionXml(
         level: 'warn',
       },
     )
-    const errorDumpPath =
-      (await dumpErrorPrompts(xmlSystemPrompt, userPrompt, error, {
-        ...dumpContextInfo,
-        model,
-      })) ?? undefined
     logAutoModeOutcome(tooLong ? 'transcript_too_long' : 'error', model, {
       classifierType,
       ...(tooLong && {
@@ -1295,7 +1232,6 @@ async function classifyYoloActionXml(
       transcriptTooLong: Boolean(tooLong),
       stage: stage1Usage ? 'thinking' : undefined,
       durationMs: Date.now() - overallStart,
-      errorDumpPath,
       ...(stage1Usage && {
         usage: stage1Usage,
         stage1Usage,
@@ -1562,16 +1498,6 @@ export async function classifyYoloAction(
     logForDebugging(`Auto mode classifier error: ${errorMessage(error)}`, {
       level: 'warn',
     })
-    const errorDumpPath =
-      (await dumpErrorPrompts(systemPrompt, userPrompt, error, {
-        mainLoopTokens,
-        classifierChars,
-        classifierTokensEst,
-        transcriptEntries,
-        messages: messages.length,
-        action: actionCompact,
-        model,
-      })) ?? undefined
     // No API usage on error — use classifierTokensEst / mainLoopTokens
     // for the ratio. Overflow errors are the critical divergence signal.
     logAutoModeOutcome(tooLong ? 'transcript_too_long' : 'error', model, {
@@ -1590,7 +1516,6 @@ export async function classifyYoloAction(
       model,
       unavailable: !tooLong,
       transcriptTooLong: Boolean(tooLong),
-      errorDumpPath,
     }
   }
 }

@@ -23,6 +23,7 @@ import {
   getSessionId,
   getSessionProjectDir,
   isSessionPersistenceDisabled,
+  setPromptCache1hEligible,
   switchSession,
 } from '../bootstrap/state.js'
 import { getBuiltInCommandNames as builtInCommandNames } from './commandRegistry.js'
@@ -487,6 +488,9 @@ class Project {
   currentSessionLastPrompt: string | undefined
   currentSessionAgentSetting: string | undefined
   currentSessionMode: 'coordinator' | 'normal' | undefined
+  // 1h prompt-cache TTL decision, persisted so a resume adopts the same
+  // cache_control tier (see CacheTtl1hEntry).
+  currentSessionCacheTtl1h: boolean | undefined
   // Tri-state: undefined = never touched (don't write), null = exited worktree,
   // object = currently in worktree. reAppendSessionMetadata writes null so
   // --resume knows the session exited (vs. crashed while inside).
@@ -757,6 +761,13 @@ class Project {
       appendEntryToFile(this.sessionFile, {
         type: 'mode',
         mode: this.currentSessionMode,
+        sessionId,
+      })
+    }
+    if (this.currentSessionCacheTtl1h !== undefined) {
+      appendEntryToFile(this.sessionFile, {
+        type: 'cache-ttl-1h',
+        eligible: this.currentSessionCacheTtl1h,
         sessionId,
       })
     }
@@ -1132,6 +1143,8 @@ class Project {
       void this.enqueueWrite(sessionFile, entry)
     } else if (entry.type === 'mode') {
       // Mode entries can always be appended
+      void this.enqueueWrite(sessionFile, entry)
+    } else if (entry.type === 'cache-ttl-1h') {
       void this.enqueueWrite(sessionFile, entry)
     } else if (entry.type === 'worktree-state') {
       void this.enqueueWrite(sessionFile, entry)
@@ -1805,7 +1818,7 @@ function recoverOrphanedParallelToolResults(
  * delta = 0: round-trip consistent
  *
  * Called from loadConversationForResume — fires once per resume, not on
- * /share or log-listing chain rebuilds.
+ * log-listing chain rebuilds.
  */
 export function checkResumeConsistency(chain: Message[]): void {
   for (let i = chain.length - 1; i >= 0; i--) {
@@ -2300,6 +2313,7 @@ export function restoreSessionMetadata(meta: {
   agentColor?: string
   agentSetting?: string
   mode?: 'coordinator' | 'normal'
+  cacheTtl1h?: boolean
   worktreeSession?: PersistedWorktreeSession | null
   prNumber?: number
   prUrl?: string
@@ -2314,6 +2328,13 @@ export function restoreSessionMetadata(meta: {
   if (meta.agentColor) project.currentSessionAgentColor = meta.agentColor
   if (meta.agentSetting) project.currentSessionAgentSetting = meta.agentSetting
   if (meta.mode) project.currentSessionMode = meta.mode
+  if (meta.cacheTtl1h !== undefined) {
+    project.currentSessionCacheTtl1h = meta.cacheTtl1h
+    // Adopt-else-compute: arm the bootstrap latch with the resumed session's
+    // decision so the first post-resume request marks breakpoints with the
+    // same TTL the pre-interruption process created entries under.
+    setPromptCache1hEligible(meta.cacheTtl1h)
+  }
   if (meta.worktreeSession !== undefined)
     project.currentSessionWorktree = meta.worktreeSession
   if (meta.prNumber !== undefined)
@@ -2336,6 +2357,7 @@ export function clearSessionMetadata(): void {
   project.currentSessionLastPrompt = undefined
   project.currentSessionAgentSetting = undefined
   project.currentSessionMode = undefined
+  project.currentSessionCacheTtl1h = undefined
   project.currentSessionWorktree = undefined
   project.currentSessionPrNumber = undefined
   project.currentSessionPrUrl = undefined
@@ -2411,6 +2433,23 @@ export function cacheSessionTitle(customTitle: string): void {
  */
 export function saveMode(mode: 'coordinator' | 'normal'): void {
   getProject().currentSessionMode = mode
+}
+
+/**
+ * Record the session's latched 1h prompt-cache TTL decision. Cached for the
+ * exit-time re-append and appended eagerly when the session file already
+ * exists, so an adopted decision survives an unclean exit too.
+ */
+export function saveCacheTtl1h(eligible: boolean): void {
+  const project = getProject()
+  project.currentSessionCacheTtl1h = eligible
+  if (project.sessionFile) {
+    appendEntryToFile(project.sessionFile, {
+      type: 'cache-ttl-1h',
+      eligible,
+      sessionId: getSessionId(),
+    })
+  }
 }
 
 /**
@@ -2504,6 +2543,7 @@ export async function loadFullLog(log: LogOption): Promise<LogOption> {
       prUrls,
       prRepositories,
       modes,
+      cacheTtl1hs,
       worktreeStates,
       fileHistorySnapshots,
       contentReplacements,
@@ -2544,6 +2584,7 @@ export async function loadFullLog(log: LogOption): Promise<LogOption> {
       agentColor: sessionId ? agentColors.get(sessionId) : log.agentColor,
       agentSetting: sessionId ? agentSettings.get(sessionId) : log.agentSetting,
       mode: sessionId ? (modes.get(sessionId) as LogOption['mode']) : log.mode,
+      cacheTtl1h: sessionId ? cacheTtl1hs.get(sessionId) : log.cacheTtl1h,
       worktreeSession:
         sessionId && worktreeStates.has(sessionId)
           ? worktreeStates.get(sessionId)
@@ -2634,6 +2675,7 @@ const METADATA_TYPE_MARKERS = [
   '"type":"agent-color"',
   '"type":"agent-setting"',
   '"type":"mode"',
+  '"type":"cache-ttl-1h"',
   '"type":"worktree-state"',
   '"type":"pr-link"',
 ]
@@ -2999,6 +3041,7 @@ export async function loadTranscriptFile(
   prUrls: Map<UUID, string>
   prRepositories: Map<UUID, string>
   modes: Map<UUID, string>
+  cacheTtl1hs: Map<UUID, boolean>
   worktreeStates: Map<UUID, PersistedWorktreeSession | null>
   fileHistorySnapshots: Map<UUID, FileHistorySnapshotMessage>
   contentReplacements: Map<UUID, ContentReplacementRecord[]>
@@ -3016,6 +3059,7 @@ export async function loadTranscriptFile(
   const prUrls = new Map<UUID, string>()
   const prRepositories = new Map<UUID, string>()
   const modes = new Map<UUID, string>()
+  const cacheTtl1hs = new Map<UUID, boolean>()
   const worktreeStates = new Map<UUID, PersistedWorktreeSession | null>()
   const fileHistorySnapshots = new Map<UUID, FileHistorySnapshotMessage>()
   const contentReplacements = new Map<UUID, ContentReplacementRecord[]>()
@@ -3107,6 +3151,8 @@ export async function loadTranscriptFile(
           agentSettings.set(entry.sessionId, entry.agentSetting)
         } else if (entry.type === 'mode' && entry.sessionId) {
           modes.set(entry.sessionId, entry.mode)
+        } else if (entry.type === 'cache-ttl-1h' && entry.sessionId) {
+          cacheTtl1hs.set(entry.sessionId, entry.eligible)
         } else if (entry.type === 'worktree-state' && entry.sessionId) {
           worktreeStates.set(entry.sessionId, entry.worktreeSession)
         } else if (entry.type === 'pr-link' && entry.sessionId) {
@@ -3178,6 +3224,8 @@ export async function loadTranscriptFile(
         agentSettings.set(entry.sessionId, entry.agentSetting)
       } else if (entry.type === 'mode' && entry.sessionId) {
         modes.set(entry.sessionId, entry.mode)
+      } else if (entry.type === 'cache-ttl-1h' && entry.sessionId) {
+        cacheTtl1hs.set(entry.sessionId, entry.eligible)
       } else if (entry.type === 'worktree-state' && entry.sessionId) {
         worktreeStates.set(entry.sessionId, entry.worktreeSession)
       } else if (entry.type === 'pr-link' && entry.sessionId) {
@@ -3276,6 +3324,7 @@ export async function loadTranscriptFile(
     prUrls,
     prRepositories,
     modes,
+    cacheTtl1hs,
     worktreeStates,
     fileHistorySnapshots,
     contentReplacements,
@@ -3814,41 +3863,23 @@ export async function loadAllSubagentTranscriptsFromDisk(): Promise<{
 
 // Exported so useLogMessages can sync-compute the last loggable uuid
 // without awaiting recordTranscript's return value (race-free hint tracking).
-// Session logging drops attachments unless isLoggableMessage explicitly allows
-// their type. Any new attachment that must survive resume needs an allowlist
-// entry here, or it is silently lost.
+//
+// Persistence policy: what the model saw, we persist. Every attachment the
+// live chain carries into a request must reach disk, or --resume replays a
+// transcript with holes where the warmed prompt-cache prefix had bytes, and
+// cache reuse truncates at the first hole. The one legitimate exemption is an
+// injection that is last-turn AND eliminated from the API chain before the
+// next request — those declare themselves in EPHEMERAL_ATTACHMENT_TYPES and
+// stay memory-only (UI keeps them for the turn). No type qualifies today;
+// adding one here must come with the matching drop-from-next-request
+// mechanism, or resume silently loses model-visible bytes.
+export const EPHEMERAL_ATTACHMENT_TYPES: ReadonlySet<string> = new Set()
+
 export function isLoggableMessage(m: Message): boolean {
+  // High-frequency tool progress ticks: dropped for volume, not privacy.
   if (m.type === 'progress') return false
-  // IMPORTANT: We deliberately filter out most attachments for non-ants because
-  // they have sensitive info for training that we don't want exposed to the public.
-  // When enabled, we allow hook_additional_context through since it contains
-  // user-configured hook output that is useful for session context on resume.
   if (m.type === 'attachment') {
-    if (
-      m.attachment.type === 'user_context_snapshot' ||
-      m.attachment.type === 'user_context_delta' ||
-      // Catalog snapshot + diff baseline; names, counts and paths only.
-      m.attachment.type === 'mcp_tools_delta' ||
-      // Only carrier of server instructions; stateless-scan, so a resume
-      // that lacks the announce re-announces the whole set.
-      m.attachment.type === 'mcp_instructions_delta' ||
-      // Same stateless-scan rule: the announce is the diff baseline.
-      m.attachment.type === 'session_guidance' ||
-      // Mid-turn drained commands exist ONLY as attachments — a prompt
-      // queued while the model was running never becomes a logged user
-      // message, so without this the human turn vanishes on resume while
-      // the model's reply to it stays.
-      m.attachment.type === 'queued_command'
-    ) {
-      return true
-    }
-    if (
-      m.attachment.type === 'hook_additional_context' &&
-      isEnvTruthy(process.env.CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT)
-    ) {
-      return true
-    }
-    return false
+    return !EPHEMERAL_ATTACHMENT_TYPES.has(m.attachment.type)
   }
   return true
 }
@@ -3872,7 +3903,6 @@ function collectReplIds(messages: readonly Message[]): Set<string> {
  * REPL tool_use/tool_result pairs and promote isVirtual messages to real. On
  * --resume the model then sees a coherent native-tool-call history (assistant
  * called Bash, got result, called Read, got result) without the REPL wrapper.
- * Ant transcripts keep the wrapper so /share training data sees REPL usage.
  *
  * replIds is pre-collected from the FULL session array, not the slice being
  * transformed — recordTranscript receives incremental slices where the REPL
@@ -4096,6 +4126,7 @@ export async function loadAllLogsFromSessionFile(
     prUrls,
     prRepositories,
     modes,
+    cacheTtl1hs,
     fileHistorySnapshots,
     contentReplacements,
     leafUuids,
@@ -4157,6 +4188,7 @@ export async function loadAllLogsFromSessionFile(
       agentColor: agentColors.get(sessionId),
       agentSetting: agentSettings.get(sessionId),
       mode: modes.get(sessionId) as LogOption['mode'],
+      cacheTtl1h: cacheTtl1hs.get(sessionId),
       prNumber: prNumbers.get(sessionId),
       prUrl: prUrls.get(sessionId),
       prRepository: prRepositories.get(sessionId),

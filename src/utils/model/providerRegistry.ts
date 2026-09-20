@@ -409,6 +409,19 @@ export class ProviderRegistry {
     return provider?.config.type ?? null
   }
 
+  /**
+   * Whether the default provider's cache service honors an explicit `ttl`
+   * on cache_control breakpoints. Automatic-prefix providers strip the
+   * markers entirely, so asking for 1h there is dead weight.
+   */
+  supports1hCacheTTL(): boolean {
+    const def = this.getDefaultProvider()
+    if (!def) return false
+    return (
+      DEFAULT_CACHE_TYPE_BY_PROVIDER[def.config.type] === 'explicit-breakpoint'
+    )
+  }
+
   getProviderAuth(model: string): ProviderAuthConfig | undefined {
     const provider = this.getProviderForModel(model)
     return provider?.config.auth

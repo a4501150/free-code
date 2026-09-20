@@ -641,21 +641,6 @@ export function Config({
       },
     },
     {
-      id: 'terminalRecording',
-      label: 'Terminal recording',
-      value: settingsData?.terminalRecording ?? false,
-      type: 'boolean' as const,
-      onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          terminalRecording: enabled,
-        })
-        setSettingsData(prev => ({
-          ...prev,
-          terminalRecording: enabled,
-        }))
-      },
-    },
-    {
       id: 'crossProjectResume',
       label: 'Cross-project resume',
       value: settingsData?.crossProjectResume ?? false,
@@ -1601,7 +1586,6 @@ export function Config({
           ? undefined
           : { ...iu.permissions, defaultMode: iu.permissions.defaultMode },
       // Group B settings
-      terminalRecording: iu?.terminalRecording,
       crossProjectResume: iu?.crossProjectResume,
       alwaysDebugLog: iu?.alwaysDebugLog,
       replMode: iu?.replMode,

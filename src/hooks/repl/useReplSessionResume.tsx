@@ -37,7 +37,6 @@ import {
   exitRestoredWorktree,
 } from '../../utils/sessionRestore.js'
 import { updateSessionName } from '../../utils/concurrentSessions.js'
-import { renameRecordingForSession } from '../../utils/asciicast.js'
 import { copyPlanForFork, copyPlanForResume } from '../../utils/plans.js'
 import { copyFileHistoryForResume } from '../../utils/fileHistory.js'
 import { processSessionStartHooks } from '../../utils/sessionStart.js'
@@ -221,7 +220,6 @@ export function useReplSessionResume({
           asSessionId(sessionId),
           log.fullPath ? dirname(log.fullPath) : null,
         )
-        await renameRecordingForSession()
         await resetSessionFilePointer()
 
         clearSessionMetadata()

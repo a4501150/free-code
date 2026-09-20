@@ -5,6 +5,7 @@ import {
   setPromptCache1hAllowlist,
   setPromptCache1hEligible,
 } from '../bootstrap/state.js'
+import { saveCacheTtl1h } from './sessionStorage.js'
 import { getInitialSettings } from './settings/settings.js'
 import { isClaudeAISubscriber } from './auth.js'
 import { currentLimits } from '../services/claudeAiLimits.js'
@@ -26,18 +27,30 @@ export function getCacheControl({
 }
 
 function should1hCacheTTL(querySource?: QuerySource): boolean {
+  // The wire has to honor an explicit ttl marker at all; the registry owns
+  // which providers do (automatic-prefix adapters drop the markers anyway).
+  if (!getProviderRegistry().supports1hCacheTTL()) return false
+
   if (
     getProviderRegistry().getDefaultProvider()?.config.type ===
       'bedrock-converse' &&
     isEnvTruthy(process.env.ENABLE_PROMPT_CACHING_1H_BEDROCK)
   ) {
+    // Operator opted in via env; the opt-in forces 1h and skips the
+    // subscriber gate (a first-party billing fact).
     return true
   }
 
   let userEligible = getPromptCache1hEligible()
   if (userEligible === null) {
+    // Adopt-else-compute: on resume, restoreSessionMetadata has already armed
+    // the latch with the resumed session's stored decision, so the original
+    // tier survives even if the inputs (async-loaded overage state) would
+    // compute differently now.
     userEligible = isClaudeAISubscriber() && !currentLimits.isUsingOverage
     setPromptCache1hEligible(userEligible)
+    // Persist the decision with the session so a future resume adopts it.
+    saveCacheTtl1h(userEligible)
   }
   if (!userEligible) return false
 

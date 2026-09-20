@@ -15,6 +15,10 @@ import Anthropic, {
   APIUserAbortError,
   type ClientOptions,
 } from '@anthropic-ai/sdk'
+import {
+  applyAnthropicRequestFeatures,
+  describeAnthropicCacheFeatures,
+} from './anthropicFeatures.js'
 import type {
   BetaMessageStreamParams,
   BetaRawMessageStreamEvent,
@@ -520,6 +524,14 @@ async function countTokensViaAnthropicEndpoint({
 
 export const anthropicAdapter: ProviderAdapter = {
   providerType: 'anthropic',
+
+  applyRequestFeatures(request, model, intent) {
+    applyAnthropicRequestFeatures(request, model, intent)
+  },
+
+  describeCacheRelevantFeatures(model, intent) {
+    return describeAnthropicCacheFeatures(model, intent)
+  },
 
   async createStream(
     _config: ProviderConfig,

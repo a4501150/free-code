@@ -771,10 +771,11 @@ export async function* runAgent({
     ...(description && { description }),
   }).catch(_err => logForDebugging(`Failed to write agent metadata: ${_err}`))
 
-  // Track the last recorded message UUID for parent chain continuity. Must
-  // come from the persisted set: the raw tail here is the turn-0 skill_listing
-  // seed, which isLoggableMessage drops — pointing the next write's parent at
-  // it would break the on-disk chain right after the seed block.
+  // Track the last recorded message UUID for parent chain continuity. Derived
+  // from the same isLoggableMessage filter that recordSidechainTranscript
+  // applies, so the hint never points at a row that stayed memory-only
+  // (pointing the next write's parent at such a row would break the on-disk
+  // chain right after the seed block).
   let lastRecordedUuid: UUID | null = getLastLoggedMessageUuid(initialMessages)
 
   // Anchor for thinkingDurationMs stamping, mirroring handleMessageFromStream

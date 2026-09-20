@@ -37,15 +37,10 @@ type PreviousState = {
   perToolHashes: Record<string, number>
   systemCharCount: number
   model: string
-  fastMode: boolean
-  /** Sorted beta header list. Diffed to show which headers were added/removed. */
-  betas: string[]
-  /** AFK_MODE_BETA_HEADER presence — should NOT break cache anymore
-   *  (sticky-on latched in claude.ts). Tracked to verify the fix. */
-  autoModeActive: boolean
-  /** Overage state flip — should NOT break cache anymore (eligibility is
-   *  latched session-stable in should1hCacheTTL). Tracked to verify the fix. */
-  isUsingOverage: boolean
+  /** Adapter-declared cache-relevant request-shape fields (e.g. the beta
+   *  header set, sticky wire latches). Diffed per key; keys only exist for
+   *  providers whose wire acts on them. */
+  features: Record<string, string>
   /** Resolved effort (env → options → model default). Goes into output_config
    *  or anthropic_internal.effort_override. */
   effortValue: string
@@ -58,15 +53,13 @@ type PreviousState = {
   buildDiffableContent: () => string
 }
 
+export type ChangedFeature = { name: string; prev: string; next: string }
+
 export type PendingChanges = {
   systemPromptChanged: boolean
   toolSchemasChanged: boolean
   modelChanged: boolean
-  fastModeChanged: boolean
   cacheControlChanged: boolean
-  betasChanged: boolean
-  autoModeChanged: boolean
-  overageChanged: boolean
   effortChanged: boolean
   extraBodyChanged: boolean
   addedToolCount: number
@@ -77,8 +70,8 @@ export type PendingChanges = {
   changedToolSchemas: string[]
   previousModel: string
   newModel: string
-  addedBetas: string[]
-  removedBetas: string[]
+  /** Adapter-declared feature keys whose values flipped. */
+  changedFeatures: ChangedFeature[]
   prevEffortValue: string
   newEffortValue: string
   buildPrevDiffableContent: () => string
@@ -210,10 +203,9 @@ export type PromptStateSnapshot = {
   querySource: QuerySource
   model: string
   agentId?: AgentId
-  fastMode?: boolean
-  betas?: readonly string[]
-  autoModeActive?: boolean
-  isUsingOverage?: boolean
+  /** From the active adapter's describeCacheRelevantFeatures — only the
+   *  fields that provider's wire treats as part of the cache key. */
+  features?: Record<string, string>
   effortValue?: string | number
   extraBodyParams?: unknown
 }
@@ -230,10 +222,7 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
       querySource,
       model,
       agentId,
-      fastMode,
-      betas = [],
-      autoModeActive = false,
-      isUsingOverage = false,
+      features = {},
       effortValue,
       extraBodyParams,
     } = snapshot
@@ -263,8 +252,6 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
     const systemCharCount = getSystemCharCount(system)
     const lazyDiffableContent = () =>
       buildDiffableContent(system, toolSchemas, model)
-    const isFastMode = fastMode ?? false
-    const sortedBetas = [...betas].sort()
     const effortStr = effortValue === undefined ? '' : String(effortValue)
     const extraBodyHash =
       extraBodyParams === undefined ? 0 : computeHash(extraBodyParams)
@@ -285,10 +272,7 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
         toolNames,
         systemCharCount,
         model,
-        fastMode: isFastMode,
-        betas: sortedBetas,
-        autoModeActive,
-        isUsingOverage,
+        features,
         effortValue: effortStr,
         extraBodyHash,
         callCount: 1,
@@ -305,32 +289,31 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
     const systemPromptChanged = systemHash !== prev.systemHash
     const toolSchemasChanged = toolsHash !== prev.toolsHash
     const modelChanged = model !== prev.model
-    const fastModeChanged = isFastMode !== prev.fastMode
     const cacheControlChanged = cacheControlHash !== prev.cacheControlHash
-    const betasChanged =
-      sortedBetas.length !== prev.betas.length ||
-      sortedBetas.some((b, i) => b !== prev.betas[i])
-    const autoModeChanged = autoModeActive !== prev.autoModeActive
-    const overageChanged = isUsingOverage !== prev.isUsingOverage
     const effortChanged = effortStr !== prev.effortValue
     const extraBodyChanged = extraBodyHash !== prev.extraBodyHash
+
+    const featureNames = [
+      ...new Set([...Object.keys(prev.features), ...Object.keys(features)]),
+    ].sort()
+    const changedFeatures: ChangedFeature[] = []
+    for (const name of featureNames) {
+      const p = prev.features[name] ?? ''
+      const n = features[name] ?? ''
+      if (p !== n) changedFeatures.push({ name, prev: p, next: n })
+    }
 
     if (
       systemPromptChanged ||
       toolSchemasChanged ||
       modelChanged ||
-      fastModeChanged ||
       cacheControlChanged ||
-      betasChanged ||
-      autoModeChanged ||
-      overageChanged ||
+      changedFeatures.length > 0 ||
       effortChanged ||
       extraBodyChanged
     ) {
       const prevToolSet = new Set(prev.toolNames)
       const newToolSet = new Set(toolNames)
-      const prevBetaSet = new Set(prev.betas)
-      const newBetaSet = new Set(sortedBetas)
       const addedTools = toolNames.filter(n => !prevToolSet.has(n))
       const removedTools = prev.toolNames.filter(n => !newToolSet.has(n))
       const changedToolSchemas: string[] = []
@@ -348,11 +331,7 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
         systemPromptChanged,
         toolSchemasChanged,
         modelChanged,
-        fastModeChanged,
         cacheControlChanged,
-        betasChanged,
-        autoModeChanged,
-        overageChanged,
         effortChanged,
         extraBodyChanged,
         addedToolCount: addedTools.length,
@@ -363,8 +342,7 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
         systemCharDelta: systemCharCount - prev.systemCharCount,
         previousModel: prev.model,
         newModel: model,
-        addedBetas: sortedBetas.filter(b => !prevBetaSet.has(b)),
-        removedBetas: prev.betas.filter(b => !newBetaSet.has(b)),
+        changedFeatures,
         prevEffortValue: prev.effortValue,
         newEffortValue: effortStr,
         buildPrevDiffableContent: prev.buildDiffableContent,
@@ -379,10 +357,7 @@ export function recordPromptState(snapshot: PromptStateSnapshot): void {
     prev.toolNames = toolNames
     prev.systemCharCount = systemCharCount
     prev.model = model
-    prev.fastMode = isFastMode
-    prev.betas = sortedBetas
-    prev.autoModeActive = autoModeActive
-    prev.isUsingOverage = isUsingOverage
+    prev.features = features
     prev.effortValue = effortStr
     prev.extraBodyHash = extraBodyHash
     prev.buildDiffableContent = lazyDiffableContent
@@ -442,11 +417,8 @@ export function explainCacheBreak(input: {
           : ' (tool prompt/schema changed, same tool set)'
       parts.push(`tools changed${toolDiff}`)
     }
-    // Anthropic-wire-only causes: the adapter drops these for
-    // automatic-prefix providers, so they cannot break that cache.
-    if (anthropicCache && changes.fastModeChanged) {
-      parts.push('fast mode toggled')
-    }
+    // Anthropic-wire-only: the adapter drops markers for automatic-prefix
+    // providers, so a marker flip cannot break that cache.
     if (
       anthropicCache &&
       changes.cacheControlChanged &&
@@ -456,21 +428,12 @@ export function explainCacheBreak(input: {
       // otherwise the scope/TTL flip is a consequence, not the root cause.
       parts.push('cache_control changed (scope or TTL)')
     }
-    if (anthropicCache && changes.betasChanged) {
-      const added = changes.addedBetas.length
-        ? `+${changes.addedBetas.join(',')}`
-        : ''
-      const removed = changes.removedBetas.length
-        ? `-${changes.removedBetas.join(',')}`
-        : ''
-      const diff = [added, removed].filter(Boolean).join(' ')
-      parts.push(`betas changed${diff ? ` (${diff})` : ''}`)
-    }
-    if (changes.autoModeChanged) {
-      parts.push('auto mode toggled')
-    }
-    if (anthropicCache && changes.overageChanged) {
-      parts.push('overage state changed (TTL latched, no flip)')
+    // Adapter-declared features: a key only appears for providers whose
+    // wire acts on it, so no cacheType filtering is needed here.
+    for (const f of changes.changedFeatures) {
+      parts.push(
+        `${f.name} changed (${f.prev || 'none'} → ${f.next || 'none'})`,
+      )
     }
     if (changes.effortChanged) {
       parts.push(

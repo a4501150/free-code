@@ -55,11 +55,6 @@ import {
   getOauthAccountInfo,
   handleOAuth401Error,
 } from '../../utils/auth.js'
-import {
-  getBodyBetas,
-  getMergedBetas,
-  getModelBetas,
-} from '../../utils/betas.js'
 import { getOrCreateUserID } from '../../utils/config.js'
 import { getModelMaxOutputTokens } from '../../utils/context.js'
 import { resolveAppliedEffort } from '../../utils/effort.js'
@@ -75,7 +70,6 @@ import {
   ensureToolResultPairing,
   normalizeContentFromAPI,
   normalizeMessagesForAPI,
-  stripAdvisorBlocks,
   stripForeignReasoningBlocks,
 } from '../../utils/messages.js'
 import { getSmallFastModel } from '../../utils/model/model.js'
@@ -85,12 +79,12 @@ import {
 } from '../../utils/systemPromptType.js'
 import { tokenCountFromLastAPIResponse } from '../../utils/tokens.js'
 import {
-  currentLimits,
   extractQuotaStatusFromError,
   extractQuotaStatusFromHeaders,
 } from '../claudeAiLimits.js'
 import { getAPIContextManagement } from '../compact/apiMicrocompact.js'
 import { isAutoModeActive } from '../../utils/permissions/autoModeState.js'
+import { isFastModeEnabled } from 'src/utils/fastMode.js'
 
 import {
   DomainTransportError,
@@ -99,22 +93,10 @@ import {
   DomainUserAbortError,
 } from './domain-errors.js'
 import {
-  getAfkModeHeaderLatched,
-  getFastModeHeaderLatched,
   getLastApiCompletionTimestamp,
   getSessionId,
-  setAfkModeHeaderLatched,
-  setFastModeHeaderLatched,
   setLastMainRequestId,
 } from 'src/bootstrap/state.js'
-import {
-  AFK_MODE_BETA_HEADER,
-  CONTEXT_MANAGEMENT_BETA_HEADER,
-  EFFORT_BETA_HEADER,
-  FAST_MODE_BETA_HEADER,
-  STRUCTURED_OUTPUTS_BETA_HEADER,
-  TASK_BUDGETS_BETA_HEADER,
-} from 'src/constants/betas.js'
 import {
   isAgenticQuerySource,
   type QuerySource,
@@ -124,13 +106,16 @@ import { addToTotalSessionCost } from 'src/cost-tracker.js'
 import { getInitialSettings } from 'src/utils/settings/settings.js'
 import type { AgentId } from 'src/types/ids.js'
 import { isAwsCredentialsProviderError } from 'src/utils/aws.js'
-import { isAdvisorEnabled } from 'src/utils/advisor.js'
 import { getAgentContext } from 'src/utils/agentContext.js'
 import { withAgenticSystemPromptInvariantsForQuery } from 'src/utils/agenticSystemPrompt.js'
 import {
-  modelSupportsStructuredOutputs,
+  modelSupportsContextManagement,
   shouldIncludeFirstPartyOnlyBetas,
 } from 'src/utils/betas.js'
+import {
+  effectiveFastMode,
+  type RequestFeatureIntent,
+} from './adapters/anthropicFeatures.js'
 import { getMaxThinkingTokensForModel } from 'src/utils/context.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logForDiagnosticsNoPII } from 'src/utils/diagLogs.js'
@@ -139,12 +124,6 @@ import {
   type EffortValue,
   modelSupportsEffort,
 } from 'src/utils/effort.js'
-import {
-  isFastModeAvailable,
-  isFastModeCooldown,
-  isFastModeEnabled,
-  isFastModeSupportedByModel,
-} from 'src/utils/fastMode.js'
 import { returnValue } from 'src/utils/generators.js'
 import { headlessProfilerCheckpoint } from 'src/utils/headlessProfiler.js'
 import { calculateUSDCost } from 'src/utils/modelCost.js'
@@ -155,7 +134,6 @@ import {
   type ThinkingConfig,
 } from 'src/utils/thinking.js'
 import { API_MAX_MEDIA_PER_REQUEST } from '../../constants/apiLimits.js'
-import { ADVISOR_BETA_HEADER } from '../../constants/betas.js'
 import { safeParseJSON } from '../../utils/json.js'
 import {
   normalizeModelStringForAPI,
@@ -216,7 +194,7 @@ type OutputConfig = Record<string, unknown> & {
  * @param betaHeaders - An array of beta headers to include in the request.
  * @returns A JSON object representing the extra body parameters.
  */
-export function getExtraBodyParams(betaHeaders?: string[]): JsonObject {
+export function getExtraBodyParams(): JsonObject {
   // Parse user's extra body parameters first
   const extraBodyStr = process.env.CLAUDE_CODE_EXTRA_BODY
   let result: JsonObject = {}
@@ -245,21 +223,8 @@ export function getExtraBodyParams(betaHeaders?: string[]): JsonObject {
     }
   }
 
-  // Handle beta headers if provided
-  if (betaHeaders && betaHeaders.length > 0) {
-    if (result.anthropic_beta && Array.isArray(result.anthropic_beta)) {
-      // Add to existing array, avoiding duplicates
-      const existingHeaders = result.anthropic_beta as string[]
-      const newHeaders = betaHeaders.filter(
-        header => !existingHeaders.includes(header),
-      )
-      result.anthropic_beta = [...existingHeaders, ...newHeaders]
-    } else {
-      // Create new array with the beta headers
-      result.anthropic_beta = betaHeaders
-    }
-  }
-
+  // Provider beta lists (e.g. the Bedrock body-beta union) are merged in by
+  // the Anthropic-wire adapters, not here — see adapters/anthropicFeatures.ts.
   return result
 }
 
@@ -304,21 +269,18 @@ export { getCacheControl }
 function configureEffortParams(
   effortValue: EffortValue | undefined,
   outputConfig: OutputConfig,
-  extraBodyParams: Record<string, unknown>,
-  betas: string[],
   model: string,
 ): void {
   if (!modelSupportsEffort(model) || 'effort' in outputConfig) {
     return
   }
 
-  if (effortValue === undefined) {
-    betas.push(EFFORT_BETA_HEADER)
-  } else if (typeof effortValue === 'string') {
-    // Send string effort level as is (SDK accepts low|medium|high|max; xhigh
-    // tier is ant-internal and never reaches this path in OSS builds).
+  // Send string effort level as is (SDK accepts low|medium|high|max; xhigh
+  // tier is ant-internal and never reaches this path in OSS builds). The
+  // effort beta itself is derived by the Anthropic-wire adapters from the
+  // model's effort capability — see adapters/anthropicFeatures.ts.
+  if (typeof effortValue === 'string') {
     outputConfig.effort = effortValue as 'low' | 'medium' | 'high' | 'max'
-    betas.push(EFFORT_BETA_HEADER)
   }
 }
 
@@ -336,7 +298,6 @@ type TaskBudgetParam = {
 export function configureTaskBudgetParams(
   taskBudget: Options['taskBudget'],
   outputConfig: OutputConfig & { task_budget?: TaskBudgetParam },
-  betas: string[],
 ): void {
   if (
     !taskBudget ||
@@ -351,9 +312,6 @@ export function configureTaskBudgetParams(
     ...(taskBudget.remaining !== undefined && {
       remaining: taskBudget.remaining,
     }),
-  }
-  if (!betas.includes(TASK_BUDGETS_BETA_HEADER)) {
-    betas.push(TASK_BUDGETS_BETA_HEADER)
   }
 }
 
@@ -456,7 +414,6 @@ export async function verifyApiKey(
   try {
     // WARNING: if you change this to use a non-Haiku model, this request will fail in 1P unless it uses getCLISyspromptPrefix.
     const model = getSmallFastModel()
-    const betas = getModelBetas(model)
     return await returnValue(
       withRetry(
         async () => {
@@ -481,10 +438,16 @@ export async function verifyApiKey(
             ],
             maxTokens: 1,
             temperature: 1,
-            ...(betas.length > 0 && { betas }),
             metadata: getAPIMetadata(),
             ...getExtraBodyParams(),
           }
+          adapter.applyRequestFeatures?.(request, model, {
+            isAgenticQuery: false,
+            afkModeActive: false,
+            fastModeWanted: false,
+            hasOutputFormat: false,
+            hasTaskBudget: false,
+          })
 
           await adapter.createMessage(
             verifyConfig,
@@ -1055,13 +1018,6 @@ async function* queryModel(
       : options.model
   queryCheckpoint('query_tool_schema_build_start')
   const isAgenticQuery = isAgenticQuerySource(options.querySource)
-  const betas = getMergedBetas(options.model, { isAgenticQuery })
-
-  // Legacy: send advisor beta header so old server-side advisor blocks
-  // in conversation history can be parsed without error.
-  if (isAdvisorEnabled()) {
-    betas.push(ADVISOR_BETA_HEADER)
-  }
 
   // Cataloged tools (MCP, plus built-ins named in lazyTools) stay in the
   // caller's pool for dispatch and permissions but leave the request, so the
@@ -1087,7 +1043,7 @@ async function* queryModel(
         model: options.model,
         // Last real tool only. Server tools are appended after this array, so
         // marking the last element of `allTools` would put the breakpoint
-        // behind a suffix that /advisor toggles.
+        // behind a server-tool suffix.
         cacheControl:
           enablePromptCaching && index === filteredTools.length - 1
             ? getCacheControl({ querySource: options.querySource })
@@ -1124,11 +1080,6 @@ async function* queryModel(
   // tool_uses and strips orphaned tool_results referencing non-existent tool_uses.
   messagesForAPI = ensureToolResultPairing(messagesForAPI)
 
-  // Strip advisor blocks — the API rejects them without the beta header.
-  if (!betas.includes(ADVISOR_BETA_HEADER)) {
-    messagesForAPI = stripAdvisorBlocks(messagesForAPI)
-  }
-
   // Strip excess media items before making the API call.
   // The API rejects requests with >100 media items but returns a confusing error.
   // Rather than erroring (which is hard to recover from in Cowork/CCD), we
@@ -1162,7 +1113,6 @@ async function* queryModel(
   const system = buildSystemPromptBlocks(systemPrompt, enablePromptCaching, {
     querySource: options.querySource,
   })
-  const useBetas = betas.length > 0
 
   // Build minimal context for detailed tracing (when beta tracing is enabled)
   // Note: The actual new_context message extraction is done in sessionTracing.ts using
@@ -1170,52 +1120,35 @@ async function* queryModel(
   const extraToolSchemas = [...(options.extraToolSchemas ?? [])]
   const allTools: DomainToolDefinition[] = [...toolSchemas, ...extraToolSchemas]
 
-  const isFastMode =
-    isFastModeEnabled() &&
-    isFastModeAvailable() &&
-    !isFastModeCooldown() &&
-    isFastModeSupportedByModel(options.model) &&
-    !!options.fastMode
+  const isFastMode = effectiveFastMode(options.model, !!options.fastMode)
 
-  // Sticky-on latches for dynamic beta headers. Each header, once first
-  // sent, keeps being sent for the rest of the session so mid-session
-  // toggles don't change the server-side cache key and bust ~50-70K tokens.
-  // Latches are cleared on /clear and /compact via clearBetaHeaderLatches().
-  // Per-call gates (isAgenticQuery, querySource===repl_main_thread) stay
-  // per-call so non-agentic queries keep their own stable header set.
-
-  let afkHeaderLatched = getAfkModeHeaderLatched() === true
-  if (
-    !afkHeaderLatched &&
-    isAgenticQuery &&
-    shouldIncludeFirstPartyOnlyBetas() &&
-    isAutoModeActive()
-  ) {
-    afkHeaderLatched = true
-    setAfkModeHeaderLatched(true)
-  }
-
-  let fastModeHeaderLatched = getFastModeHeaderLatched() === true
-  if (!fastModeHeaderLatched && isFastMode) {
-    fastModeHeaderLatched = true
-    setFastModeHeaderLatched(true)
+  // Provider-neutral intent for this request. Anthropic-wire adapters derive
+  // beta headers (and the fast-mode/AFK sticky latches) from it; adapters
+  // whose wire has no such vocabulary ignore it entirely.
+  const intent: RequestFeatureIntent = {
+    isAgenticQuery,
+    afkModeActive: isAutoModeActive(),
+    fastModeWanted: !!options.fastMode,
+    hasOutputFormat: !!options.outputFormat,
+    hasTaskBudget: !!options.taskBudget,
   }
 
   const effort = resolveAppliedEffort(options.model, options.effortValue)
 
-  // Capture everything that could affect the server-side cache key.
-  // Pass latched header values (not live state) so break detection
-  // reflects what we actually send, not what the user toggled.
+  // Capture everything that could affect the server-side cache key. The
+  // adapter-descriptor carries the (latched) wire-shape fields it considers
+  // cache-relevant, so break detection reflects what we actually send.
   recordPromptState({
     system,
     toolSchemas: allTools,
     querySource: options.querySource,
     model: options.model,
     agentId: options.agentId,
-    fastMode: fastModeHeaderLatched,
-    betas,
-    autoModeActive: afkHeaderLatched,
-    isUsingOverage: currentLimits.isUsingOverage ?? false,
+    features:
+      getAdapterForModel(options.model).describeCacheRelevantFeatures?.(
+        options.model,
+        intent,
+      ) ?? {},
     effortValue: effort,
     extraBodyParams: getExtraBodyParams(),
   })
@@ -1252,34 +1185,20 @@ async function* queryModel(
     }
   }
 
-  // Capture the betas sent in the last API request, including the ones that
-  // were dynamically added, so we can log and send it to telemetry.
+  // Captured per attempt from the adapter-mutated request (see
+  // domainParamsFromContext) so we can log and telemetry the final set.
   let lastRequestBetas: string[] | undefined
 
   const domainParamsFromContext = (
     retryContext: RetryContext,
   ): DomainMessageRequest => {
-    const betasParams = [...betas]
-
-    const bedrockBetas = registry.getCapability(
-      retryContext.model,
-      'betasInBody',
-    )
-      ? getBodyBetas(retryContext.model)
-      : []
-    const extraBodyParams = getExtraBodyParams(bedrockBetas)
+    const extraBodyParams = getExtraBodyParams()
 
     const outputConfig: OutputConfig = {
       ...((extraBodyParams.output_config as OutputConfig) ?? {}),
     }
 
-    configureEffortParams(
-      effort,
-      outputConfig,
-      extraBodyParams,
-      betasParams,
-      options.model,
-    )
+    configureEffortParams(effort, outputConfig, options.model)
 
     const resolvedProvider = registry.getProviderForModel(retryContext.model)
     const reasoningSummary = resolvedProvider?.model.reasoningSummary
@@ -1293,17 +1212,10 @@ async function* queryModel(
     configureTaskBudgetParams(
       options.taskBudget,
       outputConfig as OutputConfig & { task_budget?: TaskBudgetParam },
-      betasParams,
     )
 
     if (options.outputFormat && !('format' in outputConfig)) {
       outputConfig.format = options.outputFormat as Record<string, unknown>
-      if (
-        modelSupportsStructuredOutputs(options.model) &&
-        !betasParams.includes(STRUCTURED_OUTPUTS_BETA_HEADER)
-      ) {
-        betasParams.push(STRUCTURED_OUTPUTS_BETA_HEADER)
-      }
     }
 
     const maxOutputTokens =
@@ -1343,39 +1255,13 @@ async function* queryModel(
     const enablePromptCaching =
       options.enablePromptCaching ?? getPromptCachingEnabled(retryContext.model)
 
-    let speed: string | undefined
-    const isFastModeForRetry =
-      isFastModeEnabled() &&
-      isFastModeAvailable() &&
-      !isFastModeCooldown() &&
-      isFastModeSupportedByModel(options.model) &&
-      !!retryContext.fastMode
-    if (isFastModeForRetry) {
-      speed = 'fast'
-    }
-    if (fastModeHeaderLatched && !betasParams.includes(FAST_MODE_BETA_HEADER)) {
-      betasParams.push(FAST_MODE_BETA_HEADER)
-    }
-
-    const supportsAfk = registry.resolveFirstPartyCapability(
-      undefined,
-      'supportsAfkMode',
-    )
-    if (
-      afkHeaderLatched &&
-      supportsAfk &&
-      shouldIncludeFirstPartyOnlyBetas() &&
-      isAgenticQuery &&
-      !betasParams.includes(AFK_MODE_BETA_HEADER)
-    ) {
-      betasParams.push(AFK_MODE_BETA_HEADER)
-    }
+    const speed = effectiveFastMode(retryContext.model, !!retryContext.fastMode)
+      ? 'fast'
+      : undefined
 
     const temperature = !hasThinking
       ? (options.temperatureOverride ?? 1)
       : undefined
-
-    lastRequestBetas = betasParams
 
     // Build extra body params (excluding output_config which we handle separately)
     const { output_config: _oc, ...restExtraBody } = extraBodyParams
@@ -1392,15 +1278,14 @@ async function* queryModel(
       tools: allTools,
       toolChoice: options.toolChoice,
       maxTokens: maxOutputTokens,
-      ...(useBetas && { betas: betasParams }),
       ...(registry.isAnthropicType(retryContext.model) && {
         metadata: getAPIMetadata(),
       }),
       ...(thinking && { thinking }),
       ...(temperature !== undefined && { temperature }),
       ...(contextManagement &&
-        useBetas &&
-        betasParams.includes(CONTEXT_MANAGEMENT_BETA_HEADER) && {
+        modelSupportsContextManagement(retryContext.model) &&
+        shouldIncludeFirstPartyOnlyBetas(retryContext.model) && {
           contextManagement,
         }),
       ...(Object.keys(restExtraBody).length > 0 && {
@@ -1413,12 +1298,26 @@ async function* queryModel(
       ...(previousRequestId && { previousRequestId }),
     }
 
+    // The adapter decides what travels on the wire: beta headers (or the
+    // body-beta list for providers that reject beta headers), plus the
+    // sticky fast-mode/AFK latches.
+    getAdapterForModel(retryContext.model).applyRequestFeatures?.(
+      domainRequest,
+      retryContext.model,
+      intent,
+    )
+    // Capture the betas actually sent, including the dynamically added
+    // ones, so we can log and send them to telemetry.
+    lastRequestBetas =
+      domainRequest.betas ??
+      (domainRequest.extraBody?.anthropic_beta as string[] | undefined)
+
     return domainRequest
   }
 
   // Compute log scalars synchronously so the fire-and-forget .then() closure
   // captures only primitives instead of domainParamsFromContext's full closure
-  // scope (messagesForAPI, system, allTools, betas — the entire request-building
+  // scope (messagesForAPI, system, allTools — the entire request-building
   // context), which would otherwise be pinned until the promise resolves.
   {
     const queryParams = domainParamsFromContext({
@@ -1426,7 +1325,7 @@ async function* queryModel(
       thinkingConfig,
     })
     const logMessagesLength = queryParams.messages.length
-    const logBetas = useBetas ? (queryParams.betas ?? []) : []
+    const logBetas = queryParams.betas ?? []
     const logThinkingType = queryParams.thinking?.type ?? 'disabled'
     const logEffortValue = queryParams.outputConfig?.effort as
       | EffortLevel
@@ -1462,7 +1361,6 @@ async function* queryModel(
   let responseHeaders: globalThis.Headers | undefined = undefined
 
   let isFastModeRequest = isFastMode // Keep separate state as it may change if falling back
-  let isAdvisorInProgress = false
 
   startSessionActivity('api_call')
   try {
@@ -1538,7 +1436,6 @@ async function* queryModel(
       contentBlocks.length = 0
       usage = EMPTY_USAGE
       stopReason = null
-      isAdvisorInProgress = false
 
       // Streaming idle timeout watchdog: use a conservative first-event guard,
       // then a tighter post-first-event guard for stale streams.
@@ -1659,10 +1556,6 @@ async function* queryModel(
                     ...cb,
                     input: '' as unknown as { [key: string]: unknown },
                   } as (typeof contentBlocks)[number]
-                  if ((cb as { name?: string }).name === 'advisor') {
-                    isAdvisorInProgress = true
-                    logForDebugging(`[AdvisorTool] Advisor tool called`)
-                  }
                   break
                 case 'text':
                   contentBlocks[part.index] = {
@@ -1690,12 +1583,6 @@ async function* queryModel(
                   contentBlocks[part.index] = {
                     ...cb,
                   } as (typeof contentBlocks)[number]
-                  if ((cb.type as string) === 'advisor_tool_result') {
-                    isAdvisorInProgress = false
-                    logForDebugging(
-                      `[AdvisorTool] Advisor tool result received`,
-                    )
-                  }
                   break
               }
               break

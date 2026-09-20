@@ -163,8 +163,8 @@ describe('user context snapshot domains', () => {
   })
 })
 
-describe('persistence allowlist', () => {
-  test('instruction, guidance and context attachments survive resume', () => {
+describe('persistence policy', () => {
+  test('every attachment the model saw survives resume', () => {
     expect(
       isLoggableMessage(
         attachMessage({
@@ -183,7 +183,8 @@ describe('persistence allowlist', () => {
         }),
       ),
     ).toBe(true)
-    // Still memory-only:
+    // Persist-all: model-visible injections that used to be memory-only now
+    // reach disk so --resume replays the exact bytes the cache was warmed on.
     expect(
       isLoggableMessage(
         attachMessage({
@@ -193,6 +194,22 @@ describe('persistence allowlist', () => {
           isInitial: true,
         }),
       ),
+    ).toBe(true)
+    expect(
+      isLoggableMessage(
+        attachMessage({
+          type: 'relevant_memories',
+          memories: [],
+        }),
+      ),
+    ).toBe(true)
+  })
+
+  test('progress ticks stay dropped (volume, not privacy)', () => {
+    expect(
+      isLoggableMessage({ type: 'progress' } as unknown as Parameters<
+        typeof isLoggableMessage
+      >[0]),
     ).toBe(false)
   })
 })

@@ -1764,10 +1764,6 @@ const _settingsSchemaValue = z
       .boolean()
       .optional()
       .describe('Inject CLAUDE_CODE_SESSION_ID into shell subprocesses.'),
-    terminalRecording: z
-      .boolean()
-      .optional()
-      .describe('Enable asciinema-format terminal session recording.'),
   })
   .passthrough()
 

@@ -806,7 +806,7 @@ export async function getAttachments(
       Promise.resolve(getDateChangeAttachments(messages)),
     ),
     maybe('terminal_focus', () =>
-      Promise.resolve(getTerminalFocusAttachments()),
+      Promise.resolve(getTerminalFocusAttachments(messages)),
     ),
     maybe('ultrathink_effort', () =>
       Promise.resolve(getUltrathinkEffortAttachment(input)),
@@ -1346,7 +1346,21 @@ export function getDateChangeAttachments(
   messages: Message[] | undefined,
 ): Attachment[] {
   const currentDate = getLocalISODate()
-  const lastDate = getLastEmittedDate()
+  let lastDate = getLastEmittedDate()
+
+  if (lastDate === null && messages !== undefined) {
+    // Fresh process (--resume, --continue): the persisted date_change rows are
+    // replayed to the model, so baseline off the newest one instead of today.
+    // Silently baselining on today would swallow a real crossing that
+    // happened while the process was down.
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m.type === 'attachment' && m.attachment.type === 'date_change') {
+        lastDate = m.attachment.newDate
+        break
+      }
+    }
+  }
 
   if (lastDate === null) {
     // First turn — just record, no attachment needed
@@ -1383,13 +1397,28 @@ export function getDateChangeAttachments(
  *
  * Exported for testing.
  */
-export function getTerminalFocusAttachments(): Attachment[] {
+export function getTerminalFocusAttachments(
+  messages?: Message[],
+): Attachment[] {
   if (!isProactiveActive()) {
     return []
   }
 
   const focused = getTerminalFocused()
-  const lastFocused = getLastEmittedTerminalFocus()
+  let lastFocused = getLastEmittedTerminalFocus()
+
+  if (lastFocused === null && messages !== undefined) {
+    // Fresh process: baseline off the newest persisted row, not the current
+    // state — the replayed rows are visible to the model, and swallowing a
+    // focus flip that happened across the restart would misreport it.
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m.type === 'attachment' && m.attachment.type === 'terminal_focus') {
+        lastFocused = m.attachment.focused
+        break
+      }
+    }
+  }
 
   if (lastFocused === null) {
     // First observation — establish the baseline without announcing it.

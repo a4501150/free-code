@@ -20,7 +20,6 @@ import {
 import { asSessionId } from '../types/ids.js'
 import type { PersistedWorktreeSession } from '../types/logs.js'
 import type { Message } from '../types/message.js'
-import { renameRecordingForSession } from './asciicast.js'
 import { clearMemoryFileCaches } from './claudemd.js'
 import {
   type ConcurrentSessionEntry,
@@ -263,6 +262,7 @@ type ResumeLoadResult = {
   customTitle?: string
   tag?: string
   mode?: 'coordinator' | 'normal'
+  cacheTtl1h?: boolean
   worktreeSession?: PersistedWorktreeSession | null
   prNumber?: number
   prUrl?: string
@@ -362,8 +362,8 @@ export function exitRestoredWorktree(): void {
  * interactive picker — which held byte-identical copies of this. The
  * mid-session `/resume` in REPL.tsx and the headless path in cli/print.ts
  * deliberately do NOT use it: `/resume` has to switch even when forking (it
- * mints a new ID) and clears metadata first, and print mode has no asciicast
- * recording, no cost UI and no worktree of its own.
+ * mints a new ID) and clears metadata first, and print mode has no cost UI
+ * and no worktree of its own.
  */
 export async function adoptResumedSessionAtStartup(
   result: ResumeLoadResult,
@@ -386,9 +386,6 @@ export async function adoptResumedSessionAtStartup(
         asSessionId(sid),
         opts.transcriptPath ? dirname(opts.transcriptPath) : null,
       )
-      // Rename asciicast recording to match the resumed session ID so
-      // getSessionRecordingPaths() can discover it during /share
-      await renameRecordingForSession()
       await resetSessionFilePointer()
       restoreCostStateForSession(sid)
     }

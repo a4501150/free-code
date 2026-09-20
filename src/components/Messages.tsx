@@ -22,7 +22,6 @@ import type {
   ProgressMessage as ProgressMessageType,
   RenderableMessage,
 } from '../types/message.js'
-import { type AdvisorBlock, isAdvisorBlock } from '../utils/advisor.js'
 import { collapseBackgroundBashNotifications } from '../utils/collapseBackgroundBashNotifications.js'
 import { collapseHookSummaries } from '../utils/collapseHookSummaries.js'
 import { collapseReadSearchGroups } from '../utils/collapseReadSearch.js'
@@ -739,13 +738,7 @@ const MessagesImpl = ({
         if (first?.type === 'reasoning' && (first as { text?: string }).text) {
           return true
         }
-        const b = first as unknown as AdvisorBlock | undefined
-        return (
-          b != null &&
-          isAdvisorBlock(b) &&
-          b.type === 'advisor_tool_result' &&
-          b.content.type === 'advisor_result'
-        )
+        return false
       }
       if (msg.type !== 'user') return false
       const b = msg.message.content[0]

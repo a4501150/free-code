@@ -9,11 +9,7 @@ function changes(over: Partial<PendingChanges> = {}): PendingChanges {
     systemPromptChanged: false,
     toolSchemasChanged: false,
     modelChanged: false,
-    fastModeChanged: false,
     cacheControlChanged: false,
-    betasChanged: false,
-    autoModeChanged: false,
-    overageChanged: false,
     effortChanged: false,
     extraBodyChanged: false,
     addedToolCount: 0,
@@ -24,8 +20,7 @@ function changes(over: Partial<PendingChanges> = {}): PendingChanges {
     changedToolSchemas: [],
     previousModel: 'a',
     newModel: 'b',
-    addedBetas: [],
-    removedBetas: [],
+    changedFeatures: [],
     prevEffortValue: '',
     newEffortValue: '',
     buildPrevDiffableContent: () => '',
@@ -62,17 +57,34 @@ describe('explainCacheBreak provider-aware attribution', () => {
   })
 
   test('automatic-prefix providers do not blame Anthropic-wire markers', () => {
+    // Automatic-prefix adapters declare no wire features, so a break there
+    // has no Anthropic-wire attribution to offer — only the marker flip,
+    // which their adapters strip, and the idle gap.
     const reason = explainCacheBreak({
-      changes: changes({ cacheControlChanged: true, betasChanged: true }),
+      changes: changes({ cacheControlChanged: true }),
       gapMsSinceLastAssistant: 10 * MIN,
       cacheType: 'automatic-prefix',
       idleTtlMinutes: [],
     })
     expect(reason).toContain('automatic-prefix')
     expect(reason).not.toContain('cache_control')
-    expect(reason).not.toContain('betas')
+    expect(reason).not.toContain('anthropic-beta')
     expect(reason).not.toContain('TTL')
     expect(reason).toContain('10min idle gap')
+  })
+
+  test('adapter-declared feature flips are named on explicit-breakpoint providers', () => {
+    const reason = explainCacheBreak({
+      changes: changes({
+        changedFeatures: [
+          { name: 'anthropic-beta', prev: 'a-beta', next: 'a-beta,b-beta' },
+        ],
+      }),
+      gapMsSinceLastAssistant: 0,
+      cacheType: 'explicit-breakpoint',
+      idleTtlMinutes: [5, 60],
+    })
+    expect(reason).toContain('anthropic-beta changed (a-beta → a-beta,b-beta)')
   })
 
   test('declared idle TTL tiers attribute expiry on any provider', () => {

@@ -73,7 +73,6 @@ function createMinimalToolUseContext(tools: Tools = []): ToolUseContext {
   const appState = {
     toolPermissionContext: getEmptyToolPermissionContext(),
     fastMode: false,
-    advisorModel: undefined,
     mcp: { tools: [], clients: [] },
     sessionHooks: new Map(),
   }

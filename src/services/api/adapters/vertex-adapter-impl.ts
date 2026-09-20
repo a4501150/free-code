@@ -1,4 +1,9 @@
 import { GoogleAuth } from 'google-auth-library'
+
+import {
+  applyAnthropicRequestFeatures,
+  describeAnthropicCacheFeatures,
+} from './anthropicFeatures.js'
 import { VERTEX_COUNT_TOKENS_ALLOWED_BETAS } from '../../../constants/betas.js'
 import {
   anthropicMessageToDomain,
@@ -131,6 +136,14 @@ function applyVertexTransforms(body: Record<string, unknown>): {
 
 export const vertexAnthropicAdapter: ProviderAdapter = {
   providerType: 'vertex',
+
+  applyRequestFeatures(request, model, intent) {
+    applyAnthropicRequestFeatures(request, model, intent)
+  },
+
+  describeCacheRelevantFeatures(model, intent) {
+    return describeAnthropicCacheFeatures(model, intent)
+  },
 
   async createStream(
     config: ProviderConfig,

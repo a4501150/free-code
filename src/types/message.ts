@@ -105,7 +105,6 @@ export type AssistantMessage = {
   }
   error?: SDKAssistantErrorReason
   errorDetails?: string
-  advisorModel?: string
   isSidechain?: boolean
   agentId?: string
   caller?: string

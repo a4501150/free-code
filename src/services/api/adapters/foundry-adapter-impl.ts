@@ -3,6 +3,10 @@ import {
   getBearerTokenProvider,
 } from '@azure/identity'
 import {
+  applyAnthropicRequestFeatures,
+  describeAnthropicCacheFeatures,
+} from './anthropicFeatures.js'
+import {
   anthropicMessageToDomain,
   type WireMessage,
 } from '../../../types/domainConversion.js'
@@ -76,6 +80,14 @@ async function getFoundryAuth(
 
 export const foundryAdapter: ProviderAdapter = {
   providerType: 'foundry',
+
+  applyRequestFeatures(request, model, intent) {
+    applyAnthropicRequestFeatures(request, model, intent)
+  },
+
+  describeCacheRelevantFeatures(model, intent) {
+    return describeAnthropicCacheFeatures(model, intent)
+  },
 
   async createStream(
     config: ProviderConfig,

@@ -24,11 +24,9 @@ import type {
   ProgressMessage,
   SystemMessage,
 } from '../types/message.js'
-import { type AdvisorBlock, isAdvisorBlock } from '../utils/advisor.js'
 import { logError } from '../utils/log.js'
 import type { buildMessageLookups } from '../utils/messages.js'
 import { CompactSummary } from './CompactSummary.js'
-import { AdvisorMessage } from './messages/AdvisorMessage.js'
 import { AssistantRedactedThinkingMessage } from './messages/AssistantRedactedThinkingMessage.js'
 import { AssistantTextMessage } from './messages/AssistantTextMessage.js'
 import { AssistantThinkingMessage } from './messages/AssistantThinkingMessage.js'
@@ -147,7 +145,6 @@ function MessageImpl({
               isTranscriptMode={isTranscriptMode}
               lookups={lookups}
               onOpenRateLimitOptions={onOpenRateLimitOptions}
-              advisorModel={message.advisorModel}
               thinkingDurationMs={
                 typeof message.thinkingDurationMs === 'number'
                   ? (message.thinkingDurationMs as number)
@@ -387,13 +384,11 @@ function AssistantMessageBlock({
   isTranscriptMode,
   lookups,
   onOpenRateLimitOptions,
-  advisorModel,
   thinkingDurationMs,
 }: {
   param:
     | DomainContentBlock
     | ConnectorTextBlock
-    | AdvisorBlock
     | DomainUserTextBlock
     | DomainUserImageBlock
     | DomainReasoningBlock
@@ -412,7 +407,6 @@ function AssistantMessageBlock({
   isTranscriptMode: boolean
   lookups: ReturnType<typeof buildMessageLookups>
   onOpenRateLimitOptions?: () => void
-  advisorModel?: string
   thinkingDurationMs?: number
 }): React.ReactNode {
   if (isConnectorTextBlock(param)) {
@@ -471,20 +465,6 @@ function AssistantMessageBlock({
         />
       )
     case 'server_tool_use':
-    case 'advisor_tool_result':
-      if (isAdvisorBlock(param)) {
-        return (
-          <AdvisorMessage
-            block={param}
-            addMargin={addMargin}
-            resolvedToolUseIDs={lookups.resolvedToolUseIDs}
-            erroredToolUseIDs={lookups.erroredToolUseIDs}
-            shouldAnimate={shouldAnimate}
-            verbose={verbose || isTranscriptMode}
-            advisorModel={advisorModel}
-          />
-        )
-      }
       logError(new Error(`Unable to render server tool block: ${param.type}`))
       return null
     default:

@@ -1,9 +1,9 @@
 import {
-  clearBetaHeaderLatches,
   clearSystemPromptSectionState,
   getSystemPromptSectionCache,
   setSystemPromptSectionCacheEntry,
 } from '../bootstrap/state.js'
+import { clearBetaHeaderLatches } from '../services/api/adapters/anthropicFeatures.js'
 
 type ComputeFn = () => string | null | Promise<string | null>
 

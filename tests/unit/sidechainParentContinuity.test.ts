@@ -41,17 +41,20 @@ const toolsSeed = msg('tools-1', {
   },
 })
 
-// skill_listing is NOT on the isLoggableMessage allowlist — it never reaches
-// the sidechain JSONL, so it must never be handed out as the next write's
-// startingParentUuid (the on-disk chain would truncate at the phantom parent
-// and the agent prompt + turn-0 seeds would vanish from the drill-down).
+// Persist-all: skill_listing now reaches the sidechain JSONL, so it is a
+// valid startingParentUuid. getLastLoggedMessageUuid computes from the same
+// isLoggableMessage filter that writes the file, so a hint it hands out always
+// points at a row that actually persisted (the on-disk chain would truncate
+// at a phantom parent otherwise).
 const skillSeed = msg('skills-1', {
   type: 'attachment',
   attachment: { type: 'skill_listing', isInitial: true, skills: [] },
 })
 
+const progressTick = msg('progress-1', { type: 'progress' })
+
 describe('getLastLoggedMessageUuid', () => {
-  test('skips trailing attachments the logging allowlist drops', () => {
+  test('returns the raw tail: every turn-0 seed now persists', () => {
     // Exactly the runAgent turn-0 seed order: instructions, tools, skills.
     expect(
       getLastLoggedMessageUuid([
@@ -60,18 +63,26 @@ describe('getLastLoggedMessageUuid', () => {
         toolsSeed,
         skillSeed,
       ]),
-    ).toBe('tools-1')
+    ).toBe('skills-1')
   })
 
-  test('returns the raw tail when it persists', () => {
+  test('skips progress ticks, which stay dropped for volume', () => {
     expect(
       getLastLoggedMessageUuid([prompt, instructionsSeed, toolsSeed]),
     ).toBe('tools-1')
+    expect(
+      getLastLoggedMessageUuid([
+        prompt,
+        instructionsSeed,
+        skillSeed,
+        progressTick,
+      ]),
+    ).toBe('skills-1')
     expect(getLastLoggedMessageUuid([prompt])).toBe('prompt-1')
   })
 
   test('null for an empty or fully-filtered batch', () => {
     expect(getLastLoggedMessageUuid([])).toBeNull()
-    expect(getLastLoggedMessageUuid([skillSeed])).toBeNull()
+    expect(getLastLoggedMessageUuid([progressTick])).toBeNull()
   })
 })

@@ -15,6 +15,7 @@ import type {
 } from '../types/message.js'
 import { PERMISSION_MODES } from '../types/permissions.js'
 import { suppressNextSkillListing } from './attachments.js'
+import { isAdvisorBlock } from './advisor.js'
 import {
   copyFileHistoryForResume,
   type FileHistorySnapshot,
@@ -52,6 +53,36 @@ const BRIEF_TOOL_NAME = briefToolPromptNs.BRIEF_TOOL_NAME
 const LEGACY_BRIEF_TOOL_NAME = briefToolPromptNs.LEGACY_BRIEF_TOOL_NAME
 const SEND_USER_FILE_TOOL_NAME =
   sendUserFileToolPromptNs.SEND_USER_FILE_TOOL_NAME
+
+/**
+ * Strips legacy server-side advisor blocks (the pre-agent advisor feature's
+ * wire format, only ever emitted with the advisor beta header) from assistant
+ * content at load time, so no provider or renderer downstream has to know
+ * about them. An assistant turn whose only content was advisor blocks keeps a
+ * placeholder text block so the turn stays API-valid.
+ */
+function stripLegacyAdvisorBlocksFromAssistant(message: Message): Message {
+  if (message.type !== 'assistant') return message
+  const content = message.message.content
+  const filtered = content.filter(b => !isAdvisorBlock(b))
+  if (filtered.length === content.length) return message
+  if (
+    filtered.length === 0 ||
+    filtered.every(
+      b =>
+        b.type === 'reasoning' ||
+        b.type === 'redacted_reasoning' ||
+        (b.type === 'text' && (!b.text || !b.text.trim())),
+    )
+  ) {
+    filtered.push({
+      type: 'text' as const,
+      text: '[Advisor response]',
+      citations: [],
+    })
+  }
+  return { ...message, message: { ...message.message, content: filtered } }
+}
 
 /**
  * Transforms legacy attachment types to current types for backward compatibility
@@ -142,10 +173,11 @@ export function deserializeMessagesWithInterruptDetection(
   serializedMessages: Message[],
 ): DeserializeResult {
   try {
-    // Transform legacy attachment types before processing
-    const migratedMessages = serializedMessages.map(
-      migrateLegacyAttachmentTypes,
-    )
+    // Transform legacy attachment types and strip legacy server-side advisor
+    // blocks before processing — both are wire formats no longer understood.
+    const migratedMessages = serializedMessages
+      .map(migrateLegacyAttachmentTypes)
+      .map(stripLegacyAdvisorBlocksFromAssistant)
 
     // Strip invalid permissionMode values from deserialized user messages.
     // The field is unvalidated JSON from disk and may contain modes from a different build.
@@ -459,6 +491,7 @@ export async function loadConversationForResume(
   customTitle?: string
   tag?: string
   mode?: 'coordinator' | 'normal'
+  cacheTtl1h?: boolean
   worktreeSession?: PersistedWorktreeSession | null
   prNumber?: number
   prUrl?: string
@@ -555,6 +588,7 @@ export async function loadConversationForResume(
       customTitle: log?.customTitle,
       tag: log?.tag,
       mode: log?.mode,
+      cacheTtl1h: log?.cacheTtl1h,
       worktreeSession: log?.worktreeSession,
       prNumber: log?.prNumber,
       prUrl: log?.prUrl,

@@ -26,7 +26,6 @@ import { createSignal } from 'src/utils/signal.js'
 type RegisteredHookMatcher = HookCallbackMatcher | PluginHookMatcher
 
 type CapturedAPIRequestParams = Record<string, unknown>
-type CapturedAPIRequestMessages = unknown[]
 
 import type { SessionId } from 'src/types/ids.js'
 
@@ -112,11 +111,6 @@ type State = {
   agentColorIndex: number
   // Last API request for bug reports
   lastAPIRequest: CapturedAPIRequestParams | null
-  // Messages from the last API request (ant-only; reference, not clone).
-  // Captures the exact post-compaction, CLAUDE.md-injected message set sent
-  // to the API so /share's serialized_conversation.json reflects reality.
-  lastAPIRequestMessages: CapturedAPIRequestMessages | null
-  // Last auto-mode classifier request(s) for /share transcript
   // CLAUDE.md content cached by context.ts for the auto-mode classifier.
   // Breaks the yoloClassifier → claudemd → filesystem → permissions cycle.
   cachedClaudeMdContent: string | null
@@ -205,14 +199,6 @@ type State = {
   // evaluation so mid-session overage flips don't change the cache_control
   // TTL, which would bust the server-side prompt cache.
   promptCache1hEligible: boolean | null
-  // Sticky-on latch for AFK_MODE_BETA_HEADER. Once auto mode is first
-  // activated, keep sending the header for the rest of the session so
-  // Shift+Tab toggles don't bust the ~50-70K token prompt cache.
-  afkModeHeaderLatched: boolean | null
-  // Sticky-on latch for FAST_MODE_BETA_HEADER. Once fast mode is first
-  // enabled, keep sending the header so cooldown enter/exit doesn't
-  // double-bust the prompt cache. The `speed` body param stays dynamic.
-  fastModeHeaderLatched: boolean | null
   // Current prompt ID (UUID) correlating a user prompt with subsequent OTel events
   promptId: string | null
   // Last API requestId for the main conversation chain (not subagents).
@@ -311,8 +297,6 @@ function getInitialState(): State {
     agentColorIndex: 0,
     // Last API request for bug reports
     lastAPIRequest: null,
-    lastAPIRequestMessages: null,
-    // Last auto-mode classifier request(s) for /share transcript
     cachedClaudeMdContent: null,
     // In-memory error log for recent errors
     inMemoryErrorLog: [],
@@ -364,9 +348,6 @@ function getInitialState(): State {
     promptCache1hAllowlist: null,
     // Prompt cache 1h eligibility (null = not yet evaluated)
     promptCache1hEligible: null,
-    // Beta header latches (null = not yet triggered)
-    afkModeHeaderLatched: null,
-    fastModeHeaderLatched: null,
     // Current prompt ID
     promptId: null,
     lastMainRequestId: undefined,
@@ -1092,16 +1073,6 @@ export function getLastAPIRequest(): CapturedAPIRequestParams | null {
   return STATE.lastAPIRequest
 }
 
-export function setLastAPIRequestMessages(
-  messages: CapturedAPIRequestMessages | null,
-): void {
-  STATE.lastAPIRequestMessages = messages
-}
-
-export function getLastAPIRequestMessages(): CapturedAPIRequestMessages | null {
-  return STATE.lastAPIRequestMessages
-}
-
 export function setCachedClaudeMdContent(content: string | null): void {
   STATE.cachedClaudeMdContent = content
 }
@@ -1501,31 +1472,6 @@ export function getPromptCache1hEligible(): boolean | null {
 
 export function setPromptCache1hEligible(eligible: boolean | null): void {
   STATE.promptCache1hEligible = eligible
-}
-
-export function getAfkModeHeaderLatched(): boolean | null {
-  return STATE.afkModeHeaderLatched
-}
-
-export function setAfkModeHeaderLatched(v: boolean): void {
-  STATE.afkModeHeaderLatched = v
-}
-
-export function getFastModeHeaderLatched(): boolean | null {
-  return STATE.fastModeHeaderLatched
-}
-
-export function setFastModeHeaderLatched(v: boolean): void {
-  STATE.fastModeHeaderLatched = v
-}
-
-/**
- * Reset beta header latches to null. Called on /clear and /compact so a
- * fresh conversation gets fresh header evaluation.
- */
-export function clearBetaHeaderLatches(): void {
-  STATE.afkModeHeaderLatched = null
-  STATE.fastModeHeaderLatched = null
 }
 
 export function getPromptId(): string | null {

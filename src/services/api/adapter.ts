@@ -40,6 +40,7 @@ import type {
   ProviderType,
 } from '../../utils/settings/types.js'
 import type { NormalizedApiError } from '../../utils/normalizedError.js'
+import type { RequestFeatureIntent } from './adapters/anthropicFeatures.js'
 import type {
   DomainMessageRequest,
   DomainMessageResponse,
@@ -177,4 +178,30 @@ export interface ProviderAdapter {
    * - Mid-stream error: `{ mid_stream: true, cause: unknown, ... }`.
    */
   normalizeError: NormalizeErrorFn
+
+  // ── Request feature derivation (optional) ───────────────────────
+
+  /**
+   * Mutate a domain request with provider-specific wire features derived
+   * from the provider-neutral intent (beta headers, body beta lists, sticky
+   * feature latches). Anthropic-wire adapters implement this; adapters whose
+   * wire has no such vocabulary leave it undefined.
+   */
+  applyRequestFeatures?(
+    request: DomainMessageRequest,
+    model: string,
+    intent: RequestFeatureIntent,
+  ): void
+
+  /**
+   * Report the request-shape fields this provider's cache lookup is
+   * sensitive to, for prompt-cache break attribution. Empty/undefined for
+   * providers whose cache is keyed on message bytes alone.
+   */
+  describeCacheRelevantFeatures?(
+    model: string,
+    intent: RequestFeatureIntent,
+  ): Record<string, string> | undefined
 }
+
+export type { RequestFeatureIntent } from './adapters/anthropicFeatures.js'

@@ -47,7 +47,6 @@ import type {
   ToolUseSummaryMessage,
   UserMessage,
 } from '../types/message.js'
-import { isAdvisorBlock } from './advisor.js'
 import { isAgentSwarmsEnabled } from './agentSwarmsEnabled.js'
 import { count } from './array.js'
 import {
@@ -754,7 +753,6 @@ export function normalizeMessages(messages: Message[]): NormalizedMessage[] {
             uuid,
             error: message.error,
             isApiErrorMessage: message.isApiErrorMessage,
-            advisorModel: message.advisorModel,
             thinkingDurationMs: (message as Record<string, unknown>)
               .thinkingDurationMs,
           } as NormalizedAssistantMessage
@@ -1265,15 +1263,6 @@ export function buildMessageLookups(
           resolvedToolUseIDs.add(
             (content as { tool_use_id: string }).tool_use_id,
           )
-        }
-        if ((content.type as string) === 'advisor_tool_result') {
-          const result = content as {
-            tool_use_id: string
-            content: { type: string }
-          }
-          if (result.content.type === 'advisor_tool_result_error') {
-            erroredToolUseIDs.add(result.tool_use_id)
-          }
         }
       }
     }
@@ -5410,40 +5399,6 @@ export function ensureToolResultPairing(
   }
 
   return result
-}
-
-/**
- * Strip advisor blocks from messages. The API rejects server_tool_use blocks
- * with name "advisor" unless the advisor beta header is present.
- */
-export function stripAdvisorBlocks(
-  messages: (UserMessage | AssistantMessage)[],
-): (UserMessage | AssistantMessage)[] {
-  let changed = false
-  const result = messages.map(msg => {
-    if (msg.type !== 'assistant') return msg
-    const content = msg.message.content
-    const filtered = content.filter(b => !isAdvisorBlock(b))
-    if (filtered.length === content.length) return msg
-    changed = true
-    if (
-      filtered.length === 0 ||
-      filtered.every(
-        b =>
-          b.type === 'reasoning' ||
-          b.type === 'redacted_reasoning' ||
-          (b.type === 'text' && (!b.text || !b.text.trim())),
-      )
-    ) {
-      filtered.push({
-        type: 'text' as const,
-        text: '[Advisor response]',
-        citations: [],
-      })
-    }
-    return { ...msg, message: { ...msg.message, content: filtered } }
-  })
-  return changed ? result : messages
 }
 
 export function wrapCommandText(

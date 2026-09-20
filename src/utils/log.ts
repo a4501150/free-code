@@ -3,10 +3,7 @@ import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
 import type { QuerySource } from 'src/constants/querySource.js'
 import type { DomainMessageRequest } from 'src/services/api/domain-transport.js'
-import {
-  setLastAPIRequest,
-  setLastAPIRequestMessages,
-} from '../bootstrap/state.js'
+import { setLastAPIRequest } from '../bootstrap/state.js'
 import { TICK_TAG } from '../constants/xml.js'
 import {
   type LogOption,
@@ -333,17 +330,11 @@ export function captureAPIRequest(
     return
   }
 
-  // Store params WITHOUT messages to avoid retaining the entire conversation
-  // for all users. Messages are already persisted to the transcript file and
-  // available via React state.
+  // Store params WITHOUT messages to avoid retaining the entire conversation.
+  // Messages are already persisted to the transcript file and available via
+  // React state; dumpPrompts.ts keeps full request bodies for debugging.
   const { messages, ...paramsWithoutMessages } = params
   setLastAPIRequest(paramsWithoutMessages)
-  // For ant users only: also keep a reference to the final messages array so
-  // /share's serialized_conversation.json captures the exact post-compaction,
-  // CLAUDE.md-injected payload the API received. Overwritten each turn;
-  // dumpPrompts.ts already holds 5 full request bodies for ants, so this is
-  // not a new retention class.
-  setLastAPIRequestMessages(null)
 }
 
 /**

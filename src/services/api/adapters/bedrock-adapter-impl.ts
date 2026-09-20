@@ -9,6 +9,11 @@
  * Token counting uses `CountTokensCommand` directly.
  */
 import { Sha256 } from '@aws-crypto/sha256-js'
+
+import {
+  applyAnthropicRequestFeatures,
+  describeAnthropicCacheFeatures,
+} from './anthropicFeatures.js'
 import {
   CountTokensCommand,
   type CountTokensCommandInput,
@@ -929,6 +934,14 @@ async function countTokensViaBedrock({
 // Converse beta identifiers may travel in the body.
 export const bedrockAdapter: ProviderAdapter = {
   providerType: 'bedrock-converse',
+
+  applyRequestFeatures(request, model, intent) {
+    applyAnthropicRequestFeatures(request, model, intent)
+  },
+
+  describeCacheRelevantFeatures(model, intent) {
+    return describeAnthropicCacheFeatures(model, intent)
+  },
 
   async createStream(
     config: ProviderConfig,

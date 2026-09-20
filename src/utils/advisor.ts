@@ -1,4 +1,3 @@
-import type { DomainUsage } from '../types/domain.js'
 import { getInitialSettings } from './settings/settings.js'
 
 // Legacy server-side advisor block types — kept for backward compat with
@@ -52,20 +51,4 @@ export function getAdvisorConfig(): AdvisorConfig {
 export function isAdvisorEnabled(): boolean {
   const config = getAdvisorConfig()
   return (config.enabled ?? false) && !!config.advisorModel
-}
-
-// Legacy: extract advisor usage from server-side iterations (old conversations)
-export function getAdvisorUsage(
-  usage: DomainUsage,
-): Array<DomainUsage & { model: string }> {
-  const iterations = usage.iterations as
-    | Array<{ type: string }>
-    | null
-    | undefined
-  if (!iterations) {
-    return []
-  }
-  return iterations.filter(
-    it => it.type === 'advisor_message',
-  ) as unknown as Array<DomainUsage & { model: string }>
 }

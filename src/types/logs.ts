@@ -45,6 +45,7 @@ export type LogOption = {
   prUrl?: string // Full URL to the linked PR
   prRepository?: string // Repository in "owner/repo" format
   mode?: 'coordinator' | 'normal' // Session mode for coordinator/normal detection
+  cacheTtl1h?: boolean // 1h prompt-cache TTL decision latched by this session
   worktreeSession?: PersistedWorktreeSession | null // Worktree state at session end (null = exited, undefined = never entered)
   contentReplacements?: ContentReplacementRecord[] // Replacement decisions for resume reconstruction
 }
@@ -138,6 +139,19 @@ export type ModeEntry = {
 }
 
 /**
+ * The 1h prompt-cache TTL eligibility latched by this session. Persisted so a
+ * resume adopts the same cache_control tier the original process created cache
+ * entries under — the marker is part of the cache lookup, so re-latching with
+ * different inputs (async overage state) after a resume would make the
+ * text-identical prefix miss its own entry.
+ */
+export type CacheTtl1hEntry = {
+  type: 'cache-ttl-1h'
+  sessionId: UUID
+  eligible: boolean
+}
+
+/**
  * Worktree session state persisted to the transcript for resume.
  * Subset of WorktreeSession from utils/worktree.ts — excludes ephemeral
  * fields (creationDurationMs, usedSparsePaths) that are only used for
@@ -223,6 +237,7 @@ export type Entry =
   | QueueOperationMessage
   | SpeculationAcceptMessage
   | ModeEntry
+  | CacheTtl1hEntry
   | WorktreeStateEntry
   | ContentReplacementEntry
 
