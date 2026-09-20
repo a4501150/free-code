@@ -22,9 +22,6 @@ export function ReplDialogLayer({
   permissionStickyFooter,
   toolJSX,
   toolJsxCentered,
-  showSpinner,
-  showExpandedTodos,
-  tasksV2,
 }: {
   focusedInputDialog: string | undefined
   setAppState: (fn: (prev: any) => any) => void
@@ -56,9 +53,6 @@ export function ReplDialogLayer({
   permissionStickyFooter: React.ReactNode | null
   toolJSX: any
   toolJsxCentered: boolean
-  showSpinner: unknown
-  showExpandedTodos: boolean
-  tasksV2: any
 }): React.ReactNode {
   return (
     <>
@@ -68,15 +62,6 @@ export function ReplDialogLayer({
         !toolJsxCentered && (
           <Box flexDirection="column" width="100%">
             {toolJSX.jsx}
-          </Box>
-        )}
-      {!showSpinner &&
-        !toolJSX?.isLocalJSXCommand &&
-        showExpandedTodos &&
-        tasksV2 &&
-        tasksV2.length > 0 && (
-          <Box width="100%" flexDirection="column">
-            {/* TaskListV2 imported by caller */}
           </Box>
         )}
       {focusedInputDialog === 'prompt' && (

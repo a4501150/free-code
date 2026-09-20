@@ -371,6 +371,7 @@ import {
   TranscriptSearchBar,
 } from '../components/repl/TranscriptChrome.js'
 import { ReplDialogLayer } from '../components/repl/ReplDialogLayer.js'
+import { TaskLivePanel } from '../components/TaskLivePanel.js'
 import { ReplKeybindingShell } from '../components/repl/ReplKeybindingShell.js'
 import { useReplToolJSX } from '../hooks/repl/useReplToolJSX.js'
 import { useReplMessages } from '../hooks/repl/useReplMessages.js'
@@ -498,7 +499,6 @@ export function REPL({
   const initialMessage = useAppState(s => s.initialMessage)
   const queuedCommands = useCommandQueue()
   const spinnerTip = useAppState(s => s.spinnerTip)
-  const showExpandedTodos = useAppState(s => s.expandedView) === 'tasks'
   const pendingWorkerRequest = useAppState(s => s.pendingWorkerRequest)
   const teamContext = useAppState(s => s.teamContext)
   const tasks = useAppState(s => s.tasks)
@@ -2183,6 +2183,7 @@ export function REPL({
                   streamingThinking={streamingThinking}
                 />
               )}
+              <TaskLivePanel hidden={!!compactingStartTime} />
               {!showSpinner &&
                 !isLoading &&
                 !userInputOnProcessing &&
@@ -2210,9 +2211,6 @@ export function REPL({
                   permissionStickyFooter={permissionStickyFooter}
                   toolJSX={toolJSX}
                   toolJsxCentered={toolJsxCentered}
-                  showSpinner={showSpinner}
-                  showExpandedTodos={showExpandedTodos}
-                  tasksV2={tasksV2}
                 />
 
                 {!toolJSX?.shouldHidePromptInput &&

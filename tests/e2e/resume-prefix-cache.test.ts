@@ -112,10 +112,7 @@ describe('Resume prefix cache continuity', () => {
     })
 
     // Phase 1 — two turns. The second request's body is the warmed prefix.
-    server.reset([
-      success('ALPHA-ONE response'),
-      success('ALPHA-TWO response'),
-    ])
+    server.reset([success('ALPHA-ONE response'), success('ALPHA-TWO response')])
 
     let session = new TmuxSession({
       serverUrl: server.url,

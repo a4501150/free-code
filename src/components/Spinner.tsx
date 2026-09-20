@@ -56,7 +56,6 @@ import type { Theme } from 'src/utils/theme.js'
 import { activityManager } from '../utils/activityManager.js'
 import { getSpinnerVerbs } from '../constants/spinnerVerbs.js'
 import { MessageResponse } from './MessageResponse.js'
-import { TaskListV2 } from './TaskListV2.js'
 import { useSubagentTasksV2, useTasksV2 } from '../hooks/useTasksV2.js'
 import type { Task } from '../utils/tasks.js'
 import { useAppState } from '../state/AppState.js'
@@ -416,13 +415,13 @@ function SpinnerWithVerbInner({
           leaderIdleText={leaderIsIdle ? 'Idle' : undefined}
           leaderTokenCount={leaderTokenCount}
         />
-      ) : showExpandedTodos && tasksV2 && tasksV2.length > 0 ? (
-        <Box width="100%" flexDirection="column">
-          <MessageResponse>
-            <TaskListV2 tasks={tasksV2} />
-          </MessageResponse>
-        </Box>
-      ) : nextTask || effectiveTip ? (
+      ) : !showExpandedTodos && (nextTask || effectiveTip) ? (
+        // The task list itself is NOT rendered here — it lives in TaskLivePanel,
+        // mounted once below this component (a spinner-hosted list blinked: the
+        // spinner unmounts several times per turn). While the expanded panel is
+        // up it replaces this summary line; when the panel is hidden (collapsed
+        // view, store hide after all-complete) the store also collapses
+        // expandedView, so suppressing on showExpandedTodos alone is enough.
         // IMPORTANT: we need this width="100%" to avoid an Ink bug where the
         // tip gets duplicated over and over while the spinner is running if
         // the terminal is very small. TODO: fix this in Ink.
