@@ -884,8 +884,15 @@ export default class Ink {
     this.backFrame = this.frontFrame
     this.frontFrame = frame
 
-    // Pool lifecycle — reuses renderStart to avoid an extra clock call.
-    this.maybeResetPools(renderStart)
+    // Periodically reset char/hyperlink pools to prevent unbounded
+    // growth during long sessions. 5 minutes is infrequent enough that
+    // the O(cells) migration cost is negligible. Reuses renderStart to
+    // avoid extra clock call. The StylePool is session-lived (never
+    // reset) — see src/ink/output.ts charCache.
+    if (renderStart - this.lastPoolResetTime > 5 * 60 * 1000) {
+      this.resetPools()
+      this.lastPoolResetTime = renderStart
+    }
 
     const flickers: FrameEvent['flickers'] = []
     for (const patch of diff) {
@@ -2007,46 +2014,23 @@ export default class Ink {
   }
 
   /**
-   * Pool lifecycle check, run once per painted frame. Cadence: 30s
-   * normally, 1s once the style pool is near its hard-capped capacity.
-   * Past the gate, reset only when the session is old or the style pool
-   * holds more than 2x what is actually on screen — a healthy small pool
-   * isn't worth the migration walk.
-   */
-  private maybeResetPools(now: number): void {
-    const elapsed = now - this.lastPoolResetTime
-    if (elapsed < (this.stylePool.isNearCapacity() ? 1_000 : 30_000)) {
-      return
-    }
-    if (
-      elapsed > 300_000 ||
-      this.stylePool.needsCompactionFor(this.frontFrame.screen)
-    ) {
-      this.resetPools()
-    }
-    this.lastPoolResetTime = now
-  }
-
-  /**
-   * Replace char/hyperlink pools with fresh instances and compact the
-   * style pool to what's on screen, to prevent unbounded growth during
-   * long sessions. Migrates the front frame's screen IDs into the new
-   * pools so diffing remains correct. The back frame doesn't need
-   * migration — resetScreen zeros it before any reads.
+   * Replace char/hyperlink pools with fresh instances to prevent
+   * unbounded growth during long sessions. Migrates the front frame's
+   * screen IDs into the new pools so diffing remains correct. The back
+   * frame doesn't need migration — resetScreen zeros it before any
+   * reads. The StylePool is NOT reset or compacted: interned styleIds
+   * are cached across frames (Output.charCache), so remapping them here
+   * would silently repaint cached lines in the wrong colors. The cap in
+   * StylePool.intern is the only growth bound — past it styles render
+   * unstyled, honestly, instead of aliasing onto random colors.
    */
   private resetPools(): void {
     this.charPool = new CharPool()
     this.hyperlinkPool = new HyperlinkPool()
-    // Styles still on screen are lazily re-interned through this remap
-    // during the migration pass below; everything else is dropped. The
-    // pool instance is unchanged (compact() rebuilds in place), so the
-    // renderer and LogUpdate keep working without rewiring.
-    const styleRemap = this.stylePool.compact()
     migrateScreenPools(
       this.frontFrame.screen,
       this.charPool,
       this.hyperlinkPool,
-      styleRemap,
     )
     // Back frame's data is zeroed by resetScreen before reads, but its pool
     // references are used by the renderer to intern new characters. Point

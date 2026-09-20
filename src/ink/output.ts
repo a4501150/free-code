@@ -32,9 +32,11 @@ import { widestLine } from './widest-line.js'
  * is just property reads + setCellAt — no stringWidth, no style interning,
  * no hyperlink extraction per frame.
  *
- * styleId is safe to cache: StylePool is session-lived (never reset).
- * hyperlink is stored as a string (not interned ID) since hyperlinkPool
- * resets every 5 min; setCellAt interns it per-frame (cheap Map.get).
+ * styleId is safe to cache: StylePool is session-lived (never reset or
+ * compacted — remapping ids would invalidate this cache, see
+ * Ink.resetPools). hyperlink is stored as a string (not interned ID)
+ * since hyperlinkPool resets every 5 min; setCellAt interns it per-frame
+ * (cheap Map.get).
  */
 type ClusteredChar = {
   value: string

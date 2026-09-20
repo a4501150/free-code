@@ -117,11 +117,6 @@ const MAX_STYLES = 16383
 // Bound on the (from,to) transition string cache; full-clear on overflow —
 // steady-state frames reuse a tiny subset of pairs.
 const MAX_TRANSITIONS = 8192
-// Compaction floor: a pool smaller than this is cheap to keep whole even
-// when nothing on screen uses most of it.
-const COMPACTION_MIN = 512
-// Reset urgency flips from 30s to 1s once the pool passes this size.
-const NEAR_CAPACITY = 8191
 
 export class StylePool {
   private ids = new Map<string, number>()
@@ -143,8 +138,8 @@ export class StylePool {
    *
    * Past MAX_STYLES unique styles, new interning returns `none` (render
    * unstyled) rather than overflow the 15-bit packed field — silent
-   * aliasing would paint arbitrary colors, unstyled is honest. compact()
-   * or a fresh pool restores interning.
+   * aliasing would paint arbitrary colors, unstyled is honest. The pool
+   * is session-lived (never reset), so plan for the cap to be permanent.
    */
   intern(styles: AnsiCode[]): number {
     const key = styles.length === 0 ? '' : styles.map(s => s.code).join('\0')
@@ -289,57 +284,6 @@ export class StylePool {
       this.selectionBgCache.set(baseId, id)
     }
     return id
-  }
-
-  /** True when the pool is large enough that the next reset shouldn't
-   *  wait out the relaxed cadence (or already had to degrade to unstyled
-   *  interning). Drives the 30s-vs-1s pool-reset cadence. */
-  isNearCapacity(): boolean {
-    return this.overflowWarned || this.styles.length > NEAR_CAPACITY
-  }
-
-  /** True when the pool holds more than 2x the styles the screen actually
-   *  displays — accumulating dead entries from styles that scrolled out
-   *  of history. Small pools skip the O(cells) live count entirely. */
-  needsCompactionFor(screen: Screen): boolean {
-    return (
-      this.styles.length > COMPACTION_MIN &&
-      this.styles.length >
-        2 * countDistinctStyleIds(screen, this.styles.length >>> 1)
-    )
-  }
-
-  /**
-   * Rebuild the pool so only styles still referenced by the returned
-   * remap survive. The caller MUST migrate every live id holder (screen
-   * cell packs) through the remap before the next frame: it maps an old
-   * id to its fresh id, re-interning the underlying AnsiCode[] lazily on
-   * first touch — entries never touched are simply dropped. The pool
-   * instance identity is unchanged (transition/overlay caches are keyed
-   * by id and all cleared), so holders of the pool reference keep
-   * working. Returns the remap function.
-   */
-  compact(): (id: number) => number {
-    const oldStyles = this.styles
-    this.styles = [[]]
-    this.ids = new Map([['', 0]])
-    this.transitionCache.clear()
-    this.inverseCache.clear()
-    this.currentMatchCache.clear()
-    this.selectionBgCache.clear()
-    this.overflowWarned = false
-    const remap = new Int32Array(oldStyles.length).fill(-1)
-    remap[0] = 0 // unstyled slot keeps its index — none stays 0
-    return (id: number): number => {
-      const raw = id >>> 1
-      if (raw >= oldStyles.length) return this.none
-      let next = remap[raw]!
-      if (next === -1) {
-        next = this.intern(oldStyles[raw]!)
-        remap[raw] = next
-      }
-      return next
-    }
   }
 }
 
@@ -639,74 +583,35 @@ export function migrateScreenPools(
   screen: Screen,
   charPool: CharPool,
   hyperlinkPool: HyperlinkPool,
-  styleRemap?: (id: number) => number,
 ): void {
   const oldCharPool = screen.charPool
   const oldHyperlinkPool = screen.hyperlinkPool
-  if (
-    oldCharPool === charPool &&
-    oldHyperlinkPool === hyperlinkPool &&
-    !styleRemap
-  )
-    return
+  if (oldCharPool === charPool && oldHyperlinkPool === hyperlinkPool) return
 
   const size = screen.width * screen.height
   const cells = screen.cells
 
-  // Re-intern chars, styles and hyperlinks in a single pass, stride by 2
+  // Re-intern chars and hyperlinks in a single pass, stride by 2
   for (let ci = 0; ci < size << 1; ci += 2) {
     // Re-intern charId (word0)
     const oldCharId = cells[ci]!
     cells[ci] = charPool.intern(oldCharPool.get(oldCharId))
 
-    // Re-pack word1: styleId (bits [31:17]) and hyperlinkId (mid-bits).
-    // Unstyled/unlinked cells stay byte-identical — the repack is only
-    // written when either id actually changed, so unwritten cells keep
-    // their all-zero form (indistinguishable-from-blank invariant holds).
+    // Re-intern hyperlinkId (packed in word1)
     const word1 = cells[ci + 1]!
     const oldHyperlinkId = (word1 >>> HYPERLINK_SHIFT) & HYPERLINK_MASK
-    let styleId = word1 >>> STYLE_SHIFT
-    const newHyperlinkId =
-      oldHyperlinkId === 0
-        ? 0
-        : hyperlinkPool.intern(oldHyperlinkPool.get(oldHyperlinkId))
-    if (styleRemap && styleId !== 0) {
-      styleId = styleRemap(styleId)
-    }
-    if (
-      newHyperlinkId !== oldHyperlinkId ||
-      styleId !== word1 >>> STYLE_SHIFT
-    ) {
-      cells[ci + 1] = packWord1(styleId, newHyperlinkId, word1 & WIDTH_MASK)
+    if (oldHyperlinkId !== 0) {
+      const oldStr = oldHyperlinkPool.get(oldHyperlinkId)
+      const newHyperlinkId = hyperlinkPool.intern(oldStr)
+      // Repack word1 with new hyperlinkId, preserving styleId and width
+      const styleId = word1 >>> STYLE_SHIFT
+      const width = word1 & WIDTH_MASK
+      cells[ci + 1] = packWord1(styleId, newHyperlinkId, width)
     }
   }
 
   screen.charPool = charPool
   screen.hyperlinkPool = hyperlinkPool
-}
-
-/**
- * Count the distinct non-zero style IDs a screen actually displays. Cheap
- * enough to call at pool-reset cadence (≥1s), not per frame — used by
- * StylePool.needsCompactionFor to compare pool size against real usage.
- * `stopAbove`: once more than this many distinct ids are seen, stop
- * scanning (callers only care about a threshold, not the exact count).
- */
-export function countDistinctStyleIds(
-  screen: Screen,
-  stopAbove?: number,
-): number {
-  const cells = screen.cells
-  const ids = new Set<number>()
-  const end = (screen.width * screen.height) << 1
-  for (let ci = 1; ci < end; ci += 2) {
-    const styleId = cells[ci]! >>> STYLE_SHIFT
-    if (styleId !== 0 && !ids.has(styleId)) {
-      ids.add(styleId)
-      if (stopAbove !== undefined && ids.size > stopAbove) break
-    }
-  }
-  return ids.size
 }
 
 /**
