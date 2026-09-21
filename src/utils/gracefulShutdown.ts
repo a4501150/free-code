@@ -30,9 +30,9 @@ import {
 } from '../ink/termio/osc.js'
 import type { AppState } from '../state/AppState.js'
 import { runCleanupFunctions } from './cleanupRegistry.js'
+import { getInitialSettings } from './settings/settings.js'
 import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
-import { isEnvTruthy } from './envUtils.js'
 import { executeSessionEndHooks, getSessionEndHookTimeoutMs } from './hooks.js'
 import { getCurrentSessionTitle, sessionIdExists } from './sessionStorage.js'
 import { profileReport } from './startupProfiler.js'
@@ -113,9 +113,9 @@ function cleanupTerminalModes(): void {
     // Clear tab status (OSC 21337) so a stale dot doesn't linger
     if (supportsTabStatus()) writeSync(1, wrapForMultiplexer(CLEAR_TAB_STATUS))
     // Clear terminal title so the tab doesn't show stale session info.
-    // Respect CLAUDE_CODE_DISABLE_TERMINAL_TITLE — if the user opted out of
-    // title changes, don't clear their existing title on exit either.
-    if (!isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE)) {
+    // Respect terminalTitleEnabled — if the user opted out of title
+    // changes, don't clear their existing title on exit either.
+    if (getInitialSettings().terminalTitleEnabled !== false) {
       if (process.platform === 'win32') {
         process.title = ''
       } else {
@@ -449,7 +449,7 @@ export async function gracefulShutdown(
   }
 
   // Execute SessionEnd hooks. Bound both the per-hook default timeout and the
-  // overall execution via a single budget (CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS,
+  // overall execution via a single budget (sessionEndHooksTimeoutMs,
   // default 1.5s). hook.timeout in settings is respected up to this cap.
   try {
     await executeSessionEndHooks(reason, {

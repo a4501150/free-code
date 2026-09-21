@@ -9,7 +9,7 @@ import type { ToolPermissionContext } from 'src/Tool.js'
 import { getCwd } from 'src/utils/cwd.js'
 import { pathInAllowedWorkingPath } from 'src/utils/permissions/filesystem.js'
 import { setCwd } from 'src/utils/Shell.js'
-import { shouldMaintainProjectWorkingDir } from '../../utils/envUtils.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import { maybeResizeAndDownsampleImageBuffer } from '../../utils/imageResizer.js'
 import { getMaxOutputLength } from '../../utils/shell/outputLimits.js'
 import { countCharInString } from '../../utils/stringUtils.js'
@@ -171,7 +171,7 @@ export function resetCwdIfOutsideProject(
 ): boolean {
   const cwd = getCwd()
   const originalCwd = getOriginalCwd()
-  const shouldMaintain = shouldMaintainProjectWorkingDir()
+  const shouldMaintain = getInitialSettings().maintainProjectWorkingDir === true
   if (
     shouldMaintain ||
     // Fast path: originalCwd is unconditionally in allWorkingDirectories

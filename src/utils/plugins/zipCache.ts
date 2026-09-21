@@ -2,7 +2,7 @@
  * Plugin Zip Cache Module
  *
  * Manages plugins as ZIP archives in a mounted directory (e.g., Filestore).
- * When CLAUDE_CODE_PLUGIN_USE_ZIP_CACHE is enabled and CLAUDE_CODE_PLUGIN_CACHE_DIR
+ * When pluginZipCacheEnabled is enabled and pluginCacheDir setting
  * is set, plugins are stored as ZIPs in that directory and extracted to a
  * session-local temp directory at startup.
  *
@@ -44,6 +44,7 @@ import {
 import { tmpdir } from 'os'
 import { basename, dirname, join } from 'path'
 import { logForDebugging } from '../debug.js'
+import { getInitialSettings } from '../settings/settings.js'
 import { parseZipModes, unzipFile } from '../dxt/zip.js'
 import { isEnvTruthy } from '../envUtils.js'
 import { getFsImplementation } from '../fsOperations.js'
@@ -54,19 +55,19 @@ import type { MarketplaceSource } from './schemas.js'
  * Check if the plugin zip cache mode is enabled.
  */
 export function isPluginZipCacheEnabled(): boolean {
-  return isEnvTruthy(process.env.CLAUDE_CODE_PLUGIN_USE_ZIP_CACHE)
+  return getInitialSettings().pluginZipCacheEnabled === true
 }
 
 /**
  * Get the path to the zip cache directory.
- * Requires CLAUDE_CODE_PLUGIN_CACHE_DIR to be set.
- * Returns undefined if zip cache is not enabled.
+ * Requires the pluginCacheDir setting. Returns undefined if zip cache
+ * is not enabled or no cache dir is configured.
  */
 export function getPluginZipCachePath(): string | undefined {
   if (!isPluginZipCacheEnabled()) {
     return undefined
   }
-  const dir = process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR
+  const dir = getInitialSettings().pluginCacheDir
   return dir ? expandTilde(dir) : undefined
 }
 

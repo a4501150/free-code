@@ -4,32 +4,42 @@
  * per-project; the paths now travel in the environment block of the user
  * context, which is per-project anyway.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { mkdtemp, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import {
+
+// getInitialSettings is patched locally (mutable, like attribution.test.ts)
+// rather than driven through a real freecode.json: mock.module is
+// process-wide in the shared unit-test process, so a file that already mocks
+// settings.js (alphabetically earlier ones do) would shadow disk-loaded
+// config for this file too. Only this one export is patched — Bun merges the
+// patch over the real namespace, and leaking a getSettingsForSource stub
+// would break later files.
+let testSettings: Record<string, unknown> = {}
+mock.module('../../src/utils/settings/settings.js', () => ({
+  getInitialSettings: () => testSettings,
+}))
+
+const {
   buildMemoryLines,
   getMemoryEnvItems,
   loadMemoryPrompt,
   MEMORY_DIR_ENV_LABEL,
   TRANSCRIPT_DIR_ENV_LABEL,
-} from '../../src/memdir/memdir.js'
-import { getAutoMemPath } from '../../src/memdir/paths.js'
-import { resetSettingsCache } from '../../src/utils/settings/settingsCache.js'
+} = await import('../../src/memdir/memdir.js')
+const { getAutoMemPath } = await import('../../src/memdir/paths.js')
 
 let configDir: string
 
 beforeEach(async () => {
+  testSettings = {}
   configDir = await mkdtemp(join(tmpdir(), 'memory-prompt-paths-'))
-  await writeFile(join(configDir, 'freecode.json'), '{}')
   process.env.FREECODE_CONFIG_DIR = configDir
-  resetSettingsCache()
 })
 
 afterEach(async () => {
   delete process.env.FREECODE_CONFIG_DIR
-  resetSettingsCache()
   await rm(configDir, { recursive: true, force: true })
 })
 
@@ -60,15 +70,9 @@ describe('the environment items', () => {
   })
 
   test('are empty when memory is off', async () => {
-    // The env var is checked ahead of settings, so this holds whatever the
-    // process-wide settings cache currently holds.
-    process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1'
-    try {
-      expect(getMemoryEnvItems()).toEqual([])
-      expect(await loadMemoryPrompt()).toBeNull()
-    } finally {
-      delete process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY
-    }
+    testSettings = { autoMemoryEnabled: false }
+    expect(getMemoryEnvItems()).toEqual([])
+    expect(await loadMemoryPrompt()).toBeNull()
   })
 })
 

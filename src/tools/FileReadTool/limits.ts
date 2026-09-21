@@ -13,20 +13,18 @@
  * tool-result while truncation yields ~25K tokens of content at the cap.
  */
 import memoize from 'lodash-es/memoize.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import { MAX_OUTPUT_SIZE } from 'src/utils/file.js'
 export const DEFAULT_MAX_OUTPUT_TOKENS = 25000
 
 /**
- * Env var override for max output tokens. Returns undefined when unset/invalid
+ * fileReadMaxOutputTokens setting override. Returns undefined when unset
  * so the caller can fall through to the next precedence tier.
  */
 function getEnvMaxTokens(): number | undefined {
-  const override = process.env.CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS
-  if (override) {
-    const parsed = parseInt(override, 10)
-    if (!isNaN(parsed) && parsed > 0) {
-      return parsed
-    }
+  const override = getInitialSettings().fileReadMaxOutputTokens
+  if (typeof override === 'number' && override > 0) {
+    return override
   }
   return undefined
 }

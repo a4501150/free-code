@@ -3,7 +3,6 @@ import { isUltrathinkEnabled } from './thinking.js'
 import { getInitialSettings } from './settings/settings.js'
 import { getProviderRegistry } from './model/providerRegistry.js'
 
-import { isEnvTruthy } from './envUtils.js'
 import type { EffortLevel } from 'src/structuredProtocol/runtimeTypes.js'
 
 export type { EffortLevel }
@@ -19,7 +18,7 @@ export const EFFORT_LEVELS = [
 export type EffortValue = EffortLevel | number
 
 export function modelSupportsEffort(model: string): boolean {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT)) {
+  if (getInitialSettings().effortAlwaysEnabled === true) {
     return true
   }
   // Per-model effortLevels from freecode.json

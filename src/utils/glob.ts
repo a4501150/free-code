@@ -1,4 +1,5 @@
 import { basename, dirname, isAbsolute, join, sep } from 'path'
+import { getInitialSettings } from './settings/settings.js'
 import type { ToolPermissionContext } from '../Tool.js'
 import { isEnvTruthy } from './envUtils.js'
 import {
@@ -92,11 +93,10 @@ export async function glob(
   // --files: list files instead of searching content
   // --glob: filter by pattern
   // --sort=modified: sort by modification time (oldest first)
-  // --no-ignore: don't respect .gitignore (default true, set CLAUDE_CODE_GLOB_NO_IGNORE=false to respect .gitignore)
-  // --hidden: include hidden files (default true, set CLAUDE_CODE_GLOB_HIDDEN=false to exclude)
-  // Note: use || instead of ?? to treat empty string as unset (defaulting to true)
-  const noIgnore = isEnvTruthy(process.env.CLAUDE_CODE_GLOB_NO_IGNORE || 'true')
-  const hidden = isEnvTruthy(process.env.CLAUDE_CODE_GLOB_HIDDEN || 'true')
+  // --no-ignore: don't respect .gitignore (default true, globNoIgnore: false to respect .gitignore)
+  // --hidden: include hidden files (default true, globHidden: false to exclude)
+  const noIgnore = getInitialSettings().globNoIgnore !== false
+  const hidden = getInitialSettings().globHidden !== false
   const args = [
     '--files',
     '--glob',

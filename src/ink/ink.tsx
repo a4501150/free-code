@@ -614,7 +614,7 @@ export default class Ink {
       ENTER_ALT_SCREEN + // re-enter alt — vim's rmcup dropped us to main
         '\x1b[2J' + // clear screen (now alt again)
         '\x1b[H' + // cursor home
-        (this.altScreenMouseTracking ? ENABLE_MOUSE_TRACKING : '') + // re-enable mouse (skip if CLAUDE_CODE_DISABLE_MOUSE)
+        (this.altScreenMouseTracking ? ENABLE_MOUSE_TRACKING : '') + // re-enable mouse (skipped when mouse tracking is disabled)
         '\x1b[?25l', // hide cursor (Ink manages)
     )
     this.resumeStdin()

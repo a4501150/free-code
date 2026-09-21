@@ -20,6 +20,7 @@ import {
   getAutoCompactThresholdForContextWindow,
   isAutoCompactEnabled,
 } from './autoCompactConfig.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import { getConfiguredContextWindowSize } from './contextWindowSize.js'
 import { runPostCompactCleanup } from './postCompactCleanup.js'
 import { trySessionMemoryCompaction } from './sessionMemoryCompact.js'
@@ -95,14 +96,10 @@ export function calculateTokenWarningState(
 
   const actualContextWindow = getConfiguredContextWindowSize(model)
 
-  // Allow override for testing
-  const blockingLimitOverride = process.env.CLAUDE_CODE_BLOCKING_LIMIT_OVERRIDE
-  const parsedOverride = blockingLimitOverride
-    ? parseInt(blockingLimitOverride, 10)
-    : NaN
+  const override = getInitialSettings().blockingLimitOverride
   const blockingLimit =
-    !isNaN(parsedOverride) && parsedOverride > 0
-      ? parsedOverride
+    typeof override === 'number' && override > 0
+      ? override
       : actualContextWindow
 
   const isAtBlockingLimit = tokenUsage >= blockingLimit

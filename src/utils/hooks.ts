@@ -47,6 +47,7 @@ import {
 } from './sessionStorage.js'
 import type { AgentId } from '../types/ids.js'
 import {
+  getInitialSettings,
   getSettings_DEPRECATED,
   getSettingsForSource,
 } from './settings/settings.js'
@@ -170,10 +171,9 @@ const TOOL_HOOK_EXECUTION_TIMEOUT_MS = 10 * 60 * 1000
  */
 const SESSION_END_HOOK_TIMEOUT_MS_DEFAULT = 1500
 export function getSessionEndHookTimeoutMs(): number {
-  const raw = process.env.CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS
-  const parsed = raw ? parseInt(raw, 10) : NaN
-  return Number.isFinite(parsed) && parsed > 0
-    ? parsed
+  const override = getInitialSettings().sessionEndHooksTimeoutMs
+  return typeof override === 'number' && override > 0
+    ? override
     : SESSION_END_HOOK_TIMEOUT_MS_DEFAULT
 }
 
@@ -737,7 +737,7 @@ function processHookJSONOutput({
  *
  * Shell resolution: hook.shell → 'bash'. PowerShell hooks spawn pwsh
  * with -NoProfile -NonInteractive -Command and skip bash-specific prep
- * (POSIX path conversion, .sh auto-prepend, CLAUDE_CODE_SHELL_PREFIX).
+ * (POSIX path conversion, .sh auto-prepend, shellPrefix setting).
  * See docs/design/ps-shell-selection.md §5.1.
  */
 async function execCommandHook(
@@ -861,13 +861,14 @@ async function execCommandHook(
     }
   }
 
-  // CLAUDE_CODE_SHELL_PREFIX wraps the command via POSIX quoting
+  // The shellPrefix setting wraps the command via POSIX quoting
   // (formatShellPrefixCommand uses shell-quote). This makes no sense for
   // PowerShell — see design §8.1. For now PS hooks ignore the prefix;
-  // a CLAUDE_CODE_PS_SHELL_PREFIX (or shell-aware prefix) is a follow-up.
+  // a PowerShell-aware shellPrefix variant is a follow-up.
+  const shellPrefix = getInitialSettings().shellPrefix
   const finalCommand =
-    !isPowerShell && process.env.CLAUDE_CODE_SHELL_PREFIX
-      ? formatShellPrefixCommand(process.env.CLAUDE_CODE_SHELL_PREFIX, command)
+    !isPowerShell && shellPrefix
+      ? formatShellPrefixCommand(shellPrefix, command)
       : command
 
   const hookTimeoutMs = hook.timeout

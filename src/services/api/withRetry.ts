@@ -487,10 +487,7 @@ function shouldRetryDomainError(error: DomainTransportError): boolean {
 }
 
 export function getDefaultMaxRetries(): number {
-  if (process.env.CLAUDE_CODE_MAX_RETRIES) {
-    return parseInt(process.env.CLAUDE_CODE_MAX_RETRIES, 10)
-  }
-  return DEFAULT_MAX_RETRIES
+  return getInitialSettings().maxRetries ?? DEFAULT_MAX_RETRIES
 }
 function getMaxRetries(options: RetryOptions): number {
   return options.maxRetries ?? getDefaultMaxRetries()

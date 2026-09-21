@@ -68,14 +68,10 @@ export function getAgentModel(
   toolSpecifiedModel?: string,
   permissionMode?: PermissionMode,
 ): string {
-  // Priority: env var > freecode.json defaultSubagentModel
-  const envSubagentRaw = process.env.CLAUDE_CODE_SUBAGENT_MODEL
-  const envSubagent = envSubagentRaw
-    ? stripContextSuffix(envSubagentRaw)
-    : undefined
+  // Priority: modelSettings.json defaultSubagentModel > model defaults
   const configSubagent =
     getProviderRegistry().getConfiguredDefaultSubagentModel()
-  const subagentOverride = envSubagent || configSubagent
+  const subagentOverride = configSubagent
   if (subagentOverride) {
     return parseUserSpecifiedModel(subagentOverride)
   }

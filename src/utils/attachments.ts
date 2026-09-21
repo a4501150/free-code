@@ -750,7 +750,7 @@ export async function getAttachments(
   options?: { skipSkillDiscovery?: boolean },
 ): Promise<Attachment[]> {
   if (
-    isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_ATTACHMENTS) ||
+    getInitialSettings().attachmentsEnabled === false ||
     isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)
   ) {
     // query.ts:removeFromQueue dequeues these unconditionally after
@@ -3725,7 +3725,7 @@ function getTokenUsageAttachment(
   messages: Message[],
   model: string,
 ): Attachment[] {
-  if (!isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_TOKEN_USAGE_ATTACHMENT)) {
+  if (getInitialSettings().tokenUsageAttachment !== true) {
     return []
   }
 

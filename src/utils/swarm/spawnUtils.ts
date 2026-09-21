@@ -8,6 +8,7 @@ import {
   getMainLoopModelOverride,
   getSessionBypassPermissionsMode,
 } from '../../bootstrap/state.js'
+import { isAgentSwarmsEnabled } from '../agentSwarmsEnabled.js'
 import { quote } from '../bash/shellQuote.js'
 import { isInBundledMode } from '../bundledMode.js'
 import type { PermissionMode } from '../permissions/PermissionMode.js'
@@ -76,6 +77,13 @@ export function buildInheritedCliFlags(options?: {
   const sessionMode = getTeammateModeFromSnapshot()
   flags.push(`--teammate-mode ${sessionMode}`)
 
+  // Propagate --agent-teams so teammates keep teammate features when the
+  // leader opted in via the flag (settings opt-in is inherited by reading
+  // the same settings files).
+  if (isAgentSwarmsEnabled()) {
+    flags.push('--agent-teams')
+  }
+
   return flags.join(' ')
 }
 
@@ -85,12 +93,7 @@ export function buildInheritedCliFlags(options?: {
  * parent's env, so we forward any that are set in the current process.
  */
 const TEAMMATE_ENV_VARS = [
-  // API provider selection — without these, teammates default to firstParty
-  // and send requests to the wrong endpoint (GitHub issue #23561)
-  'CLAUDE_CODE_USE_BEDROCK',
-  'CLAUDE_CODE_USE_VERTEX',
-  'CLAUDE_CODE_USE_FOUNDRY',
-  // Custom API endpoint
+  // Custom API endpoint (host transport)
   'ANTHROPIC_BASE_URL',
   // Config directory override
   'FREECODE_CONFIG_DIR',
@@ -113,11 +116,11 @@ const TEAMMATE_ENV_VARS = [
 
 /**
  * Builds the `env KEY=VALUE ...` string for teammate spawn commands.
- * Always includes CLAUDECODE=1 and CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1,
- * plus any provider/config env vars that are set in the current process.
+ * Always includes CLAUDECODE=1, plus any transport/config env vars that
+ * are set in the current process.
  */
 export function buildInheritedEnvVars(): string {
-  const envVars = ['CLAUDECODE=1', 'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1']
+  const envVars = ['CLAUDECODE=1']
 
   for (const key of TEAMMATE_ENV_VARS) {
     const value = process.env[key]

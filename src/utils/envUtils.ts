@@ -119,18 +119,3 @@ export function parseEnvVars(
 export function getAWSRegion(): string {
   return process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1'
 }
-
-/**
- * Get the default Vertex AI region
- */
-export function getDefaultVertexRegion(): string {
-  return process.env.CLOUD_ML_REGION || 'us-east5'
-}
-
-/**
- * Check if bash commands should maintain project working directory (reset to original after each command)
- * @returns true if CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR is set to a truthy value
- */
-export function shouldMaintainProjectWorkingDir(): boolean {
-  return isEnvTruthy(process.env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR)
-}

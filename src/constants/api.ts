@@ -11,6 +11,8 @@ export const ANTHROPIC_API_VERSION = '2023-06-01'
 /** Header name for client-generated request IDs used by the Anthropic adapter. */
 export const CLIENT_REQUEST_ID_HEADER = 'x-client-request-id'
 
+import { getInitialSettings } from '../utils/settings/settings.js'
+
 const ANTHROPIC_DEFAULT_URL = 'https://api.anthropic.com'
 
 /**
@@ -20,19 +22,14 @@ const ANTHROPIC_DEFAULT_URL = 'https://api.anthropic.com'
  * Messages API proxy.
  */
 export function getAnthropicControlPlaneUrl(): string {
-  return (
-    process.env.ANTHROPIC_BASE_URL ||
-    process.env.CLAUDE_CODE_API_BASE_URL ||
-    ANTHROPIC_DEFAULT_URL
-  )
+  return getInitialSettings().controlPlaneBaseUrl ?? ANTHROPIC_DEFAULT_URL
 }
 
 /**
  * Base URL for Anthropic public API endpoints that are not the Messages API
- * (currently: /v1/files). Respects the standard ANTHROPIC_BASE_URL override
- * since these are real Anthropic API calls, but falls back to the default
- * Anthropic URL rather than CLAUDE_CODE_API_BASE_URL.
+ * (currently: /v1/files). Follows the control-plane override since these
+ * are real Anthropic API calls.
  */
 export function getAnthropicFilesApiUrl(): string {
-  return process.env.ANTHROPIC_BASE_URL || ANTHROPIC_DEFAULT_URL
+  return getAnthropicControlPlaneUrl()
 }

@@ -250,7 +250,7 @@ describe('Conversation Flow E2E', () => {
     test('thinking responses render for text and tool-use turns', async () => {
       session = new TmuxSession({
         serverUrl: server.url,
-        additionalEnv: { CLAUDE_CODE_DISABLE_THINKING: '' },
+        settings: { thinkingEnabled: true },
       })
       await session.start()
 

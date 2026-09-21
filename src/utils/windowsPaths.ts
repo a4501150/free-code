@@ -1,4 +1,5 @@
 import memoize from 'lodash-es/memoize.js'
+import { getInitialSettings } from './settings/settings.js'
 import * as path from 'path'
 import * as pathWin32 from 'path/win32'
 import { getCwd } from './cwd.js'
@@ -96,14 +97,13 @@ export function setShellIfWindows(): void {
  * Find the path where `bash.exe` included with git-bash exists, exiting the process if not found.
  */
 export const findGitBashPath = memoize((): string => {
-  if (process.env.CLAUDE_CODE_GIT_BASH_PATH) {
-    if (checkPathExists(process.env.CLAUDE_CODE_GIT_BASH_PATH)) {
-      return process.env.CLAUDE_CODE_GIT_BASH_PATH
+  const configured = getInitialSettings().gitBashPath
+  if (configured) {
+    if (checkPathExists(configured)) {
+      return configured
     }
     // biome-ignore lint/suspicious/noConsole:: intentional console output
-    console.error(
-      `Claude Code was unable to find CLAUDE_CODE_GIT_BASH_PATH path "${process.env.CLAUDE_CODE_GIT_BASH_PATH}"`,
-    )
+    console.error(`Unable to find gitBashPath setting path "${configured}"`)
     // eslint-disable-next-line custom-rules/no-process-exit
     process.exit(1)
   }
@@ -118,7 +118,7 @@ export const findGitBashPath = memoize((): string => {
 
   // biome-ignore lint/suspicious/noConsole:: intentional console output
   console.error(
-    'Claude Code on Windows requires git-bash (https://git-scm.com/downloads/win). If installed but not in PATH, set environment variable pointing to your bash.exe, similar to: CLAUDE_CODE_GIT_BASH_PATH=C:\\Program Files\\Git\\bin\\bash.exe',
+    'Claude Code on Windows requires git-bash (https://git-scm.com/downloads/win). If installed but not in PATH, set the gitBashPath setting to your bash.exe',
   )
   // eslint-disable-next-line custom-rules/no-process-exit
   process.exit(1)

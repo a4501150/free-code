@@ -18,12 +18,7 @@ import { parseModelStringFromRegistry } from './parseModelStringWithRegistry.js'
 export type { ModelShortName, ModelName, ModelSetting } from './modelTypes.js'
 
 export function getSmallFastModel(): ModelName {
-  // Priority: env var > freecode.json defaultSmallFastModel > defaultModel
-  if (process.env.ANTHROPIC_SMALL_FAST_MODEL) {
-    return qualifyWithDefault(
-      stripContextSuffix(process.env.ANTHROPIC_SMALL_FAST_MODEL),
-    )
-  }
+  // Priority: modelSettings.json defaultSmallFastModel > defaultModel
   const configured = getProviderRegistry().getConfiguredDefaultSmallFastModel()
   if (configured) {
     return configured as ModelName
@@ -33,7 +28,7 @@ export function getSmallFastModel(): ModelName {
 }
 
 /**
- * Helper to get the model from /model (including via /config), the --model flag, environment variable,
+ * Helper to get the model from /model (including via /config), the --model flag,
  * or the saved settings. The returned value is always a full model ID.
  * Undefined if the user didn't configure anything, in which case we fall back to
  * the default (null).
@@ -41,8 +36,7 @@ export function getSmallFastModel(): ModelName {
  * Priority order within this function:
  * 1. Model override during session (from /model command) - highest priority
  * 2. Model override at startup (from --model flag)
- * 3. ANTHROPIC_MODEL environment variable
- * 4. Settings (from user's saved settings)
+ * 3. Settings (modelSettings.json defaultModel)
  */
 export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
   let specifiedModel: ModelSetting | undefined
@@ -52,14 +46,9 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
     // Session override from /model command or --model flag — highest priority
     specifiedModel = modelOverride
   } else {
-    // Priority: env var > freecode.json defaultModel
-    const envModel = process.env.ANTHROPIC_MODEL
-    if (envModel) {
-      specifiedModel = stripContextSuffix(envModel)
-    } else {
-      const registry = getProviderRegistry()
-      specifiedModel = registry.getConfiguredDefaultModel() || undefined
-    }
+    // Priority: modelSettings.json defaultModel
+    const registry = getProviderRegistry()
+    specifiedModel = registry.getConfiguredDefaultModel() || undefined
   }
 
   return specifiedModel
@@ -71,9 +60,8 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
  * Model Selection Priority Order:
  * 1. Model override during session (from /model command) - highest priority
  * 2. Model override at startup (from --model flag)
- * 3. ANTHROPIC_MODEL environment variable
- * 4. Settings (from user's saved settings)
- * 5. Built-in default (first model in registry)
+ * 3. Settings (modelSettings.json defaultModel)
+ * 4. Built-in default (first model in registry)
  *
  * @returns The resolved model name to use
  */

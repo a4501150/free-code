@@ -2,6 +2,7 @@ import type {
   DomainBase64Source,
   DomainUserContentBlock,
 } from '../../types/domain.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import {
   SSEClientTransport,
@@ -860,9 +861,9 @@ export const connectToServer = memoize(
         )
         logMCPDebug(name, `claude.ai proxy transport created successfully`)
       } else if (serverRef.type === 'stdio' || !serverRef.type) {
-        const finalCommand =
-          process.env.CLAUDE_CODE_SHELL_PREFIX || serverRef.command
-        const finalArgs = process.env.CLAUDE_CODE_SHELL_PREFIX
+        const shellPrefix = getInitialSettings().shellPrefix
+        const finalCommand = shellPrefix || serverRef.command
+        const finalArgs = shellPrefix
           ? [[serverRef.command, ...serverRef.args].join(' ')]
           : serverRef.args
         transport = new StdioClientTransport({

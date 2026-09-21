@@ -67,9 +67,7 @@ describe('Plan Mode E2E', () => {
         serverUrl: server.url,
         height: 40,
         width: 120,
-        additionalEnv: {
-          CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
-        },
+        additionalEnv: {},
       })
       await session.start()
 
@@ -129,9 +127,7 @@ describe('Plan Mode E2E', () => {
         serverUrl: server.url,
         height: 40,
         width: 120,
-        additionalEnv: {
-          CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
-        },
+        additionalEnv: {},
       })
       await session.start()
 
@@ -196,9 +192,7 @@ describe('Plan Mode E2E', () => {
         height: 40,
         width: 120,
         settings: { showClearContextOnPlanAccept: true },
-        additionalEnv: {
-          CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
-        },
+        additionalEnv: {},
       })
       await session.start()
 
@@ -333,9 +327,7 @@ describe('Plan Mode E2E', () => {
         height: 30,
         width: 72,
         settings: { showClearContextOnPlanAccept: true },
-        additionalEnv: {
-          CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
-        },
+        additionalEnv: {},
       })
       await session.start()
 

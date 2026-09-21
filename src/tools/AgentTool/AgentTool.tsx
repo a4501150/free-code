@@ -43,7 +43,7 @@ import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import { runWithCwdOverride } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import { AbortError, errorMessage, toError } from '../../utils/errors.js'
 import type { CacheSafeParams } from '../../utils/forkedAgent.js'
 import {
@@ -137,10 +137,7 @@ const isBackgroundTasksDisabled = !isBackgroundTasksEnabled()
 
 // Auto-background agent tasks after this many ms (0 = disabled)
 function getAutoBackgroundMs(): number {
-  if (isEnvTruthy(process.env.CLAUDE_AUTO_BACKGROUND_TASKS)) {
-    return 120_000
-  }
-  return 0
+  return getInitialSettings().autoBackgroundTasksEnabled === true ? 120_000 : 0
 }
 
 // Multi-agent type constants are defined inline inside gated blocks to enable dead code elimination

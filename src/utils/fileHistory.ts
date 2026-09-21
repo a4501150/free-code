@@ -22,7 +22,7 @@ import type { LogOption } from 'src/types/logs.js'
 import { inspect } from 'util'
 import { logForDebugging } from './debug.js'
 import { getInitialSettings } from './settings/settings.js'
-import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
+import { getClaudeConfigHomeDir } from './envUtils.js'
 import { getErrnoCode, isENOENT } from './errors.js'
 import { pathExists } from './file.js'
 import { logError } from './log.js'
@@ -64,16 +64,14 @@ export function fileHistoryEnabled(): boolean {
   if (getIsNonInteractiveSession()) {
     return fileHistoryEnabledSdk()
   }
-  return (
-    (getInitialSettings().fileCheckpointingEnabled ?? true) &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING)
-  )
+  return getInitialSettings().fileCheckpointingEnabled ?? true
 }
 
 function fileHistoryEnabledSdk(): boolean {
+  const settings = getInitialSettings()
   return (
-    isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING) &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING)
+    settings.sdkFileCheckpointingEnabled === true &&
+    (settings.fileCheckpointingEnabled ?? true)
   )
 }
 

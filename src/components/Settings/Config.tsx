@@ -277,10 +277,6 @@ export function Config({
     context.options.mcpClients,
   )
 
-  const isFileCheckpointingAvailable = !isEnvTruthy(
-    process.env.CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING,
-  )
-
   const memoryFiles = React.use(getMemoryFiles(true))
   const shouldShowExternalIncludesToggle =
     hasExternalClaudeMdIncludes(memoryFiles)
@@ -784,19 +780,15 @@ export function Config({
         updateUserSettings({ speculationEnabled })
       },
     },
-    ...(isFileCheckpointingAvailable
-      ? [
-          {
-            id: 'fileCheckpointingEnabled',
-            label: 'Rewind code (checkpoints)',
-            value: settingsData?.fileCheckpointingEnabled ?? true,
-            type: 'boolean' as const,
-            onChange(fileCheckpointingEnabled: boolean) {
-              updateUserSettings({ fileCheckpointingEnabled })
-            },
-          },
-        ]
-      : []),
+    {
+      id: 'fileCheckpointingEnabled',
+      label: 'Rewind code (checkpoints)',
+      value: settingsData?.fileCheckpointingEnabled ?? true,
+      type: 'boolean' as const,
+      onChange(fileCheckpointingEnabled: boolean) {
+        updateUserSettings({ fileCheckpointingEnabled })
+      },
+    },
     {
       id: 'verbose',
       label: 'Verbose output',

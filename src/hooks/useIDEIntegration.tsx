@@ -38,15 +38,14 @@ export function useIDEIntegration({
       // Check if auto-connect is enabled
       const settings = getInitialSettings()
       const autoConnectEnabled =
-        ((settings.autoConnectIde ?? false) ||
-          autoConnectIdeFlag ||
-          isSupportedTerminal() ||
-          // tmux/screen overwrite TERM_PROGRAM, breaking terminal detection, but the
-          // IDE extension's port env var is inherited. If set, auto-connect anyway.
-          process.env.CLAUDE_CODE_SSE_PORT ||
-          ideToInstallExtension ||
-          isEnvTruthy(process.env.CLAUDE_CODE_AUTO_CONNECT_IDE)) &&
-        !isEnvDefinedFalsy(process.env.CLAUDE_CODE_AUTO_CONNECT_IDE)
+        (settings.autoConnectIde ?? false) ||
+        autoConnectIdeFlag ||
+        isSupportedTerminal() ||
+        // tmux/screen overwrite TERM_PROGRAM, breaking terminal detection, but the
+        // IDE extension's port env var is inherited. If set, auto-connect anyway.
+        process.env.CLAUDE_CODE_SSE_PORT ||
+        ideToInstallExtension ||
+        getInitialSettings().autoConnectIde === true
 
       if (!autoConnectEnabled) {
         return

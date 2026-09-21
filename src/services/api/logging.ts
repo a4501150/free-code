@@ -121,26 +121,6 @@ function detectGateway({
   return undefined
 }
 
-function getAnthropicEnvMetadata() {
-  return {
-    ...(process.env.ANTHROPIC_BASE_URL
-      ? {
-          baseUrl: process.env.ANTHROPIC_BASE_URL,
-        }
-      : {}),
-    ...(process.env.ANTHROPIC_MODEL
-      ? {
-          envModel: process.env.ANTHROPIC_MODEL,
-        }
-      : {}),
-    ...(process.env.ANTHROPIC_SMALL_FAST_MODEL
-      ? {
-          envSmallFastModel: process.env.ANTHROPIC_SMALL_FAST_MODEL,
-        }
-      : {}),
-  }
-}
-
 function getBuildAgeMinutes(): number | undefined {
   if (!MACRO.BUILD_TIME) return undefined
   const buildTime = new Date(MACRO.BUILD_TIME).getTime()

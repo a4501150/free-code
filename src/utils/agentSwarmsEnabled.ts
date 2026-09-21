@@ -1,4 +1,4 @@
-import { isEnvTruthy } from './envUtils.js'
+import { getInitialSettings } from './settings/settings.js'
 
 /**
  * Check if --agent-teams flag is provided via CLI.
@@ -15,13 +15,12 @@ function isAgentTeamsFlagSet(): boolean {
  * This is the single gate that should be checked everywhere teammates
  * are referenced (prompts, code, tools isEnabled, UI, etc.).
  *
- * Requires opt-in via CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
- * env var OR --agent-teams flag.
+ * Requires opt-in via the agentTeamsEnabled setting or the --agent-teams flag.
  */
 export function isAgentSwarmsEnabled(): boolean {
-  // Require opt-in via env var or --agent-teams flag
+  // Require opt-in via the agentTeamsEnabled setting or --agent-teams flag
   if (
-    !isEnvTruthy(process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS) &&
+    getInitialSettings().agentTeamsEnabled !== true &&
     !isAgentTeamsFlagSet()
   ) {
     return false

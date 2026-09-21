@@ -37,7 +37,6 @@ import {
 import { asSessionId, asAgentId } from '../types/ids.js'
 import { logForDebugging } from '../utils/debug.js'
 import { QueryGuard } from '../utils/QueryGuard.js'
-import { isEnvTruthy } from '../utils/envUtils.js'
 import { truncateToWidth } from '../utils/format.js'
 
 import { setMemberActive } from '../utils/swarm/teamHelpers.js'
@@ -471,7 +470,7 @@ export function REPL({
   // Env-var/settings gates hoisted to mount-time — these were on the render
   // path (hot during PageUp spam).
   const titleDisabled = useMemo(
-    () => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE),
+    () => getInitialSettings().terminalTitleEnabled === false,
     [],
   )
   const disableMessageActions = useMemo(

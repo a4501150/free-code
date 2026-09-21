@@ -21,7 +21,7 @@ import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
 import type { MemoryType } from './memory/types.js'
 import { normalizePathForConfigKey } from './path.js'
-import { getEssentialTrafficOnlyReason } from './privacyLevel.js'
+import { isEssentialTrafficOnly } from './privacyLevel.js'
 
 import * as teamMemPaths from '../memdir/teamMemPaths.js'
 import type { ImageDimensions } from './imageResizer.js'
@@ -925,6 +925,7 @@ export function shouldSkipPluginAutoupdate(): boolean {
 export type AutoUpdaterDisabledReason =
   | { type: 'development' }
   | { type: 'env'; envVar: string }
+  | { type: 'settings'; setting: string }
 
 export function formatAutoUpdaterDisabledReason(
   reason: AutoUpdaterDisabledReason,
@@ -934,6 +935,8 @@ export function formatAutoUpdaterDisabledReason(
       return 'development build'
     case 'env':
       return `${reason.envVar} set`
+    case 'settings':
+      return `${reason.setting}: false in settings`
   }
 }
 
@@ -944,9 +947,8 @@ export function getAutoUpdaterDisabledReason(): AutoUpdaterDisabledReason | null
   if (isEnvTruthy(process.env.DISABLE_AUTOUPDATER)) {
     return { type: 'env', envVar: 'DISABLE_AUTOUPDATER' }
   }
-  const essentialTrafficEnvVar = getEssentialTrafficOnlyReason()
-  if (essentialTrafficEnvVar) {
-    return { type: 'env', envVar: essentialTrafficEnvVar }
+  if (isEssentialTrafficOnly()) {
+    return { type: 'settings', setting: 'nonessentialTrafficEnabled' }
   }
   return null
 }

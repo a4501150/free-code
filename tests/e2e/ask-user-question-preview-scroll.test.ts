@@ -81,9 +81,7 @@ describe('AskUserQuestion Preview Scroll', () => {
       serverUrl: server.url,
       height: 40,
       width: 90,
-      additionalEnv: {
-        CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
-      },
+      additionalEnv: {},
     })
     await session.start()
 
@@ -160,9 +158,7 @@ describe('AskUserQuestion Preview Scroll', () => {
       serverUrl: server.url,
       height: 40,
       width: 90,
-      additionalEnv: {
-        CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
-      },
+      additionalEnv: {},
     })
     await session.start()
 
@@ -216,9 +212,7 @@ describe('AskUserQuestion Preview Scroll', () => {
       serverUrl: server.url,
       height: 40,
       width: 90,
-      additionalEnv: {
-        CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
-      },
+      additionalEnv: {},
     })
     await session.start()
 

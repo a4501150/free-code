@@ -390,14 +390,6 @@ export function calculateMessagesToKeepIndex(
  * Uses cached gate values to avoid blocking on Statsig initialization
  */
 export function shouldUseSessionMemoryCompaction(): boolean {
-  // Allow env var override for eval runs and testing
-  if (isEnvTruthy(process.env.ENABLE_CLAUDE_CODE_SM_COMPACT)) {
-    return true
-  }
-  if (isEnvTruthy(process.env.DISABLE_CLAUDE_CODE_SM_COMPACT)) {
-    return false
-  }
-
   const settings = getInitialSettings()
   return (
     (settings?.sessionMemory ?? false) &&

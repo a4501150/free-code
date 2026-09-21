@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react'
 import type { Command } from '../commands.js'
+import { getInitialSettings } from '../utils/settings/settings.js'
 import { useNotifications } from '../context/notifications.js'
 import { reinitializeLspServerManager } from '../services/lsp/manager.js'
 import { useAppState, useSetAppState } from '../state/AppState.js'
@@ -256,7 +257,7 @@ export function useManagePlugins({
       const { ant_enabled_names, ...baseMetrics } = metrics
       const allMetrics = {
         ...baseMetrics,
-        has_custom_plugin_cache_dir: !!process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR,
+        has_custom_plugin_cache_dir: !!getInitialSettings().pluginCacheDir,
       }
       logForDiagnosticsNoPII('info', 'tengu_plugins_loaded', allMetrics)
     })

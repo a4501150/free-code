@@ -114,7 +114,7 @@ export function shouldIncludeFirstPartyOnlyBetas(model?: string): boolean {
     : (registry.getDefaultProvider()?.config.type ?? null)
   return (
     (providerType === 'anthropic' || providerType === 'foundry') &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)
+    getInitialSettings().experimentalBetasEnabled !== false
   )
 }
 
@@ -182,14 +182,10 @@ export const getAllModelBetas = memoize((model: string): string[] => {
     betaHeaders.push(WEB_SEARCH_BETA_HEADER)
   }
 
-  // If ANTHROPIC_BETAS is set, split it by commas and add to betaHeaders.
-  // This is an explicit user opt-in, so honor it regardless of model.
-  if (process.env.ANTHROPIC_BETAS) {
-    betaHeaders.push(
-      ...process.env.ANTHROPIC_BETAS.split(',')
-        .map(_ => _.trim())
-        .filter(Boolean),
-    )
+  // Explicit user opt-in beta headers, honored regardless of model.
+  const extra = getInitialSettings().extraBetaHeaders
+  if (Array.isArray(extra)) {
+    betaHeaders.push(...extra.filter(h => typeof h === 'string' && h.trim()))
   }
   return betaHeaders
 })

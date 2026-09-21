@@ -265,10 +265,7 @@ export const ProviderModelSchema = z.object({
   maxOutputTokens: z
     .number()
     .optional()
-    .describe(
-      'The `max_tokens` value sent to the API for this model. ' +
-        'Overridable at runtime via `CLAUDE_CODE_MAX_OUTPUT_TOKENS`.',
-    ),
+    .describe('The `max_tokens` value sent to the API for this model.'),
   effortLevels: z
     .array(z.string())
     .optional()
@@ -959,6 +956,308 @@ const _settingsSchemaValue = z
       .describe(
         "Include built-in commit and PR workflow instructions in Claude's system prompt (default: true)",
       ),
+    claudeMdEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Load CLAUDE.md project memory files into context (default: true). When false, CLAUDE.md is never read, even with --add-dir.',
+      ),
+    additionalDirectoriesClaudeMd: z
+      .boolean()
+      .optional()
+      .describe(
+        'Also load CLAUDE.md from --add-dir additional directories (default: false)',
+      ),
+    nonessentialTrafficEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Allow nonessential network traffic (telemetry, analytics, auto-update pings, registry prefetch). When false, only essential API traffic runs (default: true)',
+      ),
+    thinkingEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Send extended-thinking parameters on requests that request thinking (default: true). When false, thinking is dropped entirely',
+      ),
+    adaptiveThinkingEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Use adaptive thinking on models that support it instead of a fixed token budget (default: true)',
+      ),
+    effortAlwaysEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Allow effort levels for every model even when the provider model config does not declare effortLevels (default: false)',
+      ),
+    context1mEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Use 1M-token context windows where the model supports them. Set false for HIPAA-style deployments (default: true)',
+      ),
+    blockingLimitOverride: z
+      .number()
+      .optional()
+      .describe(
+        'Override the context-window blocking limit used by auto-compaction (tokens)',
+      ),
+    maxRetries: z
+      .number()
+      .optional()
+      .describe('Default retry count for API requests'),
+    fastModeEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Allow fast mode (default: true). When false, the fast-mode toggle and wire feature are disabled',
+      ),
+    fastModeSkipNetworkErrors: z
+      .boolean()
+      .optional()
+      .describe(
+        'Bypass the fast-mode org-status check when it fails behind a blocking proxy (default: false)',
+      ),
+    experimentalBetasEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Send experimental beta headers and undocumented tool-schema fields on first-party endpoints (default: true)',
+      ),
+    sdkFileCheckpointingEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Enable file checkpointing in non-interactive (SDK/print) sessions. Opt-in; also requires fileCheckpointingEnabled (default: false)',
+      ),
+    attachmentsEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Attach context (queued commands aside, file changes, reminders) to requests (default: true)',
+      ),
+    tokenUsageAttachment: z
+      .boolean()
+      .optional()
+      .describe(
+        'Attach a token-usage summary to each request (default: false)',
+      ),
+    controlPlaneBaseUrl: z
+      .string()
+      .optional()
+      .describe(
+        'Base URL for Anthropic control-plane endpoints (oauth, MCP registry prefetch). Defaults to the built-in API endpoint',
+      ),
+    shellPath: z
+      .string()
+      .optional()
+      .describe(
+        'Explicit shell binary for bash tooling (bash or zsh). Default: auto-detected',
+      ),
+    shellPrefix: z
+      .string()
+      .optional()
+      .describe(
+        'Command prefix that wraps every shell, hook and MCP-stdio invocation (e.g. a sandbox launcher)',
+      ),
+    powershellToolEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Enable the PowerShell tool on Windows (preview) (default: false)',
+      ),
+    powershellParseTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Timeout for PowerShell parse requests (default: 5000)'),
+    gitBashPath: z
+      .string()
+      .optional()
+      .describe(
+        'Absolute path to git-bash bash.exe on Windows. When set and missing, startup fails with an error',
+      ),
+    maintainProjectWorkingDir: z
+      .boolean()
+      .optional()
+      .describe(
+        'Reset the shell working directory back to the project root after each bash command (default: false)',
+      ),
+    globHidden: z
+      .boolean()
+      .optional()
+      .describe('Glob results include hidden files (default: true)'),
+    globNoIgnore: z
+      .boolean()
+      .optional()
+      .describe('Glob results ignore .gitignore rules (default: true)'),
+    globTimeoutSeconds: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        'Timeout in seconds for glob/ripgrep searches (platform defaults otherwise)',
+      ),
+    useNativeFileSearch: z
+      .boolean()
+      .optional()
+      .describe(
+        'Walk skill/command directories with native fs code instead of ripgrep (default: false)',
+      ),
+    fileReadMaxOutputTokens: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Override the max output tokens for a single FileRead result'),
+    pluginCacheDir: z
+      .string()
+      .optional()
+      .describe(
+        'Directory for installed plugins. Supports ~/ prefix. Defaults to <config home>/plugins',
+      ),
+    pluginGitTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Timeout for marketplace git operations (default: 120000)'),
+    pluginZipCacheEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Store marketplace plugins in a zip cache under pluginCacheDir instead of unpacked (default: false)',
+      ),
+    sessionEndHooksTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Timeout for SessionEnd hooks (default: 1500)'),
+    exitAfterStopDelayMs: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        'Exit the process this many ms after the session stops (headless runner hygiene). Disabled by default',
+      ),
+    emitSessionStateEvents: z
+      .boolean()
+      .optional()
+      .describe(
+        'Emit session_state_changed structured events for web/mobile clients (default: false)',
+      ),
+    emitToolUseSummaries: z
+      .boolean()
+      .optional()
+      .describe(
+        'Emit human summaries of tool usage into the transcript (default: false)',
+      ),
+    precompactFastScanEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Use the byte-level pre-compaction scan when loading large transcripts (default: true). Set false to fall back to full parse',
+      ),
+    ideSkipConnectionCheck: z
+      .boolean()
+      .optional()
+      .describe(
+        'Skip workspace-folder validation when connecting to an IDE lockfile (default: false)',
+      ),
+    extraBetaHeaders: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Extra anthropic-beta header values to send on requests, joined with the auto-derived set',
+      ),
+    accessibilityMode: z
+      .boolean()
+      .optional()
+      .describe(
+        'Keep the native cursor visible and avoid render tricks that break screen readers (default: false)',
+      ),
+    mouseEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Enable terminal mouse tracking for click/scroll handling (default: true)',
+      ),
+    scrollSpeed: z
+      .number()
+      .positive()
+      .max(20)
+      .optional()
+      .describe(
+        'Multiplier for wheel scroll speed (0.1-20, default: 1). Tune for terminals with aggressive wheel acceleration',
+      ),
+    terminalTitleEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Update the terminal tab title with session info (default: true)',
+      ),
+    agentTeamsEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Enable the experimental agent-teams feature (same as the --agent-teams flag)',
+      ),
+    forkSubagentEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Make the fork subagent (context-inheriting worktree agent) available (default: false)',
+      ),
+    autoBackgroundTasksEnabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Automatically move foreground agent tasks to the background after 2 minutes (default: false)',
+      ),
+    maxToolUseConcurrency: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        'Max concurrent tool-use blocks per assistant turn (default: 10)',
+      ),
+    planAgentCount: z
+      .number()
+      .int()
+      .min(1)
+      .max(10)
+      .optional()
+      .describe(
+        'Number of plan agents spawned in plan mode (1-10). Defaults by subscription tier',
+      ),
+    planExploreAgentCount: z
+      .number()
+      .int()
+      .min(1)
+      .max(10)
+      .optional()
+      .describe(
+        'Number of explore agents spawned in plan mode (1-10, default: 3)',
+      ),
+    extraBody: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        'JSON object merged into the body of every API request (proxy/gateway extensions)',
+      ),
+    extraMetadata: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        'JSON object merged into the metadata.user_id payload of API requests',
+      ),
     permissions: PermissionsSchema.optional().describe(
       'Tool usage permissions configuration',
     ),
@@ -974,7 +1273,7 @@ const _settingsSchemaValue = z
       .optional()
       .describe(
         'Provider-qualified default subagent model (e.g. "anthropic:claude-sonnet-4-6"). ' +
-          'Takes priority over CLAUDE_CODE_SUBAGENT_MODEL env var. Canonical location is freecode.json.',
+          'Canonical location is modelSettings.json.',
       ),
     availableSubagentModels: z
       .array(z.string())
@@ -1006,8 +1305,7 @@ const _settingsSchemaValue = z
       .optional()
       .describe(
         'Provider-qualified default small/fast model (e.g. "anthropic:claude-haiku-4-5-20251001"). ' +
-          'Used for token estimation, hooks, web search, summaries. ' +
-          'ANTHROPIC_SMALL_FAST_MODEL env var takes priority over this setting. Canonical location is freecode.json.',
+          'Used for token estimation, hooks, web search, summaries. Canonical location is freecode.json.',
       ),
     modelOverrides: z
       .record(z.string(), z.string())

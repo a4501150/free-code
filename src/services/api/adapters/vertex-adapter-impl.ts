@@ -73,9 +73,9 @@ async function getVertexAccessToken(
 
   const googleAuth = new GoogleAuth({
     scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-    ...(hasProjectEnvVar || hasKeyFile
+    ...(hasProjectEnvVar || hasKeyFile || !config.auth?.gcp?.projectId
       ? {}
-      : { projectId: process.env.ANTHROPIC_VERTEX_PROJECT_ID }),
+      : { projectId: config.auth.gcp.projectId }),
   })
 
   const authClient = await googleAuth.getClient()

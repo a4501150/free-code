@@ -7,12 +7,11 @@ import {
 import type { AssistantMessage, Message } from '../../types/message.js'
 import { all } from '../../utils/generators.js'
 import { type MessageUpdateLazy, runToolUse } from './toolExecution.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import { isConcurrencySafeToolInput } from './toolInput.js'
 
 function getMaxToolUseConcurrency(): number {
-  return (
-    parseInt(process.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY || '', 10) || 10
-  )
+  return getInitialSettings().maxToolUseConcurrency ?? 10
 }
 
 export type MessageUpdate = {

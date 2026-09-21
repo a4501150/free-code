@@ -23,11 +23,6 @@ export async function validateModel(
     return { valid: false, error: 'Model name cannot be empty' }
   }
 
-  // Check if it matches ANTHROPIC_CUSTOM_MODEL_OPTION (pre-validated by the user)
-  if (normalizedModel === process.env.ANTHROPIC_CUSTOM_MODEL_OPTION) {
-    return { valid: true }
-  }
-
   // Check if the model exists in the provider registry (covers custom providers)
   const registry = getProviderRegistry()
   if (registry.getProviderForModel(normalizedModel)) {

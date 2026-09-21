@@ -140,8 +140,8 @@ describe('Injected context visibility', () => {
         // harness disables CLAUDE.md by default; the row exists to show what
         // those would send, so both have to be on for this test.
         NODE_ENV: 'development',
-        CLAUDE_CODE_DISABLE_CLAUDE_MDS: '0',
       },
+      settings: { claudeMdEnabled: true },
     })
     await session.start()
 

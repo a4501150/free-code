@@ -291,11 +291,7 @@ import { isAssistantProactiveRequested } from '../assistant/index.js'
 import { jsonStringify } from '../utils/slowOperations.js'
 import { skillChangeDetector } from '../utils/skills/skillChangeDetector.js'
 import { getCommands, clearCommandsCache } from '../commands.js'
-import {
-  isBareMode,
-  isEnvTruthy,
-  isEnvDefinedFalsy,
-} from '../utils/envUtils.js'
+import { isBareMode, isEnvTruthy } from '../utils/envUtils.js'
 import { installPluginsForHeadless } from '../utils/plugins/headlessPluginInstall.js'
 import { refreshActivePlugins } from '../utils/plugins/refresh.js'
 import { loadAllPluginsCacheOnly } from '../utils/plugins/pluginLoader.js'
@@ -2126,10 +2122,7 @@ function runHeadlessStreaming(
           }
 
           // Generate and emit prompt suggestion for structured consumers
-          if (
-            options.promptSuggestions &&
-            !isEnvDefinedFalsy(process.env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION)
-          ) {
+          if (options.promptSuggestions) {
             // TS narrows suggestionState to never in the while loop body;
             // cast via unknown to reset narrowing.
             const state = suggestionState as unknown as typeof suggestionState

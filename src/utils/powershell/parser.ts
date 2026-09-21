@@ -1,4 +1,5 @@
 import { execa } from 'execa'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 import { logForDebugging } from '../debug.js'
 import { memoizeWithLRU } from '../memoize.js'
 import { getCachedPowerShellPath } from '../shell/powershellDetection.js'
@@ -202,15 +203,12 @@ export type ParsedPowerShellCommand = {
 // CI under Defender/AMSI load can exceed 5s on consecutive spawns even after
 // CAN_SPAWN_PARSE_SCRIPT() warms the JIT (run 23574701241 windows-shard-5:
 // attackVectors F1 hit 2×5s timeout → valid:false → 'ask' instead of 'deny').
-// Override via env for tests. Read inside parsePowerShellCommandImpl, not
-// top-level, per CLAUDE.md (globalSettings.env ordering).
+// Read inside parsePowerShellCommandImpl, not top-level, so settings are
+// loaded by then.
 const DEFAULT_PARSE_TIMEOUT_MS = 5_000
 function getParseTimeoutMs(): number {
-  const env = process.env.CLAUDE_CODE_PWSH_PARSE_TIMEOUT_MS
-  if (env) {
-    const parsed = parseInt(env, 10)
-    if (!isNaN(parsed) && parsed > 0) return parsed
-  }
+  const override = getInitialSettings().powershellParseTimeoutMs
+  if (typeof override === 'number' && override > 0) return override
   return DEFAULT_PARSE_TIMEOUT_MS
 }
 // MAX_COMMAND_LENGTH is derived from PARSE_SCRIPT_BODY.length below (after the

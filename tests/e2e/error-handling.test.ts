@@ -46,7 +46,7 @@ describe('Error Handling', () => {
     test('non-retried HTTP errors are handled gracefully', async () => {
       session = new TmuxSession({
         serverUrl: server.url,
-        additionalEnv: { CLAUDE_CODE_MAX_RETRIES: '0' },
+        settings: { maxRetries: 0 },
       })
       await session.start()
 
@@ -92,7 +92,7 @@ describe('Error Handling', () => {
 
       session = new TmuxSession({
         serverUrl: server.url,
-        additionalEnv: { CLAUDE_CODE_MAX_RETRIES: '1' },
+        settings: { maxRetries: 1 },
       })
       await session.start()
 
@@ -145,7 +145,7 @@ describe('Error Handling', () => {
 
       session = new TmuxSession({
         serverUrl: server.url,
-        additionalEnv: { CLAUDE_CODE_MAX_RETRIES: '0' },
+        settings: { maxRetries: 0 },
       })
       await session.start()
 

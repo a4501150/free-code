@@ -49,6 +49,13 @@ Provider keys ONLY in `~/.freecode/modelSettings.json` (the full key set is
 `src/utils/settings/modelSettingsKeys.ts`); unknown keys are dropped
 pre-validation. Everything else in `freecode.json`. Config home is
 `~/.freecode` (`FREECODE_CONFIG_DIR`, fallback `CLAUDE_CONFIG_DIR`).
+Behavior is configured through settings files, not env: the only
+`CLAUDE_*`/`ANTHROPIC_*` names `src/` and `scripts/` may read from
+`process.env` are the three buckets in `src/utils/envAllowlist.ts`
+(auth, process/host mechanics, debug) — a unit test scans read sites and
+fails on anything else. `settings.env` survives as child-process
+passthrough; adding a behavior switch read from env requires allowlisting
+it there.
 
 ## Terminal renderer
 

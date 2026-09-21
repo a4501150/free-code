@@ -4,20 +4,17 @@ import {
   getSyntaxTheme as nativeGetSyntaxTheme,
   type SyntaxTheme,
 } from '../../native-ts/color-diff/index.js'
-import { isEnvDefinedFalsy } from '../../utils/envUtils.js'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 
-export type ColorModuleUnavailableReason = 'env'
+export type ColorModuleUnavailableReason = 'settings'
 
 /**
  * Returns a static reason why the color-diff module is unavailable, or null if available.
- * 'env' = disabled via CLAUDE_CODE_SYNTAX_HIGHLIGHT
- *
- * The reconstructed project always uses the bundled TypeScript port, so the
- * only way to disable syntax highlighting is via the env var.
+ * 'settings' = disabled via syntaxHighlightingDisabled in settings.
  */
 export function getColorModuleUnavailableReason(): ColorModuleUnavailableReason | null {
-  if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_SYNTAX_HIGHLIGHT)) {
-    return 'env'
+  if (getInitialSettings()?.syntaxHighlightingDisabled === true) {
+    return 'settings'
   }
   return null
 }

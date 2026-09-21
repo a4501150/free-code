@@ -3,7 +3,6 @@ import type { AppState } from '../../state/AppState.js'
 import type { Message } from '../../types/message.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { count } from '../../utils/array.js'
-import { isEnvDefinedFalsy, isEnvTruthy } from '../../utils/envUtils.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { toError } from '../../utils/errors.js'
 import {
@@ -30,15 +29,6 @@ export function getPromptVariant(): PromptVariant {
 }
 
 export function shouldEnablePromptSuggestion(): boolean {
-  // Env var overrides everything (for testing)
-  const envOverride = process.env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION
-  if (isEnvDefinedFalsy(envOverride)) {
-    return false
-  }
-  if (isEnvTruthy(envOverride)) {
-    return true
-  }
-
   if (!(getInitialSettings()?.promptSuggestions ?? true)) {
     return false
   }

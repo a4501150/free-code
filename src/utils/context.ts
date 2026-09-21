@@ -1,6 +1,6 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
-import { isEnvTruthy } from './envUtils.js'
 import { getProviderRegistry } from './model/providerRegistry.js'
+import { getInitialSettings } from './settings/settings.js'
 
 // Model context window size (200k tokens for all models right now)
 export const MODEL_CONTEXT_WINDOW_DEFAULT = 200_000
@@ -13,11 +13,11 @@ export const COMPACT_MAX_OUTPUT_TOKENS = 20_000
 export const MAX_OUTPUT_TOKENS_DEFAULT = 32_000
 
 /**
- * Check if 1M context is disabled via environment variable.
+ * Check if 1M context is disabled via the context1mEnabled setting.
  * Used by C4E admins to disable 1M context for HIPAA compliance.
  */
 export function is1mContextDisabled(): boolean {
-  return isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT)
+  return getInitialSettings().context1mEnabled === false
 }
 
 export function modelSupports1M(model: string): boolean {
@@ -86,17 +86,11 @@ export function calculateContextPercentages(
 /**
  * Returns the `max_tokens` value to send to the API for this model.
  * Resolution order:
- *   1. CLAUDE_CODE_MAX_OUTPUT_TOKENS env (unclamped positive int)
- *   2. freecode.json providerConfig.model.maxOutputTokens
- *   3. Model capability table (clamped to MAX_OUTPUT_TOKENS_DEFAULT)
- *   4. MAX_OUTPUT_TOKENS_DEFAULT fallback
+ *   1. providers block models[].maxOutputTokens in modelSettings.json
+ *   2. Model capability table (clamped to MAX_OUTPUT_TOKENS_DEFAULT)
+ *   3. MAX_OUTPUT_TOKENS_DEFAULT fallback
  */
 export function getModelMaxOutputTokens(model: string): number {
-  const envOverride = process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS
-  if (envOverride) {
-    const n = Number.parseInt(envOverride, 10)
-    if (Number.isFinite(n) && n > 0) return n
-  }
   const resolved = getProviderRegistry().getProviderForModel(model)
   if (resolved?.model.maxOutputTokens && resolved.model.maxOutputTokens > 0) {
     return resolved.model.maxOutputTokens

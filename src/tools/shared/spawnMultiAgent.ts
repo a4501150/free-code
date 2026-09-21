@@ -16,6 +16,7 @@ import { createTaskStateBase, generateTaskId } from '../../Task.js'
 import type { ToolUseContext } from '../../Tool.js'
 import type { InProcessTeammateTaskState } from '../../tasks/InProcessTeammateTask/types.js'
 import { formatAgentId } from '../../utils/agentId.js'
+import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { quote } from '../../utils/bash/shellQuote.js'
 import { isInBundledMode } from '../../utils/bundledMode.js'
 import { getCwd } from '../../utils/cwd.js'
@@ -248,6 +249,13 @@ function buildInheritedCliFlags(options?: {
     flags.push(`--plugin-dir ${quote([pluginDir])}`)
   }
 
+  // Propagate --agent-teams so teammates keep teammate features when the
+  // leader opted in via the flag (settings opt-in is inherited by reading
+  // the same settings files).
+  if (isAgentSwarmsEnabled()) {
+    flags.push('--agent-teams')
+  }
+
   return flags.join(' ')
 }
 
@@ -427,7 +435,7 @@ async function handleSpawnSplitPane(
 
   const flagsStr = inheritedFlags ? ` ${inheritedFlags}` : ''
   // Propagate env vars that teammates need but may not inherit from tmux split-window shells.
-  // Includes CLAUDECODE, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS, and API provider vars.
+  // Includes CLAUDECODE, config-dir and proxy/transport vars.
   const envStr = buildInheritedEnvVars()
   const spawnCommand = `cd ${quote([workingDir])} && env ${envStr} ${quote([binaryPath])} ${teammateArgs}${flagsStr}`
 
@@ -634,7 +642,7 @@ async function handleSpawnSeparateWindow(
 
   const flagsStr = inheritedFlags ? ` ${inheritedFlags}` : ''
   // Propagate env vars that teammates need but may not inherit from tmux split-window shells.
-  // Includes CLAUDECODE, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS, and API provider vars.
+  // Includes CLAUDECODE, config-dir and proxy/transport vars.
   const envStr = buildInheritedEnvVars()
   const spawnCommand = `cd ${quote([workingDir])} && env ${envStr} ${quote([binaryPath])} ${teammateArgs}${flagsStr}`
 

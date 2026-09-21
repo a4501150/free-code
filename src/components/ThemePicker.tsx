@@ -179,8 +179,8 @@ export function ThemePicker({
         </Box>
         <Text dimColor>
           {' '}
-          {colorModuleUnavailableReason === 'env'
-            ? `Syntax highlighting disabled (via CLAUDE_CODE_SYNTAX_HIGHLIGHT=${process.env.CLAUDE_CODE_SYNTAX_HIGHLIGHT})`
+          {colorModuleUnavailableReason === 'settings'
+            ? 'Syntax highlighting disabled (syntaxHighlightingDisabled: true in settings)'
             : syntaxHighlightingDisabled
               ? `Syntax highlighting disabled (${syntaxToggleShortcut} to enable)`
               : syntaxTheme

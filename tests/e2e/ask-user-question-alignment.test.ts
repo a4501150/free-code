@@ -77,9 +77,7 @@ describe('AskUserQuestion Alignment', () => {
       serverUrl: server.url,
       height: 40,
       width: 120,
-      additionalEnv: {
-        CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
-      },
+      additionalEnv: {},
     })
     await session.start()
 
@@ -144,9 +142,7 @@ describe('AskUserQuestion Alignment', () => {
       serverUrl: server.url,
       height: 40,
       width: 120,
-      additionalEnv: {
-        CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
-      },
+      additionalEnv: {},
     })
     await session.start()
 
@@ -241,9 +237,7 @@ describe('AskUserQuestion Alignment', () => {
       serverUrl: server.url,
       height: 30,
       width: 72,
-      additionalEnv: {
-        CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
-      },
+      additionalEnv: {},
     })
     await session.start()
 
@@ -303,9 +297,7 @@ describe('AskUserQuestion Alignment', () => {
       serverUrl: server.url,
       height: 30,
       width: 72,
-      additionalEnv: {
-        CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
-      },
+      additionalEnv: {},
     })
     await session.start()
 

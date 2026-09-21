@@ -61,7 +61,7 @@ export async function clearConversation({
   scrollToBottom?: () => void
 }): Promise<void> {
   // Execute SessionEnd hooks before clearing (bounded by
-  // CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS, default 1.5s)
+  // sessionEndHooksTimeoutMs, default 1.5s)
   const sessionEndTimeoutMs = getSessionEndHookTimeoutMs()
   await executeSessionEndHooks('clear', {
     getAppState,

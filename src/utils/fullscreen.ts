@@ -1,6 +1,6 @@
 import { spawnSync } from 'child_process'
 import { getIsInteractive } from '../bootstrap/state.js'
-import { isEnvTruthy } from './envUtils.js'
+import { getInitialSettings } from './settings/settings.js'
 import { execFileNoThrow } from './execFileNoThrow.js'
 
 let warnedTmuxControlMode = false
@@ -120,13 +120,13 @@ export function maybeGetTmuxControlModeWarning(): string | null {
 
 /**
  * Whether to enable SGR mouse tracking (DEC 1000/1002/1003/1006).
- * Set CLAUDE_CODE_DISABLE_MOUSE=1 to keep alt-screen + virtualized scroll
+ * Set mouseEnabled: false to keep alt-screen + virtualized scroll
  * (keyboard PgUp/PgDn/Ctrl+Home/End still work) but skip mouse capture,
  * so tmux/kitty/terminal-native copy-on-select keeps working. Clicks go with
  * it — nothing reaches the app to dispatch.
  */
 export function isMouseTrackingEnabled(): boolean {
-  return !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_MOUSE)
+  return getInitialSettings().mouseEnabled !== false
 }
 
 /**

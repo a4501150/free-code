@@ -3,7 +3,6 @@ import { join } from 'path'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { KeybindingWarnings } from 'src/components/KeybindingWarnings.js'
 import { McpParsingWarnings } from 'src/components/mcp/McpParsingWarnings.js'
-import { MAX_OUTPUT_TOKENS_DEFAULT } from 'src/utils/context.js'
 import { getClaudeConfigHomeDir } from 'src/utils/envUtils.js'
 import { getProjectConfigPaths } from 'src/utils/projectConfigPaths.js'
 import type { SettingSource } from 'src/utils/settings/constants.js'
@@ -88,11 +87,6 @@ export function Doctor({ onDone }: Props): React.ReactNode {
         name: 'TASK_MAX_OUTPUT_LENGTH',
         default: TASK_MAX_OUTPUT_DEFAULT,
         upperLimit: TASK_MAX_OUTPUT_UPPER_LIMIT,
-      },
-      {
-        name: 'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
-        default: MAX_OUTPUT_TOKENS_DEFAULT,
-        upperLimit: Number.MAX_SAFE_INTEGER,
       },
     ]
     return envVars

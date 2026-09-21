@@ -6,13 +6,14 @@
  * - CLI flag: --cowork
  * - Environment variable: CLAUDE_CODE_USE_COWORK_PLUGINS
  *
- * The base directory can be overridden via CLAUDE_CODE_PLUGIN_CACHE_DIR.
+ * The base directory can be overridden via pluginCacheDir setting.
  */
 
 import { mkdirSync } from 'fs'
 import { readdir, rm, stat } from 'fs/promises'
 import { delimiter, join } from 'path'
 import { getUseCoworkPlugins } from '../../bootstrap/state.js'
+import { getInitialSettings } from '../settings/settings.js'
 import { logForDebugging } from '../debug.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from '../envUtils.js'
 import { errorMessage, isFsInaccessible } from '../errors.js'
@@ -47,17 +48,16 @@ function getPluginsDirectoryName(): string {
  * Get the full path to the plugins directory.
  *
  * Priority:
- * 1. CLAUDE_CODE_PLUGIN_CACHE_DIR env var (explicit override)
+ * 1. pluginCacheDir setting env var (explicit override)
  * 2. Default: ~/.freecode/plugins or ~/.freecode/cowork_plugins
  */
 export function getPluginsDirectory(): string {
-  // expandTilde: when CLAUDE_CODE_PLUGIN_CACHE_DIR is set via freecode.json
-  // `env` (not shell), ~ is not expanded by the shell. Without this, a value
-  // like "~/.freecode/plugins" becomes a literal `~` directory created in the
-  // cwd of every project (gh-30794 / CC-212).
-  const envOverride = process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR
-  if (envOverride) {
-    return expandTilde(envOverride)
+  // expandTilde: settings values are not shell-expanded, so a value like
+  // "~/.freecode/plugins" would otherwise become a literal `~` directory
+  // created in the cwd of every project (gh-30794 / CC-212).
+  const configured = getInitialSettings().pluginCacheDir
+  if (configured) {
+    return expandTilde(configured)
   }
   return join(getClaudeConfigHomeDir(), getPluginsDirectoryName())
 }

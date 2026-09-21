@@ -2,6 +2,7 @@ import { release } from 'os'
 import type { Command, LocalCommandCall } from '../../types/command.js'
 import { getAuthTokenSource } from '../../utils/auth.js'
 import { getFreecodeSettingsFilePath } from '../../utils/settings/freecodeSettings.js'
+import { ALLOWED_ENV_VARS } from '../../utils/envAllowlist.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { getAgentModel } from '../../utils/model/agent.js'
 import {
@@ -23,7 +24,7 @@ function collectRelevantEnvVars(): Array<[string, string]> {
   const entries: Array<[string, string]> = []
   for (const [key, rawValue] of Object.entries(process.env)) {
     if (rawValue === undefined || rawValue === '') continue
-    if (key.startsWith('ANTHROPIC_') || key.startsWith('CLAUDE_CODE_')) {
+    if (ALLOWED_ENV_VARS.has(key)) {
       entries.push([key, formatEnvValue(key, rawValue)])
     }
   }

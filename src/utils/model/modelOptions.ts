@@ -194,21 +194,7 @@ export function getGroupedModelOptions(_fastMode = false): ModelOptionGroup[] {
     })
   }
 
-  // --- custom env model option ---
-  const envCustomModel = process.env.ANTHROPIC_CUSTOM_MODEL_OPTION
   const firstGroup = groups[0]!
-  if (
-    envCustomModel &&
-    !firstGroup.options.some(existing => existing.value === envCustomModel)
-  ) {
-    firstGroup.options.push({
-      value: envCustomModel,
-      label: process.env.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME ?? envCustomModel,
-      description:
-        process.env.ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION ??
-        `Custom model (${envCustomModel})`,
-    })
-  }
 
   // --- handle custom model (from --model or settings) ---
   let customModel: ModelSetting = null

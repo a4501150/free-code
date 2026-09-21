@@ -10,6 +10,7 @@ import memoize from 'lodash-es/memoize.js'
 import { refreshAndGetAwsCredentials } from '../auth.js'
 import { getAWSRegion, isEnvTruthy } from '../envUtils.js'
 import { logError } from '../log.js'
+import { getProviderRegistry } from './providerRegistry.js'
 import { getAWSClientProxyConfig } from '../proxy.js'
 
 // Region-prefix helpers were moved to ./bedrockInferenceProfiles.js so the
@@ -75,11 +76,11 @@ async function createBedrockClient() {
 
   const skipAuth = isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)
 
+  const bedrockEndpoint =
+    getProviderRegistry().getDefaultProvider()?.config.baseUrl
   const clientConfig: ConstructorParameters<typeof BedrockClient>[0] = {
     region,
-    ...(process.env.ANTHROPIC_BEDROCK_BASE_URL && {
-      endpoint: process.env.ANTHROPIC_BEDROCK_BASE_URL,
-    }),
+    ...(bedrockEndpoint ? { endpoint: bedrockEndpoint } : {}),
     ...(await getAWSClientProxyConfig()),
     ...(skipAuth && {
       requestHandler: new NodeHttpHandler(),
@@ -113,11 +114,11 @@ export async function createBedrockRuntimeClient() {
   const region = getAWSRegion()
   const skipAuth = isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)
 
+  const bedrockEndpoint =
+    getProviderRegistry().getDefaultProvider()?.config.baseUrl
   const clientConfig: ConstructorParameters<typeof BedrockRuntimeClient>[0] = {
     region,
-    ...(process.env.ANTHROPIC_BEDROCK_BASE_URL && {
-      endpoint: process.env.ANTHROPIC_BEDROCK_BASE_URL,
-    }),
+    ...(bedrockEndpoint ? { endpoint: bedrockEndpoint } : {}),
     ...(await getAWSClientProxyConfig()),
     ...(skipAuth && {
       // BedrockRuntimeClient defaults to HTTP/2 without fallback

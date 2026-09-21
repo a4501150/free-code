@@ -134,7 +134,6 @@ import {
   type ThinkingConfig,
 } from 'src/utils/thinking.js'
 import { API_MAX_MEDIA_PER_REQUEST } from '../../constants/apiLimits.js'
-import { safeParseJSON } from '../../utils/json.js'
 import {
   normalizeModelStringForAPI,
   parseUserSpecifiedModel,
@@ -187,45 +186,16 @@ type OutputConfig = Record<string, unknown> & {
 }
 
 /**
- * Assemble the extra body parameters for the API request, based on the
- * CLAUDE_CODE_EXTRA_BODY environment variable if present and on any beta
- * headers (primarily for Bedrock requests).
- *
- * @param betaHeaders - An array of beta headers to include in the request.
- * @returns A JSON object representing the extra body parameters.
+ * Extra body parameters merged into every API request, from the `extraBody`
+ * setting (proxy/gateway extensions). Provider beta lists (e.g. the Bedrock
+ * body-beta union) are merged in by the Anthropic-wire adapters, not here —
+ * see adapters/anthropicFeatures.ts.
  */
 export function getExtraBodyParams(): JsonObject {
-  // Parse user's extra body parameters first
-  const extraBodyStr = process.env.CLAUDE_CODE_EXTRA_BODY
-  let result: JsonObject = {}
-
-  if (extraBodyStr) {
-    try {
-      // Parse as JSON, which can be null, boolean, number, string, array or object
-      const parsed = safeParseJSON(extraBodyStr)
-      // We expect an object with key-value pairs to spread into API parameters
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        // Shallow clone — safeParseJSON is LRU-cached and returns the same
-        // object reference for the same string. Mutating `result` below
-        // would poison the cache, causing stale values to persist.
-        result = { ...(parsed as JsonObject) }
-      } else {
-        logForDebugging(
-          `CLAUDE_CODE_EXTRA_BODY env var must be a JSON object, but was given ${extraBodyStr}`,
-          { level: 'error' },
-        )
-      }
-    } catch (error) {
-      logForDebugging(
-        `Error parsing CLAUDE_CODE_EXTRA_BODY: ${errorMessage(error)}`,
-        { level: 'error' },
-      )
-    }
-  }
-
-  // Provider beta lists (e.g. the Bedrock body-beta union) are merged in by
-  // the Anthropic-wire adapters, not here — see adapters/anthropicFeatures.ts.
-  return result
+  const extraBody = getInitialSettings().extraBody
+  // Shallow clone — callers spread/mutate the result; never hand out the
+  // settings object itself.
+  return extraBody ? { ...(extraBody as JsonObject) } : {}
 }
 
 export function getPromptCachingEnabled(model: string): boolean {
@@ -317,19 +287,7 @@ export function configureTaskBudgetParams(
 
 export function getAPIMetadata() {
   // https://docs.google.com/document/d/1dURO9ycXXQCBS0V4Vhl4poDBRgkelFc5t2BNPoEgH5Q/edit?tab=t.0#heading=h.5g7nec5b09w5
-  let extra: JsonObject = {}
-  const extraStr = process.env.CLAUDE_CODE_EXTRA_METADATA
-  if (extraStr) {
-    const parsed = safeParseJSON(extraStr, false)
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      extra = parsed as JsonObject
-    } else {
-      logForDebugging(
-        `CLAUDE_CODE_EXTRA_METADATA env var must be a JSON object, but was given ${extraStr}`,
-        { level: 'error' },
-      )
-    }
-  }
+  const extra = (getInitialSettings().extraMetadata as JsonObject) ?? {}
 
   return {
     user_id: jsonStringify({
@@ -1223,7 +1181,7 @@ async function* queryModel(
 
     const hasThinking =
       thinkingConfig.type !== 'disabled' &&
-      !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_THINKING)
+      getInitialSettings().thinkingEnabled !== false
     let thinking: DomainMessageRequest['thinking'] | undefined = undefined
 
     // IMPORTANT: Do not change the adaptive-vs-budget thinking selection below
@@ -1231,7 +1189,7 @@ async function* queryModel(
     // setting that can greatly affect model quality and bashing.
     if (hasThinking && modelSupportsThinking(options.model)) {
       if (
-        !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING) &&
+        getInitialSettings().adaptiveThinkingEnabled !== false &&
         modelSupportsAdaptiveThinking(options.model)
       ) {
         thinking = { type: 'adaptive' }

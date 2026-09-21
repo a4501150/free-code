@@ -12,7 +12,7 @@ import {
   useTheme,
 } from '../ink.js'
 import type { BaseTextInputProps } from '../types/textInputTypes.js'
-import { isEnvTruthy } from '../utils/envUtils.js'
+import { getInitialSettings } from '../utils/settings/settings.js'
 import type { TextHighlight } from '../utils/textHighlighting.js'
 import { BaseTextInput } from './BaseTextInput.js'
 import { hueToRgb } from './Spinner/utils.js'
@@ -46,7 +46,7 @@ export default function TextInput(props: Props): React.ReactNode {
   const isTerminalFocused = useTerminalFocus()
   // Hoisted to mount-time — this component re-renders on every keystroke.
   const accessibilityEnabled = useMemo(
-    () => isEnvTruthy(process.env.CLAUDE_CODE_ACCESSIBILITY),
+    () => getInitialSettings().accessibilityMode === true,
     [],
   )
   const settings = useSettings()

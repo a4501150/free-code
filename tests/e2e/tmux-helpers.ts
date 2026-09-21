@@ -9,8 +9,8 @@
  * No special permission flags — uses the real default permission mode.
  * Test isolation is achieved through env variables:
  * - Temp FREECODE_CONFIG_DIR/CLAUDE_CONFIG_DIR and HOME (no real user config)
- * - CLAUDE_CODE_DISABLE_* flags (no memory, file checkpointing, etc.)
- * - Seeded freecode.json (background tasks off by default here)
+ * - Seeded freecode.json (memory, checkpointing, auto-connect and friends
+ *   are off via settings keys, not env flags)
  *
  * Tmux pane output is piped to a log file and dumped on timeout for debugging.
  */
@@ -108,6 +108,12 @@ export class TmuxSession {
     this._settings = {
       statusLine: { type: 'off' },
       backgroundTasksEnabled: false,
+      autoMemoryEnabled: false,
+      claudeMdEnabled: false,
+      promptSuggestionEnabled: false,
+      fileCheckpointingEnabled: false,
+      thinkingEnabled: false,
+      terminalTitleEnabled: false,
       ...options.settings,
     }
     this._reuseConfigDir = options.reuseConfigDir
@@ -241,12 +247,6 @@ export class TmuxSession {
       FREECODE_CONFIG_DIR: this.configDir,
       CLAUDE_CONFIG_DIR: this.configDir,
       HOME: this.homeDir,
-      CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
-      CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
-      CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING: '1',
-      CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
-      CLAUDE_CODE_DISABLE_THINKING: '1',
-      CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '0',
       NO_COLOR: '1',
       DO_NOT_TRACK: '1',
       NODE_ENV: 'test',

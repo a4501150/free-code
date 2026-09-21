@@ -5,11 +5,7 @@ import {
   getIsNonInteractiveSession,
   getProjectRoot,
 } from '../bootstrap/state.js'
-import {
-  getClaudeConfigHomeDir,
-  isEnvDefinedFalsy,
-  isEnvTruthy,
-} from '../utils/envUtils.js'
+import { getClaudeConfigHomeDir, isEnvTruthy } from '../utils/envUtils.js'
 import { findCanonicalGitRoot } from '../utils/git.js'
 import { sanitizePath } from '../utils/path.js'
 import {
@@ -20,19 +16,11 @@ import {
 /**
  * Whether auto-memory features are enabled (memdir, agent memory, past session search).
  * Enabled by default. Priority chain (first defined wins):
- *   1. CLAUDE_CODE_DISABLE_AUTO_MEMORY env var (1/true → OFF, 0/false → ON)
- *   2. CLAUDE_CODE_SIMPLE (--bare) → OFF
- *   3. autoMemoryEnabled in freecode.json (supports project-level opt-out)
- *   4. Default: enabled
+ *   1. CLAUDE_CODE_SIMPLE (--bare) → OFF
+ *   2. autoMemoryEnabled in freecode.json (supports project-level opt-out)
+ *   3. Default: enabled
  */
 export function isAutoMemoryEnabled(): boolean {
-  const envVal = process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY
-  if (isEnvTruthy(envVal)) {
-    return false
-  }
-  if (isEnvDefinedFalsy(envVal)) {
-    return true
-  }
   // --bare / SIMPLE: prompts.ts already drops the memory section from the
   // system prompt via its SIMPLE early-return; this gate stops the other half
   // (extractMemories turn-end fork, autoDream, /remember, /dream, team sync).

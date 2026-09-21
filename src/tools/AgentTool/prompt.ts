@@ -1,5 +1,4 @@
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
-import { isEnvDefinedFalsy, isEnvTruthy } from '../../utils/envUtils.js'
 import { getAgentModelDisplay as getAgentModelDisplayName } from '../../utils/model/agent.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { isTeammate } from '../../utils/teammate.js'
@@ -69,12 +68,8 @@ export function formatAgentLine(agent: AgentDefinition): string {
  * connect, /reload-plugins, or permission-mode changes mutate the list →
  * description changes → full tool-schema cache bust.
  *
- * Override with CLAUDE_CODE_AGENT_LIST_IN_MESSAGES=true/false for testing.
  */
 export function shouldInjectAgentListInMessages(): boolean {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_AGENT_LIST_IN_MESSAGES)) return true
-  if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_AGENT_LIST_IN_MESSAGES))
-    return false
   return getInitialSettings()?.agentListInMessages ?? true
 }
 

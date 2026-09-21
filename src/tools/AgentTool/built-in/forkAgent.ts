@@ -1,10 +1,9 @@
-import { isEnvTruthy } from '../../../utils/envUtils.js'
+import { getInitialSettings } from '../../../utils/settings/settings.js'
 import { AGENT_TOOL_NAME } from '../constants.js'
 import type { BuiltInAgentDefinition } from '../loadAgentsDir.js'
 
-// Gate mirrors the official CLAUDE_CODE_FORK_SUBAGENT env + settings source.
 export function isForkAgentEnabled(): boolean {
-  return isEnvTruthy(process.env.CLAUDE_CODE_FORK_SUBAGENT)
+  return getInitialSettings().forkSubagentEnabled === true
 }
 
 export function buildForkWorktreeNotice(

@@ -144,17 +144,8 @@ describe('shared git instructions', () => {
 
   test('emits nothing when git instructions are disabled', () => {
     resetAttributionMocks()
-    const previous = process.env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS
-    process.env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS = '1'
+    settings = { includeGitInstructions: false }
 
-    try {
-      expect(getCommitAndPRInstructions(HEREDOC_SYNTAX)).toBe('')
-    } finally {
-      if (previous === undefined) {
-        delete process.env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS
-      } else {
-        process.env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS = previous
-      }
-    }
+    expect(getCommitAndPRInstructions(HEREDOC_SYNTAX)).toBe('')
   })
 })

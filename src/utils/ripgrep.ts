@@ -1,4 +1,5 @@
 import type { ChildProcess, ExecFileException } from 'child_process'
+import { getInitialSettings } from './settings/settings.js'
 import { execFile, spawn } from 'child_process'
 import { existsSync } from 'fs'
 import memoize from 'lodash-es/memoize.js'
@@ -149,11 +150,10 @@ function ripGrepRaw(
   // Use single-threaded mode only if explicitly requested for this call's retry
   const threadArgs = singleThread ? ['-j', '1'] : []
   const fullArgs = [...rgArgs, ...threadArgs, ...args, target]
-  // Allow timeout to be configured via env var (in seconds), otherwise use platform defaults
+  // Allow timeout via the globTimeoutSeconds setting (in seconds), otherwise use platform defaults
   // WSL has severe performance penalty for file reads (3-5x slower on WSL2)
   const defaultTimeout = getPlatform() === 'wsl' ? 60_000 : 20_000
-  const parsedSeconds =
-    parseInt(process.env.CLAUDE_CODE_GLOB_TIMEOUT_SECONDS || '', 10) || 0
+  const parsedSeconds = getInitialSettings().globTimeoutSeconds ?? 0
   const timeout = parsedSeconds > 0 ? parsedSeconds * 1000 : defaultTimeout
 
   // For embedded ripgrep, use spawn with argv0 (execFile doesn't support argv0 properly)

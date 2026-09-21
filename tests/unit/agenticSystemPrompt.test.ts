@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import {
   isAgenticQuerySource,
   type QuerySource,
@@ -18,9 +21,13 @@ import {
 import type { ProviderConfig } from '../../src/utils/settings/types.js'
 import { asSystemPrompt } from '../../src/utils/systemPromptType.js'
 
-const originalDisableExperimentalBetas =
-  process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS
+import { resetSettingsCache } from '../../src/utils/settings/settingsCache.js'
+
 const originalAnthropicApiKey = process.env.ANTHROPIC_API_KEY
+// Isolated config dir so the user's real freecode.json (e.g.
+// experimentalBetasEnabled) can't perturb the prompt invariants.
+const originalConfigDir = process.env.FREECODE_CONFIG_DIR
+let configDir: string
 
 function countInvariant(text: string): number {
   return text.split(AGENTIC_SYSTEM_PROMPT_INVARIANTS).length - 1
@@ -28,7 +35,10 @@ function countInvariant(text: string): number {
 
 beforeEach(() => {
   resetProviderRegistry()
-  delete process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS
+  configDir = mkdtempSync(join(tmpdir(), 'agentic-prompt-'))
+  writeFileSync(join(configDir, 'freecode.json'), '{}')
+  process.env.FREECODE_CONFIG_DIR = configDir
+  resetSettingsCache()
   process.env.ANTHROPIC_API_KEY = 'test-key'
   const providers: Record<string, ProviderConfig> = {
     anthropic: {
@@ -43,12 +53,13 @@ beforeEach(() => {
 
 afterEach(() => {
   resetProviderRegistry()
-  if (originalDisableExperimentalBetas === undefined) {
-    delete process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS
+  if (originalConfigDir === undefined) {
+    delete process.env.FREECODE_CONFIG_DIR
   } else {
-    process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS =
-      originalDisableExperimentalBetas
+    process.env.FREECODE_CONFIG_DIR = originalConfigDir
   }
+  rmSync(configDir, { recursive: true, force: true })
+  resetSettingsCache()
   if (originalAnthropicApiKey === undefined) {
     delete process.env.ANTHROPIC_API_KEY
   } else {

@@ -955,9 +955,8 @@ export class ColorFile {
 
 export function getSyntaxTheme(themeName: string): SyntaxTheme {
   // highlight.js has no bat theme set, so env vars can't select alternate
-  // syntect themes. We still report the env var if set, for diagnostics.
-  const envTheme =
-    process.env.CLAUDE_CODE_SYNTAX_HIGHLIGHT ?? process.env.BAT_THEME
+  // syntect themes. We still report BAT_THEME if set, for diagnostics.
+  const envTheme = process.env.BAT_THEME
   void envTheme
   return { theme: defaultSyntaxThemeName(themeName), source: null }
 }

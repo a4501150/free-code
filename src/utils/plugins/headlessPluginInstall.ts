@@ -4,7 +4,7 @@
  * This module provides plugin installation without AppState updates,
  * suitable for non-interactive environments like CCR.
  *
- * When CLAUDE_CODE_PLUGIN_USE_ZIP_CACHE is enabled, plugins are stored as
+ * When pluginZipCacheEnabled is enabled, plugins are stored as
  * ZIPs on a mounted volume. The storage layer (pluginLoader.ts) handles
  * ZIP creation on install and extraction on load transparently.
  */

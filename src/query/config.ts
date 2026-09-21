@@ -30,14 +30,12 @@ export function buildQueryConfig(): QueryConfig {
     gates: {
       streamingToolExecution:
         getInitialSettings()?.streamingToolExecution ?? true,
-      emitToolUseSummaries: isEnvTruthy(
-        process.env.CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES,
-      ),
+      emitToolUseSummaries: getInitialSettings()?.emitToolUseSummaries ?? false,
       isAnt: false,
       // Inlined from fastMode.ts to avoid pulling its heavy module graph
       // (axios, settings, auth, model, oauth, config) into test shards that
       // didn't previously load it — changes init order and breaks unrelated tests.
-      fastModeEnabled: !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_FAST_MODE),
+      fastModeEnabled: getInitialSettings().fastModeEnabled !== false,
     },
   }
 }

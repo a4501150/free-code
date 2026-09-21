@@ -4,7 +4,6 @@ import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
 import { EXIT_PLAN_MODE_TOOL_NAME } from '../tools/ExitPlanModeTool/constants.js'
 import { isAgentSwarmsEnabled } from './agentSwarmsEnabled.js'
 import { logForDebugging } from './debug.js'
-import { isEnvTruthy } from './envUtils.js'
 import { getInitialSettings } from './settings/settings.js'
 import { getProviderRegistry } from './model/providerRegistry.js'
 import { jsonStringify } from './slowOperations.js'
@@ -132,8 +131,7 @@ export async function toolToAPISchema(
             'eagerInputStreaming',
           )
         : getProviderRegistry().getCapabilities().eagerInputStreaming) &&
-      ((getInitialSettings()?.fineGrainedToolStreaming ?? false) ||
-        isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING))
+      (getInitialSettings()?.fineGrainedToolStreaming ?? false)
     ) {
       base.eager_input_streaming = true
     }
@@ -152,8 +150,7 @@ export async function toolToAPISchema(
     schema.cache_control = options.cacheControl
   }
 
-  // CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS is the kill switch for beta API
-  // shapes. Proxy gateways (ANTHROPIC_BASE_URL → LiteLLM → Bedrock) reject
+  // experimentalBetasEnabled: false is the kill switch for beta API shapes. Proxy gateways (ANTHROPIC_BASE_URL → LiteLLM → Bedrock) reject
   // beta fields with "Extra inputs are not permitted". The gates above each
   // field are scattered and not all provider-aware, so this strips everything
   // not in the base-tool allowlist at the one choke point all tool schemas pass
@@ -162,7 +159,7 @@ export async function toolToAPISchema(
   // standard prompt caching (Bedrock/Vertex supported); the ttl sub-field is
   // gated upstream in getCacheControl.
   // github.com/anthropics/claude-code/issues/20031
-  if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS)) {
+  if (getInitialSettings()?.experimentalBetasEnabled === false) {
     const allowed = new Set([
       'name',
       'description',
@@ -191,6 +188,6 @@ function logStripOnce(stripped: string[]): void {
   if (loggedStrip) return
   loggedStrip = true
   logForDebugging(
-    `[betas] Stripped from tool schemas: [${stripped.join(', ')}] (CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1)`,
+    `[betas] Stripped from tool schemas: [${stripped.join(', ')}] (experimentalBetasEnabled: false)`,
   )
 }
