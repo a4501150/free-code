@@ -94,7 +94,9 @@ describe('system prompt is free of session-scoped bytes', () => {
 
   test('carries the Simplified Technical English section and no config paths', async () => {
     const prompt = await systemPromptText()
-    expect(prompt).toContain('# Simplified Technical English')
+    // The rules live inside "# Communicating with the user" as a bullet,
+    // not a dedicated section; guard on the rule's text.
+    expect(prompt).toContain('ASD-STE100 Simplified Technical English')
     expect(prompt).not.toContain(configDir)
     expect(prompt).not.toContain('output-styles')
   })
