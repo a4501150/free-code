@@ -44,11 +44,14 @@ const DA2_RE = /^\x1b\[>([\d;]*)c$/
 // (private ? marker distinguishes from CSI u key events)
 // eslint-disable-next-line no-control-regex
 const KITTY_FLAGS_RE = /^\x1b\[\?(\d+)u$/
-// DECXCPR cursor position: CSI ? row ; col R
+// DECXCPR cursor position: CSI ? row ; col [ ; page ] R
 // The ? marker disambiguates from modified F3 keys (Shift+F3 = CSI 1;2 R,
 // Ctrl+F3 = CSI 1;5 R, etc.) — plain CSI row;col R is genuinely ambiguous.
+// The optional third page-number param is part of the DECXCPR reply and
+// emitted by xterm, iTerm2, kitty and tmux; ignoring it leaked the whole
+// 3-param response into the prompt as text.
 // eslint-disable-next-line no-control-regex
-const CURSOR_POSITION_RE = /^\x1b\[\?(\d+);(\d+)R$/
+const CURSOR_POSITION_RE = /^\x1b\[\?(\d+);(\d+)(?:;\d+)?R$/
 // OSC response: OSC code ; data (BEL|ST)
 // eslint-disable-next-line no-control-regex
 const OSC_RESPONSE_RE = /^\x1b\](\d+);(.*?)(?:\x07|\x1b\\)$/s
@@ -71,6 +74,10 @@ const SGR_MOUSE_RE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/
 const ORPHAN_SGR_MOUSE_HEAD_RE = /^\[<\d+;\d+;\d+[Mm]/
 // eslint-disable-next-line no-control-regex
 const ORPHAN_X10_MOUSE_HEAD_RE = /^\[M[\x60-\x7f][\x20-\uffff]{2}/
+
+// Orphaned DECXCPR reply (ESC dropped by a lone-Escape flush — same race as
+// the orphan-mouse path below). Full-token match only.
+const ORPHAN_CURSOR_POSITION_RE = /^\[\?\d+;\d+(?:;\d+)?R$/
 
 function createPasteKey(content: string): ParsedKey {
   return {
@@ -267,6 +274,18 @@ export function parseMultipleKeypresses(
     } else if (token.type === 'text') {
       if (inPaste) {
         pasteBuffer += token.value
+      } else if (ORPHAN_CURSOR_POSITION_RE.test(token.value)) {
+        // DECXCPR body that arrived after a lone Escape was flushed (same
+        // race as the orphan-mouse path below): re-synthesize with the ESC
+        // prefix and dispatch as a response — otherwise `[?row;col[;page]R`
+        // leaks into the prompt as text and the pending CPR query hangs
+        // until its DA1 sentinel resolves it as unsupported.
+        const response = parseTerminalResponse('\x1b' + token.value)
+        keys.push(
+          response
+            ? { kind: 'response', sequence: token.value, response }
+            : parseKeypress(token.value),
+        )
       } else if (
         ORPHAN_SGR_MOUSE_HEAD_RE.test(token.value) ||
         ORPHAN_X10_MOUSE_HEAD_RE.test(token.value)
