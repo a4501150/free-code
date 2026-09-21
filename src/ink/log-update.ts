@@ -37,7 +37,7 @@ type Options = {
 const CARRIAGE_RETURN = { type: 'carriageReturn' } as const
 const NEWLINE = { type: 'stdout', content: '\n' } as const
 
-// Changed cells in a row before it's rewritten wholesale (column-0, EL, row).
+// Changed cells in a row before it's rewritten wholesale (column-0, row, EL).
 // Below this, per-cell patching writes fewer bytes; above it, the zigzag
 // cursor moves cost more than the clean row pass AND render as a visible
 // sweep on terminals that paint partial frames.
@@ -203,12 +203,19 @@ export class LogUpdate {
     // The scroll region stops at the bottom-pinned block: FullscreenLayout
     // keeps the spinner/task-panel/dialog/input rows at fixed screen y
     // while the transcript above scrolls, so the frame is a uniform shift
-    // in the top region plus a byte-identical tail; a full-height shift
+    // in the top region plus a tail that stays put; a full-height shift
     // classification would count the tail as deviations and bail (observed:
     // 14 deviating rows vs a budget of 12 on every streaming-tool turn).
-    // pinnedBottomSplit finds the tail — the longest run of bottom rows
-    // identical between prev and next. Rows past it are excluded from the
-    // classification and untouched by the scroll.
+    // pinnedBottomSplit finds the tail — the longest bottom run of rows
+    // that stayed (approximately) unchanged. Rows past it are excluded
+    // from the classification and untouched by the scroll; the diff loop
+    // paints their real edits in small pieces. Byte-identity alone cannot
+    // find the tail: the pinned spinner row animates (shimmer, token
+    // counter, elapsed timer) and the footer text flips at turn
+    // boundaries, so a byte-strict scan finds no tail, the region swallows
+    // the pinned block, and the shift simulation smears those rows into
+    // full-row coalesced rewrites — the visible "task-panel title blink"
+    // on every scroll-follow commit.
     //
     // Applies when: the frame is a dominant uniform shift; screen rows map
     // 1:1 onto terminal rows (alt-screen: content at or below the viewport,
@@ -266,7 +273,7 @@ export class LogUpdate {
           },
         ]
         logForDebugging(
-          `shift-scroll k=${bestK} region=${split} rows=${h} explained=${bestExplained} budget=${budget}`,
+          `shift-scroll k=${bestK} region=${split} rows=${h} explained=${bestExplained}`,
         )
       }
     }
@@ -400,8 +407,8 @@ export class LogUpdate {
     // writes is a cursor zigzag of hundreds of small patches; terminals that
     // parse partial frames (Apple Terminal, tmux) render it as a visible
     // sweep. Pre-count changed cells per existing row and rewrite heavy rows
-    // in one pass instead (column-0 + EL + full row) — same final pixels,
-    // one clean pass per row. Also applies in alt-screen: the DECSTBM scroll
+    // in one pass instead (column-0 + full row + tail EL) — same final
+    // pixels, one clean pass per row. Also applies in alt-screen: the DECSTBM scroll
     // fast path needs synchronized output, and terminals without it (Apple
     // Terminal, tmux) land on this diff loop for every scroll-follow frame.
     const coalesceRows = new Set<number>()
@@ -570,6 +577,11 @@ export class LogUpdate {
       logForDebugging(
         `repaint-frame rows=${ys.length} span=[${topY}..${ys[ys.length - 1]}] coalesced=${rewrittenRows.size} candidates=${coalesceRows.size} prevH=${prev.screen.height} nextH=${next.screen.height} grow=${growing} shrink=${shrinking} diffs=${screen.diff.length} bytes=${emittedBytes}${shiftSignature}`,
       )
+      for (const y of ys.slice(0, 16)) {
+        logForDebugging(
+          `repaint-row y=${y} coalesced=${rewrittenRows.has(y)} prev="${readLine(prev.screen, y).slice(0, 70)}" next="${readLine(next.screen, y).slice(0, 70)}"`,
+        )
+      }
     }
     if (needsFullReset) {
       return fullResetSequence_CAUSES_FLICKER(next, 'offscreen', stylePool, {
@@ -685,11 +697,20 @@ function transitionStyle(
 }
 
 /**
- * First row of the longest run of bottom rows that are byte-identical
- * between prev and next — the bottom-pinned block (spinner, task panel,
- * dialogs, input). Returns h when the bottom row itself differs (no tail;
- * the shift classification degrades to full-height), 0 when every row is
- * identical (no scroll could explain anything).
+ * First row of the longest bottom run of rows that stayed (approximately)
+ * unchanged — the bottom-pinned block (spinner, task panel, dialogs,
+ * input). Scanning up from the bottom, a row stayed if it differs from
+ * its own previous content by at most half its cells (an animating
+ * spinner row, an appended footer hint); the first row that differs more
+ * than that — shifted transcript content, or a block of new content
+ * entering at the region bottom — ends the tail and starts the region.
+ * A moved-vs-stayed oracle is deliberately not needed: rows that moved
+ * deviate from themselves heavily (the scan stops there, region above
+ * them) or lightly (a visual no-op if pinned, the diff patches them
+ * either way). Returns h when the bottom row itself churned (no tail), 0
+ * when every row stayed (nothing a scroll could explain). A row wrongly
+ * kept in the tail costs one diff-painted row; a pinned row wrongly
+ * inside the region costs a full-row coalesced repaint every frame.
  */
 function pinnedBottomSplit(prev: Screen, next: Screen): number {
   const w = next.width
@@ -697,16 +718,16 @@ function pinnedBottomSplit(prev: Screen, next: Screen): number {
   const nv = next.cells64
   const psw = prev.softWrap
   const nsw = next.softWrap
-  let split = next.height
-  outer: for (let y = next.height - 1; y >= 0; y--) {
-    if (psw[y] !== nsw[y]) break
+  const maxStayDiff = Math.ceil(w / 2)
+  for (let y = next.height - 1; y >= 0; y--) {
+    if (psw[y] !== nsw[y]) return y
     const base = y * w
+    let diff = 0
     for (let x = 0; x < w; x++) {
-      if (pv[base + x] !== nv[base + x]) break outer
+      if (pv[base + x] !== nv[base + x] && ++diff > maxStayDiff) return y
     }
-    split = y
   }
-  return split
+  return 0
 }
 
 /**
@@ -898,13 +919,21 @@ function renderFrameSlice(
 type Delta = { dx: number; dy: number }
 
 /**
- * Rewrite one existing row in a single pass: move to column 0, erase to end
- * of line, then write every visible cell the next frame has on that row.
- * Used by the diff loop for rows whose content shifted wholesale (insert or
- * remove above); the per-cell path would produce the same result as
- * hundreds of cursor round-trips, which terminals that paint partial frames
- * show as a sweep across the row. Caller must close any open style/hyperlink
- * first — the erase uses the active style for the cleared cells.
+ * Rewrite one existing row in a single pass: move to column 0, paint every
+ * cell the next row has up to its last visible column (gaps as plain
+ * spaces), then erase whatever tail remains. Used by the diff loop for
+ * rows whose content shifted wholesale (insert or remove above); the
+ * per-cell path would produce the same result as hundreds of cursor
+ * round-trips, which terminals that paint partial frames show as a sweep
+ * across the row.
+ *
+ * The erase trails the paint deliberately. An erase-first pass blanks the
+ * whole row before a single glyph lands, so terminals that paint partial
+ * writes (no DEC 2026) show the row flash empty — the "title blink" on a
+ * row-shifted repaint. Paint-first can only disturb the tail past the
+ * next row's last glyph, and rows being rewritten have content reaching
+ * at least that far anyway. Caller must close any open style/hyperlink
+ * first.
  */
 function writeRowCoalesced(
   screen: VirtualScreen,
@@ -913,39 +942,78 @@ function writeRowCoalesced(
   stylePool: StylePool,
 ): void {
   moveCursorTo(screen, 0, y)
-  screen.diff.push({ type: 'stdout', content: eraseToEndOfLine() })
+
+  const { width: screenWidth, cells, charPool, hyperlinkPool } = frame.screen
+  const rowStart = y * screenWidth
+
+  // Last column with any content (spacers admitted; painting a space over
+  // one is harmless). Past it the row is blank and the trailing erase
+  // handles it.
+  let lastVisible = -1
+  for (let x = screenWidth - 1; x >= 0; x--) {
+    if (!isEmptyCellAt(frame.screen, x, y)) {
+      lastVisible = x
+      break
+    }
+  }
 
   let currentStyleId = stylePool.none
   let currentHyperlink: Hyperlink = undefined
   let lastRenderedStyleId = -1
 
-  const { width: screenWidth, cells, charPool, hyperlinkPool } = frame.screen
-  const rowStart = y * screenWidth
-  for (let x = 0; x < screenWidth; x++) {
-    const cell = visibleCellAtIndex(
-      cells,
-      charPool,
-      hyperlinkPool,
-      rowStart + x,
-      lastRenderedStyleId,
-    )
-    if (!cell) {
-      continue
-    }
-    moveCursorTo(screen, x, y)
-    currentHyperlink = transitionHyperlink(
-      screen.diff,
-      currentHyperlink,
-      cell.hyperlink,
-    )
-    const styleStr = stylePool.transition(currentStyleId, cell.styleId)
-    if (writeCellWithStyleStr(screen, cell, styleStr)) {
-      currentStyleId = cell.styleId
-      lastRenderedStyleId = cell.styleId
+  if (lastVisible >= 0) {
+    for (let x = 0; x <= lastVisible; x++) {
+      if (cells[(rowStart + x) << 1] === 1) {
+        // Spacer cell (wide-glyph tail or soft-wrap marker): the head paint
+        // already advanced the terminal past it. Rewinding here to paint a
+        // gap space would overwrite the glyph's right half and blank CJK
+        // text. visibleCellAtIndex hides spacers, so check the raw word.
+        continue
+      }
+      const cell = visibleCellAtIndex(
+        cells,
+        charPool,
+        hyperlinkPool,
+        rowStart + x,
+        lastRenderedStyleId,
+      )
+      moveCursorTo(screen, x, y)
+      if (!cell) {
+        // Interior gap: paint a plain space so stale glyphs under skipped
+        // cells cannot survive (a leading erase would have covered this).
+        currentStyleId = transitionStyle(
+          screen.diff,
+          stylePool,
+          currentStyleId,
+          stylePool.none,
+        )
+        currentHyperlink = transitionHyperlink(
+          screen.diff,
+          currentHyperlink,
+          undefined,
+        )
+        screen.diff.push({ type: 'stdout', content: ' ' })
+        screen.cursor.x++
+        lastRenderedStyleId = -1
+        continue
+      }
+      currentHyperlink = transitionHyperlink(
+        screen.diff,
+        currentHyperlink,
+        cell.hyperlink,
+      )
+      const styleStr = stylePool.transition(currentStyleId, cell.styleId)
+      if (writeCellWithStyleStr(screen, cell, styleStr)) {
+        currentStyleId = cell.styleId
+        lastRenderedStyleId = cell.styleId
+      }
     }
   }
+  // Tail erase with the default style — same final pixels as the
+  // erase-first pass, minus the blank-row intermediate state.
   transitionStyle(screen.diff, stylePool, currentStyleId, stylePool.none)
   transitionHyperlink(screen.diff, currentHyperlink, undefined)
+  screen.diff.push({ type: 'stdout', content: eraseToEndOfLine() })
 }
 
 /**

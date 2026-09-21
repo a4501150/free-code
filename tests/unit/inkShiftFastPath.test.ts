@@ -103,17 +103,22 @@ describe('shift fast path', () => {
     const lu = new LogUpdate({ isTTY: true, stylePool: p.styles })
     const diff = lu.render(frame(prev, H), frame(next, H), true, false)
     const out = serialize(diff)
-    expect(out).toContain(setScrollRegion(1, H))
+    // Region excludes the entered row (the new content deviates from
+    // itself, so the pinned-tail scan stops there).
+    expect(out).toContain(setScrollRegion(1, H - 1))
     expect(out).toContain(csiScrollUp(1))
     expect(out).toContain(RESET_SCROLL_REGION)
     expect(out).toContain(CURSOR_HOME)
-    // Only the new bottom row content is repainted; the shifted rows are not
-    // rewritten cell-by-cell.
-    // Blank cells in the new bottom row stay unwritten (the post-scroll
-    // terminal row is already blank), so compare with spaces collapsed.
+    // Only the entered row and the hardware-blanked region-bottom row are
+    // repainted; the purely shifted rows are not rewritten cell-by-cell.
+    // The entered row is below the region (it deviates from itself, so the
+    // pinned-tail scan stops there) and is patched against its old
+    // content — unchanged columns are skipped, hence the loose match.
     const written = writtenText(diff).replace(/\s+/g, '')
-    expect(written).toContain('newbottom')
-    for (const row of ROWS.slice(1)) {
+    expect(written).toContain('bottom')
+    // The scroll blanked the region-bottom row, so its content is painted.
+    expect(written).toContain('rowsix')
+    for (const row of ROWS.slice(1, -1)) {
       expect(written).not.toContain(row.replace(/\s+/g, ''))
     }
   })
@@ -149,10 +154,15 @@ describe('shift fast path', () => {
     const lu = new LogUpdate({ isTTY: true, stylePool: p.styles })
     const diff = lu.render(frame(prev, H), frame(next, H), true, false)
     const out = serialize(diff)
-    expect(out).toContain(setScrollRegion(1, H))
+    expect(out).toContain(setScrollRegion(1, H - 1))
     const written = writtenText(diff).replace(/\s+/g, '')
     expect(written).toContain('DEVIATED')
-    expect(written).toContain('newbottom')
+    expect(written).toContain('bottom')
+    // The coalesced row paints before erasing its tail: no blank-row
+    // intermediate state on terminals that show partial writes.
+    expect(out.indexOf('DEVIATED!!!!')).toBeLessThan(
+      out.lastIndexOf('\u001B[K'),
+    )
   })
 
   test('main-screen scroll only applies when content exactly fills the viewport', () => {
@@ -172,7 +182,7 @@ describe('shift fast path', () => {
     const next = textScreen([...ROWS.slice(1), 'new bottom'], p)
     const lu = new LogUpdate({ isTTY: true, stylePool: p.styles })
     const diff = lu.render(frame(prev, H), frame(next, H), false, false)
-    expect(serialize(diff)).toContain(setScrollRegion(1, H))
+    expect(serialize(diff)).toContain(setScrollRegion(1, H - 1))
   })
 
   test('shift below a bottom-pinned block scrolls only the region above it', () => {
@@ -188,13 +198,58 @@ describe('shift fast path', () => {
     const lu = new LogUpdate({ isTTY: true, stylePool: p.styles })
     const diff = lu.render(frame(prev, H + 2), frame(next, H + 2), true, false)
     const out = serialize(diff)
-    // Region ends at row 6 (the first pinned row), not the screen bottom.
-    expect(out).toContain(setScrollRegion(1, H))
+    // Region ends at row 5 (the entered row deviates from itself and
+    // joins the painted tail), well above the screen bottom.
+    expect(out).toContain(setScrollRegion(1, H - 1))
+    expect(out).not.toContain(setScrollRegion(1, H))
     expect(out).not.toContain(setScrollRegion(1, H + 2))
     expect(out).toContain(csiScrollUp(1))
     const written = writtenText(diff).replace(/\s+/g, '')
-    expect(written).toContain('newbottom')
+    expect(written).toContain('bottom')
     expect(written).not.toContain('pinA')
     expect(written).not.toContain('pinB')
+  })
+
+  test('an animating pinned spinner row is patched, not rewritten, while the transcript scrolls', () => {
+    const p = pools()
+    // The frame a scroll-follow commit produces with a live spinner:
+    // transcript rows shift up by one, a new tool row enters at the
+    // region bottom, the spinner verb row ticks its glyph, and the
+    // footer gains a hint. Only the entered row is new content; the
+    // spinner and footer deviate from themselves by only a few cells,
+    // so they belong to the pinned tail and must be patched per cell —
+    // never an erase-and-rewrite of the row (the visible title blink).
+    const prevLines = [
+      'row one',
+      'row two',
+      'row three',
+      'row four',
+      '✻ Thinking…',
+      'hint',
+    ]
+    const nextLines = [
+      'row two',
+      'row three',
+      'row four',
+      'ENTERED!!!',
+      '✢ Thinking…',
+      'hint more',
+    ]
+    const prev = textScreen(prevLines, p)
+    const next = textScreen(nextLines, p)
+    const lu = new LogUpdate({ isTTY: true, stylePool: p.styles })
+    const diff = lu.render(frame(prev, H), frame(next, H), true, false)
+    const out = serialize(diff)
+    // Region stops at the entered row (y=3), below the spinner row.
+    expect(out).toContain(setScrollRegion(1, 3))
+    expect(out).toContain(csiScrollUp(1))
+    const written = writtenText(diff).replace(/\s+/g, '')
+    // The new tool row and the spinner glyph transition are painted…
+    expect(written).toContain('ENTERED')
+    expect(written).toContain('✢')
+    // …but neither pinned row is rewritten wholesale: their unchanged
+    // content appears nowhere in the emitted writes.
+    expect(written).not.toContain('Thinking')
+    expect(written).not.toContain('hint')
   })
 })
