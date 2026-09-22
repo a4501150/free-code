@@ -88,6 +88,10 @@ const SPINNER_FRAMES = [
 
 type Props = {
   mode: SpinnerMode
+  /** False hides the whole subtree via display:none while keeping it mounted,
+   * so a transient hide (streaming text on screen) does not remount the row,
+   * re-randomize the verb, or restart the animation clock. */
+  hidden?: boolean
   loadingStartTimeRef: React.RefObject<number>
   totalPausedMsRef: React.RefObject<number>
   pauseStartTimeRef: React.RefObject<number | null>
@@ -140,6 +144,7 @@ export function SpinnerWithVerb(props: Props): React.ReactNode {
 
 function SpinnerWithVerbInner({
   mode,
+  hidden = false,
   loadingStartTimeRef,
   totalPausedMsRef,
   pauseStartTimeRef,
@@ -375,10 +380,15 @@ function SpinnerWithVerbInner({
       : spinnerTip
 
   return (
-    <Box flexDirection="column" width="100%" alignItems="flex-start">
+    <Box
+      flexDirection="column"
+      width="100%"
+      alignItems="flex-start"
+      display={hidden ? 'none' : 'flex'}
+    >
       <SpinnerAnimationRow
         mode={mode}
-        reducedMotion={reducedMotion}
+        reducedMotion={reducedMotion || hidden}
         hasActiveTools={hasActiveTools}
         responseLengthRef={responseLengthRef}
         message={message}

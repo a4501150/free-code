@@ -1099,7 +1099,12 @@ export function REPL({
     isShowingLocalJSXCommand,
   })
 
-  const showSpinner =
+  // Mount scope for the spinner subtree. Deliberately wider than visibility:
+  // while streaming text is on screen the spinner hides itself (display:none)
+  // but stays mounted. Unmounting on every text→tool transition re-randomized
+  // the verb, restarted the animation clock and repainted the spinner+tip
+  // block wholesale, which reads as flicker around each tool call.
+  const spinnerMounted =
     (!toolJSX || toolJSX.showSpinner === true) &&
     toolUseConfirmQueue.length === 0 &&
     promptQueue.length === 0 &&
@@ -1116,10 +1121,11 @@ export function REPL({
       viewedSubagentRunning) &&
     // Hide spinner when waiting for leader to approve permission request
     !pendingWorkerRequest &&
-    !onlySleepToolActive &&
-    // Hide spinner when streaming text is visible (the text IS the feedback),
-    // but keep it when isBriefOnly suppresses the streaming text display
-    (!visibleStreamingText || isBriefOnly)
+    !onlySleepToolActive
+
+  // Hide spinner when streaming text is visible (the text IS the feedback),
+  // but keep it when isBriefOnly suppresses the streaming text display.
+  const showSpinner = spinnerMounted && (!visibleStreamingText || isBriefOnly)
 
   // hasActivePrompt → useReplDialogs
 
@@ -2163,9 +2169,10 @@ export function REPL({
                   </Box>
                 )}
               <Box flexGrow={1} />
-              {showSpinner && (
+              {spinnerMounted && (
                 <SpinnerWithVerb
                   mode={streamMode}
+                  hidden={!showSpinner}
                   spinnerTip={spinnerTip}
                   responseLengthRef={responseLengthRef}
                   overrideMessage={spinnerMessage}
