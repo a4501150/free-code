@@ -4019,16 +4019,6 @@ You have exited auto mode. The user may now want to interact more directly. You 
         }),
       ])
     }
-    case 'terminal_focus': {
-      return wrapMessagesInSystemReminder([
-        createUserMessage({
-          content: attachment.focused
-            ? `The user has focused the terminal — they are watching again. Be more collaborative: surface choices and keep output easy to follow in real time.`
-            : `The user has unfocused the terminal — they are not actively watching. Lean into autonomous action; only pause for genuinely irreversible or high-risk decisions.`,
-          isMeta: true,
-        }),
-      ])
-    }
     case 'ultrathink_effort': {
       return wrapMessagesInSystemReminder([
         createUserMessage({
@@ -4130,7 +4120,8 @@ You have exited auto mode. The user may now want to interact more directly. You 
         createUserMessage({ content: parts.join('\n\n'), isMeta: true }),
       ])
     }
-    case 'session_guidance': {
+    case 'session_guidance':
+    case 'assistant_mode': {
       return wrapMessagesInSystemReminder([
         createUserMessage({ content: attachment.text, isMeta: true }),
       ])
@@ -4181,6 +4172,7 @@ You have exited auto mode. The user may now want to interact more directly. You 
     'task_progress', // removed in PR #19337
     'ultramemory', // removed in PR #23596
     'task_reminder',
+    'terminal_focus', // proactive-mode focus carrier, removed with the tick loop
   ]
   if (LEGACY_ATTACHMENT_TYPES.includes((attachment as { type: string }).type)) {
     return []

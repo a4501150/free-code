@@ -86,7 +86,6 @@ import type {
 } from '../../utils/messages.js'
 
 import * as coordinatorModeModule from '../../coordinator/coordinatorMode.js'
-import * as proactiveModule from '../../proactive/index.js'
 
 function getCoordinatorUserContext(
   mcpClients: ReadonlyArray<{ name: string }>,
@@ -142,7 +141,6 @@ export function useReplQueryExecution({
   titleDisabled,
   sessionTitle,
   agentTitle,
-  proactiveActive,
 }: {
   messagesRef: React.RefObject<MessageType[]>
   setMessages: (action: React.SetStateAction<MessageType[]>) => void
@@ -203,7 +201,6 @@ export function useReplQueryExecution({
   titleDisabled: boolean
   sessionTitle: string | undefined
   agentTitle: string | undefined
-  proactiveActive: boolean
 }) {
   const onQueryEvent = useCallback(
     (event: Parameters<typeof handleMessageFromStream>[0]) => {
@@ -217,7 +214,6 @@ export function useReplQueryExecution({
             ])
             setConversationId(randomUUID())
             scrollRef.current?.scrollToBottom()
-            proactiveModule.setContextBlocked(false)
           } else if (
             newMessage.type === 'progress' &&
             isEphemeralToolProgress(newMessage.data.type)
@@ -237,15 +233,6 @@ export function useReplQueryExecution({
             })
           } else {
             setMessages(oldMessages => [...oldMessages, newMessage])
-          }
-          if (
-            newMessage.type === 'assistant' &&
-            'isApiErrorMessage' in newMessage &&
-            newMessage.isApiErrorMessage
-          ) {
-            proactiveModule.setContextBlocked(true)
-          } else if (newMessage.type === 'assistant') {
-            proactiveModule.setContextBlocked(false)
           }
         },
         newContent => {
@@ -361,7 +348,6 @@ export function useReplQueryExecution({
       if (!shouldQuery) {
         if (newMessages.some(isCompactBoundaryMessage)) {
           setConversationId(randomUUID())
-          proactiveModule.setContextBlocked(false)
         }
         resetLoadingState()
         setAbortController(null)
@@ -547,11 +533,7 @@ export function useReplQueryExecution({
 
           const turnDurationMs =
             Date.now() - loadingStartTimeRef.current - totalPausedMsRef.current
-          if (
-            turnDurationMs > 30000 &&
-            !abortController.signal.aborted &&
-            !proactiveActive
-          ) {
+          if (turnDurationMs > 30000 && !abortController.signal.aborted) {
             const hasRunningSwarmAgents = getAllInProcessTeammateTasks(
               store.getState().tasks,
             ).some(t => t.status === 'running')
@@ -614,7 +596,6 @@ export function useReplQueryExecution({
       swarmStartTimeRef,
       restoreMessageSyncRef,
       store,
-      proactiveActive,
     ],
   )
 

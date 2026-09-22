@@ -126,8 +126,6 @@ import {
   userFacingNameBackgroundColor,
 } from './UI.js'
 
-import * as proactiveModule from '../../proactive/index.js'
-
 // Progress display constants (for showing background hint)
 const PROGRESS_THRESHOLD_MS = 2000 // Show background hint after 2 seconds
 
@@ -661,8 +659,7 @@ export const AgentTool = buildTool({
       (run_in_background === true ||
         selectedAgent.background === true ||
         isCoordinator ||
-        assistantForceAsync ||
-        proactiveModule.isProactiveActive()) &&
+        assistantForceAsync) &&
       !isBackgroundTasksDisabled
     // Assemble the worker's tool pool independently of the parent's.
     // Workers always get their tools from assembleToolPool with their own

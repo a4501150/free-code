@@ -28,22 +28,11 @@ import {
   mcpToolCatalogDisabled,
 } from '../services/toolCatalog/exposure.js'
 import { toolCatalogDir } from '../services/toolCatalog/writer.js'
-import * as briefToolPromptNs from '../tools/BriefTool/prompt.js'
-import * as briefToolModuleNs from '../tools/BriefTool/BriefTool.js'
 import {
   systemPromptSection,
   resolveSystemPromptSections,
 } from './systemPromptSections.js'
-import { SLEEP_TOOL_NAME } from '../tools/SleepTool/prompt.js'
-import { TICK_TAG } from './xml.js'
-import { logForDebugging } from '../utils/debug.js'
 import { getMemoryEnvItems, loadMemoryPrompt } from '../memdir/memdir.js'
-
-/* eslint-disable @typescript-eslint/no-require-imports */
-const proactiveModule: typeof import('../proactive/index.js') = require('../proactive/index.js')
-/* eslint-enable @typescript-eslint/no-require-imports */
-const BRIEF_PROACTIVE_SECTION = briefToolPromptNs.BRIEF_PROACTIVE_SECTION
-const briefToolModule = briefToolModuleNs
 
 export const CLAUDE_CODE_DOCS_MAP_URL =
   'https://code.claude.com/docs/en/claude_code_docs_map.md'
@@ -53,11 +42,6 @@ function getGitInstructionsSection(
 ): string | null {
   const section = getCommitAndPRInstructions(syntax ?? BASH_MULTILINE_SYNTAX)
   return section === '' ? null : section
-}
-
-function getSystemRemindersSection(): string {
-  return `- Tool results and user messages can include <system-reminder> tags. <system-reminder> tags contain useful information and reminders. They are automatically added by the system, and bear no direct relation to the specific tool results or user messages in which they appear.
-- The conversation has unlimited context through automatic summarization.`
 }
 
 function getLanguageSection(
@@ -148,17 +132,9 @@ export async function getSystemPrompt(
   const settings = getInitialSettings()
   const enabledTools = new Set(tools.map(_ => _.name))
 
-  if (proactiveModule.isProactiveActive()) {
-    logForDebugging(`[SystemPrompt] path=simple-proactive`)
-    return [
-      `\nYou are an autonomous agent. Use the available tools to do useful work.\n\n`,
-      getSystemRemindersSection(),
-      await loadMemoryPrompt(),
-      getLanguageSection(settings.language),
-      SUMMARIZE_TOOL_RESULTS_SECTION,
-      getProactiveSection(),
-    ].filter(s => s !== null)
-  }
+  // Assistant/brief guidance is not a prompt branch: it rides the
+  // `assistant_mode` attachment (src/utils/attachments.ts) so this block
+  // stays byte-identical across modes.
 
   const dynamicSections = [
     systemPromptSection('memory', () => loadMemoryPrompt()),
@@ -169,7 +145,6 @@ export async function getSystemPrompt(
       'summarize_tool_results',
       () => SUMMARIZE_TOOL_RESULTS_SECTION,
     ),
-    systemPromptSection('brief', () => getBriefSection()),
   ]
 
   const resolvedDynamicSections =
@@ -342,69 +317,3 @@ The scratchpad directory is isolated from the user's project and can normally be
 }
 
 const SUMMARIZE_TOOL_RESULTS_SECTION = `When working with tool results, write down any important information you need later in your response, as the original tool result can be cleared later.`
-
-function getBriefSection(): string | null {
-  // Whenever the tool is available, the model is told to use it. The
-  // /brief toggle and --brief flag now only control the isBriefOnly
-  // display filter — they no longer gate model-facing behavior.
-  if (!briefToolModule.isBriefEnabled()) return null
-  // When proactive is active, getProactiveSection() already appends the
-  // section inline. Skip here to avoid duplicating it in the system prompt.
-  if (proactiveModule.isProactiveActive()) return null
-  return BRIEF_PROACTIVE_SECTION
-}
-
-function getProactiveSection(): string | null {
-  if (!proactiveModule.isProactiveActive()) return null
-
-  return `# Autonomous work
-
-You are running autonomously. You will receive \`<${TICK_TAG}>\` prompts that keep you awake between turns. Treat each one as "you are awake; decide what to do now." The time in each \`<${TICK_TAG}>\` is the user's current local time. Use it to judge the time of day. Timestamps from external tools (Slack, GitHub, and others) can use a different timezone.
-
-Multiple ticks can arrive batched into a single message. This is normal. Process the latest one. Never echo or repeat tick content in your response.
-
-## Pacing
-
-Use the ${SLEEP_TOOL_NAME} tool to control how long you wait between actions. Sleep longer when waiting for slow processes and shorter when actively iterating.
-
-**If you have nothing useful to do on a tick, you MUST call ${SLEEP_TOOL_NAME}.** Never respond with only a status message like "still waiting" or "nothing to do". That response wastes a turn and tokens for no reason.
-
-## First wake-up
-
-On your very first tick in a new session, greet the user briefly and ask what they want to work on. Do not explore the codebase or make changes yet — wait for direction.
-
-## What to do on subsequent wake-ups
-
-Look for useful work. A good colleague faced with ambiguity does not stop. They investigate, reduce risk, and build understanding. Ask yourself: what do I not know yet? What can go wrong? What must I verify before I call the work done?
-
-Do not repeat a question to the user. If you already asked something and they have not responded, do not ask again. Do not narrate what you are about to do. Act.
-
-If a tick arrives and you have no useful action to take (no files to read, no commands to run, no decisions to make), call ${SLEEP_TOOL_NAME} immediately. Do not output text about being idle. The user does not need "still waiting" messages.
-
-## Staying responsive
-
-When the user is actively engaging with you, check for and respond to their messages frequently. In a real-time conversation, answer quickly to keep the feedback loop tight. If the user is waiting on you (for example, they just sent a message, or the terminal is focused), answer before you continue background work.
-
-## Act on your judgment
-
-Act on your best judgment rather than asking for confirmation.
-
-- Read files, search code, explore the project, run tests, check types, run linters — all without asking.
-- Make code changes. Commit when you reach a good stopping point.
-- If you are unsure between two reasonable approaches, pick one and continue. You can always correct the course later.
-
-## Be concise
-
-Keep your text output brief and high-level. The user does not need a step-by-step account of your thought process or implementation details. The user can see your tool calls. Focus text output on:
-- Decisions that need the user's input
-- High-level status updates at natural milestones (for example, "PR created", "tests passing")
-- Errors or problems that change the plan
-
-Do not narrate each step, list every file you read, or explain routine actions. If you can say it in one sentence, do not use three.
-
-## Terminal focus
-
-You will be notified when the user focuses or unfocuses their terminal. Use the most recent notification to calibrate how autonomous you are:
-- **Unfocused**: The user is away. Act autonomously: make decisions, explore, commit, push. Only pause for actions that are truly irreversible or high-risk.
-- **Focused**: The user is watching. Be more collaborative. Show choices, ask before you commit large changes, and keep your output concise, so it is easy to follow in real time.${briefToolModule.isBriefEnabled() ? `\n\n${BRIEF_PROACTIVE_SECTION}` : ''}`
-}

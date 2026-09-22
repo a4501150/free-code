@@ -72,6 +72,8 @@ import {
   mcpToolCatalogDisabled,
 } from '../services/toolCatalog/exposure.js'
 import { prependBullets } from '../constants/prompts.js'
+import { buildAssistantModeBlock } from '../assistant/index.js'
+import { isBriefEnabled } from '../tools/BriefTool/BriefTool.js'
 import { getSnippetForTwoFileDiff } from 'src/tools/FileEditTool/utils.js'
 import { maybeResizeAndDownsampleImageBlock } from './imageResizer.js'
 import type { PastedContent } from './config.js'
@@ -143,8 +145,6 @@ import {
   setNeedsAutoModeExitAttachment,
   getLastEmittedDate,
   setLastEmittedDate,
-  getLastEmittedTerminalFocus,
-  setLastEmittedTerminalFocus,
   getAssistantActive,
 } from '../bootstrap/state.js'
 import type { QuerySource } from '../constants/querySource.js'
@@ -169,8 +169,6 @@ import { isHumanTurn } from './messagePredicates.js'
 import { isEnvTruthy, getClaudeConfigHomeDir } from './envUtils.js'
 import { feature } from 'bun:bundle'
 import { flushOnDateChange } from '../services/sessionTranscript/sessionTranscript.js'
-import { isProactiveActive } from '../proactive/index.js'
-import { getTerminalFocused } from '../ink/terminal-focus-state.js'
 import { hasUltrathinkKeyword, isUltrathinkEnabled } from './thinking.js'
 import {
   tokenCountFromLastAPIResponse,
@@ -658,10 +656,6 @@ export type Attachment =
       removals: string[]
     }
   | {
-      type: 'terminal_focus'
-      focused: boolean
-    }
-  | {
       type: 'ultrathink_effort'
       level: 'high'
     }
@@ -702,6 +696,11 @@ export type Attachment =
   | {
       type: 'session_guidance'
       /** Fully rendered block; replaced wholesale when tool gating changes. */
+      text: string
+    }
+  | {
+      type: 'assistant_mode'
+      /** Fully rendered block (persona, autonomy, brief, memory policy). */
       text: string
     }
   | {
@@ -805,15 +804,16 @@ export async function getAttachments(
     maybe('date_change', () =>
       Promise.resolve(getDateChangeAttachments(messages)),
     ),
-    maybe('terminal_focus', () =>
-      Promise.resolve(getTerminalFocusAttachments(messages)),
-    ),
     maybe('ultrathink_effort', () =>
       Promise.resolve(getUltrathinkEffortAttachment(input)),
     ),
     // Context-group ordering (same in compact.ts re-announce and the
-    // runAgent.ts turn-0 seed): session_guidance, mcp_instructions_delta,
+    // runAgent.ts turn-0 seed): assistant_mode (main-thread only, so absent
+    // from the seed), session_guidance, mcp_instructions_delta,
     // mcp_tools_delta, agent_listing_delta, then skill_listing below.
+    maybe('assistant_mode', () =>
+      Promise.resolve(getAssistantModeAttachment(toolUseContext, messages)),
+    ),
     maybe('session_guidance', () =>
       Promise.resolve(getSessionGuidanceAttachment(toolUseContext, messages)),
     ),
@@ -1385,55 +1385,6 @@ export function getDateChangeAttachments(
   return [{ type: 'date_change', newDate: currentDate }]
 }
 
-/**
- * Announces terminal focus transitions while proactive mode is active, so the
- * model can calibrate how autonomous to be.
- *
- * Appended at the tail rather than injected into the user context: focus flips
- * whenever the user alt-tabs, and the user context is API message 0, so putting
- * it there rewrote the cached message prefix several times a minute. Only
- * transitions are emitted, which is also what keeps this from duplicating once
- * per tool-loop iteration.
- *
- * Exported for testing.
- */
-export function getTerminalFocusAttachments(
-  messages?: Message[],
-): Attachment[] {
-  if (!isProactiveActive()) {
-    return []
-  }
-
-  const focused = getTerminalFocused()
-  let lastFocused = getLastEmittedTerminalFocus()
-
-  if (lastFocused === null && messages !== undefined) {
-    // Fresh process: baseline off the newest persisted row, not the current
-    // state — the replayed rows are visible to the model, and swallowing a
-    // focus flip that happened across the restart would misreport it.
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]
-      if (m.type === 'attachment' && m.attachment.type === 'terminal_focus') {
-        lastFocused = m.attachment.focused
-        break
-      }
-    }
-  }
-
-  if (lastFocused === null) {
-    // First observation — establish the baseline without announcing it.
-    setLastEmittedTerminalFocus(focused)
-    return []
-  }
-
-  if (focused === lastFocused) {
-    return []
-  }
-
-  setLastEmittedTerminalFocus(focused)
-  return [{ type: 'terminal_focus', focused }]
-}
-
 function getUltrathinkEffortAttachment(input: string | null): Attachment[] {
   if (!isUltrathinkEnabled() || !input || !hasUltrathinkKeyword(input)) {
     return []
@@ -1607,6 +1558,35 @@ export function getSessionGuidanceAttachment(
   }
   if (lastText === text) return []
   return [{ type: 'session_guidance', text }]
+}
+
+/**
+ * Assistant-mode guidance (persona, autonomy policy, brief reply rules,
+ * daily-log memory policy) carried as a message instead of a system-prompt
+ * branch, so the cached system block stays identical across modes. Same
+ * wholesale-replacement scan as session_guidance: no prior announcement
+ * (session start, post-compaction) re-arms the full block. Main thread only —
+ * subagents get their scoped task and need no persona. A brief-only session
+ * (user opted into /brief without assistant mode) gets just the reply rules.
+ */
+export function getAssistantModeAttachment(
+  toolUseContext: ToolUseContext,
+  messages: Message[] | undefined,
+): Attachment[] {
+  if (toolUseContext.agentId) return []
+  const assistantActive = getAssistantActive()
+  if (!assistantActive && !isBriefEnabled()) return []
+  const text = buildAssistantModeBlock({ assistantActive })
+  if (text === null) return []
+
+  let lastText: string | null = null
+  for (const msg of messages ?? []) {
+    if (msg.type !== 'attachment') continue
+    if (msg.attachment.type !== 'assistant_mode') continue
+    lastText = msg.attachment.text
+  }
+  if (lastText === text) return []
+  return [{ type: 'assistant_mode', text }]
 }
 
 /**

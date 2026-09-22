@@ -15,6 +15,10 @@ import { logError } from '../utils/log.js'
 import { getExistingOrPreferredProjectConfigPath } from '../utils/projectConfigPaths.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import { setCliTeammateModeOverride } from '../utils/swarm/backends/teammateModeSnapshot.js'
+import { isAutoMemoryEnabled } from '../memdir/paths.js'
+import { buildAssistantDailyLogBlock } from '../memdir/memdir.js'
+import { BRIEF_PROACTIVE_SECTION } from '../tools/BriefTool/prompt.js'
+import { isBriefEnabled } from '../tools/BriefTool/BriefTool.js'
 
 let forced = false
 
@@ -115,26 +119,60 @@ export async function initializeAssistantTeam(): Promise<
 }
 
 /**
- * Get the system prompt addendum for assistant mode.
- * Returns the contents of the preferred/existing project assistant.md wrapped as an
- * assistant-mode section.
+ * Build the assistant/brief guidance block carried by the `assistant_mode`
+ * attachment (see src/utils/attachments.ts). Sections are composed by gate,
+ * so a brief-only session (user opt-in, no assistant) gets just the reply
+ * rules. All volatile bytes (the persona file read, feature gates) are
+ * rendered here, at creation time — the attachment replays them byte-
+ * identically and re-announces wholesale when this text changes.
  */
-export function getAssistantSystemPromptAddendum(): string {
-  const name = getAssistantName()
-  const identity = name
-    ? `You are running in assistant mode as ${name}.`
-    : 'You are running in assistant mode.'
-  try {
-    const mdPath = getAssistantMdPath()
-    if (!existsSync(mdPath)) {
-      return `# Assistant Mode\n\n${identity}`
-    }
+export function buildAssistantModeBlock(params: {
+  assistantActive: boolean
+}): string | null {
+  const sections: string[] = []
 
-    const content = readFileSync(mdPath, 'utf-8')
-    return `# Assistant Mode\n\n${content}`
-  } catch {
-    return `# Assistant Mode\n\n${identity}`
+  if (params.assistantActive) {
+    const name = getAssistantName()
+    const identity = name
+      ? `You are running in assistant mode as ${name}.`
+      : 'You are running in assistant mode.'
+    let persona = identity
+    try {
+      const mdPath = getAssistantMdPath()
+      if (existsSync(mdPath)) {
+        persona = readFileSync(mdPath, 'utf-8')
+      }
+    } catch {
+      // Unreadable persona file: identity line only.
+    }
+    sections.push(
+      `# Assistant Mode\n\n${persona}\n\n` +
+        `## Working autonomously\n\n` +
+        `You are one long-lived session that wakes on events: a message from the ` +
+        `user (web UI or attached terminal), a scheduled task coming due, or an ` +
+        `external notification. Between events you idle — there is nothing to poll, ` +
+        `and a turn with nothing to do should end quickly and without text.\n\n` +
+        `- Act on your best judgment rather than asking for confirmation: read, ` +
+        `search, run tests, edit code, and commit when you reach a good stopping ` +
+        `point.\n` +
+        `- For actions that are hard to reverse or outward-facing, do not block ` +
+        `waiting for a human who may be away: take the safer action or leave the ` +
+        `action for the user's next message, and say what you deferred and why.\n` +
+        `- Do not repeat a question the user has not answered. Invest in what you ` +
+        `can learn on your own: what do I not know yet, what can go wrong, what ` +
+        `must I verify before calling work done?`,
+    )
   }
+
+  if (isBriefEnabled()) {
+    sections.push(BRIEF_PROACTIVE_SECTION)
+  }
+
+  if (params.assistantActive && isAutoMemoryEnabled()) {
+    sections.push(buildAssistantDailyLogBlock())
+  }
+
+  return sections.length > 0 ? sections.join('\n\n') : null
 }
 
 /**

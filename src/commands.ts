@@ -36,7 +36,6 @@ import usage from './commands/usage/index.js'
 import theme from './commands/theme/index.js'
 import vim from './commands/vim/index.js'
 import { feature } from 'bun:bundle'
-import proactive from './commands/proactive.js'
 import briefCommand from './commands/brief.js'
 import voiceCommand from './commands/voice/index.js'
 // Feature-gated command module. `feature()` is a Bun build-time macro, so
@@ -194,7 +193,6 @@ const COMMANDS = memoize((): Command[] => [
   usageReport,
   version,
   vim,
-  proactive,
   briefCommand,
   voiceCommand,
   thinkback,

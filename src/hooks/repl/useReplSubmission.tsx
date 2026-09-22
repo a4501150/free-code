@@ -66,8 +66,6 @@ import type { SetAppState } from '../../utils/messageQueueManager.js'
 import type { LocalAgentTaskState } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import type { InProcessTeammateTaskState } from '../../tasks/InProcessTeammateTask/types.js'
 
-import * as proactiveModule from '../../proactive/index.js'
-
 export function useReplSubmission(deps: {
   // All dependencies from REPL closure
   initialMessage: any
@@ -284,8 +282,6 @@ export function useReplSubmission(deps: {
       options?: { fromKeybinding?: boolean },
     ) => {
       repinScroll()
-
-      proactiveModule.resumeProactive()
 
       if (!speculationAccept && input.trim().startsWith('/')) {
         const trimmedInput = expandPastedTextRefs(

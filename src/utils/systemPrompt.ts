@@ -7,12 +7,6 @@ import { asSystemPrompt, type SystemPrompt } from './systemPromptType.js'
 
 export { asSystemPrompt, type SystemPrompt } from './systemPromptType.js'
 
-import { isProactiveActive } from '../proactive/index.js'
-
-function isProactiveActive_SAFE_TO_CALL_ANYWHERE(): boolean {
-  return isProactiveActive()
-}
-
 /**
  * Builds the effective system prompt array based on priority:
  * 0. Override system prompt (if set, e.g., via loop mode - REPLACES all other prompts)
@@ -61,18 +55,6 @@ export function buildEffectiveSystemPrompt({
     : undefined
 
   // Log agent memory loaded event for main loop agents
-
-  // In proactive mode, agent instructions are appended to the default prompt
-  // rather than replacing it. The proactive default prompt is already lean
-  // (autonomous agent identity + memory + env + proactive section), and agents
-  // add domain-specific behavior on top — same pattern as teammates.
-  if (agentSystemPrompt && isProactiveActive_SAFE_TO_CALL_ANYWHERE()) {
-    return asSystemPrompt([
-      ...defaultSystemPrompt,
-      `\n# Custom Agent Instructions\n${agentSystemPrompt}`,
-      ...(appendSystemPrompt ? [appendSystemPrompt] : []),
-    ])
-  }
 
   return asSystemPrompt([
     ...(agentSystemPrompt

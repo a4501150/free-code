@@ -142,7 +142,6 @@ import {
   getScratchpadDir,
   isScratchpadEnabled,
 } from '../utils/permissions/filesystem.js'
-import { SLEEP_TOOL_NAME } from '../tools/SleepTool/prompt.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import {
   textForResubmit,
@@ -282,8 +281,6 @@ import {
   type InProcessTeammateTaskState,
 } from '../tasks/InProcessTeammateTask/types.js'
 import { useInboxPoller } from '../hooks/useInboxPoller.js'
-import * as proactiveModule from '../proactive/index.js'
-import { useProactive } from '../proactive/useProactive.js'
 import { useScheduledTasks } from '../hooks/useScheduledTasks.js'
 import * as webuiAttachModule from '../webui/attach/hostSingleton.js'
 import { useReplAttachBridge } from '../webui/attach/replBridge.js'
@@ -561,12 +558,6 @@ export function REPL({
   // Watch for skill file changes and reload all commands
   useSkillsChange(getProjectRoot(), setLocalCommands)
 
-  // Track proactive mode for tools dependency - SleepTool filters by proactive state
-  const proactiveActive = React.useSyncExternalStore(
-    proactiveModule.subscribeToProactiveChanges,
-    proactiveModule.isProactiveActive,
-  )
-
   // BriefTool.isEnabled() reads getUserMsgOptIn() from bootstrap state, which
   // /brief flips mid-session alongside isBriefOnly. The memo below needs a
   // React-visible dep to re-run getTools() when that happens; isBriefOnly is
@@ -577,7 +568,7 @@ export function REPL({
 
   const localTools = useMemo(
     () => getTools(toolPermissionContext),
-    [toolPermissionContext, proactiveActive, isBriefOnly],
+    [toolPermissionContext, isBriefOnly],
   )
 
   useKickOffCheckAndDisableBypassPermissionsIfNeeded()
@@ -765,7 +756,6 @@ export function REPL({
     hasInterruptibleToolInProgressRef,
     tipPickedThisTurnRef,
     resetStreamingState,
-    onlySleepToolActive,
     stopHookSpinnerSuffix,
   } = useReplStreaming({
     messagesRef,
@@ -1005,8 +995,6 @@ export function REPL({
     ])
   }, [setMessages])
 
-  // onlySleepToolActive → useReplStreaming
-
   const {
     onBeforeQuery: mrOnBeforeQuery,
     onTurnComplete: mrOnTurnComplete,
@@ -1120,8 +1108,7 @@ export function REPL({
       getCommandQueueLength() > 0 ||
       viewedSubagentRunning) &&
     // Hide spinner when waiting for leader to approve permission request
-    !pendingWorkerRequest &&
-    !onlySleepToolActive
+    !pendingWorkerRequest
 
   // Hide spinner when streaming text is visible (the text IS the feedback),
   // but keep it when isBriefOnly suppresses the streaming text display.
@@ -1311,7 +1298,6 @@ export function REPL({
       titleDisabled,
       sessionTitle,
       agentTitle,
-      proactiveActive: proactiveActive as boolean,
     },
   )
 
@@ -1747,8 +1733,8 @@ export function REPL({
   })
 
   // Scheduled tasks from .freecode/scheduled_tasks.json (CronCreate/Delete/List)
-  // Assistant mode bypasses the isLoading gate (the proactive tick →
-  // Sleep → tick loop would otherwise starve the scheduler).
+  // Assistant mode bypasses the isLoading gate so a cron prompt that comes
+  // due mid-turn is enqueued immediately instead of waiting for the turn.
   // assistantEnabled is set once in initialState (main.tsx) and never mutated — no
   // subscription needed. The isAssistantCronEnabled() runtime gate is checked
   // inside useScheduledTasks's effect (not here) since wrapping a hook call
@@ -1765,21 +1751,6 @@ export function REPL({
     taskListId,
     isLoading,
     onSubmitTask: handleIncomingPrompt,
-  })
-
-  // Loop mode: auto-tick when enabled (via /job command)
-  useProactive({
-    // Suppress ticks while an initial message is pending — the initial
-    // message will be processed asynchronously and a premature tick would
-    // race with it, causing concurrent-query enqueue of expanded skill text.
-    isLoading: isLoading || initialMessage !== null,
-    queuedCommandsLength: queuedCommands.length,
-    hasActiveLocalJsxUI: isShowingLocalJSXCommand,
-    isInPlanMode: toolPermissionContext.mode === 'plan',
-    onSubmitTick: (prompt: string) =>
-      handleIncomingPrompt(prompt, { isMeta: true }),
-    onQueueTick: (prompt: string) =>
-      enqueue({ mode: 'prompt', value: prompt, isMeta: true }),
   })
 
   // Abort the current operation when a 'now' priority message arrives
@@ -2381,7 +2352,6 @@ export function REPL({
                       } else {
                         setMessages(postCompact)
                       }
-                      proactiveModule.setContextBlocked(false)
                       setConversationId(randomUUID())
                       runPostCompactCleanup(context.options.querySource)
 

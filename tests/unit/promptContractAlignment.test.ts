@@ -95,17 +95,20 @@ describe('conditional mode prompt alignment', () => {
     expect(source).toContain('reply they actually read comes through')
   })
 
-  test('proactive entry points require direction before autonomous work', () => {
+  test('assistant autonomy guidance rides the assistant_mode attachment, not the prompt', () => {
+    const assistantBlock = readSource('src/assistant/index.ts')
     const constants = readSource('src/constants/prompts.ts')
     const startup = readSource('src/main.tsx')
-    const command = readSource('src/commands/proactive.ts')
 
-    expect(constants).toContain('wait for direction')
-    expect(startup).toContain('do not begin work until they provide direction')
-    expect(command).toContain('do not begin work until they provide direction')
-    expect(startup).not.toContain(
-      'Take initiative — explore, act, and make progress without waiting for instructions.',
-    )
+    // Event-driven policy: wake on events, act without blocking on
+    // confirmation, never a polling/tick loop.
+    expect(assistantBlock).toContain('wakes on events')
+    expect(assistantBlock).toContain('rather than asking for confirmation')
+    expect(assistantBlock).toContain('there is nothing to poll')
+    expect(constants).not.toContain('getProactiveSection')
+    expect(constants).not.toContain('wait for direction')
+    expect(startup).not.toContain('maybeActivateProactive')
+    expect(startup).not.toContain('Proactive Mode')
   })
 
   test('headless coordinator prompt follows the live coordinator gate', () => {
@@ -147,15 +150,12 @@ describe('conditional mode prompt alignment', () => {
     )
   })
 
-  test('Sleep and Agent tool prompts own their field-specific guidance', () => {
+  test('Agent tool prompt owns its field-specific guidance and Sleep is gone', () => {
     const mainPrompt = readSource('src/constants/prompts.ts')
-    const sleepPrompt = readSource('src/tools/SleepTool/prompt.ts')
     const agentPrompt = readSource('src/tools/AgentTool/prompt.ts')
     const agentSchema = readSource('src/tools/AgentTool/AgentTool.tsx')
 
-    expect(mainPrompt).toContain('MUST call ${SLEEP_TOOL_NAME}')
-    expect(mainPrompt).not.toContain('Each wake-up costs an API call')
-    expect(sleepPrompt).toContain('Each wake-up costs an API call')
+    expect(mainPrompt).not.toContain('SLEEP_TOOL_NAME')
     expect(mainPrompt).not.toContain('/<skill-name> is shorthand')
     expect(mainPrompt).not.toContain('For broader codebase exploration')
     expect(agentPrompt).toContain(

@@ -46,6 +46,7 @@ const TYPES_WITHOUT_SUMMARY_LINE = [
   'mcp_tools_delta',
   'mcp_instructions_delta',
   'session_guidance',
+  'assistant_mode',
   'token_usage',
   'ultrathink_effort',
   'max_turns_reached',
@@ -56,7 +57,6 @@ const TYPES_WITHOUT_SUMMARY_LINE = [
   'date_change',
   'user_context_snapshot',
   'user_context_delta',
-  'terminal_focus',
   'auto_compact_imminent',
   'stale_task_list',
 ] as const satisfies readonly Attachment['type'][]

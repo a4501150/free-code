@@ -102,7 +102,6 @@ const LogoHeader = React.memo(function LogoHeader({
 
 import { BRIEF_TOOL_NAME } from '../tools/BriefTool/prompt.js'
 import { SEND_USER_FILE_TOOL_NAME } from '../tools/SendUserFileTool/prompt.js'
-import { isProactiveActive } from '../proactive/index.js'
 import { VirtualMessageList } from './VirtualMessageList.js'
 
 /**
@@ -768,8 +767,7 @@ const MessagesImpl = ({
   const { progress } = useTerminalNotification()
   const prevProgressState = useRef<string | null>(null)
   const progressEnabled =
-    (getInitialSettings().terminalProgressBarEnabled ?? true) &&
-    !isProactiveActive()
+    getInitialSettings().terminalProgressBarEnabled ?? true
   useEffect(() => {
     const state = progressEnabled
       ? hasToolsInProgress

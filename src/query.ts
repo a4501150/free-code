@@ -68,7 +68,6 @@ import {
   finalContextTokensFromLastResponse,
   tokenCountWithEstimation,
 } from './utils/tokens.js'
-import { SLEEP_TOOL_NAME } from './tools/SleepTool/prompt.js'
 import { executePostSamplingHooks } from './utils/hooks/postSamplingHooks.js'
 import { executeStopFailureHooks } from './utils/hooks.js'
 import type { QuerySource } from './constants/querySource.js'
@@ -1003,8 +1002,8 @@ async function* queryLoop(
     // Get queued commands snapshot before processing attachments.
     // These will be sent as attachments so Claude can respond to them in the current turn.
     //
-    // Drain pending notifications. Task completions default to 'later' —
-    // the Sleep flush covers those.
+    // Drain pending notifications. Task completions default to 'later' and
+    // wait for the next turn boundary — there is no mid-turn flush.
     //
     // Slash commands are excluded from mid-turn drain — they must go through
     // processSlashCommand after the turn ends (via useQueueProcessor), not be
@@ -1016,20 +1015,20 @@ async function* queryLoop(
     // addressed to it — main thread drains agentId===undefined, subagents
     // drain their own agentId. User prompts (mode:'prompt') still go to main
     // only; subagents never see the prompt stream.
-    // eslint-disable-next-line custom-rules/require-tool-match-name -- DomainToolUseBlock.name has no aliases
-    const sleepRan = toolUseBlocks.some(b => b.name === SLEEP_TOOL_NAME)
     const isMainThread =
       querySource.startsWith('repl_main_thread') || querySource === 'sdk'
     const currentAgentId = toolUseContext.agentId
-    const queuedCommandsSnapshot = getCommandsByMaxPriority(
-      sleepRan ? 'later' : 'next',
-    ).filter(cmd => {
-      if (isSlashCommand(cmd)) return false
-      if (isMainThread) return cmd.agentId === undefined
-      // Subagents only drain task-notifications addressed to them — never
-      // user prompts, even if someone stamps an agentId on one.
-      return cmd.mode === 'task-notification' && cmd.agentId === currentAgentId
-    })
+    const queuedCommandsSnapshot = getCommandsByMaxPriority('next').filter(
+      cmd => {
+        if (isSlashCommand(cmd)) return false
+        if (isMainThread) return cmd.agentId === undefined
+        // Subagents only drain task-notifications addressed to them — never
+        // user prompts, even if someone stamps an agentId on one.
+        return (
+          cmd.mode === 'task-notification' && cmd.agentId === currentAgentId
+        )
+      },
+    )
 
     for await (const attachment of getAttachmentMessages(
       null,

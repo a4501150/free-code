@@ -1,10 +1,9 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
-import { subscribeToProactiveChanges } from '../../proactive/index.js'
 import { Box, Text } from '../../ink.js'
 import * as React from 'react'
 import figures from 'figures'
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo } from 'react'
 import type { VimMode, PromptInputMode } from '../../types/textInputTypes.js'
 import type { ToolPermissionContext } from '../../Tool.js'
 import { isVimModeEnabled } from './utils.js'
@@ -42,7 +41,6 @@ import { getInitialSettings } from '../../utils/settings/settings.js'
 import { getPlatform } from '../../utils/platform.js'
 import { PrBadge } from '../PrBadge.js'
 
-const NULL = () => null
 type Props = {
   exitMessage: {
     show: boolean
@@ -63,47 +61,6 @@ type Props = {
   setHistoryQuery: (query: string) => void
   historyFailedMatch: boolean
   onOpenTasksDialog?: (taskId?: string) => void
-}
-
-function ProactiveCountdown(): React.ReactNode {
-  // proactive/index.js has no getNextTickAt export yet — the snapshot stays
-  // null (matching the old `proactiveModule?.getNextTickAt ?? NULL`
-  // evaluation), so this countdown never renders.
-  const nextTickAt = useSyncExternalStore(
-    subscribeToProactiveChanges,
-    NULL,
-    NULL,
-  )
-
-  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (nextTickAt === null) {
-      setRemainingSeconds(null)
-      return
-    }
-
-    function update(): void {
-      const remaining = Math.max(
-        0,
-        Math.ceil((nextTickAt! - Date.now()) / 1000),
-      )
-      setRemainingSeconds(remaining)
-    }
-
-    update()
-    const interval = setInterval(update, 1000)
-    return () => clearInterval(interval)
-  }, [nextTickAt])
-
-  if (remainingSeconds === null) return null
-
-  return (
-    <Text dimColor>
-      waiting{' '}
-      {formatDuration(remainingSeconds * 1000, { mostSignificantOnly: true })}
-    </Text>
-  )
 }
 
 export function PromptInputFooterLeftSide({
@@ -203,17 +160,11 @@ function ModeIndicator({
   const showSpinnerTree = expandedView === 'teammates'
   const prStatus = usePrStatus(isLoading, isPrStatusEnabled())
 
-  const nextTickAt = useSyncExternalStore(
-    subscribeToProactiveChanges,
-    NULL,
-    NULL,
-  )
   const voiceEnabled = useVoiceEnabled()
   const voiceState = useVoiceState(s => s.voiceState)
   const voiceWarmingUp = useVoiceState(s => s.voiceWarmingUp)
   const hasSelection = useHasSelection()
   const selGetState = useSelection().getState
-  const hasNextTick = nextTickAt !== null
   const isCoordinator = isCoordinatorMode()
   const runningTaskCount = useMemo(
     () =>
@@ -388,8 +339,6 @@ function ModeIndicator({
         />
       </Text>,
     )
-  } else if (hasNextTick) {
-    parts.push(<ProactiveCountdown key="proactive" />)
   } else if (!hasTeammatePills && showHint) {
     parts.push(...hintParts)
   }

@@ -4,7 +4,7 @@ import { getAutoMemPath, isAutoMemoryEnabled } from './paths.js'
 
 import * as teamMemPaths from './teamMemPaths.js'
 import * as teamMemPrompts from './teamMemPrompts.js'
-import { getAssistantActive, getOriginalCwd } from '../bootstrap/state.js'
+import { getOriginalCwd } from '../bootstrap/state.js'
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../services/analytics/index.js'
 import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
 import { isReplModeEnabled } from '../tools/REPLTool/constants.js'
@@ -323,23 +323,24 @@ export function buildMemoryPrompt(params: {
 }
 
 /**
- * Assistant-mode daily-log prompt.
+ * Assistant-mode memory policy: where NEW memories go.
  *
  * Assistant sessions are effectively perpetual, so the agent writes memories
  * append-only to a date-named log file rather than maintaining MEMORY.md as
  * a live index. A separate nightly /dream skill distills logs into topic
  * files + MEMORY.md. MEMORY.md is still loaded into context (via claudemd.ts)
- * as the distilled index — this prompt only changes where NEW memories go.
+ * as the distilled index — this block only changes where NEW memories go, and
+ * rides in the `assistant_mode` attachment (the standard typed-memory system
+ * prompt section stays mode-identical).
  */
-function buildAssistantDailyLogPrompt(skipIndex = false): string {
-  const memoryDir = getAutoMemPath()
+export function buildAssistantDailyLogBlock(): string {
   // Describe the path as a pattern rather than inlining today's literal path:
-  // this prompt is cached by systemPromptSection('memory', ...) and NOT
-  // invalidated on date change. The model derives the current date from the
-  // date_change attachment (appended at the tail on midnight rollover) rather
-  // than the user-context message — the latter is intentionally left stale to
-  // preserve the prompt cache prefix across midnight. The directory itself is
-  // named rather than interpolated, for the same reason.
+  // the attachment text must not vary on date change. The model derives the
+  // current date from the `currentDate` context entry and the date_change
+  // attachment (appended at the tail on midnight rollover) rather than the
+  // user-context message — the latter is intentionally left stale to preserve
+  // the prompt cache prefix across midnight. The directory itself is named
+  // rather than interpolated, for the same reason.
   const logPathPattern = join(
     `<${MEMORY_DIR_ENV_LABEL}>`,
     'logs',
@@ -348,12 +349,10 @@ function buildAssistantDailyLogPrompt(skipIndex = false): string {
     'YYYY-MM-DD.md',
   )
 
-  const lines: string[] = [
-    '# auto memory',
+  return [
+    '## Memory',
     '',
-    `You have a persistent, file-based memory system. Its directory is the \`${MEMORY_DIR_ENV_LABEL}\` in your environment context.`,
-    '',
-    "This session is long-lived. As you work, record anything worth remembering by **appending** to today's daily log file:",
+    "This session is long-lived. Record anything worth remembering by **appending** to today's daily log file (this replaces the per-type memory files and index steps above):",
     '',
     `\`${logPathPattern}\``,
     '',
@@ -361,26 +360,21 @@ function buildAssistantDailyLogPrompt(skipIndex = false): string {
     '',
     'Write each entry as a short timestamped bullet. Create the file (and parent directories) on first write if it does not exist. Do not rewrite or reorganize the log — it is append-only. A separate nightly process distills these logs into `MEMORY.md` and topic files.',
     '',
-    '## What to log',
+    '### What to log',
     '- User corrections and preferences ("use bun, not npm"; "stop summarizing diffs")',
     '- Facts about the user, their role, or their goals',
     '- Project context that is not derivable from the code (deadlines, incidents, decisions and their rationale)',
     '- Pointers to external systems (dashboards, Linear projects, Slack channels)',
     '- Anything the user explicitly asks you to remember',
     '',
-    ...WHAT_NOT_TO_SAVE_SECTION,
+    ...WHAT_NOT_TO_SAVE_SECTION.map(line =>
+      // Re-level the shared section's H2 to sit under "## Memory".
+      line.startsWith('## ') ? line.replace('## ', '### ') : line,
+    ),
     '',
-    ...(skipIndex
-      ? []
-      : [
-          `## ${ENTRYPOINT_NAME}`,
-          `\`${ENTRYPOINT_NAME}\` is the distilled index (maintained nightly from your logs) and is loaded into your context automatically. Read it for orientation, but do not edit it directly — record new information in today's log instead.`,
-          '',
-        ]),
-    ...buildSearchingPastContextSection(memoryDir, true),
-  ]
-
-  return lines.join('\n')
+    `## ${ENTRYPOINT_NAME}`,
+    `\`${ENTRYPOINT_NAME}\` is the distilled index (maintained nightly from your logs) and is loaded into your context automatically. Read it for orientation, but do not edit it directly — record new information in today's log instead.`,
+  ].join('\n')
 }
 
 /**
@@ -465,17 +459,10 @@ export async function loadMemoryPrompt(): Promise<string | null> {
 
   const skipIndex = true
 
-  // Assistant-mode daily-log takes precedence over TEAMMEM: the append-only
-  // log paradigm does not compose with team sync (which expects a shared
-  // MEMORY.md that both sides read + write). Gating on `autoEnabled` here
-  // means the !autoEnabled case falls through to the tengu_memdir_disabled
-  // telemetry block below, matching the non-assistant path.
-  if (autoEnabled && getAssistantActive()) {
-    logMemoryDirCounts(getAutoMemPath(), {
-      memory_type: 'auto',
-    })
-    return buildAssistantDailyLogPrompt(skipIndex)
-  }
+  // Assistant mode no longer swaps this prompt: the daily-log policy rides the
+  // `assistant_mode` attachment, so the memory section stays byte-identical
+  // across modes (assistant teams also fall back to the standard MEMORY.md
+  // index paradigm instead of the old append-only team-sync carve-out).
 
   // Cowork injects memory-policy text via env var; thread into all builders.
   const coworkExtraGuidelines =

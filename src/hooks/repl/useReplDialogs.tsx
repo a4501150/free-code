@@ -27,8 +27,6 @@ import type { PastedContent } from '../../utils/config.js'
 import type { PromptInputMode } from '../../types/textInputTypes.js'
 import type { SpinnerMode } from '../../components/Spinner.js'
 
-import * as proactiveModule from '../../proactive/index.js'
-
 export function useReplDialogs({
   toolJSX,
   isShowingLocalJSXCommand,
@@ -247,8 +245,6 @@ export function useReplDialogs({
     logForDebugging(
       `[onCancel] focusedInputDialog=${focusedInputDialog} streamMode=${streamMode}`,
     )
-
-    proactiveModule.pauseProactive()
 
     queryGuard.forceEnd()
 

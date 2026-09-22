@@ -10,7 +10,6 @@ import {
   regenerateSessionId,
 } from '../../bootstrap/state.js'
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
-import { setContextBlocked } from '../../proactive/index.js'
 import type { AppState } from '../../state/AppState.js'
 import { isInProcessTeammateTask } from '../../tasks/InProcessTeammateTask/types.js'
 import {
@@ -96,9 +95,6 @@ export async function clearConversation({
   }
 
   setMessages(() => [])
-
-  // Clear context-blocked flag so proactive ticks resume after /clear
-  setContextBlocked(false)
 
   // Force logo re-render by updating conversationId
   if (setConversationId) {

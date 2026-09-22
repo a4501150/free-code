@@ -6,7 +6,7 @@
  *   - sends `notifications/claude/channel` notifications for inbound — this file
  *
  * The notification handler wraps the content in a <channel> tag and
- * enqueues it. SleepTool polls hasCommandsInQueue() and wakes within 1s.
+ * enqueues it; the queue watcher wakes the idle session within 1s.
  * The model sees where the message came from and decides which tool to reply
  * with (the channel's MCP tool, SendUserMessage, or both).
  *

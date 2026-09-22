@@ -3,7 +3,6 @@ import { count } from '../../utils/array.js'
 import { truncateToWidth } from '../../utils/format.js'
 import { hasCursorUpViewportYankBug } from '../../ink/terminal.js'
 import { endInteractionSpan } from '../../utils/telemetry/sessionTracing.js'
-import { SLEEP_TOOL_NAME } from '../../tools/SleepTool/prompt.js'
 import { extractBashToolsFromMessages } from '../../utils/queryHelpers.js'
 import { getTipToShowOnSpinner } from '../../services/tips/tipScheduler.js'
 import type { SpinnerMode } from '../../components/Spinner.js'
@@ -148,21 +147,6 @@ export function useReplStreaming({
     endInteractionSpan()
   }, [pickNewSpinnerTip])
 
-  // Hide spinner when the only in-progress tool is Sleep
-  const onlySleepToolActive = useMemo(() => {
-    const lastAssistant = messages.findLast(m => m.type === 'assistant')
-    if (lastAssistant?.type !== 'assistant') return false
-    const inProgressTools = lastAssistant.message.content.filter(
-      b => b.type === 'tool_use' && inProgressToolUseIDs.has(b.id),
-    )
-    return (
-      inProgressTools.length > 0 &&
-      inProgressTools.every(
-        b => b.type === 'tool_use' && b.name === SLEEP_TOOL_NAME,
-      )
-    )
-  }, [messages, inProgressToolUseIDs])
-
   // Stop hook spinner suffix
   const stopHookSpinnerSuffix = useMemo(() => {
     const progressMsgs = messages.filter(
@@ -248,7 +232,6 @@ export function useReplStreaming({
     hasInterruptibleToolInProgressRef,
     tipPickedThisTurnRef,
     resetStreamingState,
-    onlySleepToolActive,
     stopHookSpinnerSuffix,
   }
 }

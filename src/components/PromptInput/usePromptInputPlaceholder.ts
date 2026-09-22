@@ -3,7 +3,6 @@ import { useCommandQueue } from 'src/hooks/useCommandQueue.js'
 import { useAppState } from 'src/state/AppState.js'
 import { getExampleCommandFromCache } from 'src/utils/exampleCommands.js'
 import { isQueuedCommandEditable } from 'src/utils/messageQueueManager.js'
-import { isProactiveActive } from '../../proactive/index.js'
 
 type Props = {
   input: string
@@ -41,9 +40,7 @@ export function usePromptInputPlaceholder({
     }
 
     // Show example command if user has not submitted yet and suggestions are enabled.
-    // Skip in proactive mode — the model drives the conversation so onboarding
-    // examples are irrelevant and block prompt suggestions from showing.
-    if (submitCount < 1 && promptSuggestionEnabled && !isProactiveActive()) {
+    if (submitCount < 1 && promptSuggestionEnabled) {
       return getExampleCommandFromCache()
     }
   }, [

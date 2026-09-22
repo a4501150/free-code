@@ -1,4 +1,3 @@
-import { isProactiveActive } from '../../proactive/index.js'
 import type { PartialCompactDirection } from '../../types/message.js'
 
 // Aggressive no-tools preamble. The cache-sharing fork path inherits the
@@ -349,12 +348,6 @@ ${formattedSummary}`
   if (suppressFollowUpQuestions) {
     let continuation = `${baseSummary}
 Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.`
-
-    if (isProactiveActive()) {
-      continuation += `
-
-You are running in autonomous/proactive mode. This is NOT a first wake-up — you already worked autonomously before compaction. Continue your work loop: pick up where you left off based on the summary above. Do not greet the user or ask what to work on.`
-    }
 
     return continuation
   }

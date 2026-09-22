@@ -308,7 +308,7 @@ export async function handlePromptSubmit(
     }
 
     // Interrupt the current turn when all executing tools have
-    // interruptBehavior 'cancel' (e.g. SleepTool).
+    // interruptBehavior 'cancel'.
     if (params.hasInterruptibleToolInProgress) {
       logForDebugging(
         `[interrupt] Aborting current turn: streamMode=${params.streamMode}`,

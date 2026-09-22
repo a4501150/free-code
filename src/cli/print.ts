@@ -134,7 +134,7 @@ import {
   processSetupHooks,
   takeInitialUserMessage,
 } from 'src/utils/sessionStart.js'
-import { TEAMMATE_MESSAGE_TAG, TICK_TAG } from 'src/constants/xml.js'
+import { TEAMMATE_MESSAGE_TAG } from 'src/constants/xml.js'
 import {
   getInitialSettings,
   getSettings_DEPRECATED,
@@ -287,7 +287,6 @@ import {
   logQueryProfileReport,
 } from 'src/utils/queryProfiler.js'
 import { asSessionId } from 'src/types/ids.js'
-import { isAssistantProactiveRequested } from '../assistant/index.js'
 import { jsonStringify } from '../utils/slowOperations.js'
 import { skillChangeDetector } from '../utils/skills/skillChangeDetector.js'
 import { getCommands, clearCommandsCache } from '../commands.js'
@@ -321,12 +320,6 @@ import {
   isCoordinatorMode,
   matchSessionMode,
 } from '../coordinator/coordinatorMode.js'
-import {
-  activateProactive,
-  deactivateProactive,
-  isProactiveActive,
-  isProactivePaused,
-} from '../proactive/index.js'
 import {
   publishHeadlessTranscript,
   shouldAttachHeadless,
@@ -486,14 +479,6 @@ export async function runHeadless(
       })
     }
   })
-
-  // Proactive activation is now handled in main.tsx before getTools() so
-  // SleepTool passes isEnabled() filtering. This fallback covers the case
-  // where the assistant.proactive setting is on but main.tsx's check didn't fire
-  // (e.g. settings were loaded after argv parsing).
-  if (!isProactiveActive() && isAssistantProactiveRequested()) {
-    activateProactive('command')
-  }
 
   // Periodically force a full GC to keep memory usage in check
   if (typeof Bun !== 'undefined') {
@@ -1729,26 +1714,6 @@ function runHeadlessStreaming(
     })
   })
 
-  // Proactive mode: schedule a tick to keep the model looping autonomously.
-  // setTimeout(0) yields to the event loop so pending stdin messages
-  // (interrupts, user messages) are processed before the tick fires.
-  const scheduleProactiveTick = () => {
-    setTimeout(() => {
-      if (!isProactiveActive() || isProactivePaused() || inputClosed) {
-        return
-      }
-      const tickContent = `<${TICK_TAG}>${new Date().toLocaleTimeString()}</${TICK_TAG}>`
-      enqueue({
-        mode: 'prompt' as const,
-        value: tickContent,
-        uuid: randomUUID(),
-        priority: 'later',
-        isMeta: true,
-      })
-      void run()
-    }, 0)
-  }
-
   // Abort the current operation when a 'now' priority message arrives.
   subscribeToCommandQueue(() => {
     if (abortController && getCommandsByMaxPriority('now').length > 0) {
@@ -2318,14 +2283,6 @@ function runHeadlessStreaming(
       publishHeadlessTranscript()
       // Start idle timer when we finish processing and are waiting for input
       idleTimeout.start()
-    }
-
-    // Proactive tick: if proactive is active and queue is empty, inject a tick
-    if (isProactiveActive() && !isProactivePaused()) {
-      if (peek(isMainThread) === undefined && !inputClosed) {
-        scheduleProactiveTick()
-        return
-      }
     }
 
     // Re-check the queue after releasing the mutex. A message may have
@@ -3520,22 +3477,6 @@ function runHeadlessStreaming(
               sendControlResponseError(message, errorMessage(e))
             }
           })()
-        } else if (
-          (message.request as { subtype: string }).subtype === 'set_proactive'
-        ) {
-          const req = message.request as unknown as {
-            subtype: string
-            enabled: boolean
-          }
-          if (req.enabled) {
-            if (!isProactiveActive()) {
-              activateProactive('command')
-              scheduleProactiveTick()
-            }
-          } else {
-            deactivateProactive()
-          }
-          sendControlResponseSuccess(message)
         } else {
           // Unknown control request subtype — send an error response so
           // the caller doesn't hang waiting for a reply that never comes.

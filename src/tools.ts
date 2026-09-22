@@ -12,7 +12,6 @@ import { GlobTool } from './tools/GlobTool/GlobTool.js'
 import { TaskStopTool } from './tools/TaskStopTool/TaskStopTool.js'
 import { BackgroundTaskListTool } from './tools/BackgroundTaskListTool/BackgroundTaskListTool.js'
 import { BriefTool } from './tools/BriefTool/BriefTool.js'
-import { SleepTool } from './tools/SleepTool/SleepTool.js'
 import { CronCreateTool } from './tools/ScheduleCronTool/CronCreateTool.js'
 import { CronDeleteTool } from './tools/ScheduleCronTool/CronDeleteTool.js'
 import { CronListTool } from './tools/ScheduleCronTool/CronListTool.js'
@@ -141,7 +140,6 @@ export function getAllBaseTools(): Tools {
     ...(isAgentSwarmsEnabled() ? [TeamCreateTool, TeamDeleteTool] : []),
     ...(VerifyPlanExecutionTool ? [VerifyPlanExecutionTool] : []),
     ...(isReplModeEnabled() && REPLTool ? [REPLTool] : []),
-    SleepTool,
     ...cronTools,
     BriefTool,
     SendUserFileTool,

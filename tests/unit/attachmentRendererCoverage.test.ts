@@ -75,6 +75,13 @@ const VISIBLE_FIXTURES: Array<[Attachment, string]> = [
   ],
   [
     {
+      type: 'assistant_mode',
+      text: '# Assistant Mode\n\nYou are running in assistant mode.',
+    },
+    'Assistant Mode',
+  ],
+  [
+    {
       type: 'edited_text_file',
       filename: '/p/a.ts',
       snippet: 'x',
@@ -123,7 +130,6 @@ const VISIBLE_NOT_FIXTURE_TESTED = [
   'selected_lines_in_ide',
   'stale_task_list',
   'task_status',
-  'terminal_focus',
   'text',
   'token_usage',
   'ultrathink_effort',

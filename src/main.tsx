@@ -1250,28 +1250,28 @@ async function run(): Promise<CommanderCommand> {
 
       // Log event for any single-word prompt
 
-      // Assistant mode: when .freecode/freecode.json has assistant: true AND
-      // the assistant gate is on, force brief on. Permission
-      // mode is left to the user — settings defaultMode or --permission-mode
-      // apply as normal. REPL-typed messages already default to 'next'
-      // priority (messageQueueManager.enqueue) so they drain mid-turn between
-      // tool calls. SendUserMessage (BriefTool) is enabled via the brief env
-      // var. SleepTool stays disabled (its isEnabled() gates on proactive).
-      // assistantEnabled is computed once here and reused at the
-      // getAssistantSystemPromptAddendum() call site further down.
+      // Assistant mode: when the activation gate is on, force brief on.
+      // Permission mode is left to the user — settings defaultMode or
+      // --permission-mode apply as normal. REPL-typed messages already
+      // default to 'next' priority (messageQueueManager.enqueue) so they
+      // drain mid-turn between tool calls. SendUserMessage (BriefTool) is
+      // enabled via the brief env var. assistantEnabled is computed once
+      // here and reused by the AppState snapshot further down; the guidance
+      // itself rides the `assistant_mode` attachment.
       //
       // Trust gate: .freecode/freecode.json is attacker-controllable in an
       // untrusted clone. We run ~1000 lines before showSetupScreens() shows
-      // the trust dialog, and by then we've already appended
-      // .freecode/agents/assistant.md to the system prompt. Refuse to activate
-      // until the directory has been explicitly trusted.
+      // the trust dialog, and by then the assistant persona would already
+      // ride the transcript. Refuse to activate until the directory has
+      // been explicitly trusted.
       let assistantEnabled = false
       let assistantTeamContext:
         | Awaited<ReturnType<typeof assistantModule.initializeAssistantTeam>>
         | undefined
       if ((options as { assistant?: boolean }).assistant) {
-        // --assistant daemon mode: force the latch before isAssistantMode()
-        // runs below. The daemon has already checked entitlement.
+        // --assistant (gateway-hosted child): force the latch before
+        // isAssistantMode() runs below. The gateway has already checked
+        // entitlement.
         assistantModule.markAssistantForced()
       }
       if (
@@ -1280,7 +1280,7 @@ async function run(): Promise<CommanderCommand> {
         // isAssistantMode() is true for them too. --agent-id being set
         // means we ARE a spawned teammate (extractTeammateOptions runs
         // ~170 lines later so check the raw commander option) — don't
-        // re-init the team or override teammateMode/proactive/brief.
+        // re-init the team or override teammateMode/brief.
         !(options as { agentId?: unknown }).agentId
       ) {
         if (!checkHasTrustDialogAccepted()) {
@@ -1959,11 +1959,6 @@ async function run(): Promise<CommanderCommand> {
       )
       profileCheckpoint('action_after_input_prompt')
 
-      // Activate proactive mode BEFORE getTools() so SleepTool.isEnabled()
-      // (which returns isProactiveActive()) passes and Sleep is included.
-      // The later REPL-path maybeActivateProactive() calls are idempotent.
-      maybeActivateProactive(options)
-
       let tools = getTools(toolPermissionContext)
 
       // Apply coordinator mode tool filtering for headless path
@@ -2263,9 +2258,9 @@ async function run(): Promise<CommanderCommand> {
       // the assistant installer writes defaultView:'chat' to freecode.local.json
       // which would otherwise leak into --print sessions in the same directory.
       // Runs right after maybeActivateBrief() so all startup opt-in paths fire
-      // BEFORE any isBriefEnabled() read below (proactive prompt's
-      // briefVisibility). A persisted 'chat' falls through when entitlement
-      // fails.
+      // BEFORE any isBriefEnabled() read (the assistant_mode attachment
+      // composes the brief section from it). A persisted 'chat' falls through
+      // when entitlement fails.
       if (
         !getIsNonInteractiveSession() &&
         !getUserMsgOptIn() &&
@@ -2279,34 +2274,9 @@ async function run(): Promise<CommanderCommand> {
           setUserMsgOptIn(true)
         }
       }
-      // Coordinator mode has its own system prompt and filters out Sleep, so
-      // the generic proactive prompt would tell it to call a tool it can't
-      // access and conflict with delegation instructions.
-      if (
-        ((options as { proactive?: boolean }).proactive ||
-          assistantModule.isAssistantProactiveRequested()) &&
-        !coordinatorModeModule.isCoordinatorMode()
-      ) {
-        /* eslint-disable @typescript-eslint/no-require-imports */
-        const briefVisibility = (
-          require('./tools/BriefTool/BriefTool.js') as typeof import('./tools/BriefTool/BriefTool.js')
-        ).isBriefEnabled()
-          ? 'Call SendUserMessage at checkpoints to mark where things stand.'
-          : 'The user will see any text you output.'
-        /* eslint-enable @typescript-eslint/no-require-imports */
-        const proactivePrompt = `\n# Proactive Mode\n\nYou are in proactive mode. On your first wake-up, briefly greet the user and ask what they would like to work on; do not begin work until they provide direction. Once a task exists, take initiative — explore, act, and make progress without waiting for further instructions.\n\nYou will receive periodic <tick> prompts. These are check-ins. Do whatever seems most useful for the active task, or call Sleep if there's nothing to do. ${briefVisibility}`
-        appendSystemPrompt = appendSystemPrompt
-          ? `${appendSystemPrompt}\n\n${proactivePrompt}`
-          : proactivePrompt
-      }
-
-      if (assistantEnabled) {
-        const assistantAddendum =
-          assistantModule.getAssistantSystemPromptAddendum()
-        appendSystemPrompt = appendSystemPrompt
-          ? `${appendSystemPrompt}\n\n${assistantAddendum}`
-          : assistantAddendum
-      }
+      // Assistant/brief guidance is no longer appended here: it rides the
+      // `assistant_mode` attachment (src/utils/attachments.ts), keeping the
+      // cached system block mode-identical.
 
       // Ink root is only needed for interactive sessions — patchConsole in the
       // Ink constructor would swallow console output in headless mode.
@@ -3204,7 +3174,6 @@ async function run(): Promise<CommanderCommand> {
             mainThreadAgentDefinition = loaded.restoredAgentDef
           }
 
-          maybeActivateProactive(options)
           maybeActivateBrief(options)
 
           resumeSucceeded = true
@@ -3342,7 +3311,6 @@ async function run(): Promise<CommanderCommand> {
 
         // If we have a processed resume, render the REPL
         if (processedResume) {
-          maybeActivateProactive(options)
           maybeActivateBrief(options)
 
           await launchRepl(
@@ -3388,7 +3356,6 @@ async function run(): Promise<CommanderCommand> {
           hooksPromise && hookMessages.length === 0 ? hooksPromise : undefined
 
         profileCheckpoint('action_after_hooks')
-        maybeActivateProactive(options)
         maybeActivateBrief(options)
         // Persist the current mode for fresh sessions so future resumes know what mode was used
         saveMode(
@@ -3449,10 +3416,6 @@ async function run(): Promise<CommanderCommand> {
 
   program.addOption(
     new Option('--enable-auto-mode', 'Opt in to auto mode').hideHelp(),
-  )
-
-  program.addOption(
-    new Option('--proactive', 'Start in proactive autonomous mode'),
   )
 
   program.addOption(
@@ -4238,19 +4201,6 @@ async function logTenguInit({
   try {
   } catch (error) {
     logError(error)
-  }
-}
-
-function maybeActivateProactive(options: unknown): void {
-  if (
-    (options as { proactive?: boolean }).proactive ||
-    assistantModule.isAssistantProactiveRequested()
-  ) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const proactiveModule = require('./proactive/index.js')
-    if (!proactiveModule.isProactiveActive()) {
-      proactiveModule.activateProactive('command')
-    }
   }
 }
 
