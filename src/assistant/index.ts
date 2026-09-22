@@ -1,12 +1,13 @@
 /**
  * Assistant mode lifecycle.
  *
- * Manages the "always-on assistant" mode where Claude Code operates as a
- * persistent assistant with team context, proactive behavior, and daily logs.
- *
- * Activation: .freecode/agents/assistant.md or .claude/agents/assistant.md
- * must exist in the project root, the assistant.enabled setting must be on,
- * or --assistant CLI flag must be passed (daemon mode).
+ * The "always-on assistant" is one long-lived headless session hosted by the
+ * webui gateway (one per machine). It is spawned with --assistant, which
+ * forces the mode via markAssistantForced(); nothing else activates it. The
+ * assistant.enabled setting is now only the gateway bootstrap's opt-out, and
+ * the workspace's agents/assistant.md is persona/team content, not an
+ * activation gate. The TUI joins the session (--assistant attaches the
+ * viewer) and cannot initialize it.
  */
 
 import { existsSync, readFileSync } from 'fs'
@@ -33,25 +34,13 @@ function getAssistantMdPath(): string {
 }
 
 /**
- * Check if assistant mode should be activated.
- * True if .freecode/agents/assistant.md or .claude/agents/assistant.md exists,
- * the assistant.enabled setting is on, OR --assistant was passed.
+ * Whether this process runs as the assistant. Only the gateway-spawned
+ * child (--assistant → markAssistantForced) activates the mode; a project
+ * file or a settings key alone no longer turns an ordinary session into an
+ * assistant.
  */
 export function isAssistantMode(): boolean {
-  if (forced) return true
-  if (getInitialSettings().assistant?.enabled === true) return true
-  try {
-    return existsSync(getAssistantMdPath())
-  } catch {
-    return false
-  }
-}
-
-/**
- * Whether the assistant settings (or --proactive) request proactive mode.
- */
-export function isAssistantProactiveRequested(): boolean {
-  return getInitialSettings().assistant?.proactive === true
+  return forced
 }
 
 /**

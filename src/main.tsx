@@ -1250,14 +1250,15 @@ async function run(): Promise<CommanderCommand> {
 
       // Log event for any single-word prompt
 
-      // Assistant mode: when the activation gate is on, force brief on.
-      // Permission mode is left to the user — settings defaultMode or
-      // --permission-mode apply as normal. REPL-typed messages already
-      // default to 'next' priority (messageQueueManager.enqueue) so they
-      // drain mid-turn between tool calls. SendUserMessage (BriefTool) is
-      // enabled via the brief env var. assistantEnabled is computed once
-      // here and reused by the AppState snapshot further down; the guidance
-      // itself rides the `assistant_mode` attachment.
+      // Assistant mode exists only in the headless gateway child — one
+      // assistant per machine, and the TUI can only join it (see the
+      // assistantJoin branch after the setup screens). When the activation
+      // gate is on, force brief on. Permission mode is left to the user —
+      // settings defaultMode or --permission-mode apply as normal.
+      // SendUserMessage (BriefTool) is enabled via the brief env var.
+      // assistantEnabled is computed once here and reused by the AppState
+      // snapshot further down; the guidance itself rides the
+      // `assistant_mode` attachment.
       //
       // Trust gate: .freecode/freecode.json is attacker-controllable in an
       // untrusted clone. We run ~1000 lines before showSetupScreens() shows
@@ -1268,13 +1269,18 @@ async function run(): Promise<CommanderCommand> {
       let assistantTeamContext:
         | Awaited<ReturnType<typeof assistantModule.initializeAssistantTeam>>
         | undefined
-      if ((options as { assistant?: boolean }).assistant) {
+      if (
+        (options as { assistant?: boolean }).assistant &&
+        getIsNonInteractiveSession()
+      ) {
         // --assistant (gateway-hosted child): force the latch before
         // isAssistantMode() runs below. The gateway has already checked
-        // entitlement.
+        // entitlement. An interactive --assistant is a join request, not an
+        // activation.
         assistantModule.markAssistantForced()
       }
       if (
+        getIsNonInteractiveSession() &&
         assistantModule.isAssistantMode() &&
         // Spawned teammates share the leader's cwd + freecode.json, so
         // isAssistantMode() is true for them too. --agent-id being set
@@ -2308,6 +2314,31 @@ async function run(): Promise<CommanderCommand> {
         logForDebugging(
           `[STARTUP] showSetupScreens() completed in ${Date.now() - setupScreensStart}ms`,
         )
+
+        // --assistant in the TUI: join the machine's assistant session. The
+        // assistant lives in the webui gateway; if no gateway is running this
+        // runs `web start` first (first-run password setup included).
+        if ((options as { assistant?: boolean }).assistant) {
+          const { ensureAssistantSession } =
+            await import('./webui/assistantJoin.js')
+          const joined = await ensureAssistantSession()
+          if (joined === null) {
+            // biome-ignore lint/suspicious/noConsole:: intentional console output
+            console.warn(
+              chalk.yellow(
+                'Could not reach the assistant session (assistant.enabled: false, or the gateway did not become ready).',
+              ),
+            )
+            return
+          }
+          await renderAndRun(
+            root,
+            <App getFpsMetrics={getFpsMetrics} stats={stats}>
+              <AttachedSession pid={joined.pid} />
+            </App>,
+          )
+          return
+        }
 
         // Check for pending agent memory snapshot updates (only for --agent mode, ant-only)
         if (

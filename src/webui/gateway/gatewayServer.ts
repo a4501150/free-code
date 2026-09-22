@@ -1,4 +1,5 @@
 import type { ServerWebSocket } from 'bun'
+import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import { validateUuid } from '../../utils/uuid.js'
 import {
@@ -33,7 +34,10 @@ import {
 import {
   createChildSessions,
   type ChildSessionDefaults,
+  type ChildSession,
 } from './childSessions.js'
+import { readAttachDescriptor } from '../attach/attachDescriptor.js'
+import { connectAttachClient } from './attachClient.js'
 import { listDirectories, PathError, PATH_ERROR_STATUS } from './directories.js'
 import { startGracefulRestart, type RestartReadyFrame } from './restart.js'
 import {
@@ -42,11 +46,22 @@ import {
   type SessionHub,
 } from './sessionHub.js'
 
+export type GatewayAssistantStatus = {
+  sessionId: string
+  pid: number
+  /** False while the child is still bootstrapping or after it died. */
+  live: boolean
+}
+
 export type GatewayServer = {
   readonly url: string
   readonly port: number
   /** Set when a tunnel is running, so Origin and Host checks accept it. */
   setPublicUrl(url: string | null): void
+  /** The machine's one assistant child; null when opted out or not yet up. */
+  assistantStatus(): GatewayAssistantStatus | null
+  /** Inject an external event into the assistant as a prompt turn. */
+  assistantNotify(text: string): Promise<{ ok: boolean; error?: string }>
   stop(): Promise<void>
 }
 
@@ -56,6 +71,12 @@ export type StartGatewayOptions = {
   sessionDefaults?: ChildSessionDefaults
   /** Release the daemon control socket so a new supervisor can bind it. */
   onUnbindControl?: () => void
+  /**
+   * Skip the assistant bootstrap regardless of the setting. Used by
+   * `--webui-smoke`, which must not touch the user's assistant state; the
+   * bootstrap itself is covered by tests/e2e/webui-gateway.test.ts.
+   */
+  skipAssistant?: boolean
 }
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -168,16 +189,18 @@ export function startGatewayServer(
 ): GatewayServer {
   const hub: SessionHub = createSessionHub()
   const children = createChildSessions(options.sessionDefaults)
-  // The assistant main chat, when `assistant.enabled` is set. Bootstrapping is
+  // The assistant main chat (the machine's one assistant). Bootstrapping is
   // fire-and-forget: a slow or failed assistant spawn must not delay the
   // loopback server the tunnel health-checks.
-  let assistantSessionId: string | null = null
-  void bootstrapAssistantSession(children).then(
-    session => {
-      if (session) assistantSessionId = session.sessionId
-    },
-    () => {},
-  )
+  let assistantChild: ChildSession | null = null
+  if (!options.skipAssistant) {
+    void bootstrapAssistantSession(children).then(
+      session => {
+        assistantChild = session
+      },
+      () => {},
+    )
+  }
   const throttle = createLoginThrottle({
     perAddress: 5,
     global: 60,
@@ -419,9 +442,9 @@ export function startGatewayServer(
         if (!session) return json({ error: 'unauthorized' }, 401)
         const entries = await hub.list({ owns: children.owns })
         return json({
-          sessions: assistantSessionId
+          sessions: assistantChild
             ? entries.map(entry =>
-                entry.sessionId === assistantSessionId
+                entry.sessionId === assistantChild?.sessionId
                   ? { ...entry, role: 'assistant' as const }
                   : entry,
               )
@@ -602,11 +625,52 @@ export function startGatewayServer(
     setPublicUrl(next) {
       publicUrl = next
     },
+    assistantStatus() {
+      if (!assistantChild) return null
+      const descriptor = readAttachDescriptor(assistantChild.pid)
+      const live =
+        descriptor.ok &&
+        descriptor.descriptor.sessionId === assistantChild.sessionId
+      return {
+        sessionId: assistantChild.sessionId,
+        pid: assistantChild.pid,
+        live,
+      }
+    },
+    async assistantNotify(text) {
+      if (!assistantChild) {
+        return { ok: false, error: 'no assistant session on this gateway' }
+      }
+      let client: Awaited<ReturnType<typeof connectAttachClient>> | null = null
+      try {
+        client = await connectAttachClient(assistantChild.pid, {
+          onEvent: () => {},
+          onClose: () => {},
+        })
+        const response = await client.request({
+          kind: 'submit',
+          commandId: `notify-${randomUUID()}`,
+          content: text,
+          delivery: 'next',
+          sessionEpoch: client.meta.sessionEpoch,
+        })
+        return response.ok
+          ? { ok: true }
+          : { ok: false, error: response.error?.message ?? 'submit failed' }
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        }
+      } finally {
+        client?.close()
+      }
+    },
     async stop() {
       hub.stop()
       // The assistant chat survives the restart: record where it was before
       // the child dies, so the next boot resumes the same conversation.
-      if (assistantSessionId) await writeAssistantResumeId(assistantSessionId)
+      if (assistantChild) await writeAssistantResumeId(assistantChild.sessionId)
       // Gateway-owned sessions belong to the gateway. Terminal-owned ones are
       // the user's and are deliberately left running.
       children.stopAll()

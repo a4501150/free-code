@@ -207,6 +207,13 @@ export class TmuxSession {
       }
     }
 
+    // The assistant is default-on for the gateway; e2e homes opt out unless
+    // a test enables it explicitly — an unrequested assistant child adds a
+    // session row and writes its resume pointer into the temp config home.
+    if (effectiveSettings.assistant === undefined) {
+      effectiveSettings.assistant = { enabled: false }
+    }
+
     // Split model keys into modelSettings.json, keep the rest in freecode.json.
     const modelSettings: Record<string, unknown> = {}
     const generalSettings: Record<string, unknown> = {}

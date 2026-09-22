@@ -208,6 +208,15 @@ function reportStatus(status: WebStatus): void {
     return
   }
   print(`Web server is running at ${status.url}`)
+  if ('assistant' in status) {
+    if (status.assistant?.live) {
+      print(`Assistant session: live (pid ${status.assistant.pid})`)
+    } else if (status.assistant) {
+      print('Assistant session: starting...')
+    } else {
+      print('Assistant session: none (assistant.enabled: false)')
+    }
+  }
   if (status.publicUrl) {
     print(`Public URL:  ${status.publicUrl}`)
   } else if (status.tunnelError) {

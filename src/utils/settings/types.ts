@@ -1626,25 +1626,6 @@ const _settingsSchemaValue = z
         'Custom directory for plan files, relative to project root. ' +
           `If not set, defaults to ${globalConfigDir()}/plans/`,
       ),
-    minSleepDurationMs: z
-      .number()
-      .nonnegative()
-      .int()
-      .optional()
-      .describe(
-        'Minimum duration in milliseconds that the Sleep tool must sleep for. ' +
-          'Useful for throttling proactive tick frequency.',
-      ),
-    maxSleepDurationMs: z
-      .number()
-      .int()
-      .min(-1)
-      .optional()
-      .describe(
-        'Maximum duration in milliseconds that the Sleep tool can sleep for. ' +
-          'Set to -1 for indefinite sleep (waits for user input). ' +
-          'Useful for limiting idle time in remote/managed environments.',
-      ),
     voiceEnabled: z
       .boolean()
       .optional()
@@ -1667,18 +1648,12 @@ const _settingsSchemaValue = z
           .boolean()
           .optional()
           .describe(
-            'Start the assistant persona in every interactive session (the /init-able assistant.md file and --assistant remain independent opt-ins).',
+            'The webui gateway keeps one long-lived assistant session running (it also serves it as the main chat in the browser). Defaults to on; set to false to opt out. --assistant in the TUI joins that session; it cannot initialize one.',
           ),
         name: z
           .string()
           .optional()
           .describe('Display name for the assistant persona.'),
-        proactive: z
-          .boolean()
-          .optional()
-          .describe(
-            'Proactive mode: the assistant begins work on its own between turns, driven by the Sleep tool. Equivalent to --proactive.',
-          ),
       })
       .optional()
       .describe('Assistant persona settings.'),

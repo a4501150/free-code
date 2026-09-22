@@ -5,14 +5,19 @@ import { getInitialSettings } from '../../utils/settings/settings.js'
 import type { ChildSession, ChildSessions } from './childSessions.js'
 
 /**
- * The gateway-hosted assistant session.
+ * The gateway-hosted assistant session — the machine's one assistant.
  *
- * When the user enables `assistant.enabled`, the gateway keeps one long-lived
- * assistant session alive across gateway restarts, and the browser presents it
- * as the main chat (`role: 'assistant'` on its session-list row). It is an
+ * The gateway always keeps one long-lived assistant session alive across
+ * restarts (opt out with `assistant.enabled: false`), and the browser presents
+ * it as the main chat (`role: 'assistant'` on its session-list row). It is an
  * ordinary gateway child — headless, attachable, permission-gated — spawned
- * with `--assistant` so it carries the assistant persona, and `--proactive`
- * when `assistant.proactive` is set.
+ * with `--assistant` so it carries the assistant persona. It is event-driven:
+ * browser/terminal submits, scheduled cron tasks, and `assistant.notify`
+ * control requests wake it; there is no polling loop.
+ *
+ * One gateway exists per machine (the daemon pidfile enforces it) and this
+ * module keeps exactly one child, which is what makes the assistant
+ * one-per-machine. The TUI joins this session; it cannot initialize one.
  */
 
 /** The assistant's own workspace, so it is not tied to any one project. */
@@ -54,8 +59,9 @@ export async function writeAssistantResumeId(sessionId: string): Promise<void> {
 }
 
 /**
- * Starts the assistant session unless the setting is off. Never throws: a
- * gateway without an assistant still serves every other session.
+ * Starts the assistant session unless the user opted out
+ * (`assistant.enabled: false`). Never throws: a gateway without an assistant
+ * still serves every other session.
  *
  * The recorded ID can drift (the assistant `/resume`s or `/clear`s itself); a
  * stale ID fails the resume gate, and the fallback starts a fresh chat that
@@ -65,14 +71,11 @@ export async function bootstrapAssistantSession(
   children: ChildSessions,
 ): Promise<ChildSession | null> {
   const assistant = getInitialSettings().assistant
-  if (assistant?.enabled !== true) return null
+  if (assistant?.enabled === false) return null
 
   const workspace = assistantWorkspaceDir()
   await mkdir(workspace, { recursive: true, mode: 0o700 })
-  const extraArgs = [
-    '--assistant',
-    ...(assistant.proactive === true ? ['--proactive'] : []),
-  ]
+  const extraArgs = ['--assistant']
 
   const resumeSessionId = await readResumeId()
   if (resumeSessionId) {

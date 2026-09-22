@@ -28,7 +28,9 @@ export async function runWebuiSmoke(): Promise<number> {
     `${WEBUI_JS.length} B js, ${WEBUI_CSS.length} B css`,
   )
 
-  const server = startGatewayServer()
+  // skipAssistant: the smoke must never spawn (or resume-over) the user's
+  // real assistant session; the e2e gateway suite covers the bootstrap.
+  const server = startGatewayServer({ skipAssistant: true })
   try {
     // 2. HTML shell.
     const html = await fetch(`${server.url}/`)

@@ -5,7 +5,11 @@ import { createCommandTunnelProvider } from '../tunnel/commandTunnelProvider.js'
 import { createLocalTunnelProvider } from '../tunnel/localTunnelProvider.js'
 import { readTunnelSettings } from '../tunnel/tunnelConfig.js'
 import type { TunnelHandle, TunnelProvider } from '../tunnel/types.js'
-import { startGatewayServer, type GatewayServer } from './gatewayServer.js'
+import {
+  startGatewayServer,
+  type GatewayAssistantStatus,
+  type GatewayServer,
+} from './gatewayServer.js'
 // webState imports WebStartOptionsSchema from this module, so importing it
 // here at module scope would leave that schema undefined at evaluation time.
 
@@ -42,6 +46,12 @@ export type WebStatus = {
   tunnel?: string
   tunnelError?: string
   startedAt?: number
+  /**
+   * The machine's one assistant session. Present (possibly null = still
+   * bootstrapping) while the gateway runs; `web.status` pollers use it to
+   * wait for `live` before joining.
+   */
+  assistant?: GatewayAssistantStatus | null
 }
 
 function providerFor(options: WebStartOptions): TunnelProvider | null {
@@ -155,7 +165,16 @@ export function createWebService() {
       controlUnbind = fn
     },
     get status(): WebStatus {
-      return status
+      if (!server) return { ...status, assistant: null }
+      return { ...status, assistant: server.assistantStatus() }
+    },
+    assistantStatus(): GatewayAssistantStatus | null {
+      return server?.assistantStatus() ?? null
+    },
+    assistantNotify(text: string): Promise<{ ok: boolean; error?: string }> {
+      if (!server)
+        return Promise.resolve({ ok: false, error: 'web is stopped' })
+      return server.assistantNotify(text)
     },
   }
 }

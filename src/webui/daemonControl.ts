@@ -21,6 +21,13 @@ export const DaemonControlRequestSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('web.start'), options: WebStartOptionsSchema }),
   z.object({ kind: z.literal('web.stop') }),
   z.object({ kind: z.literal('web.status') }),
+  // Injects an external event into the machine's assistant session as a
+  // prompt turn. Replies arrive through the assistant's own channels; the
+  // response here only confirms delivery.
+  z.object({
+    kind: z.literal('assistant.notify'),
+    text: z.string().min(1).max(100_000),
+  }),
 ])
 
 export type DaemonControlRequest = z.infer<typeof DaemonControlRequestSchema>
@@ -33,6 +40,7 @@ export type DaemonControlHandlers = {
   start(options: z.infer<typeof WebStartOptionsSchema>): Promise<WebStatus>
   stop(): Promise<void>
   status(): WebStatus
+  notifyAssistant?(text: string): Promise<{ ok: boolean; error?: string }>
 }
 
 /**
@@ -83,6 +91,19 @@ export function startDaemonControlServer(handlers: DaemonControlHandlers): {
                   daemonPid: process.pid,
                 }
                 break
+              case 'assistant.notify': {
+                const delivered = handlers.notifyAssistant
+                  ? await handlers.notifyAssistant(parsed.text)
+                  : { ok: false, error: 'this daemon has no assistant' }
+                response = delivered.ok
+                  ? {
+                      ok: true,
+                      status: handlers.status(),
+                      daemonPid: process.pid,
+                    }
+                  : { ok: false, error: delivered.error ?? 'notify failed' }
+                break
+              }
             }
           } catch (err) {
             response = {

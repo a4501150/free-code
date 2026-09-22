@@ -28,6 +28,7 @@ const workers: Record<string, WorkerFn> = {
         start: options => service.start(options),
         stop: () => service.stop(),
         status: () => service.status,
+        notifyAssistant: text => service.assistantNotify(text),
       })
 
       service.setControlUnbind(() => control.unbind())

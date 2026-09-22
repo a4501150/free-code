@@ -1041,23 +1041,12 @@ export function Config({
     },
     {
       id: 'assistantEnabled',
-      label: 'Assistant mode',
-      value: settingsData?.assistant?.enabled ?? false,
+      label: 'Assistant session (webui)',
+      value: settingsData?.assistant?.enabled ?? true,
       type: 'boolean' as const,
       onChange(enabled: boolean) {
         updateUserSettings({
           assistant: { ...settingsData?.assistant, enabled },
-        })
-      },
-    },
-    {
-      id: 'assistantProactive',
-      label: 'Proactive mode',
-      value: settingsData?.assistant?.proactive ?? false,
-      type: 'boolean' as const,
-      onChange(proactive: boolean) {
-        updateUserSettings({
-          assistant: { ...settingsData?.assistant, proactive },
         })
       },
     },
