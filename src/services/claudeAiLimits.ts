@@ -1,21 +1,7 @@
 import isEqual from 'lodash-es/isEqual.js'
-import { getIsNonInteractiveSession } from '../bootstrap/state.js'
 import { isClaudeAISubscriber } from '../utils/auth.js'
-import { getModelBetas } from '../utils/betas.js'
 import { logError } from '../utils/log.js'
-import {
-  getSmallFastModel,
-  normalizeModelStringForAPI,
-} from '../utils/model/model.js'
-import { isEssentialTrafficOnly } from '../utils/privacyLevel.js'
-
-import { getAPIMetadata } from './api/claude.js'
-import {
-  getAdapterForModel,
-  getProviderConfigForModel,
-} from './api/adapters/index.js'
 import { DomainTransportError } from './api/domain-errors.js'
-import type { DomainMessageRequest } from './api/domain-transport.js'
 import {
   processRateLimitHeaders,
   shouldProcessRateLimits,
@@ -191,57 +177,6 @@ export function emitStatusChange(limits: ClaudeAILimits) {
   const hoursTillReset = Math.round(
     (limits.resetsAt ? limits.resetsAt - Date.now() / 1000 : 0) / (60 * 60),
   )
-}
-
-async function makeTestQuery(): Promise<Headers> {
-  const model = getSmallFastModel()
-  const adapter = getAdapterForModel(model)
-  const providerConfig = getProviderConfigForModel(model)
-  const betas = getModelBetas(model)
-  const request: DomainMessageRequest = {
-    model: normalizeModelStringForAPI(model),
-    maxTokens: 1,
-    messages: [{ role: 'user', content: [{ type: 'text', text: 'quota' }] }],
-    metadata: getAPIMetadata(),
-    ...(betas.length > 0 ? { betas } : {}),
-  }
-  const response = await adapter.createMessage(
-    providerConfig,
-    request,
-    AbortSignal.timeout(30_000),
-  )
-  return new Headers(response.responseHeaders)
-}
-
-export async function checkQuotaStatus(): Promise<void> {
-  // Skip network requests if nonessential traffic is disabled
-  if (isEssentialTrafficOnly()) {
-    return
-  }
-
-  // Check if we should process rate limits (real subscriber or mock testing)
-  if (!shouldProcessRateLimits(isClaudeAISubscriber())) {
-    return
-  }
-
-  // In non-interactive mode (-p), the real query follows immediately and
-  // extractQuotaStatusFromHeaders() will update limits from its response
-  // headers (claude.ts), so skip this pre-check API call.
-  if (getIsNonInteractiveSession()) {
-    return
-  }
-
-  try {
-    // Make a minimal request to check quota
-    const headers = await makeTestQuery()
-
-    // Update limits based on the response
-    extractQuotaStatusFromHeaders(headers)
-  } catch (error) {
-    if (error instanceof DomainTransportError) {
-      extractQuotaStatusFromError(error)
-    }
-  }
 }
 
 /**

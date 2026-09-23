@@ -114,7 +114,6 @@ import {
 } from './interactiveHelpers.js'
 import { initBuiltinPlugins } from './plugins/bundled/index.js'
 /* eslint-enable @typescript-eslint/no-require-imports */
-import { checkQuotaStatus } from './services/claudeAiLimits.js'
 import {
   getMcpToolsCommandsAndResources,
   prefetchAllMcpResources,
@@ -2411,18 +2410,15 @@ async function run(): Promise<CommanderCommand> {
         }
       }
 
-      // Check quota status, fast mode, and bootstrap data after trust is
-      // established. These make API calls which could trigger apiKeyHelper
-      // execution.
+      // Check fast mode and bootstrap data after trust is established.
+      // These make API calls which could trigger apiKeyHelper execution.
       // --bare / SIMPLE: skip — these are cache-warms for the REPL's
-      // first-turn responsiveness (quota, fastMode, bootstrap data). Fast
+      // first-turn responsiveness (fastMode, bootstrap data). Fast
       // mode doesn't apply to generic headless sessions anyway (see getFastModeUnavailableReason).
       const skipStartupPrefetches = isBareMode()
 
       if (!skipStartupPrefetches) {
         logForDebugging('Starting background startup prefetches')
-
-        checkQuotaStatus().catch(error => logError(error))
 
         // Fetch bootstrap data from the server and update all cache values.
         void fetchBootstrapData()
