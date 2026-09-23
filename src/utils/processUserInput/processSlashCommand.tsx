@@ -660,8 +660,8 @@ async function getMessagesForSlashCommand(
             // (user-visible but NOT sent to the model), so skipping them
             // doesn't affect model context.
             // Only skip "<Name> dismissed" modal-close notifications —
-            // commands that early-exit before showing a modal (/rename,
-            // /proactive) use display:system for actual output that must
+            // commands that early-exit before showing a modal (/rename)
+            // use display:system for actual output that must
             // reach the transcript.
             const skipTranscript =
               typeof result === 'string' && result.endsWith(' dismissed')

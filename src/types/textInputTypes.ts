@@ -274,7 +274,7 @@ export type EditablePromptInputMode = Exclude<
 >
 
 /**
- * Queue priority levels. Same semantics in both normal and proactive mode.
+ * Queue priority levels.
  *
  *  - `now`   — Interrupt and send immediately. Aborts any in-flight tool
  *              call (equivalent to Esc + send). Consumers (print.ts,
@@ -310,7 +310,7 @@ export type QueuedCommand = {
   /**
    * When true, the resulting UserMessage gets `isMeta: true` — hidden in the
    * transcript UI but visible to the model. Used by system-generated prompts
-   * (proactive ticks, teammate messages, resource updates) that route through
+   * (scheduled tasks, teammate messages, resource updates) that route through
    * the queue instead of calling `onQuery` directly.
    */
   isMeta?: boolean

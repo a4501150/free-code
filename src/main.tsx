@@ -2280,9 +2280,9 @@ async function run(): Promise<CommanderCommand> {
           setUserMsgOptIn(true)
         }
       }
-      // Assistant/brief guidance is no longer appended here: it rides the
-      // `assistant_mode` attachment (src/utils/attachments.ts), keeping the
-      // cached system block mode-identical.
+      // Assistant/brief guidance never enters the system prompt: it rides the
+      // `assistant_mode` attachment (src/utils/attachments.ts), so the cached
+      // block stays byte-identical across modes.
 
       // Ink root is only needed for interactive sessions — patchConsole in the
       // Ink constructor would swallow console output in headless mode.

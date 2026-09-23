@@ -10,7 +10,7 @@
  * viewer) and cannot initialize it.
  */
 
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, statSync } from 'fs'
 import { getProjectRoot } from '../bootstrap/state.js'
 import { logError } from '../utils/log.js'
 import { getExistingOrPreferredProjectConfigPath } from '../utils/projectConfigPaths.js'
@@ -51,15 +51,7 @@ export function getAssistantName(): string | undefined {
 }
 
 /**
- * Whether --assistant flag forced activation (daemon mode).
- */
-export function isAssistantForced(): boolean {
-  return forced
-}
-
-/**
  * Mark assistant mode as forced (called from --assistant CLI flag handler).
- * Bypasses file existence check and entitlement gate.
  */
 export function markAssistantForced(): void {
   forced = true
@@ -107,6 +99,31 @@ export async function initializeAssistantTeam(): Promise<
   }
 }
 
+// The attachment getter rebuilds the block on every tool-loop iteration:
+// key the persona read on the file's stat so steady state costs one stat and
+// no read, and operate directly — the catch is the existence check.
+let personaCache: { path: string; statKey: string; text: string } | null = null
+
+function readAssistantPersona(mdPath: string): string | null {
+  try {
+    const stat = statSync(mdPath)
+    const statKey = `${stat.mtimeMs}:${stat.size}`
+    if (
+      personaCache &&
+      personaCache.path === mdPath &&
+      personaCache.statKey === statKey
+    ) {
+      return personaCache.text
+    }
+    const text = readFileSync(mdPath, 'utf-8')
+    personaCache = { path: mdPath, statKey, text }
+    return text
+  } catch {
+    // Missing or unreadable persona file: identity line only.
+    return null
+  }
+}
+
 /**
  * Build the assistant/brief guidance block carried by the `assistant_mode`
  * attachment (see src/utils/attachments.ts). Sections are composed by gate,
@@ -115,25 +132,17 @@ export async function initializeAssistantTeam(): Promise<
  * rendered here, at creation time — the attachment replays them byte-
  * identically and re-announces wholesale when this text changes.
  */
-export function buildAssistantModeBlock(params: {
-  assistantActive: boolean
-}): string | null {
+export function buildAssistantModeBlock(
+  assistantActive: boolean,
+): string | null {
   const sections: string[] = []
 
-  if (params.assistantActive) {
+  if (assistantActive) {
     const name = getAssistantName()
     const identity = name
       ? `You are running in assistant mode as ${name}.`
       : 'You are running in assistant mode.'
-    let persona = identity
-    try {
-      const mdPath = getAssistantMdPath()
-      if (existsSync(mdPath)) {
-        persona = readFileSync(mdPath, 'utf-8')
-      }
-    } catch {
-      // Unreadable persona file: identity line only.
-    }
+    const persona = readAssistantPersona(getAssistantMdPath()) ?? identity
     sections.push(
       `# Assistant Mode\n\n${persona}\n\n` +
         `## Working autonomously\n\n` +
@@ -157,7 +166,7 @@ export function buildAssistantModeBlock(params: {
     sections.push(BRIEF_PROACTIVE_SECTION)
   }
 
-  if (params.assistantActive && isAutoMemoryEnabled()) {
+  if (assistantActive && isAutoMemoryEnabled()) {
     sections.push(buildAssistantDailyLogBlock())
   }
 

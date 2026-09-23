@@ -47,7 +47,6 @@ export type MessageOrigin =
   | { kind: 'task-notification' }
   | { kind: 'coordinator' }
   | { kind: 'channel'; server: string }
-  | { kind: 'proactive' }
   | { kind: 'scheduled_task'; taskId?: string }
   | { kind: 'plan_verification' }
   | { kind: 'sdk' }

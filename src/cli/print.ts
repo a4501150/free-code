@@ -398,7 +398,7 @@ export function joinPromptValues(values: PromptValue[]): PromptValue {
  * Whether `next` can be batched into the same ask() call as `head`. Only
  * prompt-mode commands batch, and only when the workload tag matches (so the
  * combined turn is attributed correctly) and the isMeta flag matches (so a
- * proactive tick can't merge into a user prompt and lose its hidden-in-
+ * scheduled-task prompt can't merge into a user prompt and lose its hidden-in-
  * transcript marking when the head is spread over the merged command).
  */
 export function canBatchWith(

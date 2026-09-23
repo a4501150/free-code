@@ -12,9 +12,7 @@ export { asSystemPrompt, type SystemPrompt } from './systemPromptType.js'
  * 0. Override system prompt (if set, e.g., via loop mode - REPLACES all other prompts)
  * 1. Coordinator system prompt (if coordinator mode is active)
  * 2. Agent system prompt (if mainThreadAgentDefinition is set)
- *    - In proactive mode: agent prompt is APPENDED to default (agent adds domain
- *      instructions on top of the autonomous agent prompt, like teammates do)
- *    - Otherwise: agent prompt REPLACES default
+ *    - Agent prompt REPLACES default
  * 3. Custom system prompt (if specified via --system-prompt)
  * 4. Default system prompt (the standard Claude Code prompt)
  *

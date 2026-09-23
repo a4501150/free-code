@@ -14,8 +14,9 @@ export type JoinedAssistant = {
 const BOOTSTRAP_TIMEOUT_MS = 30_000
 const POLL_INTERVAL_MS = 500
 
+/** The short probe timeout every other `web.status` call site uses. */
 async function currentWebStatus() {
-  const response = await sendDaemonControl({ kind: 'web.status' })
+  const response = await sendDaemonControl({ kind: 'web.status' }, 2_000)
   return response && response.ok ? response.status : null
 }
 
@@ -23,8 +24,8 @@ async function currentWebStatus() {
  * Ensures the gateway (and with it the assistant) is running, then waits for
  * the assistant child to report a live attach descriptor. Runs the `web
  * start` flow — first-run password setup included — when no gateway answers.
- * Returns null when the assistant never appears (opt-out, or a gateway that
- * cannot host it).
+ * Returns null when the assistant will not appear (`assistant.enabled: false`,
+ * or a gateway that could not host it).
  */
 export async function ensureAssistantSession(): Promise<JoinedAssistant | null> {
   let status = await currentWebStatus()
@@ -42,16 +43,14 @@ export async function ensureAssistantSession(): Promise<JoinedAssistant | null> 
   const deadline = Date.now() + BOOTSTRAP_TIMEOUT_MS
   while (Date.now() < deadline) {
     const assistant = status?.assistant
-    if (assistant?.live) {
-      return { pid: assistant.pid, sessionId: assistant.sessionId }
+    if (assistant) {
+      if (assistant.state === 'gone') return null
+      if (assistant.state === 'live') {
+        return { pid: assistant.pid, sessionId: assistant.sessionId }
+      }
     }
     await Bun.sleep(POLL_INTERVAL_MS)
     status = await currentWebStatus()
   }
-  return status?.assistant?.live
-    ? {
-        pid: status.assistant.pid,
-        sessionId: status.assistant.sessionId,
-      }
-    : null
+  return null
 }

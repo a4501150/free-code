@@ -40,7 +40,8 @@ export type DaemonControlHandlers = {
   start(options: z.infer<typeof WebStartOptionsSchema>): Promise<WebStatus>
   stop(): Promise<void>
   status(): WebStatus
-  notifyAssistant?(text: string): Promise<{ ok: boolean; error?: string }>
+  /** Inject an external event into the assistant session as a prompt turn. */
+  notifyAssistant(text: string): Promise<{ ok: boolean; error?: string }>
 }
 
 /**
@@ -92,9 +93,7 @@ export function startDaemonControlServer(handlers: DaemonControlHandlers): {
                 }
                 break
               case 'assistant.notify': {
-                const delivered = handlers.notifyAssistant
-                  ? await handlers.notifyAssistant(parsed.text)
-                  : { ok: false, error: 'this daemon has no assistant' }
+                const delivered = await handlers.notifyAssistant(parsed.text)
                 response = delivered.ok
                   ? {
                       ok: true,
@@ -140,20 +139,23 @@ export function startDaemonControlServer(handlers: DaemonControlHandlers): {
   }
 }
 
-/** Sends one control request. Returns null when the daemon is not listening. */
+/**
+ * Sends one control request. Returns null when the daemon is not listening.
+ * `socketPath` is overridable for callers driving an isolated config home.
+ */
 export async function sendDaemonControl(
   request: DaemonControlRequest,
   timeoutMs = 60_000,
+  socketPath = getDaemonControlSocketPath(),
 ): Promise<DaemonControlResponse | null> {
-  const path = getDaemonControlSocketPath()
   try {
-    if (!statSync(path).isSocket()) return null
+    if (!statSync(socketPath).isSocket()) return null
   } catch {
     return null
   }
 
   return new Promise(resolve => {
-    const socket = createConnection(path)
+    const socket = createConnection(socketPath)
     let settled = false
     const finish = (value: DaemonControlResponse | null): void => {
       if (settled) return

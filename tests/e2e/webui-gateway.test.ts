@@ -10,6 +10,10 @@ import {
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
+import {
+  type DaemonControlRequest,
+  sendDaemonControl,
+} from '../../src/webui/daemonControl'
 import { textResponse } from '../helpers/fixture-builders'
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
@@ -59,37 +63,17 @@ async function runCli(
   return out + err
 }
 
-/** One NDJSON request over the daemon control socket, no shared imports. */
 async function sendControlRequest(
   configDir: string,
-  request: Record<string, unknown>,
+  request: DaemonControlRequest,
 ): Promise<{ ok: boolean; error?: string }> {
-  const net = await import('node:net')
-  return new Promise((resolve, reject) => {
-    const socket = net.createConnection(
-      join(configDir, 'webui', 'control.sock'),
-    )
-    let buffer = ''
-    const timer = setTimeout(() => {
-      socket.destroy()
-      reject(new Error('control socket timeout'))
-    }, 15_000)
-    socket.once('connect', () => {
-      socket.write(JSON.stringify(request) + '\n')
-    })
-    socket.on('data', chunk => {
-      buffer += chunk.toString()
-      const line = buffer.split('\n')[0]
-      if (!line) return
-      clearTimeout(timer)
-      socket.destroy()
-      resolve(JSON.parse(line))
-    })
-    socket.once('error', err => {
-      clearTimeout(timer)
-      reject(err)
-    })
-  })
+  const response = await sendDaemonControl(
+    request,
+    15_000,
+    join(configDir, 'webui', 'control.sock'),
+  )
+  if (!response) return { ok: false, error: 'the daemon is not listening' }
+  return response.ok ? { ok: true } : { ok: false, error: response.error }
 }
 
 async function waitForExit(pid: number, timeoutMs = 5000): Promise<void> {

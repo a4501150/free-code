@@ -46,20 +46,19 @@ import {
   type SessionHub,
 } from './sessionHub.js'
 
-export type GatewayAssistantStatus = {
-  sessionId: string
-  pid: number
-  /** False while the child is still bootstrapping or after it died. */
-  live: boolean
-}
+export type GatewayAssistantStatus =
+  | { state: 'live'; pid: number; sessionId: string }
+  | { state: 'starting' }
+  /** No assistant will come: `assistant.enabled: false`, a failed spawn, or dead. */
+  | { state: 'gone' }
 
 export type GatewayServer = {
   readonly url: string
   readonly port: number
   /** Set when a tunnel is running, so Origin and Host checks accept it. */
   setPublicUrl(url: string | null): void
-  /** The machine's one assistant child; null when opted out or not yet up. */
-  assistantStatus(): GatewayAssistantStatus | null
+  /** The machine's one assistant: live, still bootstrapping, or never coming. */
+  assistantStatus(): GatewayAssistantStatus
   /** Inject an external event into the assistant as a prompt turn. */
   assistantNotify(text: string): Promise<{ ok: boolean; error?: string }>
   stop(): Promise<void>
@@ -193,12 +192,18 @@ export function startGatewayServer(
   // fire-and-forget: a slow or failed assistant spawn must not delay the
   // loopback server the tunnel health-checks.
   let assistantChild: ChildSession | null = null
+  // Distinguishes "will never come" from "still coming" for web.status
+  // pollers once the session list already refuses to show an assistant row.
+  let assistantSettled = options.skipAssistant === true
   if (!options.skipAssistant) {
     void bootstrapAssistantSession(children).then(
       session => {
         assistantChild = session
+        assistantSettled = true
       },
-      () => {},
+      () => {
+        assistantSettled = true
+      },
     )
   }
   const throttle = createLoginThrottle({
@@ -626,16 +631,22 @@ export function startGatewayServer(
       publicUrl = next
     },
     assistantStatus() {
-      if (!assistantChild) return null
-      const descriptor = readAttachDescriptor(assistantChild.pid)
-      const live =
-        descriptor.ok &&
-        descriptor.descriptor.sessionId === assistantChild.sessionId
-      return {
-        sessionId: assistantChild.sessionId,
-        pid: assistantChild.pid,
-        live,
+      if (!assistantChild) {
+        return assistantSettled
+          ? { state: 'gone' as const }
+          : { state: 'starting' as const }
       }
+      if (!children.owns(assistantChild.pid)) return { state: 'gone' as const }
+      // The descriptor carries the current ID; a child that /resume'd or
+      // /clear'd itself has drifted from the ID spawn recorded.
+      const descriptor = readAttachDescriptor(assistantChild.pid)
+      return descriptor.ok
+        ? {
+            state: 'live' as const,
+            pid: assistantChild.pid,
+            sessionId: descriptor.descriptor.sessionId,
+          }
+        : { state: 'starting' as const }
     },
     async assistantNotify(text) {
       if (!assistantChild) {
@@ -643,8 +654,9 @@ export function startGatewayServer(
       }
       // The session list goes live off the pidfile, which the child writes
       // before its attach runtime registers. An external caller arriving in
-      // that window gets `runtime_not_ready`; retrying briefly is the correct
-      // posture for an event-injection API, not a bug to hide.
+      // that window gets `runtime_not_ready`; retrying that code (and connect
+      // failures) is the correct posture for an event-injection API. Other
+      // rejections — a stale epoch, a dead socket dir — are final.
       const deadline = Date.now() + 10_000
       let lastError = 'the assistant is not reachable'
       while (Date.now() < deadline) {
@@ -664,6 +676,9 @@ export function startGatewayServer(
           })
           if (response.ok) return { ok: true }
           lastError = response.error?.message ?? 'submit failed'
+          if (response.error?.code !== 'runtime_not_ready') {
+            return { ok: false, error: lastError }
+          }
         } catch (err) {
           lastError = err instanceof Error ? err.message : String(err)
         } finally {

@@ -47,9 +47,9 @@ export type WebStatus = {
   tunnelError?: string
   startedAt?: number
   /**
-   * The machine's one assistant session. Present (possibly null = still
-   * bootstrapping) while the gateway runs; `web.status` pollers use it to
-   * wait for `live` before joining.
+   * The machine's one assistant session: a state while the gateway runs
+   * (`web.status` pollers wait for `live` or bail on `gone`), null when the
+   * gateway is stopped.
    */
   assistant?: GatewayAssistantStatus | null
 }
@@ -167,9 +167,6 @@ export function createWebService() {
     get status(): WebStatus {
       if (!server) return { ...status, assistant: null }
       return { ...status, assistant: server.assistantStatus() }
-    },
-    assistantStatus(): GatewayAssistantStatus | null {
-      return server?.assistantStatus() ?? null
     },
     assistantNotify(text: string): Promise<{ ok: boolean; error?: string }> {
       if (!server)

@@ -974,10 +974,9 @@ export async function getQueuedCommandAttachments(
     return []
   }
   // Include both 'prompt' and 'task-notification' commands as attachments.
-  // During proactive agentic loops, task-notification commands would otherwise
-  // stay in the queue permanently (useQueueProcessor can't run while a query
-  // is active), causing hasPendingNotifications() to return true and Sleep to
-  // wake immediately with 0ms duration in an infinite loop.
+  // While a query is active the queue processor cannot run, so this mid-turn
+  // gate is the only drain — skipping it would strand notifications in the
+  // queue for the rest of the turn.
   const filtered = queuedCommands.filter(_ =>
     INLINE_NOTIFICATION_MODES.has(_.mode),
   )
@@ -1550,14 +1549,26 @@ export function getSessionGuidanceAttachment(
     '\n',
   )
 
+  if (lastAnnouncementText(messages, 'session_guidance') === text) return []
+  return [{ type: 'session_guidance', text }]
+}
+
+/**
+ * The text of the LAST `type` announcement in the transcript, or null when
+ * there is none — the baseline every wholesale-replacement carrier diffs
+ * against. No baseline means full announce (session start, post-compaction).
+ */
+function lastAnnouncementText(
+  messages: Message[] | undefined,
+  type: 'session_guidance' | 'assistant_mode',
+): string | null {
   let lastText: string | null = null
   for (const msg of messages ?? []) {
     if (msg.type !== 'attachment') continue
-    if (msg.attachment.type !== 'session_guidance') continue
-    lastText = msg.attachment.text
+    if (msg.attachment.type !== type) continue
+    lastText = (msg.attachment as { text: string }).text
   }
-  if (lastText === text) return []
-  return [{ type: 'session_guidance', text }]
+  return lastText
 }
 
 /**
@@ -1576,16 +1587,10 @@ export function getAssistantModeAttachment(
   if (toolUseContext.agentId) return []
   const assistantActive = getAssistantActive()
   if (!assistantActive && !isBriefEnabled()) return []
-  const text = buildAssistantModeBlock({ assistantActive })
+  const text = buildAssistantModeBlock(assistantActive)
   if (text === null) return []
 
-  let lastText: string | null = null
-  for (const msg of messages ?? []) {
-    if (msg.type !== 'attachment') continue
-    if (msg.attachment.type !== 'assistant_mode') continue
-    lastText = msg.attachment.text
-  }
-  if (lastText === text) return []
+  if (lastAnnouncementText(messages, 'assistant_mode') === text) return []
   return [{ type: 'assistant_mode', text }]
 }
 

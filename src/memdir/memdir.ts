@@ -459,10 +459,8 @@ export async function loadMemoryPrompt(): Promise<string | null> {
 
   const skipIndex = true
 
-  // Assistant mode no longer swaps this prompt: the daily-log policy rides the
-  // `assistant_mode` attachment, so the memory section stays byte-identical
-  // across modes (assistant teams also fall back to the standard MEMORY.md
-  // index paradigm instead of the old append-only team-sync carve-out).
+  // Byte-identical across modes: the assistant's daily-log policy rides the
+  // `assistant_mode` attachment, never a mode-swapped branch here.
 
   // Cowork injects memory-policy text via env var; thread into all builders.
   const coworkExtraGuidelines =

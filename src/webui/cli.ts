@@ -209,9 +209,10 @@ function reportStatus(status: WebStatus): void {
   }
   print(`Web server is running at ${status.url}`)
   if ('assistant' in status) {
-    if (status.assistant?.live) {
-      print(`Assistant session: live (pid ${status.assistant.pid})`)
-    } else if (status.assistant) {
+    const assistant = status.assistant
+    if (assistant?.state === 'live') {
+      print(`Assistant session: live (pid ${assistant.pid})`)
+    } else if (assistant?.state === 'starting') {
       print('Assistant session: starting...')
     } else {
       print('Assistant session: none (assistant.enabled: false)')
