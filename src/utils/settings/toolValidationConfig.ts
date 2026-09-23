@@ -25,7 +25,7 @@ export type ToolValidationConfig = {
 
 export const TOOL_VALIDATION_CONFIG: ToolValidationConfig = {
   // File pattern tools (accept *.ts, src/**, etc.)
-  filePatternTools: ['Read', 'Write', 'Edit', 'Glob', 'NotebookRead'],
+  filePatternTools: ['Read', 'Write', 'Edit'],
 
   // Bash wildcard tools (accept * anywhere, and legacy command:* syntax)
   bashPrefixTools: ['Bash'],
