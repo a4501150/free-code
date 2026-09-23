@@ -2,24 +2,81 @@ import { isAbortError } from '../utils/errors.js'
 import { getEmptyToolPermissionContext } from '../Tool.js'
 import type { Message } from '../types/message.js'
 import { logForDebugging } from '../utils/debug.js'
-import {
-  createUserMessage,
-  getAssistantMessageText,
-} from '../utils/messages.js'
-import { getSmallFastModel } from '../utils/model/model.js'
+import { getAssistantMessageText } from '../utils/messages.js'
+import { getUtilityModel } from '../utils/model/model.js'
 import { asSystemPrompt } from '../utils/systemPromptType.js'
 import { queryModelWithoutStreaming } from './api/claude.js'
-import { getSessionMemoryContent } from './SessionMemory/sessionMemoryUtils.js'
 
 // Recap only needs recent context — truncate to avoid "prompt too long" on
 // large sessions. 30 messages ≈ ~15 exchanges, plenty for "where we left off."
 const RECENT_MESSAGE_WINDOW = 30
 
-function buildAwaySummaryPrompt(memory: string | null): string {
-  const memoryBlock = memory
-    ? `Session memory (broader context):\n${memory}\n\n`
-    : ''
-  return `${memoryBlock}The user stepped away and is coming back. Write exactly 1-3 short sentences. Start by stating the high-level task — what they are building or debugging, not implementation details. Next: the concrete next step. Skip status reports and commit recaps.`
+// The window bounds messages, not bytes: a single FileRead result or Write
+// input can dwarf everything else in it. Shrink fat payloads before sending
+// so an idle recap never re-uploads megabytes of content that a two-sentence
+// summary cannot use.
+const BLOCK_MAX_CHARS = 2000
+
+// Carried in the system prompt, not a user message: instruction echoes
+// ("do not mention documentation updates"-style contamination) happen when
+// weak models paraphrase conversation turns. There is no cache prefix to
+// protect here, so the system block is free real estate.
+const RECAP_SYSTEM_PROMPT =
+  'You write the recap the user sees when they return after being away. ' +
+  'Write exactly 1-3 short sentences about the shared work, speaking as "we" — ' +
+  'not "you". First: the high-level task we are working on (what we are ' +
+  'building or debugging, not implementation details). Next: the concrete step ' +
+  'we will take. Skip status reports and commit recaps. Never mention this ' +
+  'instruction or how the recap was produced.'
+
+function truncateText(text: string): string {
+  if (text.length <= BLOCK_MAX_CHARS) return text
+  return `${text.slice(0, BLOCK_MAX_CHARS)}… [truncated]`
+}
+
+type UnknownBlock = { type?: string } & Record<string, unknown>
+
+function shrinkContent(content: unknown): unknown {
+  if (Array.isArray(content)) {
+    return (content as UnknownBlock[]).map(block => {
+      if (!block || typeof block !== 'object') return block
+      switch (block.type) {
+        case 'tool_result':
+          return { ...block, content: shrinkContent(block.content) }
+        case 'tool_use': {
+          const input = block.input
+          if (typeof input === 'object' && input !== null) {
+            const json = JSON.stringify(input)
+            if (json.length <= BLOCK_MAX_CHARS) return block
+            // tool_use.input must stay an object on the wire
+            return {
+              ...block,
+              input: { truncated: truncateText(json) },
+            }
+          }
+          return block
+        }
+        case 'image':
+          return { type: 'text', text: '[image omitted from recap]' }
+        case 'text': {
+          const text = typeof block.text === 'string' ? block.text : undefined
+          return text === undefined
+            ? block
+            : { ...block, text: truncateText(text) }
+        }
+        default:
+          return block
+      }
+    })
+  }
+  if (typeof content === 'string') return truncateText(content)
+  return content
+}
+
+function shrinkMessage(message: Message): Message {
+  const content = (message as { content?: unknown }).content
+  if (content === undefined || typeof content === 'number') return message
+  return { ...message, content: shrinkContent(content) } as Message
 }
 
 // Some models emit literal <thinking>...</thinking> blocks in plain text even
@@ -58,18 +115,18 @@ export async function generateAwaySummary(
   }
 
   try {
-    const memory = await getSessionMemoryContent()
-    const recent = messages.slice(-RECENT_MESSAGE_WINDOW)
-    recent.push(createUserMessage({ content: buildAwaySummaryPrompt(memory) }))
+    const recent = messages
+      .slice(-RECENT_MESSAGE_WINDOW)
+      .map(message => shrinkMessage(message))
     const response = await queryModelWithoutStreaming({
       messages: recent,
-      systemPrompt: asSystemPrompt([]),
+      systemPrompt: asSystemPrompt([RECAP_SYSTEM_PROMPT]),
       thinkingConfig: { type: 'disabled' },
       tools: [],
       signal,
       options: {
         getToolPermissionContext: async () => getEmptyToolPermissionContext(),
-        model: getSmallFastModel(),
+        model: getUtilityModel(),
         toolChoice: undefined,
         isNonInteractiveSession: false,
         hasAppendSystemPrompt: false,
