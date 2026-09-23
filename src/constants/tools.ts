@@ -18,6 +18,7 @@ import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from '../tools/SyntheticOutputTool/SyntheticOutputTool.js'
 import { ENTER_WORKTREE_TOOL_NAME } from '../tools/EnterWorktreeTool/constants.js'
 import { EXIT_WORKTREE_TOOL_NAME } from '../tools/ExitWorktreeTool/constants.js'
+import { INVOKE_TOOL_NAME } from '../services/toolCatalog/exposure.js'
 import {
   CRON_CREATE_TOOL_NAME,
   CRON_DELETE_TOOL_NAME,
@@ -37,21 +38,13 @@ export const CUSTOM_AGENT_DISALLOWED_TOOLS = new Set([
   ...ALL_AGENT_DISALLOWED_TOOLS,
 ])
 
-/**
- * Bundled agent-browser MCP web tools — the replacement for the removed
- * built-in WebFetch/WebSearch. Fully-qualified names as the MCP client
- * registers them; absent from the pool when the sidecar has no build for
- * this platform, which is merely a smaller allowlist.
- */
-export const AGENT_BROWSER_WEB_TOOL_NAMES: readonly string[] = [
-  'mcp__agent-browser__web_search',
-  'mcp__agent-browser__web_fetch',
-  'mcp__agent-browser__web_crawl',
-  'mcp__agent-browser__web_extract',
-]
-
 /*
  * Async Agent Tool Availability Status (Source of Truth)
+ *
+ * MCP tools need no entry here: the mcp__ prefix pass in filterToolsForAgent
+ * admits them for every agent. But cataloged MCP tools are stripped from the
+ * request's tools[] by the exposure filter, so the InvokeTool gateway must be
+ * allowlisted here too or async agents cannot reach them at all.
  */
 export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
   FILE_READ_TOOL_NAME,
@@ -59,7 +52,7 @@ export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
   TASK_GET_TOOL_NAME,
   TASK_LIST_TOOL_NAME,
   TASK_UPDATE_TOOL_NAME,
-  ...AGENT_BROWSER_WEB_TOOL_NAMES,
+  INVOKE_TOOL_NAME,
   ...SHELL_TOOL_NAMES,
   FILE_EDIT_TOOL_NAME,
   FILE_WRITE_TOOL_NAME,
