@@ -90,7 +90,9 @@ type Props = {
   mode: SpinnerMode
   /** False hides the whole subtree via display:none while keeping it mounted,
    * so a transient hide (streaming text on screen) does not remount the row,
-   * re-randomize the verb, or restart the animation clock. */
+   * re-randomize the verb, or restart the animation clock. While hidden with
+   * an in-progress task, a static quiet title row (QuietTitleRow) takes the
+   * slot so the task list below keeps its heading. */
   hidden?: boolean
   loadingStartTimeRef: React.RefObject<number>
   totalPausedMsRef: React.RefObject<number>
@@ -248,6 +250,19 @@ function SpinnerWithVerbInner({
         : leaderVerb)
   const message = effectiveVerb + '…'
 
+  // Quiet title: while the spinner is hidden (streaming text IS the
+  // feedback) an in-progress task still owns this slot — a static,
+  // animation-free copy of the title row holds the line so the task list
+  // below never loses its heading. It sits at the same block position with
+  // the same one-row footprint, so the swap is a single-row write and the
+  // panel tail stays byte-identical (e2e thinking-swap-repaint). Viewed
+  // agents carry their own label in this row, so no quiet copy there.
+  const quietTitle =
+    hidden &&
+    !viewedLocalAgent &&
+    !foregroundedTeammate &&
+    currentTodo !== undefined
+
   // Track CLI activity when spinner is active
   useEffect(() => {
     const operationId = 'spinner-' + mode
@@ -380,73 +395,99 @@ function SpinnerWithVerbInner({
       : spinnerTip
 
   return (
-    <Box
-      flexDirection="column"
-      width="100%"
-      alignItems="flex-start"
-      display={hidden ? 'none' : 'flex'}
-    >
-      <SpinnerAnimationRow
-        mode={mode}
-        reducedMotion={reducedMotion || hidden}
-        hasActiveTools={hasActiveTools}
-        responseLengthRef={responseLengthRef}
-        message={message}
-        messageColor={messageColor}
-        shimmerColor={shimmerColor}
-        overrideColor={overrideColor}
-        loadingStartTimeRef={loadingStartTimeRef}
-        totalPausedMsRef={totalPausedMsRef}
-        pauseStartTimeRef={pauseStartTimeRef}
-        spinnerSuffix={spinnerSuffix}
-        verbose={verbose}
-        columns={columns}
-        hasRunningTeammates={hasRunningTeammates}
-        teammateTokens={teammateTokens}
-        foregroundedTeammate={foregroundedTeammate}
-        leaderIsIdle={leaderIsIdle}
-        thinkingStatus={thinkingStatus}
-        effortSuffix={effortSuffix}
-        viewedLocalAgent={viewedLocalAgent}
-      />
-      {compactingStartTime != null ? (
-        <Box width="100%" flexDirection="column">
-          <CompactProgressBar
-            startTime={compactingStartTime}
-            columns={columns}
-          />
-        </Box>
-      ) : showSpinnerTree && hasRunningTeammates ? (
-        <TeammateSpinnerTree
-          selectedIndex={selectedIPAgentIndex}
-          isInSelectionMode={viewSelectionMode === 'selecting-agent'}
-          allIdle={allIdle}
-          leaderVerb={leaderIsIdle ? undefined : leaderVerb}
-          leaderIdleText={leaderIsIdle ? 'Idle' : undefined}
-          leaderTokenCount={leaderTokenCount}
+    <Box flexDirection="column" width="100%" alignItems="flex-start">
+      <Box
+        flexDirection="column"
+        width="100%"
+        alignItems="flex-start"
+        display={hidden ? 'none' : 'flex'}
+      >
+        <SpinnerAnimationRow
+          mode={mode}
+          reducedMotion={reducedMotion || hidden}
+          hasActiveTools={hasActiveTools}
+          responseLengthRef={responseLengthRef}
+          message={message}
+          messageColor={messageColor}
+          shimmerColor={shimmerColor}
+          overrideColor={overrideColor}
+          loadingStartTimeRef={loadingStartTimeRef}
+          totalPausedMsRef={totalPausedMsRef}
+          pauseStartTimeRef={pauseStartTimeRef}
+          spinnerSuffix={spinnerSuffix}
+          verbose={verbose}
+          columns={columns}
+          hasRunningTeammates={hasRunningTeammates}
+          teammateTokens={teammateTokens}
+          foregroundedTeammate={foregroundedTeammate}
+          leaderIsIdle={leaderIsIdle}
+          thinkingStatus={thinkingStatus}
+          effortSuffix={effortSuffix}
+          viewedLocalAgent={viewedLocalAgent}
         />
-      ) : !showExpandedTodos && (nextTask || effectiveTip) ? (
-        // The task list itself is NOT rendered here — it lives in TaskLivePanel,
-        // mounted once below this component (a spinner-hosted list blinked: the
-        // spinner unmounts several times per turn). While the expanded panel is
-        // up it replaces this summary line; when the panel is hidden (collapsed
-        // view, store hide after all-complete) the store also collapses
-        // expandedView, so suppressing on showExpandedTodos alone is enough.
-        // IMPORTANT: we need this width="100%" to avoid an Ink bug where the
-        // tip gets duplicated over and over while the spinner is running if
-        // the terminal is very small. TODO: fix this in Ink.
-        <Box width="100%" flexDirection="column">
-          {(nextTask || effectiveTip) && (
-            <MessageResponse>
-              <Text dimColor>
-                {nextTask
-                  ? `Next: ${nextTask.subject}`
-                  : `Tip: ${effectiveTip}`}
-              </Text>
-            </MessageResponse>
-          )}
-        </Box>
+        {compactingStartTime != null ? (
+          <Box width="100%" flexDirection="column">
+            <CompactProgressBar
+              startTime={compactingStartTime}
+              columns={columns}
+            />
+          </Box>
+        ) : showSpinnerTree && hasRunningTeammates ? (
+          <TeammateSpinnerTree
+            selectedIndex={selectedIPAgentIndex}
+            isInSelectionMode={viewSelectionMode === 'selecting-agent'}
+            allIdle={allIdle}
+            leaderVerb={leaderIsIdle ? undefined : leaderVerb}
+            leaderIdleText={leaderIsIdle ? 'Idle' : undefined}
+            leaderTokenCount={leaderTokenCount}
+          />
+        ) : !showExpandedTodos && (nextTask || effectiveTip) ? (
+          // The task list itself is NOT rendered here — it lives in TaskLivePanel,
+          // mounted once below this component (a spinner-hosted list blinked: the
+          // spinner unmounts several times per turn). While the expanded panel is
+          // up it replaces this summary line; when the panel is hidden (collapsed
+          // view, store hide after all-complete) the store also collapses
+          // expandedView, so suppressing on showExpandedTodos alone is enough.
+          // IMPORTANT: we need this width="100%" to avoid an Ink bug where the
+          // tip gets duplicated over and over while the spinner is running if
+          // the terminal is very small. TODO: fix this in Ink.
+          <Box width="100%" flexDirection="column">
+            {(nextTask || effectiveTip) && (
+              <MessageResponse>
+                <Text dimColor>
+                  {nextTask
+                    ? `Next: ${nextTask.subject}`
+                    : `Tip: ${effectiveTip}`}
+                </Text>
+              </MessageResponse>
+            )}
+          </Box>
+        ) : null}
+      </Box>
+      {quietTitle ? (
+        <QuietTitleRow message={message} messageColor={messageColor} />
       ) : null}
+    </Box>
+  )
+}
+
+// Same footprint as SpinnerAnimationRow — marginTop 1, a width-2 glyph cell,
+// then the title — so a show/hide swap rewrites exactly one row. No clock,
+// no status byline: nothing behind this row ticks while the spinner is down,
+// and a frozen "(5s · 1.2k tokens)" would read as a lie.
+function QuietTitleRow({
+  message,
+  messageColor,
+}: {
+  message: string
+  messageColor: keyof Theme
+}): React.ReactNode {
+  return (
+    <Box flexDirection="row" flexWrap="wrap" marginTop={1} width="100%">
+      <Box flexWrap="wrap" height={1} width={2}>
+        <Text color={messageColor}>{DEFAULT_CHARACTERS[0]}</Text>
+      </Box>
+      <Text color={messageColor}>{message}</Text>
     </Box>
   )
 }
