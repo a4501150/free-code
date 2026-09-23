@@ -4,12 +4,10 @@ import { extractBashCommentLabel } from '../tools/BashTool/commentLabel.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
-import { REPL_TOOL_NAME } from '../tools/REPLTool/constants.js'
 import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
 import { TASK_GET_TOOL_NAME } from '../tools/TaskGetTool/constants.js'
 import { TASK_LIST_TOOL_NAME } from '../tools/TaskListTool/constants.js'
 import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
-import { getReplPrimitiveTools } from '../tools/REPLTool/primitiveTools.js'
 import {
   type BranchAction,
   type CommitKind,
@@ -48,7 +46,6 @@ export type SearchOrReadResult = {
   isSearch: boolean
   isRead: boolean
   isList: boolean
-  isREPL: boolean
   /** True if this is a Write/Edit targeting a memory file */
   isMemoryWrite: boolean
   /**
@@ -162,23 +159,6 @@ export function getSearchOrReadInfo(
   toolInput: unknown,
   tools: Tools,
 ): SearchOrReadResult {
-  // REPL is absorbed silently — its inner tool calls are emitted as virtual
-  // messages (isVirtual: true) via newMessages and flow through this function
-  // as regular Read/Grep/Bash messages. The REPL wrapper itself contributes
-  // no counts and doesn't break the group, so consecutive REPL calls merge.
-  if (toolName === REPL_TOOL_NAME) {
-    return {
-      isCollapsible: true,
-      isSearch: false,
-      isRead: false,
-      isList: false,
-      isREPL: true,
-      isMemoryWrite: false,
-      isTaskManagement: false,
-      isAbsorbedSilently: true,
-    }
-  }
-
   // Memory file writes/edits are collapsible
   if (isMemoryWriteOrEdit(toolName, toolInput)) {
     return {
@@ -186,7 +166,6 @@ export function getSearchOrReadInfo(
       isSearch: false,
       isRead: false,
       isList: false,
-      isREPL: false,
       isMemoryWrite: true,
       isTaskManagement: false,
       isAbsorbedSilently: false,
@@ -199,27 +178,19 @@ export function getSearchOrReadInfo(
       isSearch: false,
       isRead: false,
       isList: false,
-      isREPL: false,
       isMemoryWrite: false,
       isTaskManagement: true,
       isAbsorbedSilently: false,
     }
   }
 
-  // Fallback to REPL primitives: in REPL mode, Bash/Read/Grep/etc. are
-  // stripped from the execution tools list, but REPL emits them as virtual
-  // messages. Without the fallback they'd return isCollapsible: false and
-  // vanish from the summary line.
-  const tool =
-    findToolByName(tools, toolName) ??
-    findToolByName(getReplPrimitiveTools(), toolName)
+  const tool = findToolByName(tools, toolName)
   if (!tool?.isSearchOrReadCommand) {
     return {
       isCollapsible: false,
       isSearch: false,
       isRead: false,
       isList: false,
-      isREPL: false,
       isMemoryWrite: false,
       isTaskManagement: false,
       isAbsorbedSilently: false,
@@ -240,7 +211,6 @@ export function getSearchOrReadInfo(
     isSearch: result.isSearch,
     isRead: result.isRead,
     isList,
-    isREPL: false,
     isMemoryWrite: false,
     isTaskManagement: false,
     isAbsorbedSilently: false,
@@ -251,7 +221,7 @@ export function getSearchOrReadInfo(
 
 /**
  * Check if a tool_use content block is a search/read operation.
- * Returns { isSearch, isRead, isREPL } if it's a collapsible search/read, null otherwise.
+ * Returns { isSearch, isRead } if it's a collapsible search/read, null otherwise.
  */
 export function getSearchOrReadFromContent(
   content: { type: string; name?: string; input?: unknown } | undefined,
@@ -260,7 +230,6 @@ export function getSearchOrReadFromContent(
   isSearch: boolean
   isRead: boolean
   isList: boolean
-  isREPL: boolean
   isMemoryWrite: boolean
   isTaskManagement: boolean
   isAbsorbedSilently: boolean
@@ -269,12 +238,11 @@ export function getSearchOrReadFromContent(
 } | null {
   if (content?.type === 'tool_use' && content.name) {
     const info = getSearchOrReadInfo(content.name, content.input, tools)
-    if (info.isCollapsible || info.isREPL) {
+    if (info.isCollapsible) {
       return {
         isSearch: info.isSearch,
         isRead: info.isRead,
         isList: info.isList,
-        isREPL: info.isREPL,
         isMemoryWrite: info.isMemoryWrite,
         isTaskManagement: info.isTaskManagement,
         isAbsorbedSilently: info.isAbsorbedSilently,
@@ -310,7 +278,6 @@ function getCollapsibleToolInfo(
   isSearch: boolean
   isRead: boolean
   isList: boolean
-  isREPL: boolean
   isMemoryWrite: boolean
   isTaskManagement: boolean
   isAbsorbedSilently: boolean
@@ -511,7 +478,6 @@ export type CollapsedCategory =
   | 'search'
   | 'read'
   | 'list'
-  | 'repl'
   | 'mcp'
   | 'bash'
   | 'taskCreate'
@@ -572,8 +538,6 @@ export function getPendingCollapsedCategories(
             ? 'memSearch'
             : 'search',
       )
-    } else if (toolInfo.isREPL) {
-      pending.add('repl')
     } else {
       // Read — split by path exactly like the builder's readFilePaths loop
       const filePaths = getFilePathsFromReadMessage(msg as RenderableMessage)
@@ -820,10 +784,6 @@ function createCollapsedGroup(
       totalReadCount - toolMemoryReadCount - teamMemReadCount,
     ),
     listCount: group.listCount,
-    // REPL operations are intentionally not collapsed (see isCollapsible: false at line 32),
-    // so replCount in collapsed groups is always 0. The replCount field is kept for
-    // sub-agent progress display in AgentTool/UI.tsx which has a separate code path.
-    replCount: 0,
     memorySearchCount: group.memorySearchCount,
     memoryReadCount,
     memoryWriteCount: group.memoryWriteCount,
@@ -1092,19 +1052,17 @@ export function collapseReadSearchGroups(
 }
 
 /**
- * Generate a summary text for search/read/REPL counts.
+ * Generate a summary text for search/read counts.
  * @param searchCount Number of search operations
  * @param readCount Number of read operations
  * @param isActive Whether the group is still in progress (use present tense) or completed (use past tense)
- * @param replCount Number of REPL executions (optional)
  * @param memoryCounts Optional memory file operation counts
- * @returns Summary text like "Searching for 3 patterns, reading 2 files, REPL'd 5 times…"
+ * @returns Summary text like "Searching for 3 patterns, reading 2 files"
  */
 export function getSearchReadSummaryText(
   searchCount: number,
   readCount: number,
   isActive: boolean,
-  replCount: number = 0,
   memoryCounts?: {
     memorySearchCount: number
     memoryReadCount: number
@@ -1203,11 +1161,6 @@ export function getSearchReadSummaryText(
     parts.push(
       `${listVerb} ${listCount} ${listCount === 1 ? 'directory' : 'directories'}`,
     )
-  }
-
-  if (replCount > 0) {
-    const replVerb = isActive ? "REPL'ing" : "REPL'd"
-    parts.push(`${replVerb} ${replCount} ${replCount === 1 ? 'time' : 'times'}`)
   }
 
   const text = parts.join(', ')

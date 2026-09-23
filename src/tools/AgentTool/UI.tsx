@@ -101,8 +101,7 @@ function hasProgressMessage(data: Progress): data is AgentToolProgress {
 }
 
 /**
- * Check if a progress message is a search/read/REPL operation (tool use or result).
- * Returns { isSearch, isRead, isREPL } if it's a collapsible operation, null otherwise.
+ * Check if a progress message is a search/read operation (tool use or result).
  *
  * For tool_result messages, uses the provided `toolUseByID` map to find the
  * corresponding tool_use block instead of relying on `normalizedMessages`.
@@ -111,7 +110,7 @@ function getSearchOrReadInfo(
   progressMessage: ProgressMessage<Progress>,
   tools: Tools,
   toolUseByID: Map<string, DomainToolUseBlock>,
-): { isSearch: boolean; isRead: boolean; isREPL: boolean } | null {
+): { isSearch: boolean; isRead: boolean } | null {
   if (!hasProgressMessage(progressMessage.data)) {
     return null
   }
@@ -140,7 +139,6 @@ type SummaryMessage = {
   type: 'summary'
   searchCount: number
   readCount: number
-  replCount: number
   uuid: string
   isActive: boolean // true if still in progress (last message was tool_use, not tool_result)
 }
@@ -489,7 +487,6 @@ function ExpandableSingleAgentResult({
                     p.searchCount,
                     p.readCount,
                     p.isActive,
-                    p.replCount,
                   )
                   return (
                     <Box key={p.uuid} height={1} overflow="hidden">
@@ -822,7 +819,7 @@ export function renderToolUseProgressMessage(
       )
   const hiddenToolUseCount = count(hiddenMessages, m => {
     if (m.type === 'summary') {
-      return m.searchCount + m.readCount + m.replCount > 0
+      return m.searchCount + m.readCount > 0
     }
     const data = m.message.data
     if (!hasProgressMessage(data)) {
@@ -875,12 +872,11 @@ export function renderToolUseProgressMessage(
           )}
           {displayedMessages.map((processed, index) => {
             if (processed.type === 'summary') {
-              // Render summary for grouped search/read/REPL operations using shared formatting
+              // Render summary for grouped search/read operations using shared formatting
               const summaryText = getSearchReadSummaryText(
                 processed.searchCount,
                 processed.readCount,
                 processed.isActive,
-                processed.replCount,
               )
               return (
                 <Box key={processed.uuid} height={1} overflow="hidden">
@@ -1632,7 +1628,6 @@ function AgentRowWithExpand({
                   p.searchCount,
                   p.readCount,
                   p.isActive,
-                  p.replCount,
                 )
                 return (
                   <Box key={p.uuid} height={1} overflow="hidden">

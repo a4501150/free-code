@@ -2029,10 +2029,6 @@ const _settingsSchemaValue = z
       .describe(
         'Accept numeric effort values (0-100+) and allow max effort level.',
       ),
-    replMode: z
-      .boolean()
-      .optional()
-      .describe('Enable REPL tool for batched file/bash operations.'),
     shellSessionId: z
       .boolean()
       .optional()

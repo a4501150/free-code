@@ -667,21 +667,6 @@ export function Config({
       },
     },
     {
-      id: 'replMode',
-      label: 'REPL tool',
-      value: settingsData?.replMode ?? false,
-      type: 'boolean' as const,
-      onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          replMode: enabled,
-        })
-        setSettingsData(prev => ({
-          ...prev,
-          replMode: enabled,
-        }))
-      },
-    },
-    {
       id: 'magicDocs',
       label: 'Magic Docs',
       value: settingsData?.magicDocs ?? false,
@@ -1569,7 +1554,6 @@ export function Config({
       // Group B settings
       crossProjectResume: iu?.crossProjectResume,
       alwaysDebugLog: iu?.alwaysDebugLog,
-      replMode: iu?.replMode,
       magicDocs: iu?.magicDocs,
       memoryUsageIndicator: iu?.memoryUsageIndicator,
       shellSessionId: iu?.shellSessionId,

@@ -88,9 +88,7 @@ export const PROCESS_MECHANICS_ENV_VARS = new Set([
   'CLAUDE_CODE_ORGANIZATION_UUID',
   'CLAUDE_CODE_USER_EMAIL',
   'CLAUDE_CODE_CONTAINER_ID',
-  // REPL / print-mode runtime options passed by hosts
-  'CLAUDE_CODE_REPL',
-  'CLAUDE_REPL_MODE',
+  // Print-mode runtime options passed by hosts
   'CLAUDE_CODE_RESUME_INTERRUPTED_TURN',
   'CLAUDE_CODE_INCLUDE_PARTIAL_MESSAGES',
   'CLAUDE_CODE_ACTION',

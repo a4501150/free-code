@@ -6,10 +6,7 @@ import * as teamMemPaths from './teamMemPaths.js'
 import * as teamMemPrompts from './teamMemPrompts.js'
 import { getOriginalCwd } from '../bootstrap/state.js'
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../services/analytics/index.js'
-import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
-import { isReplModeEnabled } from '../tools/REPLTool/constants.js'
 import { logForDebugging } from '../utils/debug.js'
-import { shouldPreferBashForSearch } from '../utils/embeddedTools.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
 import { formatFileSize } from '../utils/format.js'
 import { getProjectDir } from '../utils/sessionStorage.js'
@@ -391,17 +388,8 @@ export function buildSearchingPastContextSection(
   const projectDir = useEnvPathReference
     ? `<${TRANSCRIPT_DIR_ENV_LABEL}>`
     : getProjectDir(getOriginalCwd())
-  // When Grep is stripped from the registry, give the model a real shell
-  // invocation. In REPL mode, both Grep and Bash are hidden from direct use —
-  // the model calls them from inside REPL scripts, so the grep shell form is
-  // what it will write in the script anyway.
-  const embedded = shouldPreferBashForSearch() || isReplModeEnabled()
-  const memSearch = embedded
-    ? `grep -rn "<search term>" ${memDir} --include="*.md"`
-    : `${GREP_TOOL_NAME} with pattern="<search term>" path="${memDir}" glob="*.md"`
-  const transcriptSearch = embedded
-    ? `grep -rn "<search term>" ${projectDir}/ --include="*.jsonl"`
-    : `${GREP_TOOL_NAME} with pattern="<search term>" path="${projectDir}/" glob="*.jsonl"`
+  const memSearch = `grep -rn "<search term>" ${memDir} --include="*.md"`
+  const transcriptSearch = `grep -rn "<search term>" ${projectDir}/ --include="*.jsonl"`
   return [
     '## Searching past context',
     '',

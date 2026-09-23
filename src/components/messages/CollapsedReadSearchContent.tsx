@@ -4,7 +4,6 @@ import { useMinDisplayTime } from '../../hooks/useMinDisplayTime.js'
 import { Ansi, Box, Text, useTheme } from '../../ink.js'
 import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js'
 import { findToolByName, type Tools } from '../../Tool.js'
-import { getReplPrimitiveTools } from '../../tools/REPLTool/primitiveTools.js'
 import type { DomainToolResultBlockParam } from '../../types/domain.js'
 import type {
   CollapsedReadSearchGroup,
@@ -69,12 +68,7 @@ function VerboseToolUse({
   const toolCallDisplay = useAppStateMaybeOutsideOfProvider(
     state => state.toolCallDisplay,
   )
-  // Same REPL-primitive fallback as getSearchOrReadInfo — REPL mode strips
-  // these from the execution tools list, but virtual messages still need them
-  // to render in verbose mode.
-  const tool =
-    findToolByName(tools, content.name) ??
-    findToolByName(getReplPrimitiveTools(), content.name)
+  const tool = findToolByName(tools, content.name)
   if (!tool) return null
 
   const isResolved = lookups.resolvedToolUseIDs.has(content.id)
@@ -191,7 +185,6 @@ export function CollapsedReadSearchContent({
     searchCount: rawSearchCount,
     readCount: rawReadCount,
     listCount: rawListCount,
-    replCount,
     memorySearchCount,
     memoryReadCount,
     memoryWriteCount,
@@ -261,7 +254,6 @@ export function CollapsedReadSearchContent({
     searchCount > 0 ||
     readCount > 0 ||
     listCount > 0 ||
-    replCount > 0 ||
     mcpCallCount > 0 ||
     bashCount > 0 ||
     gitOpBashCount > 0 ||
@@ -530,19 +522,6 @@ export function CollapsedReadSearchContent({
       <Text key="list">
         {listVerb} <Text bold>{listCount}</Text>{' '}
         {listCount === 1 ? 'directory' : 'directories'}
-      </Text>,
-    )
-  }
-
-  if (replCount > 0) {
-    const replVerb = catActive('repl') ? "REPL'ing" : "REPL'd"
-    if (nonMemParts.length > 0) {
-      nonMemParts.push(<Text key="comma-repl">, </Text>)
-    }
-    nonMemParts.push(
-      <Text key="repl">
-        {replVerb} <Text bold>{replCount}</Text>{' '}
-        {replCount === 1 ? 'time' : 'times'}
       </Text>,
     )
   }

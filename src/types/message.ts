@@ -432,7 +432,6 @@ export type CollapsedReadSearchGroup = {
   searchCount: number
   readCount: number
   listCount: number
-  replCount: number
   memorySearchCount: number
   memoryReadCount: number
   memoryWriteCount: number

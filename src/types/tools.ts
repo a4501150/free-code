@@ -84,12 +84,6 @@ export type TaskOutputProgress = {
   taskType?: string
 }
 
-/** Progress emitted by the REPL pseudo-tool — JSX injected directly. */
-export type REPLToolProgress = {
-  type: 'repl_progress'
-  message?: string
-}
-
 /**
  * Union of every tool-emitted progress payload. The UI renders based on
  * `data.type`; adding a new progress type elsewhere requires adding it
@@ -102,4 +96,3 @@ export type ToolProgressData =
   | AgentToolProgress
   | MCPProgress
   | TaskOutputProgress
-  | REPLToolProgress

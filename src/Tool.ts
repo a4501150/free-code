@@ -49,7 +49,6 @@ import type {
   AgentToolProgress,
   BashProgress,
   MCPProgress,
-  REPLToolProgress,
   SkillToolProgress,
   TaskOutputProgress,
   ToolProgressData,
@@ -66,7 +65,6 @@ export type {
   AgentToolProgress,
   BashProgress,
   MCPProgress,
-  REPLToolProgress,
   SkillToolProgress,
   TaskOutputProgress,
 }
@@ -448,7 +446,6 @@ export type Tool<
   isOpenWorld?(input: z.infer<Input>): boolean
   requiresUserInteraction?(): boolean
   isMcp?: boolean
-  isLsp?: boolean
   /**
    * For MCP tools: the server and tool names as received from the MCP server (unnormalized).
    * Present on all MCP tools regardless of whether `name` is prefixed (mcp__server__tool)

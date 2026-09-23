@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import { BashTool } from '../../src/tools/BashTool/BashTool.js'
-import { GrepTool } from '../../src/tools/GrepTool/GrepTool.js'
 import type { CollapsedReadSearchGroup } from '../../src/types/message.js'
 import { getPendingCollapsedCategories } from '../../src/utils/collapseReadSearch.js'
 
@@ -23,7 +22,6 @@ function group(messages: unknown[]): CollapsedReadSearchGroup {
     searchCount: 0,
     readCount: 0,
     listCount: 0,
-    replCount: 0,
     memorySearchCount: 0,
     memoryReadCount: 0,
     memoryWriteCount: 0,
@@ -36,11 +34,11 @@ function group(messages: unknown[]): CollapsedReadSearchGroup {
   }
 }
 
-const tools = [GrepTool, BashTool] as any
+const tools = [BashTool] as any
 
 describe('getPendingCollapsedCategories', () => {
   test('a resolved call is not pending even while a sibling category runs', () => {
-    const search = toolUseMessage('s1', 'Grep', { pattern: 'foo' })
+    const search = toolUseMessage('s1', 'Bash', { command: 'rg foo' })
     const bash = toolUseMessage('b1', 'Bash', { command: 'echo hi' })
     const pending = getPendingCollapsedCategories(
       group([search, bash]),
@@ -52,7 +50,7 @@ describe('getPendingCollapsedCategories', () => {
   })
 
   test('everything pending when nothing resolved, nothing pending when all resolved', () => {
-    const search = toolUseMessage('s1', 'Grep', { pattern: 'foo' })
+    const search = toolUseMessage('s1', 'Bash', { command: 'rg foo' })
     const bash = toolUseMessage('b1', 'Bash', { command: 'echo hi' })
     const g = group([search, bash])
     const all = getPendingCollapsedCategories(g, tools, new Set())
@@ -65,10 +63,10 @@ describe('getPendingCollapsedCategories', () => {
   test('one pending call in a grouped message keeps its category pending', () => {
     const grouped = {
       type: 'grouped_tool_use',
-      toolName: 'Grep',
+      toolName: 'Bash',
       messages: [
-        toolUseMessage('s1', 'Grep', { pattern: 'a' }),
-        toolUseMessage('s2', 'Grep', { pattern: 'b' }),
+        toolUseMessage('s1', 'Bash', { command: 'rg a' }),
+        toolUseMessage('s2', 'Bash', { command: 'rg b' }),
       ],
     }
     const pending = getPendingCollapsedCategories(

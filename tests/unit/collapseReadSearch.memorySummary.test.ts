@@ -4,7 +4,7 @@ import { getSearchReadSummaryText } from '../../src/utils/collapseReadSearch.js'
 describe('memory search summary text', () => {
   test('names the searched pattern so the row is debuggable', () => {
     expect(
-      getSearchReadSummaryText(0, 0, false, 0, {
+      getSearchReadSummaryText(0, 0, false, {
         memorySearchCount: 1,
         memoryReadCount: 0,
         memoryWriteCount: 0,
@@ -15,13 +15,13 @@ describe('memory search summary text', () => {
 
   test('falls back to the bare label without args, and counts multiple', () => {
     expect(
-      getSearchReadSummaryText(0, 0, false, 0, {
+      getSearchReadSummaryText(0, 0, false, {
         memorySearchCount: 1,
         memoryReadCount: 0,
         memoryWriteCount: 0,
       }),
     ).toBe('Searched memories')
-    const multiple = getSearchReadSummaryText(0, 0, false, 0, {
+    const multiple = getSearchReadSummaryText(0, 0, false, {
       memorySearchCount: 3,
       memoryReadCount: 0,
       memoryWriteCount: 0,
@@ -32,7 +32,7 @@ describe('memory search summary text', () => {
 
   test('team memory search names its pattern too', () => {
     expect(
-      getSearchReadSummaryText(0, 0, false, 0, {
+      getSearchReadSummaryText(0, 0, false, {
         memorySearchCount: 0,
         memoryReadCount: 0,
         memoryWriteCount: 0,

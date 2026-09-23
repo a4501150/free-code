@@ -29,9 +29,6 @@ import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
-import { GLOB_TOOL_NAME } from '../../tools/GlobTool/prompt.js'
-import { GREP_TOOL_NAME } from '../../tools/GrepTool/prompt.js'
-import { REPL_TOOL_NAME } from '../../tools/REPLTool/constants.js'
 import type {
   AssistantMessage,
   Message,
@@ -153,29 +150,14 @@ function denyAutoMemTool(tool: Tool, reason: string) {
 }
 
 /**
- * Creates a canUseTool function that allows Read/Grep/Glob (unrestricted),
+ * Creates a canUseTool function that allows Read (unrestricted),
  * read-only Bash commands, and Edit/Write only for paths within the
  * auto-memory directory. Shared by extractMemories and autoDream.
  */
 export function createAutoMemCanUseTool(memoryDir: string): CanUseToolFn {
   return async (tool: Tool, input: Record<string, unknown>) => {
-    // Allow REPL — when REPL mode is enabled (ant-default), primitive tools
-    // are hidden from the tool list so the forked agent calls REPL instead.
-    // REPL's VM context re-invokes this canUseTool for each inner primitive
-    // (toolWrappers.ts createToolWrapper), so the Read/Bash/Edit/Write checks
-    // below still gate the actual file and shell operations. Giving the fork a
-    // different tool list would break prompt cache sharing (tools are part of
-    // the cache key — see CacheSafeParams in forkedAgent.ts).
-    if (tool.name === REPL_TOOL_NAME) {
-      return { behavior: 'allow' as const, updatedInput: input }
-    }
-
-    // Allow Read/Grep/Glob unrestricted — all inherently read-only
-    if (
-      tool.name === FILE_READ_TOOL_NAME ||
-      tool.name === GREP_TOOL_NAME ||
-      tool.name === GLOB_TOOL_NAME
-    ) {
+    // Allow Read unrestricted — inherently read-only.
+    if (tool.name === FILE_READ_TOOL_NAME) {
       return { behavior: 'allow' as const, updatedInput: input }
     }
 
@@ -205,7 +187,7 @@ export function createAutoMemCanUseTool(memoryDir: string): CanUseToolFn {
 
     return denyAutoMemTool(
       tool,
-      `only ${FILE_READ_TOOL_NAME}, ${GREP_TOOL_NAME}, ${GLOB_TOOL_NAME}, read-only ${BASH_TOOL_NAME}, and ${FILE_EDIT_TOOL_NAME}/${FILE_WRITE_TOOL_NAME} within ${memoryDir} are allowed`,
+      `only ${FILE_READ_TOOL_NAME}, read-only ${BASH_TOOL_NAME}, and ${FILE_EDIT_TOOL_NAME}/${FILE_WRITE_TOOL_NAME} within ${memoryDir} are allowed`,
     )
   }
 }
