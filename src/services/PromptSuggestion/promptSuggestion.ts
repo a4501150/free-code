@@ -3,6 +3,7 @@ import type { AppState } from '../../state/AppState.js'
 import type { Message } from '../../types/message.js'
 import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { count } from '../../utils/array.js'
+import { logForDebugging } from '../../utils/debug.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { toError } from '../../utils/errors.js'
 import {
@@ -419,6 +420,10 @@ export function logSuggestionOutcome(
     Math.round((userInput.length / (suggestion.length || 1)) * 100) / 100
   const wasAccepted = userInput === suggestion
   const timeMs = Math.max(0, Date.now() - emittedAt)
+  logForDebugging(
+    `[Suggestion] outcome: accepted=${wasAccepted} similarity=${similarity} ` +
+      `timeMs=${timeMs} prompt=${promptId} requestId=${generationRequestId ?? 'none'}`,
+  )
 }
 
 export function logSuggestionSuppressed(
@@ -428,4 +433,9 @@ export function logSuggestionSuppressed(
   source?: 'cli' | 'sdk',
 ): void {
   const resolvedPromptId = promptId ?? getPromptVariant()
+  logForDebugging(
+    `[Suggestion] suppressed: ${reason} prompt=${resolvedPromptId} ` +
+      `source=${source ?? 'cli'}` +
+      (suggestion ? ` suggestion="${suggestion.slice(0, 40)}"` : ''),
+  )
 }
