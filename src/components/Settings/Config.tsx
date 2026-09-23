@@ -667,21 +667,6 @@ export function Config({
       },
     },
     {
-      id: 'magicDocs',
-      label: 'Magic Docs',
-      value: settingsData?.magicDocs ?? false,
-      type: 'boolean' as const,
-      onChange(enabled: boolean) {
-        updateSettingsForSource('userSettings', {
-          magicDocs: enabled,
-        })
-        setSettingsData(prev => ({
-          ...prev,
-          magicDocs: enabled,
-        }))
-      },
-    },
-    {
       id: 'memoryUsageIndicator',
       label: 'Memory usage indicator',
       value: settingsData?.memoryUsageIndicator ?? false,
@@ -1554,7 +1539,6 @@ export function Config({
       // Group B settings
       crossProjectResume: iu?.crossProjectResume,
       alwaysDebugLog: iu?.alwaysDebugLog,
-      magicDocs: iu?.magicDocs,
       memoryUsageIndicator: iu?.memoryUsageIndicator,
       shellSessionId: iu?.shellSessionId,
       numericEffort: iu?.numericEffort,

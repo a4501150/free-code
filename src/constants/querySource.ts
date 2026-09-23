@@ -24,7 +24,6 @@ export type QuerySource =
   | 'hook_agent'
   | 'hook_prompt'
   | 'insights'
-  | 'magic_docs'
   | 'mcp_datetime_parse'
   | 'memdir_relevance'
   | 'model_validation'

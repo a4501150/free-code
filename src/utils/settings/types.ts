@@ -2011,10 +2011,6 @@ const _settingsSchemaValue = z
       .boolean()
       .optional()
       .describe('Write structured error logs to a per-session JSONL file.'),
-    magicDocs: z
-      .boolean()
-      .optional()
-      .describe('Enable Magic Docs auto-detection and background updates.'),
     memoryUsageIndicator: z
       .boolean()
       .optional()

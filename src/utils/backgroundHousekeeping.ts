@@ -1,5 +1,4 @@
 import { initAutoDream } from '../services/autoDream/autoDream.js'
-import { initMagicDocs } from '../services/MagicDocs/magicDocs.js'
 import { initSkillImprovement } from './hooks/skillImprovement.js'
 import { initExtractMemories } from '../services/extractMemories/extractMemories.js'
 
@@ -11,7 +10,6 @@ import { autoUpdateMarketplacesAndPluginsInBackground } from './plugins/pluginAu
 const DELAY_VERY_SLOW_OPERATIONS_THAT_HAPPEN_EVERY_SESSION = 10 * 60 * 1000
 
 export function startBackgroundHousekeeping(): void {
-  void initMagicDocs()
   void initSkillImprovement()
   initExtractMemories()
   initAutoDream()
