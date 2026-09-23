@@ -153,7 +153,7 @@ export function buildAssistantModeBlock(
         `- Act on your best judgment rather than asking for confirmation: read, ` +
         `search, run tests, edit code, and commit when you reach a good stopping ` +
         `point.\n` +
-        `- For actions that are hard to reverse or outward-facing, do not block ` +
+        `- For actions that are hard to reverse or that other people can see, do not block ` +
         `waiting for a human who may be away: take the safer action or leave the ` +
         `action for the user's next message, and say what you deferred and why.\n` +
         `- Do not repeat a question the user has not answered. Invest in what you ` +
