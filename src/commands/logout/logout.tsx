@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { Text } from '../../ink.js'
+import { clearLoginProviderTokens } from '../../services/oauth/logins/index.js'
 import { clearPolicyLimitsCache } from '../../services/policyLimits/index.js'
 import { getClaudeAIOAuthTokens, removeApiKey } from '../../utils/auth.js'
 import { clearBetasCaches } from '../../utils/betas.js'
@@ -16,6 +17,10 @@ export async function performLogout({
   // Wipe all secure storage data on logout
   const secureStorage = getSecureStorage()
   secureStorage.delete()
+
+  // Clear the token blocks of every OAuth login the user chose (claude.ai,
+  // codex) — the provider slots remain, flipped back to "not logged in".
+  clearLoginProviderTokens()
 
   await clearAuthRelatedCaches()
   void clearOnboarding
@@ -37,9 +42,7 @@ export async function clearAuthRelatedCaches(): Promise<void> {
 export async function call(): Promise<React.ReactNode> {
   await performLogout({ clearOnboarding: true })
 
-  const message = (
-    <Text>Successfully logged out from your Anthropic account.</Text>
-  )
+  const message = <Text>Successfully logged out.</Text>
 
   setTimeout(() => {
     gracefulShutdownSync(0, 'logout')

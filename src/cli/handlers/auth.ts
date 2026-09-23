@@ -14,6 +14,15 @@ import {
 } from '../../services/oauth/client.js'
 import { getOauthProfileFromOauthToken } from '../../services/oauth/getOauthProfile.js'
 import { OAuthService } from '../../services/oauth/index.js'
+import {
+  extractCodexAccountId,
+  type CodexTokens,
+} from '../../services/oauth/codex-client.js'
+import {
+  installCodexLoginTokens,
+  startCodexLogin,
+} from '../../services/oauth/logins/codex.js'
+import { getActiveLoginState } from '../../services/oauth/logins/active.js'
 import type { OAuthTokens } from '../../services/oauth/types.js'
 import {
   clearOAuthTokenCache,
@@ -22,7 +31,6 @@ import {
   getOauthAccountInfo,
   getSubscriptionType,
   isUsing3PServices,
-  saveCodexOAuthTokens,
   saveOAuthTokensIfNeeded,
 } from '../../utils/auth.js'
 import { logForDebugging } from '../../utils/debug.js'
@@ -34,11 +42,7 @@ import {
 } from '../../utils/model/providerRegistry.js'
 import { freecodeSettingsFileExists } from '../../utils/settings/freecodeSettings.js'
 import { writeModelSettingsFile } from '../../utils/settings/modelSettings.js'
-import {
-  DEFAULT_ANTHROPIC_MODELS,
-  DEFAULT_CODEX_MODELS,
-} from '../../utils/model/providerPresets.js'
-import type { ProviderConfig } from '../../utils/settings/types.js'
+import { DEFAULT_ANTHROPIC_MODELS } from '../../utils/model/providerPresets.js'
 import {
   getInitialSettings,
   updateSettingsForSource,
@@ -114,12 +118,15 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
   } else {
     // Third-party provider (e.g. OpenAI Codex) — tokens carry no Anthropic
     // scopes. Skip Anthropic API key creation entirely and store the tokens
-    // in their own dedicated config slot.
-    saveCodexOAuthTokens({
+    // in the codex login's provider slot (its own modelSettings write).
+    installCodexLoginTokens({
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken ?? '',
       expiresAt: tokens.expiresAt ?? Date.now() + 3600_000,
-      accountId: tokens.tokenAccount?.uuid ?? '',
+      accountId:
+        extractCodexAccountId(tokens.accessToken) ??
+        tokens.tokenAccount?.uuid ??
+        '',
     })
   }
 
@@ -162,27 +169,8 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
         },
       },
     })
-  } else {
-    // Third-party (Codex)
-    writeModelSettingsFile({
-      providers: {
-        codex: {
-          type: 'openai-responses',
-          baseUrl: 'https://chatgpt.com/backend-api/codex',
-          cache: { type: 'automatic-prefix' },
-          auth: {
-            active: 'oauth',
-            oauth: {
-              accessToken: tokens.accessToken ?? undefined,
-              refreshToken: tokens.refreshToken ?? undefined,
-              expiresAt: tokens.expiresAt ?? undefined,
-            },
-          },
-          models: DEFAULT_CODEX_MODELS,
-        } satisfies ProviderConfig,
-      },
-    })
   }
+  // Third-party (Codex) was persisted by installCodexLoginTokens above.
   resetProviderRegistry()
 
   await clearAuthRelatedCaches()
@@ -193,17 +181,37 @@ export async function authLogin({
   sso,
   console: useConsole,
   claudeai,
+  codex,
 }: {
   email?: string
   sso?: boolean
   console?: boolean
   claudeai?: boolean
+  codex?: boolean
 }): Promise<void> {
   if (useConsole && claudeai) {
     process.stderr.write(
       'Error: --console and --claudeai cannot be used together.\n',
     )
     process.exit(1)
+  }
+
+  if (codex) {
+    try {
+      await startCodexLogin(async url => {
+        process.stdout.write('Opening browser to sign in…\n')
+        process.stdout.write(`If the browser didn't open, visit: ${url}\n`)
+      })
+      process.stdout.write('Login successful.\n')
+      process.exit(0)
+    } catch (err) {
+      logError(err)
+      const sslHint = getSSLErrorHint(err)
+      process.stderr.write(
+        `Login failed: ${errorMessage(err)}\n${sslHint ? sslHint + '\n' : ''}`,
+      )
+      process.exit(1)
+    }
   }
 
   // --console selects Console; --claudeai (or no flag) selects claude.ai.
@@ -290,12 +298,20 @@ export async function authStatus(opts: {
   const oauthAccount = getOauthAccountInfo()
   const subscriptionType = getSubscriptionType()
   const using3P = isUsing3PServices()
-  const loggedIn =
+  let loggedIn =
     hasToken || apiKeySource !== 'none' || hasApiKeyEnvVar || using3P
 
   // Determine auth method
   let authMethod: string = 'none'
-  if (using3P) {
+  const loginState = getActiveLoginState()
+  if (loginState.mode === 'configured') {
+    // Provider carries its own credentials — no login state applies.
+    loggedIn = true
+    authMethod = `provider-${loginState.authMethod}`
+  } else if (loginState.mode === 'login') {
+    loggedIn = loginState.loggedIn
+    authMethod = loginState.kind === 'codex' ? 'chatgpt' : 'claude.ai'
+  } else if (using3P) {
     authMethod = 'third_party'
   } else if (authTokenSource === 'claude.ai') {
     authMethod = 'claude.ai'
@@ -376,6 +392,6 @@ export async function authLogout(): Promise<void> {
     process.stderr.write('Failed to log out.\n')
     process.exit(1)
   }
-  process.stdout.write('Successfully logged out from your Anthropic account.\n')
+  process.stdout.write('Successfully logged out.\n')
   process.exit(0)
 }

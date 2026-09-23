@@ -3632,7 +3632,7 @@ async function run(): Promise<CommanderCommand> {
 
   auth
     .command('login')
-    .description('Sign in to your Anthropic account')
+    .description('Sign in to your Anthropic or OpenAI (ChatGPT) account')
     .option('--email <email>', 'Pre-populate email address on the login page')
     .option('--sso', 'Force SSO login flow')
     .option(
@@ -3640,19 +3640,22 @@ async function run(): Promise<CommanderCommand> {
       'Use Anthropic Console (API usage billing) instead of Claude subscription',
     )
     .option('--claudeai', 'Use Claude subscription (default)')
+    .option('--codex', 'Sign in with OpenAI (ChatGPT) via Codex OAuth')
     .action(
       async ({
         email,
         sso,
         console: useConsole,
         claudeai,
+        codex,
       }: {
         email?: string
         sso?: boolean
         console?: boolean
         claudeai?: boolean
+        codex?: boolean
       }) => {
-        await authLogin({ email, sso, console: useConsole, claudeai })
+        await authLogin({ email, sso, console: useConsole, claudeai, codex })
       },
     )
 

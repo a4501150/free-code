@@ -134,6 +134,9 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
   },
   'openai-chat-completions': {
     ...ALL_FALSE_CAPABILITIES,
+    // An oauth-active provider's tokens come from the codex login and are
+    // renewed with its refresh token on 401.
+    credentialRefresh: 'codex',
     // Which field carries reasoning differs per endpoint, so the adapter
     // remembers whichever one the response used and echoes back into that
     // same one. Set this false for an endpoint that rejects unknown
@@ -142,6 +145,8 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
   },
   'openai-responses': {
     ...ALL_FALSE_CAPABILITIES,
+    // Same codex-login refresh path as chat-completions.
+    credentialRefresh: 'codex',
     // The Codex adapter round-trips reasoning across turns by echoing
     // opaque `{type:"reasoning", id, encrypted_content, summary}` items in
     // `input[]` on each outbound request. The encrypted_content blob is
@@ -162,7 +167,9 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
  * Check if an Anthropic provider config points to the official API URL.
  * Used to distinguish native Anthropic from proxy setups.
  */
-function isOfficialAnthropicBaseUrl(baseUrl: string | undefined): boolean {
+export function isOfficialAnthropicBaseUrl(
+  baseUrl: string | undefined,
+): boolean {
   if (!baseUrl) return true // no baseUrl = official Anthropic API
   try {
     return new URL(baseUrl).host === 'api.anthropic.com'

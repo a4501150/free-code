@@ -36,11 +36,18 @@ export interface LegacyMigrationResult {
  * runLegacyToFreecodeMigration() passes `{ ...process.env, ...settings.env }`.
  *
  * @param opts.env - The environment to consult (required).
- * @param opts.oauthTokens - OAuth tokens from secure storage (if available).
+ * @param opts.oauthTokens - claude.ai OAuth tokens from secure storage (if available).
+ * @param opts.codexTokens - Codex/ChatGPT OAuth tokens imported from an
+ *   existing `~/.codex/auth.json` login (if available).
  */
 export function synthesizeProvidersFromLegacy(opts: {
   env: Record<string, string | undefined>
   oauthTokens?: { accessToken: string } | null
+  codexTokens?: {
+    accessToken: string
+    refreshToken?: string
+    expiresAt?: number
+  } | null
 }): LegacyMigrationResult {
   const providers: Record<string, ProviderConfig> = {}
   const { env } = opts
@@ -94,7 +101,9 @@ export function synthesizeProvidersFromLegacy(opts: {
       models: DEFAULT_FOUNDRY_MODELS,
     }
   } else if (isEnvTruthy(getEnv('CLAUDE_CODE_USE_OPENAI'))) {
-    // OpenAI/Codex provider — uses openai-responses transform
+    // OpenAI/Codex provider — uses openai-responses transform. A migrated
+    // ~/.codex login carries real tokens; otherwise the slot waits for /login
+    // (an empty block reads as "not logged in", never as configured auth).
     providers['codex'] = {
       type: 'openai-responses',
       baseUrl: 'https://chatgpt.com/backend-api/codex',
@@ -102,7 +111,17 @@ export function synthesizeProvidersFromLegacy(opts: {
       capabilities: { webSearch: true },
       auth: {
         active: 'oauth',
-        oauth: { accessToken: '' }, // filled at runtime from Codex OAuth tokens
+        oauth: opts.codexTokens
+          ? {
+              accessToken: opts.codexTokens.accessToken,
+              ...(opts.codexTokens.refreshToken
+                ? { refreshToken: opts.codexTokens.refreshToken }
+                : {}),
+              ...(opts.codexTokens.expiresAt
+                ? { expiresAt: opts.codexTokens.expiresAt }
+                : {}),
+            }
+          : { accessToken: '' },
       },
       models: DEFAULT_CODEX_MODELS,
     }

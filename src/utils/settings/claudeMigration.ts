@@ -16,6 +16,7 @@ import { getClaudeConfigHomeDir } from '../envUtils.js'
 import { safeParseJSON } from '../json.js'
 import { synthesizeProvidersFromLegacy } from '../model/legacyProviderMigration.js'
 import { stripContextSuffix } from '../model/parseModelString.js'
+import { getClaudeAIOAuthTokens } from '../oauthTokenReader.js'
 import {
   orderFreecodeKeys,
   writeFreecodeSettingsFile,
@@ -142,6 +143,52 @@ function readGlobalClaudeJson(): Record<string, unknown> | null {
   return null
 }
 
+/**
+ * Import an existing Codex CLI login (`~/.codex/auth.json`) so a migrated
+ * user is already logged into the codex slot. The access token's JWT `exp`
+ * claim supplies the expiry (epoch ms).
+ */
+function readCodexCliLoginTokens(): {
+  accessToken: string
+  refreshToken?: string
+  expiresAt?: number
+} | null {
+  try {
+    const filePath = join(homedir(), '.codex', 'auth.json')
+    if (!existsSync(filePath)) return null
+    const parsed = safeParseJSON(readFileSync(filePath, 'utf8')) as Record<
+      string,
+      unknown
+    > | null
+    const tokens = parsed?.tokens as Record<string, unknown> | undefined
+    const accessToken =
+      typeof tokens?.access_token === 'string' ? tokens.access_token : undefined
+    if (!accessToken) return null
+    const refreshToken =
+      typeof tokens?.refresh_token === 'string'
+        ? tokens.refresh_token
+        : undefined
+    let expiresAt: number | undefined
+    try {
+      const payload = JSON.parse(
+        Buffer.from(accessToken.split('.')[1] ?? '', 'base64url').toString(
+          'utf8',
+        ),
+      ) as { exp?: number }
+      if (typeof payload.exp === 'number') expiresAt = payload.exp * 1000
+    } catch {
+      // Not a JWT — leave expiry unknown.
+    }
+    return {
+      accessToken,
+      ...(refreshToken ? { refreshToken } : {}),
+      ...(expiresAt ? { expiresAt } : {}),
+    }
+  } catch {
+    return null
+  }
+}
+
 export function runLegacyToFreecodeMigration(): void {
   const legacy = readLegacySettings()
   const globalJson = readGlobalClaudeJson()
@@ -150,9 +197,15 @@ export function runLegacyToFreecodeMigration(): void {
   const out: Record<string, unknown> = { ...(legacy ?? {}) }
   delete out.model
 
+  const claudeAiTokens = getClaudeAIOAuthTokens()
   const { providers, defaultModel, defaultSubagentModel, utilityModel } =
     synthesizeProvidersFromLegacy({
       env: { ...process.env, ...legacyEnv },
+      // A completed /login carries over as an opted-in oauth slot.
+      oauthTokens: claudeAiTokens?.accessToken
+        ? { accessToken: claudeAiTokens.accessToken }
+        : null,
+      codexTokens: readCodexCliLoginTokens(),
     })
 
   if (defaultModel && !out.defaultModel) out.defaultModel = defaultModel

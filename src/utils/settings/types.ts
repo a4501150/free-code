@@ -372,7 +372,12 @@ export const ProviderCacheSchema = z.object({
     ),
 })
 
-export const PROVIDER_CREDENTIAL_REFRESH_TYPES = ['none', 'aws', 'gcp'] as const
+export const PROVIDER_CREDENTIAL_REFRESH_TYPES = [
+  'none',
+  'aws',
+  'gcp',
+  'codex',
+] as const
 
 export type ProviderCredentialRefreshType =
   (typeof PROVIDER_CREDENTIAL_REFRESH_TYPES)[number]
@@ -562,7 +567,10 @@ export const ProviderAuthSchema = z.object({
       expiresAt: z
         .number()
         .optional()
-        .describe('Token expiry (Unix epoch seconds)'),
+        .describe(
+          'Token expiry as an absolute Unix epoch **millisecond** timestamp ' +
+            '(matches OAuthTokens.expiresAt and isOAuthTokenExpired).',
+        ),
     })
     .optional(),
   gcp: z

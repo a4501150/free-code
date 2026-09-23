@@ -6,11 +6,11 @@ import {
 import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js'
 import { Box, Link, Newline, Text, useTheme } from '../ink.js'
 import { useKeybindings } from '../keybindings/useKeybinding.js'
-import { isAnthropicAuthEnabled } from '../utils/auth.js'
+import { getProviderRegistry } from '../utils/model/providerRegistry.js'
 import { env } from '../utils/env.js'
 import { PreflightStep } from '../utils/preflightChecks.js'
 import type { ThemeSetting } from '../utils/theme.js'
-import { ConsoleOAuthFlow } from './ConsoleOAuthFlow.js'
+import { LoginChooser } from './LoginChooser.js'
 import { Select } from './CustomSelect/select.js'
 import { WelcomeV2 } from './LogoV2/WelcomeV2.js'
 import { PressEnterToContinue } from './PressEnterToContinue.js'
@@ -30,7 +30,12 @@ type Props = {
 
 export function Onboarding({ onDone }: Props): React.ReactNode {
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
-  const [oauthEnabled] = useState(() => isAnthropicAuthEnabled())
+  // The login step is only for fresh installs: with any provider configured,
+  // auth is either carried in the provider config or chosen via /login, so
+  // there is nothing onboarding must block on.
+  const [oauthEnabled] = useState(
+    () => getProviderRegistry().getAllProviders().size === 0,
+  )
   const [theme, setTheme] = useTheme()
 
   useEffect(() => {}, [oauthEnabled])
@@ -111,7 +116,7 @@ export function Onboarding({ onDone }: Props): React.ReactNode {
       id: 'oauth',
       component: (
         <SkippableStep skip={false} onSkip={goToNextStep}>
-          <ConsoleOAuthFlow onDone={goToNextStep} />
+          <LoginChooser onDone={goToNextStep} />
         </SkippableStep>
       ),
     })

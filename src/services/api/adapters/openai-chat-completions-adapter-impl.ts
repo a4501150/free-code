@@ -55,12 +55,13 @@ import {
   handleFetchError,
   makeStreamingResponse,
 } from './native-fetch-helpers.js'
+import { ensureCodexLoginFresh } from '../../oauth/logins/codex.js'
 
 // ── Auth resolution ─────────────────────────────────────────────────
 
-function resolveOpenAIChatCompletionsAuthHeaders(
+async function resolveOpenAIChatCompletionsAuthHeaders(
   config: ProviderConfig,
-): Record<string, string> {
+): Promise<Record<string, string>> {
   const auth = config.auth
   let token: string | undefined
   if (auth?.active === 'apiKey') {
@@ -72,7 +73,8 @@ function resolveOpenAIChatCompletionsAuthHeaders(
       auth.bearer?.token ||
       (auth.bearer?.tokenEnv ? process.env[auth.bearer.tokenEnv] : undefined)
   } else if (auth?.active === 'oauth') {
-    token = auth.oauth?.accessToken
+    // Codex-login token block with request-path refresh.
+    token = (await ensureCodexLoginFresh(config))?.accessToken
   }
 
   return token ? { Authorization: `Bearer ${token}` } : {}
@@ -746,7 +748,7 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
     const fetch = fetchOverride ?? globalThis.fetch
-    const authHeaders = resolveOpenAIChatCompletionsAuthHeaders(config)
+    const authHeaders = await resolveOpenAIChatCompletionsAuthHeaders(config)
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1'
     const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`
 
@@ -800,7 +802,7 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
     const fetch = fetchOverride ?? globalThis.fetch
-    const authHeaders = resolveOpenAIChatCompletionsAuthHeaders(config)
+    const authHeaders = await resolveOpenAIChatCompletionsAuthHeaders(config)
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1'
     const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`
 

@@ -1,12 +1,12 @@
 import { useCallback, useState } from 'react'
 import { getIsNonInteractiveSession } from '../bootstrap/state.js'
 import { verifyApiKey } from '../services/api/claude.js'
+import { getActiveLoginState } from '../services/oauth/logins/active.js'
 import {
   getAnthropicApiKeyWithSource,
   getApiKeyFromApiKeyHelper,
   isAnthropicAuthEnabled,
   isClaudeAISubscriber,
-  isCodexSubscriber,
 } from '../utils/auth.js'
 
 export type VerificationStatus =
@@ -22,13 +22,33 @@ export type ApiKeyVerificationResult = {
   error: Error | null
 }
 
+/**
+ * Login-layer verdict for the login-state banner. Null means the active
+ * provider predates or bypasses the login layer (Anthropic-type provider
+ * without an auth block, or a fresh install) — fall through to the legacy
+ * env/keychain API-key resolution below.
+ */
+function loginGate(): VerificationStatus | null {
+  const state = getActiveLoginState()
+  switch (state.mode) {
+    case 'configured':
+      // Credentials live in the provider config — /login never applies here.
+      return 'valid'
+    case 'login':
+      return state.loggedIn ? 'valid' : 'missing'
+    case 'legacy-anthropic':
+    case 'no-providers':
+      return null
+  }
+}
+
 export function useApiKeyVerification(): ApiKeyVerificationResult {
   const [status, setStatus] = useState<VerificationStatus>(() => {
-    if (
-      !isAnthropicAuthEnabled() ||
-      isClaudeAISubscriber() ||
-      isCodexSubscriber()
-    ) {
+    const gate = loginGate()
+    if (gate) {
+      return gate
+    }
+    if (!isAnthropicAuthEnabled() || isClaudeAISubscriber()) {
       return 'valid'
     }
     // Use skipRetrievingKeyFromApiKeyHelper to avoid executing apiKeyHelper
@@ -46,11 +66,12 @@ export function useApiKeyVerification(): ApiKeyVerificationResult {
   const [error, setError] = useState<Error | null>(null)
 
   const verify = useCallback(async (): Promise<void> => {
-    if (
-      !isAnthropicAuthEnabled() ||
-      isClaudeAISubscriber() ||
-      isCodexSubscriber()
-    ) {
+    const gate = loginGate()
+    if (gate) {
+      setStatus(gate)
+      return
+    }
+    if (!isAnthropicAuthEnabled() || isClaudeAISubscriber()) {
       setStatus('valid')
       return
     }

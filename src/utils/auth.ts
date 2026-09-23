@@ -3,10 +3,6 @@ import { exec } from 'child_process'
 import { execa } from 'execa'
 import { mkdir, stat } from 'fs/promises'
 import { GoogleAuth } from 'google-auth-library'
-import {
-  readModelSettingsFile,
-  writeModelSettingsFile,
-} from './settings/modelSettings.js'
 import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
 import { CLAUDE_AI_PROFILE_SCOPE } from 'src/constants/oauth.js'
@@ -24,7 +20,8 @@ import {
   refreshOAuthToken,
   shouldUseClaudeAIAuth,
 } from '../services/oauth/client.js'
-import type { CodexTokens } from '../services/oauth/codex-client.js'
+import { getActiveLoginState } from '../services/oauth/logins/active.js'
+import { mirrorClaudeAiOAuthToModelSettings } from '../services/oauth/logins/claudeAi.js'
 import { getOauthProfileFromOauthToken } from '../services/oauth/getOauthProfile.js'
 import type {
   BillingType,
@@ -1144,28 +1141,6 @@ export function clearOAuthTokenCache(): void {
   clearKeychainCache()
 }
 
-// ── Codex OAuth token storage ────────────────────────────────────────────────
-// These functions manage OpenAI Codex tokens separately from Anthropic's
-// claudeAiOauth keychain entry. Codex tokens are stored in the GlobalConfig
-// JSON file (not in the system keychain) and are only ever sent to OpenAI's
-// API, never to Anthropic's servers.
-
-/**
- * Saves the OpenAI Codex OAuth tokens to GlobalConfig.
- * Does NOT overwrite or interfere with Anthropic's claudeAiOauth block.
- */
-export function saveCodexOAuthTokens(_tokens: CodexTokens): void {
-  // No-op: auth is provider-managed via freecode.json
-}
-
-export function getCodexOAuthTokens(): CodexTokens | null {
-  return null
-}
-
-export function clearCodexOAuthTokens(): void {
-  // No-op: auth is provider-managed via freecode.json
-}
-
 let lastCredentialsMtimeMs = 0
 
 // Cross-process staleness: another CC instance may write fresh tokens to
@@ -1378,37 +1353,9 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
     })
     saveOAuthTokensIfNeeded(refreshedTokens)
 
-    // Update modelSettings.json with refreshed tokens. Login writes oauth creds
-    // to the "claude-ai" slot (distinct from a user-owned "anthropic" proxy).
-    try {
-      const existing = readModelSettingsFile() ?? {}
-      const providers = existing.providers as
-        | Record<string, Record<string, unknown>>
-        | undefined
-      const claudeAiProvider = providers?.['claude-ai']
-      if (
-        claudeAiProvider &&
-        (claudeAiProvider.auth as Record<string, unknown>)?.active === 'oauth'
-      ) {
-        writeModelSettingsFile({
-          providers: {
-            'claude-ai': {
-              ...claudeAiProvider,
-              auth: {
-                active: 'oauth',
-                oauth: {
-                  accessToken: refreshedTokens.accessToken,
-                  refreshToken: refreshedTokens.refreshToken,
-                  expiresAt: refreshedTokens.expiresAt,
-                },
-              },
-            },
-          },
-        })
-      }
-    } catch {
-      // Non-fatal: modelSettings.json update is best-effort
-    }
+    // Mirror the refreshed token into the login-owned "claude-ai" slot of
+    // modelSettings.json (best-effort) — the runtime view adapters read.
+    mirrorClaudeAiOAuthToModelSettings(refreshedTokens)
 
     // Clear the cache after refreshing token
     getClaudeAIOAuthTokens.cache?.clear?.()
@@ -1439,18 +1386,8 @@ export function isClaudeAISubscriber(): boolean {
 }
 
 export function isCodexSubscriber(): boolean {
-  // Only treat as Codex subscriber when explicitly using OpenAI provider
-  const providerType = getProviderRegistry().getDefaultProvider()?.config.type
-  if (
-    providerType !== 'openai-chat-completions' &&
-    providerType !== 'openai-responses'
-  ) {
-    return false
-  }
-
-  // Verify we actually have valid Codex tokens
-  const tokens = getCodexOAuthTokens()
-  return !!tokens?.accessToken
+  const state = getActiveLoginState()
+  return state.mode === 'login' && state.kind === 'codex' && state.loggedIn
 }
 
 /**

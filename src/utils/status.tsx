@@ -3,6 +3,10 @@ import figures from 'figures'
 import * as React from 'react'
 import { color, Text } from '../ink.js'
 import type { MCPServerConnection } from '../services/mcp/types.js'
+import {
+  getActiveLoginState,
+  LOGIN_METHODS,
+} from '../services/oauth/logins/index.js'
 import { getAccountInformation, isClaudeAISubscriber } from './auth.js'
 import {
   getLargeMemoryFiles,
@@ -246,6 +250,18 @@ export function buildAPIProviderProperties(): Property[] {
   const providerType = registry.getDefaultProvider()?.config.type
 
   const properties: Property[] = []
+
+  // Active OAuth login state (only when the active provider opted into one).
+  const loginState = getActiveLoginState()
+  if (loginState.mode === 'login') {
+    const method = LOGIN_METHODS.find(m => m.kind === loginState.kind)
+    properties.push({
+      label: 'Login',
+      value: loginState.loggedIn
+        ? `${method?.label ?? loginState.kind} — signed in`
+        : `${method?.label ?? loginState.kind} — not signed in (run /login)`,
+    })
+  }
 
   // Show all configured providers
   if (allProviders.size > 1) {

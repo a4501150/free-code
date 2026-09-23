@@ -33,6 +33,7 @@ import {
   type Tools,
 } from '../../Tool.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
+import { refreshActiveLoginTokens } from '../oauth/logins/index.js'
 import {
   type ConnectorTextBlock,
   type ConnectorTextDelta,
@@ -347,6 +348,15 @@ export async function prepareRetry(error: unknown): Promise<void> {
       (error instanceof DomainTransportError && error.status === 401))
   ) {
     clearGcpCredentialsCache()
+  }
+  if (
+    credentialRefresh === 'codex' &&
+    error instanceof DomainTransportError &&
+    error.status === 401
+  ) {
+    // Codex-login token refresh: renew via the refresh token and rewrite the
+    // provider block; failure surfaces through the normal auth-error path.
+    await refreshActiveLoginTokens()
   }
 }
 

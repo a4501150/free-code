@@ -23,8 +23,14 @@ import {
   fromHttpStatus,
   type NormalizedApiError,
 } from '../../../utils/normalizedError.js'
-import { deriveCapabilities } from '../../../utils/model/providerRegistry.js'
-import { getCodexOAuthTokens } from '../../../utils/auth.js'
+import {
+  deriveCapabilities,
+  getProviderRegistry,
+} from '../../../utils/model/providerRegistry.js'
+import {
+  codexLoginSlotForConfig,
+  ensureCodexLoginFresh,
+} from '../../oauth/logins/codex.js'
 import { getSessionId } from '../../../bootstrap/state.js'
 import { logForDebugging } from '../../../utils/debug.js'
 import { isEnvDefinedFalsy } from '../../../utils/envUtils.js'
@@ -122,24 +128,12 @@ function extractAccountId(token: string): string {
 
 // ── Auth resolution ────────────────────────────────────────────────
 
-function resolveCodexAuth(config: ProviderConfig): {
+async function resolveCodexAuth(config: ProviderConfig): Promise<{
   accessToken: string
   getRefreshedToken: () => string
   baseUrl: string
   isProxied: boolean
-} | null {
-  const codexTokens = getCodexOAuthTokens()
-  const oauthToken = codexTokens?.accessToken
-
-  if (oauthToken) {
-    return {
-      accessToken: oauthToken,
-      getRefreshedToken: () => getCodexOAuthTokens()?.accessToken ?? oauthToken,
-      baseUrl: config.baseUrl || DEFAULT_CODEX_BASE_URL,
-      isProxied: !!config.baseUrl,
-    }
-  }
-
+} | null> {
   const auth = config.auth
   let token: string | undefined
   if (auth?.active === 'apiKey') {
@@ -151,14 +145,21 @@ function resolveCodexAuth(config: ProviderConfig): {
       auth.bearer?.token ||
       (auth.bearer?.tokenEnv ? process.env[auth.bearer.tokenEnv] : undefined)
   } else if (auth?.active === 'oauth') {
-    token = auth.oauth?.accessToken
+    // Codex-login token block with request-path refresh: expired tokens are
+    // renewed (and rewritten into modelSettings.json) before the header is built.
+    token = (await ensureCodexLoginFresh(config))?.accessToken
   }
 
   if (!token) return null
 
+  const slot = auth?.active === 'oauth' ? codexLoginSlotForConfig(config) : null
   return {
     accessToken: token,
-    getRefreshedToken: () => token!,
+    getRefreshedToken: () =>
+      // Re-read the live registry entry — a 401-driven refresh rewrites it.
+      (slot
+        ? getProviderRegistry().getProvider(slot)?.auth?.oauth?.accessToken
+        : undefined) ?? token,
     baseUrl: config.baseUrl || DEFAULT_CODEX_BASE_URL,
     isProxied: !!config.baseUrl,
   }
@@ -1376,7 +1377,7 @@ export const codexAdapter: ProviderAdapter = {
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
     const fetch = fetchOverride ?? globalThis.fetch
-    const auth = resolveCodexAuth(config)
+    const auth = await resolveCodexAuth(config)
     if (!auth) {
       throw new DomainConnectionError({
         normalized: {
@@ -1451,7 +1452,7 @@ export const codexAdapter: ProviderAdapter = {
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
     const fetch = fetchOverride ?? globalThis.fetch
-    const auth = resolveCodexAuth(config)
+    const auth = await resolveCodexAuth(config)
     if (!auth) {
       throw new DomainConnectionError({
         normalized: {
