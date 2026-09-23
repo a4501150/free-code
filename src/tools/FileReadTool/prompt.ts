@@ -33,6 +33,5 @@ ${lineFormat}
     isPDFSupported()
       ? ' — use the `pages` parameter for large PDFs, and do not pass `pages` when reading non-PDF files'
       : ''
-  }. It reads files, not directories: to list a directory, use an ls command via the ${BASH_TOOL_NAME} tool.
-- Reading a file that exists but has empty contents returns a system reminder warning in place of file contents; after a successful Edit you do not need to re-read the file — the edit result already reflects what is on disk.`
+  }. It reads files, not directories: to list a directory, use an ls command via the ${BASH_TOOL_NAME} tool.`
 }
