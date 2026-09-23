@@ -57,12 +57,12 @@ describe('tool prompt contracts', () => {
     const create = readSource('src/tools/TaskCreateTool/prompt.ts')
     const update = readSource('src/tools/TaskUpdateTool/prompt.ts')
 
-    expect(edit).toContain('read that target file')
+    expect(edit).toContain('before editing an unread file')
     expect(output).toContain(
       'Retrieve output from a running or completed background task',
     )
     expect(output).not.toContain('[Deprecated]')
-    expect(create).toContain('as soon as you finish it')
+    expect(create).toContain('as soon as it is done')
     expect(update).toContain('only when the task is fully accomplished')
     expect(update).not.toContain('Mark tasks as resolved')
   })

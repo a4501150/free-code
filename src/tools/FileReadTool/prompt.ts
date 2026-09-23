@@ -29,13 +29,10 @@ Usage:
 ${maxSizeInstruction ? `- ${maxSizeInstruction}` : ''}
 - For text and source files, provide only \`file_path\` to read the full file. To read a portion, provide \`offset\`, \`limit\`, or both.
 ${lineFormat}
-- This tool can read images (for example PNG, JPG), which come back as visual content.${
+- This tool can read images (for example PNG, JPG) as visual content, Jupyter notebooks (.ipynb, returning all cells with their outputs), and PDF files (.pdf)${
     isPDFSupported()
-      ? '\n- This tool can read PDF files (.pdf). Use the `pages` parameter for large PDFs. Do not pass `pages` when reading non-PDF files.'
+      ? ' — use the `pages` parameter for large PDFs, and do not pass `pages` when reading non-PDF files'
       : ''
-  }
-- This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.
-- This tool can only read files, not directories. To list a directory, use an ls command via the ${BASH_TOOL_NAME} tool.
-- Reading a file that exists but has empty contents returns a system reminder warning in place of file contents.
-- After a successful Edit you do not need to re-read the file to verify the change; the edit result already reflects what is on disk.`
+  }. It reads files, not directories: to list a directory, use an ls command via the ${BASH_TOOL_NAME} tool.
+- Reading a file that exists but has empty contents returns a system reminder warning in place of file contents; after a successful Edit you do not need to re-read the file — the edit result already reflects what is on disk.`
 }

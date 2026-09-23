@@ -13,29 +13,11 @@ export function getPrompt(): string {
 `
     : ''
 
-  return `Use this tool to create a structured task list for your current coding session. It tracks progress for you and shows the user how the work is unfolding.
+  return `Use this tool to create tasks in the task list — it tracks progress for you and shows the user how the work is unfolding.
 
-## Lifecycle
-
-Once a list exists, keep it accurate as you work — a list that lags behind the work is worse than no list:
-
-- Mark a task \`in_progress\` BEFORE you start it, and keep exactly one of your own tasks \`in_progress\` at a time.
-- Mark a task \`completed\` as soon as you finish it. Do not save the completion reports for the end.
+- Use it for complex multi-step work (3 or more distinct steps or operations${teammateContext}), in plan mode, when the user asks for a todo list or hands over multiple tasks, or when new instructions arrive that capture requirements as work items. Skip it for a single straightforward task or a conversational request — just do the work.
+- Check TaskList first to avoid duplicates. Give each task a clear, specific subject that describes the outcome; after creating, use TaskUpdate to set dependencies (blocks/blockedBy) when needed.
+- Once a list exists, keep it accurate — a list that lags behind the work is worse than no list. Mark a task \`in_progress\` BEFORE you start it, keep exactly one of your own tasks \`in_progress\` at a time, and mark it \`completed\` as soon as it is done; do not batch completions.
 - Add follow-up tasks as you discover them, and delete tasks that are no longer relevant.
-
-## When to Use This Tool
-
-- Complex multi-step tasks: 3 or more distinct steps or operations${teammateContext}
-- Plan mode: create a task list to track the work
-- The user explicitly requests a todo list, or provides multiple tasks to do
-- New instructions arrive: capture the requirements as tasks immediately
-
-## When NOT to Use This Tool
-
-Skip it for a single straightforward task, or for purely conversational or informational requests - do the work directly.
-
-${teammateTips}- Create tasks with clear, specific subjects that describe the outcome
-- After creating tasks, use TaskUpdate to set up dependencies (blocks/blockedBy) if needed
-- Check TaskList first to avoid creating duplicate tasks
-`
+${teammateTips}`
 }
