@@ -1,11 +1,8 @@
 /**
  * Content sightings: records which lines of which files the model was actually
  * SHOWN, so edit approval (editApproval.ts) can be decided by content logic
- * instead of read timestamps. Two writers live here:
+ * instead of read timestamps. One writer:
  *
- * - GrepTool content mode: we generate the rows ourselves, but each shown line
- *   is re-verified against the file before being marked seen (ripgrep elides
- *   lines over --max-columns, so a shown row can differ from disk).
  * - BashTool: a small allowlist of single-file read commands (cat, head, nl,
  *   sed -n 'A,Bp', grep -n, rg -n) whose output we can map back to exact line
  *   ranges
@@ -64,7 +61,7 @@ function recordSighting(
   filePath: string,
   snap: Snapshot,
   seenRanges: SeenRange[],
-  source: 'grep' | 'bash',
+  source: 'bash',
 ): void {
   const ranges = normalizeSeenRanges(seenRanges)
   if (ranges.length === 0) return
@@ -102,53 +99,6 @@ function recordSighting(
     seenRanges: wholeFile ? undefined : ranges,
     source,
   })
-}
-
-// --- GrepTool content mode ----------------------------------------------------
-
-/**
- * Parse raw ripgrep content-mode output lines into per-file shown rows.
- * Match rows are `path:num:content`, context rows `path-num-content`, and
- * `--` separates groups. Returns nothing for multiline mode (blocks can span
- * lines in ways a per-line map cannot represent).
- */
-export function recordGrepContentSightings(
-  readFileState: FileStateCache,
-  rawLines: string[],
-  opts: { multiline: boolean },
-): void {
-  if (opts.multiline) return
-  // path -> (lineNo -> shown text). Later groups overwrite: last-shown wins.
-  const byFile = new Map<string, Map<number, string>>()
-  for (const line of rawLines) {
-    if (line === '--') continue
-    // Match rows: `path:num:content`. Context rows: `path-num-content`.
-    // The path part is matched lazily so paths containing `-` (or a `C:`
-    // drive letter) are not split too early; the digits-plus-separator
-    // requirement makes the real boundary win in practice.
-    const m =
-      line.match(/^(.+?):(\d+):(.*)$/) ?? line.match(/^(.+?)-(\d+)-(.*)$/)
-    if (!m) continue
-    const filePath = m[1]!
-    const lineNo = Number(m[2])
-    const shown = m[3]!
-    if (!Number.isSafeInteger(lineNo) || lineNo < 1) continue
-    let rows = byFile.get(filePath)
-    if (!rows) byFile.set(filePath, (rows = new Map()))
-    rows.set(lineNo, shown)
-  }
-
-  for (const [filePath, rows] of byFile) {
-    const snapResult = snapshotFile(filePath)
-    if (!snapResult.ok) continue
-    const snap = snapResult.snap
-    const seen: SeenRange[] = []
-    for (const [lineNo, shown] of rows) {
-      const actual = snap.lineArray[lineNo - 1]
-      if (actual === shown) seen.push({ start: lineNo, end: lineNo })
-    }
-    recordSighting(readFileState, filePath, snap, seen, 'grep')
-  }
 }
 
 // --- BashTool read commands ---------------------------------------------------

@@ -147,8 +147,7 @@ export function GlobalSearchDialog({
         let collected = 0
         void ripGrepStream(
           // -e disambiguates pattern from options when the query starts with '-'
-          // (e.g. searching for "--verbose" or "-rf"). See GrepTool.ts for the
-          // same precaution.
+          // (e.g. searching for "--verbose" or "-rf").
           [
             '-n',
             '--no-heading',

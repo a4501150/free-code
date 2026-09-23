@@ -13,7 +13,7 @@ export function registerDebugSkill(): void {
     name: 'debug',
     description:
       'Enable debug logging for this session and help diagnose issues',
-    allowedTools: ['Read', 'Grep', 'Glob'],
+    allowedTools: ['Read'],
     argumentHint: '[issue description]',
     // disableModelInvocation so that the user has to explicitly request it in
     // interactive mode and so the description does not take up context.

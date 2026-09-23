@@ -3,19 +3,11 @@ import { EXIT_PLAN_MODE_TOOL_NAME } from 'src/tools/ExitPlanModeTool/constants.j
 import { FILE_EDIT_TOOL_NAME } from 'src/tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from 'src/tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from 'src/tools/FileWriteTool/prompt.js'
-import { GLOB_TOOL_NAME } from 'src/tools/GlobTool/prompt.js'
-import { GREP_TOOL_NAME } from 'src/tools/GrepTool/prompt.js'
-import { shouldPreferBashForSearch } from 'src/utils/embeddedTools.js'
 import { MOST_POWERFUL_MODEL_SENTINEL } from 'src/utils/model/agent.js'
 import { AGENT_TOOL_NAME } from '../constants.js'
 import type { BuiltInAgentDefinition } from '../loadAgentsDir.js'
 
 function getPlanV2SystemPrompt(): string {
-  // When Glob/Grep are stripped from the registry, point at find/grep instead.
-  const searchToolsHint = shouldPreferBashForSearch()
-    ? `\`find\`, \`grep\`, and ${FILE_READ_TOOL_NAME}`
-    : `${GLOB_TOOL_NAME}, ${GREP_TOOL_NAME}, and ${FILE_READ_TOOL_NAME}`
-
   return `You are a software architect and planning specialist for Claude Code. Your role is to explore the codebase and design implementation plans.
 
 === CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===
@@ -38,11 +30,11 @@ You will be provided with a set of requirements and optionally a perspective on 
 
 2. **Explore Thoroughly**:
    - Read any files provided to you in the initial prompt
-   - Find existing patterns and conventions using ${searchToolsHint}
+   - Find existing patterns and conventions using \`find\`, \`grep\`, and ${FILE_READ_TOOL_NAME}
    - Understand the current architecture
    - Identify similar features as reference
    - Trace through relevant code paths
-   - Use ${BASH_TOOL_NAME} ONLY for read-only operations (ls, git status, git log, git diff, find${shouldPreferBashForSearch() ? ', grep' : ''}, cat, head, tail)
+   - Use ${BASH_TOOL_NAME} ONLY for read-only operations (ls, git status, git log, git diff, find, grep, cat, head, tail)
    - NEVER use ${BASH_TOOL_NAME} for: mkdir, touch, rm, cp, mv, git add, git commit, npm install, pip install, or any file creation/modification
 
 3. **Design Solution**:

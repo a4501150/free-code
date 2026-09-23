@@ -105,8 +105,8 @@ export function createRipgrepShellIntegration(): {
 }
 
 /**
- * VCS directories to exclude from grep searches. Matches the list in
- * GrepTool (see GrepTool.ts: VCS_DIRECTORIES_TO_EXCLUDE).
+ * VCS directories to exclude from grep searches — the dirs ripgrep-like
+ * content search should never descend into.
  */
 const VCS_DIRECTORIES_TO_EXCLUDE = [
   '.git',
@@ -122,40 +122,41 @@ const VCS_DIRECTORIES_TO_EXCLUDE = [
  * binaries. Unlike the rg integration, this always shadows the system find/grep
  * since bfs/ugrep are drop-in replacements and we want consistent fast behavior.
  *
- * These wrappers replace the GlobTool/GrepTool dedicated tools (which are
- * removed from the tool registry when embedded search tools are available),
- * so they're tuned to match those tools' semantics, not GNU find/grep.
+ * The model's search channel is Bash, so these are tuned toward ripgrep-like
+ * semantics (gitignore-aware, hidden-included, VCS-excluded), not raw GNU
+ * find/grep defaults.
  *
- * `find` ↔ GlobTool:
+ * `find` (file discovery):
  * - `-S dfs`: match Claude Code's embedded bfs traversal strategy.
  * - Inject `-regextype findutils-default`: bfs defaults to POSIX BRE for
  *   -regex, but GNU find defaults to emacs-flavor (which supports `\|`
  *   alternation). Without this, `find . -regex '.*\.\(js\|ts\)'` silently
  *   returns zero results. A later user-supplied -regextype still overrides.
- * - No gitignore filtering: GlobTool passes `--no-ignore` to rg. bfs has no
- *   gitignore support anyway, so this matches by default.
- * - Hidden files included: both GlobTool (`--hidden`) and bfs's default.
+ * - No gitignore filtering: file discovery should enumerate, not filter;
+ *   bfs has no gitignore support anyway.
+ * - Hidden files included: bfs's default.
  *
  * Caveat: even with findutils-default, Oniguruma (bfs's regex engine) uses
  * leftmost-first alternation, not POSIX leftmost-longest. Patterns where
  * one alternative is a prefix of another (e.g., `\(ts\|tsx\)`) may miss
  * matches that GNU find catches. Workaround: put the longer alternative first.
  *
- * `grep` ↔ GrepTool (file filtering) + GNU grep (regex syntax):
+ * `grep` (content search) — tuned to match ripgrep's recursion defaults where
+ * ugrep differs, and GNU grep's regex syntax where ugrep differs:
  * - `-G` (basic regex / BRE): GNU grep defaults to BRE where `\|` is
  *   alternation. ugrep defaults to ERE where `|` is alternation and `\|` is a
  *   literal pipe. Without -G, `grep "foo\|bar"` silently returns zero results.
  *   User-supplied `-E`, `-F`, or `-P` later in argv overrides this.
- * - `--ignore-files`: respect .gitignore (GrepTool uses rg's default, which
- *   respects gitignore). Override with `grep --no-ignore-files`.
- * - `--hidden`: include hidden files (GrepTool passes `--hidden` to rg).
+ * - `--ignore-files`: respect .gitignore (rg respects it by default).
+ *   Override with `grep --no-ignore-files`.
+ * - `--hidden`: include hidden files (matching rg usage here).
  *   Override with `grep --no-hidden`.
- * - `--exclude-dir` for VCS dirs: GrepTool passes `--glob '!.git'` etc. to rg.
+ * - `--exclude-dir` for VCS dirs (mirrors rg `--glob '!.git'` etc.).
  * - `-I`: skip binary files. rg's recursion silently skips binary matches
  *   by default (different from direct-file-arg behavior); ugrep doesn't, so
  *   we inject -I to match. Override with `grep -a`.
  *
- * Not replicated from GrepTool:
+ * Deliberately not injected:
  * - `--max-columns 500`: ugrep's `--width` hard-truncates output which could
  *   break pipelines; rg's version replaces the line with a placeholder.
  * - Read deny rules / plugin cache exclusions: require toolPermissionContext

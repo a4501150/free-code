@@ -25,8 +25,6 @@ export function registerDreamSkill(): void {
       'Read',
       'Write',
       'Edit',
-      'Glob',
-      'Grep',
       'Bash(ls:*)',
       'Bash(grep:*)',
       'Bash(cat:*)',

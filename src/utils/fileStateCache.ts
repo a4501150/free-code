@@ -45,7 +45,6 @@ export type SeenSource =
   | 'read'
   | 'edit'
   | 'write'
-  | 'grep'
   | 'bash'
   | 'injected'
   | 'seeded'

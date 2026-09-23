@@ -26,8 +26,6 @@ const WATCHLIST = [
   'Edit',
   'EnterPlanMode',
   'ExitPlanMode',
-  'Glob',
-  'Grep',
   'Read',
   'SendMessage',
   'Skill',
@@ -47,6 +45,9 @@ const WATCHLIST = [
   // server; a stale mention of either name in prompt prose is a phantom
   'WebFetch',
   'WebSearch',
+  // dedicated search tools removed; search prose points at Bash find/grep/rg
+  'Glob',
+  'Grep',
 ]
 
 function toolMentions(text: string): string[] {
@@ -85,13 +86,9 @@ describe('tool prompt tool-name drift', () => {
     expect(offenders).toEqual([])
   })
 
-  test('Edit/Write descriptions drop Grep when dedicated search tools are stripped', () => {
-    // shouldPreferBashForSearch() removes Glob/Grep from getAllBaseTools();
-    // the descriptions must not teach the phantom Grep in that build.
-    const registered = new Set(getAllBaseTools().map(tool => tool.name))
-    if (!registered.has('Grep')) {
-      expect(getEditToolDescription()).not.toContain('Grep')
-      expect(getWriteToolDescription()).not.toContain('Grep')
-    }
+  test('Edit/Write descriptions never teach the removed Grep tool', () => {
+    // Search goes through Bash; the descriptions must not name a phantom tool.
+    expect(getEditToolDescription()).not.toContain('Grep')
+    expect(getWriteToolDescription()).not.toContain('Grep')
   })
 })

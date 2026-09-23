@@ -7,11 +7,10 @@ import {
   getDefaultBashTimeoutMs,
   getMaxBashTimeoutMs,
 } from '../../utils/timeouts.js'
+import { BASH_TOOL_NAME } from '../BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../FileWriteTool/prompt.js'
-import { GLOB_TOOL_NAME } from '../GlobTool/prompt.js'
-import { GREP_TOOL_NAME } from '../GrepTool/prompt.js'
 import { POWERSHELL_TOOL_NAME } from './toolName.js'
 
 export function getDefaultTimeoutMs(): number {
@@ -88,7 +87,7 @@ Second line with $literal dollar signs.
 
 Usage notes:
    - Output over ${getMaxOutputLength()} characters is truncated before being returned to you.
-   - Prefer the dedicated tools over PowerShell for file operations: ${GLOB_TOOL_NAME} for file search, ${GREP_TOOL_NAME} for content search, ${FILE_READ_TOOL_NAME} to read, ${FILE_EDIT_TOOL_NAME} to edit, ${FILE_WRITE_TOOL_NAME} to write.
+   - Prefer dedicated tools over PowerShell for file operations: use ${BASH_TOOL_NAME} (find/grep/rg) for search, ${FILE_READ_TOOL_NAME} to read, ${FILE_EDIT_TOOL_NAME} to edit, ${FILE_WRITE_TOOL_NAME} to write.
    - When issuing multiple commands:
    - Independent commands: make multiple ${POWERSHELL_TOOL_NAME} tool calls in a single message.
    - Dependent commands: chain them in a single ${POWERSHELL_TOOL_NAME} call (see edition-specific chaining syntax above).

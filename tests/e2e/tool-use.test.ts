@@ -420,11 +420,10 @@ describe('Tool Use E2E', () => {
     })
   })
 
-  // Grep/Glob tools are feature-gated behind DEDICATED_SEARCH_TOOLS and
-  // stripped from the default tool registry (see shouldPreferBashForSearch()
-  // in src/utils/embeddedTools.ts — default builds steer search through Bash
-  // via `find` / `grep` / `rg`). Config tool was removed entirely in c07726a.
-  // Tests for those registrations were deleted along with the tools.
+  // The dedicated Grep/Glob tools were removed entirely: search is a Bash
+  // concern (`find` / `grep` / `rg`), not a tool registration. Config tool
+  // was removed entirely in c07726a. Tests for those registrations were
+  // deleted along with the tools.
 
   describe('Parallel Tool Calls', () => {
     test('parallel Bash and file tools return all tool_results', async () => {

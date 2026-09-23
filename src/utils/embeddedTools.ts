@@ -1,8 +1,7 @@
 import { existsSync } from 'fs'
+import memoize from 'lodash-es/memoize.js'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
-
-import { feature } from 'bun:bundle'
 
 const __filename = fileURLToPath(import.meta.url)
 const sourceVendorSearchToolsRoot = resolve(
@@ -23,24 +22,28 @@ function getSearchToolBinaryName(name: 'bfs' | 'ugrep'): string {
   return process.platform === 'win32' ? `${name}.exe` : name
 }
 
-export function bundledSearchToolPaths(): BundledSearchToolPaths | null {
-  const platformDir = getSearchToolsPlatformDir()
-  const candidateRoots = [
-    resolve(dirname(process.execPath), 'vendor/search-tools'),
-    sourceVendorSearchToolsRoot,
-  ]
+// Memoized: runs existsSync on the per-request Bash tool-prompt build path.
+// Binary locations are immutable for a process.
+export const bundledSearchToolPaths = memoize(
+  (): BundledSearchToolPaths | null => {
+    const platformDir = getSearchToolsPlatformDir()
+    const candidateRoots = [
+      resolve(dirname(process.execPath), 'vendor/search-tools'),
+      sourceVendorSearchToolsRoot,
+    ]
 
-  for (const root of candidateRoots) {
-    const dir = resolve(root, platformDir)
-    const bfsPath = resolve(dir, getSearchToolBinaryName('bfs'))
-    const ugrepPath = resolve(dir, getSearchToolBinaryName('ugrep'))
-    if (existsSync(bfsPath) && existsSync(ugrepPath)) {
-      return { bfsPath, ugrepPath }
+    for (const root of candidateRoots) {
+      const dir = resolve(root, platformDir)
+      const bfsPath = resolve(dir, getSearchToolBinaryName('bfs'))
+      const ugrepPath = resolve(dir, getSearchToolBinaryName('ugrep'))
+      if (existsSync(bfsPath) && existsSync(ugrepPath)) {
+        return { bfsPath, ugrepPath }
+      }
     }
-  }
 
-  return null
-}
+    return null
+  },
+)
 
 function isSearchToolEntrypointEnabled(): boolean {
   const e = process.env.CLAUDE_CODE_ENTRYPOINT
@@ -52,27 +55,12 @@ function isSearchToolEntrypointEnabled(): boolean {
 /**
  * Whether this build has vendored bfs/ugrep available for Bash search wrappers.
  *
- * When true:
- * - `find` and `grep` in Claude's Bash shell are shadowed by shell functions
- *   that invoke vendored bfs/ugrep binaries
- * - The dedicated Glob/Grep tools are removed from the tool registry
- * - Prompt guidance steering Claude away from find/grep is omitted
+ * When true, `find` and `grep` in the Bash shell are shadowed by shell
+ * functions that invoke the vendored bfs/ugrep binaries (see
+ * ShellSnapshot.ts). Whether they're available is a perf concern only —
+ * search itself always goes through the Bash channel either way, falling
+ * back to the system `find`/`grep`/`rg` when the sidecars are absent.
  */
 export function hasEmbeddedSearchTools(): boolean {
   return isSearchToolEntrypointEnabled() && bundledSearchToolPaths() !== null
-}
-
-/**
- * True when Glob/Grep should be omitted and the model should prefer
- * `find` / `grep` / `rg` via the Bash tool. Distinct from
- * hasEmbeddedSearchTools(), which specifically reports whether the
- * runtime has bfs/ugrep available (a perf concern).
- *
- * Gated by the `DEDICATED_SEARCH_TOOLS` feature flag — default builds
- * strip Glob/Grep and use bash-first prompt variants. Opt in at build
- * time with `--feature=DEDICATED_SEARCH_TOOLS` to restore them.
- */
-export function shouldPreferBashForSearch(): boolean {
-  if (feature('DEDICATED_SEARCH_TOOLS')) return hasEmbeddedSearchTools()
-  return true
 }

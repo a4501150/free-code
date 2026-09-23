@@ -55,16 +55,15 @@ self-contained: `vendor/ripgrep/`, `vendor/search-tools/` and
 
 ### Opt-in feature flags
 
-Four subsystems stay behind compile-time `feature(...)` checks. Enable them by
+Three subsystems stay behind compile-time `feature(...)` checks. Enable them by
 passing `--feature=NAME` to the build script (unknown names are silently
 ignored, so typos become dead flags):
 
-| Flag                     | Effect                                                                                   |
-| ------------------------ | ---------------------------------------------------------------------------------------- |
-| `BUDDY`                  | Companion sprite and `/buddy` command. Currently a no-op: its modules have no consumers. |
-| `DEDICATED_SEARCH_TOOLS` | Restores the dedicated search tools in place of the generic Bash channel.                |
-| `VERIFY_PLAN`            | Plan verification guidance and task/todo verification nudges.                            |
-| `WORKTREE_MODE`          | Worktree-mode behavior and the batch skill.                                              |
+| Flag            | Effect                                                                                   |
+| --------------- | ---------------------------------------------------------------------------------------- |
+| `BUDDY`         | Companion sprite and `/buddy` command. Currently a no-op: its modules have no consumers. |
+| `VERIFY_PLAN`   | Plan verification guidance and task/todo verification nudges.                            |
+| `WORKTREE_MODE` | Worktree-mode behavior and the batch skill.                                              |
 
 ```bash
 bun run ./scripts/build.ts --feature=VERIFY_PLAN --feature=WORKTREE_MODE
@@ -159,7 +158,7 @@ ingress are created or refreshed through the API on every start, and
 Bun, TypeScript, React 19 on a repository-local terminal renderer
 (`react-reconciler`) with a pure-TypeScript Yoga port — no native build step.
 Browser UI is React 19 and hand-written CSS over `Bun.serve`. Commander, Zod v4,
-ripgrep/bfs/ugrep, MCP and LSP. Providers: Anthropic, OpenAI Responses and Chat
+ripgrep/bfs/ugrep, MCP. Providers: Anthropic, OpenAI Responses and Chat
 Completions, Bedrock, Vertex, Foundry, Gemini.
 
 ## IPFS Mirror

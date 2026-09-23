@@ -10,8 +10,6 @@ import { ExitPlanModeTool } from 'src/tools/ExitPlanModeTool/ExitPlanModeTool.js
 import { FileEditTool } from 'src/tools/FileEditTool/FileEditTool.js'
 import { FileReadTool } from 'src/tools/FileReadTool/FileReadTool.js'
 import { FileWriteTool } from 'src/tools/FileWriteTool/FileWriteTool.js'
-import { GlobTool } from 'src/tools/GlobTool/GlobTool.js'
-import { GrepTool } from 'src/tools/GrepTool/GrepTool.js'
 import { ListMcpResourcesTool } from 'src/tools/ListMcpResourcesTool/ListMcpResourcesTool.js'
 import { ReadMcpResourceTool } from 'src/tools/ReadMcpResourceTool/ReadMcpResourceTool.js'
 import { TaskCreateTool } from 'src/tools/TaskCreateTool/TaskCreateTool.js'
@@ -53,8 +51,6 @@ function getToolBuckets(): ToolBuckets {
     READ_ONLY: {
       name: 'Read-only tools',
       toolNames: new Set([
-        GlobTool.name,
-        GrepTool.name,
         ExitPlanModeTool.name,
         FileReadTool.name,
         TaskCreateTool.name,

@@ -18,7 +18,7 @@ const useReactCompiler = args.includes('--react-compiler')
 
 // All formerly feature-gated subsystems are compiled in unconditionally.
 // The remaining feature flags are opt-in only: BUDDY, VERIFY_PLAN,
-// WORKTREE_MODE, DEDICATED_SEARCH_TOOLS — enable with --feature=NAME.
+// WORKTREE_MODE — enable with --feature=NAME.
 // `--feature-set=dev-full` is still accepted but adds nothing.
 
 function runCommand(cmd: string[]): string | null {

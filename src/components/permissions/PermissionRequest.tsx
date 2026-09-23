@@ -9,8 +9,6 @@ import { BashTool } from '../../tools/BashTool/BashTool.js'
 import { FileEditTool } from '../../tools/FileEditTool/FileEditTool.js'
 import { FileReadTool } from '../../tools/FileReadTool/FileReadTool.js'
 import { FileWriteTool } from '../../tools/FileWriteTool/FileWriteTool.js'
-import { GlobTool } from '../../tools/GlobTool/GlobTool.js'
-import { GrepTool } from '../../tools/GrepTool/GrepTool.js'
 import { PowerShellTool } from '../../tools/PowerShellTool/PowerShellTool.js'
 import { SkillTool } from '../../tools/SkillTool/SkillTool.js'
 import type { AssistantMessage } from '../../types/message.js'
@@ -51,8 +49,6 @@ function permissionComponentForTool(
       return SkillPermissionRequest
     case AskUserQuestionTool:
       return AskUserQuestionPermissionRequest
-    case GlobTool:
-    case GrepTool:
     case FileReadTool:
       return FilesystemPermissionRequest
     default:

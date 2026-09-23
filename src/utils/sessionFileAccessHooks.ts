@@ -11,10 +11,6 @@ import { FileReadTool } from '../tools/FileReadTool/FileReadTool.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { FileWriteTool } from '../tools/FileWriteTool/FileWriteTool.js'
 import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
-import { GlobTool } from '../tools/GlobTool/GlobTool.js'
-import { GLOB_TOOL_NAME } from '../tools/GlobTool/prompt.js'
-import { GrepTool } from '../tools/GrepTool/GrepTool.js'
-import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
 import type { HookCallback } from '../types/hooks.js'
 import {
   detectSessionFileType,
@@ -67,34 +63,6 @@ function getSessionFileTypeFromInput(
       const parsed = FileReadTool.inputSchema.safeParse(toolInput)
       if (!parsed.success) return null
       return detectSessionFileType(parsed.data.file_path)
-    }
-    case GREP_TOOL_NAME: {
-      const parsed = GrepTool.inputSchema.safeParse(toolInput)
-      if (!parsed.success) return null
-      // Check path if provided
-      if (parsed.data.path) {
-        const pathType = detectSessionFileType(parsed.data.path)
-        if (pathType) return pathType
-      }
-      // Check glob pattern
-      if (parsed.data.glob) {
-        const globType = detectSessionPatternType(parsed.data.glob)
-        if (globType) return globType
-      }
-      return null
-    }
-    case GLOB_TOOL_NAME: {
-      const parsed = GlobTool.inputSchema.safeParse(toolInput)
-      if (!parsed.success) return null
-      // Check path if provided
-      if (parsed.data.path) {
-        const pathType = detectSessionFileType(parsed.data.path)
-        if (pathType) return pathType
-      }
-      // Check pattern
-      const patternType = detectSessionPatternType(parsed.data.pattern)
-      if (patternType) return patternType
-      return null
     }
     default:
       return null
@@ -188,8 +156,6 @@ export function registerSessionFileAccessHooks(): void {
   registerHookCallbacks({
     PostToolUse: [
       { matcher: FILE_READ_TOOL_NAME, hooks: [hook] },
-      { matcher: GREP_TOOL_NAME, hooks: [hook] },
-      { matcher: GLOB_TOOL_NAME, hooks: [hook] },
       { matcher: FILE_EDIT_TOOL_NAME, hooks: [hook] },
       { matcher: FILE_WRITE_TOOL_NAME, hooks: [hook] },
     ],

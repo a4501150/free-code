@@ -161,15 +161,7 @@ export function registerSkillifySkill(): void {
     name: 'skillify',
     description:
       "Capture this session's repeatable process into a skill. Call at end of the process you want to capture with an optional description.",
-    allowedTools: [
-      'Read',
-      'Write',
-      'Edit',
-      'Glob',
-      'Grep',
-      'AskUserQuestion',
-      'Bash(mkdir:*)',
-    ],
+    allowedTools: ['Read', 'Write', 'Edit', 'AskUserQuestion', 'Bash(mkdir:*)'],
     userInvocable: true,
     disableModelInvocation: true,
     argumentHint: '[description of the process you want to capture]',

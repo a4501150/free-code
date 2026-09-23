@@ -5,7 +5,6 @@ import { join } from 'path'
 import {
   classifyBashReadCommand,
   recordBashReadSighting,
-  recordGrepContentSightings,
 } from '../../src/utils/fileSightings.js'
 import {
   createFileStateCacheWithSizeLimit,
@@ -207,16 +206,19 @@ describe('recordBashReadSighting', () => {
   })
 })
 
-describe('recordGrepContentSightings', () => {
+describe('grep -n sightings', () => {
   test('content rows mark exactly the shown lines', async () => {
     const file = await tempFile('f.txt', 'one\ntwo\nthree')
     try {
       const cache = newCache()
-      recordGrepContentSightings(cache, [`${file}:2:two`, `${file}-3-three`], {
-        multiline: false,
-      })
+      recordBashReadSighting(
+        cache,
+        `grep -n '.' ${file}`,
+        '2:two\n3:three',
+        '/x',
+      )
       const entry = cache.get(file)
-      expect(entry?.source).toBe('grep')
+      expect(entry?.source).toBe('bash')
       // Adjacent rows merge into one range.
       expect(entry?.seenRanges).toEqual([{ start: 2, end: 3 }])
     } finally {
@@ -224,31 +226,18 @@ describe('recordGrepContentSightings', () => {
     }
   })
 
-  test('rows elided by --max-columns are not marked seen', async () => {
+  test('one row that does not match disk aborts the whole sighting', async () => {
     const file = await tempFile('f.txt', 'one\ntwo\nthree')
     try {
       const cache = newCache()
-      // ripgrep showed line 2 truncated on disk and line 3 verbatim.
-      recordGrepContentSightings(
+      // A truncated row (e.g. a display-width cut) can't be verified, and
+      // the channel fails closed rather than trusting partial output.
+      recordBashReadSighting(
         cache,
-        [`${file}:2:tw…[truncated]`, `${file}:3:three`],
-        {
-          multiline: false,
-        },
+        `grep -n '.' ${file}`,
+        '2:tw…[truncated]\n3:three',
+        '/x',
       )
-      expect(cache.get(file)?.seenRanges).toEqual([{ start: 3, end: 3 }])
-    } finally {
-      await rm(file, { recursive: true, force: true })
-    }
-  })
-
-  test('multiline mode records nothing', async () => {
-    const file = await tempFile('f.txt', 'one\ntwo')
-    try {
-      const cache = newCache()
-      recordGrepContentSightings(cache, [`${file}:1:one`], {
-        multiline: true,
-      })
       expect(cache.get(file)).toBeUndefined()
     } finally {
       await rm(file, { recursive: true, force: true })
@@ -270,9 +259,7 @@ describe('recordSighting merging with prior entries', () => {
         seenRanges: undefined,
         source: 'read',
       })
-      recordGrepContentSightings(cache, [`${file}:2:two`], {
-        multiline: false,
-      })
+      recordBashReadSighting(cache, `grep -n '.' ${file}`, '2:two', '/x')
       const entry = cache.get(file)
       // Still whole-file seen — the smaller sighting merges in, it does not
       // overwrite.
@@ -295,9 +282,7 @@ describe('recordSighting merging with prior entries', () => {
         seenRanges: [{ start: 3, end: 3 }],
         source: 'read',
       })
-      recordGrepContentSightings(cache, [`${file}:1:one`], {
-        multiline: false,
-      })
+      recordBashReadSighting(cache, `grep -n '.' ${file}`, '1:one', '/x')
       expect(cache.get(file)?.seenRanges).toEqual([
         { start: 1, end: 1 },
         { start: 3, end: 3 },
@@ -319,11 +304,9 @@ describe('recordSighting merging with prior entries', () => {
         seenRanges: undefined,
         source: 'read',
       })
-      recordGrepContentSightings(cache, [`${file}:2:two`], {
-        multiline: false,
-      })
+      recordBashReadSighting(cache, `grep -n '.' ${file}`, '2:two', '/x')
       const entry = cache.get(file)
-      expect(entry?.source).toBe('grep')
+      expect(entry?.source).toBe('bash')
       expect(entry?.seenRanges).toEqual([{ start: 2, end: 2 }])
     } finally {
       await rm(file, { recursive: true, force: true })

@@ -1,10 +1,6 @@
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
-import { GLOB_TOOL_NAME } from '../tools/GlobTool/prompt.js'
-import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
 import { getAllowedChannels } from '../bootstrap/state.js'
 import { getRateLimitTier, getSubscriptionType } from './auth.js'
-import { getCurrentProjectConfig } from './config.js'
-import { shouldPreferBashForSearch } from './embeddedTools.js'
 import { getInitialSettings } from './settings/settings.js'
 import { isBuiltInPlanAgentEnabled } from './planAgent.js'
 
@@ -57,28 +53,23 @@ export function isPlanModeInterviewPhaseEnabled(): boolean {
   return getInitialSettings()?.planModeInterviewPhase ?? false
 }
 
+// Module constant: the joined string is snapshotted into plan_mode
+// attachments and must be byte-stable across turns.
+export const READ_ONLY_TOOL_NAMES = [
+  FILE_READ_TOOL_NAME,
+  '`find`',
+  '`grep`',
+].join(', ')
+
 export function getReadOnlyToolNames(): string {
-  // When Glob/Grep are stripped from the registry, point at find/grep via
-  // Bash instead.
-  const tools = shouldPreferBashForSearch()
-    ? [FILE_READ_TOOL_NAME, '`find`', '`grep`']
-    : [FILE_READ_TOOL_NAME, GLOB_TOOL_NAME, GREP_TOOL_NAME]
-  const { allowedTools } = getCurrentProjectConfig()
-  // allowedTools is a tool-name allowlist. find/grep are shell commands, not
-  // tool names, so the filter is only meaningful for the dedicated-tools branch.
-  const filtered =
-    allowedTools && allowedTools.length > 0 && !shouldPreferBashForSearch()
-      ? tools.filter(t => allowedTools.includes(t))
-      : tools
-  return filtered.join(', ')
+  return READ_ONLY_TOOL_NAMES
 }
 
 /**
  * Snapshotted plan-mode context stored on a `plan_mode` Attachment at creation
  * time. Reading these dynamically at render time would let an OLD attachment's
  * text drift across turns whenever the underlying state changes (e.g.
- * subscription tier rotates on a token refresh, or `allowedTools` is edited
- * mid-session in a `DEDICATED_SEARCH_TOOLS` build). That drift would bust the
+ * subscription tier rotates on a token refresh). That drift would bust the
  * prompt-cache prefix. Snapshotting freezes each attachment's text to the
  * values that were live when it was emitted.
  *

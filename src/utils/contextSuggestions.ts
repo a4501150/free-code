@@ -1,6 +1,5 @@
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
-import { GREP_TOOL_NAME } from '../tools/GrepTool/prompt.js'
 import type { ContextData } from './analyzeContext.js'
 import { getDisplayPath } from './file.js'
 import { formatTokens } from './format.js'
@@ -116,14 +115,6 @@ function getLargeToolSuggestion(
         title: `Read results using ${tokenStr} tokens (${percent.toFixed(0)}%)`,
         detail:
           'Use offset and limit parameters to read only the sections you need. Avoid re-reading entire files when you only need a few lines.',
-        savingsTokens: Math.floor(tokens * 0.3),
-      }
-    case GREP_TOOL_NAME:
-      return {
-        severity: 'info',
-        title: `Grep results using ${tokenStr} tokens (${percent.toFixed(0)}%)`,
-        detail:
-          'Add more specific patterns or use the glob or type parameter to narrow file types. Consider Glob for file discovery instead of Grep.',
         savingsTokens: Math.floor(tokens * 0.3),
       }
     // Legacy built-in name from pre-MCP transcripts; the MCP replacement is
