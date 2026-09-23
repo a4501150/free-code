@@ -8,7 +8,7 @@
  *   - everything else    → freecode.json `pluginConfigs[pluginId].options`
  *
  * `loadPluginOptions` reads and merges both. The substitution helpers are also
- * here (moved from mcpPluginIntegration.ts) so hooks/LSP/skills don't all
+ * here (moved from mcpPluginIntegration.ts) so hooks/skills don't all
  * import from MCP-specific code.
  */
 
@@ -321,7 +321,7 @@ export function getUnconfiguredOptions(
  * `$`-patterns in NTFS paths ($$, $', $`, $&) aren't interpreted; DATA so
  * getPluginDataDir (which lazily mkdirs) only runs when actually present.
  *
- * Used in MCP/LSP server command/args/env, hook commands, skill/agent content.
+ * Used in MCP server command/args/env, hook commands, skill/agent content.
  */
 export function substitutePluginVariables(
   value: string,

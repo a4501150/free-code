@@ -149,7 +149,6 @@ export function useReplDialogs({
     | 'init-onboarding'
     | 'ide-onboarding'
     | 'model-switch'
-    | 'lsp-recommendation'
     | 'plugin-hint'
     | 'desktop-upsell'
     | undefined {

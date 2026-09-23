@@ -13,10 +13,7 @@ import type { StdoutMessage } from 'src/structuredProtocol/controlTypes.js'
 import { FILE_EDIT_TOOL_NAME } from 'src/tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from 'src/tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from 'src/tools/FileWriteTool/prompt.js'
-import { GLOB_TOOL_NAME } from 'src/tools/GlobTool/prompt.js'
-import { GREP_TOOL_NAME } from 'src/tools/GrepTool/prompt.js'
 import { LIST_MCP_RESOURCES_TOOL_NAME } from 'src/tools/ListMcpResourcesTool/prompt.js'
-import { LSP_TOOL_NAME } from 'src/tools/LSPTool/prompt.js'
 import { TASK_STOP_TOOL_NAME } from 'src/tools/TaskStopTool/prompt.js'
 import { extractTextContent } from 'src/utils/messages.js'
 import { SHELL_TOOL_NAMES } from 'src/utils/shell/shellToolUtils.js'
@@ -34,12 +31,9 @@ type ToolCounts = {
  * Tool categories for summarization.
  */
 const SEARCH_TOOLS = [
-  GREP_TOOL_NAME,
-  GLOB_TOOL_NAME,
   // Bundled agent-browser web tools (MCP replacement for built-in WebSearch)
   'mcp__agent-browser__web_search',
   'mcp__agent-browser__web_crawl',
-  LSP_TOOL_NAME,
 ]
 const READ_TOOLS = [
   FILE_READ_TOOL_NAME,

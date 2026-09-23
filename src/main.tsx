@@ -297,7 +297,6 @@ import {
   setUserMsgOptIn,
 } from './bootstrap/state.js'
 
-import { initializeLspServerManager } from './services/lsp/manager.js'
 import { shouldEnablePromptSuggestion } from './services/PromptSuggestion/promptSuggestion.js'
 import {
   type AppState,
@@ -926,7 +925,7 @@ async function run(): Promise<CommanderCommand> {
     )
     .option(
       '--bare',
-      'Minimal mode: skip hooks, LSP, plugin sync, auto-memory, background prefetches, keychain reads, and CLAUDE.md auto-discovery. Sets CLAUDE_CODE_SIMPLE=1. Anthropic auth is strictly ANTHROPIC_API_KEY or apiKeyHelper via --settings (OAuth and keychain are never read). 3P providers (Bedrock/Vertex/Foundry) use their own credentials. Skills still resolve via /skill-name. Explicitly provide context via: --system-prompt[-file], --append-system-prompt[-file], --add-dir (CLAUDE.md dirs), --mcp-config, --settings, --agents, --plugin-dir.',
+      'Minimal mode: skip hooks, plugin sync, auto-memory, background prefetches, keychain reads, and CLAUDE.md auto-discovery. Sets CLAUDE_CODE_SIMPLE=1. Anthropic auth is strictly ANTHROPIC_API_KEY or apiKeyHelper via --settings (OAuth and keychain are never read). 3P providers (Bedrock/Vertex/Foundry) use their own credentials. Skills still resolve via /skill-name. Explicitly provide context via: --system-prompt[-file], --append-system-prompt[-file], --add-dir (CLAUDE.md dirs), --mcp-config, --settings, --agents, --plugin-dir.',
       () => true,
     )
     .addOption(
@@ -1339,10 +1338,6 @@ async function run(): Promise<CommanderCommand> {
 
       const agentsJson = options.agents
       const agentCli = options.agent
-
-      // NOTE: LSP manager initialization is intentionally deferred until after
-      // the trust dialog is accepted. This prevents plugin LSP servers from
-      // executing code in untrusted directories before user consent.
 
       // Extract these separately so they can be modified if needed
       let outputFormat = options.outputFormat
@@ -2402,12 +2397,6 @@ async function run(): Promise<CommanderCommand> {
         )
         return
       }
-
-      // Initialize LSP manager AFTER trust is established (or in non-interactive mode
-      // where trust is implicit). This prevents plugin LSP servers from executing
-      // code in untrusted directories before user consent.
-      // Must be after inline plugins are set (if any) so --plugin-dir LSP servers are included.
-      initializeLspServerManager()
 
       // Show settings validation errors after trust is established
       // MCP config errors don't block settings from loading, so exclude them

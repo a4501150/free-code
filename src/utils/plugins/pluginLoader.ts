@@ -2904,9 +2904,10 @@ export const loadAllPlugins = memoize(async (): Promise<PluginLoadResult> => {
  * from installed_plugins.json's installPath. Plugins not on disk emit
  * 'plugin-cache-miss' and are skipped.
  *
- * Use this in startup consumers (getCommands, loadPluginAgents, MCP/LSP
- * config) so interactive startup never blocks on git clones for ref-tracked
- * plugins. Use loadAllPlugins() in explicit refresh paths (/plugins,
+ * Use this in startup consumers (getCommands, loadPluginAgents, MCP
+ * config) so interactive startup never blocks on git clones for
+ * ref-tracked plugins. Use loadAllPlugins() in explicit refresh paths
+ * (/plugins,
  * refresh.ts, headlessPluginInstall) where fresh source is the intent.
  *
  * CLAUDE_CODE_SYNC_PLUGIN_INSTALL=1 delegates to the full loader — that

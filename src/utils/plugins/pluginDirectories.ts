@@ -109,7 +109,7 @@ export function pluginDataDirPath(pluginId: string): string {
  * substitutePluginVariables call site — the DATA pattern uses function-form
  * .replace() so this isn't invoked unless ${CLAUDE_PLUGIN_DATA} is present
  * (ROOT also uses function-form, but for $-pattern safety, not laziness).
- * Env-var export sites (MCP/LSP server env, hook env) call this eagerly
+ * Env-var export sites (MCP server env, hook env) call this eagerly
  * since subprocesses may expect the dir to exist before writing to it.
  *
  * Sync because it's called from substitutePluginVariables (sync, inside

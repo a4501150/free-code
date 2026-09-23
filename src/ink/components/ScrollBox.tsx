@@ -142,7 +142,7 @@ function ScrollBox({
   }
 
   function scrollMutated(el: DOMElement): void {
-    // Signal background intervals (IDE poll, LSP poll, GCS fetch, orphan
+    // Signal background intervals (IDE poll, GCS fetch, orphan
     // check) to skip their next tick — they compete for the event loop and
     // contributed to 1402ms max frame gaps during scroll drain.
     markScrollActivity()

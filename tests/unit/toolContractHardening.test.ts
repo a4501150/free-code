@@ -8,8 +8,6 @@ import {
 import { isConcurrencySafeToolInput } from '../../src/services/tools/toolInput.js'
 import { AskUserQuestionTool } from '../../src/tools/AskUserQuestionTool/AskUserQuestionTool.js'
 import { inputSchema as fileEditInputSchema } from '../../src/tools/FileEditTool/types.js'
-import { getMethodAndParams } from '../../src/tools/LSPTool/LSPTool.js'
-import { lspToolInputSchema } from '../../src/tools/LSPTool/schemas.js'
 import { TaskStopTool } from '../../src/tools/TaskStopTool/TaskStopTool.js'
 
 function makeTool(
@@ -104,57 +102,6 @@ describe('concurrency-safe input classification', () => {
     })
 
     expect(isConcurrencySafeToolInput(tool, {})).toBe(false)
-  })
-})
-
-describe('LSP operation-specific contracts', () => {
-  test('document and workspace symbol operations do not require positions', () => {
-    expect(
-      lspToolInputSchema.safeParse({
-        operation: 'documentSymbol',
-        filePath: '/repo/file.ts',
-      }).success,
-    ).toBe(true)
-    expect(
-      lspToolInputSchema.safeParse({
-        operation: 'workspaceSymbol',
-        filePath: '/repo/file.ts',
-        query: 'Widget',
-      }).success,
-    ).toBe(true)
-  })
-
-  test('position-based operations still require line and character', () => {
-    expect(
-      lspToolInputSchema.safeParse({
-        operation: 'goToDefinition',
-        filePath: '/repo/file.ts',
-      }).success,
-    ).toBe(false)
-  })
-
-  test('workspace query propagates and position mapping remains 1-based', () => {
-    expect(
-      getMethodAndParams(
-        {
-          operation: 'workspaceSymbol',
-          filePath: '/repo/file.ts',
-          query: 'Widget',
-        },
-        '/repo/file.ts',
-      ),
-    ).toEqual({ method: 'workspace/symbol', params: { query: 'Widget' } })
-    expect(
-      getMethodAndParams(
-        {
-          operation: 'goToDefinition',
-          filePath: '/repo/file.ts',
-          line: 2,
-          character: 3,
-        },
-        '/repo/file.ts',
-      ),
-    ).toMatchObject({ params: { position: { line: 1, character: 2 } } })
   })
 })
 

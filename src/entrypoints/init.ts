@@ -4,7 +4,6 @@ import '../utils/config.js'
 import { showInvalidConfigDialog } from '../components/InvalidConfigDialog.js'
 import memoize from 'lodash-es/memoize.js'
 import { getIsNonInteractiveSession } from 'src/bootstrap/state.js'
-import { shutdownLspServerManager } from '../services/lsp/manager.js'
 import { populateOAuthAccountInfoIfNeeded } from '../services/oauth/client.js'
 import {
   initializePolicyLimitsLoadingPromise,
@@ -117,9 +116,6 @@ export const init = memoize(async (): Promise<void> => {
 
     // Set up git-bash if relevant
     setShellIfWindows()
-
-    // Register LSP manager cleanup (initialization happens in main.tsx after --plugin-dir is processed)
-    registerCleanup(shutdownLspServerManager)
 
     // gh-32730: teams created by subagents (or main agent without
     // explicit TeamDelete) were left on disk forever. Register cleanup

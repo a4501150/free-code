@@ -70,7 +70,7 @@ export function isEnvDefinedFalsy(
 }
 
 /**
- * --bare / CLAUDE_CODE_SIMPLE — skip hooks, LSP, plugin sync, skill dir-walk,
+ * --bare / CLAUDE_CODE_SIMPLE — skip hooks, plugin sync, skill dir-walk,
  * attribution, background prefetches, and ALL keychain/credential reads.
  * Auth is strictly ANTHROPIC_API_KEY env or apiKeyHelper from --settings.
  * Explicit CLI flags (--plugin-dir, --add-dir, --mcp-config) still honored.

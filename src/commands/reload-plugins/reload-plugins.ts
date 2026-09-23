@@ -19,11 +19,10 @@ export const call: LocalCommandCall = async (_args, context) => {
     n(r.command_count, 'skill'),
     n(r.agent_count, 'agent'),
     n(r.hook_count, 'hook'),
-    // "plugin MCP/LSP" disambiguates from user-config/built-in servers,
+    // "plugin MCP" disambiguates from user-config/built-in servers,
     // which /reload-plugins doesn't touch. Commands/hooks are plugin-only;
     // agent_count is total agents (incl. built-ins). (gh-31321)
     n(r.mcp_count, 'plugin MCP server'),
-    n(r.lsp_count, 'plugin LSP server'),
   ]
   let msg = `Reloaded: ${parts.join(' · ')}`
 

@@ -812,7 +812,7 @@ async function execCommandHook(
   const projectDir = getProjectRoot()
 
   // Substitute ${CLAUDE_PLUGIN_ROOT} and ${user_config.X} in the command string.
-  // Order matches MCP/LSP (plugin vars FIRST, then user config) so a user-
+  // Order matches MCP (plugin vars FIRST, then user config) so a user-
   // entered value containing the literal text ${CLAUDE_PLUGIN_ROOT} is treated
   // as opaque — not re-interpreted as a template.
   let command = hook.command

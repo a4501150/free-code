@@ -20,7 +20,6 @@ import { clearAllPendingCallbacks } from '../../hooks/useSwarmPermissionPoller.j
 import { clearAllDumpState } from '../../services/api/dumpPrompts.js'
 import { resetPromptCacheBreakDetection } from '../../services/api/promptCacheBreakDetection.js'
 import { runPostCompactCleanup } from '../../services/compact/postCompactCleanup.js'
-import { resetAllLSPDiagnosticState } from '../../services/lsp/LSPDiagnosticRegistry.js'
 import { clearTrackedMagicDocs } from '../../services/MagicDocs/magicDocs.js'
 import { clearDynamicSkills } from '../../skills/loadSkillsDir.js'
 import { resetSentSkillNames } from '../../utils/attachments.js'
@@ -96,8 +95,6 @@ export function clearSessionCaches(
   clearResolveGitDirCache()
   // Clear dynamic skills (loaded from skill directories)
   clearDynamicSkills()
-  // Clear LSP diagnostic tracking state
-  resetAllLSPDiagnosticState()
   // Clear tracked magic docs
   clearTrackedMagicDocs()
   // Clear session environment variables
