@@ -109,6 +109,7 @@ import {
 } from '../cost-tracker.js'
 import { useCostSummary } from '../costHook.js'
 import { useAfterFirstRender } from '../hooks/useAfterFirstRender.js'
+import { useUnmountDebounce } from '../hooks/useUnmountDebounce.js'
 import { useDeferredHookMessages } from '../hooks/useDeferredHookMessages.js'
 import {
   addToHistory,
@@ -393,6 +394,11 @@ import {
 // key off them (syntheticStreamingToolUseMessages, streamingToolUseIDs).
 const EMPTY_STREAMING_TOOL_USES: StreamingToolUse[] = []
 const EMPTY_IN_PROGRESS_TOOL_USE_IDS = new Set<string>()
+
+// How long the spinner subtree stays mounted after its mount condition
+// drops. Long enough to bridge request boundaries inside one turn, short
+// enough that a real turn-end teardown does not visibly lag.
+const SPINNER_UNMOUNT_GRACE_MS = 300
 
 export type Props = {
   commands: Command[]
@@ -1089,8 +1095,10 @@ export function REPL({
   // while streaming text is on screen the spinner hides itself (display:none)
   // but stays mounted. Unmounting on every text→tool transition re-randomized
   // the verb, restarted the animation clock and repainted the spinner+tip
-  // block wholesale, which reads as flicker around each tool call.
-  const spinnerMounted =
+  // block wholesale, which reads as flicker around each tool call. The grace
+  // window additionally holds the mount across brief dips of the condition
+  // (request boundaries inside one turn) so no row blinks mid-turn.
+  const spinnerMountedRaw =
     (!toolJSX || toolJSX.showSpinner === true) &&
     toolUseConfirmQueue.length === 0 &&
     promptQueue.length === 0 &&
@@ -1107,6 +1115,10 @@ export function REPL({
       viewedSubagentRunning) &&
     // Hide spinner when waiting for leader to approve permission request
     !pendingWorkerRequest
+  const spinnerMounted = useUnmountDebounce(
+    !!spinnerMountedRaw,
+    SPINNER_UNMOUNT_GRACE_MS,
+  )
 
   // Hide spinner when streaming text is visible (the text IS the feedback),
   // but keep it when isBriefOnly suppresses the streaming text display.
