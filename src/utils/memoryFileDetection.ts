@@ -191,8 +191,21 @@ export function isMemoryDirectory(dirPath: string): boolean {
   if (normalizedCmp.includes('/session-memory/')) {
     return true
   }
+  // Session transcripts also live under <config>/projects/<slug>/, so the
+  // slug and session levels count. Deeper session subdirectories
+  // (<slug>/<session>/tool-results, /subagents, /todos) are session plumbing,
+  // not memory: a grep over a spilled tool-result file must not render as
+  // "Searched memories". Auto-memory subdirectories are already covered by
+  // the autoMemPath prefix check above.
   if (underConfig && normalizedCmp.includes('/projects/')) {
-    return true
+    const projectsMarker = '/projects/'
+    const afterProjects = normalizedCmp.slice(
+      normalizedCmp.lastIndexOf(projectsMarker) + projectsMarker.length,
+    )
+    const depth = afterProjects.split('/').filter(Boolean).length
+    if (depth <= 2) {
+      return true
+    }
   }
   if (isAutoMemoryEnabled() && normalizedCmp.includes('/memory/')) {
     return true
