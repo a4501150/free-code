@@ -29,7 +29,7 @@ export function coerceEditInput(raw: unknown): unknown {
 
   if (Array.isArray(obj.edits)) {
     throw new ToolInputCoercionError(
-      `The Edit tool no longer takes an "edits" array of LINE:HASH anchors. Call it with {file_path, old_string, new_string, replace_all?}: Read or Grep the file, copy the exact text to replace into old_string (strip the "N:" line-number prefix), and put the new text in new_string.`,
+      `The Edit tool no longer takes an "edits" array of LINE:HASH anchors. Call it with {file_path, old_string, new_string, replace_all?}: Read the file or run a file-printing Bash command, copy the exact text to replace into old_string (strip the "N:" line-number prefix), and put the new text in new_string.`,
     )
   }
 

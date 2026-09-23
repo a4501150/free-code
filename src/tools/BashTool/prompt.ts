@@ -19,8 +19,7 @@ export function getMaxTimeoutMs(): number {
 
 export function getSimplePrompt(): string {
   // The -regex quirk below is a bfs (embedded search sidecar) behavior; on a
-  // system find it does not apply, so gate on the sidecars being available,
-  // not on Glob/Grep being stripped.
+  // system find it does not apply, so gate on the sidecars being available.
   const embedded = hasEmbeddedSearchTools()
 
   const instructionItems: Array<string | string[]> = [

@@ -6,7 +6,7 @@ const editFields = {
   old_string: z
     .string()
     .describe(
-      'The exact text to replace, matching the file content verbatim including indentation. Strip any Read/Grep line-number prefix (`N:`) from copied lines — never include the prefix in this string.',
+      'The exact text to replace, matching the file content verbatim including indentation. Strip any Read line-number prefix (`N:`) from copied lines — never include the prefix in this string.',
     ),
   new_string: z
     .string()

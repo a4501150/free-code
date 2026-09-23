@@ -62,7 +62,7 @@ ${durabilitySection}
 
 ## Runtime behavior
 
-Jobs only fire while the REPL is idle (not mid-query). ${durableRuntimeNote}At most ${MAX_JOBS} jobs at once; the tool returns an error until you delete one. The scheduler delays recurring tasks by up to 10% of their period (max 15 min).
+Jobs only fire while the session is idle (not mid-query). ${durableRuntimeNote}At most ${MAX_JOBS} jobs at once; the tool returns an error until you delete one. The scheduler delays recurring tasks by up to 10% of their period (max 15 min).
 
 Recurring tasks auto-expire after ${DEFAULT_MAX_AGE_DAYS} days — they fire one final time, then the scheduler removes them. Tell the user about the ${DEFAULT_MAX_AGE_DAYS}-day limit when scheduling recurring jobs.
 

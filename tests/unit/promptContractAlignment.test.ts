@@ -74,7 +74,7 @@ describe('conditional mode prompt alignment', () => {
     const attachments = readSource('src/utils/attachments.ts')
 
     expect(source).toContain(
-      'Prefer a dedicated file/search tool over a shell command',
+      'Prefer a dedicated file tool over a shell command',
     )
     expect(source).not.toContain('enabledTools.has(FILE_READ_TOOL_NAME)')
     expect(source).not.toContain('enabledTools.has(FILE_EDIT_TOOL_NAME)')
