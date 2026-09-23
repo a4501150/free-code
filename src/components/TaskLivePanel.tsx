@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Box, Text } from '../ink.js'
+import { Box } from '../ink.js'
 import { useSubagentTasksV2, useTasksV2 } from '../hooks/useTasksV2.js'
 import { useAppState } from '../state/AppState.js'
 import { getViewedTeammateTask } from '../state/selectors.js'
@@ -53,27 +53,8 @@ export function TaskLivePanel({ hidden = false }: Props): React.ReactNode {
     return null
   }
 
-  // Title rule mirrors the spinner's (first in-progress task's activeForm).
-  // Rendered from panel creation, never inserted mid-frame: a row appearing
-  // later breaks the shift-scroll fast path's byte-identical tail (e2e
-  // thinking-swap-repaint). A viewed agent shows its own label in the
-  // spinner row, so only the main-session list gets a panel-owned title.
-  const currentTodo =
-    !viewedLocalAgent && !foregroundedTeammate
-      ? tasksV2.find(task => task.status === 'in_progress')
-      : undefined
-
   return (
     <Box width="100%" flexDirection="column">
-      {currentTodo && (
-        <Box>
-          <Text color="claude">
-            {'* '}
-            {currentTodo.activeForm ?? currentTodo.subject}
-            {'…'}
-          </Text>
-        </Box>
-      )}
       <MessageResponse>
         <TaskListV2 tasks={tasksV2} />
       </MessageResponse>

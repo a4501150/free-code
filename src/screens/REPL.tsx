@@ -1111,13 +1111,6 @@ export function REPL({
   // Hide spinner when streaming text is visible (the text IS the feedback),
   // but keep it when isBriefOnly suppresses the streaming text display.
   const showSpinner = spinnerMounted && (!visibleStreamingText || isBriefOnly)
-  // The live task panel renders a static title row for the in-progress
-  // task (from panel creation — a row appearing mid-frame breaks the
-  // shift-scroll fast path, e2e thinking-swap-repaint). The spinner's verb
-  // would duplicate that text while both rows are up, so the default verb
-  // (which is the same activeForm) is suppressed; a custom spinnerMessage
-  // stays visible since it differs from the panel title.
-  const livePanelHasWork = !!tasksV2?.some(t => t.status === 'in_progress')
 
   // hasActivePrompt → useReplDialogs
 
@@ -2151,11 +2144,7 @@ export function REPL({
                   hidden={!showSpinner}
                   spinnerTip={spinnerTip}
                   responseLengthRef={responseLengthRef}
-                  overrideMessage={
-                    livePanelHasWork && !viewedTask && !spinnerMessage
-                      ? ''
-                      : spinnerMessage
-                  }
+                  overrideMessage={spinnerMessage}
                   spinnerSuffix={stopHookSpinnerSuffix}
                   verbose={verbose}
                   loadingStartTimeRef={loadingStartTimeRef}
