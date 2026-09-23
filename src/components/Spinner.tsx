@@ -1,7 +1,7 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { Box, Text } from '../ink.js'
 import * as React from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { stringWidth } from '../ink/stringWidth.js'
 import { getGraphemeSegmenter } from '../utils/intl.js'
 
@@ -88,11 +88,13 @@ const SPINNER_FRAMES = [
 
 type Props = {
   mode: SpinnerMode
-  /** False hides the whole subtree via display:none while keeping it mounted,
-   * so a transient hide (streaming text on screen) does not remount the row,
-   * re-randomize the verb, or restart the animation clock. While hidden with
-   * an in-progress task, a static quiet title row (QuietTitleRow) takes the
-   * slot so the task list below keeps its heading. */
+  /** False hides the whole subtree via display:none while keeping it mounted.
+   * The REPL keeps this subtree mounted for the session's whole life —
+   * visibility is ONLY ever this prop, never mounting — so a hide does not
+   * remount the row, reset the animation clock, or trigger mount-time side
+   * effects on the next show. While hidden with an in-progress task, a
+   * static quiet title row (QuietTitleRow) takes the slot so the task list
+   * below keeps its heading. */
   hidden?: boolean
   loadingStartTimeRef: React.RefObject<number>
   totalPausedMsRef: React.RefObject<number>
@@ -117,6 +119,28 @@ type Props = {
   streamingThinking?: StreamingThinking | null
 }
 
+// Random verb, re-picked once per turn. Used to ride spinner remounts; with
+// the spinner subtree mounted for the session's whole life, the turn marker
+// is loadingStartTimeRef: it advances when a new turn's loading begins, so
+// the verb rotates at turn boundaries but a mid-turn re-show (streaming
+// text → tool call) keeps the same verb. Mounting while hidden defers
+// rotation to the first show.
+function useTurnScopedVerb(
+  loadingStartTimeRef: React.RefObject<number>,
+  hidden: boolean,
+): string {
+  const [verb, setVerb] = useState(() => sample(getSpinnerVerbs()) ?? 'Working')
+  const turnRef = useRef(loadingStartTimeRef.current)
+  useEffect(() => {
+    if (hidden) return
+    if (loadingStartTimeRef.current !== turnRef.current) {
+      turnRef.current = loadingStartTimeRef.current
+      setVerb(sample(getSpinnerVerbs()) ?? 'Working')
+    }
+  }, [hidden, loadingStartTimeRef])
+  return verb
+}
+
 // Thin wrapper: branches on isBriefOnly so the two variants have independent
 // hook call chains. Without this split, toggling /brief mid-render would
 // violate Rules of Hooks (the inner variant calls ~10 more hooks).
@@ -137,7 +161,12 @@ export function SpinnerWithVerb(props: Props): React.ReactNode {
     !viewingAgentTaskId
   ) {
     return (
-      <BriefSpinner mode={props.mode} overrideMessage={props.overrideMessage} />
+      <BriefSpinner
+        mode={props.mode}
+        overrideMessage={props.overrideMessage}
+        hidden={props.hidden}
+        loadingStartTimeRef={props.loadingStartTimeRef}
+      />
     )
   }
 
@@ -227,8 +256,9 @@ function SpinnerWithVerbInner({
   )
   const nextTask = findNextPendingTask(tasksV2)
 
-  // Use useState with initializer to pick a random verb once on mount
-  const [randomVerb] = useState(() => sample(getSpinnerVerbs()))
+  // Turn-scoped random verb (see useTurnScopedVerb): with the subtree
+  // mounted for the session's whole life there is no per-turn remount.
+  const randomVerb = useTurnScopedVerb(loadingStartTimeRef, hidden)
 
   // Leader's own verb (always the leader's, regardless of who is foregrounded)
   const leaderVerb =
@@ -263,14 +293,17 @@ function SpinnerWithVerbInner({
     !foregroundedTeammate &&
     currentTodo !== undefined
 
-  // Track CLI activity when spinner is active
+  // Track CLI activity only while actually shown: the subtree stays
+  // mounted through idle stretches, and a display:none spinner must not
+  // keep the CLI marked busy.
   useEffect(() => {
+    if (hidden) return
     const operationId = 'spinner-' + mode
     activityManager.startCLIActivity(operationId)
     return () => {
       activityManager.endCLIActivity(operationId)
     }
-  }, [mode])
+  }, [mode, hidden])
 
   const effortSuffix = getEffortSuffix(
     viewedLocalAgent?.model ?? getMainLoopModel(),
@@ -539,30 +572,36 @@ function CompactProgressBar({
 type BriefSpinnerProps = {
   mode: SpinnerMode
   overrideMessage?: string | null
+  hidden?: boolean
+  loadingStartTimeRef: React.RefObject<number>
 }
 
 function BriefSpinner({
   mode,
   overrideMessage,
+  hidden = false,
+  loadingStartTimeRef,
 }: BriefSpinnerProps): React.ReactNode {
   const settings = useSettings()
   const reducedMotion = settings.prefersReducedMotion ?? false
-  const [randomVerb] = useState(() => sample(getSpinnerVerbs()) ?? 'Working')
+  const randomVerb = useTurnScopedVerb(loadingStartTimeRef, hidden)
   const verb = overrideMessage ?? randomVerb
 
-  // Track CLI activity so OS/IDE "busy" indicators fire in brief mode too
+  // Track CLI activity so OS/IDE "busy" indicators fire in brief mode too.
+  // Only while shown — the REPL keeps this subtree mounted through idle.
   useEffect(() => {
+    if (hidden) return
     const operationId = 'spinner-' + mode
     activityManager.startCLIActivity(operationId)
     return () => {
       activityManager.endCLIActivity(operationId)
     }
-  }, [mode])
+  }, [mode, hidden])
 
-  // Drive both dot cycle and shimmer from the shared clock. The viewport
-  // ref is unused — the spinner unmounts on turn end so viewport-based
-  // pausing isn't needed.
-  const [, time] = useAnimationFrame(reducedMotion ? null : 120)
+  // Drive both dot cycle and shimmer from the shared clock; the clock stops
+  // while hidden so a mounted-through-idle spinner costs no repaints. The
+  // viewport ref is unused — viewport-based pausing isn't needed here.
+  const [, time] = useAnimationFrame(reducedMotion || hidden ? null : 120)
 
   const runningCount = useAppState(s =>
     count(Object.values(s.tasks), isBackgroundTask),
@@ -594,7 +633,13 @@ function BriefSpinner({
   const pad = Math.max(1, columns - 2 - leftWidth - stringWidth(rightText))
 
   return (
-    <Box flexDirection="row" width="100%" marginTop={1} paddingLeft={2}>
+    <Box
+      flexDirection="row"
+      width="100%"
+      marginTop={1}
+      paddingLeft={2}
+      display={hidden ? 'none' : 'flex'}
+    >
       {showConnWarning ? (
         <Text color="error">{connText + dots}</Text>
       ) : (
