@@ -332,7 +332,6 @@ import { useFileHistorySnapshotInit } from 'src/hooks/useFileHistorySnapshotInit
 import { useSettingsErrors } from 'src/hooks/notifs/useSettingsErrors.js'
 import { useMcpConnectivityStatus } from 'src/hooks/notifs/useMcpConnectivityStatus.js'
 import { useAutoModeUnavailableNotification } from 'src/hooks/notifs/useAutoModeUnavailableNotification.js'
-import { useLspInitializationNotification } from 'src/hooks/notifs/useLspInitializationNotification.js'
 import { usePluginInstallationStatus } from 'src/hooks/notifs/usePluginInstallationStatus.js'
 import { usePluginAutoupdateNotification } from 'src/hooks/notifs/usePluginAutoupdateNotification.js'
 import { performStartupChecks } from 'src/utils/plugins/performStartupChecks.js'
@@ -612,7 +611,6 @@ export function REPL({
   useFastModeNotification()
   useDeprecationWarningNotification(mainLoopModel)
   useNpmDeprecationNotification()
-  useLspInitializationNotification()
   useTeammateLifecycleNotification()
   // Memoize the combined initial tools array to prevent reference changes
   const combinedInitialTools = useMemo(() => {
@@ -2160,7 +2158,10 @@ export function REPL({
                   streamingThinking={streamingThinking}
                 />
               )}
-              <TaskLivePanel hidden={!!compactingStartTime} />
+              <TaskLivePanel
+                hidden={!!compactingStartTime}
+                quietTitle={!showSpinner}
+              />
               {!showSpinner &&
                 !isLoading &&
                 !userInputOnProcessing &&

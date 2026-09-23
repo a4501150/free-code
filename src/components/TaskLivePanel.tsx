@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Box } from '../ink.js'
+import { Box, Text } from '../ink.js'
 import { useSubagentTasksV2, useTasksV2 } from '../hooks/useTasksV2.js'
 import { useAppState } from '../state/AppState.js'
 import { getViewedTeammateTask } from '../state/selectors.js'
@@ -11,6 +11,10 @@ type Props = {
   /** Compaction in flight — the compact progress bar owns the slot below the
    * spinner, so the panel stands down. */
   hidden?: boolean
+  /** The spinner row is hidden (text streaming) or unmounted (idle), so it
+   * is not carrying the title line — the panel renders a static one instead
+   * of leaving the rows orphaned. */
+  quietTitle?: boolean
 }
 
 /**
@@ -24,7 +28,10 @@ type Props = {
  * mount/unmount is a pure row shift above a byte-identical tail, which the
  * log-update shift fast path scrolls instead of repainting.
  */
-export function TaskLivePanel({ hidden = false }: Props): React.ReactNode {
+export function TaskLivePanel({
+  hidden = false,
+  quietTitle = false,
+}: Props): React.ReactNode {
   const expandedView = useAppState(s => s.expandedView)
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const tasks = useAppState(s => s.tasks)
@@ -53,8 +60,25 @@ export function TaskLivePanel({ hidden = false }: Props): React.ReactNode {
     return null
   }
 
+  // Mirror the spinner's title rule (first unresolved task's activeForm).
+  // A viewed agent shows its own label in the spinner row, so only the
+  // main-session list gets a panel-owned title.
+  const currentTodo =
+    !viewedLocalAgent && !foregroundedTeammate
+      ? tasksV2.find(task => task.status === 'in_progress')
+      : undefined
+
   return (
     <Box width="100%" flexDirection="column">
+      {quietTitle && currentTodo && (
+        <Box>
+          <Text color="claude">
+            {'* '}
+            {currentTodo.activeForm ?? currentTodo.subject}
+            {'…'}
+          </Text>
+        </Box>
+      )}
       <MessageResponse>
         <TaskListV2 tasks={tasksV2} />
       </MessageResponse>
