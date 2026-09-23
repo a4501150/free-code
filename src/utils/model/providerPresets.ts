@@ -39,14 +39,6 @@ export const CLAUDE_4X_3P_CAPS = {
 // ── Pricing presets (per Mtok, USD) ──────────────────────────────────
 // @see https://platform.claude.com/docs/en/about-claude/pricing
 
-export const SONNET_PRICING = {
-  input: 3,
-  output: 15,
-  cacheWrite: 3.75,
-  cacheRead: 0.3,
-  webSearch: 0.01,
-} as const
-
 export const OPUS_46_PRICING = {
   input: 5,
   output: 25,
@@ -63,43 +55,106 @@ export const HAIKU_45_PRICING = {
   webSearch: 0.01,
 } as const
 
+export const OPUS_55_PRICING = {
+  input: 4,
+  output: 20,
+  cacheWrite: 5,
+  cacheRead: 0.2,
+  webSearch: 0.01,
+} as const
+
+// Opus 5 shares the Opus 4.6 rate card.
+export const OPUS_5_PRICING = OPUS_46_PRICING
+
+export const SONNET_5_PRICING = {
+  input: 2,
+  output: 10,
+  cacheWrite: 2.5,
+  cacheRead: 0.2,
+  webSearch: 0.01,
+} as const
+
+// Fable 5.1 cache reads bill at 0.025x input; Fable 5 at the standard 0.1x.
+export const FABLE_51_PRICING = {
+  input: 10,
+  output: 50,
+  cacheWrite: 12.5,
+  cacheRead: 0.25,
+  webSearch: 0.01,
+} as const
+
+export const FABLE_5_PRICING = {
+  input: 10,
+  output: 50,
+  cacheWrite: 12.5,
+  cacheRead: 1,
+  webSearch: 0.01,
+} as const
+
+// Verified against the live /v1/models catalog and platform.claude.com pricing.
 export const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
   {
-    id: 'claude-opus-4-7',
-    label: 'Opus 4.7',
+    id: 'claude-opus-5-5',
+    label: 'Opus 5.5',
 
     description: 'Most capable',
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
 
-    pricing: OPUS_46_PRICING,
+    pricing: OPUS_55_PRICING,
     effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
     defaultEffort: 'xhigh',
     ...CLAUDE_46_CAPS,
   },
   {
-    id: 'claude-opus-4-6',
-    label: 'Opus 4.6',
+    id: 'claude-fable-5-1',
+    label: 'Fable 5.1',
 
-    description: 'Most capable',
+    description: 'Frontier reasoning for demanding work',
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
 
-    pricing: OPUS_46_PRICING,
-    effortLevels: ['low', 'medium', 'high', 'max'],
+    pricing: FABLE_51_PRICING,
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'xhigh',
+    ...CLAUDE_46_CAPS,
+  },
+  {
+    id: 'claude-opus-5',
+    label: 'Opus 5',
+
+    description: 'Previous flagship',
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+
+    pricing: OPUS_5_PRICING,
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
     defaultEffort: 'high',
     ...CLAUDE_46_CAPS,
   },
   {
-    id: 'claude-sonnet-4-6',
-    label: 'Sonnet 4.6',
+    id: 'claude-sonnet-5',
+    label: 'Sonnet 5',
 
     description: 'Fast and capable',
     contextWindow: 1_000_000,
-    maxOutputTokens: 64_000,
+    maxOutputTokens: 128_000,
 
-    pricing: SONNET_PRICING,
-    effortLevels: ['low', 'medium', 'high', 'max'],
+    pricing: SONNET_5_PRICING,
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'high',
+    ...CLAUDE_46_CAPS,
+  },
+  {
+    id: 'claude-fable-5',
+    label: 'Fable 5',
+
+    description: 'Previous frontier model',
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+
+    pricing: FABLE_5_PRICING,
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
     defaultEffort: 'high',
     ...CLAUDE_46_CAPS,
   },
@@ -115,10 +170,12 @@ export const DEFAULT_ANTHROPIC_MODELS: ProviderModelConfig[] = [
   },
 ]
 
+// 3P model ids follow the existing id conventions but are unverified against
+// the Bedrock/Vertex catalogs.
 export const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
   {
-    id: 'us.anthropic.claude-opus-4-7',
-    label: 'Opus 4.7',
+    id: 'us.anthropic.claude-opus-5-5',
+    label: 'Opus 5.5',
 
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
@@ -128,24 +185,35 @@ export const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
     ...CLAUDE_46_3P_CAPS,
   },
   {
-    id: 'us.anthropic.claude-opus-4-6-v1',
-    label: 'Opus 4.6',
+    id: 'us.anthropic.claude-fable-5-1',
+    label: 'Fable 5.1',
 
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
 
-    effortLevels: ['low', 'medium', 'high', 'max'],
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'xhigh',
+    ...CLAUDE_46_3P_CAPS,
+  },
+  {
+    id: 'us.anthropic.claude-opus-5',
+    label: 'Opus 5',
+
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
     defaultEffort: 'high',
     ...CLAUDE_46_3P_CAPS,
   },
   {
-    id: 'us.anthropic.claude-sonnet-4-6',
-    label: 'Sonnet 4.6',
+    id: 'us.anthropic.claude-sonnet-5',
+    label: 'Sonnet 5',
 
     contextWindow: 1_000_000,
-    maxOutputTokens: 64_000,
+    maxOutputTokens: 128_000,
 
-    effortLevels: ['low', 'medium', 'high', 'max'],
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
     defaultEffort: 'high',
     ...CLAUDE_46_3P_CAPS,
   },
@@ -161,8 +229,8 @@ export const DEFAULT_BEDROCK_MODELS: ProviderModelConfig[] = [
 
 export const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
   {
-    id: 'claude-opus-4-7',
-    label: 'Opus 4.7',
+    id: 'claude-opus-5-5',
+    label: 'Opus 5.5',
 
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
@@ -172,24 +240,35 @@ export const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
     ...CLAUDE_46_3P_CAPS,
   },
   {
-    id: 'claude-opus-4-6',
-    label: 'Opus 4.6',
+    id: 'claude-fable-5-1',
+    label: 'Fable 5.1',
 
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
 
-    effortLevels: ['low', 'medium', 'high', 'max'],
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'xhigh',
+    ...CLAUDE_46_3P_CAPS,
+  },
+  {
+    id: 'claude-opus-5',
+    label: 'Opus 5',
+
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
     defaultEffort: 'high',
     ...CLAUDE_46_3P_CAPS,
   },
   {
-    id: 'claude-sonnet-4-6',
-    label: 'Sonnet 4.6',
+    id: 'claude-sonnet-5',
+    label: 'Sonnet 5',
 
     contextWindow: 1_000_000,
-    maxOutputTokens: 64_000,
+    maxOutputTokens: 128_000,
 
-    effortLevels: ['low', 'medium', 'high', 'max'],
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
     defaultEffort: 'high',
     ...CLAUDE_46_3P_CAPS,
   },
@@ -205,8 +284,8 @@ export const DEFAULT_VERTEX_MODELS: ProviderModelConfig[] = [
 
 export const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
   {
-    id: 'claude-opus-4-7',
-    label: 'Opus 4.7',
+    id: 'claude-opus-5-5',
+    label: 'Opus 5.5',
 
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
@@ -216,24 +295,35 @@ export const DEFAULT_FOUNDRY_MODELS: ProviderModelConfig[] = [
     ...CLAUDE_46_CAPS,
   },
   {
-    id: 'claude-opus-4-6',
-    label: 'Opus 4.6',
+    id: 'claude-fable-5-1',
+    label: 'Fable 5.1',
 
     contextWindow: 1_000_000,
     maxOutputTokens: 128_000,
 
-    effortLevels: ['low', 'medium', 'high', 'max'],
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'xhigh',
+    ...CLAUDE_46_CAPS,
+  },
+  {
+    id: 'claude-opus-5',
+    label: 'Opus 5',
+
+    contextWindow: 1_000_000,
+    maxOutputTokens: 128_000,
+
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
     defaultEffort: 'high',
     ...CLAUDE_46_CAPS,
   },
   {
-    id: 'claude-sonnet-4-6',
-    label: 'Sonnet 4.6',
+    id: 'claude-sonnet-5',
+    label: 'Sonnet 5',
 
     contextWindow: 1_000_000,
-    maxOutputTokens: 64_000,
+    maxOutputTokens: 128_000,
 
-    effortLevels: ['low', 'medium', 'high', 'max'],
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
     defaultEffort: 'high',
     ...CLAUDE_46_CAPS,
   },
@@ -256,46 +346,95 @@ export const OPENAI_CAPS = {
   structuredOutputs: false,
 } as const
 
+// Windows, descriptions and default efforts mirror codex-rs models-manager/models.json
+// (ultra effort is not in freecode's EFFORT_LEVELS and is dropped).
 export const DEFAULT_CODEX_MODELS: ProviderModelConfig[] = [
+  {
+    id: 'gpt-6-astra',
+    label: 'GPT-6 Astra',
+
+    description: 'Frontier intelligence for the most demanding work',
+    contextWindow: 272_000,
+    maxOutputTokens: 128_000,
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'low',
+    ...OPENAI_CAPS,
+  },
+  {
+    id: 'gpt-6-sol',
+    label: 'GPT-6 Sol',
+
+    description: 'Workhorse model for coding and everyday work',
+    contextWindow: 272_000,
+    maxOutputTokens: 128_000,
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'medium',
+    ...OPENAI_CAPS,
+  },
+  {
+    id: 'gpt-6-luna',
+    label: 'GPT-6 Luna',
+
+    description: 'Fast and affordable model for easier tasks',
+    contextWindow: 272_000,
+    maxOutputTokens: 128_000,
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'medium',
+    ...OPENAI_CAPS,
+  },
+  {
+    id: 'gpt-5.6-sol',
+    label: 'GPT-5.6 Sol',
+
+    description: 'Older coding model for complex work',
+    contextWindow: 272_000,
+    maxOutputTokens: 128_000,
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'low',
+    ...OPENAI_CAPS,
+  },
+  {
+    id: 'gpt-5.6-terra',
+    label: 'GPT-5.6 Terra',
+
+    description: 'Older balanced model for straightforward work',
+    contextWindow: 272_000,
+    maxOutputTokens: 128_000,
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'medium',
+    ...OPENAI_CAPS,
+  },
+  {
+    id: 'gpt-5.6-luna',
+    label: 'GPT-5.6 Luna',
+
+    description: 'Older fast and efficient model',
+    contextWindow: 272_000,
+    maxOutputTokens: 128_000,
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'medium',
+    ...OPENAI_CAPS,
+  },
+  {
+    id: 'gpt-5.5',
+    label: 'GPT-5.5',
+
+    description: 'Legacy coding model',
+    contextWindow: 272_000,
+    maxOutputTokens: 128_000,
+    effortLevels: ['low', 'medium', 'high', 'xhigh'],
+    defaultEffort: 'medium',
+    ...OPENAI_CAPS,
+  },
   {
     id: 'gpt-5.4',
     label: 'GPT-5.4',
 
-    description: 'Latest GPT',
-    contextWindow: 1_050_000,
-    maxOutputTokens: 128_000,
-    effortLevels: ['none', 'low', 'medium', 'high', 'xhigh'],
-    ...OPENAI_CAPS,
-  },
-  {
-    id: 'gpt-5.3-codex',
-    label: 'GPT-5.3 Codex',
-
-    description: 'Frontier agentic coding',
-    contextWindow: 400_000,
+    description: 'Strong model for everyday coding',
+    contextWindow: 272_000,
     maxOutputTokens: 128_000,
     effortLevels: ['low', 'medium', 'high', 'xhigh'],
-    ...OPENAI_CAPS,
-  },
-  {
-    id: 'gpt-5.4-mini',
-    label: 'GPT-5.4 Mini',
-
-    description: 'Fast GPT',
-    contextWindow: 400_000,
-    maxOutputTokens: 128_000,
-    effortLevels: ['none', 'low', 'medium', 'high', 'xhigh'],
-    ...OPENAI_CAPS,
-  },
-  {
-    id: 'gpt-5.3-codex-spark',
-    label: 'GPT-5.3 Codex Spark',
-
-    description: 'Real-time coding, 1000+ tok/s',
-    contextWindow: 128_000,
-    maxOutputTokens: 128_000,
-    effortLevels: ['low', 'medium', 'high'],
-    defaultEffort: 'high',
+    defaultEffort: 'medium',
     ...OPENAI_CAPS,
   },
 ]
