@@ -1,7 +1,7 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { Box, Text } from '../ink.js'
 import * as React from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { stringWidth } from '../ink/stringWidth.js'
 import { getGraphemeSegmenter } from '../utils/intl.js'
 
@@ -88,14 +88,6 @@ const SPINNER_FRAMES = [
 
 type Props = {
   mode: SpinnerMode
-  /** False hides the whole subtree via display:none while keeping it mounted.
-   * The REPL keeps this subtree mounted for the session's whole life —
-   * visibility is ONLY ever this prop, never mounting — so a hide does not
-   * remount the row, reset the animation clock, or trigger mount-time side
-   * effects on the next show. While hidden with an in-progress task, a
-   * static quiet title row (QuietTitleRow) takes the slot so the task list
-   * below keeps its heading. */
-  hidden?: boolean
   loadingStartTimeRef: React.RefObject<number>
   totalPausedMsRef: React.RefObject<number>
   pauseStartTimeRef: React.RefObject<number | null>
@@ -119,28 +111,6 @@ type Props = {
   streamingThinking?: StreamingThinking | null
 }
 
-// Random verb, re-picked once per turn. Used to ride spinner remounts; with
-// the spinner subtree mounted for the session's whole life, the turn marker
-// is loadingStartTimeRef: it advances when a new turn's loading begins, so
-// the verb rotates at turn boundaries but a mid-turn re-show (streaming
-// text → tool call) keeps the same verb. Mounting while hidden defers
-// rotation to the first show.
-function useTurnScopedVerb(
-  loadingStartTimeRef: React.RefObject<number>,
-  hidden: boolean,
-): string {
-  const [verb, setVerb] = useState(() => sample(getSpinnerVerbs()) ?? 'Working')
-  const turnRef = useRef(loadingStartTimeRef.current)
-  useEffect(() => {
-    if (hidden) return
-    if (loadingStartTimeRef.current !== turnRef.current) {
-      turnRef.current = loadingStartTimeRef.current
-      setVerb(sample(getSpinnerVerbs()) ?? 'Working')
-    }
-  }, [hidden, loadingStartTimeRef])
-  return verb
-}
-
 // Thin wrapper: branches on isBriefOnly so the two variants have independent
 // hook call chains. Without this split, toggling /brief mid-render would
 // violate Rules of Hooks (the inner variant calls ~10 more hooks).
@@ -161,12 +131,7 @@ export function SpinnerWithVerb(props: Props): React.ReactNode {
     !viewingAgentTaskId
   ) {
     return (
-      <BriefSpinner
-        mode={props.mode}
-        overrideMessage={props.overrideMessage}
-        hidden={props.hidden}
-        loadingStartTimeRef={props.loadingStartTimeRef}
-      />
+      <BriefSpinner mode={props.mode} overrideMessage={props.overrideMessage} />
     )
   }
 
@@ -175,7 +140,6 @@ export function SpinnerWithVerb(props: Props): React.ReactNode {
 
 function SpinnerWithVerbInner({
   mode,
-  hidden = false,
   loadingStartTimeRef,
   totalPausedMsRef,
   pauseStartTimeRef,
@@ -256,9 +220,10 @@ function SpinnerWithVerbInner({
   )
   const nextTask = findNextPendingTask(tasksV2)
 
-  // Turn-scoped random verb (see useTurnScopedVerb): with the subtree
-  // mounted for the session's whole life there is no per-turn remount.
-  const randomVerb = useTurnScopedVerb(loadingStartTimeRef, hidden)
+  // Use useState with initializer to pick a random verb once on mount.
+  // The REPL unmounts the subtree only at turn boundaries (grace-windowed),
+  // so mount == turn here: the verb rotates per turn but never mid-turn.
+  const [randomVerb] = useState(() => sample(getSpinnerVerbs()) ?? 'Working')
 
   // Leader's own verb (always the leader's, regardless of who is foregrounded)
   const leaderVerb =
@@ -280,30 +245,14 @@ function SpinnerWithVerbInner({
         : leaderVerb)
   const message = effectiveVerb + '…'
 
-  // Quiet title: while the spinner is hidden (streaming text IS the
-  // feedback) an in-progress task still owns this slot — a static,
-  // animation-free copy of the title row holds the line so the task list
-  // below never loses its heading. It sits at the same block position with
-  // the same one-row footprint, so the swap is a single-row write and the
-  // panel tail stays byte-identical (e2e thinking-swap-repaint). Viewed
-  // agents carry their own label in this row, so no quiet copy there.
-  const quietTitle =
-    hidden &&
-    !viewedLocalAgent &&
-    !foregroundedTeammate &&
-    currentTodo !== undefined
-
-  // Track CLI activity only while actually shown: the subtree stays
-  // mounted through idle stretches, and a display:none spinner must not
-  // keep the CLI marked busy.
+  // Track CLI activity when spinner is active
   useEffect(() => {
-    if (hidden) return
     const operationId = 'spinner-' + mode
     activityManager.startCLIActivity(operationId)
     return () => {
       activityManager.endCLIActivity(operationId)
     }
-  }, [mode, hidden])
+  }, [mode])
 
   const effortSuffix = getEffortSuffix(
     viewedLocalAgent?.model ?? getMainLoopModel(),
@@ -429,15 +378,10 @@ function SpinnerWithVerbInner({
 
   return (
     <Box flexDirection="column" width="100%" alignItems="flex-start">
-      <Box
-        flexDirection="column"
-        width="100%"
-        alignItems="flex-start"
-        display={hidden ? 'none' : 'flex'}
-      >
+      <Box flexDirection="column" width="100%" alignItems="flex-start">
         <SpinnerAnimationRow
           mode={mode}
-          reducedMotion={reducedMotion || hidden}
+          reducedMotion={reducedMotion}
           hasActiveTools={hasActiveTools}
           responseLengthRef={responseLengthRef}
           message={message}
@@ -497,30 +441,6 @@ function SpinnerWithVerbInner({
           </Box>
         ) : null}
       </Box>
-      {quietTitle ? (
-        <QuietTitleRow message={message} messageColor={messageColor} />
-      ) : null}
-    </Box>
-  )
-}
-
-// Same footprint as SpinnerAnimationRow — marginTop 1, a width-2 glyph cell,
-// then the title — so a show/hide swap rewrites exactly one row. No clock,
-// no status byline: nothing behind this row ticks while the spinner is down,
-// and a frozen "(5s · 1.2k tokens)" would read as a lie.
-function QuietTitleRow({
-  message,
-  messageColor,
-}: {
-  message: string
-  messageColor: keyof Theme
-}): React.ReactNode {
-  return (
-    <Box flexDirection="row" flexWrap="wrap" marginTop={1} width="100%">
-      <Box flexWrap="wrap" height={1} width={2}>
-        <Text color={messageColor}>{DEFAULT_CHARACTERS[0]}</Text>
-      </Box>
-      <Text color={messageColor}>{message}</Text>
     </Box>
   )
 }
@@ -572,36 +492,30 @@ function CompactProgressBar({
 type BriefSpinnerProps = {
   mode: SpinnerMode
   overrideMessage?: string | null
-  hidden?: boolean
-  loadingStartTimeRef: React.RefObject<number>
 }
 
 function BriefSpinner({
   mode,
   overrideMessage,
-  hidden = false,
-  loadingStartTimeRef,
 }: BriefSpinnerProps): React.ReactNode {
   const settings = useSettings()
   const reducedMotion = settings.prefersReducedMotion ?? false
-  const randomVerb = useTurnScopedVerb(loadingStartTimeRef, hidden)
+  const [randomVerb] = useState(() => sample(getSpinnerVerbs()) ?? 'Working')
   const verb = overrideMessage ?? randomVerb
 
-  // Track CLI activity so OS/IDE "busy" indicators fire in brief mode too.
-  // Only while shown — the REPL keeps this subtree mounted through idle.
+  // Track CLI activity so OS/IDE "busy" indicators fire in brief mode too
   useEffect(() => {
-    if (hidden) return
     const operationId = 'spinner-' + mode
     activityManager.startCLIActivity(operationId)
     return () => {
       activityManager.endCLIActivity(operationId)
     }
-  }, [mode, hidden])
+  }, [mode])
 
-  // Drive both dot cycle and shimmer from the shared clock; the clock stops
-  // while hidden so a mounted-through-idle spinner costs no repaints. The
-  // viewport ref is unused — viewport-based pausing isn't needed here.
-  const [, time] = useAnimationFrame(reducedMotion || hidden ? null : 120)
+  // Drive both dot cycle and shimmer from the shared clock. The viewport
+  // ref is unused — the spinner unmounts on turn end so viewport-based
+  // pausing isn't needed.
+  const [, time] = useAnimationFrame(reducedMotion ? null : 120)
 
   const runningCount = useAppState(s =>
     count(Object.values(s.tasks), isBackgroundTask),
@@ -633,13 +547,7 @@ function BriefSpinner({
   const pad = Math.max(1, columns - 2 - leftWidth - stringWidth(rightText))
 
   return (
-    <Box
-      flexDirection="row"
-      width="100%"
-      marginTop={1}
-      paddingLeft={2}
-      display={hidden ? 'none' : 'flex'}
-    >
+    <Box flexDirection="row" width="100%" marginTop={1} paddingLeft={2}>
       {showConnWarning ? (
         <Text color="error">{connText + dots}</Text>
       ) : (

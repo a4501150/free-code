@@ -110,6 +110,7 @@ import {
 import { useCostSummary } from '../costHook.js'
 import { useAfterFirstRender } from '../hooks/useAfterFirstRender.js'
 import { useDeferredHookMessages } from '../hooks/useDeferredHookMessages.js'
+import { useUnmountDebounce } from '../hooks/useUnmountDebounce.js'
 import {
   addToHistory,
   removeLastFromHistory,
@@ -393,6 +394,11 @@ import {
 // key off them (syntheticStreamingToolUseMessages, streamingToolUseIDs).
 const EMPTY_STREAMING_TOOL_USES: StreamingToolUse[] = []
 const EMPTY_IN_PROGRESS_TOOL_USE_IDS = new Set<string>()
+
+// How long the spinner subtree stays mounted after its busy condition
+// drops. Long enough to bridge request boundaries inside one turn, short
+// enough that a real turn-end teardown does not visibly lag.
+const SPINNER_UNMOUNT_GRACE_MS = 300
 
 export type Props = {
   commands: Command[]
@@ -1085,16 +1091,17 @@ export function REPL({
     isShowingLocalJSXCommand,
   })
 
-  // Visibility condition for the spinner subtree, which is mounted for the
-  // session's whole life and toggled ONLY via the `hidden` prop below.
-  // Visibility is deliberately narrower than what used to be the mount
-  // scope: while streaming text is on screen the spinner hides itself
-  // (display:none) but stays mounted. Hiding on every text→tool transition
-  // (or unmounting, before) re-randomized the verb, restarted the
-  // animation clock and repainted the spinner+tip block wholesale, which
-  // read as flicker around each tool call. With mount out of the picture,
-  // dips of this condition between request boundaries are free — worst
-  // case the row is hidden for a frame, never removed and re-added.
+  // Busy condition for the spinner: API request pending, tools running,
+  // or the turn is otherwise in flight. The spinner stays visible for the
+  // WHOLE busy stretch — including while assistant text streams onto the
+  // screen. It used to hide behind streaming text ("the text IS the
+  // feedback"), but every provider-side stream clear (streamingText resets
+  // at each message arrival and each content_block_start) hid and re-showed
+  // the row mid-turn, reading as the spinner unmounting between thinking
+  // and text. Gating MOUNT (not visibility) through the grace window is
+  // equivalent to visible-whenever-busy: the grace hold spans request
+  // boundaries, so a remount — and with it verb re-draw and clock restart
+  // — happens only at genuine turn boundaries.
   const spinnerActive =
     (!toolJSX || toolJSX.showSpinner === true) &&
     toolUseConfirmQueue.length === 0 &&
@@ -1113,9 +1120,10 @@ export function REPL({
     // Hide spinner when waiting for leader to approve permission request
     !pendingWorkerRequest
 
-  // Hide spinner when streaming text is visible (the text IS the feedback),
-  // but keep it when isBriefOnly suppresses the streaming text display.
-  const showSpinner = spinnerActive && (!visibleStreamingText || isBriefOnly)
+  const spinnerMounted = useUnmountDebounce(
+    !!spinnerActive,
+    SPINNER_UNMOUNT_GRACE_MS,
+  )
 
   // hasActivePrompt → useReplDialogs
 
@@ -2143,26 +2151,27 @@ export function REPL({
                   </Box>
                 )}
               <Box flexGrow={1} />
-              <SpinnerWithVerb
-                mode={streamMode}
-                hidden={!showSpinner}
-                spinnerTip={spinnerTip}
-                responseLengthRef={responseLengthRef}
-                overrideMessage={spinnerMessage}
-                spinnerSuffix={stopHookSpinnerSuffix}
-                verbose={verbose}
-                loadingStartTimeRef={loadingStartTimeRef}
-                totalPausedMsRef={totalPausedMsRef}
-                pauseStartTimeRef={pauseStartTimeRef}
-                overrideColor={spinnerColor}
-                overrideShimmerColor={spinnerShimmerColor}
-                compactingStartTime={compactingStartTime}
-                hasActiveTools={inProgressToolUseIDs.size > 0}
-                leaderIsIdle={!isLoading}
-                streamingThinking={streamingThinking}
-              />
+              {spinnerMounted && (
+                <SpinnerWithVerb
+                  mode={streamMode}
+                  spinnerTip={spinnerTip}
+                  responseLengthRef={responseLengthRef}
+                  overrideMessage={spinnerMessage}
+                  spinnerSuffix={stopHookSpinnerSuffix}
+                  verbose={verbose}
+                  loadingStartTimeRef={loadingStartTimeRef}
+                  totalPausedMsRef={totalPausedMsRef}
+                  pauseStartTimeRef={pauseStartTimeRef}
+                  overrideColor={spinnerColor}
+                  overrideShimmerColor={spinnerShimmerColor}
+                  compactingStartTime={compactingStartTime}
+                  hasActiveTools={inProgressToolUseIDs.size > 0}
+                  leaderIsIdle={!isLoading}
+                  streamingThinking={streamingThinking}
+                />
+              )}
               <TaskLivePanel hidden={!!compactingStartTime} />
-              {!showSpinner &&
+              {!spinnerMounted &&
                 !isLoading &&
                 !userInputOnProcessing &&
                 !hasRunningTeammates &&

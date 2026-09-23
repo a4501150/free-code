@@ -24,10 +24,9 @@ beforeEach(() => {
 })
 afterEach(() => resetProviderRegistry())
 
-function makeProps(hidden?: boolean) {
+function makeProps() {
   return {
     mode: 'responding' as const,
-    hidden,
     loadingStartTimeRef: { current: Date.now() },
     totalPausedMsRef: { current: 0 },
     pauseStartTimeRef: { current: null },
@@ -38,22 +37,16 @@ function makeProps(hidden?: boolean) {
   }
 }
 
-function render(hidden?: boolean): Promise<string> {
+function render(): Promise<string> {
   return renderToAnsiString(
     <AppStateProvider>
-      <SpinnerWithVerb {...makeProps(hidden)} />
+      <SpinnerWithVerb {...makeProps()} />
     </AppStateProvider>,
   )
 }
 
-describe('SpinnerWithVerb hidden prop', () => {
-  test('renders nothing when hidden', async () => {
-    const frame = await render(true)
-    expect(frame).not.toContain('Reading')
-    expect(frame).not.toContain('Do the thing')
-  })
-
-  test('renders verb and tip when visible', async () => {
+describe('SpinnerWithVerb', () => {
+  test('renders verb and tip', async () => {
     const frame = await render()
     expect(frame).toContain('Reading')
     expect(frame).toContain('Do the thing')

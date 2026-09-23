@@ -1,13 +1,16 @@
 /**
- * E2E: while an in-progress task exists, its title row must stay on
- * screen even while the spinner is hidden behind streaming text. The
- * spinner renders a static quiet-title row in its slot during those
- * windows (Spinner.tsx QuietTitleRow) so the live task list never loses
- * its heading.
+ * E2E: the spinner row must stay visible for the whole busy stretch —
+ * including while the assistant's text streams onto the screen. The old
+ * policy hid the spinner behind streaming text ("the text IS the
+ * feedback"), but each provider-side stream clear hid and re-showed the
+ * row mid-turn: the row vanishing after the first complete streamed line
+ * is exactly what users saw as the spinner unmounting when thinking ended
+ * and the answer began.
  *
- * Probe: a delayed text response stretches the streaming phase; pane
- * captures during it must keep showing the bare quiet title row. Pre-fix
- * the spinner simply vanished there and the title went with it.
+ * Probe: a delayed multi-line text response stretches the streaming
+ * phase; pane captures during it must keep showing the ANIMATED title
+ * row. Verbose mode makes that row always carry a "(Ns · N tokens)"
+ * byline, so a title line with the byline is only ever the live spinner.
  */
 
 import {
@@ -39,7 +42,7 @@ function withDelay(response: MockResponse, delayMs: number): MockResponse {
   return response
 }
 
-describe('quiet title during streaming', () => {
+describe('spinner visible during streaming', () => {
   let server: MockAnthropicServer
   let session: TmuxSession | undefined
 
@@ -53,7 +56,7 @@ describe('quiet title during streaming', () => {
     if (session) await session.stop()
   })
 
-  test('the title row survives the spinner-hidden streaming window', async () => {
+  test('the animated spinner survives the streaming window', async () => {
     session = new TmuxSession({
       serverUrl: server.url,
       additionalArgs: ['--dangerously-skip-permissions'],
@@ -62,14 +65,14 @@ describe('quiet title during streaming', () => {
     })
     await session.start()
 
-    // Visible streaming text renders complete lines only (text before the
-    // last newline), so the fixture must carry line breaks — a one-line
-    // stream never hides the spinner and the quiet window never opens.
+    // Multi-line stream: under the old hide-behind-text policy each
+    // complete line painted re-evaluated the hide condition, so the line
+    // breaks are what made the old blink observable.
     const streamText =
       Array.from(
         { length: 12 },
         (_, i) =>
-          `padding line ${i} — streamed deltas hold the quiet window open`,
+          `padding line ${i} — streamed deltas stretch the stream window`,
       ).join('\n') + '\nEND OF STREAM MARKER'
 
     server.reset([
@@ -77,12 +80,13 @@ describe('quiet title during streaming', () => {
       toolUseResponse([
         {
           name: 'TaskCreate',
-          input: { subject: 'Audit the quiet title', description: 'x' },
+          input: { subject: 'Spin through the stream', description: 'x' },
         },
       ]),
       textResponse('Board is up.'),
-      // Turn 2: claim task 1, then stream a long text response. Text
-      // streaming hides the spinner — the quiet title row must take over.
+      // Turn 2: claim task 1 so the spinner shows the task verb, then
+      // stream a long text response. The spinner must keep its animated
+      // row (title + verbose byline) through the whole stream.
       toolUseResponse([
         { name: 'TaskUpdate', input: { taskId: '1', status: 'in_progress' } },
       ]),
@@ -94,24 +98,23 @@ describe('quiet title during streaming', () => {
 
     await session.submitAndApprove('start task one', 60_000)
 
-    // Poll the pane through the streaming phase and count the quiet title
-    // row: the title with NO animated spinner beside it. Verbose mode
-    // makes the animated row always carry a "(timer · tokens)" trailer,
-    // so a bare "· <title>…" line is only ever the quiet row. Pre-fix the
-    // line simply disappeared while deltas streamed.
-    const quietRow = /^· Audit the quiet title…\s*$/m
-    let quietCaptures = 0
+    // Poll the pane through the streaming phase and count frames carrying
+    // the animated row: the task verb followed by the verbose
+    // "(Ns · …)" byline. Pre-fix the row vanished as soon as the first
+    // complete streamed line painted.
+    const animatedRow = /Spin through the stream… \(/m
+    let spinnerCaptures = 0
     const allPanes: string[] = []
     const deadline = Date.now() + 60_000
     while (Date.now() < deadline) {
       const pane = await session.capturePane()
       if (pane.includes('END OF STREAM MARKER')) break
-      if (quietRow.test(pane)) quietCaptures++
+      if (animatedRow.test(pane)) spinnerCaptures++
       else allPanes.push(pane)
       await new Promise(r => setTimeout(r, 60))
     }
 
-    if (quietCaptures < 5) {
+    if (spinnerCaptures < 5) {
       console.log(
         allPanes
           .slice(-3)
@@ -119,9 +122,9 @@ describe('quiet title during streaming', () => {
           .join('\n'),
       )
     }
-    // The delayed stream stretches the quiet window to ~2s; at ~10
-    // captures/s the static row must be on screen many times.
-    expect(quietCaptures).toBeGreaterThanOrEqual(5)
+    // The delayed stream stretches the window to ~2s; at ~10 captures/s
+    // the animated row must be on screen many times.
+    expect(spinnerCaptures).toBeGreaterThanOrEqual(5)
 
     await session.waitForText('END OF STREAM MARKER', 30_000)
   })
