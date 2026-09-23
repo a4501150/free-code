@@ -10,10 +10,8 @@ import type { Tools } from '../Tool.js'
 import {
   getCommitAndPRInstructions,
   BASH_MULTILINE_SYNTAX,
-  POWERSHELL_MULTILINE_SYNTAX,
   type MultiLineSyntax,
 } from '../tools/shared/gitInstructions.js'
-import { isPowerShellToolEnabled } from '../utils/shell/shellToolUtils.js'
 import { getPublicModelDisplayName } from '../utils/model/model.js'
 
 import {
@@ -279,14 +277,10 @@ export async function enhanceSystemPromptWithEnvDetails(
 - IMPORTANT: You are in an agentic tool-use loop environment. A response without tool calls ends the loop and is your final answer. Always include tool calls if you have more work to do.
 - Agent threads always have their cwd reset between bash calls, as a result please only use absolute file paths.
 - In your final response, share file paths (always absolute, never relative) that are relevant to the task. Include code snippets only when the exact text matters (for example, a bug you found, a function signature the caller asked for) — do not recap code you merely read.`
-  // Git guidance lives in the system prompt, not the shell tool prompts.
-  // Shell tools are not visible here, so pick the multi-line syntax by
-  // platform: PowerShell only runs where isPowerShellToolEnabled() can be true.
-  const gitSection = getGitInstructionsSection(
-    isPowerShellToolEnabled()
-      ? POWERSHELL_MULTILINE_SYNTAX
-      : BASH_MULTILINE_SYNTAX,
-  )
+  // Git guidance lives in the system prompt, not the shell tool prompts —
+  // except PowerShell here-string syntax for these same calls, which rides
+  // the PowerShell tool description.
+  const gitSection = getGitInstructionsSection(BASH_MULTILINE_SYNTAX)
   const envInfo = await computeEnvInfo(model, additionalWorkingDirectories)
   return [
     ...existingSystemPrompt,

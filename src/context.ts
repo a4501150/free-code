@@ -22,9 +22,7 @@ import { shouldIncludeGitInstructions } from './utils/gitSettings.js'
 import {
   getCommitAndPRInstructions,
   BASH_MULTILINE_SYNTAX,
-  POWERSHELL_MULTILINE_SYNTAX,
 } from './tools/shared/gitInstructions.js'
-import { isPowerShellToolEnabled } from './utils/shell/shellToolUtils.js'
 import { logError } from './utils/log.js'
 
 const MAX_STATUS_CHARS = 2000
@@ -153,16 +151,14 @@ export const getSystemContext = memoize(
     const gitStatus = !shouldIncludeGitInstructions()
       ? null
       : await getGitStatus()
-    // Git guidance (commit format, HEREDOC/here-string syntax, attribution)
-    // rides here, not the static system prompt: the attribution footer names
-    // the current model, so these bytes are session-scoped by construction.
+    // Git guidance (commit format, HEREDOC syntax, attribution) rides here,
+    // not the static system prompt: the attribution footer names the current
+    // model, so these bytes are session-scoped by construction. PowerShell
+    // here-string syntax for the same calls lives in the PowerShell tool
+    // description, not here.
     const gitInstructions = !shouldIncludeGitInstructions()
       ? null
-      : getCommitAndPRInstructions(
-          isPowerShellToolEnabled()
-            ? POWERSHELL_MULTILINE_SYNTAX
-            : BASH_MULTILINE_SYNTAX,
-        )
+      : getCommitAndPRInstructions(BASH_MULTILINE_SYNTAX)
     const scratchpad = getScratchpadInstructions()
 
     logForDiagnosticsNoPII('info', 'system_context_completed', {
