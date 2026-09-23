@@ -24,7 +24,7 @@ export interface LegacyMigrationResult {
   providers: Record<string, ProviderConfig>
   defaultModel?: string
   defaultSubagentModel?: string
-  defaultSmallFastModel?: string
+  utilityModel?: string
 }
 
 // ── Migration logic ──────────────────────────────────────────────────
@@ -161,12 +161,12 @@ export function synthesizeProvidersFromLegacy(opts: {
   const envSmallFast =
     getEnv('ANTHROPIC_SMALL_FAST_MODEL') ||
     getEnv('ANTHROPIC_DEFAULT_HAIKU_MODEL')
-  const defaultSmallFastModel = envSmallFast ? qualify(envSmallFast) : undefined
+  const utilityModel = envSmallFast ? qualify(envSmallFast) : undefined
 
   return {
     providers,
     defaultModel,
     defaultSubagentModel,
-    defaultSmallFastModel,
+    utilityModel,
   }
 }

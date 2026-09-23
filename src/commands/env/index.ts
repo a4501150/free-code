@@ -7,9 +7,10 @@ import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { getAgentModel } from '../../utils/model/agent.js'
 import {
   getMainLoopModel,
-  getSmallFastModel,
+  getUtilityModel,
 } from '../../utils/model/modelResolution.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
+import { getPlanAgentConfig } from '../../utils/planAgent.js'
 import { getProjectsDir } from '../../utils/sessionStorage.js'
 
 function isSecretKey(name: string): boolean {
@@ -39,11 +40,8 @@ export const call: LocalCommandCall = async () => {
 
   const primaryModel = getMainLoopModel()
   const subagentModel = getAgentModel('inherit', primaryModel)
-  const smallFastModel = getSmallFastModel()
-  const balancedModel =
-    registry.getConfiguredDefaultBalancedModel() ?? '(inherit)'
-  const mostPowerfulModel =
-    registry.getConfiguredDefaultMostPowerfulModel() ?? '(inherit)'
+  const utilityModel = getUtilityModel()
+  const planModel = getPlanAgentConfig().planModel ?? '(inherit)'
 
   const runtime =
     typeof Bun !== 'undefined'
@@ -79,9 +77,8 @@ export const call: LocalCommandCall = async () => {
     'Models',
     `  Primary:       ${primaryModel}`,
     `  Subagent:      ${subagentModel}`,
-    `  Small fast:    ${smallFastModel}`,
-    `  Balanced:      ${balancedModel}`,
-    `  Most powerful: ${mostPowerfulModel}`,
+    `  Utility:       ${utilityModel}`,
+    `  Plan agent:    ${planModel}`,
   )
 
   sections.push(

@@ -1,7 +1,7 @@
 import type { PermissionMode } from '../permissions/PermissionMode.js'
 import {
   getRuntimeMainLoopModel,
-  getSmallFastModel,
+  getUtilityModel,
   parseUserSpecifiedModel,
 } from './model.js'
 import { getProviderRegistry } from './providerRegistry.js'
@@ -13,29 +13,15 @@ import {
 import { getPublicModelDisplayName } from './modelDisplay.js'
 
 /**
- * Sentinel value for agent definitions that want the configured small/fast model.
- * Resolved at runtime by getAgentModel() via getSmallFastModel().
- */
-export const SMALL_FAST_MODEL_SENTINEL = 'smallFast'
-
-/**
- * Sentinel value for agent definitions that want a balanced-capability model.
- * Resolved at runtime by getAgentModel() via defaultBalancedModel config,
- * falling back to inherit (main model) if not configured.
- */
-export const BALANCED_MODEL_SENTINEL = 'balanced'
-
-/**
- * Sentinel value for agent definitions that want the most powerful available model.
- * Resolved at runtime by getAgentModel() via defaultMostPowerfulModel config,
- * falling back to inherit (main model) if not configured.
+ * Sentinel value for agent definitions that want the configured utility model
+ * (the background-call model: hooks, summaries, quota checks).
+ * Resolved at runtime by getAgentModel() via getUtilityModel(), which falls
+ * back to defaultModel if utilityModel is not configured.
  *
  * NOTE: still subject to the defaultSubagentModel blunt override — if the user
- * sets defaultSubagentModel, it wins over this sentinel. Users wanting tiered
- * routing should leave defaultSubagentModel unset and configure the three
- * tier fields (defaultSmallFastModel / defaultBalancedModel / defaultMostPowerfulModel).
+ * sets defaultSubagentModel, it wins over this sentinel.
  */
-export const MOST_POWERFUL_MODEL_SENTINEL = 'mostPowerful'
+export const UTILITY_MODEL_SENTINEL = 'utility'
 
 /**
  * Keywords the Agent tool's `model` param accepts as an explicit
@@ -118,37 +104,10 @@ export function getAgentModel(
     })
   }
 
-  // Resolve 'smallFast' sentinel to the configured small/fast model
-  if (agentModelWithExp === SMALL_FAST_MODEL_SENTINEL) {
-    return applyParentRegionPrefix(getSmallFastModel())
-  }
-
-  // Resolve 'balanced' sentinel to configured balanced model, falling back to inherit
-  if (agentModelWithExp === BALANCED_MODEL_SENTINEL) {
-    const balanced = registry.getConfiguredDefaultBalancedModel()
-    if (balanced) {
-      return applyParentRegionPrefix(parseUserSpecifiedModel(balanced))
-    }
-    // Fall back to inherit (main model)
-    return getRuntimeMainLoopModel({
-      permissionMode: permissionMode ?? 'default',
-      mainLoopModel: parentModel,
-      exceeds200kTokens: false,
-    })
-  }
-
-  // Resolve 'mostPowerful' sentinel to configured most-powerful model, falling back to inherit
-  if (agentModelWithExp === MOST_POWERFUL_MODEL_SENTINEL) {
-    const mostPowerful = registry.getConfiguredDefaultMostPowerfulModel()
-    if (mostPowerful) {
-      return applyParentRegionPrefix(parseUserSpecifiedModel(mostPowerful))
-    }
-    // Fall back to inherit (main model)
-    return getRuntimeMainLoopModel({
-      permissionMode: permissionMode ?? 'default',
-      mainLoopModel: parentModel,
-      exceeds200kTokens: false,
-    })
+  // Resolve 'utility' sentinel to the configured utility model
+  // (falls back to defaultModel inside getUtilityModel)
+  if (agentModelWithExp === UTILITY_MODEL_SENTINEL) {
+    return applyParentRegionPrefix(getUtilityModel())
   }
 
   const model = parseUserSpecifiedModel(agentModelWithExp)
@@ -158,27 +117,10 @@ export function getAgentModel(
 export function getAgentModelDisplay(model: string | undefined): string {
   if (!model) return 'Inherit from parent (default)'
   if (model === 'inherit') return 'Inherit from parent'
-  if (model === SMALL_FAST_MODEL_SENTINEL) {
-    const resolved = getSmallFastModel()
+  if (model === UTILITY_MODEL_SENTINEL) {
+    const resolved = getUtilityModel()
     const displayName = getPublicModelDisplayName(resolved)
     return displayName ?? resolved
-  }
-  if (model === BALANCED_MODEL_SENTINEL) {
-    const balanced = getProviderRegistry().getConfiguredDefaultBalancedModel()
-    if (balanced) {
-      const displayName = getPublicModelDisplayName(balanced)
-      return displayName ?? balanced
-    }
-    return 'Inherit from parent'
-  }
-  if (model === MOST_POWERFUL_MODEL_SENTINEL) {
-    const mostPowerful =
-      getProviderRegistry().getConfiguredDefaultMostPowerfulModel()
-    if (mostPowerful) {
-      const displayName = getPublicModelDisplayName(mostPowerful)
-      return displayName ?? mostPowerful
-    }
-    return 'Inherit from parent'
   }
   // Try to get a display name from the registry
   const displayName = getPublicModelDisplayName(model)

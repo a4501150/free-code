@@ -1284,28 +1284,13 @@ const _settingsSchemaValue = z
           'These are exposed as enum values in the Agent tool schema so the LLM can choose between them. ' +
           'E.g. ["anthropic:claude-sonnet-4-6", "anthropic:claude-haiku-4-5-20251001"]',
       ),
-    defaultBalancedModel: z
+    utilityModel: z
       .string()
       .optional()
       .describe(
-        'Provider-qualified model for built-in agents that need balanced capability ' +
-          '(e.g. magicDocs). Falls back to inherit (main model) if not set.',
-      ),
-    defaultMostPowerfulModel: z
-      .string()
-      .optional()
-      .describe(
-        'Provider-qualified model for built-in agents that need the most powerful ' +
-          'available model (e.g. the Plan agent). Falls back to inherit (main model) if not set. ' +
-          'NOTE: overridden by defaultSubagentModel when that is set — leave defaultSubagentModel ' +
-          'unset to get tiered routing (smallFast / balanced / mostPowerful).',
-      ),
-    defaultSmallFastModel: z
-      .string()
-      .optional()
-      .describe(
-        'Provider-qualified default small/fast model (e.g. "anthropic:claude-haiku-4-5-20251001"). ' +
-          'Used for token estimation, hooks, web search, summaries. Canonical location is freecode.json.',
+        'Provider-qualified model for background utility calls: token estimation, hooks, ' +
+          'summaries, quota checks, memory lookup, session search ' +
+          '(e.g. "anthropic:claude-haiku-4-5-20251001"). Falls back to defaultModel if not set.',
       ),
     modelOverrides: z
       .record(z.string(), z.string())

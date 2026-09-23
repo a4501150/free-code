@@ -20,7 +20,7 @@ import {
   getPreferredProjectConfigPath,
   getProjectConfigPaths,
 } from '../projectConfigPaths.js'
-import { getSmallFastModel } from '../model/model.js'
+import { getUtilityModel } from '../model/model.js'
 import { jsonParse } from '../slowOperations.js'
 import { asSystemPrompt } from '../systemPromptType.js'
 import {
@@ -158,7 +158,7 @@ Output <updates>[]</updates> if no updates are needed.`,
       }
     },
 
-    getModel: getSmallFastModel,
+    getModel: getUtilityModel,
   }
 
   return createApiQueryHook(config)
@@ -244,7 +244,7 @@ Rules:
     signal: createAbortController().signal,
     options: {
       getToolPermissionContext: async () => getEmptyToolPermissionContext(),
-      model: getSmallFastModel(),
+      model: getUtilityModel(),
       toolChoice: undefined,
       isNonInteractiveSession: false,
       hasAppendSystemPrompt: false,

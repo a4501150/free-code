@@ -512,15 +512,15 @@ describe('Provider Config E2E', () => {
     })
   })
 
-  // ─── Subagent Model Tier Routing ───────────────────────────
+  // ─── Subagent Utility Model Routing ────────────────────────
   //
-  // Exercises the mostPowerful tier sentinel in src/utils/model/agent.ts:
-  //   1. Subagent with model: mostPowerful uses defaultMostPowerfulModel when
+  // Exercises the utility sentinel in src/utils/model/agent.ts:
+  //   1. Subagent with model: utility uses utilityModel when
   //      configured.
-  //   2. defaultSubagentModel is a blunt override that beats the tier sentinel
-  //      (clause a — documented in CLAUDE.md).
-  //   3. Falls back to inherit (main model) when defaultMostPowerfulModel is
-  //      unset.
+  //   2. defaultSubagentModel is a blunt override that beats the sentinel.
+  //   3. Falls back to defaultModel when utilityModel is unset
+  //      (getUtilityModel's fallback — same as the main model here since
+  //      no /model override is in play).
   //
   // Uses a user-defined markdown agent rather than the built-in Plan agent:
   // Plan is gated behind the `planAgentConfig.enabled` setting, which is
@@ -528,7 +528,7 @@ describe('Provider Config E2E', () => {
   // include it. The markdown path exercises the identical resolution code
   // in getAgentModel().
 
-  describe('Subagent Model Tier Routing', () => {
+  describe('Subagent Utility Model Routing', () => {
     let session: TmuxSession
     let tierCwd: string | null = null
 
@@ -545,8 +545,8 @@ describe('Provider Config E2E', () => {
         [
           '---',
           'name: TierTest',
-          'description: Test subagent for mostPowerful tier routing',
-          'model: mostPowerful',
+          'description: Test subagent for utility model routing',
+          'model: utility',
           '---',
           '',
           `You are a test subagent. ${AGENT_MARKER}. Respond briefly.`,
@@ -618,7 +618,7 @@ describe('Provider Config E2E', () => {
       )
     }
 
-    test('subagent with model:mostPowerful uses defaultMostPowerfulModel when configured', async () => {
+    test('subagent with model:utility uses utilityModel when configured', async () => {
       tierCwd = await setupTierAgentCwd()
 
       // Main agent spawns TierTest subagent; subagent returns a short reply;
@@ -643,7 +643,7 @@ describe('Provider Config E2E', () => {
         cwd: tierCwd,
         settings: {
           defaultModel: 'test-anthropic:main-model',
-          defaultMostPowerfulModel: 'test-anthropic:powerful-model',
+          utilityModel: 'test-anthropic:powerful-model',
           providers: {
             'test-anthropic': {
               type: 'anthropic',
@@ -667,11 +667,11 @@ describe('Provider Config E2E', () => {
       expect(requests.some(r => r.body.model === 'main-model')).toBe(true)
     })
 
-    test('defaultSubagentModel overrides mostPowerful sentinel (clause a)', async () => {
+    test('defaultSubagentModel overrides utility sentinel (clause a)', async () => {
       tierCwd = await setupTierAgentCwd()
 
       // With defaultSubagentModel set, the tier sentinel is short-circuited —
-      // sub-model wins regardless of defaultMostPowerfulModel.
+      // sub-model wins regardless of utilityModel.
       anthropicServer.reset([
         toolUseResponse([
           {
@@ -692,7 +692,7 @@ describe('Provider Config E2E', () => {
         cwd: tierCwd,
         settings: {
           defaultModel: 'test-anthropic:main-model',
-          defaultMostPowerfulModel: 'test-anthropic:powerful-model',
+          utilityModel: 'test-anthropic:powerful-model',
           defaultSubagentModel: 'test-anthropic:sub-model',
           providers: {
             'test-anthropic': {
@@ -717,11 +717,11 @@ describe('Provider Config E2E', () => {
       assertTierSubagentModel(requests, 'sub-model')
     })
 
-    test('mostPowerful falls back to inherit when defaultMostPowerfulModel is unset', async () => {
+    test('utility falls back to defaultModel when utilityModel is unset', async () => {
       tierCwd = await setupTierAgentCwd()
 
-      // With only defaultModel configured, the mostPowerful sentinel falls
-      // back to inherit — the subagent uses the parent's main-model.
+      // With only defaultModel configured, getUtilityModel() falls back to
+      // it — the subagent uses main-model.
       anthropicServer.reset([
         toolUseResponse([
           {
@@ -742,7 +742,7 @@ describe('Provider Config E2E', () => {
         cwd: tierCwd,
         settings: {
           defaultModel: 'test-anthropic:main-model',
-          // no defaultMostPowerfulModel, no defaultSubagentModel
+          // no utilityModel, no defaultSubagentModel
           providers: {
             'test-anthropic': {
               type: 'anthropic',

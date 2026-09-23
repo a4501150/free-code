@@ -14,7 +14,7 @@
 
 export type { ModelShortName, ModelName, ModelSetting } from './modelTypes.js'
 export {
-  getSmallFastModel,
+  getUtilityModel,
   getUserSpecifiedModelSetting,
   getMainLoopModel,
   getRuntimeMainLoopModel,

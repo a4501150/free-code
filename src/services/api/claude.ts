@@ -72,7 +72,7 @@ import {
   normalizeMessagesForAPI,
   stripForeignReasoningBlocks,
 } from '../../utils/messages.js'
-import { getSmallFastModel } from '../../utils/model/model.js'
+import { getUtilityModel } from '../../utils/model/model.js'
 import {
   asSystemPrompt,
   type SystemPrompt,
@@ -210,8 +210,8 @@ export function getPromptCachingEnabled(model: string): boolean {
 
   // Check if we should disable for small/fast model
   if (isEnvTruthy(process.env.DISABLE_PROMPT_CACHING_HAIKU)) {
-    const smallFastModel = getSmallFastModel()
-    if (model === smallFastModel) return false
+    const utilityModel = getUtilityModel()
+    if (model === utilityModel) return false
   }
 
   const bareModel = stripProviderPrefix(model).toLowerCase()
@@ -371,7 +371,7 @@ export async function verifyApiKey(
 
   try {
     // WARNING: if you change this to use a non-Haiku model, this request will fail in 1P unless it uses getCLISyspromptPrefix.
-    const model = getSmallFastModel()
+    const model = getUtilityModel()
     return await returnValue(
       withRetry(
         async () => {
@@ -2335,7 +2335,7 @@ export async function queryHaiku({
         signal,
         options: {
           ...options,
-          model: getSmallFastModel(),
+          model: getUtilityModel(),
           enablePromptCaching: options.enablePromptCaching ?? false,
           outputFormat,
           async getToolPermissionContext() {

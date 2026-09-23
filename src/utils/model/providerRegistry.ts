@@ -251,24 +251,18 @@ export class ProviderRegistry {
   private readonly _defaultModel: string | undefined
   /** Provider-qualified default subagent model from freecode.json */
   private readonly _defaultSubagentModel: string | undefined
-  /** Provider-qualified default small/fast model from freecode.json */
-  private readonly _defaultSmallFastModel: string | undefined
+  /** Provider-qualified utility model for background calls from modelSettings.json */
+  private readonly _utilityModel: string | undefined
   /** Provider-qualified available subagent models from freecode.json (max 3) */
   private readonly _availableSubagentModels: string[]
-  /** Provider-qualified default balanced model from freecode.json */
-  private readonly _defaultBalancedModel: string | undefined
-  /** Provider-qualified default most-powerful model from freecode.json */
-  private readonly _defaultMostPowerfulModel: string | undefined
 
   constructor(
     providers: Record<string, ProviderConfig>,
     opts?: {
       defaultModel?: string
       defaultSubagentModel?: string
-      defaultSmallFastModel?: string
+      utilityModel?: string
       availableSubagentModels?: string[]
-      defaultBalancedModel?: string
-      defaultMostPowerfulModel?: string
     },
   ) {
     this.providers = new Map(Object.entries(providers))
@@ -280,10 +274,8 @@ export class ProviderRegistry {
     )
     this._defaultModel = opts?.defaultModel
     this._defaultSubagentModel = opts?.defaultSubagentModel
-    this._defaultSmallFastModel = opts?.defaultSmallFastModel
+    this._utilityModel = opts?.utilityModel
     this._availableSubagentModels = opts?.availableSubagentModels ?? []
-    this._defaultBalancedModel = opts?.defaultBalancedModel
-    this._defaultMostPowerfulModel = opts?.defaultMostPowerfulModel
     this.buildIndex()
   }
 
@@ -559,11 +551,11 @@ export class ProviderRegistry {
   }
 
   /**
-   * Get the configured default small/fast model from freecode.json.
+   * Get the configured utility model from modelSettings.json.
    * Returns a provider-qualified string or undefined.
    */
-  getConfiguredDefaultSmallFastModel(): string | undefined {
-    return this._defaultSmallFastModel
+  getConfiguredUtilityModel(): string | undefined {
+    return this._utilityModel
   }
 
   /**
@@ -572,22 +564,6 @@ export class ProviderRegistry {
    */
   getAvailableSubagentModels(): string[] {
     return this._availableSubagentModels
-  }
-
-  /**
-   * Get the configured default balanced model from freecode.json.
-   * Returns a provider-qualified string or undefined.
-   */
-  getConfiguredDefaultBalancedModel(): string | undefined {
-    return this._defaultBalancedModel
-  }
-
-  /**
-   * Get the configured default most-powerful model from freecode.json.
-   * Returns a provider-qualified string or undefined.
-   */
-  getConfiguredDefaultMostPowerfulModel(): string | undefined {
-    return this._defaultMostPowerfulModel
   }
 
   /**
@@ -639,10 +615,8 @@ export function getProviderRegistry(): ProviderRegistry {
       {
         defaultModel: readStr('defaultModel'),
         defaultSubagentModel: readStr('defaultSubagentModel'),
-        defaultSmallFastModel: readStr('defaultSmallFastModel'),
+        utilityModel: readStr('utilityModel'),
         availableSubagentModels,
-        defaultBalancedModel: readStr('defaultBalancedModel'),
-        defaultMostPowerfulModel: readStr('defaultMostPowerfulModel'),
       },
     )
   }
@@ -654,10 +628,8 @@ export function initProviderRegistry(
   opts?: {
     defaultModel?: string
     defaultSubagentModel?: string
-    defaultSmallFastModel?: string
+    utilityModel?: string
     availableSubagentModels?: string[]
-    defaultBalancedModel?: string
-    defaultMostPowerfulModel?: string
   },
 ): ProviderRegistry {
   _instance = new ProviderRegistry(providers, opts)

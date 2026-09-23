@@ -150,20 +150,15 @@ export function runLegacyToFreecodeMigration(): void {
   const out: Record<string, unknown> = { ...(legacy ?? {}) }
   delete out.model
 
-  const {
-    providers,
-    defaultModel,
-    defaultSubagentModel,
-    defaultSmallFastModel,
-  } = synthesizeProvidersFromLegacy({
-    env: { ...process.env, ...legacyEnv },
-  })
+  const { providers, defaultModel, defaultSubagentModel, utilityModel } =
+    synthesizeProvidersFromLegacy({
+      env: { ...process.env, ...legacyEnv },
+    })
 
   if (defaultModel && !out.defaultModel) out.defaultModel = defaultModel
   if (defaultSubagentModel && !out.defaultSubagentModel)
     out.defaultSubagentModel = defaultSubagentModel
-  if (defaultSmallFastModel && !out.defaultSmallFastModel)
-    out.defaultSmallFastModel = defaultSmallFastModel
+  if (utilityModel && !out.utilityModel) out.utilityModel = utilityModel
 
   if (!out.defaultModel && typeof legacy?.model === 'string') {
     const defaultProviderName = Object.keys(providers)[0] ?? 'anthropic'

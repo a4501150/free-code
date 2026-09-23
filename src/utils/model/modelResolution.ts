@@ -17,9 +17,9 @@ import { parseModelStringFromRegistry } from './parseModelStringWithRegistry.js'
 // Re-export types from modelTypes for backward compat
 export type { ModelShortName, ModelName, ModelSetting } from './modelTypes.js'
 
-export function getSmallFastModel(): ModelName {
-  // Priority: modelSettings.json defaultSmallFastModel > defaultModel
-  const configured = getProviderRegistry().getConfiguredDefaultSmallFastModel()
+export function getUtilityModel(): ModelName {
+  // Priority: modelSettings.json utilityModel > defaultModel
+  const configured = getProviderRegistry().getConfiguredUtilityModel()
   if (configured) {
     return configured as ModelName
   }
