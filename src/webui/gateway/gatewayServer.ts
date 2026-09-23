@@ -641,30 +641,37 @@ export function startGatewayServer(
       if (!assistantChild) {
         return { ok: false, error: 'no assistant session on this gateway' }
       }
-      let client: Awaited<ReturnType<typeof connectAttachClient>> | null = null
-      try {
-        client = await connectAttachClient(assistantChild.pid, {
-          onEvent: () => {},
-          onClose: () => {},
-        })
-        const response = await client.request({
-          kind: 'submit',
-          commandId: `notify-${randomUUID()}`,
-          content: text,
-          delivery: 'next',
-          sessionEpoch: client.meta.sessionEpoch,
-        })
-        return response.ok
-          ? { ok: true }
-          : { ok: false, error: response.error?.message ?? 'submit failed' }
-      } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
+      // The session list goes live off the pidfile, which the child writes
+      // before its attach runtime registers. An external caller arriving in
+      // that window gets `runtime_not_ready`; retrying briefly is the correct
+      // posture for an event-injection API, not a bug to hide.
+      const deadline = Date.now() + 10_000
+      let lastError = 'the assistant is not reachable'
+      while (Date.now() < deadline) {
+        let client: Awaited<ReturnType<typeof connectAttachClient>> | null =
+          null
+        try {
+          client = await connectAttachClient(assistantChild.pid, {
+            onEvent: () => {},
+            onClose: () => {},
+          })
+          const response = await client.request({
+            kind: 'submit',
+            commandId: `notify-${randomUUID()}`,
+            content: text,
+            delivery: 'next',
+            sessionEpoch: client.meta.sessionEpoch,
+          })
+          if (response.ok) return { ok: true }
+          lastError = response.error?.message ?? 'submit failed'
+        } catch (err) {
+          lastError = err instanceof Error ? err.message : String(err)
+        } finally {
+          client?.close()
         }
-      } finally {
-        client?.close()
+        await Bun.sleep(500)
       }
+      return { ok: false, error: lastError }
     },
     async stop() {
       hub.stop()

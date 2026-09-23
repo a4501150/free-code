@@ -59,6 +59,39 @@ async function runCli(
   return out + err
 }
 
+/** One NDJSON request over the daemon control socket, no shared imports. */
+async function sendControlRequest(
+  configDir: string,
+  request: Record<string, unknown>,
+): Promise<{ ok: boolean; error?: string }> {
+  const net = await import('node:net')
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection(
+      join(configDir, 'webui', 'control.sock'),
+    )
+    let buffer = ''
+    const timer = setTimeout(() => {
+      socket.destroy()
+      reject(new Error('control socket timeout'))
+    }, 15_000)
+    socket.once('connect', () => {
+      socket.write(JSON.stringify(request) + '\n')
+    })
+    socket.on('data', chunk => {
+      buffer += chunk.toString()
+      const line = buffer.split('\n')[0]
+      if (!line) return
+      clearTimeout(timer)
+      socket.destroy()
+      resolve(JSON.parse(line))
+    })
+    socket.once('error', err => {
+      clearTimeout(timer)
+      reject(err)
+    })
+  })
+}
+
 async function waitForExit(pid: number, timeoutMs = 5000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -1195,7 +1228,7 @@ describe('WebUI gateway', () => {
 
   test('hosts an assistant main chat when assistant.enabled is set', async () => {
     dirs = await makeDirs()
-    server.reset([textResponse('Assistant standing by.')])
+    server.reset([textResponse('Standing by after the notification.')])
 
     // Seed provider settings, trust and API-key approval the same way, then
     // enable the assistant BEFORE `web start` — the gateway reads the setting
@@ -1246,6 +1279,24 @@ describe('WebUI gateway', () => {
     )
     // The chat runs in the gateway's own workspace, not a terminal directory.
     expect(assistantRow.cwd).toEndWith(join('webui', 'assistant'))
+
+    // External events arrive as prompt turns through the control socket —
+    // the assistant has no tick loop, so this is what wakes it. The queued
+    // mock response is consumed only when the injected prompt runs.
+    const requestsBefore = server.getRequestCount()
+    const control = await sendControlRequest(dirs.config, {
+      kind: 'assistant.notify',
+      text: 'Status check from the audit.',
+    })
+    expect(control.ok, `assistant.notify failed: ${control.error}`).toBe(true)
+    await waitFor(
+      () => server.getRequestCount(),
+      count => count > requestsBefore,
+      {
+        description: 'the notified prompt to reach the model',
+        timeoutMs: 30_000,
+      },
+    )
 
     // A gateway restart must carry the chat forward, not orphan it.
     await runCli(dirs, ['web', 'stop'])
