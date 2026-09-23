@@ -10,7 +10,6 @@ import { logForDebugging } from '../../utils/debug.js'
 import { withOAuth401Retry } from '../../utils/http.js'
 import { logError } from '../../utils/log.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
-import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
 import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
 
 const bootstrapResponseSchema = z.object({
@@ -35,11 +34,6 @@ const bootstrapResponseSchema = z.object({
 type BootstrapResponse = z.infer<typeof bootstrapResponseSchema>
 
 async function fetchBootstrapAPI(): Promise<BootstrapResponse | null> {
-  if (isEssentialTrafficOnly()) {
-    logForDebugging('[Bootstrap] Skipped: Nonessential traffic disabled')
-    return null
-  }
-
   if (
     !getProviderRegistry().resolveFirstPartyCapability(
       undefined,

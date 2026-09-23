@@ -33,7 +33,6 @@ import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { classifyAxiosError } from '../../utils/errors.js'
 import { safeParseJSON } from '../../utils/json.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
-import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
 import { sleep } from '../../utils/sleep.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
@@ -492,27 +491,12 @@ async function fetchAndLoadPolicyLimits(): Promise<
 }
 
 /**
- * Policies that default to denied when essential-traffic-only mode is active
- * and the policy cache is unavailable. Without this, a cache miss or network
- * timeout would silently re-enable these features for HIPAA orgs.
- */
-const ESSENTIAL_TRAFFIC_DENY_ON_MISS = new Set(['allow_product_feedback'])
-
-/**
  * Check if a specific policy is allowed
  * Returns true if the policy is unknown, unavailable, or explicitly allowed (fail open).
- * Exception: policies in ESSENTIAL_TRAFFIC_DENY_ON_MISS fail closed when
- * essential-traffic-only mode is active and the cache is unavailable.
  */
 export function isPolicyAllowed(policy: string): boolean {
   const restrictions = getRestrictionsFromCache()
   if (!restrictions) {
-    if (
-      isEssentialTrafficOnly() &&
-      ESSENTIAL_TRAFFIC_DENY_ON_MISS.has(policy)
-    ) {
-      return false
-    }
     return true // fail open
   }
   const restriction = restrictions[policy]

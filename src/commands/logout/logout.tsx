@@ -1,9 +1,5 @@
 import * as React from 'react'
 import { Text } from '../../ink.js'
-import {
-  getGroveNoticeConfig,
-  getGroveSettings,
-} from '../../services/api/grove.js'
 import { clearPolicyLimitsCache } from '../../services/policyLimits/index.js'
 import { getClaudeAIOAuthTokens, removeApiKey } from '../../utils/auth.js'
 import { clearBetasCaches } from '../../utils/betas.js'
@@ -33,10 +29,6 @@ export async function clearAuthRelatedCaches(): Promise<void> {
   clearToolSchemaCache()
 
   resetUserCache()
-
-  // Clear Grove config cache
-  getGroveNoticeConfig.cache?.clear?.()
-  getGroveSettings.cache?.clear?.()
 
   // Clear policy limits cache
   await clearPolicyLimitsCache()

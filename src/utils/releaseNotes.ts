@@ -5,7 +5,6 @@ import { getIsNonInteractiveSession } from '../bootstrap/state.js'
 import { getClaudeConfigHomeDir } from './envUtils.js'
 import { toError } from './errors.js'
 import { logError } from './log.js'
-import { isEssentialTrafficOnly } from './privacyLevel.js'
 
 const MAX_WHATS_NEW_ITEMS = 5
 
@@ -84,7 +83,6 @@ async function fetchGitHubCommits(repo: string): Promise<WhatsNewCache | null> {
 
 export async function fetchAndStoreWhatsNew(): Promise<void> {
   if (getIsNonInteractiveSession()) return
-  if (isEssentialTrafficOnly()) return
 
   const repo = MACRO.GITHUB_REPO
   if (!repo) return

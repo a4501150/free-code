@@ -219,10 +219,6 @@ import {
 import { setupVscodeSdkMcp } from 'src/services/mcp/vscodeSdkMcp.js'
 import { getAllMcpConfigs } from 'src/services/mcp/config.js'
 import {
-  isQualifiedForGrove,
-  checkGroveForNonInteractive,
-} from 'src/services/api/grove.js'
-import {
   toInternalMessages,
   toSDKRateLimitInfo,
 } from 'src/utils/messages/mappers.js'
@@ -489,12 +485,6 @@ export async function runHeadless(
   // Start headless profiler for first turn
   headlessProfilerStartTurn()
   headlessProfilerCheckpoint('runHeadless_entry')
-
-  // Check Grove requirements for non-interactive consumer subscribers
-  if (await isQualifiedForGrove()) {
-    await checkGroveForNonInteractive()
-  }
-  headlessProfilerCheckpoint('after_grove_check')
 
   if (options.resumeSessionAt && !options.resume) {
     process.stderr.write(`Error: --resume-session-at requires --resume\n`)

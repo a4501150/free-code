@@ -1,6 +1,5 @@
 import addDir from './commands/add-dir/index.js'
 import btw from './commands/btw/index.js'
-import feedback from './commands/feedback/index.js'
 import clear from './commands/clear/index.js'
 import color from './commands/color/index.js'
 import copy from './commands/copy/index.js'
@@ -47,7 +46,6 @@ import thinkbackPlay from './commands/thinkback-play/index.js'
 import permissions from './commands/permissions/index.js'
 import plan from './commands/plan/index.js'
 import fast from './commands/fast/index.js'
-import privacySettings from './commands/privacy-settings/index.js'
 import hooks from './commands/hooks/index.js'
 import files from './commands/files/index.js'
 import branch from './commands/branch/index.js'
@@ -179,7 +177,6 @@ const COMMANDS = memoize((): Command[] => [
   summary,
   tag,
   theme,
-  feedback,
   review,
   ultrareview,
   rewind,
@@ -199,7 +196,6 @@ const COMMANDS = memoize((): Command[] => [
   thinkbackPlay,
   permissions,
   plan,
-  privacySettings,
   hooks,
   exportCommand,
   logout,

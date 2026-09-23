@@ -21,7 +21,6 @@ import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
 import type { MemoryType } from './memory/types.js'
 import { normalizePathForConfigKey } from './path.js'
-import { isEssentialTrafficOnly } from './privacyLevel.js'
 
 import * as teamMemPaths from '../memdir/teamMemPaths.js'
 import type { ImageDimensions } from './imageResizer.js'
@@ -946,9 +945,6 @@ export function getAutoUpdaterDisabledReason(): AutoUpdaterDisabledReason | null
   }
   if (isEnvTruthy(process.env.DISABLE_AUTOUPDATER)) {
     return { type: 'env', envVar: 'DISABLE_AUTOUPDATER' }
-  }
-  if (isEssentialTrafficOnly()) {
-    return { type: 'settings', setting: 'nonessentialTrafficEnabled' }
   }
   return null
 }

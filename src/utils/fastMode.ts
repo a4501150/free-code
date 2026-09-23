@@ -18,7 +18,6 @@ import {
   parseUserSpecifiedModel,
 } from './model/model.js'
 import { getProviderRegistry } from './model/providerRegistry.js'
-import { isEssentialTrafficOnly } from './privacyLevel.js'
 import {
   getInitialSettings,
   getSettingsForSource,
@@ -362,11 +361,6 @@ export function resolveFastModeStatusFromCache(): void {
 }
 
 export async function prefetchFastModeStatus(): Promise<void> {
-  // Skip network requests if nonessential traffic is disabled
-  if (isEssentialTrafficOnly()) {
-    return
-  }
-
   if (!isFastModeEnabled()) {
     return
   }

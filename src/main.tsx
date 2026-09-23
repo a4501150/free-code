@@ -33,7 +33,6 @@ import { launchRepl } from './replLauncher.js'
 import { AttachedSession } from './screens/AttachedSession.js'
 import { App } from './components/App.js'
 import { fetchBootstrapData } from './services/api/bootstrap.js'
-import { prefetchOfficialMcpUrls } from './services/mcp/officialRegistry.js'
 import type {
   McpSdkServerConfig,
   McpServerConfig,
@@ -516,9 +515,6 @@ export function startDeferredPrefetches(): void {
     void prefetchGcpCredentialsIfSafe()
   }
   void countFilesRoundedRg(getCwd(), AbortSignal.timeout(3000), [])
-
-  // Analytics and feature flag initialization
-  void prefetchOfficialMcpUrls()
 
   // File change detectors deferred from init() to unblock first render
   void settingsChangeDetector.initialize()

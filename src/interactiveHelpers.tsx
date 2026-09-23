@@ -21,7 +21,6 @@ import type { RenderOptions, Root, TextProps } from './ink.js'
 import { AlternateScreen } from './ink/components/AlternateScreen.js'
 import { KeybindingSetup } from './keybindings/KeybindingProviderSetup.js'
 import { startDeferredPrefetches } from './main.js'
-import { isQualifiedForGrove } from './services/api/grove.js'
 import { handleMcpjsonServerApprovals } from './services/mcpServerApproval.js'
 import { AppStateProvider } from './state/AppState.js'
 import { onChangeAppState } from './state/onChangeAppState.js'
@@ -65,7 +64,6 @@ import { ClaudeMdExternalIncludesDialog } from './components/ClaudeMdExternalInc
 import { ConfigDirMigrationDialog } from './components/ConfigDirMigrationDialog.js'
 import { ClaudeMdMigrationDialog } from './components/ClaudeMdMigrationDialog.js'
 import { MigrationPromptDialog } from './components/MigrationPromptDialog.js'
-import { GroveDialog } from './components/grove/Grove.js'
 import { BypassPermissionsModeDialog } from './components/BypassPermissionsModeDialog.js'
 import { DevChannelsDialog } from './components/DevChannelsDialog.js'
 import { getClaudeAIOAuthTokens } from './utils/auth.js'
@@ -301,20 +299,6 @@ export async function showSetupScreens(
   // In normal mode, this happens after the trust dialog is accepted
   // This includes potentially dangerous environment variables from untrusted sources
   applyConfigEnvironmentVariables()
-
-  if (await isQualifiedForGrove()) {
-    const decision = await showSetupDialog<string>(root, done => (
-      <GroveDialog
-        showIfAlreadyViewed={false}
-        location={onboardingShown ? 'onboarding' : 'policy_update_modal'}
-        onDone={done}
-      />
-    ))
-    if (decision === 'escape') {
-      gracefulShutdownSync(0)
-      return false
-    }
-  }
 
   if (
     (permissionMode === 'bypassPermissions' ||

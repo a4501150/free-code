@@ -968,12 +968,6 @@ const _settingsSchemaValue = z
       .describe(
         'Also load CLAUDE.md from --add-dir additional directories (default: false)',
       ),
-    nonessentialTrafficEnabled: z
-      .boolean()
-      .optional()
-      .describe(
-        'Allow nonessential network traffic (telemetry, analytics, auto-update pings, registry prefetch). When false, only essential API traffic runs (default: true)',
-      ),
     thinkingEnabled: z
       .boolean()
       .optional()
@@ -1043,12 +1037,6 @@ const _settingsSchemaValue = z
       .optional()
       .describe(
         'Attach a token-usage summary to each request (default: false)',
-      ),
-    controlPlaneBaseUrl: z
-      .string()
-      .optional()
-      .describe(
-        'Base URL for Anthropic control-plane endpoints (oauth, MCP registry prefetch). Defaults to the built-in API endpoint',
       ),
     shellPath: z
       .string()

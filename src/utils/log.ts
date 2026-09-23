@@ -14,7 +14,6 @@ import { CACHE_PATHS } from './cachePaths.js'
 import { stripDisplayTags, stripDisplayTagsAllowEmpty } from './displayTags.js'
 import { isUsing3PServices } from './auth.js'
 import { toError } from './errors.js'
-import { isEssentialTrafficOnly } from './privacyLevel.js'
 import { jsonParse } from './slowOperations.js'
 
 /**
@@ -164,8 +163,7 @@ export function logError(error: unknown): void {
     if (
       // Cloud providers (Bedrock/Vertex/Foundry) always disable error reporting
       isUsing3PServices() ||
-      process.env.DISABLE_ERROR_REPORTING ||
-      isEssentialTrafficOnly()
+      process.env.DISABLE_ERROR_REPORTING
     ) {
       return
     }
