@@ -7,11 +7,6 @@ import { getCurrentWorktreeSession } from '../utils/worktree.js'
 import { getSessionStartDate } from './common.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import type { Tools } from '../Tool.js'
-import {
-  getCommitAndPRInstructions,
-  BASH_MULTILINE_SYNTAX,
-  type MultiLineSyntax,
-} from '../tools/shared/gitInstructions.js'
 import { getPublicModelDisplayName } from '../utils/model/model.js'
 
 import {
@@ -34,13 +29,6 @@ import { getMemoryEnvItems, loadMemoryPrompt } from '../memdir/memdir.js'
 
 export const CLAUDE_CODE_DOCS_MAP_URL =
   'https://code.claude.com/docs/en/claude_code_docs_map.md'
-
-function getGitInstructionsSection(
-  syntax: MultiLineSyntax | null,
-): string | null {
-  const section = getCommitAndPRInstructions(syntax ?? BASH_MULTILINE_SYNTAX)
-  return section === '' ? null : section
-}
 
 function getLanguageSection(
   languagePreference: string | undefined,
@@ -277,17 +265,11 @@ export async function enhanceSystemPromptWithEnvDetails(
 - IMPORTANT: You are in an agentic tool-use loop environment. A response without tool calls ends the loop and is your final answer. Always include tool calls if you have more work to do.
 - Agent runs always have their cwd reset between bash calls, as a result please only use absolute file paths.
 - In your final response, share file paths (always absolute, never relative) that are relevant to the task. Include code snippets only when the exact text matters (for example, a bug you found, a function signature the caller asked for) — do not recap code you merely read.`
-  // Git guidance lives in the system prompt, not the shell tool prompts —
-  // except PowerShell here-string syntax for these same calls, which rides
-  // the PowerShell tool description.
-  const gitSection = getGitInstructionsSection(BASH_MULTILINE_SYNTAX)
+  // No git guidance appended here: it rides the git_instructions attachment,
+  // seeded turn-0 in runAgent.ts (a prompt append would duplicate the
+  // agent's own pipeline announce — see the MCP instructions note there).
   const envInfo = await computeEnvInfo(model, additionalWorkingDirectories)
-  return [
-    ...existingSystemPrompt,
-    notes,
-    ...(gitSection !== null ? [gitSection] : []),
-    envInfo,
-  ]
+  return [...existingSystemPrompt, notes, envInfo]
 }
 
 /**

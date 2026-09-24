@@ -47,6 +47,7 @@ const TYPES_WITHOUT_SUMMARY_LINE = [
   'mcp_instructions_delta',
   'session_guidance',
   'assistant_mode',
+  'git_instructions',
   'token_usage',
   'ultrathink_effort',
   'max_turns_reached',

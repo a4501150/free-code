@@ -13,6 +13,11 @@ export const BASH_MULTILINE_SYNTAX: MultiLineSyntax = {
   pr: 'a HEREDOC',
 }
 
+export const POWERSHELL_MULTILINE_SYNTAX: MultiLineSyntax = {
+  commit: `a single-quoted here-string (\`git commit -m @' ... '@\`, closing \`'@\` at column 0)`,
+  pr: 'a here-string',
+}
+
 export function getCommitAndPRInstructions(syntax: MultiLineSyntax): string {
   if (!shouldIncludeGitInstructions()) return ''
 

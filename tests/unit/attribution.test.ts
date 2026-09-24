@@ -106,10 +106,16 @@ describe('getAttributionTexts', () => {
 describe('shared git instructions', () => {
   const repoRoot = process.cwd()
 
-  test('git guidance rides the session context, not the shell tool prompts', () => {
-    const contextSource = readFileSync(join(repoRoot, 'src/context.ts'), 'utf8')
-    expect(contextSource).toContain('getCommitAndPRInstructions')
+  test('git guidance rides the git_instructions attachment, not tool prompts or the agent prompt', () => {
+    const carrierSource = readFileSync(
+      join(repoRoot, 'src/utils/attachments.ts'),
+      'utf8',
+    )
+    expect(carrierSource).toContain('getCommitAndPRInstructions')
+    expect(carrierSource).toContain("type: 'git_instructions'")
     for (const file of [
+      'src/context.ts',
+      'src/constants/prompts.ts',
       'src/tools/BashTool/prompt.ts',
       'src/tools/PowerShellTool/prompt.ts',
     ]) {

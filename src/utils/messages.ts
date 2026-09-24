@@ -4121,7 +4121,8 @@ You have exited auto mode. The user may now want to interact more directly. You 
       ])
     }
     case 'session_guidance':
-    case 'assistant_mode': {
+    case 'assistant_mode':
+    case 'git_instructions': {
       return wrapMessagesInSystemReminder([
         createUserMessage({ content: attachment.text, isMeta: true }),
       ])

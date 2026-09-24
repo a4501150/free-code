@@ -82,6 +82,13 @@ const VISIBLE_FIXTURES: Array<[Attachment, string]> = [
   ],
   [
     {
+      type: 'git_instructions',
+      text: '# Git commits and pull requests\n\n- Use conventional commit format.',
+    },
+    'conventional commit format',
+  ],
+  [
+    {
       type: 'edited_text_file',
       filename: '/p/a.ts',
       snippet: 'x',

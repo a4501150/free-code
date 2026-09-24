@@ -19,6 +19,12 @@ import { getFsImplementation } from './fsOperations.js'
 import { readdir, stat } from 'fs/promises'
 import type { IDESelection } from '../types/ide.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
+import { POWERSHELL_TOOL_NAME } from '../tools/PowerShellTool/toolName.js'
+import {
+  getCommitAndPRInstructions,
+  BASH_MULTILINE_SYNTAX,
+  POWERSHELL_MULTILINE_SYNTAX,
+} from '../tools/shared/gitInstructions.js'
 import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
 import { getPlanFilePath, getPlan } from './plans.js'
 import {
@@ -695,6 +701,12 @@ export type Attachment =
       text: string
     }
   | {
+      type: 'git_instructions'
+      /** Fully rendered commit/PR block; multi-line syntax follows the
+       * shell tools in the pool. */
+      text: string
+    }
+  | {
       type: 'assistant_mode'
       /** Fully rendered block (persona, autonomy, brief, memory policy). */
       text: string
@@ -805,13 +817,17 @@ export async function getAttachments(
     ),
     // Context-group ordering (same in compact.ts re-announce and the
     // runAgent.ts turn-0 seed): assistant_mode (main-thread only, so absent
-    // from the seed), session_guidance, mcp_instructions_delta,
-    // mcp_tools_delta, agent_listing_delta, then skill_listing below.
+    // from the seed), session_guidance, git_instructions,
+    // mcp_instructions_delta, mcp_tools_delta, agent_listing_delta, then
+    // skill_listing below.
     maybe('assistant_mode', () =>
       Promise.resolve(getAssistantModeAttachment(toolUseContext, messages)),
     ),
     maybe('session_guidance', () =>
       Promise.resolve(getSessionGuidanceAttachment(toolUseContext, messages)),
+    ),
+    maybe('git_instructions', () =>
+      Promise.resolve(getGitInstructionsAttachment(toolUseContext, messages)),
     ),
     maybe('mcp_instructions_delta', () =>
       Promise.resolve(
@@ -1547,13 +1563,46 @@ export function getSessionGuidanceAttachment(
 }
 
 /**
+ * Commit/PR conventions carrier (format, multi-line message syntax,
+ * attribution footer). Rides its own attachment, not the user-context
+ * `system` domain: the attribution footer names the current model, so the
+ * bytes are session-scoped, and both the subagent turn-0 seed and the
+ * compaction re-announce follow this carrier's stateless-scan pattern.
+ * Wholesale replacement like session_guidance: no prior announcement
+ * (session start, post-compaction, subagent transcript) means full
+ * announce; a text difference (attribution or model change) replaces the
+ * block. Not main-thread-only — subagents commit too. The multi-line syntax
+ * follows the shell tools actually in the pool: bash HEREDOC preferred,
+ * PowerShell here-string when the worker has no Bash tool (pwsh here-string
+ * how-to rides the PowerShell tool description regardless). The
+ * includeGitInstructions setting empties the block via
+ * getCommitAndPRInstructions itself.
+ */
+export function getGitInstructionsAttachment(
+  toolUseContext: ToolUseContext,
+  messages: Message[] | undefined,
+): Attachment[] {
+  const pool = toolUseContext.options.tools
+  const syntax = pool.some(t => toolMatchesName(t, BASH_TOOL_NAME))
+    ? BASH_MULTILINE_SYNTAX
+    : pool.some(t => toolMatchesName(t, POWERSHELL_TOOL_NAME))
+      ? POWERSHELL_MULTILINE_SYNTAX
+      : null
+  if (syntax === null) return []
+  const text = getCommitAndPRInstructions(syntax)
+  if (text === '') return []
+  if (lastAnnouncementText(messages, 'git_instructions') === text) return []
+  return [{ type: 'git_instructions', text }]
+}
+
+/**
  * The text of the LAST `type` announcement in the transcript, or null when
  * there is none — the baseline every wholesale-replacement carrier diffs
  * against. No baseline means full announce (session start, post-compaction).
  */
 function lastAnnouncementText(
   messages: Message[] | undefined,
-  type: 'session_guidance' | 'assistant_mode',
+  type: 'session_guidance' | 'assistant_mode' | 'git_instructions',
 ): string | null {
   let lastText: string | null = null
   for (const msg of messages ?? []) {

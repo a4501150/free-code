@@ -45,6 +45,7 @@ import type {
 } from '../../types/message.js'
 import {
   createAttachmentMessage,
+  getGitInstructionsAttachment,
   getMcpInstructionsDeltaAttachment,
   getMcpToolsDeltaAttachment,
   getSkillListingAttachments,
@@ -706,11 +707,22 @@ export async function* runAgent({
     agentToolUseContext.preserveToolUseResults = true
   }
 
+  // Turn-0 git guidance seed: the worker's pipeline would announce it too,
+  // but only with its first tool batch — too late to shape an opening
+  // commit. Unscoped by fork status: the scan dedupes a fork that inherited
+  // the parent's announcement. Context-group ordering (same in
+  // attachments.ts and compact.ts re-announce): guidance blocks first,
+  // instructions before tools, skills last.
+  for (const attachment of getGitInstructionsAttachment(
+    agentToolUseContext,
+    initialMessages,
+  )) {
+    initialMessages.push(createAttachmentMessage(attachment))
+  }
+
   // Turn-0 MCP instructions seed, unscoped by fork status: the delta scans
   // initialMessages, so a fork's inherited transcript already announces the
   // parent's servers and only agent-specific servers get announced here.
-  // Context-group ordering (same in attachments.ts and compact.ts
-  // re-announce): instructions before tools, skills last.
   for (const attachment of getMcpInstructionsDeltaAttachment(
     mergedMcpClients,
     allTools,

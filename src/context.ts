@@ -19,10 +19,6 @@ import { getInitialSettings } from './utils/settings/settings.js'
 import { execFileNoThrow } from './utils/execFileNoThrow.js'
 import { getBranch, getDefaultBranch, getIsGit, gitExe } from './utils/git.js'
 import { shouldIncludeGitInstructions } from './utils/gitSettings.js'
-import {
-  getCommitAndPRInstructions,
-  BASH_MULTILINE_SYNTAX,
-} from './tools/shared/gitInstructions.js'
 import { logError } from './utils/log.js'
 
 const MAX_STATUS_CHARS = 2000
@@ -128,7 +124,6 @@ export const getEnvContext = memoize(
  */
 export const SYSTEM_CONTEXT_KEYS: ReadonlySet<string> = new Set([
   'gitStatus',
-  'gitInstructions',
   'scratchpad',
 ])
 
@@ -151,26 +146,22 @@ export const getSystemContext = memoize(
     const gitStatus = !shouldIncludeGitInstructions()
       ? null
       : await getGitStatus()
-    // Git guidance (commit format, HEREDOC syntax, attribution) rides here,
-    // not the static system prompt: the attribution footer names the current
-    // model, so these bytes are session-scoped by construction. PowerShell
-    // here-string syntax for the same calls lives in the PowerShell tool
-    // description, not here.
-    const gitInstructions = !shouldIncludeGitInstructions()
-      ? null
-      : getCommitAndPRInstructions(BASH_MULTILINE_SYNTAX)
+    // Git guidance (commit format, multi-line syntax, attribution) does NOT
+    // ride here — it has its own `git_instructions` attachment
+    // (attachments.ts), announced once per transcript: the attribution
+    // footer names the current model, so the bytes are session-scoped, and
+    // the subagent seed and compaction re-announce follow the attachment's
+    // stateless-scan pattern, not the context domains.
     const scratchpad = getScratchpadInstructions()
 
     logForDiagnosticsNoPII('info', 'system_context_completed', {
       duration_ms: Date.now() - startTime,
       has_git_status: gitStatus !== null,
-      has_git_instructions: gitInstructions !== null && gitInstructions !== '',
       has_injection: false,
     })
 
     return {
       ...(gitStatus && { gitStatus }),
-      ...(gitInstructions ? { gitInstructions } : {}),
       ...(scratchpad && { scratchpad }),
     }
   },

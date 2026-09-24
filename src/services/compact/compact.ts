@@ -31,6 +31,7 @@ import {
   getMcpInstructionsDeltaAttachment,
   getAssistantModeAttachment,
   getSessionGuidanceAttachment,
+  getGitInstructionsAttachment,
   getPostCompactSkillListingAttachment,
 } from '../../utils/attachments.js'
 import { snapshotPlanModeRenderContext } from '../../utils/planMode.js'
@@ -359,13 +360,17 @@ async function pushReAnnounceAttachments(
   scanMessages: Message[],
 ): Promise<void> {
   // Context-group ordering (same in attachments.ts and the runAgent.ts
-  // turn-0 seed). assistant_mode is main-thread-only: the seed omits it,
+  // turn-0 seed): assistant_mode, session_guidance, git_instructions, then
+  // the MCP carriers. assistant_mode is main-thread-only: the seed omits it,
   // compaction re-announce does not, and its scan treats a post-compaction
   // transcript with no prior announcement as a full re-arm.
   for (const att of getAssistantModeAttachment(context, scanMessages)) {
     target.push(createAttachmentMessage(att))
   }
   for (const att of getSessionGuidanceAttachment(context, scanMessages)) {
+    target.push(createAttachmentMessage(att))
+  }
+  for (const att of getGitInstructionsAttachment(context, scanMessages)) {
     target.push(createAttachmentMessage(att))
   }
   for (const att of getMcpInstructionsDeltaAttachment(
