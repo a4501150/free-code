@@ -118,7 +118,6 @@ import {
   type Output as FileReadToolOutput,
 } from '../tools/FileReadTool/FileReadTool.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../tools/SendMessageTool/constants.js'
-import { TASK_OUTPUT_TOOL_NAME } from '../tools/TaskOutputTool/constants.js'
 import type { PermissionMode } from '../types/permissions.js'
 import {
   normalizeToolInput,
@@ -3827,17 +3826,18 @@ You have exited auto mode. The user may now want to interact more directly. You 
           parts.push(`Progress: ${attachment.deltaSummary}`)
         }
         const sendMsgSuffix = isAgentSwarmsEnabled()
-          ? ` or send it a message with ${SEND_MESSAGE_TOOL_NAME}`
+          ? ` You can send it a message with ${SEND_MESSAGE_TOOL_NAME}.`
           : ''
         if (attachment.outputFilePath) {
           parts.push(
-            `Do NOT spawn a duplicate. You will be notified when it completes. You can read partial output at ${attachment.outputFilePath}${sendMsgSuffix}.`,
+            `Do NOT spawn a duplicate. You will be notified when it completes. You can read partial output at ${attachment.outputFilePath}.`,
           )
         } else {
           parts.push(
-            `Do NOT spawn a duplicate. You will be notified when it completes. You can check its progress with the ${TASK_OUTPUT_TOOL_NAME} tool${sendMsgSuffix}.`,
+            `Do NOT spawn a duplicate. You will be notified when it completes. Until then, say it is still running.`,
           )
         }
+        if (sendMsgSuffix) parts.push(sendMsgSuffix.trim())
         return [
           createUserMessage({
             content: wrapInSystemReminder(parts.join(' ')),
@@ -3864,7 +3864,7 @@ You have exited auto mode. The user may now want to interact more directly. You 
         )
       } else {
         messageParts.push(
-          `You can check its output using the ${TASK_OUTPUT_TOOL_NAME} tool.`,
+          `Its report was delivered in the completion notification.`,
         )
       }
 

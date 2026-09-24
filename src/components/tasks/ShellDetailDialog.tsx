@@ -51,7 +51,7 @@ type Props = {
 // covers virtually every interactive shell log; truly huge logs still get
 // truncated by tailFile/getTaskOutput with a "[NKB of earlier output
 // omitted]" prefix. Users wanting the full log can Read the output file
-// directly (path is documented in the BackgroundTaskOutput tool description).
+// directly (path is listed by BackgroundTaskList and in each task notification).
 const SHELL_DETAIL_TAIL_BYTES = 1_048_576
 
 // Hard caps for the two scroll viewports, counted in content lines. Actual

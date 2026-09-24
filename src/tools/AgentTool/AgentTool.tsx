@@ -265,7 +265,9 @@ export const outputSchema = (() => {
     prompt: z.string().describe('The prompt for the agent'),
     outputFile: z
       .string()
-      .describe('Path to the output file for checking agent progress'),
+      .describe(
+        'Path to the agent output file — its full JSONL transcript, kept for the user; do not Read it into your context',
+      ),
     canReadOutputFile: z
       .boolean()
       .optional()
@@ -1674,7 +1676,7 @@ The agent is now running and will receive instructions via mailbox.`,
         : ''
       const prefix = `Async agent launched successfully.\nagentId: ${data.agentId} (internal ID - do not mention to user.${sendMsgHint})\nThe agent is working in the background; its final report will be delivered to you as a system notification in a later turn — sleeping or polling does not change when it arrives.`
       const instructions = data.canReadOutputFile
-        ? `Do not duplicate this agent's work — avoid working with the same files or topics it is using. Work on non-overlapping tasks, or briefly tell the user what you launched and end your response.\noutput_file: ${data.outputFile}\nIf asked, you can check progress before completion by using ${FILE_READ_TOOL_NAME} or ${BASH_TOOL_NAME} tail on the output file.`
+        ? `Do not duplicate this agent's work — avoid working with the same files or topics it is using. Work on non-overlapping tasks, or briefly tell the user what you launched and end your response.\noutput_file: ${data.outputFile}\nDo NOT ${FILE_READ_TOOL_NAME} or tail this file — it is the agent's full JSONL transcript and reading it overflows your context. If asked for progress before the completion notification arrives, say the agent is still running.`
         : `Briefly tell the user what you launched and end your response. Do not generate any other text — agent results will arrive in a subsequent message.`
       const text = `${prefix}\n${instructions}`
       return {

@@ -15,7 +15,6 @@ import { ReadMcpResourceTool } from 'src/tools/ReadMcpResourceTool/ReadMcpResour
 import { TaskCreateTool } from 'src/tools/TaskCreateTool/TaskCreateTool.js'
 import { TaskGetTool } from 'src/tools/TaskGetTool/TaskGetTool.js'
 import { TaskListTool } from 'src/tools/TaskListTool/TaskListTool.js'
-import { TaskOutputTool } from 'src/tools/TaskOutputTool/TaskOutputTool.js'
 import { TaskStopTool } from 'src/tools/TaskStopTool/TaskStopTool.js'
 import { TaskUpdateTool } from 'src/tools/TaskUpdateTool/TaskUpdateTool.js'
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
@@ -58,7 +57,6 @@ function getToolBuckets(): ToolBuckets {
         TaskListTool.name,
         TaskUpdateTool.name,
         TaskStopTool.name,
-        TaskOutputTool.name,
         ListMcpResourcesTool.name,
         ReadMcpResourceTool.name,
       ]),

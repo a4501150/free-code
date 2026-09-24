@@ -163,4 +163,56 @@ describe('Background task kill notification', () => {
 
     expect(matching).toBeDefined()
   })
+
+  test('completed background command notifies the model; BackgroundTaskOutput is gone from the tool pool', async () => {
+    server.reset([
+      toolUseResponse([
+        {
+          name: 'Bash',
+          input: {
+            command: 'echo done-and-dusted',
+            description: 'completion-probe',
+            run_in_background: true,
+          },
+        },
+      ]),
+      textResponse('Started in background.'),
+      // Turn auto-fired by the completion notification.
+      textResponse('Acknowledged completion.'),
+    ])
+
+    session = new TmuxSession({
+      serverUrl: server.url,
+      settings: { backgroundTasksEnabled: true },
+    })
+    await session.start()
+    await session.submitAndApprove('Run a quick command in the background')
+
+    const matching = await waitForRequest(
+      server,
+      req => {
+        const text = userTextBlob(req)
+        return (
+          /<task-notification>/i.test(text) &&
+          /<status>completed<\/status>/i.test(text) &&
+          /<output-file>/.test(text)
+        )
+      },
+      {
+        timeoutMs: 15_000,
+        description: 'completed background task notification request',
+      },
+    )
+    expect(matching).toBeDefined()
+
+    // The notification is the only retrieval channel: the output-fetching
+    // tool must not be in the model-facing pool at all.
+    const first = server.getRequestLog()[0]
+    const toolNames = ((first.body.tools ?? []) as Array<{ name: string }>).map(
+      t => t.name,
+    )
+    expect(toolNames).not.toContain('BackgroundTaskOutput')
+    expect(toolNames).toContain('BackgroundTaskList')
+    expect(toolNames).toContain('BackgroundTaskStop')
+  })
 })

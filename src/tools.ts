@@ -17,7 +17,6 @@ import { CronListTool } from './tools/ScheduleCronTool/CronListTool.js'
 import { SendUserFileTool } from './tools/SendUserFileTool/SendUserFileTool.js'
 import { PushNotificationTool } from './tools/PushNotificationTool/PushNotificationTool.js'
 const cronTools = [CronCreateTool, CronDeleteTool, CronListTool]
-import { TaskOutputTool } from './tools/TaskOutputTool/TaskOutputTool.js'
 import { ExitPlanModeTool } from './tools/ExitPlanModeTool/ExitPlanModeTool.js'
 import { SendMessageTool } from './tools/SendMessageTool/SendMessageTool.js'
 import { TeamCreateTool } from './tools/TeamCreateTool/TeamCreateTool.js'
@@ -94,7 +93,6 @@ export function getAllBaseTools(): Tools {
   const powerShellTool = getPowerShellTool()
   return [
     AgentTool,
-    TaskOutputTool,
     BashTool,
     ExitPlanModeTool,
     FileReadTool,

@@ -1,5 +1,4 @@
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
-import { TASK_OUTPUT_TOOL_NAME } from '../../tools/TaskOutputTool/constants.js'
 import { TASK_STOP_TOOL_NAME } from '../../tools/TaskStopTool/prompt.js'
 import type { PermissionRuleValue } from './PermissionRule.js'
 
@@ -12,9 +11,12 @@ const LEGACY_TOOL_NAME_ALIASES: Record<string, string> = {
   Task: AGENT_TOOL_NAME,
   TaskStop: TASK_STOP_TOOL_NAME,
   KillShell: TASK_STOP_TOOL_NAME,
-  TaskOutput: TASK_OUTPUT_TOOL_NAME,
-  AgentOutputTool: TASK_OUTPUT_TOOL_NAME,
-  BashOutputTool: TASK_OUTPUT_TOOL_NAME,
+  // BackgroundTaskOutput was removed; the aliases persist so stored
+  // permission rules naming it still resolve (to the removed name, which
+  // matches no live tool).
+  TaskOutput: 'BackgroundTaskOutput',
+  AgentOutputTool: 'BackgroundTaskOutput',
+  BashOutputTool: 'BackgroundTaskOutput',
   Brief: BRIEF_TOOL_NAME,
 }
 

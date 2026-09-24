@@ -36,11 +36,9 @@ describe('withAgentStoppedStatus', () => {
   test('all completion surfaces use the shared formatter', () => {
     const utils = readSource('src/tools/AgentTool/agentToolUtils.ts')
     const agentTool = readSource('src/tools/AgentTool/AgentTool.tsx')
-    const taskOutput = readSource('src/tools/TaskOutputTool/TaskOutputTool.tsx')
 
     expect(utils).toContain('withAgentStoppedStatus(agentResult)')
     expect(agentTool).toContain('withAgentStoppedStatus(agentResult)')
     expect(agentTool).toContain('withAgentStoppedStatus({')
-    expect(taskOutput).toContain('withAgentStoppedStatus(agentTask.result)')
   })
 })

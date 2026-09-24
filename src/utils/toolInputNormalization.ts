@@ -6,7 +6,6 @@ import type { AgentId } from 'src/types/ids.js'
 import type { z } from 'zod/v4'
 import type { Tool } from '../Tool.js'
 import { EXIT_PLAN_MODE_TOOL_NAME } from '../tools/ExitPlanModeTool/constants.js'
-import { TASK_OUTPUT_TOOL_NAME } from '../tools/TaskOutputTool/constants.js'
 import { getCwd } from './cwd.js'
 import {
   getPlan,
@@ -93,8 +92,10 @@ export function normalizeToolInput<T extends Tool>(
           : stripTrailingWhitespace(parsedInput.content),
       } as z.infer<T['inputSchema']>
     }
-    case TASK_OUTPUT_TOOL_NAME: {
-      // Normalize legacy parameter names from AgentOutputTool/BashOutputTool
+    case 'BackgroundTaskOutput': {
+      // The tool was removed; this case stays so transcripts recorded
+      // before removal replay cleanly. Normalizes legacy parameter names
+      // from AgentOutputTool/BashOutputTool.
       const legacyInput = input as Record<string, unknown>
       const taskId =
         legacyInput.task_id ?? legacyInput.agentId ?? legacyInput.bash_id

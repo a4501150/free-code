@@ -20,7 +20,6 @@ const WATCHLIST = [
   'AskUserQuestion',
   'Bash',
   'BackgroundTaskList',
-  'BackgroundTaskOutput',
   'BackgroundTaskStop',
   'CronCreate',
   'Edit',
@@ -32,6 +31,7 @@ const WATCHLIST = [
   'TaskList',
   'Write',
   // historical names that must never resurface un-gated
+  'BackgroundTaskOutput',
   'BashOutput',
   'KillShell',
   'NotebookEdit',

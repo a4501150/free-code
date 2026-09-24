@@ -334,7 +334,7 @@ const fullInputSchema = z.strictObject({
       `Short description of what the command does, in active voice. Simple commands get a brief one (5-10 words): ls → "List files in current directory". Commands that are hard to parse at a glance state the effect: git reset --hard origin/main → "Discard all local changes and match remote main"; find . -name "*.tmp" -exec rm {} \\; → "Find and delete all .tmp files recursively".`,
     ),
   run_in_background: semanticBoolean(z.boolean().optional()).describe(
-    `Run the command asynchronously instead of sleeping or polling. Returns at once with a task ID and output file path; a completion notification arrives when it exits. A pipe buffers all output until the command exits. To wait on external state, put the polling in one backgrounded loop with an exit condition: \`while ! check; do sleep 5; done\`.`,
+    `Run the command asynchronously instead of sleeping or polling. Returns at once with a task ID and output file path; when the command exits, a completion notification arrives summarizing the run — Read the output file for the full output. A pipe buffers all output until the command exits. To wait on external state, put the polling in one backgrounded loop with an exit condition: \`while ! check; do sleep 5; done\`.`,
   ),
   _simulatedSedEdit: z
     .object({
