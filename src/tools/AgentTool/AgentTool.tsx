@@ -143,7 +143,9 @@ const baseInputSchema = z.object({
   description: z
     .string()
     .describe('A short (3-5 word) description of the task'),
-  prompt: z.string().describe('The task for the agent to perform'),
+  prompt: z
+    .string()
+    .describe('The detailed prompt for the agent to perform the task'),
   subagent_type: z
     .string()
     .optional()
@@ -153,9 +155,7 @@ const baseInputSchema = z.object({
     .optional()
     .describe(
       "Optional model override for this agent. Use a provider-qualified model ID (for example 'anthropic:claude-sonnet-4-6'). " +
-        "Takes precedence over the agent definition's model. " +
-        "Pass 'inherit' to run the agent on the parent's model. " +
-        "If omitted, uses the agent definition's model, or inherits from the parent.",
+        "Takes precedence over the agent definition's model; pass 'inherit' to run the agent on the parent's model.",
     ),
   run_in_background: z
     .boolean()
@@ -190,7 +190,7 @@ const fullInputSchema = (() => {
       .enum(['worktree', 'none'])
       .optional()
       .describe(
-        'Isolation mode. "worktree" runs the agent in a temporary git worktree — an isolated copy of the repo, cleaned up automatically if it makes no changes; otherwise the worktree path and branch are returned in the result. "none" runs the agent in the current working directory; pass it explicitly to override an agent definition that sets isolation.',
+        'Isolation mode. "worktree" runs the agent in a temporary git worktree — an isolated copy of the repo, cleaned up automatically if it makes no changes; otherwise the worktree path and branch are returned in the result. "none" runs in the current working directory and overrides an agent definition that sets isolation.',
       ),
     cwd: z
       .string()

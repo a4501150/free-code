@@ -157,7 +157,7 @@ describe('conditional mode prompt alignment', () => {
     )
     expect(agentPrompt).toContain('not a parallelism mechanism')
     expect(agentPrompt).toContain(
-      'its report is delivered as a system task notification',
+      'you will receive a system task notification carrying its report',
     )
   })
 })

@@ -95,11 +95,11 @@ export async function getPrompt(
 ${effectiveAgents.map(agent => formatAgentLine(agent)).join('\n')}`
 
   // Shared core prompt used by both coordinator and non-coordinator modes
-  const shared = `Launches a specialized agent (subagent) to handle complex, multi-step tasks autonomously. Each agent type has specific capabilities and tools available to it.
+  const shared = `Launches a subagent to handle complex, multi-step tasks autonomously.
 
 ${agentListSection}
 
-Specify the ${AGENT_TOOL_NAME} tool's subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.`
+Set the ${AGENT_TOOL_NAME} tool's subagent_type parameter to pick a type; when omitted, the general-purpose agent is used.`
 
   // Coordinator mode gets the slim prompt -- the coordinator system prompt
   // already covers usage notes, examples, and when-not-to-use guidance.
@@ -107,49 +107,45 @@ Specify the ${AGENT_TOOL_NAME} tool's subagent_type parameter to select which ag
     return shared
   }
 
-  const whenNotToUse = `Do not use ${AGENT_TOOL_NAME} for tasks you can handle directly (reading specific files, targeted searches) or for tasks unrelated to the listed agent descriptions.`
-
   // Shares the backgroundTasksEnabled gate with the run_in_background param
   // (stripped from the schema in AgentTool.tsx when the setting is off), so
   // the prompt and schema never disagree about what exists.
   const backgroundSection = isBackgroundTasksEnabled()
     ? `
 
-When running an agent in the foreground, the tool blocks and returns the agent's final report as this call's tool result.
-When running an agent in the background (\`run_in_background: true\`), the tool returns immediately with the agent's ID; when the agent finishes, its report is delivered as a system task notification. You don't have to do anything while waiting for a backgrounded agent: once it completes, the notification is delivered automatically by the harness. Backgrounding is not a parallelism mechanism — to run agents in parallel whose results you need together, send multiple ${AGENT_TOOL_NAME} tool uses in a single message.`
+When running an agent in the foreground, the ${AGENT_TOOL_NAME} tool will block and return once the agent finished, with its final report as this call's tool result.
+When running an agent in the background, the ${AGENT_TOOL_NAME} tool will return immediately with the agent's ID. The agent keeps running until it finishes and you will receive a system task notification carrying its report.
+
+You don't have to do anything waiting for a backgrounded agent, once it completed, a system task notification will come in automatically by harness.
+
+Until the system task notification arrives you know nothing about what the backgrounded subagent found or performed. The system task notification will contain the actual response from the subagent, so report "subagent is still running" when you have not received it, never a guess. Do not Read or tail the agent's output file while it runs — it is the agent's full transcript, and reading it brings the subagent's tool output back into your context.
+
+Backgrounding is not a parallelism mechanism — to run agents in parallel whose results you need together, send multiple ${AGENT_TOOL_NAME} tool uses in a single message.`
     : ''
 
-  const whenToForkSection = forkAvailable
+  // The fork facts (inherits your transcript, shares your prompt cache) are
+  // also on the fork's agent-listing line; the bullet carries the gotchas.
+  const forkBullet = forkAvailable
     ? `
-
-## When to fork
-Fork yourself (pass \`subagent_type: "fork"\`) when the intermediate tool output is not worth keeping in your context — a fork inherits your transcript and shares your prompt cache. Open-ended questions and independent research questions are good fork tasks. By default a fork's report is this call's tool result; with \`run_in_background: true\` it reports later via the completion notification. Launch parallel forks in one message.
-- Write the fork prompt as a directive (what to do), not a briefing — it already has your context. State what is in scope and what is out.
-- While a backgrounded fork runs, do not Read or tail its output file — that brings the fork's tool output back into your context and defeats the purpose.
-- Until the completion notification arrives, you know nothing about what the fork found. Report "still running", never a guess.`
+ - Fork Agent (pass \`subagent_type: "fork"\`) is a specialized subagent that forks yourself, so use it when the intermediate tool output is not worth keeping in your context and/or the task benefits from inheriting your full transcript and sharing your prompt cache. Write its prompt as a directive (what to do), not a briefing, since it inherits your full context.`
     : ''
-
-  const promptingSection = `
-
-## Prompting
-${forkAvailable ? 'Any agent other than a fork starts with zero context. ' : ''}Brief the agent like a colleague who just entered the room — it has not seen this conversation. Explain the goal, what you already ruled out, and enough surrounding context for it to make judgment calls. Never delegate understanding: "based on your findings, fix the bug" pushes the reasoning onto the agent. Name file paths and what specifically to change, and say clearly whether to write code or only research.`
 
   // Non-coordinator gets the lean worker contract: handoff facts, no examples.
   // The isolation and cwd facts live on their schema descriptions, which are
   // always in the schema, so they need no bullet here.
-  return `${shared}
+  return `${shared}${backgroundSection}
 
-${whenNotToUse}${backgroundSection}${whenToForkSection}
-
-- The agent returns a single message; the user sees it only by expanding the agent's result, so send a concise summary yourself. Do not use an agent to retrieve full file contents — what it reads is summarized in the handoff; use the Read tool directly.
-- The agent works on its own task list and cannot change yours. Put everything the agent must act on in the prompt, not in a task description it has to look up.
-- Avoid duplicating work that active agents are already doing. If you delegate research, do not run the same searches yourself.${
-    isInProcessTeammate()
-      ? `
-- The run_in_background, name, team_name, and mode parameters are not available in this context. Only synchronous subagents are supported.`
-      : isTeammate()
-        ? `
-- The name, team_name, and mode parameters are not available in this context — teammates cannot spawn other teammates. Omit them to spawn a subagent.`
-        : ''
-  }${promptingSection}`
+ - Do not use ${AGENT_TOOL_NAME} for tasks you can handle directly (reading specific files, targeted searches) or for tasks unrelated to the listed agent descriptions.
+ - ${forkAvailable ? 'Any agent other than a fork starts with zero context. ' : ''}Brief the agent like a colleague who just entered the room — it has not seen this conversation. Explain the goal, what you already ruled out, the exact file paths, and whether to write code or only research. Never delegate understanding: "based on your findings, fix the bug" pushes the reasoning onto the agent.
+ - The agent works on its own task list and cannot change yours. Put everything the agent must act on in the prompt, not in a task description it has to look up.
+ - The agent returns a single message and the user sees it only by expanding the agent's result, so send a concise summary yourself. Do not use an agent to retrieve full file contents — what it reads is summarized in the handoff; use the Read tool directly.
+ - Avoid duplicating work that active agents are already doing. If you delegate research, do not run the same searches yourself.${forkBullet}${
+   isInProcessTeammate()
+     ? `
+ - The run_in_background, name, team_name, and mode parameters are not available in this context. Only synchronous subagents are supported.`
+     : isTeammate()
+       ? `
+ - The name, team_name, and mode parameters are not available in this context — teammates cannot spawn other teammates. Omit them to spawn a subagent.`
+       : ''
+ }`
 }
