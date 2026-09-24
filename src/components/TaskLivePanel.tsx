@@ -11,6 +11,12 @@ type Props = {
   /** Compaction in flight — the compact progress bar owns the slot below the
    * spinner, so the panel stands down. */
   hidden?: boolean
+  /** Whether the spinner row is mounted above. While it is, its own marginTop
+   * separates the messages from the block and the panel stays flush under it;
+   * once it unmounts (turn end with tasks still open, permission prompt) the
+   * panel must take the blank row itself, or it sits glued to the last
+   * message. */
+  spinnerVisible: boolean
 }
 
 /**
@@ -21,8 +27,8 @@ type Props = {
  * every such flip — the bottom-pinned block changed height and the renderer
  * erased-and-rewrote the region (the task-panel "blink"). Hosted here, item
  * updates reconcile in place (TaskListV2 keys rows by task.id) and spinner
- * mount/unmount is a pure row shift above a byte-identical tail, which the
- * log-update shift fast path scrolls instead of repainting.
+ * mount/unmount only swaps the blank separator row (the spinner's marginTop
+ * while up, the panel's own once down) — the panel body below stays put.
  */
 /**
  * True while the panel is showing the MAIN session's list and every task is
@@ -45,7 +51,10 @@ export function useTaskPanelCompletedHold(): boolean {
   )
 }
 
-export function TaskLivePanel({ hidden = false }: Props): React.ReactNode {
+export function TaskLivePanel({
+  hidden = false,
+  spinnerVisible,
+}: Props): React.ReactNode {
   const expandedView = useAppState(s => s.expandedView)
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const tasks = useAppState(s => s.tasks)
@@ -75,7 +84,7 @@ export function TaskLivePanel({ hidden = false }: Props): React.ReactNode {
   }
 
   return (
-    <Box width="100%" flexDirection="column">
+    <Box width="100%" flexDirection="column" marginTop={spinnerVisible ? 0 : 1}>
       <MessageResponse>
         <TaskListV2 tasks={tasksV2} />
       </MessageResponse>

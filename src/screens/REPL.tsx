@@ -2183,7 +2183,10 @@ export function REPL({
                   streamingThinking={streamingThinking}
                 />
               )}
-              <TaskLivePanel hidden={!!compactingStartTime} />
+              <TaskLivePanel
+                hidden={!!compactingStartTime}
+                spinnerVisible={spinnerVisible}
+              />
               {!spinnerVisible &&
                 !isLoading &&
                 !userInputOnProcessing &&
