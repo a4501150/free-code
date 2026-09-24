@@ -55,9 +55,13 @@ const questionSchema = z.object({
     .describe(
       "The available choices. Each option is a distinct choice (unless multiSelect is true). No 'Other' option — it is added automatically.",
     ),
+  // Optional, not `.default(false)`: strict presentation makes every
+  // property nullable, and `.default()` absorbs undefined but rejects the
+  // `null` fill — the field would fail validation inside array items, which
+  // the input stripper also cleans. Consumers treat absence as false.
   multiSelect: z
     .boolean()
-    .default(false)
+    .optional()
     .describe(
       'Allow selecting multiple options. Use when the choices are not mutually exclusive.',
     ),

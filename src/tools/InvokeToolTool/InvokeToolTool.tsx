@@ -25,6 +25,7 @@ import {
 } from '../../services/toolCatalog/exposure.js'
 import { toolCatalogDir } from '../../services/toolCatalog/writer.js'
 import { zodToJsonSchema } from '../../utils/zodToJsonSchema.js'
+import { stripStrictNullInputs } from '../../utils/stripStrictNullInputs.js'
 import {
   extractSearchText,
   isResultTruncated,
@@ -79,12 +80,30 @@ function innerInputSchema(tool: Tool): Record<string, unknown> | null {
   }
 }
 
-function requiredKeysError(input: InvokeInput, tool: Tool): string | null {
+/**
+ * Clean `null`/`""` placeholders against the INNER tool's schema. The outer
+ * stripper only sees this tool's opaque args record and its conservative
+ * fallback drops every null — including ones the inner schema legitimately
+ * admits. This mirrors what direct MCP exposure gets at entrypoints/mcp.ts.
+ */
+function sanitizedArgs(
+  args: Record<string, unknown>,
+  tool: Tool,
+): Record<string, unknown> {
+  return stripStrictNullInputs(innerInputSchema(tool) ?? {}, args) as Record<
+    string,
+    unknown
+  >
+}
+
+function requiredKeysError(
+  args: Record<string, unknown>,
+  tool: Tool,
+): string | null {
   const schema = innerInputSchema(tool)
   if (!schema) return null
   const required = schema.required
   if (!Array.isArray(required) || required.length === 0) return null
-  const args = (input.args ?? {}) as Record<string, unknown>
   const missing = required.filter(
     key => typeof key === 'string' && args[key] === undefined,
   )
@@ -121,7 +140,10 @@ export const InvokeTool = buildTool({
     if (!target.ok) {
       return { result: false, message: target.error, errorCode: 1 }
     }
-    const required = requiredKeysError(input, target.tool)
+    const required = requiredKeysError(
+      sanitizedArgs((input.args ?? {}) as Record<string, unknown>, target.tool),
+      target.tool,
+    )
     if (required) {
       return { result: false, message: required, errorCode: 2 }
     }
@@ -197,12 +219,16 @@ export const InvokeTool = buildTool({
     if (!target.ok) {
       throw new Error(target.error)
     }
-    const inner = requiredKeysError(input, target.tool)
+    const args = sanitizedArgs(
+      (input.args ?? {}) as Record<string, unknown>,
+      target.tool,
+    )
+    const inner = requiredKeysError(args, target.tool)
     if (inner) {
       throw new Error(inner)
     }
     const result = await target.tool.call(
-      (input.args ?? {}) as never,
+      args as never,
       context,
       canUseTool,
       parentMessage,

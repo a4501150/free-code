@@ -248,6 +248,37 @@ describe('InvokeTool dispatch', () => {
     expect(seen!.onProgress).toBe(progress)
   })
 
+  test('args are stripped against the INNER schema before dispatch', async () => {
+    let seen: Record<string, unknown> | null = null
+    const inner = mcpTool('mcp__srv__a', {
+      type: 'object',
+      properties: {
+        target: { type: 'string' },
+        text: { type: ['string', 'null'] },
+        element: { type: 'string' },
+      },
+      required: ['target'],
+    })
+    inner.call = (async (args: unknown) => {
+      seen = args as Record<string, unknown>
+      return { data: 'ok' }
+    }) as Tool['call']
+    const ctx = contextWith([inner])
+
+    await InvokeTool.call(
+      {
+        tool: 'mcp__srv__a',
+        args: { target: '#b', text: null, element: null },
+      },
+      ctx,
+      () => {},
+      undefined,
+      undefined,
+    )
+    // `text` admits null and survives; `element` does not and is stripped.
+    expect(seen).toEqual({ target: '#b', text: null })
+  })
+
   test('lazy built-in named in lazyTools is dispatchable', async () => {
     previousConfigDir = process.env.FREECODE_CONFIG_DIR
     const dir = await mkdtemp(join(tmpdir(), 'invoke-tool-lazy-'))

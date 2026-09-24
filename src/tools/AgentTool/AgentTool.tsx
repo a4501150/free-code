@@ -189,10 +189,10 @@ const fullInputSchema = (() => {
 
   return baseInputSchema.merge(multiAgentInputSchema).extend({
     isolation: z
-      .enum(['worktree'])
+      .enum(['worktree', 'none'])
       .optional()
       .describe(
-        'Isolation mode. "worktree" creates a temporary git worktree so the agent works on an isolated copy of the repo.',
+        'Isolation mode. "worktree" creates a temporary git worktree so the agent works on an isolated copy of the repo. "none" (or omitting the field) runs the agent in the current working directory; pass "none" explicitly to override an agent definition that sets isolation.',
       ),
     cwd: z
       .string()
@@ -241,7 +241,7 @@ type AgentToolInput = z.infer<typeof baseInputSchema> & {
   name?: string
   team_name?: string
   mode?: z.infer<typeof permissionModeSchema>
-  isolation?: 'worktree' | 'remote'
+  isolation?: 'worktree' | 'none'
   cwd?: string
 }
 
@@ -600,8 +600,10 @@ export const AgentTool = buildTool({
       permissionMode,
     )
 
-    // Resolve effective isolation mode (explicit param overrides agent def)
-    const effectiveIsolation = isolation ?? selectedAgent.isolation
+    // Resolve effective isolation mode (explicit param overrides agent def;
+    // 'none' is an explicit opt-out that also beats the agent definition).
+    const effectiveIsolation =
+      isolation === 'none' ? undefined : (isolation ?? selectedAgent.isolation)
     if (cwd && effectiveIsolation === 'worktree') {
       throw new Error('cwd cannot be used together with worktree isolation.')
     }

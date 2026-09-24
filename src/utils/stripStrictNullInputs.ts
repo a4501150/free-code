@@ -24,8 +24,10 @@
  * Pass the schema the model was shown: a tool's `inputJSONSchema` where it has
  * one — MCP tools, whose Zod schema is an opaque passthrough — else its Zod
  * schema. Where neither describes a key, the placeholder is stripped as before.
- * The runtime `inputSchema.safeParse` remains the authoritative validation
- * boundary.
+ * Nested objects and array elements are cleaned the same way against their
+ * sub-schemas (models mirror the null-is-unset convention downward), while the
+ * array value itself is never dropped. The runtime `inputSchema.safeParse`
+ * remains the authoritative validation boundary.
  */
 
 type JSONSchemaNode = {
@@ -36,6 +38,7 @@ type JSONSchemaNode = {
   oneOf?: unknown
   enum?: unknown
   const?: unknown
+  items?: unknown
 }
 
 /** Strip `null` and empty-string placeholder values from tool input objects. */
@@ -47,7 +50,10 @@ export function stripStrictNullInputs(
 }
 
 function stripPlaceholders(value: unknown, schema: unknown): unknown {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  if (Array.isArray(value)) {
+    return stripArrayPlaceholders(value, schema)
+  }
+  if (typeof value !== 'object' || value === null) {
     return value
   }
 
@@ -65,7 +71,7 @@ function stripPlaceholders(value: unknown, schema: unknown): unknown {
       continue
     }
 
-    if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+    if (typeof v === 'object' && v !== null) {
       const cleaned = stripPlaceholders(v, propertySchema(schema, key))
       if (cleaned !== v) {
         if (!cloned) cloned = { ...obj }
@@ -75,6 +81,82 @@ function stripPlaceholders(value: unknown, schema: unknown): unknown {
   }
 
   return cloned ?? value
+}
+
+/**
+ * Clean placeholders inside array values. The array itself is kept (an empty
+ * array is a real value — e.g. `addBlocks: []`), but strict presentation teaches
+ * models "null = unset" and they mirror it downward into item objects, so
+ * elements are cleaned against the array's element schema. Nulls/empty strings
+ * that the element schema doesn't explicitly admit are dropped (the element
+ * reads as "meant to omit this entry"); object elements are recursed.
+ */
+function stripArrayPlaceholders(arr: unknown[], schema: unknown): unknown[] {
+  const elementFor = (index: number): unknown => {
+    const items = jsonSchemaNode(schema)?.items
+    if (items !== undefined) return Array.isArray(items) ? items[index] : items
+    return elementSchema(schema)
+  }
+  let out: unknown[] | undefined
+  for (let i = 0; i < arr.length; i++) {
+    const el = arr[i]
+    if (el === null || el === '') {
+      if (elementMeansAbsent(elementFor(i), el)) {
+        if (!out) out = arr.slice(0, i)
+        continue
+      }
+      out?.push(el)
+      continue
+    }
+    if (typeof el === 'object') {
+      const cleaned = stripPlaceholders(el, elementFor(i))
+      if (cleaned !== el) {
+        if (!out) out = arr.slice(0, i)
+        out.push(cleaned)
+        continue
+      }
+    }
+    out?.push(el)
+  }
+  return out ?? arr
+}
+
+/** Whether a null/'' array element reads as "the model meant to omit this entry". */
+function elementMeansAbsent(element: unknown, value: null | ''): boolean {
+  if (element === undefined) return true
+  if (value === '') return true
+  return !zodAccepts(element, null) && !jsonAdmitsNull(element)
+}
+
+/**
+ * The element schema of a Zod array, unwrapping `.optional()`/`.default()`/
+ * `.nullable()` wrappers that sit between the property and the array. v4
+ * arrays expose `.element`/`.def.element`; wrappers carry the inner schema as
+ * `.def.innerType`.
+ */
+function elementSchema(schema: unknown): unknown {
+  let node = schema as
+    | {
+        safeParse?: unknown
+        element?: unknown
+        def?: Record<string, unknown>
+        _def?: Record<string, unknown>
+      }
+    | undefined
+  for (
+    let depth = 0;
+    depth < 6 && node && typeof node.safeParse === 'function';
+    depth++
+  ) {
+    const def = (node.def ?? node._def) as Record<string, unknown> | undefined
+    if (def?.['type'] === 'array' || node.element !== undefined) {
+      return node.element ?? def?.['element'] ?? def?.['valueType']
+    }
+    node = (def?.['innerType'] ??
+      def?.['valueType'] ??
+      def?.['elementType']) as typeof node | undefined
+  }
+  return undefined
 }
 
 /** Whether `value` at `key` reads as "the model meant to omit this field". */

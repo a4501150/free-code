@@ -61,12 +61,68 @@ describe('stripStrictNullInputs with a JSON Schema', () => {
   })
 })
 
+// Array params as an MCP JSON Schema presents them: `regions` admits null
+// elements, `widgets` items carry an optional `note` whose null fill the
+// model mirrors downward from the top-level null-is-unset convention.
+const arraySchema = {
+  type: 'object',
+  properties: {
+    regions: {
+      type: 'array',
+      items: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    },
+    widgets: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { name: { type: 'string' }, note: { type: 'string' } },
+        required: ['name'],
+      },
+    },
+  },
+  required: ['widgets'],
+}
+
+describe('stripStrictNullInputs with JSON Schema arrays', () => {
+  test('keeps null elements the item schema admits', () => {
+    const input = { widgets: [], regions: ['us', null] }
+    expect(stripStrictNullInputs(arraySchema, input)).toBe(input)
+  })
+
+  test('cleans nulls inside array item objects', () => {
+    expect(
+      stripStrictNullInputs(arraySchema, {
+        widgets: [{ name: 'a', note: null }],
+        regions: [],
+      }),
+    ).toEqual({ widgets: [{ name: 'a' }], regions: [] })
+  })
+
+  test('drops a placeholder object element entirely', () => {
+    expect(
+      stripStrictNullInputs(arraySchema, {
+        widgets: [null, { name: 'a', note: '' }],
+      }),
+    ).toEqual({ widgets: [{ name: 'a' }] })
+  })
+})
+
 const zodSchema = z.object({
   command: z.string(),
   description: z.string().optional(),
   timeout: z.number().optional(),
   profile: z.string().nullable().optional(),
   nested: z.object({ inner: z.string().optional() }).optional(),
+  tags: z.array(z.enum(['a', 'b'])).optional(),
+  items: z
+    .array(
+      z.object({
+        label: z.string(),
+        on: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+  flags: z.array(z.string().nullable()).optional(),
 })
 
 describe('stripStrictNullInputs with a Zod schema', () => {
@@ -103,9 +159,45 @@ describe('stripStrictNullInputs with a Zod schema', () => {
     ).toEqual({ command: 'ls', nested: {} })
   })
 
-  test('leaves arrays alone', () => {
-    const input = { command: 'ls', fields: [{ value: '' }] }
-    expect(stripStrictNullInputs(zodSchema, input)).toEqual(input)
+  test('drops null/"" elements an array element schema does not admit', () => {
+    expect(
+      stripStrictNullInputs(zodSchema, {
+        command: 'ls',
+        tags: ['a', null, ''],
+      }),
+    ).toEqual({ command: 'ls', tags: ['a'] })
+  })
+
+  test('keeps a null an array element schema admits', () => {
+    expect(
+      stripStrictNullInputs(zodSchema, { command: 'ls', flags: [null, 'x'] }),
+    ).toEqual({ command: 'ls', flags: [null, 'x'] })
+  })
+
+  test('cleans placeholders inside array item objects', () => {
+    expect(
+      stripStrictNullInputs(zodSchema, {
+        command: 'ls',
+        items: [
+          { label: 'x', on: null },
+          { label: 'y', on: true },
+        ],
+      }),
+    ).toEqual({
+      command: 'ls',
+      items: [{ label: 'x' }, { label: 'y', on: true }],
+    })
+  })
+
+  test('keeps an empty array — the array value itself is never dropped', () => {
+    expect(
+      stripStrictNullInputs(zodSchema, { command: 'ls', tags: [] }),
+    ).toEqual({ command: 'ls', tags: [] })
+  })
+
+  test('leaves an array with no placeholders identical (no copy)', () => {
+    const input = { command: 'ls', tags: ['a', 'b'] }
+    expect(stripStrictNullInputs(zodSchema, input)).toBe(input)
   })
 
   test('strips unconditionally with no schema at all', () => {

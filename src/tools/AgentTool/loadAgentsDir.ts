@@ -629,12 +629,17 @@ export function parseAgentFromMarkdown(
     const VALID_ISOLATION_MODES: readonly IsolationMode[] = ['worktree']
     const isolationRaw = frontmatter['isolation'] as string | undefined
     let isolation: IsolationMode | undefined
-    if (isolationRaw !== undefined) {
+    // 'none' is the explicit no-isolation opt-out (same spelling the Agent
+    // tool parameter accepts) — normalizes to undefined, no warning.
+    if (isolationRaw !== undefined && isolationRaw !== 'none') {
       if (VALID_ISOLATION_MODES.includes(isolationRaw as IsolationMode)) {
         isolation = isolationRaw as IsolationMode
       } else {
         logForDebugging(
-          `Agent file ${filePath} has invalid isolation value '${isolationRaw}'. Valid options: ${VALID_ISOLATION_MODES.join(', ')}`,
+          `Agent file ${filePath} has invalid isolation value '${isolationRaw}'. Valid options: ${[
+            ...VALID_ISOLATION_MODES,
+            'none',
+          ].join(', ')}`,
         )
       }
     }

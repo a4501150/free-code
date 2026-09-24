@@ -147,7 +147,7 @@ ${whenNotToUse}${whenToForkSection}
   }${
     isWorktreeModeEnabled()
       ? `
-- Set \`isolation: "worktree"\` to run the agent in a temporary git worktree — an isolated copy of the repository. It is cleaned up automatically if the agent makes no changes; otherwise the worktree path and branch are returned in the result.`
+- Set \`isolation: "worktree"\` to run the agent in a temporary git worktree — an isolated copy of the repository. It is cleaned up automatically if the agent makes no changes; otherwise the worktree path and branch are returned in the result. Pass \`isolation: "none"\` to run in the current working directory — the same as omitting it, but it overrides an agent definition that sets isolation.`
       : ''
   }${
     isInProcessTeammate()
