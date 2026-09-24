@@ -55,18 +55,20 @@ self-contained: `vendor/ripgrep/`, `vendor/search-tools/` and
 
 ### Opt-in feature flags
 
-Three subsystems stay behind compile-time `feature(...)` checks. Enable them by
+Two subsystems stay behind compile-time `feature(...)` checks. Enable them by
 passing `--feature=NAME` to the build script (unknown names are silently
 ignored, so typos become dead flags):
 
-| Flag            | Effect                                                                                   |
-| --------------- | ---------------------------------------------------------------------------------------- |
-| `BUDDY`         | Companion sprite and `/buddy` command. Currently a no-op: its modules have no consumers. |
-| `VERIFY_PLAN`   | Plan verification guidance and task/todo verification nudges.                            |
-| `WORKTREE_MODE` | Worktree-mode behavior and the batch skill.                                              |
+| Flag          | Effect                                                                                   |
+| ------------- | ---------------------------------------------------------------------------------------- |
+| `BUDDY`       | Companion sprite and `/buddy` command. Currently a no-op: its modules have no consumers. |
+| `VERIFY_PLAN` | Plan verification guidance and task/todo verification nudges.                            |
+
+Worktree mode (EnterWorktree/ExitWorktree, `isolation: "worktree"`, the batch
+skill, `--worktree`) is compiled in unconditionally.
 
 ```bash
-bun run ./scripts/build.ts --feature=VERIFY_PLAN --feature=WORKTREE_MODE
+bun run ./scripts/build.ts --feature=VERIFY_PLAN
 ```
 
 ## Quick start

@@ -29,9 +29,7 @@ export function initBundledSkills(): void {
   registerSkillifySkill()
   registerRememberSkill()
   registerSimplifySkill()
-  if (feature('WORKTREE_MODE')) {
-    registerBatchSkill()
-  }
+  registerBatchSkill()
   dreamNs.registerDreamSkill()
   // /loop's isEnabled delegates to isAssistantCronEnabled() — same lazy
   // per-invocation pattern as the cron tools. Registered unconditionally;

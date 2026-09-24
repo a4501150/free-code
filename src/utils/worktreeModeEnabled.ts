@@ -1,12 +1,10 @@
-import { feature } from 'bun:bundle'
-
 /**
- * Gated behind the `WORKTREE_MODE` feature flag. When off, the
- * EnterWorktree/ExitWorktree tools are stripped from the registry and
- * the `--worktree` / `--tmux` CLI flags are disabled; vanilla
- * `git worktree add/remove` via the Bash tool covers the same ground.
+ * Worktree mode is compiled in unconditionally. The EnterWorktree/ExitWorktree
+ * tools are always registered (and, like other low-frequency tools, listed in
+ * `lazyTools` by default in the docs), and `--worktree` / `--tmux` always
+ * work. The function stays so callers keep a single switch point; a user who
+ * wants plain `git worktree` via Bash simply never invokes these tools.
  */
 export function isWorktreeModeEnabled(): boolean {
-  if (feature('WORKTREE_MODE')) return true
-  return false
+  return true
 }

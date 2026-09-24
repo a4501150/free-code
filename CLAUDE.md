@@ -6,7 +6,7 @@ commented IN the file that governs them.
 
 ## Build and test traps
 
-- `bun run build` → `./cli`; `bun run dev` runs `src/` uncompiled. All shipped subsystems compile in unconditionally; the 3 opt-in flags (`--feature=NAME` on the build script) are in README.md — unknown names are silently ignored, so a typo becomes a dead flag.
+- `bun run build` → `./cli`; `bun run dev` runs `src/` uncompiled. All shipped subsystems compile in unconditionally; the 2 opt-in flags (`--feature=NAME` on the build script) are in README.md — unknown names are silently ignored, so a typo becomes a dead flag.
 - `bun run test` runs unit + e2e but does NOT typecheck or format; run `bun run typecheck`, `bun run test:unit`, `bun run format` yourself.
 - e2e drives the COMPILED binary: run `bun run build:dev:full` first or you are testing stale code. Each e2e test gets `env -i` + temp HOME and asserts via the mock provider's request log, not the tmux pane.
 - Unit tests share one process: `mock.module` and module-level `memoize` leak across files.

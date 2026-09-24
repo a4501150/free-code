@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { buildTool, type ToolDef, toolMatchesName } from 'src/Tool.js'
 import type {
@@ -199,9 +198,7 @@ const fullInputSchema = (() => {
       .string()
       .optional()
       .describe(
-        feature('WORKTREE_MODE')
-          ? 'Absolute path to run the agent in. Overrides the working directory for all filesystem and shell operations within this agent. Mutually exclusive with isolation: "worktree".'
-          : 'Absolute path to run the agent in. Overrides the working directory for all filesystem and shell operations within this agent.',
+        'Absolute path to run the agent in. Overrides the working directory for all filesystem and shell operations within this agent. Mutually exclusive with isolation: "worktree".',
       ),
   })
 })()
@@ -213,14 +210,11 @@ const fullInputSchema = (() => {
 // type, but call() destructures via the explicit AgentToolInput type below
 // which always includes all optional fields.
 export const inputSchema = (() => {
-  // feature() is compile-time DCE: exactly one branch survives per build, so
-  // the resulting schema is fixed for the lifetime of the binary. Stripping
-  // optional fields the build doesn't support keeps them out of the JSON
-  // schema the model sees. Use ternaries (const) instead of `let` reassignment
-  // so the union return type is preserved through each step.
-  const afterWorktreeGate = !feature('WORKTREE_MODE')
-    ? fullInputSchema.omit({ isolation: true })
-    : fullInputSchema
+  // Worktree isolation is compiled in unconditionally, so isolation is
+  // always in the schema. Stripping still applies to optional fields whose
+  // backing feature is off. Use ternaries (const) instead of `let`
+  // reassignment so the union return type is preserved through each step.
+  const afterWorktreeGate = fullInputSchema
 
   // isAgentSwarmsEnabled() / isBackgroundTasksDisabled can read from disk and
   // flip mid-session. The optional-only fields stripped here (name, team_name,
