@@ -52,6 +52,12 @@ export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
   TASK_LIST_TOOL_NAME,
   TASK_UPDATE_TOOL_NAME,
   INVOKE_TOOL_NAME,
+  // Async agents can message each other: siblings share the process's task
+  // registry, so SendMessage routes worker→worker directly (address targets
+  // via ListAgents). Worker→main-session is NOT routed — the coordinator's
+  // return channel is the worker's final report, and its inbound channel is
+  // queued follow-ups.
+  SEND_MESSAGE_TOOL_NAME,
   LIST_AGENTS_TOOL_NAME,
   ...SHELL_TOOL_NAMES,
   FILE_EDIT_TOOL_NAME,
