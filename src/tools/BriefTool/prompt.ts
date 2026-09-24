@@ -7,7 +7,7 @@ export const BRIEF_TOOL_PROMPT = `Send a message the user will read. Text outsid
 
 \`message\` supports markdown. \`attachments\` takes file paths (absolute or cwd-relative) for images, diffs, logs.
 
-\`status\` labels intent. Use 'normal' when replying to what the user just asked. Use 'proactive' when you start the exchange: a scheduled task finished, a problem appeared during background work, or you need input on something they have not asked about. Set it honestly. Downstream routing uses it.`
+\`proactive\` labels intent. Set it false when replying to what the user just asked. Set it true when you start the exchange: a scheduled task finished, a problem appeared during background work, or you need input on something they have not asked about. Set it honestly. Downstream routing uses it.`
 
 export const BRIEF_PROACTIVE_SECTION = `## Talking to the user
 

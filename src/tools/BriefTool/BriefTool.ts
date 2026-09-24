@@ -4,6 +4,7 @@ import { getAssistantActive, getUserMsgOptIn } from '../../bootstrap/state.js'
 import type { ValidationResult } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
+import { semanticBoolean } from '../../utils/semanticBoolean.js'
 import { plural } from '../../utils/stringUtils.js'
 import { resolveAttachments, validateAttachmentPaths } from './attachments.js'
 import {
@@ -24,11 +25,9 @@ const inputSchema = z.strictObject({
     .describe(
       'Optional file paths (absolute or relative to cwd) to attach. Use for photos, screenshots, diffs, logs, or any file the user should see alongside your message.',
     ),
-  status: z
-    .enum(['normal', 'proactive'])
-    .describe(
-      "Use 'proactive' when you're surfacing something the user hasn't asked for and needs to see now — task completion while they're away, a blocker you hit, an unsolicited status update. Use 'normal' when replying to something the user just said.",
-    ),
+  proactive: semanticBoolean(z.boolean()).describe(
+    "True when you're surfacing something the user hasn't asked for and needs to see now — task completion while they're away, a blocker you hit, an unsolicited status update. False when replying to something the user just said.",
+  ),
 })
 type InputSchema = typeof inputSchema
 
@@ -146,7 +145,7 @@ export const BriefTool = buildTool({
   },
   renderToolUseMessage,
   renderToolResultMessage,
-  async call({ message, attachments, status }, context) {
+  async call({ message, attachments }, context) {
     const sentAt = new Date().toISOString()
     if (!attachments || attachments.length === 0) {
       return { data: { message, sentAt } }
