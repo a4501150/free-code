@@ -162,7 +162,7 @@ const baseInputSchema = z.object({
     .boolean()
     .optional()
     .describe(
-      "Run this agent asynchronously. Control returns to you immediately with the agent's ID; when the agent finishes, its final report is delivered as a system notification. NOT a parallelism mechanism — to run agents in parallel whose results you need together, send multiple Agent tool uses in a single message.",
+      "Run this agent asynchronously — applies to every agent type, forks included. Control returns to you immediately with the agent's ID; when the agent finishes, its final report is delivered as a system notification. Omit or false to wait for the report as this call's tool result. NOT a parallelism mechanism — to run agents in parallel whose results you need together, send multiple Agent tool uses in a single message.",
     ),
 })
 

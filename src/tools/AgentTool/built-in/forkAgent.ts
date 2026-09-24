@@ -46,6 +46,5 @@ export const FORK_AGENT: BuiltInAgentDefinition = {
   maxTurns: 200,
   model: 'inherit',
   permissionMode: 'bubble',
-  background: true,
   getSystemPrompt: () => '',
 }

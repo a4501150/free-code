@@ -116,10 +116,10 @@ When using the ${AGENT_TOOL_NAME} tool, specify a subagent_type parameter to sel
     ? `
 
 ## When to fork
-Fork yourself (pass \`subagent_type: "fork"\`) when the intermediate tool output is not worth keeping in your context — a fork inherits your transcript and shares your prompt cache. Open-ended questions and independent research questions are good fork tasks. Launch parallel forks in one message.
+Fork yourself (pass \`subagent_type: "fork"\`) when the intermediate tool output is not worth keeping in your context — a fork inherits your transcript and shares your prompt cache. Open-ended questions and independent research questions are good fork tasks. A fork runs in the mode you pick: by default its report is this call's tool result; with \`run_in_background: true\` it reports later via the completion notification, like any other agent. Launch parallel forks in one message.
 - Write the fork prompt as a directive (what to do), not a briefing — it already has your context. State what is in scope and what is out.
-- Do not Read or tail the \`output_file\` while the fork runs. That brings the fork's tool output into your context and defeats the purpose.
-- After you launch a fork, you know nothing about what it found. Never fabricate or predict its result. Until the completion notification arrives, report "still running", not a guess.`
+- For a backgrounded fork: do not Read or tail the \`output_file\` while it runs — that brings the fork's tool output back into your context and defeats the purpose.
+- After you launch a backgrounded fork, you know nothing about what it found. Never fabricate or predict its result. Until the completion notification arrives, report "still running", not a guess.`
     : ''
 
   const promptingSection = `
