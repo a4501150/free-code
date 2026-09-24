@@ -1400,7 +1400,10 @@ export const codexAdapter: ProviderAdapter = {
       Accept: 'text/event-stream',
       Authorization: `Bearer ${currentToken}`,
       originator: 'pi',
-      'OpenAI-Beta': 'responses=experimental',
+      // Dash form is the cache-affinity header the ChatGPT backend documents
+      // (codex-rs uses it); the underscore form is our original spelling and
+      // still honored, so both are sent.
+      'session-id': sessionId,
       session_id: sessionId,
     }
     if (!auth.isProxied) {
@@ -1476,7 +1479,7 @@ export const codexAdapter: ProviderAdapter = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${currentToken}`,
       originator: 'pi',
-      'OpenAI-Beta': 'responses=experimental',
+      'session-id': sessionId,
       session_id: sessionId,
     }
     if (!auth.isProxied) {
