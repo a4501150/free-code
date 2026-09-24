@@ -15,6 +15,7 @@ import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
 import { gracefulShutdown } from '../../utils/gracefulShutdown.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
+import { deliverToSession } from '../../utils/sessionMessaging.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import type { BackendType } from '../../utils/swarm/backends/types.js'
 import { TEAM_LEAD_NAME } from '../../utils/swarm/constants.js'
@@ -657,6 +658,27 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
     },
 
     async call(input, context, canUseTool, assistantMessage) {
+      // Session addressing: to:"session:<id>" delivers the message as a
+      // prompt turn to another live session, over that process's attach
+      // channel. Live peers are discoverable with ListAgents.
+      if (
+        typeof input.message === 'string' &&
+        input.to.startsWith('session:')
+      ) {
+        const sessionId = input.to.slice('session:'.length)
+        const delivered = await deliverToSession(sessionId, input.message)
+        return {
+          data: delivered.ok
+            ? {
+                success: true,
+                message: `Message delivered to session ${sessionId} as a prompt turn.`,
+              }
+            : {
+                success: false,
+                message: delivered.error ?? 'delivery failed',
+              },
+        }
+      }
       // Route to in-process subagent by name or raw agentId before falling
       // through to ambient-team resolution. Stopped agents are auto-resumed.
       if (typeof input.message === 'string' && input.to !== '*') {

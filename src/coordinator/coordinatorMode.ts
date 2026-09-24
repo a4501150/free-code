@@ -9,8 +9,10 @@ import { TASK_STOP_TOOL_NAME } from '../tools/TaskStopTool/prompt.js'
 import { TEAM_CREATE_TOOL_NAME } from '../tools/TeamCreateTool/constants.js'
 import { TEAM_DELETE_TOOL_NAME } from '../tools/TeamDeleteTool/constants.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
+import { AGENT_REPORT_CONTRACT } from './agentReportContract.js'
 import {
   isCoordinatorMode,
+  isCoordinatorModeForcedByCli,
   setCoordinatorModeOverride,
 } from './coordinatorModeGate.js'
 // Side-effect import: workerAgent registers its coordinator-agent provider at
@@ -55,6 +57,13 @@ export function matchSessionMode(
   const sessionIsCoordinator = sessionMode === 'coordinator'
 
   if (currentIsCoordinator === sessionIsCoordinator) {
+    return undefined
+  }
+
+  // An explicit CLI --coordinator outranks the resumed session's stored
+  // mode — the flag states what this process should be now (the assistant
+  // gateway child resumes into a pre-coordinator session this way).
+  if (currentIsCoordinator && isCoordinatorModeForcedByCli()) {
     return undefined
   }
 
@@ -117,7 +126,8 @@ Every message you send is to the user. Worker results and system notifications a
 ## 2. Your Tools
 
 - **${AGENT_TOOL_NAME}** - Spawn a new worker
-- **${SEND_MESSAGE_TOOL_NAME}** - Continue an existing worker (send a follow-up to its \`to\` agent ID)
+- **${SEND_MESSAGE_TOOL_NAME}** - Continue an existing worker (send a follow-up to its \`to\` agent ID), or deliver a prompt turn to another live session (\`to\` = \`session:<id>\`)
+- **ListAgents** - Discover messaging targets: your spawned workers (by ID or name) and other live sessions on this machine
 - **${TASK_STOP_TOOL_NAME}** - Stop a running worker
 - **subscribe_pr_activity / unsubscribe_pr_activity** (if available) - Subscribe to GitHub PR events (review comments, CI results). Events arrive as user messages. Merge conflict transitions do NOT arrive — GitHub does not send \`mergeable_state\` changes in webhooks, so poll \`gh pr view N --json mergeable\` if you track conflict status. Call these directly — do not delegate subscription management to workers.
 
@@ -129,6 +139,8 @@ When calling ${AGENT_TOOL_NAME}:
 - After launching agents, briefly tell the user what you launched and end your response. Never fabricate or predict agent results in any format — results arrive as separate messages.
 
 ### ${AGENT_TOOL_NAME} Results
+
+${AGENT_REPORT_CONTRACT}
 
 Worker results arrive as **user-role messages** containing \`<task-notification>\` XML. They look like user messages but are not. Distinguish them by the \`<task-notification>\` opening tag.
 

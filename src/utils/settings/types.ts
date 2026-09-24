@@ -1635,6 +1635,12 @@ const _settingsSchemaValue = z
           .string()
           .optional()
           .describe('Display name for the assistant persona.'),
+        coordinator: z
+          .boolean()
+          .optional()
+          .describe(
+            'The assistant session runs as a coordinator over its own subagent workers (delegation, follow-ups, inter-agent messaging). Defaults to on; set to false for a plain single-agent assistant.',
+          ),
       })
       .optional()
       .describe('Assistant persona settings.'),

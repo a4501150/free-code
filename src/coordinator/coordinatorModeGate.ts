@@ -13,8 +13,21 @@ import { getInitialSettings } from '../utils/settings/settings.js'
 // observe the flip.
 let coordinatorModeOverride: boolean | undefined
 
+// A CLI --coordinator request outranks a resumed session's stored 'normal'
+// mode: the flag states what this process should be now.
+let cliForced = false
+
 export function setCoordinatorModeOverride(on: boolean): void {
   coordinatorModeOverride = on
+}
+
+export function forceCoordinatorModeFromCli(): void {
+  coordinatorModeOverride = true
+  cliForced = true
+}
+
+export function isCoordinatorModeForcedByCli(): boolean {
+  return cliForced
 }
 
 export function isCoordinatorMode(): boolean {

@@ -19,6 +19,7 @@ import { PushNotificationTool } from './tools/PushNotificationTool/PushNotificat
 const cronTools = [CronCreateTool, CronDeleteTool, CronListTool]
 import { ExitPlanModeTool } from './tools/ExitPlanModeTool/ExitPlanModeTool.js'
 import { SendMessageTool } from './tools/SendMessageTool/SendMessageTool.js'
+import { ListAgentsTool } from './tools/ListAgentsTool/ListAgentsTool.js'
 import { TeamCreateTool } from './tools/TeamCreateTool/TeamCreateTool.js'
 import { TeamDeleteTool } from './tools/TeamDeleteTool/TeamDeleteTool.js'
 import { AskUserQuestionTool } from './tools/AskUserQuestionTool/AskUserQuestionTool.js'
@@ -110,6 +111,7 @@ export function getAllBaseTools(): Tools {
     TaskListTool,
     ...(isWorktreeModeEnabled() ? [EnterWorktreeTool, ExitWorktreeTool] : []),
     SendMessageTool,
+    ListAgentsTool,
     ...(isAgentSwarmsEnabled() ? [TeamCreateTool, TeamDeleteTool] : []),
     ...(VerifyPlanExecutionTool ? [VerifyPlanExecutionTool] : []),
     ...cronTools,
@@ -136,7 +138,7 @@ export const getTools = (permissionContext: ToolPermissionContext): Tools => {
     // so the coordinator gets Task+TaskStop (via useMergedTools filtering) and
     // workers get Bash/Read/Edit (via filterToolsForAgent filtering).
     if (coordinatorModeMod.isCoordinatorMode()) {
-      simpleTools.push(AgentTool, TaskStopTool, SendMessageTool)
+      simpleTools.push(AgentTool, TaskStopTool, SendMessageTool, ListAgentsTool)
     }
     return filterToolsByDenyRules(simpleTools, permissionContext)
   }

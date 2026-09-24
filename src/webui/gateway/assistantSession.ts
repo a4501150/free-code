@@ -76,6 +76,12 @@ export async function bootstrapAssistantSession(
   const workspace = assistantWorkspaceDir()
   await mkdir(workspace, { recursive: true, mode: 0o700 })
   const extraArgs = ['--assistant']
+  // The assistant is a coordinator by default — it orchestrates its own
+  // workers and messages spawned sessions (one coordinator system, this is
+  // its default door; opt out with assistant.coordinator: false).
+  if (assistant?.coordinator !== false) {
+    extraArgs.push('--coordinator')
+  }
 
   const resumeSessionId = await readResumeId()
   if (resumeSessionId) {

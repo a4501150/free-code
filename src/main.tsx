@@ -84,6 +84,7 @@ import { isWorktreeModeEnabled } from './utils/worktreeModeEnabled.js'
 import * as assistantModule from './assistant/index.js'
 import * as coordinatorModeModule from './coordinator/coordinatorMode.js'
 import {
+  forceCoordinatorModeFromCli,
   isCoordinatorMode,
   setCoordinatorModeOverride,
 } from './coordinator/coordinatorModeGate.js'
@@ -1357,6 +1358,10 @@ async function run(): Promise<CommanderCommand> {
         process.env.CLAUDE_CODE_TASK_LIST_ID = taskListId
         // Tasks mode runs the main loop as a coordinator watching the task list.
         setCoordinatorModeOverride(true)
+      }
+      if ((options as { coordinator?: boolean }).coordinator) {
+        // Explicit coordinator door — outranks a resumed session's stored mode.
+        forceCoordinatorModeFromCli()
       }
 
       // Extract worktree option
@@ -3438,6 +3443,12 @@ async function run(): Promise<CommanderCommand> {
   )
   program.addOption(
     new Option('--assistant', 'Force assistant daemon mode').hideHelp(),
+  )
+  program.addOption(
+    new Option(
+      '--coordinator',
+      'Run the main loop as a coordinator over subagent workers',
+    ).hideHelp(),
   )
   program.addOption(
     new Option(

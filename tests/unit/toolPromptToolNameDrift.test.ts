@@ -25,6 +25,7 @@ const WATCHLIST = [
   'Edit',
   'EnterPlanMode',
   'ExitPlanMode',
+  'ListAgents',
   'Read',
   'SendMessage',
   'Skill',

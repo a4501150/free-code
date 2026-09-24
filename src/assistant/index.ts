@@ -12,6 +12,8 @@
 
 import { existsSync, readFileSync, statSync } from 'fs'
 import { getProjectRoot } from '../bootstrap/state.js'
+import { AGENT_REPORT_CONTRACT } from '../coordinator/agentReportContract.js'
+import { isCoordinatorMode } from '../coordinator/coordinatorModeGate.js'
 import { logError } from '../utils/log.js'
 import { getExistingOrPreferredProjectConfigPath } from '../utils/projectConfigPaths.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
@@ -160,6 +162,11 @@ export function buildAssistantModeBlock(
         `can learn on your own: what do I not know yet, what can go wrong, what ` +
         `must I verify before calling work done?`,
     )
+    // A coordinator assistant already reads this contract in its system
+    // prompt; only a plain assistant needs it carried in the attachment.
+    if (!isCoordinatorMode()) {
+      sections.push(`## Delegated agents\n\n${AGENT_REPORT_CONTRACT}`)
+    }
   }
 
   if (isBriefEnabled()) {
