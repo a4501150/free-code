@@ -62,14 +62,29 @@ function toSummary(task: TaskState): TaskSummary {
 }
 
 export function renderToolResultMessage(output: Output): React.ReactNode {
-  const summary =
-    output.count === 0
-      ? 'No background tasks.'
-      : `${output.count} background task(s).`
+  if (output.count === 0) {
+    return (
+      <MessageResponse height={1}>
+        <Text>No background tasks.</Text>
+      </MessageResponse>
+    )
+  }
 
+  // One row per task — the same facts the model gets, so an expand of this
+  // result is never less informative than the tool_result itself.
   return (
-    <MessageResponse height={1}>
-      <Text>{summary}</Text>
+    <MessageResponse>
+      {output.tasks.map(task => {
+        const kind = task.task_type.replace(/^local_/, '')
+        const exit =
+          task.exit_code !== undefined ? ` · exit ${task.exit_code}` : ''
+        const agent = task.agent_type ? ` · ${task.agent_type}` : ''
+        return (
+          <Text key={task.task_id} dimColor={task.status !== 'running'}>
+            {`[${task.status}] ${kind} — ${task.description}${agent}${exit}`}
+          </Text>
+        )
+      })}
     </MessageResponse>
   )
 }

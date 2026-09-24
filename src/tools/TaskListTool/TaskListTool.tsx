@@ -1,4 +1,7 @@
 import { z } from 'zod/v4'
+import * as React from 'react'
+import { MessageResponse } from '../../components/MessageResponse.js'
+import { Text } from '../../ink.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import {
   getMainTaskListId,
@@ -32,6 +35,38 @@ type OutputSchema = typeof outputSchema
 export type Output = z.infer<OutputSchema>
 
 type TaskRow = Output['tasks'][number]
+
+function formatTaskListText(tasks: TaskRow[]): string {
+  const renderRows = (rows: TaskRow[]) =>
+    rows.map(task => {
+      const owner = task.owner ? ` (${task.owner})` : ''
+      const blocked =
+        task.blockedBy.length > 0
+          ? ` [blocked by ${task.blockedBy.map(id => `#${id}`).join(', ')}]`
+          : ''
+      return `#${task.id} [${task.status}] ${task.subject}${owner}${blocked}`
+    })
+
+  const ownRows = tasks.filter(t => !t.fromParent)
+  const parentRows = tasks.filter(t => t.fromParent)
+
+  if (parentRows.length === 0) {
+    // Single-list view (main session, or subagent with empty parent list).
+    return ownRows.length === 0
+      ? 'No tasks found'
+      : renderRows(ownRows).join('\n')
+  }
+  const sections: string[] = []
+  sections.push(
+    ownRows.length > 0
+      ? `Your task list:\n${renderRows(ownRows).join('\n')}`
+      : 'Your task list is empty.',
+  )
+  sections.push(
+    `Parent session's task list (read-only — you cannot update these tasks; use TaskGet to read one in full):\n${renderRows(parentRows).join('\n')}`,
+  )
+  return sections.join('\n\n')
+}
 
 /**
  * Drop `_internal` tasks upstream; resolve blockedBy against the completed
@@ -83,6 +118,19 @@ export const TaskListTool = buildTool({
   renderToolUseMessage() {
     return null
   },
+  renderToolResultMessage(content) {
+    const { tasks } = content as Output
+    const lines = formatTaskListText(tasks).split('\n')
+    return (
+      <MessageResponse>
+        {lines.map((line, i) => (
+          <Text key={i} dimColor={!line.startsWith('#')}>
+            {line}
+          </Text>
+        ))}
+      </MessageResponse>
+    )
+  },
   async call() {
     const taskListId = getTaskListId()
 
@@ -111,41 +159,10 @@ export const TaskListTool = buildTool({
   mapToolResultToToolResultBlockParam(content, toolUseID) {
     const { tasks } = content as Output
 
-    const renderRows = (rows: TaskRow[]) =>
-      rows.map(task => {
-        const owner = task.owner ? ` (${task.owner})` : ''
-        const blocked =
-          task.blockedBy.length > 0
-            ? ` [blocked by ${task.blockedBy.map(id => `#${id}`).join(', ')}]`
-            : ''
-        return `#${task.id} [${task.status}] ${task.subject}${owner}${blocked}`
-      })
-
-    const ownRows = tasks.filter(t => !t.fromParent)
-    const parentRows = tasks.filter(t => t.fromParent)
-
-    let text: string
-    if (parentRows.length === 0) {
-      // Single-list view (main session, or subagent with empty parent list).
-      text =
-        ownRows.length === 0 ? 'No tasks found' : renderRows(ownRows).join('\n')
-    } else {
-      const sections: string[] = []
-      sections.push(
-        ownRows.length > 0
-          ? `Your task list:\n${renderRows(ownRows).join('\n')}`
-          : 'Your task list is empty.',
-      )
-      sections.push(
-        `Parent session's task list (read-only — you cannot update these tasks; use TaskGet to read one in full):\n${renderRows(parentRows).join('\n')}`,
-      )
-      text = sections.join('\n\n')
-    }
-
     return {
       tool_use_id: toolUseID,
       type: 'tool_result',
-      content: text,
+      content: formatTaskListText(tasks),
     }
   },
 } satisfies ToolDef<InputSchema, Output>)

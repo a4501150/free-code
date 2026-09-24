@@ -9,6 +9,9 @@
 import { existsSync, statSync } from 'fs'
 import { resolve } from 'path'
 import { z } from 'zod/v4'
+import * as React from 'react'
+import { MessageResponse } from '../../components/MessageResponse.js'
+import { Text } from '../../ink.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { isBriefEnabled } from '../BriefTool/BriefTool.js'
 import {
@@ -81,6 +84,21 @@ export const SendUserFileTool = buildTool({
       return `Sending file: ${path} — ${desc}`
     }
     return `Sending file: ${path}`
+  },
+
+  // Failures (bad path, directory, unreadable) render visibly instead of
+  // being buried in a JSON tool_result the user never sees.
+  renderToolResultMessage(content) {
+    const output = content as Output
+    return (
+      <MessageResponse height={1}>
+        {output.sent ? (
+          <Text dimColor>File ready: {output.path}</Text>
+        ) : (
+          <Text>File not sent{output.error ? `: ${output.error}` : '.'}</Text>
+        )}
+      </MessageResponse>
+    )
   },
 
   async call(input) {

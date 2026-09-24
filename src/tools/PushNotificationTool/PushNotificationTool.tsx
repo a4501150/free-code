@@ -7,6 +7,9 @@
  */
 
 import { z } from 'zod/v4'
+import * as React from 'react'
+import { MessageResponse } from '../../components/MessageResponse.js'
+import { Text } from '../../ink.js'
 import { sendNotification } from '../../services/notifier.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
@@ -105,6 +108,24 @@ export const PushNotificationTool = buildTool({
   renderToolUseMessage(input, _output) {
     const title = (input as { title?: string }).title ?? 'Notification'
     return `Sending notification: ${title}`
+  },
+
+  // Non-delivery must be visible: a swallowed sent:false lets the model
+  // claim the user was notified when nothing was delivered.
+  renderToolResultMessage(content) {
+    const output = content as Output
+    return (
+      <MessageResponse height={1}>
+        {output.sent ? (
+          <Text dimColor>Notification delivered.</Text>
+        ) : (
+          <Text>
+            Notification not delivered
+            {output.error ? `: ${output.error}` : '.'}
+          </Text>
+        )}
+      </MessageResponse>
+    )
   },
 
   async call(input) {

@@ -1,4 +1,7 @@
 import { z } from 'zod/v4'
+import * as React from 'react'
+import { MessageResponse } from '../../components/MessageResponse.js'
+import { Text } from '../../ink.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import {
   getMainTaskListId,
@@ -33,6 +36,23 @@ type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
+function formatTaskLines(task: NonNullable<Output['task']>): string[] {
+  const lines = [
+    `Task #${task.id}: ${task.subject}${
+      task.fromParent ? " (from the parent session's list — read-only)" : ''
+    }`,
+    `Status: ${task.status}`,
+    `Description: ${task.description}`,
+  ]
+  if (task.blockedBy.length > 0) {
+    lines.push(`Blocked by: ${task.blockedBy.map(id => `#${id}`).join(', ')}`)
+  }
+  if (task.blocks.length > 0) {
+    lines.push(`Blocks: ${task.blocks.map(id => `#${id}`).join(', ')}`)
+  }
+  return lines
+}
+
 export const TaskGetTool = buildTool({
   name: TASK_GET_TOOL_NAME,
   maxResultSizeChars: 100_000,
@@ -65,6 +85,19 @@ export const TaskGetTool = buildTool({
   },
   renderToolUseMessage() {
     return null
+  },
+  renderToolResultMessage(content) {
+    const { task } = content as Output
+    const lines = task ? formatTaskLines(task) : ['Task not found']
+    return (
+      <MessageResponse>
+        {lines.map((line, i) => (
+          <Text key={i} dimColor={i > 0}>
+            {line}
+          </Text>
+        ))}
+      </MessageResponse>
+    )
   },
   async call({ taskId }) {
     const taskListId = getTaskListId()
@@ -111,25 +144,10 @@ export const TaskGetTool = buildTool({
       }
     }
 
-    const lines = [
-      `Task #${task.id}: ${task.subject}${
-        task.fromParent ? " (from the parent session's list — read-only)" : ''
-      }`,
-      `Status: ${task.status}`,
-      `Description: ${task.description}`,
-    ]
-
-    if (task.blockedBy.length > 0) {
-      lines.push(`Blocked by: ${task.blockedBy.map(id => `#${id}`).join(', ')}`)
-    }
-    if (task.blocks.length > 0) {
-      lines.push(`Blocks: ${task.blocks.map(id => `#${id}`).join(', ')}`)
-    }
-
     return {
       tool_use_id: toolUseID,
       type: 'tool_result',
-      content: lines.join('\n'),
+      content: formatTaskLines(task).join('\n'),
     }
   },
 } satisfies ToolDef<InputSchema, Output>)

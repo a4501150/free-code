@@ -137,7 +137,7 @@ ${forkAvailable ? 'Any agent other than a fork starts with zero context. ' : ''}
   return `${shared}
 ${whenNotToUse}${whenToForkSection}
 
-- The agent returns a single message back to you and the result is not visible to the user, so send a concise summary yourself. Agents are not suitable for retrieving full file contents — file data read by the agent is summarized or lost in the single-message handoff; use the Read tool directly for full content${concurrencyNote}.
+- The agent returns a single message back to you; the user sees it only by expanding that agent's result, so send a concise summary yourself. Agents are not suitable for retrieving full file contents — file data read by the agent is summarized or lost in the single-message handoff; use the Read tool directly for full content${concurrencyNote}.
 - The agent works on its own task list and cannot change yours: ${TASK_LIST_TOOL_NAME} inside the agent shows your list as read-only context. Put everything the agent must act on in the prompt, not in a task description it has to look up.
 - Avoid duplicating work that active agents are already doing. If you delegate research, do not perform the same searches yourself.${
     isAgentSwarmsEnabled()
