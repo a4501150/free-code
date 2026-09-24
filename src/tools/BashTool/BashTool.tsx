@@ -681,9 +681,9 @@ export const BashTool = buildTool({
       if (assistantAutoBackgrounded) {
         backgroundInfo = `Command exceeded the assistant-mode blocking budget (${ASSISTANT_BLOCKING_BUDGET_MS / 1000}s) and was moved to the background with ID: ${backgroundTaskId}. Output is being streamed to ${outputPath}; the full output will be delivered to you as a system notification in a later turn — sleeping or polling on your end does not change when it arrives. In assistant mode, delegate long-running work to a subagent or use \`run_in_background: true\` up front to keep this conversation responsive.`
       } else if (backgroundedByUser) {
-        backgroundInfo = `Command was manually backgrounded by user with ID: ${backgroundTaskId}. Output is being written to: ${outputPath}`
+        backgroundInfo = `Command was manually backgrounded by user with ID: ${backgroundTaskId}. Output is being written to: ${outputPath} The command keeps running until it exits; you do not need to wait or poll — a system task notification reporting its status and output file will be delivered in a later turn.`
       } else {
-        backgroundInfo = `Command running in background with ID: ${backgroundTaskId}. Output is being written to: ${outputPath}`
+        backgroundInfo = `Command running in background with ID: ${backgroundTaskId}. Output is being written to: ${outputPath} The command keeps running until it exits; you do not need to wait or poll — a system task notification reporting its status and output file will be delivered in a later turn.`
       }
     }
 
