@@ -1,4 +1,4 @@
-import { prependBullets } from '../../constants/prompts.js'
+import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import { hasEmbeddedSearchTools } from '../../utils/embeddedTools.js'
 import {
   getDefaultBashTimeoutMs,
@@ -13,23 +13,27 @@ export function getMaxTimeoutMs(): number {
   return getMaxBashTimeoutMs()
 }
 
-// The availability of `run_in_background` is signalled on its schema
-// description (BashTool.tsx), which is removed from the schema together with
-// the param under the backgroundTasksEnabled: false setting — so the sleep
-// cluster below stays accurate either way: with backgrounding unavailable,
-// there is simply never a notification to wait for.
+// The background paragraphs below and the `run_in_background` param share one
+// gate: under the backgroundTasksEnabled: false setting the param is removed
+// from the schema (BashTool.tsx) and the prompt keeps only the foreground
+// sentence, so the two never disagree about what exists.
 
 export function getSimplePrompt(): string {
   // The -regex quirk below is a bfs (embedded search sidecar) behavior; on a
   // system find it does not apply, so gate on the sidecars being available.
   const embedded = hasEmbeddedSearchTools()
 
-  const instructionItems: Array<string | string[]> = [
-    'Run the command without a pipe. Do not append `| tail`, `| head`, or `| grep` to cap the output. The user watches your tool results in the UI, and a pipe truncates what the user sees. Large output needs no cap from you: it is saved to a file and the result names the path.',
-    'A trailing pipe on a long-running command does worse than truncate: the pipe buffers ALL output until the command exits, so a watcher, dev server, or `tail -f` piped into anything streams nothing and dies on the timeout. Run monitoring commands unpiped.',
-    'Make commands and scripts print something. A silent run leaves the user with nothing to watch, and a failing script that never says where it stopped is hard to debug. For long-running work, prefer progress output (verbose flags, per-step echoes). Do not suppress output to save tokens: large output is stored in a file, not pasted into the context.',
-    'Do not sleep-and-poll to check progress: a command that finishes on its own will return output to you after exit. For a wait that will not finish on its own (external state, another process), run a monitor command or script that creates the exit signal by exiting once the condition holds (e.g. `until <check>; do sleep 2; done`, backgrounded when the wait may be long) — system task notification carries the exit status and the output file path.',
-    'Do not prepend `cd <current-directory> &&` to a `git` command — you are already there, and the compound needs a permission rule for both parts. To work in another directory, `cd` there first (the working directory persists) or run `git -C <dir>`.',
+  const paragraphs: Array<string> = [
+    'Executes a shell command.',
+    isBackgroundTasksEnabled()
+      ? [
+          'When running a command in the foreground, the bash tool blocks and returns once the command finishes, with its output.',
+          'When running a command in the background, the bash tool returns immediately with a task ID and an output file path. The command keeps running until it exits or a terminating code or signal is caught, and you will receive a system task notification reporting its status and its output file path.',
+          '',
+          "You don't have to do anything while waiting for a backgrounded command: once it completes, a system task notification is delivered automatically by the harness.",
+        ].join('\n')
+      : 'The bash tool blocks and returns once the command finishes, with its output.',
+    'Do not append `| tail`, `| head`, or `| grep` to a command to cap the output. The user watches bash tool results in the UI, and a pipe truncates what the user can see. Large output needs no cap from you: the output is saved to a file automatically and the path will be returned to you.',
     ...(embedded
       ? [
           // bfs (which backs `find`) uses Oniguruma for -regex, which picks the
@@ -41,10 +45,5 @@ export function getSimplePrompt(): string {
       : []),
   ]
 
-  return [
-    'Executes a given bash command and returns its output. The working directory persists between commands, but shell state does not.',
-    '',
-    '# Instructions',
-    ...prependBullets(instructionItems),
-  ].join('\n')
+  return ['# Instructions', ...paragraphs].join('\n\n')
 }

@@ -148,7 +148,6 @@ describe('conditional mode prompt alignment', () => {
   test('Agent tool prompt owns its field-specific guidance and Sleep is gone', () => {
     const mainPrompt = readSource('src/constants/prompts.ts')
     const agentPrompt = readSource('src/tools/AgentTool/prompt.ts')
-    const agentSchema = readSource('src/tools/AgentTool/AgentTool.tsx')
 
     expect(mainPrompt).not.toContain('SLEEP_TOOL_NAME')
     expect(mainPrompt).not.toContain('/<skill-name> is shorthand')
@@ -156,9 +155,9 @@ describe('conditional mode prompt alignment', () => {
     expect(agentPrompt).toContain(
       'Avoid duplicating work that active agents are already doing',
     )
-    expect(agentSchema).toContain('NOT a parallelism mechanism')
-    expect(agentSchema).toContain(
-      'its final report is delivered as a system notification',
+    expect(agentPrompt).toContain('not a parallelism mechanism')
+    expect(agentPrompt).toContain(
+      'its report is delivered as a system task notification',
     )
   })
 })

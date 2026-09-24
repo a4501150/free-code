@@ -1,3 +1,4 @@
+import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import { getMaxOutputLength } from '../../utils/shell/outputLimits.js'
 import {
   getPowerShellEdition,
@@ -51,7 +52,16 @@ function getEditionSection(edition: PowerShellEdition | null): string {
 export async function getPrompt(): Promise<string> {
   const edition = await getPowerShellEdition()
 
-  return `Executes a given PowerShell command and returns its output. Working directory persists between commands; shell state (variables, functions) does not.
+  // Shares the backgroundTasksEnabled gate with the run_in_background param
+  // (stripped from the schema in PowerShellTool.tsx when the setting is off).
+  const backgroundSection = isBackgroundTasksEnabled()
+    ? `
+
+When running a command in the foreground, the tool blocks and returns once the command finishes, with its output.
+When running a command in the background (\`run_in_background: true\`), the tool returns immediately with a task ID and an output file path. The command keeps running until it exits or a terminating code or signal is caught, and you will receive a system task notification reporting its status and its output file path. You don't have to do anything while waiting for a backgrounded command: once it completes, the notification is delivered automatically by the harness.`
+    : ''
+
+  return `Executes a given PowerShell command and returns its output. Shell state (variables, functions) does not persist between commands.${backgroundSection}
 
 The user reads every tool result in the session, and output is auto-saved to a file (referenced in the result) when it grows — run the command without a pipe: a pipe through \`Select-Object\` or \`Select-String\` truncates what the user gets to see.
 

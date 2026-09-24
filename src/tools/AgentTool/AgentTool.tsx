@@ -153,16 +153,14 @@ const baseInputSchema = z.object({
     .optional()
     .describe(
       "Optional model override for this agent. Use a provider-qualified model ID (for example 'anthropic:claude-sonnet-4-6'). " +
-        "Takes precedence over the agent definition's model frontmatter. " +
-        "Pass 'inherit' to explicitly run the agent on the parent's model. " +
+        "Takes precedence over the agent definition's model. " +
+        "Pass 'inherit' to run the agent on the parent's model. " +
         "If omitted, uses the agent definition's model, or inherits from the parent.",
     ),
   run_in_background: z
     .boolean()
     .optional()
-    .describe(
-      "Run this agent asynchronously — applies to every agent type, forks included. Control returns to you immediately with the agent's ID; when the agent finishes, its final report is delivered as a system notification. Omit or false to wait for the report as this call's tool result. NOT a parallelism mechanism — to run agents in parallel whose results you need together, send multiple Agent tool uses in a single message.",
-    ),
+    .describe('Whether to run the agent in the background.'),
 })
 
 // Full schema combining base + multi-agent params + isolation
@@ -172,7 +170,7 @@ const fullInputSchema = (() => {
       .string()
       .optional()
       .describe(
-        'Name for the spawned agent. Makes it addressable via SendMessage({to: name}) while running.',
+        'Name for the spawned agent, making it addressable via SendMessage while it runs.',
       ),
     team_name: z
       .string()
@@ -183,7 +181,7 @@ const fullInputSchema = (() => {
     mode: permissionModeSchema
       .optional()
       .describe(
-        'Permission mode for spawned teammate (for example, "plan" to require plan approval).',
+        'Permission mode for the spawned teammate (for example, "plan" to require plan approval).',
       ),
   })
 
@@ -192,13 +190,13 @@ const fullInputSchema = (() => {
       .enum(['worktree', 'none'])
       .optional()
       .describe(
-        'Isolation mode. "worktree" creates a temporary git worktree so the agent works on an isolated copy of the repo. "none" (or omitting the field) runs the agent in the current working directory; pass "none" explicitly to override an agent definition that sets isolation.',
+        'Isolation mode. "worktree" runs the agent in a temporary git worktree — an isolated copy of the repo, cleaned up automatically if it makes no changes; otherwise the worktree path and branch are returned in the result. "none" runs the agent in the current working directory; pass it explicitly to override an agent definition that sets isolation.',
       ),
     cwd: z
       .string()
       .optional()
       .describe(
-        'Absolute path to run the agent in. Overrides the working directory for all filesystem and shell operations within this agent. Mutually exclusive with isolation: "worktree".',
+        'Absolute path to run the agent in. Mutually exclusive with isolation: "worktree".',
       ),
   })
 })()

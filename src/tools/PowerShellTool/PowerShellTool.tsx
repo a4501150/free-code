@@ -250,10 +250,10 @@ const fullInputSchema = z.strictObject({
     .string()
     .optional()
     .describe(
-      'Clear, concise description of what this command does in active voice.',
+      'Short description of what the command does. Simple commands get a brief one (5-10 words).',
     ),
   run_in_background: semanticBoolean(z.boolean().optional()).describe(
-    'Run the command asynchronously instead of sleeping or polling. Returns at once with a task ID and the path of the file the output is streamed to; a completion notification with that path arrives when the command exits. NOT a parallelism mechanism — for independent commands whose results you need together, send multiple PowerShell tool uses in a single message.',
+    'Whether to run the command in the background.',
   ),
 })
 
