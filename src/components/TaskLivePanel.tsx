@@ -11,12 +11,6 @@ type Props = {
   /** Compaction in flight — the compact progress bar owns the slot below the
    * spinner, so the panel stands down. */
   hidden?: boolean
-  /** Whether the spinner row is mounted above. While it is, its own marginTop
-   * separates the messages from the block and the panel stays flush under it;
-   * once it unmounts (turn end with tasks still open, permission prompt) the
-   * panel must take the blank row itself, or it sits glued to the last
-   * message. */
-  spinnerVisible: boolean
 }
 
 /**
@@ -27,8 +21,17 @@ type Props = {
  * every such flip — the bottom-pinned block changed height and the renderer
  * erased-and-rewrote the region (the task-panel "blink"). Hosted here, item
  * updates reconcile in place (TaskListV2 keys rows by task.id) and spinner
- * mount/unmount only swaps the blank separator row (the spinner's marginTop
- * while up, the panel's own once down) — the panel body below stays put.
+ * mount/unmount stays a uniform shift the log-update shift fast path scrolls.
+ *
+ * The panel owns the blank separator row above itself CONSTANTLY — never a
+ * conditional margin keyed on spinner visibility. A conditional margin would
+ * rewrite the block's top edge exactly when the spinner unmounts, turning the
+ * cheap uniform shift (the spinner's rows give way, the panel scrolls up over
+ * them) into a full repaint of everything under the edge (tests/e2e/
+ * thinking-swap-repaint.test.ts guards this). While the panel is up the
+ * spinner suppresses its own marginTop (Spinner.tsx panelOwnsSeparator), so
+ * there is exactly one blank row between the messages and the block in every
+ * state: spinner up or down.
  */
 /**
  * True while the panel is showing the MAIN session's list and every task is
@@ -51,10 +54,7 @@ export function useTaskPanelCompletedHold(): boolean {
   )
 }
 
-export function TaskLivePanel({
-  hidden = false,
-  spinnerVisible,
-}: Props): React.ReactNode {
+export function TaskLivePanel({ hidden = false }: Props): React.ReactNode {
   const expandedView = useAppState(s => s.expandedView)
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const tasks = useAppState(s => s.tasks)
@@ -84,7 +84,7 @@ export function TaskLivePanel({
   }
 
   return (
-    <Box width="100%" flexDirection="column" marginTop={spinnerVisible ? 0 : 1}>
+    <Box width="100%" flexDirection="column" marginTop={1}>
       <MessageResponse>
         <TaskListV2 tasks={tasksV2} />
       </MessageResponse>

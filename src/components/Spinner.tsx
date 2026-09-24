@@ -195,6 +195,19 @@ function SpinnerWithVerbInner({
     ? subagentTasksV2
     : (subagentTasksV2 ?? mainTasksV2)
 
+  // The live task panel (TaskLivePanel, mounted below this component) owns the
+  // blank separator row above itself whenever it renders — mirrored here by
+  // the same condition. While the panel is up the spinner drops its own
+  // marginTop so the block keeps exactly ONE blank row against the messages
+  // in every state, spinner up or down. The panel's margin must never be
+  // conditional on spinner visibility: a top-edge flip at unmount rewrites
+  // everything under it and loses the log-update shift fast path
+  // (tests/e2e/thinking-swap-repaint.test.ts).
+  const panelOwnsSeparator =
+    showExpandedTodos &&
+    compactingStartTime == null &&
+    (tasksV2?.length ?? 0) > 0
+
   // Thinking status for the byline: 'thinking' | number (duration in ms) | null.
   // Derived from the same StreamingThinking state that drives the transcript
   // overlay and the stamped message duration — no private clock or timers.
@@ -304,7 +317,12 @@ function SpinnerWithVerbInner({
   if (leaderIsIdle && hasRunningTeammates && !foregroundedTeammate) {
     return (
       <Box flexDirection="column" width="100%" alignItems="flex-start">
-        <Box flexDirection="row" flexWrap="wrap" marginTop={1} width="100%">
+        <Box
+          flexDirection="row"
+          flexWrap="wrap"
+          marginTop={panelOwnsSeparator ? 0 : 1}
+          width="100%"
+        >
           <Text dimColor>
             {TEARDROP_ASTERISK} Idle
             {!allIdle && ' · teammates running'}
@@ -332,7 +350,12 @@ function SpinnerWithVerbInner({
     )
     return (
       <Box flexDirection="column" width="100%" alignItems="flex-start">
-        <Box flexDirection="row" flexWrap="wrap" marginTop={1} width="100%">
+        <Box
+          flexDirection="row"
+          flexWrap="wrap"
+          marginTop={panelOwnsSeparator ? 0 : 1}
+          width="100%"
+        >
           <Text dimColor>
             {TEARDROP_ASTERISK} Worked for {elapsed}
           </Text>
@@ -348,7 +371,12 @@ function SpinnerWithVerbInner({
       : `${TEARDROP_ASTERISK} Idle`
     return (
       <Box flexDirection="column" width="100%" alignItems="flex-start">
-        <Box flexDirection="row" flexWrap="wrap" marginTop={1} width="100%">
+        <Box
+          flexDirection="row"
+          flexWrap="wrap"
+          marginTop={panelOwnsSeparator ? 0 : 1}
+          width="100%"
+        >
           <Text dimColor>{idleText}</Text>
         </Box>
         {showSpinnerTree && hasRunningTeammates && (
@@ -382,6 +410,7 @@ function SpinnerWithVerbInner({
         <SpinnerAnimationRow
           mode={mode}
           reducedMotion={reducedMotion}
+          suppressTopMargin={panelOwnsSeparator}
           hasActiveTools={hasActiveTools}
           responseLengthRef={responseLengthRef}
           message={message}

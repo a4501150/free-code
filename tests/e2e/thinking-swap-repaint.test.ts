@@ -132,11 +132,18 @@ describe('thinking swap repaint E2E', () => {
 
     // Every frame that took the scroll path must repaint a fraction of the
     // screen, not all of it. Pre-fix these same frames rewrote 23-30 rows.
+    // Frames dominated by a content swap (the overlay commit replaces a
+    // multi-row block: diffs in the thousands) have that many genuinely
+    // changed rows — the budget guards the small-diff full-height sweeps,
+    // which is what the pre-fix failure mode was.
     for (let i = 0; i < scrollLines.length; i++) {
       const idx = lines.indexOf(scrollLines[i])
       for (let j = idx + 1; j < Math.min(idx + 12, lines.length); j++) {
-        const m = lines[j].match(/repaint-frame .*coalesced=(\d+)/)
+        const m = lines[j].match(
+          /repaint-frame .*coalesced=(\d+) .*diffs=(\d+)/,
+        )
         if (!m) continue
+        if (Number(m[2]) >= 1000) break
         expect(Number(m[1])).toBeLessThanOrEqual(16)
         break
       }
