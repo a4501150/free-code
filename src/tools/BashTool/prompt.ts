@@ -13,9 +13,11 @@ export function getMaxTimeoutMs(): number {
   return getMaxBashTimeoutMs()
 }
 
-// Background-task guidance lives on the `run_in_background` schema description
-// (BashTool.tsx), which is removed from the schema together with the param
-// under the backgroundTasksEnabled: false setting — no prompt-side gating needed.
+// The availability of `run_in_background` is signalled on its schema
+// description (BashTool.tsx), which is removed from the schema together with
+// the param under the backgroundTasksEnabled: false setting — so the sleep
+// cluster below stays accurate either way: with backgrounding unavailable,
+// there is simply never a notification to wait for.
 
 export function getSimplePrompt(): string {
   // The -regex quirk below is a bfs (embedded search sidecar) behavior; on a
@@ -26,6 +28,8 @@ export function getSimplePrompt(): string {
     'Run the command without a pipe. Do not append `| tail`, `| head`, or `| grep` to cap the output. The user watches your tool results in the UI, and a pipe truncates what the user sees. Large output needs no cap from you: it is saved to a file and the result names the path.',
     'A trailing pipe on a long-running command does worse than truncate: the pipe buffers ALL output until the command exits, so a watcher, dev server, or `tail -f` piped into anything streams nothing and dies on the timeout. Run monitoring commands unpiped.',
     'Make commands and scripts print something. A silent run leaves the user with nothing to watch, and a failing script that never says where it stopped is hard to debug. For long-running work, prefer progress output (verbose flags, per-step echoes). Do not suppress output to save tokens: large output is stored in a file, not pasted into the context.',
+    'Avoid unnecessary `sleep` — it never makes a notification arrive sooner. A backgrounded command keeps running across turns and re-invokes you with a completion notification when it exits; sleeping or polling on your end does not change when it lands, and chained foreground sleeps cost a turn each.',
+    'To wait on a condition, background a loop that exits when it is true (e.g. `until <check>; do sleep 2; done`) — one notification, one turn. Running the check command directly beats sleeping first; if you must sleep in the foreground, keep it short.',
     'Do not prepend `cd <current-directory> &&` to a `git` command — you are already there, and the compound needs a permission rule for both parts. To work in another directory, `cd` there first (the working directory persists) or run `git -C <dir>`.',
     ...(embedded
       ? [
