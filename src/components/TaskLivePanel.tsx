@@ -24,6 +24,27 @@ type Props = {
  * mount/unmount is a pure row shift above a byte-identical tail, which the
  * log-update shift fast path scrolls instead of repainting.
  */
+/**
+ * True while the panel is showing the MAIN session's list and every task is
+ * completed — i.e. inside the TasksV2Store all-completed display window that
+ * ends with the list reset+collapse. The REPL holds the spinner on this so
+ * the spinner title and the panel disappear in the same frame. Only the main
+ * list: a viewing context renders that agent's list, which has no auto-hide
+ * path, so holding on it could pin the spinner indefinitely.
+ */
+export function useTaskPanelCompletedHold(): boolean {
+  const expandedView = useAppState(s => s.expandedView)
+  const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
+  const tasksV2 = useTasksV2()
+  return (
+    !viewingAgentTaskId &&
+    expandedView === 'tasks' &&
+    tasksV2 !== undefined &&
+    tasksV2.length > 0 &&
+    tasksV2.every(t => t.status === 'completed')
+  )
+}
+
 export function TaskLivePanel({ hidden = false }: Props): React.ReactNode {
   const expandedView = useAppState(s => s.expandedView)
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)

@@ -159,11 +159,14 @@ class TasksV2Store {
     // during the 5s window) — don't reset the wrong list.
     const currentId = getMainTaskListId()
     if (currentId !== scheduledForTaskListId) return
-    // Verify all tasks are still completed before clearing
+    // Verify all tasks are still completed before clearing. Filter
+    // _internal first — the snapshot the UI renders excludes them, and a
+    // pending internal task must not veto the hide (the spinner hold keys off
+    // the same snapshot; a veto would pin the spinner indefinitely).
     void listTasks(currentId).then(async tasksToCheck => {
+      const visible = tasksToCheck.filter(t => !t.metadata?._internal)
       const allStillCompleted =
-        tasksToCheck.length > 0 &&
-        tasksToCheck.every(t => t.status === 'completed')
+        visible.length > 0 && visible.every(t => t.status === 'completed')
       if (allStillCompleted) {
         await resetTaskList(currentId)
         this.#tasks = []

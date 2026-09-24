@@ -367,7 +367,10 @@ import {
   TranscriptSearchBar,
 } from '../components/repl/TranscriptChrome.js'
 import { ReplDialogLayer } from '../components/repl/ReplDialogLayer.js'
-import { TaskLivePanel } from '../components/TaskLivePanel.js'
+import {
+  TaskLivePanel,
+  useTaskPanelCompletedHold,
+} from '../components/TaskLivePanel.js'
 import { ReplKeybindingShell } from '../components/repl/ReplKeybindingShell.js'
 import { useReplToolJSX } from '../hooks/repl/useReplToolJSX.js'
 import { useReplMessages } from '../hooks/repl/useReplMessages.js'
@@ -1091,6 +1094,10 @@ export function REPL({
     isShowingLocalJSXCommand,
   })
 
+  // Holds the spinner while the task panel shows an all-completed main list
+  // (the store's 5s window before reset+collapse) — see the mount site below.
+  const completedPanelHold = useTaskPanelCompletedHold()
+
   // Busy condition for the spinner: API request pending, tools running,
   // or the turn is otherwise in flight. The spinner stays visible for the
   // WHOLE busy stretch — including while assistant text streams onto the
@@ -1124,6 +1131,12 @@ export function REPL({
     !!spinnerActive,
     SPINNER_UNMOUNT_GRACE_MS,
   )
+  // The task panel stays up for 5s after the last task completes (the
+  // TasksV2Store all-completed display window). Hold the spinner mounted for
+  // that window so the title and the panel vanish in the same frame instead
+  // of the title going first at the turn boundary. Mounted directly (not
+  // through the unmount grace) so the release is frame-exact.
+  const spinnerVisible = spinnerMounted || completedPanelHold
 
   // hasActivePrompt → useReplDialogs
 
@@ -2151,7 +2164,7 @@ export function REPL({
                   </Box>
                 )}
               <Box flexGrow={1} />
-              {spinnerMounted && (
+              {spinnerVisible && (
                 <SpinnerWithVerb
                   mode={streamMode}
                   spinnerTip={spinnerTip}
@@ -2171,7 +2184,7 @@ export function REPL({
                 />
               )}
               <TaskLivePanel hidden={!!compactingStartTime} />
-              {!spinnerMounted &&
+              {!spinnerVisible &&
                 !isLoading &&
                 !userInputOnProcessing &&
                 !hasRunningTeammates &&
