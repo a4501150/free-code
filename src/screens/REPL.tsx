@@ -250,7 +250,6 @@ import {
   extractBashToolsFromMessages,
 } from '../utils/queryHelpers.js'
 import { runPostCompactCleanup } from '../services/compact/postCompactCleanup.js'
-import { compactProgressLabel } from '../services/compact/compactProgressLabel.js'
 import {
   provisionContentReplacementState,
   reconstructContentReplacementState,
@@ -367,10 +366,7 @@ import {
   TranscriptSearchBar,
 } from '../components/repl/TranscriptChrome.js'
 import { ReplDialogLayer } from '../components/repl/ReplDialogLayer.js'
-import {
-  TaskLivePanel,
-  useTaskPanelCompletedHold,
-} from '../components/TaskLivePanel.js'
+import { useTaskPanelCompletedHold } from '../components/TaskLivePanel.js'
 import { ReplKeybindingShell } from '../components/repl/ReplKeybindingShell.js'
 import { useReplToolJSX } from '../hooks/repl/useReplToolJSX.js'
 import { useReplMessages } from '../hooks/repl/useReplMessages.js'
@@ -2169,21 +2165,24 @@ export function REPL({
                   mode={streamMode}
                   spinnerTip={spinnerTip}
                   responseLengthRef={responseLengthRef}
-                  overrideMessage={spinnerMessage}
                   spinnerSuffix={stopHookSpinnerSuffix}
                   verbose={verbose}
                   loadingStartTimeRef={loadingStartTimeRef}
                   totalPausedMsRef={totalPausedMsRef}
                   pauseStartTimeRef={pauseStartTimeRef}
-                  overrideColor={spinnerColor}
-                  overrideShimmerColor={spinnerShimmerColor}
-                  compactingStartTime={compactingStartTime}
+                  overrideColor={viewedAgentTask ? null : spinnerColor}
+                  overrideShimmerColor={
+                    viewedAgentTask ? null : spinnerShimmerColor
+                  }
+                  overrideMessage={viewedAgentTask ? null : spinnerMessage}
+                  compactingStartTime={
+                    viewedAgentTask ? null : compactingStartTime
+                  }
                   hasActiveTools={inProgressToolUseIDs.size > 0}
                   leaderIsIdle={!isLoading}
                   streamingThinking={streamingThinking}
                 />
               )}
-              <TaskLivePanel hidden={!!compactingStartTime} />
               {!spinnerVisible &&
                 !isLoading &&
                 !userInputOnProcessing &&

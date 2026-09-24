@@ -35,9 +35,6 @@ export type SpinnerAnimationRowProps = {
   // Animation inputs
   mode: SpinnerMode
   reducedMotion: boolean
-  /** Live task panel is mounted below and owns the blank separator row —
-   * the row's own marginTop would add a second one (see Spinner.tsx). */
-  suppressTopMargin?: boolean
   hasActiveTools: boolean
   responseLengthRef: React.RefObject<number>
 
@@ -97,7 +94,6 @@ export function SpinnerAnimationRow({
   spinnerSuffix,
   verbose,
   columns,
-  suppressTopMargin = false,
   hasRunningTeammates,
   teammateTokens,
   foregroundedTeammate,
@@ -352,7 +348,7 @@ export function SpinnerAnimationRow({
       ref={viewportRef}
       flexDirection="row"
       flexWrap="wrap"
-      marginTop={suppressTopMargin ? 0 : 1}
+      marginTop={1}
       width="100%"
     >
       <SpinnerGlyph

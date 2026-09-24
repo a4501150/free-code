@@ -56,6 +56,7 @@ import type { Theme } from 'src/utils/theme.js'
 import { activityManager } from '../utils/activityManager.js'
 import { getSpinnerVerbs } from '../constants/spinnerVerbs.js'
 import { MessageResponse } from './MessageResponse.js'
+import { TaskPanelRows } from './TaskLivePanel.js'
 import { useSubagentTasksV2, useTasksV2 } from '../hooks/useTasksV2.js'
 import type { Task } from '../utils/tasks.js'
 import { useAppState } from '../state/AppState.js'
@@ -101,7 +102,10 @@ type Props = {
   hasActiveTools?: boolean
   /** Leader's turn has completed (no active query). Used to suppress stall-red spinner when only teammates are running. */
   leaderIsIdle?: boolean
-  /** When compaction is in flight, the ms timestamp it began. Drives the progress bar. */
+  /** When the LEADER's compaction is in flight, the ms timestamp it began.
+   * Drives the progress bar. The REPL nulls this (and the compaction color/
+   * message overrides) while an agent transcript view is up — a compacting
+   * agent paints only its own view, from its task's `compacting` field. */
   compactingStartTime?: number | null
   /** Leader's live thinking state. The byline shows thinking status from this
    * same source that drives the transcript overlay and the stamped message
@@ -131,7 +135,11 @@ export function SpinnerWithVerb(props: Props): React.ReactNode {
     !viewingAgentTaskId
   ) {
     return (
-      <BriefSpinner mode={props.mode} overrideMessage={props.overrideMessage} />
+      <BriefSpinner
+        mode={props.mode}
+        overrideMessage={props.overrideMessage}
+        compactingStartTime={props.compactingStartTime}
+      />
     )
   }
 
@@ -195,18 +203,31 @@ function SpinnerWithVerbInner({
     ? subagentTasksV2
     : (subagentTasksV2 ?? mainTasksV2)
 
-  // The live task panel (TaskLivePanel, mounted below this component) owns the
-  // blank separator row above itself whenever it renders — mirrored here by
-  // the same condition. While the panel is up the spinner drops its own
-  // marginTop so the block keeps exactly ONE blank row against the messages
-  // in every state, spinner up or down. The panel's margin must never be
-  // conditional on spinner visibility: a top-edge flip at unmount rewrites
-  // everything under it and loses the log-update shift fast path
-  // (tests/e2e/thinking-swap-repaint.test.ts).
-  const panelOwnsSeparator =
+  // Compaction UI is per-VIEW: inside an agent's transcript view every effect
+  // (progress bar, blue hook color, panel stand-down) comes from that agent's
+  // own task state. The REPL nulls the leader's compaction props while any
+  // agent view is up, so the compactingStartTime prop only ever describes a
+  // compaction the main view should show.
+  const viewedCompacting = viewedLocalAgent?.compacting
+  const viewCompactionStart = viewedLocalAgent
+    ? (viewedCompacting?.startedAt ?? null)
+    : compactingStartTime
+
+  // The live task-list panel is hosted by this component (every variant) and
+  // renders FLUSH below the spinner row: the spinner's own marginTop=1 is the
+  // block's single blank separator against the messages in every state, so
+  // the panel appearing or vanishing is a pure bottom-edge append/truncate —
+  // the top edge never moves and the log-update shift fast path scrolls
+  // (tests/e2e/thinking-swap-repaint.test.ts guards this). A compacting agent
+  // on screen stands the panel down; the store collapses expandedView itself
+  // once the all-completed window ends.
+  const panel =
     showExpandedTodos &&
-    compactingStartTime == null &&
-    (tasksV2?.length ?? 0) > 0
+    viewCompactionStart == null &&
+    tasksV2 &&
+    tasksV2.length > 0 ? (
+      <TaskPanelRows tasks={tasksV2} />
+    ) : null
 
   // Thinking status for the byline: 'thinking' | number (duration in ms) | null.
   // Derived from the same StreamingThinking state that drives the transcript
@@ -248,7 +269,7 @@ function SpinnerWithVerbInner({
   // A viewed subagent shows its own label (panel precedence: summary >
   // description), not the leader's todo verb.
   const effectiveVerb =
-    viewedLocalAgent?.compactStatus ??
+    viewedLocalAgent?.compacting?.label ??
     (viewedLocalAgent
       ? viewedLocalAgent.progress?.summary ||
         viewedLocalAgent.description ||
@@ -308,8 +329,18 @@ function SpinnerWithVerbInner({
 
   const defaultColor: keyof Theme = 'claude'
   const defaultShimmerColor = 'claudeShimmer'
-  const messageColor = overrideColor ?? defaultColor
-  const shimmerColor = overrideShimmerColor ?? defaultShimmerColor
+  // Blue hook-phase color: the leader's arrives as the REPL's blue override
+  // (main view only — nulled in agent views); a viewed agent's derives from
+  // its own task state, mirroring that color pair.
+  const hooksActive = viewedLocalAgent
+    ? !!viewedCompacting?.hooksActive
+    : overrideColor === 'claudeBlue_FOR_SYSTEM_SPINNER'
+  const messageColor: keyof Theme = hooksActive
+    ? 'claudeBlue_FOR_SYSTEM_SPINNER'
+    : (overrideColor ?? defaultColor)
+  const shimmerColor: keyof Theme = hooksActive
+    ? 'claudeBlueShimmer_FOR_SYSTEM_SPINNER'
+    : (overrideShimmerColor ?? defaultShimmerColor)
 
   // When leader is idle but teammates are running (and we're viewing the leader),
   // show a static dim idle display instead of the animated spinner — otherwise
@@ -317,12 +348,7 @@ function SpinnerWithVerbInner({
   if (leaderIsIdle && hasRunningTeammates && !foregroundedTeammate) {
     return (
       <Box flexDirection="column" width="100%" alignItems="flex-start">
-        <Box
-          flexDirection="row"
-          flexWrap="wrap"
-          marginTop={panelOwnsSeparator ? 0 : 1}
-          width="100%"
-        >
+        <Box flexDirection="row" flexWrap="wrap" marginTop={1} width="100%">
           <Text dimColor>
             {TEARDROP_ASTERISK} Idle
             {!allIdle && ' · teammates running'}
@@ -337,6 +363,7 @@ function SpinnerWithVerbInner({
             leaderIdleText="Idle"
           />
         )}
+        {panel}
       </Box>
     )
   }
@@ -350,16 +377,12 @@ function SpinnerWithVerbInner({
     )
     return (
       <Box flexDirection="column" width="100%" alignItems="flex-start">
-        <Box
-          flexDirection="row"
-          flexWrap="wrap"
-          marginTop={panelOwnsSeparator ? 0 : 1}
-          width="100%"
-        >
+        <Box flexDirection="row" flexWrap="wrap" marginTop={1} width="100%">
           <Text dimColor>
             {TEARDROP_ASTERISK} Worked for {elapsed}
           </Text>
         </Box>
+        {panel}
       </Box>
     )
   }
@@ -371,12 +394,7 @@ function SpinnerWithVerbInner({
       : `${TEARDROP_ASTERISK} Idle`
     return (
       <Box flexDirection="column" width="100%" alignItems="flex-start">
-        <Box
-          flexDirection="row"
-          flexWrap="wrap"
-          marginTop={panelOwnsSeparator ? 0 : 1}
-          width="100%"
-        >
+        <Box flexDirection="row" flexWrap="wrap" marginTop={1} width="100%">
           <Text dimColor>{idleText}</Text>
         </Box>
         {showSpinnerTree && hasRunningTeammates && (
@@ -389,6 +407,7 @@ function SpinnerWithVerbInner({
             leaderTokenCount={leaderTokenCount}
           />
         )}
+        {panel}
       </Box>
     )
   }
@@ -410,7 +429,6 @@ function SpinnerWithVerbInner({
         <SpinnerAnimationRow
           mode={mode}
           reducedMotion={reducedMotion}
-          suppressTopMargin={panelOwnsSeparator}
           hasActiveTools={hasActiveTools}
           responseLengthRef={responseLengthRef}
           message={message}
@@ -431,10 +449,10 @@ function SpinnerWithVerbInner({
           effortSuffix={effortSuffix}
           viewedLocalAgent={viewedLocalAgent}
         />
-        {compactingStartTime != null ? (
+        {viewCompactionStart != null ? (
           <Box width="100%" flexDirection="column">
             <CompactProgressBar
-              startTime={compactingStartTime}
+              startTime={viewCompactionStart}
               columns={columns}
             />
           </Box>
@@ -448,12 +466,10 @@ function SpinnerWithVerbInner({
             leaderTokenCount={leaderTokenCount}
           />
         ) : !showExpandedTodos && (nextTask || effectiveTip) ? (
-          // The task list itself is NOT rendered here — it lives in TaskLivePanel,
-          // mounted once below this component (a spinner-hosted list blinked: the
-          // spinner unmounts several times per turn). While the expanded panel is
-          // up it replaces this summary line; when the panel is hidden (collapsed
-          // view, store hide after all-complete) the store also collapses
-          // expandedView, so suppressing on showExpandedTodos alone is enough.
+          // The expanded task list renders as `panel` below instead of this
+          // summary line; when the panel is gone (collapsed view, store hide
+          // after all-complete) the store also collapses expandedView, so
+          // suppressing on showExpandedTodos alone is enough.
           // IMPORTANT: we need this width="100%" to avoid an Ink bug where the
           // tip gets duplicated over and over while the spinner is running if
           // the terminal is very small. TODO: fix this in Ink.
@@ -469,6 +485,7 @@ function SpinnerWithVerbInner({
             )}
           </Box>
         ) : null}
+        {panel}
       </Box>
     </Box>
   )
@@ -521,14 +538,28 @@ function CompactProgressBar({
 type BriefSpinnerProps = {
   mode: SpinnerMode
   overrideMessage?: string | null
+  compactingStartTime?: number | null
 }
 
 function BriefSpinner({
   mode,
   overrideMessage,
+  compactingStartTime = null,
 }: BriefSpinnerProps): React.ReactNode {
   const settings = useSettings()
   const reducedMotion = settings.prefersReducedMotion ?? false
+  // Brief mode has no viewing context (the wrapper only routes here when no
+  // agent view is up), so the panel is the main list, flush under the status
+  // line like in the full spinner.
+  const expandedView = useAppState(s => s.expandedView)
+  const mainTasksV2 = useTasksV2()
+  const panel =
+    expandedView === 'tasks' &&
+    compactingStartTime == null &&
+    mainTasksV2 &&
+    mainTasksV2.length > 0 ? (
+      <TaskPanelRows tasks={mainTasksV2} />
+    ) : null
   const [randomVerb] = useState(() => sample(getSpinnerVerbs()) ?? 'Working')
   const verb = overrideMessage ?? randomVerb
 
@@ -576,23 +607,26 @@ function BriefSpinner({
   const pad = Math.max(1, columns - 2 - leftWidth - stringWidth(rightText))
 
   return (
-    <Box flexDirection="row" width="100%" marginTop={1} paddingLeft={2}>
-      {showConnWarning ? (
-        <Text color="error">{connText + dots}</Text>
-      ) : (
-        <>
-          {before ? <Text dimColor>{before}</Text> : null}
-          {shimmer ? <Text>{shimmer}</Text> : null}
-          {after ? <Text dimColor>{after}</Text> : null}
-          <Text dimColor>{dots}</Text>
-        </>
-      )}
-      {rightText ? (
-        <>
-          <Text>{' '.repeat(pad)}</Text>
-          <Text color="subtle">{rightText}</Text>
-        </>
-      ) : null}
+    <Box flexDirection="column" width="100%" alignItems="flex-start">
+      <Box flexDirection="row" width="100%" marginTop={1} paddingLeft={2}>
+        {showConnWarning ? (
+          <Text color="error">{connText + dots}</Text>
+        ) : (
+          <>
+            {before ? <Text dimColor>{before}</Text> : null}
+            {shimmer ? <Text>{shimmer}</Text> : null}
+            {after ? <Text dimColor>{after}</Text> : null}
+            <Text dimColor>{dots}</Text>
+          </>
+        )}
+        {rightText ? (
+          <>
+            <Text>{' '.repeat(pad)}</Text>
+            <Text color="subtle">{rightText}</Text>
+          </>
+        ) : null}
+      </Box>
+      {panel}
     </Box>
   )
 }

@@ -59,31 +59,46 @@ describe('compactProgressLabel', () => {
 })
 
 describe('updateAgentCompactStatus', () => {
-  test('records the compaction verb and clears it when compaction ends', () => {
+  test('records label/startedAt/hooksActive and clears on compact_end', () => {
     const store = withTask(agentTask())
 
     updateAgentCompactStatus(
       'agent-1',
-      compactProgressLabel({ type: 'compact_start' }),
+      { type: 'hooks_start', hookType: 'pre_compact' },
       store.setAppState,
     )
-    expect(store.get().compactStatus).toBe('Compacting conversation')
+    let compacting = store.get().compacting
+    expect(compacting?.label).toBe('Running PreCompact hooks')
+    expect(compacting?.hooksActive).toBe(true)
+    expect(compacting?.startedAt).toBeGreaterThan(0)
+    const startedAt = compacting?.startedAt
 
     updateAgentCompactStatus(
       'agent-1',
-      compactProgressLabel({ type: 'compact_end' }),
+      { type: 'compact_start' },
       store.setAppState,
     )
-    expect(store.get().compactStatus).toBeUndefined()
+    compacting = store.get().compacting
+    expect(compacting?.label).toBe('Compacting conversation')
+    expect(compacting?.hooksActive).toBe(false)
+    // The progress bar stamps from the FIRST in-flight event, not the latest.
+    expect(compacting?.startedAt).toBe(startedAt)
+
+    updateAgentCompactStatus(
+      'agent-1',
+      { type: 'compact_end' },
+      store.setAppState,
+    )
+    expect(store.get().compacting).toBeUndefined()
   })
 
   test('ignores updates for tasks that are no longer running', () => {
     const store = withTask(agentTask({ status: 'completed' }))
     updateAgentCompactStatus(
       'agent-1',
-      'Compacting conversation',
+      { type: 'compact_start' },
       store.setAppState,
     )
-    expect(store.get().compactStatus).toBeUndefined()
+    expect(store.get().compacting).toBeUndefined()
   })
 })

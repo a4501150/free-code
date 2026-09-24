@@ -668,7 +668,7 @@ function agentCompactStatusFromTasks(
     firstData && hasProgressMessage(firstData) ? firstData.agentId : undefined
   if (!agentId || !tasks) return undefined
   const task = tasks[agentId]
-  return isLocalAgentTask(task) ? task.compactStatus : undefined
+  return isLocalAgentTask(task) ? task.compacting?.label : undefined
 }
 
 function useAgentCompactStatus(

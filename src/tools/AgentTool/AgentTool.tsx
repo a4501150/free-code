@@ -14,7 +14,6 @@ import { enhanceSystemPromptWithEnvDetails } from '../../constants/prompts.js'
 import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
 import { startAgentSummarization } from '../../services/AgentSummary/agentSummary.js'
 import { clearDumpState } from '../../services/api/dumpPrompts.js'
-import { compactProgressLabel } from '../../services/compact/compactProgressLabel.js'
 import {
   appendRetainedAgentMessage,
   completeAgentTask as completeAsyncAgent,
@@ -842,7 +841,7 @@ export const AgentTool = buildTool({
                 onCompactProgress: event =>
                   updateAgentCompactStatus(
                     agentBackgroundTask.agentId,
-                    compactProgressLabel(event),
+                    event,
                     rootSetAppState,
                   ),
               }),
@@ -993,7 +992,7 @@ export const AgentTool = buildTool({
               ? event =>
                   updateAgentCompactStatus(
                     foregroundTaskId,
-                    compactProgressLabel(event),
+                    event,
                     rootSetAppState,
                   )
               : undefined,
@@ -1114,7 +1113,7 @@ export const AgentTool = buildTool({
                         onCompactProgress: event =>
                           updateAgentCompactStatus(
                             backgroundedTaskId,
-                            compactProgressLabel(event),
+                            event,
                             rootSetAppState,
                           ),
                       })) {

@@ -14,8 +14,9 @@ import { abortSpeculation } from '../../services/PromptSuggestion/speculation.js
 import type { AppState } from '../../state/AppState.js'
 import type { SetAppState, Task, TaskStateBase } from '../../Task.js'
 import { createTaskStateBase } from '../../Task.js'
-import type { Tools } from '../../Tool.js'
+import type { CompactProgressEvent, Tools } from '../../Tool.js'
 import { findToolByName } from '../../Tool.js'
+import { compactProgressLabel } from '../../services/compact/compactProgressLabel.js'
 import type { AgentToolResult } from '../../tools/AgentTool/agentToolUtils.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from '../../tools/SyntheticOutputTool/SyntheticOutputTool.js'
@@ -245,9 +246,21 @@ export type LocalAgentTaskState = TaskStateBase & {
    * the drill-down transcript. Mirrors the leader's streamingThinking UI state,
    * including the duration the drill-down spinner byline reads. */
   streamingThinking?: StreamingThinking
-  /** Spinner verb while the sub-agent compacts its own context (e.g.
-   * "Compacting conversation"). undefined when not compacting. */
-  compactStatus?: string
+  /** Live compaction progress while the sub-agent compacts its own
+   * context — the spinner verb, the progress bar's start stamp, and whether
+   * the current phase is a Pre/PostCompact hook (the blue color).
+   * undefined when not compacting. Per-task so the effects render only in
+   * this agent's transcript view. */
+  compacting?: AgentCompactingInfo
+}
+
+export type AgentCompactingInfo = {
+  /** Spinner verb for the current phase (e.g. "Compacting conversation"). */
+  label: string
+  /** Ms timestamp of the first in-flight progress event; drives the bar. */
+  startedAt: number
+  /** True while a Pre/PostCompact hook phase is running (spinner blue). */
+  hooksActive: boolean
 }
 
 export function isLocalAgentTask(task: unknown): task is LocalAgentTaskState {
@@ -538,17 +551,46 @@ export function updateAgentStreamingThinking(
   })
 }
 
+/**
+ * Fold one compaction progress event into the task's `compacting` field.
+ * Mirrors the leader's `compactingStartTime` latch: the start stamp keeps
+ * the first in-flight event, `compact_end` clears, and a no-op update
+ * returns the same task object so subscribers don't re-render.
+ */
 export function updateAgentCompactStatus(
   taskId: string,
-  compactStatus: string | null,
+  event: CompactProgressEvent,
   setAppState: SetAppState,
 ): void {
-  const next = compactStatus ?? undefined
   updateTaskState<LocalAgentTaskState>(taskId, setAppState, task => {
-    if (task.status !== 'running' || task.compactStatus === next) {
+    if (task.status !== 'running') {
       return task
     }
-    return { ...task, compactStatus: next }
+    if (event.type === 'compact_end') {
+      if (!task.compacting) {
+        return task
+      }
+      return { ...task, compacting: undefined }
+    }
+    const label = compactProgressLabel(event)
+    if (label === null) {
+      return task
+    }
+    const hooksActive = event.type === 'hooks_start'
+    if (
+      task.compacting?.label === label &&
+      task.compacting.hooksActive === hooksActive
+    ) {
+      return task
+    }
+    return {
+      ...task,
+      compacting: {
+        label,
+        startedAt: task.compacting?.startedAt ?? Date.now(),
+        hooksActive,
+      },
+    }
   })
 }
 
