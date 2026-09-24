@@ -10,6 +10,7 @@ import { Box, Text } from '../../ink.js'
 import type { Tool } from '../../Tool.js'
 import type { ProgressMessage } from '../../types/message.js'
 import type { PowerShellProgress } from '../../types/tools.js'
+import { BACKGROUND_TASK_NUDGE } from '../../utils/task/backgroundNudge.js'
 import type { ThemeName } from '../../utils/theme.js'
 import type { Out, PowerShellToolInput } from './PowerShellTool.js'
 
@@ -141,20 +142,27 @@ export function renderToolResultMessage(
         <OutputLine content={stderr} verbose={verbose} isError />
       ) : null}
       {stdout === '' && stderr.trim() === '' ? (
-        <MessageResponse height={1}>
-          <Text dimColor>
-            {backgroundTaskId ? (
-              <>
+        backgroundTaskId ? (
+          // The model's own nudge from the tool_result, shown verbatim so
+          // the user sees exactly what the model was told.
+          <MessageResponse>
+            <Box flexDirection="column">
+              <Text dimColor>
                 Running in the background{' '}
                 <KeyboardShortcutHint shortcut="↓" action="manage" parens />
-              </>
-            ) : interrupted ? (
-              'Interrupted'
-            ) : (
-              returnCodeInterpretation || '(No output)'
-            )}
-          </Text>
-        </MessageResponse>
+              </Text>
+              <Text dimColor>{BACKGROUND_TASK_NUDGE}</Text>
+            </Box>
+          </MessageResponse>
+        ) : (
+          <MessageResponse height={1}>
+            <Text dimColor>
+              {interrupted
+                ? 'Interrupted'
+                : returnCodeInterpretation || '(No output)'}
+            </Text>
+          </MessageResponse>
+        )
       ) : null}
       {timeoutMs ? (
         <MessageResponse>

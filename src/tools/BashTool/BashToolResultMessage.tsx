@@ -4,6 +4,7 @@ import { MessageResponse } from '../../components/MessageResponse.js'
 import { OutputLine } from '../../components/shell/OutputLine.js'
 import { ShellTimeDisplay } from '../../components/shell/ShellTimeDisplay.js'
 import { Box, Text } from '../../ink.js'
+import { BACKGROUND_TASK_NUDGE } from '../../utils/task/backgroundNudge.js'
 import type { Out as BashOut } from './BashTool.js'
 
 type Props = {
@@ -74,19 +75,26 @@ export default function BashToolResultMessage({
         </MessageResponse>
       ) : null}
       {stdout === '' && stderr.trim() === '' && !cwdResetWarning ? (
-        <MessageResponse height={1}>
-          <Text dimColor>
-            {backgroundTaskId ? (
-              <>
+        backgroundTaskId ? (
+          // The model's own nudge from the tool_result, shown verbatim so
+          // the user sees exactly what the model was told.
+          <MessageResponse>
+            <Box flexDirection="column">
+              <Text dimColor>
                 Running in the background{' '}
                 <KeyboardShortcutHint shortcut="↓" action="manage" parens />
-              </>
-            ) : (
-              returnCodeInterpretation ||
-              (noOutputExpected ? 'Done' : '(No output)')
-            )}
-          </Text>
-        </MessageResponse>
+              </Text>
+              <Text dimColor>{BACKGROUND_TASK_NUDGE}</Text>
+            </Box>
+          </MessageResponse>
+        ) : (
+          <MessageResponse height={1}>
+            <Text dimColor>
+              {returnCodeInterpretation ||
+                (noOutputExpected ? 'Done' : '(No output)')}
+            </Text>
+          </MessageResponse>
+        )
       ) : null}
       {timeoutMs && (
         <MessageResponse>
