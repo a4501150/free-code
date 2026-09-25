@@ -8,7 +8,7 @@ import {
 } from '../../ink.js'
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
 import * as React from 'react'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import {
   useKeybinding,
   useKeybindings,
@@ -53,6 +53,7 @@ import {
 import { Dialog } from '../design-system/Dialog.js'
 import { Select } from '../CustomSelect/index.js'
 import { LanguagePicker } from '../LanguagePicker.js'
+import { MCPSettings } from '../mcp/index.js'
 import TextInput from '../TextInput.js'
 import {
   getExternalClaudeMdIncludes,
@@ -149,6 +150,7 @@ type SubMenu =
   | 'EnableAutoUpdates'
   | 'AutoCompactPercentage'
   | 'AutoCompactBuffer'
+  | 'McpServers'
 export function Config({
   onClose,
   context,
@@ -185,6 +187,16 @@ export function Config({
     isFastModeEnabled() ? s.fastMode : false,
   )
   const promptSuggestionEnabled = useAppState(s => s.promptSuggestionEnabled)
+  const allMcpClients = useAppState(s => s.mcp.clients)
+  const mcpServersSummary = useMemo(() => {
+    // The ide connection is not a configured server — /mcp excludes it too.
+    const servers = allMcpClients.filter(c => c.name !== 'ide')
+    if (servers.length === 0) {
+      return 'none configured'
+    }
+    const connected = servers.filter(c => c.type === 'connected').length
+    return `${connected}/${servers.length} connected`
+  }, [allMcpClients])
   const showAutoInDefaultModePicker = isAutoModeGateEnabled()
   // Chat/Transcript view picker is visible to entitled users (pass the GB
   // gate) even if they haven't opted in this session — it IS the persistent
@@ -196,7 +208,10 @@ export function Config({
   ).isBriefEntitled()
   /* eslint-enable @typescript-eslint/no-require-imports */
   const setAppState = useSetAppState()
-  const [changes, setChanges] = useState<{ [key: string]: unknown }>({})
+  // Pending-change summary shown when the dialog closes. Values are the
+  // fully formatted message lines ("Set <label> to <value>"), formatted at
+  // the call site that knows the human label — keys only dedupe entries.
+  const [changes, setChanges] = useState<{ [key: string]: string }>({})
   const initialThinkingEnabled = React.useRef(thinkingEnabled)
   // Per-source settings snapshots for revert-on-escape. getInitialSettings()
   // returns merged-across-sources which can't tell us what to delete vs
@@ -371,11 +386,8 @@ export function Config({
       const valStr =
         modelDisplayString(value) +
         (isBilledAsExtraUsage(value, false) ? ' · Billed as extra usage' : '')
-      if ('model' in prev) {
-        const { model, ...rest } = prev
-        return { ...rest, model: valStr }
-      }
-      return { ...prev, model: valStr }
+      const { model, ...rest } = prev
+      return { ...rest, model: `Set model to ${chalk.bold(valStr)}` }
     })
   }
 
@@ -392,11 +404,13 @@ export function Config({
         const { verbose, ...rest } = prev
         return rest
       }
-      return { ...prev, verbose: value }
+      return {
+        ...prev,
+        verbose: value ? 'Enabled verbose output' : 'Disabled verbose output',
+      }
     })
   }
 
-  // TODO: Add MCP servers
   const settingsItems: Setting[] = [
     // Global settings
     {
@@ -471,6 +485,13 @@ export function Config({
         })
       },
     },
+    {
+      id: 'mcpServers',
+      label: 'MCP servers',
+      value: mcpServersSummary,
+      type: 'managedEnum' as const,
+      onChange() {},
+    },
     // Fast mode toggle (ant-only, eliminated from external builds)
     ...(isFastModeEnabled() && isFastModeAvailable()
       ? [
@@ -493,15 +514,18 @@ export function Config({
                 }))
                 setChanges(prev => ({
                   ...prev,
-                  model: getFastModeModel(),
-                  'Fast mode': 'ON',
+                  model: `Set model to ${chalk.bold(modelDisplayString(getFastModeModel()))}`,
+                  fastMode: 'Enabled fast mode',
                 }))
               } else {
                 setAppState(prev => ({
                   ...prev,
                   fastMode: false,
                 }))
-                setChanges(prev => ({ ...prev, 'Fast mode': 'OFF' }))
+                setChanges(prev => ({
+                  ...prev,
+                  fastMode: 'Disabled fast mode',
+                }))
               }
             },
           },
@@ -852,7 +876,10 @@ export function Config({
           },
         }))
         // Track changes
-        setChanges(prev => ({ ...prev, defaultPermissionMode: mode }))
+        setChanges(prev => ({
+          ...prev,
+          defaultPermissionMode: `Set default permission mode to ${chalk.bold(mode)}`,
+        }))
       },
     },
     {
@@ -880,7 +907,9 @@ export function Config({
         })
         setChanges(prev => ({
           ...prev,
-          'Use auto mode during plan': useAutoModeDuringPlan,
+          useAutoModeDuringPlan: useAutoModeDuringPlan
+            ? 'Enabled use auto mode during plan'
+            : 'Disabled use auto mode during plan',
         }))
       },
     },
@@ -1089,7 +1118,13 @@ export function Config({
               // is better than leaving the tool on after switching away.
               // Reverted on Escape via initialUserMsgOptIn snapshot.
               setUserMsgOptIn(nextBrief)
-              setChanges(prev => ({ ...prev, 'Default view': selected }))
+              setChanges(prev => ({
+                ...prev,
+                defaultView:
+                  selected === 'default'
+                    ? 'Reset default view to transcript'
+                    : `Set default view to ${chalk.bold(selected)}`,
+              }))
             },
           },
         ]
@@ -1244,13 +1279,8 @@ export function Config({
     if (showSubmenu !== null) {
       return
     }
-    // Log any changes that were made
-    // TODO: Make these proper messages
-    const formattedChanges: string[] = Object.entries(changes).map(
-      ([key, value]) => {
-        return `Set ${key} to ${chalk.bold(value)}`
-      },
-    )
+    // Change lines are formatted at the call sites that know the human label.
+    const formattedChanges: string[] = Object.values(changes)
     if (themeSetting !== initialThemeSetting.current) {
       formattedChanges.push(`Set theme to ${chalk.bold(themeSetting)}`)
     }
@@ -1583,11 +1613,16 @@ export function Config({
       setting.id === 'showExternalIncludesDialog' ||
       setting.id === 'language' ||
       setting.id === 'autoCompactPercentage' ||
-      setting.id === 'autoCompactBuffer'
+      setting.id === 'autoCompactBuffer' ||
+      setting.id === 'mcpServers'
     ) {
       // managedEnum items open a submenu — isDirty is set by the submenu's
       // completion callback, not here (submenu may be cancelled).
       switch (setting.id) {
+        case 'mcpServers':
+          setShowSubmenu('McpServers')
+          setTabsHidden(true)
+          return
         case 'theme':
           setShowSubmenu('Theme')
           setTabsHidden(true)
@@ -1850,6 +1885,19 @@ export function Config({
             </Byline>
           </Text>
         </>
+      ) : showSubmenu === 'McpServers' ? (
+        <MCPSettings
+          onComplete={(msg, options) => {
+            setShowSubmenu(null)
+            setTabsHidden(false)
+            // onComplete doubles as "back" (no message) and as a terminal
+            // result (no servers configured, an action just completed).
+            // Terminal results end the whole dialog, same as /mcp.
+            if (msg) {
+              onClose(msg, options)
+            }
+          }}
+        />
       ) : showSubmenu === 'Language' ? (
         <>
           <LanguagePicker
