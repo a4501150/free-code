@@ -1,4 +1,5 @@
 import type { DomainToolResultBlockParam } from '../../types/domain.js'
+import type { NotebookCellSource } from '../../types/notebook.js'
 import * as React from 'react'
 import { FallbackToolUseErrorMessage } from '../../components/FallbackToolUseErrorMessage.js'
 import { HighlightedCode } from '../../components/HighlightedCode.js'
@@ -82,6 +83,52 @@ export function renderToolUseTag({
   return <Text dimColor> {agentTaskId}</Text>
 }
 
+/**
+ * Verbose rendering for one notebook cell: a header line with the cell
+ * metadata, the source highlighted for its language, then any text/image
+ * outputs dimmed beneath it.
+ */
+function NotebookCellView({
+  cell,
+  index,
+  filePath,
+}: {
+  cell: NotebookCellSource
+  index: number
+  filePath: string
+}): React.ReactNode {
+  const labels = [`${cell.cellType} cell`]
+  if (cell.execution_count != null) {
+    labels.push(`exec ${cell.execution_count}`)
+  }
+  if (cell.language && cell.language !== 'python') {
+    labels.push(cell.language)
+  }
+  const codeFilePath =
+    cell.cellType === 'code'
+      ? `${filePath}.${cell.language ?? 'python'}`
+      : filePath
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text dimColor>{`── cell ${index + 1} (${labels.join(', ')})`}</Text>
+      {cell.source ? (
+        <HighlightedCode code={cell.source} filePath={codeFilePath} />
+      ) : null}
+      {(cell.outputs ?? []).map((output, i) =>
+        output.text ? (
+          <Text key={i} dimColor>
+            {output.text}
+          </Text>
+        ) : output.image ? (
+          <Text key={i} dimColor>
+            [image output]
+          </Text>
+        ) : null,
+      )}
+    </Box>
+  )
+}
+
 export function renderToolResultMessage(
   output: Output,
   _progressMessages?: unknown[],
@@ -89,7 +136,6 @@ export function renderToolResultMessage(
 ): React.ReactNode {
   const verbose = options?.verbose ?? false
 
-  // TODO: Render recursively
   switch (output.type) {
     case 'image': {
       const { originalSize } = output.file
@@ -106,12 +152,32 @@ export function renderToolResultMessage(
       if (!cells || cells.length < 1) {
         return <Text color="error">No cells found in notebook</Text>
       }
-      return (
+      const summary = (
         <MessageResponse height={1}>
           <Text>
             Read <Text bold>{cells.length}</Text> cells
           </Text>
         </MessageResponse>
+      )
+      if (!verbose) {
+        return summary
+      }
+      return (
+        <Box flexDirection="column">
+          {summary}
+          <MessageResponse>
+            <Box flexDirection="column">
+              {(cells as NotebookCellSource[]).map((cell, i) => (
+                <NotebookCellView
+                  key={cell.cell_id ?? i}
+                  cell={cell}
+                  index={i}
+                  filePath={output.file.filePath}
+                />
+              ))}
+            </Box>
+          </MessageResponse>
+        </Box>
       )
     }
     case 'pdf': {
