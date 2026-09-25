@@ -1157,6 +1157,9 @@ function runHeadlessStreaming(
   // Cache SDK MCP clients to avoid reconnecting on each run
   let sdkClients: MCPServerConnection[] = []
   let sdkTools: Tools = []
+  // True once every SDK MCP client has settled; see the turn-start refresh
+  // in run().
+  let sdkMcpSettled = false
 
   // Track which MCP clients have had elicitation handlers registered
   const elicitationRegistered = new Set<string>()
@@ -1694,9 +1697,19 @@ function runHeadlessStreaming(
     idleTimeout.stop()
 
     headlessProfilerCheckpoint('run_entry')
-    // TODO(custom-tool-refactor): Should move to the init message, like browser
-
-    await updateSdkMcp()
+    // The first turn blocks on the SDK MCP handshake so the system/init
+    // message carries the real tool list, like browser MCP registration.
+    // Once every SDK client has settled, later turns refresh in the
+    // background: additions and removals are already kicked off
+    // event-driven (mcp_set_servers, plugin refresh) and each turn's init
+    // message re-reads the assembled tool list, so awaiting the handshake
+    // here would just add latency to every user prompt.
+    if (sdkMcpSettled) {
+      void updateSdkMcp()
+    } else {
+      await updateSdkMcp()
+      sdkMcpSettled = !sdkClients.some(client => client.type === 'pending')
+    }
     headlessProfilerCheckpoint('after_updateSdkMcp')
 
     // Resolve deferred plugin installation (CLAUDE_CODE_SYNC_PLUGIN_INSTALL).
