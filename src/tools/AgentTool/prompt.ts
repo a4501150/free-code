@@ -1,7 +1,7 @@
 import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import { getAgentModelDisplay as getAgentModelDisplayName } from '../../utils/model/agent.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
-import { AGENT_TOOL_NAME } from './constants.js'
+import { AGENT_PARALLELISM_GUIDANCE, AGENT_TOOL_NAME } from './constants.js'
 import {
   FORK_USAGE_GUIDANCE,
   isForkAgentEnabled,
@@ -102,7 +102,7 @@ ${agentListSection}
 
 Set the ${AGENT_TOOL_NAME} tool's subagent_type parameter to pick a type; when omitted, the general-purpose agent is used.
 
-To run agents in parallel whose results you need together, send multiple ${AGENT_TOOL_NAME} tool uses in a single message.`
+${AGENT_PARALLELISM_GUIDANCE}`
 
   // Coordinator mode gets the slim prompt -- the coordinator system prompt
   // already covers usage notes, examples, and when-not-to-use guidance.

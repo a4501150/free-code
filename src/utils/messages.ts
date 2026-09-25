@@ -85,7 +85,10 @@ import type {
   SDKAssistantErrorReason,
 } from 'src/structuredProtocol/index.js'
 import { PLAN_AGENT } from 'src/tools/AgentTool/built-in/planAgent.js'
-import { AGENT_TOOL_NAME } from 'src/tools/AgentTool/constants.js'
+import {
+  AGENT_PARALLELISM_GUIDANCE,
+  AGENT_TOOL_NAME,
+} from 'src/tools/AgentTool/constants.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from 'src/tools/AskUserQuestionTool/prompt.js'
 import { BashTool } from 'src/tools/BashTool/BashTool.js'
 import { ExitPlanModeTool } from 'src/tools/ExitPlanModeTool/ExitPlanModeTool.js'
@@ -4066,6 +4069,9 @@ You have exited auto mode. The user may now want to interact more directly. You 
         parts.push(
           `The following agent types are no longer available:\n${attachment.removedTypes.map(t => `- ${t}`).join('\n')}`,
         )
+      }
+      if (attachment.isInitial) {
+        parts.push(AGENT_PARALLELISM_GUIDANCE)
       }
       return wrapMessagesInSystemReminder([
         createUserMessage({ content: parts.join('\n\n'), isMeta: true }),

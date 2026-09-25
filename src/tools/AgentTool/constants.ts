@@ -1,6 +1,11 @@
 export const AGENT_TOOL_NAME = 'Agent'
 // Legacy wire name for backward compat (permission rules, hooks, resumed sessions)
 export const LEGACY_AGENT_TOOL_NAME = 'Task'
+
+// The parallelism rule: embedded in the Agent tool description and also
+// rendered in the initial agent_listing_delta announce. One source — the two
+// copies drifted apart once before.
+export const AGENT_PARALLELISM_GUIDANCE = `To run agents in parallel whose results you need together, send multiple ${AGENT_TOOL_NAME} tool uses in a single message.`
 export const VERIFICATION_AGENT_TYPE = 'verification'
 
 // Built-in agents that run once and return a report — the parent never
