@@ -1397,7 +1397,8 @@ async function parseFileWithSchema<T>(
  * - URL: Downloads marketplace.json directly
  * - GitHub: Clones repo and looks for .claude-plugin/marketplace.json
  * - Git: Clones repository from git URL
- * - NPM: (Not yet implemented) Would fetch from npm package
+ * - NPM: Installs the package via npm (cached under plugins/npm-cache) and
+ *   reads .claude-plugin/marketplace.json from it
  * - File: Reads from local filesystem
  *
  * After loading, validates the marketplace schema and renames the cache
@@ -1602,8 +1603,19 @@ async function loadAndCacheMarketplace(
       }
 
       case 'npm': {
-        // TODO: Implement npm package support
-        throw new Error('NPM marketplace sources not yet implemented')
+        // installFromNpm lives in pluginLoader (which imports this module);
+        // import lazily so the cycle stays deferred to call time.
+        const { installFromNpm } = await import('./pluginLoader.js')
+        safeCallProgress(onProgress, `Installing npm package ${source.package}`)
+        temporaryCachePath = join(cacheDir, tempName)
+        cleanupNeeded = true
+        await installFromNpm(source.package, temporaryCachePath)
+        marketplacePath = join(
+          temporaryCachePath,
+          '.claude-plugin',
+          'marketplace.json',
+        )
+        break
       }
 
       case 'file': {
@@ -2459,6 +2471,22 @@ export async function refreshMarketplace(
         source.headers,
         onProgress,
       )
+    } else if (source.source === 'npm') {
+      // The npm cache under plugins/npm-cache keeps a package forever;
+      // evict it so refresh re-fetches whatever the spec resolves to now.
+      const { installFromNpm } = await import('./pluginLoader.js')
+      const cachedPkg = join(
+        getPluginsDirectory(),
+        'npm-cache',
+        'node_modules',
+        source.package,
+      )
+      const fs = getFsImplementation()
+      await fs.rm(cachedPkg, { recursive: true, force: true })
+      await fs.rm(installLocation, { recursive: true, force: true })
+      safeCallProgress(onProgress, `Reinstalling npm package ${source.package}`)
+      await installFromNpm(source.package, installLocation)
+      await readCachedMarketplace(installLocation)
     } else if (isLocalMarketplaceSource(source)) {
       // Local sources: no remote to update from, but validate the file still exists and is valid
       safeCallProgress(onProgress, 'Validating local marketplace')
