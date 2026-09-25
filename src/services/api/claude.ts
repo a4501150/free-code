@@ -990,7 +990,11 @@ async function* queryModel(
   // Cataloged tools (MCP, plus built-ins named in lazyTools) stay in the
   // caller's pool for dispatch and permissions but leave the request, so the
   // tools block is frozen for the session and MCP connect/disconnect or
-  // tools/list_changed cannot invalidate the cache prefix behind it.
+  // tools/list_changed cannot invalidate the cache prefix behind it. The
+  // mid-loop refreshTools() swap churns this pool for dispatch but not the
+  // request; what does churn it: alwaysLoad servers connecting/disconnecting,
+  // blanket-deny rules added mid-session against an exposed tool, and
+  // coordinator-mode toggles.
   const filteredTools: Tools = tools.filter(isToolExposedToModel)
 
   // Three of the API's four cache breakpoints: the last tool (below), the
