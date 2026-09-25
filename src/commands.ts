@@ -7,6 +7,7 @@ import copy from './commands/copy/index.js'
 import desktop from './commands/desktop/index.js'
 import compact from './commands/compact/index.js'
 import config from './commands/config/index.js'
+import settings from './commands/settings/index.js'
 import { context, contextNonInteractive } from './commands/context/index.js'
 import cost from './commands/cost/index.js'
 import diff from './commands/diff/index.js'
@@ -183,6 +184,7 @@ const COMMANDS = memoize((): Command[] => [
   ultrareview,
   rewind,
   securityReview,
+  settings,
   terminalSetup,
   upgrade,
   extraUsage,
