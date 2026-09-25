@@ -713,10 +713,9 @@ export function charInCellAt(
  * the buffer aligned to visual columns, making cursor positioning
  * straightforward.
  *
- * TODO: When soft-wrapping is implemented, SpacerHead cells will be explicitly
- * placed by the wrapping logic at line-end positions where wide characters
- * wrap to the next line. This function doesn't need to handle SpacerHead
- * automatically - it will be set directly by the wrapping code.
+ * SpacerHead cells are set explicitly by the soft-wrapping logic at line-end
+ * positions where wide characters wrap to the next line. This function does
+ * not create SpacerHead cells itself.
  */
 export function setCellAt(
   screen: Screen,

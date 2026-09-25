@@ -242,7 +242,7 @@ export function filterAgentsByMcpRequirements(
 /**
  * Check for and initialize agent memory from project snapshots.
  * For agents with memory enabled, copies snapshot to local if no local memory exists.
- * For agents with newer snapshots, logs a debug message (user prompt TODO).
+ * For agents with newer snapshots, queues a snapshot-update prompt for the UI.
  */
 async function initializeAgentMemorySnapshots(
   agents: CustomAgentDefinition[],

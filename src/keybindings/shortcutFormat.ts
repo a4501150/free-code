@@ -2,17 +2,11 @@ import { loadKeybindingsSync } from './loadUserBindings.js'
 import { getBindingDisplayText } from './resolver.js'
 import type { KeybindingContextName } from './types.js'
 
-// TODO(keybindings-migration): Remove fallback parameter after migration is
-// complete and we've confirmed no 'keybinding_fallback_used' events are being
-// logged. The fallback exists as a safety net during migration - if bindings
-// fail to load or an action isn't found, we fall back to hardcoded values.
-// Once stable, callers should be able to trust that getBindingDisplayText
-// always returns a value for known actions, and we can remove this defensive
-// pattern.
-
-// Track which action+context pairs have already logged a fallback event
-// to avoid duplicate events from repeated calls in non-React contexts.
-const LOGGED_FALLBACKS = new Set<string>()
+// TODO(keybindings-migration): Remove the fallback parameter once callers can
+// trust the resolver to return a value for every known action. Blocker:
+// getBindingDisplayText still returns `string | undefined` and every call site
+// passes a hardcoded fallback — removal needs the resolver (and its
+// binding-loading failure path) to guarantee a non-undefined result first.
 
 /**
  * Get the display text for a configured shortcut without React hooks.
@@ -38,12 +32,5 @@ export function getShortcutDisplay(
 ): string {
   const bindings = loadKeybindingsSync()
   const resolved = getBindingDisplayText(action, context, bindings)
-  if (resolved === undefined) {
-    const key = `${action}:${context}`
-    if (!LOGGED_FALLBACKS.has(key)) {
-      LOGGED_FALLBACKS.add(key)
-    }
-    return fallback
-  }
-  return resolved
+  return resolved ?? fallback
 }
