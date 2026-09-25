@@ -6,6 +6,7 @@
  * keyed by issuer (secret). Separate trust domain from per-server AS secrets.
  */
 import type { Command } from '@commander-js/extra-typings'
+import { readFileSync } from 'node:fs'
 import { cliError, cliOk } from '../../cli/exit.js'
 import {
   acquireIdpIdToken,
@@ -153,18 +154,20 @@ export function registerMcpXaaIdpCommand(mcp: Command): void {
       'Cache an IdP id_token so XAA-enabled MCP servers authenticate ' +
         'silently. Default: run the OIDC browser login. With --id-token: ' +
         'write a pre-obtained JWT directly (used by conformance/e2e tests ' +
-        'where the mock IdP does not serve /authorize).',
+        'where the mock IdP does not serve /authorize). With --stdin: same, ' +
+        'but the JWT is read from standard input.',
     )
     .option(
       '--force',
       'Ignore any cached id_token and re-login (useful after IdP-side revocation)',
     )
-    // TODO(paulc): read the JWT from stdin instead of argv to keep it out of
-    // shell history. Fine for conformance (docker exec uses argv directly,
-    // no shell parser), but a real user would want `echo $TOKEN | ... --stdin`.
     .option(
       '--id-token <jwt>',
       'Write this pre-obtained id_token directly to cache, skipping the OIDC browser login',
+    )
+    .option(
+      '--stdin',
+      'Read the pre-obtained id_token from stdin (keeps it out of shell history and process args)',
     )
     .action(async options => {
       const idp = getXaaIdpSettings()
@@ -177,8 +180,18 @@ export function registerMcpXaaIdpCommand(mcp: Command): void {
       // Direct-inject path: skip cache check, skip OIDC. Writing IS the
       // operation. Issuer comes from settings (single source of truth), not
       // a separate flag — one less thing to desync.
-      if (options.idToken) {
-        const expiresAt = saveIdpIdTokenFromJwt(idp.issuer, options.idToken)
+      let idToken = options.idToken
+      if (options.stdin) {
+        if (idToken) {
+          return cliError('Error: use either --id-token or --stdin, not both.')
+        }
+        idToken = readFileSync(0, 'utf8').trim()
+        if (!idToken) {
+          return cliError('Error: --stdin given but stdin was empty.')
+        }
+      }
+      if (idToken) {
+        const expiresAt = saveIdpIdTokenFromJwt(idp.issuer, idToken)
         return cliOk(
           `id_token cached for ${idp.issuer} (expires ${new Date(expiresAt).toISOString()})`,
         )

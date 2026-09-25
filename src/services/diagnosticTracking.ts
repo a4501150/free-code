@@ -53,7 +53,6 @@ export class DiagnosticTrackingService {
       return
     }
 
-    // TODO: Do not cache the connected mcpClient since it can change.
     this.mcpClient = mcpClient
     this.initialized = true
   }
@@ -337,6 +336,12 @@ export class DiagnosticTrackingService {
         this.initialize(connectedIdeClient)
       }
     } else {
+      // The IDE connection can be replaced by a reconnect since initialize()
+      // ran, so re-resolve it from the current clients on every query start.
+      const connectedIdeClient = getConnectedIdeClient(clients)
+      if (connectedIdeClient) {
+        this.mcpClient = connectedIdeClient
+      }
       // Reset diagnostic tracking for new query loops
       this.reset()
     }

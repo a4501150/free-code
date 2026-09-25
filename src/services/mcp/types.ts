@@ -69,6 +69,7 @@ export const McpSSEIDEServerConfigSchema = z.object({
   type: z.literal('sse-ide'),
   url: z.string(),
   ideName: z.string(),
+  authToken: z.string().optional(),
   ideRunningInWindows: z.boolean().optional(),
   includeTools: z.array(z.string()).optional(),
   excludeTools: z.array(z.string()).optional(),
