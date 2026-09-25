@@ -38,11 +38,9 @@ function getDefaultOptionForUser(): ModelOption {
   const registry = getProviderRegistry()
   const defaultModelId = getDefaultMainLoopModelSetting()
   const resolved = registry.getProviderForModel(defaultModelId)
-  const pricingSuffix =
-    resolved?.model.pricing &&
-    registry.resolveFirstPartyCapability(undefined, 'showModelPricing')
-      ? ` · ${formatModelPricing({ inputTokens: resolved.model.pricing.input ?? 0, outputTokens: resolved.model.pricing.output ?? 0, promptCacheWriteTokens: resolved.model.pricing.cacheWrite ?? 0, promptCacheReadTokens: resolved.model.pricing.cacheRead ?? 0, webSearchRequests: resolved.model.pricing.webSearch ?? 0 })}`
-      : ''
+  const pricingSuffix = resolved?.model.pricing
+    ? ` · ${formatModelPricing({ inputTokens: resolved.model.pricing.input ?? 0, outputTokens: resolved.model.pricing.output ?? 0, promptCacheWriteTokens: resolved.model.pricing.cacheWrite ?? 0, promptCacheReadTokens: resolved.model.pricing.cacheRead ?? 0, webSearchRequests: resolved.model.pricing.webSearch ?? 0 })}`
+    : ''
 
   return {
     value: null,
@@ -70,13 +68,11 @@ function formatContextWindowTag(contextWindow?: number): string {
 
 /**
  * Build a pricing suffix string from provider model pricing metadata.
- * Returns empty string for providers without firstPartyFeatures or no pricing.
+ * Returns empty string when the model has no pricing data, whatever provider
+ * it belongs to.
  */
-function buildPricingSuffix(
-  model: ProviderModelConfig,
-  isFirstParty: boolean,
-): string {
-  if (!isFirstParty || !model.pricing) return ''
+function buildPricingSuffix(model: ProviderModelConfig): string {
+  if (!model.pricing) return ''
   return ` · ${formatModelPricing({
     inputTokens: model.pricing.input ?? 0,
     outputTokens: model.pricing.output ?? 0,
@@ -92,16 +88,15 @@ function buildPricingSuffix(
 function buildModelOption(
   model: ProviderModelConfig,
   providerName: string,
-  isFirstParty: boolean,
 ): ModelOption {
   const ctxTag = formatContextWindowTag(model.contextWindow)
   const label = (model.label || model.id) + (ctxTag ? ` ${ctxTag}` : '')
   const desc = model.description || model.id
-  const pricing = buildPricingSuffix(model, isFirstParty)
+  const pricing = buildPricingSuffix(model)
 
-  // For first-party providers, show "Label · Description + pricing"
-  // For third-party, show "Description" (provider name is shown as tab header)
-  const description = isFirstParty ? `${label} · ${desc}${pricing}` : `${desc}`
+  // Label is shown in its own column; description carries the text plus
+  // pricing when the model has pricing data (provider name is the tab header).
+  const description = `${desc}${pricing}`
 
   // descriptionForModel is used in the system prompt (no pricing, plain text)
   const descriptionForModel = model.description
@@ -155,17 +150,6 @@ export function getGroupedModelOptions(_fastMode = false): ModelOptionGroup[] {
   let isFirstGroup = true
 
   for (const [providerName, providerConfig] of allProviders) {
-    const isFirstParty = (() => {
-      // Pricing display is gated specifically on showModelPricing now;
-      // fallback to firstPartyFeatures is handled inside resolveFirstPartyCapability.
-      const firstModel = providerConfig.models[0]
-      if (!firstModel) return false
-      return registry.resolveFirstPartyCapability(
-        firstModel.id,
-        'showModelPricing',
-      )
-    })()
-
     const options: ModelOption[] = []
 
     // Prepend "Default (recommended)" to the first group
@@ -175,7 +159,7 @@ export function getGroupedModelOptions(_fastMode = false): ModelOptionGroup[] {
     }
 
     for (const model of providerConfig.models) {
-      options.push(buildModelOption(model, providerName, isFirstParty))
+      options.push(buildModelOption(model, providerName))
     }
 
     if (options.length > 0) {

@@ -449,10 +449,6 @@ export const ProviderCapabilitiesSchema = z.object({
     .boolean()
     .optional()
     .describe('Provider supports fast mode (opus:fast) and related betas'),
-  showModelPricing: z
-    .boolean()
-    .optional()
-    .describe('UI should surface Anthropic-native pricing labels'),
   supportsOAuthProfile: z
     .boolean()
     .optional()

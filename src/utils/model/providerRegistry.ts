@@ -39,7 +39,6 @@ const ALL_FALSE_CAPABILITIES: Required<ProviderCapabilities> = {
   customSyspromptPrefix: true,
   // Granular decomposition defaults (false when firstPartyFeatures is false)
   supportsFastMode: false,
-  showModelPricing: false,
   supportsOAuthProfile: false,
   supportsPolicyLimits: false,
   supportsSettingsSync: false,
@@ -90,7 +89,6 @@ const PROVIDER_CAPABILITY_DEFAULTS: Record<
     customSyspromptPrefix: true,
     // All first-party features enabled on native Anthropic.
     supportsFastMode: true,
-    showModelPricing: true,
     supportsOAuthProfile: true,
     supportsPolicyLimits: true,
     supportsSettingsSync: true,
@@ -487,7 +485,6 @@ export class ProviderRegistry {
     model: string | undefined,
     cap:
       | 'supportsFastMode'
-      | 'showModelPricing'
       | 'supportsOAuthProfile'
       | 'supportsPolicyLimits'
       | 'supportsSettingsSync'
