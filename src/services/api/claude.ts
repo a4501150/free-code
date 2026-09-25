@@ -2,6 +2,7 @@ import type {
   DomainAssistantContent,
   DomainContentBlock,
   DomainReasoningBlock,
+  DomainTextBlock,
   DomainStreamEvent,
   DomainUsage,
 } from '../../types/domain.js'
@@ -1574,9 +1575,22 @@ async function* queryModel(
                 contentBlock.connector_text += delta.connector_text as string
               } else {
                 switch (delta.type) {
-                  case 'citations_delta':
-                    // TODO: handle citations
+                  case 'citations_delta': {
+                    if (contentBlock.type !== 'text') {
+                      break
+                    }
+                    if (delta.citations === undefined) {
+                      break
+                    }
+                    const textBlock = contentBlock as DomainTextBlock
+                    textBlock.citations = [
+                      ...(Array.isArray(textBlock.citations)
+                        ? (textBlock.citations as unknown[])
+                        : []),
+                      delta.citations,
+                    ]
                     break
+                  }
                   case 'input_json_delta':
                     if (
                       contentBlock.type !== 'tool_use' &&
